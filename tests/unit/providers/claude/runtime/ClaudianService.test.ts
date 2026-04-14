@@ -788,11 +788,25 @@ describe('ClaudianService', () => {
       expect((service as any).isStreamTextEvent({ type: 'stream_event' })).toBe(false);
     });
 
-    it('should return false for content_block_start with text type', () => {
+    it('should return false for content_block_start with text type and no text payload', () => {
       expect((service as any).isStreamTextEvent({
         type: 'stream_event',
         event: { type: 'content_block_start', content_block: { type: 'text' } },
       })).toBe(false);
+    });
+
+    it('should return false for content_block_start with empty text', () => {
+      expect((service as any).isStreamTextEvent({
+        type: 'stream_event',
+        event: { type: 'content_block_start', content_block: { type: 'text', text: '' } },
+      })).toBe(false);
+    });
+
+    it('should return true for content_block_start with non-empty text', () => {
+      expect((service as any).isStreamTextEvent({
+        type: 'stream_event',
+        event: { type: 'content_block_start', content_block: { type: 'text', text: 'hello' } },
+      })).toBe(true);
     });
 
     it('should return false for content_block_start with non-text type', () => {
@@ -1222,7 +1236,7 @@ describe('ClaudianService', () => {
       expect(usageChunks[0][0].sessionId).toBe('usage-session');
     });
 
-    it('should not mark stream text seen on content_block_start alone', async () => {
+    it('should not mark stream text seen on content_block_start without text payload', async () => {
       const message = {
         type: 'stream_event',
         event: { type: 'content_block_start', content_block: { type: 'text' } },
@@ -1230,9 +1244,25 @@ describe('ClaudianService', () => {
 
       await (service as any).routeMessage(message);
 
-      // content_block_start only announces a text block will exist;
-      // it does not confirm incremental text was delivered.
+      // An empty content_block_start only announces a text block will exist;
+      // it does not confirm any visible text was delivered, so dedup stays off.
       expect(handler.sawStreamText).toBe(false);
+    });
+
+    it('should mark stream text seen on content_block_start with non-empty text', async () => {
+      const message = {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_start',
+          content_block: { type: 'text', text: 'hello' },
+        },
+      };
+
+      await (service as any).routeMessage(message);
+
+      // transformClaudeMessage yields this text to the UI, so the final
+      // assistant message must dedup against it.
+      expect(handler.sawStreamText).toBe(true);
     });
 
     it('should mark stream text seen on content_block_delta with text_delta', async () => {

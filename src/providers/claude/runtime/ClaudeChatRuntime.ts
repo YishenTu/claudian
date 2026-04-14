@@ -1422,6 +1422,18 @@ export class ClaudianService implements ChatRuntime {
     if (event.type === 'content_block_delta') {
       return event.delta?.type === 'text_delta';
     }
+    // transformClaudeMessage also emits text from content_block_start when
+    // content_block.text is non-empty, so dedup must see that case too —
+    // otherwise the start-only text renders once from the stream and again
+    // from the final assistant message.
+    if (
+      event.type === 'content_block_start' &&
+      event.content_block?.type === 'text' &&
+      typeof event.content_block.text === 'string' &&
+      event.content_block.text.length > 0
+    ) {
+      return true;
+    }
     return false;
   }
 
