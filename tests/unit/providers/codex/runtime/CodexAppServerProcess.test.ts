@@ -74,6 +74,59 @@ describe('CodexAppServerProcess', () => {
       );
     });
 
+    it('wraps Windows .cmd shims through cmd.exe', () => {
+      const platformSpy = jest.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+      try {
+        const server = new CodexAppServerProcess(createLaunchSpec({
+          command: 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.cmd',
+        }));
+        server.start();
+
+        expect(mockSpawn).toHaveBeenCalledWith(
+          process.env.comspec || 'cmd.exe',
+          ['/d', '/s', '/c', '"C:\\Users\\user\\AppData\\Roaming\\npm\\codex.cmd app-server --listen stdio://"'],
+          expect.objectContaining({
+            windowsHide: true,
+            windowsVerbatimArguments: true,
+          }),
+        );
+      } finally {
+        platformSpy.mockRestore();
+      }
+    });
+
+    it('wraps Windows .ps1 shims through PowerShell', () => {
+      const platformSpy = jest.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+      try {
+        const server = new CodexAppServerProcess(createLaunchSpec({
+          command: 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.ps1',
+        }));
+        server.start();
+
+        expect(mockSpawn).toHaveBeenCalledWith(
+          'powershell.exe',
+          [
+            '-NoLogo',
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.ps1',
+            'app-server',
+            '--listen',
+            'stdio://',
+          ],
+          expect.objectContaining({
+            windowsHide: true,
+          }),
+        );
+      } finally {
+        platformSpy.mockRestore();
+      }
+    });
+
     it('passes environment variables to the spawned process', () => {
       const env = { OPENAI_API_KEY: 'sk-test', PATH: '/usr/bin' };
       const server = new CodexAppServerProcess(createLaunchSpec({ env }));

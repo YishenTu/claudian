@@ -42,9 +42,8 @@ export function findCodexBinaryPath(
   additionalPath?: string,
   platform: NodeJS.Platform = process.platform,
 ): string | null {
-  // App-server uses raw stdio spawn, so Windows shell shims are not viable targets here.
   const binaryNames = platform === 'win32'
-    ? ['codex.exe', 'codex']
+    ? ['codex.exe', 'codex.cmd', 'codex']
     : ['codex'];
   const searchEntries = parsePathEntries(getEnhancedPath(additionalPath));
 

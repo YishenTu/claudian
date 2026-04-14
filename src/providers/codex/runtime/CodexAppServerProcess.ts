@@ -5,6 +5,66 @@ import type { CodexLaunchSpec } from './codexLaunchTypes';
 
 const SIGKILL_TIMEOUT_MS = 3_000;
 
+function quoteWindowsShellArgument(value: string): string {
+  if (!value.length) {
+    return '""';
+  }
+
+  if (!/[\s"]/u.test(value)) {
+    return value;
+  }
+
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function resolveWindowsSpawnSpec(launchSpec: Pick<CodexLaunchSpec, 'command' | 'args' | 'spawnCwd' | 'env'>) {
+  const command = launchSpec.command.trim();
+  const lowerCommand = command.toLowerCase();
+
+  if (!command || process.platform !== 'win32') {
+    return {
+      command: launchSpec.command,
+      args: launchSpec.args,
+      env: launchSpec.env,
+    };
+  }
+
+  if (lowerCommand.endsWith('.ps1')) {
+    return {
+      command: 'powershell.exe',
+      args: [
+        '-NoLogo',
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        command,
+        ...launchSpec.args,
+      ],
+      env: launchSpec.env,
+    };
+  }
+
+  if (lowerCommand.endsWith('.cmd') || lowerCommand.endsWith('.bat')) {
+    const shellCommand = [command, ...launchSpec.args]
+      .map(value => quoteWindowsShellArgument(value))
+      .join(' ');
+
+    return {
+      command: process.env.comspec || 'cmd.exe',
+      args: ['/d', '/s', '/c', `"${shellCommand}"`],
+      env: launchSpec.env,
+      windowsVerbatimArguments: true,
+    };
+  }
+
+  return {
+    command: launchSpec.command,
+    args: launchSpec.args,
+    env: launchSpec.env,
+  };
+}
+
 type ExitCallback = (code: number | null, signal: string | null) => void;
 
 export class CodexAppServerProcess {
@@ -17,10 +77,14 @@ export class CodexAppServerProcess {
   ) {}
 
   start(): void {
-    this.proc = spawn(this.launchSpec.command, this.launchSpec.args, {
+    const resolvedSpawnSpec = resolveWindowsSpawnSpec(this.launchSpec);
+
+    this.proc = spawn(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: this.launchSpec.spawnCwd,
-      env: this.launchSpec.env,
+      env: resolvedSpawnSpec.env,
+      windowsHide: true,
+      ...(resolvedSpawnSpec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     });
 
     this.alive = true;

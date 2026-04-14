@@ -27,13 +27,13 @@ describe('CodexBinaryLocator', () => {
     expect(findCodexBinaryPath(pathDir, 'darwin')).toBe(pathBinary);
   });
 
-  it('ignores a Windows codex.cmd shim on PATH', () => {
+  it('finds a Windows codex.cmd shim on PATH', () => {
     const pathDir = path.join(tempDir, 'bin');
     const pathBinary = path.join(pathDir, 'codex.cmd');
     fs.mkdirSync(pathDir, { recursive: true });
     fs.writeFileSync(pathBinary, '');
 
-    expect(findCodexBinaryPath(pathDir, 'win32')).not.toBe(pathBinary);
+    expect(findCodexBinaryPath(pathDir, 'win32')).toBe(pathBinary);
   });
 
   it('prefers a hostname-specific configured path', () => {
