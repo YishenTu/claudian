@@ -18,6 +18,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
     const codexSettings = getCodexProviderSettings(settingsBag);
     const hostnameKey = getHostnameKey();
+    const isWindowsHost = process.platform === 'win32';
     let installationMethod = codexSettings.installationMethod;
 
     // --- Setup ---
@@ -37,23 +38,32 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
           })
       );
 
-    new Setting(container)
-      .setName('Installation method')
-      .setDesc('How Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.')
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption('native-windows', 'Native Windows')
-          .addOption('wsl', 'WSL')
-          .setValue(installationMethod)
-          .onChange(async (value) => {
-            installationMethod = value === 'wsl' ? 'wsl' : 'native-windows';
-            updateCodexProviderSettings(settingsBag, { installationMethod });
-            refreshInstallationMethodUI();
-            await context.plugin.saveSettings();
-          });
-      });
+    if (isWindowsHost) {
+      new Setting(container)
+        .setName('Installation method')
+        .setDesc('How Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.')
+        .addDropdown((dropdown) => {
+          dropdown
+            .addOption('native-windows', 'Native Windows')
+            .addOption('wsl', 'WSL')
+            .setValue(installationMethod)
+            .onChange(async (value) => {
+              installationMethod = value === 'wsl' ? 'wsl' : 'native-windows';
+              updateCodexProviderSettings(settingsBag, { installationMethod });
+              refreshInstallationMethodUI();
+              await context.plugin.saveSettings();
+            });
+        });
+    }
 
     const getCliPathCopy = (): { desc: string; placeholder: string } => {
+      if (!isWindowsHost) {
+        return {
+          desc: 'Custom path to the local Codex CLI. Leave empty for auto-detection from PATH.',
+          placeholder: '/usr/local/bin/codex',
+        };
+      }
+
       if (installationMethod === 'wsl') {
         return {
           desc: 'Linux-side Codex command or absolute path to run inside WSL. Leave empty for PATH lookup inside the selected distro.',
@@ -67,7 +77,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       };
     };
 
-    const shouldValidateCliPathAsFile = (): boolean => installationMethod !== 'wsl';
+    const shouldValidateCliPathAsFile = (): boolean => !isWindowsHost || installationMethod !== 'wsl';
 
     const cliPathSetting = new Setting(container)
       .setName(`Codex CLI path (${hostnameKey})`)
@@ -179,25 +189,27 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       updateCliPathValidation(currentValue, text.inputEl);
     });
 
-    const wslDistroSetting = new Setting(container)
-      .setName('WSL distro override')
-      .setDesc('Optional advanced override. Leave empty to infer the distro from a \\\\wsl$ workspace path when possible, otherwise use the default WSL distro.');
+    if (isWindowsHost) {
+      const wslDistroSetting = new Setting(container)
+        .setName('WSL distro override')
+        .setDesc('Optional advanced override. Leave empty to infer the distro from a \\\\wsl$ workspace path when possible, otherwise use the default WSL distro.');
 
-    wslDistroSettingEl = wslDistroSetting.settingEl;
-    wslDistroSetting.addText((text) => {
-      text
-        .setPlaceholder('Ubuntu')
-        .setValue(codexSettings.wslDistroOverride)
-        .onChange(async (value) => {
-          updateCodexProviderSettings(settingsBag, { wslDistroOverride: value });
-          await context.plugin.saveSettings();
-        });
+      wslDistroSettingEl = wslDistroSetting.settingEl;
+      wslDistroSetting.addText((text) => {
+        text
+          .setPlaceholder('Ubuntu')
+          .setValue(codexSettings.wslDistroOverride)
+          .onChange(async (value) => {
+            updateCodexProviderSettings(settingsBag, { wslDistroOverride: value });
+            await context.plugin.saveSettings();
+          });
 
-      text.inputEl.addClass('claudian-settings-cli-path-input');
-      text.inputEl.style.width = '100%';
-      text.inputEl.disabled = installationMethod !== 'wsl';
-      wslDistroInputEl = text.inputEl;
-    });
+        text.inputEl.addClass('claudian-settings-cli-path-input');
+        text.inputEl.style.width = '100%';
+        text.inputEl.disabled = installationMethod !== 'wsl';
+        wslDistroInputEl = text.inputEl;
+      });
+    }
 
     refreshInstallationMethodUI();
 
