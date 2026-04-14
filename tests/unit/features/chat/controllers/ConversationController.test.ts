@@ -482,6 +482,16 @@ describe('ConversationController', () => {
       const updates = call[1];
       expect(updates).not.toHaveProperty('resumeAtMessageId');
     });
+
+    it('should clear pending conversation save state after persisting', async () => {
+      deps.state.currentConversationId = 'conv-1';
+      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+      deps.state.hasPendingConversationSave = true;
+
+      await controller.save();
+
+      expect(deps.state.hasPendingConversationSave).toBe(false);
+    });
   });
 
   describe('loadActive with existing conversation', () => {

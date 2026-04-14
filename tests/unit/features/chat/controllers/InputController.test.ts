@@ -1828,6 +1828,7 @@ describe('InputController - Message Queue', () => {
       expect(mockNotice).toHaveBeenCalledWith('Failed to initialize agent service. Please try again.');
       expect(deps.streamController.hideThinkingIndicator).toHaveBeenCalled();
       expect(deps.state.isStreaming).toBe(false);
+      expect(deps.state.hasPendingConversationSave).toBe(true);
       expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
     });
   });
@@ -1849,6 +1850,7 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(mockNotice).toHaveBeenCalledWith('Agent service not available. Please reload the plugin.');
+      expect(deps.state.hasPendingConversationSave).toBe(true);
       expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
     });
   });

@@ -115,6 +115,7 @@ function createMockView(): any {
 function createMockTabData(overrides: Record<string, any> = {}): any {
   const defaultState = {
     isStreaming: false,
+    hasPendingConversationSave: false,
     needsAttention: false,
     messages: [],
     currentConversationId: null,
@@ -1728,6 +1729,114 @@ describe('TabManager - switchToTab Session Sync', () => {
       expect.objectContaining({ id: 'conv-empty', sessionId: 'session-abc' }),
       ['/persistent/path'],
     );
+  });
+
+  it('should not sync service session for an already-loaded streaming tab', async () => {
+    jest.clearAllMocks();
+
+    const mockSyncConversationState = jest.fn();
+    const mockService = {
+      syncConversationState: mockSyncConversationState,
+    };
+
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+
+      if (tabCounter === 1) {
+        return createMockTabData({ id: 'tab-1' });
+      }
+
+      return createMockTabData({
+        id: 'tab-2',
+        conversationId: 'conv-streaming',
+        service: mockService,
+        serviceInitialized: true,
+        state: {
+          isStreaming: true,
+          messages: [{ id: 'msg-1', role: 'user', content: 'test' }],
+        },
+      });
+    });
+
+    const plugin = createMockPlugin();
+    plugin.getConversationSync = jest.fn().mockReturnValue({
+      id: 'conv-streaming',
+      messages: [{ id: 'msg-1', role: 'user', content: 'test' }],
+      sessionId: 'session-stream',
+      externalContextPaths: ['/some/path'],
+    });
+
+    const manager = new TabManager(
+      plugin,
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+
+    await manager.createTab();
+    const backgroundStreamingTab = await manager.createTab(undefined, undefined, { activate: false });
+
+    jest.clearAllMocks();
+
+    await manager.switchToTab(backgroundStreamingTab!.id);
+
+    expect(plugin.getConversationSync).not.toHaveBeenCalled();
+    expect(mockSyncConversationState).not.toHaveBeenCalled();
+  });
+
+  it('should not sync service session when local conversation state is pending save', async () => {
+    jest.clearAllMocks();
+
+    const mockSyncConversationState = jest.fn();
+    const mockService = {
+      syncConversationState: mockSyncConversationState,
+    };
+
+    let tabCounter = 0;
+    mockCreateTab.mockImplementation(() => {
+      tabCounter++;
+
+      if (tabCounter === 1) {
+        return createMockTabData({ id: 'tab-1' });
+      }
+
+      return createMockTabData({
+        id: 'tab-2',
+        conversationId: 'conv-pending-save',
+        service: mockService,
+        serviceInitialized: true,
+        state: {
+          hasPendingConversationSave: true,
+          messages: [{ id: 'msg-1', role: 'user', content: 'test' }],
+        },
+      });
+    });
+
+    const plugin = createMockPlugin();
+    plugin.getConversationSync = jest.fn().mockReturnValue({
+      id: 'conv-pending-save',
+      messages: [],
+      sessionId: null,
+      externalContextPaths: [],
+    });
+
+    const manager = new TabManager(
+      plugin,
+      createMockMcpManager(),
+      createMockEl(),
+      createMockView()
+    );
+
+    await manager.createTab();
+    const pendingSaveTab = await manager.createTab(undefined, undefined, { activate: false });
+
+    jest.clearAllMocks();
+
+    await manager.switchToTab(pendingSaveTab!.id);
+
+    expect(plugin.getConversationSync).not.toHaveBeenCalled();
+    expect(mockSyncConversationState).not.toHaveBeenCalled();
   });
 
   it('should initialize welcome for new tab without conversation', async () => {

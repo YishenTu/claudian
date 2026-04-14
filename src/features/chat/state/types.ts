@@ -55,6 +55,8 @@ export interface ChatStateData {
   isCreatingConversation: boolean;
   /** Guards against concurrent operations during conversation switching. */
   isSwitchingConversation: boolean;
+  /** Local tab state is ahead of persisted conversation metadata. */
+  hasPendingConversationSave: boolean;
 
   // Conversation identity
   currentConversationId: string | null;
