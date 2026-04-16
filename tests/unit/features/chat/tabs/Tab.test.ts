@@ -599,6 +599,48 @@ describe('Tab - Creation', () => {
       expect(tab.draftModel).toBe('opus');
       expect(tab.providerId).toBe('claude');
     });
+
+    it('should keep a Claude custom gpt model on Claude when Codex is disabled', () => {
+      const plugin = createMockPlugin();
+      plugin.settings.settingsProvider = 'claude';
+      plugin.settings.model = 'gpt-5.4';
+      plugin.settings.providerConfigs = {
+        claude: {
+          environmentVariables: 'ANTHROPIC_MODEL=gpt-5.4',
+        },
+        codex: {
+          enabled: false,
+        },
+      };
+
+      const tab = createTab(createMockOptions({ plugin }));
+
+      expect(tab.lifecycleState).toBe('blank');
+      expect(tab.draftModel).toBe('gpt-5.4');
+      expect(tab.providerId).toBe('claude');
+    });
+
+    it('should fall back to an enabled provider when defaultProviderId is disabled', () => {
+      const plugin = createMockPlugin();
+      plugin.settings.settingsProvider = 'claude';
+      plugin.settings.model = 'claude-sonnet-4-5';
+      plugin.settings.providerConfigs = {
+        claude: {},
+        codex: {
+          enabled: false,
+        },
+      };
+      plugin.settings.savedProviderModel = {
+        claude: 'opus',
+        codex: 'gpt-5.4',
+      };
+
+      const tab = createTab(createMockOptions({ plugin, defaultProviderId: 'codex' }));
+
+      expect(tab.lifecycleState).toBe('blank');
+      expect(tab.draftModel).toBe('opus');
+      expect(tab.providerId).toBe('claude');
+    });
   });
 });
 
@@ -863,6 +905,45 @@ describe('Tab - Service Initialization', () => {
       expect(tab.service).toBeNull();
       expect(tab.serviceInitialized).toBe(false);
       expect(mockSlashCommandDropdown.resetSdkSkillsCache).toHaveBeenCalled();
+    });
+
+    it('rebinds blank-tab helper services when a newly enabled provider takes over the draft model', () => {
+      const createInstructionRefineServiceSpy = jest.spyOn(ProviderRegistry, 'createInstructionRefineService')
+        .mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+      const createTitleGenerationServiceSpy = jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
+        .mockReturnValue({ cancel: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+
+      const plugin = createMockPlugin();
+      plugin.settings.settingsProvider = 'claude';
+      plugin.settings.model = 'gpt-5.4';
+      plugin.settings.providerConfigs = {
+        claude: {
+          environmentVariables: 'ANTHROPIC_MODEL=gpt-5.4',
+        },
+        codex: {
+          enabled: false,
+        },
+      };
+
+      const tab = createTab(createMockOptions({ plugin }));
+      initializeTabUI(tab, plugin);
+
+      expect(tab.draftModel).toBe('gpt-5.4');
+      expect(tab.providerId).toBe('claude');
+
+      plugin.settings.providerConfigs = {
+        ...plugin.settings.providerConfigs,
+        codex: {
+          enabled: true,
+        },
+      };
+
+      onProviderAvailabilityChanged(tab, plugin);
+
+      expect(tab.providerId).toBe('codex');
+      expect(createInstructionRefineServiceSpy).toHaveBeenLastCalledWith(plugin, 'codex');
+      expect(createTitleGenerationServiceSpy).toHaveBeenLastCalledWith(plugin, 'codex');
     });
 
     it('surfaces provider-scoped model settings for inactive-provider tabs and saves back to that provider snapshot', async () => {

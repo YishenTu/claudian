@@ -4,7 +4,7 @@ import { Notice } from 'obsidian';
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
-import { getProviderForModel } from '../../../core/providers/modelRouting';
+import { getEnabledProviderForModel, getProviderForModel } from '../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -87,11 +87,15 @@ function resolveBlankTabModel(
   providerId?: ProviderId,
 ): string {
   const settings = plugin.settings as unknown as Record<string, unknown>;
-  if (providerId) {
-    const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, providerId);
-    return snapshot.model as string;
+  if (!providerId) {
+    return settings.model as string;
   }
-  return settings.model as string;
+
+  const targetProviderId = ProviderRegistry.isEnabled(providerId, settings)
+    ? providerId
+    : ProviderRegistry.resolveSettingsProviderId(settings);
+  const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, targetProviderId);
+  return snapshot.model as string;
 }
 
 export interface TabCreateOptions {
@@ -282,20 +286,31 @@ export function onProviderAvailabilityChanged(tab: TabData, plugin: ClaudianPlug
 
   const settingsSnapshot = plugin.settings as unknown as Record<string, unknown>;
   const enabledProviderIds = ProviderRegistry.getEnabledProviderIds(settingsSnapshot);
+  let nextProviderId = tab.providerId;
 
   if (tab.draftModel) {
-    const draftProvider = getProviderForModel(tab.draftModel, settingsSnapshot);
-    if (!enabledProviderIds.includes(draftProvider)) {
+    const draftProvider = getEnabledProviderForModel(tab.draftModel, settingsSnapshot);
+    const draftProviderOwnsModel = ProviderRegistry
+      .getChatUIConfig(draftProvider)
+      .ownsModel(tab.draftModel, settingsSnapshot);
+    if (!enabledProviderIds.includes(draftProvider) || !draftProviderOwnsModel) {
       const fallbackProviderId = enabledProviderIds[0] ?? DEFAULT_CHAT_PROVIDER_ID;
       const fallbackModels = ProviderRegistry.getChatUIConfig(fallbackProviderId)
         .getModelOptions(settingsSnapshot);
       tab.draftModel = fallbackModels[0]?.value ?? tab.draftModel;
-      tab.providerId = fallbackProviderId;
+      nextProviderId = fallbackProviderId;
+    } else {
+      nextProviderId = draftProvider;
     }
   }
 
+  tab.providerId = nextProviderId;
+
   // Clean up stale service if provider changed
-  if (tab.service && tab.draftModel && tab.service.providerId !== getProviderForModel(tab.draftModel, plugin.settings as unknown as Record<string, unknown>)) {
+  if (
+    tab.service
+    && tab.service.providerId !== nextProviderId
+  ) {
     tab.service.cleanup();
     tab.service = null;
     tab.serviceInitialized = false;
@@ -346,7 +361,7 @@ export function createTab(options: TabCreateOptions): TabData {
   const draftModel = isBound ? null : resolveBlankTabModel(plugin, options.defaultProviderId);
   const initialProviderId = conversation?.providerId
     ?? (draftModel
-      ? getProviderForModel(draftModel, plugin.settings as unknown as Record<string, unknown>)
+      ? getEnabledProviderForModel(draftModel, plugin.settings as unknown as Record<string, unknown>)
       : DEFAULT_CHAT_PROVIDER_ID);
 
   const tab: TabData = {
@@ -711,7 +726,7 @@ function initializeInputToolbar(
   // Blank-tab UI config wrapper that returns mixed model options
   const blankTabUIConfigProxy = (): ProviderChatUIConfig => {
     const draftProvider = tab.draftModel
-      ? getProviderForModel(tab.draftModel, plugin.settings as unknown as Record<string, unknown>)
+      ? getEnabledProviderForModel(tab.draftModel, plugin.settings as unknown as Record<string, unknown>)
       : DEFAULT_CHAT_PROVIDER_ID;
     const baseConfig = ProviderRegistry.getChatUIConfig(draftProvider);
     return {
@@ -736,7 +751,10 @@ function initializeInputToolbar(
       if (tab.lifecycleState === 'blank') {
         const previousProvider = tab.providerId;
         tab.draftModel = model;
-        const newProvider = getProviderForModel(model, plugin.settings as unknown as Record<string, unknown>);
+        const newProvider = getEnabledProviderForModel(
+          model,
+          plugin.settings as unknown as Record<string, unknown>,
+        );
         if (tab.service) {
           cleanupTabRuntime(tab);
         }
@@ -1293,7 +1311,10 @@ export function initializeTabControllers(
       try {
         // For blank tabs on first send: derive provider from draft model
         if (tab.lifecycleState === 'blank' && tab.draftModel) {
-          const derivedProvider = getProviderForModel(tab.draftModel, plugin.settings as unknown as Record<string, unknown>);
+          const derivedProvider = getEnabledProviderForModel(
+            tab.draftModel,
+            plugin.settings as unknown as Record<string, unknown>,
+          );
           tab.providerId = derivedProvider;
         }
 
