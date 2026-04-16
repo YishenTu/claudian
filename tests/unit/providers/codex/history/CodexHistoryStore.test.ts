@@ -1,10 +1,38 @@
 import * as path from 'path';
 
-import { parseCodexSessionContent, parseCodexSessionFile, parseCodexSessionTurns } from '@/providers/codex/history/CodexHistoryStore';
+import {
+  deriveCodexMemoriesDirFromSessionsRoot,
+  deriveCodexSessionsRootFromSessionPath,
+  parseCodexSessionContent,
+  parseCodexSessionFile,
+  parseCodexSessionTurns,
+} from '@/providers/codex/history/CodexHistoryStore';
 
 const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures');
 
 describe('CodexHistoryStore', () => {
+  describe('path helpers', () => {
+    it('derives transcript and memories roots from POSIX session paths', () => {
+      const sessionFilePath = '/home/user/.codex/sessions/2026/04/14/rollout-thread.jsonl';
+
+      expect(deriveCodexSessionsRootFromSessionPath(sessionFilePath)).toBe('/home/user/.codex/sessions');
+      expect(deriveCodexMemoriesDirFromSessionsRoot('/home/user/.codex/sessions')).toBe(
+        '/home/user/.codex/memories',
+      );
+    });
+
+    it('derives transcript and memories roots from WSL UNC session paths', () => {
+      const sessionFilePath = '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\04\\14\\rollout-thread.jsonl';
+
+      expect(deriveCodexSessionsRootFromSessionPath(sessionFilePath)).toBe(
+        '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
+      );
+      expect(deriveCodexMemoriesDirFromSessionsRoot('\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions')).toBe(
+        '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\memories',
+      );
+    });
+  });
+
   describe('parseCodexSessionFile - simple session', () => {
     it('should parse a simple session with reasoning and agent message', () => {
       const filePath = path.join(FIXTURES_DIR, 'codex-session-simple.jsonl');
