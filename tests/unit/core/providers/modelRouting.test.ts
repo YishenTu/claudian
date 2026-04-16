@@ -1,6 +1,6 @@
 import '@/providers';
 
-import { getProviderForModel } from '@/core/providers/modelRouting';
+import { getEnabledProviderForModel, getProviderForModel } from '@/core/providers/modelRouting';
 
 describe('getProviderForModel', () => {
   it('routes Claude default models to claude', () => {
@@ -39,5 +39,22 @@ describe('getProviderForModel', () => {
 
   it('routes custom OPENAI_MODEL to claude without settings (no context)', () => {
     expect(getProviderForModel('my-custom-model')).toBe('claude');
+  });
+
+  it('can resolve blank-tab routing within enabled providers only', () => {
+    const settings = {
+      settingsProvider: 'claude',
+      providerConfigs: {
+        claude: {
+          environmentVariables: 'ANTHROPIC_MODEL=gpt-5.4',
+        },
+        codex: {
+          enabled: false,
+        },
+      },
+    };
+
+    expect(getProviderForModel('gpt-5.4', settings)).toBe('codex');
+    expect(getEnabledProviderForModel('gpt-5.4', settings)).toBe('claude');
   });
 });

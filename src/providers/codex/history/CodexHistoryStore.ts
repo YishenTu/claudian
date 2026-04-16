@@ -1044,6 +1044,45 @@ function flushBubbleTurnMessages(
 
 const SAFE_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
+function getPathModuleForSessionPath(sessionPath: string): typeof path.posix | typeof path.win32 {
+  return sessionPath.includes('\\') || /^[A-Za-z]:/.test(sessionPath)
+    ? path.win32
+    : path.posix;
+}
+
+export function deriveCodexSessionsRootFromSessionPath(
+  sessionFilePath: string | null | undefined,
+): string | null {
+  if (!sessionFilePath) {
+    return null;
+  }
+
+  const pathModule = getPathModuleForSessionPath(sessionFilePath);
+  let current = pathModule.dirname(pathModule.normalize(sessionFilePath));
+  let previous: string | null = null;
+
+  while (current && current !== previous) {
+    if (pathModule.basename(current).toLowerCase() === 'sessions') {
+      return current;
+    }
+    previous = current;
+    current = pathModule.dirname(current);
+  }
+
+  return null;
+}
+
+export function deriveCodexMemoriesDirFromSessionsRoot(
+  sessionsDir: string | null | undefined,
+): string | null {
+  if (!sessionsDir) {
+    return null;
+  }
+
+  const pathModule = getPathModuleForSessionPath(sessionsDir);
+  return pathModule.join(pathModule.dirname(sessionsDir), 'memories');
+}
+
 export function findCodexSessionFile(
   threadId: string,
   root: string = path.join(os.homedir(), '.codex', 'sessions'),
