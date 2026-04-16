@@ -627,6 +627,37 @@ describe('addSubagentToolCall', () => {
     expect(state.info.toolCalls).toHaveLength(2);
     expect(state.countEl.textContent).toBe('2 tool uses');
   });
+
+  it('merges repeated tool IDs instead of duplicating tool rows', () => {
+    const state = createSubagentBlock(parentEl as any, 'task-1', { description: 'Test task' });
+
+    addSubagentToolCall(state, {
+      id: 'tool-1',
+      name: 'Write',
+      input: {},
+      status: 'running',
+      isExpanded: false,
+    });
+
+    addSubagentToolCall(state, {
+      id: 'tool-1',
+      name: 'Write',
+      input: { file_path: 'notes.md' },
+      status: 'running',
+      isExpanded: false,
+    });
+
+    expect(state.info.toolCalls).toHaveLength(1);
+    expect(state.info.toolCalls[0]).toEqual(
+      expect.objectContaining({
+        id: 'tool-1',
+        input: { file_path: 'notes.md' },
+      })
+    );
+    expect(state.countEl.textContent).toBe('1 tool uses');
+    expect(getTextByClass(state.toolsContainerEl as any, 'claudian-subagent-tool-name')).toEqual(['Write']);
+    expect(getTextByClass(state.toolsContainerEl as any, 'claudian-subagent-tool-summary')).toEqual(['notes.md']);
+  });
 });
 
 describe('updateSubagentToolResult', () => {

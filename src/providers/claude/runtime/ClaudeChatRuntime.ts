@@ -72,7 +72,7 @@ import { createStopSubagentHook, type SubagentHookState } from '../hooks/Subagen
 import { encodeClaudeTurn } from '../prompt/ClaudeTurnEncoder';
 import { isContextWindowEvent, isSessionInitEvent, isStreamChunk } from '../sdk/typeGuards';
 import { getClaudeProviderSettings } from '../settings';
-import { transformSDKMessage } from '../stream/transformClaudeMessage';
+import { createTransformStreamState, transformSDKMessage } from '../stream/transformClaudeMessage';
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
 import { createClaudeApprovalCallback } from './ClaudeApprovalHandler';
 import { applyClaudeDynamicUpdates } from './ClaudeDynamicUpdates';
@@ -176,6 +176,7 @@ export class ClaudianService implements ChatRuntime {
   private _autoTurnCallback: ((result: AutoTurnResult) => void) | null = null;
   private turnMetadata: ChatTurnMetadata = {};
   private bufferedUsageChunk: StreamChunk & { type: 'usage' } | null = null;
+  private streamTransformState = createTransformStreamState();
 
   private getLegacyPluginDeps(): ClaudianPlugin & {
     agentManager?: Pick<AppAgentManager, 'setBuiltinAgentNames'>;
@@ -586,6 +587,7 @@ export class ClaudianService implements ChatRuntime {
     this.responseConsumerPromise = null;
     this.currentConfig = null;
     this.cachedSdkCommands = [];
+    this.streamTransformState.clearAll();
     this._autoTurnBuffer = [];
     this._autoTurnSawStreamText = false;
     if (!preserveHandlers) {
@@ -791,11 +793,12 @@ export class ClaudianService implements ChatRuntime {
   }
 
   /** @param modelOverride - Optional model override for cold-start queries */
-  private getTransformOptions(modelOverride?: string) {
+  private getTransformOptions(modelOverride?: string, streamState = this.streamTransformState) {
     const settings = this.getScopedSettings();
     return {
       intendedModel: modelOverride ?? settings.model,
       customContextLimits: settings.customContextLimits,
+      streamState,
     };
   }
 
@@ -1482,6 +1485,7 @@ export class ClaudianService implements ChatRuntime {
     const options = QueryOptionsBuilder.buildColdStartQueryOptions(ctx);
 
     let sawStreamText = false;
+    const streamState = createTransformStreamState();
     try {
       const response = agentQuery({ prompt: queryPrompt, options });
       this.recordTurnMetadata({ wasSent: true });
@@ -1496,7 +1500,7 @@ export class ClaudianService implements ChatRuntime {
           break;
         }
 
-        for (const event of transformSDKMessage(message, this.getTransformOptions(selectedModel))) {
+        for (const event of transformSDKMessage(message, this.getTransformOptions(selectedModel, streamState))) {
           if (isSessionInitEvent(event)) {
             this.sessionManager.captureSession(event.sessionId);
             streamSessionId = event.sessionId;

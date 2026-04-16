@@ -5,9 +5,12 @@ import { isBlockedMessage } from '../sdk/messages';
 import { extractToolResultContent } from '../sdk/toolResultContent';
 import type { TransformEvent } from '../sdk/types';
 import { getContextWindowSize } from '../types/models';
+import { createTransformStreamState, type TransformStreamState } from './toolInputStreamState';
 
 type ToolUseFields = { id: string; name: string; input: Record<string, unknown> };
 type ToolResultFields = { id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult };
+
+export { createTransformStreamState };
 
 function getToolInput(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -35,6 +38,8 @@ export interface TransformOptions {
   intendedModel?: string;
   /** Custom context limits from settings (model ID → tokens). */
   customContextLimits?: Record<string, number>;
+  /** Tracks active streamed tool blocks so input_json_delta can be normalized. */
+  streamState?: TransformStreamState;
 }
 
 interface MessageUsage {
@@ -171,6 +176,8 @@ export function* transformSDKMessage(
         }
       }
 
+      options?.streamState?.clearParent(parentToolUseId);
+
       // Extract usage from main agent assistant messages only (not subagent)
       // This gives accurate per-turn context usage without subagent token pollution
       const usage = (message.message as { usage?: MessageUsage } | undefined)?.usage;
@@ -241,11 +248,15 @@ export function* transformSDKMessage(
       const parentToolUseId = message.parent_tool_use_id ?? null;
       const event = message.event;
       if (event?.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
-        yield emitToolUse(parentToolUseId, {
+        const toolUseFields: ToolUseFields = {
           id: event.content_block.id || `tool-${Date.now()}`,
           name: event.content_block.name || 'unknown',
           input: getToolInput(event.content_block.input),
-        });
+        };
+        if (typeof event.index === 'number') {
+          options?.streamState?.registerToolUse(parentToolUseId, event.index, toolUseFields);
+        }
+        yield emitToolUse(parentToolUseId, toolUseFields);
       } else if (event?.type === 'content_block_start' && event.content_block?.type === 'thinking') {
         if (parentToolUseId === null && event.content_block.thinking) {
           yield { type: 'thinking', content: event.content_block.thinking };
@@ -255,16 +266,28 @@ export function* transformSDKMessage(
           yield { type: 'text', content: event.content_block.text };
         }
       } else if (event?.type === 'content_block_delta') {
-        if (parentToolUseId === null && event.delta?.type === 'thinking_delta' && event.delta.thinking) {
+        if (event.delta?.type === 'input_json_delta' && typeof event.index === 'number') {
+          const toolUseFields = options?.streamState?.applyInputJsonDelta(
+            parentToolUseId,
+            event.index,
+            event.delta.partial_json,
+          );
+          if (toolUseFields) {
+            yield emitToolUse(parentToolUseId, toolUseFields);
+          }
+        } else if (parentToolUseId === null && event.delta?.type === 'thinking_delta' && event.delta.thinking) {
           yield { type: 'thinking', content: event.delta.thinking };
         } else if (parentToolUseId === null && event.delta?.type === 'text_delta' && event.delta.text) {
           yield { type: 'text', content: event.delta.text };
         }
+      } else if (event?.type === 'content_block_stop' && typeof event.index === 'number') {
+        options?.streamState?.clearContentBlock(parentToolUseId, event.index);
       }
       break;
     }
 
     case 'result':
+      options?.streamState?.clearAll();
       if (isResultError(message)) {
         const content = message.errors.filter((e) => e.trim().length > 0).join('\n');
         yield {
