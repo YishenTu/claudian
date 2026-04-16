@@ -250,7 +250,7 @@ export class ClaudianView extends ItemView {
     this.tabBar = new TabBar(this.tabBarContainerEl, {
       onTabClick: (tabId) => this.handleTabClick(tabId),
       onTabClose: (tabId) => this.handleTabClose(tabId),
-      onNewTab: () => this.handleNewTab(),
+      onNewTab: () => this.createNewTab(),
     });
     fragment.appendChild(this.tabBarContainerEl);
 
@@ -263,7 +263,7 @@ export class ClaudianView extends ItemView {
     setIcon(newTabBtn, 'square-plus');
     newTabBtn.setAttribute('aria-label', 'New tab');
     newTabBtn.addEventListener('click', async () => {
-      await this.handleNewTab();
+      await this.createNewTab();
     });
 
     // New conversation button (square-pen icon - new conversation in current tab)
@@ -367,7 +367,7 @@ export class ClaudianView extends ItemView {
     this.updateTabBarVisibility();
   }
 
-  private async handleNewTab(): Promise<void> {
+  async createNewTab(): Promise<void> {
     const tab = await this.tabManager?.createTab();
     if (!tab) {
       const maxTabs = this.plugin.settings.maxTabs ?? 3;
@@ -623,7 +623,7 @@ export class ClaudianView extends ItemView {
       this.pendingPersist = null;
       if (!this.tabManager) return;
       const state = this.tabManager.getPersistedState();
-      this.plugin.storage.setTabManagerState(state).catch(() => {
+      this.plugin.persistTabManagerState(state).catch(() => {
         // Silently ignore persistence errors
       });
     }, 300);
@@ -638,7 +638,7 @@ export class ClaudianView extends ItemView {
     }
     if (!this.tabManager) return;
     const state = this.tabManager.getPersistedState();
-    await this.plugin.storage.setTabManagerState(state);
+    await this.plugin.persistTabManagerState(state);
   }
 
   // ============================================
