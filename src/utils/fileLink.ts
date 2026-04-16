@@ -33,6 +33,23 @@ interface WikilinkMatch {
   displayText: string;
 }
 
+function buildWikilinkMatch(
+  fullMatch: string,
+  linkPath: string,
+  index: number
+): WikilinkMatch {
+  const pipeIndex = fullMatch.lastIndexOf('|');
+  const displayText = pipeIndex > 0 ? fullMatch.slice(pipeIndex + 1, -2) : linkPath;
+
+  return {
+    index,
+    fullMatch,
+    linkPath,
+    linkTarget: extractLinkTarget(fullMatch),
+    displayText,
+  };
+}
+
 export function extractLinkTarget(fullMatch: string): string {
   const inner = fullMatch.slice(2, -2);
   const pipeIndex = inner.indexOf('|');
@@ -51,14 +68,10 @@ function findWikilinks(app: App, text: string): WikilinkMatch[] {
   while ((match = pattern.exec(text)) !== null) {
     const fullMatch = match[0];
     const linkPath = match[1];
-    const linkTarget = extractLinkTarget(fullMatch);
 
     if (!fileExistsInVault(app, linkPath)) continue;
 
-    const pipeIndex = fullMatch.lastIndexOf('|');
-    const displayText = pipeIndex > 0 ? fullMatch.slice(pipeIndex + 1, -2) : linkPath;
-
-    matches.push({ index: match.index, fullMatch, linkPath, linkTarget, displayText });
+    matches.push(buildWikilinkMatch(fullMatch, linkPath, match.index));
   }
 
   return matches.sort((a, b) => b.index - a.index);
@@ -85,6 +98,11 @@ function fileExistsInVault(app: App, linkPath: string): boolean {
   return false;
 }
 
+function extractLinkPathFromTarget(linkTarget: string): string {
+  const subpathIndex = linkTarget.search(/[#^]/);
+  return subpathIndex >= 0 ? linkTarget.slice(0, subpathIndex) : linkTarget;
+}
+
 /**
  * Creates a link element for a wikilink.
  * Click handling is done via event delegation in registerFileLinkHandler.
@@ -99,6 +117,22 @@ function createWikilink(
   link.setAttribute('data-href', linkTarget);
   link.setAttribute('href', linkTarget);
   return link;
+}
+
+function repairEmptyInternalLink(app: App, link: HTMLAnchorElement): void {
+  if ((link.textContent || '').trim()) return;
+
+  const linkTarget = link.dataset.href || link.getAttribute('data-href') || link.getAttribute('href');
+  if (!linkTarget) return;
+
+  const linkPath = extractLinkPathFromTarget(linkTarget);
+  if (!linkPath || !fileExistsInVault(app, linkPath)) return;
+
+  link.classList.add('claudian-file-link');
+  if (!link.dataset.href) {
+    link.setAttribute('data-href', linkTarget);
+  }
+  link.textContent = linkTarget;
 }
 
 /**
@@ -167,10 +201,15 @@ function processTextNode(app: App, node: Text): boolean {
 
 /**
  * Call after MarkdownRenderer.renderMarkdown().
- * Catches wikilinks that Obsidian's renderer doesn't process (e.g., in code blocks).
+ * Catches wikilinks that remain as raw text after rendering, especially inline code spans.
  */
 export function processFileLinks(app: App, container: HTMLElement): void {
   if (!app || !container) return;
+
+  // Repair resolved internal links that rendered as empty anchors.
+  container.querySelectorAll('a.internal-link').forEach((linkEl) => {
+    repairEmptyInternalLink(app, linkEl as HTMLAnchorElement);
+  });
 
   // Wikilinks in inline code aren't rendered by Obsidian's MarkdownRenderer
   container.querySelectorAll('code').forEach((codeEl) => {

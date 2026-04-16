@@ -214,6 +214,20 @@ describe('processFileLinks', () => {
       expect(links.length).toBe(0);
     });
 
+    it('repairs empty resolved internal-link anchors while leaving missing wikilinks visible', () => {
+      const app = createMockApp(['note.md']);
+      const container = document.createElement('div');
+      container.innerHTML = '<a class="internal-link" href="note"></a> and [[missing.md]]';
+
+      processFileLinks(app, container);
+
+      const internalLink = container.querySelector('a.internal-link');
+      expect(internalLink).not.toBeNull();
+      expect(internalLink!.textContent).toBe('note');
+      expect(internalLink!.classList.contains('claudian-file-link')).toBe(true);
+      expect(container.textContent).toBe('note and [[missing.md]]');
+    });
+
     it('processes text nodes in regular elements', () => {
       const app = createMockApp(['note.md']);
       const container = document.createElement('div');
