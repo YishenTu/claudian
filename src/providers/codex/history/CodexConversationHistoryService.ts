@@ -4,6 +4,7 @@ import type { CodexProviderState } from '../types';
 import { getCodexState } from '../types';
 import {
   type CodexParsedTurn,
+  deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFile,
   parseCodexSessionFile,
   parseCodexSessionTurns,
@@ -28,6 +29,8 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     _vaultPath: string | null,
   ): Promise<void> {
     const state = getCodexState(conversation.providerState);
+    const transcriptRootPath = state.transcriptRootPath
+      ?? deriveCodexSessionsRootFromSessionPath(state.sessionFilePath);
 
     // Pending fork with existing in-memory messages: keep them as-is
     if (this.isPendingForkConversation(conversation) && conversation.messages.length > 0) {
@@ -55,7 +58,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
       const sourceSessionFile = this.resolveSourceSessionFile(state);
       const forkSessionFile = state.sessionFilePath ?? (
         state.threadId
-          ? findCodexSessionFile(state.threadId, state.transcriptRootPath)
+          ? findCodexSessionFile(state.threadId, transcriptRootPath ?? undefined)
           : null
       );
 
@@ -92,9 +95,11 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     const threadId = state.threadId ?? conversation.sessionId ?? null;
     const sessionFilePath = state.sessionFilePath ?? (
       threadId
-        ? findCodexSessionFile(threadId, state.transcriptRootPath)
+        ? findCodexSessionFile(threadId, transcriptRootPath ?? undefined)
         : null
     );
+    const resolvedTranscriptRootPath = transcriptRootPath
+      ?? deriveCodexSessionsRootFromSessionPath(sessionFilePath);
 
     if (!sessionFilePath) {
       this.hydratedConversationPaths.delete(conversation.id);
@@ -114,6 +119,13 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         ...(conversation.providerState ?? {}),
         ...(threadId ? { threadId } : {}),
         sessionFilePath,
+        ...(resolvedTranscriptRootPath ? { transcriptRootPath: resolvedTranscriptRootPath } : {}),
+      };
+    } else if (resolvedTranscriptRootPath && resolvedTranscriptRootPath !== state.transcriptRootPath) {
+      conversation.providerState = {
+        ...(conversation.providerState ?? {}),
+        ...(threadId ? { threadId } : {}),
+        transcriptRootPath: resolvedTranscriptRootPath,
       };
     }
 
@@ -151,12 +163,14 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     sourceProviderState?: Record<string, unknown>,
   ): Record<string, unknown> {
     const sourceState = getCodexState(sourceProviderState);
+    const sourceTranscriptRootPath = sourceState.transcriptRootPath
+      ?? deriveCodexSessionsRootFromSessionPath(sourceState.sessionFilePath);
     const providerState: CodexProviderState = {
       forkSource: { sessionId: sourceSessionId, resumeAt },
       ...(sourceState.sessionFilePath ? { forkSourceSessionFilePath: sourceState.sessionFilePath } : {}),
       ...(
-        sourceState.transcriptRootPath
-          ? { forkSourceTranscriptRootPath: sourceState.transcriptRootPath }
+        sourceTranscriptRootPath
+          ? { forkSourceTranscriptRootPath: sourceTranscriptRootPath }
           : {}
       ),
     };
@@ -177,8 +191,10 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
   private resolveSourceSessionFile(state: CodexProviderState): string | null {
     if (!state.forkSource) return null;
+    const sourceTranscriptRootPath = state.forkSourceTranscriptRootPath
+      ?? deriveCodexSessionsRootFromSessionPath(state.forkSourceSessionFilePath);
     return state.forkSourceSessionFilePath
-      ?? findCodexSessionFile(state.forkSource.sessionId, state.forkSourceTranscriptRootPath);
+      ?? findCodexSessionFile(state.forkSource.sessionId, sourceTranscriptRootPath ?? undefined);
   }
 
   private truncateTurnsAtCheckpoint(

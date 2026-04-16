@@ -290,6 +290,31 @@ export function addSubagentToolCall(
   state: SubagentState,
   toolCall: ToolCallInfo
 ): void {
+  const existingIndex = state.info.toolCalls.findIndex(tc => tc.id === toolCall.id);
+  if (existingIndex >= 0) {
+    const existingToolCall = state.info.toolCalls[existingIndex]!;
+    const mergedToolCall: ToolCallInfo = {
+      ...existingToolCall,
+      ...toolCall,
+      input: {
+        ...existingToolCall.input,
+        ...toolCall.input,
+      },
+      result: toolCall.result ?? existingToolCall.result,
+      isExpanded: toolCall.isExpanded ?? existingToolCall.isExpanded,
+    };
+
+    state.info.toolCalls[existingIndex] = mergedToolCall;
+
+    const existingView = state.toolElements.get(toolCall.id);
+    if (existingView) {
+      updateSubagentToolView(existingView, mergedToolCall);
+    }
+
+    updateSyncHeaderAria(state);
+    return;
+  }
+
   state.info.toolCalls.push(toolCall);
 
   const toolCount = state.info.toolCalls.length;

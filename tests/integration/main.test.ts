@@ -15,6 +15,18 @@ describe('ClaudianPlugin', () => {
   let mockApp: any;
   let mockManifest: any;
 
+  function getRegisteredCommand(commandId: string) {
+    const call = (plugin.addCommand as jest.Mock).mock.calls.find(
+      ([config]) => config.id === commandId,
+    );
+
+    if (!call) {
+      throw new Error(`Command ${commandId} was not registered`);
+    }
+
+    return call[0];
+  }
+
   beforeEach(() => {
     // Reset mocks
     jest.clearAllMocks();
@@ -379,6 +391,108 @@ describe('ClaudianPlugin', () => {
       await commandConfig.callback();
 
       expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockLeaf);
+    });
+  });
+
+  describe('new-tab command', () => {
+    it('opens the view without creating a duplicate tab when no tab layout is persisted', async () => {
+      await plugin.onload();
+
+      const createNewTab = jest.fn().mockResolvedValue(undefined);
+      const mockView = {
+        createNewTab,
+      };
+
+      let viewOpened = false;
+      jest.spyOn(plugin, 'activateView').mockImplementation(async () => {
+        viewOpened = true;
+      });
+      jest.spyOn(plugin, 'getView').mockImplementation(() => (
+        viewOpened ? mockView as any : null
+      ));
+
+      const command = getRegisteredCommand('new-tab');
+
+      expect(command.checkCallback(true)).toBe(true);
+      expect(command.checkCallback(false)).toBe(true);
+
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(plugin.activateView).toHaveBeenCalledTimes(1);
+      expect(createNewTab).not.toHaveBeenCalled();
+    });
+
+    it('creates a new tab after reopening a persisted tab layout', async () => {
+      (plugin.loadData as jest.Mock).mockResolvedValue({
+        tabManagerState: {
+          openTabs: [
+            { tabId: 'tab-1', conversationId: null },
+          ],
+          activeTabId: 'tab-1',
+        },
+      });
+
+      await plugin.onload();
+
+      const createNewTab = jest.fn().mockResolvedValue(undefined);
+      const mockView = {
+        createNewTab,
+      };
+
+      let viewOpened = false;
+      jest.spyOn(plugin, 'activateView').mockImplementation(async () => {
+        viewOpened = true;
+      });
+      jest.spyOn(plugin, 'getView').mockImplementation(() => (
+        viewOpened ? mockView as any : null
+      ));
+
+      const command = getRegisteredCommand('new-tab');
+
+      expect(command.checkCallback(true)).toBe(true);
+      expect(command.checkCallback(false)).toBe(true);
+
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(plugin.activateView).toHaveBeenCalledTimes(1);
+      expect(createNewTab).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays unavailable when the open view is already at the tab limit', async () => {
+      await plugin.onload();
+
+      const mockView = {
+        getTabManager: jest.fn().mockReturnValue({
+          canCreateTab: jest.fn().mockReturnValue(false),
+        }),
+      };
+
+      jest.spyOn(plugin, 'getView').mockReturnValue(mockView as any);
+
+      const command = getRegisteredCommand('new-tab');
+
+      expect(command.checkCallback(true)).toBe(false);
+    });
+
+    it('stays unavailable when reopening the persisted layout would already hit the tab limit', async () => {
+      (plugin.loadData as jest.Mock).mockResolvedValue({
+        tabManagerState: {
+          openTabs: [
+            { tabId: 'tab-1', conversationId: null },
+            { tabId: 'tab-2', conversationId: null },
+            { tabId: 'tab-3', conversationId: null },
+          ],
+          activeTabId: 'tab-3',
+        },
+      });
+
+      await plugin.onload();
+
+      jest.spyOn(plugin, 'getView').mockReturnValue(null);
+
+      const command = getRegisteredCommand('new-tab');
+
+      expect(command.checkCallback(true)).toBe(false);
     });
   });
 

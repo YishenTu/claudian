@@ -18,6 +18,7 @@ function createInitialState(): ChatStateData {
     streamGeneration: 0,
     isCreatingConversation: false,
     isSwitchingConversation: false,
+    hasPendingConversationSave: false,
     currentConversationId: null,
     queuedMessage: null,
     currentContentEl: null,
@@ -136,6 +137,14 @@ export class ChatState {
 
   set isSwitchingConversation(value: boolean) {
     this.state.isSwitchingConversation = value;
+  }
+
+  get hasPendingConversationSave(): boolean {
+    return this.state.hasPendingConversationSave;
+  }
+
+  set hasPendingConversationSave(value: boolean) {
+    this.state.hasPendingConversationSave = value;
   }
 
   // ============================================

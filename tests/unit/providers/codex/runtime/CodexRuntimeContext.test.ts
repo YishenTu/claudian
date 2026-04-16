@@ -22,6 +22,25 @@ function createLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLaunch
   };
 }
 
+function createHostLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLaunchSpec {
+  const target = {
+    method: 'host-native' as const,
+    platformFamily: 'unix' as const,
+    platformOs: 'macos' as const,
+  };
+
+  return {
+    target,
+    command: 'codex',
+    args: ['app-server', '--listen', 'stdio://'],
+    spawnCwd: '/Users/test/repo',
+    targetCwd: '/Users/test/repo',
+    env: { HOME: '/Users/test' },
+    pathMapper: createCodexPathMapper(target),
+    ...overrides,
+  };
+}
+
 describe('createCodexRuntimeContext', () => {
   it('derives host-readable transcript roots from initialize.codexHome for WSL targets', () => {
     const context = createCodexRuntimeContext(
@@ -50,5 +69,39 @@ describe('createCodexRuntimeContext', () => {
         platformOs: 'windows',
       },
     )).toThrow('Codex target mismatch');
+  });
+
+  it('falls back to HOME when initialize omits codexHome for host-native targets', () => {
+    const context = createCodexRuntimeContext(
+      createHostLaunchSpec(),
+      {
+        userAgent: 'test/0.1',
+        platformFamily: 'unix',
+        platformOs: 'macos',
+      },
+    );
+
+    expect(context.codexHomeTarget).toBe('/Users/test/.codex');
+    expect(context.codexHomeHost).toBe('/Users/test/.codex');
+    expect(context.sessionsDirTarget).toBe('/Users/test/.codex/sessions');
+    expect(context.sessionsDirHost).toBe('/Users/test/.codex/sessions');
+    expect(context.memoriesDirTarget).toBe('/Users/test/.codex/memories');
+  });
+
+  it('keeps transcript roots nullable when initialize omits codexHome for WSL targets', () => {
+    const context = createCodexRuntimeContext(
+      createLaunchSpec(),
+      {
+        userAgent: 'test/0.1',
+        platformFamily: 'unix',
+        platformOs: 'linux',
+      },
+    );
+
+    expect(context.codexHomeTarget).toBeNull();
+    expect(context.codexHomeHost).toBeNull();
+    expect(context.sessionsDirTarget).toBeNull();
+    expect(context.sessionsDirHost).toBeNull();
+    expect(context.memoriesDirTarget).toBeNull();
   });
 });

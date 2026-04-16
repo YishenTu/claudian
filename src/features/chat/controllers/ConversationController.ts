@@ -126,6 +126,7 @@ export class ConversationController {
       state.planFilePath = null;
       state.prePlanPermissionMode = null;
       state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
+      state.hasPendingConversationSave = false;
 
       // Reset agent service session (no session ID for entry point)
       // Pass persistent paths to prevent stale external contexts
@@ -187,6 +188,7 @@ export class ConversationController {
       state.planFilePath = null;
       state.prePlanPermissionMode = null;
       state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
+      state.hasPendingConversationSave = false;
 
       // Pass persistent paths to prevent stale external contexts
       this.getAgentService()?.syncConversationState(
@@ -413,6 +415,7 @@ export class ConversationController {
     }
 
     await plugin.updateConversation(state.currentConversationId!, updates);
+    state.hasPendingConversationSave = false;
   }
 
   /**
@@ -429,6 +432,7 @@ export class ConversationController {
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
+    state.hasPendingConversationSave = false;
 
     // Clear status panels (auto-hide: panels reappear when agent creates new todos)
     state.currentTodos = null;

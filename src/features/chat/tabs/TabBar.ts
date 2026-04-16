@@ -61,9 +61,8 @@ export class TabBar {
       text: String(item.index),
     });
 
-    // Tooltip with full title
+    // Tooltip with full title (aria-label only; adding title too causes double tooltip)
     badgeEl.setAttribute('aria-label', item.title);
-    badgeEl.setAttribute('title', item.title);
 
     // Click handler to switch tab
     badgeEl.addEventListener('click', () => {

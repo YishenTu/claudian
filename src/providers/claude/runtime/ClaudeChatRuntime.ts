@@ -73,7 +73,7 @@ import { encodeClaudeTurn } from '../prompt/ClaudeTurnEncoder';
 import { isContextWindowEvent, isSessionInitEvent, isStreamChunk } from '../sdk/typeGuards';
 import type { TransformEvent } from '../sdk/types';
 import { getClaudeProviderSettings } from '../settings';
-import { transformSDKMessage } from '../stream/transformClaudeMessage';
+import { createTransformStreamState, transformSDKMessage } from '../stream/transformClaudeMessage';
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
 import { createClaudeApprovalCallback } from './ClaudeApprovalHandler';
 import { applyClaudeDynamicUpdates } from './ClaudeDynamicUpdates';
@@ -178,6 +178,7 @@ export class ClaudianService implements ChatRuntime {
   private _autoTurnCallback: ((result: AutoTurnResult) => void) | null = null;
   private turnMetadata: ChatTurnMetadata = {};
   private bufferedUsageChunk: StreamChunk & { type: 'usage' } | null = null;
+  private streamTransformState = createTransformStreamState();
 
   private getLegacyPluginDeps(): ClaudianPlugin & {
     agentManager?: Pick<AppAgentManager, 'setBuiltinAgentNames'>;
@@ -588,6 +589,7 @@ export class ClaudianService implements ChatRuntime {
     this.responseConsumerPromise = null;
     this.currentConfig = null;
     this.cachedSdkCommands = [];
+    this.streamTransformState.clearAll();
     this._autoTurnBuffer = [];
     this._autoTurnSawStreamText = false;
     this._autoTurnSawStreamThinking = false;
@@ -794,11 +796,12 @@ export class ClaudianService implements ChatRuntime {
   }
 
   /** @param modelOverride - Optional model override for cold-start queries */
-  private getTransformOptions(modelOverride?: string) {
+  private getTransformOptions(modelOverride?: string, streamState = this.streamTransformState) {
     const settings = this.getScopedSettings();
     return {
       intendedModel: modelOverride ?? settings.model,
       customContextLimits: settings.customContextLimits,
+      streamState,
     };
   }
 
@@ -1509,6 +1512,7 @@ export class ClaudianService implements ChatRuntime {
 
     let sawStreamText = false;
     let sawStreamThinking = false;
+    const streamState = createTransformStreamState();
     try {
       const response = agentQuery({ prompt: queryPrompt, options });
       this.recordTurnMetadata({ wasSent: true });
@@ -1520,7 +1524,7 @@ export class ClaudianService implements ChatRuntime {
           break;
         }
 
-        for (const event of transformSDKMessage(message, this.getTransformOptions(selectedModel))) {
+        for (const event of transformSDKMessage(message, this.getTransformOptions(selectedModel, streamState))) {
           this.noteVisibleStreamContent(message, event, {
             onText: () => {
               sawStreamText = true;
