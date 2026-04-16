@@ -1217,6 +1217,52 @@ describe('ClaudianService', () => {
       expect(onChunk).toHaveBeenCalled();
     });
 
+    it('should route tool input deltas as tool_use updates', async () => {
+      await (service as any).routeMessage({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_start',
+          index: 0,
+          content_block: {
+            type: 'tool_use',
+            id: 'stream-tool-1',
+            name: 'Write',
+            input: {},
+          },
+        },
+      });
+      await (service as any).routeMessage({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 0,
+          delta: {
+            type: 'input_json_delta',
+            partial_json: '{"file_path":"notes.md"',
+          },
+        },
+      });
+
+      const toolChunks = onChunk.mock.calls
+        .map(([chunk]) => chunk)
+        .filter((chunk: any) => chunk.type === 'tool_use');
+
+      expect(toolChunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: {},
+        },
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: { file_path: 'notes.md' },
+        },
+      ]);
+    });
+
     it('should signal turn complete on result message', async () => {
       const message = { type: 'result', subtype: 'success', result: 'completed' };
 
@@ -3053,6 +3099,74 @@ describe('ClaudianService', () => {
 
       // Stream text was seen, so duplicate text from assistant message should be skipped
       // Verify query completed successfully
+      expect(chunks.some(c => c.type === 'done')).toBe(true);
+    });
+
+    it('should stream cumulative tool input updates during cold-start query', async () => {
+      sdkMock.setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'stream-tool-input' },
+        {
+          type: 'stream_event',
+          event: {
+            type: 'content_block_start',
+            index: 0,
+            content_block: {
+              type: 'tool_use',
+              id: 'stream-tool-1',
+              name: 'Write',
+              input: {},
+            },
+          },
+        },
+        {
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            index: 0,
+            delta: {
+              type: 'input_json_delta',
+              partial_json: '{"file_path":"notes.md"',
+            },
+          },
+        },
+        {
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            index: 0,
+            delta: {
+              type: 'input_json_delta',
+              partial_json: ',"content":"Hello"',
+            },
+          },
+        },
+      ], { appendResult: true });
+
+      const chunks = await collectChunks(
+        service.query('hello', undefined, undefined, { forceColdStart: true })
+      );
+
+      const toolChunks = chunks.filter(c => c.type === 'tool_use');
+      expect(toolChunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: {},
+        },
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: { file_path: 'notes.md' },
+        },
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: { file_path: 'notes.md', content: 'Hello' },
+        },
+      ]);
       expect(chunks.some(c => c.type === 'done')).toBe(true);
     });
 

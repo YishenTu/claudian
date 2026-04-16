@@ -1,4 +1,4 @@
-import { getProviderForModel } from '../../../core/providers/modelRouting';
+import { getEnabledProviderForModel } from '../../../core/providers/modelRouting';
 import type { ProviderId } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
@@ -16,7 +16,7 @@ function getStoredConversationProviderId(
   }
 
   if (tab.lifecycleState === 'blank' && tab.draftModel) {
-    return getProviderForModel(
+    return getEnabledProviderForModel(
       tab.draftModel,
       plugin.settings as unknown as Record<string, unknown>,
     );

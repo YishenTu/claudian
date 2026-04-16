@@ -195,6 +195,55 @@ describe('CodexConversationHistoryService', () => {
     expect((conversation.providerState as Record<string, unknown>).sessionFilePath).toBe(transcriptPath);
   });
 
+  it('backfills transcriptRootPath from sessionFilePath when only the session path is known', async () => {
+    const threadId = 'thread-backfill-root';
+    const sessionsDir = path.join(tempHome, 'custom-codex-root', 'sessions', '2026', '03', '28');
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const transcriptPath = path.join(
+      sessionsDir,
+      `rollout-2026-03-28T00-00-00-${threadId}.jsonl`,
+    );
+
+    fs.writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({
+          timestamp: '2026-03-28T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Recovered from session path.' }],
+          },
+        }),
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const conversation: Conversation = {
+      id: 'conv-backfill-root',
+      providerId: 'codex',
+      title: 'Backfill Transcript Root',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      sessionId: threadId,
+      providerState: {
+        threadId,
+        sessionFilePath: transcriptPath,
+      },
+      messages: [],
+    };
+
+    const service = new CodexConversationHistoryService();
+    await service.hydrateConversationHistory(conversation, null);
+
+    expect(conversation.messages).toHaveLength(1);
+    expect((conversation.providerState as Record<string, unknown>).transcriptRootPath).toBe(
+      path.join(tempHome, 'custom-codex-root', 'sessions'),
+    );
+  });
+
   describe('buildForkProviderState', () => {
     it('stores forkSource with sessionId and resumeAt in providerState', () => {
       const service = new CodexConversationHistoryService();
@@ -213,6 +262,23 @@ describe('CodexConversationHistoryService', () => {
         {
           sessionFilePath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\03\\27\\rollout-thread.jsonl',
           transcriptRootPath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
+        },
+      );
+
+      expect(result).toEqual({
+        forkSource: { sessionId: 'source-thread-id', resumeAt: 'turn-uuid-2' },
+        forkSourceSessionFilePath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\03\\27\\rollout-thread.jsonl',
+        forkSourceTranscriptRootPath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
+      });
+    });
+
+    it('derives the source transcript root from sessionFilePath when only the session path is stored', () => {
+      const service = new CodexConversationHistoryService();
+      const result = service.buildForkProviderState(
+        'source-thread-id',
+        'turn-uuid-2',
+        {
+          sessionFilePath: '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\03\\27\\rollout-thread.jsonl',
         },
       );
 

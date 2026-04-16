@@ -30,7 +30,11 @@ import type ClaudianPlugin from '../../../main';
 import { getVaultPath } from '../../../utils/path';
 import { buildContextFromHistory } from '../../../utils/session';
 import { CODEX_PROVIDER_CAPABILITIES } from '../capabilities';
-import { findCodexSessionFile } from '../history/CodexHistoryStore';
+import {
+  deriveCodexMemoriesDirFromSessionsRoot,
+  deriveCodexSessionsRootFromSessionPath,
+  findCodexSessionFile,
+} from '../history/CodexHistoryStore';
 import { encodeCodexTurn } from '../prompt/encodeCodexTurn';
 import { type CodexSafeMode, getCodexProviderSettings } from '../settings';
 import {
@@ -61,7 +65,7 @@ import type {
 import type { CodexLaunchSpec } from './codexLaunchTypes';
 import { CodexNotificationRouter } from './CodexNotificationRouter';
 import { CodexRpcTransport } from './CodexRpcTransport';
-import { type CodexRuntimeContext,createCodexRuntimeContext } from './CodexRuntimeContext';
+import { type CodexRuntimeContext, createCodexRuntimeContext } from './CodexRuntimeContext';
 import { CodexServerRequestRouter } from './CodexServerRequestRouter';
 import { CodexFileTailEngine } from './CodexSessionFileTail';
 import { CodexSessionManager } from './CodexSessionManager';
@@ -373,6 +377,7 @@ export class CodexChatRuntime implements ChatRuntime {
       const existingThreadId = this.session.getThreadId();
       let threadId: string;
       let threadPath: string | null = null;
+      let threadTargetPath: string | null = null;
       let completedPendingFork = false;
 
       if (this.pendingFork) {
@@ -383,7 +388,8 @@ export class CodexChatRuntime implements ChatRuntime {
           threadId: fork.sessionId,
         });
         threadId = forkResult.thread.id;
-        threadPath = this.toHostSessionPath(forkResult.thread.path);
+        threadTargetPath = forkResult.thread.path ?? null;
+        threadPath = this.toHostSessionPath(threadTargetPath);
 
         // Compute rollback: count turns after the resumeAt checkpoint
         const forkTurns = forkResult.thread.turns ?? [];
@@ -444,7 +450,8 @@ export class CodexChatRuntime implements ChatRuntime {
           persistExtendedHistory: true,
         });
         threadId = resumeResult.thread.id;
-        threadPath = this.toHostSessionPath(resumeResult.thread.path);
+        threadTargetPath = resumeResult.thread.path ?? null;
+        threadPath = this.toHostSessionPath(threadTargetPath);
         this.loadedThreadId = threadId;
       } else if (existingThreadId && existingThreadId === this.loadedThreadId) {
         // Thread already loaded — just start a new turn
@@ -463,7 +470,8 @@ export class CodexChatRuntime implements ChatRuntime {
           persistExtendedHistory: true,
         });
         threadId = startResult.thread.id;
-        threadPath = this.toHostSessionPath(startResult.thread.path);
+        threadTargetPath = startResult.thread.path ?? null;
+        threadPath = this.toHostSessionPath(threadTargetPath);
         this.loadedThreadId = threadId;
       }
 
@@ -488,7 +496,7 @@ export class CodexChatRuntime implements ChatRuntime {
       } else {
         // --- Normal turn path ---
         tailEngine = new CodexFileTailEngine(
-          this.runtimeContext?.sessionsDirHost ?? path.join(os.homedir(), '.codex', 'sessions'),
+          this.resolveTranscriptRootHost(threadPath) ?? path.join(os.homedir(), '.codex', 'sessions'),
           200_000,
         );
         tailEngine.resetForNewTurn();
@@ -513,7 +521,15 @@ export class CodexChatRuntime implements ChatRuntime {
         const isPlanMode = providerSettings.permissionMode === 'plan';
         const externalContextPaths = this.resolveExternalContextPaths(turn, queryOptions);
         const permissionMode = this.resolveSandboxConfig();
-        const sandboxPolicy = this.buildTurnSandboxPolicy(externalContextPaths, permissionMode.sandbox);
+        const transcriptRootTarget = this.runtimeContext?.sessionsDirTarget
+          ?? deriveCodexSessionsRootFromSessionPath(threadTargetPath)
+          ?? this.resolveTranscriptRootTarget(threadPath ?? transcriptSessionFilePath);
+        const sandboxPolicy = this.buildTurnSandboxPolicy(
+          externalContextPaths,
+          permissionMode.sandbox,
+          transcriptRootTarget,
+          threadPath ?? transcriptSessionFilePath,
+        );
 
         const collaborationMode = isPlanMode
           ? {
@@ -624,7 +640,7 @@ export class CodexChatRuntime implements ChatRuntime {
         if (threadId) {
           const sessionFilePath = findCodexSessionFile(
             threadId,
-            this.runtimeContext?.sessionsDirHost ?? undefined,
+            this.resolveTranscriptRootHost(this.session.getSessionFilePath() ?? this.currentThreadPath) ?? undefined,
           );
           if (sessionFilePath) {
             this.session.setThread(threadId, sessionFilePath);
@@ -770,6 +786,7 @@ export class CodexChatRuntime implements ChatRuntime {
   }): SessionUpdateResult {
     const threadId = this.session.getThreadId();
     const sessionFilePath = this.session.getSessionFilePath() ?? this.currentThreadPath;
+    const transcriptRootPath = this.resolveTranscriptRootHost(sessionFilePath);
 
     // Preserve forkSource from existing conversation state
     const existingState = params.conversation
@@ -780,8 +797,8 @@ export class CodexChatRuntime implements ChatRuntime {
       ...(threadId ? { threadId } : {}),
       ...(sessionFilePath ? { sessionFilePath } : {}),
       ...(
-        this.runtimeContext?.sessionsDirHost || existingState?.transcriptRootPath
-          ? { transcriptRootPath: this.runtimeContext?.sessionsDirHost ?? existingState?.transcriptRootPath }
+        transcriptRootPath || existingState?.transcriptRootPath
+          ? { transcriptRootPath: transcriptRootPath ?? existingState?.transcriptRootPath }
           : {}
       ),
       ...(existingState?.forkSource ? { forkSource: existingState.forkSource } : {}),
@@ -1001,6 +1018,8 @@ export class CodexChatRuntime implements ChatRuntime {
   private buildTurnSandboxPolicy(
     externalContextPaths: string[],
     sandboxMode: string,
+    transcriptRootTargetHint?: string | null,
+    sessionFilePathHint?: string | null,
   ): SandboxPolicy | undefined {
     if (sandboxMode === 'danger-full-access') {
       return { type: 'dangerFullAccess' };
@@ -1022,11 +1041,18 @@ export class CodexChatRuntime implements ChatRuntime {
       externalContextPaths,
       'external context path',
     );
+    const memoriesDirTarget = deriveCodexMemoriesDirFromSessionsRoot(transcriptRootTargetHint)
+      ?? this.resolveMemoriesDirTarget(sessionFilePathHint)
+      ?? (
+        this.launchSpec?.target.method === 'wsl'
+          ? null
+          : path.join(os.homedir(), '.codex', 'memories')
+      );
 
     const writableRoots = [
       this.launchSpec?.targetCwd ?? getVaultPath(this.plugin.app),
       ...mappedExternalContextPaths,
-      this.runtimeContext?.memoriesDirTarget ?? path.join(os.homedir(), '.codex', 'memories'),
+      memoriesDirTarget,
       this.mapHostPathToTarget(os.tmpdir()),
       this.launchSpec?.target.platformFamily === 'unix' ? '/tmp' : null,
       this.mapHostPathToTarget(process.env.TMPDIR),
@@ -1253,6 +1279,29 @@ export class CodexChatRuntime implements ChatRuntime {
     return this.launchSpec?.pathMapper.toHostPath(targetPath) ?? targetPath;
   }
 
+  private toTargetSessionPath(sessionPath: string | null | undefined): string | null {
+    if (!sessionPath) {
+      return null;
+    }
+
+    if (!this.launchSpec) {
+      return sessionPath;
+    }
+
+    if (this.launchSpec.target.platformFamily === 'unix' && sessionPath.startsWith('/')) {
+      return sessionPath;
+    }
+
+    if (
+      this.launchSpec.target.platformFamily === 'windows'
+      && (/^[A-Za-z]:[\\/]/.test(sessionPath) || sessionPath.startsWith('\\\\'))
+    ) {
+      return sessionPath;
+    }
+
+    return this.launchSpec.pathMapper.toTargetPath(sessionPath) ?? sessionPath;
+  }
+
   private mapHostPathToTarget(hostPath: string | null | undefined): string | null {
     if (!hostPath) {
       return null;
@@ -1273,6 +1322,34 @@ export class CodexChatRuntime implements ChatRuntime {
       }
       return targetPath;
     });
+  }
+
+  private resolveTranscriptRootHost(sessionFilePath?: string | null): string | null {
+    return this.runtimeContext?.sessionsDirHost
+      ?? deriveCodexSessionsRootFromSessionPath(
+        sessionFilePath ?? this.session.getSessionFilePath() ?? this.currentThreadPath,
+      );
+  }
+
+  private resolveTranscriptRootTarget(sessionFilePath?: string | null): string | null {
+    if (this.runtimeContext?.sessionsDirTarget) {
+      return this.runtimeContext.sessionsDirTarget;
+    }
+
+    const targetSessionPath = this.toTargetSessionPath(
+      sessionFilePath ?? this.session.getSessionFilePath() ?? this.currentThreadPath,
+    );
+    return deriveCodexSessionsRootFromSessionPath(targetSessionPath);
+  }
+
+  private resolveMemoriesDirTarget(sessionFilePath?: string | null): string | null {
+    if (this.runtimeContext?.memoriesDirTarget) {
+      return this.runtimeContext.memoriesDirTarget;
+    }
+
+    return deriveCodexMemoriesDirFromSessionsRoot(
+      this.resolveTranscriptRootTarget(sessionFilePath),
+    );
   }
 }
 
