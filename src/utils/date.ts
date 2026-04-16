@@ -17,6 +17,14 @@ export function getTodayDate(): string {
   return `${readable} (${iso})`;
 }
 
+/**
+ * Returns the current local time in en-US format (e.g. "02:23 PM").
+ * Uses the system clock of the user's machine.
+ */
+export function getCurrentTime(): string {
+  return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
 /** Formats a duration in seconds as "1m 23s" or "45s". */
 export function formatDurationMmSs(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) {
