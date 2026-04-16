@@ -1,5 +1,3 @@
-import { getTodayDate } from '../../utils/date';
-
 export interface SystemPromptSettings {
   mediaFolder?: string;
   customPrompt?: string;
@@ -40,7 +38,7 @@ function getBaseSystemPrompt(
 
   return `${userContext}## Time Context
 
-- **Current Date**: ${getTodayDate()}
+- **Current Date**: Use \`bash: date\` to get the current date and time. Never guess or assume.
 - **Knowledge Status**: You possess extensive internal knowledge up to your training cutoff. You do not know the exact date of your cutoff, but you must assume that your internal weights are static and "past," while the Current Date is "present."
 
 ## Identity & Role
