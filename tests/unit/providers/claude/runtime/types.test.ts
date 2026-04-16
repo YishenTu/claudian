@@ -34,6 +34,7 @@ describe('createResponseHandler', () => {
     });
 
     expect(handler.sawStreamText).toBe(false);
+    expect(handler.sawStreamThinking).toBe(false);
     expect(handler.sawAnyChunk).toBe(false);
   });
 
@@ -62,6 +63,33 @@ describe('createResponseHandler', () => {
     expect(handler.sawStreamText).toBe(true);
     handler.resetStreamText();
     expect(handler.sawStreamText).toBe(false);
+  });
+
+  it('markStreamThinkingSeen sets sawStreamThinking to true', () => {
+    const handler = createResponseHandler({
+      id: 'test-handler',
+      onChunk: jest.fn(),
+      onDone: jest.fn(),
+      onError: jest.fn(),
+    });
+
+    expect(handler.sawStreamThinking).toBe(false);
+    handler.markStreamThinkingSeen();
+    expect(handler.sawStreamThinking).toBe(true);
+  });
+
+  it('resetStreamThinking sets sawStreamThinking back to false', () => {
+    const handler = createResponseHandler({
+      id: 'test-handler',
+      onChunk: jest.fn(),
+      onDone: jest.fn(),
+      onError: jest.fn(),
+    });
+
+    handler.markStreamThinkingSeen();
+    expect(handler.sawStreamThinking).toBe(true);
+    handler.resetStreamThinking();
+    expect(handler.sawStreamThinking).toBe(false);
   });
 
   it('markChunkSeen sets sawAnyChunk to true', () => {
@@ -148,12 +176,15 @@ describe('createResponseHandler', () => {
     });
 
     handler1.markStreamTextSeen();
+    handler1.markStreamThinkingSeen();
     handler1.markChunkSeen();
 
     // handler2 should not be affected
     expect(handler1.sawStreamText).toBe(true);
+    expect(handler1.sawStreamThinking).toBe(true);
     expect(handler1.sawAnyChunk).toBe(true);
     expect(handler2.sawStreamText).toBe(false);
+    expect(handler2.sawStreamThinking).toBe(false);
     expect(handler2.sawAnyChunk).toBe(false);
   });
 });

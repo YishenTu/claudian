@@ -12,6 +12,7 @@
     "lint": "eslint \"{src,tests}/**/*.ts\"",
     "lint:fix": "npm run lint -- --fix",
     "test": "node scripts/run-jest.js",
+    "test:claude-dedup": "node scripts/test-claude-dedup.js",
     "test:watch": "node scripts/run-jest.js --watch",
     "test:coverage": "node scripts/run-jest.js --coverage",
     "version": "node scripts/sync-version.js && git add manifest.json"
