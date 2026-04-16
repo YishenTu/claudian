@@ -29,23 +29,7 @@ function resolveWindowsSpawnSpec(launchSpec: Pick<CodexLaunchSpec, 'command' | '
     };
   }
 
-  if (lowerCommand.endsWith('.ps1')) {
-    return {
-      command: 'powershell.exe',
-      args: [
-        '-NoLogo',
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        command,
-        ...launchSpec.args,
-      ],
-      env: launchSpec.env,
-    };
-  }
-
-  if (lowerCommand.endsWith('.cmd') || lowerCommand.endsWith('.bat')) {
+  if (lowerCommand.endsWith('.cmd')) {
     const shellCommand = [command, ...launchSpec.args]
       .map(value => quoteWindowsShellArgument(value))
       .join(' ');

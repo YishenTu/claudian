@@ -96,37 +96,6 @@ describe('CodexAppServerProcess', () => {
       }
     });
 
-    it('wraps Windows .ps1 shims through PowerShell', () => {
-      const platformSpy = jest.spyOn(process, 'platform', 'get').mockReturnValue('win32');
-
-      try {
-        const server = new CodexAppServerProcess(createLaunchSpec({
-          command: 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.ps1',
-        }));
-        server.start();
-
-        expect(mockSpawn).toHaveBeenCalledWith(
-          'powershell.exe',
-          [
-            '-NoLogo',
-            '-NoProfile',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-File',
-            'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.ps1',
-            'app-server',
-            '--listen',
-            'stdio://',
-          ],
-          expect.objectContaining({
-            windowsHide: true,
-          }),
-        );
-      } finally {
-        platformSpy.mockRestore();
-      }
-    });
-
     it('passes environment variables to the spawned process', () => {
       const env = { OPENAI_API_KEY: 'sk-test', PATH: '/usr/bin' };
       const server = new CodexAppServerProcess(createLaunchSpec({ env }));
