@@ -19,6 +19,7 @@ import {
 import {
   type EffortLevel,
   isAdaptiveThinkingModel,
+  normalizeEffortLevel,
   THINKING_BUDGETS,
 } from '../types/models';
 import { createCustomSpawnFunction } from './customSpawn';
@@ -82,9 +83,6 @@ export class QueryOptionsBuilder {
 
     if (currentConfig.enableChrome !== newConfig.enableChrome) return true;
 
-    // Effort level requires restart (no setEffort() on persistent query)
-    if (currentConfig.effortLevel !== newConfig.effortLevel) return true;
-
     // External context paths require restart (additionalDirectories can't be updated dynamically)
     if (QueryOptionsBuilder.pathsChanged(currentConfig.externalContextPaths, newConfig.externalContextPaths)) {
       return true;
@@ -119,7 +117,9 @@ export class QueryOptionsBuilder {
     return {
       model: ctx.settings.model,
       thinkingTokens: thinkingTokens && thinkingTokens > 0 ? thinkingTokens : null,
-      effortLevel: isAdaptiveThinkingModel(ctx.settings.model) ? ctx.settings.effortLevel as EffortLevel : null,
+      effortLevel: isAdaptiveThinkingModel(ctx.settings.model)
+        ? normalizeEffortLevel(ctx.settings.model, ctx.settings.effortLevel)
+        : null,
       permissionMode: ctx.settings.permissionMode,
       sdkPermissionMode,
       systemPromptKey: computeSystemPromptKey(systemPromptSettings),
@@ -295,7 +295,7 @@ export class QueryOptionsBuilder {
   ): void {
     if (isAdaptiveThinkingModel(model)) {
       options.thinking = { type: 'adaptive' };
-      options.effort = settings.effortLevel as EffortLevel;
+      options.effort = normalizeEffortLevel(model, settings.effortLevel) as EffortLevel;
     } else {
       const budgetConfig = THINKING_BUDGETS.find(b => b.value === settings.thinkingBudget);
       if (budgetConfig && budgetConfig.tokens > 0) {

@@ -1605,6 +1605,24 @@ describe('ClaudianService', () => {
       expect(response?.setPermissionMode).toHaveBeenCalledWith('bypassPermissions');
     });
 
+    it('updates effort level via applyFlagSettings without restarting', async () => {
+      mockPlugin.settings.model = 'sonnet';
+      mockPlugin.settings.effortLevel = 'high';
+
+      const chunks1: any[] = [];
+      for await (const c of service.query('first')) chunks1.push(c);
+
+      const queryCountBefore = getQueryCallCount();
+      mockPlugin.settings.effortLevel = 'max';
+
+      const chunks2: any[] = [];
+      for await (const c of service.query('second')) chunks2.push(c);
+
+      const response = getLastResponse();
+      expect(response?.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: 'max' });
+      expect(getQueryCallCount()).toBe(queryCountBefore);
+    });
+
     it('updates MCP servers on the active persistent query', async () => {
       const chunks1: any[] = [];
       for await (const c of service.query('first', undefined, undefined, {
