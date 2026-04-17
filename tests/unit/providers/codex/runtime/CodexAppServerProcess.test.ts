@@ -75,7 +75,7 @@ describe('CodexAppServerProcess', () => {
     });
 
     it('wraps Windows .cmd shims through cmd.exe', () => {
-      const platformSpy = jest.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      const platformReplacement = jest.replaceProperty(process, 'platform', 'win32');
 
       try {
         const server = new CodexAppServerProcess(createLaunchSpec({
@@ -92,7 +92,7 @@ describe('CodexAppServerProcess', () => {
           }),
         );
       } finally {
-        platformSpy.mockRestore();
+        platformReplacement.restore();
       }
     });
 
