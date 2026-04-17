@@ -1,6 +1,6 @@
 import { buildSDKMessage } from '@test/helpers/sdkMessages';
 
-import { transformSDKMessage } from '@/providers/claude/stream/transformClaudeMessage';
+import { createTransformStreamState, transformSDKMessage } from '@/providers/claude/stream/transformClaudeMessage';
 
 const msg = buildSDKMessage;
 
@@ -584,6 +584,70 @@ describe('transformSDKMessage', () => {
 
       expect(results.length).toBe(1);
       expect((results[0] as any).id).toMatch(/^tool-\d+$/);
+    });
+
+    it('yields cumulative tool_use updates for input_json_delta', () => {
+      const streamState = createTransformStreamState();
+      const startMessage = msg({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_start',
+          index: 0,
+          content_block: {
+            type: 'tool_use',
+            id: 'stream-tool-1',
+            name: 'Write',
+            input: {},
+          },
+        },
+      });
+      const firstDeltaMessage = msg({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 0,
+          delta: {
+            type: 'input_json_delta',
+            partial_json: '{"file_path":"notes.md"',
+          },
+        },
+      });
+      const secondDeltaMessage = msg({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 0,
+          delta: {
+            type: 'input_json_delta',
+            partial_json: ',"content":"Hello"',
+          },
+        },
+      });
+
+      expect([...transformSDKMessage(startMessage, { streamState })]).toEqual([
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: {},
+        },
+      ]);
+      expect([...transformSDKMessage(firstDeltaMessage, { streamState })]).toEqual([
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: { file_path: 'notes.md' },
+        },
+      ]);
+      expect([...transformSDKMessage(secondDeltaMessage, { streamState })]).toEqual([
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: { file_path: 'notes.md', content: 'Hello' },
+        },
+      ]);
     });
 
     it('yields thinking for content_block_start with thinking', () => {

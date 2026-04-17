@@ -225,8 +225,14 @@ export class TabManager implements TabManagerInterface {
       // Load conversation if not already loaded
       if (tab.conversationId && tab.state.messages.length === 0) {
         await tab.controllers.conversationController?.switchTo(tab.conversationId);
-      } else if (tab.conversationId && tab.state.messages.length > 0 && tab.service) {
-        // Tab already has messages loaded and runtime exists — passive sync only
+      } else if (
+        tab.conversationId
+        && tab.state.messages.length > 0
+        && tab.service
+        && !tab.state.isStreaming
+        && !tab.state.hasPendingConversationSave
+      ) {
+        // Passive sync is only safe once local tab state has been persisted.
         const conversation = this.plugin.getConversationSync(tab.conversationId);
         if (conversation) {
           const hasMessages = conversation.messages.length > 0;

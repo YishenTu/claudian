@@ -815,53 +815,6 @@ describe('ClaudianService', () => {
     });
   });
 
-  describe('isStreamTextEvent', () => {
-    it('should return false for non-stream_event messages', () => {
-      expect((service as any).isStreamTextEvent({ type: 'assistant' })).toBe(false);
-      expect((service as any).isStreamTextEvent({ type: 'result' })).toBe(false);
-      expect((service as any).isStreamTextEvent({ type: 'user' })).toBe(false);
-    });
-
-    it('should return false when event is missing', () => {
-      expect((service as any).isStreamTextEvent({ type: 'stream_event' })).toBe(false);
-    });
-
-    it('should return true for content_block_start with text type', () => {
-      expect((service as any).isStreamTextEvent({
-        type: 'stream_event',
-        event: { type: 'content_block_start', content_block: { type: 'text' } },
-      })).toBe(true);
-    });
-
-    it('should return false for content_block_start with non-text type', () => {
-      expect((service as any).isStreamTextEvent({
-        type: 'stream_event',
-        event: { type: 'content_block_start', content_block: { type: 'tool_use' } },
-      })).toBe(false);
-    });
-
-    it('should return true for content_block_delta with text_delta type', () => {
-      expect((service as any).isStreamTextEvent({
-        type: 'stream_event',
-        event: { type: 'content_block_delta', delta: { type: 'text_delta' } },
-      })).toBe(true);
-    });
-
-    it('should return false for content_block_delta with non-text_delta type', () => {
-      expect((service as any).isStreamTextEvent({
-        type: 'stream_event',
-        event: { type: 'content_block_delta', delta: { type: 'input_json_delta' } },
-      })).toBe(false);
-    });
-
-    it('should return false for other stream event types', () => {
-      expect((service as any).isStreamTextEvent({
-        type: 'stream_event',
-        event: { type: 'message_start' },
-      })).toBe(false);
-    });
-  });
-
   describe('buildSDKUserMessage', () => {
     it('should build text-only message', () => {
       const message = (service as any).buildSDKUserMessage('Hello Claude');
@@ -1217,6 +1170,52 @@ describe('ClaudianService', () => {
       expect(onChunk).toHaveBeenCalled();
     });
 
+    it('should route tool input deltas as tool_use updates', async () => {
+      await (service as any).routeMessage({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_start',
+          index: 0,
+          content_block: {
+            type: 'tool_use',
+            id: 'stream-tool-1',
+            name: 'Write',
+            input: {},
+          },
+        },
+      });
+      await (service as any).routeMessage({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 0,
+          delta: {
+            type: 'input_json_delta',
+            partial_json: '{"file_path":"notes.md"',
+          },
+        },
+      });
+
+      const toolChunks = onChunk.mock.calls
+        .map(([chunk]) => chunk)
+        .filter((chunk: any) => chunk.type === 'tool_use');
+
+      expect(toolChunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: {},
+        },
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: { file_path: 'notes.md' },
+        },
+      ]);
+    });
+
     it('should signal turn complete on result message', async () => {
       const message = { type: 'result', subtype: 'success', result: 'completed' };
 
@@ -1260,15 +1259,48 @@ describe('ClaudianService', () => {
       expect(usageChunks[0][0].sessionId).toBe('usage-session');
     });
 
-    it('should mark stream text seen on text stream events', async () => {
+    it('should mark stream text seen only after a visible stream text chunk', async () => {
       const message = {
         type: 'stream_event',
-        event: { type: 'content_block_start', content_block: { type: 'text' } },
+        event: { type: 'content_block_start', content_block: { type: 'text', text: 'Hello' } },
       };
 
       await (service as any).routeMessage(message);
 
       expect(handler.sawStreamText).toBe(true);
+    });
+
+    it('should not mark stream text seen for empty text deltas', async () => {
+      const message = {
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '' } },
+      };
+
+      await (service as any).routeMessage(message);
+
+      expect(handler.sawStreamText).toBe(false);
+    });
+
+    it('should mark stream thinking seen only after a visible stream thinking chunk', async () => {
+      const message = {
+        type: 'stream_event',
+        event: { type: 'content_block_start', content_block: { type: 'thinking', thinking: 'Thinking...' } },
+      };
+
+      await (service as any).routeMessage(message);
+
+      expect(handler.sawStreamThinking).toBe(true);
+    });
+
+    it('should not mark stream thinking seen for empty thinking deltas', async () => {
+      const message = {
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '' } },
+      };
+
+      await (service as any).routeMessage(message);
+
+      expect(handler.sawStreamThinking).toBe(false);
     });
 
     it('should skip duplicate text from assistant messages after stream text', async () => {
@@ -1290,14 +1322,73 @@ describe('ClaudianService', () => {
       expect(textChunks).toHaveLength(0);
     });
 
-    it('should reset auto-turn stream-text dedup after an empty buffered turn completes', async () => {
+    it('should skip duplicate thinking from assistant messages after visible stream thinking', async () => {
+      await (service as any).routeMessage({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'thinking_delta', thinking: 'Reasoning...' },
+        },
+      });
+      await (service as any).routeMessage({
+        type: 'assistant',
+        message: { content: [{ type: 'thinking', thinking: 'Reasoning...' }] },
+      });
+
+      const thinkingChunks = onChunk.mock.calls.filter(
+        ([chunk]: any) => chunk.type === 'thinking'
+      );
+      expect(thinkingChunks).toHaveLength(1);
+    });
+
+    it('should keep assistant text when stream delta was empty', async () => {
+      await (service as any).routeMessage({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: '' },
+        },
+      });
+      await (service as any).routeMessage({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Final text' }] },
+      });
+
+      const textChunks = onChunk.mock.calls.filter(
+        ([chunk]: any) => chunk.type === 'text'
+      );
+      expect(textChunks).toHaveLength(1);
+      expect(textChunks[0][0].content).toBe('Final text');
+    });
+
+    it('should keep assistant thinking when stream delta was empty', async () => {
+      await (service as any).routeMessage({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'thinking_delta', thinking: '' },
+        },
+      });
+      await (service as any).routeMessage({
+        type: 'assistant',
+        message: { content: [{ type: 'thinking', thinking: 'Final thinking' }] },
+      });
+
+      const thinkingChunks = onChunk.mock.calls.filter(
+        ([chunk]: any) => chunk.type === 'thinking'
+      );
+      expect(thinkingChunks).toHaveLength(1);
+      expect(thinkingChunks[0][0].content).toBe('Final thinking');
+    });
+
+    it('should reset auto-turn stream-text dedup after a buffered turn completes', async () => {
       (service as any).responseHandlers = [];
       const autoTurnCallback = jest.fn();
       service.setAutoTurnCallback(autoTurnCallback);
 
       await (service as any).routeMessage({
         type: 'stream_event',
-        event: { type: 'content_block_start', content_block: { type: 'text' } },
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'First chunk' } },
       });
       await (service as any).routeMessage({
         type: 'assistant',
@@ -1319,8 +1410,8 @@ describe('ClaudianService', () => {
         result: 'second turn complete',
       });
 
-      expect(autoTurnCallback).toHaveBeenCalledTimes(1);
-      expect(autoTurnCallback).toHaveBeenCalledWith({
+      expect(autoTurnCallback).toHaveBeenCalledTimes(2);
+      expect(autoTurnCallback).toHaveBeenNthCalledWith(2, {
         chunks: [
           expect.objectContaining({ type: 'text', content: 'Fresh auto-turn text' }),
         ],
@@ -1403,6 +1494,7 @@ describe('ClaudianService', () => {
           setModel: jest.fn().mockResolvedValue(undefined),
           setMaxThinkingTokens: jest.fn().mockResolvedValue(undefined),
           setPermissionMode: jest.fn().mockResolvedValue(undefined),
+          applyFlagSettings: jest.fn().mockResolvedValue(undefined),
           setMcpServers: jest.fn().mockResolvedValue({ added: [], removed: [], errors: {} }),
         };
         (service as any).persistentQuery = mockPersistentQuery;
@@ -1435,6 +1527,25 @@ describe('ClaudianService', () => {
       await (service as any).applyDynamicUpdates({});
 
       expect(mockPersistentQuery.setMaxThinkingTokens).toHaveBeenCalledWith(16000);
+    });
+
+    it('should update effort level when changed for adaptive models', async () => {
+      (mockPlugin as any).settings.model = 'sonnet';
+      (mockPlugin as any).settings.effortLevel = 'max';
+
+      await (service as any).applyDynamicUpdates({});
+
+      expect(mockPersistentQuery.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: 'max' });
+      expect((service as any).currentConfig.effortLevel).toBe('max');
+    });
+
+    it('should not update effort level for non-adaptive models', async () => {
+      (mockPlugin as any).settings.model = 'custom-model';
+      (mockPlugin as any).settings.effortLevel = 'max';
+
+      await (service as any).applyDynamicUpdates({});
+
+      expect(mockPersistentQuery.applyFlagSettings).not.toHaveBeenCalled();
     });
 
     it('should update permission mode when changed', async () => {
@@ -1539,6 +1650,14 @@ describe('ClaudianService', () => {
     it('should silently handle permission mode update error', async () => {
       (mockPlugin as any).settings.permissionMode = 'yolo';
       mockPersistentQuery.setPermissionMode.mockRejectedValueOnce(new Error('Permission error'));
+
+      await expect((service as any).applyDynamicUpdates({})).resolves.toBeUndefined();
+    });
+
+    it('should silently handle effort level update error', async () => {
+      (mockPlugin as any).settings.model = 'sonnet';
+      (mockPlugin as any).settings.effortLevel = 'max';
+      mockPersistentQuery.applyFlagSettings.mockRejectedValueOnce(new Error('Effort error'));
 
       await expect((service as any).applyDynamicUpdates({})).resolves.toBeUndefined();
     });
@@ -3012,7 +3131,7 @@ describe('ClaudianService', () => {
     });
   });
 
-  describe('queryViaSDK - stream text dedup and allowedTools', () => {
+  describe('queryViaSDK - stream content dedup and allowedTools', () => {
     beforeEach(() => {
       sdkMock.resetMockMessages();
     });
@@ -3039,11 +3158,10 @@ describe('ClaudianService', () => {
       expect(chunks.some(c => c.type === 'done')).toBe(true);
     });
 
-    it('should handle stream text events and skip duplicate assistant text', async () => {
+    it('should handle visible stream text events and skip duplicate assistant text', async () => {
       sdkMock.setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'stream-dedup' },
-        { type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'text' } } },
-        { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello' } } },
+        { type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'text', text: 'Hello' } } },
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
       ], { appendResult: true });
 
@@ -3051,8 +3169,143 @@ describe('ClaudianService', () => {
         service.query('hello', undefined, undefined, { forceColdStart: true })
       );
 
-      // Stream text was seen, so duplicate text from assistant message should be skipped
-      // Verify query completed successfully
+      const textChunks = chunks.filter(c => c.type === 'text');
+      expect(textChunks).toHaveLength(1);
+      expect(textChunks[0].content).toBe('Hello');
+      expect(chunks.some(c => c.type === 'done')).toBe(true);
+    });
+
+    it('should keep assistant text when text deltas were empty', async () => {
+      sdkMock.setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'empty-text-delta' },
+        {
+          type: 'stream_event',
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '' } },
+        },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+      ], { appendResult: true });
+
+      const chunks = await collectChunks(
+        service.query('hello', undefined, undefined, { forceColdStart: true })
+      );
+
+      const textChunks = chunks.filter(c => c.type === 'text');
+      expect(textChunks).toHaveLength(1);
+      expect(textChunks[0].content).toBe('Hello');
+    });
+
+    it('should skip duplicate assistant thinking after visible stream thinking', async () => {
+      sdkMock.setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'thinking-dedup' },
+        {
+          type: 'stream_event',
+          event: {
+            type: 'content_block_start',
+            content_block: { type: 'thinking', thinking: 'Reasoning...' },
+          },
+        },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'thinking', thinking: 'Reasoning...' }] },
+        },
+      ], { appendResult: true });
+
+      const chunks = await collectChunks(
+        service.query('hello', undefined, undefined, { forceColdStart: true })
+      );
+
+      const thinkingChunks = chunks.filter(c => c.type === 'thinking');
+      expect(thinkingChunks).toHaveLength(1);
+      expect(thinkingChunks[0].content).toBe('Reasoning...');
+    });
+
+    it('should keep assistant thinking when thinking deltas were empty', async () => {
+      sdkMock.setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'empty-thinking-delta' },
+        {
+          type: 'stream_event',
+          event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '' } },
+        },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'thinking', thinking: 'Reasoning...' }] },
+        },
+      ], { appendResult: true });
+
+      const chunks = await collectChunks(
+        service.query('hello', undefined, undefined, { forceColdStart: true })
+      );
+
+      const thinkingChunks = chunks.filter(c => c.type === 'thinking');
+      expect(thinkingChunks).toHaveLength(1);
+      expect(thinkingChunks[0].content).toBe('Reasoning...');
+    });
+
+    it('should stream cumulative tool input updates during cold-start query', async () => {
+      sdkMock.setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'stream-tool-input' },
+        {
+          type: 'stream_event',
+          event: {
+            type: 'content_block_start',
+            index: 0,
+            content_block: {
+              type: 'tool_use',
+              id: 'stream-tool-1',
+              name: 'Write',
+              input: {},
+            },
+          },
+        },
+        {
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            index: 0,
+            delta: {
+              type: 'input_json_delta',
+              partial_json: '{"file_path":"notes.md"',
+            },
+          },
+        },
+        {
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            index: 0,
+            delta: {
+              type: 'input_json_delta',
+              partial_json: ',"content":"Hello"',
+            },
+          },
+        },
+      ], { appendResult: true });
+
+      const chunks = await collectChunks(
+        service.query('hello', undefined, undefined, { forceColdStart: true })
+      );
+
+      const toolChunks = chunks.filter(c => c.type === 'tool_use');
+      expect(toolChunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: {},
+        },
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: { file_path: 'notes.md' },
+        },
+        {
+          type: 'tool_use',
+          id: 'stream-tool-1',
+          name: 'Write',
+          input: { file_path: 'notes.md', content: 'Hello' },
+        },
+      ]);
       expect(chunks.some(c => c.type === 'done')).toBe(true);
     });
 

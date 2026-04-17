@@ -28,7 +28,7 @@ describe('systemPrompt', () => {
 
     it('should include base system prompt elements', () => {
       const prompt = buildSystemPrompt();
-      expect(prompt).toContain('Mocked Date');
+      expect(prompt).toContain('Use `bash: date` to get the current date and time. Never guess or assume.');
       expect(prompt).toContain('Claudian');
       expect(prompt).toContain('## Path Conventions');
       expect(prompt).toContain('# User Message Format');

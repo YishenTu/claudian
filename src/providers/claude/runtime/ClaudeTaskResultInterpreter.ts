@@ -67,15 +67,13 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
       return true;
     }
 
-    if (this.extractAgentId(toolUseResult)) {
-      return true;
-    }
-
     const rawStatus = record.retrieval_status ?? record.status;
     if (typeof rawStatus === 'string' && rawStatus.toLowerCase() === 'async_launched') {
       return true;
     }
 
+    // Sync Task results can still carry agentId metadata, so only treat
+    // output files as async when an explicit async marker is otherwise absent.
     return typeof record.outputFile === 'string' && record.outputFile.length > 0;
   }
 

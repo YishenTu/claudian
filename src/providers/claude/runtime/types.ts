@@ -51,9 +51,12 @@ export interface ResponseHandler {
   onDone: () => void;
   onError: (error: Error) => void;
   readonly sawStreamText: boolean;
+  readonly sawStreamThinking: boolean;
   readonly sawAnyChunk: boolean;
   markStreamTextSeen(): void;
+  markStreamThinkingSeen(): void;
   resetStreamText(): void;
+  resetStreamThinking(): void;
   markChunkSeen(): void;
 }
 
@@ -66,6 +69,7 @@ export interface ResponseHandlerOptions {
 
 export function createResponseHandler(options: ResponseHandlerOptions): ResponseHandler {
   let _sawStreamText = false;
+  let _sawStreamThinking = false;
   let _sawAnyChunk = false;
 
   return {
@@ -74,9 +78,12 @@ export function createResponseHandler(options: ResponseHandlerOptions): Response
     onDone: options.onDone,
     onError: options.onError,
     get sawStreamText() { return _sawStreamText; },
+    get sawStreamThinking() { return _sawStreamThinking; },
     get sawAnyChunk() { return _sawAnyChunk; },
     markStreamTextSeen() { _sawStreamText = true; },
+    markStreamThinkingSeen() { _sawStreamThinking = true; },
     resetStreamText() { _sawStreamText = false; },
+    resetStreamThinking() { _sawStreamThinking = false; },
     markChunkSeen() { _sawAnyChunk = true; },
   };
 }

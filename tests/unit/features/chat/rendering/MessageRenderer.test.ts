@@ -1521,6 +1521,33 @@ describe('MessageRenderer', () => {
   // ============================================
 
   describe('renderContent - code block wrapping', () => {
+    it('passes image-processed markdown directly to MarkdownRenderer', async () => {
+      const { MarkdownRenderer } = await import('obsidian');
+      const { replaceImageEmbedsWithHtml } = await import('@/utils/imageEmbed');
+      const { processFileLinks } = await import('@/utils/fileLink');
+      const { renderer } = createRenderer();
+      const el = createMockEl();
+
+      (replaceImageEmbedsWithHtml as jest.Mock).mockReturnValueOnce(
+        '<span title="[[note.md]]">raw html</span>\n    [[note.md]]'
+      );
+
+      await renderer.renderContent(el, 'before-images ![[image.png]] [[note.md]]');
+
+      expect(replaceImageEmbedsWithHtml).toHaveBeenCalledWith(
+        'before-images ![[image.png]] [[note.md]]',
+        expect.anything(),
+        ''
+      );
+      expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalledWith(
+        '<span title="[[note.md]]">raw html</span>\n    [[note.md]]',
+        el,
+        '',
+        expect.anything()
+      );
+      expect(processFileLinks).toHaveBeenCalledWith(expect.anything(), el);
+    });
+
     it('should wrap pre elements in code wrapper divs', async () => {
       const { MarkdownRenderer } = await import('obsidian');
       const { renderer } = createRenderer();

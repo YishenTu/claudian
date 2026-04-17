@@ -192,6 +192,25 @@ describe('runColdStartQuery', () => {
       const opts = sdkMock.getLastOptions();
       expect(opts?.model).toBe('claude-sonnet-4-5');
     });
+
+    it('clamps unsupported xhigh effort before calling the SDK', async () => {
+      sdkMock.setMockMessages([]);
+
+      await runColdStartQuery(
+        createConfig({
+          providerSettings: {
+            model: 'claude-sonnet-4-5',
+            thinkingBudget: 'off',
+            effortLevel: 'xhigh',
+            loadUserClaudeSettings: false,
+          },
+        }),
+        'hi',
+      );
+
+      const opts = sdkMock.getLastOptions();
+      expect(opts?.effort).toBe('high');
+    });
   });
 
   describe('abort handling', () => {

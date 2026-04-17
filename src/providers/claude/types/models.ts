@@ -24,12 +24,13 @@ export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: n
 ];
 
 /** Effort levels for adaptive thinking models. */
-export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export const EFFORT_LEVELS: { value: EffortLevel; label: string }[] = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Med' },
   { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'XHigh' },
   { value: 'max', label: 'Max' },
 ];
 
@@ -57,6 +58,32 @@ const DEFAULT_MODEL_VALUES = new Set(DEFAULT_CLAUDE_MODELS.map(m => m.value));
 export function isAdaptiveThinkingModel(model: string): boolean {
   if (DEFAULT_MODEL_VALUES.has(model)) return true;
   return /claude-(haiku|sonnet|opus)-/.test(model);
+}
+
+/**
+ * Whether the model supports the `xhigh` effort level. Opus 4.7+ only — the SDK
+ * silently falls back to `high` on other models.
+ */
+export function supportsXHighEffort(model: string): boolean {
+  if (model === 'opus' || model === 'opus[1m]') return true;
+  return /claude-opus-(4-[7-9]|[5-9])/.test(model);
+}
+
+/** Clamp stored effort values to what the selected model actually supports. */
+export function normalizeEffortLevel(
+  model: string,
+  effortLevel: unknown,
+): EffortLevel {
+  const allowsXHigh = supportsXHighEffort(model);
+  const isSupported = EFFORT_LEVELS.some((level) =>
+    level.value === effortLevel && (allowsXHigh || level.value !== 'xhigh')
+  );
+
+  if (isSupported) {
+    return effortLevel as EffortLevel;
+  }
+
+  return DEFAULT_EFFORT_LEVEL[model] ?? 'high';
 }
 
 export const CONTEXT_WINDOW_STANDARD = 200_000;

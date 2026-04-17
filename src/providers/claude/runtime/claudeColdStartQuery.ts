@@ -7,7 +7,11 @@ import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from 
 import { getVaultPath } from '../../../utils/path';
 import { extractAssistantText } from '../auxiliary/extractAssistantText';
 import { getClaudeProviderSettings } from '../settings';
-import { type EffortLevel, isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types/models';
+import {
+  isAdaptiveThinkingModel,
+  normalizeEffortLevel,
+  THINKING_BUDGETS,
+} from '../types/models';
 import { createCustomSpawnFunction } from './customSpawn';
 
 export interface ColdStartQueryConfig {
@@ -110,7 +114,7 @@ export async function runColdStartQuery(
   if (!config.thinking?.disabled) {
     if (isAdaptiveThinkingModel(selectedModel)) {
       options.thinking = { type: 'adaptive' };
-      options.effort = settings.effortLevel as EffortLevel;
+      options.effort = normalizeEffortLevel(selectedModel, settings.effortLevel);
     } else {
       const budgetConfig = THINKING_BUDGETS.find(
         b => b.value === settings.thinkingBudget

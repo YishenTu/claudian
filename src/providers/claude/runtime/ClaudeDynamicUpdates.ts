@@ -10,7 +10,11 @@ import type {
   ChatRuntimeQueryOptions,
 } from '../../../core/runtime/types';
 import type { ClaudianSettings, PermissionMode } from '../../../core/types/settings';
-import { isAdaptiveThinkingModel, THINKING_BUDGETS } from '../types/models';
+import {
+  isAdaptiveThinkingModel,
+  normalizeEffortLevel,
+  THINKING_BUDGETS,
+} from '../types/models';
 import type {
   ClosePersistentQueryOptions,
   PersistentQueryConfig,
@@ -75,6 +79,10 @@ export async function applyClaudeDynamicUpdates(
   }
 
   if (!isAdaptiveThinkingModel(selectedModel)) {
+    deps.mutateCurrentConfig(config => {
+      config.effortLevel = null;
+    });
+
     const budgetConfig = THINKING_BUDGETS.find(b => b.value === settings.thinkingBudget);
     const thinkingTokens = budgetConfig?.tokens ?? null;
     const currentThinking = deps.getCurrentConfig()?.thinkingTokens ?? null;
@@ -86,6 +94,27 @@ export async function applyClaudeDynamicUpdates(
         });
       } catch {
         deps.notifyFailure('Failed to update thinking budget');
+      }
+    }
+  }
+
+  if (isAdaptiveThinkingModel(selectedModel)) {
+    deps.mutateCurrentConfig(config => {
+      config.thinkingTokens = null;
+    });
+
+    const effortLevel = normalizeEffortLevel(selectedModel, settings.effortLevel);
+    const currentEffort = deps.getCurrentConfig()?.effortLevel ?? null;
+    if (effortLevel !== currentEffort) {
+      try {
+        // SDK runtime accepts `max`, but the current type definition for
+        // Settings.effortLevel has not caught up yet.
+        await persistentQuery.applyFlagSettings({ effortLevel } as unknown as Parameters<Query['applyFlagSettings']>[0]);
+        deps.mutateCurrentConfig(config => {
+          config.effortLevel = effortLevel;
+        });
+      } catch {
+        deps.notifyFailure('Failed to update effort level');
       }
     }
   }

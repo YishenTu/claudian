@@ -604,39 +604,83 @@ export class SubagentManager {
     if (this.taskResultInterpreter.hasAsyncLaunchMarker(taskToolUseResult)) {
       return 'async';
     }
-    // Use strict async markers only; avoid broad ID heuristics.
+    // Only promote to async for launch-shaped payloads. Completed sync results
+    // can still contain agent metadata in the payload or final output text.
     return this.parseAgentIdStrict(taskResult) ? 'async' : 'sync';
   }
 
   private parseAgentIdStrict(result: string): string | null {
-    const fromRaw = this.extractAgentIdFromString(result);
-    if (fromRaw) return fromRaw;
-
-    const payload = this.unwrapTextPayload(result);
-    const fromPayload = this.extractAgentIdFromString(payload);
-    if (fromPayload) return fromPayload;
+    const payload = this.unwrapTextPayload(result).trim();
+    if (!payload) {
+      return null;
+    }
 
     try {
-      const parsed = JSON.parse(result);
+      const parsed = JSON.parse(payload);
 
-      if (Array.isArray(parsed)) {
-        for (const block of parsed) {
-          if (block && typeof block === 'object' && typeof (block as Record<string, unknown>).text === 'string') {
-            const fromText = this.extractAgentIdFromString((block as Record<string, unknown>).text as string);
-            if (fromText) return fromText;
-          }
-        }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
       }
 
-      const agentId = parsed.agent_id || parsed.agentId || parsed?.data?.agent_id;
-      if (typeof agentId === 'string' && agentId.length > 0) {
-        return agentId;
+      if (this.hasTerminalTaskStatus(parsed)) {
+        return null;
+      }
+
+      const directAgentId = this.extractAgentIdFromRecord(parsed as Record<string, unknown>);
+      if (directAgentId) {
+        return directAgentId;
+      }
+
+      const taskRecord = (parsed as Record<string, unknown>).task;
+      if (taskRecord && typeof taskRecord === 'object' && !Array.isArray(taskRecord)) {
+        return this.extractAgentIdFromRecord(taskRecord as Record<string, unknown>);
       }
     } catch {
       // Not JSON
     }
 
-    return null;
+    const xmlStatus = this.taskResultInterpreter.extractTagValue(payload, 'retrieval_status')
+      ?? this.taskResultInterpreter.extractTagValue(payload, 'status');
+    if (this.isTerminalTaskStatusValue(xmlStatus)) {
+      return null;
+    }
+
+    const exactLineMatch = payload.match(/^\s*(?:agent_id|agentId)\s*[=:]\s*"?([a-zA-Z0-9_-]+)"?\s*$/i);
+    return exactLineMatch?.[1] ?? null;
+  }
+
+  private hasTerminalTaskStatus(value: unknown): boolean {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return false;
+    }
+
+    const record = value as Record<string, unknown>;
+    const rawStatus = record.retrieval_status ?? record.status;
+    return this.isTerminalTaskStatusValue(rawStatus);
+  }
+
+  private isTerminalTaskStatusValue(rawStatus: unknown): boolean {
+    if (typeof rawStatus !== 'string') {
+      return false;
+    }
+
+    const normalized = rawStatus.toLowerCase();
+    return normalized === 'completed' || normalized === 'success' || normalized === 'error';
+  }
+
+  private extractAgentIdFromRecord(record: Record<string, unknown>): string | null {
+    const direct = record.agent_id ?? record.agentId;
+    if (typeof direct === 'string' && direct.length > 0) {
+      return direct;
+    }
+
+    const data = record.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return null;
+    }
+
+    const nested = (data as Record<string, unknown>).agent_id ?? (data as Record<string, unknown>).agentId;
+    return typeof nested === 'string' && nested.length > 0 ? nested : null;
   }
 
   private extractAgentIdFromString(value: string): string | null {

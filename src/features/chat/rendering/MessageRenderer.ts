@@ -580,13 +580,18 @@ export class MessageRenderer {
     el.empty();
 
     try {
-      // Replace image embeds with HTML img tags before rendering
+      // Normalize embeds before MarkdownRenderer consumes them.
       const processedMarkdown = replaceImageEmbedsWithHtml(
         markdown,
         this.app,
         this.plugin.settings.mediaFolder
       );
-      await MarkdownRenderer.renderMarkdown(processedMarkdown, el, '', this.component);
+      await MarkdownRenderer.renderMarkdown(
+        processedMarkdown,
+        el,
+        '',
+        this.component
+      );
 
       // Wrap pre elements and move buttons outside scroll area
       el.querySelectorAll('pre').forEach((pre) => {

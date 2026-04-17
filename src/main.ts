@@ -19,6 +19,7 @@ import { ProviderRegistry } from './core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from './core/providers/types';
+import type { AppTabManagerState } from './core/providers/types';
 import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
 import type {
   ClaudianSettings,
@@ -41,6 +42,7 @@ export default class ClaudianPlugin extends Plugin {
   settings!: ClaudianSettings;
   storage!: SharedAppStorage;
   private conversations: Conversation[] = [];
+  private lastKnownTabManagerState: AppTabManagerState | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -113,17 +115,10 @@ export default class ClaudianPlugin extends Plugin {
       id: 'new-tab',
       name: 'New tab',
       checkCallback: (checking: boolean) => {
-        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
-        if (!leaf) return false;
-
-        const view = leaf.view as ClaudianView;
-        const tabManager = view.getTabManager();
-        if (!tabManager) return false;
-
-        if (!tabManager.canCreateTab()) return false;
+        if (!this.canCreateNewTab()) return false;
 
         if (!checking) {
-          tabManager.createTab();
+          void this.openNewTab();
         }
         return true;
       },
@@ -182,7 +177,7 @@ export default class ClaudianPlugin extends Plugin {
       const tabManager = view.getTabManager();
       if (tabManager) {
         const state = tabManager.getPersistedState();
-        await this.storage.setTabManagerState(state);
+        await this.persistTabManagerState(state);
       }
     }
   }
@@ -209,9 +204,57 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
+  private canCreateNewTab(): boolean {
+    const view = this.getView();
+    const tabManager = view?.getTabManager();
+
+    if (tabManager) {
+      return tabManager.canCreateTab();
+    }
+
+    if (view) {
+      return false;
+    }
+
+    return this.getLastKnownOpenTabCount() < this.getMaxTabsLimit();
+  }
+
+  private async ensureViewOpen(): Promise<ClaudianView | null> {
+    const existingView = this.getView();
+    if (existingView) {
+      return existingView;
+    }
+
+    await this.activateView();
+    return this.getView();
+  }
+
+  private async openNewTab(): Promise<void> {
+    const existingView = this.getView();
+    if (existingView) {
+      await existingView.createNewTab();
+      return;
+    }
+
+    const restoredTabCount = this.getLastKnownOpenTabCount();
+    const view = await this.ensureViewOpen();
+    if (!view) {
+      return;
+    }
+
+    // A cold-open view creates its initial tab during restore. Avoid stacking
+    // an extra blank tab on top when there was no prior layout to restore.
+    if (restoredTabCount === 0) {
+      return;
+    }
+
+    await view.createNewTab();
+  }
+
   async loadSettings() {
     this.storage = new SharedStorageService(this);
     const { claudian } = await this.storage.initialize();
+    this.lastKnownTabManagerState = await this.storage.getTabManagerState();
 
     this.settings = {
       ...DEFAULT_CLAUDIAN_SETTINGS,
@@ -622,6 +665,11 @@ export default class ClaudianPlugin extends Plugin {
     }));
   }
 
+  async persistTabManagerState(state: AppTabManagerState): Promise<void> {
+    this.lastKnownTabManagerState = state;
+    await this.storage.setTabManagerState(state);
+  }
+
   getView(): ClaudianView | null {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     if (leaves.length > 0) {
@@ -648,6 +696,15 @@ export default class ClaudianPlugin extends Plugin {
       }
     }
     return null;
+  }
+
+  private getLastKnownOpenTabCount(): number {
+    return this.lastKnownTabManagerState?.openTabs.length ?? 0;
+  }
+
+  private getMaxTabsLimit(): number {
+    const maxTabs = this.settings.maxTabs ?? 3;
+    return Math.max(3, Math.min(10, maxTabs));
   }
 
 }

@@ -279,6 +279,7 @@ export class InputController {
       images: imagesForMessage,
     };
     state.addMessage(userMsg);
+    state.hasPendingConversationSave = true;
     renderer.addMessage(userMsg);
 
     await this.triggerTitleGeneration();
