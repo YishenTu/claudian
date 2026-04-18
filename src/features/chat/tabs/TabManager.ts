@@ -146,6 +146,7 @@ export class TabManager implements TabManagerInterface {
       tabId,
       defaultProviderId,
       onStreamingChanged: (isStreaming) => {
+        tab.ui?.sendStopButton?.setStreaming(isStreaming);
         this.callbacks.onTabStreamingChanged?.(tab.id, isStreaming);
       },
       onTitleChanged: (title) => {
