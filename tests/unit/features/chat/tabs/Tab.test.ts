@@ -274,6 +274,9 @@ jest.mock('@/features/chat/ui/InputToolbar', () => ({
       serviceTierToggle: mockServiceTierToggle,
     };
   }),
+  SendStopButton: jest.fn().mockImplementation(() => ({
+    setStreaming: jest.fn(),
+  })),
 }));
 
 jest.mock('@/shared/components/SlashCommandDropdown', () => ({

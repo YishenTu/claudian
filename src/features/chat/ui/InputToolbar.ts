@@ -1063,6 +1063,43 @@ export class ContextUsageMeter {
   }
 }
 
+export interface SendStopCallbacks {
+  onSend: () => void;
+  onStop: () => void;
+}
+
+export class SendStopButton {
+  private container: HTMLElement;
+  private btnEl: HTMLElement;
+  private streaming = false;
+  private callbacks: SendStopCallbacks;
+
+  constructor(parentEl: HTMLElement, callbacks: SendStopCallbacks) {
+    this.callbacks = callbacks;
+    this.container = parentEl.createDiv({ cls: 'claudian-send-stop-container' });
+    this.btnEl = this.container.createDiv({ cls: 'claudian-send-stop-btn' });
+    setIcon(this.btnEl, 'arrow-up');
+    this.btnEl.addEventListener('click', () => {
+      if (this.streaming) {
+        this.callbacks.onStop();
+      } else {
+        this.callbacks.onSend();
+      }
+    });
+  }
+
+  setStreaming(streaming: boolean): void {
+    this.streaming = streaming;
+    if (streaming) {
+      this.btnEl.addClass('claudian-send-stop-btn--streaming');
+      setIcon(this.btnEl, 'square');
+    } else {
+      this.btnEl.removeClass('claudian-send-stop-btn--streaming');
+      setIcon(this.btnEl, 'arrow-up');
+    }
+  }
+}
+
 export function createInputToolbar(
   parentEl: HTMLElement,
   callbacks: ToolbarCallbacks
