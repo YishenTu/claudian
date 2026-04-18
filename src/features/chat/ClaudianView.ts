@@ -549,6 +549,40 @@ export class ClaudianView extends ItemView {
       }
     });
 
+    // Alt+K (Option+K on Mac): insert a line-range @mention from the current editor selection
+    this.registerDomEvent(this.containerEl, 'keydown', (e: KeyboardEvent) => {
+      if (!e.altKey || e.key.toLowerCase() !== 'k' || e.isComposing) return;
+
+      const activeTab = this.tabManager?.getActiveTab();
+      if (!activeTab) return;
+
+      const selectionController = activeTab.controllers.selectionController;
+      const fileContextManager = activeTab.ui.fileContextManager;
+      const inputEl = activeTab.dom.inputEl;
+      if (!selectionController || !fileContextManager || !inputEl) return;
+
+      const ctx = selectionController.getContext();
+      if (!ctx || ctx.mode !== 'selection' || ctx.startLine === undefined) return;
+
+      const filename = ctx.notePath.split('/').pop() ?? ctx.notePath;
+      const start = ctx.startLine;
+      const end = start + (ctx.lineCount ?? 1) - 1;
+      const mentionText = `@${filename}#${start}-${end}`;
+
+      const current = inputEl.value;
+      const needsSpace = current.length > 0 && !/\s$/.test(current);
+      inputEl.value = current + (needsSpace ? ' ' : '') + mentionText + ' ';
+      inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+
+      fileContextManager.attachFile(ctx.notePath);
+      fileContextManager.attachLineRangeMention(ctx.notePath, start, end);
+
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      inputEl.focus();
+
+      e.preventDefault();
+    });
+
     // Register Escape on the view's Obsidian Scope to prevent Obsidian from
     // navigating away when Claudian is open as a main-area tab.
     // Returning false consumes the event (preventDefault + stops scope propagation).
