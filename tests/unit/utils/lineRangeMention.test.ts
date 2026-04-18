@@ -62,4 +62,15 @@ describe('resolveLineRangeMentions', () => {
     const result = await resolveLineRangeMentions('prompt', map, readFile);
     expect(result).toBe('prompt');
   });
+
+  it('handles CRLF line endings correctly', async () => {
+    const map = new Map([['win.md', { startLine: 2, endLine: 3 }]]);
+    const result = await resolveLineRangeMentions(
+      'prompt',
+      map,
+      makeReadFile('line1\r\nline2\r\nline3\r\nline4')
+    );
+    expect(result).toContain('line2\nline3');
+    expect(result).not.toContain('\r');
+  });
 });

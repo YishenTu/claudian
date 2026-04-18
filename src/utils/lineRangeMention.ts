@@ -1,12 +1,11 @@
 export interface LineRangeMention {
-  filePath: string;
   startLine: number;
   endLine: number;
 }
 
 export async function resolveLineRangeMentions(
   prompt: string,
-  lineRangeMentions: Map<string, { startLine: number; endLine: number }>,
+  lineRangeMentions: Map<string, LineRangeMention>,
   readFile: (filePath: string) => Promise<string>,
 ): Promise<string> {
   if (lineRangeMentions.size === 0) return prompt;
@@ -21,7 +20,7 @@ export async function resolveLineRangeMentions(
       continue;
     }
 
-    const lines = content.split('\n');
+    const lines = content.split(/\r?\n/);
     const clampedEnd = Math.min(endLine, lines.length);
     const selectedLines = lines.slice(startLine - 1, clampedEnd);
     const selectedText = selectedLines.join('\n');
