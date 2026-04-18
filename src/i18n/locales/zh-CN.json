@@ -296,6 +296,29 @@
     "language": {
       "name": "语言",
       "desc": "更改插件界面的显示语言"
+    },
+    "opencode": {
+      "enabled": {
+        "name": "OpenCode",
+        "desc": "启用后 OpenCode 会出现在模型选择器中。"
+      },
+      "prewarm": {
+        "name": "Pre-warm runtime",
+        "desc": "启动时预热 ACP 进程，减少首次响应延迟。"
+      },
+      "cliPath": {
+        "name": "CLI 路径",
+        "desc": "留空自动检测。",
+        "placeholder": "/usr/local/bin/opencode"
+      },
+      "mcpServers": {
+        "desc": "OpenCode 通过自身配置管理 MCP 服务器。"
+      },
+      "environment": {
+        "name": "环境变量",
+        "desc": "配置 API 密钥等。",
+        "placeholder": "OPENAI_API_KEY=your-key"
+      }
     }
   }
 }

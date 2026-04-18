@@ -232,4 +232,17 @@ export type TranslationKey =
 
   // Settings - Language
   | 'settings.language.name'
-  | 'settings.language.desc';
+  | 'settings.language.desc'
+
+  // Settings - OpenCode
+  | 'settings.opencode.enabled.name'
+  | 'settings.opencode.enabled.desc'
+  | 'settings.opencode.prewarm.name'
+  | 'settings.opencode.prewarm.desc'
+  | 'settings.opencode.cliPath.name'
+  | 'settings.opencode.cliPath.desc'
+  | 'settings.opencode.cliPath.placeholder'
+  | 'settings.opencode.mcpServers.desc'
+  | 'settings.opencode.environment.name'
+  | 'settings.opencode.environment.desc'
+  | 'settings.opencode.environment.placeholder';

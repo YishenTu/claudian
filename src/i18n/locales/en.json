@@ -296,6 +296,29 @@
     "language": {
       "name": "Language",
       "desc": "Change the display language of the plugin interface"
+    },
+    "opencode": {
+      "enabled": {
+        "name": "OpenCode",
+        "desc": "Enable OpenCode in the model selector."
+      },
+      "prewarm": {
+        "name": "Pre-warm runtime",
+        "desc": "Start ACP process on load to reduce first response latency."
+      },
+      "cliPath": {
+        "name": "CLI path",
+        "desc": "Leave empty for auto-detection.",
+        "placeholder": "/usr/local/bin/opencode"
+      },
+      "mcpServers": {
+        "desc": "OpenCode manages MCP servers via its own configuration."
+      },
+      "environment": {
+        "name": "Environment",
+        "desc": "Configure API keys and provider settings.",
+        "placeholder": "OPENAI_API_KEY=your-key"
+      }
     }
   }
 }
