@@ -576,7 +576,7 @@ export class ClaudianView extends ItemView {
         // Source mode: line numbers are known — insert @mention token and register for send-time resolution
         const start = ctx.startLine;
         const end = start + (ctx.lineCount ?? 1) - 1;
-        const mentionText = `@${filename}#${start}-${end}`;
+        const mentionText = start === end ? `@${filename}#${start}` : `@${filename}#${start}-${end}`;
         inputEl.value = current + (needsSpace ? ' ' : '') + mentionText + ' ';
         inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
         fileContextManager.attachFile(ctx.notePath);
