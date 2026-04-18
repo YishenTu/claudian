@@ -551,7 +551,7 @@ export class ClaudianView extends ItemView {
 
     // Alt+K (Option+K on Mac): insert a line-range @mention from the current editor selection
     this.registerDomEvent(this.containerEl, 'keydown', (e: KeyboardEvent) => {
-      if (!e.altKey || e.key.toLowerCase() !== 'k' || e.isComposing) return;
+      if (!e.altKey || e.code !== 'KeyK' || e.isComposing) return;
 
       const activeTab = this.tabManager?.getActiveTab();
       if (!activeTab) return;
@@ -563,6 +563,9 @@ export class ClaudianView extends ItemView {
 
       const ctx = selectionController.getContext();
       if (!ctx || ctx.mode !== 'selection' || ctx.startLine === undefined) return;
+
+      // Reject the sentinel notePath set when view.file is null
+      if (!ctx.notePath || ctx.notePath === 'unknown') return;
 
       const filename = ctx.notePath.split('/').pop() ?? ctx.notePath;
       const start = ctx.startLine;

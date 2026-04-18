@@ -359,6 +359,7 @@ export class FileContextManager {
 
   attachLineRangeMention(filePath: string, startLine: number, endLine: number): void {
     this.state.attachLineRangeMention(filePath, startLine, endLine);
+    this.callbacks.onChipsChanged?.();
   }
 
   clearMcpMentions(): void {
