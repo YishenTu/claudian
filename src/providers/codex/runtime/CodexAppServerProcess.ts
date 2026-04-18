@@ -4,13 +4,20 @@ import type { Readable, Writable } from 'stream';
 import type { CodexLaunchSpec } from './codexLaunchTypes';
 
 const SIGKILL_TIMEOUT_MS = 3_000;
+const WINDOWS_CMD_ARGUMENT_CHARS = /[\s"&<>|{}^=;!'+,`~()%@]/u;
+
+function requiresWindowsShellQuoting(value: string): boolean {
+  return WINDOWS_CMD_ARGUMENT_CHARS.test(value)
+    || value.includes('[')
+    || value.includes(']');
+}
 
 function quoteWindowsShellArgument(value: string): string {
   if (!value.length) {
     return '""';
   }
 
-  if (!/[\s"]/u.test(value)) {
+  if (!requiresWindowsShellQuoting(value)) {
     return value;
   }
 
@@ -35,7 +42,7 @@ function resolveWindowsSpawnSpec(launchSpec: Pick<CodexLaunchSpec, 'command' | '
       .join(' ');
 
     return {
-      command: process.env.comspec || 'cmd.exe',
+      command: process.env.ComSpec || process.env.comspec || 'cmd.exe',
       args: ['/d', '/s', '/c', `"${shellCommand}"`],
       env: launchSpec.env,
       windowsVerbatimArguments: true,
