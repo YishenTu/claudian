@@ -28,8 +28,8 @@ import type { BrowserSelectionContext } from '../../../utils/browser';
 import type { CanvasSelectionContext } from '../../../utils/canvas';
 import { formatDurationMmSs } from '../../../utils/date';
 import type { EditorSelectionContext } from '../../../utils/editor';
-import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { resolveLineRangeMentions } from '../../../utils/lineRangeMention';
+import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
 import { InlineExitPlanMode } from '../rendering/InlineExitPlanMode';
@@ -261,13 +261,15 @@ export class InputController {
       imageContextManager?.clearImages();
     }
 
-    let { displayContent, turnRequest } = this.buildTurnSubmission({
+    const submission = this.buildTurnSubmission({
       content,
       images: imagesForMessage,
       editorContextOverride: options?.editorContextOverride,
       browserContextOverride: options?.browserContextOverride,
       canvasContextOverride: options?.canvasContextOverride,
     });
+    const { displayContent } = submission;
+    let { turnRequest } = submission;
 
     if (turnRequest.lineRangeMentions && turnRequest.lineRangeMentions.size > 0) {
       const vault = this.deps.plugin.app.vault;
