@@ -549,8 +549,9 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    // Alt+K (Option+K on Mac): insert a line-range @mention from the current editor selection
-    this.registerDomEvent(this.containerEl, 'keydown', (e: KeyboardEvent) => {
+    // Alt+K (Option+K on Mac): insert a line-range @mention from the current editor selection.
+    // Registered on document so it fires even when focus is in the editor pane.
+    this.registerDomEvent(document, 'keydown', (e: KeyboardEvent) => {
       if (!e.altKey || e.code !== 'KeyK' || e.isComposing) return;
 
       const activeTab = this.tabManager?.getActiveTab();
@@ -562,28 +563,80 @@ export class ClaudianView extends ItemView {
       if (!selectionController || !fileContextManager || !inputEl) return;
 
       const ctx = selectionController.getContext();
-      if (!ctx || ctx.mode !== 'selection' || ctx.startLine === undefined) return;
+      if (!ctx || ctx.mode !== 'selection') return;
 
       // Reject the sentinel notePath set when view.file is null
       if (!ctx.notePath || ctx.notePath === 'unknown') return;
 
       const filename = ctx.notePath.split('/').pop() ?? ctx.notePath;
-      const start = ctx.startLine;
-      const end = start + (ctx.lineCount ?? 1) - 1;
-      const mentionText = `@${filename}#${start}-${end}`;
-
       const current = inputEl.value;
       const needsSpace = current.length > 0 && !/\s$/.test(current);
-      inputEl.value = current + (needsSpace ? ' ' : '') + mentionText + ' ';
-      inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
 
-      fileContextManager.attachFile(ctx.notePath);
-      fileContextManager.attachLineRangeMention(ctx.notePath, start, end);
+      if (ctx.startLine !== undefined) {
+        // Source mode: line numbers are known — insert @mention token and register for send-time resolution
+        const start = ctx.startLine;
+        const end = start + (ctx.lineCount ?? 1) - 1;
+        const mentionText = `@${filename}#${start}-${end}`;
+        inputEl.value = current + (needsSpace ? ' ' : '') + mentionText + ' ';
+        inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+        fileContextManager.attachFile(ctx.notePath);
+        fileContextManager.attachLineRangeMention(ctx.notePath, start, end);
+      } else {
+        // Reading mode: no line numbers — inline the selected text directly as an editor_selection block
+        const block = `<editor_selection path="${ctx.notePath}">\n${ctx.selectedText}\n</editor_selection>`;
+        inputEl.value = current + (needsSpace ? '\n\n' : '') + block + '\n\n';
+        inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+        fileContextManager.attachFile(ctx.notePath);
+      }
 
       inputEl.dispatchEvent(new Event('input', { bubbles: true }));
       inputEl.focus();
 
       e.preventDefault();
+    });
+
+    // Shift+drop on the Claudian panel: insert @filename mention(s) into the input.
+    // Without Shift, the drop falls through to Obsidian's default handling.
+    this.registerDomEvent(this.containerEl, 'dragover', (e: DragEvent) => {
+      if (!e.shiftKey) return;
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'link';
+    });
+
+    this.registerDomEvent(this.containerEl, 'drop', (e: DragEvent) => {
+      if (!e.shiftKey) return;
+      const files = e.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const activeTab = this.tabManager?.getActiveTab();
+      if (!activeTab) return;
+      const inputEl = activeTab.dom.inputEl;
+      if (!inputEl) return;
+
+      const vault = this.app.vault;
+      const mentions: string[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const fileName = files[i].name;
+        // Look up vault-relative path by matching file name
+        const vaultFile = vault.getFiles().find((f) => f.name === fileName);
+        const mentionText = vaultFile ? `@${vaultFile.path}` : `@${fileName}`;
+        mentions.push(mentionText);
+        if (vaultFile) {
+          activeTab.ui.fileContextManager?.attachFile(vaultFile.path);
+        }
+      }
+
+      if (mentions.length === 0) return;
+      const current = inputEl.value;
+      const needsSpace = current.length > 0 && !/\s$/.test(current);
+      inputEl.value = current + (needsSpace ? ' ' : '') + mentions.join(' ') + ' ';
+      inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      inputEl.focus();
     });
 
     // Register Escape on the view's Obsidian Scope to prevent Obsidian from
