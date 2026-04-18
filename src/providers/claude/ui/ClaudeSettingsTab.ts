@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
 import { McpSettingsManager } from '../../../features/settings/ui/McpSettingsManager';
@@ -8,8 +9,10 @@ import { t } from '../../../i18n/i18n';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
+import { resolveClaudeModelSelection } from '../modelOptions';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import { AgentSettings } from './AgentSettings';
+import { claudeChatUIConfig } from './ClaudeChatUIConfig';
 import { PluginSettingsManager } from './PluginSettingsManager';
 import { SlashCommandSettings } from './SlashCommandSettings';
 
@@ -18,6 +21,22 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const claudeWorkspace = getClaudeWorkspaceServices();
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
     const claudeSettings = getClaudeProviderSettings(settingsBag);
+
+    const reconcileActiveClaudeModelSelection = (): void => {
+      const activeProvider = settingsBag.settingsProvider;
+      if (activeProvider !== undefined && activeProvider !== 'claude') {
+        return;
+      }
+
+      const currentModel = typeof settingsBag.model === 'string' ? settingsBag.model : '';
+      const nextModel = resolveClaudeModelSelection(settingsBag, currentModel);
+      if (!nextModel || nextModel === currentModel) {
+        return;
+      }
+
+      settingsBag.model = nextModel;
+      claudeChatUIConfig.applyModelDefaults(nextModel, settingsBag);
+    };
 
     // --- Setup ---
 
@@ -183,6 +202,57 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
             context.refreshModelSelectors();
           })
       );
+
+    new Setting(container)
+      .setName(t('settings.customModels.name'))
+      .setDesc(t('settings.customModels.desc'))
+      .addTextArea((text) => {
+        let pendingCustomModels = claudeSettings.customModels;
+        let savedCustomModels = claudeSettings.customModels;
+
+        const commitCustomModels = async (): Promise<void> => {
+          const previousCustomModels = savedCustomModels;
+          const previousModel = typeof settingsBag.model === 'string' ? settingsBag.model : '';
+          const previousTitleModel = typeof settingsBag.titleGenerationModel === 'string'
+            ? settingsBag.titleGenerationModel
+            : '';
+
+          if (pendingCustomModels !== savedCustomModels) {
+            updateClaudeProviderSettings(settingsBag, { customModels: pendingCustomModels });
+            savedCustomModels = pendingCustomModels;
+          }
+
+          reconcileActiveClaudeModelSelection();
+          const didReconcileTitleModel = ProviderSettingsCoordinator
+            .reconcileTitleGenerationModelSelection(settingsBag);
+          const nextModel = typeof settingsBag.model === 'string' ? settingsBag.model : '';
+          const nextTitleModel = typeof settingsBag.titleGenerationModel === 'string'
+            ? settingsBag.titleGenerationModel
+            : '';
+          const didModelSelectionChange = previousModel !== nextModel;
+          const didCustomModelsChange = previousCustomModels !== savedCustomModels;
+
+          if (!didCustomModelsChange && !didModelSelectionChange && !didReconcileTitleModel
+            && previousTitleModel === nextTitleModel) {
+            return;
+          }
+
+          await context.plugin.saveSettings();
+          context.refreshModelSelectors();
+        };
+
+        text
+          .setPlaceholder(t('settings.customModels.placeholder'))
+          .setValue(claudeSettings.customModels)
+          .onChange((value) => {
+            pendingCustomModels = value;
+          });
+        text.inputEl.rows = 6;
+        text.inputEl.cols = 40;
+        text.inputEl.addEventListener('blur', () => {
+          void commitCustomModels();
+        });
+      });
 
     // --- Slash Commands ---
 

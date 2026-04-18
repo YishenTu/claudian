@@ -248,6 +248,11 @@
       "name": "Sonnet 1M context window",
       "desc": "Show Sonnet 1M in the model selector. Requires extra usage on Max, Team, and Enterprise plans. API and Pro users need extra usage."
     },
+    "customModels": {
+      "name": "Custom models",
+      "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
+      "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
+    },
     "enableChrome": {
       "name": "Enable Chrome extension",
       "desc": "Allow Claude to interact with Chrome via the claude-in-chrome extension. Requires the extension to be installed. Requires session restart."

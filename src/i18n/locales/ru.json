@@ -248,6 +248,11 @@
       "name": "Контекстное окно Sonnet 1M",
       "desc": "Показать Sonnet 1M в селекторе моделей. Требуется дополнительное использование в планах Max, Team и Enterprise. Пользователям API и Pro требуется дополнительное использование."
     },
+    "customModels": {
+      "name": "Custom models",
+      "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
+      "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
+    },
     "enableChrome": {
       "name": "Включить расширение Chrome",
       "desc": "Разрешить Claude взаимодействовать с Chrome через расширение claude-in-chrome. Требуется установка расширения. Требуется перезапуск сессии."

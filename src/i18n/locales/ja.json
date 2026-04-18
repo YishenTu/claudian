@@ -248,6 +248,11 @@
       "name": "Sonnet 1Mコンテキストウィンドウ",
       "desc": "モデルセレクターにSonnet 1Mを表示します。Max、Team、Enterpriseプランでは追加使用量が必要です。APIおよびProユーザーは追加使用量が必要です。"
     },
+    "customModels": {
+      "name": "Custom models",
+      "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
+      "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
+    },
     "enableChrome": {
       "name": "Chrome拡張機能を有効化",
       "desc": "claude-in-chrome拡張機能を通じてClaudeがChromeと連携できるようにします。拡張機能のインストールが必要です。セッションの再起動が必要です。"

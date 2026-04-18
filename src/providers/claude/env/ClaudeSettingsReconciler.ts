@@ -2,9 +2,9 @@ import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvir
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { parseEnvironmentVariables } from '../../../utils/env';
+import { resolveClaudeModelSelection } from '../modelOptions';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
-import { DEFAULT_CLAUDE_MODELS, normalizeVisibleModelVariant } from '../types/models';
-import { getCurrentModelFromEnvironment, getModelsFromEnvironment } from './claudeModelEnv';
+import { normalizeVisibleModelVariant } from '../types/models';
 
 const ENV_HASH_MODEL_KEYS = [
   'ANTHROPIC_MODEL',
@@ -45,18 +45,10 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
       }
     }
 
-    const envVars = parseEnvironmentVariables(envText || '');
-    const customModels = getModelsFromEnvironment(envVars);
-
-    if (customModels.length > 0) {
-      const envPreferred = getCurrentModelFromEnvironment(envVars);
-      if (envPreferred && customModels.some(m => m.value === envPreferred)) {
-        settings.model = envPreferred;
-      } else {
-        settings.model = customModels[0].value;
-      }
-    } else {
-      settings.model = DEFAULT_CLAUDE_MODELS[0].value;
+    const currentModel = typeof settings.model === 'string' ? settings.model : '';
+    const nextModel = resolveClaudeModelSelection(settings, currentModel);
+    if (nextModel) {
+      settings.model = nextModel;
     }
 
     updateClaudeProviderSettings(settings, { environmentHash: currentHash });

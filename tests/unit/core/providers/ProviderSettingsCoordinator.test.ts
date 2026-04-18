@@ -3,6 +3,7 @@ import '@/providers';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { Conversation } from '@/core/types';
+import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/settings';
 
 describe('ProviderSettingsCoordinator', () => {
   describe('normalizeProviderSelection', () => {
@@ -85,6 +86,42 @@ describe('ProviderSettingsCoordinator', () => {
       const settings: Record<string, unknown> = { model: 'haiku' };
       const result = ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
       expect(typeof result).toBe('boolean');
+    });
+  });
+
+  describe('reconcileTitleGenerationModelSelection', () => {
+    it('keeps custom title models while they are still available', () => {
+      const settings: Record<string, unknown> = {
+        titleGenerationModel: 'claude-opus-4-6',
+        providerConfigs: {
+          claude: {
+            ...DEFAULT_CLAUDE_PROVIDER_SETTINGS,
+            customModels: 'claude-opus-4-6',
+          },
+        },
+      };
+
+      expect(
+        ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
+      ).toBe(false);
+      expect(settings.titleGenerationModel).toBe('claude-opus-4-6');
+    });
+
+    it('clears titleGenerationModel when no provider exposes the saved model', () => {
+      const settings: Record<string, unknown> = {
+        titleGenerationModel: 'claude-opus-4-6',
+        providerConfigs: {
+          claude: {
+            ...DEFAULT_CLAUDE_PROVIDER_SETTINGS,
+            customModels: '',
+          },
+        },
+      };
+
+      expect(
+        ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
+      ).toBe(true);
+      expect(settings.titleGenerationModel).toBe('');
     });
   });
 

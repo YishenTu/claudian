@@ -13,6 +13,7 @@ export interface ClaudeProviderSettings {
   enableBangBash: boolean;
   enableOpus1M: boolean;
   enableSonnet1M: boolean;
+  customModels: string;
   lastModel: string;
   environmentVariables: string;
   environmentHash: string;
@@ -27,6 +28,7 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   enableBangBash: false,
   enableOpus1M: false,
   enableSonnet1M: false,
+  customModels: '',
   lastModel: 'haiku',
   environmentVariables: '',
   environmentHash: '',
@@ -74,6 +76,8 @@ export function getClaudeProviderSettings(
     enableSonnet1M: (config.enableSonnet1M as boolean | undefined)
       ?? (settings.enableSonnet1M as boolean | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.enableSonnet1M,
+    customModels: (config.customModels as string | undefined)
+      ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.customModels,
     lastModel: (config.lastModel as string | undefined)
       ?? (settings.lastClaudeModel as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.lastModel,

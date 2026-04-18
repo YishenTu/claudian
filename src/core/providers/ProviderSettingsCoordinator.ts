@@ -69,6 +69,27 @@ function normalizeReasoningValue(
 }
 
 export class ProviderSettingsCoordinator {
+  static reconcileTitleGenerationModelSelection(settings: Record<string, unknown>): boolean {
+    const currentModel = typeof settings.titleGenerationModel === 'string'
+      ? settings.titleGenerationModel
+      : '';
+    if (!currentModel) {
+      return false;
+    }
+
+    const isValid = ProviderRegistry.getRegisteredProviderIds().some((providerId) =>
+      ProviderRegistry.getChatUIConfig(providerId)
+        .getModelOptions(settings)
+        .some((option) => option.value === currentModel)
+    );
+    if (isValid) {
+      return false;
+    }
+
+    settings.titleGenerationModel = '';
+    return true;
+  }
+
   static normalizeProviderSelection(settings: Record<string, unknown>): boolean {
     const next = getSettingsProviderId(settings);
 
@@ -265,6 +286,10 @@ export class ProviderSettingsCoordinator {
       allInvalidated.push(...invalidatedConversations);
     }
 
+    if (this.reconcileTitleGenerationModelSelection(settings)) {
+      anyChanged = true;
+    }
+
     return { changed: anyChanged, invalidatedConversations: allInvalidated };
   }
 
@@ -290,6 +315,10 @@ export class ProviderSettingsCoordinator {
           mergeProviderSettings(settings, targetSettings);
         }
       }
+    }
+
+    if (this.reconcileTitleGenerationModelSelection(settings)) {
+      anyChanged = true;
     }
     return anyChanged;
   }

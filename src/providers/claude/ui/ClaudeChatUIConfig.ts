@@ -1,4 +1,3 @@
-import { getRuntimeEnvironmentVariables } from '../../../core/providers/providerEnvironment';
 import type {
   ProviderChatUIConfig,
   ProviderIconSvg,
@@ -6,7 +5,8 @@ import type {
   ProviderReasoningOption,
   ProviderUIOption,
 } from '../../../core/providers/types';
-import { getCustomModelIds, getModelsFromEnvironment } from '../env/claudeModelEnv';
+import { getCustomModelIds } from '../env/claudeModelEnv';
+import { getClaudeModelOptions } from '../modelOptions';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import {
   type ClaudeModel,
@@ -14,7 +14,6 @@ import {
   DEFAULT_EFFORT_LEVEL,
   DEFAULT_THINKING_BUDGET,
   EFFORT_LEVELS,
-  filterVisibleModelOptions,
   getContextWindowSize,
   isAdaptiveThinkingModel,
   normalizeEffortLevel,
@@ -39,20 +38,7 @@ const CLAUDE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
 
 export const claudeChatUIConfig: ProviderChatUIConfig = {
   getModelOptions(settings) {
-    const customModels = getModelsFromEnvironment(
-      getRuntimeEnvironmentVariables(settings, 'claude'),
-    );
-    if (customModels.length > 0) {
-      return customModels;
-    }
-
-    const models = [...DEFAULT_CLAUDE_MODELS];
-    const claudeSettings = getClaudeProviderSettings(settings);
-    return filterVisibleModelOptions(
-      models,
-      claudeSettings.enableOpus1M,
-      claudeSettings.enableSonnet1M,
-    );
+    return getClaudeModelOptions(settings);
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
