@@ -51,12 +51,17 @@ function createMockProcess(): ChildProcess {
 }
 
 describe('CodexAppServerProcess', () => {
+  const originalPlatform = process.platform;
   let mockProc: ChildProcess;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockProc = createMockProcess();
     mockSpawn.mockReturnValue(mockProc);
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
   describe('spawn', () => {
@@ -70,6 +75,24 @@ describe('CodexAppServerProcess', () => {
         expect.objectContaining({
           stdio: ['pipe', 'pipe', 'pipe'],
           cwd: '/workspace',
+        }),
+      );
+    });
+
+    it('wraps Windows .cmd shims through cmd.exe and quotes shell metacharacters', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+
+      const server = new CodexAppServerProcess(createLaunchSpec({
+        command: 'C:\\Users\\R&D\\AppData\\Roaming\\npm\\codex.cmd',
+      }));
+      server.start();
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        process.env.ComSpec || process.env.comspec || 'cmd.exe',
+        ['/d', '/s', '/c', '""C:\\Users\\R&D\\AppData\\Roaming\\npm\\codex.cmd" app-server --listen stdio://"'],
+        expect.objectContaining({
+          windowsHide: true,
+          windowsVerbatimArguments: true,
         }),
       );
     });
