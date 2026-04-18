@@ -595,17 +595,17 @@ export class ClaudianView extends ItemView {
       e.preventDefault();
     });
 
-    // Shift+drop on the Claudian panel: insert @filename mention(s) into the input.
+    // Shift+drop: capture phase on document so we intercept before Obsidian's own drop handler.
     // Without Shift, the drop falls through to Obsidian's default handling.
-    this.registerDomEvent(this.containerEl, 'dragover', (e: DragEvent) => {
+    const onDragOver = (e: DragEvent) => {
       if (!e.shiftKey) return;
-      // Accept any drag when Shift is held — we inspect types in the drop handler
+      if (!this.containerEl.contains(e.target as Node)) return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'link';
-    });
-
-    this.registerDomEvent(this.containerEl, 'drop', (e: DragEvent) => {
+    };
+    const onDrop = (e: DragEvent) => {
       if (!e.shiftKey) return;
+      if (!this.containerEl.contains(e.target as Node)) return;
       e.preventDefault();
       e.stopPropagation();
 
@@ -659,6 +659,12 @@ export class ClaudianView extends ItemView {
       inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
       inputEl.dispatchEvent(new Event('input', { bubbles: true }));
       inputEl.focus();
+    };
+    document.addEventListener('dragover', onDragOver, true);
+    document.addEventListener('drop', onDrop, true);
+    this.register(() => {
+      document.removeEventListener('dragover', onDragOver, true);
+      document.removeEventListener('drop', onDrop, true);
     });
 
     // Register Escape on the view's Obsidian Scope to prevent Obsidian from
