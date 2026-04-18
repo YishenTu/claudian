@@ -599,15 +599,13 @@ export class ClaudianView extends ItemView {
     // Without Shift, the drop falls through to Obsidian's default handling.
     this.registerDomEvent(this.containerEl, 'dragover', (e: DragEvent) => {
       if (!e.shiftKey) return;
-      if (!e.dataTransfer?.types.includes('Files')) return;
+      // Accept any drag when Shift is held — we inspect types in the drop handler
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'link';
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'link';
     });
 
     this.registerDomEvent(this.containerEl, 'drop', (e: DragEvent) => {
       if (!e.shiftKey) return;
-      const files = e.dataTransfer?.files;
-      if (!files || files.length === 0) return;
       e.preventDefault();
       e.stopPropagation();
 
@@ -616,17 +614,41 @@ export class ClaudianView extends ItemView {
       const inputEl = activeTab.dom.inputEl;
       if (!inputEl) return;
 
+      const dt = e.dataTransfer;
+      if (!dt) return;
+
       const vault = this.app.vault;
       const mentions: string[] = [];
 
-      for (let i = 0; i < files.length; i++) {
-        const fileName = files[i].name;
-        // Look up vault-relative path by matching file name
-        const vaultFile = vault.getFiles().find((f) => f.name === fileName);
-        const mentionText = vaultFile ? `@${vaultFile.path}` : `@${fileName}`;
-        mentions.push(mentionText);
-        if (vaultFile) {
-          activeTab.ui.fileContextManager?.attachFile(vaultFile.path);
+      // Obsidian internal drag: text/plain = "obsidian://open?vault=...&file=<encoded-path>"
+      const textData = dt.getData('text/plain');
+      if (textData) {
+        for (const raw of textData.split('\n')) {
+          const line = raw.trim();
+          try {
+            const url = new URL(line);
+            const filePath = url.searchParams.get('file');
+            if (filePath) {
+              const decoded = decodeURIComponent(filePath);
+              const vaultFile = vault.getAbstractFileByPath(decoded) ?? vault.getAbstractFileByPath(decoded + '.md');
+              const mentionPath = vaultFile ? vaultFile.path : decoded;
+              mentions.push(`@${mentionPath}`);
+              if (vaultFile) activeTab.ui.fileContextManager?.attachFile(vaultFile.path);
+            }
+          } catch {
+            // not a valid URL, skip
+          }
+        }
+      }
+
+      // Native OS file drop fallback (files dragged from Finder, etc.)
+      if (mentions.length === 0 && dt.files.length > 0) {
+        for (let i = 0; i < dt.files.length; i++) {
+          const fileName = dt.files[i].name;
+          const vaultFile = vault.getFiles().find((f) => f.name === fileName);
+          const mentionText = vaultFile ? `@${vaultFile.path}` : `@${fileName}`;
+          mentions.push(mentionText);
+          if (vaultFile) activeTab.ui.fileContextManager?.attachFile(vaultFile.path);
         }
       }
 
