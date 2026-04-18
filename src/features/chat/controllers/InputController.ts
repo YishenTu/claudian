@@ -29,6 +29,7 @@ import type { CanvasSelectionContext } from '../../../utils/canvas';
 import { formatDurationMmSs } from '../../../utils/date';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
+import { resolveLineRangeMentions } from '../../../utils/lineRangeMention';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
 import { InlineExitPlanMode } from '../rendering/InlineExitPlanMode';
@@ -260,13 +261,23 @@ export class InputController {
       imageContextManager?.clearImages();
     }
 
-    const { displayContent, turnRequest } = this.buildTurnSubmission({
+    let { displayContent, turnRequest } = this.buildTurnSubmission({
       content,
       images: imagesForMessage,
       editorContextOverride: options?.editorContextOverride,
       browserContextOverride: options?.browserContextOverride,
       canvasContextOverride: options?.canvasContextOverride,
     });
+
+    if (turnRequest.lineRangeMentions && turnRequest.lineRangeMentions.size > 0) {
+      const vault = this.deps.plugin.app.vault;
+      const resolvedText = await resolveLineRangeMentions(
+        turnRequest.text,
+        turnRequest.lineRangeMentions,
+        (filePath) => vault.adapter.read(filePath),
+      );
+      turnRequest = { ...turnRequest, text: resolvedText };
+    }
 
     fileContextManager?.markCurrentNoteSent();
 
@@ -652,6 +663,7 @@ export class InputController {
       ? fileContextManager.transformContextMentions(options.content)
       : options.content;
     const enabledMcpServers = mcpServerSelector?.getEnabledServers();
+    const lineRangeMentions = fileContextManager?.getLineRangeMentions();
 
     return {
       displayContent: options.content,
@@ -667,6 +679,9 @@ export class InputController {
           : undefined,
         enabledMcpServers: enabledMcpServers && enabledMcpServers.size > 0
           ? enabledMcpServers
+          : undefined,
+        lineRangeMentions: lineRangeMentions && lineRangeMentions.size > 0
+          ? lineRangeMentions
           : undefined,
       },
     };
