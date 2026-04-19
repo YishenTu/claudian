@@ -23,6 +23,7 @@ import {
   TOOL_WRITE,
   TOOL_WRITE_STDIN,
 } from '../../../core/tools/toolNames';
+import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo } from '../../../core/types';
 import { MCP_ICON_SVG } from '../../../shared/icons';
 import { parseApplyPatchDiffs } from '../../../utils/diff';
@@ -723,8 +724,8 @@ export function renderTodoWriteResult(
   renderTodoItems(container, todos);
 }
 
-export function isBlockedToolResult(content: string, isError?: boolean): boolean {
-  const lower = content.toLowerCase();
+export function isBlockedToolResult(content: unknown, isError?: boolean): boolean {
+  const lower = extractToolResultContent(content, { fallbackIndent: 2 }).toLowerCase();
   if (lower.includes('outside the vault')) return true;
   if (lower.includes('access denied')) return true;
   if (lower.includes('user denied')) return true;
