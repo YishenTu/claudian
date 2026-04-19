@@ -45,11 +45,11 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     return this.getModelOptions(settings).some((option: ProviderUIOption) => option.value === model);
   },
 
-  isAdaptiveReasoningModel(model: string): boolean {
+  isAdaptiveReasoningModel(model: string, _settings: Record<string, unknown>): boolean {
     return isAdaptiveThinkingModel(model);
   },
 
-  getReasoningOptions(model: string): ProviderReasoningOption[] {
+  getReasoningOptions(model: string, _settings: Record<string, unknown>): ProviderReasoningOption[] {
     if (isAdaptiveThinkingModel(model)) {
       const levels = supportsXHighEffort(model)
         ? EFFORT_LEVELS
@@ -59,7 +59,7 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     return THINKING_BUDGETS.map(b => ({ value: b.value, label: b.label, tokens: b.tokens }));
   },
 
-  getDefaultReasoningValue(model: string): string {
+  getDefaultReasoningValue(model: string, _settings: Record<string, unknown>): string {
     if (isAdaptiveThinkingModel(model)) {
       return DEFAULT_EFFORT_LEVEL[model] ?? 'high';
     }

@@ -73,15 +73,15 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
     return looksLikeCodexModel(model);
   },
 
-  isAdaptiveReasoningModel(): boolean {
+  isAdaptiveReasoningModel(_model: string, _settings: Record<string, unknown>): boolean {
     return true;
   },
 
-  getReasoningOptions(): ProviderReasoningOption[] {
+  getReasoningOptions(_model: string, _settings: Record<string, unknown>): ProviderReasoningOption[] {
     return [...EFFORT_LEVELS];
   },
 
-  getDefaultReasoningValue(): string {
+  getDefaultReasoningValue(_model: string, _settings: Record<string, unknown>): string {
     return 'medium';
   },
 

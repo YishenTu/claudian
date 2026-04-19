@@ -175,12 +175,13 @@ export class ThinkingBudgetSelector {
 
     const currentEffort = this.callbacks.getSettings().effortLevel;
     const uiConfig = this.callbacks.getUIConfig();
-    const model = this.callbacks.getSettings().model;
-    const options = uiConfig.getReasoningOptions(model);
+    const settings = this.callbacks.getSettings();
+    const model = settings.model;
+    const options = uiConfig.getReasoningOptions(model, settings);
     const currentInfo = options.find(e => e.value === currentEffort);
 
     const currentEl = this.effortGearsEl.createDiv({ cls: 'claudian-thinking-current' });
-    currentEl.setText(currentInfo?.label || 'High');
+    currentEl.setText(currentInfo?.label || options[0]?.label || 'High');
 
     const optionsEl = this.effortGearsEl.createDiv({ cls: 'claudian-thinking-options' });
 
@@ -206,12 +207,13 @@ export class ThinkingBudgetSelector {
 
     const currentBudget = this.callbacks.getSettings().thinkingBudget;
     const uiConfig = this.callbacks.getUIConfig();
-    const model = this.callbacks.getSettings().model;
-    const options: ProviderReasoningOption[] = uiConfig.getReasoningOptions(model);
+    const settings = this.callbacks.getSettings();
+    const model = settings.model;
+    const options: ProviderReasoningOption[] = uiConfig.getReasoningOptions(model, settings);
     const currentBudgetInfo = options.find(b => b.value === currentBudget);
 
     const currentEl = this.budgetGearsEl.createDiv({ cls: 'claudian-thinking-current' });
-    currentEl.setText(currentBudgetInfo?.label || 'Off');
+    currentEl.setText(currentBudgetInfo?.label || options[0]?.label || 'Off');
 
     const optionsEl = this.budgetGearsEl.createDiv({ cls: 'claudian-thinking-options' });
 
@@ -241,9 +243,21 @@ export class ThinkingBudgetSelector {
       return;
     }
 
-    const model = this.callbacks.getSettings().model;
+    const settings = this.callbacks.getSettings();
+    const model = settings.model;
     const uiConfig = this.callbacks.getUIConfig();
-    const adaptive = uiConfig.isAdaptiveReasoningModel(model);
+    const options = uiConfig.getReasoningOptions(model, settings);
+    const defaultValue = uiConfig.getDefaultReasoningValue(model, settings);
+    const shouldHide = options.length === 0
+      || (options.length === 1 && options[0]?.value === defaultValue);
+
+    if (shouldHide) {
+      if (this.effortEl) this.effortEl.style.display = 'none';
+      if (this.budgetEl) this.budgetEl.style.display = 'none';
+      return;
+    }
+
+    const adaptive = uiConfig.isAdaptiveReasoningModel(model, settings);
 
     if (this.effortEl) {
       this.effortEl.style.display = adaptive ? '' : 'none';

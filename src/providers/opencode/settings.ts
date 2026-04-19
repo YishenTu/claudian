@@ -3,6 +3,7 @@ import { getProviderEnvironmentVariables } from '../../core/providers/providerEn
 import {
   normalizeOpencodeDiscoveredModels,
   type OpencodeDiscoveredModel,
+  resolveOpencodeBaseModelRawId,
 } from './models';
 
 export interface OpencodeProviderSettings {
@@ -11,6 +12,7 @@ export interface OpencodeProviderSettings {
   enabled: boolean;
   environmentVariables: string;
   prewarm: boolean;
+  preferredThinkingByModel: Record<string, string>;
   visibleModels: string[];
 }
 
@@ -20,10 +22,14 @@ export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<OpencodeProviderSettin
   enabled: false,
   environmentVariables: '',
   prewarm: true,
+  preferredThinkingByModel: {},
   visibleModels: [],
 });
 
-export function normalizeOpencodeVisibleModels(value: unknown): string[] {
+export function normalizeOpencodeVisibleModels(
+  value: unknown,
+  discoveredModels: OpencodeDiscoveredModel[] = [],
+): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -35,7 +41,7 @@ export function normalizeOpencodeVisibleModels(value: unknown): string[] {
       continue;
     }
 
-    const trimmed = entry.trim();
+    const trimmed = resolveOpencodeBaseModelRawId(entry.trim(), discoveredModels);
     if (!trimmed || seen.has(trimmed)) {
       continue;
     }
@@ -47,14 +53,41 @@ export function normalizeOpencodeVisibleModels(value: unknown): string[] {
   return normalized;
 }
 
+export function normalizeOpencodePreferredThinkingByModel(
+  value: unknown,
+  discoveredModels: OpencodeDiscoveredModel[] = [],
+): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const normalized: Record<string, string> = {};
+  for (const [rawId, thinkingLevel] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof thinkingLevel !== 'string') {
+      continue;
+    }
+
+    const normalizedRawId = resolveOpencodeBaseModelRawId(rawId.trim(), discoveredModels);
+    const normalizedThinkingLevel = thinkingLevel.trim();
+    if (!normalizedRawId || !normalizedThinkingLevel) {
+      continue;
+    }
+
+    normalized[normalizedRawId] = normalizedThinkingLevel;
+  }
+
+  return normalized;
+}
+
 export function getOpencodeProviderSettings(
   settings: Record<string, unknown>,
 ): OpencodeProviderSettings {
   const config = getProviderConfig(settings, 'opencode');
+  const discoveredModels = normalizeOpencodeDiscoveredModels(config.discoveredModels);
   return {
     cliPath: (config.cliPath as string | undefined)
       ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath,
-    discoveredModels: normalizeOpencodeDiscoveredModels(config.discoveredModels),
+    discoveredModels,
     enabled: (config.enabled as boolean | undefined)
       ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.enabled,
     environmentVariables: (config.environmentVariables as string | undefined)
@@ -62,7 +95,11 @@ export function getOpencodeProviderSettings(
       ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.environmentVariables,
     prewarm: (config.prewarm as boolean | undefined)
       ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.prewarm,
-    visibleModels: normalizeOpencodeVisibleModels(config.visibleModels),
+    preferredThinkingByModel: normalizeOpencodePreferredThinkingByModel(
+      config.preferredThinkingByModel,
+      discoveredModels,
+    ),
+    visibleModels: normalizeOpencodeVisibleModels(config.visibleModels, discoveredModels),
   };
 }
 
@@ -70,9 +107,21 @@ export function updateOpencodeProviderSettings(
   settings: Record<string, unknown>,
   updates: Partial<OpencodeProviderSettings>,
 ): OpencodeProviderSettings {
+  const current = getOpencodeProviderSettings(settings);
   const next: OpencodeProviderSettings = {
-    ...getOpencodeProviderSettings(settings),
+    ...current,
     ...updates,
+    discoveredModels: normalizeOpencodeDiscoveredModels(
+      updates.discoveredModels ?? current.discoveredModels,
+    ),
+    preferredThinkingByModel: normalizeOpencodePreferredThinkingByModel(
+      updates.preferredThinkingByModel ?? current.preferredThinkingByModel,
+      normalizeOpencodeDiscoveredModels(updates.discoveredModels ?? current.discoveredModels),
+    ),
+    visibleModels: normalizeOpencodeVisibleModels(
+      updates.visibleModels ?? current.visibleModels,
+      normalizeOpencodeDiscoveredModels(updates.discoveredModels ?? current.discoveredModels),
+    ),
   };
 
   setProviderConfig(settings, 'opencode', {
@@ -81,6 +130,7 @@ export function updateOpencodeProviderSettings(
     enabled: next.enabled,
     environmentVariables: next.environmentVariables,
     prewarm: next.prewarm,
+    preferredThinkingByModel: next.preferredThinkingByModel,
     visibleModels: next.visibleModels,
   });
 

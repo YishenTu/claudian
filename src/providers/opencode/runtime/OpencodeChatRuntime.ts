@@ -55,12 +55,16 @@ import {
 } from '../../acp';
 import { OPENCODE_PROVIDER_CAPABILITIES } from '../capabilities';
 import {
+  combineOpencodeRawModelSelection,
   decodeOpencodeModelId,
   encodeOpencodeModelId,
+  extractOpencodeModelVariantValue,
   extractOpencodeSessionModelState,
   isOpencodeModelSelectionId,
+  OPENCODE_DEFAULT_THINKING_LEVEL,
   OPENCODE_SYNTHETIC_MODEL_ID,
   type OpencodeDiscoveredModel,
+  resolveOpencodeBaseModelRawId,
 } from '../models';
 import { OpencodeToolStreamAdapter } from '../normalization/opencodeToolNormalization';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '../settings';
@@ -571,7 +575,21 @@ export class OpencodeChatRuntime implements ChatRuntime {
       return null;
     }
 
-    return decodeOpencodeModelId(selectedModel);
+    const selectedBaseRawModelId = decodeOpencodeModelId(selectedModel);
+    if (!selectedBaseRawModelId) {
+      return null;
+    }
+
+    const discoveredModels = getOpencodeProviderSettings(providerSettings).discoveredModels;
+    const effortLevel = typeof providerSettings.effortLevel === 'string'
+      ? providerSettings.effortLevel
+      : OPENCODE_DEFAULT_THINKING_LEVEL;
+    const normalizedBaseRawModelId = resolveOpencodeBaseModelRawId(selectedBaseRawModelId, discoveredModels);
+    return combineOpencodeRawModelSelection(
+      normalizedBaseRawModelId,
+      effortLevel,
+      discoveredModels,
+    );
   }
 
   private getActiveDisplayModel(queryOptions?: ChatRuntimeQueryOptions): string | undefined {
@@ -587,7 +605,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
       && selectedModel !== OPENCODE_SYNTHETIC_MODEL_ID
       && isOpencodeModelSelectionId(selectedModel)
     ) {
-      return selectedModel;
+      const selectedRawModelId = this.resolveSelectedRawModelId(queryOptions);
+      return selectedRawModelId
+        ? encodeOpencodeModelId(selectedRawModelId)
+        : selectedModel;
     }
 
     return this.currentSessionModelId
@@ -632,28 +653,49 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
     const currentSettings = getOpencodeProviderSettings(settingsBag);
     const hasDiscoveredModels = state.discoveredModels.length > 0;
-    const nextVisibleModels = currentSettings.visibleModels.length === 0 && state.currentRawModelId
-      ? [state.currentRawModelId]
+    const currentBaseRawModelId = state.currentRawModelId
+      ? resolveOpencodeBaseModelRawId(state.currentRawModelId, state.discoveredModels)
+      : null;
+    const currentThinkingLevel = state.currentRawModelId
+      ? extractOpencodeModelVariantValue(state.currentRawModelId, state.discoveredModels)
+      : null;
+    const nextVisibleModels = currentSettings.visibleModels.length === 0 && currentBaseRawModelId
+      ? [currentBaseRawModelId]
       : currentSettings.visibleModels;
+    const nextPreferredThinkingByModel = currentBaseRawModelId && currentThinkingLevel
+      ? {
+        ...currentSettings.preferredThinkingByModel,
+        [currentBaseRawModelId]: currentThinkingLevel,
+      }
+      : currentSettings.preferredThinkingByModel;
     const shouldUpdateDiscoveredModels = hasDiscoveredModels
       && !sameDiscoveredModels(currentSettings.discoveredModels, state.discoveredModels);
     const shouldSeedVisibleModels = !sameVisibleModels(currentSettings.visibleModels, nextVisibleModels);
-    let changed = shouldUpdateDiscoveredModels || shouldSeedVisibleModels;
+    const shouldSeedPreferredThinking = !sameStringMap(
+      currentSettings.preferredThinkingByModel,
+      nextPreferredThinkingByModel,
+    );
+    let changed = shouldUpdateDiscoveredModels || shouldSeedVisibleModels || shouldSeedPreferredThinking;
 
-    if (shouldUpdateDiscoveredModels || shouldSeedVisibleModels) {
+    if (shouldUpdateDiscoveredModels || shouldSeedVisibleModels || shouldSeedPreferredThinking) {
       updateOpencodeProviderSettings(settingsBag, {
         ...(shouldUpdateDiscoveredModels ? { discoveredModels: state.discoveredModels } : {}),
+        ...(shouldSeedPreferredThinking ? { preferredThinkingByModel: nextPreferredThinkingByModel } : {}),
         ...(shouldSeedVisibleModels ? { visibleModels: nextVisibleModels } : {}),
       });
     }
 
-    const currentModelSelection = state.currentRawModelId
-      ? encodeOpencodeModelId(state.currentRawModelId)
+    const currentModelSelection = currentBaseRawModelId
+      ? encodeOpencodeModelId(currentBaseRawModelId)
       : null;
     if (currentModelSelection) {
       const savedProviderModel = ensureProviderProjectionMap(settingsBag, 'savedProviderModel');
       const savedModel = typeof savedProviderModel.opencode === 'string'
         ? savedProviderModel.opencode
+        : '';
+      const savedProviderEffort = ensureProviderProjectionMap(settingsBag, 'savedProviderEffort');
+      const savedEffort = typeof savedProviderEffort.opencode === 'string'
+        ? savedProviderEffort.opencode
         : '';
 
       if (!savedModel || savedModel === OPENCODE_SYNTHETIC_MODEL_ID) {
@@ -661,10 +703,20 @@ export class OpencodeChatRuntime implements ChatRuntime {
         changed = true;
       }
 
+      if (currentThinkingLevel && !savedEffort) {
+        savedProviderEffort.opencode = currentThinkingLevel;
+        changed = true;
+      }
+
       if (ProviderRegistry.resolveSettingsProviderId(settingsBag) === this.providerId) {
         const activeModel = typeof settingsBag.model === 'string' ? settingsBag.model : '';
+        const activeEffort = typeof settingsBag.effortLevel === 'string' ? settingsBag.effortLevel : '';
         if (!activeModel || activeModel === OPENCODE_SYNTHETIC_MODEL_ID) {
           settingsBag.model = currentModelSelection;
+          changed = true;
+        }
+        if (currentThinkingLevel && !activeEffort) {
+          settingsBag.effortLevel = currentThinkingLevel;
           changed = true;
         }
       }
@@ -913,9 +965,19 @@ function sameVisibleModels(left: string[], right: string[]): boolean {
   return left.every((model, index) => model === right[index]);
 }
 
+function sameStringMap(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
+  if (leftEntries.length !== rightEntries.length) {
+    return false;
+  }
+
+  return leftEntries.every(([key, value]) => right[key] === value);
+}
+
 function ensureProviderProjectionMap(
   settings: Record<string, unknown>,
-  key: 'savedProviderModel',
+  key: 'savedProviderEffort' | 'savedProviderModel',
 ): Record<string, string> {
   const current = settings[key];
   if (current && typeof current === 'object' && !Array.isArray(current)) {

@@ -58,14 +58,15 @@ function mergeProviderSettings(
 
 function normalizeReasoningValue(
   uiConfig: ProviderChatUIConfig,
+  settings: Record<string, unknown>,
   model: string,
   value: unknown,
 ): string {
-  const allowedValues = new Set(uiConfig.getReasoningOptions(model).map(option => option.value));
+  const allowedValues = new Set(uiConfig.getReasoningOptions(model, settings).map(option => option.value));
   if (typeof value === 'string' && allowedValues.has(value)) {
     return value;
   }
-  return uiConfig.getDefaultReasoningValue(model);
+  return uiConfig.getDefaultReasoningValue(model, settings);
 }
 
 export class ProviderSettingsCoordinator {
@@ -200,12 +201,12 @@ export class ProviderSettingsCoordinator {
       settings.effortLevel = savedEffort[providerId];
     } else if (canReuseCurrentProjection && currentEffort !== undefined) {
       settings.effortLevel = currentEffort;
-    } else if (model && uiConfig.isAdaptiveReasoningModel(model)) {
-      settings.effortLevel = uiConfig.getDefaultReasoningValue(model);
+    } else if (model && uiConfig.isAdaptiveReasoningModel(model, settings)) {
+      settings.effortLevel = uiConfig.getDefaultReasoningValue(model, settings);
     }
 
-    if (model && uiConfig.isAdaptiveReasoningModel(model)) {
-      settings.effortLevel = normalizeReasoningValue(uiConfig, model, settings.effortLevel);
+    if (model && uiConfig.isAdaptiveReasoningModel(model, settings)) {
+      settings.effortLevel = normalizeReasoningValue(uiConfig, settings, model, settings.effortLevel);
     }
 
     if (serviceTierToggle) {
@@ -230,12 +231,12 @@ export class ProviderSettingsCoordinator {
       settings.thinkingBudget = savedBudget[providerId];
     } else if (canReuseCurrentProjection && currentBudget !== undefined) {
       settings.thinkingBudget = currentBudget;
-    } else if (model && !uiConfig.isAdaptiveReasoningModel(model)) {
-      settings.thinkingBudget = uiConfig.getDefaultReasoningValue(model);
+    } else if (model && !uiConfig.isAdaptiveReasoningModel(model, settings)) {
+      settings.thinkingBudget = uiConfig.getDefaultReasoningValue(model, settings);
     }
 
-    if (model && !uiConfig.isAdaptiveReasoningModel(model)) {
-      settings.thinkingBudget = normalizeReasoningValue(uiConfig, model, settings.thinkingBudget);
+    if (model && !uiConfig.isAdaptiveReasoningModel(model, settings)) {
+      settings.thinkingBudget = normalizeReasoningValue(uiConfig, settings, model, settings.thinkingBudget);
     }
   }
 

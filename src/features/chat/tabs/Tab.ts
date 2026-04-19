@@ -812,11 +812,13 @@ function initializeInputToolbar(
     onThinkingBudgetChange: async (budget: string) => {
       await updateTabProviderSettings(tab, plugin, (settings) => {
         settings.thinkingBudget = budget;
+        getTabChatUIConfig(tab, plugin).applyReasoningSelection?.(settings.model, budget, settings);
       });
     },
     onEffortLevelChange: async (effort: string) => {
       await updateTabProviderSettings(tab, plugin, (settings) => {
         settings.effortLevel = effort;
+        getTabChatUIConfig(tab, plugin).applyReasoningSelection?.(settings.model, effort, settings);
       });
     },
     onServiceTierChange: async (serviceTier: string) => {

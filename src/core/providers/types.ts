@@ -214,13 +214,13 @@ export interface ProviderChatUIConfig {
   ownsModel(model: string, settings: Record<string, unknown>): boolean;
 
   /** Whether the model uses adaptive reasoning (effort levels vs token budgets). */
-  isAdaptiveReasoningModel(model: string): boolean;
+  isAdaptiveReasoningModel(model: string, settings: Record<string, unknown>): boolean;
 
   /** Reasoning options for the current model (effort levels if adaptive, budgets otherwise). */
-  getReasoningOptions(model: string): ProviderReasoningOption[];
+  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[];
 
   /** Default reasoning value for the model. */
-  getDefaultReasoningValue(model: string): string;
+  getDefaultReasoningValue(model: string, settings: Record<string, unknown>): string;
 
   /** Context window size in tokens. */
   getContextWindowSize(model: string, customLimits?: Record<string, number>): number;
@@ -230,6 +230,9 @@ export interface ProviderChatUIConfig {
 
   /** Apply model change side effects to settings (defaults, tracking). */
   applyModelDefaults(model: string, settings: unknown): void;
+
+  /** Optional hook when the toolbar changes a reasoning selection. */
+  applyReasoningSelection?(model: string, value: string, settings: unknown): void;
 
   /** Normalize model variant based on visibility flags. Provider extracts what it needs from the settings bag. */
   normalizeModelVariant(model: string, settings: Record<string, unknown>): string;

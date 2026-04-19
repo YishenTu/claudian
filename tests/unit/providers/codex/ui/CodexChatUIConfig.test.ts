@@ -28,14 +28,14 @@ describe('CodexChatUIConfig', () => {
 
   describe('isAdaptiveReasoningModel', () => {
     it('should return true for all models', () => {
-      expect(codexChatUIConfig.isAdaptiveReasoningModel('gpt-5.4')).toBe(true);
-      expect(codexChatUIConfig.isAdaptiveReasoningModel('unknown-model')).toBe(true);
+      expect(codexChatUIConfig.isAdaptiveReasoningModel('gpt-5.4', {})).toBe(true);
+      expect(codexChatUIConfig.isAdaptiveReasoningModel('unknown-model', {})).toBe(true);
     });
   });
 
   describe('getReasoningOptions', () => {
     it('should return effort levels', () => {
-      const options = codexChatUIConfig.getReasoningOptions('gpt-5.4');
+      const options = codexChatUIConfig.getReasoningOptions('gpt-5.4', {});
       expect(options).toHaveLength(4);
       expect(options.map(o => o.value)).toEqual(['low', 'medium', 'high', 'xhigh']);
     });
@@ -43,7 +43,7 @@ describe('CodexChatUIConfig', () => {
 
   describe('getDefaultReasoningValue', () => {
     it('should return medium for all models', () => {
-      expect(codexChatUIConfig.getDefaultReasoningValue('gpt-5.4')).toBe('medium');
+      expect(codexChatUIConfig.getDefaultReasoningValue('gpt-5.4', {})).toBe('medium');
     });
   });
 

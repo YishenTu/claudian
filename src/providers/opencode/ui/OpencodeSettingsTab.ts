@@ -3,6 +3,7 @@ import { Setting } from 'obsidian';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
 import {
+  buildOpencodeBaseModels,
   type OpencodeDiscoveredModel,
   splitOpencodeModelLabel,
 } from '../models';
@@ -147,7 +148,10 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     const persistVisibleModels = async (visibleModels: string[]): Promise<void> => {
       const currentVisibleModels = getOpencodeProviderSettings(settingsBag).visibleModels;
-      const normalized = normalizeOpencodeVisibleModels(visibleModels);
+      const normalized = normalizeOpencodeVisibleModels(
+        visibleModels,
+        getOpencodeProviderSettings(settingsBag).discoveredModels,
+      );
       if (sameStringList(currentVisibleModels, normalized)) {
         return;
       }
@@ -195,9 +199,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
       for (const rawId of current.visibleModels) {
         const enriched = enrichedByRawId.get(rawId);
-        const chipEl = selectedEl.createEl('span', {
-          cls: 'claudian-opencode-model-picker-chip',
-        });
+        const chipEl = selectedEl.createEl('span', { cls: 'claudian-opencode-model-picker-chip' });
 
         if (enriched && !enriched.isAvailable) {
           chipEl.classList.add('claudian-opencode-model-picker-chip--unavailable');
@@ -331,6 +333,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
             text: model.description,
           });
         }
+
       }
     };
 
@@ -362,8 +365,9 @@ function buildEnrichedModels(
 ): EnrichedModel[] {
   const enriched: EnrichedModel[] = [];
   const discoveredIds = new Set<string>();
+  const baseModels = buildOpencodeBaseModels(discoveredModels);
 
-  for (const model of discoveredModels) {
+  for (const model of baseModels) {
     const { modelLabel, providerLabel } = splitOpencodeModelLabel(model.label || model.rawId);
     discoveredIds.add(model.rawId);
     enriched.push({
