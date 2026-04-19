@@ -98,10 +98,18 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   syncConversationState(
-    conversation: { providerState?: Record<string, unknown> } | null,
+    conversation: { providerState?: Record<string, unknown>; sessionId?: string | null } | null,
     _externalContextPaths?: string[],
   ): void {
     this.conversation = conversation as Conversation | null;
+
+    if (conversation) {
+      const state = conversation.providerState as { sessionId?: string } | undefined;
+      const savedSessionId = state?.sessionId ?? conversation.sessionId ?? null;
+      if (savedSessionId) {
+        this.sessionId = savedSessionId;
+      }
+    }
   }
 
   async reloadMcpServers(): Promise<void> {
@@ -123,13 +131,15 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
       const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
 
-      if (options?.sessionId && this.transport) {
-        const loaded = await this.loadSession(options.sessionId, cwd);
-        if (!loaded) {
-          const sessionId = await this.createSession(cwd);
-          return !!sessionId;
+      const sessionIdToUse = options?.sessionId ?? this.sessionId;
+
+      if (sessionIdToUse && this.transport) {
+        const loaded = await this.loadSession(sessionIdToUse, cwd);
+        if (loaded) {
+          return true;
         }
-        return true;
+        const newSessionId = await this.createSession(cwd);
+        return !!newSessionId;
       }
 
       if (!this.sessionId) {
@@ -191,7 +201,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       const resultPromise = this.transport.request<PromptResult>('session/prompt', {
         sessionId,
         prompt,
-      } as PromptParams);
+      } as PromptParams, 120_000);
 
       while (true) {
         while (this.chunkBuffer.length > 0) {
