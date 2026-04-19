@@ -32,4 +32,20 @@ describe('buildAcpUsageInfo', () => {
   it('returns null when no ACP usage data exists', () => {
     expect(buildAcpUsageInfo({})).toBeNull();
   });
+
+  it('rounds ACP usage percentages to whole numbers', () => {
+    const usage = buildAcpUsageInfo({
+      contextWindow: {
+        size: 200_000,
+        used: 11_830,
+      },
+      promptUsage: {
+        inputTokens: 38,
+        outputTokens: 175,
+        totalTokens: 12_005,
+      },
+    });
+
+    expect(usage?.percentage).toBe(6);
+  });
 });

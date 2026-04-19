@@ -1,8 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 
 import type { ChatMessage, ContentBlock, ToolCallInfo } from '../../../core/types';
 import { extractUserQuery } from '../../../utils/context';
-import { resolveOpencodeDatabasePath } from '../runtime/OpencodePaths';
+import { resolveExistingOpencodeDatabasePath } from '../runtime/OpencodePaths';
 import type { OpencodeProviderState } from '../types';
 
 type StoredRow = Record<string, unknown>;
@@ -25,32 +26,19 @@ export async function loadOpencodeSessionMessages(
   sessionId: string,
   providerState?: OpencodeProviderState,
 ): Promise<ChatMessage[]> {
-  const databasePath = providerState?.databasePath ?? resolveOpencodeDatabasePath();
+  const databasePath = resolveExistingOpencodeDatabasePath(providerState?.databasePath);
   if (!databasePath || databasePath === ':memory:' || !fs.existsSync(databasePath)) {
     return [];
   }
 
-  const sqlite = await loadSqliteModule();
-  if (!sqlite) {
+  const rows = await loadOpencodeSessionRows(databasePath, sessionId);
+  if (!rows) {
     return [];
   }
 
-  const db = new sqlite.DatabaseSync(databasePath, { readonly: true });
-
-  try {
-    const messageRows = db.prepare(
-      'select id, time_created, data from message where session_id = ? order by time_created asc, id asc',
-    ).all(sessionId);
-    const partRows = db.prepare(
-      'select id, message_id, data from part where session_id = ? order by message_id asc, id asc',
-    ).all(sessionId);
-
-    return mapOpencodeMessages(
-      hydrateStoredMessages(messageRows, partRows),
-    );
-  } finally {
-    db.close();
-  }
+  return mapOpencodeMessages(
+    hydrateStoredMessages(rows.messageRows, rows.partRows),
+  );
 }
 
 export function mapOpencodeMessages(messages: StoredMessage[]): ChatMessage[] {
@@ -290,4 +278,98 @@ async function loadSqliteModule(): Promise<SqliteModule | null> {
   } catch {
     return null;
   }
+}
+
+interface StoredSessionRows {
+  messageRows: StoredRow[];
+  partRows: StoredRow[];
+}
+
+async function loadOpencodeSessionRows(
+  databasePath: string,
+  sessionId: string,
+): Promise<StoredSessionRows | null> {
+  const viaNodeSqlite = await loadSessionRowsWithNodeSqlite(databasePath, sessionId);
+  if (viaNodeSqlite) {
+    return viaNodeSqlite;
+  }
+
+  return loadSessionRowsWithSqliteCli(databasePath, sessionId);
+}
+
+async function loadSessionRowsWithNodeSqlite(
+  databasePath: string,
+  sessionId: string,
+): Promise<StoredSessionRows | null> {
+  const sqlite = await loadSqliteModule();
+  if (!sqlite) {
+    return null;
+  }
+
+  let db: InstanceType<SqliteModule['DatabaseSync']> | null = null;
+  try {
+    db = new sqlite.DatabaseSync(databasePath, { readonly: true });
+    const messageRows = db.prepare(
+      'select id, time_created, data from message where session_id = ? order by time_created asc, id asc',
+    ).all(sessionId);
+    const partRows = db.prepare(
+      'select id, message_id, data from part where session_id = ? order by message_id asc, id asc',
+    ).all(sessionId);
+    return { messageRows, partRows };
+  } catch {
+    return null;
+  } finally {
+    db?.close();
+  }
+}
+
+function loadSessionRowsWithSqliteCli(
+  databasePath: string,
+  sessionId: string,
+): StoredSessionRows | null {
+  const escapedSessionId = escapeSqlLiteral(sessionId);
+  const messageRows = runSqlite3JsonQuery(
+    databasePath,
+    `select id, time_created, data from message where session_id = '${escapedSessionId}' order by time_created asc, id asc;`,
+  );
+  const partRows = runSqlite3JsonQuery(
+    databasePath,
+    `select id, message_id, data from part where session_id = '${escapedSessionId}' order by message_id asc, id asc;`,
+  );
+
+  if (!messageRows || !partRows) {
+    return null;
+  }
+
+  return { messageRows, partRows };
+}
+
+function runSqlite3JsonQuery(
+  databasePath: string,
+  sql: string,
+): StoredRow[] | null {
+  const result = spawnSync(
+    'sqlite3',
+    ['-json', databasePath, sql],
+    {
+      encoding: 'utf8',
+    },
+  );
+
+  if (result.error || result.status !== 0) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout || '[]') as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((row): row is StoredRow => isPlainObject(row))
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function escapeSqlLiteral(value: string): string {
+  return value.replaceAll('\'', '\'\'');
 }

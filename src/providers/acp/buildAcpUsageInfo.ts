@@ -27,7 +27,7 @@ export function buildAcpUsageInfo(params: BuildAcpUsageInfoParams): UsageInfo | 
     inputTokens: promptUsage?.inputTokens ?? 0,
     model: params.model,
     percentage: contextWindowSize > 0
-      ? Math.min(100, (contextTokens / contextWindowSize) * 100)
+      ? Math.min(100, Math.max(0, Math.round((contextTokens / contextWindowSize) * 100)))
       : 0,
   };
 }

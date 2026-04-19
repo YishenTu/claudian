@@ -15,10 +15,6 @@ export function resolveOpencodeDataDir(
   }
 
   const home = env.HOME || os.homedir();
-  if (process.platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support', OPENCODE_APP_NAME);
-  }
-
   if (process.platform === 'win32') {
     const appData = env.APPDATA || env.LOCALAPPDATA || path.join(home, 'AppData', 'Roaming');
     return path.join(appData, OPENCODE_APP_NAME);
@@ -38,27 +34,80 @@ export function resolveOpencodeDatabasePath(
     return path.join(resolveOpencodeDataDir(env), override);
   }
 
-  const dataDir = resolveOpencodeDataDir(env);
-  const preferred = path.join(dataDir, DEFAULT_DATABASE_NAME);
-  if (fs.existsSync(preferred)) {
-    return preferred;
-  }
-
-  try {
-    const matches = fs.readdirSync(dataDir)
-      .filter((entry) => DATABASE_NAME_PATTERN.test(entry))
-      .sort((left, right) => {
-        if (left === DEFAULT_DATABASE_NAME) return -1;
-        if (right === DEFAULT_DATABASE_NAME) return 1;
-        return left.localeCompare(right);
-      });
-
-    if (matches.length > 0) {
-      return path.join(dataDir, matches[0]!);
+  const candidates = getOpencodeDatabasePathCandidates(env);
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
     }
-  } catch {
-    return preferred;
   }
 
-  return preferred;
+  return candidates[0] ?? null;
+}
+
+export function resolveExistingOpencodeDatabasePath(
+  preferredPath?: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const preferred = preferredPath?.trim();
+  if (preferred) {
+    if (preferred === ':memory:') {
+      return preferred;
+    }
+    if (fs.existsSync(preferred)) {
+      return preferred;
+    }
+  }
+
+  const resolved = resolveOpencodeDatabasePath(env);
+  if (resolved && (resolved === ':memory:' || fs.existsSync(resolved))) {
+    return resolved;
+  }
+
+  return preferred ?? resolved;
+}
+
+function getOpencodeDatabasePathCandidates(
+  env: NodeJS.ProcessEnv,
+): string[] {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const home = env.HOME || os.homedir();
+  const dataDirs = [
+    resolveOpencodeDataDir(env),
+    path.join(home, 'Library', 'Application Support', OPENCODE_APP_NAME),
+  ];
+
+  for (const dataDir of dataDirs) {
+    pushCandidate(candidates, seen, path.join(dataDir, DEFAULT_DATABASE_NAME));
+    try {
+      const matches = fs.readdirSync(dataDir)
+        .filter((entry) => DATABASE_NAME_PATTERN.test(entry))
+        .sort((left, right) => {
+          if (left === DEFAULT_DATABASE_NAME) return -1;
+          if (right === DEFAULT_DATABASE_NAME) return 1;
+          return left.localeCompare(right);
+        });
+
+      for (const entry of matches) {
+        pushCandidate(candidates, seen, path.join(dataDir, entry));
+      }
+    } catch {
+      // Ignore missing dirs and unreadable locations.
+    }
+  }
+
+  return candidates;
+}
+
+function pushCandidate(
+  candidates: string[],
+  seen: Set<string>,
+  candidate: string,
+): void {
+  if (seen.has(candidate)) {
+    return;
+  }
+
+  seen.add(candidate);
+  candidates.push(candidate);
 }
