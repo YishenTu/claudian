@@ -18,10 +18,10 @@ const UNSAFE_TIMER_UNREF_PATTERNS = [
   },
   {
     name: 'mcp-sdk-stdio-close-wait',
-    pattern: /new Promise\(\(resolve5\) => setTimeout\(resolve5, 2e3\)\.unref\(\)\)/g,
+    pattern: /new Promise\(\((resolve\d+)\) => setTimeout\(\1, 2e3\)\.unref\(\)\)/g,
     replacement:
-      'new Promise((resolve5) => {' +
-      '\n        const closeTimeout = setTimeout(resolve5, 2e3);' +
+      'new Promise(($1) => {' +
+      '\n        const closeTimeout = setTimeout($1, 2e3);' +
       '\n        closeTimeout.unref?.();' +
       '\n      })',
   },
