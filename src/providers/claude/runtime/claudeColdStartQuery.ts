@@ -8,9 +8,8 @@ import { getVaultPath } from '../../../utils/path';
 import { extractAssistantText } from '../auxiliary/extractAssistantText';
 import { getClaudeProviderSettings } from '../settings';
 import {
-  isAdaptiveThinkingModel,
-  normalizeEffortLevel,
-  THINKING_BUDGETS,
+  resolveAdaptiveEffortLevel,
+  resolveThinkingTokens,
 } from '../types/models';
 import { createCustomSpawnFunction } from './customSpawn';
 
@@ -112,15 +111,14 @@ export async function runColdStartQuery(
   }
 
   if (!config.thinking?.disabled) {
-    if (isAdaptiveThinkingModel(selectedModel)) {
+    const effortLevel = resolveAdaptiveEffortLevel(selectedModel, settings.effortLevel);
+    if (effortLevel !== null) {
       options.thinking = { type: 'adaptive' };
-      options.effort = normalizeEffortLevel(selectedModel, settings.effortLevel);
+      options.effort = effortLevel;
     } else {
-      const budgetConfig = THINKING_BUDGETS.find(
-        b => b.value === settings.thinkingBudget
-      );
-      if (budgetConfig && budgetConfig.tokens > 0) {
-        options.maxThinkingTokens = budgetConfig.tokens;
+      const thinkingTokens = resolveThinkingTokens(selectedModel, settings.thinkingBudget);
+      if (thinkingTokens !== null) {
+        options.maxThinkingTokens = thinkingTokens;
       }
     }
   }

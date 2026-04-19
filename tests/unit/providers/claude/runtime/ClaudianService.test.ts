@@ -1548,6 +1548,55 @@ describe('ClaudianService', () => {
       expect(mockPersistentQuery.applyFlagSettings).not.toHaveBeenCalled();
     });
 
+    it('should clear thinking tokens when switching from budgeted to adaptive models', async () => {
+      (mockPlugin as any).settings.model = 'custom-model';
+      (mockPlugin as any).settings.thinkingBudget = 'high';
+      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+        '/mock/vault/path',
+        '/usr/local/bin/claude',
+        [],
+      );
+
+      mockPersistentQuery.setModel.mockClear();
+      mockPersistentQuery.setMaxThinkingTokens.mockClear();
+      mockPersistentQuery.applyFlagSettings.mockClear();
+
+      (mockPlugin as any).settings.model = 'sonnet';
+      (mockPlugin as any).settings.effortLevel = 'max';
+
+      await (service as any).applyDynamicUpdates({});
+
+      expect(mockPersistentQuery.setModel).toHaveBeenCalledWith('sonnet');
+      expect(mockPersistentQuery.setMaxThinkingTokens).toHaveBeenCalledWith(null);
+      expect(mockPersistentQuery.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: 'max' });
+      expect((service as any).currentConfig.thinkingTokens).toBeNull();
+      expect((service as any).currentConfig.effortLevel).toBe('max');
+    });
+
+    it('should restore thinking tokens when switching from adaptive to budgeted models', async () => {
+      (mockPlugin as any).settings.model = 'sonnet';
+      (mockPlugin as any).settings.thinkingBudget = 'high';
+      (mockPlugin as any).settings.effortLevel = 'max';
+      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+        '/mock/vault/path',
+        '/usr/local/bin/claude',
+        [],
+      );
+
+      mockPersistentQuery.setModel.mockClear();
+      mockPersistentQuery.setMaxThinkingTokens.mockClear();
+      mockPersistentQuery.applyFlagSettings.mockClear();
+
+      (mockPlugin as any).settings.model = 'custom-model';
+
+      await (service as any).applyDynamicUpdates({});
+
+      expect(mockPersistentQuery.setModel).toHaveBeenCalledWith('custom-model');
+      expect(mockPersistentQuery.setMaxThinkingTokens).toHaveBeenCalledWith(16000);
+      expect((service as any).currentConfig.thinkingTokens).toBe(16000);
+      expect((service as any).currentConfig.effortLevel).toBeNull();
+    });
+
     it('should update permission mode when changed', async () => {
       (mockPlugin as any).settings.permissionMode = 'yolo';
 

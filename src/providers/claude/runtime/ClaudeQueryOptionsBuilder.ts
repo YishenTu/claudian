@@ -17,10 +17,8 @@ import {
   getClaudeProviderSettings,
 } from '../settings';
 import {
-  type EffortLevel,
-  isAdaptiveThinkingModel,
-  normalizeEffortLevel,
-  THINKING_BUDGETS,
+  resolveAdaptiveEffortLevel,
+  resolveThinkingTokens,
 } from '../types/models';
 import { createCustomSpawnFunction } from './customSpawn';
 import {
@@ -103,9 +101,6 @@ export class QueryOptionsBuilder {
       userName: ctx.settings.userName,
     };
 
-    const budgetSetting = ctx.settings.thinkingBudget;
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    const thinkingTokens = budgetConfig?.tokens ?? null;
     const sdkPermissionMode = QueryOptionsBuilder.resolveClaudeSdkPermissionMode(
       ctx.settings.permissionMode,
       claudeSettings.safeMode,
@@ -116,10 +111,8 @@ export class QueryOptionsBuilder {
 
     return {
       model: ctx.settings.model,
-      thinkingTokens: thinkingTokens && thinkingTokens > 0 ? thinkingTokens : null,
-      effortLevel: isAdaptiveThinkingModel(ctx.settings.model)
-        ? normalizeEffortLevel(ctx.settings.model, ctx.settings.effortLevel)
-        : null,
+      thinkingTokens: resolveThinkingTokens(ctx.settings.model, ctx.settings.thinkingBudget),
+      effortLevel: resolveAdaptiveEffortLevel(ctx.settings.model, ctx.settings.effortLevel),
       permissionMode: ctx.settings.permissionMode,
       sdkPermissionMode,
       systemPromptKey: computeSystemPromptKey(systemPromptSettings),
@@ -293,14 +286,16 @@ export class QueryOptionsBuilder {
     settings: ClaudianSettings,
     model: string
   ): void {
-    if (isAdaptiveThinkingModel(model)) {
+    const effortLevel = resolveAdaptiveEffortLevel(model, settings.effortLevel);
+    if (effortLevel !== null) {
       options.thinking = { type: 'adaptive' };
-      options.effort = normalizeEffortLevel(model, settings.effortLevel) as EffortLevel;
-    } else {
-      const budgetConfig = THINKING_BUDGETS.find(b => b.value === settings.thinkingBudget);
-      if (budgetConfig && budgetConfig.tokens > 0) {
-        options.maxThinkingTokens = budgetConfig.tokens;
-      }
+      options.effort = effortLevel;
+      return;
+    }
+
+    const thinkingTokens = resolveThinkingTokens(model, settings.thinkingBudget);
+    if (thinkingTokens !== null) {
+      options.maxThinkingTokens = thinkingTokens;
     }
   }
 

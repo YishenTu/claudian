@@ -86,6 +86,30 @@ export function normalizeEffortLevel(
   return DEFAULT_EFFORT_LEVEL[model] ?? 'high';
 }
 
+export function resolveThinkingTokens(
+  model: string,
+  thinkingBudget: unknown,
+): number | null {
+  if (isAdaptiveThinkingModel(model)) {
+    return null;
+  }
+
+  const budgetConfig = THINKING_BUDGETS.find((budget) => budget.value === thinkingBudget);
+  const thinkingTokens = budgetConfig?.tokens ?? null;
+  return thinkingTokens && thinkingTokens > 0 ? thinkingTokens : null;
+}
+
+export function resolveAdaptiveEffortLevel(
+  model: string,
+  effortLevel: unknown,
+): EffortLevel | null {
+  if (!isAdaptiveThinkingModel(model)) {
+    return null;
+  }
+
+  return normalizeEffortLevel(model, effortLevel);
+}
+
 export const CONTEXT_WINDOW_STANDARD = 200_000;
 export const CONTEXT_WINDOW_1M = 1_000_000;
 

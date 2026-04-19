@@ -212,7 +212,7 @@ describe('QueryOptionsBuilder', () => {
 
     it('includes thinking tokens when budget is set', () => {
       const ctx = createMockContext({
-        settings: createMockSettings({ thinkingBudget: 'high' }),
+        settings: createMockSettings({ model: 'custom-model', thinkingBudget: 'high' }),
       });
       const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
 
@@ -225,6 +225,16 @@ describe('QueryOptionsBuilder', () => {
       });
       const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
 
+      expect(config.effortLevel).toBe('max');
+    });
+
+    it('clears thinkingTokens for adaptive models even when a budget is configured', () => {
+      const ctx = createMockContext({
+        settings: createMockSettings({ model: 'sonnet', thinkingBudget: 'high', effortLevel: 'max' }),
+      });
+      const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
+
+      expect(config.thinkingTokens).toBeNull();
       expect(config.effortLevel).toBe('max');
     });
 
