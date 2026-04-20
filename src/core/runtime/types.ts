@@ -71,10 +71,7 @@ export interface ChatRuntimeQueryOptions {
 }
 
 export interface ChatRuntimeEnsureReadyOptions {
-  sessionId?: string;
-  externalContextPaths?: string[];
   force?: boolean;
-  preserveHandlers?: boolean;
 }
 
 export type ChatRuntimeConversationState = Pick<

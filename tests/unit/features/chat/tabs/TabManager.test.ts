@@ -19,6 +19,7 @@ const mockInitializeTabService = jest.fn().mockResolvedValue(undefined);
 const mockSetupServiceCallbacks = jest.fn();
 const mockWireTabInputEvents = jest.fn();
 const mockGetTabTitle = jest.fn().mockReturnValue('Test Tab');
+const mockCreateChatRuntime = jest.fn();
 
 jest.mock('@/features/chat/tabs/Tab', () => ({
   createTab: (...args: any[]) => mockCreateTab(...args),
@@ -59,12 +60,14 @@ const mockGetCapabilities = jest.fn().mockReturnValue({
 const mockCommandCatalogs: Record<string, any> = {};
 jest.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
+    createChatRuntime: (...args: any[]) => mockCreateChatRuntime(...args),
     getConversationHistoryService: () => ({
       buildForkProviderState: mockBuildForkProviderState,
     }),
     getCapabilities: (...args: any[]) => mockGetCapabilities(...args),
     resolveProviderForModel: (model: string) => (
-      model.startsWith('gpt-') || /^o\d/.test(model) ? 'codex' : 'claude'
+      model.startsWith('opencode:') ? 'opencode'
+        : model.startsWith('gpt-') || /^o\d/.test(model) ? 'codex' : 'claude'
     ),
   },
 }));
@@ -930,17 +933,14 @@ describe('TabManager - SDK Commands', () => {
     expect(readyClaudeService.getSupportedCommands).not.toHaveBeenCalled();
   });
 
-  it('should warm OpenCode on demand when slash commands are requested', async () => {
+  it('should cache OpenCode command warmup for blank tabs without binding them', async () => {
     const supportedCommands = [{ id: 'acp:review', name: 'review', content: '' }];
-    let ready = false;
-    const opencodeService = {
+    const temporaryRuntime = {
       providerId: 'opencode',
-      isReady: jest.fn(() => ready),
-      ensureReady: jest.fn(async () => {
-        ready = true;
-        return true;
-      }),
+      cleanup: jest.fn(),
+      ensureReady: jest.fn().mockResolvedValue(true),
       getSupportedCommands: jest.fn().mockResolvedValue(supportedCommands),
+      syncConversationState: jest.fn(),
     };
     const mockCatalog = {
       setRuntimeCommands: jest.fn(),
@@ -957,10 +957,7 @@ describe('TabManager - SDK Commands', () => {
       supportsProviderCommands: providerId === 'opencode' || providerId === 'claude',
       reasoningControl: providerId === 'opencode' ? 'effort' : 'none',
     }));
-    mockInitializeTabService.mockImplementation(async (tab: any) => {
-      tab.service = opencodeService;
-      tab.serviceInitialized = true;
-    });
+    mockCreateChatRuntime.mockReturnValue(temporaryRuntime);
 
     const manager = createManager({
       plugin: createMockPlugin({
@@ -976,6 +973,8 @@ describe('TabManager - SDK Commands', () => {
       tabFactory: () => createMockTabData({
         id: 'tab-opencode',
         providerId: 'opencode',
+        draftModel: 'opencode:openai/gpt-5',
+        lifecycleState: 'blank',
         ui: {
           externalContextSelector: {
             getExternalContexts: jest.fn().mockReturnValue([]),
@@ -987,11 +986,17 @@ describe('TabManager - SDK Commands', () => {
     const tab = await manager.createTab();
 
     await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual(supportedCommands);
-    expect(mockInitializeTabService).toHaveBeenCalledTimes(1);
-    expect(mockSetupServiceCallbacks).toHaveBeenCalledTimes(1);
-    expect(opencodeService.ensureReady).toHaveBeenCalledTimes(1);
-    expect(opencodeService.getSupportedCommands).toHaveBeenCalled();
-    expect(mockCatalog.setRuntimeCommands).toHaveBeenCalledWith(supportedCommands);
+    await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual(supportedCommands);
+    expect(mockInitializeTabService).not.toHaveBeenCalled();
+    expect(mockSetupServiceCallbacks).not.toHaveBeenCalled();
+    expect(mockCreateChatRuntime).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'opencode' }));
+    expect(mockCreateChatRuntime).toHaveBeenCalledTimes(1);
+    expect(temporaryRuntime.ensureReady).toHaveBeenCalledTimes(1);
+    expect(temporaryRuntime.getSupportedCommands).toHaveBeenCalledTimes(1);
+    expect(temporaryRuntime.cleanup).toHaveBeenCalledTimes(1);
+    expect(mockCatalog.setRuntimeCommands).toHaveBeenLastCalledWith(supportedCommands);
+    expect(tab!.lifecycleState).toBe('blank');
+    expect(tab!.serviceInitialized).toBe(false);
   });
 });
 

@@ -17,9 +17,7 @@ import {
   type ForkContext,
   getTabTitle,
   initializeTabControllers,
-  initializeTabService,
   initializeTabUI,
-  setupServiceCallbacks,
   wireTabInputEvents,
 } from './Tab';
 import {
@@ -62,7 +60,8 @@ export class TabManager implements TabManagerInterface {
   private tabs: Map<TabId, TabData> = new Map();
   private activeTabId: TabId | null = null;
   private callbacks: TabManagerCallbacks;
-  private providerCommandWarmups = new Map<TabId, Promise<void>>();
+  private providerCommandWarmups = new Map<TabId, Promise<SlashCommand[]>>();
+  private providerCommandCache = new Map<TabId, SlashCommand[]>();
 
   /** Guard to prevent concurrent tab switches. */
   private isSwitchingTab = false;
@@ -289,6 +288,8 @@ export class TabManager implements TabManagerInterface {
 
     // Destroy tab resources (async for proper cleanup)
     await destroyTab(tab);
+    this.providerCommandWarmups.delete(tabId);
+    this.providerCommandCache.delete(tabId);
     this.tabs.delete(tabId);
     this.callbacks.onTabClosed?.(tabId);
 
@@ -630,11 +631,7 @@ export class TabManager implements TabManagerInterface {
     }
 
     if (sdkCommands.length === 0) {
-      await this.ensureProviderCommandRuntime(targetTab, providerId);
-
-      if (targetTab.service?.providerId === providerId && targetTab.service.isReady()) {
-        sdkCommands = await targetTab.service.getSupportedCommands();
-      }
+      sdkCommands = await this.ensureProviderCommandRuntime(targetTab, providerId);
     }
 
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
@@ -648,20 +645,23 @@ export class TabManager implements TabManagerInterface {
   private async ensureProviderCommandRuntime(
     tab: TabData,
     providerId: string,
-  ): Promise<void> {
+  ): Promise<SlashCommand[]> {
     if (providerId !== 'opencode') {
-      return;
+      return [];
     }
 
     const settings = getOpencodeProviderSettings(this.plugin.settings as unknown as Record<string, unknown>);
     if (!settings.enabled) {
-      return;
+      return [];
+    }
+
+    if ((!tab.service || tab.service.providerId !== providerId) && this.providerCommandCache.has(tab.id)) {
+      return this.cloneSlashCommands(this.providerCommandCache.get(tab.id) ?? []);
     }
 
     const existing = this.providerCommandWarmups.get(tab.id);
     if (existing) {
-      await existing;
-      return;
+      return await existing;
     }
 
     const warmup = this.warmOpencodeCommandRuntime(tab).finally(() => {
@@ -670,35 +670,64 @@ export class TabManager implements TabManagerInterface {
       }
     });
     this.providerCommandWarmups.set(tab.id, warmup);
-    await warmup;
+    return await warmup;
   }
 
-  private async warmOpencodeCommandRuntime(tab: TabData): Promise<void> {
+  private async warmOpencodeCommandRuntime(tab: TabData): Promise<SlashCommand[]> {
     const providerId = getTabProviderId(tab, this.plugin);
     if (providerId !== 'opencode') {
-      return;
-    }
-
-    if (!tab.serviceInitialized || tab.service?.providerId !== providerId) {
-      await initializeTabService(tab, this.plugin);
-      setupServiceCallbacks(tab, this.plugin);
-    }
-
-    if (!tab.service || tab.service.providerId !== providerId) {
-      return;
-    }
-
-    if (!tab.service.isReady()) {
-      const externalContextPaths = tab.ui.externalContextSelector?.getExternalContexts() ?? [];
-      await tab.service.ensureReady({ externalContextPaths });
+      return [];
     }
 
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     if (!catalog) {
-      return;
+      return [];
     }
 
-    catalog.setRuntimeCommands(await tab.service.getSupportedCommands());
+    if (tab.service?.providerId === providerId) {
+      this.providerCommandCache.delete(tab.id);
+      if (!tab.service.isReady()) {
+        await tab.service.ensureReady();
+      }
+
+      const commands = await tab.service.getSupportedCommands();
+      catalog.setRuntimeCommands(commands);
+      return commands;
+    }
+
+    const commands = await this.loadOpencodeCommandsWithoutBindingTab(tab);
+    if (commands.length > 0) {
+      this.providerCommandCache.set(tab.id, this.cloneSlashCommands(commands));
+    }
+    catalog.setRuntimeCommands(commands);
+    return commands;
+  }
+
+  private async loadOpencodeCommandsWithoutBindingTab(tab: TabData): Promise<SlashCommand[]> {
+    const runtime = ProviderRegistry.createChatRuntime({
+      plugin: this.plugin,
+      providerId: 'opencode',
+    });
+    try {
+      const conversation = tab.conversationId
+        ? await this.plugin.getConversationById(tab.conversationId)
+        : null;
+      if (conversation) {
+        const conversationExternalContexts = conversation.messages.length > 0
+          ? conversation.externalContextPaths ?? []
+          : this.plugin.settings.persistentExternalContextPaths ?? [];
+        runtime.syncConversationState(conversation, conversationExternalContexts);
+      }
+
+      const ready = await runtime.ensureReady();
+      if (!ready) {
+        return [];
+      }
+
+      return await runtime.getSupportedCommands();
+    } finally {
+      runtime.cleanup();
+    }
   }
 
   // ============================================
@@ -762,5 +791,9 @@ export class TabManager implements TabManagerInterface {
 
     this.tabs.clear();
     this.activeTabId = null;
+  }
+
+  private cloneSlashCommands(commands: SlashCommand[]): SlashCommand[] {
+    return commands.map((command) => ({ ...command }));
   }
 }

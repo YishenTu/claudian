@@ -29,6 +29,32 @@ describe('buildOpencodePromptText', () => {
     expect(prompt).toContain('<context_files>');
     expect(prompt).toContain('/tmp/project');
   });
+
+  it('rebuilds prior conversation context when a native session must be recreated', () => {
+    const prompt = buildOpencodePromptText(
+      {
+        text: 'Continue with the fix',
+      },
+      [
+        {
+          content: 'Inspect the bug',
+          id: 'user-1',
+          role: 'user',
+          timestamp: 1,
+        },
+        {
+          content: 'I found the failing path',
+          id: 'assistant-1',
+          role: 'assistant',
+          timestamp: 2,
+        },
+      ],
+    );
+
+    expect(prompt).toContain('User: Inspect the bug');
+    expect(prompt).toContain('Assistant: I found the failing path');
+    expect(prompt).toContain('User: Continue with the fix');
+  });
 });
 
 describe('buildOpencodePromptBlocks', () => {

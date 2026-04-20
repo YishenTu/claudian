@@ -159,7 +159,7 @@ export class AcpClientConnection {
   }
 
   cancel(notification: AcpCancelNotification): void {
-    this.notifyLogicalMethod('cancel', notification);
+    this.notifyLogicalMethod('cancel', notification, { sendAllCandidatesIfUncached: true });
   }
 
   setMode(request: AcpSetSessionModeRequest): Promise<AcpSetSessionModeResponse> {
@@ -362,9 +362,24 @@ export class AcpClientConnection {
     throw new Error(`No ACP method candidates configured for ${logicalMethod}`);
   }
 
-  private notifyLogicalMethod(logicalMethod: AcpLogicalMethod, params?: unknown): void {
-    const methodName = this.methodCache.get(logicalMethod)
-      ?? getAcpMethodCandidates(logicalMethod, this.options.methodOverrides)[0];
-    this.options.transport.notify(methodName, params);
+  private notifyLogicalMethod(
+    logicalMethod: AcpLogicalMethod,
+    params?: unknown,
+    options: { sendAllCandidatesIfUncached?: boolean } = {},
+  ): void {
+    const cachedMethod = this.methodCache.get(logicalMethod);
+    if (cachedMethod) {
+      this.options.transport.notify(cachedMethod, params);
+      return;
+    }
+
+    const candidates = getAcpMethodCandidates(logicalMethod, this.options.methodOverrides);
+    const methodNames = options.sendAllCandidatesIfUncached
+      ? Array.from(new Set(candidates))
+      : candidates.slice(0, 1);
+
+    for (const methodName of methodNames) {
+      this.options.transport.notify(methodName, params);
+    }
   }
 }

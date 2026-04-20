@@ -1,16 +1,109 @@
-import { buildOpencodeManagedConfig } from '../../../../src/providers/opencode/runtime/OpencodeLaunchArtifacts';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import {
+  buildOpencodeManagedConfig,
+  prepareOpencodeLaunchArtifacts,
+} from '../../../../src/providers/opencode/runtime/OpencodeLaunchArtifacts';
 
 describe('buildOpencodeManagedConfig', () => {
-  it('pins OpenCode to the managed build agent prompt file', () => {
-    expect(buildOpencodeManagedConfig('/vault/.context/opencode/system.md', 'Yishen')).toEqual({
+  it('pins OpenCode to the managed prompt file', () => {
+    expect(buildOpencodeManagedConfig({}, '/vault/.context/opencode/system.md', 'Yishen')).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
-        build: {
+        claudian_managed: {
           prompt: '{file:/vault/.context/opencode/system.md}',
         },
       },
-      default_agent: 'build',
+      default_agent: 'claudian_managed',
       username: 'Yishen',
+    });
+  });
+
+  it('merges the user config instead of replacing it', () => {
+    expect(buildOpencodeManagedConfig({
+      agent: {
+        build: {
+          model: 'openai/gpt-5',
+        },
+      },
+      default_agent: 'build',
+      providers: {
+        openai: {
+          api_key: 'test-key',
+        },
+      },
+      username: 'Existing',
+    }, '/vault/.context/opencode/system.md')).toEqual({
+      $schema: 'https://opencode.ai/config.json',
+      agent: {
+        build: {
+          model: 'openai/gpt-5',
+        },
+        claudian_managed: {
+          model: 'openai/gpt-5',
+          prompt: '{file:/vault/.context/opencode/system.md}',
+        },
+      },
+      default_agent: 'claudian_managed',
+      providers: {
+        openai: {
+          api_key: 'test-key',
+        },
+      },
+      username: 'Existing',
+    });
+  });
+});
+
+describe('prepareOpencodeLaunchArtifacts', () => {
+  it('layers the managed prompt config on top of OPENCODE_CONFIG', async () => {
+    const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-artifacts-'));
+    const baseConfigPath = path.join(tmpRoot, 'opencode.base.json');
+    await fs.writeFile(baseConfigPath, JSON.stringify({
+      agent: {
+        build: {
+          model: 'openai/gpt-5',
+        },
+      },
+      default_agent: 'build',
+      providers: {
+        anthropic: {
+          api_key: 'anthropic-key',
+        },
+      },
+    }), 'utf8');
+
+    const result = await prepareOpencodeLaunchArtifacts({
+      runtimeEnv: {
+        HOME: tmpRoot,
+        OPENCODE_CONFIG: baseConfigPath,
+      } as NodeJS.ProcessEnv,
+      settings: {
+        customPrompt: '',
+        mediaFolder: '',
+        userName: 'Yishen',
+        vaultPath: tmpRoot,
+      },
+      workspaceRoot: tmpRoot,
+    });
+
+    const generatedConfig = JSON.parse(await fs.readFile(result.configPath, 'utf8'));
+    expect(generatedConfig).toMatchObject({
+      default_agent: 'claudian_managed',
+      providers: {
+        anthropic: {
+          api_key: 'anthropic-key',
+        },
+      },
+      username: 'Yishen',
+    });
+    expect(generatedConfig.agent).toMatchObject({
+      claudian_managed: {
+        model: 'openai/gpt-5',
+        prompt: `{file:${result.systemPromptPath}}`,
+      },
     });
   });
 });

@@ -6,7 +6,6 @@ import type {
 
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import type {
-  ChatRuntimeEnsureReadyOptions,
   ChatRuntimeQueryOptions,
 } from '../../../core/runtime/types';
 import type { ClaudianSettings, PermissionMode } from '../../../core/types/settings';
@@ -15,6 +14,7 @@ import {
   resolveThinkingTokens,
 } from '../types/models';
 import type {
+  ClaudeEnsureReadyOptions,
   ClosePersistentQueryOptions,
   PersistentQueryConfig,
 } from './types';
@@ -35,7 +35,7 @@ export interface ClaudeDynamicUpdateDeps {
     externalContextPaths?: string[],
   ) => PersistentQueryConfig;
   needsRestart: (newConfig: PersistentQueryConfig) => boolean;
-  ensureReady: (options: ChatRuntimeEnsureReadyOptions) => Promise<boolean>;
+  ensureReady: (options: ClaudeEnsureReadyOptions) => Promise<boolean>;
   setCurrentExternalContextPaths: (paths: string[]) => void;
   notifyFailure: (message: string) => void;
 }

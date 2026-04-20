@@ -414,9 +414,8 @@ export default class ClaudianPlugin extends Plugin {
             continue;
           }
           try {
-            const externalContextPaths = tab.ui.externalContextSelector?.getExternalContexts() ?? [];
             tab.service.resetSession();
-            await tab.service.ensureReady({ externalContextPaths });
+            await tab.service.ensureReady();
           } catch {
             failedTabs++;
           }

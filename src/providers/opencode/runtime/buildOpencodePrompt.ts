@@ -1,11 +1,16 @@
 import type { ChatTurnRequest } from '../../../core/runtime/types';
+import type { ChatMessage } from '../../../core/types';
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import { appendContextFiles, appendCurrentNote } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
+import { buildContextFromHistory, buildPromptWithHistoryContext } from '../../../utils/session';
 import type { AcpContentBlock } from '../../acp';
 
-export function buildOpencodePromptText(request: ChatTurnRequest): string {
+export function buildOpencodePromptText(
+  request: ChatTurnRequest,
+  conversationHistory: ChatMessage[] = [],
+): string {
   let prompt = request.text;
 
   if (request.currentNotePath) {
@@ -28,12 +33,25 @@ export function buildOpencodePromptText(request: ChatTurnRequest): string {
     prompt = appendContextFiles(prompt, request.externalContextPaths);
   }
 
+  if (conversationHistory.length > 0) {
+    const historyContext = buildContextFromHistory(conversationHistory);
+    prompt = buildPromptWithHistoryContext(
+      historyContext,
+      prompt,
+      prompt,
+      conversationHistory,
+    );
+  }
+
   return prompt;
 }
 
-export function buildOpencodePromptBlocks(request: ChatTurnRequest): AcpContentBlock[] {
+export function buildOpencodePromptBlocks(
+  request: ChatTurnRequest,
+  conversationHistory: ChatMessage[] = [],
+): AcpContentBlock[] {
   const blocks: AcpContentBlock[] = [
-    { type: 'text', text: buildOpencodePromptText(request) },
+    { type: 'text', text: buildOpencodePromptText(request, conversationHistory) },
   ];
 
   for (const image of request.images ?? []) {

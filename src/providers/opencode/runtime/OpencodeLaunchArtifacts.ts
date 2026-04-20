@@ -6,7 +6,10 @@ import {
   computeSystemPromptKey,
   type SystemPromptSettings,
 } from '../../../core/prompt/mainAgent';
+import { expandHomePath } from '../../../utils/path';
 import { resolveOpencodeDatabasePath } from './OpencodePaths';
+
+const CLAUDIAN_MANAGED_OPENCODE_AGENT = 'claudian_managed';
 
 export interface OpencodeLaunchArtifacts {
   configPath: string;
@@ -28,7 +31,15 @@ export async function prepareOpencodeLaunchArtifacts(
   const systemPromptPath = path.join(artifactsDir, 'system.md');
   const configPath = path.join(artifactsDir, 'config.json');
   const systemPrompt = `${buildSystemPrompt(params.settings)}\n`;
-  const config = `${JSON.stringify(buildOpencodeManagedConfig(systemPromptPath, params.settings.userName), null, 2)}\n`;
+  const baseConfig = await loadOpencodeBaseConfig(
+    params.runtimeEnv.OPENCODE_CONFIG,
+    params.workspaceRoot,
+  );
+  const config = `${JSON.stringify(
+    buildOpencodeManagedConfig(baseConfig, systemPromptPath, params.settings.userName),
+    null,
+    2,
+  )}\n`;
   const databasePath = resolveOpencodeDatabasePath(params.runtimeEnv);
 
   await fs.mkdir(artifactsDir, { recursive: true });
@@ -50,18 +61,38 @@ export async function prepareOpencodeLaunchArtifacts(
 }
 
 export function buildOpencodeManagedConfig(
+  baseConfig: Record<string, unknown>,
   systemPromptPath: string,
   userName?: string,
 ): Record<string, unknown> {
   const config: Record<string, unknown> = {
-    $schema: 'https://opencode.ai/config.json',
-    agent: {
-      build: {
-        prompt: `{file:${systemPromptPath}}`,
-      },
-    },
-    default_agent: 'build',
+    ...baseConfig,
+    $schema: typeof baseConfig.$schema === 'string'
+      ? baseConfig.$schema
+      : 'https://opencode.ai/config.json',
   };
+  const existingAgents = isPlainObject(baseConfig.agent)
+    ? { ...baseConfig.agent }
+    : {};
+  const defaultAgentId = typeof baseConfig.default_agent === 'string'
+    ? baseConfig.default_agent
+    : null;
+  const existingDefaultAgent = defaultAgentId && isPlainObject(existingAgents[defaultAgentId])
+    ? { ...existingAgents[defaultAgentId] }
+    : {};
+  const existingManagedAgent = isPlainObject(existingAgents[CLAUDIAN_MANAGED_OPENCODE_AGENT])
+    ? { ...existingAgents[CLAUDIAN_MANAGED_OPENCODE_AGENT] }
+    : {};
+
+  config.agent = {
+    ...existingAgents,
+    [CLAUDIAN_MANAGED_OPENCODE_AGENT]: {
+      ...existingManagedAgent,
+      ...existingDefaultAgent,
+      prompt: `{file:${systemPromptPath}}`,
+    },
+  };
+  config.default_agent = CLAUDIAN_MANAGED_OPENCODE_AGENT;
 
   const trimmedUserName = userName?.trim();
   if (trimmedUserName) {
@@ -82,4 +113,31 @@ async function writeIfChanged(filePath: string, content: string): Promise<void> 
   }
 
   await fs.writeFile(filePath, content, 'utf-8');
+}
+
+async function loadOpencodeBaseConfig(
+  configuredPath: string | undefined,
+  workspaceRoot: string,
+): Promise<Record<string, unknown>> {
+  const trimmedPath = configuredPath?.trim();
+  if (!trimmedPath) {
+    return {};
+  }
+
+  const expandedPath = expandHomePath(trimmedPath);
+  const resolvedPath = path.isAbsolute(expandedPath)
+    ? expandedPath
+    : path.resolve(workspaceRoot, expandedPath);
+
+  try {
+    const rawConfig = await fs.readFile(resolvedPath, 'utf8');
+    const parsedConfig = JSON.parse(rawConfig) as unknown;
+    return isPlainObject(parsedConfig) ? parsedConfig : {};
+  } catch {
+    return {};
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

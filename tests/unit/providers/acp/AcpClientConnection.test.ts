@@ -175,4 +175,27 @@ describe('AcpClientConnection', () => {
       harness.close();
     }
   });
+
+  it('sends cancel notifications to all known aliases when no working method is cached', async () => {
+    const harness = createConnectionHarness((transport) => new AcpClientConnection({ transport }));
+
+    try {
+      harness.connection.cancel({ sessionId: 'session-1' });
+
+      await expect(harness.nextOutbound()).resolves.toMatchObject({
+        jsonrpc: '2.0',
+        method: 'session/cancel',
+        params: { sessionId: 'session-1' },
+      });
+      await expect(harness.nextOutbound()).resolves.toMatchObject({
+        jsonrpc: '2.0',
+        method: 'cancel',
+        params: { sessionId: 'session-1' },
+      });
+    } finally {
+      harness.connection.dispose();
+      harness.transport.dispose();
+      harness.close();
+    }
+  });
 });

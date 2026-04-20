@@ -14,6 +14,7 @@ import type {
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
   ApprovalCallback,
+  ApprovalDecisionOption,
   AskUserQuestionCallback,
   AutoTurnResult,
   ChatRewindResult,
@@ -133,6 +134,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private promptUsage: AcpUsage | null = null;
   private readonly readyListeners: Array<(ready: boolean) => void> = [];
   private ready = false;
+  private sessionInvalidated = false;
   private readonly supportedCommandWaiters: Array<(commands: SlashCommand[]) => void> = [];
   private supportedCommands: SlashCommand[] = [];
   private sessionCwds = new Map<string, string>();
@@ -177,6 +179,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const nextSessionId = conversation?.sessionId ?? null;
     if (this.sessionId !== nextSessionId) {
       this.currentSessionModelId = null;
+      this.sessionInvalidated = false;
       this.setSupportedCommands([]);
     }
     this.sessionId = nextSessionId;
@@ -194,8 +197,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
+    const targetSessionId = this.sessionId;
     const resolvedCliPath = this.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
-    const runtimeEnv = this.buildRuntimeEnv(resolvedCliPath);
+    const runtimeEnv = this.buildRuntimeEnv(
+      resolvedCliPath,
+      targetSessionId ? this.currentDatabasePath : null,
+    );
     const promptSettings = this.getSystemPromptSettings(cwd);
     const artifacts = await prepareOpencodeLaunchArtifacts({
       runtimeEnv,
@@ -231,18 +238,18 @@ export class OpencodeChatRuntime implements ChatRuntime {
       this.loadedSessionId = null;
     }
 
-    const targetSessionId = options?.sessionId ?? this.sessionId;
     if (targetSessionId) {
       if (this.loadedSessionId !== targetSessionId) {
         const loaded = await this.loadSession(targetSessionId, cwd);
         if (!loaded) {
-          return Boolean(await this.createSession(cwd));
+          this.sessionInvalidated = true;
+          this.clearActiveSession();
         }
       }
       return true;
     }
 
-    if (!this.sessionId && settings.prewarm) {
+    if (!this.sessionId && settings.prewarm && !this.sessionInvalidated) {
       return Boolean(await this.createSession(cwd));
     }
 
@@ -251,9 +258,14 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
   async *query(
     turn: PreparedChatTurn,
-    _conversationHistory?: ChatMessage[],
+    conversationHistory?: ChatMessage[],
     queryOptions?: ChatRuntimeQueryOptions,
   ): AsyncGenerator<StreamChunk> {
+    const previousMessages = conversationHistory ?? [];
+    const expectedSessionId = this.sessionId;
+    let shouldBootstrapHistory = previousMessages.length > 0
+      && (!expectedSessionId || this.sessionInvalidated);
+
     if (!(await this.ensureReady())) {
       yield { type: 'error', content: 'Failed to start OpenCode. Check the CLI path and login state.' };
       yield { type: 'done' };
@@ -267,6 +279,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
+    if (expectedSessionId && !this.sessionId) {
+      shouldBootstrapHistory = previousMessages.length > 0;
+    }
+
     if (!this.sessionId) {
       const sessionId = await this.createSession(cwd);
       if (!sessionId) {
@@ -303,7 +319,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     const promptPromise = this.connection.prompt({
-      prompt: buildOpencodePromptBlocks(turn.request),
+      prompt: buildOpencodePromptBlocks(
+        turn.request,
+        shouldBootstrapHistory ? previousMessages : [],
+      ),
       sessionId,
     }).then((response) => {
       if (response.userMessageId) {
@@ -358,10 +377,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   resetSession(): void {
-    this.sessionId = null;
-    this.loadedSessionId = null;
-    this.currentSessionModelId = null;
-    this.setSupportedCommands([]);
+    this.clearActiveSession();
+    this.sessionInvalidated = false;
   }
 
   getSessionId(): string | null {
@@ -369,7 +386,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   consumeSessionInvalidation(): boolean {
-    return false;
+    const invalidated = this.sessionInvalidated;
+    this.sessionInvalidated = false;
+    return invalidated;
   }
 
   isReady(): boolean {
@@ -382,8 +401,27 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     if (this.sessionId && this.loadedSessionId !== this.sessionId) {
-      const ready = await this.ensureReady({ sessionId: this.sessionId });
+      const ready = await this.ensureReady();
       if (!ready) {
+        return [];
+      }
+    }
+
+    if (!this.sessionId) {
+      if (!this.ready) {
+        const ready = await this.ensureReady();
+        if (!ready) {
+          return [];
+        }
+      }
+
+      if (this.sessionInvalidated) {
+        return [];
+      }
+
+      const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
+      const sessionId = await this.createSession(cwd);
+      if (!sessionId) {
         return [];
       }
     }
@@ -459,8 +497,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     };
 
     if (params.sessionInvalidated) {
-      updates.providerState = undefined;
-      updates.sessionId = null;
+      if (!this.sessionId) {
+        updates.providerState = undefined;
+        updates.sessionId = null;
+      }
     }
 
     return { updates };
@@ -568,7 +608,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     };
   }
 
-  private buildRuntimeEnv(cliPath: string): NodeJS.ProcessEnv {
+  private buildRuntimeEnv(
+    cliPath: string,
+    databasePathOverride?: string | null,
+  ): NodeJS.ProcessEnv {
     const envText = getRuntimeEnvironmentText(
       this.plugin.settings as unknown as Record<string, unknown>,
       'opencode',
@@ -577,6 +620,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     return {
       ...process.env,
       ...envVars,
+      ...(databasePathOverride ? { OPENCODE_DB: databasePathOverride } : {}),
       PATH: getEnhancedPath(envVars.PATH, cliPath || undefined),
     };
   }
@@ -797,6 +841,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
         mcpServers: [],
         sessionId,
       });
+      this.sessionInvalidated = false;
       this.loadedSessionId = response.sessionId;
       this.sessionId = response.sessionId;
       this.sessionCwds.set(response.sessionId, cwd);
@@ -890,9 +935,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
       request.toolCall.title ?? request.toolCall.kind ?? 'tool',
       normalizeApprovalInput(request.toolCall.rawInput),
       '',
+      {
+        decisionOptions: buildAcpApprovalDecisionOptions(request.options),
+      },
     );
 
-    return mapApprovalDecision(decision);
+    return mapApprovalDecision(decision, request.options);
   }
 
   private setSupportedCommands(commands: SlashCommand[]): void {
@@ -972,6 +1020,13 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const stderr = this.process?.getStderrSnapshot();
     return stderr ? `${baseMessage}\n\n${stderr}` : baseMessage;
   }
+
+  private clearActiveSession(): void {
+    this.sessionId = null;
+    this.loadedSessionId = null;
+    this.currentSessionModelId = null;
+    this.setSupportedCommands([]);
+  }
 }
 
 function normalizeApprovalInput(rawInput: unknown): Record<string, unknown> {
@@ -986,13 +1041,21 @@ function normalizeApprovalInput(rawInput: unknown): Record<string, unknown> {
 
 function mapApprovalDecision(
   decision: ApprovalDecision,
+  options: readonly {
+    kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+    optionId: string;
+  }[],
 ): AcpRequestPermissionResponse {
   if (decision === 'allow') {
-    return { optionId: 'once', outcome: 'selected' };
+    return selectPermissionOption(options, ['allow_once', 'allow_always']);
   }
 
   if (decision === 'allow-always') {
-    return { optionId: 'always', outcome: 'selected' };
+    return selectPermissionOption(options, ['allow_always', 'allow_once']);
+  }
+
+  if (decision === 'deny') {
+    return selectPermissionOption(options, ['reject_once', 'reject_always']);
   }
 
   if (typeof decision === 'object' && decision.type === 'select-option') {
@@ -1000,6 +1063,44 @@ function mapApprovalDecision(
       optionId: decision.value,
       outcome: 'selected',
     };
+  }
+
+  return { outcome: 'cancelled' };
+}
+
+function buildAcpApprovalDecisionOptions(
+  options: readonly {
+    kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+    name: string;
+    optionId: string;
+  }[],
+): ApprovalDecisionOption[] {
+  return options.map((option) => ({
+    ...(option.kind === 'allow_once'
+      ? { decision: 'allow' as const }
+      : option.kind === 'allow_always'
+      ? { decision: 'allow-always' as const }
+      : {}),
+    label: option.name,
+    value: option.optionId,
+  }));
+}
+
+function selectPermissionOption(
+  options: readonly {
+    kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+    optionId: string;
+  }[],
+  preferredKinds: readonly ('allow_once' | 'allow_always' | 'reject_once' | 'reject_always')[],
+): AcpRequestPermissionResponse {
+  for (const kind of preferredKinds) {
+    const option = options.find((entry) => entry.kind === kind);
+    if (option) {
+      return {
+        optionId: option.optionId,
+        outcome: 'selected',
+      };
+    }
   }
 
   return { outcome: 'cancelled' };
