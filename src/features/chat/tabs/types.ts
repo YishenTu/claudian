@@ -235,6 +235,7 @@ export type TabProviderContext = Pick<TabData, 'conversationId' | 'service' | 'p
 export interface PersistedTabState {
   tabId: TabId;
   conversationId: string | null;
+  draftModel?: string | null;
 }
 
 /**

@@ -161,7 +161,7 @@ describe('OpencodeChatRuntime', () => {
     );
   });
 
-  it('forces OpenCode project instruction isolation flags in the runtime environment', () => {
+  it('forces the Claude prompt flag while preserving the project config flag', () => {
     const runtime = new OpencodeChatRuntime(createMockPlugin({
       settings: {
         sharedEnvironmentVariables: 'OPENCODE_DISABLE_PROJECT_CONFIG=false\nOPENCODE_DISABLE_CLAUDE_CODE_PROMPT=false',
@@ -171,7 +171,7 @@ describe('OpencodeChatRuntime', () => {
     const env = (runtime as any).buildRuntimeEnv('/usr/local/bin/opencode', '/tmp/opencode.db');
 
     expect(env.OPENCODE_DB).toBe('/tmp/opencode.db');
-    expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('true');
+    expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('false');
     expect(env.OPENCODE_DISABLE_CLAUDE_CODE_PROMPT).toBe('true');
   });
 

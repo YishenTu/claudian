@@ -135,7 +135,7 @@ export class StorageService {
       return null;
     }
 
-    const validatedTabs: Array<{ tabId: string; conversationId: string | null }> = [];
+    const validatedTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }> = [];
     for (const tab of state.openTabs) {
       if (!tab || typeof tab !== 'object') {
         continue; // Skip invalid entries
@@ -148,6 +148,9 @@ export class StorageService {
         tabId: tabObj.tabId,
         conversationId:
           typeof tabObj.conversationId === 'string' ? tabObj.conversationId : null,
+        ...(typeof tabObj.draftModel === 'string'
+          ? { draftModel: tabObj.draftModel }
+          : {}),
       });
     }
 
@@ -172,6 +175,6 @@ export class StorageService {
 }
 
 export interface TabManagerPersistedState {
-  openTabs: Array<{ tabId: string; conversationId: string | null }>;
+  openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }>;
   activeTabId: string | null;
 }

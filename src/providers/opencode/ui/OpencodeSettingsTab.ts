@@ -134,6 +134,8 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       await view?.getTabManager()?.broadcastToAllTabs(
         (service) => Promise.resolve(service.cleanup()),
       );
+      view?.invalidateProviderCommandCaches?.(['opencode']);
+      view?.refreshModelSelector?.();
       return true;
     };
 
@@ -505,6 +507,12 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     renderAll();
 
     new Setting(container).setName('Commands').setHeading();
+
+    const commandsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
+    commandsDesc.createEl('p', {
+      cls: 'setting-item-description',
+      text: 'OpenCode can auto-detect vault-level Claude slash commands from .claude/commands/ and skills from .claude/skills/, .codex/skills/, and .agents/skills/. Manage those entries in the Claude or Codex settings tab. This setting only hides entries from the OpenCode dropdown.',
+    });
 
     context.renderHiddenProviderCommandSetting(container, 'opencode', {
       name: 'Hidden Commands',

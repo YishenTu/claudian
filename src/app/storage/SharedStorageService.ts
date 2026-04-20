@@ -31,7 +31,7 @@ export class SharedStorageService implements SharedAppStorage {
     await this.claudianSettings.save(settings as StoredClaudianSettings);
   }
 
-  async setTabManagerState(state: { openTabs: Array<{ tabId: string; conversationId: string | null }>; activeTabId: string | null }): Promise<void> {
+  async setTabManagerState(state: { openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }>; activeTabId: string | null }): Promise<void> {
     try {
       const data = (await this.plugin.loadData()) || {};
       data.tabManagerState = state;
@@ -41,7 +41,7 @@ export class SharedStorageService implements SharedAppStorage {
     }
   }
 
-  async getTabManagerState(): Promise<{ openTabs: Array<{ tabId: string; conversationId: string | null }>; activeTabId: string | null } | null> {
+  async getTabManagerState(): Promise<{ openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }>; activeTabId: string | null } | null> {
     try {
       const data = await this.plugin.loadData();
       if (!data?.tabManagerState) {
@@ -63,7 +63,7 @@ export class SharedStorageService implements SharedAppStorage {
     await this.adapter.ensureFolder(SESSIONS_PATH);
   }
 
-  private validateTabManagerState(data: unknown): { openTabs: Array<{ tabId: string; conversationId: string | null }>; activeTabId: string | null } | null {
+  private validateTabManagerState(data: unknown): { openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }>; activeTabId: string | null } | null {
     if (!data || typeof data !== 'object') {
       return null;
     }
@@ -73,7 +73,7 @@ export class SharedStorageService implements SharedAppStorage {
       return null;
     }
 
-    const validatedTabs: Array<{ tabId: string; conversationId: string | null }> = [];
+    const validatedTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }> = [];
     for (const tab of state.openTabs) {
       if (!tab || typeof tab !== 'object') {
         continue;
@@ -87,6 +87,9 @@ export class SharedStorageService implements SharedAppStorage {
       validatedTabs.push({
         tabId: tabObj.tabId,
         conversationId: typeof tabObj.conversationId === 'string' ? tabObj.conversationId : null,
+        ...(typeof tabObj.draftModel === 'string'
+          ? { draftModel: tabObj.draftModel }
+          : {}),
       });
     }
 

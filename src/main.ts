@@ -438,6 +438,7 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     for (const openView of this.getAllViews()) {
+      openView.invalidateProviderCommandCaches(affectedProviderIds);
       openView.refreshModelSelector();
     }
 

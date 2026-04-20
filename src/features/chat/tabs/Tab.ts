@@ -104,6 +104,8 @@ export interface TabCreateOptions {
   containerEl: HTMLElement;
   conversation?: Conversation;
   tabId?: TabId;
+  /** Restored draft model for blank tabs. */
+  draftModel?: string | null;
   /** Provider to inherit for blank tabs (e.g. from the active tab). */
   defaultProviderId?: ProviderId;
   onStreamingChanged?: (isStreaming: boolean) => void;
@@ -363,7 +365,12 @@ export function createTab(options: TabCreateOptions): TabData {
   state.queueIndicatorEl = dom.queueIndicatorEl;
 
   const isBound = !!conversation?.id;
-  const draftModel = isBound ? null : resolveBlankTabModel(plugin, options.defaultProviderId);
+  const restoredDraftModel = typeof options.draftModel === 'string'
+    ? options.draftModel.trim()
+    : '';
+  const draftModel = isBound
+    ? null
+    : (restoredDraftModel || resolveBlankTabModel(plugin, options.defaultProviderId));
   const initialProviderId = conversation?.providerId
     ?? (draftModel
       ? getEnabledProviderForModel(draftModel, plugin.settings as unknown as Record<string, unknown>)

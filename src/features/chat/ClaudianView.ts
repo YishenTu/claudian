@@ -117,6 +117,12 @@ export class ClaudianView extends ItemView {
         this.plugin.settings.permissionMode === 'plan' && capabilities.supportsPlanMode,
       );
     }
+
+    this.tabManager?.primeBlankProviderRuntime('opencode');
+  }
+
+  invalidateProviderCommandCaches(providerIds?: ProviderId[]): void {
+    this.tabManager?.invalidateProviderCommandCaches(providerIds);
   }
 
   /** Updates provider-scoped hidden commands on all tabs after settings changes. */
@@ -195,6 +201,7 @@ export class ClaudianView extends ItemView {
     await this.restoreOrCreateTabs();
     this.syncProviderBrandColor();
     this.updateLayoutForPosition();
+    this.tabManager?.primeBlankProviderRuntime('opencode');
   }
 
   async onClose() {

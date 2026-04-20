@@ -102,7 +102,14 @@ type MockSettingRecord = {
   toggleComponents: MockToggleComponent[];
 };
 
+type MockElementRecord = {
+  cls?: string;
+  tag?: string;
+  text?: string;
+};
+
 const createdSettings: MockSettingRecord[] = [];
+const createdElements: MockElementRecord[] = [];
 
 function createTextComponent(): MockTextComponent {
   const component = {} as MockTextComponent;
@@ -167,6 +174,10 @@ function createElement(): any {
     blur: jest.fn(),
     createEl: jest.fn((_tag?: string, attrs?: Record<string, unknown>) => {
       const child = createElement();
+      child.tag = _tag;
+      if (attrs && typeof attrs.cls === 'string') {
+        child.cls = attrs.cls;
+      }
       if (attrs && typeof attrs.text === 'string') {
         child.text = attrs.text;
       }
@@ -176,9 +187,26 @@ function createElement(): any {
       if (attrs && typeof attrs.type === 'string') {
         child.type = attrs.type;
       }
+      createdElements.push({
+        cls: child.cls,
+        tag: child.tag,
+        text: child.text,
+      });
       return child;
     }),
-    createDiv: jest.fn((_attrs?: Record<string, unknown>) => createElement()),
+    createDiv: jest.fn((attrs?: Record<string, unknown>) => {
+      const child = createElement();
+      child.tag = 'div';
+      if (attrs && typeof attrs.cls === 'string') {
+        child.cls = attrs.cls;
+      }
+      createdElements.push({
+        cls: child.cls,
+        tag: child.tag,
+        text: child.text,
+      });
+      return child;
+    }),
     createSpan: jest.fn((_attrs?: Record<string, unknown>) => createElement()),
   };
 
@@ -187,8 +215,35 @@ function createElement(): any {
 
 function createContainer(): any {
   return {
-    createDiv: jest.fn((_attrs?: Record<string, unknown>) => createElement()),
-    createEl: jest.fn((_tag?: string, _attrs?: Record<string, unknown>) => createElement()),
+    createDiv: jest.fn((attrs?: Record<string, unknown>) => {
+      const child = createElement();
+      child.tag = 'div';
+      if (attrs && typeof attrs.cls === 'string') {
+        child.cls = attrs.cls;
+      }
+      createdElements.push({
+        cls: child.cls,
+        tag: child.tag,
+        text: child.text,
+      });
+      return child;
+    }),
+    createEl: jest.fn((tag?: string, attrs?: Record<string, unknown>) => {
+      const child = createElement();
+      child.tag = tag;
+      if (attrs && typeof attrs.cls === 'string') {
+        child.cls = attrs.cls;
+      }
+      if (attrs && typeof attrs.text === 'string') {
+        child.text = attrs.text;
+      }
+      createdElements.push({
+        cls: child.cls,
+        tag: child.tag,
+        text: child.text,
+      });
+      return child;
+    }),
   };
 }
 
@@ -244,6 +299,7 @@ describe('OpencodeSettingsTab', () => {
 
   beforeEach(() => {
     createdSettings.length = 0;
+    createdElements.length = 0;
     jest.clearAllMocks();
     mockedExistsSync.mockReturnValue(false);
     mockedStatSync.mockReturnValue({ isFile: () => true } as fs.Stats);
@@ -264,5 +320,17 @@ describe('OpencodeSettingsTab', () => {
     expect(mockSaveSettings).toHaveBeenCalledTimes(1);
     expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
     expect(mockBroadcastToAllTabs).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders a notice explaining where vault-level commands and skills are managed', () => {
+    const plugin = createPlugin();
+
+    opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+
+    expect(createdElements).toContainEqual({
+      cls: 'setting-item-description',
+      tag: 'p',
+      text: 'OpenCode can auto-detect vault-level Claude slash commands from .claude/commands/ and skills from .claude/skills/, .codex/skills/, and .agents/skills/. Manage those entries in the Claude or Codex settings tab. This setting only hides entries from the OpenCode dropdown.',
+    });
   });
 });

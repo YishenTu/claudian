@@ -537,8 +537,6 @@ export class OpencodeChatRuntime implements ChatRuntime {
       ...process.env,
       ...params.runtimeEnv,
       OPENCODE_CONFIG: params.configPath,
-      OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: 'true',
-      OPENCODE_DISABLE_PROJECT_CONFIG: 'true',
       PATH: getEnhancedPath(
         params.runtimeEnv.PATH,
         path.isAbsolute(params.command) ? params.command : undefined,
@@ -633,7 +631,6 @@ export class OpencodeChatRuntime implements ChatRuntime {
       ...process.env,
       ...envVars,
       OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: 'true',
-      OPENCODE_DISABLE_PROJECT_CONFIG: 'true',
       ...(databasePathOverride ? { OPENCODE_DB: databasePathOverride } : {}),
       PATH: getEnhancedPath(envVars.PATH, cliPath || undefined),
     };

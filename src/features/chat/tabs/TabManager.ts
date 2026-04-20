@@ -42,6 +42,7 @@ function isTabManagerViewHost(value: unknown): value is TabManagerViewHost {
 
 type CreateTabOptions = {
   activate?: boolean;
+  draftModel?: string;
 };
 
 type OpenConversationOptions = {
@@ -130,7 +131,7 @@ export class TabManager implements TabManagerInterface {
       return null;
     }
 
-    const { activate = true } = options;
+    const { activate = true, draftModel } = options;
 
     const conversation = conversationId
       ? await this.plugin.getConversationById(conversationId)
@@ -147,6 +148,7 @@ export class TabManager implements TabManagerInterface {
       containerEl: this.containerEl,
       conversation: conversation ?? undefined,
       tabId,
+      ...(typeof draftModel === 'string' ? { draftModel } : {}),
       defaultProviderId,
       onStreamingChanged: (isStreaming) => {
         this.callbacks.onTabStreamingChanged?.(tab.id, isStreaming);
@@ -169,6 +171,7 @@ export class TabManager implements TabManagerInterface {
       getProviderCatalogConfig: () => this.getProviderCatalogConfig(tab),
       onProviderChanged: (providerId) => {
         this.callbacks.onTabProviderChanged?.(tab.id, providerId);
+        this.maybePrimeBlankProviderRuntime(tab);
       },
     });
 
@@ -189,6 +192,8 @@ export class TabManager implements TabManagerInterface {
 
     if (activate || !this.activeTabId) {
       await this.switchToTab(tab.id);
+    } else {
+      this.maybePrimeBlankProviderRuntime(tab);
     }
 
     return tab;
@@ -251,6 +256,7 @@ export class TabManager implements TabManagerInterface {
       }
 
       this.callbacks.onTabSwitched?.(previousTabId, tabId);
+      this.maybePrimeBlankProviderRuntime(tab);
     } finally {
       this.isSwitchingTab = false;
     }
@@ -437,6 +443,39 @@ export class TabManager implements TabManagerInterface {
       await activeTab.controllers.conversationController?.createNew();
       // Sync tab.conversationId with the newly created conversation
       activeTab.conversationId = activeTab.state.currentConversationId;
+      this.maybePrimeBlankProviderRuntime(activeTab);
+    }
+  }
+
+  invalidateProviderCommandCaches(providerIds?: string | string[]): void {
+    const providerFilter = providerIds
+      ? new Set(Array.isArray(providerIds) ? providerIds : [providerIds])
+      : null;
+
+    for (const tab of this.tabs.values()) {
+      const providerId = getTabProviderId(tab, this.plugin);
+      if (providerFilter && !providerFilter.has(providerId)) {
+        continue;
+      }
+
+      this.providerCommandWarmups.delete(tab.id);
+      this.providerCommandCache.delete(tab.id);
+      tab.ui?.slashCommandDropdown?.resetSdkSkillsCache();
+    }
+  }
+
+  primeBlankProviderRuntime(providerIds?: string | string[]): void {
+    const providerFilter = providerIds
+      ? new Set(Array.isArray(providerIds) ? providerIds : [providerIds])
+      : null;
+
+    for (const tab of this.tabs.values()) {
+      const providerId = getTabProviderId(tab, this.plugin);
+      if (providerFilter && !providerFilter.has(providerId)) {
+        continue;
+      }
+
+      this.maybePrimeBlankProviderRuntime(tab);
     }
   }
 
@@ -552,6 +591,9 @@ export class TabManager implements TabManagerInterface {
 
     for (const tab of this.tabs.values()) {
       openTabs.push({
+        ...(tab.lifecycleState === 'blank' && tab.draftModel
+          ? { draftModel: tab.draftModel }
+          : {}),
         tabId: tab.id,
         conversationId: tab.conversationId,
       });
@@ -568,7 +610,10 @@ export class TabManager implements TabManagerInterface {
     // Create tabs from persisted state with error handling
     for (const tabState of state.openTabs) {
       try {
-        await this.createTab(tabState.conversationId, tabState.tabId);
+        await this.createTab(tabState.conversationId, tabState.tabId, {
+          activate: false,
+          ...(typeof tabState.draftModel === 'string' ? { draftModel: tabState.draftModel } : {}),
+        });
       } catch {
         // Continue restoring other tabs
       }
@@ -671,6 +716,28 @@ export class TabManager implements TabManagerInterface {
     });
     this.providerCommandWarmups.set(tab.id, warmup);
     return await warmup;
+  }
+
+  private maybePrimeBlankProviderRuntime(tab: TabData): void {
+    if (tab.lifecycleState !== 'blank') {
+      return;
+    }
+
+    const providerId = getTabProviderId(tab, this.plugin);
+    if (providerId !== 'opencode') {
+      return;
+    }
+
+    const settings = getOpencodeProviderSettings(this.plugin.settings as unknown as Record<string, unknown>);
+    if (!settings.enabled || !settings.prewarm) {
+      return;
+    }
+
+    if (tab.service || this.providerCommandCache.has(tab.id) || this.providerCommandWarmups.has(tab.id)) {
+      return;
+    }
+
+    void this.ensureProviderCommandRuntime(tab, providerId).catch(() => {});
   }
 
   private async warmOpencodeCommandRuntime(tab: TabData): Promise<SlashCommand[]> {
