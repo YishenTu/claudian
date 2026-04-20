@@ -9,7 +9,7 @@ import {
 import { expandHomePath } from '../../../utils/path';
 import { resolveOpencodeDatabasePath } from './OpencodePaths';
 
-const CLAUDIAN_MANAGED_OPENCODE_AGENT = 'claudian_managed';
+const OPENCODE_SYSTEM_PROMPT_AGENT_IDS = ['build', 'plan'] as const;
 
 export interface OpencodeLaunchArtifacts {
   configPath: string;
@@ -74,25 +74,19 @@ export function buildOpencodeManagedConfig(
   const existingAgents = isPlainObject(baseConfig.agent)
     ? { ...baseConfig.agent }
     : {};
-  const defaultAgentId = typeof baseConfig.default_agent === 'string'
-    ? baseConfig.default_agent
-    : null;
-  const existingDefaultAgent = defaultAgentId && isPlainObject(existingAgents[defaultAgentId])
-    ? { ...existingAgents[defaultAgentId] }
-    : {};
-  const existingManagedAgent = isPlainObject(existingAgents[CLAUDIAN_MANAGED_OPENCODE_AGENT])
-    ? { ...existingAgents[CLAUDIAN_MANAGED_OPENCODE_AGENT] }
-    : {};
+  const nextAgents: Record<string, unknown> = { ...existingAgents };
 
-  config.agent = {
-    ...existingAgents,
-    [CLAUDIAN_MANAGED_OPENCODE_AGENT]: {
-      ...existingManagedAgent,
-      ...existingDefaultAgent,
+  for (const agentId of OPENCODE_SYSTEM_PROMPT_AGENT_IDS) {
+    const existingAgent = isPlainObject(existingAgents[agentId])
+      ? { ...existingAgents[agentId] }
+      : {};
+    nextAgents[agentId] = {
+      ...existingAgent,
       prompt: `{file:${systemPromptPath}}`,
-    },
-  };
-  config.default_agent = CLAUDIAN_MANAGED_OPENCODE_AGENT;
+    };
+  }
+
+  config.agent = nextAgents;
 
   const trimmedUserName = userName?.trim();
   if (trimmedUserName) {

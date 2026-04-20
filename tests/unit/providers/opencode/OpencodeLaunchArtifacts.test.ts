@@ -8,15 +8,17 @@ import {
 } from '../../../../src/providers/opencode/runtime/OpencodeLaunchArtifacts';
 
 describe('buildOpencodeManagedConfig', () => {
-  it('pins OpenCode to the managed prompt file', () => {
+  it('pins OpenCode build and plan prompts to the managed prompt file', () => {
     expect(buildOpencodeManagedConfig({}, '/vault/.context/opencode/system.md', 'Yishen')).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
-        claudian_managed: {
+        build: {
+          prompt: '{file:/vault/.context/opencode/system.md}',
+        },
+        plan: {
           prompt: '{file:/vault/.context/opencode/system.md}',
         },
       },
-      default_agent: 'claudian_managed',
       username: 'Yishen',
     });
   });
@@ -40,13 +42,13 @@ describe('buildOpencodeManagedConfig', () => {
       agent: {
         build: {
           model: 'openai/gpt-5',
+          prompt: '{file:/vault/.context/opencode/system.md}',
         },
-        claudian_managed: {
-          model: 'openai/gpt-5',
+        plan: {
           prompt: '{file:/vault/.context/opencode/system.md}',
         },
       },
-      default_agent: 'claudian_managed',
+      default_agent: 'build',
       providers: {
         openai: {
           api_key: 'test-key',
@@ -91,7 +93,7 @@ describe('prepareOpencodeLaunchArtifacts', () => {
 
     const generatedConfig = JSON.parse(await fs.readFile(result.configPath, 'utf8'));
     expect(generatedConfig).toMatchObject({
-      default_agent: 'claudian_managed',
+      default_agent: 'build',
       providers: {
         anthropic: {
           api_key: 'anthropic-key',
@@ -100,8 +102,11 @@ describe('prepareOpencodeLaunchArtifacts', () => {
       username: 'Yishen',
     });
     expect(generatedConfig.agent).toMatchObject({
-      claudian_managed: {
+      build: {
         model: 'openai/gpt-5',
+        prompt: `{file:${result.systemPromptPath}}`,
+      },
+      plan: {
         prompt: `{file:${result.systemPromptPath}}`,
       },
     });
