@@ -17,7 +17,6 @@ describe('buildOpencodePromptText', () => {
         startLine: 4,
         lineCount: 2,
       },
-      externalContextPaths: ['/tmp/project'],
       text: 'Summarize this',
     });
 
@@ -26,8 +25,17 @@ describe('buildOpencodePromptText', () => {
     expect(prompt).toContain('notes/today.md');
     expect(prompt).toContain('<editor_selection path="notes/today.md" lines="4-5">');
     expect(prompt).toContain('<browser_selection source="browser:https://example.com" title="Example" url="https://example.com">');
-    expect(prompt).toContain('<context_files>');
-    expect(prompt).toContain('/tmp/project');
+  });
+
+  it('does not auto-attach external context folders to the OpenCode prompt', () => {
+    const prompt = buildOpencodePromptText({
+      externalContextPaths: ['/tmp/project'],
+      text: 'Summarize this',
+    });
+
+    expect(prompt).toContain('Summarize this');
+    expect(prompt).not.toContain('<context_files>');
+    expect(prompt).not.toContain('/tmp/project');
   });
 
   it('rebuilds prior conversation context when a native session must be recreated', () => {

@@ -488,10 +488,14 @@ export interface AcpRequestPermissionRequest {
 }
 
 export type AcpRequestPermissionResponse = {
-  outcome: 'cancelled';
-} | {
-  optionId: AcpPermissionOptionId;
-  outcome: 'selected';
+  outcome:
+    | {
+      outcome: 'cancelled';
+    }
+    | {
+      optionId: AcpPermissionOptionId;
+      outcome: 'selected';
+    };
 };
 
 export interface AcpReadTextFileRequest {

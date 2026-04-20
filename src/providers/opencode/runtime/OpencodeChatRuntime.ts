@@ -1022,7 +1022,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     request: AcpRequestPermissionRequest,
   ): Promise<AcpRequestPermissionResponse> {
     if (!this.approvalCallback) {
-      return { outcome: 'cancelled' };
+      return { outcome: { outcome: 'cancelled' } };
     }
 
     const input = normalizeApprovalInput(request.toolCall.rawInput);
@@ -1360,12 +1360,14 @@ function mapApprovalDecision(
 
   if (typeof decision === 'object' && decision.type === 'select-option') {
     return {
-      optionId: decision.value,
-      outcome: 'selected',
+      outcome: {
+        optionId: decision.value,
+        outcome: 'selected',
+      },
     };
   }
 
-  return { outcome: 'cancelled' };
+  return { outcome: { outcome: 'cancelled' } };
 }
 
 function buildAcpApprovalDecisionOptions(
@@ -1397,13 +1399,15 @@ function selectPermissionOption(
     const option = options.find((entry) => entry.kind === kind);
     if (option) {
       return {
-        optionId: option.optionId,
-        outcome: 'selected',
+        outcome: {
+          optionId: option.optionId,
+          outcome: 'selected',
+        },
       };
     }
   }
 
-  return { outcome: 'cancelled' };
+  return { outcome: { outcome: 'cancelled' } };
 }
 
 function sameDiscoveredModels(

@@ -2319,6 +2319,45 @@ describe('InputController - Message Queue', () => {
       await approvalPromise;
     });
 
+    it.each([
+      ['Allow once', 'approval-allow-once', 'allow'],
+      ['Always allow', 'approval-allow-always', 'allow-always'],
+      ['Reject', 'approval-reject', { type: 'select-option', value: 'approval-reject' }],
+    ] as const)(
+      'preserves provider option values for "%s"',
+      async (optionLabel, optionValue, expectedDecision) => {
+        const parentEl = createMockEl();
+        const inputContainerEl = createMockEl();
+        (inputContainerEl as any).parentElement = parentEl;
+        deps.getInputContainerEl = () => inputContainerEl as any;
+
+        controller = new InputController(deps);
+
+        const approvalPromise = controller.handleApprovalRequest(
+          'External Directory',
+          { filepath: '/tmp/outside' },
+          'OpenCode wants to access a path outside the working directory.',
+          {
+            decisionOptions: [
+              { label: 'Allow once', value: 'approval-allow-once', decision: 'allow' },
+              { label: 'Always allow', value: 'approval-allow-always', decision: 'allow-always' },
+              { label: 'Reject', value: 'approval-reject' },
+            ],
+          },
+        );
+
+        const items = parentEl.querySelectorAll('claudian-ask-item');
+        const target = items.find((item: any) => {
+          const label = item.querySelector('claudian-ask-item-label');
+          return label?.textContent === optionLabel;
+        });
+        expect(target).toBeDefined();
+        target!.click();
+
+        await expect(approvalPromise).resolves.toEqual(expectedDecision);
+      },
+    );
+
     it('should return provider-specific amendment decisions from supplied approval options', async () => {
       const parentEl = createMockEl();
       const inputContainerEl = createMockEl();

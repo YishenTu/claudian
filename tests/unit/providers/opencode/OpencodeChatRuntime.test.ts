@@ -139,8 +139,10 @@ describe('OpencodeChatRuntime', () => {
         toolCallId: 'tool-1',
       },
     })).resolves.toEqual({
-      optionId: 'approve-now',
-      outcome: 'selected',
+      outcome: {
+        optionId: 'approve-now',
+        outcome: 'selected',
+      },
     });
 
     expect(approvalCallback).toHaveBeenCalledWith(
@@ -157,6 +159,31 @@ describe('OpencodeChatRuntime', () => {
         decisionReason: 'Path is outside the session working directory',
       },
     );
+  });
+
+  it('returns the nested ACP approval envelope for allow-always selections', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    runtime.setApprovalCallback(jest.fn().mockResolvedValue('allow-always'));
+
+    await expect((runtime as any).handlePermissionRequest({
+      options: [
+        { kind: 'allow_once', name: 'Allow once', optionId: 'approve-now' },
+        { kind: 'allow_always', name: 'Always allow', optionId: 'approve-always' },
+        { kind: 'reject_once', name: 'Reject', optionId: 'deny-now' },
+      ],
+      sessionId: 'session-1',
+      toolCall: {
+        kind: 'other',
+        rawInput: { filepath: '/tmp/outside', parentDir: '/tmp' },
+        title: 'external_directory',
+        toolCallId: 'tool-1',
+      },
+    })).resolves.toEqual({
+      outcome: {
+        optionId: 'approve-always',
+        outcome: 'selected',
+      },
+    });
   });
 
   it('syncs OpenCode session modes into provider settings without clobbering an explicit user choice', async () => {
