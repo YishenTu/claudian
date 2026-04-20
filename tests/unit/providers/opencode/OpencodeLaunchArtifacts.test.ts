@@ -9,14 +9,14 @@ import {
 
 describe('buildOpencodeManagedConfig', () => {
   it('pins OpenCode build and plan prompts to the managed prompt file', () => {
-    expect(buildOpencodeManagedConfig({}, '/vault/.context/opencode/system.md', 'Yishen')).toEqual({
+    expect(buildOpencodeManagedConfig({}, '/vault/.claudian/opencode/system.md', 'Yishen')).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
         build: {
-          prompt: '{file:/vault/.context/opencode/system.md}',
+          prompt: '{file:/vault/.claudian/opencode/system.md}',
         },
         plan: {
-          prompt: '{file:/vault/.context/opencode/system.md}',
+          prompt: '{file:/vault/.claudian/opencode/system.md}',
         },
       },
       username: 'Yishen',
@@ -37,15 +37,15 @@ describe('buildOpencodeManagedConfig', () => {
         },
       },
       username: 'Existing',
-    }, '/vault/.context/opencode/system.md')).toEqual({
+    }, '/vault/.claudian/opencode/system.md')).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
         build: {
           model: 'openai/gpt-5',
-          prompt: '{file:/vault/.context/opencode/system.md}',
+          prompt: '{file:/vault/.claudian/opencode/system.md}',
         },
         plan: {
-          prompt: '{file:/vault/.context/opencode/system.md}',
+          prompt: '{file:/vault/.claudian/opencode/system.md}',
         },
       },
       default_agent: 'build',
@@ -91,6 +91,8 @@ describe('prepareOpencodeLaunchArtifacts', () => {
       workspaceRoot: tmpRoot,
     });
 
+    expect(result.configPath).toBe(path.join(tmpRoot, '.claudian', 'opencode', 'config.json'));
+    expect(result.systemPromptPath).toBe(path.join(tmpRoot, '.claudian', 'opencode', 'system.md'));
     const generatedConfig = JSON.parse(await fs.readFile(result.configPath, 'utf8'));
     expect(generatedConfig).toMatchObject({
       default_agent: 'build',

@@ -1,5 +1,7 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
+import type { HostnameCliPaths } from '../../core/types/settings';
+import { getHostnameKey } from '../../utils/env';
 import {
   normalizeOpencodeDiscoveredModels,
   type OpencodeDiscoveredModel,
@@ -14,6 +16,7 @@ import {
 export interface OpencodeProviderSettings {
   availableModes: OpencodeMode[];
   cliPath: string;
+  cliPathsByHost: HostnameCliPaths;
   discoveredModels: OpencodeDiscoveredModel[];
   enabled: boolean;
   environmentVariables: string;
@@ -27,6 +30,7 @@ export interface OpencodeProviderSettings {
 export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<OpencodeProviderSettings> = Object.freeze({
   availableModes: [],
   cliPath: '',
+  cliPathsByHost: {},
   discoveredModels: [],
   enabled: false,
   environmentVariables: '',
@@ -36,6 +40,20 @@ export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<OpencodeProviderSettin
   selectedMode: '',
   visibleModels: [],
 });
+
+function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const result: HostnameCliPaths = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === 'string' && entry.trim()) {
+      result[key] = entry.trim();
+    }
+  }
+  return result;
+}
 
 export function normalizeOpencodeVisibleModels(
   value: unknown,
@@ -122,10 +140,12 @@ export function getOpencodeProviderSettings(
   const config = getProviderConfig(settings, 'opencode');
   const availableModes = normalizeOpencodeAvailableModes(config.availableModes);
   const discoveredModels = normalizeOpencodeDiscoveredModels(config.discoveredModels);
+
   return {
     availableModes,
     cliPath: (config.cliPath as string | undefined)
       ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath,
+    cliPathsByHost: normalizeHostnameCliPaths(config.cliPathsByHost),
     discoveredModels,
     enabled: (config.enabled as boolean | undefined)
       ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.enabled,
@@ -149,6 +169,7 @@ export function updateOpencodeProviderSettings(
   updates: Partial<OpencodeProviderSettings>,
 ): OpencodeProviderSettings {
   const current = getOpencodeProviderSettings(settings);
+  const hostnameKey = getHostnameKey();
   const nextAvailableModes = normalizeOpencodeAvailableModes(
     updates.availableModes ?? current.availableModes,
   );
@@ -169,10 +190,31 @@ export function updateOpencodeProviderSettings(
     ),
     nextVisibleModels,
   );
+  const nextCliPathsByHost = 'cliPathsByHost' in updates
+    ? normalizeHostnameCliPaths(updates.cliPathsByHost)
+    : { ...current.cliPathsByHost };
+
+  if (
+    Object.keys(nextCliPathsByHost).length === 0
+    && current.cliPath.trim()
+  ) {
+    nextCliPathsByHost[hostnameKey] = current.cliPath.trim();
+  }
+
+  if ('cliPath' in updates) {
+    const trimmedCliPath = typeof updates.cliPath === 'string' ? updates.cliPath.trim() : '';
+    if (trimmedCliPath) {
+      nextCliPathsByHost[hostnameKey] = trimmedCliPath;
+    } else {
+      delete nextCliPathsByHost[hostnameKey];
+    }
+  }
+
   const next: OpencodeProviderSettings = {
     ...current,
     ...updates,
     availableModes: nextAvailableModes,
+    cliPathsByHost: nextCliPathsByHost,
     discoveredModels: nextDiscoveredModels,
     modelAliases: nextModelAliases,
     preferredThinkingByModel: normalizeOpencodePreferredThinkingByModel(
@@ -193,6 +235,7 @@ export function updateOpencodeProviderSettings(
   setProviderConfig(settings, 'opencode', {
     availableModes: next.availableModes,
     cliPath: next.cliPath,
+    cliPathsByHost: next.cliPathsByHost,
     discoveredModels: next.discoveredModels,
     enabled: next.enabled,
     environmentVariables: next.environmentVariables,

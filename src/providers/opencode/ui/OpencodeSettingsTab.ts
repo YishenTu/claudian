@@ -1,7 +1,11 @@
+import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
+import { getHostnameKey } from '../../../utils/env';
+import { expandHomePath } from '../../../utils/path';
+import { maybeGetOpencodeWorkspaceServices } from '../app/OpencodeWorkspaceServices';
 import {
   buildOpencodeBaseModels,
   type OpencodeDiscoveredModel,
@@ -26,8 +30,10 @@ interface EnrichedModel {
 
 export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
   render(container, context) {
+    const opencodeWorkspace = maybeGetOpencodeWorkspaceServices();
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
     const opencodeSettings = getOpencodeProviderSettings(settingsBag);
+    const hostnameKey = getHostnameKey();
 
     new Setting(container).setName('Setup').setHeading();
 
@@ -56,18 +62,97 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           })
       );
 
-    new Setting(container)
-      .setName('CLI Path')
-      .setDesc('Optional absolute path to the OpenCode CLI. Leave empty to use `opencode` from PATH.')
-      .addText((text) =>
-        text
-          .setPlaceholder('opencode')
-          .setValue(opencodeSettings.cliPath)
-          .onChange(async (value) => {
-            updateOpencodeProviderSettings(settingsBag, { cliPath: value.trim() });
-            await context.plugin.saveSettings();
-          })
+    const cliPathSetting = new Setting(container)
+      .setName(`CLI Path (${hostnameKey})`)
+      .setDesc('Optional absolute path to the OpenCode CLI for this computer. Leave empty to use `opencode` from PATH.');
+
+    const validationEl = container.createDiv({ cls: 'claudian-cli-path-validation' });
+    validationEl.style.color = 'var(--text-error)';
+    validationEl.style.fontSize = '0.85em';
+    validationEl.style.marginTop = '-0.5em';
+    validationEl.style.marginBottom = '0.5em';
+    validationEl.style.display = 'none';
+
+    const validatePath = (value: string): string | null => {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      const expandedPath = expandHomePath(trimmed);
+      if (!fs.existsSync(expandedPath)) {
+        return 'Path does not exist';
+      }
+
+      const stat = fs.statSync(expandedPath);
+      if (!stat.isFile()) {
+        return 'Path must point to a file';
+      }
+
+      return null;
+    };
+
+    const updateCliPathValidation = (value: string, inputEl?: HTMLInputElement): boolean => {
+      const error = validatePath(value);
+      if (error) {
+        validationEl.setText(error);
+        validationEl.style.display = 'block';
+        if (inputEl) {
+          inputEl.style.borderColor = 'var(--text-error)';
+        }
+        return false;
+      }
+
+      validationEl.style.display = 'none';
+      if (inputEl) {
+        inputEl.style.borderColor = '';
+      }
+      return true;
+    };
+
+    const cliPathsByHost = { ...opencodeSettings.cliPathsByHost };
+    const currentValue = opencodeSettings.cliPathsByHost[hostnameKey] || '';
+    let cliPathInputEl: HTMLInputElement | null = null;
+
+    const persistCliPath = async (value: string): Promise<boolean> => {
+      const isValid = updateCliPathValidation(value, cliPathInputEl ?? undefined);
+      if (!isValid) {
+        return false;
+      }
+
+      const trimmed = value.trim();
+      if (trimmed) {
+        cliPathsByHost[hostnameKey] = trimmed;
+      } else {
+        delete cliPathsByHost[hostnameKey];
+      }
+
+      updateOpencodeProviderSettings(settingsBag, { cliPathsByHost: { ...cliPathsByHost } });
+      await context.plugin.saveSettings();
+      opencodeWorkspace?.cliResolver?.reset();
+      const view = context.plugin.getView();
+      await view?.getTabManager()?.broadcastToAllTabs(
+        (service) => Promise.resolve(service.cleanup()),
       );
+      return true;
+    };
+
+    cliPathSetting.addText((text) => {
+      text
+        .setPlaceholder(process.platform === 'win32'
+          ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\opencode.cmd'
+          : '/usr/local/bin/opencode')
+        .setValue(currentValue)
+        .onChange(async (value) => {
+          await persistCliPath(value);
+        });
+
+      text.inputEl.addClass('claudian-settings-cli-path-input');
+      text.inputEl.style.width = '100%';
+      cliPathInputEl = text.inputEl;
+
+      updateCliPathValidation(currentValue, text.inputEl);
+    });
 
     new Setting(container).setName('Models').setHeading();
 

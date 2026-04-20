@@ -1,3 +1,8 @@
+jest.mock('../../../../src/utils/env', () => ({
+  ...jest.requireActual('../../../../src/utils/env'),
+  getHostnameKey: () => 'host-a',
+}));
+
 import {
   getOpencodeProviderSettings,
   normalizeOpencodeModelAliases,
@@ -38,6 +43,11 @@ describe('OpenCode settings normalization', () => {
     expect(getOpencodeProviderSettings({
       providerConfigs: {
         opencode: {
+          cliPath: '/legacy/opencode',
+          cliPathsByHost: {
+            'host-a': '/host-a/opencode',
+            'host-b': '/host-b/opencode',
+          },
           discoveredModels,
           preferredThinkingByModel: {
             'anthropic/claude-sonnet-4/high': 'high',
@@ -51,6 +61,11 @@ describe('OpenCode settings normalization', () => {
     })).toMatchObject({
       preferredThinkingByModel: {
         'anthropic/claude-sonnet-4': 'high',
+      },
+      cliPath: '/legacy/opencode',
+      cliPathsByHost: {
+        'host-a': '/host-a/opencode',
+        'host-b': '/host-b/opencode',
       },
       visibleModels: [
         'anthropic/claude-sonnet-4',
@@ -101,5 +116,46 @@ describe('OpenCode settings normalization', () => {
 
     expect(next.visibleModels).toEqual(['anthropic/claude-sonnet-4']);
     expect(next.modelAliases).toEqual({ 'anthropic/claude-sonnet-4': 'Sonnet' });
+  });
+
+  it('preserves legacy cliPath when no host-scoped path exists', () => {
+    expect(getOpencodeProviderSettings({
+      providerConfigs: {
+        opencode: {
+          cliPath: '/legacy/opencode',
+          cliPathsByHost: {
+            'host-b': '/other-host/opencode',
+          },
+        },
+      },
+    })).toMatchObject({
+      cliPath: '/legacy/opencode',
+      cliPathsByHost: {
+        'host-b': '/other-host/opencode',
+      },
+    });
+  });
+
+  it('writes host-scoped cli paths when updating provider settings', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        opencode: {
+          cliPath: '/legacy/opencode',
+        },
+      },
+    };
+
+    const next = updateOpencodeProviderSettings(settings, {
+      cliPathsByHost: {
+        'host-a': '/custom/opencode',
+      },
+    });
+
+    expect(next.cliPathsByHost).toEqual({
+      'host-a': '/custom/opencode',
+    });
+    expect((settings.providerConfigs as Record<string, any>).opencode.cliPathsByHost).toEqual({
+      'host-a': '/custom/opencode',
+    });
   });
 });

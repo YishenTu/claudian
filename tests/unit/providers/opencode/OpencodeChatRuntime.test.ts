@@ -161,6 +161,20 @@ describe('OpencodeChatRuntime', () => {
     );
   });
 
+  it('forces OpenCode project instruction isolation flags in the runtime environment', () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin({
+      settings: {
+        sharedEnvironmentVariables: 'OPENCODE_DISABLE_PROJECT_CONFIG=false\nOPENCODE_DISABLE_CLAUDE_CODE_PROMPT=false',
+      },
+    }));
+
+    const env = (runtime as any).buildRuntimeEnv('/usr/local/bin/opencode', '/tmp/opencode.db');
+
+    expect(env.OPENCODE_DB).toBe('/tmp/opencode.db');
+    expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('true');
+    expect(env.OPENCODE_DISABLE_CLAUDE_CODE_PROMPT).toBe('true');
+  });
+
   it('returns the nested ACP approval envelope for allow-always selections', async () => {
     const runtime = new OpencodeChatRuntime(createMockPlugin());
     runtime.setApprovalCallback(jest.fn().mockResolvedValue('allow-always'));

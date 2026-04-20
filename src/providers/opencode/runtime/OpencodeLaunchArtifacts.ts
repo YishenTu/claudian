@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
+import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/StoragePaths';
 import {
   buildSystemPrompt,
   computeSystemPromptKey,
@@ -27,7 +28,7 @@ export interface PrepareOpencodeLaunchArtifactsParams {
 export async function prepareOpencodeLaunchArtifacts(
   params: PrepareOpencodeLaunchArtifactsParams,
 ): Promise<OpencodeLaunchArtifacts> {
-  const artifactsDir = path.join(params.workspaceRoot, '.context', 'opencode');
+  const artifactsDir = path.join(params.workspaceRoot, CLAUDIAN_STORAGE_PATH, 'opencode');
   const systemPromptPath = path.join(artifactsDir, 'system.md');
   const configPath = path.join(artifactsDir, 'config.json');
   const systemPrompt = `${buildSystemPrompt(params.settings)}\n`;
