@@ -110,6 +110,11 @@ const createMockModelSelector = () => ({
   setReady: jest.fn(),
 });
 
+const createMockModeSelector = () => ({
+  updateDisplay: jest.fn(),
+  renderOptions: jest.fn(),
+});
+
 const createMockClaudianService = (overrides?: {
   ensureReady?: jest.Mock;
   syncConversationState?: jest.Mock;
@@ -164,6 +169,7 @@ const createMockMcpServerSelector = () => ({
 });
 
 const createMockPermissionToggle = () => ({
+  setVisible: jest.fn(),
   updateDisplay: jest.fn(),
 });
 
@@ -179,6 +185,7 @@ let mockInstructionModeManager: ReturnType<typeof createMockInstructionModeManag
 let mockBangBashModeManager: ReturnType<typeof createMockBangBashModeManager>;
 let mockStatusPanel: ReturnType<typeof createMockStatusPanel>;
 let mockModelSelector: ReturnType<typeof createMockModelSelector>;
+let mockModeSelector: ReturnType<typeof createMockModeSelector>;
 let mockThinkingBudgetSelector: ReturnType<typeof createMockThinkingBudgetSelector>;
 let mockContextUsageMeter: ReturnType<typeof createMockContextUsageMeter>;
 let mockExternalContextSelector: ReturnType<typeof createMockExternalContextSelector>;
@@ -258,6 +265,7 @@ jest.mock('@/features/chat/ui/StatusPanel', () => ({
 jest.mock('@/features/chat/ui/InputToolbar', () => ({
   createInputToolbar: jest.fn().mockImplementation(() => {
     mockModelSelector = createMockModelSelector();
+    mockModeSelector = createMockModeSelector();
     mockThinkingBudgetSelector = createMockThinkingBudgetSelector();
     mockContextUsageMeter = createMockContextUsageMeter();
     mockExternalContextSelector = createMockExternalContextSelector();
@@ -266,6 +274,7 @@ jest.mock('@/features/chat/ui/InputToolbar', () => ({
     mockServiceTierToggle = createMockServiceTierToggle();
     return {
       modelSelector: mockModelSelector,
+      modeSelector: mockModeSelector,
       thinkingBudgetSelector: mockThinkingBudgetSelector,
       contextUsageMeter: mockContextUsageMeter,
       externalContextSelector: mockExternalContextSelector,
@@ -1010,6 +1019,71 @@ describe('Tab - Service Initialization', () => {
         codex: 'gpt-5.4',
       }));
       expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+
+    it('persists provider-owned mode selections for OpenCode tabs', async () => {
+      const plugin = createMockPlugin({
+        settings: {
+          excludedTags: [],
+          model: 'claude-sonnet-4-5',
+          thinkingBudget: 'low',
+          effortLevel: 'high',
+          permissionMode: 'default',
+          keyboardNavigation: {
+            scrollUpKey: 'k',
+            scrollDownKey: 'j',
+            focusInputKey: 'i',
+          },
+          persistentExternalContextPaths: [],
+          settingsProvider: 'claude',
+          providerConfigs: {
+            opencode: {
+              availableModes: [
+                { id: 'build', name: 'Build' },
+                { id: 'plan', name: 'Plan' },
+              ],
+              enabled: true,
+              selectedMode: 'build',
+            },
+          },
+          savedProviderEffort: {
+            claude: 'high',
+            opencode: 'default',
+          },
+          savedProviderModel: {
+            claude: 'claude-sonnet-4-5',
+            opencode: 'opencode:openai/gpt-5',
+          },
+        },
+      });
+
+      const tab = createTab(createMockOptions({
+        plugin,
+        conversation: {
+          id: 'conv-opencode-settings',
+          providerId: 'opencode',
+          title: 'OpenCode conversation',
+          messages: [],
+          sessionId: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      }));
+
+      initializeTabUI(tab, plugin);
+      expect(mockPermissionToggle.setVisible).toHaveBeenLastCalledWith(false);
+
+      const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
+        createInputToolbar: jest.Mock;
+      };
+      const toolbarCallbacks = toolbarModule.createInputToolbar.mock.calls.at(-1)?.[1];
+
+      await toolbarCallbacks.onModeChange('plan');
+
+      expect(plugin.settings.providerConfigs.opencode.selectedMode).toBe('plan');
+      expect(plugin.saveSettings).toHaveBeenCalled();
+      expect(mockModeSelector.updateDisplay).toHaveBeenCalled();
+      expect(mockModeSelector.renderOptions).toHaveBeenCalled();
     });
 
     it('resets to blank state when the new-conversation callback fires', () => {

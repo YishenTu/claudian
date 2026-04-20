@@ -18,6 +18,7 @@ jest.mock('fs');
 function createMockCallbacks() {
   return {
     onModelChange: jest.fn(),
+    onModeChange: jest.fn().mockResolvedValue(undefined),
     onThinkingBudgetChange: jest.fn(),
     onEffortLevelChange: jest.fn().mockResolvedValue(undefined),
     onServiceTierChange: jest.fn().mockResolvedValue(undefined),

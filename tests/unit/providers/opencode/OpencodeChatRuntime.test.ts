@@ -133,9 +133,9 @@ describe('OpencodeChatRuntime', () => {
       ],
       sessionId: 'session-1',
       toolCall: {
-        kind: 'read',
-        rawInput: { file_path: 'notes.md' },
-        title: 'Read file',
+        kind: 'other',
+        rawInput: { filepath: '/tmp/outside', parentDir: '/tmp' },
+        title: 'external_directory',
         toolCallId: 'tool-1',
       },
     })).resolves.toEqual({
@@ -144,15 +144,161 @@ describe('OpencodeChatRuntime', () => {
     });
 
     expect(approvalCallback).toHaveBeenCalledWith(
-      'Read file',
-      { file_path: 'notes.md' },
-      '',
+      'External Directory',
+      { filepath: '/tmp/outside', parentDir: '/tmp' },
+      'OpenCode wants to access a path outside the working directory.',
       {
+        blockedPath: '/tmp/outside',
         decisionOptions: [
           { decision: 'allow', label: 'Allow once', value: 'approve-now' },
           { decision: 'allow-always', label: 'Always allow', value: 'approve-always' },
           { label: 'Deny', value: 'deny-now' },
         ],
+        decisionReason: 'Path is outside the session working directory',
+      },
+    );
+  });
+
+  it('syncs OpenCode session modes into provider settings without clobbering an explicit user choice', async () => {
+    const refreshModelSelector = jest.fn();
+    const plugin = createMockPlugin({
+      getAllViews: jest.fn().mockReturnValue([{ refreshModelSelector }]),
+      settings: {
+        providerConfigs: {
+          opencode: {
+            availableModes: [
+              { id: 'build', name: 'Build' },
+            ],
+            selectedMode: 'plan',
+          },
+        },
+      },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+
+    await (runtime as any).syncSessionModeState({
+      configOptions: [{
+        currentValue: 'build',
+        id: 'mode',
+        name: 'Mode',
+        options: [
+          { name: 'Build', value: 'build' },
+          { description: 'Planning-first agent', name: 'Plan', value: 'plan' },
+        ],
+        type: 'select',
+      }],
+    });
+
+    expect(plugin.settings.providerConfigs.opencode.availableModes).toEqual([
+      { id: 'build', name: 'Build' },
+      { description: 'Planning-first agent', id: 'plan', name: 'Plan' },
+    ]);
+    expect(plugin.settings.providerConfigs.opencode.selectedMode).toBe('plan');
+    expect((runtime as any).currentSessionModeId).toBe('build');
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(refreshModelSelector).toHaveBeenCalledTimes(1);
+  });
+
+  it('seeds the OpenCode selected mode when no explicit mode has been saved yet', async () => {
+    const plugin = createMockPlugin({
+      settings: {
+        providerConfigs: {
+          opencode: {
+            availableModes: [],
+            selectedMode: '',
+          },
+        },
+      },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+
+    await (runtime as any).syncSessionModeState({
+      currentModeId: 'build',
+    });
+
+    expect(plugin.settings.providerConfigs.opencode.selectedMode).toBe('build');
+  });
+
+  it('defaults OpenCode mode selection to build before ACP mode discovery finishes', () => {
+    const plugin = createMockPlugin({
+      settings: {
+        providerConfigs: {
+          opencode: {
+            availableModes: [],
+            selectedMode: '',
+          },
+        },
+      },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot').mockReturnValue(plugin.settings);
+
+    expect((runtime as any).resolveSelectedModeId()).toBe('build');
+  });
+
+  it('prefers build/plan over auxiliary OpenCode primary modes for the main toolbar', () => {
+    const plugin = createMockPlugin({
+      settings: {
+        providerConfigs: {
+          opencode: {
+            availableModes: [
+              { id: 'build', name: 'build' },
+              { id: 'compaction', name: 'compaction' },
+              { id: 'plan', name: 'plan' },
+            ],
+            selectedMode: '',
+          },
+        },
+      },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot').mockReturnValue(plugin.settings);
+
+    expect((runtime as any).resolveSelectedModeId()).toBe('build');
+  });
+
+  it('summarizes workflow approval prompts with tool metadata', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    const approvalCallback = jest.fn().mockResolvedValue('allow');
+
+    runtime.setApprovalCallback(approvalCallback);
+
+    await (runtime as any).handlePermissionRequest({
+      options: [
+        { kind: 'allow_once', name: 'Allow once', optionId: 'approve-now' },
+      ],
+      sessionId: 'session-1',
+      toolCall: {
+        kind: 'other',
+        rawInput: {
+          tools: [
+            { name: 'bash', args: JSON.stringify({ title: 'npm test' }) },
+            { name: 'edit', args: JSON.stringify({ title: 'src/app.ts' }) },
+            { name: 'read', args: '{}' },
+            { name: 'glob', args: '{}' },
+          ],
+        },
+        title: 'workflow_tool_approval',
+        toolCallId: 'tool-2',
+      },
+    });
+
+    expect(approvalCallback).toHaveBeenCalledWith(
+      'Workflow Approval',
+      {
+        tools: [
+          { args: JSON.stringify({ title: 'npm test' }), name: 'bash' },
+          { args: JSON.stringify({ title: 'src/app.ts' }), name: 'edit' },
+          { args: '{}', name: 'read' },
+          { args: '{}', name: 'glob' },
+        ],
+      },
+      'Pre-approve workflow tools for this session: bash: npm test, edit: src/app.ts, read +1 more.',
+      {
+        decisionOptions: [
+          { decision: 'allow', label: 'Allow once', value: 'approve-now' },
+        ],
+        decisionReason: 'Session-level workflow approval requested',
       },
     );
   });

@@ -1,10 +1,8 @@
 import type {
   AcpSessionConfigOption,
-  AcpSessionConfigSelectGroup,
-  AcpSessionConfigSelectOption,
-  AcpSessionConfigSelectOptions,
   AcpSessionModelState,
 } from '../acp';
+import { flattenOpencodeSelectOptions } from './configOptions';
 
 export interface OpencodeDiscoveredModel {
   description?: string;
@@ -340,32 +338,13 @@ function extractFromConfigOptions(
   return {
     currentRawModelId: modelOption.currentValue,
     discoveredModels: normalizeOpencodeDiscoveredModels(
-      flattenSelectOptions(modelOption.options).map((option) => ({
+      flattenOpencodeSelectOptions(modelOption.options).map((option) => ({
         description: option.description ?? undefined,
         label: option.name,
         rawId: option.value,
       })),
     ),
   };
-}
-
-function flattenSelectOptions(options: AcpSessionConfigSelectOptions): AcpSessionConfigSelectOption[] {
-  if (options.length === 0) {
-    return [];
-  }
-
-  const first = options[0];
-  if (isSelectGroup(first)) {
-    return (options as AcpSessionConfigSelectGroup[]).flatMap((group) => group.options);
-  }
-
-  return options as AcpSessionConfigSelectOption[];
-}
-
-function isSelectGroup(
-  option: AcpSessionConfigSelectOption | AcpSessionConfigSelectGroup,
-): option is AcpSessionConfigSelectGroup {
-  return 'options' in option;
 }
 
 function dedupeOpencodeVariants(variants: OpencodeModelVariant[]): OpencodeModelVariant[] {

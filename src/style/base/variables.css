@@ -17,3 +17,13 @@ body.theme-light .claudian-container[data-provider="codex"] {
   --claudian-brand: #000000;
   --claudian-brand-rgb: 0, 0, 0;
 }
+
+body.theme-dark .claudian-container[data-provider="opencode"] {
+  --claudian-brand: #C8C8C8;
+  --claudian-brand-rgb: 200, 200, 200;
+}
+
+body.theme-light .claudian-container[data-provider="opencode"] {
+  --claudian-brand: #5A5A5A;
+  --claudian-brand-rgb: 90, 90, 90;
+}

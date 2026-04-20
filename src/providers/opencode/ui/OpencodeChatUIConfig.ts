@@ -1,8 +1,10 @@
 import type {
   ProviderChatUIConfig,
+  ProviderModeSelectorConfig,
   ProviderReasoningOption,
   ProviderUIOption,
 } from '../../../core/providers/types';
+import { OPENCODE_PROVIDER_ICON } from '../../../shared/icons';
 import {
   buildOpencodeBaseModels,
   decodeOpencodeModelId,
@@ -13,6 +15,7 @@ import {
   OPENCODE_SYNTHETIC_MODEL_ID,
   resolveOpencodeBaseModelRawId,
 } from '../models';
+import { getOpencodeToolbarModes, type OpencodeMode } from '../modes';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '../settings';
 
 const OPENCODE_MODELS: ProviderUIOption[] = [
@@ -23,13 +26,17 @@ const DEFAULT_CONTEXT_WINDOW = 200_000;
 export const opencodeChatUIConfig: ProviderChatUIConfig = {
   getModelOptions(settings): ProviderUIOption[] {
     const opencodeSettings = getOpencodeProviderSettings(settings);
+    const applyAlias = (rawId: string, option: ProviderUIOption): ProviderUIOption => {
+      const alias = opencodeSettings.modelAliases[rawId];
+      return alias ? { ...option, label: alias } : option;
+    };
     const discoveredModels = new Map(buildOpencodeBaseModels(opencodeSettings.discoveredModels).map((model) => [
       encodeOpencodeModelId(model.rawId),
-      {
+      applyAlias(model.rawId, {
         description: model.description ?? 'ACP runtime',
         label: model.label,
         value: encodeOpencodeModelId(model.rawId),
-      } satisfies ProviderUIOption,
+      }),
     ]));
     const savedProviderModel = (
       settings.savedProviderModel
@@ -59,19 +66,18 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
         continue;
       }
 
-      const baseModelId = encodeOpencodeModelId(
-        resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels),
-      );
+      const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels);
+      const baseModelId = encodeOpencodeModelId(baseRawId);
       pushOption(
         options,
         seenValues,
         baseModelId,
         discoveredModels.get(baseModelId)
-          ?? {
+          ?? applyAlias(baseRawId, {
             description: 'Selected in an existing session',
-            label: resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels),
+            label: baseRawId,
             value: baseModelId,
-          },
+          }),
       );
     }
 
@@ -82,11 +88,11 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
         seenValues,
         encodedModelId,
         discoveredModels.get(encodedModelId)
-          ?? {
+          ?? applyAlias(rawModelId, {
             description: 'Configured model',
             label: rawModelId,
             value: encodedModelId,
-          },
+          }),
       );
     }
 
@@ -206,6 +212,43 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
   getCustomModelIds(): Set<string> {
     return new Set<string>();
   },
+
+  getModeSelector(settings: Record<string, unknown>): ProviderModeSelectorConfig | null {
+    const opencodeSettings = getOpencodeProviderSettings(settings);
+    const availableModes = getOpencodeToolbarModes(opencodeSettings.availableModes);
+    if (availableModes.length <= 1) {
+      return null;
+    }
+
+    const selectedMode = availableModes.some((mode: OpencodeMode) => mode.id === opencodeSettings.selectedMode)
+      ? opencodeSettings.selectedMode
+      : availableModes[0]?.id || '';
+
+    return {
+      activeValue: 'build',
+      label: 'Mode',
+      options: availableModes.map((mode: OpencodeMode) => ({
+        ...(mode.description ? { description: mode.description } : {}),
+        label: formatOpencodeModeLabel(mode.name),
+        value: mode.id,
+      })),
+      value: selectedMode,
+    };
+  },
+
+  applyModeSelection(value: string, settings: unknown): void {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return;
+    }
+
+    updateOpencodeProviderSettings(settings as Record<string, unknown>, {
+      selectedMode: value,
+    });
+  },
+
+  getProviderIcon() {
+    return OPENCODE_PROVIDER_ICON;
+  },
 };
 
 function getDefaultThinkingLevelForModel(
@@ -222,6 +265,15 @@ function getDefaultThinkingLevelForModel(
   }
 
   return OPENCODE_DEFAULT_THINKING_LEVEL;
+}
+
+function formatOpencodeModeLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
 function pushOption(

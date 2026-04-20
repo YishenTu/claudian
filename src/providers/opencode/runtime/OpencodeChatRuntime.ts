@@ -46,6 +46,7 @@ import {
   type AcpRequestPermissionResponse,
   type AcpSessionConfigOption,
   type AcpSessionModelState,
+  type AcpSessionModeState,
   type AcpSessionNotification,
   AcpSessionUpdateNormalizer,
   AcpSubprocess,
@@ -67,6 +68,11 @@ import {
   type OpencodeDiscoveredModel,
   resolveOpencodeBaseModelRawId,
 } from '../models';
+import {
+  extractOpencodeSessionModeState,
+  getOpencodeToolbarModes,
+  type OpencodeMode,
+} from '../modes';
 import { OpencodeToolStreamAdapter } from '../normalization/opencodeToolNormalization';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '../settings';
 import { getOpencodeState, type OpencodeProviderState } from '../types';
@@ -128,6 +134,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private currentDatabasePath: string | null = null;
   private currentLaunchKey: string | null = null;
   private currentSessionModelId: string | null = null;
+  private currentSessionModeId: string | null = null;
   private currentTurnMetadata: ChatTurnMetadata = {};
   private loadedSessionId: string | null = null;
   private process: AcpSubprocess | null = null;
@@ -179,6 +186,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const nextSessionId = conversation?.sessionId ?? null;
     if (this.sessionId !== nextSessionId) {
       this.currentSessionModelId = null;
+      this.currentSessionModeId = null;
       this.sessionInvalidated = false;
       this.setSupportedCommands([]);
     }
@@ -306,6 +314,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     const activeTurn = this.activeTurn;
     try {
+      await this.applySelectedMode(sessionId);
       await this.applySelectedModel(sessionId, queryOptions);
     } catch (error) {
       yield {
@@ -574,6 +583,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     this.activeTurn?.queue.close();
     this.activeTurn = null;
     this.currentSessionModelId = null;
+    this.currentSessionModeId = null;
     this.setSupportedCommands([]);
 
     this.connection?.dispose();
@@ -683,6 +693,42 @@ export class OpencodeChatRuntime implements ChatRuntime {
     return this.currentSessionModelId
       ? encodeOpencodeModelId(this.currentSessionModelId)
       : (selectedModel && isOpencodeModelSelectionId(selectedModel) ? selectedModel : undefined);
+  }
+
+  private resolveSelectedModeId(): string | null {
+    const opencodeSettings = getOpencodeProviderSettings(this.getProviderSettings());
+    const availableModes = getOpencodeToolbarModes(opencodeSettings.availableModes);
+    if (opencodeSettings.selectedMode) {
+      if (
+        availableModes.some((mode) => mode.id === opencodeSettings.selectedMode)
+      ) {
+        return opencodeSettings.selectedMode;
+      }
+    }
+
+    return availableModes[0]?.id || null;
+  }
+
+  private async applySelectedMode(sessionId: string): Promise<void> {
+    if (!this.connection) {
+      return;
+    }
+
+    const selectedModeId = this.resolveSelectedModeId();
+    if (!selectedModeId || selectedModeId === this.currentSessionModeId) {
+      return;
+    }
+
+    const response = await this.connection.setConfigOption({
+      configId: 'mode',
+      sessionId,
+      type: 'select',
+      value: selectedModeId,
+    });
+    this.currentSessionModeId = selectedModeId;
+    await this.syncSessionModeState({
+      configOptions: response.configOptions,
+    });
   }
 
   private async applySelectedModel(
@@ -799,6 +845,36 @@ export class OpencodeChatRuntime implements ChatRuntime {
     this.refreshModelSelectors();
   }
 
+  private async syncSessionModeState(params: {
+    configOptions?: AcpSessionConfigOption[] | null;
+    currentModeId?: string | null;
+    modes?: AcpSessionModeState | null;
+  }): Promise<void> {
+    const state = extractOpencodeSessionModeState(params);
+    const currentModeId = params.currentModeId ?? state.currentModeId;
+    if (currentModeId) {
+      this.currentSessionModeId = currentModeId;
+    }
+
+    const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
+    const currentSettings = getOpencodeProviderSettings(settingsBag);
+    const hasAvailableModes = state.availableModes.length > 0;
+    const shouldUpdateAvailableModes = hasAvailableModes
+      && !sameModes(currentSettings.availableModes, state.availableModes);
+    const shouldSeedSelectedMode = Boolean(currentModeId) && !currentSettings.selectedMode;
+    if (!shouldUpdateAvailableModes && !shouldSeedSelectedMode) {
+      return;
+    }
+
+    updateOpencodeProviderSettings(settingsBag, {
+      ...(shouldUpdateAvailableModes ? { availableModes: state.availableModes } : {}),
+      ...(shouldSeedSelectedMode && currentModeId ? { selectedMode: currentModeId } : {}),
+    });
+
+    await this.plugin.saveSettings();
+    this.refreshModelSelectors();
+  }
+
   private refreshModelSelectors(): void {
     for (const view of this.plugin.getAllViews()) {
       view.refreshModelSelector();
@@ -822,6 +898,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
       await this.syncSessionModelState({
         configOptions: response.configOptions ?? null,
         models: response.models ?? null,
+      });
+      await this.syncSessionModeState({
+        configOptions: response.configOptions ?? null,
+        modes: response.modes ?? null,
       });
       return response.sessionId;
     } catch {
@@ -849,6 +929,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
         configOptions: response.configOptions ?? null,
         models: response.models ?? null,
       });
+      await this.syncSessionModeState({
+        configOptions: response.configOptions ?? null,
+        modes: response.modes ?? null,
+      });
       return true;
     } catch {
       return false;
@@ -866,6 +950,16 @@ export class OpencodeChatRuntime implements ChatRuntime {
     if (normalized.type === 'config_options') {
       await this.syncSessionModelState({
         configOptions: normalized.configOptions,
+      });
+      await this.syncSessionModeState({
+        configOptions: normalized.configOptions,
+      });
+      return;
+    }
+
+    if (normalized.type === 'current_mode') {
+      await this.syncSessionModeState({
+        currentModeId: normalized.currentModeId,
       });
       return;
     }
@@ -931,11 +1025,15 @@ export class OpencodeChatRuntime implements ChatRuntime {
       return { outcome: 'cancelled' };
     }
 
+    const input = normalizeApprovalInput(request.toolCall.rawInput);
+    const presentation = buildOpencodePermissionPresentation(request.toolCall.title, input, request.toolCall.locations);
     const decision = await this.approvalCallback(
-      request.toolCall.title ?? request.toolCall.kind ?? 'tool',
-      normalizeApprovalInput(request.toolCall.rawInput),
-      '',
+      presentation.toolName,
+      input,
+      presentation.description,
       {
+        ...(presentation.blockedPath ? { blockedPath: presentation.blockedPath } : {}),
+        ...(presentation.decisionReason ? { decisionReason: presentation.decisionReason } : {}),
         decisionOptions: buildAcpApprovalDecisionOptions(request.options),
       },
     );
@@ -1025,6 +1123,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     this.sessionId = null;
     this.loadedSessionId = null;
     this.currentSessionModelId = null;
+    this.currentSessionModeId = null;
     this.setSupportedCommands([]);
   }
 }
@@ -1037,6 +1136,207 @@ function normalizeApprovalInput(rawInput: unknown): Record<string, unknown> {
     return {};
   }
   return { value: rawInput };
+}
+
+function buildOpencodePermissionPresentation(
+  rawTitle: string | null | undefined,
+  input: Record<string, unknown>,
+  locations: Array<{ path: string }> | null | undefined,
+): {
+  blockedPath?: string;
+  decisionReason?: string;
+  description: string;
+  toolName: string;
+} {
+  const permissionId = normalizePermissionId(rawTitle);
+  const blockedPath = extractPermissionPath(input, locations);
+
+  switch (permissionId) {
+    case 'bash':
+      return {
+        decisionReason: 'Command execution permission required',
+        description: 'OpenCode wants to run a shell command.',
+        toolName: 'bash',
+      };
+    case 'codesearch':
+      return {
+        description: 'OpenCode wants to search indexed code outside the active buffer.',
+        toolName: 'codesearch',
+      };
+    case 'doom_loop': {
+      const repeatedTool = typeof input.tool === 'string' ? input.tool.trim() : '';
+      return {
+        decisionReason: 'OpenCode detected repeated identical tool calls',
+        description: repeatedTool
+          ? `Allow another repeated \`${repeatedTool}\` call.`
+          : 'Allow another repeated tool call.',
+        toolName: 'Doom Loop Guard',
+      };
+    }
+    case 'edit':
+      return {
+        ...(blockedPath ? { blockedPath } : {}),
+        decisionReason: 'File write permission required',
+        description: blockedPath
+          ? 'OpenCode wants to modify this file.'
+          : 'OpenCode wants to apply file changes.',
+        toolName: 'edit',
+      };
+    case 'external_directory':
+      return {
+        ...(blockedPath ? { blockedPath } : {}),
+        decisionReason: 'Path is outside the session working directory',
+        description: blockedPath
+          ? 'OpenCode wants to access a path outside the working directory.'
+          : 'OpenCode wants to access files outside the working directory.',
+        toolName: 'External Directory',
+      };
+    case 'glob':
+      return {
+        description: 'OpenCode wants to scan file paths with a glob pattern.',
+        toolName: 'glob',
+      };
+    case 'grep':
+      return {
+        description: 'OpenCode wants to search file contents with a pattern.',
+        toolName: 'grep',
+      };
+    case 'lsp':
+      return {
+        description: 'OpenCode wants to query language server data.',
+        toolName: 'lsp',
+      };
+    case 'plan_enter':
+      return {
+        description: 'OpenCode wants to switch this session into planning mode.',
+        toolName: 'Enter Plan Mode',
+      };
+    case 'plan_exit':
+      return {
+        description: 'OpenCode wants to leave planning mode and resume implementation.',
+        toolName: 'Exit Plan Mode',
+      };
+    case 'question':
+      return {
+        description: 'OpenCode wants to ask you a direct question before continuing.',
+        toolName: 'Ask Question',
+      };
+    case 'read':
+      return {
+        ...(blockedPath ? { blockedPath } : {}),
+        description: blockedPath
+          ? 'OpenCode wants to read this path.'
+          : 'OpenCode wants to read project files.',
+        toolName: 'read',
+      };
+    case 'skill':
+      return {
+        description: 'OpenCode wants to load a skill into the current session.',
+        toolName: 'skill',
+      };
+    case 'todowrite':
+      return {
+        description: 'OpenCode wants to update the shared task list.',
+        toolName: 'todowrite',
+      };
+    case 'webfetch':
+      return {
+        description: 'OpenCode wants to fetch content from a URL.',
+        toolName: 'webfetch',
+      };
+    case 'websearch':
+      return {
+        description: 'OpenCode wants to search the web.',
+        toolName: 'websearch',
+      };
+    case 'workflow_tool_approval': {
+      const summary = summarizeWorkflowTools(input);
+      return {
+        decisionReason: 'Session-level workflow approval requested',
+        description: summary
+          ? `Pre-approve workflow tools for this session: ${summary}.`
+          : 'Pre-approve workflow tools for this session.',
+        toolName: 'Workflow Approval',
+      };
+    }
+    default:
+      return {
+        ...(blockedPath ? { blockedPath } : {}),
+        description: blockedPath
+          ? `OpenCode wants permission to use ${formatPermissionLabel(permissionId)} on this path.`
+          : `OpenCode wants permission to use ${formatPermissionLabel(permissionId)}.`,
+        toolName: formatPermissionLabel(permissionId),
+      };
+  }
+}
+
+function normalizePermissionId(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() || 'tool';
+}
+
+function extractPermissionPath(
+  input: Record<string, unknown>,
+  locations: Array<{ path: string }> | null | undefined,
+): string | undefined {
+  const candidateKeys = ['filepath', 'filePath', 'path', 'parentDir'];
+  for (const key of candidateKeys) {
+    const value = input[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  const locationPath = locations?.find((location) => location.path.trim())?.path;
+  return locationPath?.trim() || undefined;
+}
+
+function summarizeWorkflowTools(input: Record<string, unknown>): string {
+  const tools = Array.isArray(input.tools) ? input.tools : [];
+  const names = tools.flatMap((tool) => {
+    if (!tool || typeof tool !== 'object' || Array.isArray(tool)) {
+      return [];
+    }
+
+    const entry = tool as Record<string, unknown>;
+    const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+    if (!name) {
+      return [];
+    }
+
+    let title = '';
+    if (typeof entry.args === 'string') {
+      try {
+        const parsedArgs = JSON.parse(entry.args) as Record<string, unknown>;
+        title = typeof parsedArgs.title === 'string'
+          ? parsedArgs.title.trim()
+          : typeof parsedArgs.name === 'string'
+          ? parsedArgs.name.trim()
+          : '';
+      } catch {
+        title = '';
+      }
+    }
+
+    return [title ? `${name}: ${title}` : name];
+  });
+
+  if (names.length === 0) {
+    return '';
+  }
+
+  if (names.length <= 3) {
+    return names.join(', ');
+  }
+
+  return `${names.slice(0, 3).join(', ')} +${names.length - 3} more`;
+}
+
+function formatPermissionLabel(permissionId: string): string {
+  return permissionId
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
 }
 
 function mapApprovalDecision(
@@ -1127,6 +1427,18 @@ function sameVisibleModels(left: string[], right: string[]): boolean {
   }
 
   return left.every((model, index) => model === right[index]);
+}
+
+function sameModes(left: OpencodeMode[], right: OpencodeMode[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((mode, index) => (
+    mode.id === right[index]?.id
+    && mode.name === right[index]?.name
+    && (mode.description ?? '') === (right[index]?.description ?? '')
+  ));
 }
 
 function sameStringMap(left: Record<string, string>, right: Record<string, string>): boolean {

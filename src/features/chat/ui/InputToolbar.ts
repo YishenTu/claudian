@@ -5,7 +5,7 @@ import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import type {
   ProviderCapabilities,
   ProviderChatUIConfig,
-  ProviderIconSvg,
+  ProviderModeSelectorConfig,
   ProviderPermissionModeToggleConfig,
   ProviderReasoningOption,
   ProviderServiceTierToggleConfig,
@@ -14,7 +14,7 @@ import type {
   ManagedMcpServer,
   UsageInfo,
 } from '../../../core/types';
-import { CHECK_ICON_SVG, MCP_ICON_SVG } from '../../../shared/icons';
+import { CHECK_ICON_SVG, createProviderIconSvg, MCP_ICON_SVG } from '../../../shared/icons';
 import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
 import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
 
@@ -29,6 +29,7 @@ export interface ToolbarSettings {
 
 export interface ToolbarCallbacks {
   onModelChange: (model: string) => Promise<void>;
+  onModeChange: (mode: string) => Promise<void>;
   onThinkingBudgetChange: (budget: string) => Promise<void>;
   onEffortLevelChange: (effort: string) => Promise<void>;
   onServiceTierChange: (serviceTier: string) => Promise<void>;
@@ -106,7 +107,11 @@ export class ModelSelector {
 
       const icon = model.providerIcon ?? this.callbacks.getUIConfig().getProviderIcon?.();
       if (icon) {
-        option.appendChild(createProviderIconSvg(icon));
+        option.appendChild(createProviderIconSvg(icon, {
+          className: 'claudian-model-provider-icon',
+          height: 12,
+          width: 12,
+        }));
       }
       option.createSpan({ text: model.label });
       if (model.description) {
@@ -123,18 +128,94 @@ export class ModelSelector {
   }
 }
 
-function createProviderIconSvg(icon: ProviderIconSvg): SVGElement {
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', icon.viewBox);
-  svg.setAttribute('width', '12');
-  svg.setAttribute('height', '12');
-  svg.classList.add('claudian-model-provider-icon');
-  const path = document.createElementNS(NS, 'path');
-  path.setAttribute('d', icon.path);
-  path.setAttribute('fill', 'currentColor');
-  svg.appendChild(path);
-  return svg;
+export class ModeSelector {
+  private container: HTMLElement;
+  private labelEl: HTMLElement | null = null;
+  private toggleEl: HTMLElement | null = null;
+  private callbacks: ToolbarCallbacks;
+
+  constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
+    this.callbacks = callbacks;
+    this.container = parentEl.createDiv({ cls: 'claudian-mode-selector' });
+    this.render();
+  }
+
+  private getSelectorConfig(): ProviderModeSelectorConfig | null {
+    return this.callbacks.getUIConfig().getModeSelector?.(this.callbacks.getSettings()) ?? null;
+  }
+
+  private render() {
+    this.container.empty();
+
+    this.labelEl = this.container.createSpan({ cls: 'claudian-mode-label' });
+    this.toggleEl = this.container.createDiv({ cls: 'claudian-toggle-switch' });
+
+    this.toggleEl.addEventListener('click', () => this.toggle());
+
+    this.updateDisplay();
+  }
+
+  updateDisplay() {
+    if (!this.toggleEl || !this.labelEl) {
+      return;
+    }
+
+    const selectorConfig = this.getSelectorConfig();
+    if (!selectorConfig || selectorConfig.options.length !== 2) {
+      this.container.style.display = 'none';
+      return;
+    }
+
+    this.container.style.display = '';
+    const options = selectorConfig.options;
+    const inactiveOption = options[0];
+    const activeOption = selectorConfig.activeValue
+      ? options.find((option) => option.value === selectorConfig.activeValue) ?? options[1]
+      : options[1];
+    const currentOption = options.find((option) => option.value === selectorConfig.value)
+      ?? selectorConfig.options[0];
+    const isActive = currentOption.value === activeOption.value;
+
+    this.labelEl.setText(currentOption.label || selectorConfig.label);
+    this.labelEl.toggleClass('active', isActive);
+    if (isActive) {
+      this.toggleEl.addClass('active');
+    } else {
+      this.toggleEl.removeClass('active');
+    }
+
+    const titleParts = [
+      `${inactiveOption.label} <-> ${activeOption.label}`,
+    ];
+    if (currentOption.description) {
+      titleParts.push(currentOption.description);
+    }
+    this.container.setAttribute('title', titleParts.join('\n'));
+  }
+
+  renderOptions() {
+    this.updateDisplay();
+  }
+
+  private async toggle() {
+    const selectorConfig = this.getSelectorConfig();
+    if (!selectorConfig || selectorConfig.options.length !== 2) {
+      return;
+    }
+
+    const [inactiveOption, activeOption] = selectorConfig.options;
+    const resolvedActiveOption = selectorConfig.activeValue
+      ? selectorConfig.options.find((option) => option.value === selectorConfig.activeValue) ?? activeOption
+      : activeOption;
+    const resolvedInactiveOption = inactiveOption.value === resolvedActiveOption.value
+      ? selectorConfig.options.find((option) => option.value !== resolvedActiveOption.value) ?? inactiveOption
+      : inactiveOption;
+    const nextValue = selectorConfig.value === resolvedActiveOption.value
+      ? resolvedInactiveOption.value
+      : resolvedActiveOption.value;
+    await this.callbacks.onModeChange(nextValue);
+    this.updateDisplay();
+  }
 }
 
 export class ThinkingBudgetSelector {
@@ -279,11 +360,17 @@ export class PermissionToggle {
   private toggleEl: HTMLElement | null = null;
   private labelEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
+  private visible = true;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
     this.container = parentEl.createDiv({ cls: 'claudian-permission-toggle' });
     this.render();
+  }
+
+  setVisible(visible: boolean): void {
+    this.visible = visible;
+    this.updateDisplay();
   }
 
   private render() {
@@ -307,7 +394,7 @@ export class PermissionToggle {
 
     const toggleConfig = this.getToggleConfig();
     const capabilities = this.callbacks.getCapabilities();
-    if (!toggleConfig) {
+    if (!this.visible || !toggleConfig) {
       this.container.style.display = 'none';
       return;
     }
@@ -1082,6 +1169,7 @@ export function createInputToolbar(
   callbacks: ToolbarCallbacks
 ): {
   modelSelector: ModelSelector;
+  modeSelector: ModeSelector;
   thinkingBudgetSelector: ThinkingBudgetSelector;
   contextUsageMeter: ContextUsageMeter | null;
   externalContextSelector: ExternalContextSelector;
@@ -1096,9 +1184,11 @@ export function createInputToolbar(
   const externalContextSelector = new ExternalContextSelector(parentEl, callbacks);
   const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);
+  const modeSelector = new ModeSelector(parentEl, callbacks);
 
   return {
     modelSelector,
+    modeSelector,
     thinkingBudgetSelector,
     serviceTierToggle,
     contextUsageMeter,

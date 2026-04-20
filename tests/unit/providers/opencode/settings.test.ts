@@ -1,7 +1,9 @@
 import {
   getOpencodeProviderSettings,
+  normalizeOpencodeModelAliases,
   normalizeOpencodePreferredThinkingByModel,
   normalizeOpencodeVisibleModels,
+  updateOpencodeProviderSettings,
 } from '../../../../src/providers/opencode/settings';
 
 describe('OpenCode settings normalization', () => {
@@ -55,5 +57,49 @@ describe('OpenCode settings normalization', () => {
         'google/gemini-2.5-pro',
       ],
     });
+  });
+
+  it('normalizes model aliases to base model ids and trims values', () => {
+    expect(normalizeOpencodeModelAliases({
+      'anthropic/claude-sonnet-4/high': '  Sonnet  ',
+      'google/gemini-2.5-pro': 'Gemini Pro',
+      'unknown/model': 'ignored',
+      'anthropic/claude-sonnet-4': '',
+    }, discoveredModels)).toEqual({
+      'anthropic/claude-sonnet-4': 'Sonnet',
+      'google/gemini-2.5-pro': 'Gemini Pro',
+      'unknown/model': 'ignored',
+    });
+  });
+
+  it('ignores non-string and non-object alias payloads', () => {
+    expect(normalizeOpencodeModelAliases(null, discoveredModels)).toEqual({});
+    expect(normalizeOpencodeModelAliases(['alias'], discoveredModels)).toEqual({});
+    expect(normalizeOpencodeModelAliases({ 'anthropic/claude-sonnet-4': 123 }, discoveredModels)).toEqual({});
+  });
+
+  it('prunes aliases whose rawId is no longer visible when updating settings', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        opencode: {
+          discoveredModels,
+          modelAliases: {
+            'anthropic/claude-sonnet-4': 'Sonnet',
+            'google/gemini-2.5-pro': 'Gemini',
+          },
+          visibleModels: [
+            'anthropic/claude-sonnet-4',
+            'google/gemini-2.5-pro',
+          ],
+        },
+      },
+    };
+
+    const next = updateOpencodeProviderSettings(settings, {
+      visibleModels: ['anthropic/claude-sonnet-4'],
+    });
+
+    expect(next.visibleModels).toEqual(['anthropic/claude-sonnet-4']);
+    expect(next.modelAliases).toEqual({ 'anthropic/claude-sonnet-4': 'Sonnet' });
   });
 });

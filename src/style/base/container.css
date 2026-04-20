@@ -6,3 +6,15 @@
   overflow: hidden;
   font-family: var(--font-text);
 }
+
+.claudian-provider-icon-variant--dark {
+  display: none;
+}
+
+body.theme-dark .claudian-provider-icon-variant--light {
+  display: none;
+}
+
+body.theme-dark .claudian-provider-icon-variant--dark {
+  display: inline;
+}

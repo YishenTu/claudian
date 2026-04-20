@@ -184,6 +184,39 @@ describe('opencodeChatUIConfig', () => {
     ]);
   });
 
+  it('uses modelAliases to override the label in model selector options', () => {
+    const options = opencodeChatUIConfig.getModelOptions({
+      providerConfigs: {
+        opencode: {
+          discoveredModels: [
+            { label: 'Anthropic/Claude Sonnet 4', rawId: 'anthropic/claude-sonnet-4' },
+            { label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' },
+          ],
+          modelAliases: {
+            'anthropic/claude-sonnet-4': 'Sonnet',
+          },
+          visibleModels: [
+            'anthropic/claude-sonnet-4',
+            'openai/gpt-5',
+          ],
+        },
+      },
+    });
+
+    expect(options).toEqual([
+      {
+        description: 'ACP runtime',
+        label: 'Sonnet',
+        value: 'opencode:anthropic/claude-sonnet-4',
+      },
+      {
+        description: 'ACP runtime',
+        label: 'OpenAI/GPT-5',
+        value: 'opencode:openai/gpt-5',
+      },
+    ]);
+  });
+
   it('shows configured base model ids even before discovery finishes', () => {
     expect(opencodeChatUIConfig.getModelOptions({
       providerConfigs: {

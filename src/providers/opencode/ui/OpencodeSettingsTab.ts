@@ -82,7 +82,24 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     const summaryEl = pickerEl.createDiv({ cls: 'claudian-opencode-model-picker-summary' });
     const selectedEl = pickerEl.createDiv({ cls: 'claudian-opencode-model-picker-selected' });
-    const controlsEl = pickerEl.createDiv({ cls: 'claudian-opencode-model-picker-controls' });
+    const catalogEl = pickerEl.createEl('details', { cls: 'claudian-opencode-model-picker-catalog' });
+    catalogEl.open = getOpencodeProviderSettings(settingsBag).visibleModels.length === 0;
+    const catalogSummaryEl = catalogEl.createEl('summary', {
+      cls: 'claudian-opencode-model-picker-catalog-summary',
+    });
+    catalogSummaryEl.createSpan({
+      cls: 'claudian-opencode-model-picker-catalog-caret',
+      text: '▸',
+    });
+    catalogSummaryEl.createSpan({
+      cls: 'claudian-opencode-model-picker-catalog-title',
+      text: 'Browse models',
+    });
+    const catalogSummaryCountEl = catalogSummaryEl.createSpan({
+      cls: 'claudian-opencode-model-picker-catalog-count',
+    });
+
+    const controlsEl = catalogEl.createDiv({ cls: 'claudian-opencode-model-picker-controls' });
 
     const searchInput = controlsEl.createEl('input', {
       cls: 'claudian-opencode-model-picker-search',
@@ -102,25 +119,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       renderList();
     });
 
-    const actionsEl = controlsEl.createDiv({ cls: 'claudian-opencode-model-picker-actions' });
-
-    const selectShownBtn = actionsEl.createEl('button', { text: 'Select shown' });
-    selectShownBtn.addEventListener('click', () => {
-      const shownIds = filterModels(getEnrichedModels()).map((model) => model.rawId);
-      void persistVisibleModels([
-        ...getOpencodeProviderSettings(settingsBag).visibleModels,
-        ...shownIds,
-      ]);
-    });
-
-    const unselectShownBtn = actionsEl.createEl('button', { text: 'Unselect shown' });
-    unselectShownBtn.addEventListener('click', () => {
-      const shownIds = new Set(filterModels(getEnrichedModels()).map((model) => model.rawId));
-      const currentVisibleModels = getOpencodeProviderSettings(settingsBag).visibleModels;
-      void persistVisibleModels(currentVisibleModels.filter((rawId) => !shownIds.has(rawId)));
-    });
-
-    const listEl = pickerEl.createDiv({ cls: 'claudian-opencode-model-picker-list' });
+    const listEl = catalogEl.createDiv({ cls: 'claudian-opencode-model-picker-list' });
 
     const getEnrichedModels = (): EnrichedModel[] => {
       const current = getOpencodeProviderSettings(settingsBag);
@@ -162,6 +161,13 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       context.refreshModelSelectors();
     };
 
+    const persistModelAliases = async (modelAliases: Record<string, string>): Promise<void> => {
+      updateOpencodeProviderSettings(settingsBag, { modelAliases });
+      await context.plugin.saveSettings();
+      renderSelected();
+      context.refreshModelSelectors();
+    };
+
     const renderSummary = (): void => {
       summaryEl.empty();
       const current = getOpencodeProviderSettings(settingsBag);
@@ -177,6 +183,12 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       summaryEl.createSpan({
         text: ` of ${current.discoveredModels.length} discovered • ${providerCount} ${providerWord}`,
       });
+
+      catalogSummaryCountEl.setText(
+        current.discoveredModels.length > 0
+          ? `${current.discoveredModels.length} available`
+          : 'No models discovered yet',
+      );
     };
 
     const renderSelected = (): void => {
@@ -192,51 +204,112 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         getEnrichedModels().map((model) => [model.rawId, model] as const),
       );
 
-      selectedEl.createEl('span', {
+      const headerEl = selectedEl.createDiv({ cls: 'claudian-opencode-model-picker-selected-header' });
+      headerEl.createEl('span', {
         cls: 'claudian-opencode-model-picker-selected-label',
-        text: 'Selected',
+        text: `Selected (${current.visibleModels.length})`,
       });
-
-      for (const rawId of current.visibleModels) {
-        const enriched = enrichedByRawId.get(rawId);
-        const chipEl = selectedEl.createEl('span', { cls: 'claudian-opencode-model-picker-chip' });
-
-        if (enriched && !enriched.isAvailable) {
-          chipEl.classList.add('claudian-opencode-model-picker-chip--unavailable');
-          chipEl.title = 'Configured model not currently reported by OpenCode';
-        } else {
-          chipEl.title = rawId;
-        }
-
-        const chipText = enriched
-          ? `${enriched.providerLabel}/${enriched.modelLabel}`
-          : rawId;
-        chipEl.createEl('span', {
-          cls: 'claudian-opencode-model-picker-chip-label',
-          text: chipText,
-        });
-
-        const removeBtn = chipEl.createEl('button', {
-          cls: 'claudian-opencode-model-picker-chip-remove',
-          text: '×',
-        });
-        removeBtn.setAttribute('aria-label', `Remove ${rawId}`);
-        removeBtn.addEventListener('click', () => {
-          void persistVisibleModels(current.visibleModels.filter((entry) => entry !== rawId));
-        });
-      }
-
-      const clearAllBtn = selectedEl.createEl('button', {
-        cls: 'claudian-opencode-model-picker-chip-remove',
+      const clearAllBtn = headerEl.createEl('button', {
+        cls: 'claudian-opencode-model-picker-selected-clear',
         text: 'Clear all',
       });
-      clearAllBtn.style.padding = '2px 8px';
-      clearAllBtn.style.width = 'auto';
-      clearAllBtn.style.height = 'auto';
       clearAllBtn.setAttribute('aria-label', 'Clear all selected models');
       clearAllBtn.addEventListener('click', () => {
         void persistVisibleModels([]);
       });
+
+      const rowsEl = selectedEl.createDiv({ cls: 'claudian-opencode-model-picker-selected-rows' });
+
+      for (const rawId of current.visibleModels) {
+        const enriched = enrichedByRawId.get(rawId);
+        const defaultLabel = enriched
+          ? `${enriched.providerLabel}/${enriched.modelLabel}`
+          : rawId;
+
+        const rowEl = rowsEl.createDiv({ cls: 'claudian-opencode-model-picker-selected-row' });
+        if (enriched && !enriched.isAvailable) {
+          rowEl.classList.add('claudian-opencode-model-picker-selected-row--unavailable');
+        }
+
+        const infoEl = rowEl.createDiv({ cls: 'claudian-opencode-model-picker-selected-info' });
+        const titleEl = infoEl.createDiv({ cls: 'claudian-opencode-model-picker-selected-title' });
+        if (enriched) {
+          titleEl.createEl('span', {
+            cls: 'claudian-opencode-model-picker-selected-badge',
+            text: enriched.providerLabel,
+          });
+          titleEl.createEl('span', {
+            cls: 'claudian-opencode-model-picker-selected-name',
+            text: enriched.modelLabel,
+          });
+        } else {
+          titleEl.createEl('span', {
+            cls: 'claudian-opencode-model-picker-selected-name',
+            text: rawId,
+          });
+        }
+
+        if (enriched && !enriched.isAvailable) {
+          infoEl.createEl('div', {
+            cls: 'claudian-opencode-model-picker-selected-unavailable',
+            text: 'Not currently reported by OpenCode',
+          });
+        }
+
+        infoEl.createEl('div', {
+          cls: 'claudian-opencode-model-picker-selected-id',
+          text: rawId,
+        });
+
+        const controlsEl = rowEl.createDiv({ cls: 'claudian-opencode-model-picker-selected-controls' });
+        const aliasInput = controlsEl.createEl('input', {
+          cls: 'claudian-opencode-model-picker-selected-alias',
+          type: 'text',
+        });
+        aliasInput.placeholder = defaultLabel;
+        aliasInput.value = current.modelAliases[rawId] ?? '';
+        aliasInput.setAttribute('aria-label', `Alias for ${defaultLabel}`);
+        aliasInput.title = 'Custom label shown in the model selector. Leave empty to use the default.';
+
+        const commitAlias = (): void => {
+          const latest = getOpencodeProviderSettings(settingsBag);
+          const existing = latest.modelAliases[rawId] ?? '';
+          const next = aliasInput.value.trim();
+          if (next === existing) {
+            aliasInput.value = existing;
+            return;
+          }
+
+          const nextAliases = { ...latest.modelAliases };
+          if (next) {
+            nextAliases[rawId] = next;
+          } else {
+            delete nextAliases[rawId];
+          }
+          void persistModelAliases(nextAliases);
+        };
+
+        aliasInput.addEventListener('blur', commitAlias);
+        aliasInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            aliasInput.blur();
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            aliasInput.value = getOpencodeProviderSettings(settingsBag).modelAliases[rawId] ?? '';
+            aliasInput.blur();
+          }
+        });
+
+        const removeBtn = controlsEl.createEl('button', {
+          cls: 'claudian-opencode-model-picker-selected-remove',
+          text: '×',
+        });
+        removeBtn.setAttribute('aria-label', `Remove ${defaultLabel}`);
+        removeBtn.addEventListener('click', () => {
+          void persistVisibleModels(current.visibleModels.filter((entry) => entry !== rawId));
+        });
+      }
     };
 
     const renderProviderSelect = (): void => {

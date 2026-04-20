@@ -175,11 +175,20 @@ export interface ProviderUIOption {
   providerIcon?: ProviderIconSvg;
 }
 
-/** SVG icon descriptor for provider branding in selectors. */
-export interface ProviderIconSvg {
+export interface ProviderPathIconSvg {
+  kind?: 'path';
   viewBox: string;
   path: string;
 }
+
+export interface ProviderMarkupIconSvg {
+  kind: 'markup';
+  viewBox: string;
+  markup: string;
+}
+
+/** SVG icon descriptor for provider branding in selectors and headers. */
+export type ProviderIconSvg = ProviderPathIconSvg | ProviderMarkupIconSvg;
 
 /** Extended option with token count for budget-based reasoning controls. */
 export interface ProviderReasoningOption extends ProviderUIOption {
@@ -203,6 +212,13 @@ export interface ProviderServiceTierToggleConfig {
   activeValue: string;
   activeLabel: string;
   description?: string;
+}
+
+export interface ProviderModeSelectorConfig {
+  activeValue?: string;
+  label: string;
+  options: ProviderUIOption[];
+  value: string;
 }
 
 /** Static UI configuration owned by the provider (model list, reasoning, context window). */
@@ -245,6 +261,12 @@ export interface ProviderChatUIConfig {
 
   /** Optional service-tier toggle descriptor. Return null when the provider exposes no fast/standard UI. */
   getServiceTierToggle?(settings: Record<string, unknown>): ProviderServiceTierToggleConfig | null;
+
+  /** Optional provider-owned mode selector descriptor. */
+  getModeSelector?(settings: Record<string, unknown>): ProviderModeSelectorConfig | null;
+
+  /** Optional hook when the toolbar changes a provider-owned mode selection. */
+  applyModeSelection?(value: string, settings: unknown): void;
 
   /** Whether the provider enables the shared bang-bash input mode. */
   isBangBashEnabled?(settings: Record<string, unknown>): boolean;

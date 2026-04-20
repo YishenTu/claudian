@@ -221,6 +221,8 @@ function refreshTabProviderUI(tab: TabData, plugin: ClaudianPlugin): void {
   const capabilities = getTabCapabilities(tab, plugin);
   tab.ui.modelSelector?.updateDisplay();
   tab.ui.modelSelector?.renderOptions();
+  tab.ui.modeSelector?.updateDisplay();
+  tab.ui.modeSelector?.renderOptions();
   tab.ui.thinkingBudgetSelector?.updateDisplay();
   tab.ui.permissionToggle?.updateDisplay();
   tab.ui.serviceTierToggle?.updateDisplay();
@@ -236,14 +238,17 @@ function refreshTabProviderUI(tab: TabData, plugin: ClaudianPlugin): void {
  */
 function applyProviderUIGating(tab: TabData, plugin: ClaudianPlugin): void {
   const capabilities = getTabCapabilities(tab, plugin);
+  const uiConfig = getTabChatUIConfig(tab, plugin);
   const mcpManager = capabilities.supportsMcpTools
     ? getProviderMcpManager(capabilities.providerId)
     : null;
+  const hasPermissionToggle = Boolean(uiConfig.getPermissionModeToggle?.());
 
   if (!capabilities.supportsMcpTools) {
     tab.ui.mcpServerSelector?.clearEnabled();
   }
   tab.ui.mcpServerSelector?.setVisible(capabilities.supportsMcpTools);
+  tab.ui.permissionToggle?.setVisible(hasPermissionToggle);
   tab.ui.fileContextManager?.setMcpManager(mcpManager);
 
   tab.ui.fileContextManager?.setAgentService(
@@ -391,6 +396,7 @@ export function createTab(options: TabCreateOptions): TabData {
       fileContextManager: null,
       imageContextManager: null,
       modelSelector: null,
+      modeSelector: null,
       thinkingBudgetSelector: null,
       externalContextSelector: null,
       mcpServerSelector: null,
@@ -774,8 +780,10 @@ function initializeInputToolbar(
         tab.ui.thinkingBudgetSelector?.updateDisplay();
         tab.ui.serviceTierToggle?.updateDisplay();
         tab.ui.modelSelector?.updateDisplay();
+        tab.ui.modeSelector?.updateDisplay();
         // Re-render options (provider may have changed reasoning controls)
         tab.ui.modelSelector?.renderOptions();
+        tab.ui.modeSelector?.renderOptions();
         applyProviderUIGating(tab, plugin);
         return;
       }
@@ -809,6 +817,13 @@ function initializeInputToolbar(
         tab.state.usage = recalculateUsageForModel(currentUsage, model, newContextWindow);
       }
     },
+    onModeChange: async (mode: string) => {
+      await updateTabProviderSettings(tab, plugin, (settings) => {
+        getTabChatUIConfig(tab, plugin).applyModeSelection?.(mode, settings);
+      });
+      tab.ui.modeSelector?.updateDisplay();
+      tab.ui.modeSelector?.renderOptions();
+    },
     onThinkingBudgetChange: async (budget: string) => {
       await updateTabProviderSettings(tab, plugin, (settings) => {
         settings.thinkingBudget = budget;
@@ -838,6 +853,7 @@ function initializeInputToolbar(
   });
 
   tab.ui.modelSelector = toolbarComponents.modelSelector;
+  tab.ui.modeSelector = toolbarComponents.modeSelector;
   tab.ui.thinkingBudgetSelector = toolbarComponents.thinkingBudgetSelector;
   tab.ui.contextUsageMeter = toolbarComponents.contextUsageMeter;
   tab.ui.externalContextSelector = toolbarComponents.externalContextSelector;
