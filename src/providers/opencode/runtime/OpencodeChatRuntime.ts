@@ -56,6 +56,7 @@ import {
   buildAcpUsageInfo,
 } from '../../acp';
 import { OPENCODE_PROVIDER_CAPABILITIES } from '../capabilities';
+import { updateOpencodeDiscoveryState } from '../discoveryState';
 import {
   combineOpencodeRawModelSelection,
   decodeOpencodeModelId,
@@ -257,7 +258,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       return true;
     }
 
-    if (!this.sessionId && settings.prewarm && !this.sessionInvalidated) {
+    if (!this.sessionId && !this.sessionInvalidated) {
       return Boolean(await this.createSession(cwd));
     }
 
@@ -700,6 +701,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const opencodeSettings = getOpencodeProviderSettings(this.getProviderSettings());
     const availableModes = getOpencodeToolbarModes(opencodeSettings.availableModes);
     if (opencodeSettings.selectedMode) {
+      if (opencodeSettings.availableModes.length === 0) {
+        return opencodeSettings.selectedMode;
+      }
+
       if (
         availableModes.some((mode) => mode.id === opencodeSettings.selectedMode)
       ) {
@@ -791,11 +796,13 @@ export class OpencodeChatRuntime implements ChatRuntime {
       currentSettings.preferredThinkingByModel,
       nextPreferredThinkingByModel,
     );
-    let changed = shouldUpdateDiscoveredModels || shouldSeedVisibleModels || shouldSeedPreferredThinking;
+    const discoveryChanged = shouldUpdateDiscoveredModels
+      ? updateOpencodeDiscoveryState(settingsBag, { discoveredModels: state.discoveredModels })
+      : false;
+    let changed = shouldSeedVisibleModels || shouldSeedPreferredThinking;
 
-    if (shouldUpdateDiscoveredModels || shouldSeedVisibleModels || shouldSeedPreferredThinking) {
+    if (shouldSeedVisibleModels || shouldSeedPreferredThinking) {
       updateOpencodeProviderSettings(settingsBag, {
-        ...(shouldUpdateDiscoveredModels ? { discoveredModels: state.discoveredModels } : {}),
         ...(shouldSeedPreferredThinking ? { preferredThinkingByModel: nextPreferredThinkingByModel } : {}),
         ...(shouldSeedVisibleModels ? { visibleModels: nextVisibleModels } : {}),
       });
@@ -838,11 +845,13 @@ export class OpencodeChatRuntime implements ChatRuntime {
       }
     }
 
-    if (!changed) {
+    if (!changed && !discoveryChanged) {
       return;
     }
 
-    await this.plugin.saveSettings();
+    if (changed) {
+      await this.plugin.saveSettings();
+    }
     this.refreshModelSelectors();
   }
 
@@ -863,16 +872,22 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const shouldUpdateAvailableModes = hasAvailableModes
       && !sameModes(currentSettings.availableModes, state.availableModes);
     const shouldSeedSelectedMode = Boolean(currentModeId) && !currentSettings.selectedMode;
-    if (!shouldUpdateAvailableModes && !shouldSeedSelectedMode) {
+    const discoveryChanged = shouldUpdateAvailableModes
+      ? updateOpencodeDiscoveryState(settingsBag, { availableModes: state.availableModes })
+      : false;
+    if (!discoveryChanged && !shouldSeedSelectedMode) {
       return;
     }
 
-    updateOpencodeProviderSettings(settingsBag, {
-      ...(shouldUpdateAvailableModes ? { availableModes: state.availableModes } : {}),
-      ...(shouldSeedSelectedMode && currentModeId ? { selectedMode: currentModeId } : {}),
-    });
+    if (shouldSeedSelectedMode && currentModeId) {
+      updateOpencodeProviderSettings(settingsBag, {
+        selectedMode: currentModeId,
+      });
+    }
 
-    await this.plugin.saveSettings();
+    if (shouldSeedSelectedMode) {
+      await this.plugin.saveSettings();
+    }
     this.refreshModelSelectors();
   }
 

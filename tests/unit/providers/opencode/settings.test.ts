@@ -116,6 +116,82 @@ describe('OpenCode settings normalization', () => {
 
     expect(next.visibleModels).toEqual(['anthropic/claude-sonnet-4']);
     expect(next.modelAliases).toEqual({ 'anthropic/claude-sonnet-4': 'Sonnet' });
+    expect((settings.providerConfigs as Record<string, any>).opencode.discoveredModels).toBeUndefined();
+  });
+
+  it('falls back active and saved OpenCode selections when the current model is removed from visible models', () => {
+    const settings: Record<string, unknown> = {
+      effortLevel: 'high',
+      model: 'opencode:google/gemini-2.5-pro',
+      providerConfigs: {
+        opencode: {
+          discoveredModels: [
+            ...discoveredModels,
+            { label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' },
+            { label: 'OpenAI/GPT-5 (high)', rawId: 'openai/gpt-5/high' },
+          ],
+          preferredThinkingByModel: {
+            'openai/gpt-5': 'high',
+          },
+          visibleModels: [
+            'google/gemini-2.5-pro',
+            'openai/gpt-5',
+          ],
+        },
+      },
+      savedProviderEffort: {
+        opencode: 'high',
+      },
+      savedProviderModel: {
+        opencode: 'opencode:google/gemini-2.5-pro',
+      },
+    };
+
+    const next = updateOpencodeProviderSettings(settings, {
+      visibleModels: ['openai/gpt-5'],
+    });
+
+    expect(next.visibleModels).toEqual(['openai/gpt-5']);
+    expect(settings.model).toBe('opencode:openai/gpt-5');
+    expect(settings.effortLevel).toBe('high');
+    expect((settings.savedProviderModel as Record<string, string>).opencode).toBe('opencode:openai/gpt-5');
+    expect((settings.savedProviderEffort as Record<string, string>).opencode).toBe('high');
+  });
+
+  it('keeps runtime discovery in memory when updating provider settings', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        opencode: {
+          availableModes: [
+            { id: 'build', name: 'Build' },
+          ],
+          discoveredModels,
+          visibleModels: ['anthropic/claude-sonnet-4'],
+        },
+      },
+    };
+
+    const next = updateOpencodeProviderSettings(settings, {
+      availableModes: [
+        { id: 'build', name: 'Build' },
+        { id: 'plan', name: 'Plan' },
+      ],
+      discoveredModels: [
+        ...discoveredModels,
+        { label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' },
+      ],
+    });
+
+    expect(next.availableModes).toEqual([
+      { id: 'build', name: 'Build' },
+      { id: 'plan', name: 'Plan' },
+    ]);
+    expect(next.discoveredModels).toEqual([
+      ...discoveredModels,
+      { label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' },
+    ]);
+    expect((settings.providerConfigs as Record<string, any>).opencode.availableModes).toBeUndefined();
+    expect((settings.providerConfigs as Record<string, any>).opencode.discoveredModels).toBeUndefined();
   });
 
   it('preserves legacy cliPath when no host-scoped path exists', () => {

@@ -88,6 +88,12 @@ describe('ProviderRegistry', () => {
         codex: { enabled: true },
       },
     })).toEqual(['codex', 'claude']);
+    expect(ProviderRegistry.getEnabledProviderIds({
+      providerConfigs: {
+        codex: { enabled: true },
+        opencode: { enabled: true },
+      },
+    })).toEqual(['opencode', 'codex', 'claude']);
   });
 
   it('returns the display name from provider registration metadata', () => {

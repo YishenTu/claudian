@@ -150,6 +150,17 @@ describe('opencodeChatUIConfig.getModeSelector', () => {
     });
   });
 
+  it('hides the selector until discovery finishes when a saved custom mode cannot be validated yet', () => {
+    expect(opencodeChatUIConfig.getModeSelector?.({
+      providerConfigs: {
+        opencode: {
+          availableModes: [],
+          selectedMode: 'compaction',
+        },
+      },
+    })).toBeNull();
+  });
+
   it('keeps the toolbar on build/plan even when OpenCode reports auxiliary primary modes', () => {
     expect(opencodeChatUIConfig.getModeSelector?.({
       providerConfigs: {

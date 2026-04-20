@@ -146,7 +146,7 @@ describe('OpenCode base model derivation', () => {
 });
 
 describe('opencodeChatUIConfig', () => {
-  it('shows only curated base models and keeps saved variant selections visible as their base model', () => {
+  it('keeps visible OpenCode model order stable and appends saved variant selections only when absent', () => {
     const options = opencodeChatUIConfig.getModelOptions({
       model: 'haiku',
       providerConfigs: {
@@ -173,13 +173,13 @@ describe('opencodeChatUIConfig', () => {
     expect(options).toEqual([
       {
         description: 'ACP runtime',
-        label: 'Anthropic/Claude Sonnet 4',
-        value: 'opencode:anthropic/claude-sonnet-4',
+        label: 'OpenAI/GPT-5',
+        value: 'opencode:openai/gpt-5',
       },
       {
         description: 'ACP runtime',
-        label: 'OpenAI/GPT-5',
-        value: 'opencode:openai/gpt-5',
+        label: 'Anthropic/Claude Sonnet 4',
+        value: 'opencode:anthropic/claude-sonnet-4',
       },
     ]);
   });

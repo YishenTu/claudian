@@ -6,6 +6,7 @@ import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { maybeGetOpencodeWorkspaceServices } from '../app/OpencodeWorkspaceServices';
+import { clearOpencodeDiscoveryState } from '../discoveryState';
 import {
   buildOpencodeBaseModels,
   type OpencodeDiscoveredModel,
@@ -47,18 +48,6 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
             updateOpencodeProviderSettings(settingsBag, { enabled: value });
             await context.plugin.saveSettings();
             context.refreshModelSelectors();
-          })
-      );
-
-    new Setting(container)
-      .setName('Prewarm Runtime')
-      .setDesc('Create an OpenCode session as soon as the runtime is ready.')
-      .addToggle((toggle) =>
-        toggle
-          .setValue(opencodeSettings.prewarm)
-          .onChange(async (value) => {
-            updateOpencodeProviderSettings(settingsBag, { prewarm: value });
-            await context.plugin.saveSettings();
           })
       );
 
@@ -128,6 +117,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       }
 
       updateOpencodeProviderSettings(settingsBag, { cliPathsByHost: { ...cliPathsByHost } });
+      clearOpencodeDiscoveryState(settingsBag);
       await context.plugin.saveSettings();
       opencodeWorkspace?.cliResolver?.reset();
       const view = context.plugin.getView();
@@ -506,7 +496,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     renderAll();
 
-    new Setting(container).setName('Commands').setHeading();
+    new Setting(container).setName('Commands and Skills').setHeading();
 
     const commandsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
     commandsDesc.createEl('p', {
@@ -515,8 +505,8 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     });
 
     context.renderHiddenProviderCommandSetting(container, 'opencode', {
-      name: 'Hidden Commands',
-      desc: 'Hide specific OpenCode slash commands from the dropdown. Enter names without the leading slash, one per line.',
+      name: 'Hidden Commands and Skills',
+      desc: 'Hide specific OpenCode commands and skills from the dropdown. Enter names without the leading slash, one per line.',
       placeholder: 'compact\nreview\nfix',
     });
 

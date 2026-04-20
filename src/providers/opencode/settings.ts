@@ -3,39 +3,45 @@ import { getProviderEnvironmentVariables } from '../../core/providers/providerEn
 import type { HostnameCliPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import {
-  normalizeOpencodeDiscoveredModels,
+  getOpencodeDiscoveryState,
+  seedOpencodeDiscoveryStateFromLegacyConfig,
+  updateOpencodeDiscoveryState,
+} from './discoveryState';
+import {
+  decodeOpencodeModelId,
+  encodeOpencodeModelId,
+  isOpencodeModelSelectionId,
+  OPENCODE_DEFAULT_THINKING_LEVEL,
   type OpencodeDiscoveredModel,
   resolveOpencodeBaseModelRawId,
 } from './models';
 import {
-  normalizeOpencodeAvailableModes,
   normalizeOpencodeSelectedMode,
   type OpencodeMode,
 } from './modes';
 
-export interface OpencodeProviderSettings {
-  availableModes: OpencodeMode[];
+export interface PersistedOpencodeProviderSettings {
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
-  discoveredModels: OpencodeDiscoveredModel[];
   enabled: boolean;
   environmentVariables: string;
   modelAliases: Record<string, string>;
-  prewarm: boolean;
   preferredThinkingByModel: Record<string, string>;
   selectedMode: string;
   visibleModels: string[];
 }
 
-export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<OpencodeProviderSettings> = Object.freeze({
-  availableModes: [],
+export interface OpencodeProviderSettings extends PersistedOpencodeProviderSettings {
+  availableModes: OpencodeMode[];
+  discoveredModels: OpencodeDiscoveredModel[];
+}
+
+export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<PersistedOpencodeProviderSettings> = Object.freeze({
   cliPath: '',
   cliPathsByHost: {},
-  discoveredModels: [],
   enabled: false,
   environmentVariables: '',
   modelAliases: {},
-  prewarm: true,
   preferredThinkingByModel: {},
   selectedMode: '',
   visibleModels: [],
@@ -138,8 +144,10 @@ export function getOpencodeProviderSettings(
   settings: Record<string, unknown>,
 ): OpencodeProviderSettings {
   const config = getProviderConfig(settings, 'opencode');
-  const availableModes = normalizeOpencodeAvailableModes(config.availableModes);
-  const discoveredModels = normalizeOpencodeDiscoveredModels(config.discoveredModels);
+  seedOpencodeDiscoveryStateFromLegacyConfig(settings, config);
+  const discoveryState = getOpencodeDiscoveryState(settings);
+  const availableModes = discoveryState.availableModes;
+  const discoveredModels = discoveryState.discoveredModels;
 
   return {
     availableModes,
@@ -153,8 +161,6 @@ export function getOpencodeProviderSettings(
       ?? getProviderEnvironmentVariables(settings, 'opencode')
       ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.environmentVariables,
     modelAliases: normalizeOpencodeModelAliases(config.modelAliases, discoveredModels),
-    prewarm: (config.prewarm as boolean | undefined)
-      ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.prewarm,
     preferredThinkingByModel: normalizeOpencodePreferredThinkingByModel(
       config.preferredThinkingByModel,
       discoveredModels,
@@ -170,12 +176,15 @@ export function updateOpencodeProviderSettings(
 ): OpencodeProviderSettings {
   const current = getOpencodeProviderSettings(settings);
   const hostnameKey = getHostnameKey();
-  const nextAvailableModes = normalizeOpencodeAvailableModes(
-    updates.availableModes ?? current.availableModes,
-  );
-  const nextDiscoveredModels = normalizeOpencodeDiscoveredModels(
-    updates.discoveredModels ?? current.discoveredModels,
-  );
+  if ('availableModes' in updates || 'discoveredModels' in updates) {
+    updateOpencodeDiscoveryState(settings, {
+      ...(updates.availableModes !== undefined ? { availableModes: updates.availableModes } : {}),
+      ...(updates.discoveredModels !== undefined ? { discoveredModels: updates.discoveredModels } : {}),
+    });
+  }
+  const discoveryState = getOpencodeDiscoveryState(settings);
+  const nextAvailableModes = discoveryState.availableModes;
+  const nextDiscoveredModels = discoveryState.discoveredModels;
   const nextSelectedMode = normalizeOpencodeSelectedMode(
     updates.selectedMode ?? current.selectedMode,
   );
@@ -232,21 +241,27 @@ export function updateOpencodeProviderSettings(
     visibleModels: nextVisibleModels,
   };
 
+  if (updates.visibleModels !== undefined) {
+    retargetRemovedOpencodeSelections(settings, next);
+  }
+
   setProviderConfig(settings, 'opencode', {
-    availableModes: next.availableModes,
     cliPath: next.cliPath,
     cliPathsByHost: next.cliPathsByHost,
-    discoveredModels: next.discoveredModels,
     enabled: next.enabled,
     environmentVariables: next.environmentVariables,
     modelAliases: next.modelAliases,
-    prewarm: next.prewarm,
     preferredThinkingByModel: next.preferredThinkingByModel,
     selectedMode: next.selectedMode,
     visibleModels: next.visibleModels,
   });
 
   return next;
+}
+
+export function hasLegacyOpencodeDiscoveryFields(settings: Record<string, unknown>): boolean {
+  const config = getProviderConfig(settings, 'opencode');
+  return 'availableModes' in config || 'discoveredModels' in config;
 }
 
 function pruneModelAliasesToVisible(
@@ -265,4 +280,59 @@ function pruneModelAliasesToVisible(
     }
   }
   return pruned;
+}
+
+function retargetRemovedOpencodeSelections(
+  settings: Record<string, unknown>,
+  next: OpencodeProviderSettings,
+): void {
+  if (next.visibleModels.length === 0) {
+    return;
+  }
+
+  const visibleSet = new Set(next.visibleModels);
+  const fallbackRawId = next.visibleModels[0];
+  const fallbackModelId = encodeOpencodeModelId(fallbackRawId);
+  const fallbackEffort = next.preferredThinkingByModel[fallbackRawId] ?? OPENCODE_DEFAULT_THINKING_LEVEL;
+
+  const maybeRetargetModel = (value: unknown): string | null => {
+    if (typeof value !== 'string' || !isOpencodeModelSelectionId(value)) {
+      return null;
+    }
+
+    const rawModelId = decodeOpencodeModelId(value);
+    if (!rawModelId) {
+      return fallbackModelId;
+    }
+
+    const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, next.discoveredModels);
+    return visibleSet.has(baseRawId) ? null : fallbackModelId;
+  };
+
+  const savedProviderModel = ensureProjectionMap(settings, 'savedProviderModel');
+  const nextSavedModel = maybeRetargetModel(savedProviderModel.opencode);
+  if (nextSavedModel) {
+    savedProviderModel.opencode = nextSavedModel;
+    ensureProjectionMap(settings, 'savedProviderEffort').opencode = fallbackEffort;
+  }
+
+  const nextTopLevelModel = maybeRetargetModel(settings.model);
+  if (nextTopLevelModel) {
+    settings.model = nextTopLevelModel;
+    settings.effortLevel = fallbackEffort;
+  }
+}
+
+function ensureProjectionMap(
+  settings: Record<string, unknown>,
+  key: 'savedProviderEffort' | 'savedProviderModel',
+): Record<string, string> {
+  const current = settings[key];
+  if (current && typeof current === 'object' && !Array.isArray(current)) {
+    return current as Record<string, string>;
+  }
+
+  const next: Record<string, string> = {};
+  settings[key] = next;
+  return next;
 }

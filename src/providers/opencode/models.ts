@@ -129,7 +129,14 @@ export function resolveOpencodeBaseModelRawId(
   }
 
   const candidate = normalizedRawId.slice(0, slashIndex);
-  return discoveredRawIds.has(candidate) ? candidate : normalizedRawId;
+  if (discoveredRawIds.has(candidate)) {
+    return candidate;
+  }
+
+  const variant = normalizedRawId.slice(slashIndex + 1).trim().toLowerCase();
+  return OPENCODE_VARIANT_ASCENDING_RANK.has(variant)
+    ? candidate
+    : normalizedRawId;
 }
 
 export function extractOpencodeModelVariantValue(

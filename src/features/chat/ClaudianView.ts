@@ -118,7 +118,7 @@ export class ClaudianView extends ItemView {
       );
     }
 
-    this.tabManager?.primeBlankProviderRuntime('opencode');
+    this.tabManager?.primeProviderRuntime('opencode');
   }
 
   invalidateProviderCommandCaches(providerIds?: ProviderId[]): void {
@@ -201,7 +201,7 @@ export class ClaudianView extends ItemView {
     await this.restoreOrCreateTabs();
     this.syncProviderBrandColor();
     this.updateLayoutForPosition();
-    this.tabManager?.primeBlankProviderRuntime('opencode');
+    this.tabManager?.primeProviderRuntime('opencode');
   }
 
   async onClose() {

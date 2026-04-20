@@ -15,7 +15,7 @@ import {
   OPENCODE_SYNTHETIC_MODEL_ID,
   resolveOpencodeBaseModelRawId,
 } from '../models';
-import { getOpencodeToolbarModes, type OpencodeMode } from '../modes';
+import { getOpencodeToolbarModes, OPENCODE_FALLBACK_MODES, type OpencodeMode } from '../modes';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '../settings';
 
 const OPENCODE_MODELS: ProviderUIOption[] = [
@@ -46,6 +46,23 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
       ? settings.savedProviderModel as Record<string, unknown>
       : null;
 
+    const seenValues = new Set<string>();
+    const options: ProviderUIOption[] = [];
+    for (const rawModelId of opencodeSettings.visibleModels) {
+      const encodedModelId = encodeOpencodeModelId(rawModelId);
+      pushOption(
+        options,
+        seenValues,
+        encodedModelId,
+        discoveredModels.get(encodedModelId)
+          ?? applyAlias(rawModelId, {
+            description: 'Configured model',
+            label: rawModelId,
+            value: encodedModelId,
+          }),
+      );
+    }
+
     const selectedModelValues = [
       typeof settings.model === 'string' ? settings.model : '',
       typeof savedProviderModel?.opencode === 'string'
@@ -53,8 +70,6 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
         : '',
     ];
 
-    const seenValues = new Set<string>();
-    const options: ProviderUIOption[] = [];
     for (const model of selectedModelValues) {
       const rawModelId = decodeOpencodeModelId(model);
       if (
@@ -77,21 +92,6 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
             description: 'Selected in an existing session',
             label: baseRawId,
             value: baseModelId,
-          }),
-      );
-    }
-
-    for (const rawModelId of opencodeSettings.visibleModels) {
-      const encodedModelId = encodeOpencodeModelId(rawModelId);
-      pushOption(
-        options,
-        seenValues,
-        encodedModelId,
-        discoveredModels.get(encodedModelId)
-          ?? applyAlias(rawModelId, {
-            description: 'Configured model',
-            label: rawModelId,
-            value: encodedModelId,
           }),
       );
     }
@@ -215,6 +215,14 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
 
   getModeSelector(settings: Record<string, unknown>): ProviderModeSelectorConfig | null {
     const opencodeSettings = getOpencodeProviderSettings(settings);
+    if (
+      opencodeSettings.availableModes.length === 0
+      && opencodeSettings.selectedMode
+      && !OPENCODE_FALLBACK_MODES.some((mode) => mode.id === opencodeSettings.selectedMode)
+    ) {
+      return null;
+    }
+
     const availableModes = getOpencodeToolbarModes(opencodeSettings.availableModes);
     if (availableModes.length <= 1) {
       return null;

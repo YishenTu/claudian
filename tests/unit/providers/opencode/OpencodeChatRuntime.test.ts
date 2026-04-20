@@ -2,6 +2,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { OpencodeChatRuntime } from '@/providers/opencode/runtime/OpencodeChatRuntime';
 import * as launchArtifacts from '@/providers/opencode/runtime/OpencodeLaunchArtifacts';
+import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 function createMockPlugin(overrides: Record<string, unknown> = {}): any {
   return {
@@ -63,7 +64,7 @@ describe('OpencodeChatRuntime', () => {
     ]);
   });
 
-  it('creates a session on demand when commands are requested without prewarm', async () => {
+  it('creates a session on demand when commands are requested before a session exists', async () => {
     const runtime = new OpencodeChatRuntime(createMockPlugin());
     const commands = [{ id: 'acp:review', name: 'review', content: '', source: 'sdk' }];
 
@@ -85,7 +86,6 @@ describe('OpencodeChatRuntime', () => {
         providerConfigs: {
           opencode: {
             enabled: true,
-            prewarm: true,
           },
         },
       },
@@ -230,13 +230,13 @@ describe('OpencodeChatRuntime', () => {
       }],
     });
 
-    expect(plugin.settings.providerConfigs.opencode.availableModes).toEqual([
+    expect(getOpencodeProviderSettings(plugin.settings).availableModes).toEqual([
       { id: 'build', name: 'Build' },
       { description: 'Planning-first agent', id: 'plan', name: 'Plan' },
     ]);
     expect(plugin.settings.providerConfigs.opencode.selectedMode).toBe('plan');
     expect((runtime as any).currentSessionModeId).toBe('build');
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
     expect(refreshModelSelector).toHaveBeenCalledTimes(1);
   });
 
@@ -275,6 +275,23 @@ describe('OpencodeChatRuntime', () => {
     jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot').mockReturnValue(plugin.settings);
 
     expect((runtime as any).resolveSelectedModeId()).toBe('build');
+  });
+
+  it('preserves a saved custom mode until ACP mode discovery can validate it', () => {
+    const plugin = createMockPlugin({
+      settings: {
+        providerConfigs: {
+          opencode: {
+            availableModes: [],
+            selectedMode: 'compaction',
+          },
+        },
+      },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot').mockReturnValue(plugin.settings);
+
+    expect((runtime as any).resolveSelectedModeId()).toBe('compaction');
   });
 
   it('prefers build/plan over auxiliary OpenCode primary modes for the main toolbar', () => {

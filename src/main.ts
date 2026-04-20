@@ -35,6 +35,7 @@ import { type InlineEditContext, InlineEditModal } from './features/inline-edit/
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n/i18n';
 import type { Locale } from './i18n/types';
+import { clearOpencodeDiscoveryState } from './providers/opencode/discoveryState';
 import { buildCursorContext } from './utils/editor';
 import { getVaultPath } from './utils/path';
 
@@ -382,6 +383,9 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     const affectedProviderIds = this.getAffectedEnvironmentProviders(changedScopes);
+    if (affectedProviderIds.includes('opencode')) {
+      clearOpencodeDiscoveryState(settingsBag);
+    }
     const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(affectedProviderIds);
     await this.saveSettings();
 

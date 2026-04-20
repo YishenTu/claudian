@@ -171,7 +171,7 @@ export class TabManager implements TabManagerInterface {
       getProviderCatalogConfig: () => this.getProviderCatalogConfig(tab),
       onProviderChanged: (providerId) => {
         this.callbacks.onTabProviderChanged?.(tab.id, providerId);
-        this.maybePrimeBlankProviderRuntime(tab);
+        this.maybePrimeProviderRuntime(tab);
       },
     });
 
@@ -193,7 +193,7 @@ export class TabManager implements TabManagerInterface {
     if (activate || !this.activeTabId) {
       await this.switchToTab(tab.id);
     } else {
-      this.maybePrimeBlankProviderRuntime(tab);
+      this.maybePrimeProviderRuntime(tab);
     }
 
     return tab;
@@ -256,7 +256,7 @@ export class TabManager implements TabManagerInterface {
       }
 
       this.callbacks.onTabSwitched?.(previousTabId, tabId);
-      this.maybePrimeBlankProviderRuntime(tab);
+      this.maybePrimeProviderRuntime(tab);
     } finally {
       this.isSwitchingTab = false;
     }
@@ -311,10 +311,9 @@ export class TabManager implements TabManagerInterface {
 
         if (fallbackTabId && this.tabs.has(fallbackTabId)) {
           await this.switchToTab(fallbackTabId);
-          // No pre-warm: replacement tabs stay cold until send
         }
       } else {
-        // Create a replacement blank tab (stays cold)
+        // Create a replacement blank tab.
         await this.createTab();
       }
     }
@@ -443,7 +442,7 @@ export class TabManager implements TabManagerInterface {
       await activeTab.controllers.conversationController?.createNew();
       // Sync tab.conversationId with the newly created conversation
       activeTab.conversationId = activeTab.state.currentConversationId;
-      this.maybePrimeBlankProviderRuntime(activeTab);
+      this.maybePrimeProviderRuntime(activeTab);
     }
   }
 
@@ -464,18 +463,18 @@ export class TabManager implements TabManagerInterface {
     }
   }
 
-  primeBlankProviderRuntime(providerIds?: string | string[]): void {
+  primeProviderRuntime(providerIds?: string | string[]): void {
     const providerFilter = providerIds
       ? new Set(Array.isArray(providerIds) ? providerIds : [providerIds])
       : null;
 
     for (const tab of this.tabs.values()) {
-      const providerId = getTabProviderId(tab, this.plugin);
+      const providerId = tab.service?.providerId ?? tab.providerId;
       if (providerFilter && !providerFilter.has(providerId)) {
         continue;
       }
 
-      this.maybePrimeBlankProviderRuntime(tab);
+      this.maybePrimeProviderRuntime(tab);
     }
   }
 
@@ -633,7 +632,6 @@ export class TabManager implements TabManagerInterface {
       await this.createTab();
     }
 
-    // No pre-warm: all tabs stay cold until first send
   }
 
   // ============================================
@@ -718,18 +716,14 @@ export class TabManager implements TabManagerInterface {
     return await warmup;
   }
 
-  private maybePrimeBlankProviderRuntime(tab: TabData): void {
-    if (tab.lifecycleState !== 'blank') {
-      return;
-    }
-
-    const providerId = getTabProviderId(tab, this.plugin);
+  private maybePrimeProviderRuntime(tab: TabData): void {
+    const providerId = tab.service?.providerId ?? tab.providerId;
     if (providerId !== 'opencode') {
       return;
     }
 
     const settings = getOpencodeProviderSettings(this.plugin.settings as unknown as Record<string, unknown>);
-    if (!settings.enabled || !settings.prewarm) {
+    if (!settings.enabled) {
       return;
     }
 

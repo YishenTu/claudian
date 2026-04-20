@@ -148,8 +148,8 @@
       "desc": ".claude/commands/ と .claude/skills/ に保存された Vault レベルのコマンドとスキルを管理します。/名前 でトリガーされます。"
     },
     "hiddenSlashCommands": {
-      "name": "非表示コマンド",
-      "desc": "ドロップダウンから特定のスラッシュコマンドを非表示にします。Claudian に関係のない Claude Code コマンドを非表示にするのに便利です。先頭のスラッシュなしでコマンド名を1行に1つ入力してください。",
+      "name": "非表示のコマンドとスキル",
+      "desc": "ドロップダウンから特定のコマンドとスキルを非表示にします。Claudian に関係のない Claude Code の項目を隠すのに便利です。先頭のスラッシュなしで名前を1行に1つ入力してください。",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {

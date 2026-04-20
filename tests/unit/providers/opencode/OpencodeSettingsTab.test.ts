@@ -259,7 +259,6 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
           enabled: true,
           environmentVariables: '',
           modelAliases: {},
-          prewarm: true,
           preferredThinkingByModel: {},
           selectedMode: '',
           visibleModels: [],
@@ -324,8 +323,19 @@ describe('OpencodeSettingsTab', () => {
 
   it('renders a notice explaining where vault-level commands and skills are managed', () => {
     const plugin = createPlugin();
+    const context = createContext(plugin);
 
-    opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    opencodeSettingsTabRenderer.render(createContainer(), context);
+
+    expect(findSetting('Commands and Skills').heading).toBe(true);
+    expect(context.renderHiddenProviderCommandSetting).toHaveBeenCalledWith(
+      expect.anything(),
+      'opencode',
+      expect.objectContaining({
+        name: 'Hidden Commands and Skills',
+        desc: 'Hide specific OpenCode commands and skills from the dropdown. Enter names without the leading slash, one per line.',
+      }),
+    );
 
     expect(createdElements).toContainEqual({
       cls: 'setting-item-description',

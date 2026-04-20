@@ -148,8 +148,8 @@
       "desc": "管理儲存在 .claude/commands/ 和 .claude/skills/ 中的 Vault 級命令與技能。由 /名稱 觸發。"
     },
     "hiddenSlashCommands": {
-      "name": "隱藏命令",
-      "desc": "從下拉選單中隱藏特定的斜線命令。適用於隱藏與 Claudian 無關的 Claude Code 命令。每行輸入一個命令名稱，無需前導斜線。",
+      "name": "隱藏命令與技能",
+      "desc": "從下拉選單中隱藏特定的命令與技能。適用於隱藏與 Claudian 無關的 Claude Code 項目。每行輸入一個名稱，無需前導斜線。",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {

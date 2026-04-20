@@ -1008,7 +1008,6 @@ describe('TabManager - SDK Commands', () => {
           providerConfigs: {
             opencode: {
               enabled: true,
-              prewarm: false,
             },
           },
         },
@@ -1085,7 +1084,6 @@ describe('TabManager - SDK Commands', () => {
           providerConfigs: {
             opencode: {
               enabled: true,
-              prewarm: false,
             },
           },
         },
@@ -1119,7 +1117,7 @@ describe('TabManager - SDK Commands', () => {
     expect(secondRuntime.cleanup).toHaveBeenCalledTimes(1);
   });
 
-  it('should prime blank OpenCode tabs when prewarm is enabled', async () => {
+  it('should prime blank OpenCode tabs automatically', async () => {
     const supportedCommands = [{ id: 'acp:review', name: 'review', content: '' }];
     const temporaryRuntime = {
       providerId: 'opencode',
@@ -1151,7 +1149,6 @@ describe('TabManager - SDK Commands', () => {
           providerConfigs: {
             opencode: {
               enabled: true,
-              prewarm: true,
             },
           },
         },
@@ -1180,6 +1177,66 @@ describe('TabManager - SDK Commands', () => {
     expect(mockCatalog.setRuntimeCommands).toHaveBeenLastCalledWith(supportedCommands);
     expect(tab!.lifecycleState).toBe('blank');
     expect(tab!.serviceInitialized).toBe(false);
+  });
+
+  it('should prime restored OpenCode conversation tabs automatically', async () => {
+    const supportedCommands = [{ id: 'acp:review', name: 'review', content: '' }];
+    const temporaryRuntime = {
+      providerId: 'opencode',
+      cleanup: jest.fn(),
+      ensureReady: jest.fn().mockResolvedValue(true),
+      getSupportedCommands: jest.fn().mockResolvedValue(supportedCommands),
+      syncConversationState: jest.fn(),
+    };
+    const mockCatalog = {
+      setRuntimeCommands: jest.fn(),
+    };
+
+    ProviderWorkspaceRegistry.setServices('opencode', { commandCatalog: mockCatalog as any });
+    mockGetCapabilities.mockImplementation((providerId: string) => ({
+      providerId,
+      supportsPersistentRuntime: true,
+      supportsNativeHistory: true,
+      supportsPlanMode: providerId === 'claude',
+      supportsRewind: providerId === 'claude',
+      supportsFork: providerId === 'claude',
+      supportsProviderCommands: providerId === 'opencode' || providerId === 'claude',
+      reasoningControl: providerId === 'opencode' ? 'effort' : 'none',
+    }));
+    mockCreateChatRuntime.mockReturnValue(temporaryRuntime);
+
+    const manager = createManager({
+      plugin: createMockPlugin({
+        settings: {
+          providerConfigs: {
+            opencode: {
+              enabled: true,
+            },
+          },
+        },
+      }),
+      tabFactory: () => createMockTabData({
+        id: 'tab-opencode-restored',
+        providerId: 'opencode',
+        conversationId: 'conv-opencode',
+        lifecycleState: 'bound_active',
+        ui: {
+          externalContextSelector: {
+            getExternalContexts: jest.fn().mockReturnValue([]),
+          },
+        },
+      }),
+    });
+
+    await manager.createTab('conv-opencode', 'tab-opencode-restored', { activate: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockCreateChatRuntime).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'opencode' }));
+    expect(temporaryRuntime.ensureReady).toHaveBeenCalledTimes(1);
+    expect(temporaryRuntime.getSupportedCommands).toHaveBeenCalledTimes(1);
+    expect(temporaryRuntime.cleanup).toHaveBeenCalledTimes(1);
+    expect(mockCatalog.setRuntimeCommands).toHaveBeenLastCalledWith(supportedCommands);
   });
 });
 

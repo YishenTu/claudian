@@ -148,8 +148,8 @@
       "desc": ".claude/commands/ 및 .claude/skills/에 저장된 Vault 수준의 명령어와 스킬을 관리합니다. /이름으로 트리거됩니다."
     },
     "hiddenSlashCommands": {
-      "name": "숨겨진 명령어",
-      "desc": "드롭다운에서 특정 슬래시 명령어를 숨깁니다. Claudian과 관련 없는 Claude Code 명령어를 숨기는 데 유용합니다. 앞의 슬래시 없이 한 줄에 하나씩 명령어 이름을 입력하세요.",
+      "name": "숨겨진 명령어와 스킬",
+      "desc": "드롭다운에서 특정 명령어와 스킬을 숨깁니다. Claudian과 관련 없는 Claude Code 항목을 숨기는 데 유용합니다. 앞의 슬래시 없이 이름을 한 줄에 하나씩 입력하세요.",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {

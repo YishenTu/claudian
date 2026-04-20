@@ -11,7 +11,7 @@ import { getOpencodeProviderSettings } from './settings';
 import { opencodeChatUIConfig } from './ui/OpencodeChatUIConfig';
 
 export const opencodeProviderRegistration: ProviderRegistration = {
-  blankTabOrder: 15,
+  blankTabOrder: 10,
   capabilities: OPENCODE_PROVIDER_CAPABILITIES,
   chatUIConfig: opencodeChatUIConfig,
   createInlineEditService: () => new OpencodeInlineEditService(),
