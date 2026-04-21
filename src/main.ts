@@ -168,6 +168,33 @@ export default class ClaudianPlugin extends Plugin {
       },
     });
 
+    // `Switch to tab N` commands for N = 1..9. Exposed through Obsidian's
+    // addCommand so users can rebind in Settings → Hotkeys. No default
+    // chord is assigned; typical binding is ⌘/⌥ + digit but that varies
+    // by OS and user preference. checkCallback hides commands for slots
+    // that exceed the current tab count, keeping the command palette
+    // tidy.
+    for (let index = 1; index <= 9; index++) {
+      this.addCommand({
+        id: `switch-to-tab-${index}`,
+        name: `Switch to tab ${index}`,
+        checkCallback: (checking: boolean) => {
+          const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+          if (!leaf) return false;
+          const view = leaf.view as ClaudianView;
+          const tabManager = view.getTabManager();
+          if (!tabManager) return false;
+          const tabs = tabManager.getAllTabs();
+          if (tabs.length < index) return false;
+
+          if (!checking) {
+            void tabManager.switchToTab(tabs[index - 1].id);
+          }
+          return true;
+        },
+      });
+    }
+
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
   }
 
