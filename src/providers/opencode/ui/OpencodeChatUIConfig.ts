@@ -15,7 +15,7 @@ import {
   OPENCODE_SYNTHETIC_MODEL_ID,
   resolveOpencodeBaseModelRawId,
 } from '../models';
-import { getOpencodeToolbarModes, OPENCODE_FALLBACK_MODES, type OpencodeMode } from '../modes';
+import { getManagedOpencodeModes, type OpencodeMode } from '../modes';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '../settings';
 
 const OPENCODE_MODELS: ProviderUIOption[] = [
@@ -215,15 +215,7 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
 
   getModeSelector(settings: Record<string, unknown>): ProviderModeSelectorConfig | null {
     const opencodeSettings = getOpencodeProviderSettings(settings);
-    if (
-      opencodeSettings.availableModes.length === 0
-      && opencodeSettings.selectedMode
-      && !OPENCODE_FALLBACK_MODES.some((mode) => mode.id === opencodeSettings.selectedMode)
-    ) {
-      return null;
-    }
-
-    const availableModes = getOpencodeToolbarModes(opencodeSettings.availableModes);
+    const availableModes = getManagedOpencodeModes(opencodeSettings.availableModes);
     if (availableModes.length <= 1) {
       return null;
     }

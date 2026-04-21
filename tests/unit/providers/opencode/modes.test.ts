@@ -1,6 +1,8 @@
 import {
   getEffectiveOpencodeModes,
+  getManagedOpencodeModes,
   getOpencodeToolbarModes,
+  normalizeManagedOpencodeSelectedMode,
   normalizeOpencodeAvailableModes,
   normalizeOpencodeSelectedMode,
   OPENCODE_FALLBACK_MODES,
@@ -37,8 +39,19 @@ describe('OpenCode mode settings', () => {
       { id: 'title', name: 'title' },
     ])).toEqual([
       { id: 'build', name: 'build' },
-      { id: 'plan', name: 'plan' },
+        { id: 'plan', name: 'plan' },
     ]);
+  });
+
+  it('keeps Claudian on managed build/plan modes even when discovery only reports custom agents', () => {
+    expect(getManagedOpencodeModes([
+      { id: 'compaction', name: 'compaction' },
+      { id: 'summary', name: 'summary' },
+    ])).toEqual(OPENCODE_FALLBACK_MODES);
+  });
+
+  it('normalizes saved custom mode selections back to build', () => {
+    expect(normalizeManagedOpencodeSelectedMode('compaction')).toBe('build');
   });
 });
 
@@ -65,7 +78,7 @@ describe('opencodeChatUIConfig.getModeSelector', () => {
     });
   });
 
-  it('hides the selector when OpenCode only exposes one mode', () => {
+  it('fills in the managed plan mode when OpenCode discovery only reports build', () => {
     expect(opencodeChatUIConfig.getModeSelector?.({
       providerConfigs: {
         opencode: {
@@ -75,7 +88,19 @@ describe('opencodeChatUIConfig.getModeSelector', () => {
           selectedMode: 'build',
         },
       },
-    })).toBeNull();
+    })).toEqual({
+      activeValue: 'build',
+      label: 'Mode',
+      options: [
+        { label: 'Build', value: 'build' },
+        {
+          description: 'Plan mode. Disallows all edit tools.',
+          label: 'Plan',
+          value: 'plan',
+        },
+      ],
+      value: 'build',
+    });
   });
 
   it('shows fallback build/plan modes before ACP discovery finishes', () => {
@@ -105,7 +130,7 @@ describe('opencodeChatUIConfig.getModeSelector', () => {
     });
   });
 
-  it('hides the selector until discovery finishes when a saved custom mode cannot be validated yet', () => {
+  it('falls back to build/plan when a saved custom mode cannot be managed safely', () => {
     expect(opencodeChatUIConfig.getModeSelector?.({
       providerConfigs: {
         opencode: {
@@ -113,7 +138,23 @@ describe('opencodeChatUIConfig.getModeSelector', () => {
           selectedMode: 'compaction',
         },
       },
-    })).toBeNull();
+    })).toEqual({
+      activeValue: 'build',
+      label: 'Mode',
+      options: [
+        {
+          description: 'The default agent. Executes tools based on configured permissions.',
+          label: 'Build',
+          value: 'build',
+        },
+        {
+          description: 'Plan mode. Disallows all edit tools.',
+          label: 'Plan',
+          value: 'plan',
+        },
+      ],
+      value: 'build',
+    });
   });
 
   it('keeps the toolbar on build/plan even when OpenCode reports auxiliary primary modes', () => {
@@ -136,6 +177,36 @@ describe('opencodeChatUIConfig.getModeSelector', () => {
         { description: 'Planning-first agent', label: 'Plan', value: 'plan' },
       ],
       value: 'plan',
+    });
+  });
+
+  it('ignores custom-only discovery and still shows managed build/plan modes', () => {
+    expect(opencodeChatUIConfig.getModeSelector?.({
+      providerConfigs: {
+        opencode: {
+          availableModes: [
+            { description: 'Internal compaction agent', id: 'compaction', name: 'compaction' },
+            { description: 'Internal summary agent', id: 'summary', name: 'summary' },
+          ],
+          selectedMode: 'summary',
+        },
+      },
+    })).toEqual({
+      activeValue: 'build',
+      label: 'Mode',
+      options: [
+        {
+          description: 'The default agent. Executes tools based on configured permissions.',
+          label: 'Build',
+          value: 'build',
+        },
+        {
+          description: 'Plan mode. Disallows all edit tools.',
+          label: 'Plan',
+          value: 'plan',
+        },
+      ],
+      value: 'build',
     });
   });
 });

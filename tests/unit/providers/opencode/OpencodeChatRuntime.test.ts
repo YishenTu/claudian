@@ -64,20 +64,14 @@ describe('OpencodeChatRuntime', () => {
     ]);
   });
 
-  it('creates a session on demand when commands are requested before a session exists', async () => {
+  it('does not create a session when commands are requested before a session exists', async () => {
     const runtime = new OpencodeChatRuntime(createMockPlugin());
-    const commands = [{ id: 'acp:review', name: 'review', content: '', source: 'sdk' }];
 
     (runtime as any).ready = true;
-    (runtime as any).createSession = jest.fn(async () => {
-      (runtime as any).sessionId = 'session-1';
-      (runtime as any).loadedSessionId = 'session-1';
-      (runtime as any).setSupportedCommands(commands);
-      return 'session-1';
-    });
+    (runtime as any).createSession = jest.fn();
 
-    await expect(runtime.getSupportedCommands()).resolves.toEqual(commands);
-    expect((runtime as any).createSession).toHaveBeenCalledTimes(1);
+    await expect(runtime.getSupportedCommands()).resolves.toEqual([]);
+    expect((runtime as any).createSession).not.toHaveBeenCalled();
   });
 
   it('marks missing saved sessions invalidated without creating a replacement command session', async () => {
@@ -117,6 +111,75 @@ describe('OpencodeChatRuntime', () => {
     expect(runtime.getSessionId()).toBeNull();
     expect(runtime.consumeSessionInvalidation()).toBe(true);
     expect(runtime.consumeSessionInvalidation()).toBe(false);
+  });
+
+  it('clears a stale database path when switching to a saved session without persisted provider state', async () => {
+    const plugin = createMockPlugin({
+      settings: {
+        providerConfigs: {
+          opencode: {
+            enabled: true,
+          },
+        },
+      },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    runtime.syncConversationState({
+      providerState: { databasePath: '/persisted/opencode.db' },
+      sessionId: 'session-1',
+    });
+    runtime.syncConversationState({
+      providerState: {},
+      sessionId: 'session-2',
+    });
+
+    jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts').mockImplementation(async (params) => {
+      expect(params.runtimeEnv.OPENCODE_DB).toBeUndefined();
+      return {
+        configPath: '/tmp/claudian-opencode-config.json',
+        databasePath: '/default/opencode.db',
+        launchKey: 'launch-key',
+        systemPromptPath: '/tmp/claudian-opencode-system.md',
+      };
+    });
+    (runtime as any).startProcess = jest.fn().mockImplementation(async () => {
+      (runtime as any).ready = true;
+    });
+    (runtime as any).loadSession = jest.fn().mockResolvedValue(true);
+
+    await expect(runtime.ensureReady()).resolves.toBe(true);
+  });
+
+  it('honors a metadata-only database override before any session exists', async () => {
+    const plugin = createMockPlugin({
+      settings: {
+        providerConfigs: {
+          opencode: {
+            enabled: true,
+          },
+        },
+      },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    runtime.syncConversationState({
+      providerState: { databasePath: ':memory:' },
+      sessionId: null,
+    });
+
+    jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts').mockImplementation(async (params) => {
+      expect(params.runtimeEnv.OPENCODE_DB).toBe(':memory:');
+      return {
+        configPath: '/tmp/claudian-opencode-config.json',
+        databasePath: ':memory:',
+        launchKey: 'launch-key',
+        systemPromptPath: '/tmp/claudian-opencode-system.md',
+      };
+    });
+    (runtime as any).startProcess = jest.fn().mockImplementation(async () => {
+      (runtime as any).ready = true;
+    });
+
+    await expect(runtime.ensureReady({ allowSessionCreation: false })).resolves.toBe(true);
   });
 
   it('maps ACP permission options through the shared approval UI', async () => {
@@ -277,7 +340,7 @@ describe('OpencodeChatRuntime', () => {
     expect((runtime as any).resolveSelectedModeId()).toBe('build');
   });
 
-  it('preserves a saved custom mode until ACP mode discovery can validate it', () => {
+  it('falls back to build when a saved custom mode is not managed by Claudian', () => {
     const plugin = createMockPlugin({
       settings: {
         providerConfigs: {
@@ -291,7 +354,7 @@ describe('OpencodeChatRuntime', () => {
     const runtime = new OpencodeChatRuntime(plugin);
     jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot').mockReturnValue(plugin.settings);
 
-    expect((runtime as any).resolveSelectedModeId()).toBe('compaction');
+    expect((runtime as any).resolveSelectedModeId()).toBe('build');
   });
 
   it('prefers build/plan over auxiliary OpenCode primary modes for the main toolbar', () => {

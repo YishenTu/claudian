@@ -287,6 +287,7 @@ export interface ProviderCliResolver {
 }
 
 export interface ProviderRuntimeCommandLoaderContext {
+  allowBlankSessionWarmup?: boolean;
   conversation: Conversation | null;
   externalContextPaths: string[];
   plugin: ClaudianPlugin;
@@ -298,11 +299,33 @@ export interface ProviderRuntimeCommandLoader {
   loadCommands(context: ProviderRuntimeCommandLoaderContext): Promise<SlashCommand[]>;
 }
 
+export type ProviderTabWarmupMode = 'none' | 'metadata' | 'runtime';
+
+export type ProviderTabWarmupLifecycleState = 'blank' | 'bound_cold' | 'bound_active' | 'closing';
+
+export interface ProviderTabWarmupContext {
+  conversation: Conversation | null;
+  externalContextPaths: string[];
+  plugin: ClaudianPlugin;
+  runtime: ChatRuntime | null;
+  tab: {
+    conversationId: string | null;
+    draftModel: string | null;
+    lifecycleState: ProviderTabWarmupLifecycleState;
+    providerId: ProviderId;
+  };
+}
+
+export interface ProviderTabWarmupPolicy {
+  resolveMode(context: ProviderTabWarmupContext): ProviderTabWarmupMode;
+}
+
 export interface ProviderWorkspaceServices {
   commandCatalog?: ProviderCommandCatalog | null;
   agentMentionProvider?: AgentMentionProvider | null;
   cliResolver?: ProviderCliResolver | null;
   runtimeCommandLoader?: ProviderRuntimeCommandLoader | null;
+  tabWarmupPolicy?: ProviderTabWarmupPolicy | null;
   mcpServerManager?: McpServerManager | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
   refreshAgentMentions?(): Promise<void>;

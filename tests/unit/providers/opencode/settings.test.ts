@@ -199,6 +199,17 @@ describe('OpenCode settings normalization', () => {
     expect((settings.providerConfigs as Record<string, any>).opencode.discoveredModels).toBeUndefined();
   });
 
+  it('normalizes saved custom OpenCode modes back to the managed build mode', () => {
+    expect(getOpencodeProviderSettings({
+      providerConfigs: {
+        opencode: {
+          availableModes: [],
+          selectedMode: 'compaction',
+        },
+      },
+    }).selectedMode).toBe('build');
+  });
+
   it('preserves legacy cliPath when no host-scoped path exists', () => {
     expect(getOpencodeProviderSettings({
       providerConfigs: {

@@ -17,7 +17,7 @@ import {
   resolveOpencodeBaseModelRawId,
 } from './models';
 import {
-  normalizeOpencodeSelectedMode,
+  normalizeManagedOpencodeSelectedMode,
   type OpencodeMode,
 } from './modes';
 
@@ -168,7 +168,7 @@ export function getOpencodeProviderSettings(
       config.preferredThinkingByModel,
       discoveredModels,
     ),
-    selectedMode: normalizeOpencodeSelectedMode(config.selectedMode),
+    selectedMode: normalizeManagedOpencodeSelectedMode(config.selectedMode, availableModes),
     visibleModels: normalizeOpencodeVisibleModels(config.visibleModels, discoveredModels),
   };
 }
@@ -188,8 +188,9 @@ export function updateOpencodeProviderSettings(
   const discoveryState = getOpencodeDiscoveryState(settings);
   const nextAvailableModes = discoveryState.availableModes;
   const nextDiscoveredModels = discoveryState.discoveredModels;
-  const nextSelectedMode = normalizeOpencodeSelectedMode(
+  const nextSelectedMode = normalizeManagedOpencodeSelectedMode(
     updates.selectedMode ?? current.selectedMode,
+    nextAvailableModes,
   );
   const nextVisibleModels = normalizeOpencodeVisibleModels(
     updates.visibleModels ?? current.visibleModels,
@@ -233,14 +234,7 @@ export function updateOpencodeProviderSettings(
       updates.preferredThinkingByModel ?? current.preferredThinkingByModel,
       nextDiscoveredModels,
     ),
-    selectedMode: (
-      nextSelectedMode
-      && updates.availableModes !== undefined
-      && nextAvailableModes.length > 0
-      && !nextAvailableModes.some((mode) => mode.id === nextSelectedMode)
-    )
-      ? (nextAvailableModes[0]?.id ?? '')
-      : nextSelectedMode,
+    selectedMode: nextSelectedMode,
     visibleModels: nextVisibleModels,
   };
 

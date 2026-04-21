@@ -17,6 +17,8 @@ export const OPENCODE_FALLBACK_MODES: ReadonlyArray<OpencodeMode> = Object.freez
   },
 ]);
 
+const OPENCODE_MANAGED_MODE_IDS = new Set(OPENCODE_FALLBACK_MODES.map((mode) => mode.id));
+
 export function normalizeOpencodeAvailableModes(value: unknown): OpencodeMode[] {
   if (!Array.isArray(value)) {
     return [];
@@ -54,10 +56,19 @@ export function getEffectiveOpencodeModes(modes: OpencodeMode[]): OpencodeMode[]
   return modes.length > 0 ? modes : [...OPENCODE_FALLBACK_MODES];
 }
 
-export function getOpencodeToolbarModes(modes: OpencodeMode[]): OpencodeMode[] {
+export function isManagedOpencodeModeId(value: string): boolean {
+  return OPENCODE_MANAGED_MODE_IDS.has(value);
+}
+
+export function getManagedOpencodeModes(modes: OpencodeMode[]): OpencodeMode[] {
   const effectiveModes = getEffectiveOpencodeModes(modes);
-  const toolbarModes = effectiveModes.filter((mode) => mode.id === 'build' || mode.id === 'plan');
-  return toolbarModes.length > 0 ? toolbarModes : effectiveModes;
+  return OPENCODE_FALLBACK_MODES.map((fallbackMode) => (
+    effectiveModes.find((mode) => mode.id === fallbackMode.id) ?? fallbackMode
+  ));
+}
+
+export function getOpencodeToolbarModes(modes: OpencodeMode[]): OpencodeMode[] {
+  return getManagedOpencodeModes(modes);
 }
 
 export function normalizeOpencodeSelectedMode(
@@ -73,4 +84,19 @@ export function normalizeOpencodeSelectedMode(
   }
 
   return trimmed;
+}
+
+export function normalizeManagedOpencodeSelectedMode(
+  value: unknown,
+  modes: OpencodeMode[] = [],
+): string {
+  const normalized = normalizeOpencodeSelectedMode(value);
+  if (!normalized) {
+    return '';
+  }
+
+  const managedModes = getManagedOpencodeModes(modes);
+  return managedModes.some((mode) => mode.id === normalized)
+    ? normalized
+    : (managedModes[0]?.id ?? '');
 }

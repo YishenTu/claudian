@@ -71,6 +71,7 @@ export interface ChatRuntimeQueryOptions {
 }
 
 export interface ChatRuntimeEnsureReadyOptions {
+  allowSessionCreation?: boolean;
   force?: boolean;
 }
 

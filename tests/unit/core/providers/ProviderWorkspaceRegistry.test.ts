@@ -69,4 +69,16 @@ describe('ProviderWorkspaceRegistry', () => {
 
     expect(ProviderWorkspaceRegistry.getRuntimeCommandLoader('opencode')).toBe(runtimeCommandLoader);
   });
+
+  it('returns the tab warmup policy for a provider', () => {
+    const tabWarmupPolicy = {
+      resolveMode: jest.fn().mockReturnValue('metadata'),
+    };
+
+    ProviderWorkspaceRegistry.setServices('opencode', {
+      tabWarmupPolicy: tabWarmupPolicy as any,
+    });
+
+    expect(ProviderWorkspaceRegistry.getTabWarmupPolicy('opencode')).toBe(tabWarmupPolicy);
+  });
 });

@@ -78,7 +78,8 @@ import {
   resolveOpencodeBaseModelRawId,
 } from '../models';
 import {
-  getOpencodeToolbarModes,
+  getManagedOpencodeModes,
+  isManagedOpencodeModeId,
   normalizeOpencodeAvailableModes,
 } from '../modes';
 import { createOpencodeToolStreamAdapter } from '../normalization/opencodeToolNormalization';
@@ -191,6 +192,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   syncConversationState(
     conversation: { providerState?: Record<string, unknown>; sessionId?: string | null } | null,
   ): void {
+    const previousSessionId = this.sessionId;
     const nextSessionId = conversation?.sessionId ?? null;
     if (this.sessionId !== nextSessionId) {
       this.currentSessionModelId = null;
@@ -200,7 +202,14 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
     this.sessionId = nextSessionId;
     const state = getOpencodeState(conversation?.providerState);
-    this.currentDatabasePath = state.databasePath ?? this.currentDatabasePath;
+    if (state.databasePath) {
+      this.currentDatabasePath = state.databasePath;
+      return;
+    }
+
+    if (!nextSessionId || nextSessionId !== previousSessionId) {
+      this.currentDatabasePath = null;
+    }
   }
 
   async reloadMcpServers(): Promise<void> {}
@@ -217,7 +226,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const resolvedCliPath = this.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
     const runtimeEnv = this.buildRuntimeEnv(
       resolvedCliPath,
-      targetSessionId ? this.currentDatabasePath : null,
+      this.currentDatabasePath,
     );
     const promptSettings = this.getSystemPromptSettings(cwd);
     const artifacts = await prepareOpencodeLaunchArtifacts({
@@ -266,6 +275,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     if (!this.sessionId && !this.sessionInvalidated) {
+      if (options?.allowSessionCreation === false) {
+        return true;
+      }
       return Boolean(await this.createSession(cwd));
     }
 
@@ -418,29 +430,14 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     if (this.sessionId && this.loadedSessionId !== this.sessionId) {
-      const ready = await this.ensureReady();
+      const ready = await this.ensureReady({ allowSessionCreation: false });
       if (!ready) {
         return [];
       }
     }
 
     if (!this.sessionId) {
-      if (!this.ready) {
-        const ready = await this.ensureReady();
-        if (!ready) {
-          return [];
-        }
-      }
-
-      if (this.sessionInvalidated) {
-        return [];
-      }
-
-      const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
-      const sessionId = await this.createSession(cwd);
-      if (!sessionId) {
-        return [];
-      }
+      return [];
     }
 
     if (this.supportedCommands.length > 0) {
@@ -700,12 +697,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
   private resolveSelectedModeId(): string | null {
     const opencodeSettings = getOpencodeProviderSettings(this.getProviderSettings());
-    const availableModes = getOpencodeToolbarModes(opencodeSettings.availableModes);
+    const availableModes = getManagedOpencodeModes(opencodeSettings.availableModes);
     if (opencodeSettings.selectedMode) {
-      if (opencodeSettings.availableModes.length === 0) {
-        return opencodeSettings.selectedMode;
-      }
-
       if (
         availableModes.some((mode) => mode.id === opencodeSettings.selectedMode)
       ) {
@@ -889,7 +882,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
     const currentSettings = getOpencodeProviderSettings(settingsBag);
-    const shouldSeedSelectedMode = Boolean(currentModeId) && !currentSettings.selectedMode;
+    const shouldSeedSelectedMode = typeof currentModeId === 'string'
+      && !currentSettings.selectedMode
+      && isManagedOpencodeModeId(currentModeId);
     const discoveryChanged = availableModes.length > 0
       && !sameModes(currentSettings.availableModes, availableModes)
       && updateOpencodeDiscoveryState(settingsBag, { availableModes });
@@ -1150,6 +1145,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   private clearActiveSession(): void {
+    this.currentDatabasePath = null;
     this.sessionId = null;
     this.loadedSessionId = null;
     this.currentSessionModelId = null;
@@ -1439,4 +1435,3 @@ function selectPermissionOption(
 
   return { outcome: { outcome: 'cancelled' } };
 }
-

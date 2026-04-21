@@ -1,6 +1,7 @@
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
+  ProviderTabWarmupPolicy,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
@@ -13,12 +14,19 @@ export interface OpencodeWorkspaceServices extends ProviderWorkspaceServices {
   commandCatalog: ProviderCommandCatalog;
 }
 
+const opencodeTabWarmupPolicy: ProviderTabWarmupPolicy = {
+  resolveMode() {
+    return 'metadata';
+  },
+};
+
 export async function createOpencodeWorkspaceServices(): Promise<OpencodeWorkspaceServices> {
   return {
     commandCatalog: new OpencodeCommandCatalog(),
     cliResolver: new OpencodeCliResolver(),
     runtimeCommandLoader: new OpencodeRuntimeCommandLoader(),
     settingsTabRenderer: opencodeSettingsTabRenderer,
+    tabWarmupPolicy: opencodeTabWarmupPolicy,
   };
 }
 
