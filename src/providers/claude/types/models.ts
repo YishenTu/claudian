@@ -52,12 +52,56 @@ export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
   'opus[1m]': 'medium',
 };
 
-const DEFAULT_MODEL_VALUES = new Set(DEFAULT_CLAUDE_MODELS.map(m => m.value));
+const ONE_M_SUFFIX = '[1m]';
+const DEFAULT_MODEL_VALUES = new Set(DEFAULT_CLAUDE_MODELS.map(m => m.value.toLowerCase()));
+
+function normalizeModelId(model: string): string {
+  return model.trim().toLowerCase();
+}
+
+function has1MContextSuffix(model: string): boolean {
+  return normalizeModelId(model).endsWith(ONE_M_SUFFIX);
+}
+
+function isBuiltInFamilyVariant(model: string, family: 'sonnet' | 'opus'): boolean {
+  const normalized = normalizeModelId(model);
+  return normalized === family || normalized === `${family}${ONE_M_SUFFIX}`;
+}
+
+function isValidContextLimit(limit: unknown): limit is number {
+  return typeof limit === 'number' && limit > 0 && !isNaN(limit) && isFinite(limit);
+}
+
+function resolveCustomContextLimit(
+  model: string,
+  customLimits?: Record<string, number>,
+): number | null {
+  if (!customLimits) {
+    return null;
+  }
+
+  const exactLimit = customLimits[model];
+  if (isValidContextLimit(exactLimit)) {
+    return exactLimit;
+  }
+
+  const normalizedModel = normalizeModelId(model);
+  const matchingLimits = Object.entries(customLimits)
+    .filter(([key, limit]) => key !== model && normalizeModelId(key) === normalizedModel && isValidContextLimit(limit))
+    .map(([, limit]) => limit);
+
+  return matchingLimits.length === 1 ? matchingLimits[0] : null;
+}
 
 /** Whether the model is a known Claude model that supports adaptive thinking. */
 export function isAdaptiveThinkingModel(model: string): boolean {
-  if (DEFAULT_MODEL_VALUES.has(model)) return true;
-  return /claude-(haiku|sonnet|opus)-/.test(model);
+  const normalized = normalizeModelId(model);
+  if (DEFAULT_MODEL_VALUES.has(normalized)) return true;
+  return /claude-(haiku|sonnet|opus)-/.test(normalized);
+}
+
+export function isDefaultClaudeModel(model: string): boolean {
+  return DEFAULT_MODEL_VALUES.has(normalizeModelId(model));
 }
 
 /**
@@ -65,8 +109,9 @@ export function isAdaptiveThinkingModel(model: string): boolean {
  * silently falls back to `high` on other models.
  */
 export function supportsXHighEffort(model: string): boolean {
-  if (model === 'opus' || model === 'opus[1m]') return true;
-  return /claude-opus-(4-[7-9]|[5-9])/.test(model);
+  const normalized = normalizeModelId(model);
+  if (isBuiltInFamilyVariant(normalized, 'opus')) return true;
+  return /claude-opus-(4-[7-9]|[5-9])/.test(normalized);
 }
 
 /** Clamp stored effort values to what the selected model actually supports. */
@@ -83,7 +128,7 @@ export function normalizeEffortLevel(
     return effortLevel as EffortLevel;
   }
 
-  return DEFAULT_EFFORT_LEVEL[model] ?? 'high';
+  return DEFAULT_EFFORT_LEVEL[normalizeModelId(model)] ?? 'high';
 }
 
 export function resolveThinkingTokens(
@@ -119,12 +164,12 @@ export function filterVisibleModelOptions<T extends { value: string }>(
   enableSonnet1M: boolean
 ): T[] {
   return models.filter((model) => {
-    if (model.value === 'opus' || model.value === 'opus[1m]') {
-      return enableOpus1M ? model.value === 'opus[1m]' : model.value === 'opus';
+    if (isBuiltInFamilyVariant(model.value, 'opus')) {
+      return enableOpus1M ? has1MContextSuffix(model.value) : normalizeModelId(model.value) === 'opus';
     }
 
-    if (model.value === 'sonnet' || model.value === 'sonnet[1m]') {
-      return enableSonnet1M ? model.value === 'sonnet[1m]' : model.value === 'sonnet';
+    if (isBuiltInFamilyVariant(model.value, 'sonnet')) {
+      return enableSonnet1M ? has1MContextSuffix(model.value) : normalizeModelId(model.value) === 'sonnet';
     }
 
     return true;
@@ -136,11 +181,11 @@ export function normalizeVisibleModelVariant(
   enableOpus1M: boolean,
   enableSonnet1M: boolean
 ): string {
-  if (model === 'opus' || model === 'opus[1m]') {
+  if (isBuiltInFamilyVariant(model, 'opus')) {
     return enableOpus1M ? 'opus[1m]' : 'opus';
   }
 
-  if (model === 'sonnet' || model === 'sonnet[1m]') {
+  if (isBuiltInFamilyVariant(model, 'sonnet')) {
     return enableSonnet1M ? 'sonnet[1m]' : 'sonnet';
   }
 
@@ -151,14 +196,12 @@ export function getContextWindowSize(
   model: string,
   customLimits?: Record<string, number>
 ): number {
-  if (customLimits && model in customLimits) {
-    const limit = customLimits[model];
-    if (typeof limit === 'number' && limit > 0 && !isNaN(limit) && isFinite(limit)) {
-      return limit;
-    }
+  const customLimit = resolveCustomContextLimit(model, customLimits);
+  if (customLimit !== null) {
+    return customLimit;
   }
 
-  if (model.endsWith('[1m]')) {
+  if (has1MContextSuffix(model)) {
     return CONTEXT_WINDOW_1M;
   }
 

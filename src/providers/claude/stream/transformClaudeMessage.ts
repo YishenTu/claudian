@@ -4,7 +4,7 @@ import type { SDKToolUseResult, StreamChunk, UsageInfo } from '../../../core/typ
 import { isBlockedMessage } from '../sdk/messages';
 import { extractToolResultContent } from '../sdk/toolResultContent';
 import type { TransformEvent } from '../sdk/types';
-import { getContextWindowSize } from '../types/models';
+import { getContextWindowSize, isDefaultClaudeModel } from '../types/models';
 import { createTransformStreamState, type TransformStreamState } from './toolInputStreamState';
 
 type ToolUseFields = { id: string; name: string; input: Record<string, unknown> };
@@ -53,36 +53,85 @@ interface ContextWindowEntry {
   contextWindow: number;
 }
 
+interface ClaudeModelSignature {
+  normalizedModel: string;
+  family: 'haiku' | 'sonnet' | 'opus';
+  is1M: boolean;
+  major?: string;
+  minor?: string;
+  date?: string;
+}
+
 function isResultError(message: { type: 'result'; subtype: string }): message is SDKResultError {
   return !!message.subtype && message.subtype !== 'success';
 }
 
-function getBuiltInModelSignature(model: string): { family: 'haiku' | 'sonnet' | 'opus'; is1M: boolean } | null {
+function normalizeClaudeModelId(model: string): string {
   const normalized = model.trim().toLowerCase();
+  const claudeIndex = normalized.indexOf('claude-');
+  return claudeIndex >= 0 ? normalized.slice(claudeIndex) : normalized;
+}
+
+function parseClaudeModelSignature(model: string): ClaudeModelSignature | null {
+  const normalized = normalizeClaudeModelId(model);
   if (normalized === 'haiku') {
-    return { family: 'haiku', is1M: false };
+    return { normalizedModel: normalized, family: 'haiku', is1M: false };
   }
   if (normalized === 'sonnet' || normalized === 'sonnet[1m]') {
-    return { family: 'sonnet', is1M: normalized.endsWith('[1m]') };
+    return { normalizedModel: normalized, family: 'sonnet', is1M: normalized.endsWith('[1m]') };
   }
   if (normalized === 'opus' || normalized === 'opus[1m]') {
-    return { family: 'opus', is1M: normalized.endsWith('[1m]') };
+    return { normalizedModel: normalized, family: 'opus', is1M: normalized.endsWith('[1m]') };
   }
+
+  const versionedMatch = normalized.match(
+    /^claude-(haiku|sonnet|opus)-(\d+)(?:-(\d+))?(?:-(\d{8}))?(?:-v\d+:\d+)?(\[1m\])?$/,
+  );
+  if (versionedMatch) {
+    const [, familyMatch, major, minor, date, oneMillionSuffix] = versionedMatch;
+    const family = familyMatch as ClaudeModelSignature['family'];
+    return {
+      normalizedModel: normalized,
+      family,
+      is1M: oneMillionSuffix === '[1m]',
+      major,
+      minor,
+      date,
+    };
+  }
+
   return null;
 }
 
-function getModelUsageSignature(model: string): { family: 'haiku' | 'sonnet' | 'opus'; is1M: boolean } | null {
-  const normalized = model.trim().toLowerCase();
-  if (normalized.includes('haiku')) {
-    return { family: 'haiku', is1M: false };
+function findUniqueEntry(
+  entries: ContextWindowEntry[],
+  predicate: (entry: ContextWindowEntry) => boolean,
+): ContextWindowEntry | null {
+  const matches = entries.filter(predicate);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function matchClaudeModelSignature(
+  entrySignature: ClaudeModelSignature | null,
+  intendedSignature: ClaudeModelSignature,
+  options?: { ignoreIs1M?: boolean },
+): boolean {
+  if (!entrySignature || entrySignature.family !== intendedSignature.family) {
+    return false;
   }
-  if (normalized.includes('sonnet')) {
-    return { family: 'sonnet', is1M: normalized.endsWith('[1m]') };
+  if (!options?.ignoreIs1M && entrySignature.is1M !== intendedSignature.is1M) {
+    return false;
   }
-  if (normalized.includes('opus')) {
-    return { family: 'opus', is1M: normalized.endsWith('[1m]') };
+  if (intendedSignature.major && entrySignature.major !== intendedSignature.major) {
+    return false;
   }
-  return null;
+  if (intendedSignature.minor && entrySignature.minor !== intendedSignature.minor) {
+    return false;
+  }
+  if (intendedSignature.date && entrySignature.date !== intendedSignature.date) {
+    return false;
+  }
+  return true;
 }
 
 function selectContextWindowEntry(
@@ -108,22 +157,41 @@ function selectContextWindowEntry(
     return null;
   }
 
-  const exactMatches = entries.filter((entry) => entry.model === intendedModel);
-  if (exactMatches.length === 1) {
-    return exactMatches[0];
+  const literalExactMatch = entries.find((entry) => entry.model === intendedModel);
+  if (literalExactMatch) {
+    return literalExactMatch;
   }
 
-  const intendedSignature = getBuiltInModelSignature(intendedModel);
+  const normalizedIntendedModel = normalizeClaudeModelId(intendedModel);
+  const exactMatch = findUniqueEntry(entries, (entry) => normalizeClaudeModelId(entry.model) === normalizedIntendedModel);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  if (!isDefaultClaudeModel(intendedModel)) {
+    return null;
+  }
+
+  const intendedSignature = parseClaudeModelSignature(intendedModel);
   if (!intendedSignature) {
     return null;
   }
 
-  const signatureMatches = entries.filter((entry) => {
-    const entrySignature = getModelUsageSignature(entry.model);
-    return entrySignature?.family === intendedSignature.family && entrySignature.is1M === intendedSignature.is1M;
-  });
+  const strictSignatureMatch = findUniqueEntry(entries, (entry) =>
+    matchClaudeModelSignature(parseClaudeModelSignature(entry.model), intendedSignature),
+  );
+  if (strictSignatureMatch) {
+    return strictSignatureMatch;
+  }
 
-  return signatureMatches.length === 1 ? signatureMatches[0] : null;
+  const hasVersionedTarget = Boolean(intendedSignature.major || intendedSignature.date);
+  if (!hasVersionedTarget) {
+    return null;
+  }
+
+  return findUniqueEntry(entries, (entry) =>
+    matchClaudeModelSignature(parseClaudeModelSignature(entry.model), intendedSignature, { ignoreIs1M: true }),
+  );
 }
 
 /**

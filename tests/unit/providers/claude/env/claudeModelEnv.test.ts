@@ -98,6 +98,11 @@ describe('getModelsFromEnvironment', () => {
     expect(result[0].label).toBe('Opus 4.6 (1M)');
   });
 
+  it('formats uppercase 1M suffixes into friendly labels', () => {
+    const result = getModelsFromEnvironment({ ANTHROPIC_MODEL: 'claude-opus-4-6[1M]' });
+    expect(result[0].label).toBe('Opus 4.6 (1M)');
+  });
+
   it('formats label from slash-separated model name', () => {
     const result = getModelsFromEnvironment({ ANTHROPIC_MODEL: 'org/custom-model' });
     expect(result[0].label).toBe('custom-model');

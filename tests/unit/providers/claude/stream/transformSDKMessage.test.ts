@@ -955,6 +955,140 @@ describe('transformSDKMessage', () => {
       ]);
     });
 
+    it('matches provider-qualified custom model ids against SDK modelUsage keys', () => {
+      const message = msg({
+        type: 'result',
+        modelUsage: {
+          'claude-haiku-4-5-20251001': {
+            inputTokens: 1000,
+            outputTokens: 300,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 200000,
+            maxOutputTokens: 32000,
+          },
+          'claude-opus-4-6[1m]': {
+            inputTokens: 1000,
+            outputTokens: 300,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 1000000,
+            maxOutputTokens: 32000,
+          },
+        },
+      });
+
+      const results = [...transformSDKMessage(message, { intendedModel: 'anthropic/claude-opus-4-6[1m]' })];
+
+      expect(results).toEqual([
+        { type: 'context_window', contextWindow: 1000000 },
+      ]);
+    });
+
+    it('preserves literal exact matches when provider-qualified entries normalize to the same Claude id', () => {
+      const message = msg({
+        type: 'result',
+        modelUsage: {
+          'eu.anthropic.claude-opus-4-6[1m]': {
+            inputTokens: 1000,
+            outputTokens: 300,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 1000000,
+            maxOutputTokens: 32000,
+          },
+          'us.anthropic.claude-opus-4-6[1m]': {
+            inputTokens: 1000,
+            outputTokens: 300,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 500000,
+            maxOutputTokens: 32000,
+          },
+        },
+      });
+
+      const results = [...transformSDKMessage(message, { intendedModel: 'eu.anthropic.claude-opus-4-6[1m]' })];
+
+      expect(results).toEqual([
+        { type: 'context_window', contextWindow: 1000000 },
+      ]);
+    });
+
+    it('matches provider-qualified custom model ids with uppercase 1M suffixes', () => {
+      const message = msg({
+        type: 'result',
+        modelUsage: {
+          'claude-haiku-4-5-20251001': {
+            inputTokens: 1000,
+            outputTokens: 300,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 200000,
+            maxOutputTokens: 32000,
+          },
+          'claude-opus-4-6[1m]': {
+            inputTokens: 1000,
+            outputTokens: 300,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 1000000,
+            maxOutputTokens: 32000,
+          },
+        },
+      });
+
+      const results = [...transformSDKMessage(message, { intendedModel: 'anthropic/claude-opus-4-6[1M]' })];
+
+      expect(results).toEqual([
+        { type: 'context_window', contextWindow: 1000000 },
+      ]);
+    });
+
+    it('does not heuristically match different custom model ids', () => {
+      const message = msg({
+        type: 'result',
+        modelUsage: {
+          'claude-haiku-4-5-20251001': {
+            inputTokens: 1000,
+            outputTokens: 300,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 200000,
+            maxOutputTokens: 32000,
+          },
+          'claude-opus-4-6[1m]': {
+            inputTokens: 1000,
+            outputTokens: 300,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 1000000,
+            maxOutputTokens: 32000,
+          },
+        },
+      });
+
+      const results = [...transformSDKMessage(message, { intendedModel: 'anthropic/claude-opus-4-6' })];
+
+      expect(results).toEqual([]);
+    });
+
     it('does not override the heuristic when multi-model result usage is ambiguous', () => {
       const message = msg({
         type: 'result',
