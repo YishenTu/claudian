@@ -1,5 +1,6 @@
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type ClaudianPlugin from '../../../main';
+import { DEFAULT_CODEX_PRIMARY_MODEL } from '../types/models';
 import { CodexAppServerProcess } from './CodexAppServerProcess';
 import { resolveCodexAppServerLaunchSpec } from './codexAppServerSupport';
 import type {
@@ -155,7 +156,7 @@ export class CodexAuxQueryRunner {
       this.plugin.settings as unknown as Record<string, unknown>,
       'codex',
     );
-    return (providerSettings.model as string) ?? 'gpt-5.4';
+    return (providerSettings.model as string) ?? DEFAULT_CODEX_PRIMARY_MODEL;
   }
 
   private async startProcess(): Promise<void> {

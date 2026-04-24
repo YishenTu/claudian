@@ -42,6 +42,7 @@ import {
   findPreferredCodexSkillByName,
 } from '../skills/CodexSkillListingService';
 import { type CodexProviderState, getCodexState } from '../types';
+import { DEFAULT_CODEX_PRIMARY_MODEL, FAST_TIER_CODEX_MODEL } from '../types/models';
 import { CodexAppServerProcess } from './CodexAppServerProcess';
 import {
   initializeCodexAppServerTransport,
@@ -85,7 +86,7 @@ function resolveCodexSandboxConfig(
 }
 
 function resolveCodexServiceTier(serviceTier: unknown, model: string | undefined): string | null {
-  if (model !== 'gpt-5.4') {
+  if (model !== FAST_TIER_CODEX_MODEL) {
     return null;
   }
   return serviceTier === 'fast' ? 'fast' : null;
@@ -403,10 +404,10 @@ export class CodexChatRuntime implements ChatRuntime {
         const permissionMode = this.resolveSandboxConfig();
         await this.transport!.request<ThreadResumeResult>('thread/resume', {
           threadId,
-          model: model ?? 'gpt-5.4',
+          model: model ?? DEFAULT_CODEX_PRIMARY_MODEL,
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
-          serviceTier: resolveCodexServiceTier(this.getProviderSettings().serviceTier, model ?? 'gpt-5.4'),
+          serviceTier: resolveCodexServiceTier(this.getProviderSettings().serviceTier, model ?? DEFAULT_CODEX_PRIMARY_MODEL),
           baseInstructions: promptText,
           persistExtendedHistory: true,
         });
@@ -442,10 +443,10 @@ export class CodexChatRuntime implements ChatRuntime {
         const permissionMode = this.resolveSandboxConfig();
         const resumeResult = await this.transport!.request<ThreadResumeResult>('thread/resume', {
           threadId: existingThreadId,
-          model: model ?? 'gpt-5.4',
+          model: model ?? DEFAULT_CODEX_PRIMARY_MODEL,
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
-          serviceTier: resolveCodexServiceTier(this.getProviderSettings().serviceTier, model ?? 'gpt-5.4'),
+          serviceTier: resolveCodexServiceTier(this.getProviderSettings().serviceTier, model ?? DEFAULT_CODEX_PRIMARY_MODEL),
           baseInstructions: promptText,
           persistExtendedHistory: true,
         });
@@ -460,11 +461,11 @@ export class CodexChatRuntime implements ChatRuntime {
         // New thread
         const permissionMode = this.resolveSandboxConfig();
         const startResult = await this.transport!.request<ThreadStartResult>('thread/start', {
-          model: model ?? 'gpt-5.4',
+          model: model ?? DEFAULT_CODEX_PRIMARY_MODEL,
           cwd: this.launchSpec?.targetCwd ?? getVaultPath(this.plugin.app) ?? undefined,
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
-          serviceTier: resolveCodexServiceTier(this.getProviderSettings().serviceTier, model ?? 'gpt-5.4'),
+          serviceTier: resolveCodexServiceTier(this.getProviderSettings().serviceTier, model ?? DEFAULT_CODEX_PRIMARY_MODEL),
           baseInstructions: promptText,
           experimentalRawEvents: false,
           persistExtendedHistory: true,
@@ -517,7 +518,7 @@ export class CodexChatRuntime implements ChatRuntime {
         // Start turn
         const providerSettings = this.getProviderSettings();
         const effort = EFFORT_MAP[providerSettings.effortLevel as string] ?? 'medium';
-        const resolvedModel = model ?? 'gpt-5.4';
+        const resolvedModel = model ?? DEFAULT_CODEX_PRIMARY_MODEL;
         const isPlanMode = providerSettings.permissionMode === 'plan';
         const externalContextPaths = this.resolveExternalContextPaths(turn, queryOptions);
         const permissionMode = this.resolveSandboxConfig();

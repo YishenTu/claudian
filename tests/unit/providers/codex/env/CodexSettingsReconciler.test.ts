@@ -1,5 +1,6 @@
 import type { Conversation } from '@/core/types';
 import { codexSettingsReconciler } from '@/providers/codex/env/CodexSettingsReconciler';
+import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 describe('codexSettingsReconciler', () => {
   it('invalidates both sessionId and providerState when the Codex env hash changes', () => {
@@ -14,10 +15,10 @@ describe('codexSettingsReconciler', () => {
     } as unknown as Conversation;
 
     const settings: Record<string, unknown> = {
-      model: 'gpt-5.4',
+      model: DEFAULT_CODEX_PRIMARY_MODEL,
       providerConfigs: {
         codex: {
-          environmentVariables: 'OPENAI_MODEL=gpt-5.4',
+          environmentVariables: `OPENAI_MODEL=${DEFAULT_CODEX_PRIMARY_MODEL}`,
           environmentHash: '',
         },
       },
@@ -28,7 +29,7 @@ describe('codexSettingsReconciler', () => {
     expect(result.changed).toBe(true);
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toBeUndefined();
-    expect(settings.model).toBe('gpt-5.4');
+    expect(settings.model).toBe(DEFAULT_CODEX_PRIMARY_MODEL);
   });
 
   it('restores a built-in model when OPENAI_MODEL is removed', () => {

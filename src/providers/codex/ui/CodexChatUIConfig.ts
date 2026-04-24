@@ -7,13 +7,13 @@ import type {
   ProviderUIOption,
 } from '../../../core/providers/types';
 import { OPENAI_PROVIDER_ICON } from '../../../shared/icons';
-
-const CODEX_MODELS: ProviderUIOption[] = [
-  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini', description: 'Fast' },
-  { value: 'gpt-5.4', label: 'GPT-5.4', description: 'Latest' },
-];
-
-const CODEX_MODEL_SET = new Set(CODEX_MODELS.map(m => m.value));
+import {
+  DEFAULT_CODEX_MODEL_SET,
+  DEFAULT_CODEX_MODELS,
+  DEFAULT_CODEX_PRIMARY_MODEL,
+  FAST_TIER_CODEX_DESCRIPTION,
+  FAST_TIER_CODEX_MODEL,
+} from '../types/models';
 
 const EFFORT_LEVELS: ProviderReasoningOption[] = [
   { value: 'low', label: 'Low' },
@@ -36,7 +36,7 @@ const CODEX_SERVICE_TIER_TOGGLE: ProviderServiceTierToggleConfig = {
   inactiveLabel: 'Standard',
   activeValue: 'fast',
   activeLabel: 'Fast',
-  description: 'Enable GPT-5.4 fast mode for this conversation. Faster responses use more credits.',
+  description: FAST_TIER_CODEX_DESCRIPTION,
 };
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
@@ -50,14 +50,14 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
     const envVars = getRuntimeEnvironmentVariables(settings, 'codex');
     if (envVars.OPENAI_MODEL) {
       const customModel = envVars.OPENAI_MODEL;
-      if (!CODEX_MODEL_SET.has(customModel)) {
+      if (!DEFAULT_CODEX_MODEL_SET.has(customModel)) {
         return [
           { value: customModel, label: customModel, description: 'Custom (env)' },
-          ...CODEX_MODELS,
+          ...DEFAULT_CODEX_MODELS,
         ];
       }
     }
-    return [...CODEX_MODELS];
+    return [...DEFAULT_CODEX_MODELS];
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
@@ -85,20 +85,24 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
   },
 
   isDefaultModel(model: string): boolean {
-    return CODEX_MODEL_SET.has(model);
+    return DEFAULT_CODEX_MODEL_SET.has(model);
   },
 
   applyModelDefaults(): void {
     // No-op for Codex
   },
 
-  normalizeModelVariant(model: string): string {
-    return model;
+  normalizeModelVariant(model: string, settings: Record<string, unknown>): string {
+    if (this.getModelOptions(settings).some((option) => option.value === model)) {
+      return model;
+    }
+
+    return DEFAULT_CODEX_PRIMARY_MODEL;
   },
 
   getCustomModelIds(envVars: Record<string, string>): Set<string> {
     const ids = new Set<string>();
-    if (envVars.OPENAI_MODEL && !CODEX_MODEL_SET.has(envVars.OPENAI_MODEL)) {
+    if (envVars.OPENAI_MODEL && !DEFAULT_CODEX_MODEL_SET.has(envVars.OPENAI_MODEL)) {
       ids.add(envVars.OPENAI_MODEL);
     }
     return ids;
@@ -109,7 +113,7 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
   },
 
   getServiceTierToggle(settings): ProviderServiceTierToggleConfig | null {
-    return settings.model === 'gpt-5.4' ? CODEX_SERVICE_TIER_TOGGLE : null;
+    return settings.model === FAST_TIER_CODEX_MODEL ? CODEX_SERVICE_TIER_TOGGLE : null;
   },
 
   getProviderIcon() {

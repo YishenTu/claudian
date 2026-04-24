@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { getEnabledProviderForModel, getProviderForModel } from '@/core/providers/modelRouting';
+import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 describe('getProviderForModel', () => {
   it('routes Claude default models to claude', () => {
@@ -15,7 +16,7 @@ describe('getProviderForModel', () => {
   });
 
   it('routes Codex default models to codex', () => {
-    expect(getProviderForModel('gpt-5.4')).toBe('codex');
+    expect(getProviderForModel(DEFAULT_CODEX_PRIMARY_MODEL)).toBe('codex');
   });
 
   it('routes unknown models to claude (default)', () => {
@@ -46,7 +47,7 @@ describe('getProviderForModel', () => {
       settingsProvider: 'claude',
       providerConfigs: {
         claude: {
-          environmentVariables: 'ANTHROPIC_MODEL=gpt-5.4',
+          environmentVariables: `ANTHROPIC_MODEL=${DEFAULT_CODEX_PRIMARY_MODEL}`,
         },
         codex: {
           enabled: false,
@@ -54,7 +55,7 @@ describe('getProviderForModel', () => {
       },
     };
 
-    expect(getProviderForModel('gpt-5.4', settings)).toBe('codex');
-    expect(getEnabledProviderForModel('gpt-5.4', settings)).toBe('claude');
+    expect(getProviderForModel(DEFAULT_CODEX_PRIMARY_MODEL, settings)).toBe('codex');
+    expect(getEnabledProviderForModel(DEFAULT_CODEX_PRIMARY_MODEL, settings)).toBe('claude');
   });
 });

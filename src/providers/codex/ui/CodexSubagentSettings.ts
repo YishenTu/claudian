@@ -3,6 +3,7 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import type { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
+import { DEFAULT_CODEX_PRIMARY_MODEL } from '../types/models';
 import type { CodexSubagentDefinition } from '../types/subagent';
 
 const REASONING_EFFORT_OPTIONS = [
@@ -137,7 +138,7 @@ class CodexSubagentModal extends Modal {
       .addText(text => {
         this._modelInput = text.inputEl;
         text.setValue(this.existing?.model ?? '')
-          .setPlaceholder('gpt-5.4');
+          .setPlaceholder(DEFAULT_CODEX_PRIMARY_MODEL);
       });
 
     new Setting(details)
