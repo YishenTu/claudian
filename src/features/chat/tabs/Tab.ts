@@ -779,11 +779,12 @@ function initializeInputToolbar(
           model,
           plugin.settings as unknown as Record<string, unknown>,
         );
+        const didProviderChange = newProvider !== previousProvider;
         if (tab.service) {
           cleanupTabRuntime(tab);
         }
         tab.providerId = newProvider;
-        if (newProvider !== previousProvider) {
+        if (didProviderChange) {
           syncTabProviderServices(tab, plugin);
         }
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
@@ -794,7 +795,9 @@ function initializeInputToolbar(
           settings.model = model;
           uiConfig.applyModelDefaults(model, settings);
         });
-        await onProviderChanged?.(newProvider);
+        if (didProviderChange) {
+          await onProviderChanged?.(newProvider);
+        }
         tab.ui.thinkingBudgetSelector?.updateDisplay();
         tab.ui.serviceTierToggle?.updateDisplay();
         tab.ui.modelSelector?.updateDisplay();

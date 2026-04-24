@@ -3523,6 +3523,66 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     expect(settled).toBe(true);
   });
 
+  it('does not trigger provider warmup when a blank-tab model switch stays on OpenCode', async () => {
+    jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+    jest.spyOn(ProviderRegistry, 'resolveProviderForModel').mockImplementation((model: string) => {
+      if (model.startsWith('opencode:')) {
+        return 'opencode';
+      }
+      if (model.startsWith('gpt-') || /^o\d/.test(model)) {
+        return 'codex';
+      }
+      return 'claude';
+    });
+
+    const plugin = createMockPlugin();
+    plugin.settings.providerConfigs = {
+      opencode: {
+        enabled: true,
+      },
+    };
+    plugin.settings.savedProviderModel = {
+      ...plugin.settings.savedProviderModel,
+      opencode: 'opencode:openai/gpt-5',
+    };
+
+    const tab = createTab(createMockOptions({
+      draftModel: 'opencode:openai/gpt-5',
+      plugin,
+    }));
+
+    let releaseWarmup!: () => void;
+    const onProviderChanged = jest.fn().mockImplementation(() => new Promise<void>((resolve) => {
+      releaseWarmup = resolve;
+    }));
+    initializeTabUI(tab, plugin, { onProviderChanged });
+
+    const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
+      createInputToolbar: jest.Mock;
+    };
+    const toolbarCallbacks = toolbarModule.createInputToolbar.mock.calls.at(-1)?.[1];
+
+    let settled = false;
+    const changePromise = toolbarCallbacks.onModelChange('opencode:anthropic/claude-sonnet-4')
+      .then(() => { settled = true; });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(tab.providerId).toBe('opencode');
+    expect(tab.draftModel).toBe('opencode:anthropic/claude-sonnet-4');
+    expect(onProviderChanged).not.toHaveBeenCalled();
+
+    await changePromise;
+    expect(settled).toBe(true);
+
+    if (releaseWarmup) {
+      releaseWarmup();
+    }
+  });
+
   it('preserves the saved Codex fast preference when switching away and back', async () => {
     jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
     jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);

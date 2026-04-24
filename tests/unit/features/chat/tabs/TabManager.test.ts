@@ -1820,7 +1820,7 @@ describe('TabManager - Provider Command Catalog', () => {
     expect(claudeCatalog.setRuntimeCommands).toHaveBeenCalledWith([]);
   });
 
-  it('awaits blank-tab provider warmup in the provider-change callback', async () => {
+  it('starts blank-tab provider warmup in the background from the provider-change callback', async () => {
     const manager = createManager();
     const tab = await manager.createTab();
     const options = mockInitializeTabUI.mock.calls[0][2];
@@ -1833,19 +1833,17 @@ describe('TabManager - Provider Command Catalog', () => {
     );
 
     let settled = false;
-    const callbackPromise = options.onProviderChanged('opencode').then(() => {
+    const callbackPromise = Promise.resolve(options.onProviderChanged('opencode')).then(() => {
       settled = true;
     });
 
     await Promise.resolve();
 
     expect(prewarmSpy).toHaveBeenCalledWith(tab);
-    expect(settled).toBe(false);
+    await callbackPromise;
+    expect(settled).toBe(true);
 
     releaseWarmup();
-    await callbackPromise;
-
-    expect(settled).toBe(true);
   });
 
   it('should return null catalog config when provider has no catalog', async () => {
