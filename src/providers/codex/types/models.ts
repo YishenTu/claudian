@@ -5,11 +5,6 @@ export type CodexModel = string;
 export const DEFAULT_CODEX_MINI_MODEL: CodexModel = 'gpt-5.4-mini';
 export const DEFAULT_CODEX_PRIMARY_MODEL: CodexModel = 'gpt-5.5';
 export const FAST_TIER_CODEX_MODEL = DEFAULT_CODEX_PRIMARY_MODEL;
-export const LEGACY_CODEX_PRIMARY_MODELS: readonly CodexModel[] = ['gpt-5.4'];
-
-const LEGACY_CODEX_MODEL_MIGRATIONS = new Map<CodexModel, CodexModel>(
-  LEGACY_CODEX_PRIMARY_MODELS.map(model => [model, DEFAULT_CODEX_PRIMARY_MODEL]),
-);
 
 function formatCodexModelSuffix(suffix: string): string {
   return suffix
@@ -27,10 +22,6 @@ export function formatCodexModelLabel(model: string): string {
 
   const [, version, suffix] = match;
   return `GPT-${version}${suffix ? ` ${formatCodexModelSuffix(suffix)}` : ''}`;
-}
-
-export function normalizeCodexModelVariant(model: string): string {
-  return LEGACY_CODEX_MODEL_MIGRATIONS.get(model) ?? model;
 }
 
 function createCodexModelOption(model: CodexModel, description: string): ProviderUIOption {

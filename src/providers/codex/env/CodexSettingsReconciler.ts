@@ -4,7 +4,7 @@ import type { Conversation } from '../../../core/types';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
 import { getCodexState } from '../types';
-import { DEFAULT_CODEX_PRIMARY_MODEL, normalizeCodexModelVariant } from '../types/models';
+import { DEFAULT_CODEX_PRIMARY_MODEL } from '../types/models';
 import { codexChatUIConfig } from '../ui/CodexChatUIConfig';
 
 const ENV_HASH_KEYS = ['OPENAI_MODEL', 'OPENAI_BASE_URL', 'OPENAI_API_KEY'];
@@ -62,7 +62,7 @@ export const codexSettingsReconciler: ProviderSettingsReconciler = {
       return false;
     }
 
-    const normalizedModel = normalizeCodexModelVariant(model);
+    const normalizedModel = codexChatUIConfig.normalizeModelVariant(model, settings);
     if (normalizedModel === model) {
       return false;
     }

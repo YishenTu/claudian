@@ -10,9 +10,9 @@ import type {
 import {
   DEFAULT_CODEX_MODEL_SET,
   DEFAULT_CODEX_MODELS,
+  DEFAULT_CODEX_PRIMARY_MODEL,
   FAST_TIER_CODEX_DESCRIPTION,
   FAST_TIER_CODEX_MODEL,
-  normalizeCodexModelVariant,
 } from '../types/models';
 
 const OPENAI_ICON: ProviderIconSvg = {
@@ -97,8 +97,12 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
     // No-op for Codex
   },
 
-  normalizeModelVariant(model: string): string {
-    return normalizeCodexModelVariant(model);
+  normalizeModelVariant(model: string, settings: Record<string, unknown>): string {
+    if (this.getModelOptions(settings).some((option) => option.value === model)) {
+      return model;
+    }
+
+    return DEFAULT_CODEX_PRIMARY_MODEL;
   },
 
   getCustomModelIds(envVars: Record<string, string>): Set<string> {

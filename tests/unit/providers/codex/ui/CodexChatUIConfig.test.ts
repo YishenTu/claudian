@@ -1,7 +1,4 @@
-import {
-  DEFAULT_CODEX_PRIMARY_MODEL,
-  LEGACY_CODEX_PRIMARY_MODELS,
-} from '@/providers/codex/types/models';
+import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 
 describe('CodexChatUIConfig', () => {
@@ -69,13 +66,15 @@ describe('CodexChatUIConfig', () => {
   });
 
   describe('normalizeModelVariant', () => {
-    it('migrates legacy built-in models to the current primary model', () => {
-      expect(codexChatUIConfig.normalizeModelVariant(LEGACY_CODEX_PRIMARY_MODELS[0], {})).toBe(DEFAULT_CODEX_PRIMARY_MODEL);
+    it('falls back unavailable Codex models to the current primary model', () => {
+      expect(codexChatUIConfig.normalizeModelVariant('gpt-5.4', {})).toBe(DEFAULT_CODEX_PRIMARY_MODEL);
     });
 
-    it('should return other models as-is', () => {
+    it('keeps visible models as-is', () => {
       expect(codexChatUIConfig.normalizeModelVariant(DEFAULT_CODEX_PRIMARY_MODEL, {})).toBe(DEFAULT_CODEX_PRIMARY_MODEL);
-      expect(codexChatUIConfig.normalizeModelVariant('custom', {})).toBe('custom');
+      expect(codexChatUIConfig.normalizeModelVariant('custom', {
+        environmentVariables: 'OPENAI_MODEL=custom',
+      })).toBe('custom');
     });
   });
 
