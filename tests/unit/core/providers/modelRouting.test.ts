@@ -38,6 +38,19 @@ describe('getProviderForModel', () => {
     expect(getProviderForModel('my-custom-model', settings)).toBe('codex');
   });
 
+  it('routes settings-defined custom Codex models to codex when settings are provided', () => {
+    const settings = {
+      providerConfigs: {
+        codex: {
+          enabled: true,
+          customModels: 'my-custom-model',
+        },
+      },
+    };
+
+    expect(getProviderForModel('my-custom-model', settings)).toBe('codex');
+  });
+
   it('routes custom OPENAI_MODEL to claude without settings (no context)', () => {
     expect(getProviderForModel('my-custom-model')).toBe('claude');
   });

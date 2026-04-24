@@ -18,6 +18,7 @@ describe('codex settings', () => {
   it('defaults installationMethod to native-windows and leaves wslDistroOverride empty', () => {
     const settings = getCodexProviderSettings({});
 
+    expect(settings.customModels).toBe('');
     expect(settings.installationMethod).toBe('native-windows');
     expect(settings.wslDistroOverride).toBe('');
     expect(settings.installationMethod).toBe(DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod);

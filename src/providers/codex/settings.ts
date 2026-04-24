@@ -21,6 +21,7 @@ export interface CodexProviderSettings {
   safeMode: CodexSafeMode;
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
+  customModels: string;
   reasoningSummary: CodexReasoningSummary;
   environmentVariables: string;
   environmentHash: string;
@@ -35,6 +36,7 @@ export const DEFAULT_CODEX_PROVIDER_SETTINGS: Readonly<CodexProviderSettings> = 
   safeMode: 'workspace-write',
   cliPath: '',
   cliPathsByHost: {},
+  customModels: '',
   reasoningSummary: 'detailed',
   environmentVariables: '',
   environmentHash: '',
@@ -95,6 +97,8 @@ export function getCodexProviderSettings(
       ?? (settings.codexCliPath as string | undefined)
       ?? DEFAULT_CODEX_PROVIDER_SETTINGS.cliPath,
     cliPathsByHost: normalizeHostnameCliPaths(config.cliPathsByHost ?? settings.codexCliPathsByHost),
+    customModels: (config.customModels as string | undefined)
+      ?? DEFAULT_CODEX_PROVIDER_SETTINGS.customModels,
     reasoningSummary: (config.reasoningSummary as CodexReasoningSummary | undefined)
       ?? (settings.codexReasoningSummary as CodexReasoningSummary | undefined)
       ?? DEFAULT_CODEX_PROVIDER_SETTINGS.reasoningSummary,
@@ -177,6 +181,7 @@ export function updateCodexProviderSettings(
     safeMode: next.safeMode,
     cliPath: next.cliPath,
     cliPathsByHost: next.cliPathsByHost,
+    customModels: next.customModels,
     reasoningSummary: next.reasoningSummary,
     environmentVariables: next.environmentVariables,
     environmentHash: next.environmentHash,

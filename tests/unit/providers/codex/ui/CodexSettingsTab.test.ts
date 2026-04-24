@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 
+import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/settings';
 import { codexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
@@ -8,12 +9,28 @@ const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockBroadcastToAllTabs = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('fs');
+jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
+  ProviderSettingsCoordinator: {
+    reconcileTitleGenerationModelSelection: jest.fn((settings: Record<string, unknown>) => {
+      const titleGenerationModel = settings.titleGenerationModel;
+      const customModels = (
+        settings.providerConfigs as { codex?: { customModels?: string } } | undefined
+      )?.codex?.customModels ?? '';
+      if (titleGenerationModel === 'my-custom-model' && customModels !== 'my-custom-model') {
+        settings.titleGenerationModel = '';
+        return true;
+      }
+      return false;
+    }),
+  },
+}));
 jest.mock('obsidian', () => {
   class MockSetting {
     public name = '';
     public desc = '';
     public heading = false;
     public textComponents: MockTextComponent[] = [];
+    public textAreaComponents: MockTextAreaComponent[] = [];
     public dropdownComponents: MockDropdownComponent[] = [];
     public toggleComponents: MockToggleComponent[] = [];
     public settingEl = { style: {} };
@@ -40,6 +57,13 @@ jest.mock('obsidian', () => {
     addText(callback: (text: MockTextComponent) => void) {
       const component = createTextComponent();
       this.textComponents.push(component);
+      callback(component);
+      return this;
+    }
+
+    addTextArea(callback: (text: MockTextAreaComponent) => void) {
+      const component = createTextAreaComponent();
+      this.textAreaComponents.push(component);
       callback(component);
       return this;
     }
@@ -89,6 +113,7 @@ jest.mock('@/i18n/i18n', () => ({
 }));
 
 jest.mock('@/utils/env', () => ({
+  ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
 }));
 
@@ -99,11 +124,11 @@ interface MockTextComponent {
   setPlaceholder: jest.MockedFunction<(value: string) => MockTextComponent>;
   setValue: jest.MockedFunction<(value: string) => MockTextComponent>;
   onChange: jest.MockedFunction<(callback: (value: string) => Promise<void> | void) => MockTextComponent>;
-  inputEl: {
-    value: string;
-    style: Record<string, string>;
-    addClass: jest.Mock;
-  };
+  inputEl: MockInputEl;
+}
+
+interface MockTextAreaComponent extends MockTextComponent {
+  trigger: (event: string) => Promise<void>;
 }
 
 interface MockDropdownComponent {
@@ -127,20 +152,43 @@ const createdSettings: Array<{
   desc: string;
   heading: boolean;
   textComponents: MockTextComponent[];
+  textAreaComponents: MockTextAreaComponent[];
   dropdownComponents: MockDropdownComponent[];
   toggleComponents: MockToggleComponent[];
 }> = [];
+
+interface MockInputEl {
+  rows: number;
+  cols: number;
+  value: string;
+  style: Record<string, string>;
+  addClass: jest.Mock;
+  addEventListener: jest.Mock;
+}
+
+function createInputEl(): MockInputEl & { _listeners: Map<string, Array<() => void>> } {
+  const listeners = new Map<string, Array<() => void>>();
+  return {
+    rows: 0,
+    cols: 0,
+    value: '',
+    style: {},
+    addClass: jest.fn(),
+    addEventListener: jest.fn((event: string, handler: () => void) => {
+      const handlers = listeners.get(event) ?? [];
+      handlers.push(handler);
+      listeners.set(event, handlers);
+    }),
+    _listeners: listeners,
+  };
+}
 
 function createTextComponent(): MockTextComponent {
   const component = {} as MockTextComponent;
   component.value = '';
   component.placeholder = '';
   component.onChangeCallback = null;
-  component.inputEl = {
-    value: '',
-    style: {},
-    addClass: jest.fn(),
-  };
+  component.inputEl = createInputEl();
   component.setPlaceholder = jest.fn((value: string) => {
     component.placeholder = value;
     return component;
@@ -155,6 +203,18 @@ function createTextComponent(): MockTextComponent {
     return component;
   });
 
+  return component;
+}
+
+function createTextAreaComponent(): MockTextAreaComponent {
+  const component = createTextComponent() as MockTextAreaComponent;
+  component.trigger = async (event: string) => {
+    const handlers = (component.inputEl as ReturnType<typeof createInputEl>)._listeners.get(event) ?? [];
+    for (const handler of handlers) {
+      handler();
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  };
   return component;
 }
 
@@ -220,19 +280,14 @@ function createContainer(): any {
 function createPlugin(overrides: Record<string, unknown> = {}): any {
   return {
     settings: {
+      settingsProvider: 'codex',
+      model: 'my-custom-model',
+      titleGenerationModel: '',
       providerConfigs: {
         codex: {
+          ...DEFAULT_CODEX_PROVIDER_SETTINGS,
           enabled: true,
-          safeMode: 'workspace-write',
-          cliPath: '',
-          cliPathsByHost: {},
-          reasoningSummary: 'detailed',
-          environmentVariables: '',
-          environmentHash: '',
-          installationMethod: 'native-windows',
-          installationMethodsByHost: {},
-          wslDistroOverride: '',
-          wslDistroOverridesByHost: {},
+          customModels: 'my-custom-model',
         },
       },
       ...overrides,
@@ -372,19 +427,11 @@ describe('CodexSettingsTab', () => {
     const plugin = createPlugin({
       providerConfigs: {
         codex: {
+          ...DEFAULT_CODEX_PROVIDER_SETTINGS,
           enabled: true,
-          safeMode: 'workspace-write',
-          cliPath: '',
           cliPathsByHost: {
             'host-a': 'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe',
           },
-          reasoningSummary: 'detailed',
-          environmentVariables: '',
-          environmentHash: '',
-          installationMethod: 'native-windows',
-          installationMethodsByHost: {},
-          wslDistroOverride: '',
-          wslDistroOverridesByHost: {},
         },
       },
     });
@@ -404,5 +451,73 @@ describe('CodexSettingsTab', () => {
       'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe',
     );
     expect(mockBroadcastToAllTabs).toHaveBeenCalledTimes(0);
+  });
+
+  it('does not switch the active model while the custom models textarea is mid-edit', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    codexSettingsTabRenderer.render(createContainer(), context);
+
+    const customModelsSetting = findSetting('Custom models');
+    const customModelsTextArea = customModelsSetting.textAreaComponents[0];
+
+    await customModelsTextArea.onChangeCallback?.('different-custom-model');
+
+    expect(plugin.settings.providerConfigs.codex.customModels).toBe('my-custom-model');
+    expect(plugin.settings.model).toBe('my-custom-model');
+    expect(mockSaveSettings).not.toHaveBeenCalled();
+    expect(context.refreshModelSelectors).not.toHaveBeenCalled();
+  });
+
+  it('reconciles removed custom models on blur and clears stale title model selections', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const plugin = createPlugin({
+      titleGenerationModel: 'my-custom-model',
+    });
+    const context = createContext(plugin);
+
+    codexSettingsTabRenderer.render(createContainer(), context);
+
+    const customModelsSetting = findSetting('Custom models');
+    const customModelsTextArea = customModelsSetting.textAreaComponents[0];
+
+    await customModelsTextArea.onChangeCallback?.('different-custom-model');
+    await customModelsTextArea.trigger('blur');
+
+    expect(plugin.settings.providerConfigs.codex.customModels).toBe('different-custom-model');
+    expect(plugin.settings.model).toBe('gpt-5.4-mini');
+    expect(plugin.settings.titleGenerationModel).toBe('');
+    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
+    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles an inactive Codex saved model when a removed custom model was selected', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const plugin = createPlugin({
+      settingsProvider: 'claude',
+      model: 'haiku',
+      savedProviderModel: {
+        claude: 'haiku',
+        codex: 'my-custom-model',
+      },
+    });
+    const context = createContext(plugin);
+
+    codexSettingsTabRenderer.render(createContainer(), context);
+
+    const customModelsSetting = findSetting('Custom models');
+    const customModelsTextArea = customModelsSetting.textAreaComponents[0];
+
+    await customModelsTextArea.onChangeCallback?.('different-custom-model');
+    await customModelsTextArea.trigger('blur');
+
+    expect(plugin.settings.model).toBe('haiku');
+    expect(plugin.settings.savedProviderModel).toEqual({
+      claude: 'haiku',
+      codex: 'gpt-5.4-mini',
+    });
+    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
   });
 });
