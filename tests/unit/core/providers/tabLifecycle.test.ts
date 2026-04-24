@@ -14,6 +14,7 @@ import '@/providers';
  * - provider lock after bind
  */
 import { getProviderForModel } from '@/core/providers/modelRouting';
+import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 describe('Tab Lifecycle - Model-Driven Provider Routing', () => {
   describe('getProviderForModel', () => {
@@ -25,7 +26,7 @@ describe('Tab Lifecycle - Model-Driven Provider Routing', () => {
     });
 
     it('derives codex from Codex model names', () => {
-      expect(getProviderForModel('gpt-5.4')).toBe('codex');
+      expect(getProviderForModel(DEFAULT_CODEX_PRIMARY_MODEL)).toBe('codex');
       expect(getProviderForModel('gpt-4o')).toBe('codex');
       expect(getProviderForModel('o3')).toBe('codex');
       expect(getProviderForModel('o4-mini')).toBe('codex');
@@ -61,12 +62,12 @@ describe('Tab Lifecycle - Blank Tab Behavior', () => {
   });
 
   it('blank tabs derive provider from draft model selection', () => {
-    expect(getProviderForModel('gpt-5.4')).toBe('codex');
+    expect(getProviderForModel(DEFAULT_CODEX_PRIMARY_MODEL)).toBe('codex');
     expect(getProviderForModel('sonnet')).toBe('claude');
   });
 
   it('blank tab with Codex draft model should fall back when Codex is disabled', () => {
-    const draftModel = 'gpt-5.4';
+    const draftModel = DEFAULT_CODEX_PRIMARY_MODEL;
     const draftProvider = getProviderForModel(draftModel);
 
     // Verify the draft is Codex
@@ -82,7 +83,7 @@ describe('Tab Lifecycle - Blank Tab Behavior', () => {
 describe('Tab Lifecycle - Provider Lock After Bind', () => {
   it('cross-provider model change should be rejected on bound sessions', () => {
     const boundProvider = 'claude';
-    const requestedModel = 'gpt-5.4';
+    const requestedModel = DEFAULT_CODEX_PRIMARY_MODEL;
     const requestedProvider = getProviderForModel(requestedModel);
 
     // Provider mismatch should be detected
@@ -197,7 +198,7 @@ describe('Tab Lifecycle - Codex Disable Fallback', () => {
   it('blank tab with Codex draft falls back to Claude default when Codex disabled', () => {
     const tab = {
       lifecycleState: 'blank' as const,
-      draftModel: 'gpt-5.4',
+      draftModel: DEFAULT_CODEX_PRIMARY_MODEL,
       providerId: 'codex' as const,
     };
 

@@ -7,6 +7,7 @@ import {
   parseSubagentToml,
   serializeSubagentToml,
 } from '@/providers/codex/storage/CodexSubagentStorage';
+import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 import type { CodexSubagentDefinition } from '@/providers/codex/types/subagent';
 
 function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter {
@@ -51,7 +52,7 @@ Stay in exploration mode.
 Trace the real execution path.
 """
 nickname_candidates = ["Atlas", "Delta", "Echo"]
-model = "gpt-5.4"
+model = "${DEFAULT_CODEX_PRIMARY_MODEL}"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 `;
@@ -74,7 +75,7 @@ describe('parseSubagentToml', () => {
 
     expect(result).not.toBeNull();
     expect(result!.nicknameCandidates).toEqual(['Atlas', 'Delta', 'Echo']);
-    expect(result!.model).toBe('gpt-5.4');
+    expect(result!.model).toBe(DEFAULT_CODEX_PRIMARY_MODEL);
     expect(result!.modelReasoningEffort).toBe('high');
     expect(result!.sandboxMode).toBe('read-only');
   });
@@ -140,7 +141,7 @@ describe('serializeSubagentToml', () => {
       description: 'Explores code.',
       developerInstructions: 'Explore.',
       nicknameCandidates: ['Atlas', 'Delta'],
-      model: 'gpt-5.4',
+      model: DEFAULT_CODEX_PRIMARY_MODEL,
       modelReasoningEffort: 'high',
       sandboxMode: 'read-only',
     };
@@ -149,7 +150,7 @@ describe('serializeSubagentToml', () => {
 
     expect(toml).toContain('nickname_candidates');
     expect(toml).toContain('Atlas');
-    expect(toml).toContain('model = "gpt-5.4"');
+    expect(toml).toContain(`model = "${DEFAULT_CODEX_PRIMARY_MODEL}"`);
     expect(toml).toContain('model_reasoning_effort = "high"');
     expect(toml).toContain('sandbox_mode = "read-only"');
   });

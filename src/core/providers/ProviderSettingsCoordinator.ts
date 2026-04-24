@@ -68,6 +68,17 @@ function normalizeReasoningValue(
   return uiConfig.getDefaultReasoningValue(model);
 }
 
+function normalizeProviderModel(
+  uiConfig: ProviderChatUIConfig,
+  settings: Record<string, unknown>,
+  model: string | undefined,
+): string | undefined {
+  if (!model) {
+    return undefined;
+  }
+  return uiConfig.normalizeModelVariant(model, settings);
+}
+
 export class ProviderSettingsCoordinator {
   static reconcileTitleGenerationModelSelection(settings: Record<string, unknown>): boolean {
     const currentModel = typeof settings.titleGenerationModel === 'string'
@@ -133,16 +144,23 @@ export class ProviderSettingsCoordinator {
     const savedEffort = ensureProjectionMap(settings, 'savedProviderEffort');
     const savedServiceTier = ensureProjectionMap(settings, 'savedProviderServiceTier');
     const savedBudget = ensureProjectionMap(settings, 'savedProviderThinkingBudget');
+    const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+    const normalizedModel = normalizeProviderModel(
+      uiConfig,
+      settings,
+      typeof settings.model === 'string' ? settings.model : undefined,
+    );
+    const projectedSettings = normalizedModel && normalizedModel !== settings.model
+      ? { ...settings, model: normalizedModel }
+      : settings;
 
-    if (typeof settings.model === 'string') {
-      savedModel[providerId] = settings.model;
+    if (normalizedModel) {
+      savedModel[providerId] = normalizedModel;
     }
     if (typeof settings.effortLevel === 'string') {
       savedEffort[providerId] = settings.effortLevel;
     }
-    const serviceTierToggle = ProviderRegistry
-      .getChatUIConfig(providerId)
-      .getServiceTierToggle?.(settings) ?? null;
+    const serviceTierToggle = uiConfig.getServiceTierToggle?.(projectedSettings) ?? null;
     if (serviceTierToggle && typeof settings.serviceTier === 'string') {
       savedServiceTier[providerId] = settings.serviceTier;
     }
@@ -161,12 +179,15 @@ export class ProviderSettingsCoordinator {
     const savedServiceTier = settings.savedProviderServiceTier as ProviderProjectionMap | undefined;
     const savedBudget = settings.savedProviderThinkingBudget as ProviderProjectionMap | undefined;
 
-    const currentModel = typeof settings.model === 'string' ? settings.model : '';
+    const shouldPreferCurrentProjection = providerId === getSettingsProviderId(settings);
+    const currentModelRaw = typeof settings.model === 'string' ? settings.model : '';
+    const currentModel = shouldPreferCurrentProjection
+      ? (normalizeProviderModel(uiConfig, settings, currentModelRaw) ?? '')
+      : currentModelRaw;
     const currentEffort = typeof settings.effortLevel === 'string' ? settings.effortLevel : undefined;
     const currentServiceTier = typeof settings.serviceTier === 'string' ? settings.serviceTier : undefined;
     const currentBudget = typeof settings.thinkingBudget === 'string' ? settings.thinkingBudget : undefined;
     const modelOptions = uiConfig.getModelOptions(settings);
-    const shouldPreferCurrentProjection = providerId === getSettingsProviderId(settings);
     const isDefaultModelOfAnotherProvider = currentModel.length > 0
       && ProviderRegistry.getRegisteredProviderIds()
         .filter(id => id !== providerId)
@@ -180,7 +201,7 @@ export class ProviderSettingsCoordinator {
     const fallbackModel = canReuseCurrentModel
       ? currentModel
       : (modelOptions[0]?.value ?? currentModel);
-    const savedModelValue = savedModel?.[providerId];
+    const savedModelValue = normalizeProviderModel(uiConfig, settings, savedModel?.[providerId]);
     const isSavedModelValid = savedModelValue !== undefined
       && modelOptions.some(option => option.value === savedModelValue);
     const model = (isSavedModelValid ? savedModelValue : undefined) ?? fallbackModel;

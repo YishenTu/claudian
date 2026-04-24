@@ -10,6 +10,10 @@ import {
   ServiceTierToggle,
   ThinkingBudgetSelector,
 } from '@/features/chat/ui/InputToolbar';
+import {
+  DEFAULT_CODEX_PRIMARY_MODEL,
+  DEFAULT_CODEX_PRIMARY_MODEL_LABEL,
+} from '@/providers/codex/types/models';
 
 jest.mock('obsidian', () => ({
   Notice: jest.fn(),
@@ -119,7 +123,7 @@ function createMockUIConfig() {
       planLabel: 'PLAN',
     }),
     getServiceTierToggle: jest.fn().mockImplementation((settings: Record<string, unknown>) =>
-      settings.model === 'gpt-5.4'
+      settings.model === DEFAULT_CODEX_PRIMARY_MODEL
         ? {
           inactiveValue: 'default',
           inactiveLabel: 'Standard',
@@ -280,7 +284,7 @@ describe('ModelSelector', () => {
     const groupedModels = [
       { value: 'opus', label: 'Opus', group: 'Claude' },
       { value: 'sonnet', label: 'Sonnet', group: 'Claude' },
-      { value: 'gpt-5.4', label: 'GPT-5.4', group: 'Codex' },
+      { value: DEFAULT_CODEX_PRIMARY_MODEL, label: DEFAULT_CODEX_PRIMARY_MODEL_LABEL, group: 'Codex' },
     ];
     const uiConfig = createMockUIConfig();
     uiConfig.getModelOptions.mockReturnValue(groupedModels);
@@ -297,7 +301,7 @@ describe('ModelSelector', () => {
 
     const dropdown = parentEl.querySelector('.claudian-model-dropdown');
     const children = dropdown?.children || [];
-    // Reversed: [Codex group, gpt-5.4, Claude group, Sonnet, Opus]
+    // Reversed: [Codex group, built-in Codex model, Claude group, Sonnet, Opus]
     const groups = children.filter((c: any) => c.hasClass('claudian-model-group'));
     expect(groups.length).toBe(2);
     expect(groups[0]?.textContent).toBe('Codex');
@@ -587,7 +591,7 @@ describe('ServiceTierToggle', () => {
     callbacks = createMockCallbacks({
       getUIConfig: jest.fn().mockReturnValue(uiConfig),
       getSettings: jest.fn().mockReturnValue({
-        model: 'gpt-5.4',
+        model: DEFAULT_CODEX_PRIMARY_MODEL,
         thinkingBudget: 'off',
         effortLevel: 'medium',
         serviceTier: 'default',
@@ -614,7 +618,7 @@ describe('ServiceTierToggle', () => {
 
   it('renders the icon button in the active state when fast mode is on', () => {
     callbacks.getSettings.mockReturnValue({
-      model: 'gpt-5.4',
+      model: DEFAULT_CODEX_PRIMARY_MODEL,
       thinkingBudget: 'off',
       effortLevel: 'medium',
       serviceTier: 'fast',
@@ -637,7 +641,7 @@ describe('ServiceTierToggle', () => {
 
   it('toggles from Fast to Standard on click', async () => {
     callbacks.getSettings.mockReturnValue({
-      model: 'gpt-5.4',
+      model: DEFAULT_CODEX_PRIMARY_MODEL,
       thinkingBudget: 'off',
       effortLevel: 'medium',
       serviceTier: 'fast',

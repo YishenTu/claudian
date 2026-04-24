@@ -6,6 +6,7 @@ import * as path from 'path';
 
 import type { PreparedChatTurn } from '@/core/runtime/types';
 import type { StreamChunk } from '@/core/types/chat';
+import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -118,7 +119,7 @@ async function emitServerRequest(
 function createMockPlugin(overrides: Record<string, unknown> = {}): any {
   return {
     settings: {
-      model: 'gpt-5.4',
+      model: DEFAULT_CODEX_PRIMARY_MODEL,
       effortLevel: 'medium',
       systemPrompt: '',
       mediaFolder: '',
@@ -245,7 +246,7 @@ function threadStartResponse(threadId = 'thread-001') {
       gitInfo: null,
       name: null,
     },
-    model: 'gpt-5.4',
+    model: DEFAULT_CODEX_PRIMARY_MODEL,
     modelProvider: 'openai_http',
     serviceTier: null,
     cwd: '/test/vault',
@@ -467,7 +468,7 @@ describe('CodexChatRuntime', () => {
       expect(mockTransportRequest).toHaveBeenCalledWith(
         'thread/start',
         expect.objectContaining({
-          model: 'gpt-5.4',
+          model: DEFAULT_CODEX_PRIMARY_MODEL,
           cwd: '/test/vault',
           persistExtendedHistory: true,
           experimentalRawEvents: false,
@@ -1331,7 +1332,7 @@ describe('CodexChatRuntime', () => {
     });
 
     it('sends serviceTier on thread/resume when fast mode is enabled', async () => {
-      const plugin = createMockPlugin({ model: 'gpt-5.4', serviceTier: 'fast' });
+      const plugin = createMockPlugin({ model: DEFAULT_CODEX_PRIMARY_MODEL, serviceTier: 'fast' });
       const rt = new CodexChatRuntime(plugin);
 
       rt.syncConversationState({
@@ -1745,7 +1746,7 @@ describe('CodexChatRuntime', () => {
       expect(turnStartCall[1].collaborationMode).toEqual({
         mode: 'plan',
         settings: {
-          model: 'gpt-5.4',
+          model: DEFAULT_CODEX_PRIMARY_MODEL,
           reasoning_effort: 'medium',
           developer_instructions: null,
         },
