@@ -21,7 +21,7 @@ const mockWireTabInputEvents = jest.fn();
 const mockGetTabTitle = jest.fn().mockReturnValue('Test Tab');
 const mockCreateChatRuntime = jest.fn();
 const mockGetProviderSettingsSnapshot = jest.fn().mockImplementation(() => ({}));
-const metadataWarmupPolicy = { resolveMode: jest.fn().mockReturnValue('metadata') };
+const commandWarmupPolicy = { resolveMode: jest.fn().mockReturnValue('commands') };
 
 jest.mock('@/features/chat/tabs/Tab', () => ({
   createTab: (...args: any[]) => mockCreateTab(...args),
@@ -857,7 +857,7 @@ describe('TabManager - Persistence', () => {
       ProviderWorkspaceRegistry.setServices('opencode', {
         commandCatalog: mockCatalog as any,
         runtimeCommandLoader: runtimeCommandLoader as any,
-        tabWarmupPolicy: metadataWarmupPolicy as any,
+        tabWarmupPolicy: commandWarmupPolicy as any,
       });
       mockGetCapabilities.mockImplementation((providerId: string) => ({
         providerId,
@@ -1128,7 +1128,7 @@ describe('TabManager - SDK Commands', () => {
     ProviderWorkspaceRegistry.setServices('opencode', {
       commandCatalog: mockCatalog as any,
       runtimeCommandLoader: runtimeCommandLoader as any,
-      tabWarmupPolicy: metadataWarmupPolicy as any,
+      tabWarmupPolicy: commandWarmupPolicy as any,
     });
     mockGetCapabilities.mockImplementation((providerId: string) => ({
       providerId,
@@ -1190,7 +1190,7 @@ describe('TabManager - SDK Commands', () => {
     ProviderWorkspaceRegistry.setServices('opencode', {
       commandCatalog: mockCatalog as any,
       runtimeCommandLoader: runtimeCommandLoader as any,
-      tabWarmupPolicy: metadataWarmupPolicy as any,
+      tabWarmupPolicy: commandWarmupPolicy as any,
     });
     mockGetCapabilities.mockImplementation((providerId: string) => ({
       providerId,
@@ -1285,7 +1285,7 @@ describe('TabManager - SDK Commands', () => {
     ProviderWorkspaceRegistry.setServices('opencode', {
       commandCatalog: mockCatalog as any,
       runtimeCommandLoader: runtimeCommandLoader as any,
-      tabWarmupPolicy: metadataWarmupPolicy as any,
+      tabWarmupPolicy: commandWarmupPolicy as any,
     });
     mockGetCapabilities.mockImplementation((providerId: string) => ({
       providerId,
@@ -1334,7 +1334,7 @@ describe('TabManager - SDK Commands', () => {
     ProviderWorkspaceRegistry.setServices('opencode', {
       commandCatalog: mockCatalog as any,
       runtimeCommandLoader: runtimeCommandLoader as any,
-      tabWarmupPolicy: metadataWarmupPolicy as any,
+      tabWarmupPolicy: commandWarmupPolicy as any,
     });
     mockGetCapabilities.mockImplementation((providerId: string) => ({
       providerId,
@@ -1389,7 +1389,7 @@ describe('TabManager - SDK Commands', () => {
     ProviderWorkspaceRegistry.setServices('opencode', {
       commandCatalog: mockCatalog as any,
       runtimeCommandLoader: runtimeCommandLoader as any,
-      tabWarmupPolicy: metadataWarmupPolicy as any,
+      tabWarmupPolicy: commandWarmupPolicy as any,
     });
     mockGetCapabilities.mockImplementation((providerId: string) => ({
       providerId,
@@ -1443,7 +1443,7 @@ describe('TabManager - SDK Commands', () => {
     ProviderWorkspaceRegistry.setServices('opencode', {
       commandCatalog: mockCatalog as any,
       runtimeCommandLoader: runtimeCommandLoader as any,
-      tabWarmupPolicy: metadataWarmupPolicy as any,
+      tabWarmupPolicy: commandWarmupPolicy as any,
     });
     mockGetCapabilities.mockImplementation((providerId: string) => ({
       providerId,
@@ -1508,7 +1508,7 @@ describe('TabManager - SDK Commands', () => {
     ProviderWorkspaceRegistry.setServices('opencode', {
       commandCatalog: mockCatalog as any,
       runtimeCommandLoader: runtimeCommandLoader as any,
-      tabWarmupPolicy: metadataWarmupPolicy as any,
+      tabWarmupPolicy: commandWarmupPolicy as any,
     });
     mockGetCapabilities.mockImplementation((providerId: string) => ({
       providerId,

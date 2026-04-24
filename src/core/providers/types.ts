@@ -287,7 +287,9 @@ export interface ProviderCliResolver {
 }
 
 export interface ProviderRuntimeCommandLoaderContext {
-  allowBlankSessionWarmup?: boolean;
+  // Shared command discovery may need a short-lived provider session; the tab
+  // manager decides when that is allowed for the active tab.
+  allowSessionCreation?: boolean;
   conversation: Conversation | null;
   externalContextPaths: string[];
   plugin: ClaudianPlugin;
@@ -299,7 +301,9 @@ export interface ProviderRuntimeCommandLoader {
   loadCommands(context: ProviderRuntimeCommandLoaderContext): Promise<SlashCommand[]>;
 }
 
-export type ProviderTabWarmupMode = 'none' | 'metadata' | 'runtime';
+// `commands` warms provider-owned command discovery without fully priming the
+// bound tab runtime. `runtime` primes the real tab runtime itself.
+export type ProviderTabWarmupMode = 'none' | 'commands' | 'runtime';
 
 export type ProviderTabWarmupLifecycleState = 'blank' | 'bound_cold' | 'bound_active' | 'closing';
 

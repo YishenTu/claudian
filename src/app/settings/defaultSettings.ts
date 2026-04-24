@@ -1,8 +1,6 @@
 import { getDefaultHiddenProviderCommands } from '../../core/providers/commands/hiddenCommands';
 import { type ClaudianSettings } from '../../core/types/settings';
-import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '../../providers/claude/settings';
-import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '../../providers/codex/settings';
-import { DEFAULT_OPENCODE_PROVIDER_SETTINGS } from '../../providers/opencode/settings';
+import { getBuiltInProviderDefaultConfigs } from '../../providers/defaultProviderConfigs';
 
 export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   userName: '',
@@ -33,11 +31,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
 
   locale: 'en',
 
-  providerConfigs: {
-    claude: { ...DEFAULT_CLAUDE_PROVIDER_SETTINGS },
-    codex: { ...DEFAULT_CODEX_PROVIDER_SETTINGS },
-    opencode: { ...DEFAULT_OPENCODE_PROVIDER_SETTINGS },
-  },
+  providerConfigs: getBuiltInProviderDefaultConfigs(),
 
   settingsProvider: 'claude',
   savedProviderModel: {},

@@ -72,7 +72,7 @@ describe('ProviderWorkspaceRegistry', () => {
 
   it('returns the tab warmup policy for a provider', () => {
     const tabWarmupPolicy = {
-      resolveMode: jest.fn().mockReturnValue('metadata'),
+      resolveMode: jest.fn().mockReturnValue('commands'),
     };
 
     ProviderWorkspaceRegistry.setServices('opencode', {

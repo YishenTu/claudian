@@ -18,7 +18,7 @@ describe('OpencodeRuntimeCommandLoader', () => {
     jest.restoreAllMocks();
   });
 
-  it('uses an isolated in-memory session for blank-tab metadata warmup', async () => {
+  it('uses an isolated in-memory session for blank-tab command warmup', async () => {
     const commands = [{ id: 'acp:review', name: 'review', content: '' }];
     const syncSpy = jest.spyOn(OpencodeChatRuntime.prototype, 'syncConversationState').mockImplementation(() => {});
     const ensureReadySpy = jest.spyOn(OpencodeChatRuntime.prototype, 'ensureReady').mockResolvedValue(true);
@@ -27,7 +27,7 @@ describe('OpencodeRuntimeCommandLoader', () => {
     const loader = new OpencodeRuntimeCommandLoader();
 
     await expect(loader.loadCommands({
-      allowBlankSessionWarmup: true,
+      allowSessionCreation: true,
       conversation: null,
       externalContextPaths: [],
       plugin: createMockPlugin(),

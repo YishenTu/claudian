@@ -16,7 +16,7 @@ export interface OpencodeWorkspaceServices extends ProviderWorkspaceServices {
 
 const opencodeTabWarmupPolicy: ProviderTabWarmupPolicy = {
   resolveMode() {
-    return 'metadata';
+    return 'commands';
   },
 };
 

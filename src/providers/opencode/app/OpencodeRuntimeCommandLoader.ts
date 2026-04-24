@@ -13,7 +13,7 @@ export class OpencodeRuntimeCommandLoader implements ProviderRuntimeCommandLoade
   }
 
   async loadCommands(context: ProviderRuntimeCommandLoaderContext) {
-    const shouldWarmBlankSession = context.allowBlankSessionWarmup === true
+    const shouldWarmBlankSession = context.allowSessionCreation === true
       && !context.conversation?.sessionId;
     const shouldWarmPreSessionConversation = !!context.conversation
       && !context.conversation.sessionId

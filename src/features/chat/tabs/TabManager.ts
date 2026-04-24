@@ -204,7 +204,7 @@ export class TabManager implements TabManagerInterface {
         try {
           await this.prewarmProviderTab(tab);
         } catch {
-          // Keep provider switching non-blocking even if metadata warmup fails.
+          // Keep provider switching non-blocking even if command warmup fails.
         }
       },
     });
@@ -706,7 +706,7 @@ export class TabManager implements TabManagerInterface {
     if (
       targetTab.lifecycleState === 'blank'
       && runtimeCommandLoader
-      && (context.warmupMode !== 'metadata' || targetTab.id !== this.activeTabId)
+      && (context.warmupMode !== 'commands' || targetTab.id !== this.activeTabId)
     ) {
       catalog?.setRuntimeCommands([]);
       return [];
@@ -798,7 +798,7 @@ export class TabManager implements TabManagerInterface {
     }
 
     switch (context.warmupMode) {
-      case 'metadata':
+      case 'commands':
         await this.getSdkCommands(tab.id);
         return;
       case 'runtime':
@@ -888,7 +888,7 @@ export class TabManager implements TabManagerInterface {
     return {
       ...warmupContext,
       cacheKey: JSON.stringify({
-        allowBlankSessionWarmup: warmupContext.warmupMode === 'metadata'
+        allowSessionCreation: warmupContext.warmupMode === 'commands'
           && tab.lifecycleState === 'blank'
           && tab.id === this.activeTabId,
         conversationId: warmupContext.conversation?.id ?? null,
@@ -915,7 +915,7 @@ export class TabManager implements TabManagerInterface {
       return [];
     }
     const commands = await loader.loadCommands({
-      allowBlankSessionWarmup: context.warmupMode === 'metadata'
+      allowSessionCreation: context.warmupMode === 'commands'
         && tab.lifecycleState === 'blank'
         && tab.id === this.activeTabId,
       conversation: context.conversation,
