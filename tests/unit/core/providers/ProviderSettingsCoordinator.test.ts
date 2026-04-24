@@ -139,6 +139,23 @@ describe('ProviderSettingsCoordinator', () => {
       ).toBe(true);
       expect(settings.titleGenerationModel).toBe('');
     });
+
+    it('keeps Codex custom title models while they are still available', () => {
+      const settings: Record<string, unknown> = {
+        titleGenerationModel: 'my-custom-model',
+        providerConfigs: {
+          codex: {
+            enabled: true,
+            customModels: 'my-custom-model',
+          },
+        },
+      };
+
+      expect(
+        ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
+      ).toBe(false);
+      expect(settings.titleGenerationModel).toBe('my-custom-model');
+    });
   });
 
   describe('projectActiveProviderState', () => {
