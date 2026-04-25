@@ -29,6 +29,7 @@ export interface ChatRuntime {
   ): void;
   reloadMcpServers(): Promise<void>;
   ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean>;
+  updatePermissionMode(mode: string): Promise<void>;
   query(
     turn: PreparedChatTurn,
     conversationHistory?: ChatMessage[],

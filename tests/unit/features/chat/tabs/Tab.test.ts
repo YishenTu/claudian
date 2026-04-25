@@ -45,6 +45,7 @@ global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 jest.mock('@/providers/claude/runtime/ClaudeChatRuntime', () => ({
   ClaudianService: jest.fn().mockImplementation(() => ({
     ensureReady: jest.fn().mockResolvedValue(true),
+    updatePermissionMode: jest.fn().mockResolvedValue(undefined),
     cleanup: jest.fn(),
     isReady: jest.fn().mockReturnValue(false),
     syncConversationState: jest.fn(),
@@ -122,6 +123,7 @@ const createMockClaudianService = (overrides?: {
 }) => ({
   providerId: overrides?.providerId ?? 'claude',
   ensureReady: overrides?.ensureReady ?? jest.fn().mockResolvedValue(true),
+  updatePermissionMode: jest.fn().mockResolvedValue(undefined),
   cleanup: jest.fn(),
   isReady: jest.fn().mockReturnValue(false),
   getCapabilities: jest.fn().mockReturnValue({
@@ -3330,6 +3332,33 @@ describe('Tab - Cross-Provider Model Rejection', () => {
 
     expect(Notice).not.toHaveBeenCalled();
     expect(plugin.saveSettings).toHaveBeenCalled();
+  });
+
+  it('pushes permission mode changes to the active runtime immediately', async () => {
+    jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+
+    const plugin = createMockPlugin();
+    const tab = createTab(createMockOptions({ plugin }));
+    initializeTabUI(tab, plugin);
+    const service = createMockClaudianService();
+    tab.service = service as any;
+
+    const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
+      createInputToolbar: jest.Mock;
+    };
+    const toolbarCallbacks = toolbarModule.createInputToolbar.mock.calls.at(-1)?.[1];
+
+    await toolbarCallbacks.onPermissionModeChange('yolo');
+    await toolbarCallbacks.onPermissionModeChange('plan');
+    await toolbarCallbacks.onPermissionModeChange('normal');
+
+    expect(plugin.settings.permissionMode).toBe('normal');
+    expect(plugin.saveSettings).toHaveBeenCalled();
+    expect(service.updatePermissionMode).toHaveBeenCalledWith('yolo');
+    expect(service.updatePermissionMode).toHaveBeenCalledWith('plan');
+    expect(service.updatePermissionMode).toHaveBeenCalledWith('normal');
   });
 });
 

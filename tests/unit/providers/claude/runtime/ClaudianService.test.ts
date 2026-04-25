@@ -1605,6 +1605,46 @@ describe('ClaudianService', () => {
       expect(mockPersistentQuery.setPermissionMode).toHaveBeenCalledWith('bypassPermissions');
     });
 
+    it('should immediately update permission mode on the active persistent query', async () => {
+      await service.updatePermissionMode('yolo');
+
+      expect(mockPersistentQuery.setPermissionMode).toHaveBeenCalledWith('bypassPermissions');
+      expect((service as any).currentConfig.permissionMode).toBe('yolo');
+      expect((service as any).currentConfig.sdkPermissionMode).toBe('bypassPermissions');
+    });
+
+    it('should immediately update permission mode to plan', async () => {
+      await service.updatePermissionMode('plan');
+
+      expect(mockPersistentQuery.setPermissionMode).toHaveBeenCalledWith('plan');
+      expect((service as any).currentConfig.permissionMode).toBe('plan');
+      expect((service as any).currentConfig.sdkPermissionMode).toBe('plan');
+    });
+
+    it('should immediately update permission mode from yolo back to safe', async () => {
+      (mockPlugin as any).settings.claudeSafeMode = 'acceptEdits';
+      await service.updatePermissionMode('yolo');
+      mockPersistentQuery.setPermissionMode.mockClear();
+
+      await service.updatePermissionMode('normal');
+
+      expect(mockPersistentQuery.setPermissionMode).toHaveBeenCalledWith('acceptEdits');
+      expect((service as any).currentConfig.permissionMode).toBe('normal');
+      expect((service as any).currentConfig.sdkPermissionMode).toBe('acceptEdits');
+    });
+
+    it('should immediately restore the configured safe SDK mode', async () => {
+      (mockPlugin as any).settings.claudeSafeMode = 'default';
+      await service.updatePermissionMode('yolo');
+      mockPersistentQuery.setPermissionMode.mockClear();
+
+      await service.updatePermissionMode('normal');
+
+      expect(mockPersistentQuery.setPermissionMode).toHaveBeenCalledWith('default');
+      expect((service as any).currentConfig.permissionMode).toBe('normal');
+      expect((service as any).currentConfig.sdkPermissionMode).toBe('default');
+    });
+
     it('should update permission mode when claudeSafeMode changes within normal mode', async () => {
       (mockPlugin as any).settings.permissionMode = 'normal';
       (mockPlugin as any).settings.claudeSafeMode = 'acceptEdits';

@@ -1729,6 +1729,31 @@ export class ClaudianService implements ChatRuntime {
     });
   }
 
+  async updatePermissionMode(mode: string): Promise<void> {
+    if (mode !== 'normal' && mode !== 'yolo' && mode !== 'plan') {
+      return;
+    }
+
+    const sdkMode = this.resolveSDKPermissionMode(mode);
+    if (!this.persistentQuery) {
+      if (this.currentConfig) {
+        this.currentConfig.permissionMode = mode;
+        this.currentConfig.sdkPermissionMode = sdkMode;
+      }
+      return;
+    }
+
+    try {
+      await this.persistentQuery.setPermissionMode(sdkMode);
+      if (this.currentConfig) {
+        this.currentConfig.permissionMode = mode;
+        this.currentConfig.sdkPermissionMode = sdkMode;
+      }
+    } catch {
+      new Notice('Failed to update permission mode');
+    }
+  }
+
   setApprovalCallback(callback: ApprovalCallback | null) {
     this.approvalCallback = callback;
   }

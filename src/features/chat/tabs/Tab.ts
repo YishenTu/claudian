@@ -826,12 +826,7 @@ function initializeInputToolbar(
       tab.ui.serviceTierToggle?.updateDisplay();
     },
     onPermissionModeChange: async (mode: string) => {
-      (plugin.settings as unknown as Record<string, unknown>).permissionMode = mode;
-      await plugin.saveSettings();
-      dom.inputWrapper.toggleClass(
-        'claudian-input-plan-mode',
-        mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
-      );
+      await updateTabPermissionMode(tab, plugin, mode);
     },
   });
 
@@ -1688,11 +1683,19 @@ function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): void {
 }
 
 export function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: string): void {
+  void updateTabPermissionMode(tab, plugin, mode);
+}
+
+async function updateTabPermissionMode(tab: TabData, plugin: ClaudianPlugin, mode: string): Promise<void> {
   (plugin.settings as unknown as Record<string, unknown>).permissionMode = mode;
-  void plugin.saveSettings();
   tab.ui.permissionToggle?.updateDisplay();
   tab.dom.inputWrapper.toggleClass(
     'claudian-input-plan-mode',
     mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
   );
+
+  await Promise.all([
+    plugin.saveSettings(),
+    tab.service?.updatePermissionMode(mode) ?? Promise.resolve(),
+  ]);
 }

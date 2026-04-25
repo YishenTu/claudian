@@ -209,6 +209,10 @@ export class CodexChatRuntime implements ChatRuntime {
     // No-op: Codex handles MCP internally
   }
 
+  async updatePermissionMode(_mode: string): Promise<void> {
+    // Codex reads permission settings when starting or resuming a turn.
+  }
+
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
     const promptSettings = this.getSystemPromptSettings();
     const promptKey = computeSystemPromptKey(promptSettings);
