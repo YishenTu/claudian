@@ -20,6 +20,7 @@ import {
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { AutoTurnResult } from '../../../core/runtime/types';
 import type { ChatMessage, Conversation } from '../../../core/types';
+import { VIEW_TYPE_CLAUDIAN } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -1160,6 +1161,7 @@ export function initializeTabControllers(
     dom.contextRowEl,
     () => autoResizeTextarea(dom.inputEl),
     dom.contentEl,
+    VIEW_TYPE_CLAUDIAN,
   );
 
   tab.controllers.browserSelectionController = new BrowserSelectionController(

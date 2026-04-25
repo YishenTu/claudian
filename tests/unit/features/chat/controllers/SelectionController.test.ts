@@ -208,7 +208,29 @@ describe('SelectionController', () => {
     expect(hideSelectionHighlight).not.toHaveBeenCalled();
   });
 
-  it('clears selection when focus leaves markdown and the chat sidebar is not focused', () => {
+  it('preserves selection when active leaf is the Claudian view (detached window / own tab)', () => {
+    const claudianLeaf = { view: { getViewType: () => 'claudian-view' } };
+    app.workspace.activeLeaf = claudianLeaf;
+    controller = new SelectionController(app, indicatorEl, inputEl, contextRowEl, undefined, focusScopeEl, 'claudian-view');
+
+    controller.start();
+    jest.advanceTimersByTime(250);
+    expect(controller.hasSelection()).toBe(true);
+
+    app.workspace.getActiveViewOfType.mockReturnValue(null);
+    (global as any).document.activeElement = null;
+    jest.advanceTimersByTime(250);
+
+    expect(controller.hasSelection()).toBe(true);
+    expect(indicatorEl.style.display).toBe('block');
+  });
+
+  it('clears selection when active leaf is a non-Claudian, non-markdown view', () => {
+    const settingsLeaf = { view: { getViewType: () => 'settings' } };
+    app.workspace.activeLeaf = settingsLeaf;
+    controller = new SelectionController(app, indicatorEl, inputEl, contextRowEl, undefined, focusScopeEl, 'claudian-view');
+
+
     controller.start();
     jest.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
