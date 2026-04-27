@@ -1828,6 +1828,33 @@ describe('StreamController - Text Content', () => {
         structured
       );
     });
+
+    it('normalizes structured tool_result content before storing it on tool calls', async () => {
+      const { updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      const msg = createTestMessage();
+      msg.toolCalls = [
+        {
+          id: 'mcp-1',
+          name: 'mcp__stitch__create_project',
+          input: {},
+          status: 'running',
+          isExpanded: false,
+        } as any,
+      ];
+
+      await controller.handleStreamChunk(
+        {
+          type: 'tool_result',
+          id: 'mcp-1',
+          content: [{ type: 'text', text: 'Created project successfully' }],
+        } as any,
+        msg,
+      );
+
+      expect(msg.toolCalls[0].status).toBe('completed');
+      expect(msg.toolCalls[0].result).toBe('Created project successfully');
+      expect(updateToolCallResult).toHaveBeenCalled();
+    });
   });
 
   describe('showThinkingIndicator - timer disconnection cleanup', () => {

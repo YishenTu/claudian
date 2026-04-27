@@ -7,6 +7,7 @@ import {
   isWriteEditTool,
   TOOL_AGENT_OUTPUT,
 } from '../../../core/tools/toolNames';
+import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
@@ -482,7 +483,7 @@ export class MessageRenderer {
     if (toolCall.status === 'error' || toolCall.status === 'blocked') return 'error';
     if (toolCall.status === 'running') return 'running';
 
-    const lowerResult = (toolCall.result || '').toLowerCase();
+    const lowerResult = extractToolResultContent(toolCall.result, { fallbackIndent: 2 }).toLowerCase();
     if (
       lowerResult.includes('not_ready') ||
       lowerResult.includes('not ready') ||
