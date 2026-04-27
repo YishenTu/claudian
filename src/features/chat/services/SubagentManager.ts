@@ -5,6 +5,7 @@ import { isAbsolute, sep } from 'path';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { ProviderTaskResultInterpreter } from '../../../core/providers/types';
 import { TOOL_TASK } from '../../../core/tools/toolNames';
+import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type {
   SubagentInfo,
   SubagentMode,
@@ -214,7 +215,7 @@ export class SubagentManager {
    */
   public renderPendingTaskFromTaskResult(
     toolId: string,
-    taskResult: string,
+    taskResult: unknown,
     isError: boolean,
     parentElOverride?: HTMLElement | null,
     taskToolUseResult?: unknown
@@ -227,8 +228,9 @@ export class SubagentManager {
     if (!targetEl) return null;
 
     const explicitMode = this.resolveTaskMode(input);
+    const taskResultText = extractToolResultContent(taskResult, { fallbackIndent: 2 });
     const inferredMode = explicitMode
-      ?? this.inferModeFromTaskResult(taskResult, isError, taskToolUseResult);
+      ?? this.inferModeFromTaskResult(taskResultText, isError, taskToolUseResult);
 
     this.pendingTasks.delete(toolId);
 
@@ -279,14 +281,15 @@ export class SubagentManager {
 
   public finalizeSyncSubagent(
     toolId: string,
-    result: string,
+    result: unknown,
     isError: boolean,
     toolUseResult?: unknown
   ): SubagentInfo | null {
     const subagentState = this.syncSubagents.get(toolId);
     if (!subagentState) return null;
 
-    const extractedResult = this.extractAgentResult(result, '', toolUseResult);
+    const resultText = extractToolResultContent(result, { fallbackIndent: 2 });
+    const extractedResult = this.extractAgentResult(resultText, '', toolUseResult);
     finalizeSubagentBlock(subagentState, extractedResult, isError);
     this.syncSubagents.delete(toolId);
 
@@ -299,22 +302,23 @@ export class SubagentManager {
 
   public handleTaskToolResult(
     taskToolId: string,
-    result: string,
+    result: unknown,
     isError?: boolean,
     toolUseResult?: unknown
   ): void {
     const subagent = this.pendingAsyncSubagents.get(taskToolId);
     if (!subagent) return;
+    const resultText = extractToolResultContent(result, { fallbackIndent: 2 });
 
     if (isError) {
-      this.transitionToError(subagent, taskToolId, result || 'Task failed to start');
+      this.transitionToError(subagent, taskToolId, resultText || 'Task failed to start');
       return;
     }
 
-    const agentId = this.taskResultInterpreter.extractAgentId(toolUseResult) ?? this.parseAgentId(result);
+    const agentId = this.taskResultInterpreter.extractAgentId(toolUseResult) ?? this.parseAgentId(resultText);
 
     if (!agentId) {
-      const truncatedResult = result.length > 100 ? result.substring(0, 100) + '...' : result;
+      const truncatedResult = resultText.length > 100 ? resultText.substring(0, 100) + '...' : resultText;
       this.transitionToError(subagent, taskToolId, `Failed to parse agent_id. Result: ${truncatedResult}`);
       return;
     }
@@ -344,15 +348,16 @@ export class SubagentManager {
 
   public handleAgentOutputToolResult(
     toolId: string,
-    result: string,
+    result: unknown,
     isError: boolean,
     toolUseResult?: unknown
   ): SubagentInfo | undefined {
+    const resultText = extractToolResultContent(result, { fallbackIndent: 2 });
     let agentId = this.outputToolIdToAgentId.get(toolId);
     let subagent = agentId ? this.activeAsyncSubagents.get(agentId) : undefined;
 
     if (!subagent) {
-      const inferredAgentId = this.inferAgentIdFromResult(result);
+      const inferredAgentId = this.inferAgentIdFromResult(resultText);
       if (inferredAgentId) {
         agentId = inferredAgentId;
         subagent = this.activeAsyncSubagents.get(inferredAgentId);
@@ -370,13 +375,13 @@ export class SubagentManager {
       return undefined;
     }
 
-    const stillRunning = this.isStillRunningResult(result, isError);
+    const stillRunning = this.isStillRunningResult(resultText, isError);
     if (stillRunning) {
       this.outputToolIdToAgentId.delete(toolId);
       return subagent;
     }
 
-    const extractedResult = this.extractAgentResult(result, agentId ?? '', toolUseResult);
+    const extractedResult = this.extractAgentResult(resultText, agentId ?? '', toolUseResult);
 
     // The chunk's is_error flag can be unreliable for async subagent results
     // (SDK may set is_error on the content block even when the agent succeeded).

@@ -620,6 +620,12 @@ describe('ToolCallRenderer', () => {
     it('should return false for normal results', () => {
       expect(isBlockedToolResult('File content here')).toBe(false);
     });
+
+    it('extracts text from structured content blocks before blocked detection', () => {
+      expect(isBlockedToolResult([
+        { type: 'text', text: 'Requires approval from user' },
+      ])).toBe(true);
+    });
   });
 
   describe('renderTodoWriteResult', () => {

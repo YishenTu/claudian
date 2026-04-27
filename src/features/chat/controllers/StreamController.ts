@@ -21,6 +21,7 @@ import {
   TOOL_TODO_WRITE,
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
+import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import type ClaudianPlugin from '../../../main';
@@ -87,6 +88,10 @@ export class StreamController {
 
   private getSubagentLifecycleAdapter(toolName?: string): ProviderSubagentLifecycleAdapter | null {
     return resolveSubagentLifecycleAdapter(this.getActiveProviderId(), toolName);
+  }
+
+  private normalizeToolResultContent(content: unknown): string {
+    return extractToolResultContent(content, { fallbackIndent: 2 });
   }
 
   // ============================================
@@ -455,15 +460,16 @@ export class StreamController {
   ): boolean {
     const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
     if (!existingToolCall) return false;
+    const normalizedContent = this.normalizeToolResultContent(chunk.content);
 
     const adapter = this.getSubagentLifecycleAdapter(existingToolCall.name);
     if (!adapter) return false;
 
     if (adapter.isSpawnTool(existingToolCall.name)) {
       existingToolCall.status = chunk.isError ? 'error' : 'completed';
-      existingToolCall.result = chunk.content;
+      existingToolCall.result = normalizedContent;
 
-      const spawnResult = adapter.extractSpawnResult(chunk.content);
+      const spawnResult = adapter.extractSpawnResult(normalizedContent);
       if (spawnResult.agentId) {
         this.lifecycleAgentIdToSpawnId.set(spawnResult.agentId, chunk.id);
       }
@@ -482,7 +488,7 @@ export class StreamController {
 
       if (chunk.isError) {
         if (subagentState) {
-          finalizeSubagentBlock(subagentState, chunk.content || 'Error', true);
+          finalizeSubagentBlock(subagentState, normalizedContent || 'Error', true);
         }
       }
       return true;
@@ -490,7 +496,7 @@ export class StreamController {
 
     if (adapter.isWaitTool(existingToolCall.name)) {
       existingToolCall.status = chunk.isError ? 'error' : 'completed';
-      existingToolCall.result = chunk.content;
+      existingToolCall.result = normalizedContent;
 
       for (const spawnId of adapter.resolveSpawnToolIds(
         existingToolCall,
@@ -517,7 +523,7 @@ export class StreamController {
 
     if (adapter.isCloseTool(existingToolCall.name)) {
       existingToolCall.status = chunk.isError ? 'error' : 'completed';
-      existingToolCall.result = chunk.content;
+      existingToolCall.result = normalizedContent;
       return true;
     }
 
@@ -529,6 +535,7 @@ export class StreamController {
     msg: ChatMessage
   ): Promise<void> {
     const { state, subagentManager } = this.deps;
+    const normalizedContent = this.normalizeToolResultContent(chunk.content);
 
     // Resolve pending Task before processing result.
     if (subagentManager.hasPendingTask(chunk.id)) {
@@ -567,7 +574,7 @@ export class StreamController {
     const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
 
     // Regular tool result
-    const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
+    const isBlocked = isBlockedToolResult(normalizedContent, chunk.isError);
 
     if (existingToolCall) {
       // Tools that resolve via dedicated callbacks (not content-based) skip
@@ -579,12 +586,12 @@ export class StreamController {
       } else {
         existingToolCall.status = 'completed';
       }
-      existingToolCall.result = chunk.content;
+      existingToolCall.result = normalizedContent;
 
       if (existingToolCall.name === TOOL_ASK_USER_QUESTION) {
         const answers =
           extractResolvedAnswers(chunk.toolUseResult) ??
-          extractResolvedAnswersFromResultText(chunk.content);
+          extractResolvedAnswersFromResultText(normalizedContent);
         if (answers) existingToolCall.resolvedAnswers = answers;
       }
 
@@ -808,9 +815,10 @@ export class StreamController {
       case 'subagent_tool_result': {
         const toolCall = subagentState.info.toolCalls.find((tc: ToolCallInfo) => tc.id === chunk.id);
         if (toolCall) {
-          const isBlocked = isBlockedToolResult(chunk.content, chunk.isError);
+          const normalizedContent = this.normalizeToolResultContent(chunk.content);
+          const isBlocked = isBlockedToolResult(normalizedContent, chunk.isError);
           toolCall.status = isBlocked ? 'blocked' : (chunk.isError ? 'error' : 'completed');
-          toolCall.result = chunk.content;
+          toolCall.result = normalizedContent;
           subagentManager.updateSyncToolResult(parentToolUseId, chunk.id, toolCall);
         }
         break;
@@ -827,11 +835,12 @@ export class StreamController {
     msg: ChatMessage
   ): void {
     const isError = chunk.isError || false;
+    const normalizedContent = this.normalizeToolResultContent(chunk.content);
     const finalized = this.deps.subagentManager.finalizeSyncSubagent(
       chunk.id, chunk.content, isError, chunk.toolUseResult
     );
 
-    const extractedResult = finalized?.result ?? chunk.content;
+    const extractedResult = finalized?.result ?? normalizedContent;
 
     const taskToolCall = this.ensureTaskToolCall(msg, chunk.id);
     taskToolCall.status = isError ? 'error' : 'completed';

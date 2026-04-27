@@ -100,6 +100,23 @@ describe('SubagentManager', () => {
       expect(manager.isPendingAsyncTask('task-structured')).toBe(false);
     });
 
+    it('transitions from pending to running when structured content carries agent_id', () => {
+      const { manager, updates } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('task-array', { description: 'Background', run_in_background: true }, parentEl);
+      manager.handleTaskToolResult(
+        'task-array',
+        [{ type: 'text', text: '{"agent_id":"agent-array-1"}' }] as any,
+      );
+
+      const running = manager.getByTaskId('task-array');
+      expect(running?.asyncStatus).toBe('running');
+      expect(running?.agentId).toBe('agent-array-1');
+      expect(updates[updates.length - 1].agentId).toBe('agent-array-1');
+      expect(manager.isPendingAsyncTask('task-array')).toBe(false);
+    });
+
     it('moves to error when Task tool_result parsing fails', () => {
       const { manager, updates } = createManager();
       const parentEl = createMockEl();
@@ -759,7 +776,9 @@ ${inlineOutput}
       const { manager } = createManager();
       setupLinkedAgentOutput(manager, 'task-1', 'agent-untrusted-output', 'out-1');
 
-      const fullOutputFile = join(process.cwd(), 'agent-untrusted.output');
+      const homeDir = process.env.HOME ?? process.cwd();
+      const untrustedDir = mkdtempSync(join(homeDir, '.claudian-untrusted-'));
+      const fullOutputFile = join(untrustedDir, 'agent-untrusted.output');
       const fullOutput = [
         JSON.stringify({
           type: 'assistant',
@@ -783,7 +802,7 @@ ${inlineOutput}
         const result = manager.handleAgentOutputToolResult('out-1', xmlPayload, false);
         expect(result?.result).toBe(inlineOutput);
       } finally {
-        rmSync(fullOutputFile, { force: true });
+        rmSync(untrustedDir, { recursive: true, force: true });
       }
     });
 
@@ -1150,6 +1169,22 @@ Only this is the final result.
       const result = manager.renderPendingTaskFromTaskResult(
         'task-1',
         '{"agent_id":"agent-123"}',
+        false
+      );
+
+      expect(result).not.toBeNull();
+      expect(result?.mode).toBe('async');
+      expect(manager.hasPendingTask('task-1')).toBe(false);
+    });
+
+    it('infers async from structured task-result content when mode is still unknown', () => {
+      const { manager } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('task-1', { prompt: 'test' }, parentEl);
+      const result = manager.renderPendingTaskFromTaskResult(
+        'task-1',
+        [{ type: 'text', text: '{"agent_id":"agent-structured"}' }] as any,
         false
       );
 
