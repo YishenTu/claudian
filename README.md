@@ -6,11 +6,11 @@
 
 ![Preview](Preview.png)
 
-An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box.
+An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Opencode and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box.
 
 ## Features & Usage
 
-Open the chat sidebar from the ribbon icon or command palette. Select text and use the hotkey for inline edit. Everything works like Claude Code or Codex — talk to the agent, and it reads, writes, edits, and searches files in your vault.
+Open the chat sidebar from the ribbon icon or command palette. Select text and use the hotkey for inline edit. Everything works like your familiar coding agent, Claude Code, Codex and Opencode — talk to the agent, and it reads, writes, edits, and searches files in your vault.
 
 **Inline Edit** — Select text or start at the cursor position + hotkey to edit directly in notes with word-level diff preview.
 
@@ -29,7 +29,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 ## Requirements
 
 - **Claude provider**: [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (native install recommended). Claude subscription/API or compatible provider ([Openrouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.moonshot.ai/docs/guide/agent-support), etc.).
-- **Codex provider** (optional): [Codex CLI](https://github.com/openai/codex) installed.
+- **Optional providers**: [Codex CLI](https://github.com/openai/codex), [Opencode](https://opencode.ai/).
 - Obsidian v1.4.5+
 - Desktop only (macOS, Linux, Windows)
 
@@ -127,9 +127,9 @@ If different, GUI apps like Obsidian may not find Node.js.
 1. Install native binary (recommended)
 2. Add Node.js path to Settings → Environment: `PATH=/path/to/node/bin`
 
-### Codex provider
+### Other providers
 
-Codex support is live but still needs more testing across platforms and installation methods. If you run into any bugs, please [submit a GitHub issue](https://github.com/YishenTu/claudian/issues).
+Codex and Opencode support are live but features might be incomplete, and still need more testing across platforms and installation methods. If you have feature request or run into any bugs, please [submit a GitHub issue](https://github.com/YishenTu/claudian/issues).
 
 ## Architecture
 
@@ -140,17 +140,22 @@ src/
 ├── core/                        # Provider-neutral runtime, registry, and type contracts
 │   ├── runtime/                 # ChatRuntime interface and approval types
 │   ├── providers/               # Provider registry and workspace services
+│   ├── auxiliary/               # Shared provider auxiliary services
+│   ├── bootstrap/               # Plugin bootstrap wiring
 │   ├── security/                # Approval utilities
 │   └── ...                      # commands, mcp, prompt, storage, tools, types
 ├── providers/
 │   ├── claude/                  # Claude SDK adaptor, prompt encoding, storage, MCP, plugins
-│   └── codex/                   # Codex app-server adaptor, JSON-RPC transport, JSONL history
+│   ├── codex/                   # Codex app-server adaptor, JSON-RPC transport, JSONL history
+│   ├── opencode/                # Opencode adaptor
+│   └── acp/                     # Agent Client Protocol shared transport
 ├── features/
 │   ├── chat/                    # Sidebar chat: tabs, controllers, renderers
 │   ├── inline-edit/             # Inline edit modal and provider-backed edit services
 │   └── settings/                # Settings shell with provider tabs
 ├── shared/                      # Reusable UI components and modals
 ├── i18n/                        # Internationalization (10 locales)
+├── types/                       # Shared ambient types
 ├── utils/                       # Cross-cutting utilities
 └── style/                       # Modular CSS
 ```
@@ -159,6 +164,7 @@ src/
 
 - [x] 1M Opus and Sonnet models
 - [x] Codex provider integration
+- [x] Opencode support
 - [ ] More to come!
 
 ## License
@@ -180,3 +186,4 @@ Licensed under the [MIT License](LICENSE).
 - [Obsidian](https://obsidian.md) for the plugin API
 - [Anthropic](https://anthropic.com) for Claude and the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview)
 - [OpenAI](https://openai.com) for [Codex](https://github.com/openai/codex)
+- [Opencode](https://opencode.ai/) 
