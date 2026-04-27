@@ -75,6 +75,7 @@ describe('ProviderRegistry', () => {
     const ids = ProviderRegistry.getRegisteredProviderIds();
     expect(ids).toContain('claude');
     expect(ids).toContain('codex');
+    expect(ids).toContain('cursor');
   });
 
   it('filters enabled provider ids using registration metadata', () => {
@@ -88,10 +89,33 @@ describe('ProviderRegistry', () => {
         codex: { enabled: true },
       },
     })).toEqual(['codex', 'claude']);
+    expect(ProviderRegistry.getEnabledProviderIds({
+      providerConfigs: {
+        codex: { enabled: true },
+        cursor: { enabled: true },
+      },
+    })).toEqual(['cursor', 'codex', 'claude']);
   });
 
   it('returns the display name from provider registration metadata', () => {
     expect(ProviderRegistry.getProviderDisplayName('claude')).toBe('Claude');
     expect(ProviderRegistry.getProviderDisplayName('codex')).toBe('Codex');
+    expect(ProviderRegistry.getProviderDisplayName('cursor')).toBe('Cursor Agent');
+  });
+
+  it('creates a Cursor runtime', () => {
+    const runtime = ProviderRegistry.createChatRuntime({
+      providerId: 'cursor',
+      plugin: {} as any,
+    });
+    expect(runtime.providerId).toBe('cursor');
+  });
+
+  it('returns Cursor capabilities', () => {
+    const caps = ProviderRegistry.getCapabilities('cursor');
+    expect(caps.providerId).toBe('cursor');
+    expect(caps.supportsNativeHistory).toBe(true);
+    expect(caps.supportsFork).toBe(false);
+    expect(caps.supportsRewind).toBe(false);
   });
 });
