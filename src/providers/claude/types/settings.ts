@@ -29,7 +29,7 @@ export interface CCPermissions {
   /** Rules that always prompt for confirmation */
   ask?: PermissionRule[];
   /** Default permission mode */
-  defaultMode?: 'acceptEdits' | 'bypassPermissions' | 'default' | 'plan';
+  defaultMode?: 'acceptEdits' | 'auto' | 'bypassPermissions' | 'default' | 'dontAsk' | 'plan';
   /** Additional directories to include in permission scope */
   additionalDirectories?: string[];
 }

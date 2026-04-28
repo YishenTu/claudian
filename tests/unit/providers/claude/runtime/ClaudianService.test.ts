@@ -1643,6 +1643,50 @@ describe('ClaudianService', () => {
       expect((service as any).currentConfig.sdkPermissionMode).toBe('acceptEdits');
     });
 
+    it('should restart before applying auto mode when auto opt-in was not enabled', async () => {
+      (mockPlugin as any).settings.permissionMode = 'normal';
+      (mockPlugin as any).settings.claudeSafeMode = 'acceptEdits';
+      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+        '/mock/vault/path',
+        '/usr/local/bin/claude',
+        [],
+      );
+
+      mockPersistentQuery.setPermissionMode.mockClear();
+      (service as any).startPersistentQuery.mockClear();
+      (mockPlugin as any).settings.claudeSafeMode = 'auto';
+
+      await (service as any).applyDynamicUpdates({});
+
+      expect(mockPersistentQuery.setPermissionMode).not.toHaveBeenCalled();
+      expect((service as any).startPersistentQuery).toHaveBeenCalledTimes(1);
+      expect((service as any).currentConfig.permissionMode).toBe('normal');
+      expect((service as any).currentConfig.sdkPermissionMode).toBe('auto');
+      expect((service as any).currentConfig.enableAutoMode).toBe(true);
+    });
+
+    it('should update permission mode to auto dynamically when auto opt-in is already enabled', async () => {
+      (mockPlugin as any).settings.permissionMode = 'yolo';
+      (mockPlugin as any).settings.claudeSafeMode = 'auto';
+      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+        '/mock/vault/path',
+        '/usr/local/bin/claude',
+        [],
+      );
+
+      mockPersistentQuery.setPermissionMode.mockClear();
+      (service as any).startPersistentQuery.mockClear();
+      (mockPlugin as any).settings.permissionMode = 'normal';
+
+      await (service as any).applyDynamicUpdates({});
+
+      expect(mockPersistentQuery.setPermissionMode).toHaveBeenCalledWith('auto');
+      expect((service as any).startPersistentQuery).not.toHaveBeenCalled();
+      expect((service as any).currentConfig.permissionMode).toBe('normal');
+      expect((service as any).currentConfig.sdkPermissionMode).toBe('auto');
+      expect((service as any).currentConfig.enableAutoMode).toBe(true);
+    });
+
     it('should update MCP servers when changed', async () => {
       mockMcpManager.getActiveServers.mockReturnValue({
         'test-server': { command: 'test', args: [] },

@@ -149,6 +149,29 @@ describe('runColdStartQuery', () => {
       expect(opts?.hooks).toBe(hooks);
     });
 
+    it('passes auto mode opt-in when Claude safe mode is auto', async () => {
+      sdkMock.setMockMessages([]);
+
+      await runColdStartQuery(
+        createConfig({
+          providerSettings: {
+            model: 'claude-sonnet-4-5',
+            thinkingBudget: 'off',
+            effortLevel: 'medium',
+            loadUserClaudeSettings: false,
+            providerConfigs: {
+              claude: {
+                safeMode: 'auto',
+              },
+            },
+          },
+        }),
+        'hi',
+      );
+
+      expect(sdkMock.getLastOptions()?.extraArgs).toEqual({ 'enable-auto-mode': null });
+    });
+
     it('sets persistSession false when configured', async () => {
       sdkMock.setMockMessages([]);
 

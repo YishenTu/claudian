@@ -10,7 +10,12 @@ import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
 import { resolveClaudeModelSelection } from '../modelOptions';
-import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
+import {
+  CLAUDE_SAFE_MODES,
+  type ClaudeSafeMode,
+  getClaudeProviderSettings,
+  updateClaudeProviderSettings,
+} from '../settings';
 import { AgentSettings } from './AgentSettings';
 import { claudeChatUIConfig } from './ClaudeChatUIConfig';
 import { PluginSettingsManager } from './PluginSettingsManager';
@@ -146,14 +151,15 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       .setName(t('settings.claudeSafeMode.name'))
       .setDesc(t('settings.claudeSafeMode.desc'))
       .addDropdown((dropdown) => {
+        for (const mode of CLAUDE_SAFE_MODES) {
+          dropdown.addOption(mode, mode);
+        }
         dropdown
-          .addOption('acceptEdits', 'acceptEdits')
-          .addOption('default', 'default')
           .setValue(claudeSettings.safeMode)
           .onChange(async (value) => {
             updateClaudeProviderSettings(
               settingsBag,
-              { safeMode: value as 'acceptEdits' | 'default' },
+              { safeMode: value as ClaudeSafeMode },
             );
             await context.plugin.saveSettings();
           });

@@ -80,6 +80,7 @@ export class QueryOptionsBuilder {
     // Since allowDangerouslySkipPermissions is always true, both directions work without restart.
 
     if (currentConfig.enableChrome !== newConfig.enableChrome) return true;
+    if (currentConfig.enableAutoMode !== newConfig.enableAutoMode) return true;
 
     // External context paths require restart (additionalDirectories can't be updated dynamically)
     if (QueryOptionsBuilder.pathsChanged(currentConfig.externalContextPaths, newConfig.externalContextPaths)) {
@@ -123,6 +124,7 @@ export class QueryOptionsBuilder {
       settingSources: claudeSettings.loadUserSettings ? 'user,project' : 'project',
       claudeCliPath: ctx.cliPath,
       enableChrome: claudeSettings.enableChrome,
+      enableAutoMode: claudeSettings.safeMode === 'auto',
     };
   }
 
@@ -242,8 +244,15 @@ export class QueryOptionsBuilder {
     );
   }
 
-  private static applyExtraArgs(options: Options, enableChrome: boolean): void {
-    if (enableChrome) {
+  private static applyExtraArgs(
+    options: Options,
+    settings: { enableChrome: boolean; safeMode: ClaudeSafeMode },
+  ): void {
+    if (settings.safeMode === 'auto') {
+      options.extraArgs = { ...options.extraArgs, 'enable-auto-mode': null };
+    }
+
+    if (settings.enableChrome) {
       options.extraArgs = { ...options.extraArgs, chrome: null };
     }
   }
@@ -275,7 +284,7 @@ export class QueryOptionsBuilder {
       includePartialMessages: true,
     };
 
-    QueryOptionsBuilder.applyExtraArgs(options, claudeSettings.enableChrome);
+    QueryOptionsBuilder.applyExtraArgs(options, claudeSettings);
     options.spawnClaudeCodeProcess = createCustomSpawnFunction(ctx.enhancedPath);
 
     return { options, claudeSettings };

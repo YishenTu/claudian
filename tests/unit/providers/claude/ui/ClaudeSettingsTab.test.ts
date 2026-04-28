@@ -371,6 +371,27 @@ describe('ClaudeSettingsTab', () => {
     expect(context.refreshModelSelectors).not.toHaveBeenCalled();
   });
 
+  it('offers auto as a Claude safe mode and persists it', async () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+
+    const safeModeSetting = findSetting('settings.claudeSafeMode.name');
+    const safeModeDropdown = safeModeSetting.dropdownComponents[0];
+
+    expect(safeModeDropdown.options).toEqual([
+      { value: 'acceptEdits', label: 'acceptEdits' },
+      { value: 'auto', label: 'auto' },
+      { value: 'default', label: 'default' },
+    ]);
+
+    await safeModeDropdown.onChangeCallback?.('auto');
+
+    expect(plugin.settings.providerConfigs.claude.safeMode).toBe('auto');
+    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
+  });
+
   it('reconciles removed custom models on blur and clears stale title model selections', async () => {
     const plugin = createPlugin({
       titleGenerationModel: 'claude-opus-4-6',

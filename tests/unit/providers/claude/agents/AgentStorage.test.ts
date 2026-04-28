@@ -339,6 +339,10 @@ describe('parsePermissionMode', () => {
     expect(parsePermissionMode('acceptEdits')).toBe('acceptEdits');
   });
 
+  it('returns auto for valid input', () => {
+    expect(parsePermissionMode('auto')).toBe('auto');
+  });
+
   it('returns dontAsk for valid input', () => {
     expect(parsePermissionMode('dontAsk')).toBe('dontAsk');
   });

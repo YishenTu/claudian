@@ -43,6 +43,10 @@ export async function probeRuntimeCommands(plugin: ClaudianPlugin): Promise<Slas
 
   const abortController = new AbortController();
   let commands: SlashCommand[] = [];
+  const extraArgs = {
+    ...(claudeSettings.safeMode === 'auto' ? { 'enable-auto-mode': null } : {}),
+    ...(claudeSettings.enableChrome ? { chrome: null } : {}),
+  };
 
   try {
     const conversation = agentQuery({
@@ -55,7 +59,7 @@ export async function probeRuntimeCommands(plugin: ClaudianPlugin): Promise<Slas
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         settingSources: claudeSettings.loadUserSettings ? ['user', 'project'] : ['project'],
-        ...(claudeSettings.enableChrome ? { extraArgs: { chrome: null } } : {}),
+        ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
         persistSession: false,
       },

@@ -110,6 +110,10 @@ export async function runColdStartQuery(
     options.resume = config.resumeSessionId;
   }
 
+  if (claudeSettings.safeMode === 'auto') {
+    options.extraArgs = { ...options.extraArgs, 'enable-auto-mode': null };
+  }
+
   if (!config.thinking?.disabled) {
     const effortLevel = resolveAdaptiveEffortLevel(selectedModel, settings.effortLevel);
     if (effortLevel !== null) {

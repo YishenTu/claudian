@@ -72,4 +72,21 @@ describe('probeRuntimeCommands', () => {
     expect(options?.settingSources).toEqual(['user', 'project']);
     expect(options?.extraArgs).toEqual({ chrome: null });
   });
+
+  it('passes auto mode opt-in when Claude safe mode is auto', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'probe-session' },
+    ], { appendResult: false });
+    sdkMock.setMockSupportedCommands([]);
+
+    await probeRuntimeCommands(createMockPlugin({
+      providerConfigs: {
+        claude: {
+          safeMode: 'auto',
+        },
+      },
+    }));
+
+    expect(sdkMock.getLastOptions()?.extraArgs).toEqual({ 'enable-auto-mode': null });
+  });
 });

@@ -119,7 +119,11 @@ export async function applyClaudeDynamicUpdates(
   if (configBeforePermissionUpdate) {
     const sdkMode = deps.resolveSDKPermissionMode(permissionMode);
     const currentSdkMode = configBeforePermissionUpdate.sdkPermissionMode ?? null;
-    if (sdkMode !== currentSdkMode) {
+    const requiresAutoModeRestart = sdkMode === 'auto' && !configBeforePermissionUpdate.enableAutoMode;
+    if (requiresAutoModeRestart) {
+      // The Claude Code auto-mode opt-in is a startup flag. The restart path below
+      // will rebuild the query with that capability before auto becomes active.
+    } else if (sdkMode !== currentSdkMode) {
       try {
         await persistentQuery.setPermissionMode(sdkMode);
         deps.mutateCurrentConfig(config => {
