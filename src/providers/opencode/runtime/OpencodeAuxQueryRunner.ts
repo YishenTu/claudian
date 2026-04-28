@@ -166,10 +166,7 @@ export class OpencodeAuxQueryRunner implements AuxQueryRunner {
   }
 
   private async ensureReady(cwd: string, systemPrompt: string): Promise<void> {
-    const resolvedCliPath = this.plugin.getResolvedProviderCliPath('opencode');
-    if (!resolvedCliPath) {
-      throw new Error('OpenCode CLI not found');
-    }
+    const resolvedCliPath = this.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
 
     const settings = this.plugin.settings as unknown as Record<string, unknown>;
     const runtimeEnv = buildOpencodeRuntimeEnv(settings, resolvedCliPath);

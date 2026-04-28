@@ -246,6 +246,14 @@ describe('getEnhancedPath', () => {
       // Should have added some extra paths beyond just process.env.PATH
       expect(segments.length).toBeGreaterThan(1);
     });
+
+    it('includes the default OpenCode install bin path from HOME', () => {
+      process.env.HOME = '/mock/home';
+      const result = getEnhancedPath();
+      const segments = result.split(SEP);
+
+      expect(segments).toContain(path.join('/mock/home', '.opencode', 'bin'));
+    });
   });
 
   describe('Unix environment variable paths', () => {
@@ -1121,6 +1129,15 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
     const mod = loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('.local');
+  });
+
+  it('includes home/.opencode/bin on Windows', () => {
+    process.env.HOME = '/mock/home';
+    const mod = loadWithWindowsPlatform();
+    const result = mod.getEnhancedPath();
+    const segments = result.split(';');
+
+    expect(segments).toContain(path.join('/mock/home', '.opencode', 'bin'));
   });
 
   it('uses semicolon separator on Windows', () => {
