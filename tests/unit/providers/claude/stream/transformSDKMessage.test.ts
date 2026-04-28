@@ -1,6 +1,10 @@
 import { buildSDKMessage } from '@test/helpers/sdkMessages';
 
-import { createTransformStreamState, transformSDKMessage } from '@/providers/claude/stream/transformClaudeMessage';
+import {
+  createTransformStreamState,
+  createTransformUsageState,
+  transformSDKMessage,
+} from '@/providers/claude/stream/transformClaudeMessage';
 
 const msg = buildSDKMessage;
 
@@ -821,6 +825,255 @@ describe('transformSDKMessage', () => {
 
       expect(results).toEqual([]);
     });
+
+    it('yields usage when Anthropic-compatible message_delta carries prompt tokens', () => {
+      const usageState = createTransformUsageState();
+      const startMessage = msg({
+        type: 'stream_event',
+        event: {
+          type: 'message_start',
+          message: {
+            usage: {
+              input_tokens: 0,
+              output_tokens: 0,
+            },
+          },
+        },
+      });
+      const deltaMessage = msg({
+        type: 'stream_event',
+        event: {
+          type: 'message_delta',
+          delta: { stop_reason: 'end_turn' },
+          usage: {
+            input_tokens: 16,
+            output_tokens: 6,
+            cache_read_input_tokens: 0,
+          },
+        },
+      });
+
+      expect([...transformSDKMessage(startMessage, {
+        intendedModel: 'glm-5.1',
+        usageState,
+      })]).toEqual([]);
+
+      const results = [...transformSDKMessage(deltaMessage, {
+        intendedModel: 'glm-5.1',
+        usageState,
+      })];
+
+      expect(results).toEqual([
+        {
+          type: 'usage',
+          usage: {
+            model: 'glm-5.1',
+            inputTokens: 16,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            contextWindow: 200000,
+            contextTokens: 16,
+            percentage: 0,
+          },
+        },
+      ]);
+    });
+
+    it('keeps standard message_start prompt usage on the final assistant usage path', () => {
+      const usageState = createTransformUsageState();
+      const startMessage = msg({
+        type: 'stream_event',
+        event: {
+          type: 'message_start',
+          message: {
+            usage: {
+              input_tokens: 10,
+              output_tokens: 0,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+            },
+          },
+        },
+      });
+      const deltaMessage = msg({
+        type: 'stream_event',
+        event: {
+          type: 'message_delta',
+          delta: { stop_reason: 'end_turn' },
+          usage: {
+            input_tokens: 10,
+            output_tokens: 4,
+          },
+        },
+      });
+      const assistantMessage = msg({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: {
+          content: [{ type: 'text', text: 'Hello' }],
+          usage: {
+            input_tokens: 10,
+            output_tokens: 4,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+          },
+        },
+      });
+
+      const startResults = [...transformSDKMessage(startMessage, {
+        intendedModel: 'sonnet',
+        usageState,
+      })];
+      const deltaResults = [...transformSDKMessage(deltaMessage, {
+        intendedModel: 'sonnet',
+        usageState,
+      })];
+      const assistantResults = [...transformSDKMessage(assistantMessage, {
+        intendedModel: 'sonnet',
+        usageState,
+      })];
+
+      expect(startResults).toEqual([]);
+      expect(deltaResults).toEqual([]);
+      expect(assistantResults).toEqual([
+        { type: 'text', content: 'Hello' },
+        {
+          type: 'usage',
+          usage: {
+            model: 'sonnet',
+            inputTokens: 10,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            contextWindow: 200000,
+            contextTokens: 10,
+            percentage: 0,
+          },
+        },
+      ]);
+    });
+
+    it('emits message_start prompt usage at result when no assistant usage arrives', () => {
+      const usageState = createTransformUsageState();
+      const startMessage = msg({
+        type: 'stream_event',
+        event: {
+          type: 'message_start',
+          message: {
+            usage: {
+              input_tokens: 10,
+              output_tokens: 0,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+            },
+          },
+        },
+      });
+      const deltaMessage = msg({
+        type: 'stream_event',
+        event: {
+          type: 'message_delta',
+          delta: { stop_reason: 'end_turn' },
+          usage: {
+            output_tokens: 4,
+          },
+        },
+      });
+      const resultMessage = msg({
+        type: 'result',
+        subtype: 'success',
+        modelUsage: undefined,
+      });
+
+      expect([...transformSDKMessage(startMessage, {
+        intendedModel: 'sonnet',
+        usageState,
+      })]).toEqual([]);
+      expect([...transformSDKMessage(deltaMessage, {
+        intendedModel: 'sonnet',
+        usageState,
+      })]).toEqual([]);
+
+      expect([...transformSDKMessage(resultMessage, {
+        intendedModel: 'sonnet',
+        usageState,
+      })]).toEqual([
+        {
+          type: 'usage',
+          usage: {
+            model: 'sonnet',
+            inputTokens: 10,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            contextWindow: 200000,
+            contextTokens: 10,
+            percentage: 0,
+          },
+        },
+      ]);
+    });
+
+    it('ignores standard message_delta usage that only contains output tokens', () => {
+      const usageState = createTransformUsageState();
+      const message = msg({
+        type: 'stream_event',
+        event: {
+          type: 'message_delta',
+          delta: { stop_reason: 'end_turn' },
+          usage: {
+            output_tokens: 6,
+          },
+        },
+      });
+
+      const results = [...transformSDKMessage(message, { usageState })];
+
+      expect(results).toEqual([]);
+    });
+
+    it('ignores subagent stream usage deltas', () => {
+      const usageState = createTransformUsageState();
+      const message = msg({
+        type: 'stream_event',
+        parent_tool_use_id: 'subagent-parent',
+        event: {
+          type: 'message_delta',
+          usage: {
+            input_tokens: 16,
+            output_tokens: 6,
+          },
+        },
+      });
+
+      const results = [...transformSDKMessage(message, { usageState })];
+
+      expect(results).toEqual([]);
+    });
+
+    it('ignores subagent message_start usage', () => {
+      const usageState = createTransformUsageState();
+      const message = msg({
+        type: 'stream_event',
+        parent_tool_use_id: 'subagent-parent',
+        event: {
+          type: 'message_start',
+          message: {
+            usage: {
+              input_tokens: 16,
+              output_tokens: 0,
+            },
+          },
+        },
+      });
+
+      const results = [...transformSDKMessage(message, { usageState })];
+
+      expect(results).toEqual([]);
+      expect([...transformSDKMessage(msg({
+        type: 'result',
+        subtype: 'success',
+        modelUsage: undefined,
+      }), { usageState })]).toEqual([]);
+    });
   });
 
   describe('result messages', () => {
@@ -1152,6 +1405,40 @@ describe('transformSDKMessage', () => {
       expect(usage.percentage).toBe(1); // 1500 / 200000 * 100 rounded
     });
 
+    it('yields usage from assistant message when usage state has no stream prompt usage', () => {
+      const usageState = createTransformUsageState();
+      const message = msg({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: {
+          content: [{ type: 'text', text: 'Hello' }],
+          usage: {
+            input_tokens: 1000,
+            output_tokens: 500,
+            cache_creation_input_tokens: 300,
+            cache_read_input_tokens: 200,
+          },
+        },
+      });
+
+      const results = [...transformSDKMessage(message, {
+        intendedModel: 'sonnet',
+        usageState,
+      })];
+
+      const usageResults = results.filter(r => r.type === 'usage');
+      expect(usageResults).toHaveLength(1);
+      expect((usageResults[0] as any).usage).toEqual({
+        model: 'sonnet',
+        inputTokens: 1000,
+        cacheCreationInputTokens: 300,
+        cacheReadInputTokens: 200,
+        contextWindow: 200000,
+        contextTokens: 1500,
+        percentage: 1,
+      });
+    });
+
     it('skips usage extraction for subagent messages', () => {
       const message = msg({
         type: 'assistant',
@@ -1264,6 +1551,81 @@ describe('transformSDKMessage', () => {
       expect(usage.cacheCreationInputTokens).toBe(0);
       expect(usage.cacheReadInputTokens).toBe(0);
       expect(usage.contextTokens).toBe(0);
+    });
+
+    it('emits final zero usage with usage state when no stream prompt usage exists', () => {
+      const usageState = createTransformUsageState();
+      const message = msg({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: {
+          content: [{ type: 'text', text: 'Hello' }],
+          usage: {
+            input_tokens: 0,
+            output_tokens: 6,
+          },
+        },
+      });
+
+      const results = [...transformSDKMessage(message, {
+        intendedModel: 'sonnet',
+        usageState,
+      })];
+
+      expect(results).toEqual([
+        { type: 'text', content: 'Hello' },
+        {
+          type: 'usage',
+          usage: {
+            model: 'sonnet',
+            inputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            contextWindow: 200000,
+            contextTokens: 0,
+            percentage: 0,
+          },
+        },
+      ]);
+    });
+
+    it('does not let final zero assistant usage overwrite positive stream usage', () => {
+      const usageState = createTransformUsageState();
+      const deltaMessage = msg({
+        type: 'stream_event',
+        event: {
+          type: 'message_delta',
+          usage: {
+            input_tokens: 16,
+            output_tokens: 6,
+          },
+        },
+      });
+      const assistantMessage = msg({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: {
+          content: [{ type: 'text', text: 'Hello' }],
+          usage: {
+            input_tokens: 0,
+            output_tokens: 6,
+          },
+        },
+      });
+
+      const streamResults = [...transformSDKMessage(deltaMessage, {
+        intendedModel: 'glm-5.1',
+        usageState,
+      })];
+      const assistantResults = [...transformSDKMessage(assistantMessage, {
+        intendedModel: 'glm-5.1',
+        usageState,
+      })];
+
+      expect(streamResults.filter(r => r.type === 'usage')).toHaveLength(1);
+      expect(assistantResults).toEqual([
+        { type: 'text', content: 'Hello' },
+      ]);
     });
   });
 
