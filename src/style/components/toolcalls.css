@@ -51,6 +51,20 @@
   display: none;
 }
 
+.claudian-tool-call-bash.expanded .claudian-tool-summary {
+  display: none;
+}
+
+.claudian-tool-bash-command {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-normal);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 2px 0 4px;
+}
+
 /* Legacy: StatusPanel bash entries still use claudian-tool-label */
 .claudian-tool-label {
   font-family: var(--font-monospace);
