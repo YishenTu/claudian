@@ -341,7 +341,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         };
 
         text
-          .setPlaceholder('gpt-5.6-preview\no4-mini\nmy-custom-model')
+          .setPlaceholder('gpt-5.4\ngpt-5.3-codex-spark')
           .setValue(codexSettings.customModels)
           .onChange((value) => {
             pendingCustomModels = value;

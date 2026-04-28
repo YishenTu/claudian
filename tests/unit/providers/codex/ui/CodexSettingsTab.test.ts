@@ -471,6 +471,18 @@ describe('CodexSettingsTab', () => {
     expect(context.refreshModelSelectors).not.toHaveBeenCalled();
   });
 
+  it('shows current Codex custom model examples in the custom models textarea', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const plugin = createPlugin();
+
+    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+
+    const customModelsSetting = findSetting('Custom models');
+    expect(customModelsSetting.textAreaComponents[0].placeholder).toBe(
+      'gpt-5.4\ngpt-5.3-codex-spark',
+    );
+  });
+
   it('reconciles removed custom models on blur and clears stale title model selections', async () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const plugin = createPlugin({

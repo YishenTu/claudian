@@ -36,7 +36,11 @@ import {
   findCodexSessionFile,
 } from '../history/CodexHistoryStore';
 import { encodeCodexTurn } from '../prompt/encodeCodexTurn';
-import { type CodexSafeMode, getCodexProviderSettings } from '../settings';
+import {
+  type CodexSafeMode,
+  getCodexProviderSettings,
+  getEffectiveCodexReasoningSummary,
+} from '../settings';
 import {
   extractExplicitCodexSkillNames,
   findPreferredCodexSkillByName,
@@ -543,7 +547,7 @@ export class CodexChatRuntime implements ChatRuntime {
             }
           : undefined;
 
-        const summary = getCodexProviderSettings(providerSettings).reasoningSummary;
+        const summary = getEffectiveCodexReasoningSummary(providerSettings, resolvedModel);
         const serviceTier = resolveCodexServiceTier(providerSettings.serviceTier, resolvedModel);
 
         // Configure router plan state before turn/start so buffered notifications

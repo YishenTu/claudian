@@ -7,6 +7,7 @@ import type {
 } from '../../../core/providers/types';
 import { OPENAI_PROVIDER_ICON } from '../../../shared/icons';
 import { getCodexModelOptions } from '../modelOptions';
+import { applyCodexModelDefaults } from '../settings';
 import {
   DEFAULT_CODEX_MODEL_SET,
   DEFAULT_CODEX_PRIMARY_MODEL,
@@ -77,8 +78,12 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
     return DEFAULT_CODEX_MODEL_SET.has(model);
   },
 
-  applyModelDefaults(): void {
-    // No-op for Codex
+  applyModelDefaults(model: string, settings: unknown): void {
+    if (!settings || typeof settings !== 'object') {
+      return;
+    }
+
+    applyCodexModelDefaults(model, settings as Record<string, unknown>);
   },
 
   normalizeModelVariant(model: string, settings: Record<string, unknown>): string {

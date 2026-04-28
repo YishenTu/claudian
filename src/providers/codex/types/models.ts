@@ -2,6 +2,7 @@ import type { ProviderUIOption } from '../../../core/providers/types';
 
 export type CodexModel = string;
 
+export const CODEX_SPARK_MODEL: CodexModel = 'gpt-5.3-codex-spark';
 export const DEFAULT_CODEX_MINI_MODEL: CodexModel = 'gpt-5.4-mini';
 export const DEFAULT_CODEX_PRIMARY_MODEL: CodexModel = 'gpt-5.5';
 export const FAST_TIER_CODEX_MODEL = DEFAULT_CODEX_PRIMARY_MODEL;
