@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/yishentu-claudian-badge.png)](https://mseep.ai/app/yishentu-claudian)
+
 # Claudian
 
 ![GitHub stars](https://img.shields.io/github/stars/YishenTu/claudian?style=social)
