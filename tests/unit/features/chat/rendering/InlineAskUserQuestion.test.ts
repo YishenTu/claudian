@@ -24,11 +24,14 @@ function makeInput(
 
 function renderWidget(
   input: Record<string, unknown>,
-  signal?: AbortSignal,
+  configOrSignal?: InlineAskQuestionConfig | AbortSignal,
 ): { container: any; resolve: jest.Mock; widget: InlineAskUserQuestion } {
   const container = createMockEl();
   const resolve = jest.fn();
-  const widget = new InlineAskUserQuestion(container, input, resolve, signal);
+  const isSignal = configOrSignal instanceof AbortSignal;
+  const signal = isSignal ? configOrSignal : undefined;
+  const config = isSignal ? undefined : configOrSignal;
+  const widget = new InlineAskUserQuestion(container, input, resolve, signal, config);
   widget.render();
   return { container, resolve, widget };
 }
@@ -83,13 +86,21 @@ describe('InlineAskUserQuestion', () => {
       expect(resolve).not.toHaveBeenCalled();
     });
 
-    it('resolves null when all questions have empty options', () => {
+    it('resolves null when all questions have empty options and custom input is disabled', () => {
       const input = makeInput([
         { question: 'Q1', options: [] },
         { question: 'Q2', options: [] },
       ]);
-      const { resolve } = renderWidget(input);
+      const { resolve } = renderWidget(input, { showCustomInput: false });
       expect(resolve).toHaveBeenCalledWith(null);
+    });
+
+    it('keeps questions with empty options when custom input is enabled', () => {
+      const input = makeInput([
+        { question: 'Q1', options: [] },
+      ]);
+      const { resolve } = renderWidget(input);
+      expect(resolve).not.toHaveBeenCalled();
     });
 
     it('keeps questions that only allow free-form input', () => {
@@ -379,18 +390,20 @@ describe('InlineAskUserQuestion', () => {
   });
 
   describe('question metadata', () => {
-    it('shows custom input only when the question allows "other"', () => {
-      const disallowOtherInput = {
-        questions: [{ question: 'Pick one', options: ['A', 'B'], isOther: false }],
+    it('shows custom input by default when showCustomInput is enabled', () => {
+      const input = {
+        questions: [{ question: 'Pick one', options: ['A', 'B'] }],
       };
-      const { container: noOther } = renderWidget(disallowOtherInput);
-      expect(noOther.querySelectorAll('claudian-ask-custom-item')).toHaveLength(0);
+      const { container: withCustom } = renderWidget(input);
+      expect(withCustom.querySelectorAll('claudian-ask-custom-item')).toHaveLength(1);
+    });
 
-      const allowOtherInput = {
-        questions: [{ question: 'Pick one', options: ['A', 'B'], isOther: true }],
+    it('hides custom input when showCustomInput is disabled', () => {
+      const input = {
+        questions: [{ question: 'Pick one', options: ['A', 'B'] }],
       };
-      const { container: withOther } = renderWidget(allowOtherInput);
-      expect(withOther.querySelectorAll('claudian-ask-custom-item')).toHaveLength(1);
+      const { container: noCustom } = renderWidget(input, { showCustomInput: false });
+      expect(noCustom.querySelectorAll('claudian-ask-custom-item')).toHaveLength(0);
     });
 
     it('renders secret free-form questions with password input', () => {
