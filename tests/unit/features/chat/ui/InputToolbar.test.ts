@@ -8,6 +8,7 @@ import {
   ModelSelector,
   ModeSelector,
   PermissionToggle,
+  SendStopButton,
   ServiceTierToggle,
   ThinkingBudgetSelector,
 } from '@/features/chat/ui/InputToolbar';
@@ -1135,5 +1136,63 @@ describe('createInputToolbar', () => {
     expect(permissionIndex).toBeGreaterThanOrEqual(0);
     expect(modeIndex).toBeGreaterThan(permissionIndex);
     expect(modeIndex).toBe(parentEl.children.length - 1);
+  });
+});
+
+describe('SendStopButton', () => {
+  let parentEl: any;
+  let onSend: jest.Mock;
+  let onStop: jest.Mock;
+  let button: SendStopButton;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    parentEl = createMockEl();
+    onSend = jest.fn();
+    onStop = jest.fn();
+    button = new SendStopButton(parentEl, { onSend, onStop });
+  });
+
+  it('renders send icon by default', () => {
+    const btn = parentEl.querySelector('.claudian-send-stop-btn');
+    expect(btn).toBeTruthy();
+    expect(btn?.hasClass('claudian-send-stop-btn--streaming')).toBe(false);
+  });
+
+  it('calls onSend when clicked in idle state', async () => {
+    const btn = parentEl.querySelector('.claudian-send-stop-btn');
+    await btn?.dispatchEvent('click');
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onStop).not.toHaveBeenCalled();
+  });
+
+  it('switches to streaming state when setStreaming(true) is called', () => {
+    button.setStreaming(true);
+    const btn = parentEl.querySelector('.claudian-send-stop-btn');
+    expect(btn?.hasClass('claudian-send-stop-btn--streaming')).toBe(true);
+  });
+
+  it('calls onStop when clicked in streaming state', async () => {
+    button.setStreaming(true);
+    const btn = parentEl.querySelector('.claudian-send-stop-btn');
+    await btn?.dispatchEvent('click');
+    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('reverts to idle state when setStreaming(false) is called', () => {
+    button.setStreaming(true);
+    button.setStreaming(false);
+    const btn = parentEl.querySelector('.claudian-send-stop-btn');
+    expect(btn?.hasClass('claudian-send-stop-btn--streaming')).toBe(false);
+  });
+
+  it('calls onSend again after reverting from streaming state', async () => {
+    button.setStreaming(true);
+    button.setStreaming(false);
+    const btn = parentEl.querySelector('.claudian-send-stop-btn');
+    await btn?.dispatchEvent('click');
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onStop).not.toHaveBeenCalled();
   });
 });
