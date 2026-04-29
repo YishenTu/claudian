@@ -348,6 +348,20 @@ export class FileContextManager {
     return this.state.getMentionedMcpServers();
   }
 
+  getLineRangeMentions(): Map<string, { startLine: number; endLine: number }> {
+    return this.state.getLineRangeMentions();
+  }
+
+  attachFile(filePath: string): void {
+    this.state.attachFile(filePath);
+    this.callbacks.onChipsChanged?.();
+  }
+
+  attachLineRangeMention(filePath: string, startLine: number, endLine: number): void {
+    this.state.attachLineRangeMention(filePath, startLine, endLine);
+    this.callbacks.onChipsChanged?.();
+  }
+
   clearMcpMentions(): void {
     this.state.clearMcpMentions();
   }

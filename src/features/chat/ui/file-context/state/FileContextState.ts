@@ -3,6 +3,8 @@ export class FileContextState {
   private sessionStarted = false;
   private mentionedMcpServers: Set<string> = new Set();
   private currentNoteSent = false;
+  private lineRangeMentions: Map<string, { startLine: number; endLine: number }> = new Map();
+
 
   getAttachedFiles(): Set<string> {
     return new Set(this.attachedFiles);
@@ -29,6 +31,7 @@ export class FileContextState {
     this.currentNoteSent = false;
     this.attachedFiles.clear();
     this.clearMcpMentions();
+    this.lineRangeMentions.clear();
   }
 
   resetForLoadedConversation(hasMessages: boolean): void {
@@ -36,6 +39,7 @@ export class FileContextState {
     this.attachedFiles.clear();
     this.sessionStarted = hasMessages;
     this.clearMcpMentions();
+    this.lineRangeMentions.clear();
   }
 
   setAttachedFiles(files: string[]): void {
@@ -80,4 +84,17 @@ export class FileContextState {
   addMentionedMcpServer(name: string): void {
     this.mentionedMcpServers.add(name);
   }
+
+  getLineRangeMentions(): Map<string, { startLine: number; endLine: number }> {
+    return new Map(this.lineRangeMentions);
+  }
+
+  attachLineRangeMention(filePath: string, startLine: number, endLine: number): void {
+    this.lineRangeMentions.set(filePath, { startLine, endLine });
+  }
+
+  removeLineRangeMention(filePath: string): void {
+    this.lineRangeMentions.delete(filePath);
+  }
 }
+

@@ -152,4 +152,47 @@ describe('FileContextState', () => {
       expect(changed).toBe(true);
     });
   });
+
+  describe('line-range mentions', () => {
+    it('starts with empty line range map', () => {
+      expect(state.getLineRangeMentions().size).toBe(0);
+    });
+
+    it('stores a line range mention', () => {
+      state.attachLineRangeMention('CLAUDE.md', 9, 15);
+      const map = state.getLineRangeMentions();
+      expect(map.get('CLAUDE.md')).toEqual({ startLine: 9, endLine: 15 });
+    });
+
+    it('overwrites an existing entry for the same file', () => {
+      state.attachLineRangeMention('CLAUDE.md', 1, 5);
+      state.attachLineRangeMention('CLAUDE.md', 9, 15);
+      expect(state.getLineRangeMentions().get('CLAUDE.md')).toEqual({ startLine: 9, endLine: 15 });
+    });
+
+    it('removes a line range mention', () => {
+      state.attachLineRangeMention('CLAUDE.md', 9, 15);
+      state.removeLineRangeMention('CLAUDE.md');
+      expect(state.getLineRangeMentions().size).toBe(0);
+    });
+
+    it('clears line range mentions on resetForNewConversation', () => {
+      state.attachLineRangeMention('CLAUDE.md', 9, 15);
+      state.resetForNewConversation();
+      expect(state.getLineRangeMentions().size).toBe(0);
+    });
+
+    it('clears line range mentions on resetForLoadedConversation', () => {
+      state.attachLineRangeMention('CLAUDE.md', 9, 15);
+      state.resetForLoadedConversation(true);
+      expect(state.getLineRangeMentions().size).toBe(0);
+    });
+
+    it('returns a copy so external mutations do not affect internal state', () => {
+      state.attachLineRangeMention('CLAUDE.md', 9, 15);
+      const map = state.getLineRangeMentions();
+      map.clear();
+      expect(state.getLineRangeMentions().size).toBe(1);
+    });
+  });
 });

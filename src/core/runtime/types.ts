@@ -51,6 +51,7 @@ export interface ChatTurnRequest {
   canvasSelection?: CanvasSelectionContext | null;
   externalContextPaths?: string[];
   enabledMcpServers?: Set<string>;
+  lineRangeMentions?: Map<string, { startLine: number; endLine: number }>;
 }
 
 export interface PreparedChatTurn {
