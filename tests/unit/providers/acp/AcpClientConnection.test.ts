@@ -1,10 +1,14 @@
 import { createInterface } from 'node:readline';
 import { PassThrough } from 'node:stream';
 
-import type { AcpSessionNotification } from '../../../../src/providers/acp';
+import type {
+  AcpSessionNotification,
+  JsonRpcRequestOptions,
+} from '../../../../src/providers/acp';
 import {
   AcpClientConnection,
   AcpJsonRpcTransport,
+  JsonRpcErrorResponse,
 } from '../../../../src/providers/acp';
 
 interface ConnectionHarness {
@@ -174,6 +178,49 @@ describe('AcpClientConnection', () => {
       harness.transport.dispose();
       harness.close();
     }
+  });
+
+  it('disables request timeout for prompt turns across method fallback', async () => {
+    const promptRequest = {
+      prompt: [{ text: 'hi', type: 'text' as const }],
+      sessionId: 'session-1',
+    };
+    const requests: Array<{
+      method: string;
+      options?: JsonRpcRequestOptions;
+      params?: unknown;
+    }> = [];
+    const transport = {
+      notify: () => undefined,
+      onNotification: () => () => undefined,
+      onRequest: () => () => undefined,
+      request: async (method: string, params?: unknown, options?: JsonRpcRequestOptions) => {
+        requests.push({ method, options, params });
+        if (method === 'session/prompt') {
+          throw new JsonRpcErrorResponse(method, -32601, 'Method not found');
+        }
+        return { stopReason: 'end_turn' };
+      },
+      signal: new AbortController().signal,
+    } as unknown as AcpJsonRpcTransport;
+    const connection = new AcpClientConnection({ transport });
+
+    await expect(connection.prompt(promptRequest)).resolves.toEqual({
+      stopReason: 'end_turn',
+    });
+
+    expect(requests).toEqual([
+      {
+        method: 'session/prompt',
+        options: { timeoutMs: 0 },
+        params: promptRequest,
+      },
+      {
+        method: 'prompt',
+        options: { timeoutMs: 0 },
+        params: promptRequest,
+      },
+    ]);
   });
 
   it('sends cancel notifications to all known aliases when no working method is cached', async () => {

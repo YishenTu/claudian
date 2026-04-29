@@ -1,4 +1,4 @@
-import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
+import type { AcpJsonRpcTransport, JsonRpcRequestOptions } from './AcpJsonRpcTransport';
 import { JsonRpcErrorResponse } from './AcpJsonRpcTransport';
 import {
   ACP_SERVER_NOTIFICATION_ALIASES,
@@ -49,6 +49,9 @@ import type {
 type SessionNotificationListener = (
   notification: AcpSessionNotification,
 ) => void | Promise<void>;
+
+// ACP prompt turns are long-running RPCs; session/update notifications stream progress until the final response.
+const ACP_PROMPT_TURN_TIMEOUT_MS = 0;
 
 export interface AcpFileSystemDelegate {
   readTextFile?: (request: AcpReadTextFileRequest) => Promise<AcpReadTextFileResponse>;
@@ -160,7 +163,9 @@ export class AcpClientConnection {
   }
 
   prompt(request: AcpPromptRequest): Promise<AcpPromptResponse> {
-    return this.requestWithFallback<AcpPromptResponse>('prompt', request);
+    return this.requestWithFallback<AcpPromptResponse>('prompt', request, {
+      timeoutMs: ACP_PROMPT_TURN_TIMEOUT_MS,
+    });
   }
 
   cancel(notification: AcpCancelNotification): void {
@@ -281,10 +286,11 @@ export class AcpClientConnection {
   private async requestWithFallback<T>(
     logicalMethod: AcpLogicalMethod,
     params?: unknown,
+    requestOptions?: JsonRpcRequestOptions,
   ): Promise<T> {
     const cachedMethod = this.methodCache.get(logicalMethod);
     if (cachedMethod) {
-      return this.options.transport.request<T>(cachedMethod, params);
+      return this.options.transport.request<T>(cachedMethod, params, requestOptions);
     }
 
     const candidates = getAcpMethodCandidates(logicalMethod, this.options.methodOverrides);
@@ -292,7 +298,7 @@ export class AcpClientConnection {
 
     for (const methodName of candidates) {
       try {
-        const result = await this.options.transport.request<T>(methodName, params);
+        const result = await this.options.transport.request<T>(methodName, params, requestOptions);
         this.methodCache.set(logicalMethod, methodName);
         return result;
       } catch (error) {
