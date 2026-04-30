@@ -555,6 +555,66 @@ describe('ClaudianPlugin', () => {
     });
   });
 
+  describe('switch-to-tab-N commands', () => {
+    function leafWithTabs(tabs: Array<{ id: string }>) {
+      const switchToTab = jest.fn().mockResolvedValue(undefined);
+      const tabManager = {
+        getAllTabs: jest.fn().mockReturnValue(tabs),
+        switchToTab,
+      };
+      const mockView = { getTabManager: () => tabManager };
+      mockApp.workspace.getLeavesOfType = jest.fn().mockReturnValue([{ view: mockView }]);
+      return { tabManager, switchToTab };
+    }
+
+    it('registers commands for N = 1..9', async () => {
+      await plugin.onload();
+      for (let i = 1; i <= 9; i++) {
+        const command = getRegisteredCommand(`switch-to-tab-${i}`);
+        expect(command.name).toBe(`Switch to tab ${i}`);
+      }
+    });
+
+    it('switch-to-tab-1 switches to the first tab when any exists', async () => {
+      await plugin.onload();
+      const { switchToTab } = leafWithTabs([{ id: 'tab-a' }, { id: 'tab-b' }]);
+
+      const command = getRegisteredCommand('switch-to-tab-1');
+      expect(command.checkCallback(true)).toBe(true);
+      expect(command.checkCallback(false)).toBe(true);
+
+      expect(switchToTab).toHaveBeenCalledTimes(1);
+      expect(switchToTab).toHaveBeenCalledWith('tab-a');
+    });
+
+    it('switch-to-tab-3 is unavailable when only 2 tabs exist', async () => {
+      await plugin.onload();
+      const { switchToTab } = leafWithTabs([{ id: 'a' }, { id: 'b' }]);
+
+      const command = getRegisteredCommand('switch-to-tab-3');
+      expect(command.checkCallback(true)).toBe(false);
+      expect(switchToTab).not.toHaveBeenCalled();
+    });
+
+    it('is unavailable when no Claudian leaf is open', async () => {
+      await plugin.onload();
+      mockApp.workspace.getLeavesOfType = jest.fn().mockReturnValue([]);
+
+      const command = getRegisteredCommand('switch-to-tab-1');
+      expect(command.checkCallback(true)).toBe(false);
+    });
+
+    it('is unavailable when the leaf has no TabManager yet', async () => {
+      await plugin.onload();
+      mockApp.workspace.getLeavesOfType = jest.fn().mockReturnValue([
+        { view: { getTabManager: () => null } },
+      ]);
+
+      const command = getRegisteredCommand('switch-to-tab-1');
+      expect(command.checkCallback(true)).toBe(false);
+    });
+  });
+
   describe('createConversation', () => {
     it('should create a new conversation with unique ID', async () => {
       await plugin.onload();
