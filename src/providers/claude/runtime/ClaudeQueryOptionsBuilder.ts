@@ -120,7 +120,7 @@ export class QueryOptionsBuilder {
       mcpServersKey: '', // Dynamic via setMcpServers, not tracked for restart
       pluginsKey,
       externalContextPaths: externalContextPaths || [],
-      settingSources: claudeSettings.loadUserSettings ? 'user,project' : 'project',
+      settingSources: claudeSettings.loadUserSettings ? 'user,project,local' : 'project,local',
       claudeCliPath: ctx.cliPath,
       enableChrome: claudeSettings.enableChrome,
     };
@@ -266,7 +266,7 @@ export class QueryOptionsBuilder {
       model,
       abortController,
       pathToClaudeCodeExecutable: ctx.cliPath,
-      settingSources: claudeSettings.loadUserSettings ? ['user', 'project'] : ['project'],
+      settingSources: claudeSettings.loadUserSettings ? ['user', 'project', 'local'] : ['project', 'local'],
       env: {
         ...process.env,
         ...ctx.customEnv,
