@@ -4,6 +4,9 @@ import * as path from 'path';
 
 import { parsePathEntries, resolveNvmDefaultBin } from '../../../utils/path';
 
+const CLAUDE_CODE_PACKAGE_SEGMENTS = ['node_modules', '@anthropic-ai', 'claude-code'];
+const CLAUDE_CODE_NODE_ENTRYPOINTS = ['cli-wrapper.cjs', 'cli.js'];
+
 function getEnvValue(name: string): string | undefined {
   return process.env[name];
 }
@@ -43,18 +46,9 @@ function isExistingFile(filePath: string): boolean {
   return false;
 }
 
-function resolveCliJsNearPathEntry(entry: string, isWindows: boolean): string | null {
-  const directCandidate = path.join(entry, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
-  if (isExistingFile(directCandidate)) {
-    return directCandidate;
-  }
-
-  const baseName = path.basename(entry).toLowerCase();
-  if (baseName === 'bin') {
-    const prefix = path.dirname(entry);
-    const candidate = isWindows
-      ? path.join(prefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      : path.join(prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+function findClaudeCodeNodeEntrypoint(packageRoot: string): string | null {
+  for (const entrypoint of CLAUDE_CODE_NODE_ENTRYPOINTS) {
+    const candidate = path.join(packageRoot, entrypoint);
     if (isExistingFile(candidate)) {
       return candidate;
     }
@@ -63,9 +57,32 @@ function resolveCliJsNearPathEntry(entry: string, isWindows: boolean): string | 
   return null;
 }
 
-function resolveCliJsFromPathEntries(entries: string[], isWindows: boolean): string | null {
+function resolveClaudeCodeEntrypointNearPathEntry(entry: string, isWindows: boolean): string | null {
+  const directCandidate = findClaudeCodeNodeEntrypoint(
+    path.join(entry, ...CLAUDE_CODE_PACKAGE_SEGMENTS)
+  );
+  if (directCandidate) {
+    return directCandidate;
+  }
+
+  const baseName = path.basename(entry).toLowerCase();
+  if (baseName === 'bin') {
+    const prefix = path.dirname(entry);
+    const packageParent = isWindows ? prefix : path.join(prefix, 'lib');
+    const candidate = findClaudeCodeNodeEntrypoint(
+      path.join(packageParent, ...CLAUDE_CODE_PACKAGE_SEGMENTS)
+    );
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function resolveClaudeCodeEntrypointFromPathEntries(entries: string[], isWindows: boolean): string | null {
   for (const entry of entries) {
-    const candidate = resolveCliJsNearPathEntry(entry, isWindows);
+    const candidate = resolveClaudeCodeEntrypointNearPathEntry(entry, isWindows);
     if (candidate) {
       return candidate;
     }
@@ -91,9 +108,9 @@ function resolveClaudeFromPathEntries(
     return exeCandidate;
   }
 
-  const cliJsCandidate = resolveCliJsFromPathEntries(entries, isWindows);
-  if (cliJsCandidate) {
-    return cliJsCandidate;
+  const packageEntrypoint = resolveClaudeCodeEntrypointFromPathEntries(entries, isWindows);
+  if (packageEntrypoint) {
+    return packageEntrypoint;
   }
 
   return null;
@@ -116,49 +133,43 @@ function getNpmGlobalPrefix(): string | null {
   return null;
 }
 
-function getNpmCliJsPaths(): string[] {
+function addClaudeCodeEntrypointPaths(paths: string[], packageParent: string): void {
+  const packageRoot = path.join(packageParent, ...CLAUDE_CODE_PACKAGE_SEGMENTS);
+  for (const entrypoint of CLAUDE_CODE_NODE_ENTRYPOINTS) {
+    paths.push(path.join(packageRoot, entrypoint));
+  }
+}
+
+function getNpmClaudeCodeEntrypointPaths(): string[] {
   const homeDir = os.homedir();
   const isWindows = process.platform === 'win32';
-  const cliJsPaths: string[] = [];
+  const entrypointPaths: string[] = [];
 
   if (isWindows) {
-    cliJsPaths.push(
-      path.join(homeDir, 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-    );
+    addClaudeCodeEntrypointPaths(entrypointPaths, path.join(homeDir, 'AppData', 'Roaming', 'npm'));
 
     const npmPrefix = getNpmGlobalPrefix();
     if (npmPrefix) {
-      cliJsPaths.push(
-        path.join(npmPrefix, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      );
+      addClaudeCodeEntrypointPaths(entrypointPaths, npmPrefix);
     }
 
     const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
     const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
 
-    cliJsPaths.push(
-      path.join(programFiles, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      path.join(programFilesX86, 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-    );
-
-    cliJsPaths.push(
-      path.join('D:', 'Program Files', 'nodejs', 'node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-    );
+    addClaudeCodeEntrypointPaths(entrypointPaths, path.join(programFiles, 'nodejs', 'node_global'));
+    addClaudeCodeEntrypointPaths(entrypointPaths, path.join(programFilesX86, 'nodejs', 'node_global'));
+    addClaudeCodeEntrypointPaths(entrypointPaths, path.join('D:', 'Program Files', 'nodejs', 'node_global'));
   } else {
-    cliJsPaths.push(
-      path.join(homeDir, '.npm-global', 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
-      '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js',
-      '/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js'
-    );
+    addClaudeCodeEntrypointPaths(entrypointPaths, path.join(homeDir, '.npm-global', 'lib'));
+    addClaudeCodeEntrypointPaths(entrypointPaths, '/usr/local/lib');
+    addClaudeCodeEntrypointPaths(entrypointPaths, '/usr/lib');
 
     if (process.env.npm_config_prefix) {
-      cliJsPaths.push(
-        path.join(process.env.npm_config_prefix, 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js')
-      );
+      addClaudeCodeEntrypointPaths(entrypointPaths, path.join(process.env.npm_config_prefix, 'lib'));
     }
   }
 
-  return cliJsPaths;
+  return entrypointPaths;
 }
 
 export function findClaudeCLIPath(pathValue?: string): string | null {
@@ -174,7 +185,7 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
     }
   }
 
-  // On Windows, prefer native .exe, then cli.js. Avoid .cmd fallback
+  // On Windows, prefer native .exe, then Node-backed package entrypoints. Avoid .cmd fallback
   // because it requires shell: true and breaks SDK stdio streaming.
   if (isWindows) {
     const exePaths: string[] = [
@@ -191,8 +202,8 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
       }
     }
 
-    const cliJsPaths = getNpmCliJsPaths();
-    for (const p of cliJsPaths) {
+    const packageEntrypointPaths = getNpmClaudeCodeEntrypointPaths();
+    for (const p of packageEntrypointPaths) {
       if (isExistingFile(p)) {
         return p;
       }
@@ -230,8 +241,8 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
   }
 
   if (!isWindows) {
-    const cliJsPaths = getNpmCliJsPaths();
-    for (const p of cliJsPaths) {
+    const packageEntrypointPaths = getNpmClaudeCodeEntrypointPaths();
+    for (const p of packageEntrypointPaths) {
       if (isExistingFile(p)) {
         return p;
       }

@@ -1,21 +1,28 @@
 import type { SpawnedProcess, SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
 
-import { findNodeExecutable } from '../../../utils/env';
+import { cliPathRequiresNode, findNodeExecutable } from '../../../utils/env';
 
 export function createCustomSpawnFunction(
   enhancedPath: string
 ): (options: SpawnOptions) => SpawnedProcess {
   return (options: SpawnOptions): SpawnedProcess => {
     let { command } = options;
-    const { args, cwd, env, signal } = options;
+    let { args } = options;
+    const { cwd, env, signal } = options;
     const shouldPipeStderr = !!env?.DEBUG_CLAUDE_AGENT_SDK;
 
-    // Resolve full path to avoid PATH lookup issues in GUI apps
-    if (command === 'node') {
+    // The SDK only routes some script extensions through `node`; normalize the
+    // remaining Node-backed paths here before Electron spawns with shell=false.
+    if (command === 'node' || cliPathRequiresNode(command)) {
       const nodeFullPath = findNodeExecutable(enhancedPath);
-      if (nodeFullPath) {
-        command = nodeFullPath;
+      if (command === 'node') {
+        if (nodeFullPath) {
+          command = nodeFullPath;
+        }
+      } else {
+        args = [command, ...args];
+        command = nodeFullPath ?? 'node';
       }
     }
 

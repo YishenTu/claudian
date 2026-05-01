@@ -286,7 +286,7 @@
     "cliPath": {
       "name": "Claude CLI 路徑",
       "desc": "Claude Code CLI 的自訂路徑。留空使用自動檢測。",
-      "descWindows": "對於原生安裝程式，使用 claude.exe。對於 npm/pnpm/yarn 或其他套件管理器安裝，使用 cli.js 路徑（不是 claude.cmd）。",
+      "descWindows": "對於原生安裝程式，使用 claude.exe。對於 npm/pnpm/yarn 或其他套件管理器安裝，使用 cli-wrapper.cjs 路徑（不是 claude.cmd）。",
       "descUnix": "貼上 \"which claude\" 的輸出 - 適用於原生安裝和 npm/pnpm/yarn 安裝。",
       "validation": {
         "notExist": "路徑不存在",

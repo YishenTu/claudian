@@ -286,7 +286,7 @@
     "cliPath": {
       "name": "Claude CLI 경로",
       "desc": "Claude Code CLI의 사용자 정의 경로. 비워두면 자동 감지 사용.",
-      "descWindows": "네이티브 설치 프로그램의 경우 claude.exe를 사용하세요. npm/pnpm/yarn 또는 기타 패키지 관리자 설치의 경우 cli.js 경로를 사용하세요 (claude.cmd가 아님).",
+      "descWindows": "네이티브 설치 프로그램의 경우 claude.exe를 사용하세요. npm/pnpm/yarn 또는 기타 패키지 관리자 설치의 경우 cli-wrapper.cjs 경로를 사용하세요 (claude.cmd가 아님).",
       "descUnix": "\"which claude\"의 출력을 붙여넣으세요 - 네이티브 및 npm/pnpm/yarn 설치 모두에서 작동합니다.",
       "validation": {
         "notExist": "경로가 존재하지 않습니다",

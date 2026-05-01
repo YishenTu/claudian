@@ -354,6 +354,19 @@ describe('ClaudeSettingsTab', () => {
     mockedStatSync.mockReturnValue({ isFile: () => true } as fs.Stats);
   });
 
+  it('uses the current npm package wrapper path as the CLI placeholder', () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+
+    const cliPathSetting = findSetting('settings.cliPath.name (host-a)');
+    const cliPathInput = cliPathSetting.textComponents[0];
+
+    expect(cliPathInput.placeholder).toContain('cli-wrapper.cjs');
+    expect(cliPathInput.placeholder).not.toContain('cli.js');
+  });
+
   it('does not switch the active model while the custom models textarea is mid-edit', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);

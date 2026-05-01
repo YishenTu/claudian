@@ -720,6 +720,7 @@ describe('cliPathRequiresNode', () => {
   it('is case-insensitive', () => {
     expect(cliPathRequiresNode('/path/to/CLI.JS')).toBe(true);
     expect(cliPathRequiresNode('/path/to/cli.MJS')).toBe(true);
+    expect(cliPathRequiresNode('/path/to/cli-wrapper.CJS')).toBe(true);
   });
 });
 

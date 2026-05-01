@@ -58,6 +58,53 @@ describe('createCustomSpawnFunction', () => {
     expect(result).toBe(mockProcess);
   });
 
+  it('launches Node-backed script commands through node when SDK passes them directly', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const findNodeExecutable = jest
+      .spyOn(env, 'findNodeExecutable')
+      .mockReturnValue('/custom/node');
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    const signal = new AbortController().signal;
+    spawnFn({
+      command: '/npm/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs',
+      args: ['--output-format', 'stream-json'],
+      cwd: '/tmp',
+      env: {},
+      signal,
+    });
+
+    expect(findNodeExecutable).toHaveBeenCalledWith('/enhanced/path');
+    expect(spawnMock).toHaveBeenCalledWith(
+      '/custom/node',
+      ['/npm/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs', '--output-format', 'stream-json'],
+      expect.objectContaining({ cwd: '/tmp' })
+    );
+  });
+
+  it('falls back to node command for Node-backed scripts when node path resolution fails', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    jest.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    spawnFn({
+      command: '/npm/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs',
+      args: ['--output-format', 'stream-json'],
+      cwd: '/tmp',
+      env: {},
+    } as SpawnOptions);
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      'node',
+      ['/npm/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs', '--output-format', 'stream-json'],
+      expect.any(Object)
+    );
+  });
+
   it('pipes stderr only when DEBUG_CLAUDE_AGENT_SDK is set', () => {
     const mockProcess = createMockProcess();
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);

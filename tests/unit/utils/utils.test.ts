@@ -499,11 +499,11 @@ describe('utils.ts', () => {
         expect(findClaudeCLIPath()).toBeNull();
       });
 
-      it('should check cli.js paths as fallback on Unix', () => {
+      it('should check cli-wrapper.cjs paths as fallback on Unix', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
-        mockExistingFile('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js');
+        mockExistingFile('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs');
 
-        expect(findClaudeCLIPath()).toBe('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js');
+        expect(findClaudeCLIPath()).toBe('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs');
       });
 
       it('should resolve Claude CLI from custom PATH', () => {
@@ -549,37 +549,35 @@ describe('utils.ts', () => {
         }) as fsType.Stats);
       }
 
-      it('should prefer .exe when both .exe and cli.js exist', () => {
+      it('should prefer .exe when both .exe and cli-wrapper.cjs exist', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         const exePath = path.join('C:\\Users\\test', '.claude', 'local', 'claude.exe');
-        const cliJsPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
-        mockExistingFile(exePath, cliJsPath);
+        const cliWrapperPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs');
+        mockExistingFile(exePath, cliWrapperPath);
 
         expect(findClaudeCLIPath()).toBe(exePath);
       });
 
-      it('should prioritize cli.js over .cmd files on Windows', () => {
+      it('should prioritize cli-wrapper.cjs over .cmd files on Windows', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         // Note: path.join uses actual platform separator, so we match against that
-        const cliJsPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+        const cliWrapperPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs');
         const cmdPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'claude.cmd');
-        // Both .cmd and cli.js exist, but cli.js should be returned (cmd is ignored entirely)
-        mockExistingFile(cmdPath, cliJsPath);
+        mockExistingFile(cmdPath, cliWrapperPath);
 
-        // Should return cli.js, not claude.cmd
-        expect(findClaudeCLIPath()).toBe(cliJsPath);
+        expect(findClaudeCLIPath()).toBe(cliWrapperPath);
       });
 
-      it('should find cli.js in custom npm global path via npm_config_prefix', () => {
+      it('should find cli-wrapper.cjs in custom npm global path via npm_config_prefix', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         process.env.npm_config_prefix = 'D:\\nodejs\\node_global';
-        const expectedPath = path.join('D:\\nodejs\\node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+        const expectedPath = path.join('D:\\nodejs\\node_global', 'node_modules', '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs');
         mockExistingFile(expectedPath);
 
         expect(findClaudeCLIPath()).toBe(expectedPath);
       });
 
-      it('should fall back to .exe if cli.js not found', () => {
+      it('should fall back to .exe if package entrypoint is not found', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         const expectedPath = path.join('C:\\Users\\test', '.claude', 'local', 'claude.exe');
         mockExistingFile(expectedPath);
@@ -602,13 +600,13 @@ describe('utils.ts', () => {
         expect(findClaudeCLIPath()).toBeNull();
       });
 
-      it('should resolve cli.js from custom PATH npm prefix', () => {
+      it('should resolve cli-wrapper.cjs from custom PATH npm prefix', () => {
         const npmBin = 'C:\\Users\\test\\AppData\\Roaming\\npm';
-        const cliJsPath = path.join(npmBin, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
-        mockExistingFile(cliJsPath);
+        const cliWrapperPath = path.join(npmBin, 'node_modules', '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs');
+        mockExistingFile(cliWrapperPath);
 
         const customPath = `${npmBin};C:\\Windows\\System32`;
-        expect(findClaudeCLIPath(customPath)).toBe(cliJsPath);
+        expect(findClaudeCLIPath(customPath)).toBe(cliWrapperPath);
       });
 
       it('should not return a directory path even if it exists', () => {

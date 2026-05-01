@@ -101,15 +101,15 @@ npm run build
 
 If you encounter `spawn claude ENOENT` or `Claude CLI not found`, the plugin can't auto-detect your Claude installation. Common with Node version managers (nvm, fnm, volta).
 
-**Solution**: Find your CLI path and set it in Settings → Advanced → Claude CLI path.
+**Solution**: Leave the setting empty first so Claudian can auto-detect Claude Code. If auto-detection fails, find your CLI path and set it in Settings → Advanced → Claude CLI path.
 
 | Platform | Command | Example Path |
 |----------|---------|--------------|
 | macOS/Linux | `which claude` | `/Users/you/.volta/bin/claude` |
 | Windows (native) | `where.exe claude` | `C:\Users\you\AppData\Local\Claude\claude.exe` |
-| Windows (npm) | `npm root -g` | `{root}\@anthropic-ai\claude-code\cli.js` |
+| Windows (npm) | `npm root -g` | `{root}\@anthropic-ai\claude-code\cli-wrapper.cjs` |
 
-> **Note**: On Windows, avoid `.cmd` wrappers. Use `claude.exe` or `cli.js`.
+> **Note**: On Windows, avoid `.cmd` and `.ps1` wrappers. Use `claude.exe` for native installs, or `cli-wrapper.cjs` for package-manager installs. `cli.js` is only a legacy fallback for older Claude Code npm packages.
 
 **Alternative**: Add your Node.js bin directory to PATH in Settings → Environment → Custom variables.
 

@@ -127,8 +127,8 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     cliPathSetting.addText((text) => {
       const placeholder = process.platform === 'win32'
-        ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli.js'
-        : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js';
+        ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli-wrapper.cjs'
+        : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs';
 
       text
         .setPlaceholder(placeholder)

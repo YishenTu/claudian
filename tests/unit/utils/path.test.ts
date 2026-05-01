@@ -450,21 +450,38 @@ describe('findClaudeCLIPath', () => {
     expect(result).toBe(commonPath);
   });
 
-  it('falls back to npm cli.js paths when binary not found', () => {
-    const cliJsPath = path.join(
+  it('falls back to npm cli-wrapper.cjs paths when binary not found', () => {
+    const cliWrapperPath = path.join(
+      os.homedir(), '.npm-global', 'lib', 'node_modules',
+      '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs'
+    );
+
+    jest.spyOn(fs, 'existsSync').mockImplementation(
+      p => String(p) === cliWrapperPath
+    );
+    jest.spyOn(fs, 'statSync').mockImplementation(
+      p => ({ isFile: () => String(p) === cliWrapperPath }) as fsType.Stats
+    );
+
+    const result = findClaudeCLIPath();
+    expect(result).toBe(cliWrapperPath);
+  });
+
+  it('keeps legacy npm cli.js fallback when cli-wrapper.cjs is absent', () => {
+    const legacyCliPath = path.join(
       os.homedir(), '.npm-global', 'lib', 'node_modules',
       '@anthropic-ai', 'claude-code', 'cli.js'
     );
 
     jest.spyOn(fs, 'existsSync').mockImplementation(
-      p => String(p) === cliJsPath
+      p => String(p) === legacyCliPath
     );
     jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === cliJsPath }) as fsType.Stats
+      p => ({ isFile: () => String(p) === legacyCliPath }) as fsType.Stats
     );
 
     const result = findClaudeCLIPath();
-    expect(result).toBe(cliJsPath);
+    expect(result).toBe(legacyCliPath);
   });
 
   it('falls back to PATH environment when common and npm paths fail', () => {

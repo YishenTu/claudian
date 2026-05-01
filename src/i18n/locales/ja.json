@@ -286,7 +286,7 @@
     "cliPath": {
       "name": "Claude CLI パス",
       "desc": "Claude Code CLI のカスタムパス。空欄で自動検出を使用。",
-      "descWindows": "ネイティブインストーラーの場合は claude.exe を使用。npm/pnpm/yarn やその他のパッケージマネージャーでのインストールの場合は cli.js パスを使用（claude.cmd ではない）。",
+      "descWindows": "ネイティブインストーラーの場合は claude.exe を使用。npm/pnpm/yarn やその他のパッケージマネージャーでのインストールの場合は cli-wrapper.cjs パスを使用（claude.cmd ではない）。",
       "descUnix": "\"which claude\" の出力を貼り付けてください - ネイティブと npm/pnpm/yarn インストールの両方で動作します。",
       "validation": {
         "notExist": "パスが存在しません",
