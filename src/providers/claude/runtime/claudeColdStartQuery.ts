@@ -6,7 +6,10 @@ import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { extractAssistantText } from '../auxiliary/extractAssistantText';
-import { getClaudeProviderSettings } from '../settings';
+import {
+  getClaudeProviderSettings,
+  resolveClaudeSettingSources,
+} from '../settings';
 import {
   resolveAdaptiveEffortLevel,
   resolveThinkingTokens,
@@ -88,9 +91,7 @@ export async function runColdStartQuery(
     },
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
-    settingSources: claudeSettings.loadUserSettings
-      ? ['user', 'project']
-      : ['project'],
+    settingSources: resolveClaudeSettingSources(claudeSettings.loadUserSettings),
     spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
   };
 

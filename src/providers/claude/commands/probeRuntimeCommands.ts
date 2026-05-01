@@ -6,7 +6,10 @@ import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
-import { getClaudeProviderSettings } from '../settings';
+import {
+  getClaudeProviderSettings,
+  resolveClaudeSettingSources,
+} from '../settings';
 
 function mapSdkCommands(sdkCommands: SDKSlashCommand[]): SlashCommand[] {
   return sdkCommands.map((cmd) => ({
@@ -58,7 +61,7 @@ export async function probeRuntimeCommands(plugin: ClaudianPlugin): Promise<Slas
         env: { ...process.env, ...customEnv, PATH: enhancedPath },
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
-        settingSources: claudeSettings.loadUserSettings ? ['user', 'project'] : ['project'],
+        settingSources: resolveClaudeSettingSources(claudeSettings.loadUserSettings),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
         persistSession: false,

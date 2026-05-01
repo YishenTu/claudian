@@ -15,6 +15,7 @@ import type { ClaudianSettings, PermissionMode } from '../../../core/types/setti
 import {
   type ClaudeSafeMode,
   getClaudeProviderSettings,
+  resolveClaudeSettingSources,
 } from '../settings';
 import {
   resolveAdaptiveEffortLevel,
@@ -110,6 +111,8 @@ export class QueryOptionsBuilder {
     const disallowedToolsKey = ctx.mcpManager.getAllDisallowedMcpTools().join('|');
     const pluginsKey = ctx.pluginManager.getPluginsKey();
 
+    const settingSources = resolveClaudeSettingSources(claudeSettings.loadUserSettings);
+
     return {
       model: ctx.settings.model,
       thinkingTokens: resolveThinkingTokens(ctx.settings.model, ctx.settings.thinkingBudget),
@@ -121,7 +124,7 @@ export class QueryOptionsBuilder {
       mcpServersKey: '', // Dynamic via setMcpServers, not tracked for restart
       pluginsKey,
       externalContextPaths: externalContextPaths || [],
-      settingSources: claudeSettings.loadUserSettings ? 'user,project' : 'project',
+      settingSources: settingSources.join(','),
       claudeCliPath: ctx.cliPath,
       enableChrome: claudeSettings.enableChrome,
       enableAutoMode: claudeSettings.safeMode === 'auto',
@@ -275,7 +278,7 @@ export class QueryOptionsBuilder {
       model,
       abortController,
       pathToClaudeCodeExecutable: ctx.cliPath,
-      settingSources: claudeSettings.loadUserSettings ? ['user', 'project'] : ['project'],
+      settingSources: resolveClaudeSettingSources(claudeSettings.loadUserSettings),
       env: {
         ...process.env,
         ...ctx.customEnv,

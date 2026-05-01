@@ -54,7 +54,7 @@ describe('probeRuntimeCommands', () => {
       content: '',
       source: 'sdk',
     }]);
-    expect(sdkMock.getLastOptions()?.settingSources).toEqual(['project']);
+    expect(sdkMock.getLastOptions()?.settingSources).toEqual(['project', 'local']);
   });
 
   it('includes user settings in the probe when the runtime would include them', async () => {
@@ -69,7 +69,7 @@ describe('probeRuntimeCommands', () => {
     }));
 
     const options = sdkMock.getLastOptions();
-    expect(options?.settingSources).toEqual(['user', 'project']);
+    expect(options?.settingSources).toEqual(['user', 'project', 'local']);
     expect(options?.extraArgs).toEqual({ chrome: null });
   });
 

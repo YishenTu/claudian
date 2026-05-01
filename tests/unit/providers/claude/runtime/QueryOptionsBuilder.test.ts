@@ -74,7 +74,7 @@ function createMockPersistentQueryConfig(
     mcpServersKey: '',
     pluginsKey: '',
     externalContextPaths: [],
-    settingSources: 'project',
+    settingSources: 'project,local',
     claudeCliPath: '/mock/claude',
     enableChrome: false,
     enableAutoMode: false,
@@ -128,7 +128,7 @@ describe('QueryOptionsBuilder', () => {
 
     it('returns true when settingSources changes', () => {
       const currentConfig = createMockPersistentQueryConfig();
-      const newConfig = { ...currentConfig, settingSources: 'user,project' };
+      const newConfig = { ...currentConfig, settingSources: 'user,project,local' };
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
     });
 
@@ -203,7 +203,7 @@ describe('QueryOptionsBuilder', () => {
       expect(config.thinkingTokens).toBeNull();
       expect(config.permissionMode).toBe('yolo');
       expect(config.sdkPermissionMode).toBe('bypassPermissions');
-      expect(config.settingSources).toBe('project');
+      expect(config.settingSources).toBe('project,local');
       expect(config.claudeCliPath).toBe('/mock/claude');
     });
 
@@ -294,13 +294,13 @@ describe('QueryOptionsBuilder', () => {
       expect(config.enableChrome).toBe(true);
     });
 
-    it('sets settingSources to user,project when loadUserClaudeSettings is true', () => {
+    it('sets settingSources to user,project,local when loadUserClaudeSettings is true', () => {
       const ctx = createMockContext({
         settings: createMockSettings({ loadUserClaudeSettings: true }),
       });
       const config = QueryOptionsBuilder.buildPersistentQueryConfig(ctx);
 
-      expect(config.settingSources).toBe('user,project');
+      expect(config.settingSources).toBe('user,project,local');
     });
   });
 

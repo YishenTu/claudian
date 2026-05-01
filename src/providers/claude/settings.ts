@@ -4,6 +4,7 @@ import type { HostnameCliPaths } from '../../core/types/settings';
 
 export const CLAUDE_SAFE_MODES = ['acceptEdits', 'auto', 'default'] as const;
 export type ClaudeSafeMode = typeof CLAUDE_SAFE_MODES[number];
+export type ClaudeSettingSource = 'user' | 'project' | 'local';
 
 export interface ClaudeProviderSettings {
   safeMode: ClaudeSafeMode;
@@ -95,6 +96,14 @@ export function getClaudeProviderSettings(
       ?? (settings.lastEnvHash as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentHash,
   };
+}
+
+export function resolveClaudeSettingSources(
+  loadUserSettings: boolean,
+): ClaudeSettingSource[] {
+  return loadUserSettings
+    ? ['user', 'project', 'local']
+    : ['project', 'local'];
 }
 
 export function updateClaudeProviderSettings(

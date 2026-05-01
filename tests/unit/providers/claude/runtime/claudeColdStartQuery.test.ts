@@ -216,6 +216,42 @@ describe('runColdStartQuery', () => {
       expect(opts?.model).toBe('claude-sonnet-4-5');
     });
 
+    it('loads project and local settings when user settings are disabled', async () => {
+      sdkMock.setMockMessages([]);
+
+      await runColdStartQuery(
+        createConfig({
+          providerSettings: {
+            model: 'claude-sonnet-4-5',
+            thinkingBudget: 'off',
+            effortLevel: 'medium',
+            loadUserClaudeSettings: false,
+          },
+        }),
+        'hi',
+      );
+
+      expect(sdkMock.getLastOptions()?.settingSources).toEqual(['project', 'local']);
+    });
+
+    it('loads user, project, and local settings when user settings are enabled', async () => {
+      sdkMock.setMockMessages([]);
+
+      await runColdStartQuery(
+        createConfig({
+          providerSettings: {
+            model: 'claude-sonnet-4-5',
+            thinkingBudget: 'off',
+            effortLevel: 'medium',
+            loadUserClaudeSettings: true,
+          },
+        }),
+        'hi',
+      );
+
+      expect(sdkMock.getLastOptions()?.settingSources).toEqual(['user', 'project', 'local']);
+    });
+
     it('clamps unsupported xhigh effort before calling the SDK', async () => {
       sdkMock.setMockMessages([]);
 
