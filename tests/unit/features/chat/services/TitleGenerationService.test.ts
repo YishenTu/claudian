@@ -300,7 +300,7 @@ describe('TitleGenerationService', () => {
       await service.generateTitle('conv-123', 'test', callback);
 
       const options = getLastOptions();
-      expect(options?.settingSources).toEqual(['project']);
+      expect(options?.settingSources).toEqual(['project', 'local']);
     });
 
     it('should set settingSources to include user when loadUserClaudeSettings is true', async () => {
@@ -321,7 +321,7 @@ describe('TitleGenerationService', () => {
       await service.generateTitle('conv-123', 'test', callback);
 
       const options = getLastOptions();
-      expect(options?.settingSources).toEqual(['user', 'project']);
+      expect(options?.settingSources).toEqual(['user', 'project', 'local']);
     });
 
     it('should truncate long user messages', async () => {

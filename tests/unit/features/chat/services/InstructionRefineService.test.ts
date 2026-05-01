@@ -79,7 +79,7 @@ describe('InstructionRefineService', () => {
       await service.refineInstruction('be concise', '');
 
       const options = getLastOptions();
-      expect(options?.settingSources).toEqual(['project']);
+      expect(options?.settingSources).toEqual(['project', 'local']);
     });
 
     it('should set settingSources to include user when loadUserClaudeSettings is true', async () => {
@@ -98,7 +98,7 @@ describe('InstructionRefineService', () => {
       await service.refineInstruction('be concise', '');
 
       const options = getLastOptions();
-      expect(options?.settingSources).toEqual(['user', 'project']);
+      expect(options?.settingSources).toEqual(['user', 'project', 'local']);
     });
 
     it('should include existing instructions and allow markdown blocks', async () => {
