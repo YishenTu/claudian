@@ -279,6 +279,10 @@
       "name": "Desplazamiento automático durante streaming",
       "desc": "Desplazarse automáticamente hacia abajo mientras Claude transmite respuestas. Desactivar para quedarse arriba y leer desde el principio."
     },
+    "deferMathRenderingDuringStreaming": {
+      "name": "Diferir renderizado matemático durante streaming",
+      "desc": "Mostrar LaTeX sin procesar mientras se transmite la respuesta y renderizar las fórmulas una vez al completar cada bloque de texto."
+    },
     "openInMainTab": {
       "name": "Abrir en área de editor principal",
       "desc": "Abrir el panel de chat como una pestaña principal en el área de editor central en lugar de la barra lateral derecha"

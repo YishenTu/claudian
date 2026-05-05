@@ -279,6 +279,10 @@
       "name": "Auto-scroll during streaming",
       "desc": "Automatically scroll to the bottom as Claude streams responses. Disable to stay at the top and read from the beginning."
     },
+    "deferMathRenderingDuringStreaming": {
+      "name": "Defer math rendering during streaming",
+      "desc": "Show raw LaTeX while responses stream, then render math once when each text block completes."
+    },
     "openInMainTab": {
       "name": "Open in main editor area",
       "desc": "Open chat panel as a main tab in the center editor area instead of the right sidebar"

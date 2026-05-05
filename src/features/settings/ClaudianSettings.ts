@@ -254,6 +254,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(container)
+      .setName(t('settings.deferMathRenderingDuringStreaming.name'))
+      .setDesc(t('settings.deferMathRenderingDuringStreaming.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.deferMathRenderingDuringStreaming ?? true)
+          .onChange(async (value) => {
+            this.plugin.settings.deferMathRenderingDuringStreaming = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // --- Conversations ---
 
     new Setting(container).setName(t('settings.conversations')).setHeading();

@@ -14,6 +14,7 @@ import type ClaudianPlugin from '../../../main';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
+import { escapeMathDelimitersForStreaming } from '../../../utils/markdownMath';
 import { findRewindContext } from '../rewind';
 import { resolveSubagentLifecycleAdapter } from './subagentLifecycleResolution';
 import {
@@ -24,7 +25,15 @@ import { renderStoredThinkingBlock } from './ThinkingBlockRenderer';
 import { renderStoredToolCall } from './ToolCallRenderer';
 import { renderStoredWriteEdit } from './WriteEditRenderer';
 
-export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
+export interface RenderContentOptions {
+  deferMath?: boolean;
+}
+
+export type RenderContentFn = (
+  el: HTMLElement,
+  markdown: string,
+  options?: RenderContentOptions
+) => Promise<void>;
 
 export class MessageRenderer {
   private app: App;
@@ -577,13 +586,20 @@ export class MessageRenderer {
   /**
    * Renders markdown content with code block enhancements.
    */
-  async renderContent(el: HTMLElement, markdown: string): Promise<void> {
+  async renderContent(
+    el: HTMLElement,
+    markdown: string,
+    options?: RenderContentOptions
+  ): Promise<void> {
     el.empty();
 
     try {
+      const renderMarkdown = options?.deferMath
+        ? escapeMathDelimitersForStreaming(markdown)
+        : markdown;
       // Normalize embeds before MarkdownRenderer consumes them.
       const processedMarkdown = replaceImageEmbedsWithHtml(
-        markdown,
+        renderMarkdown,
         this.app,
         this.plugin.settings.mediaFolder
       );

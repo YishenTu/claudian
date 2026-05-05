@@ -1074,6 +1074,25 @@ describe('MessageRenderer', () => {
     expect(processFileLinks).not.toHaveBeenCalled();
   });
 
+  it('renderContent escapes math delimiters only when requested for streaming', async () => {
+    const { MarkdownRenderer } = await import('obsidian');
+    const { renderer } = createRenderer();
+    const el = createMockEl();
+
+    await renderer.renderContent(
+      el,
+      'Live $x + y$ and `echo $PATH`',
+      { deferMath: true }
+    );
+
+    expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalledWith(
+      'Live \\$x + y\\$ and `echo $PATH`',
+      el,
+      '',
+      expect.anything()
+    );
+  });
+
   // ============================================
   // addTextCopyButton - click behavior
   // ============================================

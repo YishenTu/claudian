@@ -221,6 +221,8 @@ export type TranslationKey =
   | 'settings.tabBarPosition.header'
   | 'settings.enableAutoScroll.name'
   | 'settings.enableAutoScroll.desc'
+  | 'settings.deferMathRenderingDuringStreaming.name'
+  | 'settings.deferMathRenderingDuringStreaming.desc'
   | 'settings.openInMainTab.name'
   | 'settings.openInMainTab.desc'
   | 'settings.cliPath.name'

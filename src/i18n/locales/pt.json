@@ -279,6 +279,10 @@
       "name": "Rolagem automática durante streaming",
       "desc": "Rolar automaticamente para baixo enquanto o Claude transmite respostas. Desativar para ficar no topo e ler desde o início."
     },
+    "deferMathRenderingDuringStreaming": {
+      "name": "Adiar renderização matemática durante streaming",
+      "desc": "Mostrar LaTeX bruto enquanto a resposta é transmitida e renderizar a matemática uma vez quando cada bloco de texto terminar."
+    },
     "openInMainTab": {
       "name": "Abrir na área do editor principal",
       "desc": "Abrir o painel de chat como uma aba principal na área do editor central em vez da barra lateral direita"

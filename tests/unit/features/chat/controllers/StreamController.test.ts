@@ -210,6 +210,36 @@ describe('StreamController - Text Content', () => {
       );
     });
 
+    it('should defer math rendering during live text renders', async () => {
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.appendText('Euler: $e^{i\\pi} + 1 = 0$');
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        deps.state.currentTextEl,
+        'Euler: $e^{i\\pi} + 1 = 0$',
+        { deferMath: true }
+      );
+    });
+
+    it('should honor disabled deferred math rendering setting during live text renders', async () => {
+      (deps.plugin.settings as any).deferMathRenderingDuringStreaming = false;
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.appendText('Euler: $e^{i\\pi} + 1 = 0$');
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        deps.state.currentTextEl,
+        'Euler: $e^{i\\pi} + 1 = 0$'
+      );
+    });
+
     it('should flush a pending text render before finalizing text', async () => {
       const msg = createTestMessage();
 
@@ -228,6 +258,29 @@ describe('StreamController - Text Content', () => {
         type: 'text',
         content: 'Hello',
       });
+    });
+
+    it('should render original math once when finalizing a deferred text block', async () => {
+      const msg = createTestMessage();
+
+      await controller.appendText('Final $x^2$');
+      await controller.finalizeCurrentTextBlock(msg);
+
+      expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        'Final $x^2$',
+        { deferMath: true }
+      );
+      expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        'Final $x^2$'
+      );
+      expect(deps.renderer.addTextCopyButton).toHaveBeenCalledWith(
+        expect.anything(),
+        'Final $x^2$'
+      );
     });
   });
 
@@ -1250,6 +1303,61 @@ describe('StreamController - Text Content', () => {
 
       expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
       expect(deps.renderer.renderContent).toHaveBeenCalledWith(contentEl, 'Let me think');
+    });
+
+    it('should defer math rendering during live thinking renders', async () => {
+      const { createThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
+      const msg = createTestMessage();
+      const contentEl = createMockEl();
+      createThinkingBlock.mockReturnValueOnce({
+        wrapperEl: createMockEl(),
+        contentEl,
+        labelEl: createMockEl(),
+        content: '',
+        startTime: Date.now(),
+      });
+
+      await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning $x^2$' }, msg);
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        contentEl,
+        'Reasoning $x^2$',
+        { deferMath: true }
+      );
+    });
+
+    it('should render original math once when finalizing a deferred thinking block', async () => {
+      const { createThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
+      const msg = createTestMessage();
+      const contentEl = createMockEl();
+      createThinkingBlock.mockReturnValueOnce({
+        wrapperEl: createMockEl(),
+        contentEl,
+        labelEl: createMockEl(),
+        content: '',
+        startTime: Date.now(),
+      });
+
+      await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning $x^2$' }, msg);
+      await controller.finalizeCurrentThinkingBlock(msg);
+
+      expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
+        1,
+        contentEl,
+        'Reasoning $x^2$',
+        { deferMath: true }
+      );
+      expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
+        2,
+        contentEl,
+        'Reasoning $x^2$'
+      );
+      expect(msg.contentBlocks).toContainEqual(
+        expect.objectContaining({ type: 'thinking', content: 'Reasoning $x^2$' })
+      );
     });
 
     it('should flush a pending thinking render before finalizing', async () => {
