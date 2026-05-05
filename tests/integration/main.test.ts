@@ -533,6 +533,19 @@ describe('ClaudianPlugin', () => {
       expect(command.checkCallback(true)).toBe(false);
     });
 
+    it('keeps tab commands unavailable while a Claudian leaf view is not initialized', async () => {
+      await plugin.onload();
+
+      mockApp.workspace.getLeavesOfType.mockReturnValue([{ view: {} }]);
+
+      for (const commandId of ['new-tab', 'new-session', 'close-current-tab']) {
+        const command = getRegisteredCommand(commandId);
+
+        expect(() => command.checkCallback(true)).not.toThrow();
+        expect(command.checkCallback(true)).toBe(false);
+      }
+    });
+
     it('stays unavailable when reopening the persisted layout would already hit the tab limit', async () => {
       (plugin.loadData as jest.Mock).mockResolvedValue({
         tabManagerState: {
