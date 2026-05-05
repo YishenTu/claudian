@@ -536,16 +536,14 @@ export class CodexChatRuntime implements ChatRuntime {
           threadPath ?? transcriptSessionFilePath,
         );
 
-        const collaborationMode = isPlanMode
-          ? {
-              mode: 'plan' as const,
-              settings: {
-                model: resolvedModel,
-                reasoning_effort: effort,
-                developer_instructions: null,
-              },
-            }
-          : undefined;
+        const collaborationMode = {
+          mode: isPlanMode ? 'plan' as const : 'default' as const,
+          settings: {
+            model: resolvedModel,
+            reasoning_effort: effort,
+            developer_instructions: null,
+          },
+        };
 
         const summary = getEffectiveCodexReasoningSummary(providerSettings, resolvedModel);
         const serviceTier = resolveCodexServiceTier(providerSettings.serviceTier, resolvedModel);
@@ -563,7 +561,7 @@ export class CodexChatRuntime implements ChatRuntime {
           effort,
           summary,
           sandboxPolicy,
-          ...(collaborationMode ? { collaborationMode } : {}),
+          collaborationMode,
         });
         this.currentTurnId = turnResult.turn.id;
         this.recordTurnMetadata({

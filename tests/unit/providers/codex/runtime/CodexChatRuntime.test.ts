@@ -1795,7 +1795,7 @@ describe('CodexChatRuntime', () => {
       rt.cleanup();
     });
 
-    it('does not include collaborationMode when permissionMode is normal', async () => {
+    it('includes default collaborationMode when permissionMode is normal', async () => {
       const plugin = createMockPlugin({ permissionMode: 'normal' });
       const rt = new CodexChatRuntime(plugin);
       captureHandlers();
@@ -1805,12 +1805,19 @@ describe('CodexChatRuntime', () => {
 
       const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeDefined();
-      expect(turnStartCall[1].collaborationMode).toBeUndefined();
+      expect(turnStartCall[1].collaborationMode).toEqual({
+        mode: 'default',
+        settings: {
+          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          reasoning_effort: 'medium',
+          developer_instructions: null,
+        },
+      });
 
       rt.cleanup();
     });
 
-    it('does not include collaborationMode when permissionMode is yolo', async () => {
+    it('includes default collaborationMode when permissionMode is yolo', async () => {
       const plugin = createMockPlugin({ permissionMode: 'yolo' });
       const rt = new CodexChatRuntime(plugin);
       captureHandlers();
@@ -1820,7 +1827,49 @@ describe('CodexChatRuntime', () => {
 
       const turnStartCall = findCall('turn/start');
       expect(turnStartCall).toBeDefined();
-      expect(turnStartCall[1].collaborationMode).toBeUndefined();
+      expect(turnStartCall[1].collaborationMode).toEqual({
+        mode: 'default',
+        settings: {
+          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          reasoning_effort: 'medium',
+          developer_instructions: null,
+        },
+      });
+
+      rt.cleanup();
+    });
+
+    it('sends default collaborationMode after switching out of plan mode on the same thread', async () => {
+      const plugin = createMockPlugin({ permissionMode: 'plan' });
+      const rt = new CodexChatRuntime(plugin);
+      captureHandlers();
+      setupDefaultRequestMock();
+
+      await collectChunks(rt.query(createTurn('plan this')));
+
+      plugin.settings.permissionMode = 'normal';
+      await collectChunks(rt.query(createTurn('now edit')));
+
+      const turnStartCalls = mockTransportRequest.mock.calls.filter(
+        (call: any[]) => call[0] === 'turn/start',
+      );
+      expect(turnStartCalls).toHaveLength(2);
+      expect(turnStartCalls[0][1].collaborationMode).toEqual({
+        mode: 'plan',
+        settings: {
+          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          reasoning_effort: 'medium',
+          developer_instructions: null,
+        },
+      });
+      expect(turnStartCalls[1][1].collaborationMode).toEqual({
+        mode: 'default',
+        settings: {
+          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          reasoning_effort: 'medium',
+          developer_instructions: null,
+        },
+      });
 
       rt.cleanup();
     });
