@@ -279,9 +279,12 @@
       "name": "Auto-scroll during streaming",
       "desc": "Automatically scroll to the bottom as Claude streams responses. Disable to stay at the top and read from the beginning."
     },
-    "openInMainTab": {
-      "name": "Open in main editor area",
-      "desc": "Open chat panel as a main tab in the center editor area instead of the right sidebar"
+    "chatViewPlacement": {
+      "name": "Open Claudian in",
+      "desc": "Choose where the chat panel opens when it is created",
+      "rightSidebar": "Right sidebar",
+      "leftSidebar": "Left sidebar",
+      "mainTab": "Main editor tab"
     },
     "cliPath": {
       "name": "Claude CLI path",

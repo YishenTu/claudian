@@ -279,9 +279,12 @@
       "name": "Automatisches Scrollen während Streaming",
       "desc": "Automatisch nach unten scrollen, während Claude Antworten streamt. Deaktivieren, um oben zu bleiben und von Anfang an zu lesen."
     },
-    "openInMainTab": {
-      "name": "Im Haupteditorbereich öffnen",
-      "desc": "Chat-Panel als Haupttab im zentralen Editorbereich statt in der rechten Seitenleiste öffnen"
+    "chatViewPlacement": {
+      "name": "Claudian öffnen in",
+      "desc": "Wählen Sie, wo das Chat-Panel beim Erstellen geöffnet wird",
+      "rightSidebar": "Rechte Seitenleiste",
+      "leftSidebar": "Linke Seitenleiste",
+      "mainTab": "Haupteditor-Tab"
     },
     "cliPath": {
       "name": "Claude CLI-Pfad",

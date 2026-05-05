@@ -279,9 +279,12 @@
       "name": "Rolagem automática durante streaming",
       "desc": "Rolar automaticamente para baixo enquanto o Claude transmite respostas. Desativar para ficar no topo e ler desde o início."
     },
-    "openInMainTab": {
-      "name": "Abrir na área do editor principal",
-      "desc": "Abrir o painel de chat como uma aba principal na área do editor central em vez da barra lateral direita"
+    "chatViewPlacement": {
+      "name": "Abrir Claudian em",
+      "desc": "Escolha onde o painel de chat abre quando é criado",
+      "rightSidebar": "Barra lateral direita",
+      "leftSidebar": "Barra lateral esquerda",
+      "mainTab": "Aba do editor principal"
     },
     "cliPath": {
       "name": "Caminho CLI Claude",

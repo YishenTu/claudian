@@ -55,6 +55,15 @@ export interface KeyboardNavigationSettings {
 /** Tab bar position setting. */
 export type TabBarPosition = 'input' | 'header';
 
+export const CHAT_VIEW_PLACEMENTS = [
+  'right-sidebar',
+  'left-sidebar',
+  'main-tab',
+] as const;
+
+/** Workspace location used when opening the Claudian chat view. */
+export type ChatViewPlacement = typeof CHAT_VIEW_PLACEMENTS[number];
+
 /** Result from instruction refinement agent query. */
 export interface InstructionRefineResult {
   success: boolean;
@@ -132,7 +141,7 @@ export interface ClaudianSettings {
   maxTabs: number;
   tabBarPosition: TabBarPosition;
   enableAutoScroll: boolean;
-  openInMainTab: boolean;
+  chatViewPlacement: ChatViewPlacement;
 
   // Provider command visibility
   hiddenProviderCommands: HiddenProviderCommands;

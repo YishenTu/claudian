@@ -87,6 +87,47 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.thinkingBudget).toBe(DEFAULT_SETTINGS.thinkingBudget);
     });
 
+    it('migrates legacy openInMainTab true to main-tab placement', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        openInMainTab: true,
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.chatViewPlacement).toBe('main-tab');
+      expect(writtenContent.chatViewPlacement).toBe('main-tab');
+      expect(writtenContent).not.toHaveProperty('openInMainTab');
+    });
+
+    it('migrates legacy openInMainTab false to right-sidebar placement', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        openInMainTab: false,
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.chatViewPlacement).toBe('right-sidebar');
+      expect(writtenContent.chatViewPlacement).toBe('right-sidebar');
+      expect(writtenContent).not.toHaveProperty('openInMainTab');
+    });
+
+    it('normalizes invalid chatViewPlacement values', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        chatViewPlacement: 'floating-window',
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.chatViewPlacement).toBe('right-sidebar');
+      expect(writtenContent.chatViewPlacement).toBe('right-sidebar');
+    });
+
     it('should strip legacy blocklist fields from loaded data', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
