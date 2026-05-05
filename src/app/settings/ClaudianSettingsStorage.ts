@@ -12,12 +12,14 @@ import {
   resolveEnvironmentSnippetScope,
 } from '../../core/providers/providerEnvironment';
 import type { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
-import type {
-  ClaudianSettings,
-  EnvironmentScope,
-  EnvSnippet,
-  HiddenProviderCommands,
-  ProviderConfigMap,
+import {
+  CHAT_VIEW_PLACEMENTS,
+  type ChatViewPlacement,
+  type ClaudianSettings,
+  type EnvironmentScope,
+  type EnvSnippet,
+  type HiddenProviderCommands,
+  type ProviderConfigMap,
 } from '../../core/types/settings';
 import {
   getClaudeProviderSettings,
@@ -83,9 +85,41 @@ function stripLegacyFields(settings: Record<string, unknown>): Record<string, un
     environmentVariables: _environmentVariables,
     lastEnvHash: _lastEnvHash,
     lastCodexEnvHash: _lastCodexEnvHash,
+    openInMainTab: _openInMainTab,
     ...cleaned
   } = settings;
   return cleaned;
+}
+
+function isChatViewPlacement(value: unknown): value is ChatViewPlacement {
+  return typeof value === 'string'
+    && (CHAT_VIEW_PLACEMENTS as readonly string[]).includes(value);
+}
+
+function normalizeChatViewPlacement(
+  value: unknown,
+  legacyOpenInMainTab: unknown,
+): ChatViewPlacement {
+  if (isChatViewPlacement(value)) {
+    return value;
+  }
+
+  if (typeof legacyOpenInMainTab === 'boolean') {
+    return legacyOpenInMainTab ? 'main-tab' : 'right-sidebar';
+  }
+
+  return DEFAULT_CLAUDIAN_SETTINGS.chatViewPlacement;
+}
+
+function shouldPersistChatViewPlacementMigration(
+  stored: Record<string, unknown>,
+  normalized: ChatViewPlacement,
+): boolean {
+  return 'openInMainTab' in stored
+    || (
+      'chatViewPlacement' in stored
+      && stored.chatViewPlacement !== normalized
+    );
 }
 
 function normalizeProviderConfigs(value: unknown): ProviderConfigMap {
@@ -196,6 +230,10 @@ export class ClaudianSettingsStorage {
     );
     const envSnippets = normalizeEnvSnippets(stored.envSnippets);
     const providerConfigs = normalizeProviderConfigs(stored.providerConfigs);
+    const chatViewPlacement = normalizeChatViewPlacement(
+      stored.chatViewPlacement,
+      stored.openInMainTab,
+    );
     const legacyProviderSettings = {
       ...stored,
       hiddenProviderCommands,
@@ -211,6 +249,7 @@ export class ClaudianSettingsStorage {
       envSnippets,
       hiddenProviderCommands,
       providerConfigs,
+      chatViewPlacement,
     };
 
     const merged = {
@@ -239,6 +278,7 @@ export class ClaudianSettingsStorage {
       || 'allowedExportPaths' in stored
       || 'enableBlocklist' in stored
       || 'blockedCommands' in stored
+      || shouldPersistChatViewPlacementMigration(stored, chatViewPlacement)
       || JSON.stringify(envSnippets) !== JSON.stringify(stored.envSnippets ?? [])
       )
     ) {

@@ -283,9 +283,12 @@
       "name": "流式传输时延迟渲染数学公式",
       "desc": "响应流式传输时显示原始 LaTeX，并在每个文本块完成后只渲染一次数学公式。"
     },
-    "openInMainTab": {
-      "name": "在主编辑器区域打开",
-      "desc": "在中央编辑器区域以主标签页形式打开聊天面板，而不是在右侧边栏"
+    "chatViewPlacement": {
+      "name": "Claudian 打开位置",
+      "desc": "选择新建聊天面板时的打开位置",
+      "rightSidebar": "右侧边栏",
+      "leftSidebar": "左侧边栏",
+      "mainTab": "主编辑器标签页"
     },
     "cliPath": {
       "name": "Claude CLI 路径",

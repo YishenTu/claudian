@@ -4,7 +4,7 @@ patchSetMaxListenersForElectron();
 
 import './providers';
 
-import type { Editor } from 'obsidian';
+import type { Editor, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView, Notice, Plugin } from 'obsidian';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
@@ -29,7 +29,7 @@ import type {
 import {
   VIEW_TYPE_CLAUDIAN,
 } from './core/types';
-import type { EnvironmentScope } from './core/types/settings';
+import type { ChatViewPlacement, EnvironmentScope } from './core/types/settings';
 import { ClaudianView } from './features/chat/ClaudianView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
@@ -188,9 +188,7 @@ export default class ClaudianPlugin extends Plugin {
     let leaf = workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
 
     if (!leaf) {
-      const newLeaf = this.settings.openInMainTab
-        ? workspace.getLeaf('tab')
-        : workspace.getRightLeaf(false);
+      const newLeaf = this.getLeafForPlacement(this.settings.chatViewPlacement);
       if (newLeaf) {
         await newLeaf.setViewState({
           type: VIEW_TYPE_CLAUDIAN,
@@ -202,6 +200,18 @@ export default class ClaudianPlugin extends Plugin {
 
     if (leaf) {
       workspace.revealLeaf(leaf);
+    }
+  }
+
+  private getLeafForPlacement(placement: ChatViewPlacement): WorkspaceLeaf | null {
+    const { workspace } = this.app;
+    switch (placement) {
+      case 'main-tab':
+        return workspace.getLeaf('tab');
+      case 'left-sidebar':
+        return workspace.getLeftLeaf(false);
+      case 'right-sidebar':
+        return workspace.getRightLeaf(false);
     }
   }
 

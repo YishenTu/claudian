@@ -283,9 +283,12 @@
       "name": "Mathe-Rendering während Streaming aufschieben",
       "desc": "LaTeX während des Streamings roh anzeigen und Mathematik einmal rendern, wenn der Textblock abgeschlossen ist."
     },
-    "openInMainTab": {
-      "name": "Im Haupteditorbereich öffnen",
-      "desc": "Chat-Panel als Haupttab im zentralen Editorbereich statt in der rechten Seitenleiste öffnen"
+    "chatViewPlacement": {
+      "name": "Claudian öffnen in",
+      "desc": "Wählen Sie, wo das Chat-Panel beim Erstellen geöffnet wird",
+      "rightSidebar": "Rechte Seitenleiste",
+      "leftSidebar": "Linke Seitenleiste",
+      "mainTab": "Haupteditor-Tab"
     },
     "cliPath": {
       "name": "Claude CLI-Pfad",

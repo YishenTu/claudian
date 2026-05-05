@@ -8,6 +8,7 @@ import {
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '../../core/providers/types';
+import type { ChatViewPlacement } from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
@@ -231,16 +232,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
     });
 
     new Setting(container)
-      .setName(t('settings.openInMainTab.name'))
-      .setDesc(t('settings.openInMainTab.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.openInMainTab)
+      .setName(t('settings.chatViewPlacement.name'))
+      .setDesc(t('settings.chatViewPlacement.desc'))
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('right-sidebar', t('settings.chatViewPlacement.rightSidebar'))
+          .addOption('left-sidebar', t('settings.chatViewPlacement.leftSidebar'))
+          .addOption('main-tab', t('settings.chatViewPlacement.mainTab'))
+          .setValue(this.plugin.settings.chatViewPlacement)
           .onChange(async (value) => {
-            this.plugin.settings.openInMainTab = value;
+            this.plugin.settings.chatViewPlacement = value as ChatViewPlacement;
             await this.plugin.saveSettings();
-          })
-      );
+          });
+      });
 
     new Setting(container)
       .setName(t('settings.enableAutoScroll.name'))

@@ -283,9 +283,12 @@
       "name": "Defer math rendering during streaming",
       "desc": "Show raw LaTeX while responses stream, then render math once when each text block completes."
     },
-    "openInMainTab": {
-      "name": "Open in main editor area",
-      "desc": "Open chat panel as a main tab in the center editor area instead of the right sidebar"
+    "chatViewPlacement": {
+      "name": "Open Claudian in",
+      "desc": "Choose where the chat panel opens when it is created",
+      "rightSidebar": "Right sidebar",
+      "leftSidebar": "Left sidebar",
+      "mainTab": "Main editor tab"
     },
     "cliPath": {
       "name": "Claude CLI path",
