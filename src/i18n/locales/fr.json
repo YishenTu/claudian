@@ -279,9 +279,12 @@
       "name": "Défilement automatique pendant le streaming",
       "desc": "Défiler automatiquement vers le bas pendant que Claude diffuse les réponses. Désactiver pour rester en haut et lire depuis le début."
     },
-    "openInMainTab": {
-      "name": "Ouvrir dans la zone d'éditeur principale",
-      "desc": "Ouvrir le panneau de chat comme un onglet principal dans la zone d'éditeur centrale au lieu de la barre latérale droite"
+    "chatViewPlacement": {
+      "name": "Ouvrir Claudian dans",
+      "desc": "Choisissez où le panneau de chat s'ouvre lors de sa création",
+      "rightSidebar": "Barre latérale droite",
+      "leftSidebar": "Barre latérale gauche",
+      "mainTab": "Onglet principal de l'éditeur"
     },
     "cliPath": {
       "name": "Chemin CLI Claude",

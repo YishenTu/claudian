@@ -279,9 +279,12 @@
       "name": "Desplazamiento automático durante streaming",
       "desc": "Desplazarse automáticamente hacia abajo mientras Claude transmite respuestas. Desactivar para quedarse arriba y leer desde el principio."
     },
-    "openInMainTab": {
-      "name": "Abrir en área de editor principal",
-      "desc": "Abrir el panel de chat como una pestaña principal en el área de editor central en lugar de la barra lateral derecha"
+    "chatViewPlacement": {
+      "name": "Abrir Claudian en",
+      "desc": "Elige dónde se abre el panel de chat cuando se crea",
+      "rightSidebar": "Barra lateral derecha",
+      "leftSidebar": "Barra lateral izquierda",
+      "mainTab": "Pestaña del editor principal"
     },
     "cliPath": {
       "name": "Ruta CLI Claude",

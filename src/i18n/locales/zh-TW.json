@@ -279,9 +279,12 @@
       "name": "串流傳輸時自動捲動",
       "desc": "在 Claude 串流傳輸回應時自動捲動到底部。停用後將停留在頂部，從頭開始閱讀。"
     },
-    "openInMainTab": {
-      "name": "在主編輯器區域開啟",
-      "desc": "在中央編輯器區域以主分頁形式開啟聊天面板，而不是在右側邊欄"
+    "chatViewPlacement": {
+      "name": "Claudian 開啟位置",
+      "desc": "選擇新建聊天面板時的開啟位置",
+      "rightSidebar": "右側邊欄",
+      "leftSidebar": "左側邊欄",
+      "mainTab": "主編輯器分頁"
     },
     "cliPath": {
       "name": "Claude CLI 路徑",

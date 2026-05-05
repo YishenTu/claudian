@@ -45,7 +45,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   maxTabs: 3,
   tabBarPosition: 'input',
   enableAutoScroll: true,
-  openInMainTab: false,
+  chatViewPlacement: 'right-sidebar',
 
   hiddenProviderCommands: getDefaultHiddenProviderCommands(),
 };
