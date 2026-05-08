@@ -429,6 +429,13 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
 
     conversation.messages = merged;
     this.hydratedConversationIds.add(conversation.id);
+
+    // Clear provider session IDs so the runtime starts a fresh Claude Code process
+    // instead of trying to resume an old (dead) session. The loaded history messages
+    // are preserved and will be injected as context via the noSessionButHasHistory path.
+    conversation.sessionId = null;
+    delete state.providerSessionId;
+    delete state.previousProviderSessionIds;
   }
 
   async deleteConversationSession(
