@@ -149,7 +149,7 @@ describe('OpencodeAuxQueryRunner', () => {
     }, 'Generate a title')).resolves.toBe('Fix title now');
 
     expect(mockPrepareOpencodeLaunchArtifacts).toHaveBeenCalledWith(expect.objectContaining({
-      artifactsSubdir: 'opencode/aux/title-gen',
+      artifactsSubdir: 'opencode/auxiliary/title-gen',
       defaultAgentId: 'claudian-aux-passive',
       managedAgents: [expect.objectContaining({ id: 'claudian-aux-passive' })],
       systemPromptKey: 'Use this custom system prompt.',

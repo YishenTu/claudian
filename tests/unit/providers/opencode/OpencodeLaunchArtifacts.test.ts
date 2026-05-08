@@ -48,7 +48,7 @@ describe('buildOpencodeManagedConfig', () => {
   it('can create a dedicated aux agent and default it for the process', () => {
     expect(buildOpencodeManagedConfig(
       {},
-      '/vault/.claudian/opencode/aux/system.md',
+      '/vault/.claudian/opencode/auxiliary/system.md',
       undefined,
       [{
         definition: {
@@ -70,7 +70,7 @@ describe('buildOpencodeManagedConfig', () => {
             '*': 'deny',
             read: 'allow',
           },
-          prompt: '{file:/vault/.claudian/opencode/aux/system.md}',
+          prompt: '{file:/vault/.claudian/opencode/auxiliary/system.md}',
         },
       },
       default_agent: 'claudian-aux-readonly',
