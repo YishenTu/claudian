@@ -550,7 +550,7 @@ export const geminiSettingsTabRenderer: ProviderSettingsTabRenderer = {
       scope: 'provider:gemini',
       heading: 'Environment',
       name: 'Environment Variables',
-      desc: 'Extra environment variables passed to Gemini CLI. Prefer API key or Vertex AI authentication for third-party agent integrations; do not wire Gemini CLI OAuth quota through Claudian.',
+      desc: 'Extra environment variables passed to Gemini CLI. Prefer API key or Vertex AI authentication for third-party agent integrations.',
       placeholder: GEMINI_DEFAULT_ENVIRONMENT_VARIABLES || 'GEMINI_API_KEY=...\nGOOGLE_GENAI_USE_VERTEXAI=true',
       renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'gemini'),
     });

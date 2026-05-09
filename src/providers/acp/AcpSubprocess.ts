@@ -51,6 +51,7 @@ export class AcpSubprocess {
       env: this.launchSpec.env,
       stdio: 'pipe',
       windowsHide: true,
+      shell: process.platform === 'win32',
     });
 
     proc.stderr.on('data', (chunk: Buffer | string) => {

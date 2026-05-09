@@ -34,6 +34,7 @@ export function createCustomSpawnFunction(
       env: env as NodeJS.ProcessEnv,
       stdio: ['pipe', 'pipe', shouldPipeStderr ? 'pipe' : 'ignore'],
       windowsHide: true,
+      shell: process.platform === 'win32',
     });
 
     if (signal) {

@@ -7,6 +7,7 @@ export type AcpLogicalMethod =
   | 'prompt'
   | 'cancel'
   | 'setMode'
+  | 'setModel'
   | 'setConfigOption';
 
 export type AcpMethodOverrides = Partial<Record<AcpLogicalMethod, string | string[]>>;
@@ -21,6 +22,7 @@ const ACP_METHOD_CANDIDATES = {
   prompt: ['session/prompt', 'prompt'],
   setConfigOption: ['session/set_config_option', 'setSessionConfigOption'],
   setMode: ['session/set_mode', 'setSessionMode'],
+  setModel: ['session/set_model', 'setSessionModel'],
 } as const satisfies Record<AcpLogicalMethod, readonly string[]>;
 
 export const ACP_SERVER_NOTIFICATION_ALIASES = {

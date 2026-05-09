@@ -723,16 +723,11 @@ export class GeminiChatRuntime implements ChatRuntime {
       return;
     }
 
-    const response = await this.connection.setConfigOption({
-      configId: 'mode',
+    await this.connection.setMode({
+      modeId: selectedModeId,
       sessionId,
-      type: 'select',
-      value: selectedModeId,
     });
     this.currentSessionModeId = selectedModeId;
-    await this.syncSessionModeState({
-      configOptions: response.configOptions,
-    });
   }
 
   private async applySelectedModel(
@@ -748,16 +743,11 @@ export class GeminiChatRuntime implements ChatRuntime {
       return;
     }
 
-    const response = await this.connection.setConfigOption({
-      configId: 'model',
+    await this.connection.setModel({
+      modelId: selectedRawModelId,
       sessionId,
-      type: 'select',
-      value: selectedRawModelId,
     });
     this.currentSessionModelId = selectedRawModelId;
-    await this.syncSessionModelState({
-      configOptions: response.configOptions,
-    });
   }
 
   private async syncSessionModelState(params: {

@@ -176,6 +176,10 @@ export class AcpClientConnection {
     return this.requestWithFallback<AcpSetSessionModeResponse>('setMode', request);
   }
 
+  setModel(request: AcpSetSessionModelRequest): Promise<AcpSetSessionModelResponse> {
+    return this.requestWithFallback<AcpSetSessionModelResponse>('setModel', request);
+  }
+
   setConfigOption(
     request: AcpSetSessionConfigOptionRequest,
   ): Promise<AcpSetSessionConfigOptionResponse> {
