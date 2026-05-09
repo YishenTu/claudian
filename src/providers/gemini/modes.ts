@@ -5,8 +5,8 @@ export interface GeminiMode {
 }
 
 export const GEMINI_BUILD_MODE_ID = 'build';
-export const GEMINI_YOLO_MODE_ID = 'claudian-yolo';
-export const GEMINI_SAFE_MODE_ID = 'claudian-safe';
+export const GEMINI_YOLO_MODE_ID = 'yolo';
+export const GEMINI_SAFE_MODE_ID = 'default';
 export const GEMINI_PLAN_MODE_ID = 'plan';
 
 export const GEMINI_FALLBACK_MODES: ReadonlyArray<GeminiMode> = Object.freeze([
