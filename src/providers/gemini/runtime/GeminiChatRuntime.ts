@@ -760,7 +760,7 @@ export class GeminiChatRuntime implements ChatRuntime {
       acpState.availableModels.map((model) => ({
         ...(model.description ? { description: model.description } : {}),
         label: model.name,
-        rawId: model.id,
+        rawId: (model as any).modelId || model.id,
       })),
     );
     if (currentRawModelId) {
