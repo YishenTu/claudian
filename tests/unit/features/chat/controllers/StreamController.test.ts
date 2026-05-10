@@ -105,6 +105,7 @@ function createMockDeps(): StreamControllerDeps {
       isLinkedAgentOutputTool: jest.fn().mockReturnValue(false),
       handleAgentOutputToolResult: jest.fn().mockReturnValue(undefined),
       handleAgentOutputToolUse: jest.fn(),
+      handleAsyncSubagentResult: jest.fn().mockReturnValue(undefined),
       handleTaskToolUse: jest.fn().mockReturnValue({ action: 'buffered' }),
       handleTaskToolResult: jest.fn(),
       refreshAsyncSubagent: jest.fn(),
@@ -1670,6 +1671,47 @@ describe('StreamController - Text Content', () => {
         { foo: 'bar' }
       );
       expect(updateToolCallResult).not.toHaveBeenCalled();
+    });
+
+    it('async_subagent_result finalizes and hydrates the matching background subagent', async () => {
+      const runtime = deps.getAgentService!() as any;
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+      const completedSubagent = {
+        id: 'task-1',
+        description: 'Background task',
+        prompt: 'Do work',
+        mode: 'async',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        asyncStatus: 'completed',
+        agentId: 'agent-1',
+        result: 'Notification summary',
+      };
+
+      (deps.subagentManager.handleAsyncSubagentResult as jest.Mock).mockReturnValueOnce(completedSubagent);
+      runtime.loadSubagentFinalResult.mockResolvedValueOnce('Recovered final result');
+
+      await controller.handleStreamChunk(
+        {
+          type: 'async_subagent_result',
+          agentId: 'agent-1',
+          status: 'completed',
+          result: 'Notification summary',
+        } as any,
+        msg
+      );
+
+      expect(deps.subagentManager.handleAsyncSubagentResult).toHaveBeenCalledWith(
+        'agent-1',
+        'completed',
+        'Notification summary'
+      );
+      expect(runtime.loadSubagentToolCalls).toHaveBeenCalledWith('agent-1');
+      expect(runtime.loadSubagentFinalResult).toHaveBeenCalledWith('agent-1');
+      expect(completedSubagent.result).toBe('Recovered final result');
+      expect(deps.subagentManager.refreshAsyncSubagent).toHaveBeenCalledWith(completedSubagent);
     });
 
     it('hydrates async subagent tool calls from sidecar during streaming completion', async () => {

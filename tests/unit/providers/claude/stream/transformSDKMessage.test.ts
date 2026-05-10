@@ -92,6 +92,50 @@ describe('transformSDKMessage', () => {
         permissionMode: 'plan',
       });
     });
+
+    it('normalizes task_notification completion into async subagent result', () => {
+      const message = msg({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'agent-123',
+        status: 'completed',
+        output_file: '/tmp/agent-123.output',
+        summary: 'Agent completed successfully.',
+      } as any);
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([
+        {
+          type: 'async_subagent_result',
+          agentId: 'agent-123',
+          status: 'completed',
+          result: 'Agent completed successfully.',
+        },
+      ]);
+    });
+
+    it('maps non-completed task_notification statuses to async subagent errors', () => {
+      const message = msg({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'agent-failed',
+        status: 'failed',
+        output_file: '/tmp/agent-failed.output',
+        summary: 'Agent failed.',
+      } as any);
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([
+        {
+          type: 'async_subagent_result',
+          agentId: 'agent-failed',
+          status: 'error',
+          result: 'Agent failed.',
+        },
+      ]);
+    });
   });
 
   describe('assistant messages', () => {

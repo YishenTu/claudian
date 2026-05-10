@@ -13,7 +13,7 @@ import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
   ApprovalCallback,
   AskUserQuestionCallback,
-  AutoTurnResult,
+  AutoTurnCallback,
   ChatRewindResult,
   ChatRuntimeConversationState,
   ChatRuntimeEnsureReadyOptions,
@@ -133,7 +133,7 @@ export class CodexChatRuntime implements ChatRuntime {
   private exitPlanModeCallback: ExitPlanModeCallback | null = null;
   private permissionModeSyncCallback: ((sdkMode: string) => void) | null = null;
   private subagentHookProvider: (() => SubagentRuntimeState) | null = null;
-  private autoTurnCallback: ((result: AutoTurnResult) => void) | null = null;
+  private autoTurnCallback: AutoTurnCallback | null = null;
   private resumeCheckpoint: string | undefined;
   private activeInputBundles = new Set<CodexInputBundle>();
 
@@ -779,7 +779,7 @@ export class CodexChatRuntime implements ChatRuntime {
     this.subagentHookProvider = getState;
   }
 
-  setAutoTurnCallback(callback: ((result: AutoTurnResult) => void) | null): void {
+  setAutoTurnCallback(callback: AutoTurnCallback | null): void {
     this.autoTurnCallback = callback;
   }
 

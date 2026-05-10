@@ -9,6 +9,7 @@ import { createTransformStreamState, type TransformStreamState } from './toolInp
 
 type ToolUseFields = { id: string; name: string; input: Record<string, unknown> };
 type ToolResultFields = { id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult };
+type AsyncSubagentResultStatus = Extract<StreamChunk, { type: 'async_subagent_result' }>['status'];
 
 export { createTransformStreamState };
 
@@ -31,6 +32,37 @@ function emitToolResult(parentToolUseId: string | null, fields: ToolResultFields
     return { type: 'tool_result', ...fields };
   }
   return { type: 'subagent_tool_result', subagentId: parentToolUseId, ...fields };
+}
+
+function normalizeTaskNotificationStatus(status: unknown): AsyncSubagentResultStatus {
+  return status === 'completed' ? 'completed' : 'error';
+}
+
+function normalizeTaskNotificationResult(status: AsyncSubagentResultStatus, summary: unknown): string {
+  if (typeof summary === 'string' && summary.trim().length > 0) {
+    return summary.trim();
+  }
+  return status === 'completed' ? 'Background task completed.' : 'Background task failed.';
+}
+
+function transformTaskNotification(message: SDKMessage): StreamChunk | null {
+  if (message.type !== 'system' || message.subtype !== 'task_notification') {
+    return null;
+  }
+
+  const record = message as unknown as Record<string, unknown>;
+  const taskId = record.task_id;
+  if (typeof taskId !== 'string' || taskId.length === 0) {
+    return null;
+  }
+
+  const status = normalizeTaskNotificationStatus(record.status);
+  return {
+    type: 'async_subagent_result',
+    agentId: taskId,
+    status,
+    result: normalizeTaskNotificationResult(status, record.summary),
+  };
 }
 
 export interface TransformOptions {
@@ -352,6 +384,11 @@ export function* transformSDKMessage(
         };
       } else if (message.subtype === 'compact_boundary') {
         yield { type: 'context_compacted' };
+      } else if (message.subtype === 'task_notification') {
+        const notification = transformTaskNotification(message);
+        if (notification) {
+          yield notification;
+        }
       }
       break;
 

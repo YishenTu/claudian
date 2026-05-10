@@ -36,7 +36,7 @@ export function resolveToolUseResultStatus(
   const rawStatus = record.retrieval_status ?? record.status;
   const status = typeof rawStatus === 'string' ? rawStatus.toLowerCase() : '';
 
-  if (status === 'error') {
+  if (status === 'error' || status === 'failed' || status === 'stopped' || status === 'killed') {
     return 'error';
   }
   if (status === 'completed' || status === 'success') {

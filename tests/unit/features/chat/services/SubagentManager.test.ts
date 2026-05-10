@@ -1590,6 +1590,33 @@ Only this is the final result.
         expect(manager.hasRunningSubagents()).toBe(false);
       });
 
+      it('returns false after a live task notification completes an active async subagent', () => {
+        const { manager, updates } = createManager();
+        const parentEl = createMockEl();
+        manager.handleTaskToolUse('task-1', { description: 'Background', run_in_background: true }, parentEl);
+        manager.handleTaskToolResult('task-1', JSON.stringify({ agent_id: 'agent-123' }));
+
+        expect(manager.hasRunningSubagents()).toBe(true);
+
+        const completed = manager.handleAsyncSubagentResult(
+          'agent-123',
+          'completed',
+          'Background agent finished.'
+        );
+
+        expect(completed?.asyncStatus).toBe('completed');
+        expect(completed?.status).toBe('completed');
+        expect(completed?.result).toBe('Background agent finished.');
+        expect(manager.hasRunningSubagents()).toBe(false);
+        expect(updates[updates.length - 1]).toEqual(
+          expect.objectContaining({
+            agentId: 'agent-123',
+            asyncStatus: 'completed',
+            result: 'Background agent finished.',
+          })
+        );
+      });
+
       it('returns false after parallel foreground tasks resolve from completed task results', () => {
         const { manager } = createManager();
         const parentEl = createMockEl();

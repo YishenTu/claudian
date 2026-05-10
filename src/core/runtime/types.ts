@@ -108,6 +108,8 @@ export interface AutoTurnResult {
   metadata: ChatTurnMetadata;
 }
 
+export type AutoTurnCallback = (result: AutoTurnResult) => void | Promise<void>;
+
 export type {
   ApprovalDecision,
   ExitPlanModeCallback,

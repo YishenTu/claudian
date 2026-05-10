@@ -19,7 +19,8 @@ import {
 } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { AutoTurnResult } from '../../../core/runtime/types';
-import type { ChatMessage, Conversation } from '../../../core/types';
+import { TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
+import type { ChatMessage, Conversation, StreamChunk } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -1671,9 +1672,7 @@ export function setupServiceCallbacks(tab: TabData, plugin: ClaudianPlugin): voi
         hasRunning: tab.services.subagentManager.hasRunningSubagents(),
       })
     );
-    tab.service.setAutoTurnCallback((result: AutoTurnResult) => {
-      renderAutoTriggeredTurn(tab, result);
-    });
+    tab.service.setAutoTurnCallback((result: AutoTurnResult) => renderAutoTriggeredTurn(tab, result));
     tab.service.setPermissionModeSyncCallback((sdkMode) => {
       const mode = sdkMode === 'bypassPermissions' || sdkMode === 'yolo'
         ? 'yolo'
@@ -1701,39 +1700,108 @@ function generateMessageId(): string {
  * Renders an auto-triggered turn (e.g., agent response to task-notification)
  * that arrives after the main handler has completed.
  */
-function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): void {
+function isVisibleAutoTurnChunk(chunk: StreamChunk, hiddenToolIds: Set<string>): boolean {
+  switch (chunk.type) {
+    case 'text':
+      return chunk.content.trim().length > 0;
+    case 'thinking':
+    case 'notice':
+    case 'error':
+    case 'tool_output':
+    case 'context_compacted':
+    case 'subagent_tool_use':
+    case 'subagent_tool_result':
+      return true;
+    case 'tool_use':
+      return chunk.name !== TOOL_AGENT_OUTPUT;
+    case 'tool_result':
+      return !hiddenToolIds.has(chunk.id);
+    default:
+      return false;
+  }
+}
+
+function hasVisibleAutoTurnMessageContent(msg: ChatMessage): boolean {
+  if (msg.content.trim().length > 0) return true;
+  if (msg.toolCalls && msg.toolCalls.length > 0) return true;
+  return msg.contentBlocks?.some(block =>
+    block.type !== 'text' || block.content.trim().length > 0
+  ) ?? false;
+}
+
+async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Promise<void> {
   if (!tab.dom.contentEl.isConnected) {
     return;
   }
 
   const { chunks, metadata } = result;
-  const hasToolActivity = chunks.some(
-    chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result'
+  if (chunks.length === 0) return;
+
+  const hiddenToolIds = new Set(
+    chunks
+      .filter((chunk): chunk is Extract<StreamChunk, { type: 'tool_use' }> =>
+        chunk.type === 'tool_use' && chunk.name === TOOL_AGENT_OUTPUT
+      )
+      .map(chunk => chunk.id)
   );
-  let textContent = '';
-
-  for (const chunk of chunks) {
-    if (chunk.type === 'text') {
-      textContent += chunk.content;
-    }
-  }
-
-  if (!textContent.trim() && !hasToolActivity) return;
-
-  const content = textContent.trim() || '(background task completed)';
+  const hasVisibleContent = chunks.some(chunk => isVisibleAutoTurnChunk(chunk, hiddenToolIds));
 
   const assistantMsg: ChatMessage = {
     id: metadata.assistantMessageId ?? generateMessageId(),
     role: 'assistant',
-    content,
+    content: '',
     timestamp: Date.now(),
-    contentBlocks: [{ type: 'text', content }],
+    toolCalls: [],
+    contentBlocks: [],
     ...(metadata.assistantMessageId && { assistantMessageId: metadata.assistantMessageId }),
   };
 
-  tab.state.addMessage(assistantMsg);
-  tab.renderer?.renderStoredMessage(assistantMsg);
-  tab.renderer?.scrollToBottom();
+  const previousContentEl = tab.state.currentContentEl;
+  const previousTextEl = tab.state.currentTextEl;
+  const previousTextContent = tab.state.currentTextContent;
+  const previousThinkingState = tab.state.currentThinkingState;
+
+  if (hasVisibleContent) {
+    tab.state.addMessage(assistantMsg);
+    const msgEl = tab.renderer?.addMessage?.(assistantMsg);
+    const contentEl = msgEl?.querySelector('.claudian-message-content') as HTMLElement | null | undefined;
+    if (contentEl) {
+      if (!previousContentEl) {
+        tab.state.toolCallElements.clear();
+      }
+      tab.state.currentContentEl = contentEl;
+      tab.state.currentTextEl = null;
+      tab.state.currentTextContent = '';
+      tab.state.currentThinkingState = null;
+    }
+  }
+
+  try {
+    for (const chunk of chunks) {
+      await tab.controllers.streamController?.handleStreamChunk(chunk, assistantMsg);
+    }
+
+    if (hasVisibleContent && !hasVisibleAutoTurnMessageContent(assistantMsg)) {
+      const placeholder = '(background task completed)';
+      assistantMsg.content = placeholder;
+      await tab.controllers.streamController?.appendText(placeholder);
+    }
+
+    if (hasVisibleContent) {
+      await tab.controllers.streamController?.finalizeCurrentThinkingBlock(assistantMsg);
+      await tab.controllers.streamController?.finalizeCurrentTextBlock(assistantMsg);
+    }
+  } finally {
+    if (hasVisibleContent) {
+      tab.controllers.streamController?.hideThinkingIndicator();
+      tab.services.subagentManager.resetStreamingState?.();
+      tab.state.currentContentEl = previousContentEl;
+      tab.state.currentTextEl = previousTextEl;
+      tab.state.currentTextContent = previousTextContent;
+      tab.state.currentThinkingState = previousThinkingState;
+      tab.renderer?.scrollToBottom();
+    }
+  }
 }
 
 export function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: string): void {

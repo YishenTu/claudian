@@ -1393,8 +1393,13 @@ describe('Tab - Service Callbacks', () => {
       const plugin = createMockPlugin();
       const tab = createTab(createMockOptions({ plugin }));
       const addMessageSpy = jest.spyOn(tab.state, 'addMessage');
-      const renderStoredMessage = jest.fn();
+      const addMessage = jest.fn(() => {
+        const msgEl = createMockEl();
+        msgEl.createDiv({ cls: 'claudian-message-content' });
+        return msgEl;
+      });
       const scrollToBottom = jest.fn();
+      const handleStreamChunk = jest.fn().mockResolvedValue(undefined);
 
       Object.defineProperty(tab.dom.contentEl, 'isConnected', {
         value: true,
@@ -1402,7 +1407,19 @@ describe('Tab - Service Callbacks', () => {
         configurable: true,
       });
 
-      tab.renderer = { renderStoredMessage, scrollToBottom } as any;
+      tab.renderer = {
+        addMessage,
+        renderContent: jest.fn(),
+        addTextCopyButton: jest.fn(),
+        scrollToBottom,
+      } as any;
+      tab.controllers.streamController = {
+        handleStreamChunk,
+        appendText: jest.fn().mockResolvedValue(undefined),
+        finalizeCurrentThinkingBlock: jest.fn().mockResolvedValue(undefined),
+        finalizeCurrentTextBlock: jest.fn().mockResolvedValue(undefined),
+        hideThinkingIndicator: jest.fn(),
+      } as any;
       tab.controllers.inputController = {
         handleApprovalRequest: jest.fn(),
         dismissPendingApproval: jest.fn(),
@@ -1411,6 +1428,7 @@ describe('Tab - Service Callbacks', () => {
       } as any;
       tab.services.subagentManager = {
         hasRunningSubagents: jest.fn().mockReturnValue(false),
+        resetStreamingState: jest.fn(),
       } as any;
 
       const service = {
@@ -1427,13 +1445,13 @@ describe('Tab - Service Callbacks', () => {
       setupServiceCallbacks(tab, plugin);
 
       const autoTurnCallback = service.setAutoTurnCallback.mock.calls[0][0];
-      return { tab, addMessageSpy, renderStoredMessage, scrollToBottom, autoTurnCallback };
+      return { tab, addMessageSpy, addMessage, handleStreamChunk, scrollToBottom, autoTurnCallback };
     }
 
-    it('renders tool-only auto-triggered turns with a placeholder assistant message', () => {
-      const { addMessageSpy, renderStoredMessage, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
+    it('renders tool-only auto-triggered turns with a placeholder assistant message', async () => {
+      const { addMessageSpy, addMessage, handleStreamChunk, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
 
-      autoTurnCallback({
+      await autoTurnCallback({
         chunks: [
           { type: 'tool_result', id: 'task-1', content: 'done' },
         ],
@@ -1446,15 +1464,48 @@ describe('Tab - Service Callbacks', () => {
           content: '(background task completed)',
         })
       );
-      expect(renderStoredMessage).toHaveBeenCalled();
+      expect(addMessage).toHaveBeenCalled();
+      expect(handleStreamChunk).toHaveBeenCalledWith(
+        { type: 'tool_result', id: 'task-1', content: 'done' },
+        expect.objectContaining({ role: 'assistant' })
+      );
       expect(scrollToBottom).toHaveBeenCalled();
     });
 
-    it('skips auto-triggered rendering after the tab DOM is detached', () => {
-      const { tab, addMessageSpy, renderStoredMessage, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
+    it('routes hidden async subagent auto-turn chunks without adding a placeholder message', async () => {
+      const { addMessageSpy, addMessage, handleStreamChunk, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
+
+      await autoTurnCallback({
+        chunks: [
+          {
+            type: 'async_subagent_result',
+            agentId: 'agent-1',
+            status: 'completed',
+            result: 'Done',
+          },
+        ],
+        metadata: {},
+      });
+
+      expect(handleStreamChunk).toHaveBeenCalledWith(
+        {
+          type: 'async_subagent_result',
+          agentId: 'agent-1',
+          status: 'completed',
+          result: 'Done',
+        },
+        expect.objectContaining({ role: 'assistant' })
+      );
+      expect(addMessageSpy).not.toHaveBeenCalled();
+      expect(addMessage).not.toHaveBeenCalled();
+      expect(scrollToBottom).not.toHaveBeenCalled();
+    });
+
+    it('skips auto-triggered rendering after the tab DOM is detached', async () => {
+      const { tab, addMessageSpy, addMessage, handleStreamChunk, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
 
       (tab.dom.contentEl as any).isConnected = false;
-      autoTurnCallback({
+      await autoTurnCallback({
         chunks: [
           { type: 'text', content: 'Background result' },
         ],
@@ -1462,7 +1513,8 @@ describe('Tab - Service Callbacks', () => {
       });
 
       expect(addMessageSpy).not.toHaveBeenCalled();
-      expect(renderStoredMessage).not.toHaveBeenCalled();
+      expect(addMessage).not.toHaveBeenCalled();
+      expect(handleStreamChunk).not.toHaveBeenCalled();
       expect(scrollToBottom).not.toHaveBeenCalled();
     });
   });

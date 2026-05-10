@@ -3,7 +3,7 @@ import type { ChatMessage, Conversation, SlashCommand, StreamChunk, ToolCallInfo
 import type {
   ApprovalCallback,
   AskUserQuestionCallback,
-  AutoTurnResult,
+  AutoTurnCallback,
   ChatRewindResult,
   ChatRuntimeConversationState,
   ChatRuntimeEnsureReadyOptions,
@@ -50,7 +50,7 @@ export interface ChatRuntime {
   setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void;
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void;
   setSubagentHookProvider(getState: () => SubagentRuntimeState): void;
-  setAutoTurnCallback(callback: ((result: AutoTurnResult) => void) | null): void;
+  setAutoTurnCallback(callback: AutoTurnCallback | null): void;
   consumeTurnMetadata(): ChatTurnMetadata;
 
   buildSessionUpdates(params: {

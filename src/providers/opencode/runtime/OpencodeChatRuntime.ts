@@ -16,7 +16,7 @@ import type {
   ApprovalCallback,
   ApprovalDecisionOption,
   AskUserQuestionCallback,
-  AutoTurnResult,
+  AutoTurnCallback,
   ChatRewindResult,
   ChatRuntimeEnsureReadyOptions,
   ChatRuntimeQueryOptions,
@@ -483,7 +483,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
   setSubagentHookProvider(_getState: () => SubagentRuntimeState): void {}
 
-  setAutoTurnCallback(_callback: ((result: AutoTurnResult) => void) | null): void {}
+  setAutoTurnCallback(_callback: AutoTurnCallback | null): void {}
 
   consumeTurnMetadata(): ChatTurnMetadata {
     const metadata = this.currentTurnMetadata;

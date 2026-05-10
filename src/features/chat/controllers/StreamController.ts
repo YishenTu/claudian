@@ -178,6 +178,10 @@ export class StreamController {
         await this.handleSubagentChunk(chunk, msg);
         break;
 
+      case 'async_subagent_result':
+        await this.handleAsyncSubagentResult(chunk);
+        break;
+
       case 'tool_output':
         this.handleToolOutput(chunk, msg);
         break;
@@ -1137,6 +1141,21 @@ export class StreamController {
     await this.hydrateAsyncSubagentToolCalls(handled);
 
     return isLinked || handled !== undefined;
+  }
+
+  private async handleAsyncSubagentResult(
+    chunk: Extract<StreamChunk, { type: 'async_subagent_result' }>
+  ): Promise<void> {
+    const handled = this.deps.subagentManager.handleAsyncSubagentResult(
+      chunk.agentId,
+      chunk.status,
+      chunk.result
+    );
+
+    await this.hydrateAsyncSubagentToolCalls(handled);
+    if (handled) {
+      this.showThinkingIndicator();
+    }
   }
 
   private async hydrateAsyncSubagentToolCalls(subagent: SubagentInfo | undefined): Promise<void> {

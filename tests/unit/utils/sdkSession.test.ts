@@ -2140,6 +2140,12 @@ describe('sdkSession', () => {
       expect(resolveToolUseResultStatus(undefined, 'orphaned')).toBe('orphaned');
       expect(resolveToolUseResultStatus({ status: 'unknown' }, 'orphaned')).toBe('orphaned');
     });
+
+    it('maps task notification failure statuses to error', () => {
+      expect(resolveToolUseResultStatus({ status: 'failed' }, 'completed')).toBe('error');
+      expect(resolveToolUseResultStatus({ status: 'stopped' }, 'completed')).toBe('error');
+      expect(resolveToolUseResultStatus({ status: 'killed' }, 'completed')).toBe('error');
+    });
   });
 
   describe('loadSDKSessionMessages - async subagent hydration', () => {

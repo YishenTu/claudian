@@ -404,6 +404,34 @@ export class SubagentManager {
     return subagent;
   }
 
+  public handleAsyncSubagentResult(
+    agentId: string,
+    status: 'completed' | 'error',
+    result?: string
+  ): SubagentInfo | undefined {
+    const subagent = this.activeAsyncSubagents.get(agentId);
+    if (!subagent || subagent.asyncStatus !== 'running') {
+      return undefined;
+    }
+
+    subagent.agentId = subagent.agentId || agentId;
+    subagent.asyncStatus = status;
+    subagent.status = status;
+    subagent.result = result?.trim() || (status === 'error' ? 'Background task failed.' : 'Background task completed.');
+    subagent.completedAt = Date.now();
+
+    this.activeAsyncSubagents.delete(agentId);
+    for (const [toolId, mappedAgentId] of this.outputToolIdToAgentId.entries()) {
+      if (mappedAgentId === agentId) {
+        this.outputToolIdToAgentId.delete(toolId);
+      }
+    }
+
+    this.updateAsyncDomState(subagent);
+    this.onStateChange(subagent);
+    return subagent;
+  }
+
   public isPendingAsyncTask(taskToolId: string): boolean {
     return this.pendingAsyncSubagents.has(taskToolId);
   }

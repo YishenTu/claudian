@@ -34,7 +34,7 @@ import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
   ApprovalCallback,
   AskUserQuestionCallback,
-  AutoTurnResult,
+  AutoTurnCallback,
   ChatRewindResult,
   ChatRuntimeConversationState,
   ChatRuntimeQueryOptions,
@@ -179,7 +179,7 @@ export class ClaudianService implements ChatRuntime {
   private _autoTurnBuffer: StreamChunk[] = [];
   private _autoTurnSawStreamText = false;
   private _autoTurnSawStreamThinking = false;
-  private _autoTurnCallback: ((result: AutoTurnResult) => void) | null = null;
+  private _autoTurnCallback: AutoTurnCallback | null = null;
   private turnMetadata: ChatTurnMetadata = {};
   private bufferedUsageChunk: StreamChunk & { type: 'usage' } | null = null;
   private streamTransformState = createTransformStreamState();
@@ -831,6 +831,7 @@ export class ClaudianService implements ChatRuntime {
 
     // Safe to use last handler - design guarantees single handler at a time
     const handler = this.responseHandlers[this.responseHandlers.length - 1];
+    const autoTurnBufferStartLength = this._autoTurnBuffer.length;
 
     // Transform SDK message to StreamChunks
     for (const event of transformSDKMessage(message, this.getTransformOptions())) {
@@ -920,6 +921,15 @@ export class ClaudianService implements ChatRuntime {
       }
     }
 
+    if (
+      !handler
+      && message.type === 'system'
+      && message.subtype === 'task_notification'
+      && this._autoTurnBuffer.length > autoTurnBufferStartLength
+    ) {
+      await this.flushAutoTurnBuffer();
+    }
+
     if (message.type === 'assistant' && message.uuid) {
       this.recordTurnMetadata({ assistantMessageId: message.uuid });
     }
@@ -935,22 +945,26 @@ export class ClaudianService implements ChatRuntime {
         handler.resetStreamThinking();
         handler.onDone();
       } else {
-        this._autoTurnSawStreamText = false;
-        this._autoTurnSawStreamThinking = false;
-        if (this._autoTurnBuffer.length === 0) {
-          return;
-        }
-
-        // Flush buffered chunks from auto-triggered turn (no handler was registered)
-        const chunks = [...this._autoTurnBuffer];
-        const metadata = this.consumeTurnMetadata();
-        this._autoTurnBuffer = [];
-        try {
-          this._autoTurnCallback?.({ chunks, metadata });
-        } catch {
-          new Notice('Background task completed, but the result could not be rendered.');
-        }
+        await this.flushAutoTurnBuffer();
       }
+    }
+  }
+
+  private async flushAutoTurnBuffer(): Promise<void> {
+    this._autoTurnSawStreamText = false;
+    this._autoTurnSawStreamThinking = false;
+    if (this._autoTurnBuffer.length === 0) {
+      return;
+    }
+
+    // Flush buffered chunks from auto-triggered turn (no handler was registered)
+    const chunks = [...this._autoTurnBuffer];
+    const metadata = this.consumeTurnMetadata();
+    this._autoTurnBuffer = [];
+    try {
+      await this._autoTurnCallback?.({ chunks, metadata });
+    } catch {
+      new Notice('Background task completed, but the result could not be rendered.');
     }
   }
 
@@ -1766,7 +1780,7 @@ export class ClaudianService implements ChatRuntime {
     this._subagentStateProvider = getState;
   }
 
-  setAutoTurnCallback(callback: ((result: AutoTurnResult) => void) | null): void {
+  setAutoTurnCallback(callback: AutoTurnCallback | null): void {
     this._autoTurnCallback = callback;
   }
 

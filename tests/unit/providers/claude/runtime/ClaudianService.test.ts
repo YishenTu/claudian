@@ -1170,6 +1170,55 @@ describe('ClaudianService', () => {
       expect(onChunk).toHaveBeenCalled();
     });
 
+    it('should route task_notification completion to the active handler', async () => {
+      await (service as any).routeMessage({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'agent-123',
+        status: 'completed',
+        output_file: '/tmp/agent-123.output',
+        summary: 'Agent completed successfully.',
+        uuid: 'notification-1',
+        session_id: 'session-1',
+      });
+
+      expect(onChunk).toHaveBeenCalledWith({
+        type: 'async_subagent_result',
+        agentId: 'agent-123',
+        status: 'completed',
+        result: 'Agent completed successfully.',
+      });
+    });
+
+    it('should flush task_notification completion through auto-turn callback without waiting for a result message', async () => {
+      (service as any).responseHandlers = [];
+      const autoTurnCallback = jest.fn();
+      service.setAutoTurnCallback(autoTurnCallback);
+
+      await (service as any).routeMessage({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'agent-456',
+        status: 'completed',
+        output_file: '/tmp/agent-456.output',
+        summary: 'Background agent finished.',
+        uuid: 'notification-2',
+        session_id: 'session-1',
+      });
+
+      expect(autoTurnCallback).toHaveBeenCalledWith({
+        chunks: [
+          {
+            type: 'async_subagent_result',
+            agentId: 'agent-456',
+            status: 'completed',
+            result: 'Background agent finished.',
+          },
+        ],
+        metadata: {},
+      });
+    });
+
     it('should route tool input deltas as tool_use updates', async () => {
       await (service as any).routeMessage({
         type: 'stream_event',
