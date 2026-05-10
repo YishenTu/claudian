@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { Notice, Setting } from 'obsidian';
+import { Setting } from 'obsidian';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
@@ -45,7 +45,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container)
       .setName('Enable Codex provider')
-      .setDesc('When enabled, Codex models appear in the model selector for new conversations. Existing chats stay on their current provider, so open a new tab to switch to Codex.')
+      .setDesc('When enabled, Codex models appear in the model selector for new conversations. Existing Codex sessions are preserved.')
       .addToggle((toggle) =>
         toggle
           .setValue(codexSettings.enabled)
@@ -53,9 +53,6 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
             updateCodexProviderSettings(settingsBag, { enabled: value });
             await context.plugin.saveSettings();
             context.refreshModelSelectors();
-            if (value) {
-              new Notice('Codex enabled. Existing chats stay on their current provider. Open a new tab to switch to Codex.');
-            }
           })
       );
 
