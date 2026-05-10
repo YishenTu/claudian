@@ -1076,6 +1076,13 @@ export class GeminiChatRuntime implements ChatRuntime {
   private async handlePermissionRequest(
     request: AcpRequestPermissionRequest,
   ): Promise<AcpRequestPermissionResponse> {
+    if (this.currentSessionModeId === GEMINI_YOLO_MODE_ID || this.currentSessionModeId === GEMINI_BUILD_MODE_ID) {
+      const autoDecision = selectPermissionOption(request.options, ['allow_always', 'allow_once']);
+      if (autoDecision.outcome.outcome === 'selected') {
+        return autoDecision;
+      }
+    }
+
     if (!this.approvalCallback) {
       return { outcome: { outcome: 'cancelled' } };
     }
