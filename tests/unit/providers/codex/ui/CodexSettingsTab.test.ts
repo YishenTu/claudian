@@ -84,6 +84,7 @@ jest.mock('obsidian', () => {
   }
 
   return {
+    Notice: jest.fn(),
     Setting: MockSetting,
   };
 });
@@ -363,6 +364,29 @@ describe('CodexSettingsTab', () => {
 
     expect(findOptionalSetting('Installation method')).toBeUndefined();
     expect(findOptionalSetting('WSL distro override')).toBeUndefined();
+  });
+
+  it('refreshes existing chat views after enabling Codex', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const plugin = createPlugin({
+      providerConfigs: {
+        codex: {
+          ...DEFAULT_CODEX_PROVIDER_SETTINGS,
+          enabled: false,
+          customModels: '',
+        },
+      },
+    });
+    const context = createContext(plugin);
+
+    codexSettingsTabRenderer.render(createContainer(), context);
+
+    const enableSetting = findSetting('Enable Codex provider');
+    await enableSetting.toggleComponents[0].onChangeCallback?.(true);
+
+    expect(plugin.settings.providerConfigs.codex.enabled).toBe(true);
+    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
+    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
   });
 
   it('uses host-native CLI path behavior on non-Windows even when WSL is saved', async () => {

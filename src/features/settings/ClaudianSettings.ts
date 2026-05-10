@@ -149,6 +149,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
         ) => this.renderHiddenProviderCommandSetting(target, targetProviderId, copy),
         refreshModelSelectors: () => {
           for (const view of this.plugin.getAllViews()) {
+            const tabManager = view.getTabManager();
+            for (const tab of tabManager?.getAllTabs() ?? []) {
+              tab.onProviderAvailabilityChanged?.();
+            }
             view.refreshModelSelector();
           }
         },
