@@ -561,7 +561,29 @@ export class GeminiChatRuntime implements ChatRuntime {
     });
 
     this.transport.start();
-    await this.connection.initialize();
+    try {
+      await this.connection.initialize();
+    } catch (error) {
+      const baseMessage = error instanceof Error ? error.message : String(error);
+      const stderr = this.process.getStderrSnapshot();
+      const isAlive = this.process.isAlive();
+      
+      let diagnostic = `Failed to initialize Gemini connection: ${baseMessage}`;
+      if (stderr) {
+        diagnostic += `\n\nCLI Output (stderr):\n${stderr}`;
+      }
+      
+      if (!isAlive) {
+        diagnostic += '\n\nThe Gemini CLI process exited unexpectedly.';
+        const nodeError = getMissingNodeError(params.command, processEnv.PATH);
+        if (nodeError) {
+          diagnostic += `\n\n${nodeError}`;
+        }
+      }
+
+      console.error('[Claudian] Gemini Initialization Error:', diagnostic, error);
+      throw new Error(diagnostic);
+    }
     this.setReady(true);
   }
 
