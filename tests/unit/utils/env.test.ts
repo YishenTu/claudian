@@ -713,6 +713,30 @@ describe('cliPathRequiresNode', () => {
     expect(cliPathRequiresNode(scriptPath)).toBe(false);
   });
 
+  it('returns false for non-node shebang scripts that reference node in the body', () => {
+    const scriptPath = isWindows ? 'C:\\temp\\claude-wrapper' : '/tmp/claude-wrapper';
+    const script = [
+      '#!/usr/bin/env bash',
+      'set -euo pipefail',
+      'NODE_BIN="$(command -v node)"',
+      'exec "$NODE_BIN" /path/to/cli.js "$@"',
+      '',
+    ].join('\n');
+
+    jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === scriptPath);
+    jest.spyOn(fs, 'statSync').mockImplementation(
+      p => ({ isFile: () => String(p) === scriptPath }) as fsType.Stats
+    );
+    jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
+      Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength).write(script);
+      return script.length;
+    });
+    jest.spyOn(fs, 'closeSync').mockImplementation(() => {});
+
+    expect(cliPathRequiresNode(scriptPath)).toBe(false);
+  });
+
   it('returns false for .cmd files', () => {
     expect(cliPathRequiresNode('/path/to/claude.cmd')).toBe(false);
   });
