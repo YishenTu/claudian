@@ -4,7 +4,7 @@ import type {
   ProviderReasoningOption,
   ProviderUIOption,
 } from '../../../core/providers/types';
-import { OPENAI_PROVIDER_ICON } from '../../../shared/icons';
+import { GEMINI_PROVIDER_ICON } from '../../../shared/icons';
 import {
   buildGeminiBaseModels,
   decodeGeminiModelId,
@@ -253,7 +253,7 @@ export const geminiChatUIConfig: ProviderChatUIConfig = {
   },
 
   getProviderIcon() {
-    return OPENAI_PROVIDER_ICON;
+    return GEMINI_PROVIDER_ICON;
   },
 };
 
