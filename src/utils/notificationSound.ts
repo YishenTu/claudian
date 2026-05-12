@@ -1,4 +1,8 @@
-import notificationSoundUrl from '../assets/sounds/notification.wav';
+import notificationSoundBase64 from '../assets/sounds/notification.wav';
+
+// Standard `audio/wav` MIME; esbuild's `dataurl` loader emits the non-standard
+// `audio/wave` which Chromium silently refuses, so we build the URL ourselves.
+const notificationSoundUrl = `data:audio/wav;base64,${notificationSoundBase64}`;
 
 /**
  * Plays a short notification sound when the AI has finished streaming and the
