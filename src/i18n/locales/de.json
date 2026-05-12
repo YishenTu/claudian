@@ -283,6 +283,14 @@
       "name": "Mathe-Rendering während Streaming aufschieben",
       "desc": "LaTeX während des Streamings roh anzeigen und Mathematik einmal rendern, wenn der Textblock abgeschlossen ist."
     },
+    "enableCompletionSound": {
+      "name": "Completion sound",
+      "desc": "Play a short sound when the assistant finishes responding."
+    },
+    "completionSoundVolume": {
+      "name": "Completion sound volume",
+      "desc": "Volume of the completion notification sound."
+    },
     "chatViewPlacement": {
       "name": "Claudian öffnen in",
       "desc": "Wählen Sie, wo das Chat-Panel beim Erstellen geöffnet wird",

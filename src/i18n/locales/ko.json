@@ -283,6 +283,14 @@
       "name": "스트리밍 중 수식 렌더링 지연",
       "desc": "응답이 스트리밍되는 동안 원본 LaTeX를 표시하고 각 텍스트 블록이 완료되면 수식을 한 번 렌더링합니다."
     },
+    "enableCompletionSound": {
+      "name": "Completion sound",
+      "desc": "Play a short sound when the assistant finishes responding."
+    },
+    "completionSoundVolume": {
+      "name": "Completion sound volume",
+      "desc": "Volume of the completion notification sound."
+    },
     "chatViewPlacement": {
       "name": "Claudian 열 위치",
       "desc": "채팅 패널이 생성될 때 열릴 위치를 선택합니다",

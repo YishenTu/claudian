@@ -271,8 +271,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(container)
-      .setName('Completion sound')
-      .setDesc('Play a short sound when the assistant finishes responding.')
+      .setName(t('settings.enableCompletionSound.name'))
+      .setDesc(t('settings.enableCompletionSound.desc'))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enableCompletionSound ?? true)
@@ -283,8 +283,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(container)
-      .setName('Completion sound volume')
-      .setDesc('Volume of the completion notification sound.')
+      .setName(t('settings.completionSoundVolume.name'))
+      .setDesc(t('settings.completionSoundVolume.desc'))
       .addSlider((slider) =>
         slider
           .setLimits(0, 100, 5)

@@ -283,6 +283,14 @@
       "name": "串流傳輸時延遲渲染數學公式",
       "desc": "回應串流傳輸時顯示原始 LaTeX，並在每個文字區塊完成後只渲染一次數學公式。"
     },
+    "enableCompletionSound": {
+      "name": "Completion sound",
+      "desc": "Play a short sound when the assistant finishes responding."
+    },
+    "completionSoundVolume": {
+      "name": "Completion sound volume",
+      "desc": "Volume of the completion notification sound."
+    },
     "chatViewPlacement": {
       "name": "Claudian 開啟位置",
       "desc": "選擇新建聊天面板時的開啟位置",
