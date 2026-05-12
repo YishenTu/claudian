@@ -61,6 +61,10 @@ jest.mock('@/utils/path', () => ({
   getVaultPath: jest.fn().mockReturnValue('/test/vault'),
 }));
 
+jest.mock('@/utils/notificationSound', () => ({
+  playCompletionSound: jest.fn(),
+}));
+
 function createMockDeps(): StreamControllerDeps {
   const state = new ChatState();
   const messagesEl = createMockEl();
@@ -386,6 +390,16 @@ describe('StreamController - Text Content', () => {
       await expect(
         controller.handleStreamChunk({ type: 'done' }, msg)
       ).resolves.not.toThrow();
+    });
+
+    it('plays the completion sound when receiving a done chunk', async () => {
+      const { playCompletionSound } = jest.requireMock('@/utils/notificationSound');
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      expect(playCompletionSound).toHaveBeenCalledTimes(1);
     });
   });
 

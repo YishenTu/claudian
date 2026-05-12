@@ -33,6 +33,7 @@ import {
 import { formatDurationMmSs } from '../../../utils/date';
 import { extractDiffData } from '../../../utils/diff';
 import { hasStreamingMathDelimiters } from '../../../utils/markdownMath';
+import { playCompletionSound } from '../../../utils/notificationSound';
 import { getVaultPath, normalizePathForVault } from '../../../utils/path';
 import { FLAVOR_TEXTS } from '../constants';
 import type { MessageRenderer, RenderContentOptions } from '../rendering/MessageRenderer';
@@ -200,6 +201,8 @@ export class StreamController {
       case 'done':
         // Flush any remaining pending tools
         this.flushPendingTools();
+        // Signal that streaming finished and the user can speak again
+        playCompletionSound();
         break;
 
       case 'context_compacted': {

@@ -13,6 +13,7 @@ const baseConfig = {
     '^@anthropic-ai/claude-agent-sdk$': '<rootDir>/tests/__mocks__/claude-agent-sdk.ts',
     '^obsidian$': '<rootDir>/tests/__mocks__/obsidian.ts',
     '^@modelcontextprotocol/sdk/(.*)$': '<rootDir>/node_modules/@modelcontextprotocol/sdk/dist/cjs/$1',
+    '\\.wav$': '<rootDir>/tests/__mocks__/wavStub.ts',
   },
   transformIgnorePatterns: [
     'node_modules/(?!(@anthropic-ai/claude-agent-sdk)/)',
