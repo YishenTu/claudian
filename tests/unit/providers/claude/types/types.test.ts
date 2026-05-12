@@ -96,6 +96,8 @@ describe('types.ts', () => {
         enableAutoScroll: true,
         deferMathRenderingDuringStreaming: true,
         chatViewPlacement: 'right-sidebar',
+        enableCompletionSound: true,
+        completionSoundVolume: 1,
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -148,6 +150,8 @@ describe('types.ts', () => {
         enableAutoScroll: true,
         deferMathRenderingDuringStreaming: true,
         chatViewPlacement: 'right-sidebar',
+        enableCompletionSound: true,
+        completionSoundVolume: 1,
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -201,6 +205,8 @@ describe('types.ts', () => {
         enableAutoScroll: false,
         deferMathRenderingDuringStreaming: true,
         chatViewPlacement: 'right-sidebar',
+        enableCompletionSound: true,
+        completionSoundVolume: 1,
         hiddenProviderCommands: {
           claude: [],
           codex: [],

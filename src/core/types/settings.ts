@@ -143,6 +143,8 @@ export interface ClaudianSettings {
   enableAutoScroll: boolean;
   deferMathRenderingDuringStreaming: boolean;
   chatViewPlacement: ChatViewPlacement;
+  enableCompletionSound: boolean;
+  completionSoundVolume: number; // 0.0 – 1.0
 
   // Provider command visibility
   hiddenProviderCommands: HiddenProviderCommands;

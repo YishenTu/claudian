@@ -270,6 +270,32 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(container)
+      .setName('Completion sound')
+      .setDesc('Play a short sound when the assistant finishes responding.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableCompletionSound ?? true)
+          .onChange(async (value) => {
+            this.plugin.settings.enableCompletionSound = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(container)
+      .setName('Completion sound volume')
+      .setDesc('Volume of the completion notification sound.')
+      .addSlider((slider) =>
+        slider
+          .setLimits(0, 100, 5)
+          .setValue(Math.round((this.plugin.settings.completionSoundVolume ?? 1) * 100))
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.completionSoundVolume = value / 100;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // --- Conversations ---
 
     new Setting(container).setName(t('settings.conversations')).setHeading();

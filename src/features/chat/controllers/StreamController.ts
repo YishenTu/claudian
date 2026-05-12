@@ -202,7 +202,10 @@ export class StreamController {
         // Flush any remaining pending tools
         this.flushPendingTools();
         // Signal that streaming finished and the user can speak again
-        playCompletionSound();
+        playCompletionSound({
+          enabled: this.deps.plugin.settings.enableCompletionSound,
+          volume: this.deps.plugin.settings.completionSoundVolume,
+        });
         break;
 
       case 'context_compacted': {

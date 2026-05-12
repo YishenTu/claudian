@@ -89,6 +89,8 @@ function createMockDeps(): StreamControllerDeps {
     plugin: {
       settings: {
         permissionMode: 'yolo',
+        enableCompletionSound: true,
+        completionSoundVolume: 1,
       },
       app: {
         vault: {
@@ -400,6 +402,25 @@ describe('StreamController - Text Content', () => {
       await controller.handleStreamChunk({ type: 'done' }, msg);
 
       expect(playCompletionSound).toHaveBeenCalledTimes(1);
+      expect(playCompletionSound).toHaveBeenCalledWith({
+        enabled: true,
+        volume: 1,
+      });
+    });
+
+    it('forwards user-configured completion sound settings to the player', async () => {
+      const { playCompletionSound } = jest.requireMock('@/utils/notificationSound');
+      deps.plugin.settings.enableCompletionSound = false;
+      deps.plugin.settings.completionSoundVolume = 0.4;
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      expect(playCompletionSound).toHaveBeenCalledWith({
+        enabled: false,
+        volume: 0.4,
+      });
     });
   });
 
