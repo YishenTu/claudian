@@ -136,6 +136,10 @@ const context = await esbuild.context({
   sourcemap: prod ? false : 'inline',
   treeShaking: true,
   outfile: 'main.js',
+  // Embed audio assets as base64 data URLs so the plugin stays a single main.js
+  loader: {
+    '.wav': 'dataurl',
+  },
 });
 
 if (prod) {
