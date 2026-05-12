@@ -422,6 +422,17 @@ describe('StreamController - Text Content', () => {
         volume: 0.4,
       });
     });
+
+    it('does not play the completion sound when the stream was cancelled', async () => {
+      const { playCompletionSound } = jest.requireMock('@/utils/notificationSound');
+      deps.state.cancelRequested = true;
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      expect(playCompletionSound).not.toHaveBeenCalled();
+    });
   });
 
   describe('Usage handling', () => {

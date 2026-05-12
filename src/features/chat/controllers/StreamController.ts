@@ -201,11 +201,15 @@ export class StreamController {
       case 'done':
         // Flush any remaining pending tools
         this.flushPendingTools();
-        // Signal that streaming finished and the user can speak again
-        playCompletionSound({
-          enabled: this.deps.plugin.settings.enableCompletionSound,
-          volume: this.deps.plugin.settings.completionSoundVolume,
-        });
+        // Signal that streaming finished and the user can speak again, but
+        // skip the sound if the user cancelled the turn (Esc) — the SDK may
+        // still emit a trailing `done` after a cancel request.
+        if (!state.cancelRequested) {
+          playCompletionSound({
+            enabled: this.deps.plugin.settings.enableCompletionSound,
+            volume: this.deps.plugin.settings.completionSoundVolume,
+          });
+        }
         break;
 
       case 'context_compacted': {
