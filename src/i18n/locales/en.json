@@ -283,6 +283,14 @@
       "name": "Defer math rendering during streaming",
       "desc": "Show raw LaTeX while responses stream, then render math once when each text block completes."
     },
+    "enableCompletionSound": {
+      "name": "Completion sound",
+      "desc": "Play a short sound when the assistant finishes responding."
+    },
+    "completionSoundVolume": {
+      "name": "Completion sound volume",
+      "desc": "Volume of the completion notification sound."
+    },
     "chatViewPlacement": {
       "name": "Open Claudian in",
       "desc": "Choose where the chat panel opens when it is created",

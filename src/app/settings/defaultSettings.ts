@@ -47,6 +47,8 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   enableAutoScroll: true,
   deferMathRenderingDuringStreaming: true,
   chatViewPlacement: 'right-sidebar',
+  enableCompletionSound: true,
+  completionSoundVolume: 1,
 
   hiddenProviderCommands: getDefaultHiddenProviderCommands(),
 };

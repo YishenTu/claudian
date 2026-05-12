@@ -61,6 +61,10 @@ jest.mock('@/utils/path', () => ({
   getVaultPath: jest.fn().mockReturnValue('/test/vault'),
 }));
 
+jest.mock('@/utils/notificationSound', () => ({
+  playCompletionSound: jest.fn(),
+}));
+
 function createMockDeps(): StreamControllerDeps {
   const state = new ChatState();
   const messagesEl = createMockEl();
@@ -85,6 +89,8 @@ function createMockDeps(): StreamControllerDeps {
     plugin: {
       settings: {
         permissionMode: 'yolo',
+        enableCompletionSound: true,
+        completionSoundVolume: 1,
       },
       app: {
         vault: {
@@ -386,6 +392,46 @@ describe('StreamController - Text Content', () => {
       await expect(
         controller.handleStreamChunk({ type: 'done' }, msg)
       ).resolves.not.toThrow();
+    });
+
+    it('plays the completion sound when receiving a done chunk', async () => {
+      const { playCompletionSound } = jest.requireMock('@/utils/notificationSound');
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      expect(playCompletionSound).toHaveBeenCalledTimes(1);
+      expect(playCompletionSound).toHaveBeenCalledWith({
+        enabled: true,
+        volume: 1,
+      });
+    });
+
+    it('forwards user-configured completion sound settings to the player', async () => {
+      const { playCompletionSound } = jest.requireMock('@/utils/notificationSound');
+      deps.plugin.settings.enableCompletionSound = false;
+      deps.plugin.settings.completionSoundVolume = 0.4;
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      expect(playCompletionSound).toHaveBeenCalledWith({
+        enabled: false,
+        volume: 0.4,
+      });
+    });
+
+    it('does not play the completion sound when the stream was cancelled', async () => {
+      const { playCompletionSound } = jest.requireMock('@/utils/notificationSound');
+      deps.state.cancelRequested = true;
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      expect(playCompletionSound).not.toHaveBeenCalled();
     });
   });
 

@@ -283,6 +283,14 @@
       "name": "Diferir renderizado matemático durante streaming",
       "desc": "Mostrar LaTeX sin procesar mientras se transmite la respuesta y renderizar las fórmulas una vez al completar cada bloque de texto."
     },
+    "enableCompletionSound": {
+      "name": "Completion sound",
+      "desc": "Play a short sound when the assistant finishes responding."
+    },
+    "completionSoundVolume": {
+      "name": "Completion sound volume",
+      "desc": "Volume of the completion notification sound."
+    },
     "chatViewPlacement": {
       "name": "Abrir Claudian en",
       "desc": "Elige dónde se abre el panel de chat cuando se crea",

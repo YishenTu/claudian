@@ -136,6 +136,13 @@ const context = await esbuild.context({
   sourcemap: prod ? false : 'inline',
   treeShaking: true,
   outfile: 'main.js',
+  // Embed audio assets as base64 so the plugin stays a single main.js.
+  // We assemble the data URL with an explicit MIME at the call site because
+  // esbuild's `dataurl` loader emits the non-standard `audio/wave` MIME for
+  // WAV files, which Chromium/Electron silently refuses to play.
+  loader: {
+    '.wav': 'base64',
+  },
 });
 
 if (prod) {
