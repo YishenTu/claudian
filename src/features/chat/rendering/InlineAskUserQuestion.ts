@@ -124,7 +124,7 @@ export class InlineAskUserQuestion {
           typeof q === 'object' &&
           q !== null &&
           typeof q.question === 'string' &&
-          ((Array.isArray(q.options) && q.options.length > 0) || q.isOther === true),
+          ((Array.isArray(q.options) && q.options.length > 0) || q.isOther === true || this.config.showCustomInput),
       )
       .map((q, idx) => ({
         question: q.question,
@@ -655,8 +655,8 @@ export class InlineAskUserQuestion {
     this.handleResolve(result);
   }
 
-  private canShowCustomInputForQuestion(question: AskUserQuestionItem): boolean {
-    return this.config.showCustomInput && question.isOther === true;
+  private canShowCustomInputForQuestion(_question: AskUserQuestionItem): boolean {
+    return this.config.showCustomInput;
   }
 
   private getOptionValue(option: AskUserQuestionOption): string {
