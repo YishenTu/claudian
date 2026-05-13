@@ -86,18 +86,19 @@ export class ImageContextManager {
 
     this.dropOverlay = inputWrapper.createDiv({ cls: 'claudian-drop-overlay' });
     const dropContent = this.dropOverlay.createDiv({ cls: 'claudian-drop-content' });
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const ownerDocument = inputWrapper.ownerDocument ?? window.document;
+    const svg = ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('width', '32');
     svg.setAttribute('height', '32');
     svg.setAttribute('fill', 'none');
     svg.setAttribute('stroke', 'currentColor');
     svg.setAttribute('stroke-width', '2');
-    const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const pathEl = ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'path');
     pathEl.setAttribute('d', 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4');
-    const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    const polyline = ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'polyline');
     polyline.setAttribute('points', '17 8 12 3 7 8');
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    const line = ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'line');
     line.setAttribute('x1', '12');
     line.setAttribute('y1', '3');
     line.setAttribute('x2', '12');
@@ -110,10 +111,12 @@ export class ImageContextManager {
 
     const dropZone = inputWrapper;
 
-    dropZone.addEventListener('dragenter', (e) => this.handleDragEnter(e as DragEvent));
-    dropZone.addEventListener('dragover', (e) => this.handleDragOver(e as DragEvent));
-    dropZone.addEventListener('dragleave', (e) => this.handleDragLeave(e as DragEvent));
-    dropZone.addEventListener('drop', (e) => this.handleDrop(e as DragEvent));
+    dropZone.addEventListener('dragenter', (e) => this.handleDragEnter(e));
+    dropZone.addEventListener('dragover', (e) => this.handleDragOver(e));
+    dropZone.addEventListener('dragleave', (e) => this.handleDragLeave(e));
+    dropZone.addEventListener('drop', (e) => {
+      void this.handleDrop(e);
+    });
   }
 
   private handleDragEnter(e: DragEvent) {
@@ -168,7 +171,8 @@ export class ImageContextManager {
   }
 
   private setupPasteHandler() {
-    this.inputEl.addEventListener('paste', async (e) => {
+    this.inputEl.addEventListener('paste', (e) => {
+      void (async (): Promise<void> => {
       const items = e.clipboardData?.items;
       if (!items) return;
 
@@ -183,6 +187,7 @@ export class ImageContextManager {
           return;
         }
       }
+      })();
     });
   }
 
@@ -297,7 +302,8 @@ export class ImageContextManager {
   }
 
   private showFullImage(image: ImageAttachment) {
-    const overlay = document.body.createDiv({ cls: 'claudian-image-modal-overlay' });
+    const ownerDocument = this.containerEl.ownerDocument ?? window.document;
+    const overlay = ownerDocument.body.createDiv({ cls: 'claudian-image-modal-overlay' });
     const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
 
     modal.createEl('img', {
@@ -317,7 +323,7 @@ export class ImageContextManager {
     };
 
     const close = () => {
-      document.removeEventListener('keydown', handleEsc);
+      ownerDocument.removeEventListener('keydown', handleEsc);
       overlay.remove();
     };
 
@@ -325,7 +331,7 @@ export class ImageContextManager {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close();
     });
-    document.addEventListener('keydown', handleEsc);
+    ownerDocument.addEventListener('keydown', handleEsc);
   }
 
   private generateId(): string {

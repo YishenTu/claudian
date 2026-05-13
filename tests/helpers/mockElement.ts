@@ -51,8 +51,13 @@ export interface MockElement {
       setInterval: (callback: () => void, timeout: number) => number;
       clearInterval: (handle: number) => void;
     };
+    activeElement?: any;
+    body?: any;
+    addEventListener?: (event: string, handler: (...args: any[]) => void) => void;
+    removeEventListener?: (event: string, handler: (...args: any[]) => void) => void;
     createElement: (tagName: string) => MockElement;
     createElementNS: (namespace: string, tagName: string) => MockElement;
+    getSelection?: () => Selection | null;
   };
   _classes: Set<string>;
   _classList: Set<string>;
@@ -165,10 +170,25 @@ export function createMockEl(tag = 'div'): any {
     },
   };
 
+  const currentDocument = (): any => (globalThis as any).document;
   const ownerDocument = {
     defaultView,
-    createElement: (tagName: string) => createMockEl(tagName),
-    createElementNS: (_namespace: string, tagName: string) => createMockEl(tagName),
+    get activeElement() {
+      return currentDocument()?.activeElement ?? null;
+    },
+    get body() {
+      return currentDocument()?.body;
+    },
+    addEventListener(event: string, handler: (...args: any[]) => void) {
+      currentDocument()?.addEventListener?.(event, handler);
+    },
+    removeEventListener(event: string, handler: (...args: any[]) => void) {
+      currentDocument()?.removeEventListener?.(event, handler);
+    },
+    createElement: (tagName: string) => currentDocument()?.createElement?.(tagName) ?? createMockEl(tagName),
+    createElementNS: (namespace: string, tagName: string) =>
+      currentDocument()?.createElementNS?.(namespace, tagName) ?? createMockEl(tagName),
+    getSelection: () => currentDocument()?.getSelection?.() ?? null,
   };
 
   const element: MockElement = {
@@ -270,6 +290,7 @@ export function createMockEl(tag = 'div'): any {
     scrollIntoView() {},
     focus() {},
     blur() {},
+    select() {},
 
     setAttribute(name: string, value: string) {
       if (name === 'class') {

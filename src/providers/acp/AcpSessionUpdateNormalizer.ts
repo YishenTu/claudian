@@ -345,12 +345,12 @@ function formatUnknownValue(value: unknown): string {
     return '';
   }
   if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
+    return `${value}`;
   }
   try {
-    return JSON.stringify(value, null, 2);
+    return JSON.stringify(value, null, 2) ?? '';
   } catch {
-    return String(value);
+    return '[unserializable]';
   }
 }
 

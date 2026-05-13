@@ -63,10 +63,12 @@ export function renderEnvironmentSettingsSection(
       text.inputEl.addClass('claudian-settings-env-textarea');
       text.inputEl.dataset.envScope = scope;
       text.inputEl.addEventListener('input', () => updateReviewWarning());
-      text.inputEl.addEventListener('blur', async () => {
-        await plugin.applyEnvironmentVariables(scope, text.inputEl.value);
-        renderCustomContextLimits?.(contextLimitsContainer);
-        updateReviewWarning();
+      text.inputEl.addEventListener('blur', () => {
+        void (async (): Promise<void> => {
+          await plugin.applyEnvironmentVariables(scope, text.inputEl.value);
+          renderCustomContextLimits?.(contextLimitsContainer);
+          updateReviewWarning();
+        })();
       });
       envTextarea = text.inputEl;
     });

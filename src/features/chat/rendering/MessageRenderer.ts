@@ -149,12 +149,12 @@ export class MessageRenderer {
     }
 
     const msgEl = this.liveMessageEls.get(msg.id)
-      ?? this.messagesEl.querySelector(`[data-message-id="${msg.id}"]`) as HTMLElement | null;
+      ?? this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${msg.id}"]`);
     if (!msgEl) {
       return;
     }
 
-    const contentEl = msgEl.querySelector('.claudian-message-content') as HTMLElement | null;
+    const contentEl = msgEl.querySelector<HTMLElement>('.claudian-message-content');
     if (!contentEl) {
       return;
     }
@@ -167,7 +167,7 @@ export class MessageRenderer {
       void this.renderContent(textEl, textToShow);
     }
 
-    const toolbar = msgEl.querySelector('.claudian-user-msg-actions') as HTMLElement | null;
+    const toolbar = msgEl.querySelector<HTMLElement>('.claudian-user-msg-actions');
     if (toolbar) {
       toolbar.querySelectorAll('.claudian-user-msg-copy-btn').forEach((el) => el.remove());
     }
@@ -179,7 +179,7 @@ export class MessageRenderer {
 
   removeMessage(messageId: string): void {
     const msgEl = this.liveMessageEls.get(messageId)
-      ?? this.messagesEl.querySelector(`[data-message-id="${messageId}"]`) as HTMLElement | null;
+      ?? this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
     if (!msgEl) {
       return;
     }
@@ -547,7 +547,8 @@ export class MessageRenderer {
   showFullImage(image: ImageAttachment): void {
     const dataUri = `data:${image.mediaType};base64,${image.data}`;
 
-    const overlay = document.body.createDiv({ cls: 'claudian-image-modal-overlay' });
+    const ownerDocument = this.messagesEl.ownerDocument ?? window.document;
+    const overlay = ownerDocument.body.createDiv({ cls: 'claudian-image-modal-overlay' });
     const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
 
     modal.createEl('img', {
@@ -567,7 +568,7 @@ export class MessageRenderer {
     };
 
     const close = () => {
-      document.removeEventListener('keydown', handleEsc);
+      ownerDocument.removeEventListener('keydown', handleEsc);
       overlay.remove();
     };
 
@@ -575,7 +576,7 @@ export class MessageRenderer {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close();
     });
-    document.addEventListener('keydown', handleEsc);
+    ownerDocument.addEventListener('keydown', handleEsc);
   }
 
   /**
@@ -610,7 +611,8 @@ export class MessageRenderer {
         this.app,
         this.plugin.settings.mediaFolder
       );
-      await MarkdownRenderer.renderMarkdown(
+      await MarkdownRenderer.render(
+        this.app,
         processedMarkdown,
         el,
         '',
@@ -640,14 +642,13 @@ export class MessageRenderer {
             wrapper.appendChild(label);
             label.addEventListener('click', () => {
               runRendererAction(async () => {
-                const activeWindow = label.ownerDocument.defaultView ?? window;
                 const originalLabel = match[1];
                 if (!originalLabel) return;
 
                 try {
                   await navigator.clipboard.writeText(code.textContent || '');
-                  label.setText('copied!');
-                  activeWindow.setTimeout(() => label.setText(originalLabel), 1500);
+                  label.setText('Copied!');
+                  window.setTimeout(() => label.setText(originalLabel), 1500);
                 } catch {
                   // Clipboard API may fail in non-secure contexts
                 }
@@ -694,7 +695,6 @@ export class MessageRenderer {
     copyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       runRendererAction(async () => {
-        const activeWindow = copyBtn.ownerDocument.defaultView ?? window;
 
         try {
           await navigator.clipboard.writeText(markdown);
@@ -705,15 +705,15 @@ export class MessageRenderer {
 
         // Clear any pending timeout from rapid clicks
         if (feedbackTimeout) {
-          activeWindow.clearTimeout(feedbackTimeout);
+          window.clearTimeout(feedbackTimeout);
         }
 
         // Show "copied!" feedback
         copyBtn.empty();
-        copyBtn.setText('copied!');
+        copyBtn.setText('Copied!');
         copyBtn.classList.add('copied');
 
-        feedbackTimeout = activeWindow.setTimeout(() => {
+        feedbackTimeout = window.setTimeout(() => {
           copyBtn.empty();
           setIcon(copyBtn, 'copy');
           copyBtn.classList.remove('copied');
@@ -747,7 +747,7 @@ export class MessageRenderer {
   }
 
   private getOrCreateActionsToolbar(msgEl: HTMLElement): HTMLElement {
-    const existing = msgEl.querySelector('.claudian-user-msg-actions') as HTMLElement | null;
+    const existing = msgEl.querySelector<HTMLElement>('.claudian-user-msg-actions');
     if (existing) return existing;
     return msgEl.createDiv({ cls: 'claudian-user-msg-actions' });
   }
@@ -763,17 +763,16 @@ export class MessageRenderer {
     copyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       runRendererAction(async () => {
-        const activeWindow = copyBtn.ownerDocument.defaultView ?? window;
         try {
           await navigator.clipboard.writeText(content);
         } catch {
           return;
         }
-        if (feedbackTimeout) activeWindow.clearTimeout(feedbackTimeout);
+        if (feedbackTimeout) window.clearTimeout(feedbackTimeout);
         copyBtn.empty();
-        copyBtn.setText('copied!');
+        copyBtn.setText('Copied!');
         copyBtn.classList.add('copied');
-        feedbackTimeout = activeWindow.setTimeout(() => {
+        feedbackTimeout = window.setTimeout(() => {
           copyBtn.empty();
           setIcon(copyBtn, 'copy');
           copyBtn.classList.remove('copied');
@@ -835,8 +834,7 @@ export class MessageRenderer {
     const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < threshold;
     if (isNearBottom) {
-      const activeWindow = this.messagesEl.ownerDocument.defaultView ?? window;
-      activeWindow.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
       });
     }

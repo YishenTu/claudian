@@ -101,6 +101,10 @@ class MockElement {
     this._scrollTop = _value;
   }
 
+  get ownerDocument(): any {
+    return (global as any).document;
+  }
+
   appendChild(child: MockElement): MockElement {
     child.parent = this;
     this.children.push(child);

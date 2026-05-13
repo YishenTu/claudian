@@ -129,7 +129,7 @@ export class SlashCommandDropdown {
     this.triggerStartIndex = triggerIndex;
     this.activeTriggerChar = triggerChar;
     const isAtPosition0 = triggerIndex === 0;
-    this.showDropdown(searchText, isAtPosition0);
+    void this.showDropdown(searchText, isAtPosition0);
   }
 
   handleKeydown(e: KeyboardEvent): boolean {
@@ -265,7 +265,7 @@ export class SlashCommandDropdown {
             displayPrefix: '/',
             insertPrefix: '/',
             isBuiltIn: true,
-            slashCommand: cmd as SlashCommand,
+            slashCommand: cmd,
           });
         }
       }

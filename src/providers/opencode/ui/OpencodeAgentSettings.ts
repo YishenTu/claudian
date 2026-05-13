@@ -91,7 +91,7 @@ class OpencodeAgentModal extends Modal {
       .addText((text) => {
         nameInput = text.inputEl;
         text.setValue(this.existing?.name ?? '')
-          .setPlaceholder('review');
+          .setPlaceholder('Review');
       });
 
     new Setting(contentEl)
@@ -130,7 +130,7 @@ class OpencodeAgentModal extends Modal {
       .addText((text) => {
         modelInput = text.inputEl;
         text.setValue(this.existing?.model ?? '')
-          .setPlaceholder('anthropic/claude-sonnet-4-20250514');
+          .setPlaceholder('Anthropic/Claude-sonnet-4-20250514');
       });
 
     new Setting(details)
@@ -139,7 +139,7 @@ class OpencodeAgentModal extends Modal {
       .addText((text) => {
         variantInput = text.inputEl;
         text.setValue(this.existing?.variant ?? '')
-          .setPlaceholder('high');
+          .setPlaceholder('High');
       });
 
     new Setting(details)
@@ -152,7 +152,7 @@ class OpencodeAgentModal extends Modal {
       });
 
     new Setting(details)
-      .setName('Top P')
+      .setName('Top p')
       .setDesc('Optional nucleus sampling value')
       .addText((text) => {
         topPInput = text.inputEl;
@@ -166,7 +166,7 @@ class OpencodeAgentModal extends Modal {
       .addText((text) => {
         colorInput = text.inputEl;
         text.setValue(this.existing?.color ?? '')
-          .setPlaceholder('#FF5733');
+          .setPlaceholder('#Ff5733');
       });
 
     new Setting(details)
@@ -179,7 +179,7 @@ class OpencodeAgentModal extends Modal {
       });
 
     new Setting(details)
-      .setName('Hide From @mention')
+      .setName('Hide from @mention')
       .setDesc('Hide this subagent from the @ autocomplete menu')
       .addToggle((toggle) => {
         toggle.setValue(hiddenValue).onChange((value) => {
@@ -188,7 +188,7 @@ class OpencodeAgentModal extends Modal {
       });
 
     new Setting(details)
-      .setName('Disable Agent')
+      .setName('Disable agent')
       .setDesc('Disable the agent without deleting the file')
       .addToggle((toggle) => {
         toggle.setValue(disableValue).onChange((value) => {
@@ -197,7 +197,7 @@ class OpencodeAgentModal extends Modal {
       });
 
     new Setting(details)
-      .setName('Enabled Tools (JSON)')
+      .setName('Enabled tools (JSON)')
       .setDesc('Optional deprecated tools map, e.g. {"write":false,"edit":false}')
       .addTextArea((text) => {
         toolsInput = text.inputEl;
@@ -248,7 +248,8 @@ class OpencodeAgentModal extends Modal {
       text: 'Save',
       cls: 'claudian-save-btn',
     });
-    saveBtn.addEventListener('click', async () => {
+    saveBtn.addEventListener('click', () => {
+      void (async (): Promise<void> => {
       const name = nameInput.value.trim();
       const nameError = validateOpencodeAgentName(name);
       if (nameError) {
@@ -342,6 +343,7 @@ class OpencodeAgentModal extends Modal {
         return;
       }
       this.close();
+      })();
     });
   }
 
@@ -448,7 +450,8 @@ export class OpencodeAgentSettings {
       attr: { 'aria-label': 'Delete' },
     });
     setIcon(deleteBtn, 'trash-2');
-    deleteBtn.addEventListener('click', async () => {
+    deleteBtn.addEventListener('click', () => {
+      void (async (): Promise<void> => {
       if (!this.app) return;
       const confirmed = await confirmDelete(
         this.app,
@@ -463,6 +466,7 @@ export class OpencodeAgentSettings {
       } catch {
         new Notice('Failed to delete subagent');
       }
+      })();
     });
   }
 

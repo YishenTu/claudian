@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport';
 import * as http from 'http';
 import * as https from 'https';
 
@@ -27,6 +27,20 @@ export interface McpTestResult {
 interface UrlServerConfig {
   url: string;
   headers?: Record<string, string>;
+}
+
+type StreamableHttpTransportOptions = ConstructorParameters<typeof StreamableHTTPClientTransport>[1];
+type LegacySseTransportConstructor = new (
+  url: URL,
+  options?: StreamableHttpTransportOptions,
+) => Transport;
+
+function createLegacySseTransport(url: URL, options: StreamableHttpTransportOptions): Transport {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- Legacy SSE MCP servers still need the SDK's deprecated compatibility transport.
+  const module = require('@modelcontextprotocol/sdk/client/sse') as {
+    SSEClientTransport: LegacySseTransportConstructor;
+  };
+  return new module.SSEClientTransport(url, options);
 }
 
 /**
@@ -57,7 +71,10 @@ export function createNodeFetch(): (input: string | URL | Request, init?: Reques
         fail(signal?.reason ?? new Error('Request aborted'));
       };
 
-      const requestHeaders = Object.fromEntries(headers.entries());
+      const requestHeaders: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        requestHeaders[key] = value;
+      });
       if (body) {
         requestHeaders['content-length'] = String(body.byteLength);
       }
@@ -172,7 +189,10 @@ function createFetchResponse(res: http.IncomingMessage): MinimalFetchResponse {
     headers: responseHeaders,
     body,
     text: readAsText,
-    json: async () => JSON.parse(await readAsText()),
+    json: async () => {
+      const parsed: unknown = JSON.parse(await readAsText());
+      return parsed;
+    },
   };
 }
 
@@ -190,9 +210,9 @@ function mergeHeaders(input: string | URL | Request, init?: RequestInit): Header
   const headers = new Headers(input instanceof Request ? input.headers : undefined);
   if (init?.headers) {
     const initHeaders = new Headers(init.headers);
-    for (const [key, value] of initHeaders.entries()) {
+    initHeaders.forEach((value, key) => {
       headers.set(key, value);
-    }
+    });
   }
   return headers;
 }
@@ -211,7 +231,7 @@ const nodeFetch = createNodeFetch();
 export async function testMcpServer(server: ManagedMcpServer): Promise<McpTestResult> {
   const type = getMcpServerType(server.config);
 
-  let transport;
+  let transport: Transport;
   try {
     if (type === 'stdio') {
       const config = server.config as { command: string; args?: string[]; env?: Record<string, string> };
@@ -222,7 +242,7 @@ export async function testMcpServer(server: ManagedMcpServer): Promise<McpTestRe
       transport = new StdioClientTransport({
         command: cmd,
         args,
-        env: { ...process.env, ...config.env, PATH: getEnhancedPath(config.env?.PATH) } as Record<string, string>,
+        env: { ...process.env, ...config.env, PATH: getEnhancedPath(config.env?.PATH) },
         stderr: 'ignore',
       });
     } else {
@@ -233,7 +253,7 @@ export async function testMcpServer(server: ManagedMcpServer): Promise<McpTestRe
         requestInit: config.headers ? { headers: config.headers } : undefined,
       };
       transport = type === 'sse'
-        ? new SSEClientTransport(url, options)
+        ? createLegacySseTransport(url, options)
         : new StreamableHTTPClientTransport(url, options);
     }
   } catch (error) {
@@ -246,7 +266,7 @@ export async function testMcpServer(server: ManagedMcpServer): Promise<McpTestRe
 
   const client = new Client({ name: 'claudian-tester', version: '1.0.0' });
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = window.setTimeout(() => controller.abort(), 10000);
 
   try {
     await client.connect(transport, { signal: controller.signal });
@@ -280,7 +300,7 @@ export async function testMcpServer(server: ManagedMcpServer): Promise<McpTestRe
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   } finally {
-    clearTimeout(timeout);
+    window.clearTimeout(timeout);
     try {
       await client.close();
     } catch {

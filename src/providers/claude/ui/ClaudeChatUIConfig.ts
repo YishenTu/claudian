@@ -9,7 +9,6 @@ import { getCustomModelIds } from '../env/claudeModelEnv';
 import { getClaudeModelOptions } from '../modelOptions';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import {
-  type ClaudeModel,
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_EFFORT_LEVEL,
   DEFAULT_THINKING_BUDGET,
@@ -37,7 +36,7 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
-    return this.getModelOptions(settings).some((option: ProviderUIOption) => option.value === model);
+    return getClaudeModelOptions(settings).some((option: ProviderUIOption) => option.value === model);
   },
 
   isAdaptiveReasoningModel(model: string, _settings: Record<string, unknown>): boolean {
@@ -73,15 +72,15 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     const target = settings as Record<string, unknown>;
 
     if (DEFAULT_CLAUDE_MODELS.some(m => m.value === model)) {
-      target.thinkingBudget = DEFAULT_THINKING_BUDGET[model as ClaudeModel];
+      target.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
       if (isAdaptiveThinkingModel(model)) {
-        target.effortLevel = DEFAULT_EFFORT_LEVEL[model as ClaudeModel] ?? 'high';
+        target.effortLevel = DEFAULT_EFFORT_LEVEL[model] ?? 'high';
       }
       updateClaudeProviderSettings(target, { lastModel: model });
     } else {
       target.lastCustomModel = model;
       if (isAdaptiveThinkingModel(model)) {
-        target.effortLevel = normalizeEffortLevel(model, target.effortLevel as string | undefined);
+        target.effortLevel = normalizeEffortLevel(model, target.effortLevel);
       }
     }
   },

@@ -123,7 +123,7 @@ export interface AgentMessageItem {
   id: string;
   text: string;
   phase: string;
-  memoryCitation: unknown | null;
+  memoryCitation: unknown;
 }
 
 export interface PlanItem {

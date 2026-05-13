@@ -1,4 +1,4 @@
-import { Modal, Notice, setIcon, Setting } from 'obsidian';
+import { type App, Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
@@ -21,7 +21,7 @@ export class CodexSkillModal extends Modal {
   private _triggerSave!: () => Promise<void>;
 
   constructor(
-    app: any,
+    app: App,
     existing: ProviderCommandEntry | null,
     onSave: (entry: ProviderCommandEntry) => Promise<void>
   ) {
@@ -65,7 +65,7 @@ export class CodexSkillModal extends Modal {
       .addText(text => {
         this._nameInput = text.inputEl;
         text.setValue(this.existing?.name || '')
-          .setPlaceholder('analyze-code');
+          .setPlaceholder('Analyze-code');
       });
 
     new Setting(contentEl)
@@ -85,7 +85,7 @@ export class CodexSkillModal extends Modal {
       attr: { rows: '10', placeholder: 'Analyze the code for...' },
     });
     contentArea.value = this.existing?.content || '';
-    this._contentArea = contentArea as HTMLTextAreaElement;
+    this._contentArea = contentArea;
 
     const doSave = async () => {
       const name = this._nameInput.value.trim();
@@ -142,7 +142,9 @@ export class CodexSkillModal extends Modal {
       text: 'Save',
       cls: 'claudian-save-btn',
     });
-    saveBtn.addEventListener('click', doSave);
+    saveBtn.addEventListener('click', () => {
+      void doSave();
+    });
   }
 
   onClose() {
@@ -154,13 +156,13 @@ export class CodexSkillSettings {
   private containerEl: HTMLElement;
   private catalog: ProviderCommandCatalog;
   private entries: ProviderCommandEntry[] = [];
-  private app?: any;
+  private app?: App;
 
-  constructor(containerEl: HTMLElement, catalog: ProviderCommandCatalog, app?: any) {
+  constructor(containerEl: HTMLElement, catalog: ProviderCommandCatalog, app?: App) {
     this.containerEl = containerEl;
     this.catalog = catalog;
     this.app = app;
-    this.render();
+    void this.render();
   }
 
   async deleteEntry(entry: ProviderCommandEntry): Promise<void> {
@@ -243,13 +245,15 @@ export class CodexSkillSettings {
         attr: { 'aria-label': 'Delete' },
       });
       setIcon(deleteBtn, 'trash-2');
-      deleteBtn.addEventListener('click', async () => {
+      deleteBtn.addEventListener('click', () => {
+        void (async (): Promise<void> => {
         try {
           await this.deleteEntry(entry);
           new Notice(`Codex skill "$${entry.name}" deleted`);
         } catch {
           new Notice('Failed to delete Codex skill');
         }
+        })();
       });
     }
   }

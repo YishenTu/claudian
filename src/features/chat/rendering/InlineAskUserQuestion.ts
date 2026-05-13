@@ -51,7 +51,7 @@ export class InlineAskUserQuestion {
       showCustomInput: config?.showCustomInput ?? true,
       immediateSelect: config?.immediateSelect ?? false,
     };
-    this.boundKeyDown = this.handleKeyDown.bind(this);
+    this.boundKeyDown = (event) => this.handleKeyDown(event);
   }
 
   render(): void {
@@ -91,8 +91,7 @@ export class InlineAskUserQuestion {
     this.rootEl.addEventListener('keydown', this.boundKeyDown);
 
     // Defer focus to after the element is in the DOM and laid out
-    const activeWindow = this.rootEl.ownerDocument.defaultView ?? window;
-    activeWindow.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       this.rootEl.focus();
       this.rootEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
@@ -111,7 +110,7 @@ export class InlineAskUserQuestion {
     const raw = this.input.questions;
     if (!Array.isArray(raw)) return [];
 
-    return raw
+    return (raw as unknown[])
       .filter(
         (q): q is {
           question: string;
@@ -121,11 +120,14 @@ export class InlineAskUserQuestion {
           isOther?: boolean;
           isSecret?: boolean;
           id?: string;
-        } =>
-          typeof q === 'object' &&
-          q !== null &&
-          typeof q.question === 'string' &&
-          ((Array.isArray(q.options) && q.options.length > 0) || q.isOther === true),
+        } => {
+          if (!q || typeof q !== 'object' || Array.isArray(q)) {
+            return false;
+          }
+          const record = q as Record<string, unknown>;
+          return typeof record.question === 'string'
+            && ((Array.isArray(record.options) && record.options.length > 0) || record.isOther === true);
+        },
       )
       .map((q, idx) => ({
         question: q.question,
@@ -146,7 +148,7 @@ export class InlineAskUserQuestion {
       const value = this.extractValue(obj, label);
       return { label, description, ...(value !== label ? { value } : {}) };
     }
-    return { label: typeof opt === 'string' ? opt : String(opt), description: '' };
+    return { label: this.stringifyOptionValue(opt), description: '' };
   }
 
   private deduplicateOptions(options: AskUserQuestionOption[]): AskUserQuestionOption[] {
@@ -163,7 +165,15 @@ export class InlineAskUserQuestion {
     if (typeof obj.value === 'string') return obj.value;
     if (typeof obj.text === 'string') return obj.text;
     if (typeof obj.name === 'string') return obj.name;
-    return String(obj);
+    return 'Option';
+  }
+
+  private stringifyOptionValue(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+      return `${value}`;
+    }
+    return 'Option';
   }
 
   private extractValue(obj: Record<string, unknown>, fallback: string): string {
@@ -447,13 +457,13 @@ export class InlineAskUserQuestion {
       item.toggleClass('is-selected', isSelected);
 
       if (isMulti) {
-        const checkSpan = item.querySelector('.claudian-ask-check') as HTMLElement | null;
+        const checkSpan = item.querySelector('.claudian-ask-check');
         if (checkSpan) {
           checkSpan.textContent = isSelected ? '[\u2713] ' : '[ ] ';
           checkSpan.toggleClass('is-checked', isSelected);
         }
       } else {
-        const labelRow = item.querySelector('.claudian-ask-label-row') as HTMLElement | null;
+        const labelRow = item.querySelector('.claudian-ask-label-row');
         const existingMark = item.querySelector('.claudian-ask-check-mark');
         if (isSelected && !existingMark && labelRow) {
           labelRow.createSpan({ text: ' \u2713', cls: 'claudian-ask-check-mark' });

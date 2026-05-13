@@ -5,5 +5,5 @@ export interface OpencodeProviderState {
 export function getOpencodeState(
   providerState?: Record<string, unknown>,
 ): OpencodeProviderState {
-  return (providerState ?? {}) as OpencodeProviderState;
+  return (providerState ?? {});
 }

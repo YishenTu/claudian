@@ -69,8 +69,8 @@ function listedSkillToProviderEntry(
     ...(isVault
       ? {
           persistenceKey: createCodexSkillPersistenceKey({
-            rootId: location!.rootId,
-            currentName: location!.name,
+            rootId: location.rootId,
+            currentName: location.name,
           }),
         }
       : {}),

@@ -129,6 +129,7 @@ export class ModelSelector {
         option.appendChild(createProviderIconSvg(icon, {
           className: 'claudian-model-provider-icon',
           height: 12,
+          ownerDocument: option.ownerDocument,
           width: 12,
         }));
       }
@@ -787,7 +788,7 @@ export class ExternalContextSelector {
 
     // Header
     const headerEl = this.dropdownEl.createDiv({ cls: 'claudian-external-context-header' });
-    headerEl.setText('External Contexts');
+    headerEl.setText('External contexts');
 
     // Path list
     const listEl = this.dropdownEl.createDiv({ cls: 'claudian-external-context-list' });
@@ -990,7 +991,7 @@ export class McpServerSelector {
 
     // Header
     const headerEl = this.dropdownEl.createDiv({ cls: 'claudian-mcp-selector-header' });
-    headerEl.setText('MCP Servers');
+    headerEl.setText('Mcp servers');
 
     // Server list
     const listEl = this.dropdownEl.createDiv({ cls: 'claudian-mcp-selector-list' });
@@ -1054,7 +1055,7 @@ export class McpServerSelector {
 
     // Update item visually in-place (immediate feedback)
     const isEnabled = this.enabledServers.has(name);
-    const checkEl = itemEl.querySelector('.claudian-mcp-selector-check') as HTMLElement | null;
+    const checkEl = itemEl.querySelector<HTMLElement>('.claudian-mcp-selector-check');
 
     if (isEnabled) {
       itemEl.addClass('enabled');
@@ -1095,7 +1096,7 @@ export class McpServerSelector {
       }
     } else {
       this.iconEl.removeClass('active');
-      this.iconEl.setAttribute('title', 'MCP servers (click to enable)');
+      this.iconEl.setAttribute('title', 'Mcp servers (click to enable)');
       this.badgeEl.removeClass('visible');
     }
   }

@@ -51,7 +51,7 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
-    if (this.getModelOptions(settings).some((option: ProviderUIOption) => option.value === model)) {
+    if (getCodexModelOptions(settings).some((option: ProviderUIOption) => option.value === model)) {
       return true;
     }
 

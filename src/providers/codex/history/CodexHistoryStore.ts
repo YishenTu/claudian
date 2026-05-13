@@ -370,7 +370,7 @@ function parseSessionRecord(line: string): ParsedSessionRecord | null {
   };
 
   try {
-    parsed = JSON.parse(line);
+    parsed = JSON.parse(line) as typeof parsed;
   } catch {
     return null;
   }
@@ -1044,7 +1044,7 @@ function flushBubbleTurnMessages(
 
 const SAFE_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-function getPathModuleForSessionPath(sessionPath: string): typeof path.posix | typeof path.win32 {
+function getPathModuleForSessionPath(sessionPath: string): typeof path.posix {
   return sessionPath.includes('\\') || /^[A-Za-z]:/.test(sessionPath)
     ? path.win32
     : path.posix;

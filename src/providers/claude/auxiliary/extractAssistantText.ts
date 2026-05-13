@@ -6,15 +6,14 @@ export function extractAssistantText(
     return '';
   }
 
-  return content
-    .filter((block): block is { type: 'text'; text: string } =>
-      !!block &&
-      typeof block === 'object' &&
-      'type' in block &&
-      'text' in block &&
-      block.type === 'text' &&
-      typeof block.text === 'string'
-    )
+  return (content as unknown[])
+    .filter((block): block is { type: 'text'; text: string } => {
+      if (!block || typeof block !== 'object' || Array.isArray(block)) {
+        return false;
+      }
+      const record = block as Record<string, unknown>;
+      return record.type === 'text' && typeof record.text === 'string';
+    })
     .map((block) => block.text)
     .join('');
 }

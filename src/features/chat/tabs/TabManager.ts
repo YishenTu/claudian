@@ -122,7 +122,7 @@ export class TabManager implements TabManagerInterface {
   );
   constructor(
     plugin: ClaudianPlugin,
-    arg2: HTMLElement | unknown,
+    arg2: unknown,
     arg3: HTMLElement | TabManagerViewHost,
     arg4?: TabManagerViewHost | TabManagerCallbacks,
     arg5: TabManagerCallbacks = {},
@@ -136,7 +136,7 @@ export class TabManager implements TabManagerInterface {
       return;
     }
 
-    this.containerEl = arg3 as HTMLElement;
+    this.containerEl = arg3;
     this.view = arg4 as TabManagerViewHost;
     this.callbacks = arg5;
   }
@@ -747,10 +747,12 @@ export class TabManager implements TabManagerInterface {
       return [];
     }
 
-    const context = await this.buildProviderCommandContext(
+    const resolvedWarmupContext = warmupContext
+      ?? await this.buildProviderWarmupContext(tab, providerId);
+    const context = this.buildProviderCommandContext(
       tab,
       providerId,
-      warmupContext ?? await this.buildProviderWarmupContext(tab, providerId),
+      resolvedWarmupContext,
     );
     const cached = this.providerCommandCache.get(tab.id);
     if (
@@ -786,7 +788,7 @@ export class TabManager implements TabManagerInterface {
   private isProviderCommandLoaderAvailable(providerId: ProviderId): boolean {
     const loader = ProviderWorkspaceRegistry.getRuntimeCommandLoader(providerId);
     if (!loader) return false;
-    return loader.isAvailable(this.plugin.settings as unknown as Record<string, unknown>);
+    return loader.isAvailable(this.plugin.settings);
   }
 
   private async prewarmProviderTab(tab: TabData): Promise<void> {
@@ -881,7 +883,7 @@ export class TabManager implements TabManagerInterface {
     warmupContext: ProviderWarmupContext,
   ): ProviderCommandContext {
     const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.plugin.settings as unknown as Record<string, unknown>,
+      this.plugin.settings,
       providerId,
     );
 

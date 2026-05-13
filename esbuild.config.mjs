@@ -1,7 +1,7 @@
 import esbuild from 'esbuild';
+import { builtinModules } from 'node:module';
 import path from 'path';
 import process from 'process';
-import builtins from 'builtin-modules';
 import {
   copyFileSync,
   existsSync,
@@ -127,8 +127,8 @@ const context = await esbuild.context({
     '@lezer/common',
     '@lezer/highlight',
     '@lezer/lr',
-    ...builtins,
-    ...builtins.map(m => `node:${m}`),
+    ...builtinModules,
+    ...builtinModules.map(m => `node:${m}`),
   ],
   format: 'cjs',
   target: 'es2018',

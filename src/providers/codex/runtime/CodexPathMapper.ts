@@ -81,63 +81,69 @@ function maybeMapLinuxToWslUnc(targetPath: string, distroName?: string): string 
 }
 
 function createIdentityMapper(target: CodexExecutionTarget): CodexPathMapper {
+  const toTargetPath = (hostPath: string): string | null => {
+    if (!hostPath) {
+      return null;
+    }
+
+    return target.platformFamily === 'windows'
+      ? normalizeWindowsPath(hostPath)
+      : normalizePosixPath(hostPath);
+  };
+  const toHostPath = (targetPath: string): string | null => {
+    if (!targetPath) {
+      return null;
+    }
+
+    return target.platformFamily === 'windows'
+      ? normalizeWindowsPath(targetPath)
+      : normalizePosixPath(targetPath);
+  };
+
   return {
     target,
-    toTargetPath(hostPath: string): string | null {
-      if (!hostPath) {
-        return null;
-      }
-
-      return target.platformFamily === 'windows'
-        ? normalizeWindowsPath(hostPath)
-        : normalizePosixPath(hostPath);
-    },
-    toHostPath(targetPath: string): string | null {
-      if (!targetPath) {
-        return null;
-      }
-
-      return target.platformFamily === 'windows'
-        ? normalizeWindowsPath(targetPath)
-        : normalizePosixPath(targetPath);
-    },
+    toTargetPath,
+    toHostPath,
     mapTargetPathList(hostPaths: string[]): string[] {
       return hostPaths
-        .map(hostPath => this.toTargetPath(hostPath))
+        .map(toTargetPath)
         .filter((value): value is string => typeof value === 'string' && value.length > 0);
     },
     canRepresentHostPath(hostPath: string): boolean {
-      return this.toTargetPath(hostPath) !== null;
+      return toTargetPath(hostPath) !== null;
     },
   };
 }
 
 function createWslPathMapper(target: CodexExecutionTarget): CodexPathMapper {
+  const toTargetPath = (hostPath: string): string | null => {
+    if (!hostPath) {
+      return null;
+    }
+
+    return maybeMapWslUncToLinux(hostPath, target.distroName)
+      ?? maybeMapWindowsDriveToWsl(hostPath);
+  };
+  const toHostPath = (targetPath: string): string | null => {
+    if (!targetPath) {
+      return null;
+    }
+
+    return maybeMapLinuxToWindowsDrive(targetPath)
+      ?? maybeMapLinuxToWslUnc(targetPath, target.distroName);
+  };
+
   return {
     target,
-    toTargetPath(hostPath: string): string | null {
-      if (!hostPath) {
-        return null;
-      }
-
-      return maybeMapWslUncToLinux(hostPath, target.distroName)
-        ?? maybeMapWindowsDriveToWsl(hostPath);
-    },
-    toHostPath(targetPath: string): string | null {
-      if (!targetPath) {
-        return null;
-      }
-
-      return maybeMapLinuxToWindowsDrive(targetPath)
-        ?? maybeMapLinuxToWslUnc(targetPath, target.distroName);
-    },
+    toTargetPath,
+    toHostPath,
     mapTargetPathList(hostPaths: string[]): string[] {
       return hostPaths
-        .map(hostPath => this.toTargetPath(hostPath))
+        .map(toTargetPath)
         .filter((value): value is string => typeof value === 'string' && value.length > 0);
     },
     canRepresentHostPath(hostPath: string): boolean {
-      return this.toTargetPath(hostPath) !== null;
+      return toTargetPath(hostPath) !== null;
     },
   };
 }

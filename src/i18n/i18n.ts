@@ -40,11 +40,11 @@ export function t(key: TranslationKey, params?: Record<string, string | number>)
   const dict = translations[currentLocale];
 
   const keys = key.split('.');
-  let value: any = dict;
+  let value: unknown = dict;
 
   for (const k of keys) {
     if (value && typeof value === 'object' && k in value) {
-      value = value[k];
+      value = (value as Record<string, unknown>)[k];
     } else {
       if (currentLocale !== DEFAULT_LOCALE) {
         return tFallback(key, params);
@@ -58,8 +58,9 @@ export function t(key: TranslationKey, params?: Record<string, string | number>)
   }
 
   if (params) {
-    return value.replace(/\{(\w+)\}/g, (_, param) => {
-      return params[param]?.toString() ?? `{${param}}`;
+    return value.replace(/\{(\w+)\}/g, (match: string, param: string): string => {
+      const replacement = params[param];
+      return replacement !== undefined ? `${replacement}` : match;
     });
   }
 
@@ -69,11 +70,11 @@ export function t(key: TranslationKey, params?: Record<string, string | number>)
 function tFallback(key: TranslationKey, params?: Record<string, string | number>): string {
   const dict = translations[DEFAULT_LOCALE];
   const keys = key.split('.');
-  let value: any = dict;
+  let value: unknown = dict;
 
   for (const k of keys) {
     if (value && typeof value === 'object' && k in value) {
-      value = value[k];
+      value = (value as Record<string, unknown>)[k];
     } else {
       return key;
     }
@@ -84,8 +85,9 @@ function tFallback(key: TranslationKey, params?: Record<string, string | number>
   }
 
   if (params) {
-    return value.replace(/\{(\w+)\}/g, (_, param) => {
-      return params[param]?.toString() ?? `{${param}}`;
+    return value.replace(/\{(\w+)\}/g, (match: string, param: string): string => {
+      const replacement = params[param];
+      return replacement !== undefined ? `${replacement}` : match;
     });
   }
 
@@ -136,4 +138,3 @@ export function getLocaleDisplayName(locale: Locale): string {
   };
   return names[locale] || locale;
 }
-

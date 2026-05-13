@@ -1,6 +1,10 @@
 import type { McpServerConfig, ParsedMcpConfig } from '../types';
 import { isValidMcpServerConfig } from '../types';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 /**
  * Parse pasted JSON (supports multiple formats).
  *
@@ -12,20 +16,20 @@ import { isValidMcpServerConfig } from '../types';
  */
 export function parseClipboardConfig(json: string): ParsedMcpConfig {
   try {
-    const parsed = JSON.parse(json);
+    const parsed: unknown = JSON.parse(json);
 
-    if (!parsed || typeof parsed !== 'object') {
+    if (!isRecord(parsed)) {
       throw new Error('Invalid JSON object');
     }
 
     // Format 1: Full Claude Code format
     // { "mcpServers": { "server-name": { "command": "...", ... } } }
-    if (parsed.mcpServers && typeof parsed.mcpServers === 'object') {
+    if (isRecord(parsed.mcpServers)) {
       const servers: Array<{ name: string; config: McpServerConfig }> = [];
 
       for (const [name, config] of Object.entries(parsed.mcpServers)) {
         if (isValidMcpServerConfig(config)) {
-          servers.push({ name, config: config as McpServerConfig });
+          servers.push({ name, config });
         }
       }
 
@@ -40,7 +44,7 @@ export function parseClipboardConfig(json: string): ParsedMcpConfig {
     // { "command": "...", "args": [...] } or { "type": "sse", "url": "..." }
     if (isValidMcpServerConfig(parsed)) {
       return {
-        servers: [{ name: '', config: parsed as McpServerConfig }],
+        servers: [{ name: '', config: parsed }],
         needsName: true,
       };
     }
@@ -52,7 +56,7 @@ export function parseClipboardConfig(json: string): ParsedMcpConfig {
       const [name, config] = entries[0];
       if (isValidMcpServerConfig(config)) {
         return {
-          servers: [{ name, config: config as McpServerConfig }],
+          servers: [{ name, config }],
           needsName: false,
         };
       }
@@ -63,7 +67,7 @@ export function parseClipboardConfig(json: string): ParsedMcpConfig {
     const servers: Array<{ name: string; config: McpServerConfig }> = [];
     for (const [name, config] of entries) {
       if (isValidMcpServerConfig(config)) {
-        servers.push({ name, config: config as McpServerConfig });
+        servers.push({ name, config });
       }
     }
 

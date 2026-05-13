@@ -695,7 +695,7 @@ export class ConversationController {
     if (!isCurrent) {
       if (openState === 'closed' && options.onOpenConversationInNewTab) {
         menu.addItem((menuItem) => menuItem
-          .setTitle('Open in New Tab')
+          .setTitle('Open in new tab')
           .onClick(() => {
             void this.runHistoryAction(
               () => options.onOpenConversationInNewTab?.(conversationId, true),
@@ -703,7 +703,7 @@ export class ConversationController {
             );
           }));
         menu.addItem((menuItem) => menuItem
-          .setTitle('Open in Background Tab')
+          .setTitle('Open in background tab')
           .onClick(() => {
             void this.runHistoryAction(
               () => options.onOpenConversationInNewTab?.(conversationId, false),
@@ -712,7 +712,7 @@ export class ConversationController {
           }));
       } else if (openState === 'open') {
         menu.addItem((menuItem) => menuItem
-          .setTitle('Switch to Open Session')
+          .setTitle('Switch to open session')
           .onClick(() => {
             void this.runHistoryAction(
               () => options.onSelectConversation(conversationId),
@@ -759,7 +759,7 @@ export class ConversationController {
     const titleEl = item.querySelector('.claudian-history-item-title') as HTMLElement;
     if (!titleEl) return;
 
-    const input = document.createElement('input');
+    const input = (item.ownerDocument ?? window.document).createElement('input');
     input.type = 'text';
     input.className = 'claudian-rename-input';
     input.value = currentTitle;

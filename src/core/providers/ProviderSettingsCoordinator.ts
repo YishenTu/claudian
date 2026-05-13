@@ -32,7 +32,7 @@ function ensureProjectionMap(
 ): ProviderProjectionMap {
   const current = settings[key];
   if (current && typeof current === 'object') {
-    return current as ProviderProjectionMap;
+    return current;
   }
 
   const next: ProviderProjectionMap = {};

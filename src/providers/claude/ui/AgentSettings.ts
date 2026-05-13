@@ -142,7 +142,8 @@ class AgentModal extends Modal {
       text: t('common.save'),
       cls: 'claudian-save-btn',
     });
-    saveBtn.addEventListener('click', async () => {
+    saveBtn.addEventListener('click', () => {
+      void (async (): Promise<void> => {
       const name = nameInput.value.trim();
       const nameError = validateAgentName(name);
       if (nameError) {
@@ -185,7 +186,7 @@ class AgentModal extends Modal {
         prompt,
         tools: parseList(toolsInput),
         disallowedTools: parseList(disallowedToolsInput),
-        model: (modelValue as AgentDefinition['model']) || 'inherit',
+        model: (modelValue) || 'inherit',
         source: 'vault',
         filePath: this.existingAgent?.filePath,
         skills: parseList(skillsInput),
@@ -202,6 +203,7 @@ class AgentModal extends Modal {
         return;
       }
       this.close();
+      })();
     });
   }
 
@@ -297,7 +299,8 @@ export class AgentSettings {
       attr: { 'aria-label': t('common.delete') },
     });
     setIcon(deleteBtn, 'trash-2');
-    deleteBtn.addEventListener('click', async () => {
+    deleteBtn.addEventListener('click', () => {
+      void (async (): Promise<void> => {
       const confirmed = await confirmDelete(
         this.app,
         t('settings.subagents.deleteConfirm', { name: agent.name })
@@ -309,6 +312,7 @@ export class AgentSettings {
         const message = err instanceof Error ? err.message : 'Unknown error';
         new Notice(t('settings.subagents.deleteFailed', { message }));
       }
+      })();
     });
   }
 

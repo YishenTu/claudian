@@ -65,15 +65,16 @@ export function normalizeOpencodeDiscoveredModels(value: unknown): OpencodeDisco
 
   const normalized: OpencodeDiscoveredModel[] = [];
   const seen = new Set<string>();
-  for (const entry of value) {
+  for (const entry of value as unknown[]) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       continue;
     }
+    const record = entry as Record<string, unknown>;
 
-    const rawId = typeof entry.rawId === 'string' ? entry.rawId.trim() : '';
-    const label = typeof entry.label === 'string' ? entry.label.trim() : rawId;
-    const description = typeof entry.description === 'string'
-      ? entry.description.trim()
+    const rawId = typeof record.rawId === 'string' ? record.rawId.trim() : '';
+    const label = typeof record.label === 'string' ? record.label.trim() : rawId;
+    const description = typeof record.description === 'string'
+      ? record.description.trim()
       : '';
 
     if (!rawId || seen.has(rawId)) {

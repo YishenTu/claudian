@@ -49,7 +49,7 @@ export class MentionDropdownController {
   private mcpManager: McpMentionProvider | null = null;
   private agentService: AgentMentionProvider | null = null;
   private fixed: boolean;
-  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private debounceTimer: number | null = null;
 
   constructor(
     containerEl: HTMLElement,
@@ -86,7 +86,7 @@ export class MentionDropdownController {
     const externalContexts = this.callbacks.getExternalContexts() || [];
     if (externalContexts.length === 0) return;
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       try {
         externalContextScanner.scanPaths(externalContexts);
       } catch {
@@ -110,7 +110,7 @@ export class MentionDropdownController {
 
   destroy(): void {
     if (this.debounceTimer !== null) {
-      clearTimeout(this.debounceTimer);
+      window.clearTimeout(this.debounceTimer);
     }
     this.dropdown.destroy();
   }
@@ -132,10 +132,10 @@ export class MentionDropdownController {
 
   handleInputChange(): void {
     if (this.debounceTimer !== null) {
-      clearTimeout(this.debounceTimer);
+      window.clearTimeout(this.debounceTimer);
     }
 
-    this.debounceTimer = setTimeout(() => {
+    this.debounceTimer = window.setTimeout(() => {
       const text = this.inputEl.value;
       this.updateMcpMentionsFromText(text);
 

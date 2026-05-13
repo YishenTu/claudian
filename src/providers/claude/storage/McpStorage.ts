@@ -98,7 +98,7 @@ export class McpStorage {
     if (await this.adapter.exists(MCP_CONFIG_PATH)) {
       try {
         const raw = await this.adapter.read(MCP_CONFIG_PATH);
-        const parsed = JSON.parse(raw);
+        const parsed: unknown = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
           existing = parsed as Record<string, unknown>;
         }
@@ -118,7 +118,8 @@ export class McpStorage {
     if (Object.keys(claudianServers).length > 0) {
       file._claudian = { ...(existingClaudian ?? {}), servers: claudianServers };
     } else if (existingClaudian) {
-      const { servers: _servers, ...rest } = existingClaudian;
+      const rest = { ...existingClaudian };
+      delete rest.servers;
       if (Object.keys(rest).length > 0) {
         file._claudian = rest;
       } else {

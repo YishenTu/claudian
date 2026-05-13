@@ -99,7 +99,7 @@ export class QueryOptionsBuilder {
     ctx: QueryOptionsContext,
     externalContextPaths?: string[]
   ): PersistentQueryConfig {
-    const claudeSettings = getClaudeProviderSettings(ctx.settings as unknown as Record<string, unknown>);
+    const claudeSettings = getClaudeProviderSettings(ctx.settings);
     const systemPromptSettings: SystemPromptSettings = {
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
@@ -269,7 +269,7 @@ export class QueryOptionsBuilder {
     model: string,
     abortController?: AbortController,
   ): { options: Options; claudeSettings: ReturnType<typeof getClaudeProviderSettings> } {
-    const claudeSettings = getClaudeProviderSettings(ctx.settings as unknown as Record<string, unknown>);
+    const claudeSettings = getClaudeProviderSettings(ctx.settings);
     const systemPromptSettings: SystemPromptSettings = {
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
@@ -307,7 +307,7 @@ export class QueryOptionsBuilder {
       options.thinking = { type: 'adaptive' };
       // SDK runtime accepts `xhigh` on Opus 4.7+ and silently falls back to
       // `high` elsewhere, but its type definition lags our local EffortLevel.
-      options.effort = effortLevel as Options['effort'];
+      options.effort = effortLevel;
       return;
     }
 

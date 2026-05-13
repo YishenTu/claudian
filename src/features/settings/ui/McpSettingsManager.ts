@@ -6,6 +6,7 @@ import { testMcpServer } from '../../../core/mcp/McpTester';
 import type { AppMcpStorage } from '../../../core/providers/types';
 import type { ManagedMcpServer, McpServerConfig, McpServerType } from '../../../core/types';
 import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../../core/types';
+import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import { McpServerModal } from './McpServerModal';
 import { McpTestModal } from './McpTestModal';
 
@@ -27,7 +28,7 @@ export class McpSettingsManager {
     this.containerEl = containerEl;
     this.mcpStorage = deps.mcpStorage;
     this.broadcastMcpReload = deps.broadcastMcpReload;
-    this.loadAndRender();
+    void this.loadAndRender();
   }
 
   private async loadAndRender() {
@@ -71,7 +72,7 @@ export class McpSettingsManager {
     importOption.createSpan({ text: 'Import from clipboard' });
     importOption.addEventListener('click', () => {
       dropdown.removeClass('is-visible');
-      this.importFromClipboard();
+      void this.importFromClipboard();
     });
 
     addBtn.addEventListener('click', (e) => {
@@ -79,13 +80,13 @@ export class McpSettingsManager {
       dropdown.toggleClass('is-visible', !dropdown.hasClass('is-visible'));
     });
 
-    document.addEventListener('click', () => {
+    (this.containerEl.ownerDocument ?? window.document).addEventListener('click', () => {
       dropdown.removeClass('is-visible');
     });
 
     if (this.servers.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-mcp-empty' });
-      emptyEl.setText('No MCP servers configured. Click "Add" to add one.');
+      emptyEl.setText('No mcp servers configured. Click "add" to add one.');
       return;
     }
 
@@ -137,14 +138,18 @@ export class McpSettingsManager {
       attr: { 'aria-label': 'Verify (show tools)' },
     });
     setIcon(testBtn, 'zap');
-    testBtn.addEventListener('click', () => this.testServer(server));
+    testBtn.addEventListener('click', () => {
+      void this.testServer(server);
+    });
 
     const toggleBtn = actionsEl.createEl('button', {
       cls: 'claudian-mcp-action-btn',
       attr: { 'aria-label': server.enabled ? 'Disable' : 'Enable' },
     });
     setIcon(toggleBtn, server.enabled ? 'toggle-right' : 'toggle-left');
-    toggleBtn.addEventListener('click', () => this.toggleServer(server));
+    toggleBtn.addEventListener('click', () => {
+      void this.toggleServer(server);
+    });
 
     const editBtn = actionsEl.createEl('button', {
       cls: 'claudian-mcp-action-btn',
@@ -158,7 +163,9 @@ export class McpSettingsManager {
       attr: { 'aria-label': 'Delete' },
     });
     setIcon(deleteBtn, 'trash-2');
-    deleteBtn.addEventListener('click', () => this.deleteServer(server));
+    deleteBtn.addEventListener('click', () => {
+      void this.deleteServer(server);
+    });
   }
 
   private async testServer(server: ManagedMcpServer) {
@@ -245,8 +252,10 @@ export class McpSettingsManager {
     const modal = new McpServerModal(
       this.app,
       existing,
-      async (server) => {
-        await this.saveServer(server, existing);
+      (server) => {
+        void this.saveServer(server, existing).catch((error: unknown) => {
+          new Notice(error instanceof Error ? error.message : 'Failed to save MCP server');
+        });
       },
       initialType
     );
@@ -263,7 +272,7 @@ export class McpSettingsManager {
 
       const parsed = tryParseClipboardConfig(text);
       if (!parsed || parsed.servers.length === 0) {
-        new Notice('No valid MCP configuration found in clipboard');
+        new Notice('No valid mcp configuration found in clipboard');
         return;
       }
 
@@ -273,8 +282,10 @@ export class McpSettingsManager {
         const modal = new McpServerModal(
           this.app,
           null,
-          async (savedServer) => {
-            await this.saveServer(savedServer, null);
+          (savedServer) => {
+            void this.saveServer(savedServer, null).catch((error: unknown) => {
+              new Notice(error instanceof Error ? error.message : 'Failed to save MCP server');
+            });
           },
           type,
           server  // Pre-fill with parsed config
@@ -347,7 +358,7 @@ export class McpSettingsManager {
     }
 
     if (added.length === 0) {
-      new Notice('No new MCP servers imported');
+      new Notice('No new mcp servers imported');
       return;
     }
 
@@ -371,7 +382,7 @@ export class McpSettingsManager {
   }
 
   private async deleteServer(server: ManagedMcpServer) {
-    if (!confirm(`Delete MCP server "${server.name}"?`)) {
+    if (!(await confirmDelete(this.app, `Delete MCP server "${server.name}"?`))) {
       return;
     }
 
@@ -384,6 +395,6 @@ export class McpSettingsManager {
 
   /** Refresh the server list (call after external changes). */
   public refresh() {
-    this.loadAndRender();
+    void this.loadAndRender();
   }
 }

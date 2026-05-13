@@ -61,6 +61,7 @@ describe('CanvasSelectionController', () => {
     app = {
       workspace: {
         getActiveViewOfType: jest.fn().mockReturnValue(null),
+        getMostRecentLeaf: jest.fn().mockReturnValue({ view: canvasView }),
         getLeavesOfType: jest.fn().mockReturnValue([{ view: canvasView }]),
       },
     };
@@ -180,7 +181,7 @@ describe('CanvasSelectionController', () => {
       { view: inactiveCanvasView },
       { view: activeCanvasView },
     ]);
-    app.workspace.activeLeaf = { view: activeCanvasView };
+    app.workspace.getMostRecentLeaf.mockReturnValue({ view: activeCanvasView });
 
     controller.start();
     jest.advanceTimersByTime(250);
@@ -192,7 +193,7 @@ describe('CanvasSelectionController', () => {
   });
 
   it('handles no canvas view gracefully', () => {
-    app.workspace.activeLeaf = null;
+    app.workspace.getMostRecentLeaf.mockReturnValue(null);
     app.workspace.getLeavesOfType.mockReturnValue([]);
 
     controller.start();

@@ -8,7 +8,6 @@ import { TOOL_TASK } from '../../../core/tools/toolNames';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type {
   SubagentInfo,
-  SubagentMode,
   ToolCallInfo,
 } from '../../../core/types';
 import { extractFinalResultFromSubagentJsonl } from '../../../utils/subagentJsonl';
@@ -37,6 +36,28 @@ export type HandleTaskResult =
 export type RenderPendingResult =
   | { mode: 'sync'; subagentState: SubagentState }
   | { mode: 'async'; info: SubagentInfo; domState: AsyncSubagentState };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseJsonValue(value: string): unknown {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 export class SubagentManager {
   private static readonly TRUSTED_OUTPUT_EXT = '.output';
@@ -569,7 +590,7 @@ export class SubagentManager {
       id: taskToolId,
       description,
       prompt,
-      mode: 'async' as SubagentMode,
+      mode: 'async',
       isExpanded: false,
       status: 'running',
       toolCalls: [],
@@ -597,7 +618,7 @@ export class SubagentManager {
     const description = (newInput.description as string) || '';
     if (description) {
       info.description = description;
-      const labelEl = wrapperEl.querySelector('.claudian-subagent-label') as HTMLElement | null;
+      const labelEl = wrapperEl.querySelector('.claudian-subagent-label');
       if (labelEl) {
         const truncated = description.length > 40 ? description.substring(0, 40) + '...' : description;
         labelEl.setText(truncated);
@@ -606,7 +627,7 @@ export class SubagentManager {
     const prompt = (newInput.prompt as string) || '';
     if (prompt) {
       info.prompt = prompt;
-      const promptEl = wrapperEl.querySelector('.claudian-subagent-prompt-text') as HTMLElement | null;
+      const promptEl = wrapperEl.querySelector('.claudian-subagent-prompt-text');
       if (promptEl) {
         promptEl.setText(prompt);
       }
@@ -648,28 +669,21 @@ export class SubagentManager {
       return null;
     }
 
-    try {
-      const parsed = JSON.parse(payload);
-
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return null;
-      }
-
+    const parsed = parseJsonRecord(payload);
+    if (parsed) {
       if (this.hasTerminalTaskStatus(parsed)) {
         return null;
       }
 
-      const directAgentId = this.extractAgentIdFromRecord(parsed as Record<string, unknown>);
+      const directAgentId = this.extractAgentIdFromRecord(parsed);
       if (directAgentId) {
         return directAgentId;
       }
 
-      const taskRecord = (parsed as Record<string, unknown>).task;
-      if (taskRecord && typeof taskRecord === 'object' && !Array.isArray(taskRecord)) {
-        return this.extractAgentIdFromRecord(taskRecord as Record<string, unknown>);
+      const taskRecord = parsed.task;
+      if (isRecord(taskRecord)) {
+        return this.extractAgentIdFromRecord(taskRecord);
       }
-    } catch {
-      // Not JSON
     }
 
     const xmlStatus = this.taskResultInterpreter.extractTagValue(payload, 'retrieval_status')
@@ -781,18 +795,19 @@ export class SubagentManager {
     if (isError) return false;
     if (!trimmed) return false;
 
-    try {
-      const parsed = JSON.parse(payload);
-      const status = parsed.retrieval_status || parsed.status;
-      const hasAgents = parsed.agents && Object.keys(parsed.agents).length > 0;
+    const parsed = parseJsonRecord(payload);
+    if (parsed) {
+      const status = parsed.retrieval_status ?? parsed.status;
+      const agents = isRecord(parsed.agents) ? parsed.agents : null;
+      const hasAgents = agents !== null && Object.keys(agents).length > 0;
 
       if (status === 'not_ready' || status === 'running' || status === 'pending') {
         return true;
       }
 
-      if (hasAgents) {
-        const agentStatuses = Object.values(parsed.agents as Record<string, unknown>)
-          .map((a) => (a && typeof a === 'object' && 'status' in a && typeof (a as Record<string, unknown>).status === 'string') ? ((a as Record<string, unknown>).status as string).toLowerCase() : '');
+      if (hasAgents && agents) {
+        const agentStatuses = Object.values(agents)
+          .map((agent) => (isRecord(agent) && typeof agent.status === 'string') ? agent.status.toLowerCase() : '');
         const anyRunning = agentStatuses.some(s =>
           s === 'running' || s === 'pending' || s === 'not_ready'
         );
@@ -805,8 +820,6 @@ export class SubagentManager {
       }
 
       return false;
-    } catch {
-      // Not JSON
     }
 
     const lowerResult = payload.toLowerCase();
@@ -837,38 +850,40 @@ export class SubagentManager {
 
     const payload = this.unwrapTextPayload(result);
 
-    try {
-      const parsed = JSON.parse(payload);
-
+    const parsed = parseJsonRecord(payload);
+    if (parsed) {
       const taskResult = this.extractResultFromTaskObject(parsed.task);
       if (taskResult) {
         return taskResult;
       }
 
-      if (parsed.agents && agentId && parsed.agents[agentId]) {
-        const agentData = parsed.agents[agentId];
-        const parsedResult = this.extractResultFromCandidateString(agentData?.result);
+      const agents = isRecord(parsed.agents) ? parsed.agents : null;
+      const agentData = agents && agentId ? agents[agentId] : null;
+      if (isRecord(agentData)) {
+        const parsedResult = this.extractResultFromCandidateString(agentData.result);
         if (parsedResult) {
           return parsedResult;
         }
-        const parsedOutput = this.extractResultFromCandidateString(agentData?.output);
+        const parsedOutput = this.extractResultFromCandidateString(agentData.output);
         if (parsedOutput) {
           return parsedOutput;
         }
         return JSON.stringify(agentData, null, 2);
       }
 
-      if (parsed.agents) {
-        const agentIds = Object.keys(parsed.agents);
+      if (agents) {
+        const agentIds = Object.keys(agents);
         if (agentIds.length > 0) {
-          const firstAgent = parsed.agents[agentIds[0]];
-          const parsedResult = this.extractResultFromCandidateString(firstAgent?.result);
-          if (parsedResult) {
-            return parsedResult;
-          }
-          const parsedOutput = this.extractResultFromCandidateString(firstAgent?.output);
-          if (parsedOutput) {
-            return parsedOutput;
+          const firstAgent = agents[agentIds[0]];
+          if (isRecord(firstAgent)) {
+            const parsedResult = this.extractResultFromCandidateString(firstAgent.result);
+            if (parsedResult) {
+              return parsedResult;
+            }
+            const parsedOutput = this.extractResultFromCandidateString(firstAgent.output);
+            if (parsedOutput) {
+              return parsedOutput;
+            }
           }
           return JSON.stringify(firstAgent, null, 2);
         }
@@ -883,9 +898,6 @@ export class SubagentManager {
       if (parsedOutput) {
         return parsedOutput;
       }
-
-    } catch {
-      // Not JSON, return as-is
     }
 
     const taggedResult = this.extractResultFromTaggedPayload(payload);
@@ -944,54 +956,47 @@ export class SubagentManager {
       }
     }
 
-    try {
-      const parsed = JSON.parse(result);
+    const parsed = parseJsonRecord(result);
+    if (parsed) {
       const agentId = parsed.agent_id || parsed.agentId;
 
       if (typeof agentId === 'string' && agentId.length > 0) {
         return agentId;
       }
 
-      if (parsed.data?.agent_id) {
-        return parsed.data.agent_id;
+      const data = parsed.data;
+      if (isRecord(data) && typeof data.agent_id === 'string') {
+        return data.agent_id;
       }
 
       if (parsed.id && typeof parsed.id === 'string') {
         return parsed.id;
       }
-    } catch {
-      // Not JSON
     }
 
     return null;
   }
 
   private inferAgentIdFromResult(result: string): string | null {
-    try {
-      const parsed = JSON.parse(result);
-      if (parsed.agents && typeof parsed.agents === 'object') {
-        const keys = Object.keys(parsed.agents);
-        if (keys.length > 0) {
-          return keys[0];
-        }
+    const parsed = parseJsonRecord(result);
+    if (parsed) {
+      const agents = isRecord(parsed.agents) ? parsed.agents : null;
+      if (agents) {
+        return Object.keys(agents)[0] ?? null;
       }
-    } catch {
-      // Not JSON
     }
     return null;
   }
 
   private unwrapTextPayload(raw: string): string {
-    try {
-      const parsed = JSON.parse(raw);
+    const parsed = parseJsonValue(raw);
+    if (parsed !== null) {
       if (Array.isArray(parsed)) {
-        const textBlock = parsed.find((b: any) => b && typeof b.text === 'string');
-        if (textBlock?.text) return textBlock.text as string;
-      } else if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') {
+        const textBlock = (parsed as unknown[]).find((block) => isRecord(block) && typeof block.text === 'string');
+        if (isRecord(textBlock) && typeof textBlock.text === 'string') return textBlock.text;
+      } else if (isRecord(parsed) && typeof parsed.text === 'string') {
         return parsed.text;
       }
-    } catch {
-      // Not JSON or not an envelope
     }
     return raw;
   }

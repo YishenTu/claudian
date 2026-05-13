@@ -135,6 +135,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         dispatch,
         dom: {
+          ownerDocument: (global as any).document,
           addEventListener: jest.fn(),
           removeEventListener: jest.fn(),
         },
@@ -239,6 +240,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         dispatch,
         dom: {
+          ownerDocument: (global as any).document,
           addEventListener: jest.fn(),
           removeEventListener: jest.fn(),
         },
@@ -347,6 +349,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         dispatch,
         dom: {
+          ownerDocument: (global as any).document,
           addEventListener: jest.fn(),
           removeEventListener: jest.fn(),
         },
@@ -440,6 +443,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         dispatch,
         dom: {
+          ownerDocument: (global as any).document,
           addEventListener: jest.fn(),
           removeEventListener: jest.fn(),
         },
@@ -581,6 +585,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         dispatch,
         dom: {
+          ownerDocument: (global as any).document,
           addEventListener: jest.fn(),
           removeEventListener: jest.fn(),
         },
@@ -685,6 +690,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         dispatch,
         dom: {
+          ownerDocument: (global as any).document,
           addEventListener: jest.fn(),
           removeEventListener: jest.fn(),
         },
@@ -815,6 +821,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         dispatch,
         dom: {
+          ownerDocument: (global as any).document,
           addEventListener: jest.fn(),
           removeEventListener: jest.fn(),
         },
@@ -919,6 +926,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         dispatch,
         dom: {
+          ownerDocument: (global as any).document,
           addEventListener: jest.fn(),
           removeEventListener: jest.fn(),
         },

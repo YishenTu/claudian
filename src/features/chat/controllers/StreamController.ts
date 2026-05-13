@@ -281,13 +281,13 @@ export class StreamController {
         // If already rendered, update the header name + summary
         const toolEl = state.toolCallElements.get(chunk.id);
         if (toolEl) {
-          const nameEl = toolEl.querySelector('.claudian-tool-name') as HTMLElement | null
-            ?? toolEl.querySelector('.claudian-write-edit-name') as HTMLElement | null;
+          const nameEl = toolEl.querySelector('.claudian-tool-name')
+            ?? toolEl.querySelector('.claudian-write-edit-name');
           if (nameEl) {
             nameEl.setText(getToolName(existingToolCall.name, existingToolCall.input));
           }
-          const summaryEl = toolEl.querySelector('.claudian-tool-summary') as HTMLElement | null
-            ?? toolEl.querySelector('.claudian-write-edit-summary') as HTMLElement | null;
+          const summaryEl = toolEl.querySelector('.claudian-tool-summary')
+            ?? toolEl.querySelector('.claudian-write-edit-summary');
           if (summaryEl) {
             summaryEl.setText(getToolSummary(existingToolCall.name, existingToolCall.input));
           }
@@ -342,7 +342,7 @@ export class StreamController {
     }
 
     const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.deps.plugin.settings as unknown as Record<string, unknown>,
+      this.deps.plugin.settings,
       providerId,
     );
     return typeof settings.model === 'string' ? settings.model : undefined;
@@ -1228,8 +1228,7 @@ export class StreamController {
     if (attempt >= StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS.length) return;
 
     const delay = StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS[attempt];
-    const activeWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
-    activeWindow.setTimeout(() => {
+    window.setTimeout(() => {
       void this.retryAsyncSubagentResult(subagent, runtime, attempt);
     }, delay);
   }
@@ -1341,8 +1340,8 @@ export class StreamController {
 
     // Clear any existing timeout
     if (state.thinkingIndicatorTimeout) {
-      const activeWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
-      state.clearThinkingIndicatorTimeout(activeWindow);
+      const timerWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
+      state.clearThinkingIndicatorTimeout(timerWindow);
     }
 
     // Don't show flavor text while model thinking block is active
@@ -1358,8 +1357,8 @@ export class StreamController {
     }
 
     // Schedule showing the indicator after a delay
-    const activeWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
-    state.setThinkingIndicatorTimeout(activeWindow.setTimeout(() => {
+    const timerWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
+    state.setThinkingIndicatorTimeout(timerWindow.setTimeout(() => {
       state.setThinkingIndicatorTimeout(null, null);
       // Double-check we still have a content element, no indicator exists, and no thinking block
       if (!state.currentContentEl || state.thinkingEl || state.currentThinkingState) return;
@@ -1391,9 +1390,10 @@ export class StreamController {
       if (state.flavorTimerInterval) {
         state.clearFlavorTimerInterval();
       }
-      state.setFlavorTimerInterval(activeWindow.setInterval(updateTimer, 1000), activeWindow);
+      const thinkingWindow = state.currentContentEl.ownerDocument.defaultView ?? timerWindow;
+      state.setFlavorTimerInterval(thinkingWindow.setInterval(updateTimer, 1000), thinkingWindow);
 
-    }, StreamController.THINKING_INDICATOR_DELAY), activeWindow);
+    }, StreamController.THINKING_INDICATOR_DELAY), timerWindow);
   }
 
   /** Hides the thinking indicator and cancels any pending show timeout. */
@@ -1443,8 +1443,7 @@ export class StreamController {
     const relativePath = normalizePathForVault(rawPath, vaultPath);
     if (!relativePath || relativePath.startsWith('/')) return;
 
-    const activeWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
-    activeWindow.setTimeout(() => {
+    window.setTimeout(() => {
       const { vault } = this.deps.plugin.app;
       const file = vault.getAbstractFileByPath(relativePath);
       if (file instanceof TFile) {
@@ -1468,9 +1467,12 @@ export class StreamController {
     const changes = input.changes;
     if (Array.isArray(changes)) {
       for (const change of changes) {
-        if (change && typeof change === 'object' && typeof change.path === 'string') {
-          notified.add(change.path);
-          this.notifyVaultFileChange({ file_path: change.path });
+        if (change && typeof change === 'object' && !Array.isArray(change)) {
+          const changeRecord = change as Record<string, unknown>;
+          if (typeof changeRecord.path === 'string') {
+            notified.add(changeRecord.path);
+            this.notifyVaultFileChange({ file_path: changeRecord.path });
+          }
         }
       }
     }

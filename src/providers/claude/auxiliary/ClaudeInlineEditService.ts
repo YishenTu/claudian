@@ -58,7 +58,7 @@ export class InlineEditService {
 
   private getScopedSettings(): Record<string, unknown> {
     return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.plugin.settings as unknown as Record<string, unknown>,
+      this.plugin.settings,
       'claude',
     );
   }

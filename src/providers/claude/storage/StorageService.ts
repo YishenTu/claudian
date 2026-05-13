@@ -21,6 +21,10 @@ import { COMMANDS_PATH, SlashCommandStorage } from './SlashCommandStorage';
 
 export const CLAUDE_PATH = '.claude';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 export interface CombinedSettings {
   cc: CCSettings;
   claudian: StoredClaudianSettings;
@@ -114,8 +118,8 @@ export class StorageService {
 
   async getTabManagerState(): Promise<TabManagerPersistedState | null> {
     try {
-      const data = await this.plugin.loadData();
-      if (data?.tabManagerState) {
+      const data: unknown = await this.plugin.loadData();
+      if (isRecord(data) && data.tabManagerState) {
         return this.validateTabManagerState(data.tabManagerState);
       }
       return null;
@@ -165,7 +169,8 @@ export class StorageService {
 
   async setTabManagerState(state: TabManagerPersistedState): Promise<void> {
     try {
-      const data = (await this.plugin.loadData()) || {};
+      const loaded: unknown = await this.plugin.loadData();
+      const data = isRecord(loaded) ? loaded : {};
       data.tabManagerState = state;
       await this.plugin.saveData(data);
     } catch {

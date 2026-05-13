@@ -206,7 +206,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     if (isWindowsHost) {
       const wslDistroSetting = new Setting(container)
         .setName('WSL distro override')
-        .setDesc('Optional advanced override. Leave empty to infer the distro from a \\\\wsl$ workspace path when possible, otherwise use the default WSL distro.');
+        .setDesc('Optional advanced override. Leave empty to infer the distro from a WSL workspace path when possible, otherwise use the default WSL distro.');
 
       wslDistroSettingEl = wslDistroSetting.settingEl;
       wslDistroSetting.addText((text) => {
@@ -235,8 +235,8 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       .setDesc(t('settings.codexSafeMode.desc'))
       .addDropdown((dropdown) => {
         dropdown
-          .addOption('workspace-write', 'workspace-write')
-          .addOption('read-only', 'read-only')
+          .addOption('workspace-write', 'Workspace write')
+          .addOption('read-only', 'Read only')
           .setValue(codexSettings.safeMode)
           .onChange(async (value) => {
             updateCodexProviderSettings(
@@ -260,7 +260,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container)
       .setName('Custom models')
-      .setDesc('Append additional Codex model IDs to the picker, one per line. OPENAI_MODEL still takes precedence when set.')
+      .setDesc('Append additional Codex model ids to the picker, one per line. `OPENAI_MODEL` still takes precedence when set.')
       .addTextArea((text) => {
         let pendingCustomModels = codexSettings.customModels;
         let savedCustomModels = codexSettings.customModels;
@@ -369,7 +369,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     const codexCatalog = codexWorkspace.commandCatalog;
     if (codexCatalog) {
-      new Setting(container).setName('Codex Skills').setHeading();
+      new Setting(container).setName('Codex skills').setHeading();
 
       const skillsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
       skillsDesc.createEl('p', {
@@ -389,7 +389,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     // --- Subagents ---
 
-    new Setting(container).setName('Codex Subagents').setHeading();
+    new Setting(container).setName('Codex subagents').setHeading();
 
     const subagentDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
     subagentDesc.createEl('p', {
@@ -408,7 +408,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const mcpNotice = container.createDiv({ cls: 'claudian-mcp-settings-desc' });
     const mcpDesc = mcpNotice.createEl('p', { cls: 'setting-item-description' });
     mcpDesc.appendText('Codex manages MCP servers via its own CLI. Configure with ');
-    mcpDesc.createEl('code', { text: 'codex mcp' });
+    mcpDesc.createEl('code').appendText('codex mcp');
     mcpDesc.appendText(' and they will be available in Claudian. ');
     mcpDesc.createEl('a', {
       text: 'Learn more',

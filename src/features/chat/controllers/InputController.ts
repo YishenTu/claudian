@@ -622,12 +622,14 @@ export class InputController {
       this.deps.getImageContextManager()?.setImages(images);
     }
 
-    setTimeout(
-      () => this.sendMessage({
-        editorContextOverride: editorContext,
-        browserContextOverride: browserContext ?? null,
-        canvasContextOverride: canvasContext,
-      }),
+    window.setTimeout(
+      () => {
+        void this.sendMessage({
+          editorContextOverride: editorContext,
+          browserContextOverride: browserContext ?? null,
+          canvasContextOverride: canvasContext,
+        });
+      },
       0
     );
   }
@@ -862,7 +864,7 @@ export class InputController {
   private activateStreamingAssistantMessage(message: ChatMessage): void {
     const { state, renderer } = this.deps;
     const msgEl = renderer.addMessage(message);
-    const contentEl = msgEl.querySelector('.claudian-message-content') as HTMLElement | null;
+    const contentEl = msgEl.querySelector<HTMLElement>('.claudian-message-content');
 
     if (!contentEl) {
       return;
@@ -1100,8 +1102,7 @@ export class InputController {
     if (!(plugin.settings.enableAutoScroll ?? true)) return;
     if (!state.autoScrollEnabled) return;
 
-    const activeWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
-    activeWindow.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       if (!(this.deps.plugin.settings.enableAutoScroll ?? true)) return;
       if (!this.deps.state.autoScrollEnabled) return;
 
@@ -1131,13 +1132,15 @@ export class InputController {
         plugin.app,
         rawInstruction,
         {
-          onAccept: async (finalInstruction) => {
-            const currentPrompt = plugin.settings.systemPrompt;
-            plugin.settings.systemPrompt = appendMarkdownSnippet(currentPrompt, finalInstruction);
-            await plugin.saveSettings();
+          onAccept: (finalInstruction) => {
+            void (async (): Promise<void> => {
+              const currentPrompt = plugin.settings.systemPrompt;
+              plugin.settings.systemPrompt = appendMarkdownSnippet(currentPrompt, finalInstruction);
+              await plugin.saveSettings();
 
-            new Notice('Instruction added to custom system prompt');
-            instructionModeManager?.clear();
+              new Notice('Instruction added to custom system prompt');
+              instructionModeManager?.clear();
+            })();
           },
           onReject: () => {
             wasCancelled = true;
@@ -1530,9 +1533,14 @@ export class InputController {
         await this.deps.onForkAll();
         break;
       }
-      default:
+      default: {
         // Unknown command - notify user
-        new Notice(`Unknown command: ${command.action}`);
+        const unknownAction = typeof (command as { action?: unknown }).action === 'string'
+          ? (command as { action: string }).action
+          : 'unknown';
+        new Notice(`Unknown command: ${unknownAction}`);
+        break;
+      }
     }
   }
 

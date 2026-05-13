@@ -39,7 +39,7 @@ export class InlineExitPlanMode {
     this.signal = signal;
     this.renderContent = renderContent;
     this.planPathPrefix = planPathPrefix;
-    this.boundKeyDown = this.handleKeyDown.bind(this);
+    this.boundKeyDown = (event) => this.handleKeyDown(event);
   }
 
   render(): void {
@@ -122,8 +122,7 @@ export class InlineExitPlanMode {
     this.rootEl.setAttribute('tabindex', '0');
     this.rootEl.addEventListener('keydown', this.boundKeyDown);
 
-    const activeWindow = this.rootEl.ownerDocument.defaultView ?? window;
-    activeWindow.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       this.rootEl.focus();
       this.rootEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });

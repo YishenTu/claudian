@@ -286,7 +286,7 @@ export function addSubagentToolCall(
 ): void {
   const existingIndex = state.info.toolCalls.findIndex(tc => tc.id === toolCall.id);
   if (existingIndex >= 0) {
-    const existingToolCall = state.info.toolCalls[existingIndex]!;
+    const existingToolCall = state.info.toolCalls[existingIndex];
     const mergedToolCall: ToolCallInfo = {
       ...existingToolCall,
       ...toolCall,

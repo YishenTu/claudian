@@ -573,10 +573,11 @@ function renderApplyPatchExpanded(
   const changes = Array.isArray(input.changes) ? input.changes : [];
   if (changes.length > 0) {
     const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
-    for (const change of changes) {
-      if (!change || typeof change !== 'object') continue;
-      const path = typeof change.path === 'string' ? change.path : '';
-      const kind = typeof change.kind === 'string' ? change.kind : 'change';
+    for (const change of changes as unknown[]) {
+      if (!change || typeof change !== 'object' || Array.isArray(change)) continue;
+      const changeRecord = change as Record<string, unknown>;
+      const path = typeof changeRecord.path === 'string' ? changeRecord.path : '';
+      const kind = typeof changeRecord.kind === 'string' ? changeRecord.kind : 'change';
       if (!path) continue;
       linesEl.createDiv({ cls: 'claudian-tool-line', text: `${kind}: ${path}` });
     }
@@ -617,13 +618,24 @@ function renderAgentLifecycleExpanded(container: HTMLElement, result: string): v
       const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
       for (const [key, value] of Object.entries(parsed)) {
         const lineEl = linesEl.createDiv({ cls: 'claudian-tool-line' });
-        const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+        const displayValue = formatToolDisplayValue(value);
         lineEl.setText(`${key}: ${displayValue}`);
       }
       return;
     } catch { /* fall through to plain text */ }
   }
   renderLinesExpanded(container, result, 20);
+}
+
+function formatToolDisplayValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return `${value}`;
+  }
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return JSON.stringify(value);
 }
 
 export function renderExpandedContent(
@@ -802,7 +814,7 @@ function formatAnswer(raw: unknown): string {
 }
 
 function resolveAskUserAnswers(toolCall: ToolCallInfo): Record<string, unknown> | undefined {
-  if (toolCall.resolvedAnswers) return toolCall.resolvedAnswers as Record<string, unknown>;
+  if (toolCall.resolvedAnswers) return toolCall.resolvedAnswers;
 
   const parsed = extractResolvedAnswersFromResultText(toolCall.result);
   if (parsed) {

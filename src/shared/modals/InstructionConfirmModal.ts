@@ -59,7 +59,7 @@ export class InstructionModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('claudian-instruction-modal');
-    this.setTitle('Add Custom Instruction');
+    this.setTitle('Add custom instruction');
 
     // User input section (always visible)
     const inputSection = contentEl.createDiv({ cls: 'claudian-instruction-section' });
@@ -94,7 +94,7 @@ export class InstructionModal extends Modal {
       // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !this.isSubmitting) {
         e.preventDefault();
-        this.submitClarification();
+        void this.submitClarification();
       }
     });
 
@@ -196,7 +196,9 @@ export class InstructionModal extends Modal {
         cls: 'claudian-instruction-btn claudian-instruction-accept-btn',
         attr: { 'aria-label': 'Submit response' }
       });
-      submitBtn.addEventListener('click', () => this.submitClarification());
+      submitBtn.addEventListener('click', () => {
+        void this.submitClarification();
+      });
     } else if (this.state === 'confirmation') {
       this.editBtnEl = this.buttonsEl.createEl('button', {
         text: 'Edit',

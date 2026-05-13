@@ -1,5 +1,3 @@
-import type { Plugin } from 'obsidian';
-
 import { McpServerManager } from '../../../core/mcp/McpServerManager';
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -39,7 +37,7 @@ export async function createClaudeWorkspaceServices(
   plugin: ClaudianPlugin,
   adapter: VaultFileAdapter,
 ): Promise<ClaudeWorkspaceServices> {
-  const claudeStorage = new StorageService(plugin as Plugin, adapter);
+  const claudeStorage = new StorageService(plugin, adapter);
   await claudeStorage.ensureDirectories();
 
   const cliResolver = new ClaudeCliResolver();

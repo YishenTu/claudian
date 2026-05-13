@@ -169,25 +169,28 @@ export class AcpJsonRpcTransport {
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
 
     return new Promise<T>((resolve, reject) => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
+      let timer: number | undefined;
       let onAbort: (() => void) | undefined;
 
       const cleanup = (): void => {
-        if (timer) clearTimeout(timer);
+        if (timer) window.clearTimeout(timer);
         if (onAbort && options.signal) {
           options.signal.removeEventListener('abort', onAbort);
         }
+      };
+      const resolvePending = (result: unknown): void => {
+        resolve(result as T);
       };
 
       const pending: PendingRequest = {
         cleanup,
         method,
         reject,
-        resolve: resolve as (result: unknown) => void,
+        resolve: resolvePending,
       };
 
       if (timeoutMs > 0) {
-        timer = setTimeout(() => {
+        timer = window.setTimeout(() => {
           this.pending.delete(id);
           cleanup();
           reject(new Error(`Request timeout: ${method} (${timeoutMs}ms)`));

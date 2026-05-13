@@ -315,7 +315,7 @@ export class OpencodeAuxQueryRunner implements AuxQueryRunner {
 
   private resolveSelectedRawModel(explicitModel?: string): string | undefined {
     const projectedSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.plugin.settings as unknown as Record<string, unknown>,
+      this.plugin.settings,
       'opencode',
     );
     if (explicitModel) {

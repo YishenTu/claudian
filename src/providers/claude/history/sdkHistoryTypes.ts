@@ -38,7 +38,7 @@ export interface SDKNativeContentBlock {
   name?: string;
   input?: Record<string, unknown>;
   tool_use_id?: string;
-  content?: string | unknown;
+  content?: unknown;
   is_error?: boolean;
   source?: {
     type: 'base64';

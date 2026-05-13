@@ -153,10 +153,10 @@ export class CodexAuxQueryRunner {
 
   private resolveProviderModel(): string {
     const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.plugin.settings as unknown as Record<string, unknown>,
+      this.plugin.settings,
       'codex',
     );
-    return (providerSettings.model as string) ?? DEFAULT_CODEX_PRIMARY_MODEL;
+    return (providerSettings.model) ?? DEFAULT_CODEX_PRIMARY_MODEL;
   }
 
   private async startProcess(): Promise<void> {

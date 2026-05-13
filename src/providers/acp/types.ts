@@ -169,7 +169,7 @@ export type AcpSessionConfigSelectOptions =
   | AcpSessionConfigSelectGroup[];
 
 export type AcpSessionConfigOption = {
-  category?: 'mode' | 'model' | 'thought_level' | string | null;
+  category?: string | null;
   description?: string | null;
   id: AcpSessionConfigId;
   name: string;

@@ -105,7 +105,7 @@ export function parseFrontmatter(
   if (!match) return null;
 
   try {
-    const parsed = parseYaml(match[1]);
+    const parsed: unknown = parseYaml(match[1]);
     if (parsed !== null && parsed !== undefined && typeof parsed !== 'object') {
       return null;
     }

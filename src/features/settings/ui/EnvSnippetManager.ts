@@ -9,6 +9,7 @@ import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { EnvironmentScope, EnvSnippet } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
+import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../../utils/env';
 import type { ClaudianView } from '../../chat/ClaudianView';
 
@@ -179,7 +180,7 @@ export class EnvSnippetModal extends Modal {
     saveBtn.addEventListener('click', () => saveSnippet());
 
     // Focus name input after modal is rendered (timeout for Windows compatibility)
-    setTimeout(() => nameEl?.focus(), 50);
+    window.setTimeout(() => nameEl?.focus(), 50);
   }
 
   onClose() {
@@ -218,7 +219,9 @@ export class EnvSnippetManager {
       attr: { 'aria-label': t('settings.envSnippets.addBtn') },
     });
     setIcon(saveBtn, 'plus');
-    saveBtn.addEventListener('click', () => this.saveCurrentEnv());
+    saveBtn.addEventListener('click', () => {
+      void this.saveCurrentEnv();
+    });
 
     const snippets = this.plugin.settings.envSnippets.filter((snippet) => this.shouldDisplaySnippet(snippet));
 
@@ -250,12 +253,14 @@ export class EnvSnippetManager {
         attr: { 'aria-label': 'Insert' },
       });
       setIcon(restoreBtn, 'clipboard-paste');
-      restoreBtn.addEventListener('click', async () => {
+      restoreBtn.addEventListener('click', () => {
+        void (async (): Promise<void> => {
         try {
           await this.insertSnippet(snippet);
         } catch {
           new Notice('Failed to insert snippet');
         }
+        })();
       });
 
       const editBtn = actionsEl.createEl('button', {
@@ -272,14 +277,16 @@ export class EnvSnippetManager {
         attr: { 'aria-label': 'Delete' },
       });
       setIcon(deleteBtn, 'trash-2');
-      deleteBtn.addEventListener('click', async () => {
+      deleteBtn.addEventListener('click', () => {
+        void (async (): Promise<void> => {
         try {
-          if (confirm(`Delete environment snippet "${snippet.name}"?`)) {
+          if (await confirmDelete(this.plugin.app, `Delete environment snippet "${snippet.name}"?`)) {
             await this.deleteSnippet(snippet);
           }
         } catch {
           new Notice('Failed to delete snippet');
         }
+        })();
       });
     }
   }
@@ -290,11 +297,13 @@ export class EnvSnippetManager {
       this.plugin,
       null,
       this.scope,
-      async (snippet) => {
-        this.plugin.settings.envSnippets.push(snippet);
-        await this.plugin.saveSettings();
-        this.render();
-        new Notice(`Environment snippet "${snippet.name}" saved`);
+      (snippet) => {
+        void (async (): Promise<void> => {
+          this.plugin.settings.envSnippets.push(snippet);
+          await this.plugin.saveSettings();
+          this.render();
+          new Notice(`Environment snippet "${snippet.name}" saved`);
+        })();
       }
     );
     modal.open();
@@ -338,14 +347,16 @@ export class EnvSnippetManager {
       this.plugin,
       snippet,
       this.scope,
-      async (updatedSnippet) => {
-        const index = this.plugin.settings.envSnippets.findIndex(s => s.id === snippet.id);
-        if (index !== -1) {
-          this.plugin.settings.envSnippets[index] = updatedSnippet;
-          await this.plugin.saveSettings();
-          this.render();
-          new Notice(`Environment snippet "${updatedSnippet.name}" updated`);
-        }
+      (updatedSnippet) => {
+        void (async (): Promise<void> => {
+          const index = this.plugin.settings.envSnippets.findIndex(s => s.id === snippet.id);
+          if (index !== -1) {
+            this.plugin.settings.envSnippets[index] = updatedSnippet;
+            await this.plugin.saveSettings();
+            this.render();
+            new Notice(`Environment snippet "${updatedSnippet.name}" updated`);
+          }
+        })();
       }
     );
     modal.open();
@@ -372,7 +383,7 @@ export class EnvSnippetManager {
 
   private syncTextareaValue(scope: EnvironmentScope, value: string): void {
     const selector = `.claudian-settings-env-textarea[data-env-scope="${scope}"]`;
-    const envTextarea = document.querySelector(selector) as HTMLTextAreaElement | null;
+    const envTextarea = (this.containerEl.ownerDocument ?? window.document).querySelector<HTMLTextAreaElement>(selector);
     if (envTextarea) {
       envTextarea.value = value;
     }

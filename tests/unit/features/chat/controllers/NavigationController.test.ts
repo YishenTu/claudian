@@ -326,6 +326,30 @@ describe('NavigationController', () => {
       expect(mockCancelRaf).toHaveBeenCalled();
     });
 
+    it('uses the messages owner window for scroll animation frames', () => {
+      const ownerRequestAnimationFrame = jest.fn<ReturnType<Window['requestAnimationFrame']>, Parameters<Window['requestAnimationFrame']>>()
+        .mockReturnValue(42);
+      const ownerCancelAnimationFrame = jest.fn<void, [number]>();
+      Object.defineProperty(messagesEl.ownerDocument, 'defaultView', {
+        configurable: true,
+        value: {
+          ...messagesEl.ownerDocument.defaultView,
+          requestAnimationFrame: ownerRequestAnimationFrame,
+          cancelAnimationFrame: ownerCancelAnimationFrame,
+        },
+      });
+
+      messagesEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }));
+
+      expect(ownerRequestAnimationFrame).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockRaf).not.toHaveBeenCalled();
+
+      (global as any).document.dispatchEvent(new KeyboardEvent('keyup', { key: 'w' }));
+
+      expect(ownerCancelAnimationFrame).toHaveBeenCalledWith(42);
+      expect(mockCancelRaf).not.toHaveBeenCalled();
+    });
+
     it('uses configured scroll keys (case insensitive)', () => {
       settings.scrollUpKey = 'k';
       settings.scrollDownKey = 'j';

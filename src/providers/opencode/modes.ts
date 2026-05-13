@@ -39,15 +39,16 @@ export function normalizeOpencodeAvailableModes(value: unknown): OpencodeMode[] 
 
   const normalized: OpencodeMode[] = [];
   const seen = new Set<string>();
-  for (const entry of value) {
+  for (const entry of value as unknown[]) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       continue;
     }
+    const record = entry as Record<string, unknown>;
 
-    const id = typeof entry.id === 'string' ? entry.id.trim() : '';
-    const name = typeof entry.name === 'string' ? entry.name.trim() : id;
-    const description = typeof entry.description === 'string'
-      ? entry.description.trim()
+    const id = typeof record.id === 'string' ? record.id.trim() : '';
+    const name = typeof record.name === 'string' ? record.name.trim() : id;
+    const description = typeof record.description === 'string'
+      ? record.description.trim()
       : '';
 
     if (!id || seen.has(id)) {

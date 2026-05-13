@@ -52,7 +52,7 @@ function toKnownToolName(value: string | undefined): OpencodeKnownToolName | nul
 
   const normalized = value.trim().toLowerCase();
   return isKnownToolName(normalized)
-    ? normalized as OpencodeKnownToolName
+    ? normalized
     : null;
 }
 
@@ -204,7 +204,7 @@ function normalizeQuestionAnswers(
 
   for (let index = 0; index < Math.min(rawAnswers.length, questions.length); index += 1) {
     const question = questions[index];
-    const rawEntry = rawAnswers[index];
+    const rawEntry = (rawAnswers as unknown[])[index];
     if (!question) {
       continue;
     }

@@ -46,7 +46,7 @@ export function normalizeHiddenProviderCommands(
     return getDefaultHiddenProviderCommands();
   }
 
-  const candidate = value as Partial<Record<ProviderId | string, unknown>>;
+  const candidate = value as Partial<Record<string, unknown>>;
   const normalized: HiddenProviderCommands = {};
 
   for (const [providerId, commands] of Object.entries(candidate)) {

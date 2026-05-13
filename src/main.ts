@@ -62,14 +62,14 @@ export default class ClaudianPlugin extends Plugin {
     );
 
     this.addRibbonIcon('bot', 'Open Claudian', () => {
-      this.activateView();
+      void this.activateView();
     });
 
     this.addCommand({
       id: 'open-view',
       name: 'Open chat view',
       callback: () => {
-        this.activateView();
+        void this.activateView();
       },
     });
 
@@ -81,7 +81,7 @@ export default class ClaudianPlugin extends Plugin {
           ? ctx
           : this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view) {
-          new Notice('Inline edit unavailable: could not access the active markdown view.');
+          new Notice('Inline edit unavailable: could not access the active Markdown view.');
           return;
         }
 
@@ -148,7 +148,7 @@ export default class ClaudianPlugin extends Plugin {
         if (activeTab.state.isStreaming) return false;
 
         if (!checking) {
-          tabManager.createNewConversation();
+          void tabManager.createNewConversation();
         }
         return true;
       },
@@ -167,7 +167,7 @@ export default class ClaudianPlugin extends Plugin {
         if (!checking) {
           const activeTabId = tabManager.getActiveTabId();
           if (activeTabId) {
-            tabManager.closeTab(activeTabId);
+            void tabManager.closeTab(activeTabId);
           }
         }
         return true;
@@ -177,7 +177,11 @@ export default class ClaudianPlugin extends Plugin {
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
   }
 
-  async onunload() {
+  onunload(): void {
+    void this.persistOpenTabStates();
+  }
+
+  private async persistOpenTabStates(): Promise<void> {
     // Ensures state is saved even if Obsidian quits without calling onClose()
     for (const view of this.getAllViews()) {
       const tabManager = view.getTabManager();
@@ -276,7 +280,7 @@ export default class ClaudianPlugin extends Plugin {
     this.settings = {
       ...DEFAULT_CLAUDIAN_SETTINGS,
       ...claudian,
-    } as ClaudianSettings;
+    };
 
     // Plan mode is ephemeral — normalize back to normal on load so the app
     // doesn't start stuck in plan mode after a restart (prePlanPermissionMode is lost)
@@ -305,7 +309,7 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     const didNormalizeProviderSelection = ProviderSettingsCoordinator.normalizeProviderSelection(
-      this.settings as unknown as Record<string, unknown>,
+      this.settings,
     );
     const didNormalizeModelVariants = this.normalizeModelVariantSettings();
 
@@ -340,7 +344,7 @@ export default class ClaudianPlugin extends Plugin {
     const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment();
 
     ProviderSettingsCoordinator.projectActiveProviderState(
-      this.settings as unknown as Record<string, unknown>,
+      this.settings,
     );
 
     if (changed || didNormalizeModelVariants || didNormalizeProviderSelection) {
@@ -375,16 +379,16 @@ export default class ClaudianPlugin extends Plugin {
 
   normalizeModelVariantSettings(): boolean {
     return ProviderSettingsCoordinator.normalizeAllModelVariants(
-      this.settings as unknown as Record<string, unknown>,
+      this.settings,
     );
   }
 
   async saveSettings() {
     ProviderSettingsCoordinator.normalizeProviderSelection(
-      this.settings as unknown as Record<string, unknown>,
+      this.settings,
     );
     ProviderSettingsCoordinator.persistProjectedProviderState(
-      this.settings as unknown as Record<string, unknown>,
+      this.settings,
     );
 
     await this.storage.saveClaudianSettings(this.settings);
@@ -507,18 +511,18 @@ export default class ClaudianPlugin extends Plugin {
   /** Returns the runtime environment variables (fixed at plugin load). */
   getActiveEnvironmentVariables(
     providerId: ProviderId = ProviderRegistry.resolveSettingsProviderId(
-      this.settings as unknown as Record<string, unknown>,
+      this.settings,
     ),
   ): string {
     return getRuntimeEnvironmentText(
-      this.settings as unknown as Record<string, unknown>,
+      this.settings,
       providerId,
     );
   }
 
   getEnvironmentVariablesForScope(scope: EnvironmentScope): string {
     return getScopedEnvironmentVariables(
-      this.settings as unknown as Record<string, unknown>,
+      this.settings,
       scope,
     );
   }
@@ -529,7 +533,7 @@ export default class ClaudianPlugin extends Plugin {
       return null;
     }
 
-    return cliResolver.resolveFromSettings(this.settings as unknown as Record<string, unknown>);
+    return cliResolver.resolveFromSettings(this.settings);
   }
 
   private reconcileModelWithEnvironment(providerIds: ProviderId[] = ProviderRegistry.getRegisteredProviderIds()): {
@@ -537,7 +541,7 @@ export default class ClaudianPlugin extends Plugin {
     invalidatedConversations: Conversation[];
   } {
     return ProviderSettingsCoordinator.reconcileProviders(
-      this.settings as unknown as Record<string, unknown>,
+      this.settings,
       this.conversations,
       providerIds,
     );
@@ -555,7 +559,7 @@ export default class ClaudianPlugin extends Plugin {
         continue;
       }
 
-      const providerId = scope.slice('provider:'.length) as ProviderId;
+      const providerId = scope.slice('provider:'.length);
       if (registeredProviderIds.has(providerId)) {
         affectedProviderIds.add(providerId);
       }
@@ -669,7 +673,8 @@ export default class ClaudianPlugin extends Plugin {
     if (!conversation) return;
 
     // providerId is immutable — strip it from updates to prevent accidental mutation
-    const { providerId: _, ...safeUpdates } = updates;
+    const safeUpdates = { ...updates };
+    delete safeUpdates.providerId;
     Object.assign(conversation, safeUpdates, { updatedAt: Date.now() });
 
     await this.storage.sessions.saveMetadata(

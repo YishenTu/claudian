@@ -8,12 +8,22 @@ import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
 import { createProviderIconSvg } from '../../shared/icons';
+import {
+  cancelScheduledAnimationFrame,
+  scheduleAnimationFrame,
+  type ScheduledAnimationFrame,
+} from '../../utils/animationFrame';
 import type { HistoryConversationOpenState } from './controllers/ConversationController';
 import { getTabProviderId, onProviderAvailabilityChanged, updatePlanModeUI } from './tabs/Tab';
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
 import type { TabData, TabId } from './tabs/types';
 import { recalculateUsageForModel } from './utils/usageInfo';
+
+type LoadableView = {
+  containerEl?: HTMLElement;
+  load: () => Promise<void> | void;
+};
 
 export class ClaudianView extends ItemView {
   private plugin: ClaudianPlugin;
@@ -41,7 +51,7 @@ export class ClaudianView extends ItemView {
   private eventRefs: EventRef[] = [];
 
   // Debouncing for tab bar updates
-  private pendingTabBarUpdate: number | null = null;
+  private pendingTabBarUpdate: ScheduledAnimationFrame | null = null;
 
   // Debouncing for tab state persistence
   private pendingPersist: number | null = null;
@@ -53,12 +63,13 @@ export class ClaudianView extends ItemView {
     // Hover Editor compatibility: Define load as an instance method that can't be
     // overwritten by prototype patching. Hover Editor patches ClaudianView.prototype.load
     // after our class is defined, but instance methods take precedence over prototype methods.
-    const originalLoad = Object.getPrototypeOf(this).load.bind(this);
+    const prototype = Object.getPrototypeOf(this) as LoadableView;
+    const originalLoad = prototype.load.bind(this) as () => Promise<void> | void;
     Object.defineProperty(this, 'load', {
       value: async () => {
         // Ensure containerEl exists before any patched load code tries to use it
         if (!this.containerEl) {
-          (this as any).containerEl = createDiv({ cls: 'view-content' });
+          (this as LoadableView).containerEl = createDiv({ cls: 'view-content' });
         }
         // Wrap in try-catch to prevent Hover Editor errors from breaking our view
         try {
@@ -90,15 +101,15 @@ export class ClaudianView extends ItemView {
       onProviderAvailabilityChanged(tab, this.plugin);
       const providerId = getTabProviderId(tab, this.plugin);
       const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-        this.plugin.settings as unknown as Record<string, unknown>,
+        this.plugin.settings,
         providerId,
       );
-      const model = providerSettings.model as string;
+      const model = providerSettings.model;
       const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
       const capabilities = ProviderRegistry.getCapabilities(providerId);
       const contextWindow = uiConfig.getContextWindowSize(
         model,
-        providerSettings.customContextLimits as Record<string, number> | undefined,
+        providerSettings.customContextLimits,
       );
 
       if (tab.state.usage) {
@@ -208,8 +219,7 @@ export class ClaudianView extends ItemView {
 
   async onClose() {
     if (this.pendingTabBarUpdate !== null) {
-      const activeWindow = this.containerEl.ownerDocument.defaultView ?? window;
-      activeWindow.cancelAnimationFrame(this.pendingTabBarUpdate);
+      cancelScheduledAnimationFrame(this.pendingTabBarUpdate);
       this.pendingTabBarUpdate = null;
     }
 
@@ -408,19 +418,18 @@ export class ClaudianView extends ItemView {
     if (!this.tabManager || !this.tabBar) return;
 
     // Debounce tab bar updates using requestAnimationFrame
-    const activeWindow = this.containerEl.ownerDocument.defaultView ?? window;
     if (this.pendingTabBarUpdate !== null) {
-      activeWindow.cancelAnimationFrame(this.pendingTabBarUpdate);
+      cancelScheduledAnimationFrame(this.pendingTabBarUpdate);
     }
 
-    this.pendingTabBarUpdate = activeWindow.requestAnimationFrame(() => {
+    this.pendingTabBarUpdate = scheduleAnimationFrame(() => {
       this.pendingTabBarUpdate = null;
       if (!this.tabManager || !this.tabBar) return;
 
       const items = this.tabManager.getTabBarItems();
       this.tabBar.update(items);
       this.updateTabBarVisibility();
-    });
+    }, this.containerEl.ownerDocument.defaultView ?? null);
   }
 
   private updateTabBarVisibility(): void {
@@ -464,6 +473,7 @@ export class ClaudianView extends ItemView {
     const svg = createProviderIconSvg(icon, {
       dataProvider: providerId,
       height: 18,
+      ownerDocument: this.logoEl.ownerDocument,
       width: 18,
     });
     this.logoEl.appendChild(svg);
@@ -562,7 +572,7 @@ export class ClaudianView extends ItemView {
         const providerId = getTabProviderId(activeTab, this.plugin);
         if (!ProviderRegistry.getCapabilities(providerId).supportsPlanMode) return;
         const current = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-          this.plugin.settings as unknown as Record<string, unknown>,
+          this.plugin.settings,
           providerId,
         ).permissionMode as string;
         if (current === 'plan') {
@@ -645,13 +655,12 @@ export class ClaudianView extends ItemView {
   }
 
   private persistTabState(): void {
-    const activeWindow = this.containerEl.ownerDocument.defaultView ?? window;
 
     // Debounce persistence to avoid rapid writes (300ms delay)
     if (this.pendingPersist !== null) {
-      activeWindow.clearTimeout(this.pendingPersist);
+      window.clearTimeout(this.pendingPersist);
     }
-    this.pendingPersist = activeWindow.setTimeout(() => {
+    this.pendingPersist = window.setTimeout(() => {
       this.pendingPersist = null;
       if (!this.tabManager) return;
       const state = this.tabManager.getPersistedState();
@@ -665,8 +674,7 @@ export class ClaudianView extends ItemView {
   private async persistTabStateImmediate(): Promise<void> {
     // Cancel any pending debounced persist
     if (this.pendingPersist !== null) {
-      const activeWindow = this.containerEl.ownerDocument.defaultView ?? window;
-      activeWindow.clearTimeout(this.pendingPersist);
+      window.clearTimeout(this.pendingPersist);
       this.pendingPersist = null;
     }
     if (!this.tabManager) return;

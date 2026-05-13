@@ -9,7 +9,7 @@ export function getVaultPath(app: App): string | null {
 }
 
 function getEnvValue(key: string): string | undefined {
-  const hasKey = (name: string) => Object.prototype.hasOwnProperty.call(process.env, name);
+  const hasKey = (name: string): boolean => name in process.env && process.env[name] !== undefined;
 
   if (hasKey(key)) {
     return process.env[key];
@@ -42,24 +42,24 @@ function expandEnvironmentVariables(value: string): string {
   let expanded = value;
 
   // Windows %VAR% format - allow parentheses for vars like %ProgramFiles(x86)%
-  expanded = expanded.replace(/%([A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9_]+\))?[A-Za-z0-9_]*)%/g, (match, name) => {
+  expanded = expanded.replace(/%([A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9_]+\))?[A-Za-z0-9_]*)%/g, (match: string, name: string): string => {
     const envValue = getEnvValue(name);
     return envValue !== undefined ? envValue : match;
   });
 
   if (isWindows) {
-    expanded = expanded.replace(/!([A-Za-z_][A-Za-z0-9_]*)!/g, (match, name) => {
+    expanded = expanded.replace(/!([A-Za-z_][A-Za-z0-9_]*)!/g, (match: string, name: string): string => {
       const envValue = getEnvValue(name);
       return envValue !== undefined ? envValue : match;
     });
 
-    expanded = expanded.replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)/gi, (match, name) => {
+    expanded = expanded.replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)/gi, (match: string, name: string): string => {
       const envValue = getEnvValue(name);
       return envValue !== undefined ? envValue : match;
     });
   }
 
-  expanded = expanded.replace(/\$([A-Za-z_][A-Za-z0-9_]*)|\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, name1, name2) => {
+  expanded = expanded.replace(/\$([A-Za-z_][A-Za-z0-9_]*)|\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match: string, name1: string | undefined, name2: string | undefined): string => {
     const key = name1 ?? name2;
     if (!key) return match;
     const envValue = getEnvValue(key);

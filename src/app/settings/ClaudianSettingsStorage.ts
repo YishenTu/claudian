@@ -58,36 +58,24 @@ const LEGACY_TOP_LEVEL_PROVIDER_FIELDS = [
   'lastCodexEnvHash',
 ] as const;
 
+const LEGACY_STRIPPED_SETTING_FIELDS = [
+  'activeConversationId',
+  'show1MModel',
+  'hiddenSlashCommands',
+  'slashCommands',
+  'allowExternalAccess',
+  'allowedExportPaths',
+  'enableBlocklist',
+  'blockedCommands',
+  ...LEGACY_TOP_LEVEL_PROVIDER_FIELDS,
+  'openInMainTab',
+] as const;
+
 function stripLegacyFields(settings: Record<string, unknown>): Record<string, unknown> {
-  const {
-    activeConversationId: _activeConversationId,
-    show1MModel: _show1MModel,
-    hiddenSlashCommands: _hiddenSlashCommands,
-    slashCommands: _slashCommands,
-    allowExternalAccess: _allowExternalAccess,
-    allowedExportPaths: _allowedExportPaths,
-    enableBlocklist: _enableBlocklist,
-    blockedCommands: _blockedCommands,
-    claudeSafeMode: _claudeSafeMode,
-    codexSafeMode: _codexSafeMode,
-    claudeCliPath: _claudeCliPath,
-    claudeCliPathsByHost: _claudeCliPathsByHost,
-    codexCliPath: _codexCliPath,
-    codexCliPathsByHost: _codexCliPathsByHost,
-    codexReasoningSummary: _codexReasoningSummary,
-    loadUserClaudeSettings: _loadUserClaudeSettings,
-    codexEnabled: _codexEnabled,
-    lastClaudeModel: _lastClaudeModel,
-    enableChrome: _enableChrome,
-    enableBangBash: _enableBangBash,
-    enableOpus1M: _enableOpus1M,
-    enableSonnet1M: _enableSonnet1M,
-    environmentVariables: _environmentVariables,
-    lastEnvHash: _lastEnvHash,
-    lastCodexEnvHash: _lastCodexEnvHash,
-    openInMainTab: _openInMainTab,
-    ...cleaned
-  } = settings;
+  const cleaned = { ...settings };
+  for (const key of LEGACY_STRIPPED_SETTING_FIELDS) {
+    delete cleaned[key];
+  }
   return cleaned;
 }
 
@@ -255,14 +243,14 @@ export class ClaudianSettingsStorage {
     const merged = {
       ...this.getDefaults(),
       ...legacyNormalized,
-    } as StoredClaudianSettings;
+    };
 
     updateClaudeProviderSettings(
-      merged as unknown as Record<string, unknown>,
+      merged,
       getClaudeProviderSettings(legacyProviderSettings),
     );
     updateCodexProviderSettings(
-      merged as unknown as Record<string, unknown>,
+      merged,
       getCodexProviderSettings(legacyProviderSettings),
     );
 
@@ -290,7 +278,7 @@ export class ClaudianSettingsStorage {
 
   async save(settings: StoredClaudianSettings): Promise<void> {
     const content = JSON.stringify(
-      stripLegacyFields(settings as unknown as Record<string, unknown>),
+      stripLegacyFields(settings),
       null,
       2,
     );
@@ -319,7 +307,7 @@ export class ClaudianSettingsStorage {
 
     const current = await this.load();
     updateClaudeProviderSettings(
-      current as unknown as Record<string, unknown>,
+      current,
       { lastModel: model },
     );
     await this.save(current);
@@ -328,7 +316,7 @@ export class ClaudianSettingsStorage {
   async setLastEnvHash(hash: string): Promise<void> {
     const current = await this.load();
     updateClaudeProviderSettings(
-      current as unknown as Record<string, unknown>,
+      current,
       { environmentHash: hash },
     );
     await this.save(current);

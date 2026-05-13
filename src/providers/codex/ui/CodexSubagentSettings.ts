@@ -16,7 +16,7 @@ const REASONING_EFFORT_OPTIONS = [
 
 const SANDBOX_MODE_OPTIONS = [
   { value: '', label: 'Inherit' },
-  { value: 'read-only', label: 'Read-only' },
+  { value: 'read-only', label: 'Read only' },
   { value: 'danger-full-access', label: 'Danger full access' },
   { value: 'workspace-write', label: 'Workspace write' },
 ] as const;
@@ -105,7 +105,7 @@ class CodexSubagentModal extends Modal {
       .addText(text => {
         this._nameInput = text.inputEl;
         text.setValue(this.existing?.name ?? '')
-          .setPlaceholder('code_reviewer');
+          .setPlaceholder('Code_reviewer');
       });
 
     new Setting(contentEl)
@@ -165,7 +165,7 @@ class CodexSubagentModal extends Modal {
 
     new Setting(details)
       .setName('Nickname candidates')
-      .setDesc('Comma-separated display nicknames (e.g., Atlas, Delta, Echo)')
+      .setDesc('Comma-separated display nicknames (e.g., atlas, delta, echo)')
       .addText(text => {
         this._nicknamesInput = text.inputEl;
         text.setValue(this.existing?.nicknameCandidates?.join(', ') ?? '');
@@ -261,7 +261,9 @@ class CodexSubagentModal extends Modal {
       text: 'Save',
       cls: 'claudian-save-btn',
     });
-    saveBtn.addEventListener('click', doSave);
+    saveBtn.addEventListener('click', () => {
+      void doSave();
+    });
   }
 
   onClose() {
@@ -281,7 +283,7 @@ export class CodexSubagentSettings {
     this.storage = storage;
     this.app = app;
     this.onChanged = onChanged;
-    this.render();
+    void this.render();
   }
 
   async render(): Promise<void> {
@@ -355,7 +357,8 @@ export class CodexSubagentSettings {
       attr: { 'aria-label': 'Delete' },
     });
     setIcon(deleteBtn, 'trash-2');
-    deleteBtn.addEventListener('click', async () => {
+    deleteBtn.addEventListener('click', () => {
+      void (async (): Promise<void> => {
       if (!this.app) return;
       const confirmed = await confirmDelete(
         this.app,
@@ -370,6 +373,7 @@ export class CodexSubagentSettings {
       } catch {
         new Notice('Failed to delete subagent');
       }
+      })();
     });
   }
 

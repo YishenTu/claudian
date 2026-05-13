@@ -18,7 +18,7 @@ function getStoredConversationProviderId(
   if (tab.lifecycleState === 'blank' && tab.draftModel) {
     return getEnabledProviderForModel(
       tab.draftModel,
-      plugin.settings as unknown as Record<string, unknown>,
+      plugin.settings,
     );
   }
 

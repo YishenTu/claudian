@@ -71,7 +71,7 @@ export async function runColdStartQuery(
 
   const settings = config.providerSettings
     ?? ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      config.plugin.settings as unknown as Record<string, unknown>,
+      config.plugin.settings,
       'claude',
     );
   const claudeSettings = getClaudeProviderSettings(settings);
@@ -121,7 +121,7 @@ export async function runColdStartQuery(
       options.thinking = { type: 'adaptive' };
       // SDK runtime accepts `xhigh` on Opus 4.7+ and silently falls back to
       // `high` elsewhere, but its type definition lags our local EffortLevel.
-      options.effort = effortLevel as Options['effort'];
+      options.effort = effortLevel;
     } else {
       const thinkingTokens = resolveThinkingTokens(selectedModel, settings.thinkingBudget);
       if (thinkingTokens !== null) {

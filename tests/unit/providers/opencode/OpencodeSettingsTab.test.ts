@@ -411,7 +411,7 @@ describe('OpencodeSettingsTab', () => {
 
     opencodeSettingsTabRenderer.render(createContainer(), context);
 
-    expect(findSetting('Commands and Skills').heading).toBe(true);
+    expect(findSetting('Commands and skills').heading).toBe(true);
     expect(context.renderHiddenProviderCommandSetting).toHaveBeenCalledWith(
       expect.anything(),
       'opencode',

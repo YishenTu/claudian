@@ -937,6 +937,47 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.flavorTimerInterval).toBeNull();
     });
 
+    it('uses the content owner window for thinking timers', () => {
+      const ownerSetTimeout = jest.fn<ReturnType<Window['setTimeout']>, Parameters<Window['setTimeout']>>(
+        (callback, timeout) => globalThis.setTimeout(callback, timeout) as unknown as number,
+      );
+      const ownerClearTimeout = jest.fn<void, [number]>((handle) => {
+        globalThis.clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+      });
+      const ownerSetInterval = jest.fn<ReturnType<Window['setInterval']>, Parameters<Window['setInterval']>>(
+        (callback, timeout) => globalThis.setInterval(callback, timeout) as unknown as number,
+      );
+      const ownerClearInterval = jest.fn<void, [number]>((handle) => {
+        globalThis.clearInterval(handle as unknown as ReturnType<typeof setInterval>);
+      });
+      const ownerWindow = {
+        ...deps.state.currentContentEl!.ownerDocument.defaultView,
+        setTimeout: ownerSetTimeout,
+        clearTimeout: ownerClearTimeout,
+        setInterval: ownerSetInterval,
+        clearInterval: ownerClearInterval,
+      };
+      Object.defineProperty(deps.state.currentContentEl!.ownerDocument, 'defaultView', {
+        configurable: true,
+        value: ownerWindow,
+      });
+
+      deps.state.responseStartTime = performance.now();
+
+      controller.showThinkingIndicator();
+      expect(ownerSetTimeout).toHaveBeenCalledWith(expect.any(Function), 400);
+
+      controller.hideThinkingIndicator();
+      expect(ownerClearTimeout).toHaveBeenCalled();
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+      expect(ownerSetInterval).toHaveBeenCalledWith(expect.any(Function), 1000);
+
+      controller.hideThinkingIndicator();
+      expect(ownerClearInterval).toHaveBeenCalled();
+    });
+
     it('should clear timer interval in resetStreamingState', () => {
       deps.state.responseStartTime = performance.now();
 

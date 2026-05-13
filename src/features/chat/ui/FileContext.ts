@@ -68,17 +68,19 @@ export class FileContextManager {
           this.refreshCurrentNoteChip();
         }
       },
-      onOpenFile: async (filePath) => {
-        const file = this.app.vault.getAbstractFileByPath(filePath);
-        if (!(file instanceof TFile)) {
-          new Notice(`Could not open file: ${filePath}`);
-          return;
-        }
-        try {
-          await this.app.workspace.getLeaf().openFile(file);
-        } catch (error) {
-          new Notice(`Failed to open file: ${error instanceof Error ? error.message : String(error)}`);
-        }
+      onOpenFile: (filePath) => {
+        void (async (): Promise<void> => {
+          const file = this.app.vault.getAbstractFileByPath(filePath);
+          if (!(file instanceof TFile)) {
+            new Notice(`Could not open file: ${filePath}`);
+            return;
+          }
+          try {
+            await this.app.workspace.getLeaf().openFile(file);
+          } catch (error) {
+            new Notice(`Failed to open file: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        })();
       },
     });
 
@@ -366,9 +368,9 @@ export class FileContextManager {
     const fileTags: string[] = [];
 
     if (cache.frontmatter?.tags) {
-      const fmTags = cache.frontmatter.tags;
+      const fmTags: unknown = cache.frontmatter.tags;
       if (Array.isArray(fmTags)) {
-        fileTags.push(...fmTags.map((t: string) => t.replace(/^#/, '')));
+        fileTags.push(...fmTags.filter((tag): tag is string => typeof tag === 'string').map((tag) => tag.replace(/^#/, '')));
       } else if (typeof fmTags === 'string') {
         fileTags.push(fmTags.replace(/^#/, ''));
       }

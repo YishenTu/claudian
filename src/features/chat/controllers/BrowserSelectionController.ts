@@ -35,16 +35,14 @@ export class BrowserSelectionController {
 
   start(): void {
     if (this.pollInterval) return;
-    const activeWindow = this.inputEl.ownerDocument.defaultView ?? window;
-    this.pollInterval = activeWindow.setInterval(() => {
+    this.pollInterval = window.setInterval(() => {
       void this.poll();
     }, BROWSER_SELECTION_POLL_INTERVAL);
   }
 
   stop(): void {
     if (this.pollInterval) {
-      const activeWindow = this.inputEl.ownerDocument.defaultView ?? window;
-      activeWindow.clearInterval(this.pollInterval);
+      window.clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
     this.clear();
@@ -78,7 +76,7 @@ export class BrowserSelectionController {
   }
 
   private getActiveBrowserView(): { view: ItemView; viewType: string; containerEl: HTMLElement } | null {
-    const activeLeaf = this.app.workspace.activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
+    const activeLeaf = this.app.workspace.getMostRecentLeaf?.();
     const activeView = activeLeaf?.view as ItemView | undefined;
     const containerEl = (activeView as unknown as { containerEl?: HTMLElement }).containerEl;
     if (!activeView || !containerEl) return null;
@@ -157,7 +155,7 @@ export class BrowserSelectionController {
   }
 
   private async extractSelectionFromWebviews(containerEl: HTMLElement): Promise<string | null> {
-    const webviews = Array.from(containerEl.querySelectorAll('webview')) as BrowserLikeWebview[];
+    const webviews = Array.from(containerEl.querySelectorAll<BrowserLikeWebview>('webview'));
     for (const webview of webviews) {
       if (typeof webview.executeJavaScript !== 'function') continue;
       try {
@@ -216,7 +214,7 @@ export class BrowserSelectionController {
       }
     }
 
-    const embeddableEl = containerEl.querySelector('iframe[src], webview[src]') as HTMLElement | null;
+    const embeddableEl = containerEl.querySelector<HTMLElement>('iframe[src], webview[src]');
     const embeddedSrc = embeddableEl?.getAttribute('src');
     if (embeddedSrc?.trim()) {
       return embeddedSrc.trim();

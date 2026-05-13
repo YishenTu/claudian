@@ -37,13 +37,13 @@ export class CodexServerRequestRouter {
 
   async handleServerRequest(
     requestIdOrMethod: RequestId | string,
-    methodOrParams: string | unknown,
+    methodOrParams: unknown,
     maybeParams?: unknown,
   ): Promise<unknown> {
     const hasExplicitRequestId = maybeParams !== undefined;
-    const requestId = hasExplicitRequestId ? requestIdOrMethod as RequestId : undefined;
+    const requestId = hasExplicitRequestId ? requestIdOrMethod : undefined;
     const method = (hasExplicitRequestId ? methodOrParams : requestIdOrMethod) as string;
-    const params = (hasExplicitRequestId ? maybeParams : methodOrParams) as unknown;
+    const params = (hasExplicitRequestId ? maybeParams : methodOrParams);
 
     switch (method) {
       case 'item/commandExecution/requestApproval':

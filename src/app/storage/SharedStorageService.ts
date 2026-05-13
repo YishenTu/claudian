@@ -7,6 +7,10 @@ import { CLAUDIAN_STORAGE_PATH } from '../../core/bootstrap/StoragePaths';
 import { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../settings/ClaudianSettingsStorage';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 export class SharedStorageService implements SharedAppStorage {
   readonly claudianSettings: ClaudianSettingsStorage;
   readonly sessions: SessionStorage;
@@ -33,7 +37,8 @@ export class SharedStorageService implements SharedAppStorage {
 
   async setTabManagerState(state: { openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }>; activeTabId: string | null }): Promise<void> {
     try {
-      const data = (await this.plugin.loadData()) || {};
+      const loaded: unknown = await this.plugin.loadData();
+      const data = isRecord(loaded) ? loaded : {};
       data.tabManagerState = state;
       await this.plugin.saveData(data);
     } catch {
@@ -43,8 +48,8 @@ export class SharedStorageService implements SharedAppStorage {
 
   async getTabManagerState(): Promise<{ openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }>; activeTabId: string | null } | null> {
     try {
-      const data = await this.plugin.loadData();
-      if (!data?.tabManagerState) {
+      const data: unknown = await this.plugin.loadData();
+      if (!isRecord(data) || !data.tabManagerState) {
         return null;
       }
 

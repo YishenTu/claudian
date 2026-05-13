@@ -38,7 +38,7 @@ export function resolveCodexAppServerLaunchSpec(
   providerId: ProviderId = 'codex',
 ): CodexLaunchSpec {
   return buildCodexLaunchSpec({
-    settings: plugin.settings as unknown as Record<string, unknown>,
+    settings: plugin.settings,
     resolvedCliCommand: plugin.getResolvedProviderCliPath(providerId),
     hostVaultPath: getCodexAppServerWorkingDirectory(plugin),
     env: buildCodexAppServerEnvironment(plugin, providerId),

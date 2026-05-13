@@ -12,5 +12,5 @@ export interface ClaudeProviderState {
 export function getClaudeState(
   providerState: Record<string, unknown> | undefined,
 ): ClaudeProviderState {
-  return (providerState ?? {}) as ClaudeProviderState;
+  return (providerState ?? {});
 }

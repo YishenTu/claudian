@@ -61,13 +61,7 @@ export function buildClaudeSDKUserMessage(
 export function buildClaudePromptWithImages(
   prompt: string,
   images?: ImageAttachment[],
-): string | AsyncGenerator<{
-  type: 'user';
-  message: {
-    role: 'user';
-    content: UserContentBlock[];
-  };
-}> {
+): string | AsyncGenerator<SDKUserMessage> {
   if (!images || images.length === 0) {
     return prompt;
   }
@@ -81,6 +75,7 @@ export function buildClaudePromptWithImages(
         role: 'user' as const,
         content,
       },
+      parent_tool_use_id: null,
     };
   }
 

@@ -125,14 +125,14 @@ export class CodexAppServerProcess {
 
     return new Promise<void>((resolve) => {
       const onExit = () => {
-        clearTimeout(killTimer);
+        window.clearTimeout(killTimer);
         resolve();
       };
 
       this.proc!.once('exit', onExit);
       this.proc!.kill('SIGTERM');
 
-      const killTimer = setTimeout(() => {
+      const killTimer = window.setTimeout(() => {
         if (this.alive) {
           this.proc!.kill('SIGKILL');
         }

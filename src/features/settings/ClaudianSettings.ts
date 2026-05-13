@@ -16,9 +16,28 @@ import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { renderEnvironmentSettingsSection } from './ui/EnvironmentSettingsSection';
 
-type SettingsTabId = 'general' | ProviderId;
+type SettingsTabId = string;
+type ObsidianHotkey = { modifiers: string[]; key: string };
+type ObsidianHotkeyManager = {
+  customKeys?: Record<string, ObsidianHotkey[] | undefined>;
+  defaultKeys?: Record<string, ObsidianHotkey[] | undefined>;
+};
+type ObsidianHotkeyTab = {
+  searchInputEl?: HTMLInputElement;
+  searchComponent?: { inputEl?: HTMLInputElement };
+  updateHotkeyVisibility?: () => void;
+};
+type ObsidianSettingsController = {
+  activeTab?: ObsidianHotkeyTab;
+  open: () => void;
+  openTabById: (id: string) => void;
+};
+type AppWithHotkeyInternals = App & {
+  hotkeyManager?: ObsidianHotkeyManager;
+  setting?: ObsidianSettingsController;
+};
 
-function formatHotkey(hotkey: { modifiers: string[]; key: string }): string {
+function formatHotkey(hotkey: ObsidianHotkey): string {
   const isMac = Platform.isMacOS;
   const modMap: Record<string, string> = isMac
     ? { Mod: '⌘', Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Meta: '⌘' }
@@ -31,10 +50,14 @@ function formatHotkey(hotkey: { modifiers: string[]; key: string }): string {
 }
 
 function openHotkeySettings(app: App): void {
-  const setting = (app as any).setting;
+  const setting = (app as AppWithHotkeyInternals).setting;
+  if (!setting) {
+    return;
+  }
+
   setting.open();
   setting.openTabById('hotkeys');
-  setTimeout(() => {
+  window.setTimeout(() => {
     const tab = setting.activeTab;
     if (!tab) {
       return;
@@ -51,12 +74,12 @@ function openHotkeySettings(app: App): void {
 }
 
 function getHotkeyForCommand(app: App, commandId: string): string | null {
-  const hotkeyManager = (app as any).hotkeyManager;
+  const hotkeyManager = (app as AppWithHotkeyInternals).hotkeyManager;
   if (!hotkeyManager) return null;
 
   const customHotkeys = hotkeyManager.customKeys?.[commandId];
   const defaultHotkeys = hotkeyManager.defaultKeys?.[commandId];
-  const hotkeys = customHotkeys?.length > 0 ? customHotkeys : defaultHotkeys;
+  const hotkeys = customHotkeys && customHotkeys.length > 0 ? customHotkeys : defaultHotkeys;
 
   if (!hotkeys || hotkeys.length === 0) return null;
 
@@ -327,7 +350,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
             this.plugin.settings.userName = value;
             await this.plugin.saveSettings();
           });
-        text.inputEl.addEventListener('blur', () => this.restartServiceForPromptChange());
+        text.inputEl.addEventListener('blur', () => {
+          void this.restartServiceForPromptChange();
+        });
       });
 
     new Setting(container)
@@ -343,7 +368,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
         text.inputEl.rows = 6;
         text.inputEl.cols = 50;
-        text.inputEl.addEventListener('blur', () => this.restartServiceForPromptChange());
+        text.inputEl.addEventListener('blur', () => {
+          void this.restartServiceForPromptChange();
+        });
       });
 
     new Setting(container)
@@ -351,7 +378,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.excludedTags.desc'))
       .addTextArea((text) => {
         text
-          .setPlaceholder('system\nprivate\ndraft')
+          .setPlaceholder('System\nprivate\ndraft')
           .setValue(this.plugin.settings.excludedTags.join('\n'))
           .onChange(async (value) => {
             this.plugin.settings.excludedTags = value
@@ -369,14 +396,16 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.mediaFolder.desc'))
       .addText((text) => {
         text
-          .setPlaceholder('attachments')
+          .setPlaceholder('Attachments')
           .setValue(this.plugin.settings.mediaFolder)
           .onChange(async (value) => {
             this.plugin.settings.mediaFolder = value.trim();
             await this.plugin.saveSettings();
           });
         text.inputEl.addClass('claudian-settings-media-input');
-        text.inputEl.addEventListener('blur', () => this.restartServiceForPromptChange());
+        text.inputEl.addEventListener('blur', () => {
+          void this.restartServiceForPromptChange();
+        });
       });
 
     // --- Input ---
@@ -424,7 +453,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         };
 
         text
-          .setPlaceholder('map w scrollUp\nmap s scrollDown\nmap i focusInput')
+          .setPlaceholder('Map w scrollup\nmap s scrolldown\nmap i focusinput')
           .setValue(pendingValue)
           .onChange((value) => {
             pendingValue = value;
@@ -432,8 +461,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
 
         text.inputEl.rows = 3;
-        text.inputEl.addEventListener('blur', async () => {
-          await commitValue(true);
+        text.inputEl.addEventListener('blur', () => {
+          void commitValue(true);
         });
       });
 
@@ -536,7 +565,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
       const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation claudian-hidden' });
 
-      inputEl.addEventListener('input', async () => {
+      const saveContextLimit = async (): Promise<void> => {
         const trimmed = inputEl.value.trim();
 
         if (!this.plugin.settings.customContextLimits) {
@@ -562,6 +591,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
         }
 
         await this.plugin.saveSettings();
+      };
+
+      inputEl.addEventListener('input', () => {
+        void saveContextLimit();
       });
     }
   }

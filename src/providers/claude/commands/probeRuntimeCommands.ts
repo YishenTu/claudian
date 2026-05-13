@@ -41,7 +41,7 @@ export async function probeRuntimeCommands(plugin: ClaudianPlugin): Promise<Slas
   );
   const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
   const claudeSettings = getClaudeProviderSettings(
-    plugin.settings as unknown as Record<string, unknown>,
+    plugin.settings,
   );
 
   const abortController = new AbortController();

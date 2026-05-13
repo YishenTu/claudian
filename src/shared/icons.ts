@@ -11,7 +11,7 @@ const MCP_ICON_PATHS = [
 ];
 
 function createSvgElement(ownerDocument: Document, tagName: string): SVGElement {
-  return ownerDocument.createElementNS(SVG_NS, tagName) as SVGElement;
+  return ownerDocument.createElementNS(SVG_NS, tagName);
 }
 
 export function appendMcpIcon(container: HTMLElement): void {
@@ -100,6 +100,7 @@ export interface CreateProviderIconSvgOptions {
   className?: string;
   dataProvider?: string;
   height?: number | string;
+  ownerDocument?: Document;
   width?: number | string;
 }
 
@@ -107,7 +108,8 @@ export function createProviderIconSvg(
   icon: ProviderIconSvg,
   options: CreateProviderIconSvgOptions = {},
 ): SVGElement {
-  const svg = document.createElementNS(SVG_NS, 'svg');
+  const ownerDocument = options.ownerDocument ?? window.document;
+  const svg = ownerDocument.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', icon.viewBox);
   svg.setAttribute('fill', 'none');
   svg.setAttribute('aria-hidden', 'true');
@@ -128,27 +130,27 @@ export function createProviderIconSvg(
 
   if (icon.kind === 'composite') {
     for (const child of icon.children) {
-      svg.appendChild(createProviderSvgChild(child));
+      svg.appendChild(createProviderSvgChild(child, ownerDocument));
     }
     return svg;
   }
 
-  const path = document.createElementNS(SVG_NS, 'path');
+  const path = ownerDocument.createElementNS(SVG_NS, 'path');
   path.setAttribute('d', icon.path);
   path.setAttribute('fill', 'currentColor');
   svg.appendChild(path);
   return svg;
 }
 
-function createProviderSvgChild(child: ProviderSvgChild): SVGElement {
-  const element = document.createElementNS(SVG_NS, child.tag);
+function createProviderSvgChild(child: ProviderSvgChild, ownerDocument: Document): SVGElement {
+  const element = ownerDocument.createElementNS(SVG_NS, child.tag);
   for (const [name, value] of Object.entries(child.attributes)) {
     element.setAttribute(name, value);
   }
 
   if (child.tag === 'g') {
     for (const nestedChild of child.children) {
-      element.appendChild(createProviderSvgChild(nestedChild));
+      element.appendChild(createProviderSvgChild(nestedChild, ownerDocument));
     }
   }
 

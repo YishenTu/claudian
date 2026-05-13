@@ -18,7 +18,7 @@ export class VaultFileCache {
   initializeInBackground(): void {
     if (this.isInitialized) return;
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       this.tryRefreshFiles();
     }, 0);
   }
@@ -68,7 +68,7 @@ export class VaultFolderCache {
   initializeInBackground(): void {
     if (this.isInitialized) return;
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       this.tryRefreshFolders();
     }, 0);
   }

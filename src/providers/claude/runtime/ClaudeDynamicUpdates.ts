@@ -132,7 +132,7 @@ export async function applyClaudeDynamicUpdates(
   if (deps.getCurrentConfig() && mcpServersKey !== deps.getCurrentConfig()!.mcpServersKey) {
     const serverConfigs: Record<string, McpServerConfig> = {};
     for (const [name, config] of Object.entries(mcpServers)) {
-      serverConfigs[name] = config as McpServerConfig;
+      serverConfigs[name] = config;
     }
 
     try {

@@ -158,7 +158,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName('Models').setHeading();
 
     new Setting(container)
-      .setName('Visible Models')
+      .setName('Visible models')
       .setDesc('Choose which OpenCode models appear in the chat selector. Filter by provider or type to search. The current session model stays pinned even if it is not selected here.');
 
     const pickerEl = container.createDiv({ cls: 'claudian-opencode-model-picker' });
@@ -191,7 +191,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       cls: 'claudian-opencode-model-picker-search',
       type: 'search',
     });
-    searchInput.placeholder = 'Filter by model, provider, or id…';
+    searchInput.placeholder = 'Filter by model, provider, or ID…';
     searchInput.addEventListener('input', () => {
       searchQuery = searchInput.value.trim().toLowerCase();
       renderList();
@@ -505,7 +505,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     renderAll();
 
-    new Setting(container).setName('Commands and Skills').setHeading();
+    new Setting(container).setName('Commands and skills').setHeading();
 
     const commandsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
     commandsDesc.createEl('p', {

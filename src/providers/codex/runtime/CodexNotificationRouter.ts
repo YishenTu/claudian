@@ -135,38 +135,38 @@ export class CodexNotificationRouter {
 
     switch (item.type) {
       case 'userMessage':
-        this.emitUserMessageBoundary(item as UserMessageItem);
+        this.emitUserMessageBoundary(item);
         break;
 
       case 'agentMessage':
-        this.emitAgentMessageBoundary(item as AgentMessageItem);
+        this.emitAgentMessageBoundary(item);
         break;
 
       case 'reasoning':
         break;
 
       case 'commandExecution':
-        this.emitToolUseFromCommand(item as CommandExecutionItem);
+        this.emitToolUseFromCommand(item);
         break;
 
       case 'fileChange':
-        this.emitToolUseFromFileChange(item as FileChangeItem);
+        this.emitToolUseFromFileChange(item);
         break;
 
       case 'imageView':
-        this.emitToolUseFromImageView(item as ImageViewItem);
+        this.emitToolUseFromImageView(item);
         break;
 
       case 'webSearch':
-        this.emitToolUseFromWebSearch(item as WebSearchItem);
+        this.emitToolUseFromWebSearch(item);
         break;
 
       case 'collabAgentToolCall':
-        this.emitToolUseFromCollabAgent(item as CollabAgentToolCallItem);
+        this.emitToolUseFromCollabAgent(item);
         break;
 
       case 'mcpToolCall':
-        this.emitToolUseFromMcp(item as McpToolCallItem);
+        this.emitToolUseFromMcp(item);
         break;
 
       default:
@@ -180,40 +180,40 @@ export class CodexNotificationRouter {
     switch (item.type) {
       case 'userMessage':
         if (!this.startedUserMessageIds.has(item.id)) {
-          this.emitUserMessageBoundary(item as UserMessageItem);
+          this.emitUserMessageBoundary(item);
         }
         break;
 
       case 'agentMessage':
-        this.completeAgentMessage(item as AgentMessageItem);
+        this.completeAgentMessage(item);
         break;
 
       case 'commandExecution':
-        this.emitToolResultFromCommand(item as CommandExecutionItem);
+        this.emitToolResultFromCommand(item);
         break;
 
       case 'fileChange':
-        this.emitToolResultFromFileChange(item as FileChangeItem);
+        this.emitToolResultFromFileChange(item);
         break;
 
       case 'imageView':
-        this.emitToolResultFromImageView(item as ImageViewItem);
+        this.emitToolResultFromImageView(item);
         break;
 
       case 'webSearch':
-        this.emitToolResultFromWebSearch(item as WebSearchItem);
+        this.emitToolResultFromWebSearch(item);
         break;
 
       case 'collabAgentToolCall':
-        this.emitToolResultFromCollabAgent(item as CollabAgentToolCallItem);
+        this.emitToolResultFromCollabAgent(item);
         break;
 
       case 'mcpToolCall':
-        this.emitToolResultFromMcp(item as McpToolCallItem);
+        this.emitToolResultFromMcp(item);
         break;
 
       case 'contextCompaction':
-        this.emitContextCompactionBoundary(item as ContextCompactionItem);
+        this.emitContextCompactionBoundary(item);
         break;
 
       default:
