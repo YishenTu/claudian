@@ -70,7 +70,7 @@ export class NavigationSidebar {
     this.pendingVisibilityFrame = scheduleAnimationFrame(() => {
       this.pendingVisibilityFrame = null;
       this.applyVisibility();
-    });
+    }, this.messagesEl.ownerDocument.defaultView ?? null);
   }
 
   private applyVisibility(): void {

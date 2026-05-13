@@ -2,6 +2,40 @@ import { ChatState, createInitialState } from '@/features/chat/state/ChatState';
 import type { ChatStateCallbacks } from '@/features/chat/state/types';
 
 describe('ChatState', () => {
+  const originalWindow = (globalThis as { window?: Window }).window;
+
+  beforeAll(() => {
+    const testWindow = {
+      setTimeout: (callback: () => void, timeout: number): number =>
+        globalThis.setTimeout(callback, timeout) as unknown as number,
+      clearTimeout: (handle: number): void => {
+        globalThis.clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+      },
+      setInterval: (callback: () => void, timeout: number): number =>
+        globalThis.setInterval(callback, timeout) as unknown as number,
+      clearInterval: (handle: number): void => {
+        globalThis.clearInterval(handle as unknown as ReturnType<typeof setInterval>);
+      },
+    } as Window;
+
+    Object.defineProperty(globalThis, 'window', {
+      value: testWindow,
+      configurable: true,
+    });
+  });
+
+  afterAll(() => {
+    if (originalWindow === undefined) {
+      delete (globalThis as { window?: Window }).window;
+      return;
+    }
+
+    Object.defineProperty(globalThis, 'window', {
+      value: originalWindow,
+      configurable: true,
+    });
+  });
+
   describe('createInitialState', () => {
     it('returns correct default values', () => {
       const state = createInitialState();
@@ -193,10 +227,10 @@ describe('ChatState', () => {
 
     it('stores thinkingIndicatorTimeout', () => {
       const chatState = new ChatState();
-      const timeout = setTimeout(() => {}, 100);
+      const timeout = window.setTimeout(() => {}, 100);
       chatState.thinkingIndicatorTimeout = timeout;
       expect(chatState.thinkingIndicatorTimeout).toBe(timeout);
-      clearTimeout(timeout);
+      window.clearTimeout(timeout);
     });
   });
 
@@ -328,18 +362,18 @@ describe('ChatState', () => {
 
     it('stores flavorTimerInterval', () => {
       const chatState = new ChatState();
-      const interval = setInterval(() => {}, 1000);
+      const interval = window.setInterval(() => {}, 1000);
       chatState.flavorTimerInterval = interval;
       expect(chatState.flavorTimerInterval).toBe(interval);
-      clearInterval(interval);
+      window.clearInterval(interval);
     });
   });
 
   describe('clearFlavorTimerInterval', () => {
     it('clears active interval', () => {
       const chatState = new ChatState();
-      const clearSpy = jest.spyOn(global, 'clearInterval');
-      const interval = setInterval(() => {}, 1000);
+      const clearSpy = jest.spyOn(window, 'clearInterval');
+      const interval = window.setInterval(() => {}, 1000);
       chatState.flavorTimerInterval = interval;
 
       chatState.clearFlavorTimerInterval();
@@ -351,7 +385,7 @@ describe('ChatState', () => {
 
     it('is a no-op when no interval is active', () => {
       const chatState = new ChatState();
-      const clearSpy = jest.spyOn(global, 'clearInterval');
+      const clearSpy = jest.spyOn(window, 'clearInterval');
 
       chatState.clearFlavorTimerInterval();
 
@@ -369,9 +403,9 @@ describe('ChatState', () => {
       chatState.currentThinkingState = {} as any;
       chatState.isStreaming = true;
       chatState.cancelRequested = true;
-      const timeout = setTimeout(() => {}, 1000);
+      const timeout = window.setTimeout(() => {}, 1000);
       chatState.thinkingIndicatorTimeout = timeout;
-      const interval = setInterval(() => {}, 1000);
+      const interval = window.setInterval(() => {}, 1000);
       chatState.flavorTimerInterval = interval;
       chatState.responseStartTime = 12345;
 

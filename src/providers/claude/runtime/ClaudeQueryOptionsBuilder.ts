@@ -80,6 +80,10 @@ export class QueryOptionsBuilder {
     // Note: Permission mode is handled dynamically via setPermissionMode() in ClaudianService.
     // Since allowDangerouslySkipPermissions is always true, both directions work without restart.
 
+    // Fixed thinking budgets are startup query options. Adaptive effort remains
+    // dynamic via applyFlagSettings(), but fixed budgets require query rebuilds.
+    if (currentConfig.thinkingTokens !== newConfig.thinkingTokens) return true;
+
     if (currentConfig.enableChrome !== newConfig.enableChrome) return true;
     if (currentConfig.enableAutoMode !== newConfig.enableAutoMode) return true;
 
@@ -309,7 +313,7 @@ export class QueryOptionsBuilder {
 
     const thinkingTokens = resolveThinkingTokens(model, settings.thinkingBudget);
     if (thinkingTokens !== null) {
-      options.maxThinkingTokens = thinkingTokens;
+      options.thinking = { type: 'enabled', budgetTokens: thinkingTokens };
     }
   }
 

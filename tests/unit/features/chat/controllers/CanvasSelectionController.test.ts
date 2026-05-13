@@ -44,7 +44,7 @@ describe('CanvasSelectionController', () => {
     jest.useFakeTimers();
 
     indicatorEl = createMockIndicator();
-    inputEl = {};
+    inputEl = createMockEl();
     contextRowEl = createMockContextRow();
 
     const node1 = createMockCanvasNode('abc123');

@@ -144,6 +144,12 @@ describe('QueryOptionsBuilder', () => {
       expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(false);
     });
 
+    it('returns true when fixed thinking tokens change', () => {
+      const currentConfig = createMockPersistentQueryConfig({ thinkingTokens: null });
+      const newConfig = { ...currentConfig, thinkingTokens: 16000 };
+      expect(QueryOptionsBuilder.needsRestart(currentConfig, newConfig)).toBe(true);
+    });
+
     it('returns false when only model changes (dynamic update)', () => {
       const currentConfig = createMockPersistentQueryConfig();
       const newConfig = { ...currentConfig, model: 'claude-opus-4-5' };
@@ -461,8 +467,8 @@ describe('QueryOptionsBuilder', () => {
       };
       const options = QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
 
-      expect(options.maxThinkingTokens).toBe(16000);
-      expect(options.thinking).toBeUndefined();
+      expect(options.thinking).toEqual({ type: 'enabled', budgetTokens: 16000 });
+      expect(options.maxThinkingTokens).toBeUndefined();
     });
 
     it('sets resume session ID when provided', () => {

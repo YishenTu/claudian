@@ -19,7 +19,7 @@ export class SelectionController {
   private onVisibilityChange: (() => void) | null;
   private storedSelection: StoredSelection | null = null;
   private inputHandoffGraceUntil: number | null = null;
-  private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private pollInterval: number | null = null;
   private readonly focusScopePointerDownHandler = () => {
     if (!this.storedSelection) return;
     this.inputHandoffGraceUntil = Date.now() + INPUT_HANDOFF_GRACE_MS;
@@ -47,12 +47,14 @@ export class SelectionController {
     if (this.focusScopeEl !== this.inputEl) {
       this.focusScopeEl.addEventListener('pointerdown', this.focusScopePointerDownHandler);
     }
-    this.pollInterval = setInterval(() => this.poll(), SELECTION_POLL_INTERVAL);
+    const activeWindow = this.inputEl.ownerDocument.defaultView ?? window;
+    this.pollInterval = activeWindow.setInterval(() => this.poll(), SELECTION_POLL_INTERVAL);
   }
 
   stop(): void {
     if (this.pollInterval) {
-      clearInterval(this.pollInterval);
+      const activeWindow = this.inputEl.ownerDocument.defaultView ?? window;
+      activeWindow.clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
     this.inputEl.removeEventListener('pointerdown', this.focusScopePointerDownHandler);
@@ -135,7 +137,7 @@ export class SelectionController {
       return;
     }
 
-    const selection = document.getSelection();
+    const selection = this.getDocumentSelection(containerEl.ownerDocument);
     const selectedText = selection?.toString() ?? '';
 
     if (selectedText.trim()) {
@@ -207,8 +209,25 @@ export class SelectionController {
     return ranges;
   }
 
+  private getDocumentSelection(ownerDocument?: Document | null): Selection | null {
+    if (ownerDocument && typeof ownerDocument.getSelection === 'function') {
+      return ownerDocument.getSelection();
+    }
+
+    if (typeof document !== 'undefined' && typeof document.getSelection === 'function') {
+      return document.getSelection();
+    }
+
+    return null;
+  }
+
+  private getActiveElement(ownerDocument?: Document | null): Element | null {
+    return ownerDocument?.activeElement
+      ?? (typeof document === 'undefined' ? null : document.activeElement);
+  }
+
   private isFocusWithinChatSidebar(): boolean {
-    const activeElement = document.activeElement as Node | null;
+    const activeElement = this.getActiveElement(this.focusScopeEl.ownerDocument) as Node | null;
     return activeElement !== null
       && (activeElement === this.focusScopeEl || this.focusScopeEl.contains(activeElement));
   }
@@ -218,7 +237,7 @@ export class SelectionController {
       return false;
     }
 
-    const activeElement = document.activeElement as Node | null;
+    const activeElement = this.getActiveElement(sel.editorView.dom.ownerDocument) as Node | null;
     if (activeElement === null || !sel.editorView.dom.contains(activeElement)) {
       return false;
     }
@@ -232,7 +251,7 @@ export class SelectionController {
       return false;
     }
 
-    return this.selectionMatchesRanges(document.getSelection(), ranges);
+    return this.selectionMatchesRanges(this.getDocumentSelection(this.focusScopeEl.ownerDocument), ranges);
   }
 
   private clearWhenMarkdownContextIsUnavailable(): void {

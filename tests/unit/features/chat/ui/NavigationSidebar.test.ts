@@ -53,6 +53,7 @@ class MockElement {
   tagName: string;
   classList = new MockClassList();
   style: Record<string, string> = {};
+  ownerDocument: { defaultView: Window | null };
   children: MockElement[] = [];
   attributes: Record<string, string> = {};
   dataset: Record<string, string> = {};
@@ -68,6 +69,9 @@ class MockElement {
 
   constructor(tagName: string) {
     this.tagName = tagName.toUpperCase();
+    this.ownerDocument = {
+      defaultView: (globalThis as { window?: Window }).window ?? null,
+    };
   }
 
   set className(value: string) {
@@ -196,9 +200,26 @@ describe('NavigationSidebar', () => {
   let parentEl: MockElement;
   let messagesEl: MockElement;
   let sidebar: NavigationSidebar;
+  let originalWindow: Window | undefined;
 
   beforeEach(() => {
     jest.useFakeTimers();
+    originalWindow = (globalThis as { window?: Window }).window;
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        requestAnimationFrame: (callback: FrameRequestCallback): number =>
+          globalThis.setTimeout(() => callback(performance.now()), 16) as unknown as number,
+        cancelAnimationFrame: (handle: number): void => {
+          globalThis.clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+        },
+        setTimeout: (callback: () => void, timeout: number): number =>
+          globalThis.setTimeout(callback, timeout) as unknown as number,
+        clearTimeout: (handle: number): void => {
+          globalThis.clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+        },
+      } as Window,
+      configurable: true,
+    });
     parentEl = new MockElement('div');
     messagesEl = new MockElement('div');
     parentEl.appendChild(messagesEl);
@@ -206,6 +227,14 @@ describe('NavigationSidebar', () => {
 
   afterEach(() => {
     sidebar?.destroy();
+    if (originalWindow === undefined) {
+      delete (globalThis as { window?: Window }).window;
+    } else {
+      Object.defineProperty(globalThis, 'window', {
+        value: originalWindow,
+        configurable: true,
+      });
+    }
     jest.useRealTimers();
   });
 

@@ -64,7 +64,7 @@ export function normalizeCodexToolInput(
     case 'view_image':
       return {
         ...input,
-        file_path: (input.path ?? input.file_path ?? '') as string,
+        file_path: stringifyCodexValue(input.path ?? input.file_path),
       };
 
     case 'web_search':
@@ -86,12 +86,12 @@ function normalizeUpdatePlanTodos(input: Record<string, unknown>): Array<Record<
   return plan.map((entry: unknown) => {
     if (!entry || typeof entry !== 'object') return { id: '', title: '', status: 'pending' };
     const item = entry as Record<string, unknown>;
-    const text = String(item.step ?? item.title ?? item.content ?? '');
+    const text = stringifyCodexValue(item.step ?? item.title ?? item.content);
     return {
-      id: String(item.id ?? ''),
+      id: stringifyCodexValue(item.id),
       content: text,
       activeForm: text,
-      status: String(item.status ?? 'pending'),
+      status: stringifyCodexValue(item.status) || 'pending',
     };
   });
 }
@@ -129,8 +129,8 @@ function normalizeQuestions(input: Record<string, unknown>): Array<Record<string
       : [];
 
     return {
-      question: String(item.question ?? `Question ${index + 1}`),
-      ...(item.id ? { id: String(item.id) } : {}),
+      question: stringifyCodexValue(item.question) || `Question ${index + 1}`,
+      ...(item.id ? { id: stringifyCodexValue(item.id) } : {}),
       header: typeof item.header === 'string' && item.header.trim()
         ? String(item.header)
         : `Q${index + 1}`,
@@ -144,11 +144,24 @@ function normalizeCommandValue(value: unknown): string {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) {
     return value
-      .map(entry => (typeof entry === 'string' ? entry : String(entry)))
+      .map(stringifyCodexValue)
+      .filter(Boolean)
       .join(' ')
       .trim();
   }
-  return value == null ? '' : String(value);
+  return stringifyCodexValue(value);
+}
+
+function stringifyCodexValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value === null || value === undefined) return '';
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
 }
 
 function normalizeWebSearchInput(input: Record<string, unknown>): Record<string, unknown> {

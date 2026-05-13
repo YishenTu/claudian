@@ -91,7 +91,8 @@ export class InlineAskUserQuestion {
     this.rootEl.addEventListener('keydown', this.boundKeyDown);
 
     // Defer focus to after the element is in the DOM and laid out
-    requestAnimationFrame(() => {
+    const activeWindow = this.rootEl.ownerDocument.defaultView ?? window;
+    activeWindow.requestAnimationFrame(() => {
       this.rootEl.focus();
       this.rootEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
@@ -485,7 +486,7 @@ export class InlineAskUserQuestion {
 
         if (item.hasClass('claudian-ask-custom-item')) {
           const input = item.querySelector('.claudian-ask-custom-text') as HTMLInputElement;
-          if (input && document.activeElement === input) {
+          if (input && this.rootEl.ownerDocument.activeElement === input) {
             input.blur();
             this.isInputFocused = false;
           }
@@ -556,7 +557,7 @@ export class InlineAskUserQuestion {
         e.preventDefault();
         e.stopPropagation();
         this.isInputFocused = false;
-        (document.activeElement as HTMLElement)?.blur();
+        (this.rootEl.ownerDocument.activeElement as HTMLElement | null)?.blur();
         this.rootEl.focus();
         return;
       }
@@ -564,7 +565,7 @@ export class InlineAskUserQuestion {
         e.preventDefault();
         e.stopPropagation();
         this.isInputFocused = false;
-        (document.activeElement as HTMLElement)?.blur();
+        (this.rootEl.ownerDocument.activeElement as HTMLElement | null)?.blur();
         if (e.key === 'Tab' && e.shiftKey) {
           this.switchTab(this.activeTabIndex - 1);
         } else {

@@ -1,27 +1,46 @@
 export interface ScheduledAnimationFrame {
   kind: 'raf' | 'timeout';
-  id: number | ReturnType<typeof setTimeout>;
+  id: number;
+  ownerWindow: Window | null;
 }
 
-export function scheduleAnimationFrame(callback: () => void): ScheduledAnimationFrame {
-  if (typeof globalThis.requestAnimationFrame === 'function') {
+function getRendererWindow(): Window | null {
+  return typeof window === 'undefined' ? null : window;
+}
+
+export function scheduleAnimationFrame(
+  callback: () => void,
+  ownerWindow: Window | null = getRendererWindow(),
+): ScheduledAnimationFrame {
+  const activeWindow = ownerWindow ?? getRendererWindow();
+  if (!activeWindow) {
+    callback();
+    return { kind: 'timeout', id: 0, ownerWindow: null };
+  }
+
+  if (typeof activeWindow.requestAnimationFrame === 'function') {
     return {
       kind: 'raf',
-      id: globalThis.requestAnimationFrame(() => callback()),
+      id: activeWindow.requestAnimationFrame(() => callback()),
+      ownerWindow: activeWindow,
     };
   }
 
   return {
     kind: 'timeout',
-    id: globalThis.setTimeout(callback, 16),
+    id: activeWindow.setTimeout(callback, 16),
+    ownerWindow: activeWindow,
   };
 }
 
 export function cancelScheduledAnimationFrame(frame: ScheduledAnimationFrame): void {
-  if (frame.kind === 'raf' && typeof globalThis.cancelAnimationFrame === 'function') {
-    globalThis.cancelAnimationFrame(frame.id as number);
+  const activeWindow = frame.ownerWindow ?? getRendererWindow();
+  if (!activeWindow) return;
+
+  if (frame.kind === 'raf' && typeof activeWindow.cancelAnimationFrame === 'function') {
+    activeWindow.cancelAnimationFrame(frame.id);
     return;
   }
 
-  globalThis.clearTimeout(frame.id as ReturnType<typeof setTimeout>);
+  activeWindow.clearTimeout(frame.id);
 }

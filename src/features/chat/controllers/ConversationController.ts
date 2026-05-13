@@ -16,6 +16,12 @@ import type { ImageContextManager } from '../ui/ImageContext';
 import type { ExternalContextSelector, McpServerSelector } from '../ui/InputToolbar';
 import type { StatusPanel } from '../ui/StatusPanel';
 
+function runConversationAction(action: () => Promise<void>, failureMessage: string): void {
+  void action().catch(() => {
+    new Notice(failureMessage);
+  });
+}
+
 export interface ConversationCallbacks {
   onNewConversation?: () => void;
   onConversationLoaded?: () => void;
@@ -571,30 +577,39 @@ export class ConversationController {
       });
 
       if (!isCurrent) {
-        content.addEventListener('click', async (e) => {
+        content.addEventListener('click', (e) => {
           e.stopPropagation();
           if (this.isHistoryNewTabModifierClick(e) && options.onOpenConversationInNewTab) {
             e.preventDefault();
-            await this.runHistoryAction(
-              () => options.onOpenConversationInNewTab?.(conv.id, true),
+            runConversationAction(
+              () => this.runHistoryAction(
+                () => options.onOpenConversationInNewTab?.(conv.id, true),
+                'Failed to load conversation',
+              ),
               'Failed to load conversation',
             );
             return;
           }
 
-          await this.runHistoryAction(
-            () => options.onSelectConversation(conv.id),
+          runConversationAction(
+            () => this.runHistoryAction(
+              () => options.onSelectConversation(conv.id),
+              'Failed to load conversation',
+            ),
             'Failed to load conversation',
           );
         });
 
         if (options.onOpenConversationInNewTab) {
-          content.addEventListener('auxclick', async (e) => {
+          content.addEventListener('auxclick', (e) => {
             if (e.button !== 1) return;
             e.preventDefault();
             e.stopPropagation();
-            await this.runHistoryAction(
-              () => options.onOpenConversationInNewTab?.(conv.id, true),
+            runConversationAction(
+              () => this.runHistoryAction(
+                () => options.onOpenConversationInNewTab?.(conv.id, true),
+                'Failed to load conversation',
+              ),
               'Failed to load conversation',
             );
           });
@@ -618,13 +633,12 @@ export class ConversationController {
         const regenerateBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
         setIcon(regenerateBtn, 'refresh-cw');
         regenerateBtn.setAttribute('aria-label', 'Regenerate title');
-        regenerateBtn.addEventListener('click', async (e) => {
+        regenerateBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          try {
-            await this.regenerateTitle(conv.id);
-          } catch {
-            new Notice('Failed to regenerate response');
-          }
+          runConversationAction(
+            () => this.regenerateTitle(conv.id),
+            'Failed to regenerate response',
+          );
         });
       }
 
@@ -639,10 +653,13 @@ export class ConversationController {
       const deleteBtn = actions.createEl('button', { cls: 'claudian-action-btn claudian-delete-btn' });
       setIcon(deleteBtn, 'trash-2');
       deleteBtn.setAttribute('aria-label', 'Delete');
-      deleteBtn.addEventListener('click', async (e) => {
+      deleteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        await this.runHistoryAction(
-          () => this.deleteHistoryConversation(conv.id, options),
+        runConversationAction(
+          () => this.runHistoryAction(
+            () => this.deleteHistoryConversation(conv.id, options),
+            'Failed to delete conversation',
+          ),
           'Failed to delete conversation',
         );
       });
@@ -761,8 +778,10 @@ export class ConversationController {
       }
     };
 
-    input.addEventListener('blur', finishRename);
-    input.addEventListener('keydown', async (e) => {
+    input.addEventListener('blur', () => {
+      runConversationAction(finishRename, 'Failed to rename conversation');
+    });
+    input.addEventListener('keydown', (e) => {
       // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
       if (e.key === 'Enter' && !e.isComposing) {
         input.blur();

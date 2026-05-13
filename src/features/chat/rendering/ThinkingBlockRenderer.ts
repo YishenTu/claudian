@@ -8,7 +8,7 @@ export interface ThinkingBlockState {
   labelEl: HTMLElement;
   content: string;
   startTime: number;
-  timerInterval: ReturnType<typeof setInterval> | null;
+  timerInterval: number | null;
   isExpanded: boolean;
 }
 
@@ -29,9 +29,10 @@ export function createThinkingBlock(
   const labelEl = header.createSpan({ cls: 'claudian-thinking-label' });
   const startTime = Date.now();
   labelEl.setText('Thinking 0s...');
+  const activeWindow = parentEl.ownerDocument.defaultView ?? window;
 
   // Start timer interval to update label every second
-  const timerInterval = setInterval(() => {
+  const timerInterval = activeWindow.setInterval(() => {
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
     labelEl.setText(`Thinking ${elapsed}s...`);
   }, 1000);
@@ -68,7 +69,8 @@ export async function appendThinkingContent(
 export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   // Stop the timer
   if (state.timerInterval) {
-    clearInterval(state.timerInterval);
+    const activeWindow = state.wrapperEl.ownerDocument.defaultView ?? window;
+    activeWindow.clearInterval(state.timerInterval);
     state.timerInterval = null;
   }
 
@@ -89,7 +91,8 @@ export function finalizeThinkingBlock(state: ThinkingBlockState): number {
 
 export function cleanupThinkingBlock(state: ThinkingBlockState | null) {
   if (state?.timerInterval) {
-    clearInterval(state.timerInterval);
+    const activeWindow = state.wrapperEl.ownerDocument.defaultView ?? window;
+    activeWindow.clearInterval(state.timerInterval);
   }
 }
 
@@ -114,7 +117,9 @@ export function renderStoredThinkingBlock(
 
   // Collapsible content
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-thinking-content' });
-  renderContent(contentEl, content);
+  void renderContent(contentEl, content).catch(() => {
+    contentEl.setText(content);
+  });
 
   // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
   const state = { isExpanded: false };

@@ -20,6 +20,23 @@ import { appendCheckIcon, appendMcpIcon, createProviderIconSvg } from '../../../
 import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
 import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
 
+interface ElectronOpenDialogResult {
+  canceled: boolean;
+  filePaths: string[];
+}
+
+interface ElectronRemoteApi {
+  dialog: {
+    showOpenDialog(options: { properties: string[]; title: string }): Promise<ElectronOpenDialogResult>;
+  };
+}
+
+function runToolbarAction(action: () => Promise<void>, failureMessage: string): void {
+  void action().catch(() => {
+    new Notice(failureMessage);
+  });
+}
+
 export interface ToolbarSettings {
   model: string;
   thinkingBudget: string;
@@ -120,11 +137,13 @@ export class ModelSelector {
         option.setAttribute('title', model.description);
       }
 
-      option.addEventListener('click', async (e) => {
+      option.addEventListener('click', (e) => {
         e.stopPropagation();
-        await this.callbacks.onModelChange(model.value);
-        this.updateDisplay();
-        this.renderOptions();
+        runToolbarAction(async () => {
+          await this.callbacks.onModelChange(model.value);
+          this.updateDisplay();
+          this.renderOptions();
+        }, 'Failed to change model');
       });
     }
   }
@@ -152,7 +171,9 @@ export class ModeSelector {
     this.labelEl = this.container.createSpan({ cls: 'claudian-mode-label' });
     this.toggleEl = this.container.createDiv({ cls: 'claudian-toggle-switch' });
 
-    this.toggleEl.addEventListener('click', () => this.toggle());
+    this.toggleEl.addEventListener('click', () => {
+      runToolbarAction(() => this.toggle(), 'Failed to change mode');
+    });
 
     this.updateDisplay();
   }
@@ -274,10 +295,12 @@ export class ThinkingBudgetSelector {
         gearEl.addClass('selected');
       }
 
-      gearEl.addEventListener('click', async (e) => {
+      gearEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        await this.callbacks.onEffortLevelChange(effort.value);
-        this.updateDisplay();
+        runToolbarAction(async () => {
+          await this.callbacks.onEffortLevelChange(effort.value);
+          this.updateDisplay();
+        }, 'Failed to change effort level');
       });
     }
   }
@@ -308,10 +331,12 @@ export class ThinkingBudgetSelector {
         gearEl.addClass('selected');
       }
 
-      gearEl.addEventListener('click', async (e) => {
+      gearEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        await this.callbacks.onThinkingBudgetChange(budget.value);
-        this.updateDisplay();
+        runToolbarAction(async () => {
+          await this.callbacks.onThinkingBudgetChange(budget.value);
+          this.updateDisplay();
+        }, 'Failed to change thinking budget');
       });
     }
   }
@@ -381,7 +406,9 @@ export class PermissionToggle {
 
     this.updateDisplay();
 
-    this.toggleEl.addEventListener('click', () => this.toggle());
+    this.toggleEl.addEventListener('click', () => {
+      runToolbarAction(() => this.toggle(), 'Failed to change permission mode');
+    });
   }
 
   private getToggleConfig(): ProviderPermissionModeToggleConfig | null {
@@ -456,7 +483,9 @@ export class ServiceTierToggle {
 
     this.updateDisplay();
 
-    this.buttonEl.addEventListener('click', () => this.toggle());
+    this.buttonEl.addEventListener('click', () => {
+      runToolbarAction(() => this.toggle(), 'Failed to change service tier');
+    });
   }
 
   private getToggleConfig(): ProviderServiceTierToggleConfig | null {
@@ -696,7 +725,7 @@ export class ExternalContextSelector {
     // Click to open native folder picker
     iconWrapper.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.openFolderPicker();
+      void this.openFolderPicker();
     });
 
     this.dropdownEl = this.container.createDiv({ cls: 'claudian-external-context-dropdown' });
@@ -707,7 +736,10 @@ export class ExternalContextSelector {
     try {
       // Access Electron's dialog through remote
       // eslint-disable-next-line @typescript-eslint/no-require-imports -- Electron remote is exposed only at runtime in Obsidian's renderer.
-      const { remote } = require('electron');
+      const { remote } = require('electron') as { remote?: ElectronRemoteApi };
+      if (!remote) {
+        throw new Error('Electron remote API is unavailable');
+      }
       const result = await remote.dialog.showOpenDialog({
         properties: ['openDirectory'],
         title: 'Select External Context',

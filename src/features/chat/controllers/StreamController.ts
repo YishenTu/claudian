@@ -706,7 +706,7 @@ export class StreamController {
       this.pendingTextRenderFrame = scheduleAnimationFrame(() => {
         this.pendingTextRenderFrame = null;
         void this.renderPendingText();
-      });
+      }, this.getStreamingRenderWindow());
     }
 
     return this.pendingTextRenderPromise;
@@ -753,7 +753,7 @@ export class StreamController {
       this.pendingTextRenderFrame = scheduleAnimationFrame(() => {
         this.pendingTextRenderFrame = null;
         void this.renderPendingText();
-      });
+      }, this.getStreamingRenderWindow());
       return;
     }
 
@@ -782,7 +782,7 @@ export class StreamController {
       this.pendingToolOutputFrames.delete(toolId);
       updateToolCallResult(toolId, toolCall, this.deps.state.toolCallElements);
       this.scrollToBottom();
-    });
+    }, this.getMessagesWindow());
     this.pendingToolOutputFrames.set(toolId, frame);
   }
 
@@ -856,7 +856,7 @@ export class StreamController {
       this.pendingThinkingRenderFrame = scheduleAnimationFrame(() => {
         this.pendingThinkingRenderFrame = null;
         void this.renderPendingThinking();
-      });
+      }, this.getThinkingRenderWindow());
     }
 
     return this.pendingThinkingRenderPromise;
@@ -903,7 +903,7 @@ export class StreamController {
       this.pendingThinkingRenderFrame = scheduleAnimationFrame(() => {
         this.pendingThinkingRenderFrame = null;
         void this.renderPendingThinking();
-      });
+      }, this.getThinkingRenderWindow());
       return;
     }
 
@@ -1228,7 +1228,8 @@ export class StreamController {
     if (attempt >= StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS.length) return;
 
     const delay = StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS[attempt];
-    setTimeout(() => {
+    const activeWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
+    activeWindow.setTimeout(() => {
       void this.retryAsyncSubagentResult(subagent, runtime, attempt);
     }, delay);
   }
@@ -1340,8 +1341,8 @@ export class StreamController {
 
     // Clear any existing timeout
     if (state.thinkingIndicatorTimeout) {
-      clearTimeout(state.thinkingIndicatorTimeout);
-      state.thinkingIndicatorTimeout = null;
+      const activeWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
+      state.clearThinkingIndicatorTimeout(activeWindow);
     }
 
     // Don't show flavor text while model thinking block is active
@@ -1357,8 +1358,9 @@ export class StreamController {
     }
 
     // Schedule showing the indicator after a delay
-    state.thinkingIndicatorTimeout = setTimeout(() => {
-      state.thinkingIndicatorTimeout = null;
+    const activeWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
+    state.setThinkingIndicatorTimeout(activeWindow.setTimeout(() => {
+      state.setThinkingIndicatorTimeout(null, null);
       // Double-check we still have a content element, no indicator exists, and no thinking block
       if (!state.currentContentEl || state.thinkingEl || state.currentThinkingState) return;
 
@@ -1376,8 +1378,7 @@ export class StreamController {
         // Check if element is still connected to DOM (prevents orphaned interval updates)
         if (!timerSpan.isConnected) {
           if (state.flavorTimerInterval) {
-            clearInterval(state.flavorTimerInterval);
-            state.flavorTimerInterval = null;
+            state.clearFlavorTimerInterval();
           }
           return;
         }
@@ -1388,11 +1389,11 @@ export class StreamController {
 
       // Start interval to update timer every second
       if (state.flavorTimerInterval) {
-        clearInterval(state.flavorTimerInterval);
+        state.clearFlavorTimerInterval();
       }
-      state.flavorTimerInterval = setInterval(updateTimer, 1000);
+      state.setFlavorTimerInterval(activeWindow.setInterval(updateTimer, 1000), activeWindow);
 
-    }, StreamController.THINKING_INDICATOR_DELAY);
+    }, StreamController.THINKING_INDICATOR_DELAY), activeWindow);
   }
 
   /** Hides the thinking indicator and cancels any pending show timeout. */
@@ -1401,8 +1402,8 @@ export class StreamController {
 
     // Cancel any pending show timeout
     if (state.thinkingIndicatorTimeout) {
-      clearTimeout(state.thinkingIndicatorTimeout);
-      state.thinkingIndicatorTimeout = null;
+      const activeWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
+      state.clearThinkingIndicatorTimeout(activeWindow);
     }
 
     // Clear timer interval (but preserve responseStartTime for duration capture)
@@ -1436,12 +1437,14 @@ export class StreamController {
    * FSWatcher often misses the event.
    */
   private notifyVaultFileChange(input: Record<string, unknown>): void {
-    const rawPath = (input.file_path ?? input.notebook_path) as string | undefined;
+    const rawPathValue = input.file_path ?? input.notebook_path;
+    const rawPath = typeof rawPathValue === 'string' ? rawPathValue : undefined;
     const vaultPath = getVaultPath(this.deps.plugin.app);
     const relativePath = normalizePathForVault(rawPath, vaultPath);
     if (!relativePath || relativePath.startsWith('/')) return;
 
-    setTimeout(() => {
+    const activeWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
+    activeWindow.setTimeout(() => {
       const { vault } = this.deps.plugin.app;
       const file = vault.getAbstractFileByPath(relativePath);
       if (file instanceof TFile) {
@@ -1491,7 +1494,7 @@ export class StreamController {
     this.pendingScrollFrame = scheduleAnimationFrame(() => {
       this.pendingScrollFrame = null;
       this.applyScrollToBottom();
-    });
+    }, this.getMessagesWindow());
   }
 
   private applyScrollToBottom(): void {
@@ -1508,6 +1511,24 @@ export class StreamController {
 
     cancelScheduledAnimationFrame(this.pendingScrollFrame);
     this.pendingScrollFrame = null;
+  }
+
+  private getMessagesWindow(): Window | null {
+    return this.deps.getMessagesEl().ownerDocument.defaultView ?? null;
+  }
+
+  private getStreamingRenderWindow(): Window | null {
+    const { state } = this.deps;
+    return state.currentTextEl?.ownerDocument?.defaultView
+      ?? state.currentContentEl?.ownerDocument?.defaultView
+      ?? this.getMessagesWindow();
+  }
+
+  private getThinkingRenderWindow(): Window | null {
+    const { state } = this.deps;
+    return state.currentThinkingState?.contentEl.ownerDocument?.defaultView
+      ?? state.currentContentEl?.ownerDocument?.defaultView
+      ?? this.getMessagesWindow();
   }
 
   resetStreamingState(): void {

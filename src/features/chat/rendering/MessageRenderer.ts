@@ -35,6 +35,12 @@ export type RenderContentFn = (
   options?: RenderContentOptions
 ) => Promise<void>;
 
+function runRendererAction(action: () => Promise<void>): void {
+  void action().catch(() => {
+    // UI actions already surface expected failures locally.
+  });
+}
+
 export class MessageRenderer {
   private app: App;
   private plugin: ClaudianPlugin;
@@ -632,14 +638,20 @@ export class MessageRenderer {
               text: match[1],
             });
             wrapper.appendChild(label);
-            label.addEventListener('click', async () => {
-              try {
-                await navigator.clipboard.writeText(code.textContent || '');
-                label.setText('copied!');
-                setTimeout(() => label.setText(match[1]), 1500);
-              } catch {
-                // Clipboard API may fail in non-secure contexts
-              }
+            label.addEventListener('click', () => {
+              runRendererAction(async () => {
+                const activeWindow = label.ownerDocument.defaultView ?? window;
+                const originalLabel = match[1];
+                if (!originalLabel) return;
+
+                try {
+                  await navigator.clipboard.writeText(code.textContent || '');
+                  label.setText('copied!');
+                  activeWindow.setTimeout(() => label.setText(originalLabel), 1500);
+                } catch {
+                  // Clipboard API may fail in non-secure contexts
+                }
+              });
             });
           }
         }
@@ -677,34 +689,37 @@ export class MessageRenderer {
     const copyBtn = textEl.createSpan({ cls: 'claudian-text-copy-btn' });
     setIcon(copyBtn, 'copy');
 
-    let feedbackTimeout: ReturnType<typeof setTimeout> | null = null;
+    let feedbackTimeout: number | null = null;
 
-    copyBtn.addEventListener('click', async (e) => {
+    copyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      runRendererAction(async () => {
+        const activeWindow = copyBtn.ownerDocument.defaultView ?? window;
 
-      try {
-        await navigator.clipboard.writeText(markdown);
-      } catch {
-        // Clipboard API may fail in non-secure contexts
-        return;
-      }
+        try {
+          await navigator.clipboard.writeText(markdown);
+        } catch {
+          // Clipboard API may fail in non-secure contexts
+          return;
+        }
 
-      // Clear any pending timeout from rapid clicks
-      if (feedbackTimeout) {
-        clearTimeout(feedbackTimeout);
-      }
+        // Clear any pending timeout from rapid clicks
+        if (feedbackTimeout) {
+          activeWindow.clearTimeout(feedbackTimeout);
+        }
 
-      // Show "copied!" feedback
-      copyBtn.empty();
-      copyBtn.setText('copied!');
-      copyBtn.classList.add('copied');
-
-      feedbackTimeout = setTimeout(() => {
+        // Show "copied!" feedback
         copyBtn.empty();
-        setIcon(copyBtn, 'copy');
-        copyBtn.classList.remove('copied');
-        feedbackTimeout = null;
-      }, 1500);
+        copyBtn.setText('copied!');
+        copyBtn.classList.add('copied');
+
+        feedbackTimeout = activeWindow.setTimeout(() => {
+          copyBtn.empty();
+          setIcon(copyBtn, 'copy');
+          copyBtn.classList.remove('copied');
+          feedbackTimeout = null;
+        }, 1500);
+      });
     });
   }
 
@@ -743,25 +758,28 @@ export class MessageRenderer {
     setIcon(copyBtn, 'copy');
     copyBtn.setAttribute('aria-label', 'Copy message');
 
-    let feedbackTimeout: ReturnType<typeof setTimeout> | null = null;
+    let feedbackTimeout: number | null = null;
 
-    copyBtn.addEventListener('click', async (e) => {
+    copyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      try {
-        await navigator.clipboard.writeText(content);
-      } catch {
-        return;
-      }
-      if (feedbackTimeout) clearTimeout(feedbackTimeout);
-      copyBtn.empty();
-      copyBtn.setText('copied!');
-      copyBtn.classList.add('copied');
-      feedbackTimeout = setTimeout(() => {
+      runRendererAction(async () => {
+        const activeWindow = copyBtn.ownerDocument.defaultView ?? window;
+        try {
+          await navigator.clipboard.writeText(content);
+        } catch {
+          return;
+        }
+        if (feedbackTimeout) activeWindow.clearTimeout(feedbackTimeout);
         copyBtn.empty();
-        setIcon(copyBtn, 'copy');
-        copyBtn.classList.remove('copied');
-        feedbackTimeout = null;
-      }, 1500);
+        copyBtn.setText('copied!');
+        copyBtn.classList.add('copied');
+        feedbackTimeout = activeWindow.setTimeout(() => {
+          copyBtn.empty();
+          setIcon(copyBtn, 'copy');
+          copyBtn.classList.remove('copied');
+          feedbackTimeout = null;
+        }, 1500);
+      });
     });
   }
 
@@ -772,13 +790,15 @@ export class MessageRenderer {
     if (toolbar.firstChild !== btn) toolbar.insertBefore(btn, toolbar.firstChild);
     setIcon(btn, 'rotate-ccw');
     btn.setAttribute('aria-label', t('chat.rewind.ariaLabel'));
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      try {
-        await this.rewindCallback?.(messageId);
-      } catch (err) {
-        new Notice(t('chat.rewind.failed', { error: err instanceof Error ? err.message : 'Unknown error' }));
-      }
+      runRendererAction(async () => {
+        try {
+          await this.rewindCallback?.(messageId);
+        } catch (err) {
+          new Notice(t('chat.rewind.failed', { error: err instanceof Error ? err.message : 'Unknown error' }));
+        }
+      });
     });
   }
 
@@ -789,13 +809,15 @@ export class MessageRenderer {
     if (toolbar.firstChild !== btn) toolbar.insertBefore(btn, toolbar.firstChild);
     setIcon(btn, 'git-fork');
     btn.setAttribute('aria-label', t('chat.fork.ariaLabel'));
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      try {
-        await this.forkCallback?.(messageId);
-      } catch (err) {
-        new Notice(t('chat.fork.failed', { error: err instanceof Error ? err.message : 'Unknown error' }));
-      }
+      runRendererAction(async () => {
+        try {
+          await this.forkCallback?.(messageId);
+        } catch (err) {
+          new Notice(t('chat.fork.failed', { error: err instanceof Error ? err.message : 'Unknown error' }));
+        }
+      });
     });
   }
 
@@ -813,7 +835,8 @@ export class MessageRenderer {
     const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < threshold;
     if (isNearBottom) {
-      requestAnimationFrame(() => {
+      const activeWindow = this.messagesEl.ownerDocument.defaultView ?? window;
+      activeWindow.requestAnimationFrame(() => {
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
       });
     }

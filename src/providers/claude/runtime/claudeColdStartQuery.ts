@@ -125,7 +125,7 @@ export async function runColdStartQuery(
     } else {
       const thinkingTokens = resolveThinkingTokens(selectedModel, settings.thinkingBudget);
       if (thinkingTokens !== null) {
-        options.maxThinkingTokens = thinkingTokens;
+        options.thinking = { type: 'enabled', budgetTokens: thinkingTokens };
       }
     }
   }

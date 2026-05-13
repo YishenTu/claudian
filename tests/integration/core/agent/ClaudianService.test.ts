@@ -1530,7 +1530,7 @@ describe('ClaudianService', () => {
   });
 
   describe('persistent query dynamic updates', () => {
-    it('updates thinking tokens on the active persistent query when budget changes (custom model)', async () => {
+    it('rebuilds the persistent query when a fixed thinking budget changes', async () => {
       // Use a custom model so the legacy budget path is used
       mockPlugin.settings.model = 'custom-model';
       mockPlugin.settings.thinkingBudget = 'off';
@@ -1538,15 +1538,14 @@ describe('ClaudianService', () => {
       const chunks1: any[] = [];
       for await (const c of service.query('first')) chunks1.push(c);
 
-      // Change thinking budget - this should trigger setMaxThinkingTokens on next query
+      // Change thinking budget - this should rebuild the query with startup thinking options.
       mockPlugin.settings.thinkingBudget = 'high';
 
       const chunks2: any[] = [];
       for await (const c of service.query('second')) chunks2.push(c);
 
       const response = getLastResponse();
-      // setMaxThinkingTokens should be called with the new budget value (16000 for 'high')
-      expect(response?.setMaxThinkingTokens).toHaveBeenCalledWith(16000);
+      expect(response?.setMaxThinkingTokens).not.toHaveBeenCalled();
     });
 
     it('does not call setMaxThinkingTokens for adaptive models when budget changes', async () => {

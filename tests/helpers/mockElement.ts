@@ -43,6 +43,14 @@ export interface MockElement {
   appendText: (text: string) => void;
   setCssProps: (props: Record<string, string>) => void;
   ownerDocument: {
+    defaultView: {
+      requestAnimationFrame: (callback: FrameRequestCallback) => number;
+      cancelAnimationFrame: (handle: number) => void;
+      setTimeout: (callback: () => void, timeout: number) => number;
+      clearTimeout: (handle: number) => void;
+      setInterval: (callback: () => void, timeout: number) => number;
+      clearInterval: (handle: number) => void;
+    };
     createElement: (tagName: string) => MockElement;
     createElementNS: (namespace: string, tagName: string) => MockElement;
   };
@@ -125,7 +133,40 @@ export function createMockEl(tag = 'div'): any {
     }
   };
 
+  const defaultView = {
+    requestAnimationFrame: (callback: FrameRequestCallback): number => {
+      const requestFrame =
+        (globalThis as { window?: Window }).window?.requestAnimationFrame
+        ?? (globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame;
+      if (typeof requestFrame === 'function') {
+        return requestFrame(callback);
+      }
+      return globalThis.setTimeout(() => callback(performance.now()), 16) as unknown as number;
+    },
+    cancelAnimationFrame: (handle: number): void => {
+      const cancelFrame =
+        (globalThis as { window?: Window }).window?.cancelAnimationFrame
+        ?? (globalThis as { cancelAnimationFrame?: typeof cancelAnimationFrame }).cancelAnimationFrame;
+      if (typeof cancelFrame === 'function') {
+        cancelFrame(handle);
+        return;
+      }
+      globalThis.clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+    },
+    setTimeout: (callback: () => void, timeout: number): number =>
+      globalThis.setTimeout(callback, timeout) as unknown as number,
+    clearTimeout: (handle: number): void => {
+      globalThis.clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+    },
+    setInterval: (callback: () => void, timeout: number): number =>
+      globalThis.setInterval(callback, timeout) as unknown as number,
+    clearInterval: (handle: number): void => {
+      globalThis.clearInterval(handle as unknown as ReturnType<typeof setInterval>);
+    },
+  };
+
   const ownerDocument = {
+    defaultView,
     createElement: (tagName: string) => createMockEl(tagName),
     createElementNS: (_namespace: string, tagName: string) => createMockEl(tagName),
   };

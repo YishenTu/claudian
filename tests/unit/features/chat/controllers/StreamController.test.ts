@@ -61,6 +61,45 @@ jest.mock('@/utils/path', () => ({
   getVaultPath: jest.fn().mockReturnValue('/test/vault'),
 }));
 
+const originalWindow = (globalThis as { window?: Window }).window;
+
+function installTestWindow(): void {
+  const testWindow = {
+    requestAnimationFrame: (callback: FrameRequestCallback): number =>
+      globalThis.setTimeout(() => callback(performance.now()), 16) as unknown as number,
+    cancelAnimationFrame: (handle: number): void => {
+      globalThis.clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+    },
+    setTimeout: (callback: () => void, timeout: number): number =>
+      globalThis.setTimeout(callback, timeout) as unknown as number,
+    clearTimeout: (handle: number): void => {
+      globalThis.clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+    },
+    setInterval: (callback: () => void, timeout: number): number =>
+      globalThis.setInterval(callback, timeout) as unknown as number,
+    clearInterval: (handle: number): void => {
+      globalThis.clearInterval(handle as unknown as ReturnType<typeof setInterval>);
+    },
+  } as Window;
+
+  Object.defineProperty(globalThis, 'window', {
+    value: testWindow,
+    configurable: true,
+  });
+}
+
+function restoreTestWindow(): void {
+  if (originalWindow === undefined) {
+    delete (globalThis as { window?: Window }).window;
+    return;
+  }
+
+  Object.defineProperty(globalThis, 'window', {
+    value: originalWindow,
+    configurable: true,
+  });
+}
+
 function createMockDeps(): StreamControllerDeps {
   const state = new ChatState();
   const messagesEl = createMockEl();
@@ -158,6 +197,7 @@ describe('StreamController - Text Content', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    installTestWindow();
     deps = createMockDeps();
     controller = new StreamController(deps);
     deps.state.currentContentEl = createMockEl();
@@ -166,6 +206,7 @@ describe('StreamController - Text Content', () => {
   afterEach(() => {
     // Clean up any timers set by ChatState
     deps.state.resetStreamingState();
+    restoreTestWindow();
     jest.useRealTimers();
   });
 
@@ -2173,10 +2214,11 @@ describe('StreamController - Text Content', () => {
       // Advance fake clock so performance.now() returns non-zero
       jest.advanceTimersByTime(1);
       deps.state.responseStartTime = performance.now();
-      const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
+      const activeWindow = deps.state.currentContentEl!.ownerDocument.defaultView!;
+      const clearIntervalSpy = jest.spyOn(activeWindow, 'clearInterval');
 
       // Manually set a pre-existing interval
-      deps.state.flavorTimerInterval = setInterval(() => {}, 9999) as unknown as ReturnType<typeof setInterval>;
+      deps.state.setFlavorTimerInterval(activeWindow.setInterval(() => {}, 9999), activeWindow);
 
       controller.showThinkingIndicator();
       jest.advanceTimersByTime(500);
@@ -2237,6 +2279,7 @@ describe('StreamController - Plan Mode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    installTestWindow();
     deps = createMockDeps();
     controller = new StreamController(deps);
     deps.state.currentContentEl = createMockEl();
@@ -2244,6 +2287,7 @@ describe('StreamController - Plan Mode', () => {
 
   afterEach(() => {
     deps.state.resetStreamingState();
+    restoreTestWindow();
     jest.useRealTimers();
   });
 

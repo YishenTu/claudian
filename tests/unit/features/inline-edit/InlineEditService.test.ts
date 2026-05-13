@@ -435,8 +435,8 @@ describe('InlineEditService', () => {
       });
 
       const options = getLastOptions();
-      expect(options?.maxThinkingTokens).toBeGreaterThan(0);
-      expect(options?.thinking).toBeUndefined();
+      expect(options?.thinking).toEqual({ type: 'enabled', budgetTokens: expect.any(Number) });
+      expect(options?.maxThinkingTokens).toBeUndefined();
     });
 
     it('should capture session ID for conversation continuity', async () => {

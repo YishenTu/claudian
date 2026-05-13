@@ -40,6 +40,22 @@ export function setToolIcon(el: HTMLElement, name: string): void {
   }
 }
 
+function stringifyToolValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value === null || value === undefined) return '';
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+function getInputText(input: Record<string, unknown>, key: string, fallback = ''): string {
+  return stringifyToolValue(input[key]) || fallback;
+}
+
 export function getToolName(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case TOOL_TODO_WRITE: {
@@ -64,26 +80,26 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
     case TOOL_READ:
     case TOOL_WRITE:
     case TOOL_EDIT: {
-      const filePath = (input.file_path as string) || '';
+      const filePath = getInputText(input, 'file_path');
       return fileNameOnly(filePath);
     }
     case TOOL_BASH: {
-      const cmd = (input.command as string) || '';
+      const cmd = getInputText(input, 'command');
       return truncateText(cmd, 60);
     }
     case TOOL_GLOB:
     case TOOL_GREP:
-      return (input.pattern as string) || '';
+      return getInputText(input, 'pattern');
     case TOOL_WEB_SEARCH:
       return getWebSearchSummary(input, 60);
     case TOOL_WEB_FETCH:
-      return truncateText((input.url as string) || '', 60);
+      return truncateText(getInputText(input, 'url'), 60);
     case TOOL_LS:
-      return fileNameOnly((input.path as string) || '.');
+      return fileNameOnly(getInputText(input, 'path', '.'));
     case TOOL_SKILL:
-      return (input.skill as string) || '';
+      return getInputText(input, 'skill');
     case TOOL_TOOL_SEARCH:
-      return truncateText(parseToolSearchQuery(input.query as string | undefined), 60);
+      return truncateText(parseToolSearchQuery(getInputText(input, 'query')), 60);
     case TOOL_TODO_WRITE:
       return '';
     case TOOL_APPLY_PATCH:
@@ -102,28 +118,28 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
 export function getToolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case TOOL_READ:
-      return `Read: ${shortenPath(input.file_path as string) || 'file'}`;
+      return `Read: ${shortenPath(getInputText(input, 'file_path')) || 'file'}`;
     case TOOL_WRITE:
-      return `Write: ${shortenPath(input.file_path as string) || 'file'}`;
+      return `Write: ${shortenPath(getInputText(input, 'file_path')) || 'file'}`;
     case TOOL_EDIT:
-      return `Edit: ${shortenPath(input.file_path as string) || 'file'}`;
+      return `Edit: ${shortenPath(getInputText(input, 'file_path')) || 'file'}`;
     case TOOL_BASH: {
-      const cmd = (input.command as string) || 'command';
+      const cmd = getInputText(input, 'command', 'command');
       return `Bash: ${cmd.length > 40 ? cmd.substring(0, 40) + '...' : cmd}`;
     }
     case TOOL_GLOB:
-      return `Glob: ${input.pattern || 'files'}`;
+      return `Glob: ${getInputText(input, 'pattern', 'files')}`;
     case TOOL_GREP:
-      return `Grep: ${input.pattern || 'pattern'}`;
+      return `Grep: ${getInputText(input, 'pattern', 'pattern')}`;
     case TOOL_WEB_SEARCH: {
       return getWebSearchLabel(input, 40);
     }
     case TOOL_WEB_FETCH: {
-      const url = (input.url as string) || 'url';
+      const url = getInputText(input, 'url', 'url');
       return `WebFetch: ${url.length > 40 ? url.substring(0, 40) + '...' : url}`;
     }
     case TOOL_LS:
-      return `LS: ${shortenPath(input.path as string) || '.'}`;
+      return `LS: ${shortenPath(getInputText(input, 'path')) || '.'}`;
     case TOOL_TODO_WRITE: {
       const todos = input.todos as Array<{ status: string }> | undefined;
       if (todos && Array.isArray(todos)) {
@@ -133,11 +149,11 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
       return 'Tasks';
     }
     case TOOL_SKILL: {
-      const skillName = (input.skill as string) || 'skill';
+      const skillName = getInputText(input, 'skill', 'skill');
       return `Skill: ${skillName}`;
     }
     case TOOL_TOOL_SEARCH: {
-      const tools = parseToolSearchQuery(input.query as string | undefined);
+      const tools = parseToolSearchQuery(getInputText(input, 'query'));
       return `ToolSearch: ${tools || 'tools'}`;
     }
     case TOOL_ENTER_PLAN_MODE:
@@ -188,13 +204,13 @@ function getApplyPatchSummary(input: Record<string, unknown>): string {
 }
 
 function getWriteStdinSummary(input: Record<string, unknown>): string {
-  const sessionId = input.session_id ?? input.sessionId;
+  const sessionId = stringifyToolValue(input.session_id ?? input.sessionId);
   const chars = typeof input.chars === 'string' ? input.chars.replace(/\n/g, '\\n') : '';
   if (chars) {
     const preview = chars.length > 24 ? `${chars.slice(0, 24)}...` : chars;
-    return sessionId ? `#${String(sessionId)} ${preview}` : preview;
+    return sessionId ? `#${sessionId} ${preview}` : preview;
   }
-  return sessionId ? `#${String(sessionId)}` : '';
+  return sessionId ? `#${sessionId}` : '';
 }
 
 function getAgentLifecycleSummary(name: string, input: Record<string, unknown>): string {

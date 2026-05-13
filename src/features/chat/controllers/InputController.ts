@@ -62,6 +62,10 @@ const DEFAULT_APPROVAL_DECISION_OPTIONS: ApprovalDecisionOption[] =
     decision,
   }));
 
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 export interface InputControllerDeps {
   plugin: ClaudianPlugin;
   state: ChatState;
@@ -1096,7 +1100,8 @@ export class InputController {
     if (!(plugin.settings.enableAutoScroll ?? true)) return;
     if (!state.autoScrollEnabled) return;
 
-    requestAnimationFrame(() => {
+    const activeWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
+    activeWindow.requestAnimationFrame(() => {
       if (!(this.deps.plugin.settings.enableAutoScroll ?? true)) return;
       if (!this.deps.state.autoScrollEnabled) return;
 
@@ -1341,7 +1346,7 @@ export class InputController {
       } catch (err) {
         setPending(null);
         this.restoreInputContainer(inputContainerEl);
-        reject(err);
+        reject(toError(err));
       }
     });
   }
@@ -1388,7 +1393,7 @@ export class InputController {
       } catch (err) {
         this.pendingExitPlanModeInline = null;
         this.restoreInputContainer(inputContainerEl);
-        reject(err);
+        reject(toError(err));
       }
     });
   }
@@ -1442,7 +1447,7 @@ export class InputController {
         this.pendingPlanApproval = null;
         this.pendingPlanApprovalInvalidated = false;
         this.restoreInputContainer(inputContainerEl);
-        reject(err);
+        reject(toError(err));
       }
     });
   }

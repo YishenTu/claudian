@@ -920,6 +920,7 @@ describe('ConversationController', () => {
       expect(clickHandlers).toBeDefined();
 
       await clickHandlers![0]({ stopPropagation: jest.fn() });
+      await Promise.resolve();
 
       expect(deps.plugin.switchConversation).toHaveBeenCalledWith('conv-2');
     });

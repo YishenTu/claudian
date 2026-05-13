@@ -16,6 +16,7 @@ export class NavigationController {
   private deps: NavigationControllerDeps;
   private scrollDirection: 'up' | 'down' | null = null;
   private animationFrameId: number | null = null;
+  private keyboardDocument: Document | null = null;
   private initialized = false;
   private disposed = false;
 
@@ -46,7 +47,8 @@ export class NavigationController {
 
     // Attach event listeners
     messagesEl.addEventListener('keydown', this.boundMessagesKeydown);
-    document.addEventListener('keyup', this.boundKeyup);
+    this.keyboardDocument = messagesEl.ownerDocument;
+    this.keyboardDocument.addEventListener('keyup', this.boundKeyup);
 
     // Use capture phase to run before other handlers
     inputEl.addEventListener('keydown', this.boundInputKeydown, { capture: true });
@@ -62,7 +64,8 @@ export class NavigationController {
     this.stopScrolling();
 
     // Always clean up document listener first (most important for preventing leaks)
-    document.removeEventListener('keyup', this.boundKeyup);
+    this.keyboardDocument?.removeEventListener('keyup', this.boundKeyup);
+    this.keyboardDocument = null;
 
     // Element cleanup - may already be destroyed during view teardown
     const messagesEl = this.deps.getMessagesEl();
@@ -161,7 +164,8 @@ export class NavigationController {
   private stopScrolling(): void {
     this.scrollDirection = null;
     if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
+      const activeWindow = this.deps.getMessagesEl()?.ownerDocument.defaultView ?? window;
+      activeWindow.cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
   }
@@ -179,7 +183,8 @@ export class NavigationController {
     const scrollAmount = this.scrollDirection === 'up' ? -SCROLL_SPEED : SCROLL_SPEED;
     messagesEl.scrollTop += scrollAmount;
 
-    this.animationFrameId = requestAnimationFrame(this.scrollLoop);
+    const activeWindow = messagesEl.ownerDocument.defaultView ?? window;
+    this.animationFrameId = activeWindow.requestAnimationFrame(this.scrollLoop);
   };
 
   // ============================================

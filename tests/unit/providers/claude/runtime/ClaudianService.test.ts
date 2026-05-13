@@ -1568,14 +1568,22 @@ describe('ClaudianService', () => {
       expect(mockPersistentQuery.setModel).not.toHaveBeenCalled();
     });
 
-    it('should update thinking tokens when changed', async () => {
-      // Initial budget is 0 (not a valid ThinkingBudget value) → tokens = null
-      // Change to 'high' → tokens = 16000 (different from null → triggers update)
+    it('should restart when fixed thinking tokens change', async () => {
+      (mockPlugin as any).settings.model = 'custom-model';
+      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+        '/mock/vault/path',
+        '/usr/local/bin/claude',
+        [],
+      );
       (mockPlugin as any).settings.thinkingBudget = 'high';
+      const ensureReadySpy = jest.spyOn(service, 'ensureReady').mockResolvedValue(true);
 
       await (service as any).applyDynamicUpdates({});
 
-      expect(mockPersistentQuery.setMaxThinkingTokens).toHaveBeenCalledWith(16000);
+      expect(mockPersistentQuery.setMaxThinkingTokens).not.toHaveBeenCalled();
+      expect(ensureReadySpy).toHaveBeenCalledWith(
+        expect.objectContaining({ force: true }),
+      );
     });
 
     it('should update effort level when changed for adaptive models', async () => {
@@ -1613,11 +1621,10 @@ describe('ClaudianService', () => {
       (mockPlugin as any).settings.model = 'sonnet';
       (mockPlugin as any).settings.effortLevel = 'max';
 
+      const previousQuery = mockPersistentQuery;
       await (service as any).applyDynamicUpdates({});
 
-      expect(mockPersistentQuery.setModel).toHaveBeenCalledWith('sonnet');
-      expect(mockPersistentQuery.setMaxThinkingTokens).toHaveBeenCalledWith(null);
-      expect(mockPersistentQuery.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: 'max' });
+      expect(previousQuery.setMaxThinkingTokens).not.toHaveBeenCalled();
       expect((service as any).currentConfig.thinkingTokens).toBeNull();
       expect((service as any).currentConfig.effortLevel).toBe('max');
     });
@@ -1638,10 +1645,10 @@ describe('ClaudianService', () => {
 
       (mockPlugin as any).settings.model = 'custom-model';
 
+      const previousQuery = mockPersistentQuery;
       await (service as any).applyDynamicUpdates({});
 
-      expect(mockPersistentQuery.setModel).toHaveBeenCalledWith('custom-model');
-      expect(mockPersistentQuery.setMaxThinkingTokens).toHaveBeenCalledWith(16000);
+      expect(previousQuery.setMaxThinkingTokens).not.toHaveBeenCalled();
       expect((service as any).currentConfig.thinkingTokens).toBe(16000);
       expect((service as any).currentConfig.effortLevel).toBeNull();
     });
@@ -1782,11 +1789,21 @@ describe('ClaudianService', () => {
       await expect((service as any).applyDynamicUpdates({ model: 'claude-3-opus' })).resolves.toBeUndefined();
     });
 
-    it('should silently handle thinking tokens update error', async () => {
-      (mockPlugin as any).settings.thinkingBudget = 5000;
-      mockPersistentQuery.setMaxThinkingTokens.mockRejectedValueOnce(new Error('Thinking error'));
+    it('should not dynamically update fixed thinking tokens', async () => {
+      (mockPlugin as any).settings.model = 'custom-model';
+      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+        '/mock/vault/path',
+        '/usr/local/bin/claude',
+        [],
+      );
+      (mockPlugin as any).settings.thinkingBudget = 'high';
+      const ensureReadySpy = jest.spyOn(service, 'ensureReady').mockResolvedValue(true);
 
       await expect((service as any).applyDynamicUpdates({})).resolves.toBeUndefined();
+      expect(mockPersistentQuery.setMaxThinkingTokens).not.toHaveBeenCalled();
+      expect(ensureReadySpy).toHaveBeenCalledWith(
+        expect.objectContaining({ force: true }),
+      );
     });
 
     it('should silently handle permission mode update error', async () => {

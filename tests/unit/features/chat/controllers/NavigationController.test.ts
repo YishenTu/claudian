@@ -59,12 +59,14 @@ class MockElement {
   public tagName: string;
   public scrollTop = 0;
   public style: Record<string, string> = {};
+  public ownerDocument: Document;
   private attributes: Map<string, string> = new Map();
   private classes: Set<string> = new Set();
   private listeners: Map<string, { listener: Listener; options?: AddEventListenerOptions }[]> = new Map();
 
   constructor(tagName = 'DIV') {
     this.tagName = tagName;
+    this.ownerDocument = (global as any).document;
   }
 
   setAttribute(name: string, value: string): void {
@@ -165,6 +167,10 @@ describe('NavigationController', () => {
     // Mock document for event listeners
     const documentListeners: Map<string, Listener[]> = new Map();
     (global as any).document = {
+      defaultView: {
+        requestAnimationFrame: mockRaf,
+        cancelAnimationFrame: mockCancelRaf,
+      },
       addEventListener: (type: string, listener: Listener) => {
         if (!documentListeners.has(type)) {
           documentListeners.set(type, []);

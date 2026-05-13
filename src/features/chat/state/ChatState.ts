@@ -47,6 +47,8 @@ function createInitialState(): ChatStateData {
 export class ChatState {
   private state: ChatStateData;
   private _callbacks: ChatStateCallbacks;
+  private thinkingIndicatorTimeoutWindow: Window | null = null;
+  private flavorTimerIntervalWindow: Window | null = null;
 
   constructor(callbacks: ChatStateCallbacks = {}) {
     this.state = createInitialState();
@@ -224,12 +226,13 @@ export class ChatState {
     this.state.queueIndicatorEl = value;
   }
 
-  get thinkingIndicatorTimeout(): ReturnType<typeof setTimeout> | null {
+  get thinkingIndicatorTimeout(): number | null {
     return this.state.thinkingIndicatorTimeout;
   }
 
-  set thinkingIndicatorTimeout(value: ReturnType<typeof setTimeout> | null) {
+  set thinkingIndicatorTimeout(value: number | null) {
     this.state.thinkingIndicatorTimeout = value;
+    this.thinkingIndicatorTimeoutWindow = value === null ? null : this.getDefaultTimerWindow();
   }
 
   // ============================================
@@ -325,12 +328,13 @@ export class ChatState {
     this.state.responseStartTime = value;
   }
 
-  get flavorTimerInterval(): ReturnType<typeof setInterval> | null {
+  get flavorTimerInterval(): number | null {
     return this.state.flavorTimerInterval;
   }
 
-  set flavorTimerInterval(value: ReturnType<typeof setInterval> | null) {
+  set flavorTimerInterval(value: number | null) {
     this.state.flavorTimerInterval = value;
+    this.flavorTimerIntervalWindow = value === null ? null : this.getDefaultTimerWindow();
   }
 
   get pendingNewSessionPlan(): string | null {
@@ -361,10 +365,31 @@ export class ChatState {
   // Reset Methods
   // ============================================
 
+  setThinkingIndicatorTimeout(value: number | null, ownerWindow: Window | null): void {
+    this.state.thinkingIndicatorTimeout = value;
+    this.thinkingIndicatorTimeoutWindow = value === null ? null : ownerWindow;
+  }
+
+  clearThinkingIndicatorTimeout(fallbackWindow: Window | null = null): void {
+    if (this.state.thinkingIndicatorTimeout) {
+      const ownerWindow = this.thinkingIndicatorTimeoutWindow ?? fallbackWindow ?? this.getDefaultTimerWindow();
+      ownerWindow?.clearTimeout(this.state.thinkingIndicatorTimeout);
+      this.state.thinkingIndicatorTimeout = null;
+      this.thinkingIndicatorTimeoutWindow = null;
+    }
+  }
+
+  setFlavorTimerInterval(value: number | null, ownerWindow: Window | null): void {
+    this.state.flavorTimerInterval = value;
+    this.flavorTimerIntervalWindow = value === null ? null : ownerWindow;
+  }
+
   clearFlavorTimerInterval(): void {
     if (this.state.flavorTimerInterval) {
-      clearInterval(this.state.flavorTimerInterval);
+      const ownerWindow = this.flavorTimerIntervalWindow ?? this.getDefaultTimerWindow();
+      ownerWindow?.clearInterval(this.state.flavorTimerInterval);
       this.state.flavorTimerInterval = null;
+      this.flavorTimerIntervalWindow = null;
     }
   }
 
@@ -376,10 +401,7 @@ export class ChatState {
     this.state.isStreaming = false;
     this.state.cancelRequested = false;
     // Clear thinking indicator timeout
-    if (this.state.thinkingIndicatorTimeout) {
-      clearTimeout(this.state.thinkingIndicatorTimeout);
-      this.state.thinkingIndicatorTimeout = null;
-    }
+    this.clearThinkingIndicatorTimeout();
     // Clear response timer
     this.clearFlavorTimerInterval();
     this.state.responseStartTime = null;
@@ -404,6 +426,10 @@ export class ChatState {
   getPersistedMessages(): ChatMessage[] {
     // Return messages as-is - image data is single source of truth
     return this.state.messages;
+  }
+
+  private getDefaultTimerWindow(): Window | null {
+    return typeof window === 'undefined' ? null : window;
   }
 }
 

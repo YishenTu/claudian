@@ -16,7 +16,7 @@ export class BrowserSelectionController {
   private contextRowEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
   private storedSelection: BrowserSelectionContext | null = null;
-  private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private pollInterval: number | null = null;
   private pollInFlight = false;
 
   constructor(
@@ -35,14 +35,16 @@ export class BrowserSelectionController {
 
   start(): void {
     if (this.pollInterval) return;
-    this.pollInterval = setInterval(() => {
+    const activeWindow = this.inputEl.ownerDocument.defaultView ?? window;
+    this.pollInterval = activeWindow.setInterval(() => {
       void this.poll();
     }, BROWSER_SELECTION_POLL_INTERVAL);
   }
 
   stop(): void {
     if (this.pollInterval) {
-      clearInterval(this.pollInterval);
+      const activeWindow = this.inputEl.ownerDocument.defaultView ?? window;
+      activeWindow.clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
     this.clear();
@@ -76,7 +78,7 @@ export class BrowserSelectionController {
   }
 
   private getActiveBrowserView(): { view: ItemView; viewType: string; containerEl: HTMLElement } | null {
-    const activeLeaf = (this.app.workspace as any).activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
+    const activeLeaf = this.app.workspace.activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
     const activeView = activeLeaf?.view as ItemView | undefined;
     const containerEl = (activeView as unknown as { containerEl?: HTMLElement }).containerEl;
     if (!activeView || !containerEl) return null;
@@ -129,7 +131,7 @@ export class BrowserSelectionController {
     const activeEl = doc.activeElement;
     if (!activeEl || !scopeEl.contains(activeEl)) return null;
 
-    if (activeEl instanceof HTMLTextAreaElement || activeEl instanceof HTMLInputElement) {
+    if (activeEl.instanceOf(HTMLTextAreaElement) || activeEl.instanceOf(HTMLInputElement)) {
       const { value, selectionStart, selectionEnd } = activeEl;
       if (typeof selectionStart !== 'number' || typeof selectionEnd !== 'number' || selectionStart === selectionEnd) return null;
       return value.slice(selectionStart, selectionEnd).trim() || null;
@@ -235,7 +237,7 @@ export class BrowserSelectionController {
   }
 
   private clearWhenInputIsNotFocused(): void {
-    if (document.activeElement === this.inputEl) return;
+    if (this.inputEl.ownerDocument.activeElement === this.inputEl) return;
     if (this.storedSelection) {
       this.storedSelection = null;
       this.updateIndicator();

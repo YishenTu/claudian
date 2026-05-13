@@ -5,6 +5,17 @@ import { updateContextRowHasContent } from './contextRowVisibility';
 
 const CANVAS_POLL_INTERVAL = 250;
 
+type CanvasSelectionNode = { id?: unknown };
+
+type CanvasViewLike = ItemView & {
+  canvas?: {
+    selection?: Set<CanvasSelectionNode>;
+  };
+  file?: {
+    path?: unknown;
+  };
+};
+
 export class CanvasSelectionController {
   private app: App;
   private indicatorEl: HTMLElement;
@@ -12,7 +23,7 @@ export class CanvasSelectionController {
   private contextRowEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
   private storedSelection: CanvasSelectionContext | null = null;
-  private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private pollInterval: number | null = null;
 
   constructor(
     app: App,
@@ -30,12 +41,14 @@ export class CanvasSelectionController {
 
   start(): void {
     if (this.pollInterval) return;
-    this.pollInterval = setInterval(() => this.poll(), CANVAS_POLL_INTERVAL);
+    const activeWindow = this.inputEl.ownerDocument.defaultView ?? window;
+    this.pollInterval = activeWindow.setInterval(() => this.poll(), CANVAS_POLL_INTERVAL);
   }
 
   stop(): void {
     if (this.pollInterval) {
-      clearInterval(this.pollInterval);
+      const activeWindow = this.inputEl.ownerDocument.defaultView ?? window;
+      activeWindow.clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
     this.clear();
@@ -45,14 +58,16 @@ export class CanvasSelectionController {
     const canvasView = this.getCanvasView();
     if (!canvasView) return;
 
-    const canvas = (canvasView as any).canvas;
+    const canvas = canvasView.canvas;
     if (!canvas?.selection) return;
 
-    const selection: Set<{ id: string }> = canvas.selection;
-    const canvasPath = (canvasView as any).file?.path;
-    if (!canvasPath) return;
+    const selection = canvas.selection;
+    const canvasPath = canvasView.file?.path;
+    if (typeof canvasPath !== 'string' || !canvasPath) return;
 
-    const nodeIds = [...selection].map(node => node.id).filter(Boolean);
+    const nodeIds = [...selection]
+      .map(node => node.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
 
     if (nodeIds.length > 0) {
       const sameSelection = this.storedSelection
@@ -64,7 +79,7 @@ export class CanvasSelectionController {
         this.storedSelection = { canvasPath, nodeIds };
         this.updateIndicator();
       }
-    } else if (document.activeElement !== this.inputEl) {
+    } else if (this.getActiveElement() !== this.inputEl) {
       if (this.storedSelection) {
         this.storedSelection = null;
         this.updateIndicator();
@@ -72,17 +87,22 @@ export class CanvasSelectionController {
     }
   }
 
-  private getCanvasView(): ItemView | null {
-    const activeLeaf = (this.app.workspace as any).activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
-    const activeView = activeLeaf?.view as ItemView | undefined;
-    if (activeView?.getViewType?.() === 'canvas' && (activeView as any).file) {
+  private getActiveElement(): Element | null {
+    return this.inputEl.ownerDocument?.activeElement
+      ?? (typeof document === 'undefined' ? null : document.activeElement);
+  }
+
+  private getCanvasView(): CanvasViewLike | null {
+    const activeLeaf = this.app.workspace.activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
+    const activeView = activeLeaf?.view as CanvasViewLike | undefined;
+    if (activeView?.getViewType?.() === 'canvas' && activeView.file) {
       return activeView;
     }
 
     const leaves = this.app.workspace.getLeavesOfType('canvas');
     if (leaves.length === 0) return null;
-    const leaf = leaves.find(l => (l.view as any).file);
-    return leaf ? (leaf.view as ItemView) : null;
+    const leaf = leaves.find(l => (l.view as CanvasViewLike).file);
+    return leaf ? (leaf.view as CanvasViewLike) : null;
   }
 
   private updateIndicator(): void {

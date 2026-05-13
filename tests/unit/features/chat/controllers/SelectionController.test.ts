@@ -50,6 +50,7 @@ function createMockEventTarget() {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   const containedNodes = new Set<unknown>();
   const el: any = {
+    ownerDocument: createMockEl().ownerDocument,
     addEventListener: jest.fn((event: string, listener: (...args: unknown[]) => void) => {
       const handlers = listeners.get(event) ?? new Set<(...args: unknown[]) => void>();
       handlers.add(listener);

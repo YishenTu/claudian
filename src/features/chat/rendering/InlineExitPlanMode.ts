@@ -122,7 +122,8 @@ export class InlineExitPlanMode {
     this.rootEl.setAttribute('tabindex', '0');
     this.rootEl.addEventListener('keydown', this.boundKeyDown);
 
-    requestAnimationFrame(() => {
+    const activeWindow = this.rootEl.ownerDocument.defaultView ?? window;
+    activeWindow.requestAnimationFrame(() => {
       this.rootEl.focus();
       this.rootEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
@@ -239,7 +240,7 @@ export class InlineExitPlanMode {
 
         if (item.hasClass('claudian-ask-custom-item')) {
           const input = item.querySelector('.claudian-ask-custom-text') as HTMLInputElement;
-          if (input && document.activeElement === input) {
+          if (input && this.rootEl.ownerDocument.activeElement === input) {
             input.blur();
             this.isInputFocused = false;
           }

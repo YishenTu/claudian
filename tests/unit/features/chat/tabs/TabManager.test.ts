@@ -718,7 +718,7 @@ describe('TabManager - Conversation Management', () => {
 
       await manager.openConversation('conv-123');
 
-      expect(plugin.app.workspace.setActiveLeaf).toHaveBeenCalledWith({ id: 'other-leaf' }, { focus: true });
+      expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith({ id: 'other-leaf' });
     });
   });
 
