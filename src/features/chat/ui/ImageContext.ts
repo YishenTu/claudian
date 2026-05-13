@@ -117,6 +117,7 @@ export class ImageContextManager {
   }
 
   private handleDragEnter(e: DragEvent) {
+    if (e.shiftKey) return;
     e.preventDefault();
     e.stopPropagation();
 
@@ -126,6 +127,7 @@ export class ImageContextManager {
   }
 
   private handleDragOver(e: DragEvent) {
+    if (e.shiftKey) return;
     e.preventDefault();
     e.stopPropagation();
   }
@@ -152,6 +154,8 @@ export class ImageContextManager {
   }
 
   private async handleDrop(e: DragEvent) {
+    // Let Shift+drop pass through to the view-level handler (file @mention insertion)
+    if (e.shiftKey) return;
     e.preventDefault();
     e.stopPropagation();
     this.dropOverlay?.removeClass('visible');
