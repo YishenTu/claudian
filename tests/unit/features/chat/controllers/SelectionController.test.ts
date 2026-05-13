@@ -1,3 +1,5 @@
+import { createMockEl } from '@test/helpers/mockElement';
+
 import { SelectionController } from '@/features/chat/controllers/SelectionController';
 import { hideSelectionHighlight, showSelectionHighlight } from '@/shared/components/SelectionHighlight';
 
@@ -38,10 +40,10 @@ function createMockDOMSelection(text: string, anchorNode: any, focusNode?: any, 
 }
 
 function createMockIndicator() {
-  return {
-    textContent: '',
-    style: { display: 'none' },
-  } as any;
+  const indicator = createMockEl();
+  indicator.addClass('claudian-selection-indicator');
+  indicator.addClass('claudian-hidden');
+  return indicator;
 }
 
 function createMockEventTarget() {
@@ -69,18 +71,19 @@ function createMockEventTarget() {
 
 function createMockContextRow() {
   const elements: Record<string, any> = {
-    '.claudian-selection-indicator': { style: { display: 'none' } },
-    '.claudian-canvas-indicator': { style: { display: 'none' } },
+    '.claudian-selection-indicator': createMockIndicator(),
+    '.claudian-canvas-indicator': createMockEl(),
     '.claudian-file-indicator': null,
     '.claudian-image-preview': null,
   };
+  elements['.claudian-canvas-indicator'].addClass('claudian-canvas-indicator');
+  elements['.claudian-canvas-indicator'].addClass('claudian-hidden');
+  const contextRow = createMockEl();
+  const toggle = contextRow.classList.toggle;
+  contextRow.classList.toggle = jest.fn((cls: string, force?: boolean) => toggle(cls, force));
 
-  return {
-    classList: {
-      toggle: jest.fn(),
-    },
-    querySelector: jest.fn((selector: string) => elements[selector] ?? null),
-  } as any;
+  contextRow.querySelector = jest.fn((selector: string) => elements[selector] ?? null);
+  return contextRow as any;
 }
 
 describe('SelectionController', () => {
@@ -585,7 +588,8 @@ describe('SelectionController', () => {
   });
 
   it('keeps context row visible when canvas selection indicator is visible', () => {
-    const canvasIndicator = { style: { display: 'block' } };
+    const canvasIndicator = createMockEl();
+    canvasIndicator.addClass('claudian-canvas-indicator');
     contextRowEl.querySelector.mockImplementation((selector: string) => {
       if (selector === '.claudian-canvas-indicator') return canvasIndicator;
       return null;

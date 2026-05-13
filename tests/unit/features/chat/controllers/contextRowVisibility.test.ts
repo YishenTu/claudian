@@ -1,10 +1,16 @@
+import { createMockEl } from '@test/helpers/mockElement';
+
 import { updateContextRowHasContent } from '@/features/chat/controllers/contextRowVisibility';
 
 function createContextRow(browserIndicator: HTMLElement | null): HTMLElement {
-  const editorIndicator = { style: { display: 'none' } };
-  const canvasIndicator = { style: { display: 'none' } };
-  const fileIndicator = { style: { display: 'none' } };
-  const imagePreview = { style: { display: 'none' } };
+  const editorIndicator = createMockEl();
+  editorIndicator.addClass('claudian-selection-indicator claudian-hidden');
+  const canvasIndicator = createMockEl();
+  canvasIndicator.addClass('claudian-canvas-indicator claudian-hidden');
+  const fileIndicator = createMockEl();
+  fileIndicator.addClass('claudian-file-indicator claudian-hidden');
+  const imagePreview = createMockEl();
+  imagePreview.addClass('claudian-image-preview claudian-hidden');
   const lookup = new Map<string, unknown>([
     ['.claudian-selection-indicator', editorIndicator],
     ['.claudian-browser-selection-indicator', browserIndicator],
@@ -13,12 +19,11 @@ function createContextRow(browserIndicator: HTMLElement | null): HTMLElement {
     ['.claudian-image-preview', imagePreview],
   ]);
 
-  return {
-    classList: {
-      toggle: jest.fn(),
-    },
-    querySelector: jest.fn((selector: string) => lookup.get(selector) ?? null),
-  } as unknown as HTMLElement;
+  const contextRow = createMockEl();
+  const toggle = contextRow.classList.toggle;
+  contextRow.classList.toggle = jest.fn((cls: string, force?: boolean) => toggle(cls, force));
+  contextRow.querySelector = jest.fn((selector: string) => lookup.get(selector) ?? null);
+  return contextRow as unknown as HTMLElement;
 }
 
 describe('updateContextRowHasContent', () => {
@@ -29,8 +34,9 @@ describe('updateContextRowHasContent', () => {
     expect((contextRowEl.classList.toggle as jest.Mock)).toHaveBeenCalledWith('has-content', false);
   });
 
-  it('treats browser indicator as visible only when display is block', () => {
-    const browserIndicator = { style: { display: 'block' } } as unknown as HTMLElement;
+  it('treats browser indicator as visible only when it is not hidden', () => {
+    const browserIndicator = createMockEl();
+    browserIndicator.addClass('claudian-browser-selection-indicator');
     const contextRowEl = createContextRow(browserIndicator);
 
     updateContextRowHasContent(contextRowEl);

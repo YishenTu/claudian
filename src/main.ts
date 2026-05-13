@@ -37,6 +37,7 @@ import { setLocale } from './i18n/i18n';
 import type { Locale } from './i18n/types';
 import { OPENCODE_PLAN_MODE_ID, OPENCODE_SAFE_MODE_ID } from './providers/opencode/modes';
 import { buildCursorContext } from './utils/editor';
+import { focusWorkspaceLeaf } from './utils/obsidianCompat';
 import { getVaultPath } from './utils/path';
 
 function isClaudianView(value: unknown): value is ClaudianView {
@@ -203,7 +204,7 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     if (leaf) {
-      workspace.revealLeaf(leaf);
+      focusWorkspaceLeaf(workspace, leaf);
     }
   }
 

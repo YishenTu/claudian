@@ -250,9 +250,9 @@ export class BrowserSelectionController {
       const lineLabel = lineCount === 1 ? 'line' : 'lines';
       this.indicatorEl.textContent = `${lineCount} ${lineLabel} selected`;
       this.indicatorEl.setAttribute('title', this.buildIndicatorTitle());
-      this.indicatorEl.style.display = 'block';
+      this.indicatorEl.removeClass('claudian-hidden');
     } else {
-      this.indicatorEl.style.display = 'none';
+      this.indicatorEl.addClass('claudian-hidden');
       this.indicatorEl.textContent = '';
       this.indicatorEl.removeAttribute('title');
     }

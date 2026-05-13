@@ -13,10 +13,10 @@ function createMockApp(existingFiles: string[]) {
       }),
     },
     vault: {
-      getFileByPath: jest.fn((filePath: string) => {
-        if (fileSet.has(filePath.toLowerCase())) return { path: filePath };
+      getAbstractFileByPath: jest.fn((filePath: string) => {
+        if (fileSet.has(filePath.toLowerCase())) return { path: filePath, basename: filePath.replace(/\.md$/, '') };
         if (!filePath.endsWith('.md') && fileSet.has((filePath + '.md').toLowerCase())) {
-          return { path: filePath + '.md' };
+          return { path: filePath + '.md', basename: filePath };
         }
         return null;
       }),

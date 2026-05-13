@@ -83,7 +83,6 @@
 }
 
 .claudian-context-limit-validation {
-  display: none;
   font-size: var(--font-ui-smaller);
   color: var(--text-error);
   margin-top: 4px;

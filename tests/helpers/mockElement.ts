@@ -30,6 +30,7 @@ export interface MockElement {
   scrollIntoView: () => void;
   setAttribute: (name: string, value: string) => void;
   getAttribute: (name: string) => string | undefined | null;
+  removeAttribute: (name: string) => void;
   addEventListener: (event: string, handler: (...args: any[]) => void) => void;
   removeEventListener: (event: string, handler: (...args: any[]) => void) => void;
   dispatchEvent: (eventOrType: string | { type: string; [key: string]: any }, extraArg?: any) => void;
@@ -39,6 +40,12 @@ export interface MockElement {
   querySelectorAll: (selector: string) => MockElement[];
   getBoundingClientRect: () => { top: number; left: number; width: number; height: number; right: number; bottom: number; x: number; y: number; toJSON: () => void };
   setText: (text: string) => void;
+  appendText: (text: string) => void;
+  setCssProps: (props: Record<string, string>) => void;
+  ownerDocument: {
+    createElement: (tagName: string) => MockElement;
+    createElementNS: (namespace: string, tagName: string) => MockElement;
+  };
   _classes: Set<string>;
   _classList: Set<string>;
   _attributes: Map<string, string>;
@@ -46,6 +53,35 @@ export interface MockElement {
   _children: MockElement[];
   [key: string]: any;
 }
+
+const CLASS_DISPLAY: Record<string, string> = {
+  'claudian-browser-selection-indicator': 'block',
+  'claudian-canvas-indicator': 'block',
+  'claudian-context-meter': 'flex',
+  'claudian-file-indicator': 'none',
+  'claudian-image-preview': 'none',
+  'claudian-mcp-selector': 'flex',
+  'claudian-mode-selector': 'flex',
+  'claudian-permission-toggle': 'flex',
+  'claudian-selection-indicator': 'block',
+  'claudian-service-tier-toggle': 'flex',
+  'claudian-status-panel-bash': 'block',
+  'claudian-status-panel-bash-content': 'block',
+  'claudian-status-panel-bash-entry-content': 'block',
+  'claudian-status-panel-content': 'block',
+  'claudian-status-panel-todos': 'block',
+  'claudian-tab-content': 'flex',
+  'claudian-thinking-budget': 'flex',
+  'claudian-thinking-effort': 'flex',
+};
+
+const DISPLAY_CLASSES = new Set([
+  'claudian-hidden',
+  'claudian-visible-block',
+  'claudian-visible-contents',
+  'claudian-visible-flex',
+  ...Object.keys(CLASS_DISPLAY),
+]);
 
 export function createMockEl(tag = 'div'): any {
   const children: MockElement[] = [];
@@ -55,6 +91,44 @@ export function createMockEl(tag = 'div'): any {
   const dataset: Record<string, string> = {};
   const style: Record<string, string> = {};
   let textContent = '';
+
+  const resolveDisplay = (): string | null => {
+    if (classes.has('claudian-hidden')) return 'none';
+    if (classes.has('claudian-visible-flex')) return 'flex';
+    if (classes.has('claudian-visible-block')) return 'block';
+    if (classes.has('claudian-visible-contents')) return 'contents';
+
+    for (const [cls, display] of Object.entries(CLASS_DISPLAY)) {
+      if (classes.has(cls)) return display;
+    }
+
+    return null;
+  };
+
+  const syncDisplay = () => {
+    const display = resolveDisplay();
+    if (display === null) {
+      style.display = '';
+      return;
+    }
+    style.display = display;
+  };
+
+  const updateClass = (cls: string, enabled: boolean) => {
+    if (enabled) {
+      classes.add(cls);
+    } else {
+      classes.delete(cls);
+    }
+    if (DISPLAY_CLASSES.has(cls)) {
+      syncDisplay();
+    }
+  };
+
+  const ownerDocument = {
+    createElement: (tagName: string) => createMockEl(tagName),
+    createElementNS: (_namespace: string, tagName: string) => createMockEl(tagName),
+  };
 
   const element: MockElement = {
     tagName: tag.toUpperCase(),
@@ -80,29 +154,33 @@ export function createMockEl(tag = 'div'): any {
       if (value) {
         value.split(' ').filter(Boolean).forEach(c => classes.add(c));
       }
+      syncDisplay();
     },
 
     classList: {
-      add: (cls: string) => classes.add(cls),
-      remove: (cls: string) => classes.delete(cls),
+      add: (cls: string) => updateClass(cls, true),
+      remove: (cls: string) => updateClass(cls, false),
       contains: (cls: string) => classes.has(cls),
       toggle: (cls: string, force?: boolean) => {
         if (force === undefined) {
-          if (classes.has(cls)) { classes.delete(cls); return false; }
-          classes.add(cls);
+          if (classes.has(cls)) {
+            updateClass(cls, false);
+            return false;
+          }
+          updateClass(cls, true);
           return true;
         }
-        if (force) { classes.add(cls); } else { classes.delete(cls); }
+        updateClass(cls, force);
         return force;
       },
     },
 
     addClass(cls: string) {
-      cls.split(/\s+/).filter(Boolean).forEach(c => classes.add(c));
+      cls.split(/\s+/).filter(Boolean).forEach(c => updateClass(c, true));
       return element;
     },
     removeClass(cls: string) {
-      cls.split(/\s+/).filter(Boolean).forEach(c => classes.delete(c));
+      cls.split(/\s+/).filter(Boolean).forEach(c => updateClass(c, false));
       return element;
     },
     hasClass: (cls: string) => classes.has(cls),
@@ -126,6 +204,11 @@ export function createMockEl(tag = 'div'): any {
       const child = createMockEl(tagName);
       if (opts?.cls) child.addClass(opts.cls);
       if (opts?.text) child.textContent = opts.text;
+      if (opts?.attr) {
+        for (const [name, value] of Object.entries(opts.attr)) {
+          child.setAttribute(name, value);
+        }
+      }
       children.push(child);
       return child;
     },
@@ -147,8 +230,30 @@ export function createMockEl(tag = 'div'): any {
     focus() {},
     blur() {},
 
-    setAttribute(name: string, value: string) { attributes.set(name, value); },
-    getAttribute(name: string) { return attributes.get(name) ?? null; },
+    setAttribute(name: string, value: string) {
+      if (name === 'class') {
+        element.className = value;
+      } else {
+        attributes.set(name, value);
+      }
+      if (name.startsWith('data-')) {
+        dataset[name.slice(5).replace(/-([a-z])/g, (_, char: string) => char.toUpperCase())] = value;
+      }
+    },
+    getAttribute(name: string) {
+      if (name === 'class') return element.className;
+      return attributes.get(name) ?? null;
+    },
+    removeAttribute(name: string) {
+      if (name === 'class') {
+        element.className = '';
+      } else {
+        attributes.delete(name);
+      }
+      if (name.startsWith('data-')) {
+        delete dataset[name.slice(5).replace(/-([a-z])/g, (_, char: string) => char.toUpperCase())];
+      }
+    },
 
     addEventListener(event: string, handler: (...args: any[]) => void) {
       if (!eventListeners.has(event)) eventListeners.set(event, []);
@@ -206,13 +311,20 @@ export function createMockEl(tag = 'div'): any {
     },
 
     setText(text: string) { textContent = text; },
-    setAttr(name: string, value: string) { attributes.set(name, value); },
+    appendText(text: string) { textContent += text; },
+    setCssProps(props: Record<string, string>) {
+      for (const [name, value] of Object.entries(props)) {
+        style[name] = value;
+      }
+    },
+    setAttr(name: string, value: string) { element.setAttribute(name, value); },
     toggleClass(cls: string, force: boolean) {
-      if (force) { classes.add(cls); } else { classes.delete(cls); }
+      updateClass(cls, force);
     },
     value: '',
     closest() { return { clientHeight: 600 }; },
     getEventListeners() { return eventListeners; },
+    ownerDocument,
 
     _classes: classes,
     _classList: classes,

@@ -25,7 +25,7 @@ describe('createProviderIconSvg', () => {
     expect(path?.getAttribute('fill')).toBe('currentColor');
   });
 
-  it('renders markup-based provider icons with theme variants', () => {
+  it('renders composite provider icons with theme variants', () => {
     const svg = createProviderIconSvg(OPENCODE_PROVIDER_ICON, {
       dataProvider: 'opencode',
       height: 18,

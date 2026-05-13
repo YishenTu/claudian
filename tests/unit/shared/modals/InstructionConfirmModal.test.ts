@@ -73,13 +73,13 @@ describe('InstructionModal', () => {
 
       const loadingEl = findByClass(contentEl, 'claudian-instruction-loading');
       expect(loadingEl).not.toBeNull();
-      expect(loadingEl.style.display).not.toBe('none');
+      expect(loadingEl.hasClass('claudian-hidden')).toBe(false);
 
       const clarificationEl = findByClass(contentEl, 'claudian-instruction-clarification-section');
-      expect(clarificationEl.style.display).toBe('none');
+      expect(clarificationEl.hasClass('claudian-hidden')).toBe(true);
 
       const confirmationEl = findByClass(contentEl, 'claudian-instruction-confirmation-section');
-      expect(confirmationEl.style.display).toBe('none');
+      expect(confirmationEl.hasClass('claudian-hidden')).toBe(true);
     });
 
     it('renders Cancel button in loading state', () => {
@@ -102,10 +102,10 @@ describe('InstructionModal', () => {
       modal.showClarification('What style do you want?');
 
       const loadingEl = findByClass(contentEl, 'claudian-instruction-loading');
-      expect(loadingEl.style.display).toBe('none');
+      expect(loadingEl.hasClass('claudian-hidden')).toBe(true);
 
       const clarificationEl = findByClass(contentEl, 'claudian-instruction-clarification-section');
-      expect(clarificationEl.style.display).toBe('block');
+      expect(clarificationEl.hasClass('claudian-hidden')).toBe(false);
     });
 
     it('displays the clarification text', () => {
@@ -142,10 +142,10 @@ describe('InstructionModal', () => {
       modal.showConfirmation('Refined instruction text');
 
       const loadingEl = findByClass(contentEl, 'claudian-instruction-loading');
-      expect(loadingEl.style.display).toBe('none');
+      expect(loadingEl.hasClass('claudian-hidden')).toBe(true);
 
       const confirmationEl = findByClass(contentEl, 'claudian-instruction-confirmation-section');
-      expect(confirmationEl.style.display).toBe('block');
+      expect(confirmationEl.hasClass('claudian-hidden')).toBe(false);
     });
 
     it('displays the refined instruction', () => {
@@ -296,10 +296,10 @@ describe('InstructionModal', () => {
       modal.showClarificationLoading();
 
       const loadingEl = findByClass(contentEl, 'claudian-instruction-loading');
-      expect(loadingEl.style.display).not.toBe('none');
+      expect(loadingEl.hasClass('claudian-hidden')).toBe(false);
 
       const clarificationEl = findByClass(contentEl, 'claudian-instruction-clarification-section');
-      expect(clarificationEl.style.display).toBe('none');
+      expect(clarificationEl.hasClass('claudian-hidden')).toBe(true);
     });
   });
 });

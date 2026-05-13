@@ -10,6 +10,7 @@
 import type { App, TFile } from 'obsidian';
 
 import { escapeHtml } from './inlineEdit';
+import { getVaultFileByPath } from './obsidianCompat';
 
 const IMAGE_EXTENSIONS = new Set([
   'png',
@@ -34,12 +35,12 @@ function resolveImageFile(
   imagePath: string,
   mediaFolder: string
 ): TFile | null {
-  let file = app.vault.getFileByPath(imagePath);
+  let file = getVaultFileByPath(app, imagePath);
   if (file) return file;
 
   if (mediaFolder) {
     const withFolder = `${mediaFolder}/${imagePath}`;
-    file = app.vault.getFileByPath(withFolder);
+    file = getVaultFileByPath(app, withFolder);
     if (file) return file;
   }
 

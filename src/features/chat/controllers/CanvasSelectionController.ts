@@ -93,9 +93,9 @@ export class CanvasSelectionController {
       this.indicatorEl.textContent = nodeIds.length === 1
         ? `node "${nodeIds[0]}" selected`
         : `${nodeIds.length} nodes selected`;
-      this.indicatorEl.style.display = 'block';
+      this.indicatorEl.removeClass('claudian-hidden');
     } else {
-      this.indicatorEl.style.display = 'none';
+      this.indicatorEl.addClass('claudian-hidden');
     }
     this.updateContextRowVisibility();
   }

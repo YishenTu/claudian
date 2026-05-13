@@ -112,6 +112,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
   return {
     app: {
       workspace: {
+        setActiveLeaf: jest.fn(),
         revealLeaf: jest.fn(),
       },
     },
@@ -717,7 +718,7 @@ describe('TabManager - Conversation Management', () => {
 
       await manager.openConversation('conv-123');
 
-      expect(plugin.app.workspace.revealLeaf).toHaveBeenCalled();
+      expect(plugin.app.workspace.setActiveLeaf).toHaveBeenCalledWith({ id: 'other-leaf' }, { focus: true });
     });
   });
 

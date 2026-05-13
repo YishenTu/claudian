@@ -63,6 +63,10 @@ export class ItemView {
 
 export class WorkspaceLeaf {}
 
+export const Platform = {
+  isMacOS: true,
+};
+
 export class App {
   vault: any = {
     adapter: {
@@ -80,6 +84,7 @@ export class App {
     getLeaf: jest.fn().mockReturnValue({
       setViewState: jest.fn().mockResolvedValue(undefined),
     }),
+    setActiveLeaf: jest.fn(),
     revealLeaf: jest.fn(),
   };
 }

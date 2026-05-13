@@ -1,5 +1,5 @@
 import type { EventRef, WorkspaceLeaf } from 'obsidian';
-import { ItemView, Notice, Scope, setIcon } from 'obsidian';
+import { ItemView, Notice, setIcon } from 'obsidian';
 
 import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
@@ -244,8 +244,7 @@ export class ClaudianView extends ItemView {
     this.titleTextEl = this.titleSlotEl.createEl('h4', { text: 'Claudian', cls: 'claudian-title-text' });
 
     // Header actions container (for header mode - initially hidden)
-    this.headerActionsEl = header.createDiv({ cls: 'claudian-header-actions claudian-header-actions-slot' });
-    this.headerActionsEl.style.display = 'none';
+    this.headerActionsEl = header.createDiv({ cls: 'claudian-header-actions claudian-header-actions-slot claudian-hidden' });
   }
 
   /**
@@ -304,7 +303,7 @@ export class ClaudianView extends ItemView {
 
     // Create a wrapper div to hold the fragment (for input mode nav row)
     const wrapper = document.createElement('div');
-    wrapper.style.display = 'contents';
+    wrapper.className = 'claudian-visible-contents';
     wrapper.appendChild(fragment);
     return wrapper;
   }
@@ -326,7 +325,7 @@ export class ClaudianView extends ItemView {
       }
       if (this.headerActionsEl) {
         this.headerActionsEl.appendChild(this.headerActionsContent);
-        this.headerActionsEl.style.display = 'flex';
+        this.headerActionsEl.removeClass('claudian-hidden');
       }
     } else {
       // Input mode: Both go to active tab's navRowEl via the wrapper
@@ -339,7 +338,7 @@ export class ClaudianView extends ItemView {
       }
       // Hide header actions slot when in input mode
       if (this.headerActionsEl) {
-        this.headerActionsEl.style.display = 'none';
+        this.headerActionsEl.addClass('claudian-hidden');
       }
     }
   }
@@ -415,16 +414,16 @@ export class ClaudianView extends ItemView {
     const isHeaderMode = this.plugin.settings.tabBarPosition === 'header';
 
     // Hide tab badges when only 1 tab, show when 2+
-    this.tabBarContainerEl.style.display = showTabBar ? 'flex' : 'none';
+    this.tabBarContainerEl.toggleClass('claudian-hidden', !showTabBar);
 
     // In header mode, badges replace logo/title in the same location
     // In input mode, keep logo/title visible (badges are in nav row)
     const hideBranding = showTabBar && isHeaderMode;
     if (this.logoEl) {
-      this.logoEl.style.display = hideBranding ? 'none' : '';
+      this.logoEl.toggleClass('claudian-hidden', hideBranding);
     }
     if (this.titleTextEl) {
-      this.titleTextEl.style.display = hideBranding ? 'none' : '';
+      this.titleTextEl.toggleClass('claudian-hidden', hideBranding);
     }
   }
 
@@ -558,17 +557,21 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    // Register Escape on the view's Obsidian Scope to prevent Obsidian from
-    // navigating away when Claudian is open as a main-area tab.
-    // Returning false consumes the event (preventDefault + stops scope propagation).
-    this.scope = new Scope(this.app.scope);
-    this.scope.register([], 'Escape', () => {
+    // Capture Escape while focus is inside the view so Obsidian does not handle
+    // it as pane navigation before Claudian can cancel streaming.
+    const activeDocument = this.containerEl.ownerDocument;
+    this.registerDomEvent(activeDocument, 'keydown', (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing) return;
+      const activeElement = activeDocument.activeElement;
+      if (!activeElement || !this.containerEl.contains(activeElement)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
       const activeTab = this.tabManager?.getActiveTab();
       if (activeTab?.state.isStreaming) {
         activeTab.controllers.inputController?.cancelStreaming();
       }
-      return false;
-    });
+    }, { capture: true });
 
     // Vault events - forward to active tab's file context manager
     const markCacheDirty = (includesFolders: boolean): void => {

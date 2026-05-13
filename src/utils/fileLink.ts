@@ -7,6 +7,8 @@
 
 import type { App, Component } from 'obsidian';
 
+import { getVaultFileByPath } from './obsidianCompat';
+
 /**
  * Regex pattern to match Obsidian wikilinks in text content.
  *
@@ -83,13 +85,13 @@ function fileExistsInVault(app: App, linkPath: string): boolean {
     return true;
   }
 
-  const directFile = app.vault.getFileByPath(linkPath);
+  const directFile = getVaultFileByPath(app, linkPath);
   if (directFile) {
     return true;
   }
 
   if (!linkPath.endsWith('.md')) {
-    const withExt = app.vault.getFileByPath(linkPath + '.md');
+    const withExt = getVaultFileByPath(app, linkPath + '.md');
     if (withExt) {
       return true;
     }

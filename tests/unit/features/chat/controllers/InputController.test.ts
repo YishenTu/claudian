@@ -27,7 +27,7 @@ function createMockInputEl() {
 }
 
 function createMockWelcomeEl() {
-  return { style: { display: '' } } as any;
+  return createMockEl();
 }
 
 function createMockFileContextManager() {

@@ -107,6 +107,28 @@
   color: var(--text-error);
 }
 
+.claudian-setting-validation {
+  font-size: var(--font-ui-smaller);
+  margin-top: -0.5em;
+  margin-bottom: 0.5em;
+}
+
+.claudian-setting-validation-error {
+  color: var(--text-error);
+}
+
+.claudian-setting-validation-warning {
+  color: var(--text-warning);
+}
+
+.claudian-settings-cli-path-input {
+  width: 100%;
+}
+
+.claudian-settings-cli-path-input.claudian-input-error {
+  border-color: var(--text-error);
+}
+
 /* Hotkey grid - 3 columns */
 .claudian-hotkey-grid {
   display: grid;

@@ -839,9 +839,9 @@ export class ConversationController {
     if (!welcomeEl) return;
 
     if (this.deps.state.messages.length === 0) {
-      welcomeEl.style.display = '';
+      welcomeEl.removeClass('claudian-hidden');
     } else {
-      welcomeEl.style.display = 'none';
+      welcomeEl.addClass('claudian-hidden');
     }
   }
 

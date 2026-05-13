@@ -183,14 +183,27 @@ export interface ProviderPathIconSvg {
   path: string;
 }
 
-export interface ProviderMarkupIconSvg {
-  kind: 'markup';
+export interface ProviderSvgPathChild {
+  tag: 'path';
+  attributes: Record<string, string>;
+}
+
+export interface ProviderSvgGroupChild {
+  tag: 'g';
+  attributes: Record<string, string>;
+  children: ProviderSvgPathChild[];
+}
+
+export type ProviderSvgChild = ProviderSvgGroupChild | ProviderSvgPathChild;
+
+export interface ProviderCompositeIconSvg {
+  kind: 'composite';
   viewBox: string;
-  markup: string;
+  children: ProviderSvgChild[];
 }
 
 /** SVG icon descriptor for provider branding in selectors and headers. */
-export type ProviderIconSvg = ProviderPathIconSvg | ProviderMarkupIconSvg;
+export type ProviderIconSvg = ProviderPathIconSvg | ProviderCompositeIconSvg;
 
 /** Extended option with token count for budget-based reasoning controls. */
 export interface ProviderReasoningOption extends ProviderUIOption {

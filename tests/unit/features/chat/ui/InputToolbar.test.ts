@@ -713,7 +713,7 @@ describe('ServiceTierToggle', () => {
   it('shows the control when the provider exposes service tier options', () => {
     const container = parentEl.querySelector('.claudian-service-tier-toggle');
     expect(container).not.toBeNull();
-    expect(container?.style.display).toBe('');
+    expect(container?.hasClass('claudian-hidden')).toBe(false);
   });
 
   it('renders the icon button in the inactive state when fast mode is off', () => {
@@ -817,7 +817,7 @@ describe('McpServerSelector', () => {
   it('should show container when servers are configured', () => {
     selector.setMcpManager(createMockMcpManager([{ name: 'test', enabled: true }]));
     const container = parentEl.querySelector('.claudian-mcp-selector');
-    expect(container?.style.display).toBe('');
+    expect(container?.hasClass('claudian-hidden')).toBe(false);
   });
 
   it('should show empty message when all servers are disabled', () => {

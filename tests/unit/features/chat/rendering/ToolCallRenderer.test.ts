@@ -205,8 +205,7 @@ describe('ToolCallRenderer', () => {
     it('should set MCP SVG for MCP tools', () => {
       const el = createMockEl();
       setToolIcon(el as unknown as HTMLElement, 'mcp__server__tool');
-      // MCP tools get innerHTML set with the SVG
-      expect(el.innerHTML).toContain('svg');
+      expect(el.children[0]?.tagName).toBe('SVG');
     });
   });
 

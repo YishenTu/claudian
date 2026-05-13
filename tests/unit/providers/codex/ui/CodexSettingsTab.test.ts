@@ -33,7 +33,12 @@ jest.mock('obsidian', () => {
     public textAreaComponents: MockTextAreaComponent[] = [];
     public dropdownComponents: MockDropdownComponent[] = [];
     public toggleComponents: MockToggleComponent[] = [];
-    public settingEl = { style: {} };
+    public settingEl = {
+      style: {},
+      toggleClass: jest.fn(),
+      addClass: jest.fn(),
+      removeClass: jest.fn(),
+    };
 
     constructor(_container: unknown) {
       createdSettings.push(this);
@@ -163,6 +168,7 @@ interface MockInputEl {
   value: string;
   style: Record<string, string>;
   addClass: jest.Mock;
+  toggleClass: jest.Mock;
   addEventListener: jest.Mock;
 }
 
@@ -174,6 +180,7 @@ function createInputEl(): MockInputEl & { _listeners: Map<string, Array<() => vo
     value: '',
     style: {},
     addClass: jest.fn(),
+    toggleClass: jest.fn(),
     addEventListener: jest.fn((event: string, handler: () => void) => {
       const handlers = listeners.get(event) ?? [];
       handlers.push(handler);
@@ -256,6 +263,7 @@ function createToggleComponent(): MockToggleComponent {
 }
 
 function createElement(): any {
+  const classes = new Set<string>();
   const element: any = {
     value: '',
     style: {},
@@ -265,6 +273,41 @@ function createElement(): any {
     createSpan: jest.fn(() => createElement()),
     setText: jest.fn(),
     empty: jest.fn(),
+    addClass: jest.fn((cls: string) => {
+      cls.split(/\s+/).filter(Boolean).forEach((item) => classes.add(item));
+    }),
+    removeClass: jest.fn((cls: string) => {
+      cls.split(/\s+/).filter(Boolean).forEach((item) => classes.delete(item));
+    }),
+    toggleClass: jest.fn((cls: string, force: boolean) => {
+      if (force) {
+        classes.add(cls);
+      } else {
+        classes.delete(cls);
+      }
+    }),
+    hasClass: jest.fn((cls: string) => classes.has(cls)),
+    classList: {
+      add: jest.fn((cls: string) => classes.add(cls)),
+      remove: jest.fn((cls: string) => classes.delete(cls)),
+      toggle: jest.fn((cls: string, force?: boolean) => {
+        if (force === undefined) {
+          if (classes.has(cls)) {
+            classes.delete(cls);
+            return false;
+          }
+          classes.add(cls);
+          return true;
+        }
+        if (force) {
+          classes.add(cls);
+        } else {
+          classes.delete(cls);
+        }
+        return force;
+      }),
+      contains: jest.fn((cls: string) => classes.has(cls)),
+    },
   };
 
   return element;

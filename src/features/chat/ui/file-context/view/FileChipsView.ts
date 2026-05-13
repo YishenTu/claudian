@@ -29,11 +29,13 @@ export class FileChipsView {
     this.fileIndicatorEl.empty();
 
     if (!filePath) {
-      this.fileIndicatorEl.style.display = 'none';
+      this.fileIndicatorEl.removeClass('claudian-visible-flex');
+      this.fileIndicatorEl.addClass('claudian-hidden');
       return;
     }
 
-    this.fileIndicatorEl.style.display = 'flex';
+    this.fileIndicatorEl.addClass('claudian-visible-flex');
+    this.fileIndicatorEl.removeClass('claudian-hidden');
     this.renderFileChip(filePath, () => {
       this.callbacks.onRemoveAttachment(filePath);
     });

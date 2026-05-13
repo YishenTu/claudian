@@ -248,11 +248,13 @@ export class ImageContextManager {
     this.imagePreviewEl.empty();
 
     if (this.attachedImages.size === 0) {
-      this.imagePreviewEl.style.display = 'none';
+      this.imagePreviewEl.removeClass('claudian-visible-flex');
+      this.imagePreviewEl.addClass('claudian-hidden');
       return;
     }
 
-    this.imagePreviewEl.style.display = 'flex';
+    this.imagePreviewEl.addClass('claudian-visible-flex');
+    this.imagePreviewEl.removeClass('claudian-hidden');
 
     for (const [id, image] of this.attachedImages) {
       this.renderImagePreview(id, image);

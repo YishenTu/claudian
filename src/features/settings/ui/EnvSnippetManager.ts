@@ -98,11 +98,11 @@ export class EnvSnippetModal extends Modal {
       const uniqueModelIds = ProviderRegistry.getCustomModelIds(envVars);
 
       if (uniqueModelIds.size === 0) {
-        contextLimitsContainer.style.display = 'none';
+        contextLimitsContainer.addClass('claudian-hidden');
         return;
       }
 
-      contextLimitsContainer.style.display = 'block';
+      contextLimitsContainer.removeClass('claudian-hidden');
 
       const existingLimits = this.snippet?.contextLimits ?? this.plugin.settings.customContextLimits ?? {};
 

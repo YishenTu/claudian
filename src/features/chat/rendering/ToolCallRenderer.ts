@@ -25,7 +25,7 @@ import {
 } from '../../../core/tools/toolNames';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo } from '../../../core/types';
-import { MCP_ICON_SVG } from '../../../shared/icons';
+import { appendMcpIcon } from '../../../shared/icons';
 import { parseApplyPatchDiffs } from '../../../utils/diff';
 import { setupCollapsible } from './collapsible';
 import { renderDiffContent } from './DiffRenderer';
@@ -34,7 +34,7 @@ import { renderTodoItems } from './todoUtils';
 export function setToolIcon(el: HTMLElement, name: string): void {
   const icon = getToolIcon(name);
   if (icon === MCP_ICON_MARKER) {
-    el.innerHTML = MCP_ICON_SVG;
+    appendMcpIcon(el);
   } else {
     setIcon(el, icon);
   }
@@ -498,9 +498,7 @@ function renderToolSearchExpanded(container: HTMLElement, result: string): void 
 function renderWebFetchExpanded(container: HTMLElement, result: string): void {
   const maxChars = 500;
   const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
-  const lineEl = linesEl.createDiv({ cls: 'claudian-tool-line' });
-  lineEl.style.whiteSpace = 'pre-wrap';
-  lineEl.style.wordBreak = 'break-word';
+  const lineEl = linesEl.createDiv({ cls: 'claudian-tool-line claudian-tool-line-wrap' });
 
   if (result.length > maxChars) {
     lineEl.setText(result.slice(0, maxChars));
@@ -932,10 +930,10 @@ function createTodoToggleHandler(
   return (expanded: boolean) => {
     if (onExpandChange) onExpandChange(expanded);
     if (currentTaskEl) {
-      currentTaskEl.style.display = expanded ? 'none' : '';
+      currentTaskEl.toggleClass('claudian-hidden', expanded);
     }
     if (statusEl) {
-      statusEl.style.display = expanded ? 'none' : '';
+      statusEl.toggleClass('claudian-hidden', expanded);
     }
   };
 }

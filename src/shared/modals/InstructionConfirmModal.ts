@@ -78,7 +78,7 @@ export class InstructionModal extends Modal {
 
     // Clarification state (hidden initially)
     this.clarificationEl = this.contentSectionEl.createDiv({ cls: 'claudian-instruction-clarification-section' });
-    this.clarificationEl.style.display = 'none';
+    this.clarificationEl.addClass('claudian-hidden');
     this.clarificationTextEl = this.clarificationEl.createDiv({ cls: 'claudian-instruction-clarification' });
 
     const responseSection = this.clarificationEl.createDiv({ cls: 'claudian-instruction-section' });
@@ -100,7 +100,7 @@ export class InstructionModal extends Modal {
 
     // Confirmation state (hidden initially)
     this.confirmationEl = this.contentSectionEl.createDiv({ cls: 'claudian-instruction-confirmation-section' });
-    this.confirmationEl.style.display = 'none';
+    this.confirmationEl.addClass('claudian-hidden');
 
     // Refined instruction display/edit
     const refinedSection = this.confirmationEl.createDiv({ cls: 'claudian-instruction-section' });
@@ -109,7 +109,7 @@ export class InstructionModal extends Modal {
 
     this.refinedDisplayEl = refinedSection.createDiv({ cls: 'claudian-instruction-refined' });
     this.editContainerEl = refinedSection.createDiv({ cls: 'claudian-instruction-edit-container' });
-    this.editContainerEl.style.display = 'none';
+    this.editContainerEl.addClass('claudian-hidden');
 
     this.editTextarea = new TextAreaComponent(this.editContainerEl);
     this.editTextarea.inputEl.addClass('claudian-instruction-edit-textarea');
@@ -167,13 +167,13 @@ export class InstructionModal extends Modal {
     this.state = state;
 
     if (this.loadingEl) {
-      this.loadingEl.style.display = state === 'loading' ? 'flex' : 'none';
+      this.loadingEl.toggleClass('claudian-hidden', state !== 'loading');
     }
     if (this.clarificationEl) {
-      this.clarificationEl.style.display = state === 'clarification' ? 'block' : 'none';
+      this.clarificationEl.toggleClass('claudian-hidden', state !== 'clarification');
     }
     if (this.confirmationEl) {
-      this.confirmationEl.style.display = state === 'confirmation' ? 'block' : 'none';
+      this.confirmationEl.toggleClass('claudian-hidden', state !== 'confirmation');
     }
 
     this.updateButtons();
@@ -234,8 +234,8 @@ export class InstructionModal extends Modal {
     this.isEditing = !this.isEditing;
 
     if (this.isEditing) {
-      if (this.refinedDisplayEl) this.refinedDisplayEl.style.display = 'none';
-      if (this.editContainerEl) this.editContainerEl.style.display = 'block';
+      this.refinedDisplayEl?.addClass('claudian-hidden');
+      this.editContainerEl?.removeClass('claudian-hidden');
       if (this.editBtnEl) this.editBtnEl.setText('Preview');
       this.editTextarea?.inputEl.focus();
     } else {
@@ -243,9 +243,9 @@ export class InstructionModal extends Modal {
       this.refinedInstruction = edited;
       if (this.refinedDisplayEl) {
         this.refinedDisplayEl.setText(edited);
-        this.refinedDisplayEl.style.display = 'block';
+        this.refinedDisplayEl.removeClass('claudian-hidden');
       }
-      if (this.editContainerEl) this.editContainerEl.style.display = 'none';
+      this.editContainerEl?.addClass('claudian-hidden');
       if (this.editBtnEl) this.editBtnEl.setText('Edit');
     }
   }

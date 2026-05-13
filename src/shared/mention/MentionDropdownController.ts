@@ -5,7 +5,7 @@ import { buildExternalContextDisplayEntries } from '../../utils/externalContext'
 import { type ExternalContextFile, externalContextScanner } from '../../utils/externalContextScanner';
 import { extractMcpMentions } from '../../utils/mcp';
 import { SelectableDropdown } from '../components/SelectableDropdown';
-import { MCP_ICON_SVG } from '../icons';
+import { appendMcpIcon } from '../icons';
 import {
   type AgentMentionProvider,
   type FolderMentionItem,
@@ -436,7 +436,7 @@ export class MentionDropdownController {
         const iconEl = itemEl.createSpan({ cls: 'claudian-mention-icon' });
         switch (item.type) {
           case 'mcp-server':
-            iconEl.innerHTML = MCP_ICON_SVG;
+            appendMcpIcon(iconEl);
             break;
           case 'agent':
           case 'agent-folder':
@@ -517,12 +517,11 @@ export class MentionDropdownController {
     if (!dropdownEl) return;
 
     const inputRect = this.inputEl.getBoundingClientRect();
-    dropdownEl.style.position = 'fixed';
-    dropdownEl.style.bottom = `${window.innerHeight - inputRect.top + 4}px`;
-    dropdownEl.style.left = `${inputRect.left}px`;
-    dropdownEl.style.right = 'auto';
-    dropdownEl.style.width = `${Math.max(inputRect.width, 280)}px`;
-    dropdownEl.style.zIndex = '10001';
+    dropdownEl.setCssProps({
+      '--claudian-fixed-dropdown-bottom': `${window.innerHeight - inputRect.top + 4}px`,
+      '--claudian-fixed-dropdown-left': `${inputRect.left}px`,
+      '--claudian-fixed-dropdown-width': `${Math.max(inputRect.width, 280)}px`,
+    });
   }
 
   private insertReplacement(beforeAt: string, replacement: string, afterCursor: string): void {

@@ -7,6 +7,22 @@
   font-family: var(--font-text);
 }
 
+.claudian-hidden {
+  display: none !important;
+}
+
+.claudian-visible-block {
+  display: block !important;
+}
+
+.claudian-visible-flex {
+  display: flex !important;
+}
+
+.claudian-visible-contents {
+  display: contents !important;
+}
+
 .claudian-provider-icon-variant--dark {
   display: none;
 }

@@ -115,6 +115,7 @@ interface MockTextComponent {
     value: string;
     style: Record<string, string>;
     addClass: jest.Mock;
+    toggleClass: jest.Mock;
   };
 }
 
@@ -151,6 +152,7 @@ function createTextComponent(): MockTextComponent {
     value: '',
     style: {},
     addClass: jest.fn(),
+    toggleClass: jest.fn(),
   };
   component.setPlaceholder = jest.fn((value: string) => {
     component.placeholder = value;
@@ -184,6 +186,7 @@ function createToggleComponent(): MockToggleComponent {
 }
 
 function createElement(): any {
+  const classes = new Set<string>();
   const element: any = {
     value: '',
     checked: false,
@@ -192,9 +195,40 @@ function createElement(): any {
     title: '',
     style: {},
     classList: {
-      add: jest.fn(),
-      toggle: jest.fn(),
+      add: jest.fn((cls: string) => classes.add(cls)),
+      remove: jest.fn((cls: string) => classes.delete(cls)),
+      toggle: jest.fn((cls: string, force?: boolean) => {
+        if (force === undefined) {
+          if (classes.has(cls)) {
+            classes.delete(cls);
+            return false;
+          }
+          classes.add(cls);
+          return true;
+        }
+        if (force) {
+          classes.add(cls);
+        } else {
+          classes.delete(cls);
+        }
+        return force;
+      }),
+      contains: jest.fn((cls: string) => classes.has(cls)),
     },
+    addClass: jest.fn((cls: string) => {
+      cls.split(/\s+/).filter(Boolean).forEach((item) => classes.add(item));
+    }),
+    removeClass: jest.fn((cls: string) => {
+      cls.split(/\s+/).filter(Boolean).forEach((item) => classes.delete(item));
+    }),
+    toggleClass: jest.fn((cls: string, force: boolean) => {
+      if (force) {
+        classes.add(cls);
+      } else {
+        classes.delete(cls);
+      }
+    }),
+    hasClass: jest.fn((cls: string) => classes.has(cls)),
     appendText: jest.fn(),
     setText: jest.fn((value: string) => {
       element.text = value;

@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as nodePath from 'path';
 
 import type { ExitPlanModeDecision } from '../../../core/types/tools';
@@ -147,9 +148,7 @@ export class InlineExitPlanMode {
     }
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const fs = require('fs');
-      const content = fs.readFileSync(planFilePath, 'utf-8') as string;
+      const content = fs.readFileSync(planFilePath, 'utf-8');
       return content.trim() || null;
     } catch (err) {
       this.planReadError = err instanceof Error ? err.message : 'unknown error';

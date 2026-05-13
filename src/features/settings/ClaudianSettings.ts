@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import { Notice, PluginSettingTab, Setting } from 'obsidian';
+import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import {
   getHiddenProviderCommands,
@@ -19,7 +19,7 @@ import { renderEnvironmentSettingsSection } from './ui/EnvironmentSettingsSectio
 type SettingsTabId = 'general' | ProviderId;
 
 function formatHotkey(hotkey: { modifiers: string[]; key: string }): string {
-  const isMac = navigator.platform.includes('Mac');
+  const isMac = Platform.isMacOS;
   const modMap: Record<string, string> = isMac
     ? { Mod: '⌘', Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Meta: '⌘' }
     : { Mod: 'Ctrl', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Shift', Meta: 'Win' };
@@ -206,16 +206,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setName(t('settings.maxTabs.name'))
       .setDesc(t('settings.maxTabs.desc'));
 
-    const maxTabsWarningEl = container.createDiv({ cls: 'claudian-max-tabs-warning' });
-    maxTabsWarningEl.style.color = 'var(--text-warning)';
-    maxTabsWarningEl.style.fontSize = '0.85em';
-    maxTabsWarningEl.style.marginTop = '-0.5em';
-    maxTabsWarningEl.style.marginBottom = '0.5em';
-    maxTabsWarningEl.style.display = 'none';
+    const maxTabsWarningEl = container.createDiv({
+      cls: 'claudian-max-tabs-warning claudian-setting-validation claudian-setting-validation-warning claudian-hidden',
+    });
     maxTabsWarningEl.setText(t('settings.maxTabs.warning'));
 
     const updateMaxTabsWarning = (value: number): void => {
-      maxTabsWarningEl.style.display = value > 5 ? 'block' : 'none';
+      maxTabsWarningEl.toggleClass('claudian-hidden', value <= 5);
     };
 
     maxTabsSetting.addSlider((slider) => {
@@ -537,7 +534,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         value: currentValue ? formatContextLimit(currentValue) : '',
       });
 
-      const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation' });
+      const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation claudian-hidden' });
 
       inputEl.addEventListener('input', async () => {
         const trimmed = inputEl.value.trim();
@@ -548,19 +545,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
         if (!trimmed) {
           delete this.plugin.settings.customContextLimits[modelId];
-          validationEl.style.display = 'none';
+          validationEl.toggleClass('claudian-hidden', true);
           inputEl.classList.remove('claudian-input-error');
         } else {
           const parsed = parseContextLimit(trimmed);
           if (parsed === null) {
             validationEl.setText(t('settings.customContextLimits.invalid'));
-            validationEl.style.display = 'block';
+            validationEl.toggleClass('claudian-hidden', false);
             inputEl.classList.add('claudian-input-error');
             return;
           }
 
           this.plugin.settings.customContextLimits[modelId] = parsed;
-          validationEl.style.display = 'none';
+          validationEl.toggleClass('claudian-hidden', true);
           inputEl.classList.remove('claudian-input-error');
         }
 

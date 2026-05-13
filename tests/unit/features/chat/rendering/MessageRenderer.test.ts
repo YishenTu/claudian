@@ -146,8 +146,9 @@ describe('MessageRenderer', () => {
     // Check the content contains interrupt styling
     const contentEl = msgEl.children[0];
     const textEl = contentEl.children[0];
-    expect(textEl.innerHTML).toContain('claudian-interrupted');
-    expect(textEl.innerHTML).toContain('Interrupted');
+    const interruptedEl = textEl.children[0];
+    expect(interruptedEl.hasClass('claudian-interrupted')).toBe(true);
+    expect(interruptedEl.textContent).toBe('Interrupted');
   });
 
   it('renders interrupted assistant message with content + interrupt indicator', () => {
@@ -173,8 +174,9 @@ describe('MessageRenderer', () => {
     // The content div should have both content rendering and an interrupt indicator
     const contentEl = msgEl.children[0];
     const lastChild = contentEl.children[contentEl.children.length - 1];
-    expect(lastChild.innerHTML).toContain('claudian-interrupted');
-    expect(lastChild.innerHTML).toContain('Interrupted');
+    const interruptedEl = lastChild.children[0];
+    expect(interruptedEl.hasClass('claudian-interrupted')).toBe(true);
+    expect(interruptedEl.textContent).toBe('Interrupted');
   });
 
   it('renders bare interrupt marker for empty interrupted assistant message', () => {
@@ -198,7 +200,7 @@ describe('MessageRenderer', () => {
     expect(msgEl.hasClass('claudian-message-assistant')).toBe(true);
     const contentEl = msgEl.children[0];
     const textEl = contentEl.children[0];
-    expect(textEl.innerHTML).toContain('claudian-interrupted');
+    expect(textEl.children[0].hasClass('claudian-interrupted')).toBe(true);
   });
 
   it('skips rebuilt context messages', () => {

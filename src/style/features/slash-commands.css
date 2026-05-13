@@ -24,6 +24,10 @@
 /* Fixed positioning for inline editor */
 .claudian-slash-dropdown-fixed {
   position: fixed;
+  bottom: var(--claudian-fixed-dropdown-bottom);
+  left: var(--claudian-fixed-dropdown-left);
+  right: auto;
+  width: var(--claudian-fixed-dropdown-width);
   z-index: 10001;
 }
 

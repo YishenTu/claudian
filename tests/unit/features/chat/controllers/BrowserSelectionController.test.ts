@@ -1,30 +1,42 @@
 /** @jest-environment jsdom */
 
+import { createMockEl } from '@test/helpers/mockElement';
+
 import { BrowserSelectionController } from '@/features/chat/controllers/BrowserSelectionController';
 
 function createMockIndicator() {
-  const indicatorEl = document.createElement('div');
-  indicatorEl.style.display = 'none';
+  const indicatorEl = createMockEl();
+  indicatorEl.addClass('claudian-browser-selection-indicator');
+  indicatorEl.addClass('claudian-hidden');
   return indicatorEl;
 }
 
 function createMockContextRow(browserIndicator: HTMLElement) {
-  const fileIndicator = { style: { display: 'none' } };
-  const imagePreview = { style: { display: 'none' } };
+  const editorIndicator = createMockEl();
+  editorIndicator.addClass('claudian-selection-indicator');
+  editorIndicator.addClass('claudian-hidden');
+  const canvasIndicator = createMockEl();
+  canvasIndicator.addClass('claudian-canvas-indicator');
+  canvasIndicator.addClass('claudian-hidden');
+  const fileIndicator = createMockEl();
+  fileIndicator.addClass('claudian-file-indicator');
+  fileIndicator.addClass('claudian-hidden');
+  const imagePreview = createMockEl();
+  imagePreview.addClass('claudian-image-preview');
+  imagePreview.addClass('claudian-hidden');
   const elements: Record<string, any> = {
-    '.claudian-selection-indicator': { style: { display: 'none' } },
+    '.claudian-selection-indicator': editorIndicator,
     '.claudian-browser-selection-indicator': browserIndicator,
-    '.claudian-canvas-indicator': { style: { display: 'none' } },
+    '.claudian-canvas-indicator': canvasIndicator,
     '.claudian-file-indicator': fileIndicator,
     '.claudian-image-preview': imagePreview,
   };
+  const contextRow = createMockEl();
+  const toggle = contextRow.classList.toggle;
+  contextRow.classList.toggle = jest.fn((cls: string, force?: boolean) => toggle(cls, force));
 
-  return {
-    classList: {
-      toggle: jest.fn(),
-    },
-    querySelector: jest.fn((selector: string) => elements[selector] ?? null),
-  } as any;
+  contextRow.querySelector = jest.fn((selector: string) => elements[selector] ?? null);
+  return contextRow as any;
 }
 
 async function flushMicrotasks(): Promise<void> {

@@ -72,8 +72,8 @@
 .claudian-input {
   width: 100%;
   flex: 1 1 0;
-  min-height: 60px;
-  /* max-height dynamically set by JS: max(150px, 55% of view height) */
+  min-height: var(--claudian-textarea-min-height, 60px);
+  max-height: var(--claudian-textarea-max-height, none);
   resize: none;
   padding: 8px 10px 10px 10px;
   border: none !important;

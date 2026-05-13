@@ -1,26 +1,30 @@
+import { createMockEl } from '@test/helpers/mockElement';
+
 import { CanvasSelectionController } from '@/features/chat/controllers/CanvasSelectionController';
 
 function createMockIndicator() {
-  return {
-    textContent: '',
-    style: { display: 'none' },
-  } as any;
+  const indicator = createMockEl();
+  indicator.addClass('claudian-canvas-indicator');
+  indicator.addClass('claudian-hidden');
+  return indicator;
 }
 
 function createMockContextRow() {
   const elements: Record<string, any> = {
-    '.claudian-selection-indicator': { style: { display: 'none' } },
-    '.claudian-canvas-indicator': { style: { display: 'none' } },
+    '.claudian-selection-indicator': createMockEl(),
+    '.claudian-canvas-indicator': createMockIndicator(),
     '.claudian-file-indicator': null,
     '.claudian-image-preview': null,
   };
+  elements['.claudian-selection-indicator'].addClass('claudian-selection-indicator');
+  elements['.claudian-selection-indicator'].addClass('claudian-hidden');
 
-  return {
-    classList: {
-      toggle: jest.fn(),
-    },
-    querySelector: jest.fn((selector: string) => elements[selector] ?? null),
-  } as any;
+  const contextRow = createMockEl();
+  const toggle = contextRow.classList.toggle;
+  contextRow.classList.toggle = jest.fn((cls: string, force?: boolean) => toggle(cls, force));
+
+  contextRow.querySelector = jest.fn((selector: string) => elements[selector] ?? null);
+  return contextRow as any;
 }
 
 function createMockCanvasNode(id: string) {
@@ -146,7 +150,8 @@ describe('CanvasSelectionController', () => {
   });
 
   it('keeps context row visible when editor selection indicator is visible', () => {
-    const editorIndicator = { style: { display: 'block' } };
+    const editorIndicator = createMockEl();
+    editorIndicator.addClass('claudian-selection-indicator');
     contextRowEl.querySelector.mockImplementation((selector: string) => {
       if (selector === '.claudian-selection-indicator') return editorIndicator;
       return null;

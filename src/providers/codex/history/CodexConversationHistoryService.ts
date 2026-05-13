@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+
 import type { ProviderConversationHistoryService } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import type { CodexProviderState } from '../types';
@@ -13,8 +15,7 @@ import {
 function readSessionTurns(sessionFilePath: string): CodexParsedTurn[] {
   let content: string;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    content = require('fs').readFileSync(sessionFilePath, 'utf-8');
+    content = fs.readFileSync(sessionFilePath, 'utf-8');
   } catch {
     return [];
   }

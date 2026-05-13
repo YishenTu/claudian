@@ -78,7 +78,7 @@ describe('Sync Subagent Renderer', () => {
       // Should be expanded
       expect(state.info.isExpanded).toBe(true);
       expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
-      expect((state.contentEl as any).style.display).toBe('block');
+      expect((state.contentEl as any).hasClass('claudian-hidden')).toBe(false);
 
       // Click again to collapse
       (state.headerEl as any).click();
@@ -180,7 +180,7 @@ describe('Sync Subagent Renderer', () => {
       // Click to expand
       headerEl.click();
       expect((wrapperEl as any).hasClass('expanded')).toBe(true);
-      expect(contentEl.style.display).toBe('block');
+      expect(contentEl.hasClass('claudian-hidden')).toBe(false);
       expect(headerEl.getAttribute('aria-expanded')).toBe('true');
 
       // Click to collapse

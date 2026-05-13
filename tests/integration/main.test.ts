@@ -56,6 +56,7 @@ describe('ClaudianPlugin', () => {
         getLeaf: jest.fn().mockReturnValue({
           setViewState: jest.fn().mockResolvedValue(undefined),
         }),
+        setActiveLeaf: jest.fn(),
         revealLeaf: jest.fn(),
       },
     };
@@ -130,7 +131,7 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
       await plugin.activateView();
 
-      expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockLeaf);
+      expect(mockApp.workspace.setActiveLeaf).toHaveBeenCalledWith(mockLeaf, { focus: true });
     });
 
     it('should create new leaf in right sidebar by default if view does not exist', async () => {
@@ -483,7 +484,7 @@ describe('ClaudianPlugin', () => {
       const ribbonCallback = (plugin.addRibbonIcon as jest.Mock).mock.calls[0][2];
       await ribbonCallback();
 
-      expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockLeaf);
+      expect(mockApp.workspace.setActiveLeaf).toHaveBeenCalledWith(mockLeaf, { focus: true });
     });
   });
 
@@ -496,7 +497,7 @@ describe('ClaudianPlugin', () => {
       const commandConfig = (plugin.addCommand as jest.Mock).mock.calls[0][0];
       await commandConfig.callback();
 
-      expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockLeaf);
+      expect(mockApp.workspace.setActiveLeaf).toHaveBeenCalledWith(mockLeaf, { focus: true });
     });
   });
 

@@ -59,14 +59,14 @@ export class SlashCommandModal extends Modal {
     let contextValue: 'fork' | '' = this.existingEntry?.context ?? '';
     let agentInput: HTMLInputElement;
 
-    /* eslint-disable prefer-const -- assigned in Setting callbacks */
-    let disableUserSetting!: Setting;
-    let disableUserToggle!: ToggleComponent;
-    /* eslint-enable prefer-const */
+    let disableUserSetting: Setting | null = null;
+    let disableUserToggle: ToggleComponent | null = null;
 
     const updateSkillOnlyFields = () => {
+      if (!disableUserSetting || !disableUserToggle) return;
+
       const isSkillType = selectedType === 'skill';
-      disableUserSetting.settingEl.style.display = isSkillType ? '' : 'none';
+      disableUserSetting.settingEl.toggleClass('claudian-hidden', !isSkillType);
       if (!isSkillType) {
         disableUserInvocation = false;
         disableUserToggle.setValue(false);
@@ -176,7 +176,7 @@ export class SlashCommandModal extends Modal {
         toggle.setValue(contextValue === 'fork')
           .onChange(value => {
             contextValue = value ? 'fork' : '';
-            agentSetting.settingEl.style.display = value ? '' : 'none';
+            agentSetting.settingEl.toggleClass('claudian-hidden', !value);
           });
       });
 
@@ -188,7 +188,7 @@ export class SlashCommandModal extends Modal {
         text.setValue(this.existingEntry?.agent || '')
           .setPlaceholder('code-reviewer');
       });
-    agentSetting.settingEl.style.display = contextValue === 'fork' ? '' : 'none';
+    agentSetting.settingEl.toggleClass('claudian-hidden', contextValue !== 'fork');
 
     new Setting(contentEl)
       .setName('Prompt template')

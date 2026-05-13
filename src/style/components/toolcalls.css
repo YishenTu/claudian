@@ -145,6 +145,11 @@
   white-space: pre;
 }
 
+.claudian-tool-line-wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Hover highlight for file search results */
 .claudian-tool-line.hoverable:hover {
   background: var(--background-modifier-hover);

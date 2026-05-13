@@ -35,23 +35,20 @@ export function renderEnvironmentSettingsSection(
   }
 
   let envTextarea: HTMLTextAreaElement | null = null;
-  const reviewEl = container.createDiv({ cls: 'claudian-env-review-warning' });
-  reviewEl.style.color = 'var(--text-warning)';
-  reviewEl.style.fontSize = '0.85em';
-  reviewEl.style.marginTop = '-0.5em';
-  reviewEl.style.marginBottom = '0.5em';
-  reviewEl.style.display = 'none';
+  const reviewEl = container.createDiv({
+    cls: 'claudian-env-review-warning claudian-setting-validation claudian-setting-validation-warning claudian-hidden',
+  });
 
   const updateReviewWarning = () => {
     const reviewKeys = getEnvironmentReviewKeysForScope(envTextarea?.value ?? '', scope);
     if (reviewKeys.length === 0) {
-      reviewEl.style.display = 'none';
+      reviewEl.toggleClass('claudian-hidden', true);
       reviewEl.empty();
       return;
     }
 
     reviewEl.setText(`Review environment ownership for: ${reviewKeys.join(', ')}`);
-    reviewEl.style.display = 'block';
+    reviewEl.toggleClass('claudian-hidden', false);
   };
 
   new Setting(container)

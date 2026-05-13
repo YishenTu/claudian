@@ -14,7 +14,7 @@ function createMockApp(files: Map<string, string> = new Map()): App {
 
   return {
     vault: {
-      getFileByPath: (path: string) => mockFiles.get(path) || null,
+      getAbstractFileByPath: (path: string) => mockFiles.get(path) || null,
       getResourcePath: (file: TFile) => files.get(file.path) || `app://local/${file.path}`,
     },
     metadataCache: {
@@ -336,7 +336,7 @@ describe('replaceImageEmbedsWithHtml', () => {
       const mockFile = { path: 'test.png', basename: 'test' } as TFile;
       const app = {
         vault: {
-          getFileByPath: () => mockFile,
+          getAbstractFileByPath: () => mockFile,
           getResourcePath: () => {
             throw new Error('Resource path failed');
           },
