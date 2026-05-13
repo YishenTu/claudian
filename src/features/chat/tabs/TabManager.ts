@@ -13,7 +13,7 @@ import type { Conversation, SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
-import { focusWorkspaceLeaf } from '../../../utils/obsidianCompat';
+import { revealWorkspaceLeaf } from '../../../utils/obsidianCompat';
 import { getTabProviderId } from './providerResolution';
 import {
   activateTab,
@@ -447,7 +447,7 @@ export class TabManager implements TabManagerInterface {
     const isSameView = crossViewResult?.view === this.view;
     if (crossViewResult && !isSameView) {
       // Focus the other view and switch to its tab instead of opening duplicate
-      focusWorkspaceLeaf(this.plugin.app.workspace, crossViewResult.view.leaf);
+      await revealWorkspaceLeaf(this.plugin.app.workspace, crossViewResult.view.leaf);
       await crossViewResult.view.getTabManager()?.switchToTab(crossViewResult.tabId);
       return;
     }

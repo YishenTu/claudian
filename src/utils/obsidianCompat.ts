@@ -8,14 +8,8 @@ export function getVaultFileByPath(app: App, filePath: string): TFile | null {
   return null;
 }
 
-export function focusWorkspaceLeaf(workspace: Workspace, leaf: WorkspaceLeaf): void {
-  const revealLeaf = (workspace as unknown as Record<string, unknown>)['revealLeaf'];
-  if (typeof revealLeaf === 'function') {
-    (revealLeaf as (leaf: WorkspaceLeaf) => void).call(workspace, leaf);
-    return;
-  }
-
-  workspace.setActiveLeaf(leaf, { focus: true });
+export async function revealWorkspaceLeaf(workspace: Workspace, leaf: WorkspaceLeaf): Promise<void> {
+  await workspace.revealLeaf(leaf);
 }
 
 function isVaultFile(value: unknown): value is TFile {

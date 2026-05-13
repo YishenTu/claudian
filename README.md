@@ -30,7 +30,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 - **Claude provider**: [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (native install recommended). Claude subscription/API or compatible provider ([Openrouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.moonshot.ai/docs/guide/agent-support), etc.).
 - **Optional providers**: [Codex CLI](https://github.com/openai/codex), [Opencode](https://opencode.ai/).
-- Obsidian v1.4.5+
+- Obsidian v1.7.2+
 - Desktop only (macOS, Linux, Windows)
 
 ## Installation

@@ -2,7 +2,7 @@
   "id": "realclaudian",
   "name": "Claudian",
   "version": "2.0.13",
-  "minAppVersion": "1.4.5",
+  "minAppVersion": "1.7.2",
   "description": "Embeds Claude Code/Codex as an AI collaborator in your vault. Your vault becomes agent's working directory, giving it full agentic capabilities: file read/write, search, bash commands, and multi-step workflows.",
   "author": "Yishen Tu",
   "authorUrl": "https://github.com/YishenTu",
