@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
+import { preserveUiText } from '../../../utils/uiCopy';
 import type { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
 import { DEFAULT_CODEX_PRIMARY_MODEL } from '../types/models';
 import type { CodexSubagentDefinition } from '../types/subagent';
@@ -101,16 +102,16 @@ class CodexSubagentModal extends Modal {
 
     new Setting(contentEl)
       .setName('Name')
-      .setDesc('Agent name Codex uses when spawning (lowercase, hyphens, underscores)')
+      .setDesc(preserveUiText('Agent name Codex uses when spawning (lowercase, hyphens, underscores)'))
       .addText(text => {
         this._nameInput = text.inputEl;
         text.setValue(this.existing?.name ?? '')
-          .setPlaceholder('code_reviewer');
+          .setPlaceholder(preserveUiText('code_reviewer'));
       });
 
     new Setting(contentEl)
       .setName('Description')
-      .setDesc('When Codex should use this agent')
+      .setDesc(preserveUiText('When Codex should use this agent'))
       .addText(text => {
         this._descInput = text.inputEl;
         text.setValue(this.existing?.description ?? '')
@@ -165,7 +166,7 @@ class CodexSubagentModal extends Modal {
 
     new Setting(details)
       .setName('Nickname candidates')
-      .setDesc('Comma-separated display nicknames (e.g., Atlas, Delta, Echo)')
+      .setDesc(preserveUiText('Comma-separated display nicknames (e.g., Atlas, Delta, Echo)'))
       .addText(text => {
         this._nicknamesInput = text.inputEl;
         text.setValue(this.existing?.nicknameCandidates?.join(', ') ?? '');
@@ -314,7 +315,7 @@ export class CodexSubagentSettings {
 
     if (this.agents.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
-      emptyEl.setText('No Codex subagents in vault. Click + to create one.');
+      emptyEl.setText(preserveUiText('No Codex subagents in vault. Click + to create one.'));
       return;
     }
 

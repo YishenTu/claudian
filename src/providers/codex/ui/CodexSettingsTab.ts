@@ -7,6 +7,7 @@ import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/
 import { t } from '../../../i18n/i18n';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
+import { preserveUiText } from '../../../utils/uiCopy';
 import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import { parseConfiguredCustomModelIds, resolveCodexModelSelection } from '../modelOptions';
 import { isWindowsStyleCliReference } from '../runtime/CodexBinaryLocator';
@@ -44,8 +45,8 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName(t('settings.setup')).setHeading();
 
     new Setting(container)
-      .setName('Enable Codex provider')
-      .setDesc('When enabled, Codex models appear in the model selector for new conversations. Existing Codex sessions are preserved.')
+      .setName(preserveUiText('Enable Codex provider'))
+      .setDesc(preserveUiText('When enabled, Codex models appear in the model selector for new conversations. Existing Codex sessions are preserved.'))
       .addToggle((toggle) =>
         toggle
           .setValue(codexSettings.enabled)
@@ -59,7 +60,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     if (isWindowsHost) {
       new Setting(container)
         .setName('Installation method')
-        .setDesc('How Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.')
+        .setDesc(preserveUiText('How Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.'))
         .addDropdown((dropdown) => {
           dropdown
             .addOption('native-windows', 'Native Windows')
@@ -205,8 +206,8 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     if (isWindowsHost) {
       const wslDistroSetting = new Setting(container)
-        .setName('WSL distro override')
-        .setDesc('Optional advanced override. Leave empty to infer the distro from a \\\\wsl$ workspace path when possible, otherwise use the default WSL distro.');
+        .setName(preserveUiText('WSL distro override'))
+        .setDesc(preserveUiText('Optional advanced override. Leave empty to infer the distro from a \\\\wsl$ workspace path when possible, otherwise use the default WSL distro.'));
 
       wslDistroSettingEl = wslDistroSetting.settingEl;
       wslDistroSetting.addText((text) => {
@@ -235,8 +236,8 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       .setDesc(t('settings.codexSafeMode.desc'))
       .addDropdown((dropdown) => {
         dropdown
-          .addOption('workspace-write', 'workspace-write')
-          .addOption('read-only', 'read-only')
+          .addOption('workspace-write', preserveUiText('workspace-write'))
+          .addOption('read-only', preserveUiText('read-only'))
           .setValue(codexSettings.safeMode)
           .onChange(async (value) => {
             updateCodexProviderSettings(
@@ -260,7 +261,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container)
       .setName('Custom models')
-      .setDesc('Append additional Codex model IDs to the picker, one per line. OPENAI_MODEL still takes precedence when set.')
+      .setDesc(preserveUiText('Append additional Codex model IDs to the picker, one per line. OPENAI_MODEL still takes precedence when set.'))
       .addTextArea((text) => {
         let pendingCustomModels = codexSettings.customModels;
         let savedCustomModels = codexSettings.customModels;
@@ -369,12 +370,12 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     const codexCatalog = codexWorkspace.commandCatalog;
     if (codexCatalog) {
-      new Setting(container).setName('Codex Skills').setHeading();
+      new Setting(container).setName(preserveUiText('Codex Skills')).setHeading();
 
       const skillsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
       skillsDesc.createEl('p', {
         cls: 'setting-item-description',
-        text: 'Manage vault-level Codex skills stored in .codex/skills/ or .agents/skills/. Home-level skills are excluded here.',
+        text: preserveUiText('Manage vault-level Codex skills stored in .codex/skills/ or .agents/skills/. Home-level skills are excluded here.'),
       });
 
       const skillsContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
@@ -389,12 +390,12 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     // --- Subagents ---
 
-    new Setting(container).setName('Codex Subagents').setHeading();
+    new Setting(container).setName(preserveUiText('Codex Subagents')).setHeading();
 
     const subagentDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
     subagentDesc.createEl('p', {
       cls: 'setting-item-description',
-      text: 'Manage vault-level Codex subagents stored in .codex/agents/. Each TOML file defines one custom agent.',
+      text: preserveUiText('Manage vault-level Codex subagents stored in .codex/agents/. Each TOML file defines one custom agent.'),
     });
 
     const subagentContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
@@ -408,7 +409,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const mcpNotice = container.createDiv({ cls: 'claudian-mcp-settings-desc' });
     const mcpDesc = mcpNotice.createEl('p', { cls: 'setting-item-description' });
     mcpDesc.appendText('Codex manages MCP servers via its own CLI. Configure with ');
-    mcpDesc.createEl('code', { text: 'codex mcp' });
+    mcpDesc.createEl('code', { text: preserveUiText('codex mcp') });
     mcpDesc.appendText(' and they will be available in Claudian. ');
     mcpDesc.createEl('a', {
       text: 'Learn more',

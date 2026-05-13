@@ -37,6 +37,7 @@ import type {
 } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath } from '../../../utils/env';
+import { clearNativeTimeout, setNativeTimeout } from '../../../utils/nativeTimers';
 import { getVaultPath } from '../../../utils/path';
 import {
   AcpClientConnection,
@@ -1118,10 +1119,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     return new Promise<SlashCommand[]>((resolve) => {
       const waiter = (commands: SlashCommand[]) => {
-        clearTimeout(timeoutId);
+        clearNativeTimeout(timeoutId);
         resolve([...commands]);
       };
-      const timeoutId = setTimeout(() => {
+      const timeoutId = setNativeTimeout(() => {
         const index = this.supportedCommandWaiters.indexOf(waiter);
         if (index >= 0) {
           this.supportedCommandWaiters.splice(index, 1);

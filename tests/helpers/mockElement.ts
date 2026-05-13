@@ -43,6 +43,10 @@ export interface MockElement {
   appendText: (text: string) => void;
   setCssProps: (props: Record<string, string>) => void;
   ownerDocument: {
+    activeElement: Element | null;
+    body?: any;
+    addEventListener?: (event: string, handler: (...args: any[]) => void) => void;
+    removeEventListener?: (event: string, handler: (...args: any[]) => void) => void;
     defaultView: {
       requestAnimationFrame: (callback: FrameRequestCallback) => number;
       cancelAnimationFrame: (handle: number) => void;
@@ -53,6 +57,7 @@ export interface MockElement {
     };
     createElement: (tagName: string) => MockElement;
     createElementNS: (namespace: string, tagName: string) => MockElement;
+    getSelection?: () => Selection | null;
   };
   _classes: Set<string>;
   _classList: Set<string>;
@@ -166,9 +171,27 @@ export function createMockEl(tag = 'div'): any {
   };
 
   const ownerDocument = {
+    get activeElement() {
+      return (globalThis as any).document?.activeElement ?? null;
+    },
+    addEventListener: (event: string, handler: (...args: any[]) => void) => {
+      (globalThis as any).document?.addEventListener?.(event, handler);
+    },
+    removeEventListener: (event: string, handler: (...args: any[]) => void) => {
+      (globalThis as any).document?.removeEventListener?.(event, handler);
+    },
+    getSelection: () => (globalThis as any).document?.getSelection?.() ?? null,
     defaultView,
     createElement: (tagName: string) => createMockEl(tagName),
     createElementNS: (_namespace: string, tagName: string) => createMockEl(tagName),
+    body: {
+      createDiv: (opts?: { cls?: string; text?: string }) => {
+        const child = createMockEl('div');
+        if (opts?.cls) child.addClass(opts.cls);
+        if (opts?.text) child.textContent = opts.text;
+        return child;
+      },
+    },
   };
 
   const element: MockElement = {

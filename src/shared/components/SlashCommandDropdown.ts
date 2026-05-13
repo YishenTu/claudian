@@ -372,9 +372,10 @@ export class SlashCommandDropdown {
   private positionFixed(): void {
     if (!this.dropdownEl || !this.isFixed) return;
 
+    const ownerWindow = this.inputEl.ownerDocument.defaultView ?? window;
     const inputRect = this.inputEl.getBoundingClientRect();
     this.dropdownEl.setCssProps({
-      '--claudian-fixed-dropdown-bottom': `${window.innerHeight - inputRect.top + 4}px`,
+      '--claudian-fixed-dropdown-bottom': `${ownerWindow.innerHeight - inputRect.top + 4}px`,
       '--claudian-fixed-dropdown-left': `${inputRect.left}px`,
       '--claudian-fixed-dropdown-width': `${Math.max(inputRect.width, 280)}px`,
     });

@@ -279,6 +279,7 @@ describe('StatusPanel', () => {
     writeTextMock = jest.fn().mockResolvedValue(undefined);
     (global as any).navigator = { clipboard: { writeText: writeTextMock } };
     containerEl = new MockElement('div');
+    (containerEl as any).ownerDocument = (global as any).document;
     panel = new StatusPanel();
   });
 

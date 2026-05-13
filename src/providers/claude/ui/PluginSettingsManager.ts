@@ -5,6 +5,7 @@ import type {
   AppPluginManager,
 } from '../../../core/providers/types';
 import type { PluginInfo } from '../../../core/types';
+import { preserveUiText } from '../../../utils/uiCopy';
 
 export interface PluginSettingsManagerDeps {
   pluginManager: AppPluginManager;
@@ -43,7 +44,7 @@ export class PluginSettingsManager {
 
     if (plugins.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-plugin-empty' });
-      emptyEl.setText('No Claude Code plugins found. Enable plugins via the Claude CLI.');
+      emptyEl.setText(preserveUiText('No Claude Code plugins found. Enable plugins via the Claude CLI.'));
       return;
     }
 
@@ -54,7 +55,7 @@ export class PluginSettingsManager {
 
     if (projectPlugins.length > 0) {
       const sectionHeader = listEl.createDiv({ cls: 'claudian-plugin-section-header' });
-      sectionHeader.setText('Project Plugins');
+      sectionHeader.setText(preserveUiText('Project Plugins'));
 
       for (const plugin of projectPlugins) {
         this.renderPluginItem(listEl, plugin);
@@ -63,7 +64,7 @@ export class PluginSettingsManager {
 
     if (userPlugins.length > 0) {
       const sectionHeader = listEl.createDiv({ cls: 'claudian-plugin-section-header' });
-      sectionHeader.setText('User Plugins');
+      sectionHeader.setText(preserveUiText('User Plugins'));
 
       for (const plugin of userPlugins) {
         this.renderPluginItem(listEl, plugin);

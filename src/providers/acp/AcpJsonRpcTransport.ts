@@ -1,5 +1,6 @@
 import { createInterface, type Interface } from 'node:readline';
 
+import { clearNativeTimeout, setNativeTimeout } from '../../utils/nativeTimers';
 import type { AcpRequestId } from './types';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -173,7 +174,7 @@ export class AcpJsonRpcTransport {
       let onAbort: (() => void) | undefined;
 
       const cleanup = (): void => {
-        if (timer) clearTimeout(timer);
+        if (timer) clearNativeTimeout(timer);
         if (onAbort && options.signal) {
           options.signal.removeEventListener('abort', onAbort);
         }
@@ -187,7 +188,7 @@ export class AcpJsonRpcTransport {
       };
 
       if (timeoutMs > 0) {
-        timer = setTimeout(() => {
+        timer = setNativeTimeout(() => {
           this.pending.delete(id);
           cleanup();
           reject(new Error(`Request timeout: ${method} (${timeoutMs}ms)`));

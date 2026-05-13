@@ -1228,8 +1228,8 @@ export class StreamController {
     if (attempt >= StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS.length) return;
 
     const delay = StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS[attempt];
-    const activeWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
-    activeWindow.setTimeout(() => {
+    const ownerWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
+    ownerWindow.setTimeout(() => {
       void this.retryAsyncSubagentResult(subagent, runtime, attempt);
     }, delay);
   }
@@ -1341,8 +1341,8 @@ export class StreamController {
 
     // Clear any existing timeout
     if (state.thinkingIndicatorTimeout) {
-      const activeWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
-      state.clearThinkingIndicatorTimeout(activeWindow);
+      const ownerWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
+      state.clearThinkingIndicatorTimeout(ownerWindow);
     }
 
     // Don't show flavor text while model thinking block is active
@@ -1358,8 +1358,8 @@ export class StreamController {
     }
 
     // Schedule showing the indicator after a delay
-    const activeWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
-    state.setThinkingIndicatorTimeout(activeWindow.setTimeout(() => {
+    const ownerWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
+    state.setThinkingIndicatorTimeout(ownerWindow.setTimeout(() => {
       state.setThinkingIndicatorTimeout(null, null);
       // Double-check we still have a content element, no indicator exists, and no thinking block
       if (!state.currentContentEl || state.thinkingEl || state.currentThinkingState) return;
@@ -1391,9 +1391,9 @@ export class StreamController {
       if (state.flavorTimerInterval) {
         state.clearFlavorTimerInterval();
       }
-      state.setFlavorTimerInterval(activeWindow.setInterval(updateTimer, 1000), activeWindow);
+      state.setFlavorTimerInterval(ownerWindow.setInterval(updateTimer, 1000), ownerWindow);
 
-    }, StreamController.THINKING_INDICATOR_DELAY), activeWindow);
+    }, StreamController.THINKING_INDICATOR_DELAY), ownerWindow);
   }
 
   /** Hides the thinking indicator and cancels any pending show timeout. */
@@ -1402,8 +1402,8 @@ export class StreamController {
 
     // Cancel any pending show timeout
     if (state.thinkingIndicatorTimeout) {
-      const activeWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
-      state.clearThinkingIndicatorTimeout(activeWindow);
+      const ownerWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
+      state.clearThinkingIndicatorTimeout(ownerWindow);
     }
 
     // Clear timer interval (but preserve responseStartTime for duration capture)
@@ -1443,8 +1443,8 @@ export class StreamController {
     const relativePath = normalizePathForVault(rawPath, vaultPath);
     if (!relativePath || relativePath.startsWith('/')) return;
 
-    const activeWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
-    activeWindow.setTimeout(() => {
+    const ownerWindow = this.deps.getMessagesEl().ownerDocument.defaultView ?? window;
+    ownerWindow.setTimeout(() => {
       const { vault } = this.deps.plugin.app;
       const file = vault.getAbstractFileByPath(relativePath);
       if (file instanceof TFile) {

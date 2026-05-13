@@ -5,6 +5,7 @@ import type { ProviderCommandCatalog } from '../../../core/providers/commands/Pr
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import { t } from '../../../i18n/i18n';
 import { extractFirstParagraph, normalizeArgumentHint, parseSlashCommandContent, validateCommandName } from '../../../utils/slashCommand';
+import { preserveUiText } from '../../../utils/uiCopy';
 
 function resolveAllowedTools(inputValue: string, parsedTools?: string[]): string[] | undefined {
   const trimmed = inputValue.trim();
@@ -97,7 +98,7 @@ export class SlashCommandModal extends Modal {
       .addText(text => {
         nameInput = text.inputEl;
         text.setValue(this.existingEntry?.name || '')
-          .setPlaceholder('review-code');
+          .setPlaceholder(preserveUiText('review-code'));
       });
 
     new Setting(contentEl)
@@ -139,7 +140,7 @@ export class SlashCommandModal extends Modal {
       .addText(text => {
         modelInput = text.inputEl;
         text.setValue(this.existingEntry?.model || '')
-          .setPlaceholder('claude-sonnet-4-5');
+          .setPlaceholder(preserveUiText('claude-sonnet-4-5'));
       });
 
     new Setting(details)
@@ -186,7 +187,7 @@ export class SlashCommandModal extends Modal {
       .addText(text => {
         agentInput = text.inputEl;
         text.setValue(this.existingEntry?.agent || '')
-          .setPlaceholder('code-reviewer');
+          .setPlaceholder(preserveUiText('code-reviewer'));
       });
     agentSetting.settingEl.toggleClass('claudian-hidden', contextValue !== 'fork');
 

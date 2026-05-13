@@ -15,6 +15,7 @@ import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 import { escapeMathDelimitersForStreaming } from '../../../utils/markdownMath';
+import { preserveUiText } from '../../../utils/uiCopy';
 import { findRewindContext } from '../rewind';
 import { resolveSubagentLifecycleAdapter } from './subagentLifecycleResolution';
 import {
@@ -547,7 +548,8 @@ export class MessageRenderer {
   showFullImage(image: ImageAttachment): void {
     const dataUri = `data:${image.mediaType};base64,${image.data}`;
 
-    const overlay = document.body.createDiv({ cls: 'claudian-image-modal-overlay' });
+    const ownerDocument = this.messagesEl.ownerDocument;
+    const overlay = ownerDocument.body.createDiv({ cls: 'claudian-image-modal-overlay' });
     const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
 
     modal.createEl('img', {
@@ -567,7 +569,7 @@ export class MessageRenderer {
     };
 
     const close = () => {
-      document.removeEventListener('keydown', handleEsc);
+      ownerDocument.removeEventListener('keydown', handleEsc);
       overlay.remove();
     };
 
@@ -575,7 +577,7 @@ export class MessageRenderer {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close();
     });
-    document.addEventListener('keydown', handleEsc);
+    ownerDocument.addEventListener('keydown', handleEsc);
   }
 
   /**
@@ -640,14 +642,14 @@ export class MessageRenderer {
             wrapper.appendChild(label);
             label.addEventListener('click', () => {
               runRendererAction(async () => {
-                const activeWindow = label.ownerDocument.defaultView ?? window;
+                const ownerWindow = label.ownerDocument.defaultView ?? window;
                 const originalLabel = match[1];
                 if (!originalLabel) return;
 
                 try {
                   await navigator.clipboard.writeText(code.textContent || '');
-                  label.setText('copied!');
-                  activeWindow.setTimeout(() => label.setText(originalLabel), 1500);
+                  label.setText(preserveUiText('copied!'));
+                  ownerWindow.setTimeout(() => label.setText(originalLabel), 1500);
                 } catch {
                   // Clipboard API may fail in non-secure contexts
                 }
@@ -694,7 +696,7 @@ export class MessageRenderer {
     copyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       runRendererAction(async () => {
-        const activeWindow = copyBtn.ownerDocument.defaultView ?? window;
+        const ownerWindow = copyBtn.ownerDocument.defaultView ?? window;
 
         try {
           await navigator.clipboard.writeText(markdown);
@@ -705,15 +707,15 @@ export class MessageRenderer {
 
         // Clear any pending timeout from rapid clicks
         if (feedbackTimeout) {
-          activeWindow.clearTimeout(feedbackTimeout);
+          ownerWindow.clearTimeout(feedbackTimeout);
         }
 
         // Show "copied!" feedback
         copyBtn.empty();
-        copyBtn.setText('copied!');
+        copyBtn.setText(preserveUiText('copied!'));
         copyBtn.classList.add('copied');
 
-        feedbackTimeout = activeWindow.setTimeout(() => {
+        feedbackTimeout = ownerWindow.setTimeout(() => {
           copyBtn.empty();
           setIcon(copyBtn, 'copy');
           copyBtn.classList.remove('copied');
@@ -763,17 +765,17 @@ export class MessageRenderer {
     copyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       runRendererAction(async () => {
-        const activeWindow = copyBtn.ownerDocument.defaultView ?? window;
+        const ownerWindow = copyBtn.ownerDocument.defaultView ?? window;
         try {
           await navigator.clipboard.writeText(content);
         } catch {
           return;
         }
-        if (feedbackTimeout) activeWindow.clearTimeout(feedbackTimeout);
+        if (feedbackTimeout) ownerWindow.clearTimeout(feedbackTimeout);
         copyBtn.empty();
-        copyBtn.setText('copied!');
+        copyBtn.setText(preserveUiText('copied!'));
         copyBtn.classList.add('copied');
-        feedbackTimeout = activeWindow.setTimeout(() => {
+        feedbackTimeout = ownerWindow.setTimeout(() => {
           copyBtn.empty();
           setIcon(copyBtn, 'copy');
           copyBtn.classList.remove('copied');
@@ -835,8 +837,8 @@ export class MessageRenderer {
     const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < threshold;
     if (isNearBottom) {
-      const activeWindow = this.messagesEl.ownerDocument.defaultView ?? window;
-      activeWindow.requestAnimationFrame(() => {
+      const ownerWindow = this.messagesEl.ownerDocument.defaultView ?? window;
+      ownerWindow.requestAnimationFrame(() => {
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
       });
     }

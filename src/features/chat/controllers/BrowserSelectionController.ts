@@ -35,16 +35,16 @@ export class BrowserSelectionController {
 
   start(): void {
     if (this.pollInterval) return;
-    const activeWindow = this.inputEl.ownerDocument.defaultView ?? window;
-    this.pollInterval = activeWindow.setInterval(() => {
+    const ownerWindow = this.inputEl.ownerDocument.defaultView ?? window;
+    this.pollInterval = ownerWindow.setInterval(() => {
       void this.poll();
     }, BROWSER_SELECTION_POLL_INTERVAL);
   }
 
   stop(): void {
     if (this.pollInterval) {
-      const activeWindow = this.inputEl.ownerDocument.defaultView ?? window;
-      activeWindow.clearInterval(this.pollInterval);
+      const ownerWindow = this.inputEl.ownerDocument.defaultView ?? window;
+      ownerWindow.clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
     this.clear();

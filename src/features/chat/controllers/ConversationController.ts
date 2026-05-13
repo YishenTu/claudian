@@ -6,6 +6,7 @@ import type { Conversation } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { confirm } from '../../../shared/modals/ConfirmModal';
+import { preserveUiText } from '../../../utils/uiCopy';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { findRewindContext } from '../rewind';
@@ -695,7 +696,7 @@ export class ConversationController {
     if (!isCurrent) {
       if (openState === 'closed' && options.onOpenConversationInNewTab) {
         menu.addItem((menuItem) => menuItem
-          .setTitle('Open in New Tab')
+          .setTitle(preserveUiText('Open in New Tab'))
           .onClick(() => {
             void this.runHistoryAction(
               () => options.onOpenConversationInNewTab?.(conversationId, true),
@@ -703,7 +704,7 @@ export class ConversationController {
             );
           }));
         menu.addItem((menuItem) => menuItem
-          .setTitle('Open in Background Tab')
+          .setTitle(preserveUiText('Open in Background Tab'))
           .onClick(() => {
             void this.runHistoryAction(
               () => options.onOpenConversationInNewTab?.(conversationId, false),
@@ -712,7 +713,7 @@ export class ConversationController {
           }));
       } else if (openState === 'open') {
         menu.addItem((menuItem) => menuItem
-          .setTitle('Switch to Open Session')
+          .setTitle(preserveUiText('Switch to Open Session'))
           .onClick(() => {
             void this.runHistoryAction(
               () => options.onSelectConversation(conversationId),
@@ -759,7 +760,7 @@ export class ConversationController {
     const titleEl = item.querySelector('.claudian-history-item-title') as HTMLElement;
     if (!titleEl) return;
 
-    const input = document.createElement('input');
+    const input = item.ownerDocument.createElement('input');
     input.type = 'text';
     input.className = 'claudian-rename-input';
     input.value = currentTitle;

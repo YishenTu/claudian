@@ -1,6 +1,8 @@
 import type { App, TFile } from 'obsidian';
 import { TFolder } from 'obsidian';
 
+import { setNativeTimeout } from '../../utils/nativeTimers';
+
 export interface VaultFileCacheOptions {
   onLoadError?: (error: unknown) => void;
 }
@@ -18,7 +20,7 @@ export class VaultFileCache {
   initializeInBackground(): void {
     if (this.isInitialized) return;
 
-    setTimeout(() => {
+    setNativeTimeout(() => {
       this.tryRefreshFiles();
     }, 0);
   }
@@ -68,7 +70,7 @@ export class VaultFolderCache {
   initializeInBackground(): void {
     if (this.isInitialized) return;
 
-    setTimeout(() => {
+    setNativeTimeout(() => {
       this.tryRefreshFolders();
     }, 0);
   }

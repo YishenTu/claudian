@@ -6,9 +6,10 @@
  * - Clarification (agent asks question)
  * - Confirmation (final instruction review)
  */
-
 import type { App } from 'obsidian';
 import { Modal, TextAreaComponent } from 'obsidian';
+
+import { preserveUiText } from '../../utils/uiCopy';
 
 export type InstructionDecision = 'accept' | 'reject';
 
@@ -59,7 +60,7 @@ export class InstructionModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('claudian-instruction-modal');
-    this.setTitle('Add Custom Instruction');
+    this.setTitle(preserveUiText('Add Custom Instruction'));
 
     // User input section (always visible)
     const inputSection = contentEl.createDiv({ cls: 'claudian-instruction-section' });

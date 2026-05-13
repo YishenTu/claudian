@@ -11,6 +11,7 @@ import type {
 } from '../../../core/types';
 import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../../core/types';
 import { parseCommand } from '../../../utils/mcp';
+import { preserveUiText } from '../../../utils/uiCopy';
 
 export class McpServerModal extends Modal {
   private existingServer: ManagedMcpServer | null;
@@ -82,7 +83,7 @@ export class McpServerModal extends Modal {
       .addText((text) => {
         this.nameInputEl = text.inputEl;
         text.setValue(this.serverName);
-        text.setPlaceholder('my-mcp-server');
+        text.setPlaceholder(preserveUiText('my-mcp-server'));
         text.onChange((value) => {
           this.serverName = value;
         });
@@ -93,9 +94,9 @@ export class McpServerModal extends Modal {
       .setName('Type')
       .setDesc('Server connection type')
       .addDropdown((dropdown) => {
-        dropdown.addOption('stdio', 'stdio (local command)');
-        dropdown.addOption('sse', 'sse (Server-Sent Events)');
-        dropdown.addOption('http', 'http (HTTP endpoint)');
+        dropdown.addOption('stdio', preserveUiText('stdio (local command)'));
+        dropdown.addOption('sse', preserveUiText('sse (Server-Sent Events)'));
+        dropdown.addOption('http', preserveUiText('http (HTTP endpoint)'));
         dropdown.setValue(this.serverType);
         dropdown.onChange((value) => {
           this.serverType = value as McpServerType;
@@ -164,7 +165,7 @@ export class McpServerModal extends Modal {
       cls: 'claudian-mcp-cmd-textarea',
     });
     cmdTextarea.value = this.command;
-    cmdTextarea.placeholder = 'docker exec -i mcp-server python -m src.server';
+    cmdTextarea.placeholder = preserveUiText('docker exec -i mcp-server python -m src.server');
     cmdTextarea.rows = 2;
     cmdTextarea.addEventListener('input', () => {
       this.command = cmdTextarea.value;
@@ -172,14 +173,14 @@ export class McpServerModal extends Modal {
 
     const envSetting = new Setting(this.typeFieldsEl)
       .setName('Environment variables')
-      .setDesc('KEY=VALUE per line (optional)');
+      .setDesc(preserveUiText('KEY=VALUE per line (optional)'));
     envSetting.settingEl.addClass('claudian-mcp-env-setting');
 
     const envTextarea = envSetting.controlEl.createEl('textarea', {
       cls: 'claudian-mcp-env-textarea',
     });
     envTextarea.value = this.env;
-    envTextarea.placeholder = 'API_KEY=your-key';
+    envTextarea.placeholder = preserveUiText('API_KEY=your-key');
     envTextarea.rows = 2;
     envTextarea.addEventListener('input', () => {
       this.env = envTextarea.value;
@@ -194,7 +195,7 @@ export class McpServerModal extends Modal {
       .setDesc(this.serverType === 'sse' ? 'SSE endpoint URL' : 'HTTP endpoint URL')
       .addText((text) => {
         text.setValue(this.url);
-        text.setPlaceholder('http://localhost:3000/sse');
+        text.setPlaceholder(preserveUiText('http://localhost:3000/sse'));
         text.onChange((value) => {
           this.url = value;
         });
@@ -203,14 +204,14 @@ export class McpServerModal extends Modal {
 
     const headersSetting = new Setting(this.typeFieldsEl)
       .setName('Headers')
-      .setDesc('HTTP headers (KEY=VALUE per line)');
+      .setDesc(preserveUiText('HTTP headers (KEY=VALUE per line)'));
     headersSetting.settingEl.addClass('claudian-mcp-env-setting');
 
     const headersTextarea = headersSetting.controlEl.createEl('textarea', {
       cls: 'claudian-mcp-env-textarea',
     });
     headersTextarea.value = this.headers;
-    headersTextarea.placeholder = 'Authorization=Bearer token\nContent-Type=application/json';
+    headersTextarea.placeholder = preserveUiText('Authorization=Bearer token\nContent-Type=application/json');
     headersTextarea.rows = 3;
     headersTextarea.addEventListener('input', () => {
       this.headers = headersTextarea.value;

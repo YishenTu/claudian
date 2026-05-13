@@ -80,8 +80,8 @@ export class InlinePlanApproval {
     this.rootEl.setAttribute('tabindex', '0');
     this.rootEl.addEventListener('keydown', this.boundKeyDown);
 
-    const activeWindow = this.rootEl.ownerDocument.defaultView ?? window;
-    activeWindow.requestAnimationFrame(() => {
+    const ownerWindow = this.rootEl.ownerDocument.defaultView ?? window;
+    ownerWindow.requestAnimationFrame(() => {
       this.rootEl.focus();
       this.rootEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });

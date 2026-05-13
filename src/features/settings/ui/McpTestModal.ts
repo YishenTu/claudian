@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import { Modal, Notice, setIcon } from 'obsidian';
 
 import type { McpTestResult, McpTool } from '../../../core/mcp/McpTester';
+import { preserveUiText } from '../../../utils/uiCopy';
 
 function formatToggleError(error: unknown): string {
   if (!(error instanceof Error)) return 'Failed to update tool setting';
@@ -273,7 +274,7 @@ export class McpTestModal extends Modal {
     const allDisabled = this.disabledTools.size === this.result.tools.length;
 
     if (allEnabled) {
-      this.toggleAllBtn.setText('Disable All');
+      this.toggleAllBtn.setText(preserveUiText('Disable All'));
       this.toggleAllBtn.toggleClass('is-destructive', true);
     } else {
       this.toggleAllBtn.setText(allDisabled ? 'Enable All' : 'Enable All');

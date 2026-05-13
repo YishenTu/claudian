@@ -1,5 +1,6 @@
 import { createInterface } from 'readline';
 
+import { clearNativeTimeout, setNativeTimeout } from '../../../utils/nativeTimers';
 import type { CodexAppServerProcess } from './CodexAppServerProcess';
 import type { JsonRpcError } from './codexAppServerTypes';
 
@@ -38,7 +39,7 @@ export class CodexRpcTransport {
 
     return new Promise<T>((resolve, reject) => {
       const timer = timeoutMs > 0
-        ? setTimeout(() => {
+        ? setNativeTimeout(() => {
           this.pending.delete(id);
           reject(new Error(`Request timeout: ${method} (${timeoutMs}ms)`));
         }, timeoutMs)
@@ -117,7 +118,7 @@ export class CodexRpcTransport {
     if (!pending) return;
 
     this.pending.delete(id);
-    if (pending.timer) clearTimeout(pending.timer);
+    if (pending.timer) clearNativeTimeout(pending.timer);
 
     if (msg.error) {
       const err = msg.error as JsonRpcError;
@@ -159,7 +160,7 @@ export class CodexRpcTransport {
 
   private rejectAllPending(error: Error): void {
     for (const [, pending] of this.pending) {
-      if (pending.timer) clearTimeout(pending.timer);
+      if (pending.timer) clearNativeTimeout(pending.timer);
       pending.reject(error);
     }
     this.pending.clear();

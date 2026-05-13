@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 
 import type { StreamChunk, UsageInfo } from '../../../core/types/chat';
+import { setNativeTimeout } from '../../../utils/nativeTimers';
 import { findCodexSessionFile } from '../history/CodexHistoryStore';
 import {
   isCodexToolOutputError,
@@ -561,7 +562,7 @@ function buildUsageInfo(
 // ---------------------------------------------------------------------------
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(resolve => setNativeTimeout(resolve, ms));
 }
 
 export class CodexFileTailEngine {

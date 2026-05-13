@@ -208,8 +208,8 @@ export class ClaudianView extends ItemView {
 
   async onClose() {
     if (this.pendingTabBarUpdate !== null) {
-      const activeWindow = this.containerEl.ownerDocument.defaultView ?? window;
-      activeWindow.cancelAnimationFrame(this.pendingTabBarUpdate);
+      const ownerWindow = this.containerEl.ownerDocument.defaultView ?? window;
+      ownerWindow.cancelAnimationFrame(this.pendingTabBarUpdate);
       this.pendingTabBarUpdate = null;
     }
 
@@ -408,12 +408,12 @@ export class ClaudianView extends ItemView {
     if (!this.tabManager || !this.tabBar) return;
 
     // Debounce tab bar updates using requestAnimationFrame
-    const activeWindow = this.containerEl.ownerDocument.defaultView ?? window;
+    const ownerWindow = this.containerEl.ownerDocument.defaultView ?? window;
     if (this.pendingTabBarUpdate !== null) {
-      activeWindow.cancelAnimationFrame(this.pendingTabBarUpdate);
+      ownerWindow.cancelAnimationFrame(this.pendingTabBarUpdate);
     }
 
-    this.pendingTabBarUpdate = activeWindow.requestAnimationFrame(() => {
+    this.pendingTabBarUpdate = ownerWindow.requestAnimationFrame(() => {
       this.pendingTabBarUpdate = null;
       if (!this.tabManager || !this.tabBar) return;
 
@@ -464,6 +464,7 @@ export class ClaudianView extends ItemView {
     const svg = createProviderIconSvg(icon, {
       dataProvider: providerId,
       height: 18,
+      ownerDocument: this.logoEl.ownerDocument,
       width: 18,
     });
     this.logoEl.appendChild(svg);
@@ -645,13 +646,13 @@ export class ClaudianView extends ItemView {
   }
 
   private persistTabState(): void {
-    const activeWindow = this.containerEl.ownerDocument.defaultView ?? window;
+    const ownerWindow = this.containerEl.ownerDocument.defaultView ?? window;
 
     // Debounce persistence to avoid rapid writes (300ms delay)
     if (this.pendingPersist !== null) {
-      activeWindow.clearTimeout(this.pendingPersist);
+      ownerWindow.clearTimeout(this.pendingPersist);
     }
-    this.pendingPersist = activeWindow.setTimeout(() => {
+    this.pendingPersist = ownerWindow.setTimeout(() => {
       this.pendingPersist = null;
       if (!this.tabManager) return;
       const state = this.tabManager.getPersistedState();
@@ -665,8 +666,8 @@ export class ClaudianView extends ItemView {
   private async persistTabStateImmediate(): Promise<void> {
     // Cancel any pending debounced persist
     if (this.pendingPersist !== null) {
-      const activeWindow = this.containerEl.ownerDocument.defaultView ?? window;
-      activeWindow.clearTimeout(this.pendingPersist);
+      const ownerWindow = this.containerEl.ownerDocument.defaultView ?? window;
+      ownerWindow.clearTimeout(this.pendingPersist);
       this.pendingPersist = null;
     }
     if (!this.tabManager) return;

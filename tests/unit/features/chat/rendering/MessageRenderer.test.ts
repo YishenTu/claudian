@@ -955,7 +955,7 @@ describe('MessageRenderer', () => {
   });
 
   it('showFullImage creates overlay with image', () => {
-    const { renderer } = createRenderer();
+    const { renderer, messagesEl } = createRenderer();
     const image: ImageAttachment = {
       id: 'img-1',
       name: 'test.png',
@@ -965,18 +965,15 @@ describe('MessageRenderer', () => {
       source: 'file',
     };
 
-    // Mock document.body.createDiv (document may not exist in node env)
     const overlayEl = createMockEl();
     const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
-    const origDocument = globalThis.document;
-    (globalThis as any).document = { body: mockBody, addEventListener: jest.fn(), removeEventListener: jest.fn() };
+    messagesEl.ownerDocument.body = mockBody;
+    messagesEl.ownerDocument.addEventListener = jest.fn();
+    messagesEl.ownerDocument.removeEventListener = jest.fn();
 
-    try {
-      renderer.showFullImage(image);
-      expect(mockBody.createDiv).toHaveBeenCalledWith({ cls: 'claudian-image-modal-overlay' });
-    } finally {
-      (globalThis as any).document = origDocument;
-    }
+    renderer.showFullImage(image);
+
+    expect(mockBody.createDiv).toHaveBeenCalledWith({ cls: 'claudian-image-modal-overlay' });
   });
 
   // ============================================
@@ -1394,33 +1391,40 @@ describe('MessageRenderer', () => {
       source: 'file',
     };
 
-    function setupDocumentMock() {
+    function setupDocumentMock(messagesEl: any) {
       const overlayEl = createMockEl();
       const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
       const docListeners = new Map<string, ((...args: any[]) => void)[]>();
-      const origDocument = globalThis.document;
+      const ownerDocument = messagesEl.ownerDocument;
+      const origBody = ownerDocument.body;
+      const origAddEventListener = ownerDocument.addEventListener;
+      const origRemoveEventListener = ownerDocument.removeEventListener;
 
-      (globalThis as any).document = {
-        body: mockBody,
-        addEventListener: jest.fn((event: string, handler: (...args: any[]) => void) => {
-          if (!docListeners.has(event)) docListeners.set(event, []);
-          docListeners.get(event)!.push(handler);
-        }),
-        removeEventListener: jest.fn((event: string, handler: (...args: any[]) => void) => {
-          const handlers = docListeners.get(event);
-          if (handlers) {
-            const idx = handlers.indexOf(handler);
-            if (idx !== -1) handlers.splice(idx, 1);
-          }
-        }),
+      ownerDocument.body = mockBody;
+      ownerDocument.addEventListener = jest.fn((event: string, handler: (...args: any[]) => void) => {
+        if (!docListeners.has(event)) docListeners.set(event, []);
+        docListeners.get(event)!.push(handler);
+      });
+      ownerDocument.removeEventListener = jest.fn((event: string, handler: (...args: any[]) => void) => {
+        const handlers = docListeners.get(event);
+        if (handlers) {
+          const idx = handlers.indexOf(handler);
+          if (idx !== -1) handlers.splice(idx, 1);
+        }
+      });
+
+      const restore = () => {
+        ownerDocument.body = origBody;
+        ownerDocument.addEventListener = origAddEventListener;
+        ownerDocument.removeEventListener = origRemoveEventListener;
       };
 
-      return { overlayEl, docListeners, origDocument };
+      return { overlayEl, docListeners, ownerDocument, restore };
     }
 
     it('closeBtn click removes overlay', () => {
-      const { renderer } = createRenderer();
-      const { overlayEl, origDocument } = setupDocumentMock();
+      const { renderer, messagesEl } = createRenderer();
+      const { overlayEl, restore } = setupDocumentMock(messagesEl);
 
       try {
         renderer.showFullImage(image);
@@ -1436,13 +1440,13 @@ describe('MessageRenderer', () => {
 
         expect(removeSpy).toHaveBeenCalled();
       } finally {
-        (globalThis as any).document = origDocument;
+        restore();
       }
     });
 
     it('clicking overlay background removes overlay', () => {
-      const { renderer } = createRenderer();
-      const { overlayEl, origDocument } = setupDocumentMock();
+      const { renderer, messagesEl } = createRenderer();
+      const { overlayEl, restore } = setupDocumentMock(messagesEl);
 
       try {
         renderer.showFullImage(image);
@@ -1456,13 +1460,13 @@ describe('MessageRenderer', () => {
 
         expect(removeSpy).toHaveBeenCalled();
       } finally {
-        (globalThis as any).document = origDocument;
+        restore();
       }
     });
 
     it('ESC key removes overlay', () => {
-      const { renderer } = createRenderer();
-      const { overlayEl, docListeners, origDocument } = setupDocumentMock();
+      const { renderer, messagesEl } = createRenderer();
+      const { overlayEl, docListeners, ownerDocument, restore } = setupDocumentMock(messagesEl);
 
       try {
         renderer.showFullImage(image);
@@ -1477,9 +1481,9 @@ describe('MessageRenderer', () => {
 
         expect(removeSpy).toHaveBeenCalled();
         // After close, the keydown handler should be removed
-        expect(document.removeEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
+        expect(ownerDocument.removeEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
       } finally {
-        (globalThis as any).document = origDocument;
+        restore();
       }
     });
   });

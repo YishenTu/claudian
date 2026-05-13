@@ -4,6 +4,7 @@ import { setIcon } from 'obsidian';
 import { buildExternalContextDisplayEntries } from '../../utils/externalContext';
 import { type ExternalContextFile, externalContextScanner } from '../../utils/externalContextScanner';
 import { extractMcpMentions } from '../../utils/mcp';
+import { clearNativeTimeout, setNativeTimeout } from '../../utils/nativeTimers';
 import { SelectableDropdown } from '../components/SelectableDropdown';
 import { appendMcpIcon } from '../icons';
 import {
@@ -86,7 +87,7 @@ export class MentionDropdownController {
     const externalContexts = this.callbacks.getExternalContexts() || [];
     if (externalContexts.length === 0) return;
 
-    setTimeout(() => {
+    setNativeTimeout(() => {
       try {
         externalContextScanner.scanPaths(externalContexts);
       } catch {
@@ -110,7 +111,7 @@ export class MentionDropdownController {
 
   destroy(): void {
     if (this.debounceTimer !== null) {
-      clearTimeout(this.debounceTimer);
+      clearNativeTimeout(this.debounceTimer);
     }
     this.dropdown.destroy();
   }
@@ -132,10 +133,10 @@ export class MentionDropdownController {
 
   handleInputChange(): void {
     if (this.debounceTimer !== null) {
-      clearTimeout(this.debounceTimer);
+      clearNativeTimeout(this.debounceTimer);
     }
 
-    this.debounceTimer = setTimeout(() => {
+    this.debounceTimer = setNativeTimeout(() => {
       const text = this.inputEl.value;
       this.updateMcpMentionsFromText(text);
 
@@ -516,9 +517,10 @@ export class MentionDropdownController {
     const dropdownEl = this.dropdown.getElement();
     if (!dropdownEl) return;
 
+    const ownerWindow = this.inputEl.ownerDocument.defaultView ?? window;
     const inputRect = this.inputEl.getBoundingClientRect();
     dropdownEl.setCssProps({
-      '--claudian-fixed-dropdown-bottom': `${window.innerHeight - inputRect.top + 4}px`,
+      '--claudian-fixed-dropdown-bottom': `${ownerWindow.innerHeight - inputRect.top + 4}px`,
       '--claudian-fixed-dropdown-left': `${inputRect.left}px`,
       '--claudian-fixed-dropdown-width': `${Math.max(inputRect.width, 280)}px`,
     });

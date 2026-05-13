@@ -25,7 +25,9 @@ import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { getEnhancedPath } from '../../../utils/env';
+import { clearNativeTimeout, setNativeTimeout } from '../../../utils/nativeTimers';
 import { getVaultPath } from '../../../utils/path';
+import { preserveUiText } from '../../../utils/uiCopy';
 import { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import { CanvasSelectionController } from '../controllers/CanvasSelectionController';
 import { ConversationController } from '../controllers/ConversationController';
@@ -479,7 +481,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   const inputEl = inputWrapper.createEl('textarea', {
     cls: 'claudian-input',
     attr: {
-      placeholder: 'How can I help you today?',
+      placeholder: preserveUiText('How can I help you today?'),
       rows: '3',
       dir: 'auto',
     },
@@ -987,9 +989,8 @@ export interface ForkContext {
 }
 
 function deepCloneMessages(messages: ChatMessage[]): ChatMessage[] {
-  const sc = (globalThis as unknown as { structuredClone?: <T>(value: T) => T }).structuredClone;
-  if (typeof sc === 'function') {
-    return sc(messages);
+  if (typeof structuredClone === 'function') {
+    return structuredClone(messages);
   }
   return JSON.parse(JSON.stringify(messages)) as ChatMessage[];
 }
@@ -1497,7 +1498,7 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
   const scrollHandler = () => {
     if (!isAutoScrollAllowed()) {
       if (reEnableTimeout) {
-        clearTimeout(reEnableTimeout);
+        clearNativeTimeout(reEnableTimeout);
         reEnableTimeout = null;
       }
       state.autoScrollEnabled = false;
@@ -1510,14 +1511,14 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     if (!isAtBottom) {
       // Immediately disable when user scrolls up
       if (reEnableTimeout) {
-        clearTimeout(reEnableTimeout);
+        clearNativeTimeout(reEnableTimeout);
         reEnableTimeout = null;
       }
       state.autoScrollEnabled = false;
     } else if (!state.autoScrollEnabled) {
       // Debounce re-enabling to avoid bounce during scroll animation
       if (!reEnableTimeout) {
-        reEnableTimeout = setTimeout(() => {
+        reEnableTimeout = setNativeTimeout(() => {
           reEnableTimeout = null;
           // Re-verify position before enabling (content may have changed)
           const { scrollTop, scrollHeight, clientHeight } = dom.messagesEl;
@@ -1531,7 +1532,7 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
   dom.messagesEl.addEventListener('scroll', scrollHandler, { passive: true });
   dom.eventCleanups.push(() => {
     dom.messagesEl.removeEventListener('scroll', scrollHandler);
-    if (reEnableTimeout) clearTimeout(reEnableTimeout);
+    if (reEnableTimeout) clearNativeTimeout(reEnableTimeout);
   });
 }
 

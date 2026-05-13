@@ -1,5 +1,6 @@
 // Must run before any SDK imports to patch Electron/Node.js realm incompatibility
 import { patchSetMaxListenersForElectron } from './utils/electronCompat';
+import { preserveUiText } from './utils/uiCopy';
 patchSetMaxListenersForElectron();
 
 import './providers';
@@ -61,7 +62,7 @@ export default class ClaudianPlugin extends Plugin {
       (leaf) => new ClaudianView(leaf, this)
     );
 
-    this.addRibbonIcon('bot', 'Open Claudian', () => {
+    this.addRibbonIcon('bot', preserveUiText('Open Claudian'), () => {
       this.activateView();
     });
 
@@ -81,7 +82,7 @@ export default class ClaudianPlugin extends Plugin {
           ? ctx
           : this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view) {
-          new Notice('Inline edit unavailable: could not access the active markdown view.');
+          new Notice(preserveUiText('Inline edit unavailable: could not access the active markdown view.'));
           return;
         }
 

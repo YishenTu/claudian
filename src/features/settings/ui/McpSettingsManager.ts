@@ -6,6 +6,7 @@ import { testMcpServer } from '../../../core/mcp/McpTester';
 import type { AppMcpStorage } from '../../../core/providers/types';
 import type { ManagedMcpServer, McpServerConfig, McpServerType } from '../../../core/types';
 import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../../core/types';
+import { preserveUiText } from '../../../utils/uiCopy';
 import { McpServerModal } from './McpServerModal';
 import { McpTestModal } from './McpTestModal';
 
@@ -79,13 +80,13 @@ export class McpSettingsManager {
       dropdown.toggleClass('is-visible', !dropdown.hasClass('is-visible'));
     });
 
-    document.addEventListener('click', () => {
+    this.containerEl.ownerDocument.addEventListener('click', () => {
       dropdown.removeClass('is-visible');
     });
 
     if (this.servers.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-mcp-empty' });
-      emptyEl.setText('No MCP servers configured. Click "Add" to add one.');
+      emptyEl.setText(preserveUiText('No MCP servers configured. Click "Add" to add one.'));
       return;
     }
 
@@ -263,7 +264,7 @@ export class McpSettingsManager {
 
       const parsed = tryParseClipboardConfig(text);
       if (!parsed || parsed.servers.length === 0) {
-        new Notice('No valid MCP configuration found in clipboard');
+        new Notice(preserveUiText('No valid MCP configuration found in clipboard'));
         return;
       }
 
@@ -347,7 +348,7 @@ export class McpSettingsManager {
     }
 
     if (added.length === 0) {
-      new Notice('No new MCP servers imported');
+      new Notice(preserveUiText('No new MCP servers imported'));
       return;
     }
 
