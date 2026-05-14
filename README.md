@@ -35,7 +35,15 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 ## Installation
 
-### From GitHub Release (recommended)
+### From Obsidian Community Plugins (recommended)
+
+1. Open Obsidian → Settings → Community plugins → Browse
+2. Search for "Claudian" and click Install
+3. Enable the plugin
+
+Or install directly from the [community plugin page](https://community.obsidian.md/plugins/realclaudian).
+
+### From GitHub Release
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/YishenTu/claudian/releases/latest)
 2. Create a folder called `claudian` in your vault's plugins folder:
@@ -45,19 +53,6 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 3. Copy the downloaded files into the `claudian` folder
 4. Enable the plugin in Obsidian:
    - Settings → Community plugins → Enable "Claudian"
-
-### Using BRAT
-
-[BRAT](https://github.com/TfTHacker/obsidian42-brat) (Beta Reviewers Auto-update Tester) allows you to install and automatically update plugins directly from GitHub.
-
-1. Install the BRAT plugin from Obsidian Community Plugins
-2. Enable BRAT in Settings → Community plugins
-3. Open BRAT settings and click "Add Beta plugin"
-4. Enter the repository URL: `https://github.com/YishenTu/claudian`
-5. Click "Add Plugin" and BRAT will install Claudian automatically
-6. Enable Claudian in Settings → Community plugins
-
-> **Tip**: BRAT will automatically check for updates and notify you when a new version is available.
 
 ### From source (development)
 
@@ -86,8 +81,6 @@ npm run dev
 # Production build
 npm run build
 ```
-
-> **Tip**: Copy `.env.local.example` to `.env.local` or `npm install` and setup your vault path to auto-copy files during development.
 
 ## Privacy & Data Use
 
