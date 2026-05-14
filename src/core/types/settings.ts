@@ -119,6 +119,7 @@ export interface ClaudianSettings {
 
   // UI settings
   keyboardNavigation: KeyboardNavigationSettings;
+  requireCommandOrControlEnterToSend: boolean;
 
   // Internationalization
   locale: string;

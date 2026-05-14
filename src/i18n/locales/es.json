@@ -112,6 +112,10 @@
       "name": "Mapeos de navegación estilo Vim",
       "desc": "Un mapeo por línea. Formato: \"map <tecla> <acción>\" (acciones: scrollUp, scrollDown, focusInput)."
     },
+    "requireCommandOrControlEnterToSend": {
+      "name": "Requerir Command/Ctrl+Enter para enviar",
+      "desc": "Cuando está activado, Enter inserta un salto de línea. Command+Enter envía en macOS; Ctrl+Enter envía en Windows y Linux."
+    },
     "hotkeys": "Atajos de teclado",
     "inlineEditHotkey": {
       "name": "Edición en línea",

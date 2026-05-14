@@ -112,6 +112,10 @@
       "name": "Vim-style navigation mappings",
       "desc": "One mapping per line. Format: \"map <key> <action>\" (actions: scrollUp, scrollDown, focusInput)."
     },
+    "requireCommandOrControlEnterToSend": {
+      "name": "Require Command/Ctrl+Enter to send",
+      "desc": "When enabled, Enter inserts a newline. Command+Enter sends on macOS; Ctrl+Enter sends on Windows and Linux."
+    },
     "hotkeys": "Hotkeys",
     "inlineEditHotkey": {
       "name": "Inline Edit",

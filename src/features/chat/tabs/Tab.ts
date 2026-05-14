@@ -1,5 +1,5 @@
 import type { Component } from 'obsidian';
-import { Notice } from 'obsidian';
+import { Notice, Platform } from 'obsidian';
 
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
@@ -20,7 +20,7 @@ import {
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { AutoTurnResult } from '../../../core/runtime/types';
 import { TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
-import type { ChatMessage, Conversation, StreamChunk } from '../../../core/types';
+import type { ChatMessage, ClaudianSettings, Conversation, StreamChunk } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -167,6 +167,25 @@ function getTabHiddenCommands(
     plugin.settings,
     getTabProviderId(tab, plugin, conversation),
   );
+}
+
+function shouldSendMessageFromEnterKey(
+  e: KeyboardEvent,
+  settings: Pick<ClaudianSettings, 'requireCommandOrControlEnterToSend'>,
+): boolean {
+  if (e.key !== 'Enter' || e.shiftKey || e.isComposing) {
+    return false;
+  }
+
+  if (settings.requireCommandOrControlEnterToSend !== true) {
+    return true;
+  }
+
+  if (Platform.isMacOS) {
+    return e.metaKey === true && !e.ctrlKey && !e.altKey;
+  }
+
+  return e.ctrlKey === true && !e.metaKey && !e.altKey;
 }
 
 type ProviderCatalogInfo = {
@@ -1462,7 +1481,7 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
       return;
     }
 
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    if (shouldSendMessageFromEnterKey(e, plugin.settings)) {
       e.preventDefault();
       void controllers.inputController?.sendMessage();
     }

@@ -91,6 +91,8 @@ export type TranslationKey =
   | 'settings.titleModel.auto'
   | 'settings.navMappings.name'
   | 'settings.navMappings.desc'
+  | 'settings.requireCommandOrControlEnterToSend.name'
+  | 'settings.requireCommandOrControlEnterToSend.desc'
 
   // Settings - Hotkeys
   | 'settings.hotkeys'

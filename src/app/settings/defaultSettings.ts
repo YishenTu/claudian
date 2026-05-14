@@ -28,6 +28,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
     scrollDownKey: 's',
     focusInputKey: 'i',
   },
+  requireCommandOrControlEnterToSend: false,
 
   locale: 'en',
 
