@@ -107,6 +107,10 @@
       "name": "Vim-Style Navigationszuordnungen",
       "desc": "Eine Zuordnung pro Zeile. Format: \"map <Taste> <Aktion>\" (Aktionen: scrollUp, scrollDown, focusInput)."
     },
+    "requireCommandOrControlEnterToSend": {
+      "name": "Command/Ctrl+Enter zum Senden erfordern",
+      "desc": "Wenn aktiviert, fügt Enter einen Zeilenumbruch ein. Command+Enter sendet unter macOS; Ctrl+Enter sendet unter Windows und Linux."
+    },
     "hotkeys": "Tastenkürzel",
     "inlineEditHotkey": {
       "name": "Inline-Bearbeitung",

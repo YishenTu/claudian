@@ -413,6 +413,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
     new Setting(container).setName(t('settings.input')).setHeading();
 
     new Setting(container)
+      .setName(t('settings.requireCommandOrControlEnterToSend.name'))
+      .setDesc(t('settings.requireCommandOrControlEnterToSend.desc'))
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.requireCommandOrControlEnterToSend ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.requireCommandOrControlEnterToSend = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(container)
       .setName(t('settings.navMappings.name'))
       .setDesc(t('settings.navMappings.desc'))
       .addTextArea((text) => {

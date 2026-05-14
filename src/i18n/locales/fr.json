@@ -107,6 +107,10 @@
       "name": "Mappages de navigation style Vim",
       "desc": "Un mappage par ligne. Format : \"map <touche> <action>\" (actions : scrollUp, scrollDown, focusInput)."
     },
+    "requireCommandOrControlEnterToSend": {
+      "name": "Exiger Command/Ctrl+Entrée pour envoyer",
+      "desc": "Lorsque cette option est activée, Entrée insère une nouvelle ligne. Command+Entrée envoie sur macOS ; Ctrl+Entrée envoie sur Windows et Linux."
+    },
     "hotkeys": "Raccourcis clavier",
     "inlineEditHotkey": {
       "name": "Édition en ligne",

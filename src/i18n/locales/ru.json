@@ -107,6 +107,10 @@
       "name": "Сопоставления навигации в стиле Vim",
       "desc": "По одному сопоставлению в строке. Формат: \"map <ключ> <действие>\" (действия: scrollUp, scrollDown, focusInput)."
     },
+    "requireCommandOrControlEnterToSend": {
+      "name": "Требовать Command/Ctrl+Enter для отправки",
+      "desc": "Если включено, Enter вставляет новую строку. Command+Enter отправляет на macOS; Ctrl+Enter отправляет на Windows и Linux."
+    },
     "hotkeys": "Горячие клавиши",
     "inlineEditHotkey": {
       "name": "Инлайн-редактирование",

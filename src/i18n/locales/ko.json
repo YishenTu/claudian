@@ -107,6 +107,10 @@
       "name": "Vim 스타일 네비게이션 매핑",
       "desc": "한 줄에 하나의 매핑. 형식: \"map <키> <동작>\" (동작: scrollUp, scrollDown, focusInput)."
     },
+    "requireCommandOrControlEnterToSend": {
+      "name": "Command/Ctrl+Enter로 보내기 필수",
+      "desc": "활성화하면 Enter는 줄바꿈을 삽입합니다. macOS에서는 Command+Enter, Windows와 Linux에서는 Ctrl+Enter로 보냅니다."
+    },
     "hotkeys": "단축키",
     "inlineEditHotkey": {
       "name": "인라인 편집",

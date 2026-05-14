@@ -107,6 +107,10 @@
       "name": "Vim 風格導航映射",
       "desc": "每行一個映射。格式：\"map <鍵> <動作>\"（動作：scrollUp, scrollDown, focusInput）。"
     },
+    "requireCommandOrControlEnterToSend": {
+      "name": "需要 Command/Ctrl+Enter 才能傳送",
+      "desc": "啟用後，Enter 會插入換行。macOS 使用 Command+Enter 傳送；Windows 和 Linux 使用 Ctrl+Enter 傳送。"
+    },
     "hotkeys": "快捷鍵",
     "inlineEditHotkey": {
       "name": "內嵌編輯",

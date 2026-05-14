@@ -82,6 +82,7 @@ describe('types.ts', () => {
 
         persistentExternalContextPaths: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
+        requireCommandOrControlEnterToSend: false,
         locale: 'en',
         providerConfigs: {},
         claudeCliPath: '',
@@ -134,6 +135,7 @@ describe('types.ts', () => {
 
         persistentExternalContextPaths: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
+        requireCommandOrControlEnterToSend: false,
         locale: 'zh-CN',
         providerConfigs: {},
         claudeCliPath: '',
@@ -187,6 +189,7 @@ describe('types.ts', () => {
 
         persistentExternalContextPaths: [],
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
+        requireCommandOrControlEnterToSend: true,
         locale: 'en',
         providerConfigs: {},
         claudeCliPath: '',
