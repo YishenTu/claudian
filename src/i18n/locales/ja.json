@@ -24,10 +24,15 @@
   "chat": {
     "rewind": {
       "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更が元に戻されます。手動またはbashで編集されたファイルには影響しません。",
+      "confirmMessageConversationOnly": "会話をこの時点に巻き戻しますか？ファイル変更は保持されます。",
       "confirmButton": "巻き戻す",
       "ariaLabel": "ここに巻き戻す",
+      "menuConversationOnly": "会話のみ巻き戻す",
+      "menuCodeAndConversation": "コード + 会話を巻き戻す",
       "notice": "巻き戻し完了：{count} 個のファイルを復元",
+      "noticeConversationOnly": "会話を巻き戻しました。ファイル変更は保持されました",
       "noticeSaveFailed": "巻き戻し完了：{count} 個のファイルを復元しましたが、状態を保存できませんでした：{error}",
+      "noticeConversationOnlySaveFailed": "会話を巻き戻しましたが、状態を保存できませんでした：{error}",
       "failed": "巻き戻しに失敗：{error}",
       "cannot": "巻き戻しできません：{error}",
       "unavailableStreaming": "ストリーミング中は巻き戻しできません",

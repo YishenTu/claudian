@@ -92,6 +92,8 @@ export interface ChatRewindResult {
   deletions?: number;
 }
 
+export type ChatRewindMode = 'conversation' | 'code-and-conversation';
+
 export interface SubagentRuntimeState {
   hasRunning: boolean;
 }

@@ -24,10 +24,15 @@
   "chat": {
     "rewind": {
       "confirmMessage": "Rembobiner jusqu'à ce point ? Les modifications de fichiers après ce message seront annulées. Le rembobinage n'affecte pas les fichiers modifiés manuellement ou via bash.",
+      "confirmMessageConversationOnly": "Rembobiner la conversation jusqu'à ce point ? Les modifications de fichiers seront conservées.",
       "confirmButton": "Rembobiner",
       "ariaLabel": "Rembobiner jusqu'ici",
+      "menuConversationOnly": "Rembobiner la conversation seule",
+      "menuCodeAndConversation": "Rembobiner code + conversation",
       "notice": "Rembobiné : {count} fichier(s) restauré(s)",
+      "noticeConversationOnly": "Conversation rembobinée ; modifications de fichiers conservées",
       "noticeSaveFailed": "Rembobiné : {count} fichier(s) restauré(s), mais impossible d'enregistrer l'état : {error}",
+      "noticeConversationOnlySaveFailed": "Conversation rembobinée, mais impossible d'enregistrer l'état : {error}",
       "failed": "Échec du rembobinage : {error}",
       "cannot": "Impossible de rembobiner : {error}",
       "unavailableStreaming": "Impossible de rembobiner pendant le streaming",

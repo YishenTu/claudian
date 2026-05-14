@@ -3523,6 +3523,22 @@ describe('ClaudianService', () => {
   });
 
   describe('rewind', () => {
+    it('conversation-only mode skips SDK file rewind and prepares resume checkpoint', async () => {
+      const mockRewindFiles = jest.fn();
+      const mockInterrupt = jest.fn().mockResolvedValue(undefined);
+      (service as any).persistentQuery = { rewindFiles: mockRewindFiles, interrupt: mockInterrupt };
+      (service as any).messageChannel = { close: jest.fn() };
+      (service as any).queryAbortController = { abort: jest.fn() };
+      (service as any).shuttingDown = false;
+
+      const result = await service.rewind('user-uuid', 'assistant-uuid', 'conversation');
+
+      expect(mockRewindFiles).not.toHaveBeenCalled();
+      expect(result).toEqual({ canRewind: true, filesChanged: [] });
+      expect((service as any).pendingResumeAt).toBe('assistant-uuid');
+      expect((service as any).persistentQuery).toBeNull();
+    });
+
     it('dry-runs first to capture filesChanged, then performs actual rewind', async () => {
       // SDK only returns filesChanged on dry run, not on actual rewind
       const mockRewindFiles = jest.fn()

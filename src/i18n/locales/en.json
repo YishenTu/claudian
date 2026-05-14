@@ -24,10 +24,15 @@
   "chat": {
     "rewind": {
       "confirmMessage": "Rewind to this point? File changes after this message will be reverted. Rewinding does not affect files edited manually or via bash.",
+      "confirmMessageConversationOnly": "Rewind conversation to this point? File changes will be kept.",
       "confirmButton": "Rewind",
       "ariaLabel": "Rewind to here",
+      "menuConversationOnly": "Rewind conversation only",
+      "menuCodeAndConversation": "Rewind code + conversation",
       "notice": "Rewound: {count} file(s) reverted",
+      "noticeConversationOnly": "Rewound conversation; file changes kept",
       "noticeSaveFailed": "Rewound: {count} file(s) reverted, but failed to save state: {error}",
+      "noticeConversationOnlySaveFailed": "Rewound conversation, but failed to save state: {error}",
       "failed": "Rewind failed: {error}",
       "cannot": "Cannot rewind: {error}",
       "unavailableStreaming": "Cannot rewind while streaming",

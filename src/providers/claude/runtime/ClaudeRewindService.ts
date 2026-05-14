@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { ChatRewindResult } from '../../../core/runtime/types';
+import type { ChatRewindMode, ChatRewindResult } from '../../../core/runtime/types';
 
 interface BackupEntryFile {
   originalPath: string;
@@ -33,6 +33,7 @@ export interface ClaudeRewindBackup {
 
 export interface ExecuteClaudeRewindDeps {
   assistantMessageId: string;
+  mode: ChatRewindMode;
   rewindFiles: (userMessageId: string, dryRun?: boolean) => Promise<RewindFilesResult>;
   closePersistentQuery: (reason: string) => void;
   setPendingResumeAt: (assistantMessageId: string) => void;
@@ -168,6 +169,12 @@ export async function executeClaudeRewind(
   userMessageId: string,
   deps: ExecuteClaudeRewindDeps,
 ): Promise<ChatRewindResult> {
+  if (deps.mode === 'conversation') {
+    deps.setPendingResumeAt(deps.assistantMessageId);
+    deps.closePersistentQuery('conversation rewind');
+    return { canRewind: true, filesChanged: [] };
+  }
+
   const preview = await deps.rewindFiles(userMessageId, true);
   if (!preview.canRewind) {
     return preview;

@@ -2,6 +2,7 @@ import { Menu, Notice, setIcon } from 'obsidian';
 
 import type { TitleGenerationService } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
+import type { ChatRewindMode } from '../../../core/runtime/types';
 import type { Conversation } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
@@ -270,7 +271,10 @@ export class ConversationController {
     }
   }
 
-  async rewind(userMessageId: string): Promise<void> {
+  async rewind(
+    userMessageId: string,
+    mode: ChatRewindMode = 'code-and-conversation',
+  ): Promise<void> {
     const { plugin, state, renderer } = this.deps;
 
     const agentServiceForCheck = this.getAgentService();
@@ -305,7 +309,9 @@ export class ConversationController {
 
     const confirmed = await confirm(
       plugin.app,
-      t('chat.rewind.confirmMessage'),
+      mode === 'conversation'
+        ? t('chat.rewind.confirmMessageConversationOnly')
+        : t('chat.rewind.confirmMessage'),
       t('chat.rewind.confirmButton')
     );
     if (!confirmed) return;
@@ -323,7 +329,7 @@ export class ConversationController {
 
     let result;
     try {
-      result = await agentService.rewind(userMsg.userMessageId, prevAssistantUuid);
+      result = await agentService.rewind(userMsg.userMessageId, prevAssistantUuid, mode);
     } catch (e) {
       new Notice(t('chat.rewind.failed', { error: e instanceof Error ? e.message : 'Unknown error' }));
       return;
@@ -352,11 +358,19 @@ export class ConversationController {
     }
 
     if (saveError) {
-      new Notice(t('chat.rewind.noticeSaveFailed', { count: String(filesChanged), error: saveError }));
+      new Notice(
+        mode === 'conversation'
+          ? t('chat.rewind.noticeConversationOnlySaveFailed', { error: saveError })
+          : t('chat.rewind.noticeSaveFailed', { count: String(filesChanged), error: saveError })
+      );
       return;
     }
 
-    new Notice(t('chat.rewind.notice', { count: String(filesChanged) }));
+    new Notice(
+      mode === 'conversation'
+        ? t('chat.rewind.noticeConversationOnly')
+        : t('chat.rewind.notice', { count: String(filesChanged) })
+    );
   }
 
   /**

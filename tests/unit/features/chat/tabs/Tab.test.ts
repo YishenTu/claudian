@@ -201,7 +201,7 @@ let mockSelectionController: ReturnType<typeof createMockSelectionController>;
 let mockBrowserSelectionController: ReturnType<typeof createMockBrowserSelectionController>;
 let mockCanvasSelectionController: ReturnType<typeof createMockCanvasSelectionController>;
 let mockStreamController: { onAsyncSubagentStateChange: jest.Mock };
-let mockConversationController: { save: jest.Mock };
+let mockConversationController: { save: jest.Mock; rewind: jest.Mock };
 let mockInputController: ReturnType<typeof createMockInputController>;
 let mockNavigationController: { initialize: jest.Mock; dispose: jest.Mock };
 
@@ -342,7 +342,10 @@ jest.mock('@/features/chat/controllers/StreamController', () => ({
 
 jest.mock('@/features/chat/controllers/ConversationController', () => ({
   ConversationController: jest.fn().mockImplementation(() => {
-    mockConversationController = { save: jest.fn().mockResolvedValue(undefined) };
+    mockConversationController = {
+      save: jest.fn().mockResolvedValue(undefined),
+      rewind: jest.fn().mockResolvedValue(undefined),
+    };
     return mockConversationController;
   }),
 }));
@@ -1787,6 +1790,23 @@ describe('Tab - Controller Initialization', () => {
       initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
 
       expect(tab.controllers.conversationController).toBeDefined();
+    });
+
+    it('should forward rewind mode from renderer to ConversationController', async () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      const { MessageRenderer } = jest.requireMock('@/features/chat/rendering/MessageRenderer') as { MessageRenderer: jest.Mock };
+      const lastCall = MessageRenderer.mock.calls[MessageRenderer.mock.calls.length - 1];
+      const rewindCallback = lastCall[3];
+
+      await rewindCallback('message-1', 'conversation');
+
+      expect(mockConversationController.rewind).toHaveBeenCalledWith('message-1', 'conversation');
     });
 
     it('should create InputController', () => {

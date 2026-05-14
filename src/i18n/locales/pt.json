@@ -24,10 +24,15 @@
   "chat": {
     "rewind": {
       "confirmMessage": "Retroceder até este ponto? As alterações de arquivos após esta mensagem serão revertidas. O retrocesso não afeta arquivos editados manualmente ou via bash.",
+      "confirmMessageConversationOnly": "Retroceder a conversa até este ponto? As alterações de arquivos serão mantidas.",
       "confirmButton": "Retroceder",
       "ariaLabel": "Retroceder até aqui",
+      "menuConversationOnly": "Retroceder somente conversa",
+      "menuCodeAndConversation": "Retroceder código + conversa",
       "notice": "Retrocedido: {count} arquivo(s) revertido(s)",
+      "noticeConversationOnly": "Conversa retrocedida; alterações de arquivos mantidas",
       "noticeSaveFailed": "Retrocedido: {count} arquivo(s) revertido(s), mas não foi possível salvar o estado: {error}",
+      "noticeConversationOnlySaveFailed": "Conversa retrocedida, mas não foi possível salvar o estado: {error}",
       "failed": "Falha ao retroceder: {error}",
       "cannot": "Não é possível retroceder: {error}",
       "unavailableStreaming": "Não é possível retroceder durante a transmissão",

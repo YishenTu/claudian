@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { createMockEl } from '@test/helpers/mockElement';
+import { Menu } from 'obsidian';
 
 import {
   TOOL_AGENT_OUTPUT,
@@ -85,6 +86,7 @@ function createRenderer(messagesEl?: any, providerId: 'claude' | 'codex' = 'clau
 describe('MessageRenderer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (Menu as typeof Menu & { instances: unknown[] }).instances.length = 0;
   });
 
   // ============================================
@@ -340,7 +342,7 @@ describe('MessageRenderer', () => {
     expect(messagesEl.querySelector('.claudian-message-rewind-btn')).toBeNull();
   });
 
-  it('adds a rewind button for eligible streamed user messages via refreshActionButtons', () => {
+  it('shows rewind mode menu for eligible streamed user messages', async () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
     const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any, createMockComponent() as any, messagesEl, rewindCallback, undefined, mockCapabilities());
@@ -367,7 +369,16 @@ describe('MessageRenderer', () => {
     expect(btn).not.toBeNull();
 
     btn!.click();
-    expect(rewindCallback).toHaveBeenCalledWith('u1');
+    const menu = (Menu as typeof Menu & { instances: any[] }).instances[0];
+    expect(menu.items.map((item: any) => item.title)).toEqual([
+      'Rewind conversation only',
+      'Rewind code + conversation',
+    ]);
+
+    menu.items[0].clickHandler?.();
+    await Promise.resolve();
+
+    expect(rewindCallback).toHaveBeenCalledWith('u1', 'conversation');
   });
 
   // ============================================

@@ -17,6 +17,7 @@ import type {
   ApprovalDecisionOption,
   AskUserQuestionCallback,
   AutoTurnCallback,
+  ChatRewindMode,
   ChatRewindResult,
   ChatRuntimeEnsureReadyOptions,
   ChatRuntimeQueryOptions,
@@ -463,6 +464,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   async rewind(
     _userMessageId: string,
     _assistantMessageId: string,
+    _mode?: ChatRewindMode,
   ): Promise<ChatRewindResult> {
     return { canRewind: false };
   }

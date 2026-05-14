@@ -24,10 +24,15 @@
   "chat": {
     "rewind": {
       "confirmMessage": "Zu diesem Punkt zurückspulen? Dateiänderungen nach dieser Nachricht werden rückgängig gemacht. Das Zurückspulen betrifft keine manuell oder über Bash bearbeiteten Dateien.",
+      "confirmMessageConversationOnly": "Konversation zu diesem Punkt zurückspulen? Dateiänderungen bleiben erhalten.",
       "confirmButton": "Zurückspulen",
       "ariaLabel": "Hierher zurückspulen",
+      "menuConversationOnly": "Nur Konversation zurückspulen",
+      "menuCodeAndConversation": "Code + Konversation zurückspulen",
       "notice": "Zurückgespult: {count} Datei(en) wiederhergestellt",
+      "noticeConversationOnly": "Konversation zurückgespult; Dateiänderungen bleiben erhalten",
       "noticeSaveFailed": "Zurückgespult: {count} Datei(en) wiederhergestellt, aber Status konnte nicht gespeichert werden: {error}",
+      "noticeConversationOnlySaveFailed": "Konversation zurückgespult, aber Status konnte nicht gespeichert werden: {error}",
       "failed": "Zurückspulen fehlgeschlagen: {error}",
       "cannot": "Zurückspulen nicht möglich: {error}",
       "unavailableStreaming": "Zurückspulen während des Streamings nicht möglich",

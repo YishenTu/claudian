@@ -1187,7 +1187,7 @@ export function initializeTabControllers(
     plugin,
     component,
     dom.messagesEl,
-    (id) => tab.controllers.conversationController!.rewind(id),
+    (id, mode) => tab.controllers.conversationController!.rewind(id, mode),
     forkRequestCallback
       ? (id) => handleForkRequest(tab, plugin, id, forkRequestCallback)
       : undefined,

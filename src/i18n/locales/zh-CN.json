@@ -24,10 +24,15 @@
   "chat": {
     "rewind": {
       "confirmMessage": "回退到此处？此消息之后的文件更改将被还原。回退不会影响手动或通过 bash 编辑的文件。",
+      "confirmMessageConversationOnly": "将对话回退到此处？文件更改将保留。",
       "confirmButton": "回退",
       "ariaLabel": "回退到此处",
+      "menuConversationOnly": "仅回退对话",
+      "menuCodeAndConversation": "回退代码 + 对话",
       "notice": "已回退：还原了 {count} 个文件",
+      "noticeConversationOnly": "已回退对话；文件更改已保留",
       "noticeSaveFailed": "已回退：还原了 {count} 个文件，但无法保存状态：{error}",
+      "noticeConversationOnlySaveFailed": "已回退对话，但无法保存状态：{error}",
       "failed": "回退失败：{error}",
       "cannot": "无法回退：{error}",
       "unavailableStreaming": "流式响应中无法回退",

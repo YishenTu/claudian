@@ -25,10 +25,15 @@ export type TranslationKey =
 
   // Chat - Rewind
   | 'chat.rewind.confirmMessage'
+  | 'chat.rewind.confirmMessageConversationOnly'
   | 'chat.rewind.confirmButton'
   | 'chat.rewind.ariaLabel'
+  | 'chat.rewind.menuConversationOnly'
+  | 'chat.rewind.menuCodeAndConversation'
   | 'chat.rewind.notice'
+  | 'chat.rewind.noticeConversationOnly'
   | 'chat.rewind.noticeSaveFailed'
+  | 'chat.rewind.noticeConversationOnlySaveFailed'
   | 'chat.rewind.failed'
   | 'chat.rewind.cannot'
   | 'chat.rewind.unavailableStreaming'

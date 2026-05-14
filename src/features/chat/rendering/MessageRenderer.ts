@@ -1,7 +1,8 @@
 import type { App, Component } from 'obsidian';
-import { MarkdownRenderer, Notice, setIcon } from 'obsidian';
+import { MarkdownRenderer, Menu, Notice, setIcon } from 'obsidian';
 
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderCapabilities } from '../../../core/providers/types';
+import type { ChatRewindMode } from '../../../core/runtime/types';
 import {
   isSubagentToolName,
   isWriteEditTool,
@@ -46,7 +47,7 @@ export class MessageRenderer {
   private plugin: ClaudianPlugin;
   private component: Component;
   private messagesEl: HTMLElement;
-  private rewindCallback?: (messageId: string) => Promise<void>;
+  private rewindCallback?: (messageId: string, mode?: ChatRewindMode) => Promise<void>;
   private getCapabilities: () => ProviderCapabilities;
   private forkCallback?: (messageId: string) => Promise<void>;
   private liveMessageEls = new Map<string, HTMLElement>();
@@ -55,7 +56,7 @@ export class MessageRenderer {
     plugin: ClaudianPlugin,
     component: Component,
     messagesEl: HTMLElement,
-    rewindCallback?: (messageId: string) => Promise<void>,
+    rewindCallback?: (messageId: string, mode?: ChatRewindMode) => Promise<void>,
     forkCallback?: (messageId: string) => Promise<void>,
     getCapabilities?: () => ProviderCapabilities,
   ) {
@@ -791,13 +792,35 @@ export class MessageRenderer {
     btn.setAttribute('aria-label', t('chat.rewind.ariaLabel'));
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      runRendererAction(async () => {
-        try {
-          await this.rewindCallback?.(messageId);
-        } catch (err) {
-          new Notice(t('chat.rewind.failed', { error: err instanceof Error ? err.message : 'Unknown error' }));
-        }
-      });
+      this.showRewindMenu(e, messageId);
+    });
+  }
+
+  private showRewindMenu(event: MouseEvent, messageId: string): void {
+    const menu = new Menu();
+    this.addRewindMenuItem(menu, messageId, 'conversation');
+    this.addRewindMenuItem(menu, messageId, 'code-and-conversation');
+    menu.showAtMouseEvent(event);
+  }
+
+  private addRewindMenuItem(menu: Menu, messageId: string, mode: ChatRewindMode): void {
+    menu.addItem((item) => {
+      item
+        .setTitle(
+          mode === 'conversation'
+            ? t('chat.rewind.menuConversationOnly')
+            : t('chat.rewind.menuCodeAndConversation')
+        )
+        .setIcon(mode === 'conversation' ? 'message-square' : 'rotate-ccw')
+        .onClick(() => {
+          runRendererAction(async () => {
+            try {
+              await this.rewindCallback?.(messageId, mode);
+            } catch (err) {
+              new Notice(t('chat.rewind.failed', { error: err instanceof Error ? err.message : 'Unknown error' }));
+            }
+          });
+        });
     });
   }
 
