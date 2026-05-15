@@ -1168,4 +1168,21 @@ describe('ComposerExpandButton', () => {
     expect(buttonEl?.getAttribute('aria-label')).toBe('Collapse composer');
     expect(buttonEl?.getAttribute('title')).toBe('Collapse composer');
   });
+
+  it('should show expand state by default before any setExpanded call', () => {
+    const buttonEl = parentEl.querySelector('.claudian-composer-expand-button');
+    expect(buttonEl?.hasClass('active')).toBe(false);
+    expect(buttonEl?.getAttribute('aria-label')).toBe('Expand composer');
+    expect(buttonEl?.getAttribute('title')).toBe('Expand composer');
+  });
+
+  it('should revert to expand state after being collapsed', () => {
+    button.setExpanded(true);
+    button.setExpanded(false);
+
+    const buttonEl = parentEl.querySelector('.claudian-composer-expand-button');
+    expect(buttonEl?.hasClass('active')).toBe(false);
+    expect(buttonEl?.getAttribute('aria-label')).toBe('Expand composer');
+    expect(buttonEl?.getAttribute('title')).toBe('Expand composer');
+  });
 });

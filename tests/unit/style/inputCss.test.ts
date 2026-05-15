@@ -24,4 +24,13 @@ describe('input composer CSS', () => {
     expect(getRule('.claudian-input-wrapper.claudian-input-wrapper-expanded'))
       .toMatch(/height:\s*clamp\(260px,\s*46vh,\s*520px\)/);
   });
+
+  it('keeps manual-collapsed textarea bounded at compact height with scroll', () => {
+    const rule = getRule(
+      '.claudian-input-wrapper.claudian-input-wrapper-manual-collapsed .claudian-input',
+    );
+    expect(rule).toMatch(/max-height:\s*var\(--claudian-textarea-max-height,\s*96px\)/);
+    expect(rule).toMatch(/min-height:\s*var\(--claudian-textarea-min-height,\s*60px\)/);
+    expect(rule).toMatch(/overflow-y:\s*auto/);
+  });
 });
