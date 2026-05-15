@@ -25,10 +25,11 @@ import {
 } from '../../../core/tools/toolNames';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo } from '../../../core/types';
+import type { DiffStats } from '../../../core/types/diff';
 import { appendMcpIcon } from '../../../shared/icons';
-import { parseApplyPatchDiffs } from '../../../utils/diff';
+import { parseApplyPatchDiffs, parseFileUpdateChangeDiffs } from '../../../utils/diff';
 import { setupCollapsible } from './collapsible';
-import { renderDiffContent } from './DiffRenderer';
+import { renderDiffContent, renderDiffStats } from './DiffRenderer';
 import { renderTodoItems } from './todoUtils';
 
 export function setToolIcon(el: HTMLElement, name: string): void {
@@ -533,40 +534,14 @@ function renderApplyPatchExpanded(
   result: string | undefined,
 ): void {
   const patchText = typeof input.patch === 'string' ? input.patch : '';
-  const parsedDiffs = patchText ? parseApplyPatchDiffs(patchText) : [];
+  const parsedDiffs = getApplyPatchFileDiffs(input);
 
   if (result && /verification failed|^[Ee]rror:/.test(result.trim())) {
     renderLinesExpanded(container, result, 20);
   }
 
   if (parsedDiffs.length > 0) {
-    for (const fileDiff of parsedDiffs) {
-      const sectionEl = container.createDiv({ cls: 'claudian-tool-patch-section' });
-      const statsSuffix = fileDiff.stats.added || fileDiff.stats.removed
-        ? ` (+${fileDiff.stats.added} -${fileDiff.stats.removed})`
-        : '';
-      const pathText = fileDiff.movedTo
-        ? `${fileDiff.filePath} -> ${fileDiff.movedTo}`
-        : fileDiff.filePath;
-      sectionEl.createDiv({
-        cls: 'claudian-tool-patch-header',
-        text: `${fileDiff.operation}: ${pathText}${statsSuffix}`,
-      });
-
-      if (fileDiff.operation === 'delete' && fileDiff.diffLines.length === 0) {
-        sectionEl.createDiv({ cls: 'claudian-tool-empty', text: 'File deleted' });
-        continue;
-      }
-
-      if (fileDiff.diffLines.length === 0) {
-        sectionEl.createDiv({ cls: 'claudian-tool-empty', text: 'No textual diff available' });
-        continue;
-      }
-
-      const diffRow = sectionEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
-      const diffEl = diffRow.createDiv({ cls: 'claudian-write-edit-diff' });
-      renderDiffContent(diffEl, fileDiff.diffLines);
-    }
+    renderApplyPatchDiffSections(container, parsedDiffs);
     return;
   }
 
@@ -577,9 +552,10 @@ function renderApplyPatchExpanded(
       if (!change || typeof change !== 'object' || Array.isArray(change)) continue;
       const changeRecord = change as Record<string, unknown>;
       const path = typeof changeRecord.path === 'string' ? changeRecord.path : '';
-      const kind = typeof changeRecord.kind === 'string' ? changeRecord.kind : 'change';
       if (!path) continue;
-      linesEl.createDiv({ cls: 'claudian-tool-line', text: `${kind}: ${path}` });
+      const movedTo = readMoveTarget(changeRecord.kind);
+      const pathText = movedTo ? `${path} -> ${movedTo}` : path;
+      linesEl.createDiv({ cls: 'claudian-tool-line', text: pathText });
     }
     return;
   }
@@ -607,6 +583,62 @@ function renderApplyPatchExpanded(
   }
 
   container.createDiv({ cls: 'claudian-tool-empty', text: 'No result' });
+}
+
+function renderApplyPatchDiffSections(
+  container: HTMLElement,
+  fileDiffs: ReturnType<typeof parseApplyPatchDiffs>,
+): void {
+  for (const fileDiff of fileDiffs) {
+    const sectionEl = container.createDiv({ cls: 'claudian-tool-patch-section' });
+
+    if (fileDiff.operation === 'delete' && fileDiff.diffLines.length === 0) {
+      sectionEl.createDiv({ cls: 'claudian-tool-empty', text: 'File deleted' });
+      continue;
+    }
+
+    if (fileDiff.diffLines.length === 0) {
+      sectionEl.createDiv({ cls: 'claudian-tool-empty', text: 'No textual diff available' });
+      continue;
+    }
+
+    const diffRow = sectionEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
+    const diffEl = diffRow.createDiv({ cls: 'claudian-write-edit-diff' });
+    renderDiffContent(diffEl, fileDiff.diffLines);
+  }
+}
+
+function readMoveTarget(kind: unknown): string | undefined {
+  if (!kind || typeof kind !== 'object' || Array.isArray(kind)) {
+    return undefined;
+  }
+  const record = kind as Record<string, unknown>;
+  return typeof record.move_path === 'string' ? record.move_path : undefined;
+}
+
+function getApplyPatchFileDiffs(input: Record<string, unknown>): ReturnType<typeof parseApplyPatchDiffs> {
+  const patchText = typeof input.patch === 'string' ? input.patch : '';
+  const parsedDiffs = patchText ? parseApplyPatchDiffs(patchText) : [];
+  return parsedDiffs.length > 0 ? parsedDiffs : parseFileUpdateChangeDiffs(input.changes);
+}
+
+function getApplyPatchDiffStats(input: Record<string, unknown>): DiffStats | undefined {
+  const fileDiffs = getApplyPatchFileDiffs(input);
+  if (fileDiffs.length === 0) return undefined;
+
+  const stats = fileDiffs.reduce<DiffStats>(
+    (acc, fileDiff) => ({
+      added: acc.added + fileDiff.stats.added,
+      removed: acc.removed + fileDiff.stats.removed,
+    }),
+    { added: 0, removed: 0 }
+  );
+
+  return stats.added > 0 || stats.removed > 0 ? stats : undefined;
+}
+
+function getDiffStatsAriaLabel(stats: DiffStats): string {
+  return `Changes: +${stats.added} -${stats.removed}`;
 }
 
 function renderAgentLifecycleExpanded(container: HTMLElement, result: string): void {
@@ -644,7 +676,7 @@ export function renderExpandedContent(
   result: string | undefined,
   input: Record<string, unknown> = {},
 ): void {
-  if (!result && toolName !== TOOL_WEB_SEARCH && toolName !== TOOL_BASH) {
+  if (!result && toolName !== TOOL_WEB_SEARCH && toolName !== TOOL_BASH && toolName !== TOOL_APPLY_PATCH) {
     container.createDiv({ cls: 'claudian-tool-empty', text: 'No result' });
     return;
   }
@@ -732,6 +764,29 @@ function setToolStatus(statusEl: HTMLElement, status: ToolCallInfo['status']): v
   resetStatusElement(statusEl, `status-${status}`, `Status: ${status}`);
   const icon = STATUS_ICONS[status];
   if (icon) setIcon(statusEl, icon);
+}
+
+function setApplyPatchHeaderRight(statusEl: HTMLElement, toolCall: ToolCallInfo): void {
+  const isError = toolCall.status === 'error' || toolCall.status === 'blocked';
+  const stats = isError ? undefined : getApplyPatchDiffStats(toolCall.input);
+  if (!stats) {
+    setToolStatus(statusEl, toolCall.status);
+    return;
+  }
+
+  statusEl.className = 'claudian-tool-status claudian-write-edit-stats';
+  statusEl.empty();
+  statusEl.setAttribute('aria-label', getDiffStatsAriaLabel(stats));
+  renderDiffStats(statusEl, stats);
+}
+
+function setGenericToolHeaderRight(statusEl: HTMLElement, toolCall: ToolCallInfo): void {
+  if (toolCall.name === TOOL_APPLY_PATCH) {
+    setApplyPatchHeaderRight(statusEl, toolCall);
+    return;
+  }
+
+  setToolStatus(statusEl, toolCall.status);
 }
 
 export function renderTodoWriteResult(
@@ -1001,8 +1056,7 @@ export function renderToolCall(
   toolEl.dataset.toolId = toolCall.id;
   toolCallElements.set(toolCall.id, toolEl);
 
-  statusEl.addClass(`status-${toolCall.status}`);
-  statusEl.setAttribute('aria-label', `Status: ${toolCall.status}`);
+  setGenericToolHeaderRight(statusEl, toolCall);
 
   renderToolContent(content, toolCall, 'Running...');
 
@@ -1051,7 +1105,7 @@ export function updateToolCallResult(
 
   const statusEl = toolEl.querySelector('.claudian-tool-status') as HTMLElement;
   if (statusEl) {
-    setToolStatus(statusEl, toolCall.status);
+    setGenericToolHeaderRight(statusEl, toolCall);
   }
 
   if (toolCall.name === TOOL_ASK_USER_QUESTION) {
@@ -1083,7 +1137,7 @@ export function renderStoredToolCall(
   if (toolCall.name === TOOL_TODO_WRITE) {
     setTodoWriteStatus(statusEl, toolCall.input);
   } else {
-    setToolStatus(statusEl, toolCall.status);
+    setGenericToolHeaderRight(statusEl, toolCall);
   }
 
   renderToolContent(content, toolCall);

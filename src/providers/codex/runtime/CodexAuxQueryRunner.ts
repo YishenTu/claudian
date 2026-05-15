@@ -49,7 +49,7 @@ export class CodexAuxQueryRunner {
         approvalPolicy: 'never',
         sandbox: 'read-only',
         baseInstructions: config.systemPrompt,
-        experimentalRawEvents: false,
+        experimentalRawEvents: true,
         persistExtendedHistory: false,
       });
       this.threadId = result.thread.id;

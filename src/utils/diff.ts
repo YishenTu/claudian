@@ -119,6 +119,14 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
   return fileDiffs;
 }
 
+export function parseFileUpdateChangeDiffs(changes: unknown): ApplyPatchFileDiff[] {
+  if (!Array.isArray(changes)) return [];
+
+  return changes
+    .map(parseFileUpdateChangeDiff)
+    .filter((diff): diff is ApplyPatchFileDiff => diff !== null);
+}
+
 export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo): ToolDiffData | undefined {
   const filePath = (toolCall.input.file_path as string) || 'file';
 
@@ -207,4 +215,88 @@ function buildApplyPatchFileDiff(current: {
   };
   if (current.movedTo) result.movedTo = current.movedTo;
   return result;
+}
+
+function parseFileUpdateChangeDiff(change: unknown): ApplyPatchFileDiff | null {
+  if (!change || typeof change !== 'object' || Array.isArray(change)) {
+    return null;
+  }
+
+  const record = change as Record<string, unknown>;
+  const filePath = typeof record.path === 'string' ? record.path : '';
+  const diff = typeof record.diff === 'string' ? record.diff : '';
+  if (!filePath || !diff.trim()) {
+    return null;
+  }
+
+  const kindInfo = parseFileUpdateKind(record.kind ?? record.type);
+  const diffLines = parseUnifiedDiffLines(diff);
+  return {
+    filePath,
+    operation: kindInfo.operation,
+    ...(kindInfo.movedTo ? { movedTo: kindInfo.movedTo } : {}),
+    diffLines,
+    stats: countLineChanges(diffLines),
+  };
+}
+
+function parseFileUpdateKind(value: unknown): {
+  operation: ApplyPatchFileDiff['operation'];
+  movedTo?: string;
+} {
+  if (typeof value === 'string') {
+    return { operation: normalizePatchOperation(value) };
+  }
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    const type = typeof record.type === 'string' ? record.type : '';
+    const movedTo = typeof record.move_path === 'string' ? record.move_path : undefined;
+    return {
+      operation: normalizePatchOperation(type),
+      ...(movedTo ? { movedTo } : {}),
+    };
+  }
+
+  return { operation: 'update' };
+}
+
+function normalizePatchOperation(value: string): ApplyPatchFileDiff['operation'] {
+  if (value === 'add' || value === 'delete' || value === 'update') {
+    return value;
+  }
+
+  return 'update';
+}
+
+function parseUnifiedDiffLines(diffText: string): DiffLine[] {
+  const diffLines: DiffLine[] = [];
+  let oldLineNum = 1;
+  let newLineNum = 1;
+
+  for (const line of diffText.split(/\r?\n/)) {
+    if (!line) continue;
+    if (line.startsWith('--- ') || line.startsWith('+++ ')) continue;
+
+    if (line.startsWith('@@')) {
+      const match = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
+      if (match) {
+        oldLineNum = Number(match[1]);
+        newLineNum = Number(match[2]);
+      }
+      continue;
+    }
+
+    const prefix = line[0];
+    const text = line.slice(1);
+    if (prefix === '+') {
+      diffLines.push({ type: 'insert', text, newLineNum: newLineNum++ });
+    } else if (prefix === '-') {
+      diffLines.push({ type: 'delete', text, oldLineNum: oldLineNum++ });
+    } else if (prefix === ' ') {
+      diffLines.push({ type: 'equal', text, oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
+    }
+  }
+
+  return diffLines;
 }

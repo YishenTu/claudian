@@ -460,7 +460,7 @@ describe('CodexHistoryStore', () => {
       expect(readTool!.input.file_path).toBe('/tmp/screenshot.png');
     });
 
-    it('restores write_stdin as native write_stdin', () => {
+    it('restores non-empty write_stdin as native write_stdin', () => {
       const filePath = path.join(FIXTURES_DIR, 'codex-session-persisted-tools.jsonl');
       const messages = parseCodexSessionFile(filePath);
 
@@ -469,6 +469,216 @@ describe('CodexHistoryStore', () => {
       expect(stdinTool).toBeDefined();
       expect(stdinTool!.id).toBe('call_stdin_1');
       expect(stdinTool!.input.session_id).toBe('sess_1');
+      expect(stdinTool!.input.chars).toBe('y\n');
+    });
+
+    it('suppresses standalone empty write_stdin polling calls', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'write_stdin',
+            arguments: '{"session_id":2404,"chars":"","yield_time_ms":1000}',
+            call_id: 'call_poll',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call_poll',
+            output: 'Input sent.',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Done.' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+      const assistantMsg = messages.find(m => m.role === 'assistant');
+
+      expect(assistantMsg!.toolCalls).toBeUndefined();
+    });
+
+    it('maps long-running write_stdin polling output back to the parent Bash tool', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Run checks.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'exec_command',
+            arguments: '{"cmd":"bun run check"}',
+            call_id: 'call_cmd',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call_cmd',
+            output: 'Chunk ID: aaa\nWall time: 0.0000 seconds\nProcess running with session ID 2404\nOriginal token count: 3\nOutput:\n$ bun run check\n',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:03.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'write_stdin',
+            arguments: '{"session_id":2404,"chars":"","yield_time_ms":1000}',
+            call_id: 'call_poll',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:04.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call_poll',
+            output: 'Chunk ID: bbb\nWall time: 1.0000 seconds\nProcess exited with code 0\nOriginal token count: 2\nOutput:\nall good\n',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:05.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Done.' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+      const assistantMsg = messages.find(m => m.role === 'assistant' && m.toolCalls);
+
+      expect(assistantMsg!.toolCalls!.map(tc => tc.name)).not.toContain('write_stdin');
+      const bashTool = assistantMsg!.toolCalls!.find(tc => tc.name === 'Bash');
+      expect(bashTool).toMatchObject({
+        id: 'call_cmd',
+        status: 'completed',
+        result: '$ bun run check\nall good\n',
+      });
+    });
+
+    it('keeps non-empty write_stdin separate from the parent Bash tool', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Confirm the prompt.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'exec_command',
+            arguments: '{"cmd":"npm init"}',
+            call_id: 'call_cmd',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call_cmd',
+            output: 'Chunk ID: aaa\nWall time: 0.0000 seconds\nProcess running with session ID 2404\nOriginal token count: 2\nOutput:\nProceed? [y/N]\n',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:03.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'write_stdin',
+            arguments: '{"session_id":2404,"chars":"y\\n"}',
+            call_id: 'call_stdin',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:04.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call_stdin',
+            output: 'Input sent.',
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+      const assistantMsg = messages.find(m => m.role === 'assistant' && m.toolCalls);
+      const bashTool = assistantMsg!.toolCalls!.find(tc => tc.name === 'Bash');
+      const stdinTool = assistantMsg!.toolCalls!.find(tc => tc.name === 'write_stdin');
+
+      expect(bashTool).toMatchObject({
+        id: 'call_cmd',
+        status: 'running',
+        result: 'Proceed? [y/N]\n',
+      });
+      expect(stdinTool).toMatchObject({
+        id: 'call_stdin',
+        status: 'completed',
+        input: { session_id: 2404, chars: 'y\n' },
+        result: 'Input sent.',
+      });
+    });
+
+    it('drops orphan custom_tool_call_output rows instead of rendering generic tool cards', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call_output',
+            call_id: 'call_patch_orphan',
+            output: 'Success. Updated the following files:\nM /tmp/a.ts\n',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Done.' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].role).toBe('assistant');
+      expect(messages[0].toolCalls).toBeUndefined();
+      expect(messages[0].content).toBe('Done.');
     });
   });
 

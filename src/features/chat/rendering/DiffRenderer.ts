@@ -1,9 +1,23 @@
-import type { DiffLine } from '../../../core/types/diff';
+import type { DiffLine, DiffStats } from '../../../core/types/diff';
 
 export interface DiffHunk {
   lines: DiffLine[];
   oldStart: number;
   newStart: number;
+}
+
+export function renderDiffStats(statsEl: HTMLElement, stats: DiffStats): void {
+  if (stats.added > 0) {
+    const addedEl = statsEl.createSpan({ cls: 'added' });
+    addedEl.setText(`+${stats.added}`);
+  }
+  if (stats.removed > 0) {
+    if (stats.added > 0) {
+      statsEl.createSpan({ text: ' ' });
+    }
+    const removedEl = statsEl.createSpan({ cls: 'removed' });
+    removedEl.setText(`-${stats.removed}`);
+  }
 }
 
 export function splitIntoHunks(diffLines: DiffLine[], contextLines = 3): DiffHunk[] {

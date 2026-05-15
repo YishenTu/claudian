@@ -7,6 +7,7 @@ import {
   TOOL_SPAWN_AGENT,
   TOOL_TASK,
   TOOL_WAIT_AGENT,
+  TOOL_WRITE_STDIN,
 } from '@/core/tools/toolNames';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -448,6 +449,71 @@ describe('MessageRenderer', () => {
     // Only the non-empty text block should trigger renderContent
     expect(renderContentSpy).toHaveBeenCalledTimes(1);
     expect(renderContentSpy).toHaveBeenCalledWith(expect.anything(), 'Real content');
+  });
+
+  it('does not render stored Codex write_stdin transport tools', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl, 'codex');
+
+    const msg: ChatMessage = {
+      id: 'm1',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [
+        {
+          id: 'stdin-1',
+          name: TOOL_WRITE_STDIN,
+          input: { session_id: '2404', chars: '' },
+          status: 'completed',
+          result: 'poll output',
+        } as any,
+      ],
+      contentBlocks: [
+        { type: 'tool_use', toolId: 'stdin-1' } as any,
+      ],
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    expect(renderStoredToolCall).not.toHaveBeenCalled();
+    expect(messagesEl.children).toHaveLength(0);
+  });
+
+  it('renders stored Codex write_stdin tools when they send real input', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl, 'codex');
+
+    const msg: ChatMessage = {
+      id: 'm1',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [
+        {
+          id: 'stdin-1',
+          name: TOOL_WRITE_STDIN,
+          input: { session_id: '2404', chars: 'y\n' },
+          status: 'completed',
+          result: 'Input sent.',
+        } as any,
+      ],
+      contentBlocks: [
+        { type: 'tool_use', toolId: 'stdin-1' } as any,
+      ],
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    expect(renderStoredToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        id: 'stdin-1',
+        name: TOOL_WRITE_STDIN,
+        input: { session_id: '2404', chars: 'y\n' },
+      }),
+    );
+    expect(messagesEl.children).toHaveLength(1);
   });
 
   it('renders response duration footer when durationSeconds is present', () => {

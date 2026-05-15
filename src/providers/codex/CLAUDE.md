@@ -14,18 +14,13 @@ The `initialize` handshake is mandatory and must include `{ experimentalApi: tru
 
 ## Design Decisions
 
-### Dual Tool Source — Why File Tailing
+### Live Streaming Uses Raw JSON-RPC
 
-Tools are displayed from two possible sources:
+Live turn output is streamed from `codex app-server` JSON-RPC notifications. `thread/start` and `thread/resume` request `experimentalRawEvents: true`, and `CodexNotificationRouter` projects both normalized item notifications and raw `rawResponseItem/completed` payloads into Claudian `StreamChunk`s.
 
-| Mode | Source | When |
-|------|--------|------|
-| `transcript` (default) | Session JSONL file via `CodexFileTailEngine` polling at 100ms | Session file found during `primeCursor()` |
-| `fallback` | Live RPC notifications via `CodexNotificationRouter` | File not found, or 5 consecutive read failures |
+**Why raw RPC owns live output**: polling the provider JSONL transcript during an active turn makes renderer work scale with total transcript size. Raw JSON-RPC preserves the provider-native `function_call`, `function_call_output`, `custom_tool_call`, and `custom_tool_call_output` payloads without rereading the transcript file.
 
-**Why transcript mode exists**: the session JSONL has richer tool result data than live notifications (e.g., exit codes from `exec_command_end`, structured MCP enrichment). Using it ensures tool display is consistent between live streaming and replayed conversations from history.
-
-**Timing coordination**: in transcript mode, the notification router suppresses tool chunks. Before emitting `done`, the runtime calls `waitForSettle()` — waits until the tail engine has been idle for 500ms (no new events) and polling was recent (within 250ms) — then drains remaining tail chunks. This prevents the turn from completing before the last tools are displayed.
+JSONL remains the provider-owned replay source for history hydration and session-file discovery. Do not reintroduce live JSONL polling unless the app-server stops emitting an equivalent raw notification and the tradeoff is documented with a current wire trace.
 
 ### Skill Listing Via Ephemeral Process
 

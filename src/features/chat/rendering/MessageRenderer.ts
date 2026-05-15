@@ -6,6 +6,7 @@ import {
   isSubagentToolName,
   isWriteEditTool,
   TOOL_AGENT_OUTPUT,
+  TOOL_WRITE_STDIN,
 } from '../../../core/tools/toolNames';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '../../../core/types';
@@ -244,6 +245,9 @@ export class MessageRenderer {
         return;
       }
     }
+    if (msg.role === 'assistant' && !this.hasVisibleContent(msg)) {
+      return;
+    }
 
     const msgEl = this.messagesEl.createDiv({
       cls: `claudian-message claudian-message-${msg.role}`,
@@ -280,8 +284,19 @@ export class MessageRenderer {
 
   private hasVisibleContent(msg: ChatMessage): boolean {
     if (msg.content && msg.content.trim().length > 0) return true;
-    if (msg.toolCalls && msg.toolCalls.length > 0) return true;
-    if (msg.contentBlocks && msg.contentBlocks.length > 0) return true;
+    if (msg.contentBlocks && msg.contentBlocks.length > 0) {
+      for (const block of msg.contentBlocks) {
+        if (block.type === 'thinking' && block.content.trim().length > 0) return true;
+        if (block.type === 'text' && block.content.trim().length > 0) return true;
+        if (block.type === 'context_compacted') return true;
+        if (block.type === 'subagent') return true;
+        if (block.type === 'tool_use') {
+          const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
+          if (toolCall && this.shouldRenderToolCall(toolCall)) return true;
+        }
+      }
+    }
+    if (msg.toolCalls?.some(toolCall => this.shouldRenderToolCall(toolCall))) return true;
     return false;
   }
 
@@ -388,11 +403,8 @@ export class MessageRenderer {
    * and Codex collab agent lifecycle tools.
    */
   private renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo, msg?: ChatMessage): void {
+    if (!this.shouldRenderToolCall(toolCall)) return;
     const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(toolCall.name);
-
-    // Skip invisible internal tools
-    if (toolCall.name === TOOL_AGENT_OUTPUT) return;
-    if (subagentLifecycleAdapter?.isHiddenTool(toolCall.name)) return;
 
     if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall);
@@ -403,6 +415,21 @@ export class MessageRenderer {
     } else {
       renderStoredToolCall(contentEl, toolCall);
     }
+  }
+
+  private shouldRenderToolCall(toolCall: ToolCallInfo): boolean {
+    if (toolCall.name === TOOL_AGENT_OUTPUT) return false;
+    if (toolCall.name === TOOL_WRITE_STDIN && this.isSilentWriteStdinTool(toolCall)) return false;
+    if (toolCall.name === 'custom_tool_call_output') return false;
+
+    const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(toolCall.name);
+    if (subagentLifecycleAdapter?.isHiddenTool(toolCall.name)) return false;
+
+    return true;
+  }
+
+  private isSilentWriteStdinTool(toolCall: ToolCallInfo): boolean {
+    return typeof toolCall.input.chars !== 'string' || toolCall.input.chars.length === 0;
   }
 
   private renderTaskSubagent(

@@ -471,7 +471,7 @@ describe('CodexChatRuntime', () => {
           model: DEFAULT_CODEX_PRIMARY_MODEL,
           cwd: '/test/vault',
           persistExtendedHistory: true,
-          experimentalRawEvents: false,
+          experimentalRawEvents: true,
           baseInstructions: expect.any(String),
         }),
       );
@@ -738,6 +738,7 @@ describe('CodexChatRuntime', () => {
       expect(resumeCall).toBeDefined();
       expect(resumeCall[1].threadId).toBe('thread-existing');
       expect(resumeCall[1].baseInstructions).toBeDefined();
+      expect(resumeCall[1].experimentalRawEvents).toBe(true);
 
       const startCall = findCall('thread/start');
       expect(startCall).toBeUndefined();
@@ -843,8 +844,8 @@ describe('CodexChatRuntime', () => {
       }));
     });
 
-    it('prefers session-tail tool chunks when a Codex session file is available', async () => {
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-tail-runtime-'));
+    it('streams raw response items instead of tailing the Codex session file', async () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-raw-runtime-'));
       const sessionFilePath = path.join(tmpDir, 'thread-tail.jsonl');
       fs.writeFileSync(sessionFilePath, '');
 
@@ -881,39 +882,24 @@ describe('CodexChatRuntime', () => {
               ].join('\n') + '\n',
             );
 
-            emitNotification('item/started', {
-              item: {
-                type: 'commandExecution',
-                id: 'call_wrong_1',
-                command: 'echo wrong',
-                cwd: '/test/vault',
-                processId: '1',
-                source: 'unifiedExecStartup',
-                status: 'inProgress',
-                commandActions: [{ type: 'unknown', command: 'echo wrong' }],
-                aggregatedOutput: null,
-                exitCode: null,
-                durationMs: null,
-              },
+            emitNotification('rawResponseItem/completed', {
               threadId: 'thread-tail',
               turnId: 'turn-tail',
+              item: {
+                type: 'function_call',
+                name: 'exec_command',
+                call_id: 'call_raw_1',
+                arguments: '{"command":"cat package.json"}',
+              },
             });
-            emitNotification('item/completed', {
-              item: {
-                type: 'commandExecution',
-                id: 'call_wrong_1',
-                command: 'echo wrong',
-                cwd: '/test/vault',
-                processId: '1',
-                source: 'unifiedExecStartup',
-                status: 'completed',
-                commandActions: [],
-                aggregatedOutput: 'wrong\n',
-                exitCode: 0,
-                durationMs: 10,
-              },
+            emitNotification('rawResponseItem/completed', {
               threadId: 'thread-tail',
               turnId: 'turn-tail',
+              item: {
+                type: 'function_call_output',
+                call_id: 'call_raw_1',
+                output: 'Exit code: 0\nOutput:\nraw package output',
+              },
             });
             emitNotification('turn/completed', {
               threadId: 'thread-tail',
@@ -929,17 +915,17 @@ describe('CodexChatRuntime', () => {
 
         expect(chunks).toContainEqual(expect.objectContaining({
           type: 'tool_use',
-          id: 'call_tail_1',
+          id: 'call_raw_1',
           name: 'Bash',
-          input: { command: 'cat src/main.ts' },
+          input: { command: 'cat package.json' },
         }));
         expect(chunks).toContainEqual(expect.objectContaining({
           type: 'tool_result',
-          id: 'call_tail_1',
-          content: 'import x from "./main";',
+          id: 'call_raw_1',
+          content: 'raw package output',
           isError: false,
         }));
-        expect(chunks).not.toContainEqual(expect.objectContaining({ id: 'call_wrong_1' }));
+        expect(chunks).not.toContainEqual(expect.objectContaining({ id: 'call_tail_1' }));
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
@@ -2315,7 +2301,7 @@ describe('CodexChatRuntime', () => {
       expect(runtime.getSessionId()).toBeNull();
     });
 
-    it('does not call buildInput or start transcript tailing for compact', async () => {
+    it('does not call buildInput for compact', async () => {
       mockTransportRequest.mockImplementation(buildRequestHandler({
         'thread/start': () => threadStartResponse('thread-no-input'),
         'thread/compact/start': () => {

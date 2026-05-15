@@ -162,11 +162,21 @@ export interface FileChangeItem {
   type: 'fileChange';
   id: string;
   changes: FileChangeEntry[];
+  status?: string;
 }
 
 export interface FileChangeEntry {
   path: string;
-  type: string;
+  type?: string;
+  kind?: string | { type?: string; move_path?: string | null };
+  diff?: string;
+}
+
+export interface FileChangePatchUpdatedNotification {
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  changes: FileChangeEntry[];
 }
 
 export interface ImageViewItem {
@@ -351,6 +361,7 @@ export interface ThreadResumeParams {
   sandbox?: string;
   serviceTier?: string | null;
   baseInstructions?: string;
+  experimentalRawEvents?: boolean;
   persistExtendedHistory?: boolean;
 }
 

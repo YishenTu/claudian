@@ -191,6 +191,9 @@ function createPersistedParseContext(): PersistedParseContext {
     turnOrder: [],
     currentTurnId: null,
     toolCallToTurn: new Map(),
+    suppressedToolOutputIds: new Set(),
+    terminalSessionToCommandId: new Map(),
+    stdinCallToCommandId: new Map(),
     turnCounter: 0,
   };
 }
@@ -561,6 +564,9 @@ interface PersistedParseContext {
   turnOrder: string[];
   currentTurnId: string | null;
   toolCallToTurn: Map<string, { turnId: string; bubbleIndex: number }>;
+  suppressedToolOutputIds: Set<string>;
+  terminalSessionToCommandId: Map<string, string>;
+  stdinCallToCommandId: Map<string, string>;
   turnCounter: number;
 }
 
@@ -576,6 +582,21 @@ function processPersistedToolCall(
 ): void {
   const callId = payload.call_id;
   if (!callId) return;
+
+  if (payload.name === 'write_stdin') {
+    const parsedArgs = parseCodexArguments(payload.arguments ?? payload.input);
+    if (isSilentWriteStdinInput(parsedArgs)) {
+      const terminalSessionId = readTerminalSessionIdArgument(parsedArgs);
+      const parentCallId = terminalSessionId
+        ? ctx.terminalSessionToCommandId.get(terminalSessionId)
+        : undefined;
+      if (parentCallId) {
+        ctx.stdinCallToCommandId.set(callId, parentCallId);
+      }
+      ctx.suppressedToolOutputIds.add(callId);
+      return;
+    }
+  }
 
   const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
   const bubble = ensureAssistantBubble(turn, timestamp);
@@ -615,6 +636,23 @@ function processPersistedToolOutput(
       ? JSON.stringify(payload.output)
       : '';
 
+  const parentCommandId = ctx.stdinCallToCommandId.get(callId);
+  if (parentCommandId) {
+    const parentToolCall = findPersistedToolCallById(ctx, parentCommandId);
+    if (parentToolCall) {
+      applyPersistedToolOutput(parentToolCall, payload.output, rawOutput, ctx, {
+        allowImplicitCommandCompletion: false,
+      });
+    }
+    ctx.stdinCallToCommandId.delete(callId);
+    ctx.suppressedToolOutputIds.delete(callId);
+    return;
+  }
+
+  if (ctx.suppressedToolOutputIds.delete(callId)) {
+    return;
+  }
+
   // Cross-turn resolution: look up where the tool call was originally pushed
   const origin = ctx.toolCallToTurn.get(callId);
   if (origin) {
@@ -623,11 +661,14 @@ function processPersistedToolOutput(
       const originBubble = originTurn.assistantBubbles[origin.bubbleIndex];
       const existing = originBubble.toolCalls.find(tool => tool.id === callId);
       if (existing) {
-        existing.result = normalizePersistedToolOutput(existing, payload.output, rawOutput);
-        existing.status = isCodexToolOutputError(rawOutput) ? 'error' : 'completed';
+        applyPersistedToolOutput(existing, payload.output, rawOutput, ctx);
         return;
       }
     }
+  }
+
+  if (payload.type === 'custom_tool_call_output') {
+    return;
   }
 
   // Fallback: push orphan entry into current turn
@@ -642,6 +683,86 @@ function processPersistedToolOutput(
     status: isCodexToolOutputError(rawOutput) ? 'error' : 'completed',
     result: normalizedResult,
   });
+}
+
+function findPersistedToolCallById(ctx: PersistedParseContext, callId: string): ToolCallInfo | null {
+  const origin = ctx.toolCallToTurn.get(callId);
+  if (!origin) {
+    return null;
+  }
+
+  const turn = ctx.turns.get(origin.turnId);
+  if (!turn || origin.bubbleIndex >= turn.assistantBubbles.length) {
+    return null;
+  }
+
+  return turn.assistantBubbles[origin.bubbleIndex].toolCalls.find(tool => tool.id === callId) ?? null;
+}
+
+function readTerminalSessionIdArgument(input: Record<string, unknown>): string | undefined {
+  const value = input.session_id ?? input.sessionId;
+  if (typeof value === 'string' && value) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+function isSilentWriteStdinInput(input: Record<string, unknown>): boolean {
+  return typeof input.chars !== 'string' || input.chars.length === 0;
+}
+
+function appendCommandOutput(previous: string | undefined, next: string): string {
+  if (!next) return previous ?? '';
+  if (!previous) return next;
+  if (previous.endsWith('\n') || next.startsWith('\n')) return previous + next;
+  return `${previous}\n${next}`;
+}
+
+function readPersistedCommandToolResult(rawOutputText: string): {
+  output: string;
+  status: 'running' | 'completed' | 'unknown';
+  exitCode?: number;
+  terminalSessionId?: string;
+} {
+  const output = normalizeCodexToolResult('Bash', rawOutputText);
+  const exitCodeMatch = rawOutputText.match(/(?:Exit code:|Process exited with code)\s*(-?\d+)/i);
+  const runningMatch = rawOutputText.match(/Process running with session ID\s*([^\n]+)/i);
+
+  return {
+    output,
+    status: exitCodeMatch ? 'completed' : runningMatch ? 'running' : 'unknown',
+    ...(exitCodeMatch ? { exitCode: Number(exitCodeMatch[1] ?? 0) } : {}),
+    ...(runningMatch ? { terminalSessionId: (runningMatch[1] ?? '').trim() } : {}),
+  };
+}
+
+function applyPersistedToolOutput(
+  toolCall: ToolCallInfo,
+  rawOutputValue: string | unknown[] | undefined,
+  rawOutputText: string,
+  ctx: PersistedParseContext,
+  options: { allowImplicitCommandCompletion?: boolean } = {},
+): void {
+  if (toolCall.name === 'Bash') {
+    const commandResult = readPersistedCommandToolResult(rawOutputText);
+    toolCall.result = appendCommandOutput(toolCall.result, commandResult.output);
+    if (commandResult.terminalSessionId) {
+      ctx.terminalSessionToCommandId.set(commandResult.terminalSessionId, toolCall.id);
+    }
+    if (commandResult.status === 'running') {
+      toolCall.status = 'running';
+      return;
+    }
+    if (commandResult.status === 'unknown' && options.allowImplicitCommandCompletion === false) {
+      return;
+    }
+    toolCall.status = commandResult.exitCode !== undefined
+      ? commandResult.exitCode === 0 ? 'completed' : 'error'
+      : isCodexToolOutputError(rawOutputText) ? 'error' : 'completed';
+    return;
+  }
+
+  toolCall.result = normalizePersistedToolOutput(toolCall, rawOutputValue, rawOutputText);
+  toolCall.status = isCodexToolOutputError(rawOutputText) ? 'error' : 'completed';
 }
 
 function normalizePersistedToolOutput(
@@ -816,6 +937,9 @@ function applyCompactedReplacementHistory(
   ctx.turnOrder.length = 0;
   ctx.currentTurnId = null;
   ctx.toolCallToTurn.clear();
+  ctx.suppressedToolOutputIds.clear();
+  ctx.terminalSessionToCommandId.clear();
+  ctx.stdinCallToCommandId.clear();
   ctx.turnCounter = 0;
 
   const replacementHistory = Array.isArray(payload?.replacement_history)

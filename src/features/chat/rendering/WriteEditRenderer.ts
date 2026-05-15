@@ -2,9 +2,9 @@ import { setIcon } from 'obsidian';
 
 import { getToolIcon } from '../../../core/tools/toolIcons';
 import type { ToolCallInfo, ToolDiffData } from '../../../core/types';
-import type { DiffLine, DiffStats } from '../../../core/types/diff';
+import type { DiffLine } from '../../../core/types/diff';
 import { setupCollapsible } from './collapsible';
-import { renderDiffContent } from './DiffRenderer';
+import { renderDiffContent, renderDiffStats } from './DiffRenderer';
 import { fileNameOnly } from './ToolCallRenderer';
 
 export interface WriteEditState {
@@ -41,20 +41,6 @@ function shortenPath(filePath: string, maxLength = 40): string {
   }
 
   return `${firstDir}/.../${filename}`;
-}
-
-function renderDiffStats(statsEl: HTMLElement, stats: DiffStats): void {
-  if (stats.added > 0) {
-    const addedEl = statsEl.createSpan({ cls: 'added' });
-    addedEl.setText(`+${stats.added}`);
-  }
-  if (stats.removed > 0) {
-    if (stats.added > 0) {
-      statsEl.createSpan({ text: ' ' });
-    }
-    const removedEl = statsEl.createSpan({ cls: 'removed' });
-    removedEl.setText(`-${stats.removed}`);
-  }
 }
 
 export function createWriteEditBlock(

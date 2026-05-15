@@ -123,6 +123,7 @@ describe('CodexAuxQueryRunner', () => {
       'thread/start',
       expect.objectContaining({
         cwd: '/mnt/c/repo',
+        experimentalRawEvents: true,
       }),
     );
   });

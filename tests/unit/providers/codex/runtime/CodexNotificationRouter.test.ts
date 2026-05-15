@@ -40,6 +40,126 @@ describe('CodexNotificationRouter', () => {
         { type: 'text', content: ' world' },
       ]);
     });
+
+    it('emits only missing assistant text from raw completed messages', () => {
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'msg1',
+        delta: 'Hel',
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Hello' }],
+        },
+      });
+
+      expect(chunks).toEqual([
+        { type: 'text', content: 'Hel' },
+        { type: 'text', content: 'lo' },
+      ]);
+    });
+
+    it('deduplicates raw completed text against the current post-tool assistant segment', () => {
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'msg1',
+        delta: 'First',
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'call_abc',
+          command: 'echo tool',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'echo tool' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'call_abc',
+          command: 'echo tool',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'echo tool' }],
+          aggregatedOutput: 'tool\n',
+          exitCode: 0,
+          durationMs: 10,
+        },
+      });
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'msg2',
+        delta: 'Sec',
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Second' }],
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'text')).toEqual([
+        { type: 'text', content: 'First' },
+        { type: 'text', content: 'Sec' },
+        { type: 'text', content: 'ond' },
+      ]);
+    });
+
+    it('does not render raw user bootstrap messages as assistant text', () => {
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [
+            { type: 'input_text', text: '# AGENTS.md instructions for /vault\n\n<INSTRUCTIONS>\nDo good work.\n</INSTRUCTIONS>' },
+            { type: 'input_text', text: '<environment_context>\n  <cwd>/vault</cwd>\n</environment_context>' },
+          ],
+        },
+      });
+
+      expect(chunks).toEqual([]);
+    });
+
+    it('does not render raw developer instruction messages as assistant text', () => {
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'message',
+          role: 'developer',
+          content: [
+            { type: 'input_text', text: '<permissions instructions>\nSandbox mode...\n</permissions instructions>' },
+          ],
+        },
+      });
+
+      expect(chunks).toEqual([]);
+    });
   });
 
   describe('reasoning', () => {
@@ -181,6 +301,206 @@ describe('CodexNotificationRouter', () => {
       });
     });
 
+    it('maps raw response function calls to tool chunks without JSONL tailing', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'exec_command',
+          call_id: 'call_raw',
+          arguments: '{"cmd":"ls -1"}',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_raw',
+          output: 'Exit code: 0\nOutput:\nfile.txt',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks).toContainEqual({
+        type: 'tool_use',
+        id: 'call_raw',
+        name: 'Bash',
+        input: { command: 'ls -1' },
+      });
+      expect(chunks).toContainEqual({
+        type: 'tool_result',
+        id: 'call_raw',
+        content: 'file.txt',
+        isError: false,
+      });
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
+    });
+
+    it('does not normalize raw command output a second time when item/completed arrives', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'exec_command',
+          call_id: 'call_raw_json',
+          arguments: '{"cmd":"printf json"}',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_raw_json',
+          output: 'Exit code: 0\nOutput:\n{"output":"literal"}',
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'call_raw_json',
+          command: 'printf json',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'printf json' }],
+          aggregatedOutput: 'Exit code: 0\nOutput:\n{"output":"literal"}',
+          exitCode: 0,
+          durationMs: 10,
+        },
+      });
+
+      expect(chunks).toContainEqual({
+        type: 'tool_result',
+        id: 'call_raw_json',
+        content: '{"output":"literal"}',
+        isError: false,
+      });
+      expect(chunks).not.toContainEqual(expect.objectContaining({
+        type: 'tool_result',
+        id: 'call_raw_json',
+        content: 'literal',
+      }));
+    });
+
+    it('preserves non-empty raw write_stdin calls as visible tool chunks', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'write_stdin',
+          call_id: 'call_stdin',
+          arguments: '{"session_id":2404,"chars":"y\\n"}',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_stdin',
+          output: 'Input sent.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks).toContainEqual({
+        type: 'tool_use',
+        id: 'call_stdin',
+        name: 'write_stdin',
+        input: { session_id: 2404, chars: 'y\n' },
+      });
+      expect(chunks).toContainEqual({
+        type: 'tool_result',
+        id: 'call_stdin',
+        content: 'Input sent.',
+        isError: false,
+      });
+    });
+
+    it('does not duplicate item/started when raw response already emitted the tool_use', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'exec_command',
+          call_id: 'call_raw',
+          arguments: '{"command":"pwd"}',
+        },
+      });
+      router.handleNotification('item/started', {
+        item: {
+          type: 'commandExecution',
+          id: 'call_raw',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+    });
+
+    it('suppresses raw apply_patch transport rows so fileChange remains the owner', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'apply_patch',
+          call_id: 'patch_raw',
+          input: '*** Begin Patch\n*** End Patch',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'patch_raw',
+          output: 'Success. Updated files.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks).toEqual([{ type: 'done' }]);
+    });
+
     it('maps fileChange item/started to tool_use chunk', () => {
       router.handleNotification('item/started', {
         item: {
@@ -198,6 +518,116 @@ describe('CodexNotificationRouter', () => {
         id: 'call_fc1',
         name: 'apply_patch',
       });
+    });
+
+    it('emits fileChange tool input before completed result so final diffs can update the renderer', () => {
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'fileChange',
+          id: 'call_fc_done',
+          status: 'completed',
+          changes: [
+            {
+              path: '/workspace/foo.ts',
+              kind: 'update',
+              diff: '@@ -1 +1 @@\n-old\n+new',
+            },
+          ],
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_fc_done',
+          name: 'apply_patch',
+          input: {
+            changes: [
+              {
+                path: '/workspace/foo.ts',
+                kind: 'update',
+                type: 'update',
+                diff: '@@ -1 +1 @@\n-old\n+new',
+              },
+            ],
+          },
+        },
+        {
+          type: 'tool_result',
+          id: 'call_fc_done',
+          content: 'update: /workspace/foo.ts',
+          isError: false,
+        },
+      ]);
+    });
+
+    it('maps fileChange patchUpdated diffs into apply_patch tool input', () => {
+      router.handleNotification('item/fileChange/patchUpdated', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'call_patch',
+        changes: [
+          {
+            path: '/workspace/foo.ts',
+            kind: { type: 'update', move_path: null },
+            diff: '@@ -1 +1 @@\n-old\n+new',
+          },
+        ],
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_patch',
+          name: 'apply_patch',
+          input: {
+            changes: [
+              {
+                path: '/workspace/foo.ts',
+                kind: 'update',
+                type: 'update',
+                diff: '@@ -1 +1 @@\n-old\n+new',
+              },
+            ],
+          },
+        },
+      ]);
+    });
+
+    it('merges raw apply_patch input into the fileChange-owned tool call', () => {
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'apply_patch',
+          call_id: 'call_patch',
+          input: '*** Begin Patch\n*** Update File: /workspace/foo.ts\n@@\n-old\n+new\n*** End Patch',
+        },
+      });
+      router.handleNotification('item/started', {
+        item: {
+          type: 'fileChange',
+          id: 'call_patch',
+          changes: [{ path: '/workspace/foo.ts', type: 'update' }],
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_patch',
+          name: 'apply_patch',
+          input: {
+            patch: '*** Begin Patch\n*** Update File: /workspace/foo.ts\n@@\n-old\n+new\n*** End Patch',
+            changes: [{ path: '/workspace/foo.ts', kind: 'update', type: 'update' }],
+          },
+        },
+      ]);
     });
   });
 
