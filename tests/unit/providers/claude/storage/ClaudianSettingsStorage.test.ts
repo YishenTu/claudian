@@ -20,6 +20,7 @@ const mockAdapter = {
   read: jest.fn(),
   write: jest.fn(),
   delete: jest.fn(),
+  rename: jest.fn(),
 } as unknown as jest.Mocked<VaultFileAdapter>;
 
 describe('ClaudianSettingsStorage', () => {
@@ -32,6 +33,7 @@ describe('ClaudianSettingsStorage', () => {
     mockAdapter.read.mockResolvedValue('{}');
     mockAdapter.write.mockResolvedValue(undefined);
     mockAdapter.delete.mockResolvedValue(undefined);
+    mockAdapter.rename.mockResolvedValue(undefined);
     storage = new ClaudianSettingsStorage(mockAdapter);
   });
 
@@ -86,6 +88,28 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.userName).toBe('TestUser');
       // Defaults should still be present for unspecified fields
       expect(result.thinkingBudget).toBe(DEFAULT_SETTINGS.thinkingBudget);
+    });
+
+    it('backs up invalid settings JSON and falls back to defaults', async () => {
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(12345);
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue('{"systemPrompt":"line one\r\nline two"}');
+
+      try {
+        const result = await storage.load();
+
+        expect(result.model).toBe(DEFAULT_SETTINGS.model);
+        expect(mockAdapter.rename).toHaveBeenCalledWith(
+          CLAUDIAN_SETTINGS_PATH,
+          `${CLAUDIAN_SETTINGS_PATH}.invalid-12345`,
+        );
+        expect(mockAdapter.write).toHaveBeenCalledWith(
+          CLAUDIAN_SETTINGS_PATH,
+          expect.any(String),
+        );
+      } finally {
+        nowSpy.mockRestore();
+      }
     });
 
     it('migrates legacy openInMainTab true to main-tab placement', async () => {
@@ -345,11 +369,17 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.envSnippets[0].scope).toBeUndefined();
     });
 
-    it('should throw on JSON parse error', async () => {
+    it('should recover from JSON parse errors', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue('invalid json');
 
-      await expect(storage.load()).rejects.toThrow();
+      const result = await storage.load();
+
+      expect(result.model).toBe(DEFAULT_SETTINGS.model);
+      expect(mockAdapter.rename).toHaveBeenCalledWith(
+        CLAUDIAN_SETTINGS_PATH,
+        expect.stringMatching(new RegExp(`^${CLAUDIAN_SETTINGS_PATH}\\.invalid-\\d+$`)),
+      );
     });
 
     it('should throw on read error', async () => {
