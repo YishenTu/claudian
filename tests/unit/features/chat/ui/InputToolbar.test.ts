@@ -2,6 +2,7 @@ import { createMockEl } from '@test/helpers/mockElement';
 
 import type { UsageInfo } from '@/core/types';
 import {
+  ComposerExpandButton,
   ContextUsageMeter,
   createInputToolbar,
   McpServerSelector,
@@ -1122,6 +1123,7 @@ describe('createInputToolbar', () => {
     expect(toolbar.mcpServerSelector).toBeInstanceOf(McpServerSelector);
     expect(toolbar.permissionToggle).toBeInstanceOf(PermissionToggle);
     expect(toolbar.serviceTierToggle).toBeInstanceOf(ServiceTierToggle);
+    expect(toolbar.composerExpandButton).toBeInstanceOf(ComposerExpandButton);
   });
 
   it('should place the mode selector after the permission toggle in toolbar order', () => {
@@ -1135,5 +1137,35 @@ describe('createInputToolbar', () => {
     expect(permissionIndex).toBeGreaterThanOrEqual(0);
     expect(modeIndex).toBeGreaterThan(permissionIndex);
     expect(modeIndex).toBe(parentEl.children.length - 1);
+  });
+});
+
+describe('ComposerExpandButton', () => {
+  let parentEl: any;
+  let callbacks: ReturnType<typeof createMockCallbacks>;
+  let button: ComposerExpandButton;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    parentEl = createMockEl();
+    callbacks = createMockCallbacks({
+      onExpandComposer: jest.fn(),
+    });
+    button = new ComposerExpandButton(parentEl, callbacks);
+  });
+
+  it('should call onExpandComposer when clicked', () => {
+    parentEl.querySelector('.claudian-composer-expand-button')?.click();
+
+    expect((callbacks as any).onExpandComposer).toHaveBeenCalledTimes(1);
+  });
+
+  it('should show active state when expanded', () => {
+    button.setExpanded(true);
+
+    const buttonEl = parentEl.querySelector('.claudian-composer-expand-button');
+    expect(buttonEl?.hasClass('active')).toBe(true);
+    expect(buttonEl?.getAttribute('aria-label')).toBe('Collapse composer');
+    expect(buttonEl?.getAttribute('title')).toBe('Collapse composer');
   });
 });

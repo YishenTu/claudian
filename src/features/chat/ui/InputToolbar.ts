@@ -53,6 +53,7 @@ export interface ToolbarCallbacks {
   onEffortLevelChange: (effort: string) => Promise<void>;
   onServiceTierChange: (serviceTier: string) => Promise<void>;
   onPermissionModeChange: (mode: string) => Promise<void>;
+  onExpandComposer?: () => void;
   getSettings: () => ToolbarSettings;
   getEnvironmentVariables?: () => string;
   getUIConfig: () => ProviderChatUIConfig;
@@ -525,6 +526,51 @@ export class ServiceTierToggle {
       : toggleConfig.activeValue;
     await this.callbacks.onServiceTierChange(next);
     this.updateDisplay();
+  }
+}
+
+export class ComposerExpandButton {
+  private container: HTMLElement;
+  private buttonEl: HTMLElement | null = null;
+  private callbacks: ToolbarCallbacks;
+  private expanded = false;
+
+  constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
+    this.callbacks = callbacks;
+    this.container = parentEl.createDiv({ cls: 'claudian-composer-expand' });
+    this.render();
+  }
+
+  private render(): void {
+    this.container.empty();
+
+    this.buttonEl = this.container.createEl('button', {
+      cls: 'claudian-composer-expand-button',
+      attr: {
+        'aria-label': 'Expand composer',
+        type: 'button',
+      },
+    });
+    this.updateDisplay();
+
+    this.buttonEl.addEventListener('click', () => {
+      this.callbacks.onExpandComposer?.();
+    });
+  }
+
+  setExpanded(expanded: boolean): void {
+    this.expanded = expanded;
+    this.updateDisplay();
+  }
+
+  private updateDisplay(): void {
+    if (!this.buttonEl) return;
+
+    this.buttonEl.toggleClass('active', this.expanded);
+    const label = this.expanded ? 'Collapse composer' : 'Expand composer';
+    this.buttonEl.setAttribute('aria-label', label);
+    this.buttonEl.setAttribute('title', label);
+    setIcon(this.buttonEl, this.expanded ? 'minimize-2' : 'maximize-2');
   }
 }
 
@@ -1221,6 +1267,7 @@ export function createInputToolbar(
   mcpServerSelector: McpServerSelector;
   permissionToggle: PermissionToggle;
   serviceTierToggle: ServiceTierToggle;
+  composerExpandButton: ComposerExpandButton;
 } {
   const modelSelector = new ModelSelector(parentEl, callbacks);
   const thinkingBudgetSelector = new ThinkingBudgetSelector(parentEl, callbacks);
@@ -1229,6 +1276,7 @@ export function createInputToolbar(
   const externalContextSelector = new ExternalContextSelector(parentEl, callbacks);
   const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);
+  const composerExpandButton = new ComposerExpandButton(parentEl, callbacks);
   const modeSelector = new ModeSelector(parentEl, callbacks);
 
   return {
@@ -1240,5 +1288,6 @@ export function createInputToolbar(
     externalContextSelector,
     mcpServerSelector,
     permissionToggle,
+    composerExpandButton,
   };
 }

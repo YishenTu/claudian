@@ -9,6 +9,11 @@
   margin-bottom: 4px;
 }
 
+.claudian-context-row .claudian-image-preview {
+  padding: 0;
+  margin-bottom: 0;
+}
+
 /* Individual image preview chip */
 .claudian-image-chip {
   display: flex;

@@ -5,15 +5,21 @@
 }
 
 /* Input wrapper (border container) - flex column so textarea expands when no chips */
-/* Height calculation: context row (36px) + textarea min (60px) + toolbar (38px) + border (2px) = 136px */
 .claudian-input-wrapper {
   position: relative;
   display: flex;
   flex-direction: column;
   min-height: 140px;
+  box-sizing: border-box;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   background: var(--background-primary);
+}
+
+.claudian-input-wrapper.claudian-input-wrapper-expanded {
+  height: clamp(260px, 46vh, 520px);
+  min-height: 260px;
+  overflow: hidden;
 }
 
 /* Context row (file chip start, selection indicator end) - inside input wrapper at top */
@@ -30,6 +36,11 @@
 /* Show context row when it has visible content */
 .claudian-context-row.has-content {
   display: flex;
+}
+
+.claudian-input-wrapper:not(.claudian-input-wrapper-expanded) .claudian-context-row.has-content {
+  max-height: 90px;
+  overflow-y: auto;
 }
 
 /* Nav row (tab badges start, header icons end) - above input wrapper */
@@ -81,9 +92,9 @@
   width: 100%;
   flex: 1 1 0;
   min-height: var(--claudian-textarea-min-height, 60px);
-  max-height: var(--claudian-textarea-max-height, none);
+  max-height: var(--claudian-textarea-max-height, 96px);
   resize: none;
-  padding: 8px 10px 10px 10px;
+  padding: 10px 12px 12px 12px;
   border: none !important;
   border-radius: 6px;
   background: transparent !important;
@@ -94,6 +105,18 @@
   box-shadow: none !important;
   overflow-y: auto;
   unicode-bidi: plaintext; /* Proper BiDi text handling for mixed RTL/LTR */
+}
+
+.claudian-input-wrapper.claudian-input-wrapper-expanded .claudian-input {
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.claudian-input-wrapper.claudian-input-wrapper-manual-collapsed .claudian-input {
+  min-height: var(--claudian-textarea-min-height, 60px);
+  max-height: var(--claudian-textarea-max-height, 96px);
+  overflow-y: auto;
 }
 
 .claudian-input:hover,
@@ -114,6 +137,7 @@
   align-items: center;
   justify-content: flex-start;
   flex-shrink: 0;
+  margin-top: auto;
   padding: 4px 6px 6px 6px;
 }
 

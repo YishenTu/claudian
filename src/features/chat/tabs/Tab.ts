@@ -28,6 +28,7 @@ import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import { CanvasSelectionController } from '../controllers/CanvasSelectionController';
+import { updateContextRowHasContent } from '../controllers/contextRowVisibility';
 import { ConversationController } from '../controllers/ConversationController';
 import { InputController } from '../controllers/InputController';
 import { NavigationController } from '../controllers/NavigationController';
@@ -40,13 +41,17 @@ import { BangBashService } from '../services/BangBashService';
 import { SubagentManager } from '../services/SubagentManager';
 import { ChatState } from '../state/ChatState';
 import { BangBashModeManager as BangBashModeManagerClass } from '../ui/BangBashModeManager';
+import {
+  getComposerModeAfterInput,
+  getComposerModeAfterReset,
+  getComposerModeAfterToggle,
+} from '../ui/composerMode';
 import { FileContextManager } from '../ui/FileContext';
 import { ImageContextManager } from '../ui/ImageContext';
 import { createInputToolbar } from '../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../ui/InstructionModeManager';
 import { NavigationSidebar } from '../ui/NavigationSidebar';
 import { StatusPanel } from '../ui/StatusPanel';
-import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
 import { getTabProviderId } from './providerResolution';
 import type { TabData, TabDOMElements, TabId, TabProviderContext } from './types';
@@ -60,6 +65,12 @@ type TabProviderSettings = Record<string, unknown> & {
   permissionMode: string;
   customContextLimits?: Record<string, number>;
 };
+
+const COMPOSER_EXPANDED_CLASS = 'claudian-input-wrapper-expanded';
+const COMPOSER_MANUAL_COLLAPSED_CLASS = 'claudian-input-wrapper-manual-collapsed';
+const COMPOSER_AUTO_EXPAND_BUFFER_PX = 8;
+const COMPOSER_COMPACT_TEXTAREA_MIN_HEIGHT = 60;
+const COMPOSER_COMPACT_TEXTAREA_MAX_HEIGHT = 96;
 
 /**
  * Returns model options for a blank tab.
@@ -444,6 +455,7 @@ export function createTab(options: TabCreateOptions): TabData {
       mcpServerSelector: null,
       permissionToggle: null,
       serviceTierToggle: null,
+      composerExpandButton: null,
       slashCommandDropdown: null,
       instructionModeManager: null,
       bangBashModeManager: null,
@@ -453,9 +465,56 @@ export function createTab(options: TabCreateOptions): TabData {
     },
     dom,
     renderer: null,
+    composerMode: 'compact',
   };
 
   return tab;
+}
+
+function applyComposerMode(tab: TabData): void {
+  const mode = tab.composerMode;
+  tab.dom.inputWrapper.toggleClass(COMPOSER_EXPANDED_CLASS, mode === 'expanded');
+  tab.dom.inputWrapper.toggleClass(COMPOSER_MANUAL_COLLAPSED_CLASS, mode === 'manual-collapsed');
+  tab.ui.composerExpandButton?.setExpanded(mode === 'expanded');
+
+  if (mode === 'expanded') {
+    tab.dom.inputEl.setCssProps({
+      '--claudian-textarea-min-height': '0px',
+      '--claudian-textarea-max-height': 'none',
+    });
+    return;
+  }
+
+  tab.dom.inputEl.setCssProps({
+    '--claudian-textarea-min-height': `${COMPOSER_COMPACT_TEXTAREA_MIN_HEIGHT}px`,
+    '--claudian-textarea-max-height': `${COMPOSER_COMPACT_TEXTAREA_MAX_HEIGHT}px`,
+  });
+}
+
+function setComposerMode(tab: TabData, mode: TabData['composerMode']): void {
+  tab.composerMode = mode;
+  applyComposerMode(tab);
+}
+
+function toggleComposerMode(tab: TabData): void {
+  setComposerMode(
+    tab,
+    getComposerModeAfterToggle(tab.composerMode, tab.dom.inputEl.value.trim().length > 0),
+  );
+  tab.dom.inputEl.focus();
+}
+
+function doesComposerOverflowCompact(textarea: HTMLTextAreaElement): boolean {
+  const visibleHeight = Math.max(textarea.clientHeight, textarea.offsetHeight);
+  return visibleHeight > 0
+    && textarea.scrollHeight > visibleHeight + COMPOSER_AUTO_EXPAND_BUFFER_PX;
+}
+
+function updateComposerModeFromInput(tab: TabData): void {
+  setComposerMode(tab, getComposerModeAfterInput(tab.composerMode, {
+    hasText: tab.dom.inputEl.value.trim().length > 0,
+    overflowsCompact: doesComposerOverflowCompact(tab.dom.inputEl),
+  }));
 }
 
 /**
@@ -622,7 +681,8 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
         tab.controllers.selectionController?.updateContextRowVisibility();
         tab.controllers.browserSelectionController?.updateContextRowVisibility();
         tab.controllers.canvasSelectionController?.updateContextRowVisibility();
-        autoResizeTextarea(dom.inputEl);
+        updateContextRowHasContent(dom.contextRowEl);
+        updateComposerModeFromInput(tab);
         tab.renderer?.scrollToBottomIfNeeded();
       },
       getExternalContexts: () => tab.ui.externalContextSelector?.getExternalContexts() || [],
@@ -640,7 +700,8 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
         tab.controllers.selectionController?.updateContextRowVisibility();
         tab.controllers.browserSelectionController?.updateContextRowVisibility();
         tab.controllers.canvasSelectionController?.updateContextRowVisibility();
-        autoResizeTextarea(dom.inputEl);
+        updateContextRowHasContent(dom.contextRowEl);
+        updateComposerModeFromInput(tab);
         tab.renderer?.scrollToBottomIfNeeded();
       },
     },
@@ -870,6 +931,9 @@ function initializeInputToolbar(
         mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
       );
     },
+    onExpandComposer: () => {
+      toggleComposerMode(tab);
+    },
   });
 
   tab.ui.modelSelector = toolbarComponents.modelSelector;
@@ -880,6 +944,7 @@ function initializeInputToolbar(
   tab.ui.mcpServerSelector = toolbarComponents.mcpServerSelector;
   tab.ui.permissionToggle = toolbarComponents.permissionToggle;
   tab.ui.serviceTierToggle = toolbarComponents.serviceTierToggle;
+  tab.ui.composerExpandButton = toolbarComponents.composerExpandButton;
 
   tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 
@@ -1196,7 +1261,7 @@ export function initializeTabControllers(
     dom.selectionIndicatorEl!,
     dom.inputEl,
     dom.contextRowEl,
-    () => autoResizeTextarea(dom.inputEl),
+    () => updateComposerModeFromInput(tab),
     dom.contentEl,
   );
 
@@ -1205,7 +1270,7 @@ export function initializeTabControllers(
     dom.browserIndicatorEl!,
     dom.inputEl,
     dom.contextRowEl,
-    () => autoResizeTextarea(dom.inputEl)
+    () => updateComposerModeFromInput(tab)
   );
 
   tab.controllers.canvasSelectionController = new CanvasSelectionController(
@@ -1213,7 +1278,7 @@ export function initializeTabControllers(
     dom.canvasIndicatorEl!,
     dom.inputEl,
     dom.contextRowEl,
-    () => autoResizeTextarea(dom.inputEl)
+    () => updateComposerModeFromInput(tab)
   );
 
   tab.controllers.streamController = new StreamController({
@@ -1336,7 +1401,7 @@ export function initializeTabControllers(
     getStatusPanel: () => ui.statusPanel,
     generateId: generateMessageId,
     resetInputHeight: () => {
-      // Per-tab input height is managed by CSS, no dynamic adjustment needed
+      setComposerMode(tab, getComposerModeAfterReset(tab.composerMode));
     },
     getAuxiliaryModel: () => tab.service?.getAuxiliaryModel?.() ?? tab.draftModel ?? null,
     getAgentService: () => tab.service,
@@ -1473,7 +1538,10 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     ui.instructionModeManager?.handleInputChange();
     ui.bangBashModeManager?.handleInputChange();
     syncBangBashSuppression();
-    autoResizeTextarea(dom.inputEl);
+    setComposerMode(tab, getComposerModeAfterInput(tab.composerMode, {
+      hasText: dom.inputEl.value.trim().length > 0,
+      overflowsCompact: doesComposerOverflowCompact(dom.inputEl),
+    }));
   };
   dom.inputEl.addEventListener('input', inputHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('input', inputHandler));

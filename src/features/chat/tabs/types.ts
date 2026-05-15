@@ -14,9 +14,11 @@ import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { BangBashModeManager } from '../ui/BangBashModeManager';
+import type { ComposerMode } from '../ui/composerMode';
 import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type {
+  ComposerExpandButton,
   ContextUsageMeter,
   ExternalContextSelector,
   McpServerSelector,
@@ -120,6 +122,7 @@ export interface TabUIComponents {
   mcpServerSelector: McpServerSelector | null;
   permissionToggle: PermissionToggle | null;
   serviceTierToggle: ServiceTierToggle | null;
+  composerExpandButton: ComposerExpandButton | null;
   slashCommandDropdown: SlashCommandDropdown | null;
   instructionModeManager: InstructionModeManager | null;
   bangBashModeManager: BangBashModeManager | null;
@@ -213,6 +216,9 @@ export interface TabData {
 
   /** Per-tab renderer. */
   renderer: MessageRenderer | null;
+
+  /** Composer sizing state. */
+  composerMode: ComposerMode;
 }
 
 export type TabProviderContext = Pick<TabData, 'conversationId' | 'service' | 'providerId' | 'lifecycleState' | 'draftModel'>;

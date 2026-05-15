@@ -181,6 +181,10 @@ const createMockServiceTierToggle = () => ({
   updateDisplay: jest.fn(),
 });
 
+const createMockComposerExpandButton = () => ({
+  setExpanded: jest.fn(),
+});
+
 // Shared mock instances (reset in beforeEach)
 let mockFileContextManager: ReturnType<typeof createMockFileContextManager>;
 let mockImageContextManager: ReturnType<typeof createMockImageContextManager>;
@@ -196,6 +200,7 @@ let mockExternalContextSelector: ReturnType<typeof createMockExternalContextSele
 let mockMcpServerSelector: ReturnType<typeof createMockMcpServerSelector>;
 let mockPermissionToggle: ReturnType<typeof createMockPermissionToggle>;
 let mockServiceTierToggle: ReturnType<typeof createMockServiceTierToggle>;
+let mockComposerExpandButton: ReturnType<typeof createMockComposerExpandButton>;
 let mockMessageRenderer: { scrollToBottomIfNeeded: jest.Mock; setAsyncSubagentClickCallback: jest.Mock };
 let mockSelectionController: ReturnType<typeof createMockSelectionController>;
 let mockBrowserSelectionController: ReturnType<typeof createMockBrowserSelectionController>;
@@ -276,6 +281,7 @@ jest.mock('@/features/chat/ui/InputToolbar', () => ({
     mockMcpServerSelector = createMockMcpServerSelector();
     mockPermissionToggle = createMockPermissionToggle();
     mockServiceTierToggle = createMockServiceTierToggle();
+    mockComposerExpandButton = createMockComposerExpandButton();
     return {
       modelSelector: mockModelSelector,
       modeSelector: mockModeSelector,
@@ -285,6 +291,7 @@ jest.mock('@/features/chat/ui/InputToolbar', () => ({
       mcpServerSelector: mockMcpServerSelector,
       permissionToggle: mockPermissionToggle,
       serviceTierToggle: mockServiceTierToggle,
+      composerExpandButton: mockComposerExpandButton,
     };
   }),
 }));
@@ -2341,6 +2348,31 @@ describe('Tab - UI Callback Wiring', () => {
       callbacks.onImagesChanged();
 
       expect(mockMessageRenderer.scrollToBottomIfNeeded).toHaveBeenCalled();
+    });
+
+    it('should wire onExpandComposer to toggle composer mode', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      tab.dom.inputEl.value = 'long enough text to keep manual collapse meaningful';
+
+      initializeTabUI(tab, options.plugin);
+
+      const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
+        createInputToolbar: jest.Mock;
+      };
+      const toolbarCallbacks = toolbarModule.createInputToolbar.mock.calls.at(-1)?.[1];
+
+      toolbarCallbacks.onExpandComposer();
+
+      expect(tab.dom.inputWrapper.hasClass('claudian-input-wrapper-expanded')).toBe(true);
+      expect(tab.dom.inputWrapper.hasClass('claudian-input-wrapper-manual-collapsed')).toBe(false);
+      expect(mockComposerExpandButton.setExpanded).toHaveBeenLastCalledWith(true);
+
+      toolbarCallbacks.onExpandComposer();
+
+      expect(tab.dom.inputWrapper.hasClass('claudian-input-wrapper-expanded')).toBe(false);
+      expect(tab.dom.inputWrapper.hasClass('claudian-input-wrapper-manual-collapsed')).toBe(true);
+      expect(mockComposerExpandButton.setExpanded).toHaveBeenLastCalledWith(false);
     });
 
     it('should wire getExcludedTags to return plugin settings', () => {

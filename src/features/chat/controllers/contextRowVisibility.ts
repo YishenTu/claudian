@@ -11,8 +11,8 @@ export function updateContextRowHasContent(contextRowEl: HTMLElement): void {
   const hasFileChips = !!fileIndicator && fileIndicator.hasClass('claudian-visible-flex');
   const hasImageChips = !!imagePreview && imagePreview.hasClass('claudian-visible-flex');
 
-  contextRowEl.classList.toggle(
-    'has-content',
-    hasEditorSelection || hasBrowserSelection || hasCanvasSelection || hasFileChips || hasImageChips
-  );
+  const hasContent =
+    hasEditorSelection || hasBrowserSelection || hasCanvasSelection || hasFileChips || hasImageChips;
+
+  contextRowEl.classList.toggle('has-content', hasContent);
 }
