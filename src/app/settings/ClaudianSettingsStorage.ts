@@ -210,8 +210,10 @@ export class ClaudianSettingsStorage {
       return this.getDefaults();
     }
 
-    const content = await this.adapter.read(settingsPath);
-    const stored = JSON.parse(content) as Record<string, unknown>;
+    const stored = await this.readStoredSettings(settingsPath);
+    if (!stored) {
+      return this.getDefaults();
+    }
     const hiddenProviderCommands = mergeLegacyClaudeHiddenCommands(
       normalizeHiddenProviderCommands(stored.hiddenProviderCommands),
       stored.hiddenSlashCommands,
@@ -274,6 +276,22 @@ export class ClaudianSettingsStorage {
     }
 
     return merged;
+  }
+
+  private async readStoredSettings(settingsPath: string): Promise<Record<string, unknown> | null> {
+    const content = await this.adapter.read(settingsPath);
+    try {
+      return JSON.parse(content) as Record<string, unknown>;
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) {
+        throw error;
+      }
+
+      const backupPath = `${settingsPath}.invalid-${Date.now()}`;
+      await this.adapter.rename(settingsPath, backupPath);
+      await this.save(this.getDefaults());
+      return null;
+    }
   }
 
   async save(settings: StoredClaudianSettings): Promise<void> {
