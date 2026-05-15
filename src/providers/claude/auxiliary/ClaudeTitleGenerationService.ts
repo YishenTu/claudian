@@ -6,6 +6,7 @@ import type {
 import type ClaudianPlugin from '../../../main';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { runColdStartQuery } from '../runtime/claudeColdStartQuery';
+import { claudeChatUIConfig } from '../ui/ClaudeChatUIConfig';
 
 export type { TitleGenerationResult };
 
@@ -73,8 +74,15 @@ export class TitleGenerationService {
     const envVars = parseEnvironmentVariables(
       this.plugin.getActiveEnvironmentVariables('claude')
     );
+    const titleModel = this.plugin.settings.titleGenerationModel;
+    if (titleModel && claudeChatUIConfig.ownsModel(
+      titleModel,
+      this.plugin.settings as unknown as Record<string, unknown>,
+    )) {
+      return titleModel;
+    }
+
     return (
-      this.plugin.settings.titleGenerationModel ||
       envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL ||
       'claude-haiku-4-5'
     );

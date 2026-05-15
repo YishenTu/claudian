@@ -13,6 +13,7 @@ import {
   type ProviderSettingsReconciler,
   type ProviderSubagentLifecycleAdapter,
   type ProviderTaskResultInterpreter,
+  type TitleGenerationCallback,
   type TitleGenerationService,
 } from './types';
 
@@ -46,8 +47,25 @@ export class ProviderRegistry {
     return this.getProviderRegistration(providerId).createRuntime(options);
   }
 
-  static createTitleGenerationService(plugin: ClaudianPlugin, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): TitleGenerationService {
+  static createTitleGenerationService(plugin: ClaudianPlugin, providerId?: ProviderId): TitleGenerationService {
+    if (!providerId) {
+      return new RoutedTitleGenerationService(plugin);
+    }
     return this.getProviderRegistration(providerId).createTitleGenerationService(plugin);
+  }
+
+  static resolveTitleGenerationProviderId(settings: Record<string, unknown>): ProviderId {
+    const titleModel = typeof settings.titleGenerationModel === 'string'
+      ? settings.titleGenerationModel.trim()
+      : '';
+
+    if (!titleModel) {
+      return DEFAULT_CHAT_PROVIDER_ID;
+    }
+
+    return this.resolveProviderForModel(titleModel, settings, {
+      fallbackProviderId: DEFAULT_CHAT_PROVIDER_ID,
+    });
   }
 
   static createInstructionRefineService(plugin: ClaudianPlugin, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): InstructionRefineService {
@@ -172,5 +190,54 @@ export class ProviderRegistry {
       }
     }
     return ids;
+  }
+}
+
+interface ActiveTitleGeneration {
+  service: TitleGenerationService;
+}
+
+class RoutedTitleGenerationService implements TitleGenerationService {
+  private readonly activeGenerations = new Map<string, ActiveTitleGeneration>();
+
+  constructor(private readonly plugin: ClaudianPlugin) {}
+
+  async generateTitle(
+    conversationId: string,
+    userMessage: string,
+    callback: TitleGenerationCallback,
+  ): Promise<void> {
+    const providerId = ProviderRegistry.resolveTitleGenerationProviderId(
+      this.plugin.settings as unknown as Record<string, unknown>,
+    );
+    const service = ProviderRegistry.createTitleGenerationService(this.plugin, providerId);
+    const generation = { service };
+    const previous = this.activeGenerations.get(conversationId);
+
+    this.activeGenerations.set(conversationId, generation);
+    previous?.service.cancel();
+
+    try {
+      await service.generateTitle(conversationId, userMessage, async (convId, result) => {
+        if (this.activeGenerations.get(conversationId) !== generation) {
+          return;
+        }
+        await callback(convId, result);
+      });
+    } finally {
+      if (this.activeGenerations.get(conversationId) === generation) {
+        this.activeGenerations.delete(conversationId);
+      }
+    }
+  }
+
+  cancel(): void {
+    const services = new Set<TitleGenerationService>(
+      [...this.activeGenerations.values()].map(generation => generation.service),
+    );
+    this.activeGenerations.clear();
+    for (const service of services) {
+      service.cancel();
+    }
   }
 }

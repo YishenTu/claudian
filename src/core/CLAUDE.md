@@ -50,10 +50,13 @@ for await (const chunk of runtime.query(preparedTurn, history)) {
 ### Provider Factories
 
 ```typescript
-const titleService = ProviderRegistry.createTitleGenerationService(plugin, providerId);
+const titleService = ProviderRegistry.createTitleGenerationService(plugin);
 const refineService = ProviderRegistry.createInstructionRefineService(plugin, providerId);
 const inlineEditService = ProviderRegistry.createInlineEditService(plugin, providerId);
 ```
+
+Title generation is provider-routed by the global `titleGenerationModel` setting.
+It is intentionally independent from the active chat tab provider.
 
 ### Workspace Services
 

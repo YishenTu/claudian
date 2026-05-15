@@ -923,7 +923,7 @@ describe('Tab - Service Initialization', () => {
       expect(mockSlashCommandDropdown.resetSdkSkillsCache).toHaveBeenCalled();
     });
 
-    it('rebinds blank-tab helper services when a newly enabled provider takes over the draft model', () => {
+    it('rebinds provider-scoped helper services when a newly enabled provider takes over the draft model', () => {
       const createInstructionRefineServiceSpy = jest.spyOn(ProviderRegistry, 'createInstructionRefineService')
         .mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
       const createTitleGenerationServiceSpy = jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
@@ -959,7 +959,7 @@ describe('Tab - Service Initialization', () => {
 
       expect(tab.providerId).toBe('codex');
       expect(createInstructionRefineServiceSpy).toHaveBeenLastCalledWith(plugin, 'codex');
-      expect(createTitleGenerationServiceSpy).toHaveBeenLastCalledWith(plugin, 'codex');
+      expect(createTitleGenerationServiceSpy).not.toHaveBeenCalledWith(plugin, 'codex');
     });
 
     it('surfaces provider-scoped model settings for inactive-provider tabs and saves back to that provider snapshot', async () => {
@@ -3960,7 +3960,7 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     expect(tab.serviceInitialized).toBe(false);
     expect(tab.providerId).toBe('claude');
     expect(createInstructionRefineServiceSpy.mock.calls.length).toBeGreaterThan(initialInstructionCalls);
-    expect(createTitleGenerationServiceSpy.mock.calls.length).toBeGreaterThan(initialTitleCalls);
+    expect(createTitleGenerationServiceSpy.mock.calls.length).toBe(initialTitleCalls);
   });
 });
 

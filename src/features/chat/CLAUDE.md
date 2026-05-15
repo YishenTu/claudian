@@ -122,7 +122,7 @@ for await (const chunk of runtime.query(preparedTurn, history)) {
 
 - `ClaudianView.onClose()` must abort active tabs and dispose runtimes
 - `ChatState` is per-tab; `TabManager` coordinates tab-level operations such as fork targets and provider-aware command catalogs
-- Title generation runs concurrently per conversation
+- Title generation runs concurrently per conversation and routes by the global title-generation model selection, not by the active chat tab provider
 - `/compact`
   - Claude skips context injection so the provider recognizes the built-in command and persists the compaction boundary
   - Codex routes compact turns to `thread/compact/start` and persists the durable `context_compacted` boundary from JSONL history

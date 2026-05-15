@@ -298,12 +298,16 @@ function syncTabProviderServices(
 ): void {
   tab.services.instructionRefineService?.cancel();
   tab.services.instructionRefineService?.resetConversation();
-  tab.services.titleGenerationService?.cancel();
   tab.services.instructionRefineService = ProviderRegistry.createInstructionRefineService(plugin, tab.providerId);
-  tab.services.titleGenerationService = ProviderRegistry.createTitleGenerationService(plugin, tab.providerId);
   tab.services.subagentManager.setTaskResultInterpreter?.(
     ProviderRegistry.getTaskResultInterpreter(tab.providerId)
   );
+}
+
+function ensureTitleGenerationService(tab: TabData, plugin: ClaudianPlugin): void {
+  if (!tab.services.titleGenerationService) {
+    tab.services.titleGenerationService = ProviderRegistry.createTitleGenerationService(plugin);
+  }
 }
 
 function cleanupTabRuntime(tab: TabData): void {
@@ -701,6 +705,7 @@ function initializeInstructionAndTodo(tab: TabData, plugin: ClaudianPlugin): voi
   const { dom } = tab;
 
   syncTabProviderServices(tab, plugin);
+  ensureTitleGenerationService(tab, plugin);
   tab.ui.instructionModeManager = new InstructionModeManagerClass(
     dom.inputEl,
     {
