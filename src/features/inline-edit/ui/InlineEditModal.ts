@@ -1,4 +1,4 @@
-import { RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { RangeSetBuilder, StateEffect, StateField, type Text } from '@codemirror/state';
 import type { DecorationSet } from '@codemirror/view';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { App, Editor, MarkdownView } from 'obsidian';
@@ -107,25 +107,41 @@ class InputWidget extends WidgetType {
   }
 }
 
+export function buildInlineEditInputDecorations(options: {
+  doc: Text;
+  inputPos: number;
+  isInbetween?: boolean;
+  widget: WidgetType;
+}): DecorationSet {
+  // Decoration.set(..., true) sorts line and widget decorations by CodeMirror's
+  // internal range ordering, including equal-position block widgets at line start.
+  const isInbetween = options.isInbetween ?? false;
+  const lineStart = options.doc.lineAt(options.inputPos).from;
+  return Decoration.set([
+    Decoration.line({
+      class: 'claudian-inline-input-line',
+    }).range(lineStart),
+    Decoration.widget({
+      widget: options.widget,
+      block: !isInbetween,
+      side: isInbetween ? 1 : -1,
+    }).range(options.inputPos),
+  ], true);
+}
+
 const inlineEditField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update: (deco, tr) => {
     deco = deco.map(tr.changes);
     for (const e of tr.effects) {
       if (e.is(showInlineEdit)) {
-        const builder = new RangeSetBuilder<Decoration>();
         // Block above line for selection/inline mode, inline widget for inbetween mode
-        const isInbetween = e.value.isInbetween ?? false;
-        const lineStart = tr.state.doc.lineAt(e.value.inputPos).from;
-        builder.add(lineStart, lineStart, Decoration.line({
-          class: 'claudian-inline-input-line',
-        }));
-        builder.add(e.value.inputPos, e.value.inputPos, Decoration.widget({
+        deco = buildInlineEditInputDecorations({
+          doc: tr.state.doc,
+          inputPos: e.value.inputPos,
+          isInbetween: e.value.isInbetween,
           widget: new InputWidget(e.value.widget),
-          block: !isInbetween,
-          side: isInbetween ? 1 : -1,
-        }));
-        deco = builder.finish();
+        });
       } else if (e.is(showDiff)) {
         const builder = new RangeSetBuilder<Decoration>();
         builder.add(e.value.from, e.value.to, Decoration.replace({

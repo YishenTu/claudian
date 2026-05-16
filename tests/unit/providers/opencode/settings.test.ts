@@ -314,6 +314,30 @@ describe('OpenCode settings normalization', () => {
     });
   });
 
+  it('preserves legacy cliPath when applying a full settings snapshot', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        opencode: {
+          cliPath: '/legacy/opencode',
+          cliPathsByHost: {
+            'host-b': '/other-host/opencode',
+          },
+        },
+      },
+    };
+
+    const snapshot = getOpencodeProviderSettings(settings);
+    const next = updateOpencodeProviderSettings(settings, snapshot);
+
+    expect(next.cliPath).toBe('/legacy/opencode');
+    expect((settings.providerConfigs as Record<string, any>).opencode).toMatchObject({
+      cliPath: '/legacy/opencode',
+      cliPathsByHost: {
+        'host-b': '/other-host/opencode',
+      },
+    });
+  });
+
   it('drops the legacy cliPath once host-scoped paths are explicitly edited', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {

@@ -223,7 +223,11 @@ export function updateOpencodeProviderSettings(
     ? normalizeHostnameCliPaths(updates.cliPathsByHost)
     : { ...current.cliPathsByHost };
   let nextCliPath = 'cliPathsByHost' in updates
-    ? DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath
+    ? (
+      typeof updates.cliPath === 'string'
+        ? updates.cliPath.trim()
+        : DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath
+    )
     : current.cliPath.trim();
 
   if ('cliPath' in updates && !('cliPathsByHost' in updates)) {

@@ -236,6 +236,7 @@ describe('ClaudianSettingsStorage', () => {
       const codexSettings = getCodexProviderSettings(result);
       const opencodeSettings = getOpencodeProviderSettings(result);
       const persistedOpencodeConfig = result.providerConfigs.opencode as Record<string, unknown>;
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
       expect(claudeSettings.cliPathsByHost).toEqual({
         'device:current': '/custom/claude-a',
@@ -260,6 +261,18 @@ describe('ClaudianSettingsStorage', () => {
         'host-b': '/custom/opencode-b',
       });
       expect(persistedOpencodeConfig.cliPathsByHost).toEqual({
+        'device:current': '/custom/opencode-a',
+        'host-b': '/custom/opencode-b',
+      });
+      expect(writtenContent.providerConfigs.claude.cliPathsByHost).toEqual({
+        'device:current': '/custom/claude-a',
+        'host-b': '/custom/claude-b',
+      });
+      expect(writtenContent.providerConfigs.codex.cliPathsByHost).toEqual({
+        'device:current': '/custom/codex-a',
+        'host-b': '/custom/codex-b',
+      });
+      expect(writtenContent.providerConfigs.opencode.cliPathsByHost).toEqual({
         'device:current': '/custom/opencode-a',
         'host-b': '/custom/opencode-b',
       });

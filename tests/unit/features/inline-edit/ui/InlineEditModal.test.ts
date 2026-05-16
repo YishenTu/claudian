@@ -1,7 +1,17 @@
 import '@/providers';
 
+import { Text } from '@codemirror/state';
+import { WidgetType } from '@codemirror/view';
+
+import { buildInlineEditInputDecorations } from '@/features/inline-edit/ui/InlineEditModal';
 import { escapeHtml, normalizeInsertionText } from '@/utils/inlineEdit';
 import { normalizePathForVault } from '@/utils/path';
+
+class TestWidget extends WidgetType {
+  toDOM(): HTMLElement {
+    return {} as HTMLElement;
+  }
+}
 
 // Copy of the diff algorithm from InlineEditModal for testing
 interface DiffOp {
@@ -74,6 +84,15 @@ function diffToHtml(ops: DiffOp[]): string {
 }
 
 describe('InlineEditModal - Insertion Newline Trimming', () => {
+  it('builds line-start block widget decorations without range ordering errors', () => {
+    expect(() => buildInlineEditInputDecorations({
+      doc: Text.of(['First line', 'Second line']),
+      inputPos: 0,
+      widget: new TestWidget(),
+      isInbetween: false,
+    })).not.toThrow();
+  });
+
   describe('normalizeInsertionText', () => {
     it('should remove leading newlines', () => {
       const input = '\n\nContent here';
