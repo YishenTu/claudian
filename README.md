@@ -84,9 +84,11 @@ npm run build
 
 ## Privacy & Data Use
 
-- **Sent to API**: Your input, attached files, images, and tool call outputs. Default: Anthropic (Claude) or OpenAI (Codex); configurable via environment variables.
+- **Sent to API**: Your input, attached files, images, and tool call outputs. Default: Anthropic (Claude) or OpenAI (Codex); configurable via provider settings and environment variables.
 - **Local storage**: Claudian settings and session metadata in `vault/.claudian/`; Claude provider files in `vault/.claude/`; transcripts in `~/.claude/projects/` (Claude) and `~/.codex/sessions/` (Codex).
-- **No telemetry**: No tracking beyond your configured API provider.
+- **Environment variables**: Provider subprocesses inherit the Obsidian process environment plus any variables you configure in Claudian. This is needed for CLI authentication, proxies, certificates, and PATH resolution.
+- **Device-specific paths**: Per-device CLI paths use an opaque local key stored in browser local storage, not your system hostname.
+- **Background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, and provider SDK/CLI calls needed to answer your requests.
 
 ## Troubleshooting
 

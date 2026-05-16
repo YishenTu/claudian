@@ -98,7 +98,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const shouldValidateCliPathAsFile = (): boolean => !isWindowsHost || installationMethod !== 'wsl';
 
     const cliPathSetting = new Setting(container)
-      .setName(`Codex CLI path (${hostnameKey})`)
+      .setName('Codex CLI path')
       .setDesc(getCliPathCopy().desc);
 
     const validationEl = container.createDiv({

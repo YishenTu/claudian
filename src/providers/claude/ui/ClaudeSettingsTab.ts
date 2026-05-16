@@ -54,7 +54,7 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const cliPathDescription = `${t('settings.cliPath.desc')} ${platformDesc}`;
 
     const cliPathSetting = new Setting(container)
-      .setName(`${t('settings.cliPath.name')} (${hostnameKey})`)
+      .setName(t('settings.cliPath.name'))
       .setDesc(cliPathDescription);
 
     const validationEl = container.createDiv({

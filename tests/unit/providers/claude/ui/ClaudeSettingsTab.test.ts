@@ -398,7 +398,7 @@ describe('ClaudeSettingsTab', () => {
 
     claudeSettingsTabRenderer.render(createContainer(), context);
 
-    const cliPathSetting = findSetting('settings.cliPath.name (host-a)');
+    const cliPathSetting = findSetting('settings.cliPath.name');
     const cliPathInput = cliPathSetting.textComponents[0];
 
     expect(cliPathInput.placeholder).toContain('cli-wrapper.cjs');

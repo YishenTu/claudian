@@ -15,7 +15,7 @@ export class ClaudeCliResolver {
   private readonly cachedHostname = getHostnameKey();
 
   /**
-   * Resolves CLI path with priority: hostname-specific -> legacy -> auto-detect.
+   * Resolves CLI path with priority: device-specific -> legacy -> auto-detect.
    * @param settings Full app settings bag
    */
   resolveFromSettings(settings: Record<string, unknown>): string | null {

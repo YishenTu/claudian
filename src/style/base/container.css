@@ -19,10 +19,6 @@
   display: flex !important;
 }
 
-.claudian-visible-contents {
-  display: contents !important;
-}
-
 .claudian-provider-icon-variant--dark {
   display: none;
 }

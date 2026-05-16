@@ -1,9 +1,7 @@
 import type * as fsType from 'fs';
-import type * as osType from 'os';
 import type * as pathType from 'path';
 
 const fs = jest.requireActual<typeof fsType>('fs');
-const os = jest.requireActual<typeof osType>('os');
 const path = jest.requireActual<typeof pathType>('path');
 
 import * as env from '../../../src/utils/env';
@@ -16,6 +14,7 @@ const {
   getEnhancedPath,
   getMissingNodeError,
   getHostnameKey,
+  migrateLegacyHostnameKeyedMap,
   parseContextLimit,
   parseEnvironmentVariables,
 } = env;
@@ -858,20 +857,36 @@ describe('findNodeDirectory', () => {
 
 describe('getHostnameKey', () => {
   it('returns a non-empty string', () => {
-    const hostname = getHostnameKey();
-    expect(typeof hostname).toBe('string');
-    expect(hostname.length).toBeGreaterThan(0);
+    const key = getHostnameKey();
+    expect(typeof key).toBe('string');
+    expect(key.length).toBeGreaterThan(0);
   });
 
-  it('returns the system hostname', () => {
-    const hostname = getHostnameKey();
-    expect(hostname).toBe(os.hostname());
+  it('returns an opaque device key instead of the system hostname', () => {
+    const key = getHostnameKey();
+    expect(key).toMatch(/^device:/);
   });
 
   it('returns consistent value on repeated calls', () => {
     const first = getHostnameKey();
     const second = getHostnameKey();
     expect(first).toBe(second);
+  });
+
+  it('migrates the current legacy hostname entry to the opaque device key', () => {
+    const migrated = migrateLegacyHostnameKeyedMap(
+      {
+        'legacy-host': '/legacy/cli',
+        'other-host': '/other/cli',
+      },
+      'device:new',
+      'legacy-host',
+    );
+
+    expect(migrated).toEqual({
+      'device:new': '/legacy/cli',
+      'other-host': '/other/cli',
+    });
   });
 });
 

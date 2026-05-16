@@ -1,7 +1,11 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { HostnameCliPaths } from '../../core/types/settings';
-import { getHostnameKey } from '../../utils/env';
+import {
+  getHostnameKey,
+  getLegacyHostnameKey,
+  migrateLegacyHostnameKeyedMap,
+} from '../../utils/env';
 import {
   getOpencodeDiscoveryState,
   seedOpencodeDiscoveryStateFromLegacyConfig,
@@ -149,6 +153,14 @@ export function getOpencodeProviderSettings(
   settings: Record<string, unknown>,
 ): OpencodeProviderSettings {
   const config = getProviderConfig(settings, 'opencode');
+  const normalizedCliPathsByHost = normalizeHostnameCliPaths(config.cliPathsByHost);
+  const cliPathsByHost = Object.keys(normalizedCliPathsByHost).length > 0
+    ? migrateLegacyHostnameKeyedMap(
+      normalizedCliPathsByHost,
+      getHostnameKey(),
+      getLegacyHostnameKey(),
+    )
+    : normalizedCliPathsByHost;
   seedOpencodeDiscoveryStateFromLegacyConfig(settings, config);
   const discoveryState = getOpencodeDiscoveryState(settings);
   const availableModes = discoveryState.availableModes;
@@ -158,7 +170,7 @@ export function getOpencodeProviderSettings(
     availableModes,
     cliPath: (config.cliPath as string | undefined)
       ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath,
-    cliPathsByHost: normalizeHostnameCliPaths(config.cliPathsByHost),
+    cliPathsByHost,
     discoveredModels,
     enabled: (config.enabled as boolean | undefined)
       ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.enabled,
@@ -214,7 +226,7 @@ export function updateOpencodeProviderSettings(
     ? DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath
     : current.cliPath.trim();
 
-  if ('cliPath' in updates) {
+  if ('cliPath' in updates && !('cliPathsByHost' in updates)) {
     const trimmedCliPath = typeof updates.cliPath === 'string' ? updates.cliPath.trim() : '';
     if (trimmedCliPath) {
       nextCliPathsByHost[hostnameKey] = trimmedCliPath;

@@ -116,6 +116,10 @@ const inlineEditField = StateField.define<DecorationSet>({
         const builder = new RangeSetBuilder<Decoration>();
         // Block above line for selection/inline mode, inline widget for inbetween mode
         const isInbetween = e.value.isInbetween ?? false;
+        const lineStart = tr.state.doc.lineAt(e.value.inputPos).from;
+        builder.add(lineStart, lineStart, Decoration.line({
+          class: 'claudian-inline-input-line',
+        }));
         builder.add(e.value.inputPos, e.value.inputPos, Decoration.widget({
           widget: new InputWidget(e.value.widget),
           block: !isInbetween,

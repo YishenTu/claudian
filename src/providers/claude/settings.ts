@@ -1,6 +1,11 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { HostnameCliPaths } from '../../core/types/settings';
+import {
+  getHostnameKey,
+  getLegacyHostnameKey,
+  migrateLegacyHostnameKeyedMap,
+} from '../../utils/env';
 
 export const CLAUDE_SAFE_MODES = ['acceptEdits', 'auto', 'default'] as const;
 export type ClaudeSafeMode = typeof CLAUDE_SAFE_MODES[number];
@@ -60,6 +65,16 @@ export function getClaudeProviderSettings(
   settings: Record<string, unknown>,
 ): ClaudeProviderSettings {
   const config = getProviderConfig(settings, 'claude');
+  const normalizedCliPathsByHost = normalizeHostnameCliPaths(
+    config.cliPathsByHost ?? settings.claudeCliPathsByHost,
+  );
+  const cliPathsByHost = Object.keys(normalizedCliPathsByHost).length > 0
+    ? migrateLegacyHostnameKeyedMap(
+      normalizedCliPathsByHost,
+      getHostnameKey(),
+      getLegacyHostnameKey(),
+    )
+    : normalizedCliPathsByHost;
 
   return {
     safeMode: normalizeClaudeSafeMode(config.safeMode)
@@ -68,7 +83,7 @@ export function getClaudeProviderSettings(
     cliPath: (config.cliPath as string | undefined)
       ?? (settings.claudeCliPath as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.cliPath,
-    cliPathsByHost: normalizeHostnameCliPaths(config.cliPathsByHost ?? settings.claudeCliPathsByHost),
+    cliPathsByHost,
     loadUserSettings: (config.loadUserSettings as boolean | undefined)
       ?? (settings.loadUserClaudeSettings as boolean | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.loadUserSettings,

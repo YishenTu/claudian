@@ -247,6 +247,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
           this.plugin.settings.maxTabs = value;
           await this.plugin.saveSettings();
           updateMaxTabsWarning(value);
+          for (const view of this.plugin.getAllViews()) {
+            view.refreshTabControls();
+          }
         });
       updateMaxTabsWarning(this.plugin.settings.maxTabs ?? 3);
     });

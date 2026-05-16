@@ -78,7 +78,7 @@ export type PermissionMode = 'yolo' | 'plan' | 'normal';
 /** Scope for environment variable storage and snippets. */
 export type EnvironmentScope = 'shared' | `provider:${string}`;
 
-/** Hostname-keyed CLI paths for per-device configuration. */
+/** Opaque device-keyed CLI paths for per-device configuration. */
 export type HostnameCliPaths = Record<string, string>;
 
 /** Opaque provider-owned settings bags keyed by provider id. */

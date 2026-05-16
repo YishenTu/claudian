@@ -7,6 +7,8 @@ import { parsePathEntries, resolveNvmDefaultBin } from './path';
 const isWindows = process.platform === 'win32';
 const PATH_SEPARATOR = isWindows ? ';' : ':';
 const NODE_EXECUTABLE = isWindows ? 'node.exe' : 'node';
+const DEVICE_SETTINGS_STORAGE_KEY = 'claudian.deviceSettingsKey';
+let cachedDeviceSettingsKey: string | null = null;
 
 function getHomeDir(): string {
   return process.env.HOME || process.env.USERPROFILE || '';
@@ -342,8 +344,85 @@ export function parseEnvironmentVariables(input: string): Record<string, string>
   return result;
 }
 
+function getDeviceSettingsStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function createOpaqueDeviceSettingsKey(): string {
+  const cryptoApi = typeof window === 'undefined' ? null : window.crypto;
+  const randomUUID = cryptoApi?.randomUUID?.();
+  if (randomUUID) {
+    return `device:${randomUUID}`;
+  }
+
+  if (cryptoApi?.getRandomValues) {
+    const randomBytes = new Uint8Array(16);
+    cryptoApi.getRandomValues(randomBytes);
+    const entropy = Array.from(randomBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    return `device:${Date.now().toString(36)}:${entropy}`;
+  }
+
+  const entropy = Math.random().toString(36).slice(2);
+  return `device:${Date.now().toString(36)}:${entropy}`;
+}
+
+// Backward-compatible name: provider settings still store legacy `cliPathsByHost`
+// maps, but new keys are opaque per-install identifiers rather than hostnames.
 export function getHostnameKey(): string {
-  return os.hostname();
+  if (cachedDeviceSettingsKey) {
+    return cachedDeviceSettingsKey;
+  }
+
+  const storage = getDeviceSettingsStorage();
+  const stored = storage?.getItem(DEVICE_SETTINGS_STORAGE_KEY)?.trim();
+  if (stored) {
+    cachedDeviceSettingsKey = stored;
+    return cachedDeviceSettingsKey;
+  }
+
+  cachedDeviceSettingsKey = createOpaqueDeviceSettingsKey();
+  try {
+    storage?.setItem(DEVICE_SETTINGS_STORAGE_KEY, cachedDeviceSettingsKey);
+  } catch {
+    // Local storage can be unavailable in restricted renderer contexts.
+  }
+
+  return cachedDeviceSettingsKey;
+}
+
+export function getLegacyHostnameKey(): string {
+  try {
+    return os.hostname();
+  } catch {
+    return '';
+  }
+}
+
+export function migrateLegacyHostnameKeyedMap<T extends string>(
+  entries: Record<string, T>,
+  currentKey: string,
+  legacyHostnameKey: string,
+): Record<string, T> {
+  if (!currentKey || !legacyHostnameKey || currentKey === legacyHostnameKey) {
+    return entries;
+  }
+
+  const hasCurrentEntry = Object.prototype.hasOwnProperty.call(entries, currentKey);
+  const hasLegacyEntry = Object.prototype.hasOwnProperty.call(entries, legacyHostnameKey);
+  if (!hasLegacyEntry) {
+    return entries;
+  }
+
+  const migrated = { ...entries };
+  if (!hasCurrentEntry) {
+    migrated[currentKey] = entries[legacyHostnameKey];
+  }
+  delete migrated[legacyHostnameKey];
+  return migrated;
 }
 
 export const MIN_CONTEXT_LIMIT = 1_000;

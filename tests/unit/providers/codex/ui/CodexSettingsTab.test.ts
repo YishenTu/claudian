@@ -434,7 +434,7 @@ describe('CodexSettingsTab', () => {
 
     codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
-    const cliPathSetting = findSetting('Codex CLI path (host-a)');
+    const cliPathSetting = findSetting('Codex CLI path');
     expect(cliPathSetting.desc).toBe('Custom path to the local Codex CLI. Leave empty for auto-detection from PATH.');
     expect(cliPathSetting.textComponents[0].placeholder).toBe('/usr/local/bin/codex');
 
@@ -454,7 +454,7 @@ describe('CodexSettingsTab', () => {
     const installationMethodSetting = findSetting('Installation method');
     await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
 
-    const cliPathSetting = findSetting('Codex CLI path (host-a)');
+    const cliPathSetting = findSetting('Codex CLI path');
     await cliPathSetting.textComponents[0].onChangeCallback?.('codex');
 
     expect(plugin.settings.providerConfigs.codex.installationMethodsByHost).toEqual({
@@ -484,7 +484,7 @@ describe('CodexSettingsTab', () => {
     const installationMethodSetting = findSetting('Installation method');
     await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
 
-    const cliPathSetting = findSetting('Codex CLI path (host-a)');
+    const cliPathSetting = findSetting('Codex CLI path');
     await cliPathSetting.textComponents[0].onChangeCallback?.('C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe');
 
     expect(plugin.settings.providerConfigs.codex.installationMethodsByHost).toEqual({

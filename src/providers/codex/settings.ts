@@ -1,7 +1,11 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { HostnameCliPaths } from '../../core/types/settings';
-import { getHostnameKey } from '../../utils/env';
+import {
+  getHostnameKey,
+  getLegacyHostnameKey,
+  migrateLegacyHostnameKeyedMap,
+} from '../../utils/env';
 import { CODEX_SPARK_MODEL } from './types/models';
 
 export type CodexSafeMode = 'workspace-write' | 'read-only';
@@ -104,8 +108,22 @@ export function getCodexProviderSettings(
 ): CodexProviderSettings {
   const config = getProviderConfig(settings, 'codex');
   const hostnameKey = getHostnameKey();
-  const installationMethodsByHost = normalizeInstallationMethodsByHost(config.installationMethodsByHost);
-  const wslDistroOverridesByHost = normalizeHostnameCliPaths(config.wslDistroOverridesByHost);
+  const normalizedCliPathsByHost = normalizeHostnameCliPaths(config.cliPathsByHost ?? settings.codexCliPathsByHost);
+  const normalizedInstallationMethodsByHost = normalizeInstallationMethodsByHost(config.installationMethodsByHost);
+  const normalizedWslDistroOverridesByHost = normalizeHostnameCliPaths(config.wslDistroOverridesByHost);
+  const hasLegacyHostnameKeyedSettings = Object.keys(normalizedCliPathsByHost).length > 0
+    || Object.keys(normalizedInstallationMethodsByHost).length > 0
+    || Object.keys(normalizedWslDistroOverridesByHost).length > 0;
+  const legacyHostnameKey = hasLegacyHostnameKeyedSettings ? getLegacyHostnameKey() : '';
+  const cliPathsByHost = hasLegacyHostnameKeyedSettings
+    ? migrateLegacyHostnameKeyedMap(normalizedCliPathsByHost, hostnameKey, legacyHostnameKey)
+    : normalizedCliPathsByHost;
+  const installationMethodsByHost = hasLegacyHostnameKeyedSettings
+    ? migrateLegacyHostnameKeyedMap(normalizedInstallationMethodsByHost, hostnameKey, legacyHostnameKey)
+    : normalizedInstallationMethodsByHost;
+  const wslDistroOverridesByHost = hasLegacyHostnameKeyedSettings
+    ? migrateLegacyHostnameKeyedMap(normalizedWslDistroOverridesByHost, hostnameKey, legacyHostnameKey)
+    : normalizedWslDistroOverridesByHost;
   const hasHostScopedInstallationMethods = Object.keys(installationMethodsByHost).length > 0;
   const hasHostScopedWslDistroOverrides = Object.keys(wslDistroOverridesByHost).length > 0;
   const legacyInstallationMethod = normalizeCodexInstallationMethod(config.installationMethod);
@@ -121,7 +139,7 @@ export function getCodexProviderSettings(
     cliPath: (config.cliPath as string | undefined)
       ?? (settings.codexCliPath as string | undefined)
       ?? DEFAULT_CODEX_PROVIDER_SETTINGS.cliPath,
-    cliPathsByHost: normalizeHostnameCliPaths(config.cliPathsByHost ?? settings.codexCliPathsByHost),
+    cliPathsByHost,
     customModels: (config.customModels as string | undefined)
       ?? DEFAULT_CODEX_PROVIDER_SETTINGS.customModels,
     reasoningSummary: (config.reasoningSummary as CodexReasoningSummary | undefined)

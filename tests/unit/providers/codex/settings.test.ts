@@ -8,14 +8,19 @@ import {
 import { CODEX_SPARK_MODEL } from '@/providers/codex/types/models';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
+const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
 
 jest.mock('@/utils/env', () => ({
+  ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
+  getLegacyHostnameKey: () => mockGetLegacyHostnameKey(),
 }));
 
 describe('codex settings', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetHostnameKey.mockReturnValue('host-a');
+    mockGetLegacyHostnameKey.mockReturnValue('legacy-host');
   });
 
   it('defaults installationMethod to native-windows and leaves wslDistroOverride empty', () => {
@@ -60,6 +65,45 @@ describe('codex settings', () => {
 
     expect(settings.installationMethod).toBe('native-windows');
     expect(settings.wslDistroOverride).toBe('');
+  });
+
+  it('migrates current legacy hostname-scoped settings to the opaque device key', () => {
+    mockGetHostnameKey.mockReturnValue('device:current');
+    mockGetLegacyHostnameKey.mockReturnValue('host-a');
+
+    const settings = getCodexProviderSettings({
+      providerConfigs: {
+        codex: {
+          cliPathsByHost: {
+            'host-a': '/host-a/codex',
+            'host-b': '/host-b/codex',
+          },
+          installationMethodsByHost: {
+            'host-a': 'wsl',
+            'host-b': 'native-windows',
+          },
+          wslDistroOverridesByHost: {
+            'host-a': 'Ubuntu',
+            'host-b': 'Debian',
+          },
+        },
+      },
+    });
+
+    expect(settings.cliPathsByHost).toEqual({
+      'device:current': '/host-a/codex',
+      'host-b': '/host-b/codex',
+    });
+    expect(settings.installationMethod).toBe('wsl');
+    expect(settings.installationMethodsByHost).toEqual({
+      'device:current': 'wsl',
+      'host-b': 'native-windows',
+    });
+    expect(settings.wslDistroOverride).toBe('Ubuntu');
+    expect(settings.wslDistroOverridesByHost).toEqual({
+      'device:current': 'Ubuntu',
+      'host-b': 'Debian',
+    });
   });
 
   it('round-trips installationMethod and trims wslDistroOverride on update for the current host', () => {

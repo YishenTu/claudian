@@ -1,11 +1,17 @@
 import * as fs from 'fs';
-import * as os from 'os';
 
 import { findClaudeCLIPath } from '@/providers/claude/cli/findClaudeCLIPath';
 import { ClaudeCliResolver, resolveClaudeCliPath } from '@/providers/claude/runtime/ClaudeCliResolver';
+import { getHostnameKey } from '@/utils/env';
 
 jest.mock('fs');
-jest.mock('os');
+jest.mock('@/utils/env', () => {
+  const actual = jest.requireActual('@/utils/env');
+  return {
+    ...actual,
+    getHostnameKey: jest.fn(() => 'test-host'),
+  };
+});
 jest.mock('@/providers/claude/cli/findClaudeCLIPath', () => {
   const actual = jest.requireActual('@/providers/claude/cli/findClaudeCLIPath');
   return {
@@ -17,12 +23,12 @@ jest.mock('@/providers/claude/cli/findClaudeCLIPath', () => {
 const mockedExists = fs.existsSync as jest.Mock;
 const mockedStat = fs.statSync as jest.Mock;
 const mockedFind = findClaudeCLIPath as jest.Mock;
-const mockedHostname = os.hostname as jest.Mock;
+const mockedDeviceKey = getHostnameKey as jest.Mock;
 
 describe('ClaudeCliResolver', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedHostname.mockReturnValue('test-host');
+    mockedDeviceKey.mockReturnValue('test-host');
   });
 
   describe('hostname-based resolution', () => {

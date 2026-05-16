@@ -41,6 +41,14 @@
   min-height: 0;
 }
 
+.claudian-input-nav-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+}
+
 /* Header mode: hide nav row above input (content moved to header) */
 .claudian-container--header-mode .claudian-input-nav-row {
   display: none;

@@ -55,7 +55,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       );
 
     const cliPathSetting = new Setting(container)
-      .setName(`CLI Path (${hostnameKey})`)
+      .setName('CLI path')
       .setDesc('Optional absolute path to the OpenCode CLI for this computer. Leave empty to use `opencode` from PATH.');
 
     const validationEl = container.createDiv({

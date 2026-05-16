@@ -29,6 +29,10 @@ import {
   getCodexProviderSettings,
   updateCodexProviderSettings,
 } from '../../providers/codex/settings';
+import {
+  getOpencodeProviderSettings,
+  updateOpencodeProviderSettings,
+} from '../../providers/opencode/settings';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './defaultSettings';
 
 export {
@@ -252,6 +256,10 @@ export class ClaudianSettingsStorage {
     updateCodexProviderSettings(
       merged,
       getCodexProviderSettings(legacyProviderSettings),
+    );
+    updateOpencodeProviderSettings(
+      merged,
+      getOpencodeProviderSettings(legacyProviderSettings),
     );
 
     if (

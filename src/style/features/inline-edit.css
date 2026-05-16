@@ -16,7 +16,7 @@
 
 /* CM6 widget container - ensure transparent background */
 .cm-widgetBuffer,
-.cm-line:has(.claudian-inline-input-container) {
+.cm-line.claudian-inline-input-line {
   background: transparent !important;
 }
 

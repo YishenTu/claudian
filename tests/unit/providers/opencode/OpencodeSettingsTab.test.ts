@@ -388,7 +388,7 @@ describe('OpencodeSettingsTab', () => {
 
     opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
-    const cliPathSetting = findSetting('CLI Path (host-a)');
+    const cliPathSetting = findSetting('CLI path');
     await cliPathSetting.textComponents[0].onChangeCallback?.('/custom/opencode');
 
     expect(plugin.settings.providerConfigs.opencode.cliPathsByHost).toEqual({

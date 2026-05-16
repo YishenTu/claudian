@@ -43,6 +43,7 @@ export class ClaudianView extends ItemView {
   private titleTextEl: HTMLElement | null = null;
   private headerActionsEl: HTMLElement | null = null;
   private headerActionsContent: HTMLElement | null = null;
+  private newTabButtonEl: HTMLElement | null = null;
 
   // Header elements
   private historyDropdown: HTMLElement | null = null;
@@ -287,10 +288,10 @@ export class ClaudianView extends ItemView {
     this.headerActionsContent.className = 'claudian-header-actions';
 
     // New tab button (plus icon)
-    const newTabBtn = this.headerActionsContent.createDiv({ cls: 'claudian-header-btn claudian-new-tab-btn' });
-    setIcon(newTabBtn, 'square-plus');
-    newTabBtn.setAttribute('aria-label', 'New tab');
-    newTabBtn.addEventListener('click', () => {
+    this.newTabButtonEl = this.headerActionsContent.createDiv({ cls: 'claudian-header-btn claudian-new-tab-btn' });
+    setIcon(this.newTabButtonEl, 'square-plus');
+    this.newTabButtonEl.setAttribute('aria-label', 'New tab');
+    this.newTabButtonEl.addEventListener('click', () => {
       void this.createNewTab().catch(() => new Notice('Failed to create tab'));
     });
 
@@ -322,7 +323,7 @@ export class ClaudianView extends ItemView {
 
     // Create a wrapper div to hold the fragment (for input mode nav row)
     const wrapper = activeDocument.createElement('div');
-    wrapper.className = 'claudian-visible-contents';
+    wrapper.className = 'claudian-input-nav-content';
     wrapper.appendChild(fragment);
     return wrapper;
   }
@@ -381,6 +382,11 @@ export class ClaudianView extends ItemView {
     this.updateTabBarVisibility();
   }
 
+  /** Refreshes tab controls after settings that affect tab availability change. */
+  refreshTabControls(): void {
+    this.updateTabBarVisibility();
+  }
+
   // ============================================
   // Tab Management
   // ============================================
@@ -409,6 +415,7 @@ export class ClaudianView extends ItemView {
     if (!tab) {
       const maxTabs = this.plugin.settings.maxTabs ?? 3;
       new Notice(`Maximum ${maxTabs} tabs allowed`);
+      this.updateTabBarVisibility();
       return;
     }
     this.updateTabBarVisibility();
@@ -451,6 +458,23 @@ export class ClaudianView extends ItemView {
     if (this.titleTextEl) {
       this.titleTextEl.toggleClass('claudian-hidden', hideBranding);
     }
+
+    this.updateNewTabButtonVisibility();
+  }
+
+  private updateNewTabButtonVisibility(): void {
+    if (!this.newTabButtonEl || !this.tabManager) return;
+
+    const canCreateTab = this.tabManager.canCreateTab();
+    this.newTabButtonEl.toggleClass('claudian-hidden', !canCreateTab);
+    if (canCreateTab) {
+      this.newTabButtonEl.removeAttribute('aria-disabled');
+      this.newTabButtonEl.removeAttribute('aria-hidden');
+      return;
+    }
+
+    this.newTabButtonEl.setAttribute('aria-disabled', 'true');
+    this.newTabButtonEl.setAttribute('aria-hidden', 'true');
   }
 
   /** Sets `data-provider` on the root container so CSS brand color follows the active provider. */
