@@ -173,6 +173,9 @@ export class CursorChatRuntime implements ChatRuntime {
     });
 
     const proc = new CursorAgentProcess(launchSpec);
+    // Spawn first so stdout/stderr getters resolve to live streams before we
+    // attach listeners or hand the readable to the transport.
+    proc.start();
     const transport = new CursorEventTransport(proc.stdout);
     this.currentProcess = proc;
     this.currentTransport = transport;
@@ -203,11 +206,10 @@ export class CursorChatRuntime implements ChatRuntime {
       flushNotify();
     });
 
-    const drainParseError = (): void => {
+    transport.onParseError(() => {
       // Swallow parse errors; cursor-agent occasionally interleaves blank
       // lines or non-JSON diagnostics that are safe to ignore.
-    };
-    transport.onParseError(drainParseError);
+    });
 
     let stderrBuffer = '';
     proc.stderr.on('data', (data: Buffer) => {
@@ -222,7 +224,6 @@ export class CursorChatRuntime implements ChatRuntime {
       flushNotify();
     });
 
-    proc.start();
     transport.start();
 
     try {

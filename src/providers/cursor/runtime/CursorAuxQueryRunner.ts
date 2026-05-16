@@ -49,6 +49,9 @@ export class CursorAuxQueryRunner implements AuxQueryRunner {
     });
 
     const proc = new CursorAgentProcess(launchSpec);
+    // Spawn first so stdout/stderr getters resolve to live streams before we
+    // attach listeners or hand the readable to the transport.
+    proc.start();
     const transport = new CursorEventTransport(proc.stdout);
     const state = createCursorNormalizationState();
     let accumulated = '';
@@ -115,7 +118,6 @@ export class CursorAuxQueryRunner implements AuxQueryRunner {
       finalize();
     }, TURN_TIMEOUT_MS);
 
-    proc.start();
     transport.start();
 
     try {
