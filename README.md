@@ -116,6 +116,19 @@ cursor-agent --list-models
 
 (or `cursor-agent models` for the same list with grouping). Copy any of those ids into the **Custom models** textarea to expose them in the picker. Changing `CURSOR_MODEL`, `CURSOR_API_KEY`, or `CURSOR_BASE_URL` invalidates active Cursor sessions so the next turn starts fresh against the new endpoint.
 
+### Context window per model
+
+Claudian reports a sensible default context window per model in the chat tab footer:
+
+- **1 M tokens** for the wider models Cursor exposes today: `gpt-5.5-*`, `gpt-5.4-{low,medium,high,xhigh}` (not the `mini` / `nano` variants), `claude-opus-4-7-*`, `claude-4.5-opus-*`, `claude-4.6-opus-*`, `claude-4.6-sonnet-*`, and `grok-4.3`.
+- **200 K tokens** for everything else (`auto`, `composer-*`, older Claude/GPT-5.x families, Gemini Flash, Kimi, etc.).
+
+To override the window for any specific model — for example because Cursor changed a model's window or you're using a routed model the heuristic doesn't recognize:
+
+1. Set `CURSOR_MODEL=<model-id>` in **Settings → Claudian → Cursor → Cursor environment** (this surfaces the model in the per-model context limits UI).
+2. The shared **Custom context limits** section near the bottom of the Cursor settings tab will show `<model-id>` with a text input.
+3. Enter a value like `1m`, `500k`, or `1000000` and the runtime's usage chunk will report against that window for that model.
+
 ## Privacy & Data Use
 
 - **Sent to API**: Your input, attached files, images, and tool call outputs. Default: Anthropic (Claude), OpenAI (Codex), or Cursor's routed model providers (Cursor); configurable via environment variables.

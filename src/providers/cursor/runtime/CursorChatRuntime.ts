@@ -34,6 +34,8 @@ import {
 import { encodeCursorTurn } from '../prompt/encodeCursorTurn';
 import { getCursorProviderSettings } from '../settings';
 import { getCursorState } from '../types';
+import { DEFAULT_CURSOR_PRIMARY_MODEL } from '../types/models';
+import { cursorChatUIConfig } from '../ui/CursorChatUIConfig';
 import { CursorAgentProcess } from './CursorAgentProcess';
 import { resolveCursorCliPath } from './CursorBinaryLocator';
 import { CursorEventTransport } from './CursorEventTransport';
@@ -180,10 +182,17 @@ export class CursorChatRuntime implements ChatRuntime {
     this.currentProcess = proc;
     this.currentTransport = transport;
 
+    const customContextLimits = (settings.customContextLimits as Record<string, number> | undefined);
+    const contextWindowSize = cursorChatUIConfig.getContextWindowSize(
+      model ?? DEFAULT_CURSOR_PRIMARY_MODEL,
+      customContextLimits,
+    );
+
     const state = createCursorNormalizationState();
     state.sessionId = this.threadId;
     const normalizationContext: CursorNormalizationContext = {
       modelHint: model,
+      contextWindowSize,
     };
 
     const buffer: StreamChunk[] = [];

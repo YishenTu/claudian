@@ -7,9 +7,8 @@ import { getCursorModelOptions } from '../modelOptions';
 import {
   DEFAULT_CURSOR_MODEL_SET,
   DEFAULT_CURSOR_PRIMARY_MODEL,
+  getCursorContextWindow,
 } from '../types/models';
-
-const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 function looksLikeCursorModel(model: string): boolean {
   if (DEFAULT_CURSOR_MODEL_SET.has(model)) {
@@ -42,8 +41,8 @@ export const cursorChatUIConfig: ProviderChatUIConfig = {
     return '';
   },
 
-  getContextWindowSize(): number {
-    return DEFAULT_CONTEXT_WINDOW;
+  getContextWindowSize(model: string, customLimits?: Record<string, number>): number {
+    return getCursorContextWindow(model, customLimits);
   },
 
   isDefaultModel(model: string): boolean {

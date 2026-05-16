@@ -79,8 +79,44 @@ describe('CursorChatUIConfig', () => {
   });
 
   describe('getContextWindowSize', () => {
-    it('returns a sensible default context window', () => {
+    it('returns 200K for non-1M models like auto and composer-2', () => {
       expect(cursorChatUIConfig.getContextWindowSize(DEFAULT_CURSOR_PRIMARY_MODEL)).toBe(200_000);
+      expect(cursorChatUIConfig.getContextWindowSize('composer-2')).toBe(200_000);
+      expect(cursorChatUIConfig.getContextWindowSize('composer-2-fast')).toBe(200_000);
+    });
+
+    it('returns 1M for known 1M-context models', () => {
+      expect(cursorChatUIConfig.getContextWindowSize('gpt-5.5-extra-high')).toBe(1_000_000);
+      expect(cursorChatUIConfig.getContextWindowSize('gpt-5.5-high-fast')).toBe(1_000_000);
+      expect(cursorChatUIConfig.getContextWindowSize('gpt-5.4-medium')).toBe(1_000_000);
+      expect(cursorChatUIConfig.getContextWindowSize('claude-opus-4-7-max')).toBe(1_000_000);
+      expect(cursorChatUIConfig.getContextWindowSize('claude-opus-4-7-thinking-xhigh')).toBe(1_000_000);
+      expect(cursorChatUIConfig.getContextWindowSize('claude-4.6-opus-max-thinking')).toBe(1_000_000);
+      expect(cursorChatUIConfig.getContextWindowSize('claude-4.6-sonnet-medium-thinking')).toBe(1_000_000);
+      expect(cursorChatUIConfig.getContextWindowSize('grok-4.3')).toBe(1_000_000);
+    });
+
+    it('does not flag mini and nano variants as 1M', () => {
+      expect(cursorChatUIConfig.getContextWindowSize('gpt-5.4-mini-medium')).toBe(200_000);
+      expect(cursorChatUIConfig.getContextWindowSize('gpt-5.4-nano-medium')).toBe(200_000);
+    });
+
+    it('honours the customLimits override before pattern matching', () => {
+      const customLimits = { 'gpt-5.5-extra-high': 750_000, composer: 500_000 };
+      expect(cursorChatUIConfig.getContextWindowSize('gpt-5.5-extra-high', customLimits)).toBe(750_000);
+      // Models without an entry still resolve via pattern matching.
+      expect(cursorChatUIConfig.getContextWindowSize('claude-opus-4-7-max', customLimits)).toBe(1_000_000);
+    });
+
+    it('ignores invalid customLimits entries', () => {
+      const customLimits = {
+        'gpt-5.5-extra-high': 0,
+        'composer-2': -1,
+        auto: Number.NaN,
+      } as unknown as Record<string, number>;
+      expect(cursorChatUIConfig.getContextWindowSize('gpt-5.5-extra-high', customLimits)).toBe(1_000_000);
+      expect(cursorChatUIConfig.getContextWindowSize('composer-2', customLimits)).toBe(200_000);
+      expect(cursorChatUIConfig.getContextWindowSize('auto', customLimits)).toBe(200_000);
     });
   });
 
