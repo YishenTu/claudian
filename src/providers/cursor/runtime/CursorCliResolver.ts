@@ -1,42 +1,48 @@
+import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderCliResolver } from '../../../core/providers/types';
 import { getHostnameKey } from '../../../utils/env';
 import { getCursorProviderSettings } from '../settings';
+import { resolveCursorCliPath } from './CursorBinaryLocator';
 
 /**
- * Resolves the configured `cursor-agent` CLI path from provider settings.
- *
- * Phase 1: returns the configured path verbatim (per-host map first, then
- * scalar `cliPath`). Validation, PATH probing, and fallback discovery move in
- * with `CursorBinaryLocator` during Phase 2.
+ * Resolves the `cursor-agent` CLI path from settings, with caching keyed by
+ * the inputs that affect resolution. Falls back to PATH probe when no
+ * configured path exists.
  */
 export class CursorCliResolver implements ProviderCliResolver {
-  private cachedPath: string | null = null;
-  private cacheKey: string | null = null;
+  private resolvedPath: string | null = null;
+  private lastHostnamePath = '';
+  private lastLegacyPath = '';
+  private lastEnvText = '';
+  private readonly cachedHostname = getHostnameKey();
 
   resolveFromSettings(settings: Record<string, unknown>): string | null {
     const cursorSettings = getCursorProviderSettings(settings);
-    const hostKey = getHostnameKey();
-    const hostScopedPath = cursorSettings.cliPathsByHost[hostKey] ?? '';
-    const candidate = hostScopedPath || cursorSettings.cliPath;
-    const trimmed = candidate.trim();
+    const hostnamePath = (cursorSettings.cliPathsByHost[this.cachedHostname] ?? '').trim();
+    const legacyPath = cursorSettings.cliPath.trim();
+    const envText = getRuntimeEnvironmentText(settings, 'cursor');
 
-    if (!trimmed) {
-      this.cacheKey = null;
-      this.cachedPath = null;
-      return null;
+    if (
+      this.resolvedPath !== null &&
+      hostnamePath === this.lastHostnamePath &&
+      legacyPath === this.lastLegacyPath &&
+      envText === this.lastEnvText
+    ) {
+      return this.resolvedPath;
     }
 
-    if (this.cacheKey === trimmed && this.cachedPath !== null) {
-      return this.cachedPath;
-    }
+    this.lastHostnamePath = hostnamePath;
+    this.lastLegacyPath = legacyPath;
+    this.lastEnvText = envText;
 
-    this.cacheKey = trimmed;
-    this.cachedPath = trimmed;
-    return trimmed;
+    this.resolvedPath = resolveCursorCliPath(hostnamePath, legacyPath, envText);
+    return this.resolvedPath;
   }
 
   reset(): void {
-    this.cacheKey = null;
-    this.cachedPath = null;
+    this.resolvedPath = null;
+    this.lastHostnamePath = '';
+    this.lastLegacyPath = '';
+    this.lastEnvText = '';
   }
 }

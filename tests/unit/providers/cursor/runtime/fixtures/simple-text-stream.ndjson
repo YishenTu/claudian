@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/Users/adnan/src/claudian","session_id":"dea8eb05-fa9f-4170-8dab-99d61f1e3fe5","model":"Composer 2 Fast","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"respond with exactly the word 'ok' and nothing else"}]},"session_id":"dea8eb05-fa9f-4170-8dab-99d61f1e3fe5"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]},"session_id":"dea8eb05-fa9f-4170-8dab-99d61f1e3fe5","timestamp_ms":1778900547967}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]},"session_id":"dea8eb05-fa9f-4170-8dab-99d61f1e3fe5"}
+{"type":"result","subtype":"success","duration_ms":3538,"duration_api_ms":3538,"is_error":false,"result":"ok","session_id":"dea8eb05-fa9f-4170-8dab-99d61f1e3fe5","request_id":"bd355ce8-0586-400c-9ffc-cbb98f4a7564","usage":{"inputTokens":37176,"outputTokens":27,"cacheReadTokens":7200,"cacheWriteTokens":0}}
