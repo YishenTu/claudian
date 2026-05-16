@@ -43,6 +43,17 @@ import {
 } from './CursorLaunchSpecBuilder';
 
 const CREATE_CHAT_TIMEOUT_MS = 30_000;
+const CHAT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function extractChatIdLine(buffer: string): string | null {
+  for (const rawLine of buffer.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line && CHAT_ID_PATTERN.test(line)) {
+      return line;
+    }
+  }
+  return null;
+}
 
 /**
  * Real Phase 2 runtime. Each turn is a one-shot `cursor-agent` invocation.
@@ -471,8 +482,27 @@ export class CursorChatRuntime implements ChatRuntime {
         settle('reject', new Error(buildDiagnostic('cursor-agent create-chat timed out')));
       }, CREATE_CHAT_TIMEOUT_MS);
 
+      const finishWithChatId = (chatId: string): void => {
+        // cursor-agent sometimes keeps stdio open after printing the id (a
+        // lingering background task or socket inside the CLI). Resolve as
+        // soon as we have a valid id and fire-and-forget a SIGTERM so we
+        // don't wedge the turn waiting for the 'close' event.
+        settle('resolve', chatId);
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          // Process already exited; ignore.
+        }
+      };
+
       child.stdout?.on('data', (data: Buffer) => {
         stdout += data.toString('utf-8');
+        if (!settled) {
+          const chatId = extractChatIdLine(stdout);
+          if (chatId) {
+            finishWithChatId(chatId);
+          }
+        }
       });
       child.stderr?.on('data', (data: Buffer) => {
         stderr += data.toString('utf-8');
@@ -480,24 +510,22 @@ export class CursorChatRuntime implements ChatRuntime {
       child.on('error', (error) => {
         settle('reject', new Error(buildDiagnostic(`cursor-agent create-chat spawn error: ${error.message}`)));
       });
-      // Use 'close' (fires after stdout/stderr drain) instead of 'exit' to
-      // avoid a race where the last chunk of stdout arrives after exit.
+      // 'close' fires after stdio drain. If it arrives before we've seen a
+      // chat id, treat it as a failure with a useful diagnostic.
       child.on('close', (code) => {
+        if (settled) {
+          return;
+        }
         if (code !== 0) {
           settle('reject', new Error(buildDiagnostic(`cursor-agent create-chat exited with code ${code}`)));
           return;
         }
-        const trimmed = stdout.trim();
-        if (!trimmed) {
-          settle('reject', new Error(buildDiagnostic('cursor-agent create-chat returned no output')));
+        const chatId = extractChatIdLine(stdout);
+        if (chatId) {
+          settle('resolve', chatId);
           return;
         }
-        const lastLine = trimmed.split(/\r?\n/).filter(Boolean).pop() ?? '';
-        if (!lastLine) {
-          settle('reject', new Error(buildDiagnostic('cursor-agent create-chat returned no session id line')));
-          return;
-        }
-        settle('resolve', lastLine);
+        settle('reject', new Error(buildDiagnostic('cursor-agent create-chat returned no session id line')));
       });
     });
   }
