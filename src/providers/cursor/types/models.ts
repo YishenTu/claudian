@@ -11,8 +11,8 @@ export const CURSOR_SONNET_MODEL: CursorModel = 'claude-4.6-sonnet-medium-thinki
 const KNOWN_LABELS: Record<string, string> = {
   auto: 'Auto',
   'composer-2': 'Composer 2',
-  'gpt-5.5-extra-high': 'GPT-5.5 1M Extra High',
-  'claude-opus-4-7-max': 'Opus 4.7 1M Max',
+  'gpt-5.5-extra-high': 'GPT-5.5 Extra High',
+  'claude-opus-4-7-max': 'Opus 4.7 Max',
   'claude-4.6-sonnet-medium-thinking': 'Sonnet 4.6 Thinking',
 };
 
