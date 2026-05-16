@@ -99,9 +99,9 @@ describe('cursorSettingsReconciler', () => {
   });
 
   it('normalizeModelVariantSettings keeps recognized models unchanged', () => {
-    const settings: Record<string, unknown> = { model: 'gpt-5' };
+    const settings: Record<string, unknown> = { model: 'gpt-5.5-extra-high' };
     const changed = cursorSettingsReconciler.normalizeModelVariantSettings(settings);
     expect(changed).toBe(false);
-    expect(settings.model).toBe('gpt-5');
+    expect(settings.model).toBe('gpt-5.5-extra-high');
   });
 });

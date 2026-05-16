@@ -125,14 +125,14 @@ export const cursorSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container)
       .setName('Custom models')
-      .setDesc('Append additional Cursor model ids to the picker, one per line. `CURSOR_MODEL` still takes precedence when set.')
+      .setDesc('Append additional Cursor model ids to the picker, one per line. Run `cursor-agent --list-models` in a terminal to see every model your account supports. `CURSOR_MODEL` still takes precedence when set.')
       .addTextArea((text) => {
         let pendingCustomModels = cursorSettings.customModels;
         let savedCustomModels = cursorSettings.customModels;
 
         text
           .setValue(cursorSettings.customModels)
-          .setPlaceholder('composer-2-fast\nclaude-haiku-4')
+          .setPlaceholder('composer-2-fast\ngpt-5.5-high-fast\nclaude-4.5-sonnet-thinking')
           .onChange((value) => {
             pendingCustomModels = value;
           });

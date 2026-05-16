@@ -6,7 +6,7 @@
 
 ![Preview](Preview.png)
 
-An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Opencode and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box.
+An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Cursor, Opencode and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box.
 
 ## Features & Usage
 
@@ -29,7 +29,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 ## Requirements
 
 - **Claude provider**: [Claude Code CLI](https://code.claude.com/docs/en/overview) installed (native install recommended). Claude subscription/API or compatible provider ([Openrouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.moonshot.ai/docs/guide/agent-support), etc.).
-- **Optional providers**: [Codex CLI](https://github.com/openai/codex), [Opencode](https://opencode.ai/).
+- **Optional providers**: [Codex CLI](https://github.com/openai/codex), [Cursor CLI](https://docs.cursor.com/en/cli/overview) (`cursor-agent`), [Opencode](https://opencode.ai/).
 - Obsidian v1.7.2+
 - Desktop only (macOS, Linux, Windows)
 
@@ -82,10 +82,44 @@ npm run dev
 npm run build
 ```
 
+## Cursor provider
+
+The Cursor provider wraps the headless [Cursor CLI](https://docs.cursor.com/en/cli/overview) (`cursor-agent`). It is opt-in (off by default) and routes every turn through `cursor-agent --print --output-format stream-json --stream-partial-output --force --resume <chatId> --model <id> --workspace <vault>`. Conversation continuity is preserved by minting a chat id with `cursor-agent create-chat` once per conversation and passing it back on every subsequent turn via `--resume`.
+
+### Enable
+
+1. Install `cursor-agent` and sign in with `cursor-agent login` (or configure `CURSOR_API_KEY`).
+2. In Obsidian: **Settings → Claudian → Cursor → Setup → Enable Cursor provider**.
+3. Optional: pin the CLI path if auto-detection from `PATH` doesn't find it. The field validates that the file exists.
+
+### Configuring Cursor models
+
+The Cursor model picker is fed from three sources (in priority order):
+
+1. **`CURSOR_MODEL` env var** (highest priority) — set in **Settings → Claudian → Cursor → Cursor environment**, prepends to the dropdown labelled "Custom (env)" and is treated as the resolved selection.
+2. **Custom models textarea** — newline-separated model ids in **Settings → Claudian → Cursor → Models → Custom models**. Anything you paste here appears in the dropdown.
+3. **Built-in defaults** shipped with the plugin:
+
+   | Model id | Label |
+   |---|---|
+   | `auto` | Auto |
+   | `composer-2` | Composer 2 |
+   | `gpt-5.5-extra-high` | GPT-5.5 Extra High |
+   | `claude-4.6-opus-max-thinking` | Opus 4.6 Max Thinking |
+   | `claude-4.6-sonnet-medium-thinking` | Sonnet 4.6 Thinking |
+
+To see every model your Cursor account currently supports, run:
+
+```bash
+cursor-agent --list-models
+```
+
+(or `cursor-agent models` for the same list with grouping). Copy any of those ids into the **Custom models** textarea to expose them in the picker. Changing `CURSOR_MODEL`, `CURSOR_API_KEY`, or `CURSOR_BASE_URL` invalidates active Cursor sessions so the next turn starts fresh against the new endpoint.
+
 ## Privacy & Data Use
 
-- **Sent to API**: Your input, attached files, images, and tool call outputs. Default: Anthropic (Claude) or OpenAI (Codex); configurable via environment variables.
-- **Local storage**: Claudian settings and session metadata in `vault/.claudian/`; Claude provider files in `vault/.claude/`; transcripts in `~/.claude/projects/` (Claude) and `~/.codex/sessions/` (Codex).
+- **Sent to API**: Your input, attached files, images, and tool call outputs. Default: Anthropic (Claude), OpenAI (Codex), or Cursor's routed model providers (Cursor); configurable via environment variables.
+- **Local storage**: Claudian settings and session metadata in `vault/.claudian/`; Claude provider files in `vault/.claude/`; transcripts in `~/.claude/projects/` (Claude) and `~/.codex/sessions/` (Codex). Cursor stores chat ids only in `vault/.claudian/sessions/*.meta.json`; transcripts stay on Cursor's side.
 - **No telemetry**: No tracking beyond your configured API provider.
 
 ## Troubleshooting
@@ -122,7 +156,7 @@ If different, GUI apps like Obsidian may not find Node.js.
 
 ### Other providers
 
-Codex and Opencode support are live but features might be incomplete, and still need more testing across platforms and installation methods. If you have feature request or run into any bugs, please [submit a GitHub issue](https://github.com/YishenTu/claudian/issues).
+Codex, Cursor, and Opencode support are live but features might be incomplete, and still need more testing across platforms and installation methods. If you have feature request or run into any bugs, please [submit a GitHub issue](https://github.com/YishenTu/claudian/issues).
 
 ## Architecture
 
@@ -140,6 +174,7 @@ src/
 ├── providers/
 │   ├── claude/                  # Claude SDK adaptor, prompt encoding, storage, MCP, plugins
 │   ├── codex/                   # Codex app-server adaptor, JSON-RPC transport, JSONL history
+│   ├── cursor/                  # Cursor CLI adaptor, NDJSON event transport, one-shot turns
 │   ├── opencode/                # Opencode adaptor
 │   └── acp/                     # Agent Client Protocol shared transport
 ├── features/
@@ -158,6 +193,7 @@ src/
 - [x] 1M Opus and Sonnet models
 - [x] Codex provider integration
 - [x] Opencode support
+- [x] Cursor CLI provider integration (send/stream/cancel, title, instruction refine, inline edit)
 - [ ] More to come!
 
 ## License
@@ -179,4 +215,5 @@ Licensed under the [MIT License](LICENSE).
 - [Obsidian](https://obsidian.md) for the plugin API
 - [Anthropic](https://anthropic.com) for Claude and the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview)
 - [OpenAI](https://openai.com) for [Codex](https://github.com/openai/codex)
+- [Cursor](https://cursor.com) for the [Cursor CLI](https://docs.cursor.com/en/cli/overview)
 - [Opencode](https://opencode.ai/) 
