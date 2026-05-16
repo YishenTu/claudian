@@ -42,7 +42,7 @@ import {
   buildCursorLaunchSpec,
 } from './CursorLaunchSpecBuilder';
 
-const CREATE_CHAT_TIMEOUT_MS = 15_000;
+const CREATE_CHAT_TIMEOUT_MS = 30_000;
 
 /**
  * Real Phase 2 runtime. Each turn is a one-shot `cursor-agent` invocation.
@@ -432,10 +432,43 @@ export class CursorChatRuntime implements ChatRuntime {
 
       let stdout = '';
       let stderr = '';
+      let settled = false;
+      const startedAt = Date.now();
+
+      const settle = (
+        kind: 'resolve' | 'reject',
+        valueOrError: string | Error,
+      ): void => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        if (kind === 'resolve') {
+          resolve(valueOrError as string);
+        } else {
+          reject(valueOrError as Error);
+        }
+      };
+
+      const buildDiagnostic = (label: string): string => {
+        const elapsed = Date.now() - startedAt;
+        const pathHint = (launchSpec.env.PATH ?? '').split(/[:;]/).slice(0, 6).join(':');
+        const stdoutSnippet = stdout.trim().slice(0, 200);
+        const stderrSnippet = stderr.trim().slice(0, 400);
+        const parts = [
+          label,
+          `cli=${launchSpec.command}`,
+          `cwd=${launchSpec.spawnCwd ?? '(inherit)'}`,
+          `elapsed=${elapsed}ms`,
+        ];
+        if (pathHint) parts.push(`PATH[0..6]=${pathHint}`);
+        if (stdoutSnippet) parts.push(`stdout=${stdoutSnippet}`);
+        if (stderrSnippet) parts.push(`stderr=${stderrSnippet}`);
+        return parts.join(' | ');
+      };
 
       const timer = window.setTimeout(() => {
         child.kill('SIGKILL');
-        reject(new Error('cursor-agent create-chat timed out'));
+        settle('reject', new Error(buildDiagnostic('cursor-agent create-chat timed out')));
       }, CREATE_CHAT_TIMEOUT_MS);
 
       child.stdout?.on('data', (data: Buffer) => {
@@ -445,26 +478,26 @@ export class CursorChatRuntime implements ChatRuntime {
         stderr += data.toString('utf-8');
       });
       child.on('error', (error) => {
-        window.clearTimeout(timer);
-        reject(error);
+        settle('reject', new Error(buildDiagnostic(`cursor-agent create-chat spawn error: ${error.message}`)));
       });
-      child.on('exit', (code) => {
-        window.clearTimeout(timer);
+      // Use 'close' (fires after stdout/stderr drain) instead of 'exit' to
+      // avoid a race where the last chunk of stdout arrives after exit.
+      child.on('close', (code) => {
         if (code !== 0) {
-          reject(new Error(stderr.trim() || `cursor-agent create-chat exited with code ${code}`));
+          settle('reject', new Error(buildDiagnostic(`cursor-agent create-chat exited with code ${code}`)));
           return;
         }
         const trimmed = stdout.trim();
         if (!trimmed) {
-          reject(new Error('cursor-agent create-chat returned an empty session id'));
+          settle('reject', new Error(buildDiagnostic('cursor-agent create-chat returned no output')));
           return;
         }
         const lastLine = trimmed.split(/\r?\n/).filter(Boolean).pop() ?? '';
         if (!lastLine) {
-          reject(new Error('cursor-agent create-chat returned no session id line'));
+          settle('reject', new Error(buildDiagnostic('cursor-agent create-chat returned no session id line')));
           return;
         }
-        resolve(lastLine);
+        settle('resolve', lastLine);
       });
     });
   }
