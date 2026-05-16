@@ -4,6 +4,8 @@ import { claudeWorkspaceRegistration } from './claude/app/ClaudeWorkspaceService
 import { claudeProviderRegistration } from './claude/registration';
 import { codexWorkspaceRegistration } from './codex/app/CodexWorkspaceServices';
 import { codexProviderRegistration } from './codex/registration';
+import { cursorWorkspaceRegistration } from './cursor/app/CursorWorkspaceServices';
+import { cursorProviderRegistration } from './cursor/registration';
 import { opencodeWorkspaceRegistration } from './opencode/app/OpencodeWorkspaceServices';
 import { opencodeProviderRegistration } from './opencode/registration';
 
@@ -17,9 +19,11 @@ export function registerBuiltInProviders(): void {
   ProviderRegistry.register('claude', claudeProviderRegistration);
   ProviderRegistry.register('codex', codexProviderRegistration);
   ProviderRegistry.register('opencode', opencodeProviderRegistration);
+  ProviderRegistry.register('cursor', cursorProviderRegistration);
   ProviderWorkspaceRegistry.register('claude', claudeWorkspaceRegistration);
   ProviderWorkspaceRegistry.register('codex', codexWorkspaceRegistration);
   ProviderWorkspaceRegistry.register('opencode', opencodeWorkspaceRegistration);
+  ProviderWorkspaceRegistry.register('cursor', cursorWorkspaceRegistration);
   builtInProvidersRegistered = true;
 }
 

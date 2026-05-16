@@ -48,6 +48,10 @@
   border-color: var(--claudian-brand-codex, #d0d0d0);
 }
 
+.claudian-tab-badge-streaming[data-provider="cursor"] {
+  border-color: var(--claudian-brand-cursor, #6b9cff);
+}
+
 .claudian-tab-badge-streaming[data-provider="opencode"] {
   border-color: var(--claudian-brand-opencode, #C8C8C8);
 }

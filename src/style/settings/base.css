@@ -45,6 +45,13 @@
   font-size: var(--font-ui-small);
 }
 
+/* Cursor placeholder */
+.claudian-settings-cursor-placeholder {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
 /* Settings page - remove separator lines from setting items */
 .claudian-settings .setting-item {
   border-top: none;
