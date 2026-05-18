@@ -1,7 +1,8 @@
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 
-const SIGKILL_TIMEOUT_MS = 3_000;
+const IS_WIN32 = process.platform === 'win32';
+const KILL_TIMEOUT_MS = 3_000;
 const STDERR_BUFFER_LIMIT = 8_000;
 
 export interface AcpSubprocessLaunchSpec {
@@ -49,6 +50,7 @@ export class AcpSubprocess {
     const proc = spawn(this.launchSpec.command, this.launchSpec.args, {
       cwd: this.launchSpec.cwd,
       env: this.launchSpec.env,
+      shell: IS_WIN32,
       stdio: 'pipe',
       windowsHide: true,
     });
@@ -102,15 +104,19 @@ export class AcpSubprocess {
         resolve();
       };
       const killTimer = window.setTimeout(() => {
-        proc.kill('SIGKILL');
-      }, SIGKILL_TIMEOUT_MS);
+        if (IS_WIN32) {
+          spawn('taskkill', ['/pid', String(proc.pid), '/f', '/t']);
+        } else {
+          proc.kill('SIGKILL');
+        }
+      }, KILL_TIMEOUT_MS);
       const cleanup = () => {
         window.clearTimeout(killTimer);
         proc.off('exit', onClose);
       };
 
       proc.once('exit', onClose);
-      proc.kill('SIGTERM');
+      proc.kill(IS_WIN32 ? 'SIGINT' : 'SIGTERM');
     });
   }
 
