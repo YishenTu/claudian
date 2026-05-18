@@ -63,6 +63,36 @@ export class ItemView {
 
 export class WorkspaceLeaf {}
 
+export class Scope {
+  static instances: Scope[] = [];
+
+  parent?: Scope;
+  handlers: Array<{
+    modifiers: string[] | null;
+    key: string | null;
+    func: (evt: KeyboardEvent, ctx?: unknown) => false | unknown;
+  }> = [];
+
+  constructor(parent?: Scope) {
+    this.parent = parent;
+    Scope.instances.push(this);
+  }
+
+  register = jest.fn((
+    modifiers: string[] | null,
+    key: string | null,
+    func: (evt: KeyboardEvent, ctx?: unknown) => false | unknown
+  ) => {
+    const handler = { modifiers, key, func };
+    this.handlers.push(handler);
+    return handler;
+  });
+
+  unregister = jest.fn((handler: unknown) => {
+    this.handlers = this.handlers.filter((entry) => entry !== handler);
+  });
+}
+
 export const Platform = {
   isMacOS: true,
 };

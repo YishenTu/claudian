@@ -1,5 +1,5 @@
 import type { EventRef, WorkspaceLeaf } from 'obsidian';
-import { ItemView, Notice, setIcon } from 'obsidian';
+import { ItemView, Notice, Scope, setIcon } from 'obsidian';
 
 import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
@@ -236,6 +236,7 @@ export class ClaudianView extends ItemView {
 
     this.tabBar?.destroy();
     this.tabBar = null;
+    this.scope = null;
   }
 
   // ============================================
@@ -610,20 +611,19 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    // Capture Escape while focus is inside the view so Obsidian does not handle
-    // it as pane navigation before Claudian can cancel streaming.
-    this.registerDomEvent(activeDocument, 'keydown', (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.isComposing) return;
-      const activeElement = activeDocument.activeElement;
-      if (!activeElement || !this.containerEl.contains(activeElement)) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      const activeTab = this.tabManager?.getActiveTab();
-      if (activeTab?.state.isStreaming) {
-        activeTab.controllers.inputController?.cancelStreaming();
+    // View scopes are the Obsidian-owned boundary for main-area tab hotkeys.
+    // Returning false consumes Escape before Obsidian uses it for pane navigation.
+    this.scope = new Scope(this.app.scope);
+    this.scope.register([], 'Escape', (e: KeyboardEvent) => {
+      if (e.isComposing) return;
+      if (!e.defaultPrevented) {
+        const activeTab = this.tabManager?.getActiveTab();
+        if (activeTab?.state.isStreaming) {
+          activeTab.controllers.inputController?.cancelStreaming();
+        }
       }
-    }, { capture: true });
+      return false;
+    });
 
     // Vault events - forward to active tab's file context manager
     const markCacheDirty = (includesFolders: boolean): void => {
