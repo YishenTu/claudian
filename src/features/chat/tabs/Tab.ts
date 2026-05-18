@@ -46,10 +46,11 @@ import { createInputToolbar } from '../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../ui/InstructionModeManager';
 import { NavigationSidebar } from '../ui/NavigationSidebar';
 import { StatusPanel } from '../ui/StatusPanel';
+import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
 import { getTabProviderId } from './providerResolution';
 import type { TabData, TabDOMElements, TabId, TabProviderContext } from './types';
-import { generateTabId, TEXTAREA_MAX_HEIGHT_PERCENT, TEXTAREA_MIN_MAX_HEIGHT } from './types';
+import { generateTabId } from './types';
 
 type TabProviderSettings = Record<string, unknown> & {
   model: string;
@@ -455,35 +456,6 @@ export function createTab(options: TabCreateOptions): TabData {
   };
 
   return tab;
-}
-
-/**
- * Auto-resizes a textarea based on its content.
- *
- * Logic:
- * - At minimum wrapper height: let flexbox allocate space (textarea fills available)
- * - When content exceeds flex allocation: set min-height to force wrapper growth
- * - When content shrinks: remove min-height override to let wrapper shrink
- * - Max height is capped at 55% of view height (minimum 150px)
- */
-function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
-  // Calculate max height: 55% of view height, minimum 150px
-  const viewHeight = textarea.closest('.claudian-container')?.clientHeight ?? window.innerHeight;
-  const maxHeight = Math.max(TEXTAREA_MIN_MAX_HEIGHT, viewHeight * TEXTAREA_MAX_HEIGHT_PERCENT);
-
-  // Get flex-allocated height (what flexbox gives the textarea)
-  const flexAllocatedHeight = textarea.offsetHeight;
-
-  // Get content height (what the content actually needs), capped at max
-  const contentHeight = Math.min(textarea.scrollHeight, maxHeight);
-
-  // Only set min-height if content exceeds flex allocation
-  // This forces the wrapper to grow while letting it shrink when content reduces
-  const minHeight = contentHeight > flexAllocatedHeight ? contentHeight : 60;
-  textarea.setCssProps({
-    '--claudian-textarea-min-height': `${minHeight}px`,
-    '--claudian-textarea-max-height': `${maxHeight}px`,
-  });
 }
 
 /**
