@@ -1,6 +1,6 @@
 import type { EditorView } from '@codemirror/view';
 
-import type { ChatRuntimeQueryOptions } from '../../../core/runtime/types';
+import type { ChatRuntimeQueryOptions, ChatTurnRequest } from '../../../core/runtime/types';
 import type { TodoItem } from '../../../core/tools/todo';
 import type {
   ChatMessage,
@@ -22,6 +22,8 @@ export interface QueuedMessage {
   editorContext: EditorSelectionContext | null;
   browserContext?: BrowserSelectionContext | null;
   canvasContext: CanvasSelectionContext | null;
+  /** Provider-neutral turn snapshot captured at enqueue time. */
+  turnRequest?: ChatTurnRequest;
 }
 
 /** Pending tool call waiting to be rendered (buffered until input is complete). */

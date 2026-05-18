@@ -233,12 +233,18 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      expect(deps.state.queuedMessage).toEqual({
+      expect(deps.state.queuedMessage).toMatchObject({
         content: 'queued message',
         images: undefined,
         editorContext: null,
         browserContext: null,
         canvasContext: null,
+      });
+      expect(deps.state.queuedMessage?.turnRequest).toMatchObject({
+        text: 'queued message',
+        editorSelection: null,
+        browserSelection: null,
+        canvasSelection: null,
       });
       expect(inputEl.value).toBe('');
     });
@@ -253,12 +259,16 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      expect(deps.state.queuedMessage).toEqual({
+      expect(deps.state.queuedMessage).toMatchObject({
         content: 'queued with images',
         images: mockImages,
         editorContext: null,
         browserContext: null,
         canvasContext: null,
+      });
+      expect(deps.state.queuedMessage?.turnRequest).toMatchObject({
+        text: 'queued with images',
+        images: mockImages,
       });
       expect(imageContextManager.clearImages).toHaveBeenCalled();
     });
@@ -322,7 +332,14 @@ describe('InputController - Message Queue', () => {
         jest.runAllTimers();
         await Promise.resolve();
 
-        expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({ editorContextOverride: null }));
+        expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({
+          content: 'queued plan',
+          turnRequestOverride: expect.objectContaining({
+            text: 'queued plan',
+            editorSelection: null,
+            canvasSelection: null,
+          }),
+        }));
         sendSpy.mockRestore();
       } finally {
         jest.useRealTimers();
@@ -347,6 +364,57 @@ describe('InputController - Message Queue', () => {
       controller.updateQueueIndicator();
 
       const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      expect(queueIndicatorEl.style.display).toBe('none');
+    });
+
+    it('should withdraw queued message to the composer for editing', () => {
+      const mockImages = [{ id: 'img1', name: 'queued.png' }];
+      const draftImages = [{ id: 'img2', name: 'draft.png' }];
+      deps.state.queuedMessage = {
+        content: 'queued content',
+        images: mockImages as any,
+        editorContext: null,
+        canvasContext: null,
+      };
+      inputEl.value = 'draft content';
+      const imageContextManager = deps.getImageContextManager()!;
+      (imageContextManager.getAttachedImages as jest.Mock).mockReturnValue(draftImages);
+
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      const editButton = queueIndicatorEl
+        .querySelectorAll('.claudian-queue-indicator-icon-action')
+        .find((button: any) => button.getAttribute('aria-label') === 'Edit queued message');
+      editButton?.click();
+
+      expect(deps.state.queuedMessage).toBeNull();
+      expect(inputEl.value).toBe('queued content\n\ndraft content');
+      expect(imageContextManager.setImages).toHaveBeenCalledWith([...mockImages, ...draftImages]);
+      expect(deps.resetInputHeight).toHaveBeenCalled();
+      expect(inputEl.focus).toHaveBeenCalled();
+      expect(queueIndicatorEl.style.display).toBe('none');
+    });
+
+    it('should discard queued message without changing the composer', () => {
+      deps.state.queuedMessage = {
+        content: 'queued content',
+        images: undefined,
+        editorContext: null,
+        canvasContext: null,
+      };
+      inputEl.value = 'draft content';
+
+      controller.updateQueueIndicator();
+
+      const queueIndicatorEl = deps.state.queueIndicatorEl as any;
+      const discardButton = queueIndicatorEl
+        .querySelectorAll('.claudian-queue-indicator-icon-action')
+        .find((button: any) => button.getAttribute('aria-label') === 'Discard queued message');
+      discardButton?.click();
+
+      expect(deps.state.queuedMessage).toBeNull();
+      expect(inputEl.value).toBe('draft content');
       expect(queueIndicatorEl.style.display).toBe('none');
     });
 
@@ -2525,8 +2593,8 @@ describe('InputController - Message Queue', () => {
     });
   });
 
-  describe('processQueuedMessage restores images', () => {
-    it('should restore images from queued message', () => {
+  describe('processQueuedMessage sends the queued snapshot', () => {
+    it('should send images from the queued message without rebuilding composer state', () => {
       jest.useFakeTimers();
       try {
         const mockImages = [{ id: 'img1', name: 'test.png' }];
@@ -2536,13 +2604,19 @@ describe('InputController - Message Queue', () => {
           editorContext: null,
           canvasContext: null,
         };
-        const imageContextManager = deps.getImageContextManager()!;
         const sendSpy = jest.spyOn(controller, 'sendMessage').mockResolvedValue(undefined);
 
         (controller as any).processQueuedMessage();
         jest.runAllTimers();
 
-        expect(imageContextManager.setImages).toHaveBeenCalledWith(mockImages);
+        expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({
+          content: 'queued content',
+          images: mockImages,
+          turnRequestOverride: expect.objectContaining({
+            text: 'queued content',
+            images: mockImages,
+          }),
+        }));
         sendSpy.mockRestore();
       } finally {
         jest.useRealTimers();
