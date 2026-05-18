@@ -13,7 +13,11 @@ const mockNotice = Notice as jest.Mock;
 
 function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): ConversationControllerDeps {
   const state = new ChatState();
-  const inputEl = { value: '', focus: jest.fn() } as unknown as HTMLTextAreaElement;
+  const inputEl = {
+    value: '',
+    focus: jest.fn(),
+    dispatchEvent: jest.fn(),
+  } as unknown as HTMLTextAreaElement;
   const historyDropdown = createMockEl();
   let welcomeEl: any = createMockEl();
   const messagesEl = createMockEl();
@@ -2408,6 +2412,11 @@ describe('ConversationController - Rewind', () => {
     const inputEl = deps.getInputEl();
     expect(inputEl.value).toBe('test');
     expect(inputEl.focus).toHaveBeenCalled();
+    // Programmatic value sets don't fire input events; rewind dispatches one
+    // so the composer auto-resize can size the textarea to the loaded content.
+    expect(inputEl.dispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'input' }),
+    );
 
     // Should show success notice with file count
     const noticeMsg = mockNotice.mock.calls[0][0] as string;

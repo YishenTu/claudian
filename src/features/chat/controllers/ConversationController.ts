@@ -344,6 +344,9 @@ export class ConversationController {
     const inputEl = this.deps.getInputEl();
     inputEl.value = userMsg.content;
     inputEl.focus();
+    // Programmatic value sets don't fire input events; dispatch one so the
+    // composer auto-resize can size the textarea to the loaded content.
+    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
 
     const welcomeEl = renderer.renderMessages(state.messages, () => this.getGreeting());
     this.deps.setWelcomeEl(welcomeEl);

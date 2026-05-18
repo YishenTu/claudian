@@ -20,17 +20,38 @@ describe('input composer CSS', () => {
     );
   });
 
-  it('keeps expanded composer height fixed', () => {
-    expect(getRule('.claudian-input-wrapper.claudian-input-wrapper-expanded'))
-      .toMatch(/height:\s*clamp\(260px,\s*46vh,\s*520px\)/);
+  it('defines composer-max bounds as CSS variables (shared with Tab.ts)', () => {
+    const rule = getRule('.claudian-input-wrapper');
+    expect(rule).toMatch(/--claudian-composer-max-floor-px:\s*260\b/);
+    expect(rule).toMatch(/--claudian-composer-max-ceiling-px:\s*520\b/);
+    expect(rule).toMatch(/--claudian-composer-max-vh-ratio:\s*0\.46\b/);
   });
 
-  it('keeps manual-collapsed textarea bounded at compact height with scroll', () => {
-    const rule = getRule(
-      '.claudian-input-wrapper.claudian-input-wrapper-manual-collapsed .claudian-input',
+  it('expands composer using the shared CSS variables', () => {
+    const rule = getRule('.claudian-input-wrapper.claudian-input-wrapper-expanded');
+    expect(rule).toMatch(/height:\s*clamp\(/);
+    expect(rule).toMatch(/var\(--claudian-composer-max-floor-px\)/);
+    expect(rule).toMatch(/var\(--claudian-composer-max-vh-ratio\)/);
+    expect(rule).toMatch(/var\(--claudian-composer-max-ceiling-px\)/);
+  });
+
+  it('caps the chip context row in both compact and expanded modes', () => {
+    // Bug guard: in expanded mode the wrapper is fixed-height with
+    // overflow:hidden, so an uncapped chip row would squeeze out the textarea
+    // when many images/files are attached.
+    const rule = getRule('.claudian-context-row.has-content');
+    expect(rule).toMatch(/max-height:\s*90px/);
+    expect(rule).toMatch(/overflow-y:\s*auto/);
+    expect(inputCss).not.toMatch(
+      /:not\(\.claudian-input-wrapper-expanded\)\s+\.claudian-context-row\.has-content/,
     );
-    expect(rule).toMatch(/max-height:\s*var\(--claudian-textarea-max-height,\s*96px\)/);
+  });
+
+  it('keeps compact textarea sized via CSS variables with internal scroll', () => {
+    const rule = getRule('.claudian-input');
+    expect(rule).toMatch(/flex:\s*1 1 0/);
     expect(rule).toMatch(/min-height:\s*var\(--claudian-textarea-min-height,\s*60px\)/);
+    expect(rule).toMatch(/max-height:\s*var\(--claudian-textarea-max-height,\s*none\)/);
     expect(rule).toMatch(/overflow-y:\s*auto/);
   });
 });

@@ -42,7 +42,6 @@ import { SubagentManager } from '../services/SubagentManager';
 import { ChatState } from '../state/ChatState';
 import { BangBashModeManager as BangBashModeManagerClass } from '../ui/BangBashModeManager';
 import {
-  getComposerModeAfterInput,
   getComposerModeAfterReset,
   getComposerModeAfterToggle,
 } from '../ui/composerMode';
@@ -67,10 +66,13 @@ type TabProviderSettings = Record<string, unknown> & {
 };
 
 const COMPOSER_EXPANDED_CLASS = 'claudian-input-wrapper-expanded';
-const COMPOSER_MANUAL_COLLAPSED_CLASS = 'claudian-input-wrapper-manual-collapsed';
-const COMPOSER_AUTO_EXPAND_BUFFER_PX = 8;
-const COMPOSER_COMPACT_TEXTAREA_MIN_HEIGHT = 60;
-const COMPOSER_COMPACT_TEXTAREA_MAX_HEIGHT = 96;
+const COMPOSER_COMPACT_TEXTAREA_BASE_MIN_HEIGHT = 60;
+// Fallbacks for the CSS-defined cap bounds (see src/style/components/input.css).
+// Used only when getComputedStyle can't read the custom properties (e.g. jsdom
+// tests without the stylesheet loaded). Production reads the live CSS values.
+const COMPOSER_AUTOGROW_FALLBACK_FLOOR_PX = 260;
+const COMPOSER_AUTOGROW_FALLBACK_CEILING_PX = 520;
+const COMPOSER_AUTOGROW_FALLBACK_VH_RATIO = 0.46;
 
 /**
  * Returns model options for a blank tab.
@@ -474,21 +476,16 @@ export function createTab(options: TabCreateOptions): TabData {
 function applyComposerMode(tab: TabData): void {
   const mode = tab.composerMode;
   tab.dom.inputWrapper.toggleClass(COMPOSER_EXPANDED_CLASS, mode === 'expanded');
-  tab.dom.inputWrapper.toggleClass(COMPOSER_MANUAL_COLLAPSED_CLASS, mode === 'manual-collapsed');
   tab.ui.composerExpandButton?.setExpanded(mode === 'expanded');
 
   if (mode === 'expanded') {
-    tab.dom.inputEl.setCssProps({
-      '--claudian-textarea-min-height': '0px',
-      '--claudian-textarea-max-height': 'none',
-    });
+    // CSS rule `.claudian-input-wrapper-expanded .claudian-input` already
+    // sets `min-height: 0; max-height: none` with higher specificity than the
+    // CSS-variable fallbacks, so no JS sizing is needed in expanded mode.
     return;
   }
 
-  tab.dom.inputEl.setCssProps({
-    '--claudian-textarea-min-height': `${COMPOSER_COMPACT_TEXTAREA_MIN_HEIGHT}px`,
-    '--claudian-textarea-max-height': `${COMPOSER_COMPACT_TEXTAREA_MAX_HEIGHT}px`,
-  });
+  resizeCompactTextarea(tab);
 }
 
 function setComposerMode(tab: TabData, mode: TabData['composerMode']): void {
@@ -497,24 +494,62 @@ function setComposerMode(tab: TabData, mode: TabData['composerMode']): void {
 }
 
 function toggleComposerMode(tab: TabData): void {
-  setComposerMode(
-    tab,
-    getComposerModeAfterToggle(tab.composerMode, tab.dom.inputEl.value.trim().length > 0),
-  );
+  setComposerMode(tab, getComposerModeAfterToggle(tab.composerMode));
   tab.dom.inputEl.focus();
 }
 
-function doesComposerOverflowCompact(textarea: HTMLTextAreaElement): boolean {
-  const visibleHeight = Math.max(textarea.clientHeight, textarea.offsetHeight);
-  return visibleHeight > 0
-    && textarea.scrollHeight > visibleHeight + COMPOSER_AUTO_EXPAND_BUFFER_PX;
+function readNumericCssVar(styles: CSSStyleDeclaration, name: string, fallback: number): number {
+  const raw = Number.parseFloat(styles.getPropertyValue(name));
+  return Number.isFinite(raw) ? raw : fallback;
 }
 
-function updateComposerModeFromInput(tab: TabData): void {
-  setComposerMode(tab, getComposerModeAfterInput(tab.composerMode, {
-    hasText: tab.dom.inputEl.value.trim().length > 0,
-    overflowsCompact: doesComposerOverflowCompact(tab.dom.inputEl),
-  }));
+function computeCompactMaxHeight(el: HTMLElement): number {
+  const wrapper = el.closest<HTMLElement>('.claudian-input-wrapper') ?? el;
+  const wrapperStyles = getComputedStyle(wrapper);
+  const floor = readNumericCssVar(
+    wrapperStyles, '--claudian-composer-max-floor-px', COMPOSER_AUTOGROW_FALLBACK_FLOOR_PX);
+  const ceiling = readNumericCssVar(
+    wrapperStyles, '--claudian-composer-max-ceiling-px', COMPOSER_AUTOGROW_FALLBACK_CEILING_PX);
+  const vhRatio = readNumericCssVar(
+    wrapperStyles, '--claudian-composer-max-vh-ratio', COMPOSER_AUTOGROW_FALLBACK_VH_RATIO);
+  // window.innerHeight mirrors CSS `vh` — container.clientHeight would diverge
+  // since Obsidian's sidebar pane is shorter than the viewport.
+  const expandedWrapperHeight = Math.min(
+    ceiling, Math.max(floor, window.innerHeight * vhRatio));
+  // Subtract wrapper border + textarea padding so the compact wrapper's OUTER
+  // height equals the expanded wrapper's outer height. textarea is content-box
+  // so its max-height clamps content only; padding extends beyond.
+  const textareaStyles = getComputedStyle(el);
+  const padTop = Number.parseFloat(textareaStyles.paddingTop) || 0;
+  const padBottom = Number.parseFloat(textareaStyles.paddingBottom) || 0;
+  const borderTop = Number.parseFloat(wrapperStyles.borderTopWidth) || 0;
+  const borderBottom = Number.parseFloat(wrapperStyles.borderBottomWidth) || 0;
+  return Math.max(floor, expandedWrapperHeight - padTop - padBottom - borderTop - borderBottom);
+}
+
+// Two-step within one synchronous tick avoids jitter: dropping min-height
+// makes scrollHeight reflect natural content, then we pin to it clamped
+// between baseline and the cap.
+function resizeCompactTextarea(tab: TabData): void {
+  if (tab.composerMode !== 'compact') return;
+  const el = tab.dom.inputEl;
+  const maxHeight = computeCompactMaxHeight(el);
+
+  el.setCssProps({
+    '--claudian-textarea-min-height': '0px',
+    '--claudian-textarea-max-height': `${maxHeight}px`,
+  });
+
+  const contentHeight = el.scrollHeight;
+  const minHeight = Math.max(
+    COMPOSER_COMPACT_TEXTAREA_BASE_MIN_HEIGHT,
+    Math.min(contentHeight, maxHeight),
+  );
+
+  el.setCssProps({
+    '--claudian-textarea-min-height': `${minHeight}px`,
+    '--claudian-textarea-max-height': `${maxHeight}px`,
+  });
 }
 
 /**
@@ -682,7 +717,7 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
         tab.controllers.browserSelectionController?.updateContextRowVisibility();
         tab.controllers.canvasSelectionController?.updateContextRowVisibility();
         updateContextRowHasContent(dom.contextRowEl);
-        updateComposerModeFromInput(tab);
+        resizeCompactTextarea(tab);
         tab.renderer?.scrollToBottomIfNeeded();
       },
       getExternalContexts: () => tab.ui.externalContextSelector?.getExternalContexts() || [],
@@ -701,7 +736,7 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
         tab.controllers.browserSelectionController?.updateContextRowVisibility();
         tab.controllers.canvasSelectionController?.updateContextRowVisibility();
         updateContextRowHasContent(dom.contextRowEl);
-        updateComposerModeFromInput(tab);
+        resizeCompactTextarea(tab);
         tab.renderer?.scrollToBottomIfNeeded();
       },
     },
@@ -1261,7 +1296,7 @@ export function initializeTabControllers(
     dom.selectionIndicatorEl!,
     dom.inputEl,
     dom.contextRowEl,
-    () => updateComposerModeFromInput(tab),
+    () => resizeCompactTextarea(tab),
     dom.contentEl,
   );
 
@@ -1270,7 +1305,7 @@ export function initializeTabControllers(
     dom.browserIndicatorEl!,
     dom.inputEl,
     dom.contextRowEl,
-    () => updateComposerModeFromInput(tab)
+    () => resizeCompactTextarea(tab)
   );
 
   tab.controllers.canvasSelectionController = new CanvasSelectionController(
@@ -1278,7 +1313,7 @@ export function initializeTabControllers(
     dom.canvasIndicatorEl!,
     dom.inputEl,
     dom.contextRowEl,
-    () => updateComposerModeFromInput(tab)
+    () => resizeCompactTextarea(tab)
   );
 
   tab.controllers.streamController = new StreamController({
@@ -1538,10 +1573,13 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     ui.instructionModeManager?.handleInputChange();
     ui.bangBashModeManager?.handleInputChange();
     syncBangBashSuppression();
-    setComposerMode(tab, getComposerModeAfterInput(tab.composerMode, {
-      hasText: dom.inputEl.value.trim().length > 0,
-      overflowsCompact: doesComposerOverflowCompact(dom.inputEl),
-    }));
+    // Hybrid C: when in expanded mode and the user empties the composer,
+    // auto-collapse back to normal/baseline so the next session feels fresh.
+    if (tab.composerMode === 'expanded' && dom.inputEl.value.trim().length === 0) {
+      setComposerMode(tab, 'compact');
+      return;
+    }
+    resizeCompactTextarea(tab);
   };
   dom.inputEl.addEventListener('input', inputHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('input', inputHandler));

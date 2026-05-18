@@ -4,8 +4,14 @@
   padding: 12px 0 0 0;
 }
 
-/* Input wrapper (border container) - flex column so textarea expands when no chips */
+/* Composer max-height bounds — single source of truth shared with Tab.ts.
+   Tab.ts reads these via getComputedStyle to size the compact textarea, so
+   the cap matches the expanded wrapper's clamp range automatically. */
 .claudian-input-wrapper {
+  --claudian-composer-max-floor-px: 260;
+  --claudian-composer-max-ceiling-px: 520;
+  --claudian-composer-max-vh-ratio: 0.46;
+
   position: relative;
   display: flex;
   flex-direction: column;
@@ -17,8 +23,12 @@
 }
 
 .claudian-input-wrapper.claudian-input-wrapper-expanded {
-  height: clamp(260px, 46vh, 520px);
-  min-height: 260px;
+  height: clamp(
+    calc(var(--claudian-composer-max-floor-px) * 1px),
+    calc(var(--claudian-composer-max-vh-ratio) * 100vh),
+    calc(var(--claudian-composer-max-ceiling-px) * 1px)
+  );
+  min-height: calc(var(--claudian-composer-max-floor-px) * 1px);
   overflow: hidden;
 }
 
@@ -34,11 +44,11 @@
 }
 
 /* Show context row when it has visible content */
+/* Cap with internal scroll in BOTH modes so many chips never squeeze the
+   textarea — in expanded mode the wrapper has fixed height + overflow:hidden,
+   so an uncapped chip row would clip the textarea or chips themselves. */
 .claudian-context-row.has-content {
   display: flex;
-}
-
-.claudian-input-wrapper:not(.claudian-input-wrapper-expanded) .claudian-context-row.has-content {
   max-height: 90px;
   overflow-y: auto;
 }
@@ -92,7 +102,7 @@
   width: 100%;
   flex: 1 1 0;
   min-height: var(--claudian-textarea-min-height, 60px);
-  max-height: var(--claudian-textarea-max-height, 96px);
+  max-height: var(--claudian-textarea-max-height, none);
   resize: none;
   padding: 10px 12px 12px 12px;
   border: none !important;
@@ -110,12 +120,6 @@
 .claudian-input-wrapper.claudian-input-wrapper-expanded .claudian-input {
   min-height: 0;
   max-height: none;
-  overflow-y: auto;
-}
-
-.claudian-input-wrapper.claudian-input-wrapper-manual-collapsed .claudian-input {
-  min-height: var(--claudian-textarea-min-height, 60px);
-  max-height: var(--claudian-textarea-max-height, 96px);
   overflow-y: auto;
 }
 

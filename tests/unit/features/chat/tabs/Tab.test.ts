@@ -2221,6 +2221,46 @@ describe('Tab - Event Handler Behavior', () => {
       expect(mockFileContextManager.handleInputChange).toHaveBeenCalled();
       expect(mockInstructionModeManager.handleInputChange).toHaveBeenCalled();
     });
+
+    it('auto-collapses expanded composer back to compact when text is emptied', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+      tab.composerMode = 'expanded';
+      tab.dom.inputWrapper.addClass('claudian-input-wrapper-expanded');
+      tab.dom.inputEl.value = '';
+
+      wireTabInputEvents(tab, options.plugin);
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      listeners.get('input')[0]();
+
+      expect(tab.composerMode).toBe('compact');
+      expect(tab.dom.inputWrapper.hasClass('claudian-input-wrapper-expanded')).toBe(false);
+    });
+
+    it('keeps expanded mode while text is non-empty', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      tab.ui.fileContextManager = mockFileContextManager as any;
+      tab.ui.instructionModeManager = mockInstructionModeManager as any;
+      tab.controllers.inputController = mockInputController as any;
+      tab.controllers.selectionController = mockSelectionController as any;
+      tab.composerMode = 'expanded';
+      tab.dom.inputWrapper.addClass('claudian-input-wrapper-expanded');
+      tab.dom.inputEl.value = 'still typing';
+
+      wireTabInputEvents(tab, options.plugin);
+      const listeners = (tab.dom.inputEl as any).getEventListeners();
+      listeners.get('input')[0]();
+
+      expect(tab.composerMode).toBe('expanded');
+      expect(tab.dom.inputWrapper.hasClass('claudian-input-wrapper-expanded')).toBe(true);
+    });
   });
 
   describe('wireTabInputEvents - focus handler', () => {
@@ -2353,7 +2393,6 @@ describe('Tab - UI Callback Wiring', () => {
     it('should wire onExpandComposer to toggle composer mode', () => {
       const options = createMockOptions();
       const tab = createTab(options);
-      tab.dom.inputEl.value = 'long enough text to keep manual collapse meaningful';
 
       initializeTabUI(tab, options.plugin);
 
@@ -2365,13 +2404,11 @@ describe('Tab - UI Callback Wiring', () => {
       toolbarCallbacks.onExpandComposer();
 
       expect(tab.dom.inputWrapper.hasClass('claudian-input-wrapper-expanded')).toBe(true);
-      expect(tab.dom.inputWrapper.hasClass('claudian-input-wrapper-manual-collapsed')).toBe(false);
       expect(mockComposerExpandButton.setExpanded).toHaveBeenLastCalledWith(true);
 
       toolbarCallbacks.onExpandComposer();
 
       expect(tab.dom.inputWrapper.hasClass('claudian-input-wrapper-expanded')).toBe(false);
-      expect(tab.dom.inputWrapper.hasClass('claudian-input-wrapper-manual-collapsed')).toBe(true);
       expect(mockComposerExpandButton.setExpanded).toHaveBeenLastCalledWith(false);
     });
 
