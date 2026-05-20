@@ -262,6 +262,13 @@ export interface ProviderChatUIConfig {
   /** Apply model change side effects to settings (defaults, tracking). */
   applyModelDefaults(model: string, settings: unknown): void;
 
+  /** Optional provider hook to discover model-scoped metadata after a model is selected. */
+  prepareModelMetadata?(
+    model: string,
+    settings: Record<string, unknown>,
+    context: { plugin: ClaudianPlugin },
+  ): Promise<void>;
+
   /** Optional hook when the toolbar changes a reasoning selection. */
   applyReasoningSelection?(model: string, value: string, settings: unknown): void;
 

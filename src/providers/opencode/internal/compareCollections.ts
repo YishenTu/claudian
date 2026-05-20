@@ -1,4 +1,4 @@
-import type { OpencodeDiscoveredModel } from '../models';
+import type { OpencodeDiscoveredModel, OpencodeThinkingOptionsByModel } from '../models';
 import type { OpencodeMode } from '../modes';
 
 export function sameStringList(left: string[], right: string[]): boolean {
@@ -46,4 +46,27 @@ export function sameDiscoveredModels(
     && model.label === right[index]?.label
     && (model.description ?? '') === (right[index]?.description ?? '')
   ));
+}
+
+export function sameThinkingOptionsByModel(
+  left: OpencodeThinkingOptionsByModel,
+  right: OpencodeThinkingOptionsByModel,
+): boolean {
+  const leftEntries = Object.entries(left);
+  if (leftEntries.length !== Object.keys(right).length) {
+    return false;
+  }
+
+  return leftEntries.every(([rawId, leftOptions]) => {
+    const rightOptions = right[rawId] ?? [];
+    if (leftOptions.length !== rightOptions.length) {
+      return false;
+    }
+
+    return leftOptions.every((option, index) => (
+      option.value === rightOptions[index]?.value
+      && option.label === rightOptions[index]?.label
+      && (option.description ?? '') === (rightOptions[index]?.description ?? '')
+    ));
+  });
 }

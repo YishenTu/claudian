@@ -9,7 +9,6 @@ import {
   buildOpencodeBaseModels,
   decodeOpencodeModelId,
   encodeOpencodeModelId,
-  getOpencodeModelVariants,
   isOpencodeModelSelectionId,
   OPENCODE_DEFAULT_THINKING_LEVEL,
   OPENCODE_SYNTHETIC_MODEL_ID,
@@ -19,12 +18,14 @@ import {
   resolveOpencodeModeForPermissionMode,
   resolvePermissionModeForManagedOpencodeMode,
 } from '../modes';
+import { OpencodeChatRuntime } from '../runtime/OpencodeChatRuntime';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '../settings';
 
 const OPENCODE_MODELS: ProviderUIOption[] = [
   { value: OPENCODE_SYNTHETIC_MODEL_ID, label: 'OpenCode', description: 'ACP runtime' },
 ];
 const DEFAULT_CONTEXT_WINDOW = 200_000;
+const OPENCODE_METADATA_WARMUP_DB = ':memory:';
 const OPENCODE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveValue: 'normal',
   inactiveLabel: 'Safe',
@@ -114,31 +115,17 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
     return isOpencodeModelSelectionId(model);
   },
 
-  isAdaptiveReasoningModel(_model: string, _settings: Record<string, unknown>): boolean {
-    return true;
+  isAdaptiveReasoningModel(model: string, settings: Record<string, unknown>): boolean {
+    return getOpencodeThinkingOptions(model, settings).length > 0;
   },
 
   getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
-    const rawModelId = decodeOpencodeModelId(model);
-    if (!rawModelId) {
-      return [];
-    }
-
-    const opencodeSettings = getOpencodeProviderSettings(settings);
-    const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels);
-    const variants = getOpencodeModelVariants(baseRawId, opencodeSettings.discoveredModels);
-    if (variants.length === 0) {
-      return [];
-    }
-
-    return [
-      { value: OPENCODE_DEFAULT_THINKING_LEVEL, label: 'Default' },
-      ...variants.map((variant) => ({
+    return getOpencodeThinkingOptions(model, settings)
+      .map((variant) => ({
         description: variant.description,
         label: variant.label,
         value: variant.value,
-      })),
-    ];
+      }));
   },
 
   getDefaultReasoningValue(model: string, settings: Record<string, unknown>): string {
@@ -178,6 +165,32 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
     settingsBag.effortLevel = getDefaultThinkingLevelForModel(baseRawId, settingsBag);
   },
 
+  async prepareModelMetadata(model: string, _settings: Record<string, unknown>, context): Promise<void> {
+    const rawModelId = decodeOpencodeModelId(model);
+    if (!rawModelId) {
+      return;
+    }
+
+    const opencodeSettings = getOpencodeProviderSettings(context.plugin.settings);
+    const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels);
+    if (baseRawId && opencodeSettings.thinkingOptionsByModel[baseRawId]) {
+      return;
+    }
+
+    const runtime = new OpencodeChatRuntime(context.plugin);
+    try {
+      runtime.syncConversationState({
+        providerState: { databasePath: OPENCODE_METADATA_WARMUP_DB },
+        sessionId: null,
+      });
+      await runtime.warmModelMetadata(model);
+    } catch {
+      // Metadata warmup is opportunistic; the first real turn can still discover it.
+    } finally {
+      runtime.cleanup();
+    }
+  },
+
   applyReasoningSelection(model: string, value: string, settings: unknown): void {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
       return;
@@ -192,7 +205,7 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
     const opencodeSettings = getOpencodeProviderSettings(settingsBag);
     const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels);
     const supportedValues = new Set(
-      getOpencodeModelVariants(baseRawId, opencodeSettings.discoveredModels).map((variant) => variant.value),
+      (opencodeSettings.thinkingOptionsByModel[baseRawId] ?? []).map((variant) => variant.value),
     );
     const nextPreferredThinkingByModel = {
       ...opencodeSettings.preferredThinkingByModel,
@@ -264,13 +277,28 @@ function getDefaultThinkingLevelForModel(
   const opencodeSettings = getOpencodeProviderSettings(settings);
   const preferred = opencodeSettings.preferredThinkingByModel[baseRawId];
   const supportedValues = new Set(
-    getOpencodeModelVariants(baseRawId, opencodeSettings.discoveredModels).map((variant) => variant.value),
+    (opencodeSettings.thinkingOptionsByModel[baseRawId] ?? []).map((variant) => variant.value),
   );
   if (preferred && supportedValues.has(preferred)) {
     return preferred;
   }
 
-  return OPENCODE_DEFAULT_THINKING_LEVEL;
+  return opencodeSettings.thinkingOptionsByModel[baseRawId]?.[0]?.value
+    ?? OPENCODE_DEFAULT_THINKING_LEVEL;
+}
+
+function getOpencodeThinkingOptions(
+  model: string,
+  settings: Record<string, unknown>,
+): ProviderReasoningOption[] {
+  const rawModelId = decodeOpencodeModelId(model);
+  if (!rawModelId) {
+    return [];
+  }
+
+  const opencodeSettings = getOpencodeProviderSettings(settings);
+  const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels);
+  return opencodeSettings.thinkingOptionsByModel[baseRawId] ?? [];
 }
 
 function pushOption(

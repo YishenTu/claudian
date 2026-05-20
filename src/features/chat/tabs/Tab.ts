@@ -790,6 +790,7 @@ function initializeInputToolbar(
         if (didProviderChange) {
           await onProviderChanged?.(newProvider);
         }
+        await uiConfig.prepareModelMetadata?.(model, plugin.settings, { plugin });
         tab.ui.thinkingBudgetSelector?.updateDisplay();
         tab.ui.serviceTierToggle?.updateDisplay();
         tab.ui.modelSelector?.updateDisplay();
@@ -815,6 +816,7 @@ function initializeInputToolbar(
         settings.model = model;
         uiConfig.applyModelDefaults(model, settings);
       });
+      await uiConfig.prepareModelMetadata?.(model, plugin.settings, { plugin });
       tab.ui.thinkingBudgetSelector?.updateDisplay();
       tab.ui.serviceTierToggle?.updateDisplay();
       tab.ui.modelSelector?.updateDisplay();

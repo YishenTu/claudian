@@ -198,18 +198,23 @@ describe('opencodeChatUIConfig', () => {
     ]);
   });
 
-  it('returns per-model thinking options from discovered variants', () => {
+  it('returns per-model thinking options from ACP thought-level discovery', () => {
     const settings = {
       model: 'opencode:anthropic/claude-sonnet-4',
       providerConfigs: {
         opencode: {
           discoveredModels: [
             { label: 'Anthropic/Claude Sonnet 4', rawId: 'anthropic/claude-sonnet-4' },
-            { label: 'Anthropic/Claude Sonnet 4 (high)', rawId: 'anthropic/claude-sonnet-4/high' },
-            { label: 'Anthropic/Claude Sonnet 4 (max)', rawId: 'anthropic/claude-sonnet-4/max' },
           ],
           preferredThinkingByModel: {
             'anthropic/claude-sonnet-4': 'max',
+          },
+          thinkingOptionsByModel: {
+            'anthropic/claude-sonnet-4': [
+              { label: 'Low', value: 'low' },
+              { label: 'High', value: 'high' },
+              { label: 'Max', value: 'max' },
+            ],
           },
         },
       },
@@ -219,7 +224,7 @@ describe('opencodeChatUIConfig', () => {
       'opencode:anthropic/claude-sonnet-4',
       settings,
     )).toEqual([
-      { label: 'Default', value: 'default' },
+      { label: 'Low', value: 'low' },
       { label: 'High', value: 'high' },
       { label: 'Max', value: 'max' },
     ]);

@@ -16,8 +16,10 @@ import {
   decodeOpencodeModelId,
   encodeOpencodeModelId,
   isOpencodeModelSelectionId,
+  normalizeOpencodeThinkingOptionsByModel,
   OPENCODE_DEFAULT_THINKING_LEVEL,
   type OpencodeDiscoveredModel,
+  type OpencodeThinkingOptionsByModel,
   resolveOpencodeBaseModelRawId,
 } from './models';
 import {
@@ -34,6 +36,7 @@ export interface PersistedOpencodeProviderSettings {
   modelAliases: Record<string, string>;
   preferredThinkingByModel: Record<string, string>;
   selectedMode: string;
+  thinkingOptionsByModel: OpencodeThinkingOptionsByModel;
   visibleModels: string[];
 }
 
@@ -53,6 +56,7 @@ export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<PersistedOpencodeProvi
   modelAliases: {},
   preferredThinkingByModel: {},
   selectedMode: '',
+  thinkingOptionsByModel: {},
   visibleModels: [],
 });
 
@@ -165,6 +169,14 @@ export function getOpencodeProviderSettings(
   const discoveryState = getOpencodeDiscoveryState(settings);
   const availableModes = discoveryState.availableModes;
   const discoveredModels = discoveryState.discoveredModels;
+  const persistedThinkingOptionsByModel = normalizeOpencodeThinkingOptionsByModel(
+    config.thinkingOptionsByModel,
+    discoveredModels,
+  );
+  const thinkingOptionsByModel = normalizeOpencodeThinkingOptionsByModel({
+    ...persistedThinkingOptionsByModel,
+    ...discoveryState.thinkingOptionsByModel,
+  }, discoveredModels);
 
   return {
     availableModes,
@@ -185,6 +197,7 @@ export function getOpencodeProviderSettings(
       discoveredModels,
     ),
     selectedMode: normalizeManagedOpencodeSelectedMode(config.selectedMode, availableModes),
+    thinkingOptionsByModel,
     visibleModels: normalizeOpencodeVisibleModels(config.visibleModels, discoveredModels),
   };
 }
@@ -195,15 +208,24 @@ export function updateOpencodeProviderSettings(
 ): OpencodeProviderSettings {
   const current = getOpencodeProviderSettings(settings);
   const hostnameKey = getHostnameKey();
-  if ('availableModes' in updates || 'discoveredModels' in updates) {
+  if ('availableModes' in updates || 'discoveredModels' in updates || 'thinkingOptionsByModel' in updates) {
     updateOpencodeDiscoveryState(settings, {
       ...(updates.availableModes !== undefined ? { availableModes: updates.availableModes } : {}),
       ...(updates.discoveredModels !== undefined ? { discoveredModels: updates.discoveredModels } : {}),
+      ...(updates.thinkingOptionsByModel !== undefined
+        ? { thinkingOptionsByModel: updates.thinkingOptionsByModel }
+        : {}),
     });
   }
   const discoveryState = getOpencodeDiscoveryState(settings);
   const nextAvailableModes = discoveryState.availableModes;
   const nextDiscoveredModels = discoveryState.discoveredModels;
+  const nextThinkingOptionsByModel = updates.thinkingOptionsByModel !== undefined
+    ? discoveryState.thinkingOptionsByModel
+    : normalizeOpencodeThinkingOptionsByModel(
+      current.thinkingOptionsByModel,
+      nextDiscoveredModels,
+    );
   const nextSelectedMode = normalizeManagedOpencodeSelectedMode(
     updates.selectedMode ?? current.selectedMode,
     nextAvailableModes,
@@ -253,12 +275,18 @@ export function updateOpencodeProviderSettings(
       nextDiscoveredModels,
     ),
     selectedMode: nextSelectedMode,
+    thinkingOptionsByModel: nextThinkingOptionsByModel,
     visibleModels: nextVisibleModels,
   };
 
   if (updates.visibleModels !== undefined) {
     retargetRemovedOpencodeSelections(settings, next);
   }
+
+  const persistedThinkingOptionsByModel = pruneThinkingOptionsToPersistedSelections(
+    settings,
+    next,
+  );
 
   setProviderConfig(settings, 'opencode', {
     cliPath: next.cliPath,
@@ -269,6 +297,7 @@ export function updateOpencodeProviderSettings(
     modelAliases: next.modelAliases,
     preferredThinkingByModel: next.preferredThinkingByModel,
     selectedMode: next.selectedMode,
+    thinkingOptionsByModel: persistedThinkingOptionsByModel,
     visibleModels: next.visibleModels,
   });
 
@@ -296,6 +325,53 @@ function pruneModelAliasesToVisible(
     }
   }
   return pruned;
+}
+
+function pruneThinkingOptionsToPersistedSelections(
+  settings: Record<string, unknown>,
+  next: OpencodeProviderSettings,
+): OpencodeThinkingOptionsByModel {
+  const persistableRawIds = new Set(next.visibleModels);
+  addPersistableSelection(persistableRawIds, settings.model, next.discoveredModels);
+  addPersistableSelection(persistableRawIds, settings.titleGenerationModel, next.discoveredModels);
+
+  const savedProviderModel = settings.savedProviderModel;
+  if (savedProviderModel && typeof savedProviderModel === 'object' && !Array.isArray(savedProviderModel)) {
+    addPersistableSelection(
+      persistableRawIds,
+      (savedProviderModel as Record<string, unknown>).opencode,
+      next.discoveredModels,
+    );
+  }
+
+  const pruned: OpencodeThinkingOptionsByModel = {};
+  for (const rawId of persistableRawIds) {
+    const options = next.thinkingOptionsByModel[rawId];
+    if (options?.length) {
+      pruned[rawId] = options.map((option) => ({ ...option }));
+    }
+  }
+  return pruned;
+}
+
+function addPersistableSelection(
+  target: Set<string>,
+  value: unknown,
+  discoveredModels: OpencodeDiscoveredModel[],
+): void {
+  if (typeof value !== 'string' || !isOpencodeModelSelectionId(value)) {
+    return;
+  }
+
+  const rawModelId = decodeOpencodeModelId(value);
+  if (!rawModelId) {
+    return;
+  }
+
+  const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, discoveredModels);
+  if (baseRawId) {
+    target.add(baseRawId);
+  }
 }
 
 function retargetRemovedOpencodeSelections(

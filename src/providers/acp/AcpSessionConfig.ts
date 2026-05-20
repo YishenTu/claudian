@@ -19,6 +19,12 @@ export interface AcpResolvedSessionModeState {
   currentModeId: string | null;
 }
 
+export interface AcpResolvedSessionThoughtLevelState {
+  availableLevels: SelectItem[];
+  configId: string | null;
+  currentLevel: string | null;
+}
+
 type SelectItem = { description?: string; id: string; name: string };
 
 export function flattenAcpSessionConfigSelectOptions(
@@ -61,16 +67,27 @@ export function extractAcpSessionModeState(params: {
   };
 }
 
+export function extractAcpSessionThoughtLevelState(params: {
+  configOptions?: AcpSessionConfigOption[] | null;
+}): AcpResolvedSessionThoughtLevelState {
+  const { configId, items, current } = resolveSelectItems(params.configOptions, 'thought_level');
+  return {
+    availableLevels: items ?? [],
+    configId,
+    currentLevel: current,
+  };
+}
+
 // `items` is null when the config option is missing or empty so callers fall back to
 // the session's own metadata. `current` is always the config option's `currentValue`
 // when one exists, so fallbacks can still seed a current id from it.
 function resolveSelectItems(
   configOptions: AcpSessionConfigOption[] | null | undefined,
-  category: 'model' | 'mode',
-): { current: string | null; items: SelectItem[] | null } {
+  category: 'model' | 'mode' | 'thought_level',
+): { configId: string | null; current: string | null; items: SelectItem[] | null } {
   const selectOption = findSessionConfigSelectOption(configOptions, category);
   if (!selectOption) {
-    return { current: null, items: null };
+    return { configId: null, current: null, items: null };
   }
 
   const items = flattenAcpSessionConfigSelectOptions(selectOption.options).map((option) => ({
@@ -80,6 +97,7 @@ function resolveSelectItems(
   }));
 
   return {
+    configId: selectOption.id,
     current: selectOption.currentValue,
     items: items.length > 0 ? items : null,
   };
@@ -87,7 +105,7 @@ function resolveSelectItems(
 
 function findSessionConfigSelectOption(
   configOptions: AcpSessionConfigOption[] | null | undefined,
-  category: 'model' | 'mode',
+  category: 'model' | 'mode' | 'thought_level',
 ): Extract<AcpSessionConfigOption, { type: 'select' }> | null {
   if (!configOptions) {
     return null;
@@ -101,9 +119,13 @@ function findSessionConfigSelectOption(
     return byCategory;
   }
   const byLegacyId = configOptions.find((option) => (
-    option.type === 'select' && normalizeComparableKey(option.id) === category
+    option.type === 'select' && normalizeComparableKey(option.id) === legacyConfigIdForCategory(category)
   ));
   return byLegacyId?.type === 'select' ? byLegacyId : null;
+}
+
+function legacyConfigIdForCategory(category: 'model' | 'mode' | 'thought_level'): string {
+  return category === 'thought_level' ? 'effort' : category;
 }
 
 function isSelectGroup(

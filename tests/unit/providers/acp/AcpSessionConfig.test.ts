@@ -1,6 +1,7 @@
 import {
   extractAcpSessionModelState,
   extractAcpSessionModeState,
+  extractAcpSessionThoughtLevelState,
   flattenAcpSessionConfigSelectOptions,
 } from '../../../../src/providers/acp';
 
@@ -214,6 +215,33 @@ describe('AcpSessionConfig', () => {
         { description: 'Planning-first agent', id: 'plan', name: 'Plan' },
       ],
       currentModeId: 'build',
+    });
+  });
+
+  it('extracts detached thought-level options from ACP config options', () => {
+    expect(extractAcpSessionThoughtLevelState({
+      configOptions: [
+        {
+          category: 'thought_level',
+          currentValue: 'low',
+          id: 'effort',
+          name: 'Effort',
+          options: [
+            { name: 'Low', value: 'low' },
+            { name: 'Medium', value: 'medium' },
+            { name: 'High', value: 'high' },
+          ],
+          type: 'select',
+        },
+      ],
+    })).toEqual({
+      availableLevels: [
+        { id: 'low', name: 'Low' },
+        { id: 'medium', name: 'Medium' },
+        { id: 'high', name: 'High' },
+      ],
+      configId: 'effort',
+      currentLevel: 'low',
     });
   });
 });

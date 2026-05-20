@@ -10,9 +10,11 @@ import { clearOpencodeDiscoveryState } from '../discoveryState';
 import { sameStringList } from '../internal/compareCollections';
 import {
   buildOpencodeBaseModels,
+  encodeOpencodeModelId,
   type OpencodeDiscoveredModel,
   splitOpencodeModelLabel,
 } from '../models';
+import { OpencodeChatRuntime } from '../runtime/OpencodeChatRuntime';
 import {
   getOpencodeProviderSettings,
   normalizeOpencodeVisibleModels,
@@ -22,6 +24,7 @@ import {
 import { OpencodeAgentSettings } from './OpencodeAgentSettings';
 
 const ALL_PROVIDERS_KEY = 'all';
+const OPENCODE_METADATA_WARMUP_DB = ':memory:';
 
 interface EnrichedModel {
   description: string;
@@ -206,6 +209,8 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     });
 
     const listEl = catalogEl.createDiv({ cls: 'claudian-opencode-model-picker-list' });
+    let loadingModelCatalog = false;
+    let modelCatalogLoadFailed = false;
 
     const getEnrichedModels = (): EnrichedModel[] => {
       const current = getOpencodeProviderSettings(settingsBag);
@@ -247,6 +252,24 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       context.refreshModelSelectors();
     };
 
+    const persistModelMetadata = async (rawId: string): Promise<void> => {
+      const runtime = new OpencodeChatRuntime(context.plugin);
+      try {
+        runtime.syncConversationState({
+          providerState: { databasePath: OPENCODE_METADATA_WARMUP_DB },
+          sessionId: null,
+        });
+        const loaded = await runtime.warmModelMetadata(encodeOpencodeModelId(rawId));
+        if (loaded) {
+          context.refreshModelSelectors();
+        }
+      } catch {
+        // Metadata warmup is opportunistic; the first chat turn can still discover it.
+      } finally {
+        runtime.cleanup();
+      }
+    };
+
     const persistModelAliases = async (modelAliases: Record<string, string>): Promise<void> => {
       updateOpencodeProviderSettings(settingsBag, { modelAliases });
       await context.plugin.saveSettings();
@@ -270,11 +293,13 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         text: ` of ${current.discoveredModels.length} discovered • ${providerCount} ${providerWord}`,
       });
 
-      catalogSummaryCountEl.setText(
-        current.discoveredModels.length > 0
-          ? `${current.discoveredModels.length} available`
-          : 'No models discovered yet',
-      );
+      let catalogSummary = 'No models discovered yet';
+      if (loadingModelCatalog) {
+        catalogSummary = 'Loading models...';
+      } else if (current.discoveredModels.length > 0) {
+        catalogSummary = `${current.discoveredModels.length} available`;
+      }
+      catalogSummaryCountEl.setText(catalogSummary);
     };
 
     const renderSelected = (): void => {
@@ -440,9 +465,15 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
       if (filtered.length === 0) {
         const emptyEl = listEl.createDiv({ cls: 'claudian-opencode-model-picker-empty' });
-        emptyEl.setText(enriched.length === 0
-          ? 'Start OpenCode once to load its model catalog. Claudian will then let you pick visible models.'
-          : 'No models match your filter.');
+        let emptyText = 'No models match your filter.';
+        if (loadingModelCatalog) {
+          emptyText = 'Loading OpenCode model catalog...';
+        } else if (modelCatalogLoadFailed) {
+          emptyText = 'Could not load the OpenCode model catalog. Check the CLI path and login state, then expand this section again.';
+        } else if (enriched.length === 0) {
+          emptyText = 'Start OpenCode once to load its model catalog. Claudian will then let you pick visible models.';
+        }
+        emptyEl.setText(emptyText);
         return;
       }
 
@@ -461,7 +492,12 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           const next = checkboxEl.checked
             ? [...currentVisibleModels, model.rawId]
             : currentVisibleModels.filter((id) => id !== model.rawId);
-          void persistVisibleModels(next);
+          void (async () => {
+            await persistVisibleModels(next);
+            if (checkboxEl.checked) {
+              await persistModelMetadata(model.rawId);
+            }
+          })();
         });
 
         const textEl = rowEl.createDiv({ cls: 'claudian-opencode-model-picker-row-text' });
@@ -504,6 +540,44 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     };
 
     renderAll();
+
+    const loadModelCatalog = async (): Promise<void> => {
+      if (loadingModelCatalog || getOpencodeProviderSettings(settingsBag).discoveredModels.length > 0) {
+        return;
+      }
+
+      loadingModelCatalog = true;
+      modelCatalogLoadFailed = false;
+      renderAll();
+
+      const runtime = new OpencodeChatRuntime(context.plugin);
+      try {
+        runtime.syncConversationState({
+          providerState: { databasePath: OPENCODE_METADATA_WARMUP_DB },
+          sessionId: null,
+        });
+        const loaded = await runtime.ensureReady({ allowSessionCreation: true });
+        modelCatalogLoadFailed = !loaded || getOpencodeProviderSettings(settingsBag).discoveredModels.length === 0;
+        if (!modelCatalogLoadFailed) {
+          context.refreshModelSelectors();
+        }
+      } catch {
+        modelCatalogLoadFailed = true;
+      } finally {
+        loadingModelCatalog = false;
+        runtime.cleanup();
+        renderAll();
+      }
+    };
+
+    catalogEl.addEventListener('toggle', () => {
+      if (catalogEl.open) {
+        void loadModelCatalog();
+      }
+    });
+    if (catalogEl.open) {
+      void loadModelCatalog();
+    }
 
     new Setting(container).setName('Commands and skills').setHeading();
 
