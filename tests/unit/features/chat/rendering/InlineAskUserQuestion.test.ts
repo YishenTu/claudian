@@ -781,6 +781,77 @@ describe('InlineAskUserQuestion', () => {
       const tabs = container.querySelectorAll('claudian-ask-tab');
       expect(tabs[1]?.hasClass('is-active')).toBe(true);
     });
+
+    it('ArrowDown from custom input blurs and clamps at max', () => {
+      const input = makeInput([{ question: 'Q', options: ['A', 'B'], isOther: true }]);
+      const { container } = renderWidget(input);
+      const root = findRoot(container);
+
+      const items = findItems(container);
+      const customItem = items.find((i: any) => i.hasClass('claudian-ask-custom-item'));
+      customItem?.click();
+
+      fireKeyDown(root, 'ArrowDown');
+
+      // Custom row is last item, ArrowDown clamps — focus stays on custom row (navigation mode)
+      expect(customItem?.hasClass('is-focused')).toBe(true);
+    });
+
+    it('Escape from custom input returns to navigation without cancelling dialog', () => {
+      const input = makeInput([
+        { question: 'Q1', options: ['A'], isOther: true },
+        { question: 'Q2', options: ['B'] },
+      ]);
+      const { container, resolve } = renderWidget(input);
+      const root = findRoot(container);
+
+      // Navigate to custom input and activate
+      fireKeyDown(root, 'ArrowDown'); // focus on custom row (index 1)
+      fireKeyDown(root, 'Enter');     // activate input
+
+      // Escape should exit input mode, not cancel
+      fireKeyDown(root, 'Escape');
+
+      // Dialog should NOT be resolved
+      expect(resolve).not.toHaveBeenCalled();
+
+      // Should still be on Q1 tab
+      const tabs = container.querySelectorAll('claudian-ask-tab');
+      expect(tabs[0]?.hasClass('is-active')).toBe(true);
+
+      // Custom row should still be focused in navigation mode
+      const items = findItems(container);
+      const customItem = items.find((i: any) => i.hasClass('claudian-ask-custom-item'));
+      expect(customItem?.hasClass('is-focused')).toBe(true);
+    });
+
+    it('Enter from custom input commits text and advances tab', () => {
+      const input = makeInput([
+        { question: 'Q1', options: ['A'], isOther: true },
+        { question: 'Q2', options: ['B'] },
+      ]);
+      const { container } = renderWidget(input);
+      const root = findRoot(container);
+
+      // Navigate to custom input and activate
+      fireKeyDown(root, 'ArrowDown'); // focus on custom row (index 1)
+      fireKeyDown(root, 'Enter');     // activate input
+
+      // Simulate typing text
+      const customItem = findItems(container).find((i: any) =>
+        i.hasClass('claudian-ask-custom-item'),
+      );
+      const inputEl = customItem?.querySelector('.claudian-ask-custom-text');
+      inputEl.value = 'my custom text';
+      inputEl.dispatchEvent({ type: 'input' });
+
+      // Enter should commit and advance
+      fireKeyDown(root, 'Enter');
+
+      // Should be on Q2 tab
+      const tabs = container.querySelectorAll('claudian-ask-tab');
+      expect(tabs[1]?.hasClass('is-active')).toBe(true);
+    });
   });
 });
 

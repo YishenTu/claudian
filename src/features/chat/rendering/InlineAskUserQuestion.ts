@@ -512,10 +512,6 @@ export class InlineAskUserQuestion {
   }
 
   private handleNavigationKey(e: KeyboardEvent, maxFocusIndex: number): boolean {
-    if (this.isInputFocused && e.key !== 'Escape') {
-      (this.rootEl.ownerDocument.activeElement as HTMLElement | null)?.blur();
-      this.isInputFocused = false;
-    }
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
@@ -575,6 +571,22 @@ export class InlineAskUserQuestion {
         } else {
           this.switchTab(this.activeTabIndex + 1);
         }
+        return;
+      }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        (this.rootEl.ownerDocument.activeElement as HTMLElement | null)?.blur();
+        this.isInputFocused = false;
+        const q = this.questions[this.activeTabIndex];
+        const maxIdx = this.canShowCustomInputForQuestion(q) ? q.options.length : q.options.length - 1;
+        if (e.key === 'ArrowUp') {
+          this.focusedItemIndex = Math.max(this.focusedItemIndex - 1, 0);
+        } else {
+          this.focusedItemIndex = Math.min(this.focusedItemIndex + 1, maxIdx);
+        }
+        this.updateFocusIndicator();
+        this.rootEl.focus();
         return;
       }
       return;
