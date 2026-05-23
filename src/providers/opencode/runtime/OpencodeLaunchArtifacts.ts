@@ -114,7 +114,6 @@ export async function prepareOpencodeLaunchArtifacts(
       promptKey,
       configContent,
       databasePath ?? '',
-      params.runtimeEnv.OPENCODE_DB ?? '',
       params.runtimeEnv.XDG_DATA_HOME ?? '',
     ].join('::'),
     systemPromptPath,

@@ -190,6 +190,43 @@ describe('OpencodeChatRuntime', () => {
     await expect(runtime.ensureReady({ allowSessionCreation: false })).resolves.toBe(true);
   });
 
+  it('restarts when the ACP transport closed even if the subprocess still looks alive', async () => {
+    const plugin = createMockPlugin({
+      settings: {
+        providerConfigs: {
+          opencode: {
+            enabled: true,
+          },
+        },
+      },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    const mockTransport = { dispose: jest.fn(), isClosed: false };
+    const mockProcess = { isAlive: jest.fn().mockReturnValue(true), shutdown: jest.fn() };
+    const mockConnection = { dispose: jest.fn() };
+
+    jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts').mockResolvedValue({
+      configPath: '/tmp/claudian-opencode-config.json',
+      configContent: '{}\n',
+      databasePath: '/default/opencode.db',
+      launchKey: 'launch-key',
+      systemPromptPath: '/tmp/claudian-opencode-system.md',
+    });
+    const shutdownProcess = jest.spyOn(runtime as any, 'shutdownProcess').mockResolvedValue(undefined);
+    const startProcess = jest.spyOn(runtime as any, 'startProcess').mockImplementation(async () => {
+      (runtime as any).connection = mockConnection;
+      (runtime as any).process = mockProcess;
+      (runtime as any).transport = mockTransport;
+    });
+
+    await expect(runtime.ensureReady({ allowSessionCreation: false })).resolves.toBe(true);
+    mockTransport.isClosed = true;
+    await expect(runtime.ensureReady({ allowSessionCreation: false })).resolves.toBe(true);
+
+    expect(shutdownProcess).toHaveBeenCalledTimes(2);
+    expect(startProcess).toHaveBeenCalledTimes(2);
+  });
+
   it('maps ACP permission options through the shared approval UI', async () => {
     const runtime = new OpencodeChatRuntime(createMockPlugin());
     const approvalCallback = jest.fn().mockResolvedValue('allow');

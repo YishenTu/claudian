@@ -72,6 +72,7 @@ describe('OpencodeAuxQueryRunner', () => {
   };
   let mockTransport: {
     dispose: jest.Mock;
+    isClosed: boolean;
     start: jest.Mock;
   };
   let sessionNotificationListener: ((notification: any) => void | Promise<void>) | null;
@@ -121,6 +122,7 @@ describe('OpencodeAuxQueryRunner', () => {
     };
     mockTransport = {
       dispose: jest.fn(),
+      isClosed: false,
       start: jest.fn(),
     };
 
@@ -190,6 +192,40 @@ describe('OpencodeAuxQueryRunner', () => {
     expect(MockAcpSubprocess).toHaveBeenCalledWith(expect.objectContaining({
       command: 'opencode',
     }));
+  });
+
+  it('restarts the auxiliary ACP subprocess when the cached transport closed', async () => {
+    const firstTransport = {
+      dispose: jest.fn(),
+      isClosed: false,
+      start: jest.fn(),
+    };
+    const secondTransport = {
+      dispose: jest.fn(),
+      isClosed: false,
+      start: jest.fn(),
+    };
+    MockAcpJsonRpcTransport
+      .mockImplementationOnce(() => firstTransport as any)
+      .mockImplementationOnce(() => secondTransport as any);
+    const runner = new OpencodeAuxQueryRunner(createMockPlugin(), {
+      agentProfile: 'passive',
+      artifactPurpose: 'title-gen',
+    });
+
+    await expect(runner.query({
+      systemPrompt: 'Use this custom system prompt.',
+    }, 'Generate a title')).resolves.toBe('Fix title now');
+
+    firstTransport.isClosed = true;
+
+    await expect(runner.query({
+      systemPrompt: 'Use this custom system prompt.',
+    }, 'Generate another title')).resolves.toBe('Fix title now');
+
+    expect(firstTransport.dispose).toHaveBeenCalledTimes(1);
+    expect(MockAcpSubprocess).toHaveBeenCalledTimes(2);
+    expect(MockAcpJsonRpcTransport).toHaveBeenCalledTimes(2);
   });
 
   it('uses an explicit encoded OpenCode model override from the active chat tab', async () => {
