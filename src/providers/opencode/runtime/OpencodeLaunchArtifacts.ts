@@ -103,6 +103,7 @@ export async function prepareOpencodeLaunchArtifacts(
   const databasePath = resolveOpencodeDatabasePath(params.runtimeEnv);
 
   await fs.mkdir(artifactsDir, { recursive: true });
+  await ensureOpencodeDatabaseDirectory(databasePath);
   await writeIfChanged(systemPromptPath, systemPrompt);
   await writeIfChanged(configPath, configContent);
 
@@ -119,6 +120,14 @@ export async function prepareOpencodeLaunchArtifacts(
     ].join('::'),
     systemPromptPath,
   };
+}
+
+async function ensureOpencodeDatabaseDirectory(databasePath: string | null): Promise<void> {
+  if (!databasePath || databasePath === ':memory:') {
+    return;
+  }
+
+  await fs.mkdir(path.dirname(databasePath), { recursive: true });
 }
 
 export function buildOpencodeManagedConfig(
