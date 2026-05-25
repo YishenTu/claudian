@@ -548,11 +548,12 @@ describe('Tab - Creation', () => {
       expect(tab.dom.inputEl).toBeDefined();
     });
 
-    it('should initialize empty eventCleanups array', () => {
+    it('should initialize eventCleanups with resize handle cleanup', () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
-      expect(tab.dom.eventCleanups).toEqual([]);
+      expect(tab.dom.eventCleanups.length).toBe(1);
+      expect(typeof tab.dom.eventCleanups[0]).toBe('function');
     });
 
     it('should initialize all controllers as null', () => {
@@ -1256,7 +1257,7 @@ describe('Tab - Event Wiring', () => {
 
       wireTabInputEvents(tab, options.plugin);
 
-      expect(tab.dom.eventCleanups.length).toBe(4); // keydown, input, focus, scroll
+      expect(tab.dom.eventCleanups.length).toBe(5); // resize handle + keydown, input, focus, scroll
     });
   });
 });

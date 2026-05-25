@@ -154,6 +154,9 @@ export interface TabDOMElements {
   browserIndicatorEl: HTMLElement | null;
   canvasIndicatorEl: HTMLElement | null;
 
+  /** Resize handle for dragging input box height. */
+  resizeHandleEl: HTMLElement | null;
+
   /** Cleanup functions for event listeners (prevents memory leaks). */
   eventCleanups: Array<() => void>;
 }

@@ -42,6 +42,7 @@ import { ChatState } from '../state/ChatState';
 import { BangBashModeManager as BangBashModeManagerClass } from '../ui/BangBashModeManager';
 import { FileContextManager } from '../ui/FileContext';
 import { ImageContextManager } from '../ui/ImageContext';
+import { createInputResizeHandle } from '../ui/inputResizeHandle';
 import { createInputToolbar } from '../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../ui/InstructionModeManager';
 import { NavigationSidebar } from '../ui/NavigationSidebar';
@@ -397,6 +398,8 @@ export function createTab(options: TabCreateOptions): TabData {
   const subagentManager = new SubagentManager(() => {});
 
   const dom = buildTabDOM(contentEl);
+  const resizeCleanup = attachInputResizeHandle(dom);
+  dom.eventCleanups.push(resizeCleanup);
   state.queueIndicatorEl = dom.queueIndicatorEl;
 
   const isBound = !!conversation?.id;
@@ -494,8 +497,21 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     selectionIndicatorEl: null,
     browserIndicatorEl: null,
     canvasIndicatorEl: null,
+    resizeHandleEl: null,
     eventCleanups: [],
   };
+}
+
+function attachInputResizeHandle(dom: TabDOMElements): () => void {
+  const container = dom.inputContainerEl;
+  const viewport = container.closest('.claudian-container') as HTMLElement | null;
+  if (!viewport) return () => {};
+
+  return createInputResizeHandle({
+    container,
+    inputWrapper: dom.inputWrapper,
+    viewport,
+  });
 }
 
 /**

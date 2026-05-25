@@ -4,12 +4,41 @@
   padding: 12px 0 0 0;
 }
 
+/* Resize handle — thin bar at top of input container */
+.claudian-input-resize-handle {
+  height: 6px;
+  cursor: ns-resize;
+  position: relative;
+  flex-shrink: 0;
+  margin-bottom: 2px;
+  border-radius: 3px;
+}
+
+.claudian-input-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.claudian-input-resize-handle:hover::after {
+  opacity: 1;
+}
+
 /* Input wrapper (border container) - flex column so textarea expands when no chips */
 /* Height calculation: context row (36px) + textarea min (60px) + toolbar (38px) + border (2px) = 136px */
 .claudian-input-wrapper {
   position: relative;
   display: flex;
   flex-direction: column;
+  height: var(--claudian-input-wrapper-height, auto);
   min-height: 140px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
