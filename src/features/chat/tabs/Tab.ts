@@ -497,7 +497,6 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     selectionIndicatorEl: null,
     browserIndicatorEl: null,
     canvasIndicatorEl: null,
-    resizeHandleEl: null,
     eventCleanups: [],
   };
 }

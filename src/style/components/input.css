@@ -33,6 +33,12 @@
   opacity: 1;
 }
 
+/* Dragging state — applied to body during resize drag */
+body.claudian-dragging-ns {
+  cursor: ns-resize;
+  user-select: none;
+}
+
 /* Input wrapper (border container) - flex column so textarea expands when no chips */
 /* Height calculation: context row (36px) + textarea min (60px) + toolbar (38px) + border (2px) = 136px */
 .claudian-input-wrapper {

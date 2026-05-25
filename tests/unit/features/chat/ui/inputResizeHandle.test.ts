@@ -139,12 +139,10 @@ describe('createInputResizeHandle', () => {
     const handle = inputWrapper.querySelector('.claudian-input-resize-handle') as HTMLElement;
 
     handle.dispatchEvent(new MouseEvent('mousedown', { clientY: 300, bubbles: true }));
-    expect(document.body.style.cursor).toBe('ns-resize');
-    expect(document.body.style.userSelect).toBe('none');
+    expect(document.body.classList.contains('claudian-dragging-ns')).toBe(true);
 
     document.dispatchEvent(new MouseEvent('mouseup'));
-    expect(document.body.style.cursor).toBe('');
-    expect(document.body.style.userSelect).toBe('');
+    expect(document.body.classList.contains('claudian-dragging-ns')).toBe(false);
 
     cleanup();
   });

@@ -31,8 +31,7 @@ export function createInputResizeHandle({ inputWrapper, viewport }: InputResizeH
     doc.addEventListener('mousemove', onMouseMove);
     doc.addEventListener('mouseup', onMouseUp);
     if (doc.body) {
-      doc.body.style.cursor = 'ns-resize';
-      doc.body.style.userSelect = 'none';
+      doc.body.classList.add('claudian-dragging-ns');
     }
   };
 
@@ -54,8 +53,7 @@ export function createInputResizeHandle({ inputWrapper, viewport }: InputResizeH
     doc.removeEventListener('mousemove', onMouseMove);
     doc.removeEventListener('mouseup', onMouseUp);
     if (doc.body) {
-      doc.body.style.cursor = '';
-      doc.body.style.userSelect = '';
+      doc.body.classList.remove('claudian-dragging-ns');
     }
   };
 
