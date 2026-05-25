@@ -71,6 +71,7 @@ export class TabBar {
         cls: 'claudian-tab-badge-close',
         text: '×',
       });
+      closeEl.setAttribute('aria-label', 'Close tab');
       closeEl.addEventListener('click', (e: Event) => {
         e.stopPropagation();
         e.stopImmediatePropagation();

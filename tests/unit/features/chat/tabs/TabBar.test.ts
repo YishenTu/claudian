@@ -213,6 +213,7 @@ describe('TabBar', () => {
       const closeBtn = badge._children.find((c: any) => c._classList.has('claudian-tab-badge-close'));
       expect(closeBtn).toBeDefined();
       expect(closeBtn.textContent).toBe('×');
+      expect(closeBtn.getAttribute('aria-label')).toBe('Close tab');
     });
 
     it('should not render close button when canClose is false', () => {
