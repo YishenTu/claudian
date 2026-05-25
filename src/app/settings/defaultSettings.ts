@@ -22,6 +22,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   sharedEnvironmentVariables: '',
   envSnippets: [],
   customContextLimits: {},
+  customModelAliases: {},
 
   keyboardNavigation: {
     scrollUpKey: 'w',

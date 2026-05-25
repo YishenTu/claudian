@@ -244,6 +244,13 @@
         "cancel": "取消"
       }
     },
+    "customModelOverrides": {
+      "name": "自定义模型覆盖",
+      "desc": "为自定义模型设置模型选择器别名和上下文窗口大小。"
+    },
+    "customModelAliases": {
+      "placeholder": "别名"
+    },
     "customContextLimits": {
       "name": "自定义上下文限制",
       "desc": "为您的自定义模型设置上下文窗口大小。留空使用默认值（200k 令牌）。",

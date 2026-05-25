@@ -554,31 +554,66 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     const headerEl = container.createDiv({ cls: 'claudian-context-limits-header' });
     headerEl.createSpan({
-      text: t('settings.customContextLimits.name'),
+      text: t('settings.customModelOverrides.name'),
       cls: 'claudian-context-limits-label',
     });
 
     const descEl = container.createDiv({ cls: 'claudian-context-limits-desc' });
-    descEl.setText(t('settings.customContextLimits.desc'));
+    descEl.setText(t('settings.customModelOverrides.desc'));
 
     const listEl = container.createDiv({ cls: 'claudian-context-limits-list' });
 
     for (const modelId of uniqueModelIds) {
       const currentValue = this.plugin.settings.customContextLimits?.[modelId];
+      const currentAlias = this.plugin.settings.customModelAliases?.[modelId] ?? '';
 
       const itemEl = listEl.createDiv({ cls: 'claudian-context-limits-item' });
       const nameEl = itemEl.createDiv({ cls: 'claudian-context-limits-model' });
       nameEl.setText(modelId);
 
       const inputWrapper = itemEl.createDiv({ cls: 'claudian-context-limits-input-wrapper' });
+      const aliasInputEl = inputWrapper.createEl('input', {
+        type: 'text',
+        placeholder: t('settings.customModelAliases.placeholder'),
+        cls: 'claudian-context-alias-input',
+        value: currentAlias,
+      });
+      aliasInputEl.setAttribute('aria-label', `Alias for ${modelId}`);
+      aliasInputEl.title = 'Custom label shown in the model selector. Leave empty to use the default.';
+
       const inputEl = inputWrapper.createEl('input', {
         type: 'text',
         placeholder: '200k',
         cls: 'claudian-context-limits-input',
         value: currentValue ? formatContextLimit(currentValue) : '',
       });
+      inputEl.setAttribute('aria-label', `Context window for ${modelId}`);
 
       const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation claudian-hidden' });
+
+      const saveAlias = async (): Promise<void> => {
+        if (!this.plugin.settings.customModelAliases) {
+          this.plugin.settings.customModelAliases = {};
+        }
+
+        const existing = this.plugin.settings.customModelAliases[modelId] ?? '';
+        const trimmed = aliasInputEl.value.trim();
+        if (trimmed === existing) {
+          aliasInputEl.value = existing;
+          return;
+        }
+
+        if (trimmed) {
+          this.plugin.settings.customModelAliases[modelId] = trimmed;
+        } else {
+          delete this.plugin.settings.customModelAliases[modelId];
+        }
+
+        await this.plugin.saveSettings();
+        for (const view of this.plugin.getAllViews()) {
+          view.refreshModelSelector();
+        }
+      };
 
       const saveContextLimit = async (): Promise<void> => {
         const trimmed = inputEl.value.trim();
@@ -610,6 +645,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
       inputEl.addEventListener('input', () => {
         void saveContextLimit();
+      });
+      aliasInputEl.addEventListener('blur', () => {
+        void saveAlias();
+      });
+      aliasInputEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          aliasInputEl.blur();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          aliasInputEl.value = this.plugin.settings.customModelAliases?.[modelId] ?? '';
+          aliasInputEl.blur();
+        }
       });
     }
   }

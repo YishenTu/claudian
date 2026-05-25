@@ -43,6 +43,7 @@ export class EnvSnippetModal extends Modal {
     let descEl: HTMLInputElement;
     let envVarsEl: HTMLTextAreaElement;
     const contextLimitInputs: Map<string, HTMLInputElement> = new Map();
+    const modelAliasInputs: Map<string, HTMLInputElement> = new Map();
     let contextLimitsContainer: HTMLElement | null = null;
 
     // !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
@@ -74,6 +75,14 @@ export class EnvSnippetModal extends Modal {
         }
       }
 
+      const modelAliases: Record<string, string> = {};
+      for (const [modelId, input] of modelAliasInputs) {
+        const value = input.value.trim();
+        if (value) {
+          modelAliases[modelId] = value;
+        }
+      }
+
       const snippet: EnvSnippet = {
         id: this.snippet?.id || `snippet-${Date.now()}`,
         name,
@@ -84,6 +93,7 @@ export class EnvSnippetModal extends Modal {
           this.snippet?.scope ?? this.snippetScope,
         ),
         contextLimits: Object.keys(contextLimits).length > 0 ? contextLimits : undefined,
+        modelAliases: modelAliasInputs.size > 0 ? modelAliases : undefined,
       };
 
       this.onSave(snippet);
@@ -94,6 +104,7 @@ export class EnvSnippetModal extends Modal {
       if (!contextLimitsContainer) return;
       contextLimitsContainer.empty();
       contextLimitInputs.clear();
+      modelAliasInputs.clear();
 
       const envVars = parseEnvironmentVariables(envVarsEl.value);
       const uniqueModelIds = ProviderRegistry.getCustomModelIds(envVars);
@@ -106,13 +117,14 @@ export class EnvSnippetModal extends Modal {
       contextLimitsContainer.removeClass('claudian-hidden');
 
       const existingLimits = this.snippet?.contextLimits ?? this.plugin.settings.customContextLimits ?? {};
+      const existingAliases = this.snippet?.modelAliases ?? this.plugin.settings.customModelAliases ?? {};
 
       contextLimitsContainer.createEl('div', {
-        text: t('settings.customContextLimits.name'),
+        text: t('settings.customModelOverrides.name'),
         cls: 'setting-item-name',
       });
       contextLimitsContainer.createEl('div', {
-        text: t('settings.customContextLimits.desc'),
+        text: t('settings.customModelOverrides.desc'),
         cls: 'setting-item-description',
       });
 
@@ -121,12 +133,23 @@ export class EnvSnippetModal extends Modal {
         row.createSpan({ text: modelId, cls: 'claudian-snippet-limit-model' });
         row.createSpan({ cls: 'claudian-snippet-limit-spacer' });
 
+        const aliasInput = row.createEl('input', {
+          type: 'text',
+          placeholder: t('settings.customModelAliases.placeholder'),
+          cls: 'claudian-snippet-alias-input',
+        });
+        aliasInput.value = existingAliases[modelId] ?? '';
+        aliasInput.setAttribute('aria-label', `Alias for ${modelId}`);
+        aliasInput.title = 'Custom label shown in the model selector. Leave empty to use the default.';
+        modelAliasInputs.set(modelId, aliasInput);
+
         const input = row.createEl('input', {
           type: 'text',
           placeholder: '200k',
           cls: 'claudian-snippet-limit-input',
         });
         input.value = existingLimits[modelId] ? formatContextLimit(existingLimits[modelId]) : '';
+        input.setAttribute('aria-label', `Context window for ${modelId}`);
         contextLimitInputs.set(modelId, input);
       }
     };
@@ -333,6 +356,22 @@ export class EnvSnippetManager {
         ...this.plugin.settings.customContextLimits,
         ...snippet.contextLimits,
       };
+    }
+
+    // Legacy snippets without modelAliases don't modify aliases. Snippets saved
+    // with alias fields clear aliases for their own model IDs when left empty.
+    if (snippet.modelAliases) {
+      const modelIds = ProviderRegistry.getCustomModelIds(parseEnvironmentVariables(snippet.envVars));
+      const nextAliases = { ...(this.plugin.settings.customModelAliases ?? {}) };
+      for (const modelId of modelIds) {
+        const alias = snippet.modelAliases[modelId]?.trim();
+        if (alias) {
+          nextAliases[modelId] = alias;
+        } else {
+          delete nextAliases[modelId];
+        }
+      }
+      this.plugin.settings.customModelAliases = nextAliases;
     }
     await this.plugin.saveSettings();
 

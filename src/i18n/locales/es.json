@@ -244,6 +244,13 @@
         "cancel": "Cancelar"
       }
     },
+    "customModelOverrides": {
+      "name": "Anulaciones de modelos personalizados",
+      "desc": "Configure alias en el selector de modelos y tamaños de ventana de contexto para modelos personalizados."
+    },
+    "customModelAliases": {
+      "placeholder": "Alias"
+    },
     "customContextLimits": {
       "name": "Límites de contexto personalizados",
       "desc": "Establezca tamaños de ventana de contexto para sus modelos personalizados. Deje vacío para usar el valor predeterminado (200k tokens).",

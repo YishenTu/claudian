@@ -11,8 +11,7 @@ import {
   resolveClaudeSettingSources,
 } from '../settings';
 import {
-  resolveAdaptiveEffortLevel,
-  resolveThinkingTokens,
+  resolveEffortLevel,
 } from '../types/models';
 import { createCustomSpawnFunction } from './customSpawn';
 
@@ -116,18 +115,11 @@ export async function runColdStartQuery(
   }
 
   if (!config.thinking?.disabled) {
-    const effortLevel = resolveAdaptiveEffortLevel(selectedModel, settings.effortLevel);
-    if (effortLevel !== null) {
-      options.thinking = { type: 'adaptive' };
-      // SDK runtime accepts `xhigh` on Opus 4.7+ and silently falls back to
-      // `high` elsewhere, but its type definition lags our local EffortLevel.
-      options.effort = effortLevel;
-    } else {
-      const thinkingTokens = resolveThinkingTokens(selectedModel, settings.thinkingBudget);
-      if (thinkingTokens !== null) {
-        options.thinking = { type: 'enabled', budgetTokens: thinkingTokens };
-      }
-    }
+    const effortLevel = resolveEffortLevel(selectedModel, settings.effortLevel);
+    options.thinking = { type: 'adaptive' };
+    // SDK runtime accepts `xhigh` on Opus 4.7+ and silently falls back to
+    // `high` elsewhere, but its type definition lags our local EffortLevel.
+    options.effort = effortLevel;
   }
 
   const response = agentQuery({ prompt, options });

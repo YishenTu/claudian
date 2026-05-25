@@ -159,7 +159,7 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('projectActiveProviderState', () => {
-    it('projects saved model/effort/budget for the settings provider', () => {
+    it('projects saved model and effort for the settings provider', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',
         providerConfigs: {
@@ -182,7 +182,7 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.model).toBe(DEFAULT_CODEX_PRIMARY_MODEL);
       expect(settings.effortLevel).toBe('medium');
       expect(settings.serviceTier).toBe('fast');
-      expect(settings.thinkingBudget).toBe('1024');
+      expect(settings.thinkingBudget).toBe('off');
       expect(settings.permissionMode).toBe('normal');
     });
 
@@ -225,7 +225,7 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.model).toBe('sonnet');
       expect(settings.effortLevel).toBe('high');
       expect(settings.serviceTier).toBe('default');
-      expect(settings.thinkingBudget).toBe('off');
+      expect(settings.thinkingBudget).toBe('500');
     });
 
     it('does not overwrite when no saved values exist', () => {

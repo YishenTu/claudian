@@ -198,8 +198,12 @@ export class ProviderSettingsCoordinator {
     if (serviceTierToggle && typeof settings.serviceTier === 'string') {
       savedServiceTier[providerId] = settings.serviceTier;
     }
-    if (typeof settings.thinkingBudget === 'string') {
+    const usesBudget = normalizedModel !== undefined
+      && !uiConfig.isAdaptiveReasoningModel(normalizedModel, projectedSettings);
+    if (usesBudget && typeof settings.thinkingBudget === 'string') {
       savedBudget[providerId] = settings.thinkingBudget;
+    } else {
+      delete savedBudget[providerId];
     }
     if (typeof settings.permissionMode === 'string' && uiConfig.getPermissionModeToggle?.()) {
       savedPermissionMode[providerId] = settings.permissionMode;
@@ -279,15 +283,14 @@ export class ProviderSettingsCoordinator {
 
     const usesBudget = Boolean(model) && !isAdaptive;
 
-    if (savedBudget?.[providerId] !== undefined) {
-      settings.thinkingBudget = savedBudget[providerId];
-    } else if (canReuseCurrentProjection && currentBudget !== undefined) {
-      settings.thinkingBudget = currentBudget;
-    } else if (usesBudget) {
-      settings.thinkingBudget = uiConfig.getDefaultReasoningValue(model, settings);
-    }
-
     if (usesBudget) {
+      if (savedBudget?.[providerId] !== undefined) {
+        settings.thinkingBudget = savedBudget[providerId];
+      } else if (canReuseCurrentProjection && currentBudget !== undefined) {
+        settings.thinkingBudget = currentBudget;
+      } else {
+        settings.thinkingBudget = uiConfig.getDefaultReasoningValue(model, settings);
+      }
       settings.thinkingBudget = normalizeReasoningValue(uiConfig, settings, model, settings.thinkingBudget);
     }
 

@@ -13,14 +13,17 @@ function getModelTypeFromEnvKey(envKey: string): string {
   return match ? match[1].toLowerCase() : envKey;
 }
 
-export function getModelsFromEnvironment(envVars: Record<string, string>): { value: string; label: string; description: string }[] {
+export function getModelsFromEnvironment(
+  envVars: Record<string, string>,
+  modelAliases: Record<string, string> = {},
+): { value: string; label: string; description: string }[] {
   const modelMap = new Map<string, { types: string[]; label: string }>();
 
   for (const envKey of CUSTOM_MODEL_ENV_KEYS) {
     const type = getModelTypeFromEnvKey(envKey);
     const modelValue = envVars[envKey];
     if (modelValue) {
-      const label = formatCustomModelLabel(modelValue);
+      const label = modelAliases[modelValue] ?? formatCustomModelLabel(modelValue);
 
       if (!modelMap.has(modelValue)) {
         modelMap.set(modelValue, { types: [type], label });

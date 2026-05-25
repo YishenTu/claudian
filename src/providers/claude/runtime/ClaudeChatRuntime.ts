@@ -8,7 +8,7 @@
  * - Persistent query for active chat conversation (eliminates cold-start latency)
  * - Cold-start queries for inline edit, title generation
  * - MessageChannel for message queueing and turn management
- * - Dynamic updates (model, thinking tokens, permission mode, MCP servers)
+ * - Dynamic updates (model, effort level, permission mode, MCP servers)
  */
 
 import type {

@@ -97,8 +97,7 @@ export function createResponseHandler(options: ResponseHandlerOptions): Response
 
 export interface PersistentQueryConfig {
   model: string | null;
-  thinkingTokens: number | null;
-  effortLevel: EffortLevel | null;
+  effortLevel: EffortLevel;
   permissionMode: PermissionMode | null;
   sdkPermissionMode: SDKPermissionMode | null;
   systemPromptKey: string;

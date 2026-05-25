@@ -57,10 +57,25 @@
 
 .claudian-context-limits-input-wrapper {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
+  gap: 8px;
   margin-left: 16px;
   flex-shrink: 0;
+}
+
+.claudian-context-alias-input {
+  width: 180px;
+  padding: 4px 8px;
+  font-size: var(--font-ui-small);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.claudian-context-alias-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
 }
 
 .claudian-context-limits-input {
@@ -85,7 +100,7 @@
 .claudian-context-limit-validation {
   font-size: var(--font-ui-smaller);
   color: var(--text-error);
-  margin-top: 4px;
+  margin-left: 4px;
 }
 
 /* Environment Snippets Styles */
@@ -330,7 +345,7 @@
   display: flex;
   align-items: center;
   gap: 0.5em;
-  margin-bottom: 0.25em;
+  margin-bottom: 0.5em;
 }
 
 .claudian-snippet-limit-model {
@@ -344,4 +359,8 @@
 
 .claudian-snippet-limit-input {
   width: 80px;
+}
+
+.claudian-snippet-alias-input {
+  width: 160px;
 }

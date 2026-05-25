@@ -430,8 +430,46 @@ describe('ClaudianSettingsStorage', () => {
         envVars: 'PATH=/usr/local/bin\nANTHROPIC_MODEL=claude-custom',
         scope: undefined,
         contextLimits: undefined,
+        modelAliases: undefined,
       }]);
       expect(writtenContent.envSnippets[0].scope).toBeUndefined();
+    });
+
+    it('normalizes custom model aliases on load', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        customModelAliases: {
+          ' custom-model ': '  Friendly model  ',
+          empty: '   ',
+          ignored: 123,
+        },
+        envSnippets: [{
+          id: 'snippet-1',
+          name: 'Aliased snippet',
+          description: '',
+          envVars: 'ANTHROPIC_MODEL=custom-model',
+          modelAliases: {
+            ' custom-model ': '  Snippet model  ',
+            ignored: 123,
+          },
+        }],
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.customModelAliases).toEqual({
+        'custom-model': 'Friendly model',
+      });
+      expect(result.envSnippets[0].modelAliases).toEqual({
+        'custom-model': 'Snippet model',
+      });
+      expect(writtenContent.customModelAliases).toEqual({
+        'custom-model': 'Friendly model',
+      });
+      expect(writtenContent.envSnippets[0].modelAliases).toEqual({
+        'custom-model': 'Snippet model',
+      });
     });
 
     it('should throw on JSON parse error', async () => {

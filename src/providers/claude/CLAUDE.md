@@ -6,7 +6,7 @@ SDK adaptor wrapping `@anthropic-ai/claude-agent-sdk` behind `ChatRuntime`, with
 
 ### Persistent Query — Why Not Restart
 
-The persistent query stays alive across turns. Model, permission mode, MCP servers, and effort level are updated dynamically via SDK API calls (`setModel`, `setPermissionMode`, `setMcpServers`, `applyFlagSettings`). Fixed thinking budgets are startup query options and require a query rebuild when they change. Restart is also required when the effective system prompt, disabled-tool set, plugin set, settings source set, CLI path, Chrome enablement, or external context paths change.
+The persistent query stays alive across turns. Model, permission mode, MCP servers, and effort level are updated dynamically via SDK API calls (`setModel`, `setPermissionMode`, `setMcpServers`, `applyFlagSettings`). Restart is required when the effective system prompt, disabled-tool set, plugin set, settings source set, CLI path, Chrome enablement, or external context paths change.
 
 ### Text Deduplication
 

@@ -1530,15 +1530,14 @@ describe('ClaudianService', () => {
   });
 
   describe('persistent query dynamic updates', () => {
-    it('rebuilds the persistent query when a fixed thinking budget changes', async () => {
-      // Use a custom model so the legacy budget path is used
+    it('ignores legacy thinking budget changes', async () => {
       mockPlugin.settings.model = 'custom-model';
       mockPlugin.settings.thinkingBudget = 'off';
 
       const chunks1: any[] = [];
       for await (const c of service.query('first')) chunks1.push(c);
 
-      // Change thinking budget - this should rebuild the query with startup thinking options.
+      const queryCountBefore = getQueryCallCount();
       mockPlugin.settings.thinkingBudget = 'high';
 
       const chunks2: any[] = [];
@@ -1546,10 +1545,10 @@ describe('ClaudianService', () => {
 
       const response = getLastResponse();
       expect(response?.setMaxThinkingTokens).not.toHaveBeenCalled();
+      expect(getQueryCallCount()).toBe(queryCountBefore);
     });
 
-    it('does not call setMaxThinkingTokens for adaptive models when budget changes', async () => {
-      // Adaptive model (sonnet) should use effort levels, not token budgets
+    it('uses effort levels instead of token budgets for built-in models', async () => {
       mockPlugin.settings.model = 'sonnet';
       mockPlugin.settings.thinkingBudget = 'off';
 

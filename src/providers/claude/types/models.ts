@@ -13,16 +13,6 @@ export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; descrip
   { value: 'opus[1m]', label: 'Opus 1M', description: 'Most capable (1M context window)' },
 ];
 
-export type ThinkingBudget = 'off' | 'low' | 'medium' | 'high' | 'xhigh';
-
-export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: number }[] = [
-  { value: 'off', label: 'Off', tokens: 0 },
-  { value: 'low', label: 'Low', tokens: 4000 },
-  { value: 'medium', label: 'Med', tokens: 8000 },
-  { value: 'high', label: 'High', tokens: 16000 },
-  { value: 'xhigh', label: 'Ultra', tokens: 32000 },
-];
-
 /** Effort levels for adaptive thinking models. */
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -41,15 +31,6 @@ export const DEFAULT_EFFORT_LEVEL: Record<string, EffortLevel> = {
   'sonnet[1m]': 'high',
   'opus': 'high',
   'opus[1m]': 'high',
-};
-
-/** Default thinking budget per model tier. */
-export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
-  'haiku': 'off',
-  'sonnet': 'low',
-  'sonnet[1m]': 'low',
-  'opus': 'medium',
-  'opus[1m]': 'medium',
 };
 
 const ONE_M_SUFFIX = '[1m]';
@@ -93,13 +74,6 @@ function resolveCustomContextLimit(
   return matchingLimits.length === 1 ? matchingLimits[0] : null;
 }
 
-/** Whether the model is a known Claude model that supports adaptive thinking. */
-export function isAdaptiveThinkingModel(model: string): boolean {
-  const normalized = normalizeModelId(model);
-  if (DEFAULT_MODEL_VALUES.has(normalized)) return true;
-  return /claude-(haiku|sonnet|opus)-/.test(normalized);
-}
-
 export function isDefaultClaudeModel(model: string): boolean {
   return DEFAULT_MODEL_VALUES.has(normalizeModelId(model));
 }
@@ -131,27 +105,10 @@ export function normalizeEffortLevel(
   return DEFAULT_EFFORT_LEVEL[normalizeModelId(model)] ?? 'high';
 }
 
-export function resolveThinkingTokens(
-  model: string,
-  thinkingBudget: unknown,
-): number | null {
-  if (isAdaptiveThinkingModel(model)) {
-    return null;
-  }
-
-  const budgetConfig = THINKING_BUDGETS.find((budget) => budget.value === thinkingBudget);
-  const thinkingTokens = budgetConfig?.tokens ?? null;
-  return thinkingTokens && thinkingTokens > 0 ? thinkingTokens : null;
-}
-
-export function resolveAdaptiveEffortLevel(
+export function resolveEffortLevel(
   model: string,
   effortLevel: unknown,
-): EffortLevel | null {
-  if (!isAdaptiveThinkingModel(model)) {
-    return null;
-  }
-
+): EffortLevel {
   return normalizeEffortLevel(model, effortLevel);
 }
 

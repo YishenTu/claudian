@@ -244,6 +244,13 @@
         "cancel": "取消"
       }
     },
+    "customModelOverrides": {
+      "name": "自訂模型覆寫",
+      "desc": "為自訂模型設定模型選擇器別名和上下文視窗大小。"
+    },
+    "customModelAliases": {
+      "placeholder": "別名"
+    },
     "customContextLimits": {
       "name": "自訂上下文限制",
       "desc": "為您的自訂模型設定上下文視窗大小。留空使用預設值（200k 權杖）。",

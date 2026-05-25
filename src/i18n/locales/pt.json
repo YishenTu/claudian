@@ -244,6 +244,13 @@
         "cancel": "Cancelar"
       }
     },
+    "customModelOverrides": {
+      "name": "Substituições de modelos personalizados",
+      "desc": "Defina aliases no seletor de modelos e tamanhos de janela de contexto para modelos personalizados."
+    },
+    "customModelAliases": {
+      "placeholder": "Alias"
+    },
     "customContextLimits": {
       "name": "Limites de contexto personalizados",
       "desc": "Defina tamanhos de janela de contexto para seus modelos personalizados. Deixe vazio para usar o padrão (200k tokens).",

@@ -244,6 +244,13 @@
         "cancel": "취소"
       }
     },
+    "customModelOverrides": {
+      "name": "사용자 정의 모델 재정의",
+      "desc": "사용자 정의 모델의 모델 선택기 별칭과 컨텍스트 창 크기를 설정합니다."
+    },
+    "customModelAliases": {
+      "placeholder": "별칭"
+    },
     "customContextLimits": {
       "name": "사용자 정의 컨텍스트 제한",
       "desc": "사용자 정의 모델의 컨텍스트 창 크기를 설정합니다. 기본값(200k 토큰)을 사용하려면 비워두세요.",

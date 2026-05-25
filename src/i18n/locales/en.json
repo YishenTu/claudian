@@ -244,6 +244,13 @@
         "cancel": "Cancel"
       }
     },
+    "customModelOverrides": {
+      "name": "Custom model overrides",
+      "desc": "Set model selector aliases and context window sizes for custom models."
+    },
+    "customModelAliases": {
+      "placeholder": "Alias"
+    },
     "customContextLimits": {
       "name": "Custom Context Limits",
       "desc": "Set context window sizes for your custom models. Leave empty to use the default (200k tokens).",

@@ -244,6 +244,13 @@
         "cancel": "Abbrechen"
       }
     },
+    "customModelOverrides": {
+      "name": "Benutzerdefinierte Modellüberschreibungen",
+      "desc": "Legen Sie Aliasnamen in der Modellauswahl und Kontextfenstergrößen für benutzerdefinierte Modelle fest."
+    },
+    "customModelAliases": {
+      "placeholder": "Alias"
+    },
     "customContextLimits": {
       "name": "Benutzerdefinierte Kontextlimits",
       "desc": "Legen Sie die Kontextfenstergrößen für Ihre benutzerdefinierten Modelle fest. Leer lassen für den Standardwert (200k Token).",

@@ -118,6 +118,15 @@ describe('getModelsFromEnvironment', () => {
     expect(result[0].label).toBe('Opus 4.5 (2511)');
   });
 
+  it('uses aliases before formatting environment model labels', () => {
+    const result = getModelsFromEnvironment(
+      { ANTHROPIC_MODEL: 'claude-opus-4-6' },
+      { 'claude-opus-4-6': 'Gateway Opus' },
+    );
+
+    expect(result[0].label).toBe('Gateway Opus');
+  });
+
   it('returns models for tier-specific env vars', () => {
     const result = getModelsFromEnvironment({
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'my-opus',

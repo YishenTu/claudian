@@ -17,7 +17,6 @@ import {
   DEFAULT_CLAUDE_MODELS,
   filterVisibleModelOptions,
   getContextWindowSize,
-  isAdaptiveThinkingModel,
   normalizeEffortLevel,
   normalizeVisibleModelVariant,
   supportsXHighEffort,
@@ -46,6 +45,10 @@ describe('types.ts', () => {
 
     it('should have envSnippets as empty array by default', () => {
       expect(DEFAULT_SETTINGS.envSnippets).toEqual([]);
+    });
+
+    it('should have custom model aliases as an empty map by default', () => {
+      expect(DEFAULT_SETTINGS.customModelAliases).toEqual({});
     });
 
     it('should have lastClaudeModel set to haiku by default', () => {
@@ -78,6 +81,7 @@ describe('types.ts', () => {
         sharedEnvironmentVariables: '',
         envSnippets: [],
         customContextLimits: {},
+        customModelAliases: {},
         systemPrompt: '',
 
         persistentExternalContextPaths: [],
@@ -131,6 +135,7 @@ describe('types.ts', () => {
         sharedEnvironmentVariables: 'API_KEY=test',
         envSnippets: [],
         customContextLimits: {},
+        customModelAliases: {},
         systemPrompt: '',
 
         persistentExternalContextPaths: [],
@@ -185,6 +190,7 @@ describe('types.ts', () => {
         sharedEnvironmentVariables: '',
         envSnippets: [],
         customContextLimits: {},
+        customModelAliases: {},
         systemPrompt: '',
 
         persistentExternalContextPaths: [],
@@ -230,12 +236,16 @@ describe('types.ts', () => {
         name: 'Production Config',
         description: 'Production environment variables',
         envVars: 'API_KEY=prod-key\nDEBUG=false',
+        modelAliases: {
+          'custom-model': 'Production model',
+        },
       };
 
       expect(snippet.id).toBe('snippet-123');
       expect(snippet.name).toBe('Production Config');
       expect(snippet.description).toBe('Production environment variables');
       expect(snippet.envVars).toContain('API_KEY=prod-key');
+      expect(snippet.modelAliases?.['custom-model']).toBe('Production model');
     });
 
     it('should allow empty description', () => {
@@ -674,47 +684,6 @@ describe('types.ts', () => {
         expect(normalizeVisibleModelVariant('haiku', true, true)).toBe('haiku');
         expect(normalizeVisibleModelVariant('custom-model', true, true)).toBe('custom-model');
       });
-    });
-  });
-
-  describe('isAdaptiveThinkingModel', () => {
-    it('should return true for default model aliases', () => {
-      expect(isAdaptiveThinkingModel('haiku')).toBe(true);
-      expect(isAdaptiveThinkingModel('sonnet')).toBe(true);
-      expect(isAdaptiveThinkingModel('sonnet[1m]')).toBe(true);
-      expect(isAdaptiveThinkingModel('opus')).toBe(true);
-      expect(isAdaptiveThinkingModel('opus[1m]')).toBe(true);
-      expect(isAdaptiveThinkingModel('opus[1M]')).toBe(true);
-    });
-
-    it('should return true for full Claude model IDs', () => {
-      expect(isAdaptiveThinkingModel('claude-sonnet-4-6-20250514')).toBe(true);
-      expect(isAdaptiveThinkingModel('claude-opus-4-6-20250514')).toBe(true);
-      expect(isAdaptiveThinkingModel('claude-haiku-4-5-20251001')).toBe(true);
-    });
-
-    it('should return false for custom/unknown models', () => {
-      expect(isAdaptiveThinkingModel('custom-model')).toBe(false);
-      expect(isAdaptiveThinkingModel('gpt-4')).toBe(false);
-      expect(isAdaptiveThinkingModel('')).toBe(false);
-    });
-
-    it('should return true for provider-qualified Claude model IDs', () => {
-      expect(isAdaptiveThinkingModel('us.anthropic.claude-sonnet-4-20250514-v1:0')).toBe(true);
-      expect(isAdaptiveThinkingModel('anthropic/claude-opus-4-6')).toBe(true);
-      expect(isAdaptiveThinkingModel('eu.anthropic.claude-haiku-4-5-20251001-v1:0')).toBe(true);
-    });
-
-    it('should return false for partial model IDs without version suffix', () => {
-      expect(isAdaptiveThinkingModel('claude-haiku')).toBe(false);
-      expect(isAdaptiveThinkingModel('claude-sonnet')).toBe(false);
-      expect(isAdaptiveThinkingModel('claude-opus')).toBe(false);
-    });
-
-    it('should return true for full versioned 1M model IDs', () => {
-      expect(isAdaptiveThinkingModel('claude-opus-4-6[1m]')).toBe(true);
-      expect(isAdaptiveThinkingModel('claude-sonnet-4-6[1m]')).toBe(true);
-      expect(isAdaptiveThinkingModel('claude-opus-4-6[1M]')).toBe(true);
     });
   });
 

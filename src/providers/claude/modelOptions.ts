@@ -21,9 +21,32 @@ function parseConfiguredCustomModelIds(value: string): string[] {
   return modelIds;
 }
 
+function normalizeCustomModelAliases(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const aliases: Record<string, string> = {};
+  for (const [rawModelId, rawAlias] of Object.entries(value)) {
+    if (typeof rawAlias !== 'string') {
+      continue;
+    }
+
+    const modelId = rawModelId.trim();
+    const alias = rawAlias.trim();
+    if (modelId && alias) {
+      aliases[modelId] = alias;
+    }
+  }
+
+  return aliases;
+}
+
 export function getClaudeModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
+  const customModelAliases = normalizeCustomModelAliases(settings.customModelAliases);
   const customModels = getModelsFromEnvironment(
     getRuntimeEnvironmentVariables(settings, 'claude'),
+    customModelAliases,
   );
   if (customModels.length > 0) {
     return customModels;
@@ -45,7 +68,7 @@ export function getClaudeModelOptions(settings: Record<string, unknown>): Provid
     seenValues.add(modelId);
     models.push({
       value: modelId,
-      label: formatCustomModelLabel(modelId),
+      label: customModelAliases[modelId] ?? formatCustomModelLabel(modelId),
       description: 'Custom model',
     });
   }
