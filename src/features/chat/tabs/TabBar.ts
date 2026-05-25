@@ -71,8 +71,10 @@ export class TabBar {
         cls: 'claudian-tab-badge-close',
         text: '×',
       });
-      closeEl.addEventListener('click', (e) => {
+      closeEl.addEventListener('click', (e: Event) => {
         e.stopPropagation();
+        e.stopImmediatePropagation();
+        e.preventDefault();
         this.callbacks.onTabClose(item.id);
       });
     }

@@ -236,7 +236,7 @@ describe('TabBar', () => {
 
       const badge = containerEl._children[0];
       const closeBtn = badge._children.find((c: any) => c._classList.has('claudian-tab-badge-close'));
-      const mockEvent = { stopPropagation: jest.fn() };
+      const mockEvent = { stopPropagation: jest.fn(), stopImmediatePropagation: jest.fn(), preventDefault: jest.fn() };
       closeBtn.dispatchEvent('click', mockEvent);
 
       expect(mockEvent.stopPropagation).toHaveBeenCalled();
