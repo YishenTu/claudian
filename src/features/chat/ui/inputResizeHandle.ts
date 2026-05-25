@@ -60,6 +60,9 @@ export function createInputResizeHandle({ inputWrapper, viewport }: InputResizeH
   handle.addEventListener('mousedown', onMouseDown);
 
   return () => {
+    if (isDragging && doc.body) {
+      doc.body.classList.remove('claudian-dragging-ns');
+    }
     handle.removeEventListener('mousedown', onMouseDown);
     doc.removeEventListener('mousemove', onMouseMove);
     doc.removeEventListener('mouseup', onMouseUp);
