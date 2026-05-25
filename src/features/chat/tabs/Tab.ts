@@ -503,12 +503,10 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
 }
 
 function attachInputResizeHandle(dom: TabDOMElements): () => void {
-  const container = dom.inputContainerEl;
-  const viewport = container.closest('.claudian-container') as HTMLElement | null;
+  const viewport = dom.inputWrapper.closest('.claudian-container') as HTMLElement | null;
   if (!viewport) return () => {};
 
   return createInputResizeHandle({
-    container,
     inputWrapper: dom.inputWrapper,
     viewport,
   });

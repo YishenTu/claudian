@@ -4,22 +4,23 @@
   padding: 12px 0 0 0;
 }
 
-/* Resize handle — thin bar at top of input container */
+/* Resize handle — invisible hit zone at top of input wrapper */
 .claudian-input-resize-handle {
-  height: 6px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
   cursor: ns-resize;
-  position: relative;
-  flex-shrink: 0;
-  margin-bottom: 2px;
-  border-radius: 3px;
+  z-index: 1;
 }
 
 .claudian-input-resize-handle::after {
   content: '';
   position: absolute;
-  top: 50%;
+  top: 2px;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   width: 24px;
   height: 3px;
   border-radius: 2px;
