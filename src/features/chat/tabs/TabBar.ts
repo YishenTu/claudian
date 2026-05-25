@@ -65,18 +65,22 @@ export class TabBar {
     badgeEl.setAttribute('aria-label', item.title);
     badgeEl.setAttribute('data-provider', item.providerId);
 
+    // Close button (visible on hover)
+    if (item.canClose) {
+      const closeEl = badgeEl.createDiv({
+        cls: 'claudian-tab-badge-close',
+        text: '×',
+      });
+      closeEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.callbacks.onTabClose(item.id);
+      });
+    }
+
     // Click handler to switch tab
     badgeEl.addEventListener('click', () => {
       this.callbacks.onTabClick(item.id);
     });
-
-    // Right-click to close (if allowed)
-    if (item.canClose) {
-      badgeEl.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        this.callbacks.onTabClose(item.id);
-      });
-    }
   }
 
   /** Destroys the tab bar. */
