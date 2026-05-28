@@ -14,6 +14,8 @@ import {
   type ScheduledAnimationFrame,
 } from '../../utils/animationFrame';
 import type { HistoryConversationOpenState } from './controllers/ConversationController';
+import { InlineOrchestratorPlan } from './rendering/InlineOrchestratorPlan';
+import { OrchestratorService } from './services/OrchestratorService';
 import { getTabProviderId, onProviderAvailabilityChanged, updatePlanModeUI } from './tabs/Tab';
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
@@ -30,6 +32,7 @@ export class ClaudianView extends ItemView {
 
   // Tab management
   private tabManager: TabManager | null = null;
+  private orchestratorService!: OrchestratorService;
   private tabBar: TabBar | null = null;
   private tabBarContainerEl: HTMLElement | null = null;
   private tabContentEl: HTMLElement | null = null;
@@ -174,12 +177,21 @@ export class ClaudianView extends ItemView {
     this.navRowContent = this.buildNavRowContent();
     this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
 
+    this.orchestratorService = new OrchestratorService({
+      sendToTab: (tabId, message) => {
+        const tab = this.tabManager?.getTab(tabId);
+        if (!tab) return;
+        tab.controllers.inputController?.sendMessage({ content: message });
+      },
+    });
+
     this.tabManager = new TabManager(
       this.plugin,
       this.tabContentEl,
       this,
       {
-        onTabCreated: () => {
+        onTabCreated: (tab) => {
+          this.wireOrchestratorCallbacks(tab);
           this.updateTabBar();
           this.updateNavRowLocation();
           this.persistTabState();
@@ -192,7 +204,8 @@ export class ClaudianView extends ItemView {
           this.persistTabState();
           this.syncProviderBrandColor();
         },
-        onTabClosed: () => {
+        onTabClosed: (tabId) => {
+          this.orchestratorService.handleTabClosed(tabId);
           this.updateTabBar();
           this.persistTabState();
         },
@@ -391,6 +404,36 @@ export class ClaudianView extends ItemView {
   // ============================================
   // Tab Management
   // ============================================
+
+  private wireOrchestratorCallbacks(tab: TabData): void {
+    const tabId = tab.id;
+    tab.controllers.streamController?.setOrchestratorCallbacks(
+      // onOrchestratorPlanDetected
+      (msgEl, plan) => {
+        new InlineOrchestratorPlan(
+          msgEl,
+          plan,
+          async (tasks) => {
+            for (const task of tasks) {
+              const workerTab = await this.tabManager?.createWorkerTab(tabId);
+              if (!workerTab) continue;
+              this.orchestratorService.registerWorker(tabId, workerTab.id, task.description);
+              this.wireOrchestratorCallbacks(workerTab);
+              workerTab.controllers.inputController?.sendMessage({ content: task.prompt });
+            }
+          },
+          () => {}, // onCancel: no-op
+        ).render();
+      },
+      // onWorkerDone
+      (result, isError) => {
+        const orchId = this.orchestratorService.getOrchestratorTabId(tabId);
+        if (orchId) {
+          this.orchestratorService.reportResult(tabId, result, isError);
+        }
+      },
+    );
+  }
 
   private handleTabClick(tabId: TabId): void {
     const switched = this.tabManager?.switchToTab(tabId);

@@ -102,6 +102,14 @@ export class StreamController {
     this.deps = deps;
   }
 
+  setOrchestratorCallbacks(
+    onOrchestratorPlanDetected?: StreamControllerDeps['onOrchestratorPlanDetected'],
+    onWorkerDone?: StreamControllerDeps['onWorkerDone'],
+  ): void {
+    this.deps.onOrchestratorPlanDetected = onOrchestratorPlanDetected;
+    this.deps.onWorkerDone = onWorkerDone;
+  }
+
   private getActiveProviderId(): ProviderId {
     return this.deps.getAgentService?.()?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
   }
