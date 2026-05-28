@@ -51,6 +51,7 @@ function isTabManagerViewHost(value: unknown): value is TabManagerViewHost {
 type CreateTabOptions = {
   activate?: boolean;
   draftModel?: string;
+  bypassTabLimit?: boolean;
 };
 
 type OpenConversationOptions = {
@@ -158,7 +159,7 @@ export class TabManager implements TabManagerInterface {
     options: CreateTabOptions = {},
   ): Promise<TabData | null> {
     const maxTabs = this.getMaxTabs();
-    if (this.tabs.size >= maxTabs) {
+    if (this.tabs.size >= maxTabs && !options.bypassTabLimit) {
       return null;
     }
 
@@ -229,6 +230,26 @@ export class TabManager implements TabManagerInterface {
       this.maybePrimeProviderRuntime(tab);
     }
 
+    return tab;
+  }
+
+  /**
+   * Creates a worker tab for an orchestrator, bypassing the max-tab limit.
+   * Sets orchestratorTabId on the new tab and registers it on the orchestrator tab.
+   */
+  async createWorkerTab(orchestratorTabId: TabId): Promise<TabData | null> {
+    const tab = await this.createTab(undefined, undefined, {
+      activate: false,
+      bypassTabLimit: true,
+    });
+    if (!tab) return null;
+
+    tab.orchestratorTabId = orchestratorTabId;
+    const orchestratorTab = this.tabs.get(orchestratorTabId);
+    if (orchestratorTab) {
+      orchestratorTab.workerTabIds = orchestratorTab.workerTabIds ?? [];
+      orchestratorTab.workerTabIds.push(tab.id);
+    }
     return tab;
   }
 
