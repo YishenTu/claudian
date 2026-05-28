@@ -1242,9 +1242,9 @@ export class OrchestratorToggle {
 
     const isActive = this.callbacks.getOrchestratorMode?.() ?? false;
     if (isActive) {
-      this.buttonEl.addClass('is-active');
+      this.buttonEl.addClass('active');
     } else {
-      this.buttonEl.removeClass('is-active');
+      this.buttonEl.removeClass('active');
     }
 
     this.container.setAttribute('title', 'Orchestrator mode');
