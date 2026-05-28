@@ -1,0 +1,38 @@
+/* Orchestrator plan approval widget */
+
+.claudian-orchestrator-plan {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: var(--size-4-3);
+  margin-top: var(--size-4-2);
+  background: var(--background-secondary);
+}
+
+.claudian-orchestrator-plan h4 {
+  margin: 0 0 var(--size-4-2);
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+}
+
+.claudian-orchestrator-plan-tasks {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--size-4-3);
+}
+
+.claudian-orchestrator-plan-task {
+  padding: var(--size-4-1) 0;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-orchestrator-plan-task:last-child {
+  border-bottom: none;
+}
+
+.claudian-orchestrator-plan-actions {
+  display: flex;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-3);
+}
