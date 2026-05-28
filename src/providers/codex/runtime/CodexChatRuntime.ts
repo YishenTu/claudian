@@ -257,7 +257,7 @@ export class CodexChatRuntime implements ChatRuntime {
 
     const model = this.resolveModel(queryOptions);
     const promptSettings = this.getSystemPromptSettings();
-    const promptText = buildSystemPrompt(promptSettings);
+    const promptText = buildSystemPrompt(promptSettings, { orchestratorMode: queryOptions?.orchestratorMode });
 
     const enqueueChunk = (chunk: StreamChunk): void => {
       this.chunkBuffer.push(chunk);

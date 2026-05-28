@@ -620,11 +620,13 @@ export class ClaudianService implements ChatRuntime {
   private buildPersistentQueryConfig(
     vaultPath: string,
     cliPath: string,
-    externalContextPaths?: string[]
+    externalContextPaths?: string[],
+    orchestratorMode?: boolean,
   ): PersistentQueryConfig {
     return QueryOptionsBuilder.buildPersistentQueryConfig(
       this.buildQueryOptionsContext(vaultPath, cliPath),
-      externalContextPaths
+      externalContextPaths,
+      orchestratorMode,
     );
   }
 
@@ -673,7 +675,8 @@ export class ClaudianService implements ChatRuntime {
     cliPath: string,
     resumeSessionId?: string,
     resumeAtMessageId?: string,
-    externalContextPaths?: string[]
+    externalContextPaths?: string[],
+    orchestratorMode?: boolean,
   ): Options {
     const baseContext = this.buildQueryOptionsContext(vaultPath, cliPath);
     const hooks = this.buildHooks();
@@ -687,6 +690,7 @@ export class ClaudianService implements ChatRuntime {
       canUseTool: this.createApprovalCallback(),
       hooks,
       externalContextPaths,
+      orchestratorMode,
     };
 
     return QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
@@ -1004,6 +1008,7 @@ export class ClaudianService implements ChatRuntime {
       enabledMcpServers: request.enabledMcpServers ?? legacyQueryOptions?.enabledMcpServers,
       forceColdStart: legacyQueryOptions?.forceColdStart,
       externalContextPaths: request.externalContextPaths ?? legacyQueryOptions?.externalContextPaths,
+      orchestratorMode: request.orchestratorMode ?? legacyQueryOptions?.orchestratorMode,
     };
 
     if (
@@ -1012,6 +1017,7 @@ export class ClaudianService implements ChatRuntime {
       effectiveQueryOptions.enabledMcpServers === undefined &&
       effectiveQueryOptions.forceColdStart === undefined &&
       effectiveQueryOptions.externalContextPaths === undefined &&
+      effectiveQueryOptions.orchestratorMode === undefined &&
       (effectiveQueryOptions.mcpMentions?.size ?? 0) === 0
     ) {
       return undefined;
@@ -1451,8 +1457,8 @@ export class ClaudianService implements ChatRuntime {
         getPermissionMode: () => this.plugin.settings.permissionMode,
         resolveSDKPermissionMode: (mode) => this.resolveSDKPermissionMode(mode),
         mcpManager: this.mcpManager,
-        buildPersistentQueryConfig: (vaultPath, cliPath, externalContextPaths) =>
-          this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths),
+        buildPersistentQueryConfig: (vaultPath, cliPath, externalContextPaths, orchestratorMode) =>
+          this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths, orchestratorMode),
         needsRestart: (newConfig) => this.needsRestart(newConfig),
         ensureReady: (options) => this.ensureReady(options),
         setCurrentExternalContextPaths: (paths) => {
