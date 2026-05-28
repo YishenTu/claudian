@@ -67,6 +67,14 @@ describe('OrchestratorService', () => {
       service.reportResult('worker-1', 'second');
       expect(sent).toHaveLength(countAfterFirst);
     });
+
+    it('cleans up fleet state after all workers done', () => {
+      const { service } = makeService();
+      service.registerWorker('orch-1', 'worker-1', 'Research');
+      service.reportResult('worker-1', 'result');
+      // After completion, getOrchestratorTabId should return null (cleaned up)
+      expect(service.getOrchestratorTabId('worker-1')).toBeNull();
+    });
   });
 
   describe('handleTabClosed', () => {

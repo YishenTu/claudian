@@ -39,6 +39,8 @@ export class OrchestratorService {
       ? `Worker '${meta.description}' failed: ${result}`
       : `Worker '${meta.description}' finished: ${result}`;
     this.deps.sendToTab(meta.orchestratorTabId, label);
+    // Intentional: synthesis fires even when all workers failed or were closed,
+    // so the orchestrator can compose a meaningful response from the failure messages.
     this.checkAllDone(meta.orchestratorTabId);
   }
 
@@ -54,8 +56,15 @@ export class OrchestratorService {
         this.checkAllDone(meta.orchestratorTabId);
       }
     }
-    // If this is an orchestrator tab, drop the fleet so future reportResult calls are no-ops.
-    this.workerSets.delete(tabId);
+    // Clean up meta for this tab (whether worker or not-yet-done orchestrator).
+    this.workerMeta.delete(tabId);
+
+    // If this is an orchestrator tab, clean up all its workers' meta too.
+    const fleet = this.workerSets.get(tabId);
+    if (fleet) {
+      for (const wId of fleet) this.workerMeta.delete(wId);
+      this.workerSets.delete(tabId);
+    }
   }
 
   getOrchestratorTabId(workerTabId: TabId): TabId | null {
@@ -68,6 +77,9 @@ export class OrchestratorService {
     const allDone = [...workers].every((id) => this.workerMeta.get(id)?.done === true);
     if (allDone) {
       this.deps.sendToTab(orchestratorTabId, 'All workers have reported. Please synthesize.');
+      // Clean up fleet state after synthesis fires.
+      for (const wId of workers) this.workerMeta.delete(wId);
+      this.workerSets.delete(orchestratorTabId);
     }
   }
 }
