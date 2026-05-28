@@ -1,6 +1,7 @@
 import { TFile } from 'obsidian';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
+import { extractOrchestratorPlan } from '../rendering/orchestratorPlanParser';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
   type ProviderId,
@@ -72,6 +73,10 @@ export interface StreamControllerDeps {
   updateQueueIndicator: () => void;
   /** Get the agent service from the tab. */
   getAgentService?: () => ChatRuntime | null;
+  /** Called when a complete assistant message contains an orchestrator plan block. */
+  onOrchestratorPlanDetected?: (msgEl: HTMLElement, plan: import('../rendering/orchestratorPlanParser').OrchestratorPlan) => void;
+  /** Called when a worker tab's stream finishes. Provides the final assistant message text. */
+  onWorkerDone?: (result: string, isError: boolean) => void;
 }
 
 export class StreamController {
@@ -200,6 +205,21 @@ export class StreamController {
       case 'done':
         // Flush any remaining pending tools
         this.flushPendingTools();
+        // Orchestrator plan detection
+        if (this.deps.onOrchestratorPlanDetected && msg.content) {
+          const plan = extractOrchestratorPlan(msg.content);
+          if (plan) {
+            const msgEl = this.deps.renderer.getMessageEl(msg.id);
+            if (msgEl) {
+              this.deps.onOrchestratorPlanDetected(msgEl, plan);
+            }
+          }
+        }
+        // Worker done-reporting
+        if (this.deps.onWorkerDone) {
+          const isError = msg.toolCalls?.some((tc) => tc.status === 'error') ?? false;
+          this.deps.onWorkerDone(msg.content, isError);
+        }
         break;
 
       case 'context_compacted': {
