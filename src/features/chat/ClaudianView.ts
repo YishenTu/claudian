@@ -614,6 +614,26 @@ export class ClaudianView extends ItemView {
     // View scopes are the Obsidian-owned boundary for main-area tab hotkeys.
     // Returning false consumes Escape before Obsidian uses it for pane navigation.
     this.scope = new Scope(this.app.scope);
+    this.scope.register(['Meta'], 'Enter', (e: KeyboardEvent) => {
+      if (
+        e.isComposing
+        || e.defaultPrevented
+        || e.shiftKey
+        || e.altKey
+        || this.plugin.settings.requireCommandOrControlEnterToSend !== true
+      ) {
+        return;
+      }
+
+      const activeTab = this.tabManager?.getActiveTab();
+      if (!activeTab || activeDocument.activeElement !== activeTab.dom.inputEl) {
+        return;
+      }
+
+      e.preventDefault();
+      void activeTab.controllers.inputController?.sendMessage();
+      return false;
+    });
     this.scope.register([], 'Escape', (e: KeyboardEvent) => {
       if (e.isComposing) return;
       if (!e.defaultPrevented) {

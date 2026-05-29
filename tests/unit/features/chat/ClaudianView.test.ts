@@ -82,6 +82,9 @@ describe('ClaudianView Escape handling', () => {
     view.registerEvent = jest.fn();
     view.eventRefs = eventRefs;
     view.plugin = {
+      settings: {
+        requireCommandOrControlEnterToSend: false,
+      },
       app: {
         vault: {
           on: jest.fn((_event: string, handler: unknown) => {
@@ -126,6 +129,7 @@ describe('ClaudianView Escape handling', () => {
 
     expect(view.scope).toBeInstanceOf(Scope);
     expect(view.scope.parent).toBe(view.app.scope);
+    expect(view.scope.register).toHaveBeenCalledWith(['Meta'], 'Enter', expect.any(Function));
     expect(view.scope.register).toHaveBeenCalledWith([], 'Escape', expect.any(Function));
     expect(view.registerDomEvent).not.toHaveBeenCalledWith(
       expect.anything(),
@@ -170,5 +174,87 @@ describe('ClaudianView Escape handling', () => {
 
     expect(cancelStreaming).not.toHaveBeenCalled();
     expect(result).toBe(false);
+  });
+
+  it('sends from scoped Meta+Enter when the send shortcut setting is enabled and input is focused', () => {
+    const { view } = createEscapeHarness({ isStreaming: false });
+    const inputEl = createMockEl('textarea');
+    const sendMessage = jest.fn();
+    view.plugin.settings.requireCommandOrControlEnterToSend = true;
+    view.tabManager.getActiveTab.mockReturnValue({
+      state: { isStreaming: false },
+      dom: { inputEl },
+      controllers: {
+        inputController: { sendMessage },
+      },
+      ui: {
+        fileContextManager: {
+          markFileCacheDirty: jest.fn(),
+          markFolderCacheDirty: jest.fn(),
+          handleFileOpen: jest.fn(),
+          handleClickOutside: jest.fn(),
+        },
+      },
+    });
+    Object.defineProperty(view.containerEl.ownerDocument, 'activeElement', {
+      configurable: true,
+      value: inputEl,
+    });
+
+    view.wireEventHandlers();
+    const metaEnterHandler = view.scope.handlers.find((handler: any) => handler.key === 'Enter');
+    const event = {
+      isComposing: false,
+      defaultPrevented: false,
+      shiftKey: false,
+      altKey: false,
+      preventDefault: jest.fn(),
+    } as unknown as KeyboardEvent;
+    const result = metaEnterHandler.func(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(result).toBe(false);
+  });
+
+  it('does not send scoped Meta+Enter when the input is not focused', () => {
+    const { view } = createEscapeHarness({ isStreaming: false });
+    const inputEl = createMockEl('textarea');
+    const sendMessage = jest.fn();
+    view.plugin.settings.requireCommandOrControlEnterToSend = true;
+    view.tabManager.getActiveTab.mockReturnValue({
+      state: { isStreaming: false },
+      dom: { inputEl },
+      controllers: {
+        inputController: { sendMessage },
+      },
+      ui: {
+        fileContextManager: {
+          markFileCacheDirty: jest.fn(),
+          markFolderCacheDirty: jest.fn(),
+          handleFileOpen: jest.fn(),
+          handleClickOutside: jest.fn(),
+        },
+      },
+    });
+    Object.defineProperty(view.containerEl.ownerDocument, 'activeElement', {
+      configurable: true,
+      value: createMockEl('button'),
+    });
+
+    view.wireEventHandlers();
+    const metaEnterHandler = view.scope.handlers.find((handler: any) => handler.key === 'Enter');
+    const event = {
+      isComposing: false,
+      defaultPrevented: false,
+      shiftKey: false,
+      altKey: false,
+      preventDefault: jest.fn(),
+    } as unknown as KeyboardEvent;
+    const result = metaEnterHandler.func(event);
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(result).toBeUndefined();
   });
 });

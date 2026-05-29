@@ -1,5 +1,5 @@
 import type { Component } from 'obsidian';
-import { Notice, Platform } from 'obsidian';
+import { Notice } from 'obsidian';
 
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
@@ -182,11 +182,7 @@ function shouldSendMessageFromEnterKey(
     return true;
   }
 
-  if (Platform.isMacOS) {
-    return e.metaKey === true && !e.ctrlKey && !e.altKey;
-  }
-
-  return e.ctrlKey === true && !e.metaKey && !e.altKey;
+  return (e.metaKey === true || e.ctrlKey === true) && !e.altKey;
 }
 
 type ProviderCatalogInfo = {
