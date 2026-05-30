@@ -126,6 +126,42 @@ describe('PiChatRuntime', () => {
     expect(runtime.prepareTurn({ text: ' /compact' }).isCompact).toBe(false);
   });
 
+  it('yields error and done without spawning when Pi is disabled', async () => {
+    const plugin = createPlugin();
+    plugin.settings.providerConfigs.pi.enabled = false;
+    const runtime = new PiChatRuntime(plugin);
+
+    const chunks: unknown[] = [];
+    for await (const chunk of runtime.query(createTurn(runtime))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      { type: 'error', content: 'Failed to start Pi. Check the CLI path and login state.' },
+      { type: 'done' },
+    ]);
+    expect(mockSubprocessInstances).toHaveLength(0);
+  });
+
+  it('sends native compact requests and yields a context boundary', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    const chunks: unknown[] = [];
+
+    for await (const chunk of runtime.query(runtime.prepareTurn({
+      text: '/compact keep decisions',
+    }))) {
+      chunks.push(chunk);
+    }
+
+    expect(mockTransportInstances[0].request).toHaveBeenCalledWith('compact', {
+      customInstructions: 'keep decisions',
+    });
+    expect(chunks).toEqual([
+      { type: 'context_compacted' },
+      { type: 'done' },
+    ]);
+  });
+
   it('yields a terminal error and done when the Pi process closes mid-turn', async () => {
     const runtime = new PiChatRuntime(createPlugin());
     const iterator = runtime.query(createTurn(runtime));
@@ -253,12 +289,58 @@ describe('PiChatRuntime', () => {
 
     expect(steerAccepted).toBe(true);
     expect(mockTransportInstances[0].request).toHaveBeenCalledWith('steer', {
-      images: [],
       message: 'Follow up',
     });
     await expect(iterator.next()).resolves.toEqual({
       done: false,
       value: { type: 'user_message_start', content: 'Follow up' },
+    });
+
+    mockTransportInstances[0].eventHandlers[0]({ type: 'agent_end' });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: 'done' },
+    });
+  });
+
+  it('maps steer images and filters empty image data', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    const iterator = runtime.query(createTurn(runtime));
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: 'user_message_start', content: 'Hello Pi' },
+    });
+
+    await expect(runtime.steer(runtime.prepareTurn({
+      images: [
+        {
+          data: 'base64-image',
+          id: 'image-1',
+          mediaType: 'image/png',
+          name: 'image.png',
+          size: 12,
+          source: 'paste',
+        },
+        {
+          data: '',
+          id: 'image-2',
+          mediaType: 'image/jpeg',
+          name: 'empty.jpg',
+          size: 0,
+          source: 'paste',
+        },
+      ],
+      text: 'Follow up with image',
+    } as any))).resolves.toBe(true);
+
+    expect(mockTransportInstances[0].request).toHaveBeenCalledWith('steer', {
+      images: [{ data: 'base64-image', mimeType: 'image/png', type: 'image' }],
+      message: 'Follow up with image',
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: 'user_message_start', content: 'Follow up with image' },
     });
 
     mockTransportInstances[0].eventHandlers[0]({ type: 'agent_end' });
@@ -315,6 +397,37 @@ describe('PiChatRuntime', () => {
     mockTransportInstances[0].eventHandlers[0]({ type: 'agent_end' });
     await promise;
     expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
+  });
+
+  it('does not restart after a live Pi runtime reports a newly created session id', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+
+    const runQuery = async (): Promise<void> => {
+      const chunks: unknown[] = [];
+      const promise = (async () => {
+        for await (const chunk of runtime.query(createTurn(runtime))) {
+          chunks.push(chunk);
+        }
+      })();
+      await flushPromises();
+      (mockTransportInstances[0].request as jest.Mock).mockImplementation(async (type: string) => {
+        if (type === 'get_state') {
+          return { sessionId: 'live-session' };
+        }
+        if (type === 'get_session_stats') {
+          return {};
+        }
+        return {};
+      });
+      mockTransportInstances[0].eventHandlers[0]({ type: 'agent_end' });
+      await promise;
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
+    };
+
+    await runQuery();
+    await runQuery();
+
+    expect(mockSubprocessInstances).toHaveLength(1);
   });
 
   it('clamps stale effort selections to the selected Pi model thinking levels', async () => {
@@ -424,6 +537,64 @@ describe('PiChatRuntime', () => {
       ['set_thinking_level', { level: 'medium' }],
       ['set_thinking_level', { level: 'medium' }],
     ]);
+  });
+
+  it('switches warm runtimes by absolute session file without restarting Pi', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+
+    runtime.syncConversationState({
+      providerState: { sessionFile: '/tmp/pi-session-a.jsonl' },
+      sessionId: null,
+    });
+    await runtime.ensureReady();
+
+    runtime.syncConversationState({
+      providerState: { sessionFile: '/tmp/pi-session-b.jsonl' },
+      sessionId: null,
+    });
+    await runtime.ensureReady();
+
+    expect(mockSubprocessInstances).toHaveLength(1);
+    expect(mockTransportInstances[0].request).toHaveBeenCalledWith('switch_session', {
+      sessionPath: '/tmp/pi-session-b.jsonl',
+    });
+  });
+
+  it('restarts instead of calling switch_session for bare saved session ids', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+
+    runtime.syncConversationState({
+      providerState: {},
+      sessionId: 'session-a',
+    });
+    await runtime.ensureReady();
+
+    runtime.syncConversationState({
+      providerState: {},
+      sessionId: 'session-b',
+    });
+    await runtime.ensureReady();
+
+    expect(mockSubprocessInstances).toHaveLength(2);
+    expect(mockTransportInstances[0].request).not.toHaveBeenCalledWith(
+      'switch_session',
+      expect.anything(),
+    );
+  });
+
+  it('restarts when a previously bound Pi session target is cleared', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+
+    runtime.syncConversationState({
+      providerState: { sessionFile: '/tmp/pi-session-a.jsonl' },
+      sessionId: null,
+    });
+    await runtime.ensureReady();
+
+    runtime.syncConversationState(null);
+    await runtime.ensureReady();
+
+    expect(mockSubprocessInstances).toHaveLength(2);
   });
 
   it('does not persist stale session file state after a reset starts a new Pi session', () => {

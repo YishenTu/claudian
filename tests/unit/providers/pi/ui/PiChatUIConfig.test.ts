@@ -60,6 +60,9 @@ describe('PiChatUIConfig', () => {
     expect(piChatUIConfig.getModelOptions({ providerConfigs: { pi: {} } })).toEqual([
       { value: 'pi', label: 'Pi', description: 'Configure models in settings' },
     ]);
+    expect(piChatUIConfig.ownsModel('pi', { providerConfigs: { pi: {} } })).toBe(true);
+    expect(piChatUIConfig.ownsModel('pi:anthropic/claude-sonnet-4', { providerConfigs: { pi: {} } })).toBe(true);
+    expect(piChatUIConfig.ownsModel('pi:invalid', { providerConfigs: { pi: {} } })).toBe(false);
     expect(piChatUIConfig.getReasoningOptions('pi', { providerConfigs: { pi: {} } })).toEqual([
       { label: 'Off', value: 'off' },
     ]);
@@ -74,6 +77,38 @@ describe('PiChatUIConfig', () => {
       { label: 'High', value: 'high' },
     ]);
     expect(piChatUIConfig.getDefaultReasoningValue('pi:anthropic/claude-sonnet-4', settings)).toBe('high');
+  });
+
+  it('resolves context windows from cached Pi model metadata before falling back', () => {
+    const contextSettings: Record<string, unknown> = {
+      providerConfigs: {
+        pi: {
+          discoveredModels: [{
+            contextWindow: 1_000_000,
+            encodedId: 'pi:anthropic/claude-sonnet-4',
+            id: 'claude-sonnet-4',
+            input: ['text'],
+            label: 'Claude Sonnet 4',
+            provider: 'anthropic',
+            reasoning: true,
+            thinkingLevels: ['off', 'medium', 'high'],
+          }],
+          visibleModels: ['pi:anthropic/claude-sonnet-4'],
+        },
+      },
+    };
+
+    expect(piChatUIConfig.getContextWindowSize(
+      'pi:anthropic/claude-sonnet-4',
+      { 'pi:anthropic/claude-sonnet-4': 123_000 },
+      contextSettings,
+    )).toBe(1_000_000);
+    expect(piChatUIConfig.getContextWindowSize(
+      'pi:missing/model',
+      { 'pi:missing/model': 123_000 },
+      contextSettings,
+    )).toBe(123_000);
+    expect(piChatUIConfig.getContextWindowSize('pi:missing/model', undefined, contextSettings)).toBe(200_000);
   });
 
   it('keeps decoded models on Pi effort controls when discovery metadata is stale', () => {

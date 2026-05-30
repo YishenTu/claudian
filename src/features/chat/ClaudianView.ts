@@ -111,6 +111,7 @@ export class ClaudianView extends ItemView {
       const contextWindow = uiConfig.getContextWindowSize(
         model,
         providerSettings.customContextLimits,
+        providerSettings,
       );
 
       if (tab.state.usage) {

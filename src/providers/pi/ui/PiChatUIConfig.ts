@@ -90,7 +90,7 @@ export const piChatUIConfig: ProviderChatUIConfig = {
   },
 
   ownsModel(model: string): boolean {
-    return isPiModelSelectionId(model);
+    return model === PI_SYNTHETIC_MODEL_ID || decodePiModelId(model) !== null;
   },
 
   isAdaptiveReasoningModel(model: string, settings: Record<string, unknown>): boolean {
@@ -125,8 +125,15 @@ export const piChatUIConfig: ProviderChatUIConfig = {
     );
   },
 
-  getContextWindowSize(model: string, customLimits?: Record<string, number>): number {
-    return customLimits?.[model] ?? DEFAULT_CONTEXT_WINDOW;
+  getContextWindowSize(
+    model: string,
+    customLimits?: Record<string, number>,
+    settings?: Record<string, unknown>,
+  ): number {
+    const metadataContextWindow = settings
+      ? getCachedModel(model, settings)?.contextWindow
+      : undefined;
+    return metadataContextWindow ?? customLimits?.[model] ?? DEFAULT_CONTEXT_WINDOW;
   },
 
   isDefaultModel(model: string): boolean {

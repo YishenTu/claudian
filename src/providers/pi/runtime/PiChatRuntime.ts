@@ -1,3 +1,5 @@
+import * as path from 'node:path';
+
 import {
   buildSystemPrompt,
   computeSystemPromptKey,
@@ -119,6 +121,7 @@ export class PiChatRuntime implements ChatRuntime {
   private activeTurn: ActiveTurn | null = null;
   private currentLaunchKey: string | null = null;
   private currentModel: string | null = null;
+  private currentSessionTarget: string | null = null;
   private currentThinkingLevel: string | null = null;
   private currentTurnMetadata: ChatTurnMetadata = {};
   private extensionBridge: PiExtensionUiBridge | null = null;
@@ -194,37 +197,51 @@ export class PiChatRuntime implements ChatRuntime {
     const resolvedCliPath = this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
     const runtimeEnvText = getRuntimeEnvironmentText(this.plugin.settings as unknown as Record<string, unknown>, 'pi');
     const promptSettings = this.getSystemPromptSettings(cwd);
+    const systemPrompt = buildSystemPrompt(promptSettings);
+    const noSession = !allowSessionCreation && !hasSessionTarget;
     const launchSpec = buildPiLaunchSpec({
       command: resolvedCliPath,
       cwd,
       env: this.buildRuntimeEnv(runtimeEnvText),
       envText: runtimeEnvText,
-      noSession: !allowSessionCreation && !hasSessionTarget,
+      noSession,
       providerState: this.getCurrentProviderState(),
       settings,
-      systemPrompt: buildSystemPrompt(promptSettings),
+      systemPrompt,
     });
+    const sessionTarget = this.sessionFile ?? this.sessionId ?? null;
     const nextLaunchKey = JSON.stringify({
-      launchKey: launchSpec.launchKey,
+      command: resolvedCliPath,
+      cwd,
+      envText: runtimeEnvText,
+      noSession,
       promptKey: computeSystemPromptKey(promptSettings),
+      systemPrompt,
       toolMode: settings.toolMode,
     });
+    const sessionTargetChanged = sessionTarget !== this.currentSessionTarget;
+    const canSwitchSessionTarget = sessionTargetChanged && this.isSwitchableSessionFile(this.sessionFile);
+    const unSwitchableSessionTargetChanged = sessionTargetChanged && !canSwitchSessionTarget;
 
     const shouldRestart = !this.process
       || !this.transport
       || !this.process.isAlive()
       || this.transport.isClosed
       || options?.force === true
-      || this.currentLaunchKey !== nextLaunchKey;
+      || this.currentLaunchKey !== nextLaunchKey
+      || unSwitchableSessionTargetChanged;
 
     if (shouldRestart) {
       await this.shutdownProcess();
       await this.startProcess(launchSpec);
       this.currentLaunchKey = nextLaunchKey;
+      this.currentSessionTarget = sessionTarget;
+    } else if (canSwitchSessionTarget && this.sessionFile) {
+      await this.switchSession(this.sessionFile, launchSpec, nextLaunchKey);
     }
 
     if (allowSessionCreation || hasSessionTarget) {
-      await this.refreshState().catch(() => {});
+      await this.refreshStateAndSessionTarget();
     }
     this.setReady(true);
     return true;
@@ -294,8 +311,9 @@ export class PiChatRuntime implements ChatRuntime {
     }
 
     try {
+      const images = buildPiPromptImages(turn.request.images);
       await this.transport.request('steer', {
-        images: buildPiPromptImages(turn.request.images),
+        ...(images.length > 0 ? { images } : {}),
         message: buildPiPromptText(turn.request),
       });
       this.activeTurn?.queue.push({
@@ -317,9 +335,13 @@ export class PiChatRuntime implements ChatRuntime {
     this.sessionId = null;
     this.sessionFile = null;
     this.leafEntryId = null;
+    this.currentSessionTarget = null;
     if (this.transport && !this.transport.isClosed) {
       void this.transport.request('new_session')
-        .then((response) => this.applyStateResponse(response))
+        .then((response) => {
+          this.applyStateResponse(response);
+          this.currentSessionTarget = this.sessionFile ?? this.sessionId ?? null;
+        })
         .catch(() => {});
     }
   }
@@ -486,7 +508,7 @@ export class PiChatRuntime implements ChatRuntime {
         await activeTurn.terminalPromise;
       }
 
-      await this.refreshState().catch(() => {});
+      await this.refreshStateAndSessionTarget();
       const usage = await this.fetchUsage(queryOptions).catch(() => null);
       if (usage) {
         activeTurn.queue.push({ sessionId: this.sessionId, type: 'usage', usage });
@@ -554,6 +576,7 @@ export class PiChatRuntime implements ChatRuntime {
     const process = this.process;
     this.process = null;
     this.currentModel = null;
+    this.currentSessionTarget = null;
     this.currentThinkingLevel = null;
     if (process) {
       await process.shutdown().catch(() => {});
@@ -638,6 +661,15 @@ export class PiChatRuntime implements ChatRuntime {
     this.applyStateResponse(response);
   }
 
+  private async refreshStateAndSessionTarget(): Promise<void> {
+    try {
+      await this.refreshState();
+      this.currentSessionTarget = this.sessionFile ?? this.sessionId ?? null;
+    } catch {
+      // State refresh is opportunistic; the next turn can still proceed.
+    }
+  }
+
   private applyStateResponse(response: unknown): void {
     const state = extractStateRecord(response);
     this.sessionId = getString(state.sessionId)
@@ -660,8 +692,13 @@ export class PiChatRuntime implements ChatRuntime {
       return null;
     }
 
+    const providerSettings = this.getProviderSettings();
+    const selectedModel = this.resolveSelectedModel(providerSettings, queryOptions);
+    const fallbackContextWindow = selectedModel
+      ? findPiModel(getPiProviderSettings(providerSettings), selectedModel)?.contextWindow
+      : undefined;
     const response = await this.transport.request('get_session_stats', {}, 10_000);
-    return buildPiUsageInfo(response, this.resolveSelectedModel(this.getProviderSettings(), queryOptions));
+    return buildPiUsageInfo(response, selectedModel, fallbackContextWindow);
   }
 
   private getSystemPromptSettings(vaultPath: string): SystemPromptSettings {
@@ -748,6 +785,30 @@ export class PiChatRuntime implements ChatRuntime {
     const message = error instanceof Error ? error.message : 'Pi request failed';
     const stderr = this.process?.getStderrSnapshot();
     return stderr ? `${message}\n\n${stderr}` : message;
+  }
+
+  private isSwitchableSessionFile(sessionFile: string | null): sessionFile is string {
+    return typeof sessionFile === 'string'
+      && sessionFile.trim().length > 0
+      && path.isAbsolute(sessionFile);
+  }
+
+  private async switchSession(
+    sessionFile: string,
+    launchSpec: PiLaunchSpec,
+    nextLaunchKey: string,
+  ): Promise<void> {
+    try {
+      await this.transport!.request('switch_session', { sessionPath: sessionFile });
+      this.currentLaunchKey = nextLaunchKey;
+      this.currentSessionTarget = sessionFile;
+      this.sessionInvalidated = false;
+    } catch {
+      await this.shutdownProcess();
+      await this.startProcess(launchSpec);
+      this.currentLaunchKey = nextLaunchKey;
+      this.currentSessionTarget = this.sessionFile ?? this.sessionId ?? null;
+    }
   }
 }
 

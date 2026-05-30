@@ -8,12 +8,13 @@ describe('PiJsonl', () => {
     const lines: string[] = [];
     subscribePiJsonlLines(stream, line => lines.push(line));
     const separator = String.fromCharCode(0x2028);
+    const paragraphSeparator = String.fromCharCode(0x2029);
 
-    stream.write(`{"a":1}\r\n{"b":"line${separator}separator"}\n`);
+    stream.write(`{"a":1}\r\n{"b":"line${separator}separator${paragraphSeparator}still same record"}\n`);
 
     expect(lines).toEqual([
       '{"a":1}',
-      `{"b":"line${separator}separator"}`,
+      `{"b":"line${separator}separator${paragraphSeparator}still same record"}`,
     ]);
   });
 

@@ -17,6 +17,10 @@ function createTransport() {
 }
 
 describe('PiRpcTransport', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('writes command requests with string ids', async () => {
     const { input, transport, writes } = createTransport();
     const promise = transport.request('get_state', { foo: 'bar' });
@@ -74,6 +78,16 @@ describe('PiRpcTransport', () => {
     expect(events).toEqual([{ type: 'message_update', delta: 'hi' }]);
   });
 
+  it('ignores malformed JSON records without failing pending requests', async () => {
+    const { input, transport } = createTransport();
+    const promise = transport.request('prompt');
+
+    input.write('not-json\n');
+    input.write('{"type":"response","id":"req_1","success":true,"result":{"accepted":true}}\n');
+
+    await expect(promise).resolves.toEqual({ accepted: true });
+  });
+
   it('rejects failed responses and pending requests on dispose', async () => {
     const { input, transport } = createTransport();
     const failed = transport.request('prompt');
@@ -84,5 +98,19 @@ describe('PiRpcTransport', () => {
     const pending = transport.request('prompt');
     transport.dispose();
     await expect(pending).rejects.toBeInstanceOf(PiRpcTransportClosedError);
+  });
+
+  it('rejects timed-out requests and removes them from the pending set', async () => {
+    jest.useFakeTimers();
+    const { input, transport } = createTransport();
+    const timedOut = transport.request('prompt', {}, 100);
+
+    jest.advanceTimersByTime(100);
+    await expect(timedOut).rejects.toThrow('Request timeout: prompt');
+
+    input.write('{"type":"response","id":"req_1","success":true,"result":"late"}\n');
+    const next = transport.request('get_state', {}, 100);
+    input.write('{"type":"response","id":"req_2","success":true,"result":{"ok":true}}\n');
+    await expect(next).resolves.toEqual({ ok: true });
   });
 });

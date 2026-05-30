@@ -1,12 +1,16 @@
 import type { UsageInfo } from '../../../core/types';
 
-export function buildPiUsageInfo(response: unknown, model: string | null): UsageInfo | null {
+export function buildPiUsageInfo(
+  response: unknown,
+  model: string | null,
+  fallbackContextWindow = 200_000,
+): UsageInfo | null {
   const stats = getRecord(response);
   const contextUsage = getRecord(stats.contextUsage ?? stats.context_usage ?? stats);
-  const contextWindow = getNumber(contextUsage.contextWindow)
+  const providerContextWindow = getNumber(contextUsage.contextWindow)
     ?? getNumber(contextUsage.context_window)
-    ?? getNumber(contextUsage.window)
-    ?? 200_000;
+    ?? getNumber(contextUsage.window);
+  const contextWindow = providerContextWindow ?? fallbackContextWindow;
   const contextTokens = getNumber(contextUsage.contextTokens)
     ?? getNumber(contextUsage.context_tokens)
     ?? getNumber(contextUsage.tokens)
@@ -29,7 +33,7 @@ export function buildPiUsageInfo(response: unknown, model: string | null): Usage
       ?? 0,
     contextTokens,
     contextWindow,
-    contextWindowIsAuthoritative: true,
+    contextWindowIsAuthoritative: providerContextWindow !== null,
     inputTokens,
     ...(model ? { model } : {}),
     percentage: normalizePiUsagePercentage(

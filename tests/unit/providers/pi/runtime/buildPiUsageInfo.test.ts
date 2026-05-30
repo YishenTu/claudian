@@ -51,4 +51,19 @@ describe('buildPiUsageInfo', () => {
 
     expect(usage?.percentage).toBe(6);
   });
+
+  it('uses a fallback context window without marking it provider-authoritative', () => {
+    const usage = buildPiUsageInfo({
+      contextUsage: {
+        contextTokens: 50_000,
+        inputTokens: 1200,
+      },
+    }, 'pi:anthropic/claude-sonnet-4', 1_000_000);
+
+    expect(usage).toMatchObject({
+      contextWindow: 1_000_000,
+      contextWindowIsAuthoritative: false,
+      percentage: 5,
+    });
+  });
 });
