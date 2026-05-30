@@ -33,6 +33,10 @@ import {
   getOpencodeProviderSettings,
   updateOpencodeProviderSettings,
 } from '../../providers/opencode/settings';
+import {
+  getPiProviderSettings,
+  updatePiProviderSettings,
+} from '../../providers/pi/settings';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './defaultSettings';
 
 export {
@@ -132,6 +136,7 @@ const HOST_SCOPED_PROVIDER_CONFIG_FIELDS: Record<string, string[]> = {
   claude: ['cliPathsByHost'],
   codex: ['cliPathsByHost', 'installationMethodsByHost', 'wslDistroOverridesByHost'],
   opencode: ['cliPathsByHost'],
+  pi: ['cliPathsByHost'],
 };
 
 function hasHostScopedProviderConfigNormalization(
@@ -323,6 +328,10 @@ export class ClaudianSettingsStorage {
     updateOpencodeProviderSettings(
       merged,
       getOpencodeProviderSettings(legacyProviderSettings),
+    );
+    updatePiProviderSettings(
+      merged,
+      getPiProviderSettings(legacyProviderSettings),
     );
     const didNormalizeHostScopedProviderConfigs = hasHostScopedProviderConfigNormalization(
       providerConfigs,

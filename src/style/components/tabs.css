@@ -52,6 +52,10 @@
   border-color: var(--claudian-brand-opencode, #C8C8C8);
 }
 
+.claudian-tab-badge-streaming[data-provider="pi"] {
+  border-color: var(--claudian-brand-pi, #ffffff);
+}
+
 .claudian-tab-badge-attention {
   border-color: var(--text-error);
 }

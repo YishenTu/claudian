@@ -25,6 +25,34 @@ describe('extractDiffData', () => {
     expect(result!.stats).toEqual({ added: 1, removed: 1 });
   });
 
+  it('returns ToolDiffData from Pi result details.diff', () => {
+    const toolCall = makeToolCall('Edit', { file_path: 'src/pi.ts' });
+    const toolUseResult = {
+      content: [{ text: 'Edited src/pi.ts', type: 'text' }],
+      details: {
+        diff: [
+          '--- a/src/pi.ts',
+          '+++ b/src/pi.ts',
+          '@@ -2,2 +2,2 @@',
+          ' keep',
+          '-old',
+          '+new',
+        ].join('\n'),
+      },
+    };
+
+    const result = extractDiffData(toolUseResult, toolCall);
+
+    expect(result).toBeDefined();
+    expect(result!.filePath).toBe('src/pi.ts');
+    expect(result!.diffLines).toEqual([
+      { type: 'equal', text: 'keep', oldLineNum: 2, newLineNum: 2 },
+      { type: 'delete', text: 'old', oldLineNum: 3 },
+      { type: 'insert', text: 'new', newLineNum: 3 },
+    ]);
+    expect(result!.stats).toEqual({ added: 1, removed: 1 });
+  });
+
   it('uses SDK filePath when present in toolUseResult', () => {
     const toolCall = makeToolCall('Write', { file_path: 'input/path.ts' });
     const toolUseResult = {
@@ -121,6 +149,49 @@ describe('diffFromToolInput', () => {
     expect(result!.diffLines.filter(l => l.type === 'delete')).toHaveLength(2);
     expect(result!.diffLines.filter(l => l.type === 'insert')).toHaveLength(3);
     expect(result!.stats).toEqual({ added: 3, removed: 2 });
+  });
+
+  it('returns delete + insert lines for Pi Edit edits array', () => {
+    const toolCall = makeToolCall('Edit', {
+      file_path: 'src/pi.ts',
+      edits: [
+        { oldText: 'one\ntwo', newText: 'uno\ndos' },
+        { oldText: 'three', newText: 'tres' },
+      ],
+    });
+
+    const result = diffFromToolInput(toolCall, 'src/pi.ts');
+
+    expect(result).toBeDefined();
+    expect(result!.filePath).toBe('src/pi.ts');
+    expect(result!.diffLines.filter(l => l.type === 'delete').map(l => l.text)).toEqual(['one', 'two', 'three']);
+    expect(result!.diffLines.filter(l => l.type === 'insert').map(l => l.text)).toEqual(['uno', 'dos', 'tres']);
+    expect(result!.stats).toEqual({ added: 3, removed: 3 });
+  });
+
+  it('uses path as the fallback file path for Pi Write input', () => {
+    const toolCall = makeToolCall('Write', {
+      path: 'src/pi-new.ts',
+      content: 'created',
+    });
+
+    const result = extractDiffData(undefined, toolCall);
+
+    expect(result).toBeDefined();
+    expect(result!.filePath).toBe('src/pi-new.ts');
+  });
+
+  it('ignores non-string file_path values when a Pi path fallback is available', () => {
+    const toolCall = makeToolCall('Write', {
+      file_path: 123,
+      path: 'src/pi-new.ts',
+      content: 'created',
+    });
+
+    const result = extractDiffData(undefined, toolCall);
+
+    expect(result).toBeDefined();
+    expect(result!.filePath).toBe('src/pi-new.ts');
   });
 
   it('returns all insert lines for Write with valid content', () => {

@@ -8,6 +8,8 @@
   --claudian-brand-codex-rgb: 208, 208, 208;
   --claudian-brand-opencode: #B8B8B8;
   --claudian-brand-opencode-rgb: 184, 184, 184;
+  --claudian-brand-pi: #ffffff;
+  --claudian-brand-pi-rgb: 255, 255, 255;
   --claudian-error: #dc3545;
   --claudian-error-rgb: 220, 53, 69;
   --claudian-compact: #5bc0de;
@@ -18,6 +20,8 @@ body.theme-light .claudian-container {
   --claudian-brand-codex-rgb: 0, 0, 0;
   --claudian-brand-opencode: #707070;
   --claudian-brand-opencode-rgb: 112, 112, 112;
+  --claudian-brand-pi: #000000;
+  --claudian-brand-pi-rgb: 0, 0, 0;
 }
 
 /* Active-provider alias for single-provider surfaces. */
@@ -34,4 +38,9 @@ body.theme-light .claudian-container {
 .claudian-container[data-provider="opencode"] {
   --claudian-brand: var(--claudian-brand-opencode);
   --claudian-brand-rgb: var(--claudian-brand-opencode-rgb);
+}
+
+.claudian-container[data-provider="pi"] {
+  --claudian-brand: var(--claudian-brand-pi);
+  --claudian-brand-rgb: var(--claudian-brand-pi-rgb);
 }
