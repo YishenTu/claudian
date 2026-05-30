@@ -13,6 +13,7 @@ import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
+import { getBlankTabModelOptions } from '../chat/tabs/Tab';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { renderEnvironmentSettingsSection } from './ui/EnvironmentSettingsSection';
 
@@ -175,8 +176,26 @@ export class ClaudianSettingTab extends PluginSettingTab {
             view.refreshModelSelector();
           }
         },
+        refreshSettingsDisplay: () => this.display(),
+        reconcileDefaultModelSelection: () => this.reconcileDefaultModelSelection(),
         renderCustomContextLimits: (target, providerId) => this.renderCustomContextLimits(target, providerId),
       });
+    }
+  }
+
+  private reconcileDefaultModelSelection(): void {
+    const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
+    const selection = typeof settingsBag.defaultModelSelection === 'string'
+      ? settingsBag.defaultModelSelection
+      : 'last-used';
+    if (!selection || selection === 'last-used') {
+      return;
+    }
+
+    const isAvailable = getBlankTabModelOptions(settingsBag)
+      .some(model => model.value === selection);
+    if (!isAvailable) {
+      this.plugin.settings.defaultModelSelection = 'last-used';
     }
   }
 
@@ -296,6 +315,33 @@ export class ClaudianSettingTab extends PluginSettingTab {
     // --- Conversations ---
 
     new Setting(container).setName(t('settings.conversations')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.defaultModel.name'))
+      .setDesc(t('settings.defaultModel.desc'))
+      .addDropdown((dropdown) => {
+        dropdown.addOption('last-used', t('settings.defaultModel.lastUsed'));
+
+        const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
+        const availableModels = getBlankTabModelOptions(settingsBag);
+        for (const model of availableModels) {
+          dropdown.addOption(model.value, model.group ? `${model.group} / ${model.label}` : model.label);
+        }
+
+        const current = typeof this.plugin.settings.defaultModelSelection === 'string'
+          ? this.plugin.settings.defaultModelSelection
+          : 'last-used';
+        const selected = current === 'last-used' || availableModels.some(model => model.value === current)
+          ? current
+          : 'last-used';
+
+        dropdown
+          .setValue(selected)
+          .onChange(async (value) => {
+            this.plugin.settings.defaultModelSelection = value || 'last-used';
+            await this.plugin.saveSettings();
+          });
+      });
 
     new Setting(container)
       .setName(t('settings.autoTitle.name'))

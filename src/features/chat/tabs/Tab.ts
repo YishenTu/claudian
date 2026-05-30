@@ -79,6 +79,19 @@ export function getBlankTabModelOptions(
   });
 }
 
+function resolveFixedDefaultModel(settings: Record<string, unknown>): string | null {
+  const selection = typeof settings.defaultModelSelection === 'string'
+    ? settings.defaultModelSelection
+    : 'last-used';
+  if (!selection || selection === 'last-used') {
+    return null;
+  }
+
+  return getBlankTabModelOptions(settings).some(option => option.value === selection)
+    ? selection
+    : null;
+}
+
 /**
  * Resolves the draft model for a new blank tab by projecting provider-specific
  * saved settings. Without this, `plugin.settings.model` reflects only the
@@ -89,13 +102,19 @@ function resolveBlankTabModel(
   providerId?: ProviderId,
 ): string {
   const settings = plugin.settings as unknown as Record<string, unknown>;
+  const fixedDefaultModel = resolveFixedDefaultModel(settings);
+  if (fixedDefaultModel) {
+    return fixedDefaultModel;
+  }
+
   if (!providerId) {
     return settings.model as string;
   }
 
-  const targetProviderId = ProviderRegistry.isEnabled(providerId, settings)
+  const enabledProviderIds = ProviderRegistry.getEnabledProviderIds(settings);
+  const targetProviderId = enabledProviderIds.includes(providerId)
     ? providerId
-    : ProviderRegistry.resolveSettingsProviderId(settings);
+    : (enabledProviderIds[0] ?? ProviderRegistry.resolveSettingsProviderId(settings));
   const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, targetProviderId);
   return snapshot.model as string;
 }

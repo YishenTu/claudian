@@ -1,6 +1,7 @@
 import * as fs from 'fs';
-import { Setting } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
@@ -46,6 +47,26 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     // --- Setup ---
 
     new Setting(container).setName(t('settings.setup')).setHeading();
+
+    new Setting(container)
+      .setName('Enable Claude')
+      .setDesc('When enabled, Claude models appear in the model selector for new conversations. Existing Claude sessions are preserved.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(claudeSettings.enabled)
+          .onChange(async (value) => {
+            if (!value && ProviderRegistry.getEnabledProviderIds(settingsBag).length <= 1) {
+              new Notice('At least one provider must stay enabled.');
+              toggle.setValue(true);
+              return;
+            }
+            updateClaudeProviderSettings(settingsBag, { enabled: value });
+            context.reconcileDefaultModelSelection?.();
+            await context.plugin.saveSettings();
+            context.refreshModelSelectors();
+            context.refreshSettingsDisplay?.();
+          })
+      );
 
     const hostnameKey = getHostnameKey();
     const platformDesc = process.platform === 'win32'

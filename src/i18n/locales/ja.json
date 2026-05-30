@@ -108,6 +108,11 @@
       "desc": "会話タイトルを自動生成するために使用されるモデル。",
       "auto": "自動 (Haiku)"
     },
+    "defaultModel": {
+      "name": "新しい会話のデフォルトモデル",
+      "desc": "新しい空の会話を作成するときに使用するモデルを選択します。",
+      "lastUsed": "最後に使用したモデル"
+    },
     "navMappings": {
       "name": "Vimスタイルナビゲーションマッピング",
       "desc": "1行に1つのマッピング。形式：\"map <キー> <アクション>\"（アクション：scrollUp, scrollDown, focusInput）。"

@@ -108,6 +108,11 @@
       "desc": "Model used for auto-generating conversation titles.",
       "auto": "Auto (Haiku)"
     },
+    "defaultModel": {
+      "name": "Default model for new conversations",
+      "desc": "Choose the model used when a new blank conversation is created.",
+      "lastUsed": "Last used model"
+    },
     "navMappings": {
       "name": "Vim-style navigation mappings",
       "desc": "One mapping per line. Format: \"map <key> <action>\" (actions: scrollUp, scrollDown, focusInput)."

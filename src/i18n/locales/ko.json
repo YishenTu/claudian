@@ -108,6 +108,11 @@
       "desc": "대화 제목을 자동 생성하는 데 사용되는 모델.",
       "auto": "자동 (Haiku)"
     },
+    "defaultModel": {
+      "name": "새 대화 기본 모델",
+      "desc": "새 빈 대화를 만들 때 사용할 모델을 선택합니다.",
+      "lastUsed": "마지막으로 사용한 모델"
+    },
     "navMappings": {
       "name": "Vim 스타일 네비게이션 매핑",
       "desc": "한 줄에 하나의 매핑. 형식: \"map <키> <동작>\" (동작: scrollUp, scrollDown, focusInput)."

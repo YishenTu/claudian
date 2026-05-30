@@ -1,6 +1,7 @@
 import * as fs from 'fs';
-import { Setting } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
 import { getHostnameKey } from '../../../utils/env';
@@ -51,9 +52,16 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         toggle
           .setValue(opencodeSettings.enabled)
           .onChange(async (value) => {
+            if (!value && ProviderRegistry.getEnabledProviderIds(settingsBag).length <= 1) {
+              new Notice('At least one provider must stay enabled.');
+              toggle.setValue(true);
+              return;
+            }
             updateOpencodeProviderSettings(settingsBag, { enabled: value });
+            context.reconcileDefaultModelSelection?.();
             await context.plugin.saveSettings();
             context.refreshModelSelectors();
+            context.refreshSettingsDisplay?.();
           })
       );
 

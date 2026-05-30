@@ -108,6 +108,11 @@
       "desc": "Modelo utilizado para generar automáticamente títulos de conversación.",
       "auto": "Automático (Haiku)"
     },
+    "defaultModel": {
+      "name": "Modelo predeterminado para nuevas conversaciones",
+      "desc": "Elige el modelo usado al crear una nueva conversación vacía.",
+      "lastUsed": "Último modelo usado"
+    },
     "navMappings": {
       "name": "Mapeos de navegación estilo Vim",
       "desc": "Un mapeo por línea. Formato: \"map <tecla> <acción>\" (acciones: scrollUp, scrollDown, focusInput)."

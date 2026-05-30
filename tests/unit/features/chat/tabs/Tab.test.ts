@@ -415,6 +415,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       },
       persistentExternalContextPaths: [],
       settingsProvider: 'claude',
+      defaultModelSelection: 'last-used',
       codexEnabled: true,
       savedProviderModel: {
         claude: 'claude-sonnet-4-5',
@@ -610,6 +611,33 @@ describe('Tab - Creation', () => {
       plugin.settings.model = 'opus';
 
       const tab = createTab(createMockOptions({ plugin }));
+
+      expect(tab.lifecycleState).toBe('blank');
+      expect(tab.draftModel).toBe('opus');
+      expect(tab.providerId).toBe('claude');
+    });
+
+    it('should use a configured fixed default model for new blank tabs', () => {
+      const plugin = createMockPlugin();
+      plugin.settings.defaultModelSelection = DEFAULT_CODEX_PRIMARY_MODEL;
+      plugin.settings.model = 'opus';
+
+      const tab = createTab(createMockOptions({ plugin, defaultProviderId: 'claude' }));
+
+      expect(tab.lifecycleState).toBe('blank');
+      expect(tab.draftModel).toBe(DEFAULT_CODEX_PRIMARY_MODEL);
+      expect(tab.providerId).toBe('codex');
+    });
+
+    it('should ignore a fixed default model when its provider is disabled', () => {
+      const plugin = createMockPlugin();
+      plugin.settings.defaultModelSelection = DEFAULT_CODEX_PRIMARY_MODEL;
+      plugin.settings.model = 'opus';
+      plugin.settings.providerConfigs = {
+        codex: { enabled: false },
+      };
+
+      const tab = createTab(createMockOptions({ plugin, defaultProviderId: 'claude' }));
 
       expect(tab.lifecycleState).toBe('blank');
       expect(tab.draftModel).toBe('opus');

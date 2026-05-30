@@ -108,6 +108,11 @@
       "desc": "用于自动生成对话标题的模型。",
       "auto": "自动 (Haiku)"
     },
+    "defaultModel": {
+      "name": "新对话默认模型",
+      "desc": "选择创建新空白对话时使用的模型。",
+      "lastUsed": "最后使用的模型"
+    },
     "navMappings": {
       "name": "Vim 风格导航映射",
       "desc": "每行一个映射。格式：\"map <键> <动作>\"（动作：scrollUp, scrollDown, focusInput）。"
