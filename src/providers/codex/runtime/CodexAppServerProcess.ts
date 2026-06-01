@@ -1,7 +1,11 @@
 import { type ChildProcess, spawn } from 'child_process';
 import type { Readable, Writable } from 'stream';
 
-import { resolveWindowsCmdShimSpawnSpec } from '../../../utils/windowsCmdShim';
+import {
+  resolveWindowsCmdShimSpawnSpec,
+  terminateSpawnedProcess,
+  type WindowsCmdShimSpawnSpec,
+} from '../../../utils/windowsCmdShim';
 import type { CodexLaunchSpec } from './codexLaunchTypes';
 
 const SIGKILL_TIMEOUT_MS = 3_000;
@@ -12,6 +16,7 @@ export class CodexAppServerProcess {
   private proc: ChildProcess | null = null;
   private alive = false;
   private exitCallbacks: ExitCallback[] = [];
+  private resolvedSpawnSpec: WindowsCmdShimSpawnSpec | null = null;
 
   constructor(
     private readonly launchSpec: Pick<CodexLaunchSpec, 'command' | 'args' | 'spawnCwd' | 'env'>,
@@ -19,6 +24,7 @@ export class CodexAppServerProcess {
 
   start(): void {
     const resolvedSpawnSpec = resolveWindowsCmdShimSpawnSpec(this.launchSpec);
+    this.resolvedSpawnSpec = resolvedSpawnSpec;
 
     this.proc = spawn(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -80,13 +86,20 @@ export class CodexAppServerProcess {
       };
 
       this.proc!.once('exit', onExit);
-      this.proc!.kill('SIGTERM');
+      this.killProc('SIGTERM');
 
       const killTimer = window.setTimeout(() => {
         if (this.alive) {
-          this.proc!.kill('SIGKILL');
+          this.killProc('SIGKILL');
         }
       }, SIGKILL_TIMEOUT_MS);
     });
+  }
+
+  private killProc(signal: NodeJS.Signals): boolean {
+    if (!this.proc) {
+      return false;
+    }
+    return terminateSpawnedProcess(this.proc, signal, spawn, this.resolvedSpawnSpec);
   }
 }

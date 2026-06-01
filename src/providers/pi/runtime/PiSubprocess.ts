@@ -3,7 +3,11 @@ import * as path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 
 import { getEnhancedPath } from '../../../utils/env';
-import { resolveWindowsCmdShimSpawnSpec } from '../../../utils/windowsCmdShim';
+import {
+  resolveWindowsCmdShimSpawnSpec,
+  terminateSpawnedProcess,
+  type WindowsCmdShimSpawnSpec,
+} from '../../../utils/windowsCmdShim';
 
 const SIGKILL_TIMEOUT_MS = 3_000;
 const STDERR_BUFFER_LIMIT = 8_000;
@@ -22,6 +26,7 @@ export class PiSubprocess {
   private readonly closeListeners = new Set<CloseListener>();
   private notifiedClose = false;
   private proc: ChildProcessWithoutNullStreams | null = null;
+  private resolvedSpawnSpec: WindowsCmdShimSpawnSpec | null = null;
   private stderrBuffer = '';
 
   constructor(private readonly launchSpec: PiSubprocessLaunchSpec) {}
@@ -47,6 +52,7 @@ export class PiSubprocess {
     }
 
     const resolvedSpawnSpec = resolveWindowsCmdShimSpawnSpec(this.launchSpec);
+    this.resolvedSpawnSpec = resolvedSpawnSpec;
     const proc = spawn(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
       cwd: this.launchSpec.cwd,
       env: {
@@ -110,7 +116,7 @@ export class PiSubprocess {
         resolve();
       };
       const killTimer = window.setTimeout(() => {
-        proc.kill('SIGKILL');
+        this.killProc(proc, 'SIGKILL');
       }, SIGKILL_TIMEOUT_MS);
       const cleanup = () => {
         window.clearTimeout(killTimer);
@@ -118,8 +124,12 @@ export class PiSubprocess {
       };
 
       proc.once('exit', onClose);
-      proc.kill('SIGTERM');
+      this.killProc(proc, 'SIGTERM');
     });
+  }
+
+  private killProc(proc: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): boolean {
+    return terminateSpawnedProcess(proc, signal, spawn, this.resolvedSpawnSpec);
   }
 
   private notifyClose(error?: Error): void {

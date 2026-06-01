@@ -1,24 +1,29 @@
-import * as fs from 'node:fs';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import { PiCliResolver } from '@/providers/pi/runtime/PiCliResolver';
 
-jest.mock('node:fs');
+jest.mock('fs');
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => 'current-host',
 }));
 
-const mockedExists = fs.existsSync as jest.Mock;
 const mockedStat = fs.statSync as jest.Mock;
 
 describe('PiCliResolver', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
   });
 
   it('resolves the current host path before the legacy Pi CLI path', () => {
-    mockedExists.mockImplementation((filePath: string) => filePath === '/current/pi');
-    mockedStat.mockReturnValue({ isFile: () => true });
+    mockedStat.mockImplementation((filePath: string) => {
+      if (filePath === '/current/pi') {
+        return { isFile: () => true };
+      }
+      throw new Error(`ENOENT: ${filePath}`);
+    });
 
     const resolver = new PiCliResolver();
 
@@ -29,19 +34,44 @@ describe('PiCliResolver', () => {
   });
 
   it('falls back to cliPath and returns null for invalid paths', () => {
-    mockedExists.mockImplementation((filePath: string) => filePath === '/legacy/pi');
-    mockedStat.mockReturnValue({ isFile: () => true });
+    mockedStat.mockImplementation((filePath: string) => {
+      if (filePath === '/legacy/pi') {
+        return { isFile: () => true };
+      }
+      throw new Error(`ENOENT: ${filePath}`);
+    });
 
     const resolver = new PiCliResolver();
     expect(resolver.resolve({ 'other-host': '/other/pi' }, '/legacy/pi')).toBe('/legacy/pi');
 
-    mockedExists.mockReturnValue(false);
+    mockedStat.mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
     expect(resolver.resolve({ 'other-host': '/other/pi' }, '/legacy/pi')).toBeNull();
   });
 
+  it('falls back to PATH lookup when no Pi CLI path is configured', () => {
+    const pathDir = '/custom/bin';
+    const pathBinary = path.join(pathDir, 'pi');
+    mockedStat.mockImplementation((filePath: string) => {
+      if (filePath === pathBinary) {
+        return { isFile: () => true };
+      }
+      throw new Error(`ENOENT: ${filePath}`);
+    });
+
+    const resolver = new PiCliResolver();
+
+    expect(resolver.resolve({}, '', `PATH=${pathDir}`)).toBe(pathBinary);
+  });
+
   it('invalidates cached resolutions when provider environment changes', () => {
-    mockedExists.mockReturnValue(true);
-    mockedStat.mockReturnValue({ isFile: () => true });
+    mockedStat.mockImplementation((filePath: string) => {
+      if (filePath === '/current/pi') {
+        return { isFile: () => true };
+      }
+      throw new Error(`ENOENT: ${filePath}`);
+    });
 
     const resolver = new PiCliResolver();
     const firstSettings = {

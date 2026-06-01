@@ -9,9 +9,11 @@ jest.mock('child_process', () => ({
 }));
 
 describe('createCustomSpawnFunction', () => {
+  const originalPlatform = process.platform;
   const spawnMock = spawn as jest.MockedFunction<typeof spawn>;
 
   afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
     jest.restoreAllMocks();
     spawnMock.mockReset();
   });
@@ -22,6 +24,7 @@ describe('createCustomSpawnFunction', () => {
       stdin: {} as NodeJS.WritableStream,
       stdout: {} as NodeJS.ReadableStream,
       stderr,
+      pid: 12345,
       killed: false,
       exitCode: null,
       kill: jest.fn(),
@@ -207,6 +210,92 @@ describe('createCustomSpawnFunction', () => {
 
     expect(findNodeExecutable).not.toHaveBeenCalled();
     expect(spawnMock).toHaveBeenCalledWith('python', ['script.py'], expect.any(Object));
+  });
+
+  it('wraps manually configured Windows .cmd commands through cmd.exe', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const findNodeExecutable = jest.spyOn(env, 'findNodeExecutable');
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    spawnFn({
+      command: 'C:\\Users\\R&D\\AppData\\Roaming\\npm\\claude.cmd',
+      args: ['--output-format', 'stream-json'],
+      cwd: 'C:\\Vault',
+      env: {},
+    } as SpawnOptions);
+
+    expect(findNodeExecutable).not.toHaveBeenCalled();
+    expect(spawnMock).toHaveBeenCalledWith(
+      process.env.ComSpec || process.env.comspec || 'cmd.exe',
+      ['/d', '/s', '/c', '""C:\\Users\\R&D\\AppData\\Roaming\\npm\\claude.cmd" --output-format stream-json"'],
+      expect.objectContaining({
+        cwd: 'C:\\Vault',
+        windowsHide: true,
+        windowsVerbatimArguments: true,
+      }),
+    );
+  });
+
+  it('kills the process tree when aborting manually configured Windows .cmd commands', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const mockProcess = createMockProcess();
+    const originalKill = mockProcess.kill;
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const controller = new AbortController();
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    spawnFn({
+      command: 'C:\\Users\\R&D\\AppData\\Roaming\\npm\\claude.cmd',
+      args: ['--output-format', 'stream-json'],
+      cwd: 'C:\\Vault',
+      env: {},
+      signal: controller.signal,
+    } as SpawnOptions);
+
+    controller.abort();
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      'taskkill.exe',
+      ['/pid', '12345', '/t', '/f'],
+      expect.objectContaining({
+        stdio: 'ignore',
+        windowsHide: true,
+      }),
+    );
+    expect(originalKill).not.toHaveBeenCalled();
+  });
+
+  it('delegates returned Windows .cmd process kill to process-tree termination', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const mockProcess = createMockProcess();
+    const originalKill = mockProcess.kill;
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    const result = spawnFn({
+      command: 'C:\\Users\\R&D\\AppData\\Roaming\\npm\\claude.cmd',
+      args: ['--output-format', 'stream-json'],
+      cwd: 'C:\\Vault',
+      env: {},
+    } as SpawnOptions);
+
+    expect(result).toBe(mockProcess);
+    expect(result.kill).not.toBe(originalKill);
+
+    result.kill('SIGKILL');
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      'taskkill.exe',
+      ['/pid', '12345', '/t', '/f'],
+      expect.objectContaining({
+        stdio: 'ignore',
+        windowsHide: true,
+      }),
+    );
+    expect(originalKill).not.toHaveBeenCalled();
   });
 
   it('does not pass signal to spawn options', () => {

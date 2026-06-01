@@ -1,7 +1,12 @@
 import type { SpawnedProcess, SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
-import { spawn } from 'child_process';
+import { type ChildProcess, spawn } from 'child_process';
 
 import { cliPathRequiresNode, findNodeExecutable } from '../../../utils/env';
+import {
+  resolveWindowsCmdShimSpawnSpec,
+  terminateSpawnedProcess,
+  type WindowsCmdShimSpawnSpec,
+} from '../../../utils/windowsCmdShim';
 
 export function createCustomSpawnFunction(
   enhancedPath: string
@@ -26,21 +31,28 @@ export function createCustomSpawnFunction(
       }
     }
 
+    const resolvedSpawnSpec = resolveWindowsCmdShimSpawnSpec({ args, command });
+
     // Do not pass `signal` directly to spawn() — Obsidian's Electron runtime
     // uses a different realm for AbortSignal, causing `instanceof EventTarget`
     // checks inside Node's internals to fail. Handle abort manually instead.
-    const child = spawn(command, args, {
+    const child = spawn(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
       cwd,
       env: env,
       stdio: ['pipe', 'pipe', shouldPipeStderr ? 'pipe' : 'ignore'],
       windowsHide: true,
+      ...(resolvedSpawnSpec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     });
+    installTreeAwareKill(child, resolvedSpawnSpec);
 
     if (signal) {
+      const killChild = (): void => {
+        child.kill('SIGTERM');
+      };
       if (signal.aborted) {
-        child.kill();
+        killChild();
       } else {
-        signal.addEventListener('abort', () => child.kill(), { once: true });
+        signal.addEventListener('abort', killChild, { once: true });
       }
     }
 
@@ -54,4 +66,22 @@ export function createCustomSpawnFunction(
 
     return child as unknown as SpawnedProcess;
   };
+}
+
+function installTreeAwareKill(child: ChildProcess, spawnSpec: WindowsCmdShimSpawnSpec): void {
+  if (!spawnSpec.killProcessTree) {
+    return;
+  }
+
+  const originalKill = child.kill.bind(child);
+  const killableChild = {
+    get pid(): number | undefined {
+      return child.pid;
+    },
+    kill: originalKill,
+  };
+
+  child.kill = ((signal?: NodeJS.Signals | number): boolean =>
+    terminateSpawnedProcess(killableChild, signal, spawn, spawnSpec)
+  ) as typeof child.kill;
 }

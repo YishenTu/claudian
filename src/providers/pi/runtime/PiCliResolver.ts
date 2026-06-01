@@ -1,8 +1,6 @@
-import * as fs from 'node:fs';
-
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import { getHostnameKey } from '../../../utils/env';
-import { expandHomePath } from '../../../utils/path';
+import { findCliBinaryPath, resolveConfiguredCliPath } from '../../../utils/cliBinaryLocator';
+import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { getPiProviderSettings } from '../settings';
 
 export class PiCliResolver {
@@ -30,13 +28,20 @@ export class PiCliResolver {
     this.lastCliPath = cliPath;
     this.lastHostnamePath = hostnamePath;
     this.lastEnvText = envText;
-    this.resolvedPath = this.resolve(piSettings.cliPathsByHost, cliPath);
+    this.resolvedPath = this.resolve(piSettings.cliPathsByHost, cliPath, envText);
     return this.resolvedPath;
   }
 
-  resolve(hostnamePaths: Record<string, string> | undefined, legacyPath: string): string | null {
+  resolve(
+    hostnamePaths: Record<string, string> | undefined,
+    legacyPath: string,
+    envText = '',
+  ): string | null {
     const hostnamePath = (hostnamePaths?.[this.cachedHostname] ?? '').trim();
-    return resolveConfiguredCliPath(hostnamePath) ?? resolveConfiguredCliPath(legacyPath.trim());
+    const customEnv = parseEnvironmentVariables(envText || '');
+    return resolveConfiguredCliPath(hostnamePath)
+      ?? resolveConfiguredCliPath(legacyPath.trim())
+      ?? findCliBinaryPath('pi', customEnv.PATH);
   }
 
   reset(): void {
@@ -45,21 +50,4 @@ export class PiCliResolver {
     this.lastEnvText = '';
     this.resolvedPath = null;
   }
-}
-
-function resolveConfiguredCliPath(cliPath: string): string | null {
-  if (!cliPath) {
-    return null;
-  }
-
-  try {
-    const expanded = expandHomePath(cliPath);
-    if (fs.existsSync(expanded) && fs.statSync(expanded).isFile()) {
-      return expanded;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
 }

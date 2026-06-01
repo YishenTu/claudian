@@ -175,28 +175,6 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
     };
     renderModels();
 
-    new Setting(container)
-      .setName('Tool mode')
-      .setDesc('Controls whether Pi gets all configured tools or read-only tools.')
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption('all', 'All tools')
-          .addOption('readonly', 'Read-only')
-          .setValue(piSettings.toolMode)
-          .onChange(async (value) => {
-            updatePiProviderSettings(settingsBag, {
-              toolMode: value === 'readonly' ? 'readonly' : 'all',
-            });
-            await context.plugin.saveSettings();
-          });
-      });
-
-    context.renderHiddenProviderCommandSetting(container, 'pi', {
-      desc: 'Hide Pi runtime commands by name.',
-      name: 'Hidden Pi commands',
-      placeholder: 'review, tests',
-    });
-
     renderEnvironmentSettingsSection({
       container,
       desc: 'Environment variables passed only to Pi.',

@@ -1,31 +1,6 @@
-import * as fs from 'fs';
-import * as path from 'path';
-
-import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
-import { expandHomePath, parsePathEntries } from '../../../utils/path';
+import { findCliBinaryPath, resolveConfiguredCliPath } from '../../../utils/cliBinaryLocator';
+import { parseEnvironmentVariables } from '../../../utils/env';
 import type { CodexInstallationMethod } from '../settings';
-
-function isExistingFile(filePath: string): boolean {
-  try {
-    return fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function resolveConfiguredPath(configuredPath: string | undefined): string | null {
-  const trimmed = (configuredPath ?? '').trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  try {
-    const expandedPath = expandHomePath(trimmed);
-    return isExistingFile(expandedPath) ? expandedPath : null;
-  } catch {
-    return null;
-  }
-}
 
 export function isWindowsStyleCliReference(value: string | null | undefined): boolean {
   const trimmed = (value ?? '').trim();
@@ -42,23 +17,7 @@ export function findCodexBinaryPath(
   additionalPath?: string,
   platform: NodeJS.Platform = process.platform,
 ): string | null {
-  const binaryNames = platform === 'win32'
-    ? ['codex.exe', 'codex.cmd', 'codex']
-    : ['codex'];
-  const searchEntries = parsePathEntries(getEnhancedPath(additionalPath));
-
-  for (const dir of searchEntries) {
-    if (!dir) continue;
-
-    for (const binaryName of binaryNames) {
-      const candidate = path.join(dir, binaryName);
-      if (isExistingFile(candidate)) {
-        return candidate;
-      }
-    }
-  }
-
-  return null;
+  return findCliBinaryPath('codex', additionalPath, platform);
 }
 
 export function resolveCodexCliPath(
@@ -75,12 +34,12 @@ export function resolveCodexCliPath(
     return configuredCommand || 'codex';
   }
 
-  const configuredHostnamePath = resolveConfiguredPath(hostnamePath);
+  const configuredHostnamePath = resolveConfiguredCliPath(hostnamePath);
   if (configuredHostnamePath) {
     return configuredHostnamePath;
   }
 
-  const configuredLegacyPath = resolveConfiguredPath(legacyPath);
+  const configuredLegacyPath = resolveConfiguredCliPath(legacyPath);
   if (configuredLegacyPath) {
     return configuredLegacyPath;
   }

@@ -1,6 +1,12 @@
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 
+import {
+  resolveWindowsCmdShimSpawnSpec,
+  terminateSpawnedProcess,
+  type WindowsCmdShimSpawnSpec,
+} from '../../utils/windowsCmdShim';
+
 const SIGKILL_TIMEOUT_MS = 3_000;
 const STDERR_BUFFER_LIMIT = 8_000;
 
@@ -18,6 +24,7 @@ export class AcpSubprocess {
   private readonly closeListeners = new Set<CloseListener>();
   private notifiedClose = false;
   private proc: ChildProcessWithoutNullStreams | null = null;
+  private resolvedSpawnSpec: WindowsCmdShimSpawnSpec | null = null;
   private stderrBuffer = '';
 
   constructor(private readonly launchSpec: AcpSubprocessLaunchSpec) {}
@@ -46,11 +53,14 @@ export class AcpSubprocess {
       return;
     }
 
-    const proc = spawn(this.launchSpec.command, this.launchSpec.args, {
+    const resolvedSpawnSpec = resolveWindowsCmdShimSpawnSpec(this.launchSpec);
+    this.resolvedSpawnSpec = resolvedSpawnSpec;
+    const proc = spawn(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
       cwd: this.launchSpec.cwd,
       env: this.launchSpec.env,
       stdio: 'pipe',
       windowsHide: true,
+      ...(resolvedSpawnSpec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     });
 
     proc.stderr.on('data', (chunk: Buffer | string) => {
@@ -102,7 +112,7 @@ export class AcpSubprocess {
         resolve();
       };
       const killTimer = window.setTimeout(() => {
-        proc.kill('SIGKILL');
+        this.killProc(proc, 'SIGKILL');
       }, SIGKILL_TIMEOUT_MS);
       const cleanup = () => {
         window.clearTimeout(killTimer);
@@ -110,8 +120,12 @@ export class AcpSubprocess {
       };
 
       proc.once('exit', onClose);
-      proc.kill('SIGTERM');
+      this.killProc(proc, 'SIGTERM');
     });
+  }
+
+  private killProc(proc: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): boolean {
+    return terminateSpawnedProcess(proc, signal, spawn, this.resolvedSpawnSpec);
   }
 
   private notifyClose(error?: Error): void {

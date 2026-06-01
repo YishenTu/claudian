@@ -273,6 +273,19 @@ describe('PiSettingsTab', () => {
     expect(context.refreshModelSelectors).toHaveBeenCalled();
   });
 
+  it('does not render hidden command settings for Pi', () => {
+    const settings: Record<string, unknown> = { providerConfigs: { pi: {} } };
+    const context = render(settings);
+
+    expect(context.renderHiddenProviderCommandSetting).not.toHaveBeenCalled();
+  });
+
+  it('does not render the chat input tool mode setting for Pi', () => {
+    render({ providerConfigs: { pi: { toolMode: 'readonly' } } });
+
+    expect(() => findSetting('Tool mode')).toThrow('Setting not found: Tool mode');
+  });
+
   it('validates host-scoped CLI paths and resets the resolver after valid changes', async () => {
     const settings: Record<string, unknown> = { providerConfigs: { pi: {} } };
     const context = render(settings);
