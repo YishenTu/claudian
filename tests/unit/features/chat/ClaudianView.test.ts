@@ -1,5 +1,5 @@
 import { createMockEl } from '@test/helpers/mockElement';
-import { Scope } from 'obsidian';
+import { Platform, Scope } from 'obsidian';
 
 import { ClaudianView } from '@/features/chat/ClaudianView';
 
@@ -119,6 +119,68 @@ describe('ClaudianView Escape handling', () => {
     return { cancelStreaming, eventRefs, view };
   }
 
+  function createScopedSendHarness(options: {
+    inputFocused: boolean;
+  }): {
+    inputEl: HTMLTextAreaElement;
+    sendMessage: jest.Mock;
+    view: any;
+  } {
+    const sendMessage = jest.fn();
+    const inputEl = createMockEl('textarea') as unknown as HTMLTextAreaElement;
+    Object.defineProperty(inputEl.ownerDocument, 'activeElement', {
+      configurable: true,
+      get: () => options.inputFocused ? inputEl : null,
+    });
+    const eventRefs: unknown[] = [];
+    const parentScope = new Scope();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.app = { scope: parentScope };
+    view.containerEl = createMockEl();
+    view.historyDropdown = createMockEl();
+    view.registerDomEvent = jest.fn();
+    view.registerEvent = jest.fn();
+    view.eventRefs = eventRefs;
+    view.plugin = {
+      app: {
+        vault: {
+          on: jest.fn((_event: string, handler: unknown) => {
+            const ref = { handler };
+            eventRefs.push(ref);
+            return ref;
+          }),
+        },
+        workspace: {
+          on: jest.fn((_event: string, handler: unknown) => {
+            const ref = { handler };
+            eventRefs.push(ref);
+            return ref;
+          }),
+        },
+      },
+    };
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue({
+        state: { isStreaming: false },
+        dom: { inputEl },
+        controllers: {
+          inputController: { sendMessage },
+        },
+        ui: {
+          fileContextManager: {
+            markFileCacheDirty: jest.fn(),
+            markFolderCacheDirty: jest.fn(),
+            handleFileOpen: jest.fn(),
+            handleClickOutside: jest.fn(),
+          },
+        },
+      }),
+    };
+
+    return { inputEl, sendMessage, view };
+  }
+
   it('registers Escape on the Obsidian view scope instead of document keydown capture', () => {
     const { view } = createEscapeHarness({ isStreaming: true });
 
@@ -170,5 +232,55 @@ describe('ClaudianView Escape handling', () => {
 
     expect(cancelStreaming).not.toHaveBeenCalled();
     expect(result).toBe(false);
+  });
+
+  it('sends from focused composer through scoped Mod+Enter', () => {
+    Platform.isMacOS = true;
+    const { sendMessage, view } = createScopedSendHarness({ inputFocused: true });
+
+    view.wireEventHandlers();
+    const sendHandler = view.scope.handlers.find(
+      (handler: any) => handler.key === 'Enter' && handler.modifiers?.includes('Mod')
+    );
+    const event = {
+      key: 'Enter',
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: true,
+      altKey: false,
+      isComposing: false,
+      defaultPrevented: false,
+      preventDefault: jest.fn(),
+    } as unknown as KeyboardEvent;
+    const result = sendHandler.func(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(result).toBe(false);
+  });
+
+  it('ignores scoped Mod+Enter when composer is not focused', () => {
+    Platform.isMacOS = true;
+    const { sendMessage, view } = createScopedSendHarness({ inputFocused: false });
+
+    view.wireEventHandlers();
+    const sendHandler = view.scope.handlers.find(
+      (handler: any) => handler.key === 'Enter' && handler.modifiers?.includes('Mod')
+    );
+    const event = {
+      key: 'Enter',
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: true,
+      altKey: false,
+      isComposing: false,
+      defaultPrevented: false,
+      preventDefault: jest.fn(),
+    } as unknown as KeyboardEvent;
+    const result = sendHandler.func(event);
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(result).toBeUndefined();
   });
 });

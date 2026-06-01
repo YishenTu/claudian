@@ -2047,6 +2047,52 @@ describe('Tab - Event Handler Behavior', () => {
       expect(mockSlashCommandDropdown.handleKeydown).toHaveBeenCalled();
     });
 
+    it('should let explicit Command+Enter send before slash dropdown handles Enter', () => {
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockSlashCommandDropdown.handleKeydown.mockReturnValue(true);
+      mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+      const { fireKeydown } = setupKeydownTab();
+      Platform.isMacOS = true;
+
+      const event = {
+        key: 'Enter',
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: true,
+        altKey: false,
+        isComposing: false,
+        preventDefault: jest.fn(),
+      };
+      fireKeydown(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(mockInputController.sendMessage).toHaveBeenCalled();
+      expect(mockSlashCommandDropdown.handleKeydown).not.toHaveBeenCalled();
+    });
+
+    it('should keep plain Enter routed to visible slash dropdown before sending', () => {
+      mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
+      mockInstructionModeManager.handleKeydown.mockReturnValue(false);
+      mockSlashCommandDropdown.handleKeydown.mockReturnValue(true);
+      mockFileContextManager.handleMentionKeydown.mockReturnValue(false);
+      const { fireKeydown } = setupKeydownTab();
+
+      const event = {
+        key: 'Enter',
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        isComposing: false,
+        preventDefault: jest.fn(),
+      };
+      fireKeydown(event);
+
+      expect(mockSlashCommandDropdown.handleKeydown).toHaveBeenCalled();
+      expect(mockInputController.sendMessage).not.toHaveBeenCalled();
+    });
+
     it('should handle resume dropdown keydown', () => {
       mockInstructionModeManager.handleTriggerKey.mockReturnValue(false);
       mockInstructionModeManager.handleKeydown.mockReturnValue(false);
