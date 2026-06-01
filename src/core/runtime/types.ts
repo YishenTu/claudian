@@ -51,6 +51,7 @@ export interface ChatTurnRequest {
   canvasSelection?: CanvasSelectionContext | null;
   externalContextPaths?: string[];
   enabledMcpServers?: Set<string>;
+  orchestratorMode?: boolean;
 }
 
 export interface PreparedChatTurn {
@@ -68,6 +69,7 @@ export interface ChatRuntimeQueryOptions {
   enabledMcpServers?: Set<string>;
   forceColdStart?: boolean;
   externalContextPaths?: string[];
+  orchestratorMode?: boolean;
 }
 
 export interface ChatRuntimeEnsureReadyOptions {

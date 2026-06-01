@@ -22,6 +22,7 @@ import type {
   McpServerSelector,
   ModelSelector,
   ModeSelector,
+  OrchestratorToggle,
   PermissionToggle,
   ServiceTierToggle,
   ThinkingBudgetSelector,
@@ -120,6 +121,7 @@ export interface TabUIComponents {
   mcpServerSelector: McpServerSelector | null;
   permissionToggle: PermissionToggle | null;
   serviceTierToggle: ServiceTierToggle | null;
+  orchestratorToggle: OrchestratorToggle | null;
   slashCommandDropdown: SlashCommandDropdown | null;
   instructionModeManager: InstructionModeManager | null;
   bangBashModeManager: BangBashModeManager | null;
@@ -213,6 +215,12 @@ export interface TabData {
 
   /** Per-tab renderer. */
   renderer: MessageRenderer | null;
+
+  /** Set on worker tabs: the tab ID of the orchestrator that spawned this tab. */
+  orchestratorTabId?: TabId | null;
+
+  /** Set on orchestrator tabs: IDs of all worker tabs spawned by this orchestrator. */
+  workerTabIds?: TabId[];
 }
 
 export type TabProviderContext = Pick<TabData, 'conversationId' | 'service' | 'providerId' | 'lifecycleState' | 'draftModel'>;
@@ -276,4 +284,8 @@ export interface TabBarItem {
   isStreaming: boolean;
   needsAttention: boolean;
   canClose: boolean;
+  /** True when this tab is an orchestrator tab. */
+  isOrchestrator?: boolean;
+  /** True when this tab is a worker tab (spawned by an orchestrator). */
+  isWorker?: boolean;
 }

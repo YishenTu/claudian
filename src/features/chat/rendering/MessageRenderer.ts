@@ -890,4 +890,9 @@ export class MessageRenderer {
     }
   }
 
+  /** Returns the DOM element for a rendered message, or null if not tracked. */
+  getMessageEl(msgId: string): HTMLElement | null {
+    return this.liveMessageEls.get(msgId) ?? null;
+  }
+
 }

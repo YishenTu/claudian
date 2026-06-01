@@ -47,6 +47,7 @@ export interface PersistentQueryContext extends QueryOptionsContext {
   canUseTool?: CanUseTool;
   hooks: Options['hooks'];
   externalContextPaths?: string[];
+  orchestratorMode?: boolean;
 }
 
 export interface ColdStartQueryContext extends QueryOptionsContext {
@@ -58,6 +59,7 @@ export interface ColdStartQueryContext extends QueryOptionsContext {
   mcpMentions?: Set<string>;
   enabledMcpServers?: Set<string>;
   allowedTools?: string[];
+  orchestratorMode?: boolean;
   hasEditorContext: boolean;
   externalContextPaths?: string[];
 }
@@ -92,7 +94,8 @@ export class QueryOptionsBuilder {
 
   static buildPersistentQueryConfig(
     ctx: QueryOptionsContext,
-    externalContextPaths?: string[]
+    externalContextPaths?: string[],
+    orchestratorMode?: boolean,
   ): PersistentQueryConfig {
     const claudeSettings = getClaudeProviderSettings(ctx.settings);
     const systemPromptSettings: SystemPromptSettings = {
@@ -117,7 +120,7 @@ export class QueryOptionsBuilder {
       effortLevel: resolveEffortLevel(ctx.settings.model, ctx.settings.effortLevel),
       permissionMode: ctx.settings.permissionMode,
       sdkPermissionMode,
-      systemPromptKey: computeSystemPromptKey(systemPromptSettings),
+      systemPromptKey: computeSystemPromptKey(systemPromptSettings, { orchestratorMode }),
       disallowedToolsKey,
       mcpServersKey: '', // Dynamic via setMcpServers, not tracked for restart
       pluginsKey,
@@ -134,6 +137,7 @@ export class QueryOptionsBuilder {
       ctx,
       ctx.settings.model,
       ctx.abortController,
+      ctx.orchestratorMode,
     );
 
     options.disallowedTools = [
@@ -176,6 +180,7 @@ export class QueryOptionsBuilder {
       ctx,
       selectedModel,
       ctx.abortController,
+      ctx.orchestratorMode,
     );
 
     const mcpMentions = ctx.mcpMentions || new Set<string>();
@@ -262,6 +267,7 @@ export class QueryOptionsBuilder {
     ctx: QueryOptionsContext,
     model: string,
     abortController?: AbortController,
+    orchestratorMode?: boolean,
   ): { options: Options; claudeSettings: ReturnType<typeof getClaudeProviderSettings> } {
     const claudeSettings = getClaudeProviderSettings(ctx.settings);
     const systemPromptSettings: SystemPromptSettings = {
@@ -272,7 +278,7 @@ export class QueryOptionsBuilder {
     };
     const options: Options = {
       cwd: ctx.vaultPath,
-      systemPrompt: buildSystemPrompt(systemPromptSettings),
+      systemPrompt: buildSystemPrompt(systemPromptSettings, { orchestratorMode }),
       model,
       abortController,
       pathToClaudeCodeExecutable: ctx.cliPath,

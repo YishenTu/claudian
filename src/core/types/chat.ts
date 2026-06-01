@@ -83,6 +83,8 @@ export interface Conversation {
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
   /** UI-enabled MCP servers for this session (context-saving servers activated via selector). */
   enabledMcpServers?: string[];
+  /** When true, this conversation is an orchestrator that can spawn worker tabs. */
+  orchestratorMode?: boolean;
   /** Assistant checkpoint identifier for resumeAtMessageId after rewind. */
   resumeAtMessageId?: string;
 }

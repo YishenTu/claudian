@@ -740,6 +740,11 @@ export class InputController {
       : options.content;
     const enabledMcpServers = mcpServerSelector?.getEnabledServers();
 
+    const conversationId = this.deps.state.currentConversationId;
+    const orchestratorMode = conversationId
+      ? this.deps.plugin.getConversationSync(conversationId)?.orchestratorMode
+      : undefined;
+
     return {
       displayContent: options.content,
       turnRequest: {
@@ -755,6 +760,7 @@ export class InputController {
         enabledMcpServers: enabledMcpServers && enabledMcpServers.size > 0
           ? enabledMcpServers
           : undefined,
+        orchestratorMode: orchestratorMode || undefined,
       },
     };
   }

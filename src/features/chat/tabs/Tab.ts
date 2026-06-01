@@ -444,6 +444,7 @@ export function createTab(options: TabCreateOptions): TabData {
       mcpServerSelector: null,
       permissionToggle: null,
       serviceTierToggle: null,
+      orchestratorToggle: null,
       slashCommandDropdown: null,
       instructionModeManager: null,
       bangBashModeManager: null,
@@ -872,6 +873,22 @@ function initializeInputToolbar(
         mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
       );
     },
+    getOrchestratorMode: () => {
+      const conversation = tab.conversationId
+        ? plugin.getConversationSync(tab.conversationId)
+        : null;
+      return conversation?.orchestratorMode === true;
+    },
+    onOrchestratorModeChange: async () => {
+      const conversation = tab.conversationId
+        ? plugin.getConversationSync(tab.conversationId)
+        : null;
+      if (!conversation) return;
+      await plugin.updateConversation(conversation.id, {
+        orchestratorMode: !(conversation.orchestratorMode ?? false),
+      });
+      tab.ui.orchestratorToggle?.updateDisplay();
+    },
   });
 
   tab.ui.modelSelector = toolbarComponents.modelSelector;
@@ -882,6 +899,7 @@ function initializeInputToolbar(
   tab.ui.mcpServerSelector = toolbarComponents.mcpServerSelector;
   tab.ui.permissionToggle = toolbarComponents.permissionToggle;
   tab.ui.serviceTierToggle = toolbarComponents.serviceTierToggle;
+  tab.ui.orchestratorToggle = toolbarComponents.orchestratorToggle;
 
   tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 

@@ -53,10 +53,12 @@ export interface ToolbarCallbacks {
   onEffortLevelChange: (effort: string) => Promise<void>;
   onServiceTierChange: (serviceTier: string) => Promise<void>;
   onPermissionModeChange: (mode: string) => Promise<void>;
+  onOrchestratorModeChange?: () => Promise<void>;
   getSettings: () => ToolbarSettings;
   getEnvironmentVariables?: () => string;
   getUIConfig: () => ProviderChatUIConfig;
   getCapabilities: () => ProviderCapabilities;
+  getOrchestratorMode?: () => boolean;
 }
 
 export class ModelSelector {
@@ -1209,6 +1211,51 @@ export class ContextUsageMeter {
   }
 }
 
+export class OrchestratorToggle {
+  private container: HTMLElement;
+  private buttonEl: HTMLElement | null = null;
+  private iconEl: HTMLElement | null = null;
+  private callbacks: ToolbarCallbacks;
+
+  constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
+    this.callbacks = callbacks;
+    this.container = parentEl.createDiv({ cls: 'claudian-orchestrator-toggle' });
+    this.render();
+  }
+
+  private render() {
+    this.container.empty();
+
+    this.buttonEl = this.container.createDiv({ cls: 'claudian-orchestrator-button' });
+    this.iconEl = this.buttonEl.createSpan({ cls: 'claudian-orchestrator-icon' });
+    setIcon(this.iconEl, 'git-fork');
+
+    this.updateDisplay();
+
+    this.buttonEl.addEventListener('click', () => {
+      runToolbarAction(() => this.toggle(), 'Failed to toggle orchestrator mode');
+    });
+  }
+
+  updateDisplay() {
+    if (!this.buttonEl) return;
+
+    const isActive = this.callbacks.getOrchestratorMode?.() ?? false;
+    if (isActive) {
+      this.buttonEl.addClass('active');
+    } else {
+      this.buttonEl.removeClass('active');
+    }
+
+    this.container.setAttribute('title', 'Orchestrator mode');
+  }
+
+  private async toggle() {
+    await this.callbacks.onOrchestratorModeChange?.();
+    this.updateDisplay();
+  }
+}
+
 export function createInputToolbar(
   parentEl: HTMLElement,
   callbacks: ToolbarCallbacks
@@ -1221,6 +1268,7 @@ export function createInputToolbar(
   mcpServerSelector: McpServerSelector;
   permissionToggle: PermissionToggle;
   serviceTierToggle: ServiceTierToggle;
+  orchestratorToggle: OrchestratorToggle;
 } {
   const modelSelector = new ModelSelector(parentEl, callbacks);
   const thinkingBudgetSelector = new ThinkingBudgetSelector(parentEl, callbacks);
@@ -1230,6 +1278,7 @@ export function createInputToolbar(
   const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);
   const modeSelector = new ModeSelector(parentEl, callbacks);
+  const orchestratorToggle = new OrchestratorToggle(parentEl, callbacks);
 
   return {
     modelSelector,
@@ -1240,5 +1289,6 @@ export function createInputToolbar(
     externalContextSelector,
     mcpServerSelector,
     permissionToggle,
+    orchestratorToggle,
   };
 }

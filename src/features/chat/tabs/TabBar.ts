@@ -56,13 +56,21 @@ export class TabBar {
       stateClass = 'claudian-tab-badge-streaming';
     }
 
+    let displayTitle = item.title;
+    if (item.isOrchestrator) {
+      displayTitle = `⚡ ${item.title}`;
+    } else if (item.isWorker) {
+      const workerSuffix = item.isStreaming ? ' ◌' : item.needsAttention ? ' ?' : ' ✓';
+      displayTitle = item.title + workerSuffix;
+    }
+
     const badgeEl = this.containerEl.createDiv({
       cls: `claudian-tab-badge ${stateClass}`,
       text: String(item.index),
     });
 
     // Tooltip with full title (aria-label only; adding title too causes double tooltip)
-    badgeEl.setAttribute('aria-label', item.title);
+    badgeEl.setAttribute('aria-label', displayTitle);
     badgeEl.setAttribute('data-provider', item.providerId);
 
     // Click handler to switch tab

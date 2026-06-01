@@ -36,6 +36,7 @@ import { hasStreamingMathDelimiters } from '../../../utils/markdownMath';
 import { getVaultPath, normalizePathForVault } from '../../../utils/path';
 import { FLAVOR_TEXTS } from '../constants';
 import type { MessageRenderer, RenderContentOptions } from '../rendering/MessageRenderer';
+import { extractOrchestratorPlan, type OrchestratorPlan } from '../rendering/orchestratorPlanParser';
 import { resolveSubagentLifecycleAdapter } from '../rendering/subagentLifecycleResolution';
 import {
   createSubagentBlock,
@@ -72,6 +73,10 @@ export interface StreamControllerDeps {
   updateQueueIndicator: () => void;
   /** Get the agent service from the tab. */
   getAgentService?: () => ChatRuntime | null;
+  /** Called when a complete assistant message contains an orchestrator plan block. */
+  onOrchestratorPlanDetected?: (msgEl: HTMLElement, plan: OrchestratorPlan) => void;
+  /** Called when a worker tab's stream finishes. Provides the final assistant message text. */
+  onWorkerDone?: (result: string, isError: boolean) => void;
 }
 
 export class StreamController {
@@ -95,6 +100,14 @@ export class StreamController {
 
   constructor(deps: StreamControllerDeps) {
     this.deps = deps;
+  }
+
+  setOrchestratorCallbacks(
+    onOrchestratorPlanDetected?: StreamControllerDeps['onOrchestratorPlanDetected'],
+    onWorkerDone?: StreamControllerDeps['onWorkerDone'],
+  ): void {
+    this.deps.onOrchestratorPlanDetected = onOrchestratorPlanDetected;
+    this.deps.onWorkerDone = onWorkerDone;
   }
 
   private getActiveProviderId(): ProviderId {
@@ -200,6 +213,21 @@ export class StreamController {
       case 'done':
         // Flush any remaining pending tools
         this.flushPendingTools();
+        // Orchestrator plan detection
+        if (this.deps.onOrchestratorPlanDetected && msg.content) {
+          const plan = extractOrchestratorPlan(msg.content);
+          if (plan) {
+            const msgEl = this.deps.renderer.getMessageEl(msg.id);
+            if (msgEl) {
+              this.deps.onOrchestratorPlanDetected(msgEl, plan);
+            }
+          }
+        }
+        // Worker done-reporting
+        if (this.deps.onWorkerDone) {
+          const isError = msg.toolCalls?.some((tc) => tc.status === 'error') ?? false;
+          this.deps.onWorkerDone(msg.content, isError);
+        }
         break;
 
       case 'context_compacted': {

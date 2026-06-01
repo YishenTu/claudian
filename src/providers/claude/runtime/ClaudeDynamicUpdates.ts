@@ -32,6 +32,7 @@ export interface ClaudeDynamicUpdateDeps {
     vaultPath: string,
     cliPath: string,
     externalContextPaths?: string[],
+    orchestratorMode?: boolean,
   ) => PersistentQueryConfig;
   needsRestart: (newConfig: PersistentQueryConfig) => boolean;
   ensureReady: (options: ClaudeEnsureReadyOptions) => Promise<boolean>;
@@ -146,7 +147,7 @@ export async function applyClaudeDynamicUpdates(
     return;
   }
 
-  const newConfig = deps.buildPersistentQueryConfig(vaultPath, cliPath, newExternalContextPaths);
+  const newConfig = deps.buildPersistentQueryConfig(vaultPath, cliPath, newExternalContextPaths, queryOptions?.orchestratorMode);
   if (!deps.needsRestart(newConfig)) {
     return;
   }

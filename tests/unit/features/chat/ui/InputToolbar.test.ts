@@ -7,6 +7,7 @@ import {
   McpServerSelector,
   ModelSelector,
   ModeSelector,
+  OrchestratorToggle,
   PermissionToggle,
   ServiceTierToggle,
   ThinkingBudgetSelector,
@@ -1122,6 +1123,7 @@ describe('createInputToolbar', () => {
     expect(toolbar.mcpServerSelector).toBeInstanceOf(McpServerSelector);
     expect(toolbar.permissionToggle).toBeInstanceOf(PermissionToggle);
     expect(toolbar.serviceTierToggle).toBeInstanceOf(ServiceTierToggle);
+    expect(toolbar.orchestratorToggle).toBeInstanceOf(OrchestratorToggle);
   });
 
   it('should place the mode selector after the permission toggle in toolbar order', () => {
@@ -1132,8 +1134,10 @@ describe('createInputToolbar', () => {
 
     const permissionIndex = parentEl.children.findIndex((child: any) => child.hasClass('claudian-permission-toggle'));
     const modeIndex = parentEl.children.findIndex((child: any) => child.hasClass('claudian-mode-selector'));
+    const orchestratorIndex = parentEl.children.findIndex((child: any) => child.hasClass('claudian-orchestrator-toggle'));
     expect(permissionIndex).toBeGreaterThanOrEqual(0);
     expect(modeIndex).toBeGreaterThan(permissionIndex);
-    expect(modeIndex).toBe(parentEl.children.length - 1);
+    expect(orchestratorIndex).toBeGreaterThan(modeIndex);
+    expect(orchestratorIndex).toBe(parentEl.children.length - 1);
   });
 });

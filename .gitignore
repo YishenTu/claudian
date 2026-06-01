@@ -93,3 +93,5 @@ dev
 
 .claude/
 .codex/
+.worktrees/
+jest.config.worktree.js
