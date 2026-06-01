@@ -115,16 +115,6 @@ async function flushPromises(): Promise<void> {
   await new Promise(resolve => setImmediate(resolve));
 }
 
-async function waitForCondition(condition: () => boolean): Promise<void> {
-  for (let i = 0; i < 20; i++) {
-    if (condition()) {
-      return;
-    }
-    await flushPromises();
-  }
-  throw new Error('Condition was not met');
-}
-
 describe('PiChatRuntime', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -749,13 +739,15 @@ describe('PiChatRuntime', () => {
       sessionId: 'session-1',
     });
 
-    const chunks: unknown[] = [];
-    const promise = (async () => {
-      for await (const chunk of runtime.query(createTurn(runtime))) {
-        chunks.push(chunk);
-      }
-    })();
-    await waitForCondition(() => mockTransportInstances[0]?.request.mock.calls.some(([type]) => type === 'prompt'));
+    const iterator = runtime.query(createTurn(runtime));
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: 'user_message_start', content: 'Hello Pi' },
+    });
+    expect(mockTransportInstances[0].request).toHaveBeenCalledWith('prompt', {
+      message: 'Hello Pi',
+    });
+
     await fs.writeFile(sessionFile, [
       JSON.stringify({ type: 'session', id: 'session-1' }),
       JSON.stringify({ id: 'u0', parentId: null, type: 'message', message: { role: 'user', content: 'Before' } }),
@@ -764,8 +756,15 @@ describe('PiChatRuntime', () => {
       JSON.stringify({ id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: 'Hello' } }),
     ].join('\n'));
     mockTransportInstances[0].eventHandlers[0]({ type: 'agent_end' });
-    await promise;
 
+    const chunks: unknown[] = [];
+    while (true) {
+      const next = await iterator.next();
+      if (next.done) {
+        break;
+      }
+      chunks.push(next.value);
+    }
     expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
     expect(runtime.consumeTurnMetadata()).toMatchObject({
       assistantMessageId: 'a1',
