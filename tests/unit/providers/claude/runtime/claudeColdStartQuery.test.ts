@@ -86,6 +86,17 @@ describe('runColdStartQuery', () => {
 
       expect(result.sessionId).toBeNull();
     });
+
+    it('ignores non-assistant SDK messages with string message payloads', async () => {
+      sdkMock.setMockMessages([
+        { type: 'permission_denied', message: 'Permission denied' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'answer' }] } },
+      ]);
+
+      const result = await runColdStartQuery(createConfig(), 'hi');
+
+      expect(result.text).toBe('answer');
+    });
   });
 
   describe('infrastructure errors', () => {

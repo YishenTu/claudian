@@ -1,19 +1,76 @@
+const JS_IDENTIFIER = '[A-Za-z_$][A-Za-z0-9_$]*';
+
 const UNSAFE_TIMER_UNREF_PATTERNS = [
   {
-    name: 'claude-sdk-process-transport-close',
-    pattern: /if \(\$ && !\$\.killed && \$\.exitCode === null\) setTimeout\(\(X\) => \{\s*if \(X\.killed \|\| X\.exitCode !== null\) return;\s*X\.kill\("SIGTERM"\), setTimeout\(\(J\) => \{\s*if \(J\.exitCode === null\) J\.kill\("SIGKILL"\);\s*\}, 5e3, X\)\.unref\(\);\s*\}, ([A-Za-z_$][A-Za-z0-9_$]*), \$\)\.unref\(\), \$\.once\("exit", (\(\) => (?:\{[^{}]*\}|[^;{}]+))\);/g,
+    name: 'claude-sdk-process-transport-close-async',
+    pattern: new RegExp(
+      `if \\((${JS_IDENTIFIER}) && !\\1\\.killed && \\1\\.exitCode === null\\) setTimeout\\(\\((${JS_IDENTIFIER}), (${JS_IDENTIFIER})\\) => \\{\\s*` +
+      `if \\(\\2\\.exitCode !== null\\) \\{\\s*` +
+      `\\3\\(\\);\\s*` +
+      `return;\\s*` +
+      `\\}\\s*` +
+      `if \\(process\\.platform === "win32"\\) \\{\\s*` +
+      `setTimeout\\(\\((${JS_IDENTIFIER}), (${JS_IDENTIFIER})\\) => \\{\\s*` +
+      `if \\(\\4\\.exitCode === null\\) \\4\\.kill\\("SIGKILL"\\);\\s*` +
+      `\\5\\(\\);\\s*` +
+      `\\}, 5e3, \\2, \\3\\)\\.unref\\(\\);\\s*` +
+      `return;\\s*` +
+      `\\}\\s*` +
+      `\\2\\.kill\\("SIGTERM"\\), setTimeout\\(\\((${JS_IDENTIFIER})\\) => \\{\\s*` +
+      `if \\(\\6\\.exitCode === null\\) \\6\\.kill\\("SIGKILL"\\);\\s*` +
+      `\\}, 5e3, \\2\\)\\.unref\\(\\), \\3\\(\\);\\s*` +
+      `\\}, (${JS_IDENTIFIER}), \\1, (${JS_IDENTIFIER})\\)\\.unref\\(\\), \\1\\.once\\("exit", (\\(\\) => (?:\\{[^{}]*\\}|[^;{}]+))\\);`,
+      'g',
+    ),
     replacement:
-      'if ($ && !$.killed && $.exitCode === null) {' +
-      '\n      const processKillTimer = setTimeout((X) => {' +
-      '\n        if (X.killed || X.exitCode !== null) return;' +
-      '\n        X.kill("SIGTERM");' +
-      '\n        const forceKillTimer = setTimeout((J) => {' +
-      '\n          if (J.exitCode === null) J.kill("SIGKILL");' +
-      '\n        }, 5e3, X);' +
+      'if ($1 && !$1.killed && $1.exitCode === null) {' +
+      '\n      const processKillTimer = setTimeout(($2, $3) => {' +
+      '\n        if ($2.exitCode !== null) {' +
+      '\n          $3();' +
+      '\n          return;' +
+      '\n        }' +
+      '\n        if (process.platform === "win32") {' +
+      '\n          const windowsForceKillTimer = setTimeout(($4, $5) => {' +
+      '\n            if ($4.exitCode === null) $4.kill("SIGKILL");' +
+      '\n            $5();' +
+      '\n          }, 5e3, $2, $3);' +
+      '\n          windowsForceKillTimer.unref?.();' +
+      '\n          return;' +
+      '\n        }' +
+      '\n        $2.kill("SIGTERM");' +
+      '\n        const forceKillTimer = setTimeout(($6) => {' +
+      '\n          if ($6.exitCode === null) $6.kill("SIGKILL");' +
+      '\n        }, 5e3, $2);' +
       '\n        forceKillTimer.unref?.();' +
-      '\n      }, $1, $);' +
+      '\n        $3();' +
+      '\n      }, $7, $1, $8);' +
       '\n      processKillTimer.unref?.();' +
-      '\n      $.once("exit", $2);' +
+      '\n      $1.once("exit", $9);' +
+      '\n    }',
+  },
+  {
+    name: 'claude-sdk-process-transport-close',
+    pattern: new RegExp(
+      `if \\((${JS_IDENTIFIER}) && !\\1\\.killed && \\1\\.exitCode === null\\) setTimeout\\(\\((${JS_IDENTIFIER})\\) => \\{\\s*` +
+      `if \\(\\2\\.killed \\|\\| \\2\\.exitCode !== null\\) return;\\s*` +
+      `\\2\\.kill\\("SIGTERM"\\), setTimeout\\(\\((${JS_IDENTIFIER})\\) => \\{\\s*` +
+      `if \\(\\3\\.exitCode === null\\) \\3\\.kill\\("SIGKILL"\\);\\s*` +
+      `\\}, 5e3, \\2\\)\\.unref\\(\\);\\s*` +
+      `\\}, (${JS_IDENTIFIER}), \\1\\)\\.unref\\(\\), \\1\\.once\\("exit", (\\(\\) => (?:\\{[^{}]*\\}|[^;{}]+))\\);`,
+      'g',
+    ),
+    replacement:
+      'if ($1 && !$1.killed && $1.exitCode === null) {' +
+      '\n      const processKillTimer = setTimeout(($2) => {' +
+      '\n        if ($2.killed || $2.exitCode !== null) return;' +
+      '\n        $2.kill("SIGTERM");' +
+      '\n        const forceKillTimer = setTimeout(($3) => {' +
+      '\n          if ($3.exitCode === null) $3.kill("SIGKILL");' +
+      '\n        }, 5e3, $2);' +
+      '\n        forceKillTimer.unref?.();' +
+      '\n      }, $4, $1);' +
+      '\n      processKillTimer.unref?.();' +
+      '\n      $1.once("exit", $5);' +
       '\n    }',
   },
   {

@@ -1,8 +1,17 @@
 export function extractAssistantText(
-  message: { type: string; message?: { content?: unknown } }
+  message: { type: string; message?: unknown }
 ): string {
-  const content = message.message?.content;
-  if (message.type !== 'assistant' || !Array.isArray(content)) {
+  if (message.type !== 'assistant') {
+    return '';
+  }
+
+  const payload = message.message;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return '';
+  }
+
+  const content = (payload as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
     return '';
   }
 
