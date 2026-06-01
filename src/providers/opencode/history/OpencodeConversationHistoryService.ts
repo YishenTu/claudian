@@ -1,7 +1,10 @@
 import type { ProviderConversationHistoryService } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { getOpencodeState, type OpencodeProviderState } from '../types';
-import { loadOpencodeSessionMessages } from './OpencodeHistoryStore';
+import {
+  isOpencodeSessionHydrationDiagnosticMessage,
+  loadOpencodeSessionMessages,
+} from './OpencodeHistoryStore';
 
 export class OpencodeConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedKeys = new Map<string, string>();
@@ -32,6 +35,14 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     }
 
     conversation.messages = messages;
+    if (
+      messages.length === 1
+      && isOpencodeSessionHydrationDiagnosticMessage(messages[0])
+    ) {
+      this.hydratedKeys.delete(conversation.id);
+      return;
+    }
+
     this.hydratedKeys.set(conversation.id, hydrationKey);
   }
 
