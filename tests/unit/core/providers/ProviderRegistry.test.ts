@@ -96,7 +96,7 @@ describe('ProviderRegistry', () => {
     expect(caps.supportsProviderCommands).toBe(true);
     expect(caps.supportsImageAttachments).toBe(true);
     expect(caps.supportsTurnSteer).toBe(true);
-    expect(caps.supportsFork).toBe(false);
+    expect(caps.supportsFork).toBe(true);
   });
 
   it('lists registered provider ids', () => {

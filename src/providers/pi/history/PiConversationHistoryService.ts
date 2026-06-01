@@ -13,6 +13,37 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     vaultPath: string | null,
   ): Promise<void> {
     const state = getPiState(conversation.providerState);
+    if (this.isPendingForkConversation(conversation)) {
+      if (conversation.messages.length > 0) {
+        return;
+      }
+
+      const sourceSessionFile = state.forkSourceSessionFile
+        ?? findPiSessionFile(state.forkSource!.sessionId, vaultPath);
+      if (!sourceSessionFile) {
+        this.hydratedKeys.delete(conversation.id);
+        return;
+      }
+
+      try {
+        const content = await fs.readFile(sourceSessionFile, 'utf-8');
+        const messages = parsePiSessionContent(content, {
+          leafEntryId: state.forkSource!.resumeAt,
+          requireLeafEntryId: true,
+        });
+        if (messages.length === 0) {
+          this.hydratedKeys.delete(conversation.id);
+          return;
+        }
+
+        conversation.messages = messages;
+        this.hydratedKeys.set(conversation.id, `fork::${sourceSessionFile}::${state.forkSource!.resumeAt}`);
+      } catch {
+        this.hydratedKeys.delete(conversation.id);
+      }
+      return;
+    }
+
     const sessionTarget = state.sessionFile ?? state.sessionId ?? conversation.sessionId;
     if (!sessionTarget) {
       this.hydratedKeys.delete(conversation.id);
@@ -59,19 +90,29 @@ export class PiConversationHistoryService implements ProviderConversationHistory
 
   resolveSessionIdForConversation(conversation: Conversation | null): string | null {
     const state = getPiState(conversation?.providerState);
-    return state.sessionId ?? conversation?.sessionId ?? null;
+    return state.sessionFile
+      ?? state.sessionId
+      ?? conversation?.sessionId
+      ?? state.forkSource?.sessionId
+      ?? null;
   }
 
   isPendingForkConversation(_conversation: Conversation): boolean {
-    return false;
+    const state = getPiState(_conversation.providerState);
+    return !!state.forkSource && !state.sessionId && !state.sessionFile && !_conversation.sessionId;
   }
 
   buildForkProviderState(
-    _sourceSessionId: string,
-    _resumeAt: string,
-    _sourceProviderState?: Record<string, unknown>,
+    sourceSessionId: string,
+    resumeAt: string,
+    sourceProviderState?: Record<string, unknown>,
   ): Record<string, unknown> {
-    return {};
+    const sourceState = getPiState(sourceProviderState);
+    const sourceSessionFile = sourceState.sessionFile ?? sourceState.forkSourceSessionFile;
+    return buildPersistedPiState({
+      forkSource: { sessionId: sourceSessionId, resumeAt },
+      ...(sourceSessionFile ? { forkSourceSessionFile: sourceSessionFile } : {}),
+    }) as Record<string, unknown>;
   }
 
   buildPersistedProviderState(

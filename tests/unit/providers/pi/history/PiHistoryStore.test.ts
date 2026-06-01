@@ -1,7 +1,14 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import {
+  createPiForkSessionFile,
   parsePiSessionContent,
+  parsePiSessionEntries,
   type PiSessionEntry,
   resolvePiActivePath,
+  resolvePiEntryPath,
 } from '@/providers/pi/history/PiHistoryStore';
 
 describe('PiHistoryStore', () => {
@@ -352,6 +359,134 @@ describe('PiHistoryStore', () => {
       input: { file_path: 'left.md', path: 'left.md' },
       name: 'Read',
       result: 'left contents',
+      status: 'completed',
+    }]);
+  });
+
+  it('resolves a strict entry path for fork checkpoints without sibling branches', () => {
+    const entries = parsePiSessionEntries([
+      JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'First' } }),
+      JSON.stringify({ id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+      JSON.stringify({ id: 'u2', parentId: 'a1', type: 'message', message: { role: 'user', content: 'Next branch' } }),
+      JSON.stringify({ id: 'a2', parentId: 'u2', type: 'message', message: { role: 'assistant', content: 'Later' } }),
+    ].join('\n')).entries;
+
+    expect(resolvePiEntryPath(entries, 'a1').map(entry => entry.id)).toEqual(['u1', 'a1']);
+  });
+
+  it('truncates linear Pi sessions through the requested checkpoint', () => {
+    const content = [
+      JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'First' } }),
+      JSON.stringify({ id: 'a1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+      JSON.stringify({ id: 'u2', type: 'message', message: { role: 'user', content: 'Later' } }),
+      JSON.stringify({ id: 'a2', type: 'message', message: { role: 'assistant', content: 'Do not include' } }),
+    ].join('\n');
+    const entries = parsePiSessionEntries(content).entries;
+
+    expect(resolvePiEntryPath(entries, 'a1').map(entry => entry.id)).toEqual(['u1', 'a1']);
+    expect(parsePiSessionContent(content, { leafEntryId: 'a1' }).map(message => message.content)).toEqual([
+      'First',
+      'Done',
+    ]);
+  });
+
+  it('keeps id-less trailing entries during normal linear hydration', () => {
+    const content = [
+      JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'First' } }),
+      JSON.stringify({ id: 'a1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+      JSON.stringify({ type: 'custom_message', content: 'Trailing notice' }),
+    ].join('\n');
+
+    expect(parsePiSessionContent(content).map(message => message.content)).toEqual([
+      'First',
+      'Done',
+      'Trailing notice',
+    ]);
+    expect(parsePiSessionContent(content, { leafEntryId: 'a1' }).map(message => message.content)).toEqual([
+      'First',
+      'Done',
+    ]);
+  });
+
+  it('creates a self-contained Pi fork session file at the assistant checkpoint', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-fork-'));
+    const sourceFile = path.join(dir, 'source.jsonl');
+    await fs.writeFile(sourceFile, [
+      JSON.stringify({ type: 'session', version: 3, id: 'source-session', timestamp: '2026-01-01T00:00:00.000Z', cwd: '/source-cwd' }),
+      JSON.stringify({ id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: 'First' } }),
+      JSON.stringify({ id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+      JSON.stringify({ id: 'u2', parentId: 'a1', type: 'message', message: { role: 'user', content: 'Do not copy' } }),
+    ].join('\n'));
+
+    const forked = await createPiForkSessionFile(sourceFile, 'a1', {
+      now: new Date('2026-02-03T04:05:06.789Z'),
+      sessionId: 'fork-session',
+      targetCwd: '/target-cwd',
+    });
+    const forkedContent = await fs.readFile(forked.sessionFile, 'utf-8');
+    const forkedLines = forkedContent.trim().split('\n').map(line => JSON.parse(line));
+
+    expect(forked).toEqual({
+      leafEntryId: 'a1',
+      parentSession: sourceFile,
+      sessionFile: path.join(dir, '2026-02-03T04-05-06-789Z_fork-session.jsonl'),
+      sessionId: 'fork-session',
+    });
+    expect(forkedLines).toEqual([
+      {
+        cwd: '/target-cwd',
+        id: 'fork-session',
+        parentSession: sourceFile,
+        timestamp: '2026-02-03T04:05:06.789Z',
+        type: 'session',
+        version: 3,
+      },
+      { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: 'First' } },
+      { id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: 'Done' } },
+    ]);
+  });
+
+  it('includes active id-less tool results when creating linear Pi fork files', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-fork-linear-'));
+    const sourceFile = path.join(dir, 'source.jsonl');
+    await fs.writeFile(sourceFile, [
+      JSON.stringify({ type: 'session', version: 3, id: 'source-session', timestamp: '2026-01-01T00:00:00.000Z', cwd: '/source-cwd' }),
+      JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'Read a file' } }),
+      JSON.stringify({
+        id: 'a1',
+        type: 'message',
+        message: {
+          role: 'assistant',
+          content: [
+            { id: 'tool-1', input: { path: 'a.md' }, name: 'read', type: 'toolCall' },
+          ],
+        },
+      }),
+      JSON.stringify({
+        result: { content: [{ text: 'file contents', type: 'text' }] },
+        toolCallId: 'tool-1',
+        type: 'toolResult',
+      }),
+      JSON.stringify({ id: 'u2', type: 'message', message: { role: 'user', content: 'Do not copy' } }),
+    ].join('\n'));
+
+    const forked = await createPiForkSessionFile(sourceFile, 'a1', {
+      now: new Date('2026-02-03T04:05:06.789Z'),
+      sessionId: 'fork-session',
+    });
+    const forkedContent = await fs.readFile(forked.sessionFile, 'utf-8');
+    const forkedLines = forkedContent.trim().split('\n').map(line => JSON.parse(line));
+
+    expect(forkedLines.map(line => line.id)).toEqual(['fork-session', 'u1', 'a1', undefined]);
+    expect(forkedLines[3]).toMatchObject({
+      toolCallId: 'tool-1',
+      type: 'toolResult',
+    });
+    expect(parsePiSessionContent(forkedContent)[1].toolCalls).toEqual([{
+      id: 'tool-1',
+      input: { file_path: 'a.md', path: 'a.md' },
+      name: 'Read',
+      result: 'file contents',
       status: 'completed',
     }]);
   });

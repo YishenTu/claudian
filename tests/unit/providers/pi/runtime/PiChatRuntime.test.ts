@@ -1,3 +1,7 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 const mockTransportInstances: MockPiRpcTransport[] = [];
 const mockSubprocessInstances: MockPiSubprocess[] = [];
 
@@ -109,6 +113,16 @@ function createTurn(runtime: PiChatRuntime) {
 
 async function flushPromises(): Promise<void> {
   await new Promise(resolve => setImmediate(resolve));
+}
+
+async function waitForCondition(condition: () => boolean): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    if (condition()) {
+      return;
+    }
+    await flushPromises();
+  }
+  throw new Error('Condition was not met');
 }
 
 describe('PiChatRuntime', () => {
@@ -595,6 +609,169 @@ describe('PiChatRuntime', () => {
     await runtime.ensureReady();
 
     expect(mockSubprocessInstances).toHaveLength(2);
+  });
+
+  it('materializes pending Pi forks into a new one-to-one session file before startup', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-runtime-fork-'));
+    const sourceFile = path.join(dir, 'source.jsonl');
+    await fs.writeFile(sourceFile, [
+      JSON.stringify({ type: 'session', version: 3, id: 'source-session', timestamp: '2026-01-01T00:00:00.000Z', cwd: '/tmp/pi-vault' }),
+      JSON.stringify({ id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: 'First' } }),
+      JSON.stringify({ id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+      JSON.stringify({ id: 'u2', parentId: 'a1', type: 'message', message: { role: 'user', content: 'Do not copy' } }),
+    ].join('\n'));
+    const runtime = new PiChatRuntime(createPlugin());
+
+    runtime.syncConversationState({
+      providerState: {
+        forkSource: { sessionId: 'source-session', resumeAt: 'a1' },
+        forkSourceSessionFile: sourceFile,
+      },
+      sessionId: null,
+    });
+    await runtime.ensureReady();
+
+    const launchSpec = mockSubprocessInstances[0].launchSpec as { args: string[] };
+    const sessionArgIndex = launchSpec.args.indexOf('--session');
+    expect(sessionArgIndex).toBeGreaterThanOrEqual(0);
+    const forkedSessionFile = launchSpec.args[sessionArgIndex + 1];
+    expect(forkedSessionFile).toMatch(new RegExp(`${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/.*\\.jsonl$`));
+    const forkedLines = (await fs.readFile(forkedSessionFile, 'utf-8'))
+      .trim()
+      .split('\n')
+      .map(line => JSON.parse(line));
+    expect(forkedLines.map(line => line.id)).toEqual([
+      expect.any(String),
+      'u1',
+      'a1',
+    ]);
+    expect(forkedLines[0]).toMatchObject({
+      cwd: '/tmp/pi-vault',
+      parentSession: sourceFile,
+      type: 'session',
+      version: 3,
+    });
+    expect(runtime.buildSessionUpdates({
+      conversation: null,
+      sessionInvalidated: false,
+    }).updates.providerState).toMatchObject({
+      leafEntryId: 'a1',
+      parentSession: sourceFile,
+      sessionFile: forkedSessionFile,
+      sessionId: forkedLines[0].id,
+    });
+  });
+
+  it('does not materialize pending Pi forks when session creation is disallowed', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-runtime-fork-warmup-'));
+    const sourceFile = path.join(dir, 'source.jsonl');
+    await fs.writeFile(sourceFile, [
+      JSON.stringify({ type: 'session', version: 3, id: 'source-session', timestamp: '2026-01-01T00:00:00.000Z', cwd: '/tmp/pi-vault' }),
+      JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'First' } }),
+      JSON.stringify({ id: 'a1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+    ].join('\n'));
+    const runtime = new PiChatRuntime(createPlugin());
+    const forkSource = { sessionId: 'source-session', resumeAt: 'a1' };
+
+    runtime.syncConversationState({
+      providerState: {
+        forkSource,
+        forkSourceSessionFile: sourceFile,
+      },
+      sessionId: null,
+    });
+    await runtime.ensureReady({ allowSessionCreation: false });
+
+    const launchSpec = mockSubprocessInstances[0].launchSpec as { args: string[] };
+    expect(launchSpec.args).toContain('--no-session');
+    expect(launchSpec.args).not.toContain('--session');
+    expect((await fs.readdir(dir)).sort()).toEqual(['source.jsonl']);
+    expect(runtime.buildSessionUpdates({
+      conversation: null,
+      sessionInvalidated: false,
+    }).updates.providerState).toEqual({
+      forkSource,
+      forkSourceSessionFile: sourceFile,
+    });
+  });
+
+  it('resolves fork source sessions from pending Pi fork metadata', () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    const conversation = {
+      createdAt: 1,
+      id: 'conversation-1',
+      messages: [],
+      providerId: 'pi',
+      providerState: {
+        forkSource: { sessionId: 'source-session', resumeAt: 'a1' },
+      },
+      sessionId: null,
+      title: 'Pi',
+      updatedAt: 1,
+    } satisfies Conversation;
+
+    expect(runtime.resolveSessionIdForFork(conversation)).toBe('source-session');
+  });
+
+  it('resolves file-only Pi sessions as fork sources', () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    const conversation = {
+      createdAt: 1,
+      id: 'conversation-1',
+      messages: [],
+      providerId: 'pi',
+      providerState: {
+        sessionFile: '/tmp/pi-session.jsonl',
+      },
+      sessionId: null,
+      title: 'Pi',
+      updatedAt: 1,
+    } satisfies Conversation;
+
+    expect(runtime.resolveSessionIdForFork(conversation)).toBe('/tmp/pi-session.jsonl');
+
+    runtime.syncConversationState(conversation);
+
+    expect(runtime.resolveSessionIdForFork(null)).toBe('/tmp/pi-session.jsonl');
+  });
+
+  it('records live Pi message ids from the appended session path after a turn', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-runtime-metadata-'));
+    const sessionFile = path.join(dir, 'session.jsonl');
+    await fs.writeFile(sessionFile, [
+      JSON.stringify({ type: 'session', id: 'session-1' }),
+      JSON.stringify({ id: 'u0', parentId: null, type: 'message', message: { role: 'user', content: 'Before' } }),
+      JSON.stringify({ id: 'a0', parentId: 'u0', type: 'message', message: { role: 'assistant', content: 'Ready' } }),
+    ].join('\n'));
+    const runtime = new PiChatRuntime(createPlugin());
+    runtime.syncConversationState({
+      providerState: { sessionFile, sessionId: 'session-1' },
+      sessionId: 'session-1',
+    });
+
+    const chunks: unknown[] = [];
+    const promise = (async () => {
+      for await (const chunk of runtime.query(createTurn(runtime))) {
+        chunks.push(chunk);
+      }
+    })();
+    await waitForCondition(() => mockTransportInstances[0]?.request.mock.calls.some(([type]) => type === 'prompt'));
+    await fs.writeFile(sessionFile, [
+      JSON.stringify({ type: 'session', id: 'session-1' }),
+      JSON.stringify({ id: 'u0', parentId: null, type: 'message', message: { role: 'user', content: 'Before' } }),
+      JSON.stringify({ id: 'a0', parentId: 'u0', type: 'message', message: { role: 'assistant', content: 'Ready' } }),
+      JSON.stringify({ id: 'u1', parentId: 'a0', type: 'message', message: { role: 'user', content: 'Hello Pi' } }),
+      JSON.stringify({ id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: 'Hello' } }),
+    ].join('\n'));
+    mockTransportInstances[0].eventHandlers[0]({ type: 'agent_end' });
+    await promise;
+
+    expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
+    expect(runtime.consumeTurnMetadata()).toMatchObject({
+      assistantMessageId: 'a1',
+      userMessageId: 'u1',
+      wasSent: true,
+    });
   });
 
   it('does not persist stale session file state after a reset starts a new Pi session', () => {

@@ -39,20 +39,107 @@ describe('PiConversationHistoryService', () => {
     });
   });
 
-  it('sanitizes persisted provider state and keeps fork disabled', () => {
+  it('builds pending fork state from source session metadata', () => {
+    const service = new PiConversationHistoryService();
+    const conversation = createConversation('/tmp/session.jsonl');
+    conversation.providerState = {
+      forkSource: { sessionId: 'source-session', resumeAt: 'assistant-1' },
+      forkSourceSessionFile: '/tmp/source.jsonl',
+    };
+    conversation.sessionId = null;
+
+    expect(service.isPendingForkConversation(conversation)).toBe(true);
+    expect(service.resolveSessionIdForConversation(conversation)).toBe('source-session');
+    expect(service.buildForkProviderState('s1', 'checkpoint', {
+      sessionFile: '/tmp/session.jsonl',
+    })).toEqual({
+      forkSource: { sessionId: 's1', resumeAt: 'checkpoint' },
+      forkSourceSessionFile: '/tmp/session.jsonl',
+    });
+    expect(service.buildForkProviderState('source-session', 'checkpoint', {
+      forkSource: { sessionId: 'source-session', resumeAt: 'assistant-1' },
+      forkSourceSessionFile: '/tmp/source.jsonl',
+    })).toEqual({
+      forkSource: { sessionId: 'source-session', resumeAt: 'checkpoint' },
+      forkSourceSessionFile: '/tmp/source.jsonl',
+    });
+  });
+
+  it('resolves file-only Pi sessions as fork sources', () => {
+    const service = new PiConversationHistoryService();
+    const conversation = createConversation('/tmp/session.jsonl');
+    conversation.providerState = { sessionFile: '/tmp/session.jsonl' };
+    conversation.sessionId = null;
+
+    expect(service.resolveSessionIdForConversation(conversation)).toBe('/tmp/session.jsonl');
+    expect(service.buildForkProviderState('/tmp/session.jsonl', 'checkpoint', {
+      sessionFile: '/tmp/session.jsonl',
+    })).toEqual({
+      forkSource: { sessionId: '/tmp/session.jsonl', resumeAt: 'checkpoint' },
+      forkSourceSessionFile: '/tmp/session.jsonl',
+    });
+  });
+
+  it('hydrates pending forks from the source session truncated at the checkpoint', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-'));
+    const sessionFile = path.join(dir, 'source.jsonl');
+    await fs.writeFile(sessionFile, [
+      JSON.stringify({ type: 'session', id: 'source-session' }),
+      JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'First' } }),
+      JSON.stringify({ id: 'a1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+      JSON.stringify({ id: 'u2', type: 'message', message: { role: 'user', content: 'Later' } }),
+    ].join('\n'));
+    const conversation = createConversation(sessionFile);
+    conversation.messages = [];
+    conversation.providerState = {
+      forkSource: { sessionId: 'source-session', resumeAt: 'a1' },
+      forkSourceSessionFile: sessionFile,
+    };
+    conversation.sessionId = null;
+    const service = new PiConversationHistoryService();
+
+    await service.hydrateConversationHistory(conversation, null);
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['First', 'Done']);
+  });
+
+  it('does not hydrate pending forks when the checkpoint is missing', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-missing-'));
+    const sessionFile = path.join(dir, 'source.jsonl');
+    await fs.writeFile(sessionFile, [
+      JSON.stringify({ type: 'session', id: 'source-session' }),
+      JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'First' } }),
+      JSON.stringify({ id: 'a1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+      JSON.stringify({ id: 'u2', type: 'message', message: { role: 'user', content: 'Later' } }),
+    ].join('\n'));
+    const conversation = createConversation(sessionFile);
+    conversation.messages = [];
+    conversation.providerState = {
+      forkSource: { sessionId: 'source-session', resumeAt: 'missing-checkpoint' },
+      forkSourceSessionFile: sessionFile,
+    };
+    conversation.sessionId = null;
+    const service = new PiConversationHistoryService();
+
+    await service.hydrateConversationHistory(conversation, null);
+
+    expect(conversation.messages).toEqual([]);
+  });
+
+  it('sanitizes persisted provider state', () => {
     const service = new PiConversationHistoryService();
     const conversation = createConversation('/tmp/session.jsonl');
     conversation.providerState = {
       empty: '',
       leafEntryId: 'leaf-1',
+      parentSession: '/tmp/source.jsonl',
       sessionFile: '/tmp/session.jsonl',
       sessionId: 's1',
     };
 
-    expect(service.isPendingForkConversation(conversation)).toBe(false);
-    expect(service.buildForkProviderState('s1', 'checkpoint')).toEqual({});
     expect(service.buildPersistedProviderState?.(conversation)).toEqual({
       leafEntryId: 'leaf-1',
+      parentSession: '/tmp/source.jsonl',
       sessionFile: '/tmp/session.jsonl',
       sessionId: 's1',
     });

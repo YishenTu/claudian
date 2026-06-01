@@ -6,7 +6,7 @@ export const PI_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object.f
   supportsNativeHistory: true,
   supportsPlanMode: false,
   supportsRewind: false,
-  supportsFork: false,
+  supportsFork: true,
   supportsProviderCommands: true,
   supportsImageAttachments: true,
   supportsInstructionMode: true,

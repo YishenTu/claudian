@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
+import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
@@ -26,15 +28,39 @@ export interface ParsedPiSessionEntries {
 
 export interface ParsePiSessionContentOptions {
   leafEntryId?: string;
+  requireLeafEntryId?: boolean;
+}
+
+export interface CreatePiForkSessionFileOptions {
+  now?: Date;
+  sessionDir?: string;
+  sessionId?: string;
+  targetCwd?: string;
+}
+
+export interface CreatedPiForkSessionFile {
+  leafEntryId: string;
+  parentSession: string;
+  sessionFile: string;
+  sessionId: string;
 }
 
 export function parsePiSessionContent(
   content: string,
   options: ParsePiSessionContentOptions = {},
 ): ChatMessage[] {
+  const parsed = parsePiSessionEntries(content);
+  const leafEntryId = options.leafEntryId?.trim();
+  if (
+    options.requireLeafEntryId
+    && (!leafEntryId || !parsed.entries.some(entry => entry.id === leafEntryId))
+  ) {
+    return [];
+  }
+
   return mapPiSessionEntries(resolvePiActivePath(
-    parsePiSessionEntries(content).entries,
-    options.leafEntryId,
+    parsed.entries,
+    leafEntryId,
   ));
 }
 
@@ -80,15 +106,17 @@ export function parsePiSessionEntries(content: string): ParsedPiSessionEntries {
 }
 
 export function resolvePiActivePath(entries: PiSessionEntry[], leafId?: string): PiSessionEntry[] {
-  const entriesWithIds = entries.filter(entry => entry.id);
+  const entriesWithIds = entries.filter((entry): entry is PiSessionEntry & { id: string } => !!entry.id);
   if (entriesWithIds.length === 0) {
     return entries;
   }
-  if (!entriesWithIds.some(entry => entry.parentId)) {
+
+  const hasBranchGraph = hasPiBranchGraph(entriesWithIds);
+  if (!leafId && !hasBranchGraph) {
     return entries;
   }
 
-  const byId = new Map(entriesWithIds.map(entry => [entry.id!, entry] as const));
+  const byId = new Map(entriesWithIds.map(entry => [entry.id, entry] as const));
   const targetLeafId = leafId && byId.has(leafId)
     ? leafId
     : entriesWithIds[entriesWithIds.length - 1]?.id;
@@ -96,6 +124,46 @@ export function resolvePiActivePath(entries: PiSessionEntry[], leafId?: string):
     return entries;
   }
 
+  const activePath = hasBranchGraph
+    ? resolvePiGraphEntryPath(byId, targetLeafId)
+    : resolvePiLinearEntryPath(entries, targetLeafId);
+  if (activePath.length === 0) {
+    return entries;
+  }
+
+  return hasBranchGraph
+    ? includePiGraphPathEntries(entries, activePath)
+    : includePiLinearPathEntries(entries, activePath);
+}
+
+export function resolvePiEntryPath(entries: PiSessionEntry[], leafId: string): PiSessionEntry[] {
+  const entriesWithIds = entries.filter((entry): entry is PiSessionEntry & { id: string } => !!entry.id);
+  const byId = new Map(entriesWithIds.map(entry => [entry.id, entry] as const));
+  if (!byId.has(leafId)) {
+    return [];
+  }
+
+  const hasBranchGraph = hasPiBranchGraph(entriesWithIds);
+  const activePath = hasBranchGraph
+    ? resolvePiGraphEntryPath(byId, leafId)
+    : resolvePiLinearEntryPath(entries, leafId);
+  if (activePath.length === 0) {
+    return [];
+  }
+
+  return hasBranchGraph
+    ? includePiGraphPathEntries(entries, activePath)
+    : includePiLinearPathEntries(entries, activePath);
+}
+
+function hasPiBranchGraph(entriesWithIds: PiSessionEntry[]): boolean {
+  return entriesWithIds.some(entry => !!entry.parentId && !isToolResultEntry(entry));
+}
+
+function resolvePiGraphEntryPath(
+  byId: Map<string, PiSessionEntry>,
+  targetLeafId: string,
+): PiSessionEntry[] {
   const activePath: PiSessionEntry[] = [];
   const seen = new Set<string>();
   let current: PiSessionEntry | undefined = byId.get(targetLeafId);
@@ -108,6 +176,21 @@ export function resolvePiActivePath(entries: PiSessionEntry[], leafId?: string):
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
 
+  return activePath;
+}
+
+function resolvePiLinearEntryPath(entries: PiSessionEntry[], targetLeafId: string): PiSessionEntry[] {
+  const leafIndex = entries.findIndex(entry => entry.id === targetLeafId);
+  if (leafIndex < 0) {
+    return [];
+  }
+  return entries.slice(0, leafIndex + 1);
+}
+
+function includePiGraphPathEntries(
+  entries: PiSessionEntry[],
+  activePath: PiSessionEntry[],
+): PiSessionEntry[] {
   const activeIds = new Set(activePath.map(entry => entry.id).filter((id): id is string => !!id));
   const activeToolCallIds = collectToolCallIds(activePath);
   return entries.filter((entry) => {
@@ -125,6 +208,71 @@ export function resolvePiActivePath(entries: PiSessionEntry[], leafId?: string):
     }
     return false;
   });
+}
+
+function includePiLinearPathEntries(
+  entries: PiSessionEntry[],
+  activePath: PiSessionEntry[],
+): PiSessionEntry[] {
+  const activeEntries = new Set(activePath);
+  const activeToolCallIds = collectToolCallIds(activePath);
+  return entries.filter((entry) => {
+    if (activeEntries.has(entry)) {
+      return true;
+    }
+    if (!isToolResultEntry(entry)) {
+      return false;
+    }
+    const toolCallId = getToolResultCallId(entry);
+    return !!toolCallId && activeToolCallIds.has(toolCallId);
+  });
+}
+
+export async function createPiForkSessionFile(
+  sourceSessionFile: string,
+  resumeAt: string,
+  options: CreatePiForkSessionFileOptions = {},
+): Promise<CreatedPiForkSessionFile> {
+  const sourceContent = await fsp.readFile(sourceSessionFile, 'utf-8');
+  const parsed = parsePiSessionEntries(sourceContent);
+  const branchEntries = resolvePiEntryPath(parsed.entries, resumeAt);
+  if (branchEntries.length === 0) {
+    throw new Error(`Pi fork checkpoint not found: ${resumeAt}`);
+  }
+
+  const timestamp = options.now ?? new Date();
+  const timestampText = timestamp.toISOString();
+  const sessionId = options.sessionId ?? randomUUID();
+  const sessionDir = options.sessionDir ?? path.dirname(sourceSessionFile);
+  const sessionFile = path.join(
+    sessionDir,
+    `${timestampText.replace(/[:.]/g, '-')}_${sessionId}.jsonl`,
+  );
+  const sourceCwd = typeof parsed.header?.cwd === 'string' && parsed.header.cwd.trim()
+    ? parsed.header.cwd.trim()
+    : process.cwd();
+  const header = {
+    type: 'session',
+    version: 3,
+    id: sessionId,
+    timestamp: timestampText,
+    cwd: options.targetCwd ?? sourceCwd,
+    parentSession: sourceSessionFile,
+  };
+  const lines = [
+    JSON.stringify(header),
+    ...branchEntries.map(entry => JSON.stringify(entry.raw)),
+  ];
+
+  await fsp.mkdir(sessionDir, { recursive: true });
+  await fsp.writeFile(sessionFile, `${lines.join('\n')}\n`, { flag: 'wx' });
+
+  return {
+    leafEntryId: resumeAt,
+    parentSession: sourceSessionFile,
+    sessionFile,
+    sessionId,
+  };
 }
 
 export function findPiSessionFile(

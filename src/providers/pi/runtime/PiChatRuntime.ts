@@ -1,3 +1,4 @@
+import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 
 import {
@@ -38,6 +39,12 @@ import { parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { PI_PROVIDER_CAPABILITIES } from '../capabilities';
 import {
+  createPiForkSessionFile,
+  findPiSessionFile,
+  parsePiSessionEntries,
+  resolvePiActivePath,
+} from '../history/PiHistoryStore';
+import {
   clampPiThinkingLevel,
   decodePiModelId,
   findPiModel,
@@ -49,7 +56,12 @@ import {
   type PiEventNormalizationState,
 } from '../normalizations/piEventNormalization';
 import { getPiProviderSettings } from '../settings';
-import { buildPersistedPiState, getPiState, type PiProviderState } from '../types';
+import {
+  buildPersistedPiState,
+  getPiState,
+  type PiForkSource,
+  type PiProviderState,
+} from '../types';
 import { buildPiPromptImages, buildPiPromptText } from './buildPiPrompt';
 import { buildPiUsageInfo } from './buildPiUsageInfo';
 import { PiExtensionUiBridge, type PiExtensionUiRenderer } from './PiExtensionUiBridge';
@@ -126,6 +138,9 @@ export class PiChatRuntime implements ChatRuntime {
   private currentTurnMetadata: ChatTurnMetadata = {};
   private extensionBridge: PiExtensionUiBridge | null = null;
   private leafEntryId: string | null = null;
+  private parentSession: string | null = null;
+  private pendingFork: PiForkSource | null = null;
+  private pendingForkSourceSessionFile: string | null = null;
   private process: PiSubprocess | null = null;
   private ready = false;
   private readonly readyListeners = new Set<(ready: boolean) => void>();
@@ -171,14 +186,31 @@ export class PiChatRuntime implements ChatRuntime {
       this.sessionId = null;
       this.sessionFile = null;
       this.leafEntryId = null;
+      this.parentSession = null;
+      this.pendingFork = null;
+      this.pendingForkSourceSessionFile = null;
       this.sessionInvalidated = false;
       return;
     }
 
     const state = getPiState(conversation.providerState);
+    if (state.forkSource && !state.sessionId && !state.sessionFile && !conversation.sessionId) {
+      this.sessionId = null;
+      this.sessionFile = null;
+      this.leafEntryId = null;
+      this.parentSession = null;
+      this.pendingFork = state.forkSource;
+      this.pendingForkSourceSessionFile = state.forkSourceSessionFile ?? null;
+      this.sessionInvalidated = false;
+      return;
+    }
+
     this.sessionId = state.sessionId ?? conversation.sessionId ?? null;
     this.sessionFile = state.sessionFile ?? null;
     this.leafEntryId = state.leafEntryId ?? null;
+    this.parentSession = state.parentSession ?? null;
+    this.pendingFork = null;
+    this.pendingForkSourceSessionFile = null;
     this.sessionInvalidated = false;
   }
 
@@ -191,11 +223,15 @@ export class PiChatRuntime implements ChatRuntime {
       return false;
     }
 
-    const hasSessionTarget = Boolean(this.sessionId || this.sessionFile);
     const allowSessionCreation = options?.allowSessionCreation !== false;
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
     const resolvedCliPath = this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
     const runtimeEnvText = getRuntimeEnvironmentText(this.plugin.settings as unknown as Record<string, unknown>, 'pi');
+    if (allowSessionCreation) {
+      await this.materializePendingFork(cwd, runtimeEnvText);
+    }
+
+    const hasSessionTarget = Boolean(this.sessionId || this.sessionFile);
     const promptSettings = this.getSystemPromptSettings(cwd);
     const systemPrompt = buildSystemPrompt(promptSettings);
     const noSession = !allowSessionCreation && !hasSessionTarget;
@@ -253,7 +289,16 @@ export class PiChatRuntime implements ChatRuntime {
     queryOptions?: ChatRuntimeQueryOptions,
   ): AsyncGenerator<StreamChunk> {
     this.currentTurnMetadata = {};
-    if (!(await this.ensureReady())) {
+    let isReady: boolean;
+    try {
+      isReady = await this.ensureReady();
+    } catch (error) {
+      yield { type: 'error', content: this.formatRuntimeError(error) };
+      yield { type: 'done' };
+      return;
+    }
+
+    if (!isReady) {
       yield { type: 'error', content: 'Failed to start Pi. Check the CLI path and login state.' };
       yield { type: 'done' };
       return;
@@ -335,6 +380,9 @@ export class PiChatRuntime implements ChatRuntime {
     this.sessionId = null;
     this.sessionFile = null;
     this.leafEntryId = null;
+    this.parentSession = null;
+    this.pendingFork = null;
+    this.pendingForkSourceSessionFile = null;
     this.currentSessionTarget = null;
     if (this.transport && !this.transport.isClosed) {
       void this.transport.request('new_session')
@@ -428,7 +476,14 @@ export class PiChatRuntime implements ChatRuntime {
   }
 
   resolveSessionIdForFork(conversation: Conversation | null): string | null {
-    return this.sessionId ?? conversation?.sessionId ?? null;
+    const state = getPiState(conversation?.providerState);
+    return this.sessionFile
+      ?? this.sessionId
+      ?? state.sessionFile
+      ?? state.sessionId
+      ?? conversation?.sessionId
+      ?? state.forkSource?.sessionId
+      ?? null;
   }
 
   async loadSubagentToolCalls(_agentId: string): Promise<ToolCallInfo[]> {
@@ -483,6 +538,7 @@ export class PiChatRuntime implements ChatRuntime {
     queryOptions?: ChatRuntimeQueryOptions,
   ): Promise<void> {
     try {
+      const turnStartLeafId = await this.resolveCurrentLeafEntryId();
       await this.applySelectedModel(queryOptions);
       await this.applySelectedThinkingLevel(queryOptions);
       if (activeTurn.cancelled) {
@@ -509,6 +565,7 @@ export class PiChatRuntime implements ChatRuntime {
       }
 
       await this.refreshStateAndSessionTarget();
+      await this.updateTurnMetadataFromSessionFile(turnStartLeafId);
       const usage = await this.fetchUsage(queryOptions).catch(() => null);
       if (usage) {
         activeTurn.queue.push({ sessionId: this.sessionId, type: 'usage', usage });
@@ -685,6 +742,9 @@ export class PiChatRuntime implements ChatRuntime {
     this.leafEntryId = getString(state.leafEntryId)
       ?? getString(state.leaf_entry_id)
       ?? this.leafEntryId;
+    this.parentSession = getString(state.parentSession)
+      ?? getString(state.parent_session)
+      ?? this.parentSession;
   }
 
   private async fetchUsage(queryOptions?: ChatRuntimeQueryOptions): Promise<UsageInfo | null> {
@@ -699,6 +759,93 @@ export class PiChatRuntime implements ChatRuntime {
       : undefined;
     const response = await this.transport.request('get_session_stats', {}, 10_000);
     return buildPiUsageInfo(response, selectedModel, fallbackContextWindow);
+  }
+
+  private async materializePendingFork(cwd: string, runtimeEnvText: string): Promise<void> {
+    if (!this.pendingFork) {
+      return;
+    }
+
+    const env = parseEnvironmentVariables(runtimeEnvText);
+    const sourceSessionFile = this.pendingForkSourceSessionFile
+      ?? findPiSessionFile(
+        this.pendingFork.sessionId,
+        cwd,
+        typeof env.PI_CODING_AGENT_SESSION_DIR === 'string' ? env.PI_CODING_AGENT_SESSION_DIR : null,
+      );
+    if (!sourceSessionFile) {
+      throw new Error(`Pi fork source session not found: ${this.pendingFork.sessionId}`);
+    }
+
+    const forkedSession = await createPiForkSessionFile(
+      sourceSessionFile,
+      this.pendingFork.resumeAt,
+      { targetCwd: cwd },
+    );
+    this.sessionId = forkedSession.sessionId;
+    this.sessionFile = forkedSession.sessionFile;
+    this.leafEntryId = forkedSession.leafEntryId;
+    this.parentSession = forkedSession.parentSession;
+    this.pendingFork = null;
+    this.pendingForkSourceSessionFile = null;
+    this.sessionInvalidated = false;
+    this.currentSessionTarget = null;
+  }
+
+  private async resolveCurrentLeafEntryId(): Promise<string | null> {
+    if (this.leafEntryId) {
+      return this.leafEntryId;
+    }
+    if (!this.sessionFile) {
+      return null;
+    }
+
+    try {
+      const content = await fsp.readFile(this.sessionFile, 'utf-8');
+      const entries = parsePiSessionEntries(content).entries;
+      const activePath = resolvePiActivePath(entries);
+      const leafEntryId = getLastPiEntryId(activePath);
+      this.leafEntryId = leafEntryId;
+      return leafEntryId;
+    } catch {
+      return null;
+    }
+  }
+
+  private async updateTurnMetadataFromSessionFile(previousLeafEntryId: string | null): Promise<void> {
+    if (!this.sessionFile) {
+      return;
+    }
+
+    try {
+      const content = await fsp.readFile(this.sessionFile, 'utf-8');
+      const entries = parsePiSessionEntries(content).entries;
+      const activePath = resolvePiActivePath(entries);
+      if (activePath.length === 0) {
+        return;
+      }
+
+      this.leafEntryId = getLastPiEntryId(activePath) ?? this.leafEntryId;
+      const previousLeafIndex = previousLeafEntryId
+        ? activePath.findIndex(entry => entry.id === previousLeafEntryId)
+        : -1;
+      const newEntries = previousLeafIndex >= 0
+        ? activePath.slice(previousLeafIndex + 1)
+        : activePath;
+      const userEntry = previousLeafIndex >= 0
+        ? newEntries.find(entry => getPiEntryRole(entry) === 'user')
+        : findLastPiEntryByRole(newEntries, 'user');
+      const assistantEntry = findLastPiEntryByRole(newEntries, 'assistant');
+
+      if (userEntry?.id) {
+        this.currentTurnMetadata.userMessageId = userEntry.id;
+      }
+      if (assistantEntry?.id) {
+        this.currentTurnMetadata.assistantMessageId = assistantEntry.id;
+      }
+    } catch {
+      // Live checkpoint metadata is best-effort; hydration can still recover IDs later.
+    }
   }
 
   private getSystemPromptSettings(vaultPath: string): SystemPromptSettings {
@@ -763,8 +910,18 @@ export class PiChatRuntime implements ChatRuntime {
   }
 
   private getCurrentProviderState(): PiProviderState {
+    if (this.pendingFork) {
+      return {
+        forkSource: this.pendingFork,
+        ...(this.pendingForkSourceSessionFile
+          ? { forkSourceSessionFile: this.pendingForkSourceSessionFile }
+          : {}),
+      };
+    }
+
     return {
       ...(this.leafEntryId ? { leafEntryId: this.leafEntryId } : {}),
+      ...(this.parentSession ? { parentSession: this.parentSession } : {}),
       ...(this.sessionFile ? { sessionFile: this.sessionFile } : {}),
       ...(this.sessionId ? { sessionId: this.sessionId } : {}),
     };
@@ -854,6 +1011,41 @@ function normalizePiRuntimeCommands(response: unknown): SlashCommand[] {
 function extractStateRecord(response: unknown): Record<string, unknown> {
   const record = getRecord(response);
   return getRecord(record.state ?? record.session ?? response);
+}
+
+function getPiEntryRole(entry: { message?: Record<string, unknown>; type: string }): string | null {
+  const message = entry.message ?? {};
+  const role = getString(message.role);
+  if (role) {
+    return role;
+  }
+
+  if (entry.type === 'toolResult') {
+    return 'toolResult';
+  }
+  return null;
+}
+
+function getLastPiEntryId(entries: Array<{ id?: string }>): string | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const id = entries[i].id;
+    if (id) {
+      return id;
+    }
+  }
+  return null;
+}
+
+function findLastPiEntryByRole<T extends { message?: Record<string, unknown>; type: string }>(
+  entries: T[],
+  role: string,
+): T | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (getPiEntryRole(entries[i]) === role) {
+      return entries[i];
+    }
+  }
+  return undefined;
 }
 
 function getRecord(value: unknown): Record<string, unknown> {
