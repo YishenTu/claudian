@@ -307,6 +307,31 @@ describe('PiChatRuntime', () => {
     });
   });
 
+  it('emits terminal Pi stop-reason errors before completing the turn', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    const iterator = runtime.query(createTurn(runtime));
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: 'user_message_start', content: 'Hello Pi' },
+    });
+
+    mockTransportInstances[0].eventHandlers[0]({
+      errorMessage: 'Invalid image',
+      stopReason: 'error',
+      type: 'message_end',
+    });
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: 'error', content: 'Invalid image' },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: 'done' },
+    });
+  });
+
   it('maps steer images and filters empty image data', async () => {
     const runtime = new PiChatRuntime(createPlugin());
     const iterator = runtime.query(createTurn(runtime));

@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 
 import { getEnhancedPath } from '../../../utils/env';
+import { resolveWindowsCmdShimSpawnSpec } from '../../../utils/windowsCmdShim';
 
 const SIGKILL_TIMEOUT_MS = 3_000;
 const STDERR_BUFFER_LIMIT = 8_000;
@@ -45,7 +46,8 @@ export class PiSubprocess {
       return;
     }
 
-    const proc = spawn(this.launchSpec.command, this.launchSpec.args, {
+    const resolvedSpawnSpec = resolveWindowsCmdShimSpawnSpec(this.launchSpec);
+    const proc = spawn(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
       cwd: this.launchSpec.cwd,
       env: {
         ...this.launchSpec.env,
@@ -56,6 +58,7 @@ export class PiSubprocess {
       },
       stdio: 'pipe',
       windowsHide: true,
+      ...(resolvedSpawnSpec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     });
 
     proc.stderr.on('data', (chunk: Buffer | string) => {

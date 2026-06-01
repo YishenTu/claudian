@@ -92,6 +92,10 @@ export class PiAuxQueryRunner implements AuxQueryRunner {
         return;
       }
       for (const chunk of normalizePiRpcEvent(event, normalizationState)) {
+        if (chunk.type === 'error') {
+          rejectTerminal(new Error(chunk.content));
+          continue;
+        }
         if (chunk.type !== 'text') {
           continue;
         }

@@ -26,6 +26,7 @@ function createMockProcess(): any {
 }
 
 describe('PiSubprocess', () => {
+  const originalPlatform = process.platform;
   let proc: any;
 
   beforeEach(() => {
@@ -35,6 +36,7 @@ describe('PiSubprocess', () => {
   });
 
   afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
     jest.useRealTimers();
   });
 
@@ -56,6 +58,28 @@ describe('PiSubprocess', () => {
         PATH: expect.stringContaining('/usr/bin'),
       }),
     }));
+  });
+
+  it('wraps Windows .cmd shims through cmd.exe', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const subprocess = new PiSubprocess({
+      args: ['--mode', 'rpc', '--system-prompt', 'Use R&D policy'],
+      command: 'C:\\Users\\R&D\\AppData\\Roaming\\npm\\pi.cmd',
+      cwd: 'C:\\Vault',
+      env: { PATH: 'C:\\Windows\\System32' },
+    });
+
+    subprocess.start();
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      process.env.ComSpec || process.env.comspec || 'cmd.exe',
+      ['/d', '/s', '/c', '""C:\\Users\\R&D\\AppData\\Roaming\\npm\\pi.cmd" --mode rpc --system-prompt "Use R&D policy""'],
+      expect.objectContaining({
+        cwd: 'C:\\Vault',
+        windowsHide: true,
+        windowsVerbatimArguments: true,
+      }),
+    );
   });
 
   it('keeps a bounded stderr snapshot for runtime errors', () => {

@@ -35,6 +35,9 @@ export function normalizePiRpcEvent(
       return normalizeToolOutput(event, state);
     case 'tool_execution_end':
       return normalizeToolResult(event, state);
+    case 'message_end':
+    case 'turn_end':
+      return normalizeTerminalError(event);
     case 'compaction_end':
       return [{ type: 'context_compacted' }];
     case 'auto_retry_start':
@@ -46,6 +49,25 @@ export function normalizePiRpcEvent(
     default:
       return [];
   }
+}
+
+export function getPiTerminalErrorMessage(event: Record<string, unknown>): string | null {
+  if (event.type !== 'message_end' && event.type !== 'turn_end') {
+    return null;
+  }
+
+  const terminalEvent = getNestedRecord(event, 'assistantMessageEvent')
+    ?? getNestedRecord(event, 'assistant_message_event')
+    ?? event;
+  const records = terminalEvent === event ? [event] : [terminalEvent, event];
+  const stopReason = getStringField(records, ['stopReason', 'stop_reason']);
+  if (stopReason?.toLowerCase() !== 'error') {
+    return null;
+  }
+
+  return getStringField(records, ['errorMessage', 'error_message', 'error', 'message'])
+    ?? getNestedStringField(records, 'error', ['message'])
+    ?? 'Pi turn failed.';
 }
 
 function normalizeMessageUpdate(event: Record<string, unknown>): StreamChunk[] {
@@ -75,6 +97,11 @@ function normalizeMessageUpdate(event: Record<string, unknown>): StreamChunk[] {
   }
 
   return [];
+}
+
+function normalizeTerminalError(event: Record<string, unknown>): StreamChunk[] {
+  const message = getPiTerminalErrorMessage(event);
+  return message ? [{ type: 'error', content: message }] : [];
 }
 
 function normalizeToolUse(
@@ -148,4 +175,37 @@ function getNestedRecord(
 
 function getString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
+}
+
+function getStringField(
+  records: Array<Record<string, unknown>>,
+  keys: string[],
+): string | null {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = getString(record[key]);
+      if (value) {
+        return value;
+      }
+    }
+  }
+  return null;
+}
+
+function getNestedStringField(
+  records: Array<Record<string, unknown>>,
+  parentKey: string,
+  keys: string[],
+): string | null {
+  for (const record of records) {
+    const nested = getNestedRecord(record, parentKey);
+    if (!nested) {
+      continue;
+    }
+    const value = getStringField([nested], keys);
+    if (value) {
+      return value;
+    }
+  }
+  return null;
 }

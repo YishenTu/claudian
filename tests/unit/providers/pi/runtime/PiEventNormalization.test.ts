@@ -126,4 +126,22 @@ describe('Pi event normalization', () => {
       type: 'notice',
     }]);
   });
+
+  it('surfaces terminal Pi stop-reason errors', () => {
+    const state = createPiEventNormalizationState();
+
+    expect(normalizePiRpcEvent({
+      errorMessage: 'Invalid image',
+      stopReason: 'error',
+      type: 'message_end',
+    }, state)).toEqual([{ type: 'error', content: 'Invalid image' }]);
+
+    expect(normalizePiRpcEvent({
+      assistant_message_event: {
+        error_message: 'Authentication failed',
+        stop_reason: 'error',
+      },
+      type: 'turn_end',
+    }, state)).toEqual([{ type: 'error', content: 'Authentication failed' }]);
+  });
 });

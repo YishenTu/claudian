@@ -154,4 +154,19 @@ describe('PiAuxQueryRunner', () => {
       type: 'extension_ui_response',
     });
   });
+
+  it('rejects terminal Pi stop-reason errors', async () => {
+    mockTransportRequest.mockResolvedValue({});
+    const runner = new PiAuxQueryRunner(createPlugin(), { profile: 'passive' });
+    const query = runner.query({ systemPrompt: 'Summarize briefly.' }, 'Hello');
+
+    await flushPromises();
+    mockEventHandler?.({
+      errorMessage: 'Authentication failed',
+      stopReason: 'error',
+      type: 'turn_end',
+    });
+
+    await expect(query).rejects.toThrow('Authentication failed');
+  });
 });

@@ -52,6 +52,7 @@ import {
 } from '../models';
 import {
   createPiEventNormalizationState,
+  getPiTerminalErrorMessage,
   normalizePiRpcEvent,
   type PiEventNormalizationState,
 } from '../normalizations/piEventNormalization';
@@ -661,8 +662,12 @@ export class PiChatRuntime implements ChatRuntime {
     }
 
     const state = this.getNormalizationState();
-    for (const chunk of normalizePiRpcEvent(event, state)) {
+    const chunks = normalizePiRpcEvent(event, state);
+    for (const chunk of chunks) {
       this.activeTurn?.queue.push(chunk);
+    }
+    if (getPiTerminalErrorMessage(event)) {
+      this.activeTurn?.resolveTerminal();
     }
   }
 
