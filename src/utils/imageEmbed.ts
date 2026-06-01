@@ -25,6 +25,11 @@ const IMAGE_EXTENSIONS = new Set([
 
 const IMAGE_EMBED_PATTERN = /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
+interface ReplaceImageEmbedsOptions {
+  mediaFolder?: string;
+  sourcePath?: string;
+}
+
 function isImagePath(path: string): boolean {
   const ext = path.split('.').pop()?.toLowerCase();
   return ext ? IMAGE_EXTENSIONS.has(ext) : false;
@@ -33,18 +38,18 @@ function isImagePath(path: string): boolean {
 function resolveImageFile(
   app: App,
   imagePath: string,
-  mediaFolder: string
+  options: Required<ReplaceImageEmbedsOptions>
 ): TFile | null {
   let file = getVaultFileByPath(app, imagePath);
   if (file) return file;
 
-  if (mediaFolder) {
-    const withFolder = `${mediaFolder}/${imagePath}`;
+  if (options.mediaFolder) {
+    const withFolder = `${options.mediaFolder}/${imagePath}`;
     file = getVaultFileByPath(app, withFolder);
     if (file) return file;
   }
 
-  const resolved = app.metadataCache.getFirstLinkpathDest(imagePath, '');
+  const resolved = app.metadataCache.getFirstLinkpathDest(imagePath, options.sourcePath);
   if (resolved) return resolved;
 
   return null;
@@ -83,18 +88,31 @@ function createFallbackHtml(wikilink: string): string {
   return `<span class="claudian-embedded-image-fallback">${escapeHtml(wikilink)}</span>`;
 }
 
+function normalizeOptions(options?: string | ReplaceImageEmbedsOptions): Required<ReplaceImageEmbedsOptions> {
+  if (typeof options === 'string') {
+    return { mediaFolder: options, sourcePath: '' };
+  }
+
+  return {
+    mediaFolder: options?.mediaFolder ?? '',
+    sourcePath: options?.sourcePath ?? '',
+  };
+}
+
 /**
- * Call before MarkdownRenderer.renderMarkdown().
+ * Call before MarkdownRenderer.render().
  * Non-image embeds (e.g., ![[note.md]]) pass through unchanged.
  */
 export function replaceImageEmbedsWithHtml(
   markdown: string,
   app: App,
-  mediaFolder: string = ''
+  options?: string | ReplaceImageEmbedsOptions
 ): string {
   if (!app?.vault || !app?.metadataCache) {
     return markdown;
   }
+
+  const normalizedOptions = normalizeOptions(options);
 
   // Reset lastIndex to avoid issues with global regex
   IMAGE_EMBED_PATTERN.lastIndex = 0;
@@ -107,7 +125,7 @@ export function replaceImageEmbedsWithHtml(
           return match;
         }
 
-        const file = resolveImageFile(app, imagePath, mediaFolder);
+        const file = resolveImageFile(app, imagePath, normalizedOptions);
         if (!file) {
           return createFallbackHtml(match);
         }

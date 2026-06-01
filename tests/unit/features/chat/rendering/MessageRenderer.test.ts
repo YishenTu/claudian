@@ -1681,7 +1681,7 @@ describe('MessageRenderer', () => {
       expect(replaceImageEmbedsWithHtml).toHaveBeenCalledWith(
         'before-images ![[image.png]] [[note.md]]',
         expect.anything(),
-        ''
+        { mediaFolder: '' }
       );
       expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalledWith(
         '<span title="[[note.md]]">raw html</span>\n    [[note.md]]',

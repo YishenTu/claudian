@@ -1,4 +1,4 @@
-import { RangeSetBuilder, StateEffect, StateField, type Text } from '@codemirror/state';
+import { StateEffect, StateField, type Text } from '@codemirror/state';
 import type { DecorationSet } from '@codemirror/view';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { App, Editor, MarkdownView } from 'obsidian';
@@ -26,6 +26,7 @@ import { buildExternalContextDisplayEntries } from '../../../utils/externalConte
 import { externalContextScanner } from '../../../utils/externalContextScanner';
 import { normalizeInsertionText } from '../../../utils/inlineEdit';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
+import { renderInlineEditMarkdownPreview } from './inlineEditMarkdownPreview';
 
 export type InlineEditContext =
   | { mode: 'selection'; selectedText: string }
@@ -42,11 +43,15 @@ const showDiff = StateEffect.define<{
   from: number;
   to: number;
   diffOps: DiffOp[];
+  previewPos: number;
+  previewText: string;
   widget: InlineEditController;
 }>();
 const showInsertion = StateEffect.define<{
   pos: number;
   diffOps: DiffOp[];
+  previewPos: number;
+  previewText: string;
   widget: InlineEditController;
 }>();
 const hideInlineEdit = StateEffect.define<null>();
@@ -107,6 +112,21 @@ class InputWidget extends WidgetType {
   }
 }
 
+class PreviewWidget extends WidgetType {
+  constructor(private markdown: string, private controller: InlineEditController) {
+    super();
+  }
+  toDOM(): HTMLElement {
+    return this.controller.createPreviewDOM(this.markdown);
+  }
+  eq(other: PreviewWidget): boolean {
+    return this.markdown === other.markdown;
+  }
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
 export function buildInlineEditInputDecorations(options: {
   doc: Text;
   inputPos: number;
@@ -143,18 +163,28 @@ const inlineEditField = StateField.define<DecorationSet>({
           widget: new InputWidget(e.value.widget),
         });
       } else if (e.is(showDiff)) {
-        const builder = new RangeSetBuilder<Decoration>();
-        builder.add(e.value.from, e.value.to, Decoration.replace({
-          widget: new DiffWidget(e.value.diffOps, e.value.widget),
-        }));
-        deco = builder.finish();
+        deco = Decoration.set([
+          Decoration.widget({
+            widget: new PreviewWidget(e.value.previewText, e.value.widget),
+            block: true,
+            side: -1,
+          }).range(e.value.previewPos),
+          Decoration.replace({
+            widget: new DiffWidget(e.value.diffOps, e.value.widget),
+          }).range(e.value.from, e.value.to),
+        ], true);
       } else if (e.is(showInsertion)) {
-        const builder = new RangeSetBuilder<Decoration>();
-        builder.add(e.value.pos, e.value.pos, Decoration.widget({
-          widget: new DiffWidget(e.value.diffOps, e.value.widget),
-          side: 1, // After the position
-        }));
-        deco = builder.finish();
+        deco = Decoration.set([
+          Decoration.widget({
+            widget: new PreviewWidget(e.value.previewText, e.value.widget),
+            block: true,
+            side: -1,
+          }).range(e.value.previewPos),
+          Decoration.widget({
+            widget: new DiffWidget(e.value.diffOps, e.value.widget),
+            side: 1, // After the position
+          }).range(e.value.pos),
+        ], true);
       } else if (e.is(hideInlineEdit)) {
         deco = Decoration.none;
       }
@@ -308,6 +338,7 @@ class InlineEditController {
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private mentionDropdown: MentionDropdownController | null = null;
   private mentionDataProvider: VaultMentionDataProvider;
+  private agentReplyRenderVersion = 0;
 
   constructor(
     private app: App,
@@ -516,6 +547,45 @@ class InlineEditController {
     return container;
   }
 
+  createPreviewDOM(markdown: string): HTMLElement {
+    const ownerDocument = this.getOwnerDocument();
+    const previewEl = ownerDocument.createElement('div');
+    previewEl.className = 'claudian-inline-markdown-preview';
+
+    const bodyEl = ownerDocument.createElement('div');
+    bodyEl.className = 'claudian-inline-markdown-preview-body markdown-rendered';
+    previewEl.appendChild(bodyEl);
+
+    void this.renderMarkdownPreview(bodyEl, markdown);
+    return previewEl;
+  }
+
+  private async renderMarkdownPreview(container: HTMLElement, markdown: string): Promise<void> {
+    await renderInlineEditMarkdownPreview({
+      app: this.app,
+      component: this.plugin,
+      container,
+      markdown,
+      sourcePath: this.notePath,
+      mediaFolder: this.plugin.settings?.mediaFolder ?? '',
+    });
+  }
+
+  private replaceRenderedPreview(target: HTMLElement, rendered: HTMLElement): void {
+    target.empty();
+
+    if (rendered.childNodes) {
+      for (const child of Array.from(rendered.childNodes)) {
+        target.appendChild(child);
+      }
+      return;
+    }
+
+    for (const child of Array.from(rendered.children)) {
+      target.appendChild(child);
+    }
+  }
+
   private async generate() {
     if (!this.inputEl || !this.spinnerEl) return;
     const userMessage = this.inputEl.value.trim();
@@ -582,8 +652,18 @@ class InlineEditController {
 
   private showAgentReply(message: string) {
     if (!this.agentReplyEl || !this.containerEl) return;
-    this.agentReplyEl.removeClass('claudian-hidden');
-    this.agentReplyEl.textContent = message;
+    const replyEl = this.agentReplyEl;
+    const renderVersion = ++this.agentReplyRenderVersion;
+    const renderedEl = this.getOwnerDocument().createElement('div');
+
+    replyEl.removeClass('claudian-hidden');
+    replyEl.empty();
+    void this.renderMarkdownPreview(renderedEl, message).then(() => {
+      if (renderVersion !== this.agentReplyRenderVersion || replyEl !== this.agentReplyEl) {
+        return;
+      }
+      this.replaceRenderedPreview(replyEl, renderedEl);
+    });
     this.containerEl.classList.add('has-agent-reply');
   }
 
@@ -603,12 +683,15 @@ class InlineEditController {
     hideSelectionHighlight(this.editorView);
 
     const diffOps = computeDiff(this.selectedText, this.editedText);
+    const previewPos = this.editorView.state.doc.lineAt(this.selFrom).from;
 
     this.editorView.dispatch({
       effects: showDiff.of({
         from: this.selFrom,
         to: this.selTo,
         diffOps,
+        previewPos,
+        previewText: this.editedText,
         widget: this,
       }),
     });
@@ -625,11 +708,14 @@ class InlineEditController {
     this.insertedText = trimmedText;
 
     const diffOps: DiffOp[] = [{ type: 'insert', text: trimmedText }];
+    const previewPos = this.editorView.state.doc.lineAt(this.selFrom).from;
 
     this.editorView.dispatch({
       effects: showInsertion.of({
         pos: this.selFrom,
         diffOps,
+        previewPos,
+        previewText: trimmedText,
         widget: this,
       }),
     });

@@ -637,7 +637,7 @@ export class MessageRenderer {
       const processedMarkdown = replaceImageEmbedsWithHtml(
         renderMarkdown,
         this.app,
-        this.plugin.settings.mediaFolder
+        { mediaFolder: this.plugin.settings.mediaFolder }
       );
       await MarkdownRenderer.render(
         this.app,

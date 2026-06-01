@@ -94,6 +94,42 @@
   font-size: var(--font-ui-small, 13px);
   line-height: 1.4;
   color: var(--text-muted);
+  overflow-x: auto;
+  word-wrap: break-word;
+}
+
+.claudian-inline-agent-reply > :first-child,
+.claudian-inline-markdown-preview-body > :first-child {
+  margin-top: 0;
+}
+
+.claudian-inline-agent-reply > :last-child,
+.claudian-inline-markdown-preview-body > :last-child {
+  margin-bottom: 0;
+}
+
+.claudian-inline-markdown-preview {
+  margin: 4px 0 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  overflow-x: auto;
+}
+
+.claudian-inline-markdown-preview-body {
+  font-family: var(--font-text);
+  font-size: var(--font-text-size);
+  line-height: var(--line-height-normal);
+}
+
+.claudian-inline-markdown-preview img {
+  max-width: 100%;
+  height: auto;
+}
+
+.claudian-inline-markdown-fallback {
   white-space: pre-wrap;
   word-wrap: break-word;
 }

@@ -1,7 +1,7 @@
 import '@/providers';
 
 import { createMockEl } from '@test/helpers/mockElement';
-import { Notice } from 'obsidian';
+import { MarkdownRenderer, Notice } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { type InlineEditContext, InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
@@ -32,6 +32,14 @@ jest.mock('@/utils/externalContextScanner', () => ({
     scanPaths: jest.fn().mockReturnValue([]),
   },
 }));
+
+function createDeferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}
 
 describe('InlineEditModal - openAndWait', () => {
   beforeEach(() => {
@@ -990,6 +998,331 @@ describe('InlineEditModal - openAndWait', () => {
 
       expect(editTextMock).toHaveBeenCalledTimes(1);
       expect(editTextMock.mock.calls[0][0].contextFiles).toEqual(['/external/src/my file.md']);
+
+      widgetRef.reject();
+      await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
+      getEditorViewSpy.mockRestore();
+    } finally {
+      (global as any).document = originalDocument;
+    }
+  });
+
+  it('renders clarification replies as markdown with the active note path', async () => {
+    const originalDocument = (global as any).document;
+    (global as any).document = {
+      body: createMockEl('body'),
+      createElement: (tagName: string) => createMockEl(tagName),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    };
+
+    try {
+      const app = {
+        vault: {
+          getFiles: jest.fn().mockReturnValue([]),
+          getAllLoadedFiles: jest.fn().mockReturnValue([]),
+        },
+        workspace: {
+          getActiveViewOfType: jest.fn(),
+        },
+      } as any;
+      const plugin = {
+        settings: {
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
+          mediaFolder: '',
+        },
+        getSdkCommands: jest.fn().mockReturnValue([]),
+      } as any;
+      const editor = {} as any;
+      const view = { editor } as any;
+
+      let widgetRef: any = null;
+      const dispatch = jest.fn((transaction: any) => {
+        const effects = Array.isArray(transaction?.effects)
+          ? transaction.effects
+          : transaction?.effects
+            ? [transaction.effects]
+            : [];
+        for (const effect of effects) {
+          const widget = effect?.value?.widget;
+          if (widget && typeof widget.createInputDOM === 'function') {
+            widgetRef = widget;
+            widget.createInputDOM();
+          }
+        }
+      });
+      const editorView = {
+        state: {
+          doc: {
+            line: jest.fn(() => ({ from: 0 })),
+            lineAt: jest.fn(() => ({ from: 0, number: 1 })),
+          },
+        },
+        dispatch,
+        dom: {
+          ownerDocument: (global as any).document,
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
+        },
+      } as any;
+
+      const getEditorViewSpy = jest
+        .spyOn(editorUtils, 'getEditorView')
+        .mockReturnValue(editorView);
+
+      const editContext: InlineEditContext = {
+        mode: 'cursor',
+        cursorContext: {
+          beforeCursor: '',
+          afterCursor: '',
+          isInbetween: true,
+          line: 0,
+          column: 0,
+        },
+      };
+
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
+      const resultPromise = modal.openAndWait();
+
+      (MarkdownRenderer.renderMarkdown as jest.Mock).mockClear();
+      widgetRef.showAgentReply('Should this use $Z(f)$?');
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalledWith(
+        'Should this use $Z(f)$?',
+        expect.anything(),
+        'math/note.md',
+        plugin
+      );
+
+      widgetRef.reject();
+      await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
+      getEditorViewSpy.mockRestore();
+    } finally {
+      (global as any).document = originalDocument;
+    }
+  });
+
+  it('does not let stale clarification markdown renders overwrite newer replies', async () => {
+    const originalDocument = (global as any).document;
+    (global as any).document = {
+      body: createMockEl('body'),
+      createElement: (tagName: string) => createMockEl(tagName),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    };
+
+    try {
+      const app = {
+        vault: {
+          getFiles: jest.fn().mockReturnValue([]),
+          getAllLoadedFiles: jest.fn().mockReturnValue([]),
+        },
+        workspace: {
+          getActiveViewOfType: jest.fn(),
+        },
+      } as any;
+      const plugin = {
+        settings: {
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
+          mediaFolder: '',
+        },
+        getSdkCommands: jest.fn().mockReturnValue([]),
+      } as any;
+      const editor = {} as any;
+      const view = { editor } as any;
+
+      let widgetRef: any = null;
+      const dispatch = jest.fn((transaction: any) => {
+        const effects = Array.isArray(transaction?.effects)
+          ? transaction.effects
+          : transaction?.effects
+            ? [transaction.effects]
+            : [];
+        for (const effect of effects) {
+          const widget = effect?.value?.widget;
+          if (widget && typeof widget.createInputDOM === 'function') {
+            widgetRef = widget;
+            widget.createInputDOM();
+          }
+        }
+      });
+      const editorView = {
+        state: {
+          doc: {
+            line: jest.fn(() => ({ from: 0 })),
+            lineAt: jest.fn(() => ({ from: 0, number: 1 })),
+          },
+        },
+        dispatch,
+        dom: {
+          ownerDocument: (global as any).document,
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
+        },
+      } as any;
+
+      const getEditorViewSpy = jest
+        .spyOn(editorUtils, 'getEditorView')
+        .mockReturnValue(editorView);
+
+      const firstRender = createDeferred();
+      const secondRender = createDeferred();
+      (MarkdownRenderer.renderMarkdown as jest.Mock)
+        .mockImplementationOnce((markdown: string, container: any) => {
+          container.createDiv({ text: markdown });
+          return firstRender.promise;
+        })
+        .mockImplementationOnce((markdown: string, container: any) => {
+          container.createDiv({ text: markdown });
+          return secondRender.promise;
+        });
+
+      const editContext: InlineEditContext = {
+        mode: 'cursor',
+        cursorContext: {
+          beforeCursor: '',
+          afterCursor: '',
+          isInbetween: true,
+          line: 0,
+          column: 0,
+        },
+      };
+
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
+      const resultPromise = modal.openAndWait();
+
+      widgetRef.showAgentReply('First clarification');
+      widgetRef.showAgentReply('Second clarification');
+
+      secondRender.resolve();
+      await secondRender.promise;
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(widgetRef.agentReplyEl.children).toHaveLength(1);
+      expect(widgetRef.agentReplyEl.children[0].textContent).toBe('Second clarification');
+
+      firstRender.resolve();
+      await firstRender.promise;
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(widgetRef.agentReplyEl.children).toHaveLength(1);
+      expect(widgetRef.agentReplyEl.children[0].textContent).toBe('Second clarification');
+
+      widgetRef.reject();
+      await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
+      getEditorViewSpy.mockRestore();
+    } finally {
+      (global as any).document = originalDocument;
+    }
+  });
+
+  it('adds rendered preview text to inline edit diff effects', async () => {
+    const originalDocument = (global as any).document;
+    (global as any).document = {
+      body: createMockEl('body'),
+      createElement: (tagName: string) => createMockEl(tagName),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    };
+
+    try {
+      const app = {
+        vault: {
+          getFiles: jest.fn().mockReturnValue([]),
+          getAllLoadedFiles: jest.fn().mockReturnValue([]),
+        },
+        workspace: {
+          getActiveViewOfType: jest.fn(),
+        },
+      } as any;
+      const plugin = {
+        settings: {
+          hiddenProviderCommands: {
+            claude: [],
+            codex: [],
+          },
+          mediaFolder: '',
+        },
+        getSdkCommands: jest.fn().mockReturnValue([]),
+      } as any;
+      const editor = {
+        getCursor: jest.fn((which: string) => which === 'from'
+          ? { line: 0, ch: 0 }
+          : { line: 0, ch: 3 }),
+        getSelection: jest.fn().mockReturnValue('old'),
+      } as any;
+      const view = { editor } as any;
+
+      let widgetRef: any = null;
+      let previewText: string | undefined;
+      const dispatch = jest.fn((transaction: any) => {
+        const effects = Array.isArray(transaction?.effects)
+          ? transaction.effects
+          : transaction?.effects
+            ? [transaction.effects]
+            : [];
+        for (const effect of effects) {
+          if (effect?.value?.previewText) {
+            previewText = effect.value.previewText;
+          }
+
+          const widget = effect?.value?.widget;
+          if (widget && typeof widget.createInputDOM === 'function' && !widgetRef) {
+            widgetRef = widget;
+            widget.createInputDOM();
+          }
+        }
+      });
+      const editorView = {
+        state: {
+          doc: {
+            line: jest.fn(() => ({ from: 0 })),
+            lineAt: jest.fn(() => ({ from: 0, number: 1 })),
+          },
+        },
+        dispatch,
+        dom: {
+          ownerDocument: (global as any).document,
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
+        },
+      } as any;
+
+      const getEditorViewSpy = jest
+        .spyOn(editorUtils, 'getEditorView')
+        .mockReturnValue(editorView);
+
+      const editContext: InlineEditContext = {
+        mode: 'selection',
+        selectedText: 'old',
+      };
+
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
+      const resultPromise = modal.openAndWait();
+      widgetRef.inlineEditService = {
+        editText: jest.fn().mockResolvedValue({
+          success: true,
+          editedText: '**new** $x^2$',
+        }),
+        continueConversation: jest.fn(),
+        cancel: jest.fn(),
+        resetConversation: jest.fn(),
+      };
+
+      widgetRef.inputEl.value = 'Improve the statement';
+      await widgetRef.generate();
+
+      expect(previewText).toBe('**new** $x^2$');
 
       widgetRef.reject();
       await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
