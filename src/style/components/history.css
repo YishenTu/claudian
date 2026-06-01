@@ -9,8 +9,6 @@
   bottom: 100%;
   margin-bottom: 4px;
   background: var(--background-secondary);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
