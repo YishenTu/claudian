@@ -128,7 +128,9 @@ export function parseFileUpdateChangeDiffs(changes: unknown): ApplyPatchFileDiff
 }
 
 export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo): ToolDiffData | undefined {
-  const filePath = (toolCall.input.file_path as string) || 'file';
+  const filePath = getNonEmptyStringValue(toolCall.input.file_path)
+    ?? getNonEmptyStringValue(toolCall.input.path)
+    ?? 'file';
 
   if (toolUseResult && typeof toolUseResult === 'object') {
     const result = toolUseResult as Record<string, unknown>;
@@ -138,6 +140,17 @@ export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo):
       const diffLines = structuredPatchToDiffLines(hunks);
       const stats = countLineChanges(diffLines);
       return { filePath: resultFilePath, diffLines, stats };
+    }
+
+    const unifiedDiff = getUnifiedDiffText(result);
+    if (unifiedDiff) {
+      const diffLines = parseUnifiedDiffLines(unifiedDiff);
+      if (diffLines.length > 0) {
+        const resultFilePath = (typeof result.filePath === 'string' ? result.filePath : null)
+          || (typeof result.path === 'string' ? result.path : null)
+          || filePath;
+        return { filePath: resultFilePath, diffLines, stats: countLineChanges(diffLines) };
+      }
     }
   }
 
@@ -149,17 +162,13 @@ export function diffFromToolInput(toolCall: ToolCallInfo, filePath: string): Too
     const oldStr = toolCall.input.old_string;
     const newStr = toolCall.input.new_string;
     if (typeof oldStr === 'string' && typeof newStr === 'string') {
-      const diffLines: DiffLine[] = [];
-      const oldLines = oldStr.split('\n');
-      const newLines = newStr.split('\n');
-      let oldLineNum = 1;
-      for (const line of oldLines) {
-        diffLines.push({ type: 'delete', text: line, oldLineNum: oldLineNum++ });
-      }
-      let newLineNum = 1;
-      for (const line of newLines) {
-        diffLines.push({ type: 'insert', text: line, newLineNum: newLineNum++ });
-      }
+      const diffLines = buildReplacementDiffLines([{ oldText: oldStr, newText: newStr }]);
+      return { filePath, diffLines, stats: countLineChanges(diffLines) };
+    }
+
+    const editPairs = getEditPairs(toolCall.input);
+    if (editPairs.length > 0) {
+      const diffLines = buildReplacementDiffLines(editPairs);
       return { filePath, diffLines, stats: countLineChanges(diffLines) };
     }
   }
@@ -178,6 +187,79 @@ export function diffFromToolInput(toolCall: ToolCallInfo, filePath: string): Too
   }
 
   return undefined;
+}
+
+function getUnifiedDiffText(result: Record<string, unknown>): string | null {
+  if (typeof result.diff === 'string' && result.diff.trim()) {
+    return result.diff;
+  }
+
+  const details = result.details;
+  if (details && typeof details === 'object' && !Array.isArray(details)) {
+    const diff = (details as Record<string, unknown>).diff;
+    if (typeof diff === 'string' && diff.trim()) {
+      return diff;
+    }
+  }
+
+  return null;
+}
+
+interface ReplacementPair {
+  oldText: string;
+  newText: string;
+}
+
+function getEditPairs(input: Record<string, unknown>): ReplacementPair[] {
+  const topLevelPair = getReplacementPair(input);
+  if (topLevelPair) {
+    return [topLevelPair];
+  }
+
+  const edits = input.edits;
+  if (!Array.isArray(edits)) {
+    return [];
+  }
+
+  return edits
+    .map(getReplacementPair)
+    .filter((pair): pair is ReplacementPair => pair !== null);
+}
+
+function getReplacementPair(value: unknown): ReplacementPair | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const oldText = getStringValue(record.oldText ?? record.old_text ?? record.old_string);
+  const newText = getStringValue(record.newText ?? record.new_text ?? record.new_string);
+  return oldText !== null && newText !== null ? { oldText, newText } : null;
+}
+
+function getStringValue(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function getNonEmptyStringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function buildReplacementDiffLines(pairs: ReplacementPair[]): DiffLine[] {
+  const diffLines: DiffLine[] = [];
+  let oldLineNum = 1;
+  let newLineNum = 1;
+
+  for (const pair of pairs) {
+    for (const line of pair.oldText.split('\n')) {
+      diffLines.push({ type: 'delete', text: line, oldLineNum: oldLineNum++ });
+    }
+    for (const line of pair.newText.split('\n')) {
+      diffLines.push({ type: 'insert', text: line, newLineNum: newLineNum++ });
+    }
+  }
+
+  return diffLines;
 }
 
 function buildApplyPatchFileDiff(current: {

@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 
 import { OpencodeCliResolver } from '@/providers/opencode/runtime/OpencodeCliResolver';
 
@@ -8,17 +9,21 @@ jest.mock('@/utils/env', () => ({
   getHostnameKey: () => 'current-host',
 }));
 
-const mockedExists = fs.existsSync as jest.Mock;
 const mockedStat = fs.statSync as jest.Mock;
 
 describe('OpencodeCliResolver', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
   });
 
   it('uses the current host path instead of another synced host path', () => {
-    mockedExists.mockImplementation((filePath: string) => filePath === '/current/opencode');
-    mockedStat.mockReturnValue({ isFile: () => true });
+    mockedStat.mockImplementation((filePath: string) => {
+      if (filePath === '/current/opencode') {
+        return { isFile: () => true };
+      }
+      throw new Error(`ENOENT: ${filePath}`);
+    });
 
     const resolver = new OpencodeCliResolver();
     const resolved = resolver.resolve(
@@ -34,8 +39,12 @@ describe('OpencodeCliResolver', () => {
   });
 
   it('falls back to the legacy path when the current host has no custom path', () => {
-    mockedExists.mockImplementation((filePath: string) => filePath === '/legacy/opencode');
-    mockedStat.mockReturnValue({ isFile: () => true });
+    mockedStat.mockImplementation((filePath: string) => {
+      if (filePath === '/legacy/opencode') {
+        return { isFile: () => true };
+      }
+      throw new Error(`ENOENT: ${filePath}`);
+    });
 
     const resolver = new OpencodeCliResolver();
     const resolved = resolver.resolve(
@@ -50,7 +59,9 @@ describe('OpencodeCliResolver', () => {
   });
 
   it('returns null when neither the current host nor the legacy path resolve to a file', () => {
-    mockedExists.mockReturnValue(false);
+    mockedStat.mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
 
     const resolver = new OpencodeCliResolver();
     const resolved = resolver.resolve(
@@ -62,5 +73,21 @@ describe('OpencodeCliResolver', () => {
     );
 
     expect(resolved).toBeNull();
+  });
+
+  it('falls back to PATH lookup when no OpenCode CLI path is configured', () => {
+    const pathDir = '/custom/bin';
+    const pathBinary = path.join(pathDir, 'opencode');
+    mockedStat.mockImplementation((filePath: string) => {
+      if (filePath === pathBinary) {
+        return { isFile: () => true };
+      }
+      throw new Error(`ENOENT: ${filePath}`);
+    });
+
+    const resolver = new OpencodeCliResolver();
+    const resolved = resolver.resolve({}, '', `PATH=${pathDir}`);
+
+    expect(resolved).toBe(pathBinary);
   });
 });

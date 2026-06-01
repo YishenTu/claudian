@@ -891,6 +891,7 @@ function initializeInputToolbar(
         const newContextWindow = uiConfig.getContextWindowSize(
           model,
           providerSettings.customContextLimits,
+          providerSettings,
         );
         tab.state.usage = recalculateUsageForModel(currentUsage, model, newContextWindow);
       }

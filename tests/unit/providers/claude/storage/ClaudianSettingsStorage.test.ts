@@ -10,6 +10,7 @@ import {
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
+import { getPiProviderSettings } from '@/providers/pi/settings';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
@@ -228,6 +229,12 @@ describe('ClaudianSettingsStorage', () => {
               'host-b': '/custom/opencode-b',
             },
           },
+          pi: {
+            cliPathsByHost: {
+              'host-a': '/custom/pi-a',
+              'host-b': '/custom/pi-b',
+            },
+          },
         },
       }));
 
@@ -235,7 +242,9 @@ describe('ClaudianSettingsStorage', () => {
       const claudeSettings = getClaudeProviderSettings(result);
       const codexSettings = getCodexProviderSettings(result);
       const opencodeSettings = getOpencodeProviderSettings(result);
+      const piSettings = getPiProviderSettings(result);
       const persistedOpencodeConfig = result.providerConfigs.opencode as Record<string, unknown>;
+      const persistedPiConfig = result.providerConfigs.pi as Record<string, unknown>;
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
       expect(claudeSettings.cliPathsByHost).toEqual({
@@ -260,9 +269,17 @@ describe('ClaudianSettingsStorage', () => {
         'device:current': '/custom/opencode-a',
         'host-b': '/custom/opencode-b',
       });
+      expect(piSettings.cliPathsByHost).toEqual({
+        'device:current': '/custom/pi-a',
+        'host-b': '/custom/pi-b',
+      });
       expect(persistedOpencodeConfig.cliPathsByHost).toEqual({
         'device:current': '/custom/opencode-a',
         'host-b': '/custom/opencode-b',
+      });
+      expect(persistedPiConfig.cliPathsByHost).toEqual({
+        'device:current': '/custom/pi-a',
+        'host-b': '/custom/pi-b',
       });
       expect(writtenContent.providerConfigs.claude.cliPathsByHost).toEqual({
         'device:current': '/custom/claude-a',
@@ -275,6 +292,10 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.providerConfigs.opencode.cliPathsByHost).toEqual({
         'device:current': '/custom/opencode-a',
         'host-b': '/custom/opencode-b',
+      });
+      expect(writtenContent.providerConfigs.pi.cliPathsByHost).toEqual({
+        'device:current': '/custom/pi-a',
+        'host-b': '/custom/pi-b',
       });
     });
 

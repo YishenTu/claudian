@@ -192,6 +192,29 @@ describe('CodexAppServerProcess', () => {
       expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
     });
 
+    it('kills the process tree when shutting down Windows .cmd shims', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const server = new CodexAppServerProcess(createLaunchSpec({
+        command: 'C:\\Users\\R&D\\AppData\\Roaming\\npm\\codex.cmd',
+      }));
+      server.start();
+
+      const shutdownPromise = server.shutdown();
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'taskkill.exe',
+        ['/pid', '12345', '/t', '/f'],
+        expect.objectContaining({
+          stdio: 'ignore',
+          windowsHide: true,
+        }),
+      );
+      expect(mockProc.kill).not.toHaveBeenCalled();
+
+      mockProc.emit('exit', 0, null);
+      await shutdownPromise;
+    });
+
     it('sends SIGKILL if process does not exit within timeout', async () => {
       jest.useFakeTimers();
       const server = new CodexAppServerProcess(createLaunchSpec());
