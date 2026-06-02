@@ -5,6 +5,13 @@
 /** Model identifier (string to support custom models via environment variables). */
 export type ClaudeModel = string;
 
+/** A model discovered from the Anthropic /v1/models API. */
+export interface ClaudeDiscoveredModel {
+  id: string;
+  displayName: string;
+  createdAt?: string;
+}
+
 export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
   { value: 'haiku', label: 'Haiku', description: 'Fast and efficient' },
   { value: 'sonnet', label: 'Sonnet', description: 'Balanced performance' },

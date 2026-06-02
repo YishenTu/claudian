@@ -6,6 +6,7 @@ import {
   getLegacyHostnameKey,
   migrateLegacyHostnameKeyedMap,
 } from '../../utils/env';
+import type { ClaudeDiscoveredModel } from './types/models';
 
 export const CLAUDE_SAFE_MODES = ['acceptEdits', 'auto', 'default'] as const;
 export type ClaudeSafeMode = typeof CLAUDE_SAFE_MODES[number];
@@ -24,6 +25,7 @@ export interface ClaudeProviderSettings {
   lastModel: string;
   environmentVariables: string;
   environmentHash: string;
+  discoveredModels: ClaudeDiscoveredModel[];
 }
 
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
@@ -39,6 +41,7 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   lastModel: 'haiku',
   environmentVariables: '',
   environmentHash: '',
+  discoveredModels: [],
 });
 
 function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
@@ -59,6 +62,20 @@ function normalizeClaudeSafeMode(value: unknown): ClaudeSafeMode | undefined {
   return (CLAUDE_SAFE_MODES as readonly unknown[]).includes(value)
     ? value as ClaudeSafeMode
     : undefined;
+}
+
+function normalizeDiscoveredModels(value: unknown): ClaudeDiscoveredModel[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (entry): entry is ClaudeDiscoveredModel =>
+      entry !== null &&
+      typeof entry === 'object' &&
+      typeof entry.id === 'string' &&
+      typeof entry.displayName === 'string',
+  );
 }
 
 export function getClaudeProviderSettings(
@@ -110,6 +127,7 @@ export function getClaudeProviderSettings(
     environmentHash: (config.environmentHash as string | undefined)
       ?? (settings.lastEnvHash as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentHash,
+    discoveredModels: normalizeDiscoveredModels(config.discoveredModels),
   };
 }
 
