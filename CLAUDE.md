@@ -11,6 +11,7 @@ Claudian is an Obsidian plugin that embeds provider-backed chat runtimes in a si
 - Provider boundary: `src/core/runtime/` and `src/core/providers/` define the chat-facing seam. `ProviderRegistry` creates runtimes and provider-owned auxiliary services. `ProviderWorkspaceRegistry` owns workspace services such as command catalogs, agent mention providers, CLI resolution, MCP managers, and provider settings tabs.
 - Claude adaptor: `src/providers/claude/` owns the Claude runtime, prompt encoding, stream transforms, history hydration, CLI resolution, plugin and agent discovery, MCP storage, and Claude-specific settings UI. `ClaudeCommandCatalog` merges vault commands, vault skills, and runtime-supported commands behind the shared command catalog contract.
 - Codex adaptor: `src/providers/codex/` owns the `codex app-server` runtime, JSON-RPC transport, prompt encoding, raw live stream projection, JSONL history reload, settings reconciliation, normalization, skill cataloging, subagent storage, and Codex settings UI. `CodexSkillCatalog` provides `$` skill discovery from `.codex/skills/` and `.agents/skills/` without relying on runtime command discovery.
+- Hermes adaptor: `src/providers/hermes/` owns the Hermes Agent runtime over ACP (Agent Client Protocol) via stdio, SQLite-backed history hydration, multi-model provider support, and Hermes-specific settings UI. Follows the shared ACP infrastructure pattern.
 - Conversations: `Conversation` carries `providerId` and opaque `providerState`. Claude state is typed behind `ClaudeProviderState`. Codex state is typed behind `CodexProviderState` and currently stores `threadId`, `sessionFilePath`, and optional fork metadata.
 
 ## Commands
@@ -34,6 +35,7 @@ npm run test:coverage
 | **core** | Provider-neutral contracts and infrastructure | See [`src/core/CLAUDE.md`](src/core/CLAUDE.md) |
 | **providers/claude** | Claude SDK adaptor | See [`src/providers/claude/CLAUDE.md`](src/providers/claude/CLAUDE.md) |
 | **providers/codex** | Codex app-server adaptor | See [`src/providers/codex/CLAUDE.md`](src/providers/codex/CLAUDE.md) |
+| **providers/hermes** | Hermes Agent ACP adaptor | See [`src/providers/hermes/CLAUDE.md`](src/providers/hermes/CLAUDE.md) |
 | **features/chat** | Main sidebar interface | See [`src/features/chat/CLAUDE.md`](src/features/chat/CLAUDE.md) |
 | **features/inline-edit** | Inline edit modal and provider-backed edit services | `InlineEditModal` plus provider-owned inline edit services |
 | **features/settings** | Shared settings shell with provider tabs | General tab plus provider-owned Claude and Codex tab renderers |
@@ -68,6 +70,8 @@ Tests mirror the `src/` layout under `tests/unit/` and `tests/integration/`.
 | `.codex/agents/*.toml` | Codex vault subagent definitions |
 | `~/.claude/projects/{vault}/*.jsonl` | Claude-native transcripts |
 | `~/.codex/sessions/**/*.jsonl` | Codex-native transcripts |
+| `~/.hermes/state.db` | Hermes SQLite sessions and messages |
+| `~/.hermes/config.yaml` | Hermes configuration (model, provider) |
 
 ## Development Notes
 
