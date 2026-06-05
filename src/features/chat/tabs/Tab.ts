@@ -1794,8 +1794,23 @@ async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Pr
     return;
   }
 
-  const { chunks, metadata } = result;
+  const { chunks, metadata, precedingUserMessage } = result;
   if (chunks.length === 0) return;
+
+  // Remote-control turns carry the originating user prompt (the SDK stream omits
+  // it). Render it as a user bubble before the assistant reply, de-duplicating
+  // against messages already shown (e.g. rebuilt on reload).
+  if (precedingUserMessage) {
+    const alreadyShown = tab.state.messages?.some(
+      msg => msg.id === precedingUserMessage.id
+        || (precedingUserMessage.userMessageId
+          && msg.userMessageId === precedingUserMessage.userMessageId)
+    );
+    if (!alreadyShown) {
+      tab.state.addMessage(precedingUserMessage);
+      tab.renderer?.addMessage?.(precedingUserMessage);
+    }
+  }
 
   const hiddenToolIds = new Set(
     chunks

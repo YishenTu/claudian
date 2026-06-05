@@ -43,6 +43,14 @@ export interface ChatRuntime {
   isReady(): boolean;
   getSupportedCommands(): Promise<SlashCommand[]>;
   getAuxiliaryModel?(): string | null;
+
+  /**
+   * Registers (or unregisters) this session for remote control via the
+   * underlying agent SDK, so it can be driven from a paired Claude client.
+   * Only providers backed by an SDK that supports the `remote_control`
+   * control request implement this.
+   */
+  enableRemoteControl?(enabled: boolean, name?: string): Promise<unknown>;
   cleanup(): void;
   rewind(userMessageId: string, assistantMessageId: string, mode?: ChatRewindMode): Promise<ChatRewindResult>;
   setApprovalCallback(callback: ApprovalCallback | null): void;

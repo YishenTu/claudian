@@ -3,6 +3,7 @@ import type { CanvasSelectionContext } from '../../utils/canvas';
 import type { EditorSelectionContext } from '../../utils/editor';
 import type {
   ApprovalDecision,
+  ChatMessage,
   Conversation,
   ExitPlanModeCallback,
   ImageAttachment,
@@ -108,6 +109,14 @@ export interface ChatTurnMetadata {
 export interface AutoTurnResult {
   chunks: StreamChunk[];
   metadata: ChatTurnMetadata;
+  /**
+   * User message that triggered this auto-turn, when it originated outside the
+   * local UI (e.g. a remote-control turn sent from claude.ai). The SDK stream
+   * does not echo such prompts, so the runtime sources it from the transcript
+   * for the renderer to show before the assistant reply. Undefined for local
+   * background turns (e.g. subagent notifications).
+   */
+  precedingUserMessage?: ChatMessage;
 }
 
 export type AutoTurnCallback = (result: AutoTurnResult) => void | Promise<void>;

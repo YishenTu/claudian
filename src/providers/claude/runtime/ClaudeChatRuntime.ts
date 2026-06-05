@@ -68,6 +68,8 @@ import {
 } from '../../../utils/session';
 import { CLAUDE_PROVIDER_CAPABILITIES } from '../capabilities';
 import { loadSubagentFinalResult, loadSubagentToolCalls } from '../history/ClaudeHistoryStore';
+import { parseSDKMessageToChat } from '../history/sdkMessageParsing';
+import { readSDKSession } from '../history/sdkSessionPaths';
 import { createStopSubagentHook, type SubagentHookState } from '../hooks/SubagentHooks';
 import { encodeClaudeTurn } from '../prompt/ClaudeTurnEncoder';
 import { isContextWindowEvent, isSessionInitEvent, isStreamChunk } from '../sdk/typeGuards';
@@ -148,6 +150,10 @@ export class ClaudianService implements ChatRuntime {
   private mcpManager: McpServerManager;
 
   private persistentQuery: Query | null = null;
+
+  // Tracks the query for which "remote control by default" was already applied,
+  // so it fires once per query lifecycle (re-applies after a restart).
+  private remoteControlAppliedForQuery: Query | null = null;
   private messageChannel: MessageChannel | null = null;
   private queryAbortController: AbortController | null = null;
   private responseHandlers: ResponseHandler[] = [];
@@ -829,6 +835,7 @@ export class ClaudianService implements ChatRuntime {
     const handler = this.responseHandlers[this.responseHandlers.length - 1];
     const autoTurnBufferStartLength = this._autoTurnBuffer.length;
 
+
     // Transform SDK message to StreamChunks
     for (const event of transformSDKMessage(message, this.getTransformOptions())) {
       this.noteVisibleStreamContent(message, event, {
@@ -867,6 +874,8 @@ export class ClaudianService implements ChatRuntime {
         // Pass the current query instance so late completions from a dead query
         // cannot overwrite the active cache after a restart or shutdown.
         void this.fetchAndCacheCommands(this.persistentQuery);
+        // Auto-enable remote control for this session when the user opted in.
+        void this.maybeEnableRemoteControlByDefault();
       } else if (isContextWindowEvent(event)) {
         const usageChunk = this.updateBufferedUsageContextWindow(event.contextWindow);
         if (!usageChunk) {
@@ -957,11 +966,63 @@ export class ClaudianService implements ChatRuntime {
     const chunks = [...this._autoTurnBuffer];
     const metadata = this.consumeTurnMetadata();
     this._autoTurnBuffer = [];
+
+    // Remote-control turns (sent from claude.ai) are not echoed as `user` messages
+    // on the SDK stream, so the prompt is missing from the rendered transcript.
+    // Recover it from the on-disk session transcript so the renderer can show it.
+    const precedingUserMessage = await this.resolvePrecedingRemoteUserMessage(
+      metadata.assistantMessageId,
+    );
+
     try {
-      await this._autoTurnCallback?.({ chunks, metadata });
+      await this._autoTurnCallback?.({ chunks, metadata, precedingUserMessage });
     } catch {
       new Notice('Background task completed, but the result could not be rendered.');
     }
+  }
+
+  /**
+   * Finds the user prompt that triggered an auto-turn by reading the session
+   * transcript and walking back from the assistant message to the nearest real
+   * user message. Returns undefined when there is no session, no transcript
+   * entry, or the preceding user turn is a tool result / interrupt / rebuilt
+   * context. The renderer is responsible for de-duplicating against messages it
+   * has already shown.
+   */
+  private async resolvePrecedingRemoteUserMessage(
+    assistantUuid?: string,
+  ): Promise<ChatMessage | undefined> {
+    if (!assistantUuid) return undefined;
+    const sessionId = this.getSessionId();
+    if (!sessionId) return undefined;
+    const vaultPath = getVaultPath(this.plugin.app);
+    if (!vaultPath) return undefined;
+
+    try {
+      const { messages } = await readSDKSession(vaultPath, sessionId);
+      // Primary: anchor on the assistant uuid for precision. The assistant write
+      // can lag the stream though, so when it is not on disk yet, fall back to the
+      // last real user message — the user turn is written before the assistant
+      // generates, so it is reliably present. The renderer de-duplicates.
+      const assistantIdx = messages.findIndex(entry => entry.uuid === assistantUuid);
+      const startBefore = assistantIdx >= 0 ? assistantIdx : messages.length;
+
+      for (let i = startBefore - 1; i >= 0; i--) {
+        const entry = messages[i];
+        if (entry.type !== 'user') continue;
+        const chat = parseSDKMessageToChat(entry);
+        // tool_result-only user turns parse to null; skip them to reach the prompt
+        if (!chat || chat.role !== 'user') continue;
+        if (chat.isInterrupt || chat.isRebuiltContext) return undefined;
+        const hasText = !!chat.content?.trim();
+        const hasImages = !!chat.images?.length;
+        if (!hasText && !hasImages) continue;
+        return chat;
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
   }
 
   private registerResponseHandler(handler: ResponseHandler): void {
@@ -1738,6 +1799,48 @@ export class ClaudianService implements ChatRuntime {
     if (!this.persistentQuery) throw new Error('No active query');
     if (this.shuttingDown) throw new Error('Service is shutting down');
     return this.persistentQuery.rewindFiles(userMessageId, { dryRun });
+  }
+
+  /**
+   * Registers this session for remote control via the agent SDK's
+   * `remote_control` control request. Returns the SDK response (e.g. pairing
+   * info). Throws if no live query, while shutting down, or if the installed
+   * SDK build does not expose the method.
+   */
+  async enableRemoteControl(enabled: boolean, name?: string): Promise<unknown> {
+    if (!this.persistentQuery) throw new Error('No active query');
+    if (this.shuttingDown) throw new Error('Service is shutting down');
+    const query = this.persistentQuery as Query & {
+      enableRemoteControl?: (enabled: boolean, name?: string) => Promise<unknown>;
+    };
+    if (typeof query.enableRemoteControl !== 'function') {
+      throw new Error('Installed claude-agent-sdk does not support remote control');
+    }
+    return query.enableRemoteControl(enabled, name);
+  }
+
+  /**
+   * Enables remote control once per query when the user turned on the
+   * "remote control by default" setting. Best-effort: failures (e.g. an SDK
+   * build without the control request) are swallowed and retried on the next
+   * session init. Note: headless/SDK mode cannot reuse the CLI's persistent
+   * bridge, so this registers a fresh claude.ai session each time.
+   */
+  private async maybeEnableRemoteControlByDefault(): Promise<void> {
+    const query = this.persistentQuery;
+    if (!query) return;
+    if (this.remoteControlAppliedForQuery === query) return;
+    if (!getClaudeProviderSettings(this.plugin.settings).remoteControlByDefault) return;
+
+    this.remoteControlAppliedForQuery = query;
+    try {
+      await this.enableRemoteControl(true);
+    } catch {
+      // Allow a retry on the next init if this attempt failed.
+      if (this.remoteControlAppliedForQuery === query) {
+        this.remoteControlAppliedForQuery = null;
+      }
+    }
   }
 
   async rewind(
