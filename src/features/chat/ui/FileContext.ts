@@ -1,5 +1,5 @@
 import type { App, EventRef } from 'obsidian';
-import { Notice, TFile } from 'obsidian';
+import { Notice, TFile, TFolder } from 'obsidian';
 
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import type { AgentMentionProvider } from '../../../shared/mention/MentionDropdownController';
@@ -36,6 +36,7 @@ export class FileContextManager {
   private mentionDropdown: MentionDropdownController;
   private deleteEventRef: EventRef | null = null;
   private renameEventRef: EventRef | null = null;
+  private dropOverlay: HTMLElement | null = null;
 
   // Current note (shown as chip)
   private currentNotePath: string | null = null;
@@ -108,6 +109,8 @@ export class FileContextManager {
     this.renameEventRef = this.app.vault.on('rename', (file, oldPath) => {
       if (file instanceof TFile) this.handleFileRenamed(oldPath, file.path);
     });
+
+    this.setupDragAndDrop();
   }
 
   /** Returns the current note path (shown as chip). */
@@ -259,6 +262,183 @@ export class FileContextManager {
     if (this.renameEventRef) this.app.vault.offref(this.renameEventRef);
     this.mentionDropdown.destroy();
     this.chipsView.destroy();
+  }
+
+  private setupDragAndDrop() {
+    const inputWrapper = this.inputEl.closest('.claudian-input-wrapper') as HTMLElement;
+    if (!inputWrapper) return;
+
+    const ownerDocument = inputWrapper.ownerDocument ?? window.document;
+    this.dropOverlay = inputWrapper.createDiv({ cls: 'claudian-file-drop-overlay' });
+    const dropContent = this.dropOverlay.createDiv({ cls: 'claudian-file-drop-content' });
+
+    const svg = ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '32');
+    svg.setAttribute('height', '32');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    const pathEl = ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'path');
+    pathEl.setAttribute('d', 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z');
+    svg.appendChild(pathEl);
+    dropContent.appendChild(svg);
+    dropContent.createSpan({ text: 'Drop file or folder here' });
+
+    const dropZone = inputWrapper;
+
+    dropZone.addEventListener('dragenter', (e) => this.handleDragEnter(e));
+    dropZone.addEventListener('dragover', (e) => this.handleDragOver(e));
+    dropZone.addEventListener('dragleave', (e) => this.handleDragLeave(e));
+    dropZone.addEventListener('drop', (e) => {
+      void this.handleDrop(e);
+    });
+  }
+
+  private handleDragEnter(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const draggedItems = (this.app as any).dragManager?.draggedItems;
+    const hasDraggedFiles = draggedItems && draggedItems.length > 0 && draggedItems.some((item: any) => item.file);
+    const hasExternalFiles = e.dataTransfer?.types.includes('Files');
+    const hasInternalUri = e.dataTransfer?.types.includes('text/uri-list');
+
+    if (hasDraggedFiles || hasExternalFiles || hasInternalUri) {
+      this.dropOverlay?.addClass('visible');
+    }
+  }
+
+  private handleDragOver(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  private handleDragLeave(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const inputWrapper = this.inputEl.closest('.claudian-input-wrapper');
+    if (!inputWrapper) {
+      this.dropOverlay?.removeClass('visible');
+      return;
+    }
+
+    const rect = inputWrapper.getBoundingClientRect();
+    if (
+      e.clientX <= rect.left ||
+      e.clientX >= rect.right ||
+      e.clientY <= rect.top ||
+      e.clientY >= rect.bottom
+    ) {
+      this.dropOverlay?.removeClass('visible');
+    }
+  }
+
+  private async handleDrop(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.dropOverlay?.removeClass('visible');
+
+    const addedPaths: string[] = [];
+    let hasResolvedInternal = false;
+
+    // 1. Resolve internal Obsidian file/folder drags via dataTransfer URIs
+    const plainText = typeof e.dataTransfer?.getData === 'function'
+      ? e.dataTransfer.getData('text/plain') || ''
+      : '';
+    if (plainText.includes('obsidian://open')) {
+      const lines = plainText.split(/\r?\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('obsidian://open')) {
+          try {
+            const url = new URL(trimmed);
+            const fileParam = url.searchParams.get('file');
+            if (fileParam) {
+              const decodedPath = decodeURIComponent(fileParam);
+              const normalizedPath = this.normalizePathForVault(decodedPath);
+              if (normalizedPath) {
+                this.state.attachFile(normalizedPath);
+                const abstractFile = this.app.vault.getAbstractFileByPath(normalizedPath);
+                const isFolder = abstractFile instanceof TFolder;
+                const formatted = isFolder ? `${normalizedPath}/` : normalizedPath;
+                addedPaths.push(formatted);
+                hasResolvedInternal = true;
+              }
+            }
+          } catch (err) {
+            // Ignore invalid URIs
+          }
+        }
+      }
+    }
+
+    // 2. Fallback to app.dragManager (just in case)
+    if (!hasResolvedInternal) {
+      const draggedItems = (this.app as any).dragManager?.draggedItems;
+      if (draggedItems && draggedItems.length > 0) {
+        for (const item of draggedItems) {
+          if (item.file) {
+            const rawPath = item.file.path;
+            const normalizedPath = this.normalizePathForVault(rawPath);
+            if (normalizedPath) {
+              this.state.attachFile(normalizedPath);
+              const isFolder = item.file instanceof TFolder;
+              const formatted = isFolder ? `${normalizedPath}/` : normalizedPath;
+              addedPaths.push(formatted);
+              hasResolvedInternal = true;
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Resolve external OS drags
+    if (!hasResolvedInternal) {
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          let rawPath = (file as any).path || '';
+          if (!rawPath && (window as any).electron?.webUtils) {
+            rawPath = (window as any).electron.webUtils.getPathForFile(file);
+          }
+          if (rawPath) {
+            const normalizedPath = this.normalizePathForVault(rawPath);
+            if (normalizedPath) {
+              this.state.attachFile(normalizedPath);
+              addedPaths.push(normalizedPath);
+            }
+          }
+        }
+      }
+    }
+
+    if (addedPaths.length > 0) {
+      const textToInsert = addedPaths.map(p => `@${p}`).join(' ') + ' ';
+      this.insertTextAtCursor(textToInsert);
+      this.callbacks.onChipsChanged?.();
+    }
+  }
+
+  private insertTextAtCursor(textToInsert: string) {
+    const input = this.inputEl;
+    const start = input.selectionStart || 0;
+    const end = input.selectionEnd || 0;
+    const value = input.value;
+
+    let prefix = '';
+    if (start > 0 && !/\s/.test(value[start - 1])) {
+      prefix = ' ';
+    }
+
+    input.value = value.substring(0, start) + prefix + textToInsert + value.substring(end);
+    const newCursorPos = start + prefix.length + textToInsert.length;
+    input.selectionStart = input.selectionEnd = newCursorPos;
+
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
   }
 
   /** Normalizes a file path to be vault-relative with forward slashes. */
