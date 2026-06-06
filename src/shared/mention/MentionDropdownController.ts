@@ -156,11 +156,6 @@ export class MentionDropdownController {
 
       const searchText = textBeforeCursor.substring(lastAtIndex + 1);
 
-      if (/\s/.test(searchText)) {
-        this.hide();
-        return;
-      }
-
       this.mentionStartIndex = lastAtIndex;
       this.showMentionDropdown(searchText);
     }, 200);
@@ -336,6 +331,11 @@ export class MentionDropdownController {
 
     const firstVaultItemIndex = this.filteredMentionItems.length;
     const vaultItemCount = this.appendVaultItems(searchLower);
+
+    if (this.filteredMentionItems.length === 0 && this.filteredContextFiles.length === 0) {
+      this.hide();
+      return;
+    }
 
     this.selectedMentionIndex = vaultItemCount > 0 ? firstVaultItemIndex : 0;
 
