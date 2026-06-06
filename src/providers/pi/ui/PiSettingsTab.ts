@@ -97,14 +97,40 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName('Models').setHeading();
 
+    let searchQuery = '';
+    const searchContainer = container.createDiv({ cls: 'claudian-pi-model-search' });
+    new Setting(searchContainer)
+      .setName('Filter models')
+      .setDesc('Search by model name, ID, or alias.')
+      .addText((text) => {
+        text
+          .setPlaceholder('Search models...')
+          .setValue(searchQuery)
+          .onChange((value) => {
+            searchQuery = value;
+            renderModels();
+          });
+      });
+
     const modelContainer = container.createDiv({ cls: 'claudian-pi-models' });
     const renderModels = (): void => {
       modelContainer.empty();
       const current = getPiProviderSettings(settingsBag);
+      const query = searchQuery.toLowerCase();
+      const filteredModels = query
+        ? current.discoveredModels.filter(m => {
+            const label = (current.modelAliases[m.encodedId] || m.label).toLowerCase();
+            const id = m.encodedId.toLowerCase();
+            return label.includes(query) || id.includes(query);
+          })
+        : current.discoveredModels;
+
       new Setting(modelContainer)
         .setName('Discover models')
         .setDesc(current.discoveredModels.length > 0
-          ? `${current.discoveredModels.length} Pi models cached.`
+          ? (query
+            ? `${filteredModels.length} of ${current.discoveredModels.length} Pi models shown.`
+            : `${current.discoveredModels.length} Pi models cached.`)
           : 'Fetch models from `pi --mode rpc --no-session`.')
         .addButton((button) => {
           button.setButtonText('Discover').onClick(async () => {
@@ -136,7 +162,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
         return;
       }
 
-      for (const model of current.discoveredModels) {
+      for (const model of filteredModels) {
         new Setting(modelContainer)
           .setName(current.modelAliases[model.encodedId] || model.label)
           .setDesc(model.encodedId)
