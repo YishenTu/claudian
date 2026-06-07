@@ -16,7 +16,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes.
 
-**`@mention`** - Type `@` to mention anything you want the agent to work with, vault files, subagents, MCP servers, or files in external directories.
+**`@mention`** — Type `@` to mention anything you want the agent to work with, vault files, subagents, MCP servers, or files in external directories.
 
 **Plan Mode** — Toggle via `Shift+Tab`. The agent explores and designs before implementing, then presents a plan for approval.
 
