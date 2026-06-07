@@ -31,7 +31,8 @@ export class SessionsView extends ItemView {
   }
 
   getIcon(): string {
-    return 'list';
+    // Match the main chat view's icon so the sidebar tab reads as Claudian.
+    return 'bot';
   }
 
   async onOpen(): Promise<void> {
