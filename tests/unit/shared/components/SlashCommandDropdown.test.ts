@@ -213,6 +213,63 @@ describe('SlashCommandDropdown', () => {
     });
   });
 
+  describe('search result ranking', () => {
+    it('should rank exact command name matches before prefix, substring, and description matches', async () => {
+      const entries: ProviderCommandEntry[] = [
+        makeEntry('my-paper-writer', 'Substring match'),
+        makeEntry('paper-writer-long', 'Prefix match'),
+        makeEntry('alpha-helper', 'Description mentions paper-writer'),
+        makeEntry('paper-writer', 'Exact match'),
+      ];
+      const getProviderEntries = jest.fn().mockResolvedValue(entries);
+
+      const dropdownWithEntries = new SlashCommandDropdown(
+        containerEl, inputEl, callbacks,
+        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
+      );
+
+      inputEl.value = '/paper-writer';
+      inputEl.selectionStart = 13;
+      dropdownWithEntries.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(getRenderedCommandNames(containerEl)).toEqual([
+        'paper-writer',
+        'paper-writer-long',
+        'my-paper-writer',
+        'alpha-helper',
+      ]);
+
+      dropdownWithEntries.destroy();
+    });
+
+    it('should keep empty search results alphabetically sorted', async () => {
+      const getProviderEntries = jest.fn().mockResolvedValue([
+        makeEntry('zebra'),
+        makeEntry('alpha'),
+      ]);
+
+      const dropdownWithEntries = new SlashCommandDropdown(
+        containerEl, inputEl, callbacks,
+        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
+      );
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdownWithEntries.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(getRenderedCommandNames(containerEl)).toEqual([
+        'add-dir',
+        'alpha',
+        'clear',
+        'zebra',
+      ]);
+
+      dropdownWithEntries.destroy();
+    });
+  });
+
   describe('provider entry caching', () => {
     it('should cache entries after first successful fetch', async () => {
       const getProviderEntries = jest.fn().mockResolvedValue(PROVIDER_ENTRIES);

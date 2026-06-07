@@ -219,7 +219,7 @@ export class SlashCommandDropdown {
         item.name.toLowerCase().includes(searchLower) ||
         item.description?.toLowerCase().includes(searchLower)
       )
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => this.compareSearchResults(a, b, searchLower));
 
     if (currentRequest !== this.requestId) return;
 
@@ -306,6 +306,23 @@ export class SlashCommandDropdown {
     }
 
     return items;
+  }
+
+  private compareSearchResults(a: DropdownItem, b: DropdownItem, searchLower: string): number {
+    const rankDiff = this.getSearchRank(a, searchLower) - this.getSearchRank(b, searchLower);
+    if (rankDiff !== 0) return rankDiff;
+    return a.name.localeCompare(b.name);
+  }
+
+  private getSearchRank(item: DropdownItem, searchLower: string): number {
+    if (searchLower.length === 0) return 0;
+
+    const nameLower = item.name.toLowerCase();
+    if (nameLower === searchLower) return 0;
+    if (nameLower.startsWith(searchLower)) return 1;
+    if (nameLower.includes(searchLower)) return 2;
+    if (item.description?.toLowerCase().includes(searchLower)) return 3;
+    return 4;
   }
 
   private render(): void {

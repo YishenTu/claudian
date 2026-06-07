@@ -169,6 +169,48 @@ describe('SlashCommandDropdown - provider catalog', () => {
       dropdown.destroy();
     });
 
+    it('ranks exact Codex skill matches first on $ trigger', async () => {
+      const getProviderEntries = jest.fn().mockResolvedValue([
+        {
+          id: 'codex-skill-aa-analyze-helper', providerId: 'codex', kind: 'skill', name: 'aa-analyze-helper',
+          description: 'Substring match', content: '', scope: 'vault', source: 'user',
+          isEditable: true, isDeletable: true, displayPrefix: '$', insertPrefix: '$',
+        },
+        {
+          id: 'codex-skill-alpha-helper', providerId: 'codex', kind: 'skill', name: 'alpha-helper',
+          description: 'Description mentions analyze', content: '', scope: 'vault', source: 'user',
+          isEditable: true, isDeletable: true, displayPrefix: '$', insertPrefix: '$',
+        },
+        {
+          id: 'codex-skill-analyze-more', providerId: 'codex', kind: 'skill', name: 'analyze-more',
+          description: 'Prefix match', content: '', scope: 'vault', source: 'user',
+          isEditable: true, isDeletable: true, displayPrefix: '$', insertPrefix: '$',
+        },
+        {
+          id: 'codex-skill-analyze', providerId: 'codex', kind: 'skill', name: 'analyze',
+          description: 'Exact match', content: '', scope: 'vault', source: 'user',
+          isEditable: true, isDeletable: true, displayPrefix: '$', insertPrefix: '$',
+        },
+      ]);
+      const dropdown = new SlashCommandDropdown(
+        containerEl, inputEl, callbacks, { providerConfig: CODEX_CONFIG, getProviderEntries }
+      );
+
+      inputEl.value = '$analyze';
+      inputEl.selectionStart = 8;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(getRenderedCommandNames(containerEl)).toEqual([
+        '$analyze',
+        '$analyze-more',
+        '$aa-analyze-helper',
+        '$alpha-helper',
+      ]);
+
+      dropdown.destroy();
+    });
+
     it('shows built-ins + skills on / trigger at position 0', async () => {
       const getProviderEntries = jest.fn().mockResolvedValue(CODEX_ENTRIES);
       const dropdown = new SlashCommandDropdown(
