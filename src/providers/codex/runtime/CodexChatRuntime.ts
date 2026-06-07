@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { getActiveCCSwitchSnapshot, syncProviderCCSwitchSnapshot } from '../../../core/ccswitch/CCSwitchSnapshot';
 import {
   buildSystemPrompt,
   computeSystemPromptKey,
@@ -214,15 +215,21 @@ export class CodexChatRuntime implements ChatRuntime {
   }
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
+    syncProviderCCSwitchSnapshot(this.plugin.settings as unknown as Record<string, unknown>, 'codex');
     const promptSettings = this.getSystemPromptSettings();
     const promptKey = computeSystemPromptKey(promptSettings);
     const launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, this.providerId);
+    const ccSwitchHash = getActiveCCSwitchSnapshot(
+      this.plugin.settings as unknown as Record<string, unknown>,
+      'codex',
+    )?.configHash ?? '';
     const clientConfigKey = [promptKey, JSON.stringify({
       command: launchSpec.command,
       args: launchSpec.args,
       spawnCwd: launchSpec.spawnCwd,
       targetCwd: launchSpec.targetCwd,
       target: launchSpec.target,
+      ccSwitchHash,
     })].join('::');
     const shouldRebuild = !this.process
       || !this.transport

@@ -71,14 +71,20 @@ function expandEnvironmentVariables(value: string): string {
 
 export function expandHomePath(p: string): string {
   const expanded = expandEnvironmentVariables(p);
+  const homeDir = os.homedir();
+  const joinHome = (suffix: string): string => (
+    homeDir.includes('/') && !homeDir.includes('\\')
+      ? path.posix.join(homeDir, suffix.replace(/\\/g, '/'))
+      : path.join(homeDir, suffix)
+  );
   if (expanded === '~') {
-    return os.homedir();
+    return homeDir;
   }
   if (expanded.startsWith('~/')) {
-    return path.join(os.homedir(), expanded.slice(2));
+    return joinHome(expanded.slice(2));
   }
   if (expanded.startsWith('~\\')) {
-    return path.join(os.homedir(), expanded.slice(2));
+    return joinHome(expanded.slice(2));
   }
   return expanded;
 }
@@ -108,7 +114,10 @@ export function parsePathEntries(pathValue?: string): string[] {
       const upper = segment.toUpperCase();
       return upper !== '$PATH' && upper !== '${PATH}' && upper !== '%PATH%';
     })
-    .map(segment => translateMsysPath(expandHomePath(segment)));
+    .map(segment => {
+      const expanded = expandHomePath(segment);
+      return /^\/[A-Za-z]$/.test(expanded) ? expanded : translateMsysPath(expanded);
+    });
 }
 
 
@@ -218,14 +227,20 @@ export function translateMsysPath(value: string): string {
     return value;
   }
 
-  const msysMatch = value.match(/^\/([a-zA-Z])(\/.*)?$/);
+  const msysMatch = value.match(/^\/([c-zC-Z])(?:\/(.*))?$/);
   if (msysMatch) {
     const driveLetter = msysMatch[1].toUpperCase();
-    const restOfPath = msysMatch[2] ?? '';
-    return `${driveLetter}:${restOfPath.replace(/\//g, '\\')}`;
+    if (msysMatch[2] === undefined) {
+      return value.endsWith('/') ? `${driveLetter}:\\` : `${driveLetter}:`;
+    }
+    return `${driveLetter}:\\${msysMatch[2].replace(/\//g, '\\')}`;
   }
 
   return value;
+}
+
+function shouldUsePosixPath(value: string): boolean {
+  return value.startsWith('/') && !/^\/[c-zC-Z](?:\/|$)/.test(value);
 }
 
 function normalizePathBeforeResolution(p: string): string {
@@ -256,8 +271,14 @@ export function normalizePathForFilesystem(value: string): string {
     return '';
   }
   const expanded = normalizePathBeforeResolution(value);
+  if (expanded === value && /^(?:\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%)[\\/]/.test(value)) {
+    return value;
+  }
   const normalized = (() => {
     try {
+      if (shouldUsePosixPath(expanded)) {
+        return path.posix.normalize(expanded);
+      }
       return process.platform === 'win32'
         ? path.win32.normalize(expanded)
         : path.normalize(expanded);
@@ -277,6 +298,9 @@ export function normalizePathForComparison(value: string): string {
   const expanded = normalizePathBeforeResolution(value);
   const normalized = (() => {
     try {
+      if (shouldUsePosixPath(expanded)) {
+        return path.posix.normalize(expanded);
+      }
       return process.platform === 'win32'
         ? path.win32.normalize(expanded)
         : path.normalize(expanded);

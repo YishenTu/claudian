@@ -1,3 +1,4 @@
+import type { CCSwitchSnapshot } from '../../core/ccswitch/CCSwitchSnapshot';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { HostnameCliPaths } from '../../core/types/settings';
@@ -24,6 +25,8 @@ export interface ClaudeProviderSettings {
   lastModel: string;
   environmentVariables: string;
   environmentHash: string;
+  followCCSwitch: boolean;
+  ccSwitchSnapshot?: CCSwitchSnapshot;
 }
 
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
@@ -39,6 +42,7 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   lastModel: 'haiku',
   environmentVariables: '',
   environmentHash: '',
+  followCCSwitch: false,
 });
 
 function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
@@ -110,6 +114,9 @@ export function getClaudeProviderSettings(
     environmentHash: (config.environmentHash as string | undefined)
       ?? (settings.lastEnvHash as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentHash,
+    followCCSwitch: (config.followCCSwitch as boolean | undefined)
+      ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.followCCSwitch,
+    ccSwitchSnapshot: (config.ccSwitchSnapshot as CCSwitchSnapshot | undefined),
   };
 }
 

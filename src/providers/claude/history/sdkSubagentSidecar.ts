@@ -13,6 +13,12 @@ import {
   isValidSessionId,
 } from './sdkSessionPaths';
 
+function joinForValue(base: string, ...segments: string[]): string {
+  return base.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(base)
+    ? path.posix.join(base, ...segments)
+    : path.join(base, ...segments);
+}
+
 export function isValidAgentId(agentId: string): boolean {
   return isPathSafeId(agentId);
 }
@@ -181,8 +187,9 @@ function getSubagentSidecarPath(
   }
 
   const encodedVault = encodeVaultPathForSDK(vaultPath);
-  return path.join(
-    getSDKProjectsPath(),
+  const projectsPath = getSDKProjectsPath();
+  return joinForValue(
+    projectsPath,
     encodedVault,
     sessionId,
     'subagents',

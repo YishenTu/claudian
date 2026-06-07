@@ -1,3 +1,4 @@
+import { getActiveCCSwitchSnapshot, syncProviderCCSwitchSnapshot } from '../../../core/ccswitch/CCSwitchSnapshot';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
@@ -23,8 +24,13 @@ export const codexSettingsReconciler: ProviderSettingsReconciler = {
     settings: Record<string, unknown>,
     conversations: Conversation[],
   ): { changed: boolean; invalidatedConversations: Conversation[] } {
+    syncProviderCCSwitchSnapshot(settings, 'codex');
     const envText = getRuntimeEnvironmentText(settings, 'codex');
-    const currentHash = computeCodexEnvHash(envText);
+    const switchHash = getActiveCCSwitchSnapshot(settings, 'codex')?.configHash;
+    const currentHash = [
+      computeCodexEnvHash(envText),
+      ...(switchHash ? [`CC_SWITCH=${switchHash}`] : []),
+    ].filter(Boolean).join('|');
     const savedHash = getCodexProviderSettings(settings).environmentHash;
 
     if (currentHash === savedHash) {

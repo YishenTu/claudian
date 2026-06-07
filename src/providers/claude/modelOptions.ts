@@ -1,3 +1,4 @@
+import { getActiveCCSwitchSnapshot } from '../../core/ccswitch/CCSwitchSnapshot';
 import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { ProviderUIOption } from '../../core/providers/types';
 import { getModelsFromEnvironment } from './env/claudeModelEnv';
@@ -60,6 +61,19 @@ export function getClaudeModelOptions(settings: Record<string, unknown>): Provid
   );
 
   const seenValues = new Set(models.map(model => model.value));
+  const switchModel = getActiveCCSwitchSnapshot(settings, 'claude')?.model;
+  if (switchModel) {
+    const existingIndex = models.findIndex(model => model.value === switchModel);
+    if (existingIndex >= 0) {
+      models.splice(existingIndex, 1);
+    }
+    seenValues.add(switchModel);
+    models.unshift({
+      value: switchModel,
+      label: customModelAliases[switchModel] ?? formatCustomModelLabel(switchModel),
+      description: 'CC-Switch active model',
+    });
+  }
   for (const modelId of parseConfiguredCustomModelIds(claudeSettings.customModels)) {
     if (seenValues.has(modelId)) {
       continue;
@@ -81,6 +95,12 @@ export function resolveClaudeModelSelection(
   currentModel: string,
 ): string | null {
   const modelOptions = getClaudeModelOptions(settings);
+  const defaultModelIds = new Set(DEFAULT_CLAUDE_MODELS.map(option => option.value));
+  const switchModel = getActiveCCSwitchSnapshot(settings, 'claude')?.model;
+  if (switchModel && (!currentModel || defaultModelIds.has(currentModel))) {
+    return switchModel;
+  }
+
   if (currentModel && modelOptions.some(option => option.value === currentModel)) {
     return currentModel;
   }

@@ -6,21 +6,27 @@ const OPENCODE_APP_NAME = 'opencode';
 const DEFAULT_DATABASE_NAME = 'opencode.db';
 const DATABASE_NAME_PATTERN = /^opencode(?:-[a-z0-9._-]+)?\.db$/i;
 
+function joinForValue(base: string, ...segments: string[]): string {
+  return base.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(base)
+    ? path.posix.join(base, ...segments)
+    : path.join(base, ...segments);
+}
+
 export function resolveOpencodeDataDir(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const xdgDataHome = env.XDG_DATA_HOME?.trim();
   if (xdgDataHome) {
-    return path.join(xdgDataHome, OPENCODE_APP_NAME);
+    return joinForValue(xdgDataHome, OPENCODE_APP_NAME);
   }
 
   const home = env.HOME || os.homedir();
   if (process.platform === 'win32') {
-    const appData = env.APPDATA || env.LOCALAPPDATA || path.join(home, 'AppData', 'Roaming');
-    return path.join(appData, OPENCODE_APP_NAME);
+    const appData = env.APPDATA || env.LOCALAPPDATA || joinForValue(home, 'AppData', 'Roaming');
+    return joinForValue(appData, OPENCODE_APP_NAME);
   }
 
-  return path.join(home, '.local', 'share', OPENCODE_APP_NAME);
+  return joinForValue(home, '.local', 'share', OPENCODE_APP_NAME);
 }
 
 export function resolveOpencodeDatabasePath(
@@ -31,7 +37,7 @@ export function resolveOpencodeDatabasePath(
     if (override === ':memory:' || path.isAbsolute(override)) {
       return override;
     }
-    return path.join(resolveOpencodeDataDir(env), override);
+    return joinForValue(resolveOpencodeDataDir(env), override);
   }
 
   const candidates = getOpencodeDatabasePathCandidates(env);
@@ -74,11 +80,11 @@ function getOpencodeDatabasePathCandidates(
   const home = env.HOME || os.homedir();
   const dataDirs = [
     resolveOpencodeDataDir(env),
-    path.join(home, 'Library', 'Application Support', OPENCODE_APP_NAME),
+    joinForValue(home, 'Library', 'Application Support', OPENCODE_APP_NAME),
   ];
 
   for (const dataDir of dataDirs) {
-    pushCandidate(candidates, seen, path.join(dataDir, DEFAULT_DATABASE_NAME));
+    pushCandidate(candidates, seen, joinForValue(dataDir, DEFAULT_DATABASE_NAME));
     try {
       const matches = fs.readdirSync(dataDir)
         .filter((entry) => DATABASE_NAME_PATTERN.test(entry))
@@ -89,7 +95,7 @@ function getOpencodeDatabasePathCandidates(
         });
 
       for (const entry of matches) {
-        pushCandidate(candidates, seen, path.join(dataDir, entry));
+        pushCandidate(candidates, seen, joinForValue(dataDir, entry));
       }
     } catch {
       // Ignore missing dirs and unreadable locations.

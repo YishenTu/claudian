@@ -1,3 +1,4 @@
+import type { CCSwitchSnapshot } from '../../core/ccswitch/CCSwitchSnapshot';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { HostnameCliPaths } from '../../core/types/settings';
@@ -30,6 +31,8 @@ export interface CodexProviderSettings {
   reasoningSummary: CodexReasoningSummary;
   environmentVariables: string;
   environmentHash: string;
+  followCCSwitch: boolean;
+  ccSwitchSnapshot?: CCSwitchSnapshot;
   installationMethod: CodexInstallationMethod;
   installationMethodsByHost: HostnameInstallationMethods;
   wslDistroOverride: string;
@@ -45,6 +48,7 @@ export const DEFAULT_CODEX_PROVIDER_SETTINGS: Readonly<CodexProviderSettings> = 
   reasoningSummary: 'detailed',
   environmentVariables: '',
   environmentHash: '',
+  followCCSwitch: false,
   installationMethod: 'native-windows',
   installationMethodsByHost: {},
   wslDistroOverride: '',
@@ -151,6 +155,9 @@ export function getCodexProviderSettings(
     environmentHash: (config.environmentHash as string | undefined)
       ?? (settings.lastCodexEnvHash as string | undefined)
       ?? DEFAULT_CODEX_PROVIDER_SETTINGS.environmentHash,
+    followCCSwitch: (config.followCCSwitch as boolean | undefined)
+      ?? DEFAULT_CODEX_PROVIDER_SETTINGS.followCCSwitch,
+    ccSwitchSnapshot: (config.ccSwitchSnapshot as CCSwitchSnapshot | undefined),
     installationMethod: installationMethodsByHost[hostnameKey]
       ?? (
         hasHostScopedInstallationMethods
@@ -228,6 +235,8 @@ export function updateCodexProviderSettings(
     reasoningSummary: next.reasoningSummary,
     environmentVariables: next.environmentVariables,
     environmentHash: next.environmentHash,
+    followCCSwitch: next.followCCSwitch,
+    ccSwitchSnapshot: next.ccSwitchSnapshot,
     installationMethodsByHost,
     wslDistroOverridesByHost,
   });

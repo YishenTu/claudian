@@ -77,7 +77,7 @@ describe('OpencodeCliResolver', () => {
 
   it('falls back to PATH lookup when no OpenCode CLI path is configured', () => {
     const pathDir = '/custom/bin';
-    const pathBinary = path.join(pathDir, 'opencode');
+    const pathBinary = path.posix.join(pathDir, 'opencode');
     mockedStat.mockImplementation((filePath: string) => {
       if (filePath === pathBinary) {
         return { isFile: () => true };

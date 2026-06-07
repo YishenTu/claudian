@@ -365,11 +365,13 @@ export class OpencodeAuxQueryRunner implements AuxQueryRunner {
     const cwd = this.sessionCwds.get(sessionId)
       ?? getVaultPath(this.plugin.app)
       ?? process.cwd();
-    const resolvedPath = path.isAbsolute(rawPath)
-      ? path.resolve(rawPath)
-      : path.resolve(cwd, rawPath);
-    const relative = path.relative(cwd, resolvedPath);
-    if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+    const usePosix = cwd.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(cwd);
+    const pathApi = usePosix ? path.posix : path;
+    const resolvedPath = pathApi.isAbsolute(rawPath)
+      ? pathApi.resolve(rawPath)
+      : pathApi.resolve(cwd, rawPath);
+    const relative = pathApi.relative(cwd, resolvedPath);
+    if (relative === '' || (!relative.startsWith('..') && !pathApi.isAbsolute(relative))) {
       return resolvedPath;
     }
 

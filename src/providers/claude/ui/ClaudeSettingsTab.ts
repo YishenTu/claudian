@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import {
+  getStoredCCSwitchSnapshot,
+  syncProviderCCSwitchSnapshot,
+} from '../../../core/ccswitch/CCSwitchSnapshot';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
@@ -41,6 +45,34 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
       settingsBag.model = nextModel;
       claudeChatUIConfig.applyModelDefaults(nextModel, settingsBag);
+    };
+
+    const renderCCSwitchStatus = (target: HTMLElement): void => {
+      target.empty();
+      const snapshot = getStoredCCSwitchSnapshot(settingsBag, 'claude');
+      target.createEl('p', {
+        cls: 'setting-item-description',
+        text: snapshot
+          ? [
+              `Model: ${snapshot.model ?? 'unknown'}`,
+              `Base URL: ${snapshot.baseUrl ?? 'default'}`,
+              `Auth: ${snapshot.authSource ?? 'unknown'}${snapshot.keyFingerprint ? ` (${snapshot.keyFingerprint})` : ''}`,
+              `Synced: ${snapshot.syncedAt ?? 'unknown'}`,
+            ].join(' | ')
+          : 'No active CC-Switch Claude Code settings detected.',
+      });
+    };
+
+    const refreshCCSwitchSnapshot = async (statusContainer: HTMLElement): Promise<void> => {
+      syncProviderCCSwitchSnapshot(settingsBag, 'claude');
+      reconcileActiveClaudeModelSelection();
+      await context.plugin.saveSettings();
+      renderCCSwitchStatus(statusContainer);
+      context.refreshModelSelectors();
+      const view = context.plugin.getView();
+      await view?.getTabManager()?.broadcastToAllTabs(
+        (service) => Promise.resolve(service.cleanup())
+      );
     };
 
     // --- Setup ---
@@ -172,6 +204,27 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
             await context.plugin.saveSettings();
           })
       );
+
+    const ccSwitchStatus = container.createDiv({ cls: 'claudian-ccswitch-status' });
+    new Setting(container)
+      .setName('Follow cc-switch')
+      .setDesc('Read the active Claude code account, API endpoint, and model from your user-level Claude code settings. API keys are not copied into Claudian settings.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(claudeSettings.followCCSwitch)
+          .onChange(async (value) => {
+            updateClaudeProviderSettings(settingsBag, { followCCSwitch: value });
+            await refreshCCSwitchSnapshot(ccSwitchStatus);
+          })
+      )
+      .addButton((button) =>
+        button
+          .setButtonText('Refresh now')
+          .onClick(async () => {
+            await refreshCCSwitchSnapshot(ccSwitchStatus);
+          })
+      );
+    renderCCSwitchStatus(ccSwitchStatus);
 
     // --- Models ---
 

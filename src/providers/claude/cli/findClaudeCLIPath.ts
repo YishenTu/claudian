@@ -11,6 +11,24 @@ function getEnvValue(name: string): string | undefined {
   return process.env[name];
 }
 
+function joinForValue(base: string, ...segments: string[]): string {
+  return base.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(base)
+    ? path.posix.join(base, ...segments)
+    : path.join(base, ...segments);
+}
+
+function dirnameForValue(value: string): string {
+  return value.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(value)
+    ? path.posix.dirname(value)
+    : path.dirname(value);
+}
+
+function basenameForValue(value: string): string {
+  return value.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(value)
+    ? path.posix.basename(value)
+    : path.basename(value);
+}
+
 function dedupePaths(entries: string[]): string[] {
   const seen = new Set<string>();
   return entries.filter(entry => {
@@ -25,7 +43,7 @@ function findFirstExistingPath(entries: string[], candidates: string[]): string 
   for (const dir of entries) {
     if (!dir) continue;
     for (const candidate of candidates) {
-      const fullPath = path.join(dir, candidate);
+      const fullPath = joinForValue(dir, candidate);
       if (isExistingFile(fullPath)) {
         return fullPath;
       }
@@ -48,7 +66,7 @@ function isExistingFile(filePath: string): boolean {
 
 function findClaudeCodeNodeEntrypoint(packageRoot: string): string | null {
   for (const entrypoint of CLAUDE_CODE_NODE_ENTRYPOINTS) {
-    const candidate = path.join(packageRoot, entrypoint);
+    const candidate = joinForValue(packageRoot, entrypoint);
     if (isExistingFile(candidate)) {
       return candidate;
     }
@@ -59,18 +77,18 @@ function findClaudeCodeNodeEntrypoint(packageRoot: string): string | null {
 
 function resolveClaudeCodeEntrypointNearPathEntry(entry: string, isWindows: boolean): string | null {
   const directCandidate = findClaudeCodeNodeEntrypoint(
-    path.join(entry, ...CLAUDE_CODE_PACKAGE_SEGMENTS)
+    joinForValue(entry, ...CLAUDE_CODE_PACKAGE_SEGMENTS)
   );
   if (directCandidate) {
     return directCandidate;
   }
 
-  const baseName = path.basename(entry).toLowerCase();
+  const baseName = basenameForValue(entry).toLowerCase();
   if (baseName === 'bin') {
-    const prefix = path.dirname(entry);
-    const packageParent = isWindows ? prefix : path.join(prefix, 'lib');
+    const prefix = dirnameForValue(entry);
+    const packageParent = isWindows ? prefix : joinForValue(prefix, 'lib');
     const candidate = findClaudeCodeNodeEntrypoint(
-      path.join(packageParent, ...CLAUDE_CODE_PACKAGE_SEGMENTS)
+      joinForValue(packageParent, ...CLAUDE_CODE_PACKAGE_SEGMENTS)
     );
     if (candidate) {
       return candidate;
@@ -134,7 +152,7 @@ function getNpmGlobalPrefix(): string | null {
 }
 
 function addClaudeCodeEntrypointPaths(paths: string[], packageParent: string): void {
-  const packageRoot = path.join(packageParent, ...CLAUDE_CODE_PACKAGE_SEGMENTS);
+  const packageRoot = joinForValue(packageParent, ...CLAUDE_CODE_PACKAGE_SEGMENTS);
   for (const entrypoint of CLAUDE_CODE_NODE_ENTRYPOINTS) {
     paths.push(path.join(packageRoot, entrypoint));
   }
@@ -147,6 +165,7 @@ function getNpmClaudeCodeEntrypointPaths(): string[] {
 
   if (isWindows) {
     addClaudeCodeEntrypointPaths(entrypointPaths, path.join(homeDir, 'AppData', 'Roaming', 'npm'));
+    addClaudeCodeEntrypointPaths(entrypointPaths, path.join(homeDir, '.npm-global', 'lib'));
 
     const npmPrefix = getNpmGlobalPrefix();
     if (npmPrefix) {
@@ -160,12 +179,12 @@ function getNpmClaudeCodeEntrypointPaths(): string[] {
     addClaudeCodeEntrypointPaths(entrypointPaths, path.join(programFilesX86, 'nodejs', 'node_global'));
     addClaudeCodeEntrypointPaths(entrypointPaths, path.join('D:', 'Program Files', 'nodejs', 'node_global'));
   } else {
-    addClaudeCodeEntrypointPaths(entrypointPaths, path.join(homeDir, '.npm-global', 'lib'));
+    addClaudeCodeEntrypointPaths(entrypointPaths, joinForValue(homeDir, '.npm-global', 'lib'));
     addClaudeCodeEntrypointPaths(entrypointPaths, '/usr/local/lib');
     addClaudeCodeEntrypointPaths(entrypointPaths, '/usr/lib');
 
     if (process.env.npm_config_prefix) {
-      addClaudeCodeEntrypointPaths(entrypointPaths, path.join(process.env.npm_config_prefix, 'lib'));
+      addClaudeCodeEntrypointPaths(entrypointPaths, joinForValue(process.env.npm_config_prefix, 'lib'));
     }
   }
 
@@ -189,11 +208,11 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
   // because it requires shell: true and breaks SDK stdio streaming.
   if (isWindows) {
     const exePaths: string[] = [
-      path.join(homeDir, '.claude', 'local', 'claude.exe'),
-      path.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
-      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
-      path.join(homeDir, '.local', 'bin', 'claude.exe'),
+      joinForValue(homeDir, '.claude', 'local', 'claude.exe'),
+      joinForValue(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
+      joinForValue(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
+      joinForValue(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
+      joinForValue(homeDir, '.local', 'bin', 'claude.exe'),
     ];
 
     for (const p of exePaths) {
@@ -212,26 +231,26 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
   }
 
   const commonPaths: string[] = [
-    path.join(homeDir, '.claude', 'local', 'claude'),
-    path.join(homeDir, '.local', 'bin', 'claude'),
-    path.join(homeDir, '.volta', 'bin', 'claude'),
-    path.join(homeDir, '.asdf', 'shims', 'claude'),
-    path.join(homeDir, '.asdf', 'bin', 'claude'),
+    joinForValue(homeDir, '.claude', 'local', 'claude'),
+    joinForValue(homeDir, '.local', 'bin', 'claude'),
+    joinForValue(homeDir, '.volta', 'bin', 'claude'),
+    joinForValue(homeDir, '.asdf', 'shims', 'claude'),
+    joinForValue(homeDir, '.asdf', 'bin', 'claude'),
     '/usr/local/bin/claude',
     '/opt/homebrew/bin/claude',
-    path.join(homeDir, 'bin', 'claude'),
-    path.join(homeDir, '.npm-global', 'bin', 'claude'),
+    joinForValue(homeDir, 'bin', 'claude'),
+    joinForValue(homeDir, '.npm-global', 'bin', 'claude'),
   ];
 
   const npmPrefix = getNpmGlobalPrefix();
   if (npmPrefix) {
-    commonPaths.push(path.join(npmPrefix, 'bin', 'claude'));
+    commonPaths.push(joinForValue(npmPrefix, 'bin', 'claude'));
   }
 
   // NVM: resolve default version bin when NVM_BIN env var is not available (GUI apps)
   const nvmBin = resolveNvmDefaultBin(homeDir);
   if (nvmBin) {
-    commonPaths.push(path.join(nvmBin, 'claude'));
+    commonPaths.push(joinForValue(nvmBin, 'claude'));
   }
 
   for (const p of commonPaths) {
@@ -243,6 +262,14 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
   if (!isWindows) {
     const packageEntrypointPaths = getNpmClaudeCodeEntrypointPaths();
     for (const p of packageEntrypointPaths) {
+      if (isExistingFile(p)) {
+        return p;
+      }
+    }
+
+    for (const p of CLAUDE_CODE_NODE_ENTRYPOINTS.map(entrypoint =>
+      `/usr/local/lib/node_modules/@anthropic-ai/claude-code/${entrypoint}`
+    )) {
       if (isExistingFile(p)) {
         return p;
       }

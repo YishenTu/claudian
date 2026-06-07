@@ -24,6 +24,7 @@ import type {
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import { Notice } from 'obsidian';
 
+import { syncProviderCCSwitchSnapshot } from '../../../core/ccswitch/CCSwitchSnapshot';
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
@@ -414,6 +415,7 @@ export class ClaudianService implements ChatRuntime {
    * @returns true if the query was (re)started, false otherwise
    */
   async ensureReady(options?: ClaudeEnsureReadyOptions): Promise<boolean> {
+    syncProviderCCSwitchSnapshot(this.plugin.settings as unknown as Record<string, unknown>, 'claude');
     const vaultPath = getVaultPath(this.plugin.app);
 
     // Track external context paths for dynamic updates (empty list clears)

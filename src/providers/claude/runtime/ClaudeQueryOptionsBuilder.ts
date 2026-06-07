@@ -4,6 +4,7 @@ import type {
   PermissionMode as SDKPermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
 
+import { getActiveCCSwitchSnapshot } from '../../../core/ccswitch/CCSwitchSnapshot';
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import {
   buildSystemPrompt,
@@ -75,6 +76,7 @@ export class QueryOptionsBuilder {
     if (currentConfig.pluginsKey !== newConfig.pluginsKey) return true;
     if (currentConfig.settingSources !== newConfig.settingSources) return true;
     if (currentConfig.claudeCliPath !== newConfig.claudeCliPath) return true;
+    if (currentConfig.ccSwitchHash !== newConfig.ccSwitchHash) return true;
 
     // Note: Permission mode is handled dynamically via setPermissionMode() in ClaudianService.
     // Since allowDangerouslySkipPermissions is always true, both directions work without restart.
@@ -124,6 +126,7 @@ export class QueryOptionsBuilder {
       externalContextPaths: externalContextPaths || [],
       settingSources: settingSources.join(','),
       claudeCliPath: ctx.cliPath,
+      ccSwitchHash: getActiveCCSwitchSnapshot(ctx.settings, 'claude')?.configHash ?? '',
       enableChrome: claudeSettings.enableChrome,
       enableAutoMode: claudeSettings.safeMode === 'auto',
     };

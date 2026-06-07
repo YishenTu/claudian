@@ -70,13 +70,16 @@ export class AgentManager {
   async loadAgents(): Promise<void> {
     this.agents = [];
 
-    for (const name of this.builtinAgentNames) {
-      this.addAgent(makeBuiltinAgent(name));
-    }
-
     try { this.loadPluginAgents(); } catch { /* non-critical */ }
     try { this.loadVaultAgents(); } catch { /* non-critical */ }
     try { this.loadGlobalAgents(); } catch { /* non-critical */ }
+
+    const fileAgents = this.agents;
+    const fileAgentIds = new Set(fileAgents.map(agent => agent.id));
+    this.agents = [
+      ...this.builtinAgentNames.filter(name => !fileAgentIds.has(name)).map(makeBuiltinAgent),
+      ...fileAgents,
+    ];
   }
 
   getAvailableAgents(): AgentDefinition[] {
