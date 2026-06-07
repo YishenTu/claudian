@@ -55,6 +55,8 @@ export default class ClaudianPlugin extends Plugin {
   private lastKnownTabManagerState: AppTabManagerState | null = null;
   private sessionsListeners = new Set<() => void>();
   private sessionsViewOpening: Promise<WorkspaceLeaf | null> | null = null;
+  /** Last non-sessions right-sidebar tab (e.g. Outline) to restore off the chat view. */
+  private lastRightSidebarLeaf: WorkspaceLeaf | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -94,14 +96,12 @@ export default class ClaudianPlugin extends Plugin {
       },
     });
 
-    // In right-sidebar mode, focus the session switcher whenever the chat view
-    // becomes active, so the sidebar follows the chat tab (and frees up for the
-    // document Outline etc. when a non-chat tab is active).
+    // In right-sidebar mode, make the right sidebar follow the active main-area
+    // tab: show the session switcher on the chat view, and restore the user's
+    // previous sidebar tab (e.g. the document Outline) on any other file.
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', (leaf) => {
-        if (this.settings.tabBarPosition !== 'right-sidebar') return;
-        if (!isClaudianView(leaf?.view)) return;
-        void this.activateSessionsView({ focus: true });
+        this.syncSessionsSidebarToActiveLeaf(leaf);
       }),
     );
 
@@ -288,6 +288,47 @@ export default class ClaudianPlugin extends Plugin {
     const leaf = await this.sessionsViewOpening;
     if (focus && leaf) {
       await revealWorkspaceLeaf(workspace, leaf);
+    }
+  }
+
+  /**
+   * Keeps the right sidebar in step with the active main-area tab in
+   * right-sidebar mode: focus the session switcher on the chat view, and
+   * restore the user's previous sidebar tab (e.g. Outline) on any other file.
+   * Only acts on main-area leaves; sidebar activations are recorded so the
+   * preferred tab can be restored later.
+   */
+  private syncSessionsSidebarToActiveLeaf(leaf: WorkspaceLeaf | null): void {
+    if (this.settings.tabBarPosition !== 'right-sidebar') return;
+    if (!leaf) return;
+
+    const { workspace } = this.app;
+    const root = leaf.getRoot();
+
+    if (root === workspace.rightSplit) {
+      // Remember the user's chosen sidebar tab so we can bring it back; never
+      // record our own panel as the thing to restore.
+      if (leaf.view?.getViewType() !== VIEW_TYPE_CLAUDIAN_SESSIONS) {
+        this.lastRightSidebarLeaf = leaf;
+      }
+      return;
+    }
+
+    // Only react to the main editor area; ignore left-sidebar activations.
+    if (root !== workspace.rootSplit) return;
+
+    if (isClaudianView(leaf.view)) {
+      void this.activateSessionsView({ focus: true });
+      return;
+    }
+
+    const target = this.lastRightSidebarLeaf
+      ?? workspace.getLeavesOfType('outline')[0]
+      ?? null;
+    if (target) {
+      void revealWorkspaceLeaf(workspace, target).catch(() => {
+        this.lastRightSidebarLeaf = null;
+      });
     }
   }
 
