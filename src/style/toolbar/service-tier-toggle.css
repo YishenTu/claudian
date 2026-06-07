@@ -15,7 +15,7 @@
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
   flex-shrink: 0;
 }
 
@@ -36,4 +36,14 @@
 
 .claudian-service-tier-button.active {
   color: var(--claudian-brand);
+  background: rgba(var(--claudian-brand-rgb), 0.18);
+  box-shadow: inset 0 0 0 1px rgba(var(--claudian-brand-rgb), 0.28);
+}
+
+.claudian-service-tier-button.active .claudian-service-tier-icon svg {
+  fill: #ffffff;
+  stroke: #000000;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
 }
