@@ -190,6 +190,7 @@ export class ClaudianView extends ItemView {
           this.updateNavRowLocation();
           this.persistTabState();
           this.syncProviderBrandColor();
+          this.plugin.notifySessionsChanged();
         },
         onTabSwitched: () => {
           this.updateTabBar();
@@ -197,22 +198,35 @@ export class ClaudianView extends ItemView {
           this.updateNavRowLocation();
           this.persistTabState();
           this.syncProviderBrandColor();
+          this.plugin.notifySessionsChanged();
         },
         onTabClosed: () => {
           this.updateTabBar();
           this.persistTabState();
+          this.plugin.notifySessionsChanged();
         },
-        onTabStreamingChanged: () => this.updateTabBar(),
-        onTabTitleChanged: () => this.updateTabBar(),
-        onTabAttentionChanged: () => this.updateTabBar(),
+        onTabStreamingChanged: () => {
+          this.updateTabBar();
+          this.plugin.notifySessionsChanged();
+        },
+        onTabTitleChanged: () => {
+          this.updateTabBar();
+          this.plugin.notifySessionsChanged();
+        },
+        onTabAttentionChanged: () => {
+          this.updateTabBar();
+          this.plugin.notifySessionsChanged();
+        },
         onTabConversationChanged: () => {
           this.updateTabBar();
           this.persistTabState();
           this.syncProviderBrandColor();
+          this.plugin.notifySessionsChanged();
         },
         onTabProviderChanged: () => {
           this.updateTabBar();
           this.syncProviderBrandColor();
+          this.plugin.notifySessionsChanged();
         },
       }
     );
@@ -450,7 +464,10 @@ export class ClaudianView extends ItemView {
     if (!this.tabBarContainerEl || !this.tabManager) return;
 
     const tabCount = this.tabManager.getTabCount();
-    const showTabBar = tabCount >= 2;
+    // In right-sidebar mode the companion sessions panel owns tab switching, so
+    // the in-chat badges are hidden entirely regardless of tab count.
+    const isRightSidebarMode = this.plugin.settings.tabBarPosition === 'right-sidebar';
+    const showTabBar = tabCount >= 2 && !isRightSidebarMode;
     const isHeaderMode = this.plugin.settings.tabBarPosition === 'header';
 
     // Hide tab badges when only 1 tab, show when 2+

@@ -28,9 +28,11 @@ import type {
 } from './core/types';
 import {
   VIEW_TYPE_CLAUDIAN,
+  VIEW_TYPE_CLAUDIAN_SESSIONS,
 } from './core/types';
 import type { ChatViewPlacement, EnvironmentScope } from './core/types/settings';
 import { ClaudianView } from './features/chat/ClaudianView';
+import { SessionsView } from './features/chat/SessionsView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n/i18n';
@@ -51,6 +53,8 @@ export default class ClaudianPlugin extends Plugin {
   storage!: SharedAppStorage;
   private conversations: Conversation[] = [];
   private lastKnownTabManagerState: AppTabManagerState | null = null;
+  private sessionsListeners = new Set<() => void>();
+  private sessionsViewOpening: Promise<WorkspaceLeaf | null> | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -61,8 +65,17 @@ export default class ClaudianPlugin extends Plugin {
       (leaf) => new ClaudianView(leaf, this)
     );
 
+    this.registerView(
+      VIEW_TYPE_CLAUDIAN_SESSIONS,
+      (leaf) => new SessionsView(leaf, this)
+    );
+
     this.addRibbonIcon('bot', 'Open Claudian', () => {
       void this.activateView();
+    });
+
+    this.addRibbonIcon('panel-right', 'Open Claudian sessions', () => {
+      void this.activateSessionsView();
     });
 
     this.addCommand({
@@ -72,6 +85,25 @@ export default class ClaudianPlugin extends Plugin {
         void this.activateView();
       },
     });
+
+    this.addCommand({
+      id: 'open-sessions-panel',
+      name: 'Open sessions panel',
+      callback: () => {
+        void this.activateSessionsView();
+      },
+    });
+
+    // In right-sidebar mode, focus the session switcher whenever the chat view
+    // becomes active, so the sidebar follows the chat tab (and frees up for the
+    // document Outline etc. when a non-chat tab is active).
+    this.registerEvent(
+      this.app.workspace.on('active-leaf-change', (leaf) => {
+        if (this.settings.tabBarPosition !== 'right-sidebar') return;
+        if (!isClaudianView(leaf?.view)) return;
+        void this.activateSessionsView({ focus: true });
+      }),
+    );
 
     this.addCommand({
       id: 'inline-edit',
@@ -208,6 +240,53 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     if (leaf) {
+      await revealWorkspaceLeaf(workspace, leaf);
+    }
+
+    if (this.settings.tabBarPosition === 'right-sidebar') {
+      // Opening the app is an explicit action: focus the switcher (creating it
+      // if a fresh reload left no panel). Switching to a non-chat tab never
+      // calls this, so the sidebar stays free for the document Outline etc.
+      await this.activateSessionsView({ focus: true });
+    }
+  }
+
+  /**
+   * Opens the companion session switcher in the right sidebar.
+   * @param focus When true, reveals and focuses the panel. When false, creates
+   *   it only if missing without stealing focus from another active
+   *   right-sidebar tab such as the Outline.
+   */
+  async activateSessionsView({ focus = true }: { focus?: boolean } = {}): Promise<void> {
+    const { workspace } = this.app;
+
+    const existing = workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN_SESSIONS)[0];
+    if (existing) {
+      if (focus) {
+        await revealWorkspaceLeaf(workspace, existing);
+      }
+      return;
+    }
+
+    // Serialize concurrent opens (activateView and the active-leaf-change
+    // listener can both fire on a fresh load) so only one panel is created.
+    if (!this.sessionsViewOpening) {
+      this.sessionsViewOpening = (async () => {
+        const newLeaf = workspace.getRightLeaf(false);
+        if (newLeaf) {
+          await newLeaf.setViewState({
+            type: VIEW_TYPE_CLAUDIAN_SESSIONS,
+            active: focus,
+          });
+        }
+        return newLeaf;
+      })().finally(() => {
+        this.sessionsViewOpening = null;
+      });
+    }
+
+    const leaf = await this.sessionsViewOpening;
+    if (focus && leaf) {
       await revealWorkspaceLeaf(workspace, leaf);
     }
   }
@@ -618,6 +697,8 @@ export default class ClaudianPlugin extends Plugin {
       this.storage.sessions.toSessionMetadata(conversation)
     );
 
+    this.notifySessionsChanged();
+
     return conversation;
   }
 
@@ -654,6 +735,8 @@ export default class ClaudianPlugin extends Plugin {
         }
       }
     }
+
+    this.notifySessionsChanged();
   }
 
   async renameConversation(id: string, title: string): Promise<void> {
@@ -666,6 +749,8 @@ export default class ClaudianPlugin extends Plugin {
     await this.storage.sessions.saveMetadata(
       this.storage.sessions.toSessionMetadata(conversation)
     );
+
+    this.notifySessionsChanged();
   }
 
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
@@ -692,6 +777,8 @@ export default class ClaudianPlugin extends Plugin {
         }
       }
     }
+
+    this.notifySessionsChanged();
   }
 
   async getConversationById(id: string): Promise<Conversation | null> {
@@ -739,6 +826,31 @@ export default class ClaudianPlugin extends Plugin {
   getAllViews(): ClaudianView[] {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     return leaves.map(leaf => leaf.view).filter(isClaudianView);
+  }
+
+  /** Resolves the chat view the session switcher should drive (active, else first open). */
+  getActiveChatView(): ClaudianView | null {
+    const active = this.app.workspace.getActiveViewOfType(ClaudianView);
+    return active ?? this.getView();
+  }
+
+  /** Subscribes to session/tab changes. Returns an unsubscribe function. */
+  onSessionsChanged(listener: () => void): () => void {
+    this.sessionsListeners.add(listener);
+    return () => {
+      this.sessionsListeners.delete(listener);
+    };
+  }
+
+  /** Notifies subscribers (the session switcher) that sessions or tabs changed. */
+  notifySessionsChanged(): void {
+    for (const listener of this.sessionsListeners) {
+      try {
+        listener();
+      } catch {
+        // A failing listener must not break others or the caller.
+      }
+    }
   }
 
   findConversationAcrossViews(conversationId: string): { view: ClaudianView; tabId: string } | null {

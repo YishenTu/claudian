@@ -1,0 +1,158 @@
+.claudian-sessions-view {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.claudian-sessions-new-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-normal);
+  background: var(--background-primary);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.claudian-sessions-new-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.claudian-sessions-new-btn-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.claudian-sessions-new-btn-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-sessions-new-btn-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.claudian-sessions-section-header {
+  padding: 8px 6px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.claudian-sessions-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.claudian-sessions-empty {
+  padding: 8px 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.claudian-sessions-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.claudian-sessions-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-sessions-item--active {
+  background: var(--background-secondary);
+  border-inline-start: 2px solid var(--interactive-accent);
+  padding-inline-start: 6px;
+}
+
+.claudian-sessions-provider-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+.claudian-sessions-provider-dot svg {
+  width: 12px;
+  height: 12px;
+}
+
+.claudian-sessions-item--streaming .claudian-sessions-provider-dot {
+  color: var(--claudian-brand, #da7756);
+}
+
+.claudian-sessions-item--attention .claudian-sessions-provider-dot {
+  color: var(--text-error);
+}
+
+.claudian-sessions-item-content {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.claudian-sessions-item--active .claudian-sessions-item-content {
+  cursor: default;
+}
+
+.claudian-sessions-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.claudian-sessions-item-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.claudian-sessions-item-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 4px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-sessions-item:hover .claudian-sessions-item-close {
+  opacity: 1;
+}
+
+.claudian-sessions-item-close:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-sessions-item-close svg {
+  width: 14px;
+  height: 14px;
+}

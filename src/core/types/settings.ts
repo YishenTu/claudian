@@ -53,8 +53,8 @@ export interface KeyboardNavigationSettings {
   focusInputKey: string;       // Key to focus input (default: 'i', like vim insert mode)
 }
 
-/** Tab bar position setting. */
-export type TabBarPosition = 'input' | 'header';
+/** Tab bar position setting. `right-sidebar` moves tab switching into the companion sessions panel. */
+export type TabBarPosition = 'input' | 'header' | 'right-sidebar';
 
 export const CHAT_VIEW_PLACEMENTS = [
   'right-sidebar',

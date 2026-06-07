@@ -8,7 +8,7 @@ import {
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '../../core/providers/types';
-import type { ChatViewPlacement } from '../../core/types/settings';
+import type { ChatViewPlacement, TabBarPosition } from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
@@ -214,13 +214,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
         dropdown
           .addOption('input', t('settings.tabBarPosition.input'))
           .addOption('header', t('settings.tabBarPosition.header'))
+          .addOption('right-sidebar', 'Right sidebar')
           .setValue(this.plugin.settings.tabBarPosition ?? 'input')
           .onChange(async (value) => {
-            this.plugin.settings.tabBarPosition = value as 'input' | 'header';
+            this.plugin.settings.tabBarPosition = value as TabBarPosition;
             await this.plugin.saveSettings();
 
             for (const view of this.plugin.getAllViews()) {
               view.updateLayoutForPosition();
+            }
+
+            if (value === 'right-sidebar') {
+              await this.plugin.activateSessionsView();
             }
           });
       });
