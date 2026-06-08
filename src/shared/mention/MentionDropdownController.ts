@@ -278,6 +278,10 @@ export class MentionDropdownController {
       const firstVaultItemIndex = this.filteredMentionItems.length;
       const vaultItemCount = this.appendVaultItems(searchLower);
 
+      if (this.hideIfNoResults()) {
+        return;
+      }
+
       if (this.filteredContextFiles.length === 0 && vaultItemCount > 0) {
         this.selectedMentionIndex = firstVaultItemIndex;
       } else {
@@ -332,8 +336,7 @@ export class MentionDropdownController {
     const firstVaultItemIndex = this.filteredMentionItems.length;
     const vaultItemCount = this.appendVaultItems(searchLower);
 
-    if (this.filteredMentionItems.length === 0 && this.filteredContextFiles.length === 0) {
-      this.hide();
+    if (this.hideIfNoResults()) {
       return;
     }
 
@@ -414,6 +417,13 @@ export class MentionDropdownController {
     }
 
     return merged.length;
+  }
+
+  private hideIfNoResults(): boolean {
+    if (this.filteredMentionItems.length > 0) return false;
+
+    this.hide();
+    return true;
   }
 
   private renderMentionDropdown(): void {

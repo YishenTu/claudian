@@ -110,6 +110,9 @@ describe('MentionDropdownController', () => {
     mockDropdownVisible = false;
     const { SelectableDropdown } = jest.requireMock('@/shared/components/SelectableDropdown');
     (SelectableDropdown as jest.Mock).mockClear();
+    const { externalContextScanner } = jest.requireMock('@/utils/externalContextScanner');
+    (externalContextScanner.scanPaths as jest.Mock).mockReset();
+    (externalContextScanner.scanPaths as jest.Mock).mockReturnValue([]);
     containerEl = createMockEl();
     inputEl = createMockInput();
     callbacks = createMockCallbacks();
@@ -349,6 +352,63 @@ describe('MentionDropdownController', () => {
       inputEl.selectionStart = 6;
       controller.handleInputChange();
       expect(() => jest.advanceTimersByTime(200)).not.toThrow();
+    });
+
+    it('keeps matching vault filenames with spaces', () => {
+      callbacks = createMockCallbacks({
+        getCachedVaultFiles: jest.fn().mockReturnValue([
+          {
+            path: 'folder/test file 2.md',
+            name: 'test file 2.md',
+            stat: { mtime: Date.now() },
+          } as any,
+        ]),
+      });
+      controller.destroy();
+      controller = new MentionDropdownController(containerEl, inputEl, callbacks);
+
+      inputEl.value = '@test file';
+      inputEl.selectionStart = inputEl.value.length;
+      controller.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      const renderOptions = getLatestDropdownRenderOptions();
+      expect(renderOptions.items.map((item: any) => item.path)).toContain('folder/test file 2.md');
+      expect(controller.isVisible()).toBe(true);
+    });
+
+    it('hides external context dropdown after completed spaced mention stops matching', () => {
+      const { externalContextScanner } = jest.requireMock('@/utils/externalContextScanner');
+      (externalContextScanner.scanPaths as jest.Mock).mockReturnValue([
+        {
+          path: '/tmp/external/test file.md',
+          name: 'test file.md',
+          relativePath: 'test file.md',
+          contextRoot: '/tmp/external',
+          mtime: 1000,
+        },
+      ]);
+      callbacks = createMockCallbacks({
+        getExternalContexts: jest.fn().mockReturnValue(['/tmp/external']),
+      });
+      controller.destroy();
+      controller = new MentionDropdownController(containerEl, inputEl, callbacks);
+
+      inputEl.value = '@external/test file';
+      inputEl.selectionStart = inputEl.value.length;
+      controller.handleInputChange();
+      jest.advanceTimersByTime(200);
+      expect(controller.isVisible()).toBe(true);
+
+      const dropdownInstance = getLatestDropdownInstance();
+
+      inputEl.value = '@external/test file.md next';
+      inputEl.selectionStart = inputEl.value.length;
+      controller.handleInputChange();
+      jest.advanceTimersByTime(200);
+
+      expect(dropdownInstance.hide).toHaveBeenCalled();
+      expect(controller.isVisible()).toBe(false);
     });
 
     it('handles @ at start of line', () => {
