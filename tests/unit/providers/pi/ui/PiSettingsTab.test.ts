@@ -14,7 +14,10 @@ interface MockToggleComponent {
 
 interface MockTextComponent {
   inputEl: {
+    addClass: jest.Mock;
+    style: Record<string, string>;
     toggleClass: jest.Mock;
+    value: string;
   };
   onChangeCallback: ((value: string) => Promise<void> | void) | null;
   setPlaceholder: jest.Mock;
@@ -131,6 +134,7 @@ import { getPiProviderSettings } from '@/providers/pi/settings';
 import { piSettingsTabRenderer } from '@/providers/pi/ui/PiSettingsTab';
 
 const createdSettings: MockSetting[] = [];
+const createdDomElements: any[] = [];
 const mockedExists = fs.existsSync as jest.Mock;
 const mockedStat = fs.statSync as jest.Mock;
 
@@ -152,13 +156,17 @@ function createToggleComponent(): MockToggleComponent {
 function createTextComponent(): MockTextComponent {
   const component = {} as MockTextComponent;
   component.inputEl = {
+    addClass: jest.fn(),
+    style: {},
     toggleClass: jest.fn(),
+    value: '',
   };
   component.onChangeCallback = null;
   component.value = '';
   component.setPlaceholder = jest.fn(() => component);
   component.setValue = jest.fn((value: string) => {
     component.value = value;
+    component.inputEl.value = value;
     return component;
   });
   component.onChange = (callback: (value: string) => Promise<void> | void): MockTextComponent => {
@@ -209,12 +217,108 @@ function createDropdownComponent(): MockDropdownComponent {
 }
 
 function createElement(): any {
-  return {
-    createDiv: jest.fn(() => createElement()),
+  const classes = new Set<string>();
+  const eventListeners = new Map<string, Array<(...args: unknown[]) => void>>();
+  const element: any = {
+    checked: false,
+    open: false,
+    placeholder: '',
+    style: {},
+    title: '',
+    value: '',
+    classList: {
+      add: jest.fn((cls: string) => classes.add(cls)),
+      remove: jest.fn((cls: string) => classes.delete(cls)),
+      toggle: jest.fn((cls: string, force?: boolean) => {
+        if (force === undefined) {
+          if (classes.has(cls)) {
+            classes.delete(cls);
+            return false;
+          }
+          classes.add(cls);
+          return true;
+        }
+        if (force) {
+          classes.add(cls);
+        } else {
+          classes.delete(cls);
+        }
+        return force;
+      }),
+      contains: jest.fn((cls: string) => classes.has(cls)),
+    },
+    addClass: jest.fn((cls: string) => {
+      cls.split(/\s+/).filter(Boolean).forEach((item) => classes.add(item));
+    }),
+    removeClass: jest.fn((cls: string) => {
+      cls.split(/\s+/).filter(Boolean).forEach((item) => classes.delete(item));
+    }),
+    toggleClass: jest.fn((cls: string, force: boolean) => {
+      if (force) {
+        classes.add(cls);
+      } else {
+        classes.delete(cls);
+      }
+    }),
+    hasClass: jest.fn((cls: string) => classes.has(cls)),
+    setText: jest.fn((value: string) => {
+      element.text = value;
+    }),
     empty: jest.fn(),
-    setText: jest.fn(),
-    toggleClass: jest.fn(),
+    setAttribute: jest.fn(),
+    addEventListener: jest.fn((type: string, callback: (...args: unknown[]) => void) => {
+      const listeners = eventListeners.get(type) ?? [];
+      listeners.push(callback);
+      eventListeners.set(type, listeners);
+    }),
+    dispatchMockEvent: async (type: string, event?: unknown) => {
+      for (const listener of eventListeners.get(type) ?? []) {
+        await listener(event);
+      }
+    },
+    blur: jest.fn(),
+    createEl: jest.fn((tag?: string, attrs?: Record<string, unknown>) => {
+      const child = createElement();
+      child.tag = tag;
+      applyElementAttrs(child, attrs);
+      createdDomElements.push(child);
+      return child;
+    }),
+    createDiv: jest.fn((attrs?: Record<string, unknown>) => {
+      const child = createElement();
+      child.tag = 'div';
+      applyElementAttrs(child, attrs);
+      createdDomElements.push(child);
+      return child;
+    }),
+    createSpan: jest.fn((attrs?: Record<string, unknown>) => {
+      const child = createElement();
+      child.tag = 'span';
+      applyElementAttrs(child, attrs);
+      createdDomElements.push(child);
+      return child;
+    }),
   };
+
+  return element;
+}
+
+function applyElementAttrs(element: any, attrs?: Record<string, unknown>): void {
+  if (!attrs) {
+    return;
+  }
+  if (typeof attrs.cls === 'string') {
+    element.cls = attrs.cls;
+  }
+  if (typeof attrs.text === 'string') {
+    element.text = attrs.text;
+  }
+  if (typeof attrs.value === 'string') {
+    element.value = attrs.value;
+  }
+  if (typeof attrs.type === 'string') {
+    element.type = attrs.type;
+  }
 }
 
 function createContext(settings: Record<string, unknown>) {
@@ -242,23 +346,36 @@ function findSetting(name: string): MockSetting {
   return setting;
 }
 
+function findElement(tag: string, cls: string): any {
+  const element = [...createdDomElements].reverse().find(
+    candidate => candidate.tag === tag && candidate.cls === cls,
+  );
+  if (!element) {
+    throw new Error(`Element not found: ${tag}.${cls}`);
+  }
+  return element;
+}
+
+function findInputByType(type: string): any {
+  const element = [...createdDomElements].reverse().find(
+    candidate => candidate.tag === 'input' && candidate.type === type,
+  );
+  if (!element) {
+    throw new Error(`Input not found: ${type}`);
+  }
+  return element;
+}
+
 describe('PiSettingsTab', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     createdSettings.length = 0;
+    createdDomElements.length = 0;
     mockNotices.length = 0;
     mockedExists.mockReturnValue(true);
     mockedStat.mockReturnValue({ isFile: () => true });
     mockDiscoverModels.mockResolvedValue({
-      models: [{
-        encodedId: 'pi:anthropic/claude-sonnet-4',
-        id: 'claude-sonnet-4',
-        input: ['text'],
-        label: 'Claude Sonnet 4',
-        provider: 'anthropic',
-        reasoning: true,
-        thinkingLevels: ['off', 'medium'],
-      }],
+      models: [],
     });
   });
 
@@ -307,18 +424,35 @@ describe('PiSettingsTab', () => {
   });
 
   it('discovers models through PiModelDiscoveryService and reports failures', async () => {
-    const settings: Record<string, unknown> = { providerConfigs: { pi: {} } };
+    mockDiscoverModels.mockResolvedValueOnce({
+      models: [{
+        encodedId: 'pi:anthropic/claude-sonnet-4',
+        id: 'claude-sonnet-4',
+        input: ['text'],
+        label: 'Claude Sonnet 4',
+        provider: 'anthropic',
+        reasoning: true,
+        thinkingLevels: ['off', 'medium'],
+      }],
+    });
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        pi: {
+          visibleModels: ['pi:anthropic/claude-sonnet-4'],
+        },
+      },
+    };
     const context = render(settings);
 
-    await findSetting('Discover models').buttonComponents[0].onClickCallback?.();
+    await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
 
     expect(mockDiscoverModels).toHaveBeenCalledTimes(1);
     expect(getPiProviderSettings(settings).discoveredModels).toHaveLength(1);
-    expect(getPiProviderSettings(settings).visibleModels).toEqual([]);
+    expect(getPiProviderSettings(settings).visibleModels).toEqual(['pi:anthropic/claude-sonnet-4']);
     expect(context.refreshModelSelectors).toHaveBeenCalled();
 
     mockDiscoverModels.mockResolvedValueOnce({ diagnostics: 'not logged in', models: [] });
-    await findSetting('Discover models').buttonComponents[0].onClickCallback?.();
+    await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
     expect(mockNotices[0]).toContain('not logged in');
   });
 
@@ -340,12 +474,16 @@ describe('PiSettingsTab', () => {
       },
     };
     const context = render(settings);
-    const modelSetting = findSetting('Claude Sonnet 4');
+    const checkboxEl = findInputByType('checkbox');
 
-    await modelSetting.toggleComponents[0].onChangeCallback?.(true);
+    checkboxEl.checked = true;
+    await checkboxEl.dispatchMockEvent('change');
     expect(getPiProviderSettings(settings).visibleModels).toEqual(['pi:anthropic/claude-sonnet-4']);
 
-    await findSetting('Claude Sonnet 4').textComponents[0].onChangeCallback?.('Sonnet');
+    const aliasInput = findElement('input', 'claudian-provider-model-picker-selected-alias');
+    aliasInput.value = 'Sonnet';
+    await aliasInput.dispatchMockEvent('blur');
+
     expect(getPiProviderSettings(settings).modelAliases).toEqual({
       'pi:anthropic/claude-sonnet-4': 'Sonnet',
     });
