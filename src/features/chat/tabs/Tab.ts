@@ -1877,6 +1877,18 @@ async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Pr
       tab.renderer?.scrollToBottom();
     }
   }
+
+  // Route the rendered auto-turn through the normal conversation save boundary
+  // so metadata stays consistent (lastResponseAt, title/preview, provider state)
+  // and a later tab switch/reload does not restore stale messages. For native
+  // (SDK) sessions save() writes metadata and lazily creates + binds the
+  // conversation with the SDK session id when the tab has none yet — which is
+  // what makes a remote-first turn recoverable from history on reload.
+  if ((hasVisibleContent || !!precedingUserMessage) && !tab.state.isStreaming) {
+    void tab.controllers.conversationController?.save(true).catch(() => {
+      // Best-effort persistence; avoid surfacing background-save failures here.
+    });
+  }
 }
 
 export function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: string): void {

@@ -192,7 +192,6 @@ export default class ClaudianPlugin extends Plugin {
           void (async () => {
             try {
               const result = await runtime.enableRemoteControl!(true);
-              console.log('[Claudian] remote_control response:', result);
               new Notice(`Remote control enabled.\n${JSON.stringify(result)}`, 15000);
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);
