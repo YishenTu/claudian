@@ -5,6 +5,7 @@ import { createMockEl } from '@test/helpers/mockElement';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import {
   TOOL_AGENT_OUTPUT,
+  TOOL_APPLY_PATCH,
   TOOL_SPAWN_AGENT,
   TOOL_TASK,
   TOOL_TODO_WRITE,
@@ -589,7 +590,34 @@ describe('StreamController - Text Content', () => {
       expect(renderToolCall).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ id: 'read-1', name: 'Read' }),
-        expect.any(Map)
+        expect.any(Map),
+        { initiallyExpanded: false },
+      );
+    });
+
+    it('should pass expanded default to apply_patch tool blocks when enabled', async () => {
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      (deps.plugin.settings as any).expandFileEditsByDefault = true;
+
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk(
+        {
+          type: 'tool_use',
+          id: 'patch-1',
+          name: TOOL_APPLY_PATCH,
+          input: { changes: [{ path: 'src/main.ts', kind: 'update' }] },
+        },
+        msg
+      );
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      expect(renderToolCall).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: 'patch-1', name: TOOL_APPLY_PATCH }),
+        expect.any(Map),
+        { initiallyExpanded: true },
       );
     });
 
@@ -748,10 +776,33 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.pendingTools.size).toBe(0);
       expect(createWriteEditBlock).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ id: 'write-1', name: 'Write' })
+        expect.objectContaining({ id: 'write-1', name: 'Write' }),
+        { initiallyExpanded: false },
       );
       // renderToolCall should NOT be called for Write/Edit tools
       expect(renderToolCall).not.toHaveBeenCalled();
+    });
+
+    it('should pass expanded default to Write tool blocks when enabled', async () => {
+      const { createWriteEditBlock } = jest.requireMock('@/features/chat/rendering/WriteEditRenderer');
+      createWriteEditBlock.mockReturnValue({ wrapperEl: createMockEl() });
+
+      (deps.plugin.settings as any).expandFileEditsByDefault = true;
+
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: 'test.md', content: 'hello' } },
+        msg
+      );
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      expect(createWriteEditBlock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: 'write-1', name: 'Write' }),
+        { initiallyExpanded: true },
+      );
     });
 
     it('should buffer Edit tool and use createWriteEditBlock on flush', async () => {

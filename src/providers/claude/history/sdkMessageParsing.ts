@@ -7,7 +7,7 @@ import type {
   ImageMediaType,
   ToolCallInfo,
 } from '../../../core/types';
-import { extractContentBeforeXmlContext } from '../../../utils/context';
+import { extractUserDisplayContent } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
 import { isCompactionCanceledStderr, isInterruptSignalText } from '../../../utils/interrupt';
 import { extractToolResultContent } from '../sdk/toolResultContent';
@@ -40,10 +40,6 @@ function isRebuiltContextContent(textContent: string): boolean {
   return textContent.includes('\n\nUser:')
     || textContent.includes('\n\nAssistant:')
     || textContent.includes('\n\nA:');
-}
-
-function extractDisplayContent(textContent: string): string | undefined {
-  return extractContentBeforeXmlContext(textContent);
 }
 
 function extractImages(content: string | SDKNativeContentBlock[] | undefined): ImageAttachment[] | undefined {
@@ -196,7 +192,7 @@ export function parseSDKMessageToChat(
 
   let displayContent: string | undefined;
   if (sdkMsg.type === 'user') {
-    displayContent = commandNameMatch ? commandNameMatch[1] : extractDisplayContent(textContent);
+    displayContent = commandNameMatch ? commandNameMatch[1] : extractUserDisplayContent(textContent);
   }
 
   const isInterrupt = sdkMsg.type === 'user' && isInterruptSignalText(textContent);

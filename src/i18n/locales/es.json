@@ -299,6 +299,10 @@
       "name": "Diferir renderizado matemático durante streaming",
       "desc": "Mostrar LaTeX sin procesar mientras se transmite la respuesta y renderizar las fórmulas una vez al completar cada bloque de texto."
     },
+    "expandFileEditsByDefault": {
+      "name": "Expandir ediciones de archivo por defecto",
+      "desc": "Mostrar los diffs de Write y Edit expandidos cuando aparecen por primera vez."
+    },
     "chatViewPlacement": {
       "name": "Abrir Claudian en",
       "desc": "Elige dónde se abre el panel de chat cuando se crea",

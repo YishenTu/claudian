@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { ChatMessage, ContentBlock, ToolCallInfo } from '../../../core/types';
+import { extractUserDisplayContent } from '../../../utils/context';
 import {
   isCodexToolOutputError,
   normalizeCodexMcpToolInput,
@@ -393,22 +394,9 @@ const CODEX_SYSTEM_MESSAGE_PREFIXES = [
   '<skill>',
 ];
 
-const CODEX_BRACKET_CONTEXT_PATTERN = /\n\[(?:Current note|Editor selection from|Browser selection from|Canvas selection from)\b/;
-
 function isCodexSystemMessage(text: string): boolean {
   const trimmed = text.trimStart();
   return CODEX_SYSTEM_MESSAGE_PREFIXES.some(prefix => trimmed.startsWith(prefix));
-}
-
-function extractCodexDisplayContent(text: string): string | undefined {
-  if (!text) return undefined;
-
-  const bracketMatch = text.match(CODEX_BRACKET_CONTEXT_PATTERN);
-  if (bracketMatch?.index !== undefined) {
-    return text.substring(0, bracketMatch.index).trim();
-  }
-
-  return undefined;
 }
 
 function extractMessageText(content: PersistedMessagePart[] | undefined): string {
@@ -1078,7 +1066,7 @@ function flushBubbleTurnMessages(
 
   const userText = turn.userChunks.join('\n').trim();
   if (userText && !isCodexSystemMessage(userText)) {
-    const displayContent = extractCodexDisplayContent(userText);
+    const displayContent = extractUserDisplayContent(userText);
     messages.push({
       id: `codex-msg-${msgIndex}`,
       role: 'user',

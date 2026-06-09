@@ -299,6 +299,10 @@
       "name": "Defer math rendering during streaming",
       "desc": "Show raw LaTeX while responses stream, then render math once when each text block completes."
     },
+    "expandFileEditsByDefault": {
+      "name": "Expand file edits by default",
+      "desc": "Show Write and Edit diffs expanded when they first appear."
+    },
     "chatViewPlacement": {
       "name": "Open Claudian in",
       "desc": "Choose where the chat panel opens when it is created",

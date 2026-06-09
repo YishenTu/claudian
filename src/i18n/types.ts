@@ -233,6 +233,8 @@ export type TranslationKey =
   | 'settings.enableAutoScroll.desc'
   | 'settings.deferMathRenderingDuringStreaming.name'
   | 'settings.deferMathRenderingDuringStreaming.desc'
+  | 'settings.expandFileEditsByDefault.name'
+  | 'settings.expandFileEditsByDefault.desc'
   | 'settings.chatViewPlacement.name'
   | 'settings.chatViewPlacement.desc'
   | 'settings.chatViewPlacement.rightSidebar'

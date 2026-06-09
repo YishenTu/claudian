@@ -16,6 +16,7 @@ const CURRENT_NOTE_SUFFIX_REGEX = /\n\n<current_note>\n[\s\S]*?<\/current_note>$
  * context_files, canvas_selection, browser_selection
  */
 export const XML_CONTEXT_PATTERN = /\n\n<(?:current_note|editor_selection|editor_cursor|context_files|canvas_selection|browser_selection)[\s>]/;
+const BRACKET_CONTEXT_PATTERN = /\n\[(?:Current note|Editor selection from|Browser selection from|Canvas selection from)\b/;
 
 export function formatCurrentNote(notePath: string): string {
   return `<current_note>\n${notePath}\n</current_note>`;
@@ -59,6 +60,22 @@ export function extractContentBeforeXmlContext(text: string): string | undefined
   const xmlMatch = text.match(XML_CONTEXT_PATTERN);
   if (xmlMatch?.index !== undefined) {
     return text.substring(0, xmlMatch.index).trim();
+  }
+
+  return undefined;
+}
+
+export function extractUserDisplayContent(text: string): string | undefined {
+  if (!text) return undefined;
+
+  const xmlDisplayContent = extractContentBeforeXmlContext(text);
+  if (xmlDisplayContent !== undefined) {
+    return xmlDisplayContent;
+  }
+
+  const bracketMatch = text.match(BRACKET_CONTEXT_PATTERN);
+  if (bracketMatch?.index !== undefined) {
+    return text.substring(0, bracketMatch.index).trim();
   }
 
   return undefined;

@@ -299,6 +299,10 @@
       "name": "스트리밍 중 수식 렌더링 지연",
       "desc": "응답이 스트리밍되는 동안 원본 LaTeX를 표시하고 각 텍스트 블록이 완료되면 수식을 한 번 렌더링합니다."
     },
+    "expandFileEditsByDefault": {
+      "name": "파일 편집을 기본적으로 펼치기",
+      "desc": "Write 및 Edit diff가 처음 표시될 때 펼친 상태로 보여줍니다."
+    },
     "chatViewPlacement": {
       "name": "Claudian 열 위치",
       "desc": "채팅 패널이 생성될 때 열릴 위치를 선택합니다",

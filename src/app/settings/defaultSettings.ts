@@ -48,6 +48,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   tabBarPosition: 'input',
   enableAutoScroll: true,
   deferMathRenderingDuringStreaming: true,
+  expandFileEditsByDefault: false,
   chatViewPlacement: 'right-sidebar',
 
   hiddenProviderCommands: getDefaultHiddenProviderCommands(),

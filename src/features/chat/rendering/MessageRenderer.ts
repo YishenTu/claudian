@@ -7,12 +7,14 @@ import {
   isSubagentToolName,
   isWriteEditTool,
   TOOL_AGENT_OUTPUT,
+  TOOL_APPLY_PATCH,
   TOOL_WRITE_STDIN,
 } from '../../../core/tools/toolNames';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
+import { extractUserDisplayContent } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
@@ -95,6 +97,14 @@ export class MessageRenderer {
     return resolveSubagentLifecycleAdapter(this.getCapabilities().providerId, toolName);
   }
 
+  private shouldExpandFileEditsByDefault(): boolean {
+    return this.plugin.settings?.expandFileEditsByDefault === true;
+  }
+
+  private getUserMessageTextToShow(msg: ChatMessage): string {
+    return msg.displayContent ?? extractUserDisplayContent(msg.content) ?? msg.content;
+  }
+
   // ============================================
   // Streaming Message Rendering
   // ============================================
@@ -111,7 +121,7 @@ export class MessageRenderer {
 
     // Skip empty bubble for image-only messages
     if (msg.role === 'user') {
-      const textToShow = msg.displayContent ?? msg.content;
+      const textToShow = this.getUserMessageTextToShow(msg);
       if (!textToShow) {
         this.scrollToBottom();
         const lastChild = this.messagesEl.lastElementChild as HTMLElement;
@@ -130,7 +140,7 @@ export class MessageRenderer {
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });
 
     if (msg.role === 'user') {
-      const textToShow = msg.displayContent ?? msg.content;
+      const textToShow = this.getUserMessageTextToShow(msg);
       if (textToShow) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
@@ -163,7 +173,7 @@ export class MessageRenderer {
 
     contentEl.empty();
 
-    const textToShow = msg.displayContent ?? msg.content;
+    const textToShow = this.getUserMessageTextToShow(msg);
     if (textToShow) {
       const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
       void this.renderContent(textEl, textToShow);
@@ -241,7 +251,7 @@ export class MessageRenderer {
 
     // Skip empty bubble for image-only messages
     if (msg.role === 'user') {
-      const textToShow = msg.displayContent ?? msg.content;
+      const textToShow = this.getUserMessageTextToShow(msg);
       if (!textToShow) {
         return;
       }
@@ -261,7 +271,7 @@ export class MessageRenderer {
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });
 
     if (msg.role === 'user') {
-      const textToShow = msg.displayContent ?? msg.content;
+      const textToShow = this.getUserMessageTextToShow(msg);
       if (textToShow) {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
@@ -408,13 +418,17 @@ export class MessageRenderer {
     const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(toolCall.name);
 
     if (isWriteEditTool(toolCall.name)) {
-      renderStoredWriteEdit(contentEl, toolCall);
+      renderStoredWriteEdit(contentEl, toolCall, {
+        initiallyExpanded: this.shouldExpandFileEditsByDefault(),
+      });
     } else if (isSubagentToolName(toolCall.name)) {
       this.renderTaskSubagent(contentEl, toolCall);
     } else if (subagentLifecycleAdapter?.isSpawnTool(toolCall.name) && msg) {
       this.renderProviderLifecycleSubagent(contentEl, toolCall, msg);
     } else {
-      renderStoredToolCall(contentEl, toolCall);
+      renderStoredToolCall(contentEl, toolCall, {
+        initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH && this.shouldExpandFileEditsByDefault(),
+      });
     }
   }
 

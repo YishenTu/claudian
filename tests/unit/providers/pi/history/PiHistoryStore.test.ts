@@ -48,6 +48,27 @@ describe('PiHistoryStore', () => {
     });
   });
 
+  it('preserves hidden XML context wrappers in raw user content', () => {
+    const content = [
+      JSON.stringify({
+        id: 'u1',
+        type: 'entry',
+        message: {
+          role: 'user',
+          content: 'Summarize this\n\n<current_note>\nnotes/today.md\n</current_note>',
+        },
+      }),
+    ].join('\n');
+
+    const messages = parsePiSessionContent(content);
+
+    expect(messages[0]).toMatchObject({
+      content: 'Summarize this\n\n<current_note>\nnotes/today.md\n</current_note>',
+      role: 'user',
+    });
+    expect(messages[0].displayContent).toBeUndefined();
+  });
+
   it('attaches tool results to the previous assistant tool call', () => {
     const content = [
       JSON.stringify({

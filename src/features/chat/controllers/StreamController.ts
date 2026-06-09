@@ -352,6 +352,10 @@ export class StreamController {
     return this.deps.plugin.settings.deferMathRenderingDuringStreaming !== false;
   }
 
+  private shouldExpandFileEditsByDefault(): boolean {
+    return this.deps.plugin.settings.expandFileEditsByDefault === true;
+  }
+
   private getStreamingRenderOptions(content: string): RenderContentOptions | undefined {
     return this.shouldDeferMathRendering() && hasStreamingMathDelimiters(content)
       ? { deferMath: true }
@@ -398,11 +402,15 @@ export class StreamController {
     const { toolCall, parentEl } = pending;
     if (!parentEl) return;
     if (isWriteEditTool(toolCall.name)) {
-      const writeEditState = createWriteEditBlock(parentEl, toolCall);
+      const writeEditState = createWriteEditBlock(parentEl, toolCall, {
+        initiallyExpanded: this.shouldExpandFileEditsByDefault(),
+      });
       state.writeEditStates.set(toolId, writeEditState);
       state.toolCallElements.set(toolId, writeEditState.wrapperEl);
     } else {
-      renderToolCall(parentEl, toolCall, state.toolCallElements);
+      renderToolCall(parentEl, toolCall, state.toolCallElements, {
+        initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH && this.shouldExpandFileEditsByDefault(),
+      });
     }
     state.pendingTools.delete(toolId);
   }

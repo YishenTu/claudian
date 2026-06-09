@@ -77,6 +77,21 @@ describe('ToolCallRenderer', () => {
 
       expect(toolCall.isExpanded).toBe(false);
     });
+
+    it('should start expanded when requested', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall();
+      const toolCallElements = new Map<string, HTMLElement>();
+
+      const toolEl = renderToolCall(parentEl, toolCall, toolCallElements, { initiallyExpanded: true });
+      const header = toolEl.querySelector('.claudian-tool-header');
+      const content = toolEl.querySelector('.claudian-tool-content');
+
+      expect(toolCall.isExpanded).toBe(true);
+      expect(toolEl.hasClass('expanded')).toBe(true);
+      expect(content?.hasClass('claudian-hidden')).toBe(false);
+      expect(header?.getAttribute('aria-expanded')).toBe('true');
+    });
   });
 
   describe('renderStoredToolCall', () => {
@@ -586,6 +601,60 @@ describe('ToolCallRenderer', () => {
       expect(setIcon).not.toHaveBeenCalledWith(expect.anything(), 'check');
       expect(diffTexts).toContain("import { Plugin } from 'obsidian';");
       expect(diffTexts).toContain("import { Plugin, Notice } from 'obsidian';");
+    });
+
+    it('renders stored apply_patch collapsed by default', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'apply_patch',
+        status: 'completed',
+        input: {
+          patch: [
+            '*** Begin Patch',
+            '*** Update File: src/main.ts',
+            '@@',
+            '-old',
+            '+new',
+            '*** End Patch',
+          ].join('\n'),
+        },
+        result: 'Applied patch',
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      const header = toolEl.querySelector('.claudian-tool-header');
+      const content = toolEl.querySelector('.claudian-tool-content');
+
+      expect(toolEl.hasClass('expanded')).toBe(false);
+      expect(content?.hasClass('claudian-hidden')).toBe(true);
+      expect(header?.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('renders stored apply_patch expanded when requested', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'apply_patch',
+        status: 'completed',
+        input: {
+          patch: [
+            '*** Begin Patch',
+            '*** Update File: src/main.ts',
+            '@@',
+            '-old',
+            '+new',
+            '*** End Patch',
+          ].join('\n'),
+        },
+        result: 'Applied patch',
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall, { initiallyExpanded: true });
+      const header = toolEl.querySelector('.claudian-tool-header');
+      const content = toolEl.querySelector('.claudian-tool-content');
+
+      expect(toolEl.hasClass('expanded')).toBe(true);
+      expect(content?.hasClass('claudian-hidden')).toBe(false);
+      expect(header?.getAttribute('aria-expanded')).toBe('true');
     });
 
     it('renders fileChange patchUpdated diffs from changes input', () => {

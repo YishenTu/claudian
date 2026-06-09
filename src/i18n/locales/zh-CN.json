@@ -299,6 +299,10 @@
       "name": "流式传输时延迟渲染数学公式",
       "desc": "响应流式传输时显示原始 LaTeX，并在每个文本块完成后只渲染一次数学公式。"
     },
+    "expandFileEditsByDefault": {
+      "name": "默认展开文件编辑",
+      "desc": "Write 和 Edit diff 首次出现时以展开状态显示。"
+    },
     "chatViewPlacement": {
       "name": "Claudian 打开位置",
       "desc": "选择新建聊天面板时的打开位置",

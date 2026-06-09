@@ -828,6 +828,10 @@ interface ToolElementStructure {
   currentTaskEl: HTMLElement | null;
 }
 
+export interface ToolCallRenderOptions {
+  initiallyExpanded?: boolean;
+}
+
 function createToolElementStructure(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo
@@ -1048,7 +1052,8 @@ function renderToolContent(
 export function renderToolCall(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo,
-  toolCallElements: Map<string, HTMLElement>
+  toolCallElements: Map<string, HTMLElement>,
+  options: ToolCallRenderOptions = {}
 ): HTMLElement {
   const { toolEl, header, statusEl, content, currentTaskEl } =
     createToolElementStructure(parentEl, toolCall);
@@ -1060,11 +1065,12 @@ export function renderToolCall(
 
   renderToolContent(content, toolCall, 'Running...');
 
-  const state = { isExpanded: false };
-  toolCall.isExpanded = false;
+  const initiallyExpanded = options.initiallyExpanded ?? false;
+  const state = { isExpanded: initiallyExpanded };
+  toolCall.isExpanded = initiallyExpanded;
   const todoStatusEl = toolCall.name === TOOL_TODO_WRITE ? statusEl : null;
   setupCollapsible(toolEl, header, content, state, {
-    initiallyExpanded: false,
+    initiallyExpanded,
     onToggle: createTodoToggleHandler(currentTaskEl, todoStatusEl, (expanded) => {
       toolCall.isExpanded = expanded;
     }),
@@ -1129,7 +1135,8 @@ export function updateToolCallResult(
 /** For stored (non-streaming) tool calls — collapsed by default. */
 export function renderStoredToolCall(
   parentEl: HTMLElement,
-  toolCall: ToolCallInfo
+  toolCall: ToolCallInfo,
+  options: ToolCallRenderOptions = {}
 ): HTMLElement {
   const { toolEl, header, statusEl, content, currentTaskEl } =
     createToolElementStructure(parentEl, toolCall);
@@ -1145,7 +1152,7 @@ export function renderStoredToolCall(
   const state = { isExpanded: false };
   const todoStatusEl = toolCall.name === TOOL_TODO_WRITE ? statusEl : null;
   setupCollapsible(toolEl, header, content, state, {
-    initiallyExpanded: false,
+    initiallyExpanded: options.initiallyExpanded ?? false,
     onToggle: createTodoToggleHandler(currentTaskEl, todoStatusEl),
     baseAriaLabel: getToolLabel(toolCall.name, toolCall.input)
   });

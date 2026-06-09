@@ -2,6 +2,7 @@ import {
   appendContextFiles,
   appendCurrentNote,
   extractContentBeforeXmlContext,
+  extractUserDisplayContent,
   extractUserQuery,
   formatCurrentNote,
   stripCurrentNoteContext,
@@ -183,6 +184,22 @@ describe('extractContentBeforeXmlContext', () => {
       expect(extractContentBeforeXmlContext(null as unknown as string)).toBeUndefined();
       expect(extractContentBeforeXmlContext(undefined as unknown as string)).toBeUndefined();
     });
+  });
+});
+
+describe('extractUserDisplayContent', () => {
+  it('extracts display content before XML context tags', () => {
+    expect(extractUserDisplayContent('Summarize this\n\n<current_note>\nnotes/today.md\n</current_note>'))
+      .toBe('Summarize this');
+  });
+
+  it('extracts display content before bracket context tags', () => {
+    expect(extractUserDisplayContent('Fix the bug\n[Current note: notes/bug.md]'))
+      .toBe('Fix the bug');
+  });
+
+  it('does not hide ordinary XML-like user text', () => {
+    expect(extractUserDisplayContent('What does <xml> mean?')).toBeUndefined();
   });
 });
 

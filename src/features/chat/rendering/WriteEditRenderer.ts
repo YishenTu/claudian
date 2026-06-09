@@ -20,6 +20,10 @@ export interface WriteEditState {
   diffLines?: DiffLine[];
 }
 
+export interface WriteEditRenderOptions {
+  initiallyExpanded?: boolean;
+}
+
 function shortenPath(filePath: string, maxLength = 40): string {
   if (!filePath) return 'file';
   // Normalize path separators for cross-platform support
@@ -45,10 +49,12 @@ function shortenPath(filePath: string, maxLength = 40): string {
 
 export function createWriteEditBlock(
   parentEl: HTMLElement,
-  toolCall: ToolCallInfo
+  toolCall: ToolCallInfo,
+  options: WriteEditRenderOptions = {}
 ): WriteEditState {
   const filePath = (toolCall.input.file_path as string) || 'file';
   const toolName = toolCall.name; // 'Write' or 'Edit'
+  const baseAriaLabel = `${toolName}: ${shortenPath(filePath)}`;
 
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-write-edit-block' });
   wrapperEl.dataset.toolId = toolCall.id;
@@ -57,7 +63,6 @@ export function createWriteEditBlock(
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-write-edit-header' });
   headerEl.setAttribute('tabindex', '0');
   headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-label', `${toolName}: ${shortenPath(filePath)} - click to expand`);
 
   // File icon
   const iconEl = headerEl.createDiv({ cls: 'claudian-write-edit-icon' });
@@ -97,7 +102,10 @@ export function createWriteEditBlock(
   };
 
   // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
-  setupCollapsible(wrapperEl, headerEl, contentEl, state);
+  setupCollapsible(wrapperEl, headerEl, contentEl, state, {
+    initiallyExpanded: options.initiallyExpanded ?? false,
+    baseAriaLabel,
+  });
 
   return state;
 }
@@ -151,9 +159,14 @@ export function finalizeWriteEditBlock(state: WriteEditState, isError: boolean):
   }
 }
 
-export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallInfo): HTMLElement {
+export function renderStoredWriteEdit(
+  parentEl: HTMLElement,
+  toolCall: ToolCallInfo,
+  options: WriteEditRenderOptions = {}
+): HTMLElement {
   const filePath = (toolCall.input.file_path as string) || 'file';
   const toolName = toolCall.name;
+  const baseAriaLabel = `${toolName}: ${shortenPath(filePath)}`;
   const isError = toolCall.status === 'error' || toolCall.status === 'blocked';
 
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-write-edit-block' });
@@ -210,7 +223,10 @@ export function renderStoredWriteEdit(parentEl: HTMLElement, toolCall: ToolCallI
 
   // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
   const state = { isExpanded: false };
-  setupCollapsible(wrapperEl, headerEl, contentEl, state);
+  setupCollapsible(wrapperEl, headerEl, contentEl, state, {
+    initiallyExpanded: options.initiallyExpanded ?? false,
+    baseAriaLabel,
+  });
 
   return wrapperEl;
 }

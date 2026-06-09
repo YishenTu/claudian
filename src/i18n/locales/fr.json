@@ -299,6 +299,10 @@
       "name": "Différer le rendu mathématique pendant le streaming",
       "desc": "Afficher le LaTeX brut pendant la diffusion, puis rendre les formules une fois chaque bloc de texte terminé."
     },
+    "expandFileEditsByDefault": {
+      "name": "Développer les modifications de fichiers par défaut",
+      "desc": "Afficher les diffs Write et Edit développés lors de leur première apparition."
+    },
     "chatViewPlacement": {
       "name": "Ouvrir Claudian dans",
       "desc": "Choisissez où le panneau de chat s'ouvre lors de sa création",

@@ -102,6 +102,32 @@ describe('WriteEditRenderer', () => {
 
       expect(state.summaryEl.textContent).toBe('file');
     });
+
+    it('should start collapsed by default', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall();
+
+      const state = createWriteEditBlock(parentEl, toolCall);
+
+      expect(state.isExpanded).toBe(false);
+      expect(state.wrapperEl.hasClass('expanded')).toBe(false);
+      expect(state.contentEl.hasClass('claudian-hidden')).toBe(true);
+      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
+      expect(state.headerEl.getAttribute('aria-label')).toContain('click to expand');
+    });
+
+    it('should start expanded when requested', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall();
+
+      const state = createWriteEditBlock(parentEl, toolCall, { initiallyExpanded: true });
+
+      expect(state.isExpanded).toBe(true);
+      expect(state.wrapperEl.hasClass('expanded')).toBe(true);
+      expect(state.contentEl.hasClass('claudian-hidden')).toBe(false);
+      expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
+      expect(state.headerEl.getAttribute('aria-label')).toContain('click to collapse');
+    });
   });
 
   describe('updateWriteEditWithDiff', () => {
@@ -292,6 +318,34 @@ describe('WriteEditRenderer', () => {
 
       // Block should render for Edit tool
       expect(block).toBeDefined();
+    });
+
+    it('should start collapsed by default', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({ status: 'completed' });
+
+      const block = renderStoredWriteEdit(parentEl, toolCall);
+      const headerEl = block.querySelector('.claudian-write-edit-header');
+      const contentEl = block.querySelector('.claudian-write-edit-content');
+
+      expect(block.hasClass('expanded')).toBe(false);
+      expect(contentEl?.hasClass('claudian-hidden')).toBe(true);
+      expect(headerEl?.getAttribute('aria-expanded')).toBe('false');
+      expect(headerEl?.getAttribute('aria-label')).toContain('click to expand');
+    });
+
+    it('should start expanded when requested', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({ status: 'completed' });
+
+      const block = renderStoredWriteEdit(parentEl, toolCall, { initiallyExpanded: true });
+      const headerEl = block.querySelector('.claudian-write-edit-header');
+      const contentEl = block.querySelector('.claudian-write-edit-content');
+
+      expect(block.hasClass('expanded')).toBe(true);
+      expect(contentEl?.hasClass('claudian-hidden')).toBe(false);
+      expect(headerEl?.getAttribute('aria-expanded')).toBe('true');
+      expect(headerEl?.getAttribute('aria-label')).toContain('click to collapse');
     });
 
   });

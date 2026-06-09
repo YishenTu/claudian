@@ -5,6 +5,7 @@ import { Menu } from 'obsidian';
 
 import {
   TOOL_AGENT_OUTPUT,
+  TOOL_APPLY_PATCH,
   TOOL_SPAWN_AGENT,
   TOOL_TASK,
   TOOL_WAIT_AGENT,
@@ -64,12 +65,16 @@ function mockCapabilities(providerId: 'claude' | 'codex' = 'claude') {
   });
 }
 
-function createRenderer(messagesEl?: any, providerId: 'claude' | 'codex' = 'claude') {
+function createRenderer(
+  messagesEl?: any,
+  providerId: 'claude' | 'codex' = 'claude',
+  settings: Record<string, unknown> = {},
+) {
   const el = messagesEl ?? createMockEl();
   const comp = createMockComponent();
   const plugin = {
     app: {},
-    settings: { mediaFolder: '' },
+    settings: { mediaFolder: '', ...settings },
   };
   return {
     renderer: new MessageRenderer(
@@ -260,6 +265,23 @@ describe('MessageRenderer', () => {
     expect(renderContentSpy).toHaveBeenCalledWith(expect.anything(), 'user input only');
   });
 
+  it('renders extracted user display content when stored message has hidden XML context', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+    const renderContentSpy = jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+    const msg: ChatMessage = {
+      id: 'u1',
+      role: 'user',
+      content: 'Explain this\n\n<current_note>\nnotes/test.md\n</current_note>',
+      timestamp: Date.now(),
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    expect(renderContentSpy).toHaveBeenCalledWith(expect.anything(), 'Explain this');
+  });
+
   it('skips empty user message bubble (image-only)', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
@@ -438,6 +460,58 @@ describe('MessageRenderer', () => {
     expect(renderStoredSubagent).toHaveBeenCalled();
   });
 
+  it('passes collapsed file-edit default to stored Write/Edit renderer', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+
+    const msg: ChatMessage = {
+      id: 'm-write-default',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [
+        { id: 'edit-1', name: 'Edit', input: { file_path: 'notes/test.md' }, status: 'completed' } as any,
+      ],
+      contentBlocks: [
+        { type: 'tool_use', toolId: 'edit-1' } as any,
+      ],
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    expect(renderStoredWriteEdit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 'edit-1', name: 'Edit' }),
+      { initiallyExpanded: false },
+    );
+  });
+
+  it('passes expanded file-edit default to stored Write/Edit renderer', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl, 'claude', { expandFileEditsByDefault: true });
+
+    const msg: ChatMessage = {
+      id: 'm-write-expanded',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [
+        { id: 'write-1', name: 'Write', input: { file_path: 'notes/test.md' }, status: 'completed' } as any,
+      ],
+      contentBlocks: [
+        { type: 'tool_use', toolId: 'write-1' } as any,
+      ],
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    expect(renderStoredWriteEdit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 'write-1', name: 'Write' }),
+      { initiallyExpanded: true },
+    );
+  });
+
   it('skips empty or whitespace-only text blocks', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
@@ -523,8 +597,41 @@ describe('MessageRenderer', () => {
         name: TOOL_WRITE_STDIN,
         input: { session_id: '2404', chars: 'y\n' },
       }),
+      { initiallyExpanded: false },
     );
     expect(messagesEl.children).toHaveLength(1);
+  });
+
+  it('passes expanded file-edit default to stored apply_patch renderer', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl, 'codex', { expandFileEditsByDefault: true });
+
+    const msg: ChatMessage = {
+      id: 'm-apply-patch-expanded',
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [
+        {
+          id: 'patch-1',
+          name: TOOL_APPLY_PATCH,
+          input: { changes: [{ path: 'src/main.ts', kind: 'update' }] },
+          status: 'completed',
+          result: 'Applied patch',
+        } as any,
+      ],
+      contentBlocks: [
+        { type: 'tool_use', toolId: 'patch-1' } as any,
+      ],
+    };
+
+    renderer.renderStoredMessage(msg);
+
+    expect(renderStoredToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 'patch-1', name: TOOL_APPLY_PATCH }),
+      { initiallyExpanded: true },
+    );
   });
 
   it('renders response duration footer when durationSeconds is present', () => {
@@ -656,7 +763,8 @@ describe('MessageRenderer', () => {
     expect(renderContentSpy).toHaveBeenCalledWith(expect.anything(), 'Only text block persisted');
     expect(renderStoredToolCall).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ id: 'read-1', name: 'Read' })
+      expect.objectContaining({ id: 'read-1', name: 'Read' }),
+      { initiallyExpanded: false },
     );
   });
 
@@ -884,11 +992,13 @@ describe('MessageRenderer', () => {
     expect(renderStoredToolCall).toHaveBeenCalledTimes(2);
     expect(renderStoredToolCall).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ id: 'read-1', name: 'Read' })
+      expect.objectContaining({ id: 'read-1', name: 'Read' }),
+      { initiallyExpanded: false },
     );
     expect(renderStoredToolCall).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ id: 'grep-1', name: 'Grep' })
+      expect.objectContaining({ id: 'grep-1', name: 'Grep' }),
+      { initiallyExpanded: false },
     );
   });
 
