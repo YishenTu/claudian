@@ -4,7 +4,7 @@
 ![GitHub release](https://img.shields.io/github/v/release/YishenTu/claudian)
 ![License](https://img.shields.io/github/license/YishenTu/claudian)
 
-![Preview](Preview.png)
+![Preview](assets/Preview.png)
 
 An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Opencode, Pi, and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box.
 
@@ -156,17 +156,20 @@ src/
 └── style/                       # Modular CSS
 ```
 
-## Roadmap
-
-- [x] 1M Opus and Sonnet models
-- [x] Codex provider integration
-- [x] Opencode support
-- [x] Pi provider support
-- [ ] More to come!
-
 ## License
 
 Licensed under the [MIT License](LICENSE).
+
+## Sponsorship
+
+### Ke Holdings Inc. (BEIKE)
+
+<img src="assets/sponsors/MOMA.png" alt="MOMA" width="90%">
+
+Claudian is proudly sponsored by Ke Holdings Inc. (BEIKE) and the MOMA team. Their support helps Claudian continue to
+improve through ongoing development and maintenance.
+
+> Want to support Claudian or appear here? Contact me: [tysk01213@gmail.com](mailto:tysk01213@gmail.com).
 
 ## Star History
 
