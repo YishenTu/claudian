@@ -7,6 +7,8 @@ const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockBroadcastToAllTabs = jest.fn().mockResolvedValue(undefined);
+const mockListCodexWslDistributions = jest.fn();
+const mockNotice = jest.fn();
 
 jest.mock('fs');
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
@@ -25,6 +27,12 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   },
 }));
 jest.mock('obsidian', () => {
+  class MockNotice {
+    constructor(...args: unknown[]) {
+      mockNotice(...args);
+    }
+  }
+
   class MockSetting {
     public name = '';
     public desc = '';
@@ -33,6 +41,7 @@ jest.mock('obsidian', () => {
     public textAreaComponents: MockTextAreaComponent[] = [];
     public dropdownComponents: MockDropdownComponent[] = [];
     public toggleComponents: MockToggleComponent[] = [];
+    public buttonComponents: MockButtonComponent[] = [];
     public settingEl = {
       style: {},
       toggleClass: jest.fn(),
@@ -86,9 +95,17 @@ jest.mock('obsidian', () => {
       callback(component);
       return this;
     }
+
+    addButton(callback: (button: MockButtonComponent) => void) {
+      const component = createButtonComponent();
+      this.buttonComponents.push(component);
+      callback(component);
+      return this;
+    }
   }
 
   return {
+    Notice: MockNotice,
     Setting: MockSetting,
   };
 });
@@ -103,6 +120,10 @@ jest.mock('@/providers/codex/app/CodexWorkspaceServices', () => ({
     subagentStorage: {},
     refreshAgentMentions: jest.fn(),
   })),
+}));
+
+jest.mock('@/providers/codex/runtime/CodexWslDistributionService', () => ({
+  listCodexWslDistributions: (...args: unknown[]) => mockListCodexWslDistributions(...args),
 }));
 
 jest.mock('@/providers/codex/ui/CodexSkillSettings', () => ({
@@ -143,6 +164,7 @@ interface MockDropdownComponent {
   addOption: jest.MockedFunction<(value: string, label: string) => MockDropdownComponent>;
   setValue: jest.MockedFunction<(value: string) => MockDropdownComponent>;
   onChange: jest.MockedFunction<(callback: (value: string) => Promise<void> | void) => MockDropdownComponent>;
+  selectEl: MockSelectEl;
 }
 
 interface MockToggleComponent {
@@ -150,6 +172,24 @@ interface MockToggleComponent {
   onChangeCallback: ((value: boolean) => Promise<void> | void) | null;
   setValue: jest.MockedFunction<(value: boolean) => MockToggleComponent>;
   onChange: jest.MockedFunction<(callback: (value: boolean) => Promise<void> | void) => MockToggleComponent>;
+}
+
+interface MockButtonComponent {
+  disabled: boolean;
+  text: string;
+  onClickCallback: (() => Promise<void> | void) | null;
+  setButtonText: jest.MockedFunction<(value: string) => MockButtonComponent>;
+  setTooltip: jest.MockedFunction<(value: string) => MockButtonComponent>;
+  setDisabled: jest.MockedFunction<(value: boolean) => MockButtonComponent>;
+  onClick: jest.MockedFunction<(callback: () => Promise<void> | void) => MockButtonComponent>;
+}
+
+interface MockSelectEl {
+  disabled: boolean;
+  value: string;
+  options: Array<{ text: string; value: string }>;
+  empty: jest.Mock;
+  createEl: jest.Mock;
 }
 
 const createdSettings: Array<{
@@ -160,6 +200,7 @@ const createdSettings: Array<{
   textAreaComponents: MockTextAreaComponent[];
   dropdownComponents: MockDropdownComponent[];
   toggleComponents: MockToggleComponent[];
+  buttonComponents: MockButtonComponent[];
 }> = [];
 
 interface MockInputEl {
@@ -227,15 +268,30 @@ function createTextAreaComponent(): MockTextAreaComponent {
 
 function createDropdownComponent(): MockDropdownComponent {
   const component = {} as MockDropdownComponent;
+  const selectEl: MockSelectEl = {
+    disabled: false,
+    value: '',
+    options: [],
+    empty: jest.fn(() => {
+      selectEl.options = [];
+    }),
+    createEl: jest.fn((_tag: string, attributes: { text: string; value: string }) => {
+      selectEl.options.push(attributes);
+      return {};
+    }),
+  };
   component.value = '';
   component.options = [];
   component.onChangeCallback = null;
+  component.selectEl = selectEl;
   component.addOption = jest.fn((value: string, label: string) => {
     component.options.push({ value, label });
+    selectEl.options.push({ value, text: label });
     return component;
   });
   component.setValue = jest.fn((value: string) => {
     component.value = value;
+    selectEl.value = value;
     return component;
   });
   component.onChange = jest.fn((callback: (value: string) => Promise<void> | void) => {
@@ -243,6 +299,27 @@ function createDropdownComponent(): MockDropdownComponent {
     return component;
   });
 
+  return component;
+}
+
+function createButtonComponent(): MockButtonComponent {
+  const component = {} as MockButtonComponent;
+  component.disabled = false;
+  component.text = '';
+  component.onClickCallback = null;
+  component.setButtonText = jest.fn((value: string) => {
+    component.text = value;
+    return component;
+  });
+  component.setTooltip = jest.fn((_value: string) => component);
+  component.setDisabled = jest.fn((value: boolean) => {
+    component.disabled = value;
+    return component;
+  });
+  component.onClick = jest.fn((callback: () => Promise<void> | void) => {
+    component.onClickCallback = callback;
+    return component;
+  });
   return component;
 }
 
@@ -386,16 +463,23 @@ describe('CodexSettingsTab', () => {
     jest.clearAllMocks();
     mockedExistsSync.mockReturnValue(false);
     mockedStatSync.mockReturnValue({ isFile: () => true } as fs.Stats);
+    mockListCodexWslDistributions.mockResolvedValue([]);
   });
 
-  it('renders installation method and WSL distro override controls on Windows', () => {
+  it('renders WSL version, distro, and refresh controls on Windows', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const plugin = createPlugin();
 
     codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
     expect(findSetting('Installation method').dropdownComponents).toHaveLength(1);
-    expect(findSetting('WSL distro override').textComponents).toHaveLength(1);
+    expect(findSetting('Installation method').dropdownComponents[0].options).toEqual([
+      { value: 'native-windows', label: 'Native Windows' },
+      { value: 'wsl1', label: 'WSL 1' },
+      { value: 'wsl2', label: 'WSL 2' },
+    ]);
+    expect(findSetting('WSL distro').dropdownComponents).toHaveLength(1);
+    expect(findSetting('WSL distro').buttonComponents[0].text).toBe('Get');
   });
 
   it('hides Windows-only installation controls on non-Windows platforms', () => {
@@ -405,7 +489,7 @@ describe('CodexSettingsTab', () => {
     codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
     expect(findOptionalSetting('Installation method')).toBeUndefined();
-    expect(findOptionalSetting('WSL distro override')).toBeUndefined();
+    expect(findOptionalSetting('WSL distro')).toBeUndefined();
   });
 
   it('uses host-native CLI path behavior on non-Windows even when WSL is saved', async () => {
@@ -420,9 +504,9 @@ describe('CodexSettingsTab', () => {
           reasoningSummary: 'detailed',
           environmentVariables: '',
           environmentHash: '',
-          installationMethod: 'wsl',
+          installationMethod: 'wsl2',
           installationMethodsByHost: {
-            'host-a': 'wsl',
+            'host-a': 'wsl2',
           },
           wslDistroOverride: 'Ubuntu',
           wslDistroOverridesByHost: {
@@ -452,13 +536,13 @@ describe('CodexSettingsTab', () => {
     codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
     const installationMethodSetting = findSetting('Installation method');
-    await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
+    await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl2');
 
     const cliPathSetting = findSetting('Codex CLI path');
     await cliPathSetting.textComponents[0].onChangeCallback?.('codex');
 
     expect(plugin.settings.providerConfigs.codex.installationMethodsByHost).toEqual({
-      'host-a': 'wsl',
+      'host-a': 'wsl2',
     });
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe('codex');
     expect(mockSaveSettings).toHaveBeenCalled();
@@ -482,18 +566,58 @@ describe('CodexSettingsTab', () => {
     codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
     const installationMethodSetting = findSetting('Installation method');
-    await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
+    await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl2');
 
     const cliPathSetting = findSetting('Codex CLI path');
     await cliPathSetting.textComponents[0].onChangeCallback?.('C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe');
 
     expect(plugin.settings.providerConfigs.codex.installationMethodsByHost).toEqual({
-      'host-a': 'wsl',
+      'host-a': 'wsl2',
     });
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe(
       'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe',
     );
     expect(mockBroadcastToAllTabs).toHaveBeenCalledTimes(0);
+  });
+
+  it('gets and filters installed distros without auto-selecting one', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const plugin = createPlugin();
+    mockListCodexWslDistributions.mockResolvedValue([
+      { name: 'Legacy Ubuntu', version: 1, isDefault: false },
+      { name: 'Ubuntu-24.04', version: 2, isDefault: true },
+    ]);
+
+    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+
+    await findSetting('Installation method').dropdownComponents[0].onChangeCallback?.('wsl2');
+    await findSetting('WSL distro').buttonComponents[0].onClickCallback?.();
+
+    const distroDropdown = findSetting('WSL distro').dropdownComponents[0];
+    expect(distroDropdown.selectEl.options).toEqual([
+      { text: 'Select a distro', value: '' },
+      { text: 'Ubuntu-24.04 (WSL 2)', value: 'Ubuntu-24.04' },
+    ]);
+    expect(distroDropdown.selectEl.value).toBe('');
+    expect(plugin.settings.providerConfigs.codex.wslDistroOverridesByHost).toEqual({});
+
+    await distroDropdown.onChangeCallback?.('Ubuntu-24.04');
+    expect(plugin.settings.providerConfigs.codex.wslDistroOverridesByHost).toEqual({
+      'host-a': 'Ubuntu-24.04',
+    });
+  });
+
+  it('shows a native Notice when distro discovery fails', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const plugin = createPlugin();
+    mockListCodexWslDistributions.mockRejectedValue(new Error('Failed to get WSL distributions'));
+
+    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+
+    await findSetting('Installation method').dropdownComponents[0].onChangeCallback?.('wsl2');
+    await findSetting('WSL distro').buttonComponents[0].onClickCallback?.();
+
+    expect(mockNotice).toHaveBeenCalledWith('Failed to get WSL distributions');
   });
 
   it('does not switch the active model while the custom models textarea is mid-edit', async () => {

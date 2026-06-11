@@ -22,6 +22,7 @@ function createMockServerProcess(): CodexAppServerProcess & {
     stdin,
     stdout,
     stderr: new Readable({ read() {} }),
+    getStderrSnapshot: jest.fn().mockReturnValue('codex: command not found'),
     isAlive: jest.fn().mockReturnValue(true),
     onExit: jest.fn(),
     _stdout: stdout,
@@ -200,7 +201,9 @@ describe('CodexRpcTransport', () => {
       // Simulate process exit
       exitCb(1, 'SIGTERM');
 
-      await expect(promise).rejects.toThrow();
+      await expect(promise).rejects.toThrow(
+        'App-server process exited (code 1, signal SIGTERM)\n\ncodex: command not found',
+      );
     });
   });
 

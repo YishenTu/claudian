@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { Setting } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
@@ -10,7 +10,15 @@ import { expandHomePath } from '../../../utils/path';
 import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import { parseConfiguredCustomModelIds, resolveCodexModelSelection } from '../modelOptions';
 import { isWindowsStyleCliReference } from '../runtime/CodexBinaryLocator';
-import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
+import {
+  type CodexWslDistribution,
+  listCodexWslDistributions,
+} from '../runtime/CodexWslDistributionService';
+import {
+  getCodexProviderSettings,
+  isCodexWslInstallationMethod,
+  updateCodexProviderSettings,
+} from '../settings';
 import { DEFAULT_CODEX_PRIMARY_MODEL } from '../types/models';
 import { CodexSkillSettings } from './CodexSkillSettings';
 import { CodexSubagentSettings } from './CodexSubagentSettings';
@@ -63,11 +71,21 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         .addDropdown((dropdown) => {
           dropdown
             .addOption('native-windows', 'Native Windows')
-            .addOption('wsl', 'WSL')
+            .addOption('wsl1', 'WSL 1')
+            .addOption('wsl2', 'WSL 2');
+          if (installationMethod === 'wsl-unconfigured') {
+            dropdown.addOption('wsl-unconfigured', 'Select WSL version...');
+          }
+          dropdown
             .setValue(installationMethod)
             .onChange(async (value) => {
-              installationMethod = value === 'wsl' ? 'wsl' : 'native-windows';
+              installationMethod = value === 'wsl1' || value === 'wsl2'
+                ? value
+                : 'native-windows';
               updateCodexProviderSettings(settingsBag, { installationMethod });
+              wslDistroOverride = '';
+              availableWslDistributions = [];
+              refreshWslDistroOptions();
               refreshInstallationMethodUI();
               await context.plugin.saveSettings();
             });
@@ -82,7 +100,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         };
       }
 
-      if (installationMethod === 'wsl') {
+      if (isCodexWslInstallationMethod(installationMethod)) {
         return {
           desc: 'Linux-side Codex command or absolute path to run inside WSL. Leave empty for PATH lookup inside the selected distro.',
           placeholder: 'codex',
@@ -95,7 +113,8 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       };
     };
 
-    const shouldValidateCliPathAsFile = (): boolean => !isWindowsHost || installationMethod !== 'wsl';
+    const shouldValidateCliPathAsFile = (): boolean =>
+      !isWindowsHost || !isCodexWslInstallationMethod(installationMethod);
 
     const cliPathSetting = new Setting(container)
       .setName('Codex CLI path')
@@ -149,7 +168,43 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const cliPathsByHost = { ...codexSettings.cliPathsByHost };
     let cliPathInputEl: HTMLInputElement | null = null;
     let wslDistroSettingEl: HTMLElement | null = null;
-    let wslDistroInputEl: HTMLInputElement | null = null;
+    let wslDistroSelectEl: HTMLSelectElement | null = null;
+    let wslDistroOverride = codexSettings.wslDistroOverride;
+    let availableWslDistributions: CodexWslDistribution[] = [];
+
+    const refreshWslDistroOptions = (): void => {
+      if (!wslDistroSelectEl) {
+        return;
+      }
+
+      wslDistroSelectEl.empty();
+      wslDistroSelectEl.createEl('option', {
+        text: 'Select a distro',
+        value: '',
+      });
+
+      const expectedVersion = installationMethod === 'wsl1' ? 1 : 2;
+      const matchingDistributions = availableWslDistributions
+        .filter(distro => distro.version === expectedVersion);
+      if (
+        wslDistroOverride
+        && !matchingDistributions.some(distro => distro.name === wslDistroOverride)
+      ) {
+        matchingDistributions.unshift({
+          name: wslDistroOverride,
+          version: expectedVersion,
+          isDefault: false,
+        });
+      }
+
+      for (const distro of matchingDistributions) {
+        wslDistroSelectEl.createEl('option', {
+          text: `${distro.name} (WSL ${distro.version})`,
+          value: distro.name,
+        });
+      }
+      wslDistroSelectEl.value = wslDistroOverride;
+    };
 
     const refreshInstallationMethodUI = (): void => {
       const cliCopy = getCliPathCopy();
@@ -159,10 +214,13 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         updateCliPathValidation(cliPathInputEl.value, cliPathInputEl);
       }
       if (wslDistroSettingEl) {
-        wslDistroSettingEl.toggleClass('claudian-hidden', installationMethod !== 'wsl');
+        wslDistroSettingEl.toggleClass(
+          'claudian-hidden',
+          !isCodexWslInstallationMethod(installationMethod),
+        );
       }
-      if (wslDistroInputEl) {
-        wslDistroInputEl.disabled = installationMethod !== 'wsl';
+      if (wslDistroSelectEl) {
+        wslDistroSelectEl.disabled = !isCodexWslInstallationMethod(installationMethod);
       }
     };
 
@@ -205,23 +263,49 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     if (isWindowsHost) {
       const wslDistroSetting = new Setting(container)
-        .setName('WSL distro override')
-        .setDesc('Optional advanced override. Leave empty to infer the distro from a WSL workspace path when possible, otherwise use the default WSL distro.');
+        .setName('WSL distro')
+        .setDesc('Select an installed distro that matches the chosen WSL version. Click get to refresh the list.');
 
       wslDistroSettingEl = wslDistroSetting.settingEl;
-      wslDistroSetting.addText((text) => {
-        text
-          .setPlaceholder('Ubuntu')
-          .setValue(codexSettings.wslDistroOverride)
-          .onChange(async (value) => {
-            updateCodexProviderSettings(settingsBag, { wslDistroOverride: value });
-            await context.plugin.saveSettings();
-          });
+      wslDistroSetting
+        .addDropdown((dropdown) => {
+          wslDistroSelectEl = dropdown.selectEl;
+          refreshWslDistroOptions();
+          dropdown
+            .setValue(wslDistroOverride)
+            .onChange(async (value) => {
+              wslDistroOverride = value;
+              updateCodexProviderSettings(settingsBag, { wslDistroOverride: value });
+              await context.plugin.saveSettings();
+            });
+          dropdown.selectEl.disabled = !isCodexWslInstallationMethod(installationMethod);
+        })
+        .addButton((button) => {
+          button
+            .setButtonText('Get')
+            .setTooltip('Get installed WSL distributions')
+            .onClick(async () => {
+              if (!isCodexWslInstallationMethod(installationMethod)) {
+                new Notice('Select WSL 1 or WSL 2 before getting distributions.');
+                return;
+              }
 
-        text.inputEl.addClass('claudian-settings-cli-path-input');
-        text.inputEl.disabled = installationMethod !== 'wsl';
-        wslDistroInputEl = text.inputEl;
-      });
+              button.setDisabled(true);
+              try {
+                availableWslDistributions = await listCodexWslDistributions();
+                refreshWslDistroOptions();
+                const expectedVersion = installationMethod === 'wsl1' ? 1 : 2;
+                if (!availableWslDistributions.some(distro => distro.version === expectedVersion)) {
+                  new Notice(`No installed WSL ${expectedVersion} distributions were found.`);
+                }
+              } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                new Notice(message);
+              } finally {
+                button.setDisabled(false);
+              }
+            });
+        });
     }
 
     refreshInstallationMethodUI();

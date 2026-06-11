@@ -1,6 +1,4 @@
-import type { CodexInstallationMethod } from '../settings';
-
-export type CodexExecutionMethod = 'host-native' | CodexInstallationMethod;
+export type CodexExecutionMethod = 'host-native' | 'native-windows' | 'wsl';
 export type CodexExecutionPlatformOs = 'windows' | 'linux' | 'macos';
 export type CodexExecutionPlatformFamily = 'windows' | 'unix';
 
@@ -9,6 +7,7 @@ export interface CodexExecutionTarget {
   platformFamily: CodexExecutionPlatformFamily;
   platformOs: CodexExecutionPlatformOs;
   distroName?: string;
+  wslVersion?: 1 | 2;
 }
 
 export interface CodexPathMapper {

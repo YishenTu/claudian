@@ -251,5 +251,29 @@ describe('CodexAppServerProcess', () => {
 
       expect(server.isAlive()).toBe(false);
     });
+
+    it('keeps a bounded stderr snapshot for startup diagnostics', () => {
+      const server = new CodexAppServerProcess(createLaunchSpec());
+      server.start();
+
+      mockProc.stderr!.emit('data', 'first error\n');
+      mockProc.stderr!.emit('data', 'x'.repeat(9_000));
+
+      const snapshot = server.getStderrSnapshot();
+      expect(snapshot.length).toBeLessThanOrEqual(8_192);
+      expect(snapshot).toBe('x'.repeat(8_192));
+    });
+
+    it('decodes UTF-16LE stderr chunks from wsl.exe', () => {
+      const server = new CodexAppServerProcess(createLaunchSpec());
+      server.start();
+
+      mockProc.stderr!.emit('data', Buffer.from('wsl warning\r\n', 'utf16le'));
+      mockProc.stderr!.emit('data', 'zsh: command not found: codex\n');
+
+      expect(server.getStderrSnapshot()).toBe(
+        'wsl warning\r\nzsh: command not found: codex',
+      );
+    });
   });
 });

@@ -47,17 +47,31 @@ describe('codex settings', () => {
     expect(settings.wslDistroOverride).toBe('');
   });
 
+  it('requires legacy WSL settings to be reconfigured', () => {
+    const settings = getCodexProviderSettings({
+      providerConfigs: {
+        codex: {
+          installationMethod: 'wsl',
+          wslDistroOverride: 'Ubuntu',
+        },
+      },
+    });
+
+    expect(settings.installationMethod).toBe('wsl-unconfigured');
+    expect(settings.wslDistroOverride).toBe('');
+  });
+
   it('does not inherit another host installation method once host-scoped values exist', () => {
     const settings = getCodexProviderSettings({
       providerConfigs: {
         codex: {
           installationMethodsByHost: {
-            'host-b': 'wsl',
+            'host-b': 'wsl2',
           },
           wslDistroOverridesByHost: {
             'host-b': 'Ubuntu',
           },
-          installationMethod: 'wsl',
+          installationMethod: 'wsl2',
           wslDistroOverride: 'Ubuntu',
         },
       },
@@ -79,7 +93,7 @@ describe('codex settings', () => {
             'host-b': '/host-b/codex',
           },
           installationMethodsByHost: {
-            'host-a': 'wsl',
+            'host-a': 'wsl2',
             'host-b': 'native-windows',
           },
           wslDistroOverridesByHost: {
@@ -94,9 +108,9 @@ describe('codex settings', () => {
       'device:current': '/host-a/codex',
       'host-b': '/host-b/codex',
     });
-    expect(settings.installationMethod).toBe('wsl');
+    expect(settings.installationMethod).toBe('wsl2');
     expect(settings.installationMethodsByHost).toEqual({
-      'device:current': 'wsl',
+      'device:current': 'wsl2',
       'host-b': 'native-windows',
     });
     expect(settings.wslDistroOverride).toBe('Ubuntu');
@@ -114,17 +128,17 @@ describe('codex settings', () => {
     };
 
     const next = updateCodexProviderSettings(settingsBag, {
-      installationMethod: 'wsl',
+      installationMethod: 'wsl2',
       wslDistroOverride: '  Ubuntu-24.04  ',
     });
 
-    expect(next.installationMethod).toBe('wsl');
+    expect(next.installationMethod).toBe('wsl2');
     expect(next.wslDistroOverride).toBe('Ubuntu-24.04');
     expect(getCodexProviderSettings(settingsBag)).toMatchObject({
-      installationMethod: 'wsl',
+      installationMethod: 'wsl2',
       wslDistroOverride: 'Ubuntu-24.04',
       installationMethodsByHost: {
-        'host-a': 'wsl',
+        'host-a': 'wsl2',
       },
       wslDistroOverridesByHost: {
         'host-a': 'Ubuntu-24.04',
@@ -137,7 +151,7 @@ describe('codex settings', () => {
       providerConfigs: {
         codex: {
           installationMethodsByHost: {
-            'host-b': 'wsl',
+            'host-b': 'wsl1',
           },
           wslDistroOverridesByHost: {
             'host-b': 'Debian',
@@ -152,12 +166,35 @@ describe('codex settings', () => {
     });
 
     expect(next.installationMethodsByHost).toEqual({
-      'host-b': 'wsl',
+      'host-b': 'wsl1',
       'host-a': 'native-windows',
     });
     expect(next.wslDistroOverridesByHost).toEqual({
       'host-b': 'Debian',
     });
+  });
+
+  it('clears the selected distro when switching WSL versions', () => {
+    const settingsBag: Record<string, unknown> = {
+      providerConfigs: {
+        codex: {
+          installationMethodsByHost: {
+            'host-a': 'wsl2',
+          },
+          wslDistroOverridesByHost: {
+            'host-a': 'Ubuntu-24.04',
+          },
+        },
+      },
+    };
+
+    const next = updateCodexProviderSettings(settingsBag, {
+      installationMethod: 'wsl1',
+    });
+
+    expect(next.installationMethod).toBe('wsl1');
+    expect(next.wslDistroOverride).toBe('');
+    expect(next.wslDistroOverridesByHost).toEqual({});
   });
 
   it('forces reasoning summary off for GPT-5.3 Codex Spark', () => {

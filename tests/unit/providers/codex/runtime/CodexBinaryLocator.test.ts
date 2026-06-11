@@ -66,7 +66,7 @@ describe('CodexBinaryLocator', () => {
       'codex',
       '',
       '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { installationMethod: 'wsl2', hostPlatform: 'win32' },
     )).toBe('codex');
   });
 
@@ -75,7 +75,7 @@ describe('CodexBinaryLocator', () => {
       '',
       '',
       '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { installationMethod: 'wsl1', hostPlatform: 'win32' },
     )).toBe('codex');
   });
 
@@ -84,7 +84,7 @@ describe('CodexBinaryLocator', () => {
       'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
       '',
       '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { installationMethod: 'wsl2', hostPlatform: 'win32' },
     )).toBe('codex');
   });
 });
