@@ -2,8 +2,8 @@
 
 /* Selection highlight (shared by inline edit and chat) */
 .cm-line .claudian-selection-highlight,
-.claudian-selection-highlight {
-  background: var(--text-selection) !important;
+.claudian-selection-highlight.claudian-selection-highlight {
+  background: var(--text-selection);
   border-radius: 2px;
   padding: 3px 0;
   margin: -3px 0;
@@ -15,9 +15,9 @@
 }
 
 /* CM6 widget container - ensure transparent background */
-.cm-widgetBuffer,
-.cm-line.claudian-inline-input-line {
-  background: transparent !important;
+.markdown-source-view.mod-cm6 .cm-widgetBuffer,
+.markdown-source-view.mod-cm6 .cm-line.claudian-inline-input-line {
+  background: transparent;
 }
 
 /* Input container - fully transparent */
@@ -26,43 +26,43 @@
   flex-direction: column;
   gap: 0;
   padding: 2px 0;
-  background: transparent !important;
+  background: transparent;
 }
 
 /* Input wrapper - contains input and spinner */
 .claudian-inline-input-wrap {
   flex: 1;
   position: relative;
-  background: transparent !important;
+  background: transparent;
   overflow: visible;
 }
 
 /* Input - fully transparent */
-.claudian-inline-input {
+.claudian-inline-input-wrap input.claudian-inline-input {
   width: 100%;
   padding: 4px 8px;
   padding-inline-end: 30px;
-  border-width: 1px !important;
-  border-style: solid !important;
-  border-color: var(--background-modifier-border) !important;
-  border-radius: 8px !important;
-  background: transparent !important;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--background-modifier-border);
+  border-radius: 8px;
+  background: transparent;
   color: var(--text-normal);
-  font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, sans-serif) !important;
-  font-size: var(--font-ui-small, 13px) !important;
+  font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, sans-serif);
+  font-size: var(--font-ui-small, 13px);
 }
 
-.claudian-inline-input:focus,
-.claudian-inline-input:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
+.claudian-inline-input-wrap input.claudian-inline-input:focus,
+.claudian-inline-input-wrap input.claudian-inline-input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
-.claudian-inline-input::placeholder {
+.claudian-inline-input-wrap input.claudian-inline-input::placeholder {
   color: var(--text-faint);
 }
 
-.claudian-inline-input:disabled {
+.claudian-inline-input-wrap input.claudian-inline-input:disabled {
   opacity: 0.6;
 }
 
@@ -132,67 +132,67 @@
   height: auto;
 }
 
-.claudian-inline-diff-preview p {
-  margin: 0 0 6px !important;
+.claudian-inline-diff-preview .markdown-rendered p {
+  margin: 0 0 6px;
 }
 
-.claudian-inline-diff-preview p:last-child {
+.claudian-inline-diff-preview .markdown-rendered p:last-child {
   margin-bottom: 0;
 }
 
-.claudian-inline-diff-preview h1,
-.claudian-inline-diff-preview h2,
-.claudian-inline-diff-preview h3,
-.claudian-inline-diff-preview h4,
-.claudian-inline-diff-preview h5,
-.claudian-inline-diff-preview h6 {
-  margin: 0 0 6px !important;
+.claudian-inline-diff-preview .markdown-rendered h1,
+.claudian-inline-diff-preview .markdown-rendered h2,
+.claudian-inline-diff-preview .markdown-rendered h3,
+.claudian-inline-diff-preview .markdown-rendered h4,
+.claudian-inline-diff-preview .markdown-rendered h5,
+.claudian-inline-diff-preview .markdown-rendered h6 {
+  margin: 0 0 6px;
   line-height: 1.25;
 }
 
-.claudian-inline-diff-preview h1:first-child,
-.claudian-inline-diff-preview h2:first-child,
-.claudian-inline-diff-preview h3:first-child,
-.claudian-inline-diff-preview h4:first-child,
-.claudian-inline-diff-preview h5:first-child,
-.claudian-inline-diff-preview h6:first-child {
+.claudian-inline-diff-preview .markdown-rendered h1:first-child,
+.claudian-inline-diff-preview .markdown-rendered h2:first-child,
+.claudian-inline-diff-preview .markdown-rendered h3:first-child,
+.claudian-inline-diff-preview .markdown-rendered h4:first-child,
+.claudian-inline-diff-preview .markdown-rendered h5:first-child,
+.claudian-inline-diff-preview .markdown-rendered h6:first-child {
   margin-top: 0;
 }
 
-.claudian-inline-diff-preview ul,
-.claudian-inline-diff-preview ol {
-  margin: 2px 0 8px !important;
-  padding-inline-start: 1.5em !important;
+.claudian-inline-diff-preview .markdown-rendered ul,
+.claudian-inline-diff-preview .markdown-rendered ol {
+  margin: 2px 0 8px;
+  padding-inline-start: 1.5em;
 }
 
-.claudian-inline-diff-preview li {
-  margin: 2px 0 !important;
+.claudian-inline-diff-preview .markdown-rendered li {
+  margin: 2px 0;
 }
 
-.claudian-inline-diff-preview li > p {
-  margin: 0 !important;
+.claudian-inline-diff-preview .markdown-rendered li > p {
+  margin: 0;
 }
 
-.claudian-inline-diff-preview pre,
-.claudian-inline-diff-preview table,
-.claudian-inline-diff-preview blockquote {
-  margin: 2px 0 8px !important;
+.claudian-inline-diff-preview .markdown-rendered pre,
+.claudian-inline-diff-preview .markdown-rendered table,
+.claudian-inline-diff-preview .markdown-rendered blockquote {
+  margin: 2px 0 8px;
 }
 
-.claudian-inline-diff-preview .el-h1,
-.claudian-inline-diff-preview .el-h2,
-.claudian-inline-diff-preview .el-h3,
-.claudian-inline-diff-preview .el-h4,
-.claudian-inline-diff-preview .el-h5,
-.claudian-inline-diff-preview .el-h6,
-.claudian-inline-diff-preview .el-p,
-.claudian-inline-diff-preview .el-ul,
-.claudian-inline-diff-preview .el-ol,
-.claudian-inline-diff-preview .el-pre,
-.claudian-inline-diff-preview .el-table,
-.claudian-inline-diff-preview .el-blockquote {
-  margin-block-start: 0 !important;
-  margin-block-end: 6px !important;
+.claudian-inline-diff-preview .markdown-rendered .el-h1,
+.claudian-inline-diff-preview .markdown-rendered .el-h2,
+.claudian-inline-diff-preview .markdown-rendered .el-h3,
+.claudian-inline-diff-preview .markdown-rendered .el-h4,
+.claudian-inline-diff-preview .markdown-rendered .el-h5,
+.claudian-inline-diff-preview .markdown-rendered .el-h6,
+.claudian-inline-diff-preview .markdown-rendered .el-p,
+.claudian-inline-diff-preview .markdown-rendered .el-ul,
+.claudian-inline-diff-preview .markdown-rendered .el-ol,
+.claudian-inline-diff-preview .markdown-rendered .el-pre,
+.claudian-inline-diff-preview .markdown-rendered .el-table,
+.claudian-inline-diff-preview .markdown-rendered .el-blockquote {
+  margin-block-start: 0;
+  margin-block-end: 6px;
 }
 
 .claudian-inline-markdown-fallback {
@@ -245,34 +245,34 @@
   border-top: 1px solid var(--background-modifier-border);
 }
 
-.claudian-inline-preview-action {
+.claudian-inline-preview-actions button.claudian-inline-preview-action {
   min-height: 28px;
   padding: 4px 10px;
-  border: 1px solid var(--background-modifier-border) !important;
-  border-radius: 6px !important;
-  background: var(--background-secondary) !important;
-  box-shadow: none !important;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  box-shadow: none;
   color: var(--text-normal);
-  font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, sans-serif) !important;
-  font-size: var(--font-ui-small, 13px) !important;
+  font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, sans-serif);
+  font-size: var(--font-ui-small, 13px);
   line-height: 1.2;
   cursor: pointer;
 }
 
-.claudian-inline-preview-action:hover {
-  background: var(--background-modifier-hover) !important;
+.claudian-inline-preview-actions button.claudian-inline-preview-action:hover {
+  background: var(--background-modifier-hover);
 }
 
-.claudian-inline-preview-action.reject {
+.claudian-inline-preview-actions button.claudian-inline-preview-action.reject {
   color: var(--color-red);
 }
 
-.claudian-inline-preview-action.accept {
-  border-color: var(--interactive-accent) !important;
-  background: var(--interactive-accent) !important;
+.claudian-inline-preview-actions button.claudian-inline-preview-action.accept {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
   color: var(--text-on-accent);
 }
 
-.claudian-inline-preview-action.accept:hover {
-  background: var(--interactive-accent-hover) !important;
+.claudian-inline-preview-actions button.claudian-inline-preview-action.accept:hover {
+  background: var(--interactive-accent-hover);
 }
