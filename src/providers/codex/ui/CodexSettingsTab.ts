@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import {
+  getStoredCCSwitchSnapshot,
+  syncProviderCCSwitchSnapshot,
+} from '../../../core/ccswitch/CCSwitchSnapshot';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
@@ -39,6 +43,39 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       settingsBag.model = nextModel;
     };
 
+    const renderCCSwitchStatus = (target: HTMLElement): void => {
+      target.empty();
+      const snapshot = getStoredCCSwitchSnapshot(settingsBag, 'codex');
+      const wslNote = installationMethod === 'wsl'
+        ? ' WSL launches Codex inside Linux, so the CLI reads the WSL-side ~/.codex files at runtime.'
+        : '';
+      target.createEl('p', {
+        cls: 'setting-item-description',
+        text: snapshot
+          ? [
+              `Model: ${snapshot.model ?? 'unknown'}`,
+              `Provider: ${snapshot.modelProvider ?? 'default'}`,
+              `Base URL: ${snapshot.baseUrl ?? 'default'}`,
+              `Account: ${snapshot.accountId ?? 'unknown'}`,
+              `Auth: ${snapshot.authSource ?? 'unknown'}${snapshot.keyFingerprint ? ` (${snapshot.keyFingerprint})` : ''}`,
+              `Synced: ${snapshot.syncedAt ?? 'unknown'}`,
+            ].join(' | ') + wslNote
+          : `No active CC-Switch Codex settings detected.${wslNote}`,
+      });
+    };
+
+    const refreshCCSwitchSnapshot = async (statusContainer: HTMLElement): Promise<void> => {
+      syncProviderCCSwitchSnapshot(settingsBag, 'codex');
+      reconcileActiveCodexModelSelection();
+      await context.plugin.saveSettings();
+      renderCCSwitchStatus(statusContainer);
+      context.refreshModelSelectors();
+      const view = context.plugin.getView();
+      await view?.getTabManager()?.broadcastToAllTabs(
+        (service) => Promise.resolve(service.cleanup())
+      );
+    };
+
     // --- Setup ---
 
     new Setting(container).setName(t('settings.setup')).setHeading();
@@ -73,6 +110,27 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
             });
         });
     }
+
+    const ccSwitchStatus = container.createDiv({ cls: 'claudian-ccswitch-status' });
+    new Setting(container)
+      .setName('Follow cc-switch')
+      .setDesc('Read the active Codex account, API endpoint, and model from your user-level Codex configuration. API keys are not copied into Claudian settings.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(codexSettings.followCCSwitch)
+          .onChange(async (value) => {
+            updateCodexProviderSettings(settingsBag, { followCCSwitch: value });
+            await refreshCCSwitchSnapshot(ccSwitchStatus);
+          })
+      )
+      .addButton((button) =>
+        button
+          .setButtonText('Refresh now')
+          .onClick(async () => {
+            await refreshCCSwitchSnapshot(ccSwitchStatus);
+          })
+      );
+    renderCCSwitchStatus(ccSwitchStatus);
 
     const getCliPathCopy = (): { desc: string; placeholder: string } => {
       if (!isWindowsHost) {
@@ -260,7 +318,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container)
       .setName('Custom models')
-      .setDesc('Append additional Codex model ids to the picker, one per line. `OPENAI_MODEL` still takes precedence when set.')
+      .setDesc('Append additional Codex model ids to the picker, one per line. Cc-switch active models are added automatically when following is enabled.')
       .addTextArea((text) => {
         let pendingCustomModels = codexSettings.customModels;
         let savedCustomModels = codexSettings.customModels;

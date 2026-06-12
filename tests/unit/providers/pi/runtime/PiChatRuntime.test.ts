@@ -650,7 +650,7 @@ describe('PiChatRuntime', () => {
     const sessionArgIndex = launchSpec.args.indexOf('--session');
     expect(sessionArgIndex).toBeGreaterThanOrEqual(0);
     const forkedSessionFile = launchSpec.args[sessionArgIndex + 1];
-    expect(forkedSessionFile).toMatch(new RegExp(`${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/.*\\.jsonl$`));
+    expect(forkedSessionFile).toMatch(new RegExp(`${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\\\/].*\\.jsonl$`));
     const forkedLines = (await fs.readFile(forkedSessionFile, 'utf-8'))
       .trim()
       .split('\n')

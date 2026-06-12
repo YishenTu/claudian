@@ -53,5 +53,35 @@ describe('claudeSettingsReconciler', () => {
       expect(result.changed).toBe(true);
       expect(settings.model).toBe('sonnet');
     });
+
+    it('invalidates Claude sessions when the followed CC-Switch snapshot changes', () => {
+      const conversation = {
+        providerId: 'claude',
+        sessionId: 'session-1',
+        messages: [],
+      } as unknown as Conversation;
+      const settings: Record<string, unknown> = {
+        model: 'claude-opus-4-8',
+        providerConfigs: {
+          claude: {
+            followCCSwitch: true,
+            ccSwitchSnapshot: {
+              providerId: 'claude',
+              model: 'claude-opus-4-8',
+              baseUrl: 'https://claude.example.com',
+              configHash: 'switch-hash',
+            },
+            environmentHash: '',
+          },
+        },
+      };
+
+      const result = claudeSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
+
+      expect(result.changed).toBe(true);
+      expect(result.invalidatedConversations).toEqual([conversation]);
+      expect(conversation.sessionId).toBeNull();
+      expect(getClaudeProviderSettings(settings).environmentHash).toContain('CC_SWITCH=switch-hash');
+    });
   });
 });

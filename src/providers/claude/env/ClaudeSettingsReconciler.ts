@@ -1,3 +1,4 @@
+import { getActiveCCSwitchSnapshot, syncProviderCCSwitchSnapshot } from '../../../core/ccswitch/CCSwitchSnapshot';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
@@ -29,8 +30,13 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
     settings: Record<string, unknown>,
     conversations: Conversation[],
   ): { changed: boolean; invalidatedConversations: Conversation[] } {
+    syncProviderCCSwitchSnapshot(settings, 'claude');
     const envText = getRuntimeEnvironmentText(settings, 'claude');
-    const currentHash = computeEnvHash(envText);
+    const switchHash = getActiveCCSwitchSnapshot(settings, 'claude')?.configHash;
+    const currentHash = [
+      computeEnvHash(envText),
+      ...(switchHash ? [`CC_SWITCH=${switchHash}`] : []),
+    ].filter(Boolean).join('|');
     const savedHash = getClaudeProviderSettings(settings).environmentHash;
 
     if (currentHash === savedHash) {

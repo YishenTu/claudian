@@ -5,18 +5,30 @@ import * as path from 'path';
 
 import type { SDKNativeMessage, SDKSessionReadResult } from './sdkHistoryTypes';
 
+function shouldUsePosixPath(value: string): boolean {
+  return value.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(value);
+}
+
+function joinForValue(base: string, ...segments: string[]): string {
+  return shouldUsePosixPath(base)
+    ? path.posix.join(base, ...segments)
+    : path.join(base, ...segments);
+}
+
 /**
  * Encodes a vault path for the SDK project directory name.
  * The SDK replaces ALL non-alphanumeric characters with `-`.
  * This handles Unicode characters and special chars.
  */
 export function encodeVaultPathForSDK(vaultPath: string): string {
-  const absolutePath = path.resolve(vaultPath);
+  const absolutePath = shouldUsePosixPath(vaultPath)
+    ? path.posix.resolve(vaultPath)
+    : path.resolve(vaultPath);
   return absolutePath.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 export function getSDKProjectsPath(): string {
-  return path.join(os.homedir(), '.claude', 'projects');
+  return joinForValue(os.homedir(), '.claude', 'projects');
 }
 
 /** Validates an identifier for safe use in filesystem paths (no traversal, bounded length). */
@@ -41,7 +53,7 @@ export function getSDKSessionPath(vaultPath: string, sessionId: string): string 
 
   const projectsPath = getSDKProjectsPath();
   const encodedVault = encodeVaultPathForSDK(vaultPath);
-  return path.join(projectsPath, encodedVault, `${sessionId}.jsonl`);
+  return joinForValue(projectsPath, encodedVault, `${sessionId}.jsonl`);
 }
 
 export function sdkSessionExists(vaultPath: string, sessionId: string): boolean {

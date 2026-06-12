@@ -4,6 +4,12 @@ import * as path from 'path';
 import { getEnhancedPath } from './env';
 import { expandHomePath, parsePathEntries } from './path';
 
+function joinForValue(base: string, ...segments: string[]): string {
+  return base.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(base)
+    ? path.posix.join(base, ...segments)
+    : path.join(base, ...segments);
+}
+
 export function isExistingFile(filePath: string): boolean {
   try {
     return fs.statSync(filePath).isFile();
@@ -42,7 +48,9 @@ export function findCliBinaryPath(
     if (!dir) continue;
 
     for (const candidateName of binaryNames) {
-      const candidate = path.join(dir, candidateName);
+      const candidate = platform === 'win32' && !dir.startsWith('/')
+        ? path.win32.join(dir, candidateName)
+        : joinForValue(dir, candidateName);
       if (isExistingFile(candidate)) {
         return candidate;
       }
@@ -58,8 +66,10 @@ function parsePathEntriesForPlatform(pathValue: string | undefined, platform: No
   }
 
   const delimiter = platform === 'win32' ? ';' : ':';
-  return pathValue
-    .split(delimiter)
+  const entries = platform !== 'win32' && /^[A-Za-z]:[\\/]/.test(pathValue)
+    ? [pathValue]
+    : pathValue.split(delimiter);
+  return entries
     .map(segment => stripSurroundingQuotes(segment.trim()))
     .filter(segment => {
       if (!segment) return false;

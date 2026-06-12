@@ -75,6 +75,7 @@ function createMockPersistentQueryConfig(
     externalContextPaths: [],
     settingSources: 'project,local',
     claudeCliPath: '/mock/claude',
+    ccSwitchHash: '',
     enableChrome: false,
     enableAutoMode: false,
     ...overrides,

@@ -86,6 +86,12 @@ jest.mock('obsidian', () => {
       callback(component);
       return this;
     }
+
+    addButton(callback: (button: MockButtonComponent) => void) {
+      const component = createButtonComponent();
+      callback(component);
+      return this;
+    }
   }
 
   return {
@@ -152,6 +158,11 @@ interface MockToggleComponent {
   onChange: jest.MockedFunction<(callback: (value: boolean) => Promise<void> | void) => MockToggleComponent>;
 }
 
+interface MockButtonComponent {
+  setButtonText: jest.MockedFunction<(value: string) => MockButtonComponent>;
+  onClick: jest.MockedFunction<(callback: () => Promise<void> | void) => MockButtonComponent>;
+}
+
 const createdSettings: Array<{
   name: string;
   desc: string;
@@ -188,6 +199,13 @@ function createInputEl(): MockInputEl & { _listeners: Map<string, Array<() => vo
     }),
     _listeners: listeners,
   };
+}
+
+function createButtonComponent(): MockButtonComponent {
+  const component = {} as MockButtonComponent;
+  component.setButtonText = jest.fn((_value: string) => component);
+  component.onClick = jest.fn((_callback: () => Promise<void> | void) => component);
+  return component;
 }
 
 function createTextComponent(): MockTextComponent {

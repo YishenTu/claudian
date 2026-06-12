@@ -439,6 +439,27 @@ describe('CodexChatRuntime', () => {
       expect(mockProcessShutdown).toHaveBeenCalled();
     });
 
+    it('rebuilds when the followed CC-Switch snapshot changes', async () => {
+      const plugin = createMockPlugin({
+        providerConfigs: {
+          codex: {
+            followCCSwitch: true,
+            ccSwitchSnapshot: {
+              providerId: 'codex',
+              configHash: 'switch-a',
+            },
+          },
+        },
+      });
+      runtime = new CodexChatRuntime(plugin);
+
+      await runtime.ensureReady();
+      plugin.settings.providerConfigs.codex.ccSwitchSnapshot.configHash = 'switch-b';
+      await runtime.ensureReady();
+
+      expect(mockProcessShutdown).toHaveBeenCalled();
+    });
+
     it('rebuilds when force is true', async () => {
       await runtime.ensureReady();
       const rebuilt = await runtime.ensureReady({ force: true });

@@ -52,7 +52,7 @@ describe('PiCliResolver', () => {
 
   it('falls back to PATH lookup when no Pi CLI path is configured', () => {
     const pathDir = '/custom/bin';
-    const pathBinary = path.join(pathDir, 'pi');
+    const pathBinary = path.posix.join(pathDir, 'pi');
     mockedStat.mockImplementation((filePath: string) => {
       if (filePath === pathBinary) {
         return { isFile: () => true };

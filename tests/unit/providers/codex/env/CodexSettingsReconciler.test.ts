@@ -66,6 +66,42 @@ describe('codexSettingsReconciler', () => {
     );
   });
 
+  it('tracks followed CC-Switch snapshots and selects the active model', () => {
+    const conversation = {
+      providerId: 'codex',
+      sessionId: 'thread-123',
+      providerState: {
+        threadId: 'thread-123',
+        sessionFilePath: '/tmp/thread-123.jsonl',
+      },
+      messages: [],
+    } as unknown as Conversation;
+
+    const settings: Record<string, unknown> = {
+      model: DEFAULT_CODEX_PRIMARY_MODEL,
+      providerConfigs: {
+        codex: {
+          followCCSwitch: true,
+          ccSwitchSnapshot: {
+            providerId: 'codex',
+            model: 'gpt-5.5',
+            modelProvider: 'openai-compatible',
+            baseUrl: 'https://api.example.com/v1',
+            configHash: 'switch-hash',
+          },
+          environmentHash: '',
+        },
+      },
+    };
+
+    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
+
+    expect(result.changed).toBe(true);
+    expect(result.invalidatedConversations).toEqual([conversation]);
+    expect(settings.model).toBe('gpt-5.5');
+    expect((settings.providerConfigs as any).codex.environmentHash).toBe('CC_SWITCH=switch-hash');
+  });
+
   it('restores a built-in model when a settings-defined custom model is removed', () => {
     const settings: Record<string, unknown> = {
       model: 'my-custom-model',

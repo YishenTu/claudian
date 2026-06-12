@@ -265,7 +265,7 @@ describe('normalizePathForFilesystem', () => {
     process.env.TEST_NORM_VAR = '/test/val';
     try {
       const result = normalizePathForFilesystem('$TEST_NORM_VAR/sub');
-      expect(result).toBe(path.normalize('/test/val/sub'));
+      expect(result).toBe('/test/val/sub');
     } finally {
       if (original === undefined) delete process.env.TEST_NORM_VAR;
       else process.env.TEST_NORM_VAR = original;
@@ -487,7 +487,8 @@ describe('findClaudeCLIPath', () => {
   it('falls back to PATH environment when common and npm paths fail', () => {
     const envClaudePath = '/env/specific/bin/claude';
     const originalPath = process.env.PATH;
-    process.env.PATH = `/env/specific/bin:${originalPath}`;
+    const sep = isWindows ? ';' : ':';
+    process.env.PATH = `/env/specific/bin${sep}${originalPath}`;
 
     jest.spyOn(fs, 'existsSync').mockImplementation(
       p => String(p) === envClaudePath

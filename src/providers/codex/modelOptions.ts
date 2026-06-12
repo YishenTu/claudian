@@ -1,3 +1,4 @@
+import { getActiveCCSwitchSnapshot } from '../../core/ccswitch/CCSwitchSnapshot';
 import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { ProviderUIOption } from '../../core/providers/types';
 import { getCodexProviderSettings } from './settings';
@@ -47,6 +48,16 @@ export function getCodexModelOptions(settings: Record<string, unknown>): Provide
   const models = [...DEFAULT_CODEX_MODELS];
   const seenValues = new Set(models.map(model => model.value));
 
+  const switchModel = getActiveCCSwitchSnapshot(settings, 'codex')?.model;
+  if (switchModel) {
+    const existingIndex = models.findIndex(model => model.value === switchModel);
+    if (existingIndex >= 0) {
+      models.splice(existingIndex, 1);
+    }
+    seenValues.add(switchModel);
+    models.unshift(createCustomCodexModelOption(switchModel, 'CC-Switch active model'));
+  }
+
   const envModel = getConfiguredEnvCustomModel(settings);
   if (envModel) {
     seenValues.add(envModel);
@@ -73,6 +84,11 @@ export function resolveCodexModelSelection(
   const envModel = getConfiguredEnvModel(settings);
   if (envModel) {
     return envModel;
+  }
+
+  const switchModel = getActiveCCSwitchSnapshot(settings, 'codex')?.model;
+  if (switchModel && (!currentModel || DEFAULT_CODEX_MODEL_SET.has(currentModel))) {
+    return switchModel;
   }
 
   const modelOptions = getCodexModelOptions(settings);
