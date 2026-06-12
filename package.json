@@ -3,6 +3,9 @@
   "version": "2.0.23",
   "description": "Claudian - Claude Code embedded in Obsidian sidebar",
   "main": "main.js",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "postinstall": "node scripts/postinstall.mjs",
     "build:css": "node scripts/build-css.mjs",

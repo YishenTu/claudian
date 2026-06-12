@@ -73,14 +73,12 @@ function installTreeAwareKill(child: ChildProcess, spawnSpec: WindowsCmdShimSpaw
     return;
   }
 
-  const originalKill = child.kill;
+  const originalKill: (signal?: NodeJS.Signals | number) => boolean = child.kill.bind(child);
   const killableChild = {
     get pid(): number | undefined {
       return child.pid;
     },
-    kill(signal?: NodeJS.Signals | number): boolean {
-      return originalKill.call(child, signal);
-    },
+    kill: (signal?: NodeJS.Signals | number): boolean => originalKill(signal),
   };
 
   child.kill = ((signal?: NodeJS.Signals | number): boolean =>
