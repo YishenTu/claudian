@@ -11,6 +11,9 @@ export interface ForkSource {
 /** View type identifier for Obsidian. */
 export const VIEW_TYPE_CLAUDIAN = 'claudian-view';
 
+/** View type identifier for the companion right-sidebar session switcher. */
+export const VIEW_TYPE_CLAUDIAN_SESSIONS = 'claudian-sessions-view';
+
 /** Supported image media types for attachments. */
 export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 

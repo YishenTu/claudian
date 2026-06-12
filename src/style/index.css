@@ -10,6 +10,7 @@
 @import "./components/header.css";
 @import "./components/tabs.css";
 @import "./components/history.css";
+@import "./components/sessions-panel.css";
 @import "./components/messages.css";
 @import "./components/nav-sidebar.css";
 @import "./components/code.css";
