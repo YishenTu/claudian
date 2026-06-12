@@ -7,13 +7,16 @@
 /* Input wrapper (border container) - flex column so textarea expands when no chips */
 /* Height calculation: context row (36px) + textarea min (60px) + toolbar (38px) + border (2px) = 136px */
 .claudian-input-wrapper {
+  --claudian-input-wrapper-border-color: var(--background-modifier-border);
+  --claudian-input-wrapper-box-shadow: none;
   position: relative;
   display: flex;
   flex-direction: column;
   min-height: 140px;
-  border: 1px solid var(--background-modifier-border);
+  border: 1px solid var(--claudian-input-wrapper-border-color);
   border-radius: 6px;
   background: var(--background-primary);
+  box-shadow: var(--claudian-input-wrapper-box-shadow);
 }
 
 /* Context row (file chip start, selection indicator end) - inside input wrapper at top */
@@ -77,34 +80,34 @@
   text-overflow: ellipsis;
 }
 
-.claudian-input {
+.claudian-input-wrapper textarea.claudian-input {
   width: 100%;
   flex: 1 1 0;
   min-height: var(--claudian-textarea-min-height, 60px);
   max-height: var(--claudian-textarea-max-height, none);
   resize: none;
   padding: 8px 10px 10px 10px;
-  border: none !important;
+  border: none;
   border-radius: 6px;
-  background: transparent !important;
+  background: transparent;
   color: var(--text-normal);
   font-family: inherit;
   font-size: 14px;
   line-height: 1.4;
-  box-shadow: none !important;
+  box-shadow: none;
   overflow-y: auto;
   unicode-bidi: plaintext; /* Proper BiDi text handling for mixed RTL/LTR */
 }
 
-.claudian-input:hover,
-.claudian-input:focus {
-  outline: none !important;
-  border: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
+.claudian-input-wrapper textarea.claudian-input:hover,
+.claudian-input-wrapper textarea.claudian-input:focus {
+  outline: none;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
-.claudian-input::placeholder {
+.claudian-input-wrapper textarea.claudian-input::placeholder {
   color: var(--text-muted);
 }
 
@@ -252,15 +255,15 @@
 }
 
 /* Light blue border when instruction mode is active */
-.claudian-input-instruction-mode {
-  border-color: #60a5fa !important;
-  box-shadow: 0 0 0 1px #60a5fa;
+.claudian-input-wrapper.claudian-input-instruction-mode {
+  --claudian-input-wrapper-border-color: #60a5fa;
+  --claudian-input-wrapper-box-shadow: 0 0 0 1px #60a5fa;
 }
 
 /* Pink border when bash mode is active */
-.claudian-input-bang-bash-mode {
-  border-color: #f472b6 !important;
-  box-shadow: 0 0 0 1px #f472b6;
+.claudian-input-wrapper.claudian-input-bang-bash-mode {
+  --claudian-input-wrapper-border-color: #f472b6;
+  --claudian-input-wrapper-box-shadow: 0 0 0 1px #f472b6;
 }
 
 /* Monospace input while in bash mode */

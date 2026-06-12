@@ -86,11 +86,11 @@ export function createClaudeApprovalCallback(
         // the SDK doesn't inject isOther into the canUseTool input. Claudian
         // intercepts at canUseTool and renders its own UI, so we must inject
         // isOther here to match the Claude Code CLI's built-in behavior.
-        const questions = (input as Record<string, unknown>).questions;
+        const questions = input.questions;
         if (Array.isArray(questions)) {
           for (const q of questions) {
-            if (q && typeof q === 'object' && !('isOther' in q)) {
-              (q as Record<string, unknown>).isOther = true;
+            if (isObjectRecord(q) && !('isOther' in q)) {
+              q.isOther = true;
             }
           }
         }
@@ -146,4 +146,8 @@ export function createClaudeApprovalCallback(
       };
     }
   };
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
