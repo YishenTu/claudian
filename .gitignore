@@ -93,3 +93,6 @@ dev
 
 .claude/
 .codex/
+
+# Worktrees
+.worktrees/

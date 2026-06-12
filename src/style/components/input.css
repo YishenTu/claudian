@@ -4,6 +4,41 @@
   padding: 12px 0 0 0;
 }
 
+/* Resize handle — invisible hit zone at top of input wrapper */
+.claudian-input-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 1;
+}
+
+.claudian-input-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.claudian-input-resize-handle:hover::after {
+  opacity: 1;
+}
+
+/* Dragging state — applied to body during resize drag */
+body.claudian-dragging-ns {
+  cursor: ns-resize;
+  user-select: none;
+}
+
 /* Input wrapper (border container) - flex column so textarea expands when no chips */
 /* Height calculation: context row (36px) + textarea min (60px) + toolbar (38px) + border (2px) = 136px */
 .claudian-input-wrapper {
@@ -12,6 +47,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  height: var(--claudian-input-wrapper-height, auto);
   min-height: 140px;
   border: 1px solid var(--claudian-input-wrapper-border-color);
   border-radius: 6px;
