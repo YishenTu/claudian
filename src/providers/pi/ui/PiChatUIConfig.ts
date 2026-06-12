@@ -112,18 +112,7 @@ export const piChatUIConfig: ProviderChatUIConfig = {
     }));
   },
 
-  getDefaultReasoningValue(model: string, settings: Record<string, unknown>): string {
-    const piModel = getCachedModel(model, settings);
-    if (!piModel) {
-      return decodePiModelId(model) ? PI_DEFAULT_THINKING_LEVEL : 'off';
-    }
-
-    const piSettings = getPiProviderSettings(settings);
-    return clampPiThinkingLevel(
-      piSettings.preferredThinkingByModel[piModel.encodedId],
-      piModel.thinkingLevels,
-    );
-  },
+  getDefaultReasoningValue: getPiDefaultReasoningValue,
 
   getContextWindowSize(
     model: string,
@@ -152,7 +141,7 @@ export const piChatUIConfig: ProviderChatUIConfig = {
     }
 
     settingsBag.model = model;
-    settingsBag.effortLevel = this.getDefaultReasoningValue(model, settingsBag);
+    settingsBag.effortLevel = getPiDefaultReasoningValue(model, settingsBag);
   },
 
   applyReasoningSelection(model: string, value: string, settings: unknown): void {
@@ -226,6 +215,19 @@ function getCachedModel(model: string, settings: Record<string, unknown>): PiDis
   }
 
   return getPiProviderSettings(settings).discoveredModels.find(entry => entry.encodedId === model) ?? null;
+}
+
+function getPiDefaultReasoningValue(model: string, settings: Record<string, unknown>): string {
+  const piModel = getCachedModel(model, settings);
+  if (!piModel) {
+    return decodePiModelId(model) ? PI_DEFAULT_THINKING_LEVEL : 'off';
+  }
+
+  const piSettings = getPiProviderSettings(settings);
+  return clampPiThinkingLevel(
+    piSettings.preferredThinkingByModel[piModel.encodedId],
+    piModel.thinkingLevels,
+  );
 }
 
 function buildModelOption(model: PiDiscoveredModel, alias: string | undefined): ProviderUIOption {

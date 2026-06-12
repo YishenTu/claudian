@@ -3,8 +3,12 @@ import type { Writable } from 'node:stream';
 export type PiJsonlLineHandler = (line: string) => void;
 
 interface JsonlReadableStream {
-  off(eventName: string, listener: (...args: any[]) => void): unknown;
-  on(eventName: string, listener: (...args: any[]) => void): unknown;
+  off(eventName: 'data', listener: (chunk: Buffer | string) => void): unknown;
+  off(eventName: 'end' | 'close', listener: () => void): unknown;
+  off(eventName: 'error', listener: (error: unknown) => void): unknown;
+  on(eventName: 'data', listener: (chunk: Buffer | string) => void): unknown;
+  on(eventName: 'end' | 'close', listener: () => void): unknown;
+  on(eventName: 'error', listener: (error: unknown) => void): unknown;
 }
 
 export function subscribePiJsonlLines(

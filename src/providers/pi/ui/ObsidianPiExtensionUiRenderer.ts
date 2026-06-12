@@ -119,7 +119,7 @@ abstract class PiExtensionModal<TResult extends Record<string, unknown>> extends
       this.close();
     };
     this.signal.addEventListener('abort', abortHandler, { once: true });
-    this.resultPromise.finally(() => {
+    void this.resultPromise.finally(() => {
       this.signal.removeEventListener('abort', abortHandler);
     });
     this.open();
