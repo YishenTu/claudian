@@ -1,6 +1,7 @@
 import * as fs from 'fs';
-import { Setting } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
@@ -50,9 +51,16 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         toggle
           .setValue(codexSettings.enabled)
           .onChange(async (value) => {
+            if (!value && ProviderRegistry.getEnabledProviderIds(settingsBag).length <= 1) {
+              new Notice('At least one provider must stay enabled.');
+              toggle.setValue(true);
+              return;
+            }
             updateCodexProviderSettings(settingsBag, { enabled: value });
+            context.reconcileDefaultModelSelection?.();
             await context.plugin.saveSettings();
             context.refreshModelSelectors();
+            context.refreshSettingsDisplay?.();
           })
       );
 

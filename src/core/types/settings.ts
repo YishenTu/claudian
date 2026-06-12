@@ -55,6 +55,7 @@ export interface KeyboardNavigationSettings {
 
 /** Tab bar position setting. */
 export type TabBarPosition = 'input' | 'header';
+export type DefaultModelSelection = 'last-used' | string;
 
 export const CHAT_VIEW_PLACEMENTS = [
   'right-sidebar',
@@ -131,6 +132,7 @@ export interface ClaudianSettings {
 
   // Provider selection
   settingsProvider: string;  // ProviderId — which provider's model/effort/budget is projected to top-level fields
+  defaultModelSelection: DefaultModelSelection;
   savedProviderModel: Partial<Record<string, string>>;
   savedProviderEffort: Partial<Record<string, string>>;
   savedProviderServiceTier: Partial<Record<string, string>>;

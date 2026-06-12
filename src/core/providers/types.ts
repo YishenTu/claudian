@@ -373,6 +373,8 @@ export interface ProviderSettingsTabRendererContext {
     copy: { name: string; desc: string; placeholder: string },
   ): void;
   refreshModelSelectors(): void;
+  refreshSettingsDisplay?(): void;
+  reconcileDefaultModelSelection?(): void;
   renderCustomContextLimits(container: HTMLElement, providerId?: ProviderId): void;
 }
 

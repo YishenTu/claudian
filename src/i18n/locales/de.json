@@ -108,6 +108,11 @@
       "desc": "Modell zur automatischen Generierung von Konversationstiteln.",
       "auto": "Automatisch (Haiku)"
     },
+    "defaultModel": {
+      "name": "Standardmodell für neue Konversationen",
+      "desc": "Wählen Sie das Modell für neue leere Konversationen.",
+      "lastUsed": "Zuletzt verwendetes Modell"
+    },
     "navMappings": {
       "name": "Vim-Style Navigationszuordnungen",
       "desc": "Eine Zuordnung pro Zeile. Format: \"map <Taste> <Aktion>\" (Aktionen: scrollUp, scrollDown, focusInput)."

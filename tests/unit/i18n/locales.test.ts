@@ -76,6 +76,9 @@ const localizedKeys = [
   'settings.enableBangBash.validation.noNode',
   'settings.requireCommandOrControlEnterToSend.name',
   'settings.requireCommandOrControlEnterToSend.desc',
+  'settings.defaultModel.name',
+  'settings.defaultModel.desc',
+  'settings.defaultModel.lastUsed',
 ] as const;
 
 const staleBangBashDesc =
