@@ -11,6 +11,7 @@
 }
 
 .claudian-tab-badge {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -79,4 +80,33 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Close button — hidden by default, shown on badge hover */
+.claudian-tab-badge-close {
+  display: none;
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.claudian-tab-badge-close:hover {
+  background: var(--text-error);
+  color: var(--text-on-accent);
+}
+
+/* Show close button on badge hover */
+.claudian-tab-badge:hover .claudian-tab-badge-close {
+  display: flex;
 }

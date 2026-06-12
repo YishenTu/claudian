@@ -202,30 +202,46 @@ describe('TabBar', () => {
       expect(callbacks.onTabClick).toHaveBeenCalledWith('clicked-tab');
     });
 
-    it('should call onTabClose on right-click when canClose is true', () => {
+    it('should render close button when canClose is true', () => {
       const containerEl = createMockEl();
       const callbacks = createMockCallbacks();
       const tabBar = new TabBar(containerEl, callbacks);
 
       tabBar.update([createTabBarItem({ id: 'closeable-tab', canClose: true })]);
 
-      // Simulate right-click (contextmenu)
-      const mockEvent = { preventDefault: jest.fn() };
-      containerEl._children[0].dispatchEvent('contextmenu', mockEvent);
-
-      expect(mockEvent.preventDefault).toHaveBeenCalled();
-      expect(callbacks.onTabClose).toHaveBeenCalledWith('closeable-tab');
+      const badge = containerEl._children[0];
+      const closeBtn = badge._children.find((c: any) => c._classList.has('claudian-tab-badge-close'));
+      expect(closeBtn).toBeDefined();
+      expect(closeBtn.textContent).toBe('×');
+      expect(closeBtn.getAttribute('aria-label')).toBe('Close tab');
     });
 
-    it('should not register contextmenu handler when canClose is false', () => {
+    it('should not render close button when canClose is false', () => {
       const containerEl = createMockEl();
       const callbacks = createMockCallbacks();
       const tabBar = new TabBar(containerEl, callbacks);
 
       tabBar.update([createTabBarItem({ id: 'uncloseable-tab', canClose: false })]);
 
-      // Check that contextmenu handler was not registered
-      expect(containerEl._children[0]._eventListeners.has('contextmenu')).toBe(false);
+      const badge = containerEl._children[0];
+      const closeBtn = badge._children.find((c: any) => c._classList.has('claudian-tab-badge-close'));
+      expect(closeBtn).toBeUndefined();
+    });
+
+    it('should call onTabClose when close button is clicked', () => {
+      const containerEl = createMockEl();
+      const callbacks = createMockCallbacks();
+      const tabBar = new TabBar(containerEl, callbacks);
+
+      tabBar.update([createTabBarItem({ id: 'closeable-tab', canClose: true })]);
+
+      const badge = containerEl._children[0];
+      const closeBtn = badge._children.find((c: any) => c._classList.has('claudian-tab-badge-close'));
+      const mockEvent = { stopPropagation: jest.fn(), stopImmediatePropagation: jest.fn(), preventDefault: jest.fn() };
+      closeBtn.dispatchEvent('click', mockEvent);
+
+      expect(mockEvent.stopPropagation).toHaveBeenCalled();
+      expect(callbacks.onTabClose).toHaveBeenCalledWith('closeable-tab');
     });
   });
 
