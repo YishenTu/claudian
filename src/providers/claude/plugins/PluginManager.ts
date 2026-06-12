@@ -15,9 +15,6 @@ import type { PluginInfo, PluginScope } from '../../../core/types';
 import type { CCSettingsStorage } from '../storage/CCSettingsStorage';
 import type { InstalledPluginEntry, InstalledPluginsFile } from '../types/plugins';
 
-const INSTALLED_PLUGINS_PATH = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
-const GLOBAL_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
-
 interface SettingsFile {
   enabledPlugins?: Record<string, boolean>;
 }
@@ -74,15 +71,37 @@ export class PluginManager {
   private ccSettingsStorage: CCSettingsStorage;
   private vaultPath: string;
   private plugins: PluginInfo[] = [];
+  private globalClaudeDir = path.join(os.homedir(), '.claude');
+  private toHostPath: ((targetPath: string) => string | null) | null = null;
 
-  constructor(vaultPath: string, ccSettingsStorage: CCSettingsStorage) {
+  constructor(
+    vaultPath: string,
+    ccSettingsStorage: CCSettingsStorage,
+    options: {
+      globalClaudeDir?: string;
+      toHostPath?: (targetPath: string) => string | null;
+    } = {},
+  ) {
     this.vaultPath = vaultPath;
     this.ccSettingsStorage = ccSettingsStorage;
+    this.configureGlobalPaths(options);
+  }
+
+  configureGlobalPaths(options: {
+    globalClaudeDir?: string;
+    toHostPath?: (targetPath: string) => string | null;
+  }): void {
+    this.globalClaudeDir = options.globalClaudeDir ?? path.join(os.homedir(), '.claude');
+    this.toHostPath = options.toHostPath ?? null;
   }
 
   async loadPlugins(): Promise<void> {
-    const installedPlugins = readJsonFile<InstalledPluginsFile>(INSTALLED_PLUGINS_PATH);
-    const globalSettings = readJsonFile<SettingsFile>(GLOBAL_SETTINGS_PATH);
+    const installedPlugins = readJsonFile<InstalledPluginsFile>(
+      path.join(this.globalClaudeDir, 'plugins', 'installed_plugins.json'),
+    );
+    const globalSettings = readJsonFile<SettingsFile>(
+      path.join(this.globalClaudeDir, 'settings.json'),
+    );
     const projectSettings = await this.loadProjectSettings();
 
     const globalEnabled = globalSettings?.enabledPlugins ?? {};
@@ -99,7 +118,14 @@ export class PluginManager {
         if (!Array.isArray(entries)) {
           new Notice(`Claudian: plugin "${pluginId}" has malformed entry in installed_plugins.json (expected array, got ${typeof entries})`);
         }
-        const entry = selectInstalledPluginEntry(entriesArray, normalizedVaultPath);
+        const mappedEntries = entriesArray.map(entry => ({
+          ...entry,
+          installPath: this.toHostPath?.(entry.installPath) ?? entry.installPath,
+          projectPath: entry.projectPath
+            ? this.toHostPath?.(entry.projectPath) ?? entry.projectPath
+            : entry.projectPath,
+        }));
+        const entry = selectInstalledPluginEntry(mappedEntries, normalizedVaultPath);
         if (!entry) continue;
 
         const scope: PluginScope = entry.scope === 'project' ? 'project' : 'user';

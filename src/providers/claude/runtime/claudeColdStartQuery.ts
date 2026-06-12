@@ -13,6 +13,7 @@ import {
 import {
   resolveEffortLevel,
 } from '../types/models';
+import { resolveClaudeExecutionContext } from './ClaudeExecutionContext';
 import { createCustomSpawnFunction } from './customSpawn';
 
 export interface ColdStartQueryConfig {
@@ -74,15 +75,20 @@ export async function runColdStartQuery(
       'claude',
     );
   const claudeSettings = getClaudeProviderSettings(settings);
+  const executionContext = resolveClaudeExecutionContext({
+    settings,
+    hostVaultPath: vaultPath,
+    resolvedCliPath: resolvedClaudePath,
+  });
 
   const selectedModel = config.model ?? (settings.model as string);
 
   const options: Options = {
-    cwd: vaultPath,
+    cwd: executionContext.targetVaultPath,
     systemPrompt: config.systemPrompt,
     model: selectedModel,
     abortController: config.abortController,
-    pathToClaudeCodeExecutable: resolvedClaudePath,
+    pathToClaudeCodeExecutable: executionContext.cliCommand,
     env: {
       ...process.env,
       ...customEnv,
@@ -91,7 +97,7 @@ export async function runColdStartQuery(
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
     settingSources: resolveClaudeSettingSources(claudeSettings.loadUserSettings),
-    spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
+    spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath, executionContext),
   };
 
   if (config.tools !== undefined) {

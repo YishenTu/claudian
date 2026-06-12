@@ -66,6 +66,7 @@ import {
   getLastUserMessage,
   isSessionExpiredError,
 } from '../../../utils/session';
+import { maybeGetClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
 import { CLAUDE_PROVIDER_CAPABILITIES } from '../capabilities';
 import { loadSubagentFinalResult, loadSubagentToolCalls } from '../history/ClaudeHistoryStore';
 import { createStopSubagentHook, type SubagentHookState } from '../hooks/SubagentHooks';
@@ -81,7 +82,12 @@ import {
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
 import { createClaudeApprovalCallback } from './ClaudeApprovalHandler';
 import { applyClaudeDynamicUpdates } from './ClaudeDynamicUpdates';
+import {
+  type ClaudeExecutionContext,
+  resolveClaudeExecutionContext,
+} from './ClaudeExecutionContext';
 import { MessageChannel } from './ClaudeMessageChannel';
+import { mapClaudeToolInputPaths } from './ClaudePathMapping';
 import {
   type ColdStartQueryContext,
   type PersistentQueryContext,
@@ -384,14 +390,18 @@ export class ClaudianService implements ChatRuntime {
     const sessionId = this.getSessionId();
     const vaultPath = getVaultPath(this.plugin.app);
     if (!sessionId || !vaultPath) return [];
-    return loadSubagentToolCalls(vaultPath, sessionId, agentId);
+    const context = this.resolveExecutionContext(vaultPath);
+    const projectsPath = context.claudeHomeHost ? `${context.claudeHomeHost}\\projects` : undefined;
+    return loadSubagentToolCalls(context.targetVaultPath, sessionId, agentId, projectsPath);
   }
 
   async loadSubagentFinalResult(agentId: string): Promise<string | null> {
     const sessionId = this.getSessionId();
     const vaultPath = getVaultPath(this.plugin.app);
     if (!sessionId || !vaultPath) return null;
-    return loadSubagentFinalResult(vaultPath, sessionId, agentId);
+    const context = this.resolveExecutionContext(vaultPath);
+    const projectsPath = context.claudeHomeHost ? `${context.claudeHomeHost}\\projects` : undefined;
+    return loadSubagentFinalResult(context.targetVaultPath, sessionId, agentId, projectsPath);
   }
 
   async reloadMcpServers(): Promise<void> {
@@ -805,11 +815,16 @@ export class ClaudianService implements ChatRuntime {
     usageState = this.usageTransformState,
   ) {
     const settings = this.getScopedSettings();
+    const vaultPath = getVaultPath(this.plugin.app);
+    const executionContext = vaultPath ? this.resolveExecutionContext(vaultPath) : null;
     return {
       intendedModel: modelOverride ?? settings.model,
       customContextLimits: settings.customContextLimits,
       streamState,
       usageState,
+      toHostPath: executionContext?.method === 'wsl'
+        ? (value: string) => executionContext.toHostPath(value)
+        : undefined,
     };
   }
 
@@ -1799,6 +1814,14 @@ export class ClaudianService implements ChatRuntime {
           this.currentConfig.sdkPermissionMode = sdkMode;
         }
       },
+      mapInputForDisplay: (input) => {
+        const vaultPath = getVaultPath(this.plugin.app);
+        if (!vaultPath) return input;
+        const context = this.resolveExecutionContext(vaultPath);
+        return context.method === 'wsl'
+          ? mapClaudeToolInputPaths(input, value => context.toHostPath(value))
+          : input;
+      },
     });
   }
 
@@ -1807,5 +1830,15 @@ export class ClaudianService implements ChatRuntime {
       mode,
       getClaudeProviderSettings(this.plugin.settings).safeMode,
     );
+  }
+
+  private resolveExecutionContext(vaultPath: string): ClaudeExecutionContext {
+    const workspace = maybeGetClaudeWorkspaceServices();
+    if (workspace) return workspace.resolveExecutionContext(vaultPath);
+    return resolveClaudeExecutionContext({
+      settings: this.getScopedSettings(),
+      hostVaultPath: vaultPath,
+      resolvedCliPath: this.plugin.getResolvedProviderCliPath('claude'),
+    });
   }
 }

@@ -5,6 +5,7 @@ import type { SlashCommand } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
+import { resolveClaudeExecutionContext } from '../runtime/ClaudeExecutionContext';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import {
   getClaudeProviderSettings,
@@ -43,6 +44,11 @@ export async function probeRuntimeCommands(plugin: ClaudianPlugin): Promise<Slas
   const claudeSettings = getClaudeProviderSettings(
     plugin.settings,
   );
+  const executionContext = resolveClaudeExecutionContext({
+    settings: plugin.settings,
+    hostVaultPath: vaultPath,
+    resolvedCliPath: cliPath,
+  });
 
   const abortController = new AbortController();
   let commands: SlashCommand[] = [];
@@ -55,15 +61,15 @@ export async function probeRuntimeCommands(plugin: ClaudianPlugin): Promise<Slas
     const conversation = agentQuery({
       prompt: '',
       options: {
-        cwd: vaultPath,
+        cwd: executionContext.targetVaultPath,
         abortController,
-        pathToClaudeCodeExecutable: cliPath,
+        pathToClaudeCodeExecutable: executionContext.cliCommand,
         env: { ...process.env, ...customEnv, PATH: enhancedPath },
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         settingSources: resolveClaudeSettingSources(claudeSettings.loadUserSettings),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
-        spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
+        spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath, executionContext),
         persistSession: false,
       },
     });

@@ -7,6 +7,7 @@ import type {
   CodexExecutionPlatformOs,
   CodexExecutionTarget,
 } from './codexLaunchTypes';
+export { inferWslDistroFromWindowsPath } from '../../../utils/wslPathMapper';
 
 export interface ResolveCodexExecutionTargetOptions {
   settings: Record<string, unknown>;
@@ -28,16 +29,6 @@ function resolveHostPlatformOs(hostPlatform: NodeJS.Platform): CodexExecutionPla
 
 function resolveHostPlatformFamily(hostPlatform: NodeJS.Platform): CodexExecutionPlatformFamily {
   return hostPlatform === 'win32' ? 'windows' : 'unix';
-}
-
-export function inferWslDistroFromWindowsPath(hostPath: string | null | undefined): string | undefined {
-  if (!hostPath) {
-    return undefined;
-  }
-
-  const normalized = hostPath.replace(/\//g, '\\');
-  const match = normalized.match(/^\\\\wsl\$\\([^\\]+)(?:\\|$)/i);
-  return match?.[1] || undefined;
 }
 
 export function resolveCodexExecutionTarget(

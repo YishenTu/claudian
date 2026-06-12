@@ -30,6 +30,7 @@ export interface ClaudeApprovalHandlerDeps {
   getPermissionMode: () => PermissionMode;
   resolveSDKPermissionMode: (mode: PermissionMode) => SDKPermissionMode;
   syncPermissionMode: (mode: PermissionMode, sdkMode: SDKPermissionMode) => void;
+  mapInputForDisplay?: (input: Record<string, unknown>) => Record<string, unknown>;
 }
 
 export function createClaudeApprovalCallback(
@@ -115,10 +116,11 @@ export function createClaudeApprovalCallback(
 
     try {
       const { decisionReason, blockedPath, agentID } = options;
-      const description = getActionDescription(toolName, input);
+      const displayInput = deps.mapInputForDisplay?.(input) ?? input;
+      const description = getActionDescription(toolName, displayInput);
       const decision: ApprovalDecision = await approvalCallback(
         toolName,
-        input,
+        displayInput,
         description,
         { decisionReason, blockedPath, agentID },
       );

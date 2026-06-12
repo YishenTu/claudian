@@ -6,12 +6,14 @@ import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { findClaudeCLIPath } from '../cli/findClaudeCLIPath';
 import { getClaudeProviderSettings } from '../settings';
+import { isClaudeWslInstallationMethod } from '../settings';
 
 export class ClaudeCliResolver {
   private resolvedPath: string | null = null;
   private lastHostnamePath = '';
   private lastLegacyPath = '';
   private lastEnvText = '';
+  private lastInstallationMethod = '';
   private readonly cachedHostname = getHostnameKey();
 
   /**
@@ -25,12 +27,14 @@ export class ClaudeCliResolver {
     const hostnamePath = (claudeSettings.cliPathsByHost[hostnameKey] ?? '').trim();
     const normalizedLegacy = claudeSettings.cliPath.trim();
     const normalizedEnv = getRuntimeEnvironmentText(settings, 'claude');
+    const installationMethod = claudeSettings.installationMethod;
 
     if (
       this.resolvedPath &&
       hostnamePath === this.lastHostnamePath &&
       normalizedLegacy === this.lastLegacyPath &&
-      normalizedEnv === this.lastEnvText
+      normalizedEnv === this.lastEnvText &&
+      installationMethod === this.lastInstallationMethod
     ) {
       return this.resolvedPath;
     }
@@ -38,8 +42,11 @@ export class ClaudeCliResolver {
     this.lastHostnamePath = hostnamePath;
     this.lastLegacyPath = normalizedLegacy;
     this.lastEnvText = normalizedEnv;
+    this.lastInstallationMethod = installationMethod;
 
-    this.resolvedPath = resolveClaudeCliPath(hostnamePath, normalizedLegacy, normalizedEnv);
+    this.resolvedPath = resolveClaudeCliPath(hostnamePath, normalizedLegacy, normalizedEnv, {
+      installationMethod,
+    });
     return this.resolvedPath;
   }
 
@@ -64,6 +71,7 @@ export class ClaudeCliResolver {
     this.lastHostnamePath = '';
     this.lastLegacyPath = '';
     this.lastEnvText = '';
+    this.lastInstallationMethod = '';
   }
 }
 
@@ -85,7 +93,21 @@ export function resolveClaudeCliPath(
   hostnamePath: string | undefined,
   legacyPath: string | undefined,
   envText: string,
+  options: {
+    installationMethod?: ReturnType<typeof getClaudeProviderSettings>['installationMethod'];
+    hostPlatform?: NodeJS.Platform;
+  } = {},
 ): string | null {
+  if (
+    (options.hostPlatform ?? process.platform) === 'win32'
+    && options.installationMethod
+    && isClaudeWslInstallationMethod(options.installationMethod)
+  ) {
+    const configuredCommand = [hostnamePath, legacyPath]
+      .map(value => (value ?? '').trim())
+      .find(value => value && !/^[A-Za-z]:[\\/]|^\\\\|\.(?:exe|cmd|bat|ps1)$/i.test(value));
+    return configuredCommand || 'claude';
+  }
   return (
     resolveConfiguredPath(hostnamePath) ??
     resolveConfiguredPath(legacyPath) ??

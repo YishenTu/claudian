@@ -75,6 +75,11 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog {
     this.sdkCommands = commands;
   }
 
+  invalidateCache(): void {
+    this.sdkCommands = [];
+    this.probePromise = null;
+  }
+
   async listDropdownEntries(context: { includeBuiltIns: boolean }): Promise<ProviderCommandEntry[]> {
     void context;
     // SDK commands already include vault commands/skills (the SDK scans

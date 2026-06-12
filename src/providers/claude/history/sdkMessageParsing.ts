@@ -10,6 +10,7 @@ import type {
 import { extractUserDisplayContent } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
 import { isCompactionCanceledStderr, isInterruptSignalText } from '../../../utils/interrupt';
+import { mapClaudeToolInputPaths } from '../runtime/ClaudePathMapping';
 import { extractToolResultContent } from '../sdk/toolResultContent';
 import type {
   AsyncSubagentResult,
@@ -71,6 +72,7 @@ function extractImages(content: string | SDKNativeContentBlock[] | undefined): I
 function extractToolCalls(
   content: string | SDKNativeContentBlock[] | undefined,
   toolResults?: Map<string, { content: string; isError: boolean }>,
+  toHostPath?: (value: string) => string | null,
 ): ToolCallInfo[] | undefined {
   if (!content || typeof content === 'string') {
     return undefined;
@@ -102,7 +104,9 @@ function extractToolCalls(
     return {
       id: block.id,
       name: block.name,
-      input: block.input ?? {},
+      input: toHostPath
+        ? mapClaudeToolInputPaths(block.input ?? {}, toHostPath)
+        : block.input ?? {},
       status: result ? (result.isError ? 'error' : 'completed') : 'running',
       result: result?.content,
       isExpanded: false,
@@ -148,6 +152,7 @@ function mapContentBlocks(content: string | SDKNativeContentBlock[] | undefined)
 export function parseSDKMessageToChat(
   sdkMsg: SDKNativeMessage,
   toolResults?: Map<string, { content: string; isError: boolean }>,
+  toHostPath?: (value: string) => string | null,
 ): ChatMessage | null {
   if (sdkMsg.type === 'file-history-snapshot') {
     return null;
@@ -204,7 +209,9 @@ export function parseSDKMessageToChat(
     content: textContent,
     displayContent,
     timestamp,
-    toolCalls: sdkMsg.type === 'assistant' ? extractToolCalls(content, toolResults) : undefined,
+    toolCalls: sdkMsg.type === 'assistant'
+      ? extractToolCalls(content, toolResults, toHostPath)
+      : undefined,
     contentBlocks: sdkMsg.type === 'assistant' ? mapContentBlocks(content) : undefined,
     images,
     ...(sdkMsg.type === 'user' && sdkMsg.uuid && { userMessageId: sdkMsg.uuid }),

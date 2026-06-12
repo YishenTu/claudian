@@ -175,6 +175,7 @@ function getSubagentSidecarPath(
   vaultPath: string,
   sessionId: string,
   agentId: string,
+  projectsPath = getSDKProjectsPath(),
 ): string | null {
   if (!isValidSessionId(sessionId) || !isValidAgentId(agentId)) {
     return null;
@@ -182,7 +183,7 @@ function getSubagentSidecarPath(
 
   const encodedVault = encodeVaultPathForSDK(vaultPath);
   return path.join(
-    getSDKProjectsPath(),
+    projectsPath,
     encodedVault,
     sessionId,
     'subagents',
@@ -194,8 +195,9 @@ export async function loadSubagentToolCalls(
   vaultPath: string,
   sessionId: string,
   agentId: string,
+  projectsPath = getSDKProjectsPath(),
 ): Promise<ToolCallInfo[]> {
-  const subagentFilePath = getSubagentSidecarPath(vaultPath, sessionId, agentId);
+  const subagentFilePath = getSubagentSidecarPath(vaultPath, sessionId, agentId, projectsPath);
   if (!subagentFilePath) {
     return [];
   }
@@ -242,8 +244,9 @@ export async function loadSubagentFinalResult(
   vaultPath: string,
   sessionId: string,
   agentId: string,
+  projectsPath = getSDKProjectsPath(),
 ): Promise<string | null> {
-  const subagentFilePath = getSubagentSidecarPath(vaultPath, sessionId, agentId);
+  const subagentFilePath = getSubagentSidecarPath(vaultPath, sessionId, agentId, projectsPath);
   if (!subagentFilePath) {
     return null;
   }
