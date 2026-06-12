@@ -58,3 +58,6 @@
 
 /* Accessibility */
 @import "./accessibility.css";
+
+/* Utilities imported last to preserve cascade priority without importance flags */
+@import "./base/visibility.css";

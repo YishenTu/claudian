@@ -98,6 +98,6 @@
 /* ── Plan mode input border ──────────────────────── */
 
 .claudian-input-wrapper.claudian-input-plan-mode {
-  border-color: rgb(92, 148, 140) !important;
-  box-shadow: 0 0 0 1px rgb(92, 148, 140);
+  --claudian-input-wrapper-border-color: rgb(92, 148, 140);
+  --claudian-input-wrapper-box-shadow: 0 0 0 1px rgb(92, 148, 140);
 }
