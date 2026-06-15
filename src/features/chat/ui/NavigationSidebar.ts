@@ -6,6 +6,8 @@ import {
   type ScheduledAnimationFrame,
 } from '../../../utils/animationFrame';
 
+const TOC_TITLE_MAX_LENGTH = 80;
+
 /**
  * Floating sidebar for navigating chat history.
  * Provides quick access to top/bottom and previous/next user messages.
@@ -14,9 +16,13 @@ export class NavigationSidebar {
   private container: HTMLElement;
   private topBtn: HTMLElement;
   private prevBtn: HTMLElement;
+  private tocBtn: HTMLElement;
   private nextBtn: HTMLElement;
   private bottomBtn: HTMLElement;
+  private tocPopover: HTMLElement | null = null;
   private scrollHandler: () => void = () => {};
+  private outsideClickHandler: ((event: MouseEvent) => void) | null = null;
+  private mutationObserver: MutationObserver | null = null;
   private pendingVisibilityFrame: ScheduledAnimationFrame | null = null;
   private isVisible: boolean | null = null;
 
@@ -29,6 +35,7 @@ export class NavigationSidebar {
     // Create buttons
     this.topBtn = this.createButton('claudian-nav-btn-top', 'chevrons-up', 'Scroll to top');
     this.prevBtn = this.createButton('claudian-nav-btn-prev', 'chevron-up', 'Previous message');
+    this.tocBtn = this.createButton('claudian-nav-btn-toc', 'list-tree', 'Conversation directory');
     this.nextBtn = this.createButton('claudian-nav-btn-next', 'chevron-down', 'Next message');
     this.bottomBtn = this.createButton('claudian-nav-btn-bottom', 'chevrons-down', 'Scroll to bottom');
 
@@ -59,6 +66,36 @@ export class NavigationSidebar {
 
     this.prevBtn.addEventListener('click', () => this.scrollToMessage('prev'));
     this.nextBtn.addEventListener('click', () => this.scrollToMessage('next'));
+    this.tocBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.toggleDirectory();
+    });
+
+    this.outsideClickHandler = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      const containerContainsTarget = typeof this.container.contains === 'function'
+        && this.container.contains(target);
+      const popoverContainsTarget = typeof this.tocPopover?.contains === 'function'
+        && this.tocPopover.contains(target);
+      if (!containerContainsTarget && !popoverContainsTarget) {
+        this.closeDirectory();
+      }
+    };
+    this.parentEl.ownerDocument?.addEventListener?.('click', this.outsideClickHandler);
+
+    if (typeof MutationObserver !== 'undefined') {
+      this.mutationObserver = new MutationObserver(() => {
+        this.updateVisibility();
+        this.refreshOpenDirectory();
+      });
+      this.mutationObserver.observe(this.messagesEl, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-toc-title'],
+      });
+    }
   }
 
   /**
@@ -76,9 +113,99 @@ export class NavigationSidebar {
   private applyVisibility(): void {
     const { scrollHeight, clientHeight } = this.messagesEl;
     const isScrollable = scrollHeight > clientHeight + 50; // Small buffer
+    this.tocBtn.classList.remove('claudian-hidden');
     if (this.isVisible === isScrollable) return;
     this.isVisible = isScrollable;
     this.container.classList.toggle('visible', isScrollable);
+  }
+
+  private getDirectoryEntries(): Array<{ el: HTMLElement; title: string }> {
+    return Array.from(this.messagesEl.querySelectorAll<HTMLElement>('.claudian-message-user, [data-role="user"]'))
+      .map(el => ({
+        el,
+        title: this.getDirectoryTitle(el),
+      }))
+      .filter((entry): entry is { el: HTMLElement; title: string } => entry.title.length > 0);
+  }
+
+  private getDirectoryTitle(el: HTMLElement): string {
+    const explicitTitle = (el.getAttribute('data-toc-title') ?? '').trim();
+    if (explicitTitle) return explicitTitle;
+
+    const contentEl = el.querySelector<HTMLElement>('.claudian-message-content');
+    return this.formatDirectoryTitle(contentEl?.textContent ?? el.textContent ?? '');
+  }
+
+  private formatDirectoryTitle(text: string): string {
+    const firstLine = text
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .find(Boolean);
+    if (!firstLine) return '';
+    if (firstLine.length <= TOC_TITLE_MAX_LENGTH) return firstLine;
+    return `${firstLine.slice(0, TOC_TITLE_MAX_LENGTH - 3)}...`;
+  }
+
+  private toggleDirectory(): void {
+    if (this.tocPopover) {
+      this.closeDirectory();
+      return;
+    }
+    this.openDirectory();
+  }
+
+  private openDirectory(): void {
+    const entries = this.getDirectoryEntries();
+    this.closeDirectory();
+    this.tocPopover = this.parentEl.createDiv({ cls: 'claudian-nav-toc-popover' });
+    this.tocPopover.createDiv({ cls: 'claudian-nav-toc-title', text: 'Conversation directory' });
+    const listEl = this.tocPopover.createDiv({ cls: 'claudian-nav-toc-list' });
+
+    if (entries.length === 0) {
+      listEl.createDiv({
+        cls: 'claudian-nav-toc-empty',
+        text: 'No user prompts in this conversation',
+      });
+      return;
+    }
+
+    entries.forEach((entry, index) => {
+      const itemEl = listEl.createDiv({
+        cls: 'claudian-nav-toc-item',
+        text: `${index + 1}. ${entry.title}`,
+      });
+      itemEl.setAttribute('role', 'button');
+      itemEl.setAttribute('tabindex', '0');
+      itemEl.setAttribute('title', entry.title);
+
+      const selectEntry = () => {
+        this.scrollToElement(entry.el);
+        this.closeDirectory();
+      };
+      itemEl.addEventListener('click', selectEntry);
+      itemEl.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        selectEntry();
+      });
+    });
+  }
+
+  private refreshOpenDirectory(): void {
+    if (!this.tocPopover) return;
+    this.openDirectory();
+  }
+
+  private closeDirectory(): void {
+    this.tocPopover?.remove();
+    this.tocPopover = null;
+  }
+
+  private scrollToElement(el: HTMLElement): void {
+    this.messagesEl.scrollTo({
+      top: Math.max(el.offsetTop - 10, 0),
+      behavior: 'smooth',
+    });
   }
 
   /**
@@ -96,7 +223,7 @@ export class NavigationSidebar {
       // Find the last message strictly above the current scroll position
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].offsetTop < scrollTop - threshold) {
-          this.messagesEl.scrollTo({ top: messages[i].offsetTop - 10, behavior: 'smooth' });
+          this.scrollToElement(messages[i]);
           return;
         }
       }
@@ -106,7 +233,7 @@ export class NavigationSidebar {
       // Find the first message strictly below the current scroll position
       for (let i = 0; i < messages.length; i++) {
         if (messages[i].offsetTop > scrollTop + threshold) {
-          this.messagesEl.scrollTo({ top: messages[i].offsetTop - 10, behavior: 'smooth' });
+          this.scrollToElement(messages[i]);
           return;
         }
       }
@@ -120,6 +247,13 @@ export class NavigationSidebar {
       cancelScheduledAnimationFrame(this.pendingVisibilityFrame);
       this.pendingVisibilityFrame = null;
     }
+    this.closeDirectory();
+    if (this.outsideClickHandler) {
+      this.parentEl.ownerDocument?.removeEventListener?.('click', this.outsideClickHandler);
+      this.outsideClickHandler = null;
+    }
+    this.mutationObserver?.disconnect();
+    this.mutationObserver = null;
     this.messagesEl.removeEventListener('scroll', this.scrollHandler);
     this.container.remove();
   }

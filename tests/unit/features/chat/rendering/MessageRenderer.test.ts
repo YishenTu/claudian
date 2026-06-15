@@ -1081,6 +1081,23 @@ describe('MessageRenderer', () => {
     expect(msgEl.hasClass('claudian-message-user')).toBe(true);
   });
 
+  it('addMessage stores a truncated first-line table-of-contents title for user messages', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+    const msg: ChatMessage = {
+      id: 'u1',
+      role: 'user',
+      content: `${'x'.repeat(90)}\nsecond line`,
+      timestamp: Date.now(),
+    };
+
+    const msgEl = renderer.addMessage(msg);
+
+    expect(msgEl.getAttribute('data-toc-title')).toBe(`${'x'.repeat(77)}...`);
+  });
+
   it('addMessage renders images for user messages', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
@@ -1431,6 +1448,27 @@ describe('MessageRenderer', () => {
 
     expect(welcomeEl).toBeDefined();
     expect(welcomeEl!.hasClass('claudian-welcome')).toBe(true);
+  });
+
+  it('renderMessages should store table-of-contents title from displayContent before content', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl);
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+    const messages: ChatMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        content: 'Expanded prompt that should not appear',
+        displayContent: 'Visible slash command\nwith details',
+        timestamp: Date.now(),
+      },
+    ];
+
+    renderer.renderMessages(messages, () => 'Hello');
+
+    const msgEl = messagesEl.querySelector('.claudian-message-user');
+    expect(msgEl?.getAttribute('data-toc-title')).toBe('Visible slash command');
   });
 
   it('renderMessages should hide welcome when messages exist', () => {

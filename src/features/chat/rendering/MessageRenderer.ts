@@ -45,6 +45,8 @@ function runRendererAction(action: () => Promise<void>): void {
   });
 }
 
+const TOC_TITLE_MAX_LENGTH = 80;
+
 export class MessageRenderer {
   private app: App;
   private plugin: ClaudianPlugin;
@@ -105,6 +107,25 @@ export class MessageRenderer {
     return msg.displayContent ?? extractUserDisplayContent(msg.content) ?? msg.content;
   }
 
+  private getMessageTocTitle(text: string): string {
+    const firstLine = text
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .find(Boolean);
+    if (!firstLine) return '';
+    if (firstLine.length <= TOC_TITLE_MAX_LENGTH) return firstLine;
+    return `${firstLine.slice(0, TOC_TITLE_MAX_LENGTH - 3)}...`;
+  }
+
+  private applyTocTitle(msgEl: HTMLElement, text: string): void {
+    const tocTitle = this.getMessageTocTitle(text);
+    if (tocTitle) {
+      msgEl.setAttribute('data-toc-title', tocTitle);
+    } else {
+      msgEl.removeAttribute('data-toc-title');
+    }
+  }
+
   // ============================================
   // Streaming Message Rendering
   // ============================================
@@ -145,6 +166,7 @@ export class MessageRenderer {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
         this.addUserCopyButton(msgEl, textToShow);
+        this.applyTocTitle(msgEl, textToShow);
       }
       if (this.rewindCallback || this.forkCallback) {
         this.liveMessageEls.set(msg.id, msgEl);
@@ -177,6 +199,9 @@ export class MessageRenderer {
     if (textToShow) {
       const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
       void this.renderContent(textEl, textToShow);
+      this.applyTocTitle(msgEl, textToShow);
+    } else {
+      msgEl.removeAttribute('data-toc-title');
     }
 
     const toolbar = msgEl.querySelector<HTMLElement>('.claudian-user-msg-actions');
@@ -276,6 +301,7 @@ export class MessageRenderer {
         const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
         void this.renderContent(textEl, textToShow);
         this.addUserCopyButton(msgEl, textToShow);
+        this.applyTocTitle(msgEl, textToShow);
       }
       if (msg.userMessageId) {
         if (this.rewindCallback && this.isRewindEligible(allMessages, index)) {
