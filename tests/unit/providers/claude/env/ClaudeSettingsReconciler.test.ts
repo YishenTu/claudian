@@ -28,7 +28,7 @@ describe('claudeSettingsReconciler', () => {
       expect(result.changed).toBe(true);
       expect(result.invalidatedConversations).toEqual([conversation]);
       expect(conversation.sessionId).toBeNull();
-      expect(settings.model).toBe('claude-opus-4-6');
+      expect(settings.model).toBe('claude-code/claude-opus-4-6');
       expect(getClaudeProviderSettings(settings).environmentHash).toBe(
         'ANTHROPIC_BASE_URL=https://api.example.com',
       );

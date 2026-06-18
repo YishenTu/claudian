@@ -12,6 +12,7 @@ import {
 } from '../../../core/prompt/mainAgent';
 import type { AppPluginManager } from '../../../core/providers/types';
 import type { ClaudianSettings, PermissionMode } from '../../../core/types/settings';
+import { toClaudeRuntimeModelId } from '../modelSelection';
 import {
   type ClaudeSafeMode,
   getClaudeProviderSettings,
@@ -111,10 +112,11 @@ export class QueryOptionsBuilder {
     const pluginsKey = ctx.pluginManager.getPluginsKey();
 
     const settingSources = resolveClaudeSettingSources(claudeSettings.loadUserSettings);
+    const runtimeModel = toClaudeRuntimeModelId(ctx.settings.model);
 
     return {
-      model: ctx.settings.model,
-      effortLevel: resolveEffortLevel(ctx.settings.model, ctx.settings.effortLevel),
+      model: runtimeModel,
+      effortLevel: resolveEffortLevel(runtimeModel, ctx.settings.effortLevel),
       permissionMode: ctx.settings.permissionMode,
       sdkPermissionMode,
       systemPromptKey: computeSystemPromptKey(systemPromptSettings),
@@ -130,9 +132,10 @@ export class QueryOptionsBuilder {
   }
 
   static buildPersistentQueryOptions(ctx: PersistentQueryContext): Options {
+    const runtimeModel = toClaudeRuntimeModelId(ctx.settings.model);
     const { options, claudeSettings } = QueryOptionsBuilder.buildBaseOptions(
       ctx,
-      ctx.settings.model,
+      runtimeModel,
       ctx.abortController,
     );
 
@@ -148,7 +151,7 @@ export class QueryOptionsBuilder {
       claudeSettings.safeMode,
       ctx.canUseTool,
     );
-    QueryOptionsBuilder.applyThinking(options, ctx.settings, ctx.settings.model);
+    QueryOptionsBuilder.applyThinking(options, ctx.settings, runtimeModel);
     options.hooks = ctx.hooks;
 
     options.enableFileCheckpointing = true;
@@ -171,7 +174,7 @@ export class QueryOptionsBuilder {
   }
 
   static buildColdStartQueryOptions(ctx: ColdStartQueryContext): Options {
-    const selectedModel = ctx.modelOverride ?? ctx.settings.model;
+    const selectedModel = toClaudeRuntimeModelId(ctx.modelOverride ?? ctx.settings.model);
     const { options, claudeSettings } = QueryOptionsBuilder.buildBaseOptions(
       ctx,
       selectedModel,
@@ -201,7 +204,7 @@ export class QueryOptionsBuilder {
       ctx.canUseTool,
     );
     options.hooks = ctx.hooks;
-    QueryOptionsBuilder.applyThinking(options, ctx.settings, ctx.modelOverride ?? ctx.settings.model);
+    QueryOptionsBuilder.applyThinking(options, ctx.settings, selectedModel);
 
     if (ctx.allowedTools !== undefined && ctx.allowedTools.length > 0) {
       options.tools = ctx.allowedTools;

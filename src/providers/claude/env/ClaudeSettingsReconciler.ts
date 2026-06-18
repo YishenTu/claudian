@@ -4,7 +4,7 @@ import type { Conversation } from '../../../core/types';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { resolveClaudeModelSelection } from '../modelOptions';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
-import { normalizeVisibleModelVariant } from '../types/models';
+import { claudeChatUIConfig } from '../ui/ClaudeChatUIConfig';
 
 const ENV_HASH_MODEL_KEYS = [
   'ANTHROPIC_MODEL',
@@ -56,15 +56,9 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
   },
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
-    const claudeSettings = getClaudeProviderSettings(settings);
     let changed = false;
 
-    const normalize = (model: string): string =>
-      normalizeVisibleModelVariant(
-        model,
-        claudeSettings.enableOpus1M,
-        claudeSettings.enableSonnet1M,
-      );
+    const normalize = (model: string): string => claudeChatUIConfig.normalizeModelVariant(model, settings);
 
     const model = settings.model as string;
     const normalizedModel = normalize(model);
@@ -82,7 +76,7 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
       }
     }
 
-    const lastClaudeModel = claudeSettings.lastModel;
+    const lastClaudeModel = getClaudeProviderSettings(settings).lastModel;
     if (lastClaudeModel) {
       const normalizedLastClaudeModel = normalize(lastClaudeModel);
       if (lastClaudeModel !== normalizedLastClaudeModel) {

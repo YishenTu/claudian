@@ -325,7 +325,7 @@ describe('ClaudianPlugin', () => {
       const saveSpy = jest.spyOn(plugin, 'saveSettings');
       await plugin.loadSettings();
 
-      expect(plugin.settings.model).toBe('custom-model');
+      expect(plugin.settings.model).toBe('claude-code/custom-model');
       expect(saveSpy).toHaveBeenCalled();
     });
   });

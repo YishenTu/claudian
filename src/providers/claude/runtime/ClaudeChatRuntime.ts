@@ -69,6 +69,7 @@ import {
 import { CLAUDE_PROVIDER_CAPABILITIES } from '../capabilities';
 import { loadSubagentFinalResult, loadSubagentToolCalls } from '../history/ClaudeHistoryStore';
 import { createStopSubagentHook, type SubagentHookState } from '../hooks/SubagentHooks';
+import { toClaudeRuntimeModelId } from '../modelSelection';
 import { encodeClaudeTurn } from '../prompt/ClaudeTurnEncoder';
 import { isContextWindowEvent, isSessionInitEvent, isStreamChunk } from '../sdk/typeGuards';
 import type { TransformEvent } from '../sdk/types';
@@ -806,7 +807,7 @@ export class ClaudianService implements ChatRuntime {
   ) {
     const settings = this.getScopedSettings();
     return {
-      intendedModel: modelOverride ?? settings.model,
+      intendedModel: toClaudeRuntimeModelId(modelOverride ?? settings.model),
       customContextLimits: settings.customContextLimits,
       streamState,
       usageState,
@@ -1499,7 +1500,7 @@ export class ClaudianService implements ChatRuntime {
     queryOptions?: QueryOptions
   ): AsyncGenerator<StreamChunk> {
     this.resetTurnMetadata();
-    const selectedModel = queryOptions?.model || this.getScopedSettings().model;
+    const selectedModel = toClaudeRuntimeModelId(queryOptions?.model || this.getScopedSettings().model);
 
     this.sessionManager.setPendingModel(selectedModel);
     this.vaultPath = cwd;

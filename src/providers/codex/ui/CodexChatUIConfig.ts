@@ -7,6 +7,7 @@ import type {
 } from '../../../core/providers/types';
 import { OPENAI_PROVIDER_ICON } from '../../../shared/icons';
 import { getCodexModelOptions } from '../modelOptions';
+import { isCodexModelSelectionId, toCodexRuntimeModelId } from '../modelSelection';
 import { applyCodexModelDefaults } from '../settings';
 import {
   DEFAULT_CODEX_MODEL_SET,
@@ -51,11 +52,18 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
-    if (getCodexModelOptions(settings).some((option: ProviderUIOption) => option.value === model)) {
+    if (isCodexModelSelectionId(model)) {
       return true;
     }
 
-    return looksLikeCodexModel(model);
+    const runtimeModel = toCodexRuntimeModelId(model);
+    if (getCodexModelOptions(settings).some((option: ProviderUIOption) =>
+      option.value === model || toCodexRuntimeModelId(option.value) === runtimeModel
+    )) {
+      return true;
+    }
+
+    return looksLikeCodexModel(runtimeModel);
   },
 
   isAdaptiveReasoningModel(_model: string, _settings: Record<string, unknown>): boolean {
@@ -83,12 +91,16 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
       return;
     }
 
-    applyCodexModelDefaults(model, settings as Record<string, unknown>);
+    applyCodexModelDefaults(toCodexRuntimeModelId(model), settings as Record<string, unknown>);
   },
 
   normalizeModelVariant(model: string, settings: Record<string, unknown>): string {
-    if (getCodexModelOptions(settings).some((option) => option.value === model)) {
-      return model;
+    const runtimeModel = toCodexRuntimeModelId(model);
+    const option = getCodexModelOptions(settings).find((candidate) =>
+      candidate.value === model || toCodexRuntimeModelId(candidate.value) === runtimeModel
+    );
+    if (option) {
+      return option.value;
     }
 
     return DEFAULT_CODEX_PRIMARY_MODEL;

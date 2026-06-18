@@ -1,5 +1,6 @@
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type ClaudianPlugin from '../../../main';
+import { toCodexRuntimeModelId } from '../modelSelection';
 import { DEFAULT_CODEX_PRIMARY_MODEL } from '../types/models';
 import { CodexAppServerProcess } from './CodexAppServerProcess';
 import { resolveCodexAppServerLaunchSpec } from './codexAppServerSupport';
@@ -42,7 +43,7 @@ export class CodexAuxQueryRunner {
     }
 
     if (!this.threadId) {
-      const model = config.model ?? this.resolveProviderModel();
+      const model = toCodexRuntimeModelId(config.model ?? this.resolveProviderModel());
       const result = await this.transport!.request<ThreadStartResult>('thread/start', {
         model,
         cwd: this.launchSpec?.targetCwd ?? process.cwd(),
@@ -116,7 +117,7 @@ export class CodexAuxQueryRunner {
     const turnResult = await this.transport!.request<TurnStartResult>('turn/start', {
       threadId: this.threadId,
       input: [{ type: 'text', text: prompt }],
-      model: config.model,
+      model: config.model ? toCodexRuntimeModelId(config.model) : undefined,
     });
     turnId = turnResult.turn.id;
 
@@ -156,7 +157,8 @@ export class CodexAuxQueryRunner {
       this.plugin.settings,
       'codex',
     );
-    return (providerSettings.model) ?? DEFAULT_CODEX_PRIMARY_MODEL;
+    const model = providerSettings.model;
+    return typeof model === 'string' ? toCodexRuntimeModelId(model) : DEFAULT_CODEX_PRIMARY_MODEL;
   }
 
   private async startProcess(): Promise<void> {

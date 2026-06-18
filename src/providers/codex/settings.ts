@@ -6,6 +6,7 @@ import {
   getLegacyHostnameKey,
   migrateLegacyHostnameKeyedMap,
 } from '../../utils/env';
+import { toCodexRuntimeModelId } from './modelSelection';
 import { CODEX_SPARK_MODEL } from './types/models';
 
 export type CodexSafeMode = 'workspace-write' | 'read-only';
@@ -52,7 +53,7 @@ export const DEFAULT_CODEX_PROVIDER_SETTINGS: Readonly<CodexProviderSettings> = 
 });
 
 export function shouldDisableCodexReasoningSummary(model: string | undefined): boolean {
-  return model === CODEX_SPARK_MODEL;
+  return model ? toCodexRuntimeModelId(model) === CODEX_SPARK_MODEL : false;
 }
 
 export function getEffectiveCodexReasoningSummary(

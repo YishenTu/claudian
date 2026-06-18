@@ -38,6 +38,23 @@ describe('getProviderForModel', () => {
     expect(getProviderForModel('my-custom-model', settings)).toBe('codex');
   });
 
+  it('routes provider-qualified custom model ids without raw name collisions', () => {
+    const settings = {
+      providerConfigs: {
+        claude: {
+          customModels: 'deepseek-v4-pro',
+        },
+        codex: {
+          enabled: true,
+          customModels: 'deepseek-v4-pro',
+        },
+      },
+    };
+
+    expect(getProviderForModel('claude-code/deepseek-v4-pro', settings)).toBe('claude');
+    expect(getProviderForModel('openai-codex/deepseek-v4-pro', settings)).toBe('codex');
+  });
+
   it('routes settings-defined custom Codex models to codex when settings are provided', () => {
     const settings = {
       providerConfigs: {

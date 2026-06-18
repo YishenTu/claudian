@@ -36,6 +36,7 @@ import {
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFile,
 } from '../history/CodexHistoryStore';
+import { toCodexRuntimeModelId } from '../modelSelection';
 import { encodeCodexTurn } from '../prompt/encodeCodexTurn';
 import {
   type CodexSafeMode,
@@ -798,7 +799,8 @@ export class CodexChatRuntime implements ChatRuntime {
 
   private resolveModel(queryOptions?: ChatRuntimeQueryOptions): string | undefined {
     const providerSettings = this.getProviderSettings();
-    return queryOptions?.model ?? providerSettings.model as string | undefined;
+    const model = queryOptions?.model ?? providerSettings.model as string | undefined;
+    return model ? toCodexRuntimeModelId(model) : undefined;
   }
 
   private resolveSandboxConfig(): { approvalPolicy: string; sandbox: string } {

@@ -5,6 +5,7 @@ import type {
 } from '../../../core/providers/types';
 import type ClaudianPlugin from '../../../main';
 import { parseEnvironmentVariables } from '../../../utils/env';
+import { toClaudeRuntimeModelId } from '../modelSelection';
 import { runColdStartQuery } from '../runtime/claudeColdStartQuery';
 import { claudeChatUIConfig } from '../ui/ClaudeChatUIConfig';
 
@@ -79,7 +80,7 @@ export class TitleGenerationService {
       titleModel,
       this.plugin.settings as unknown as Record<string, unknown>,
     )) {
-      return titleModel;
+      return toClaudeRuntimeModelId(titleModel);
     }
 
     return (

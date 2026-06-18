@@ -2,6 +2,8 @@
  * Model type definitions and constants.
  */
 
+import { toClaudeRuntimeModelId } from '../modelSelection';
+
 /** Model identifier (string to support custom models via environment variables). */
 export type ClaudeModel = string;
 
@@ -37,7 +39,7 @@ const ONE_M_SUFFIX = '[1m]';
 const DEFAULT_MODEL_VALUES = new Set(DEFAULT_CLAUDE_MODELS.map(m => m.value.toLowerCase()));
 
 function normalizeModelId(model: string): string {
-  return model.trim().toLowerCase();
+  return toClaudeRuntimeModelId(model).trim().toLowerCase();
 }
 
 function has1MContextSuffix(model: string): boolean {

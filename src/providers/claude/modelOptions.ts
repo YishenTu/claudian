@@ -2,6 +2,7 @@ import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnv
 import type { ProviderUIOption } from '../../core/providers/types';
 import { getModelsFromEnvironment } from './env/claudeModelEnv';
 import { formatCustomModelLabel } from './modelLabels';
+import { encodeClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
 import { getClaudeProviderSettings } from './settings';
 import { DEFAULT_CLAUDE_MODELS, filterVisibleModelOptions } from './types/models';
 
@@ -49,7 +50,10 @@ export function getClaudeModelOptions(settings: Record<string, unknown>): Provid
     customModelAliases,
   );
   if (customModels.length > 0) {
-    return customModels;
+    return customModels.map((model) => ({
+      ...model,
+      value: encodeClaudeModelSelectionId(model.value),
+    }));
   }
 
   const claudeSettings = getClaudeProviderSettings(settings);
@@ -59,15 +63,16 @@ export function getClaudeModelOptions(settings: Record<string, unknown>): Provid
     claudeSettings.enableSonnet1M,
   );
 
-  const seenValues = new Set(models.map(model => model.value));
-  for (const modelId of parseConfiguredCustomModelIds(claudeSettings.customModels)) {
-    if (seenValues.has(modelId)) {
+  const seenModelIds = new Set(models.map(model => toClaudeRuntimeModelId(model.value)));
+  for (const configuredModelId of parseConfiguredCustomModelIds(claudeSettings.customModels)) {
+    const modelId = toClaudeRuntimeModelId(configuredModelId);
+    if (seenModelIds.has(modelId)) {
       continue;
     }
 
-    seenValues.add(modelId);
+    seenModelIds.add(modelId);
     models.push({
-      value: modelId,
+      value: encodeClaudeModelSelectionId(modelId),
       label: customModelAliases[modelId] ?? formatCustomModelLabel(modelId),
       description: 'Custom model',
     });
@@ -81,13 +86,27 @@ export function resolveClaudeModelSelection(
   currentModel: string,
 ): string | null {
   const modelOptions = getClaudeModelOptions(settings);
-  if (currentModel && modelOptions.some(option => option.value === currentModel)) {
-    return currentModel;
+  if (currentModel) {
+    const currentRuntimeModel = toClaudeRuntimeModelId(currentModel);
+    const currentOption = modelOptions.find(option =>
+      option.value === currentModel
+      || toClaudeRuntimeModelId(option.value) === currentRuntimeModel
+    );
+    if (currentOption) {
+      return currentOption.value;
+    }
   }
 
   const lastModel = getClaudeProviderSettings(settings).lastModel;
-  if (lastModel && modelOptions.some(option => option.value === lastModel)) {
-    return lastModel;
+  if (lastModel) {
+    const lastRuntimeModel = toClaudeRuntimeModelId(lastModel);
+    const lastOption = modelOptions.find(option =>
+      option.value === lastModel
+      || toClaudeRuntimeModelId(option.value) === lastRuntimeModel
+    );
+    if (lastOption) {
+      return lastOption.value;
+    }
   }
 
   return modelOptions[0]?.value ?? null;

@@ -1,5 +1,6 @@
 import type ClaudianPlugin from '../../main';
 import type { ChatRuntime } from '../runtime/ChatRuntime';
+import { decodeProviderModelSelectionId } from './modelSelection';
 import {
   type CreateChatRuntimeOptions,
   DEFAULT_CHAT_PROVIDER_ID,
@@ -168,6 +169,15 @@ export class ProviderRegistry {
       : (options.onlyEnabledProviders
         ? this.resolveSettingsProviderId(settings)
         : DEFAULT_CHAT_PROVIDER_ID);
+    const decodedSelection = decodeProviderModelSelectionId(model);
+
+    if (
+      decodedSelection
+      && providerIds.includes(decodedSelection.providerId)
+      && (!options.onlyEnabledProviders || this.isEnabled(decodedSelection.providerId, settings))
+    ) {
+      return decodedSelection.providerId;
+    }
 
     for (const providerId of providerIds) {
       if (providerId === fallbackProviderId) {

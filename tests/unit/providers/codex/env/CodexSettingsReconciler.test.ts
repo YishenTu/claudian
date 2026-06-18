@@ -32,6 +32,23 @@ describe('codexSettingsReconciler', () => {
     expect(settings.model).toBe(DEFAULT_CODEX_PRIMARY_MODEL);
   });
 
+  it('persists a provider-qualified selection for custom OPENAI_MODEL values', () => {
+    const settings: Record<string, unknown> = {
+      model: DEFAULT_CODEX_PRIMARY_MODEL,
+      providerConfigs: {
+        codex: {
+          environmentVariables: 'OPENAI_MODEL=deepseek-v4-pro',
+          environmentHash: '',
+        },
+      },
+    };
+
+    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+
+    expect(result.changed).toBe(true);
+    expect(settings.model).toBe('openai-codex/deepseek-v4-pro');
+  });
+
   it('preserves an active settings-defined custom model across non-model env changes', () => {
     const conversation = {
       providerId: 'codex',
@@ -60,7 +77,7 @@ describe('codexSettingsReconciler', () => {
     expect(result.invalidatedConversations).toEqual([conversation]);
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toBeUndefined();
-    expect(settings.model).toBe('my-custom-model');
+    expect(settings.model).toBe('openai-codex/my-custom-model');
     expect((settings.providerConfigs as any).codex.environmentHash).toBe(
       'OPENAI_BASE_URL=https://api.example.com/v1',
     );

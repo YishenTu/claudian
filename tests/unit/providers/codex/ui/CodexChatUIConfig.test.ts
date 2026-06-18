@@ -31,12 +31,12 @@ describe('CodexChatUIConfig', () => {
           description: 'Latest',
         },
         {
-          value: 'gpt-5.6-preview',
+          value: 'openai-codex/gpt-5.6-preview',
           label: 'GPT-5.6 Preview',
           description: 'Custom model',
         },
         {
-          value: 'my-custom-model',
+          value: 'openai-codex/my-custom-model',
           label: 'my-custom-model',
           description: 'Custom model',
         },
@@ -47,7 +47,7 @@ describe('CodexChatUIConfig', () => {
       const options = codexChatUIConfig.getModelOptions({
         environmentVariables: 'OPENAI_MODEL=my-custom-model',
       });
-      expect(options[0].value).toBe('my-custom-model');
+      expect(options[0].value).toBe('openai-codex/my-custom-model');
       expect(options[0].description).toBe('Custom (env)');
       expect(options.length).toBe(3);
     });
@@ -63,10 +63,10 @@ describe('CodexChatUIConfig', () => {
       });
 
       expect(options.map(option => option.value)).toEqual([
-        'my-custom-model',
+        'openai-codex/my-custom-model',
         'gpt-5.4-mini',
         DEFAULT_CODEX_PRIMARY_MODEL,
-        'second-custom-model',
+        'openai-codex/second-custom-model',
       ]);
     });
 
@@ -167,14 +167,14 @@ describe('CodexChatUIConfig', () => {
       expect(codexChatUIConfig.normalizeModelVariant(DEFAULT_CODEX_PRIMARY_MODEL, {})).toBe(DEFAULT_CODEX_PRIMARY_MODEL);
       expect(codexChatUIConfig.normalizeModelVariant('custom', {
         environmentVariables: 'OPENAI_MODEL=custom',
-      })).toBe('custom');
+      })).toBe('openai-codex/custom');
       expect(codexChatUIConfig.normalizeModelVariant('settings-custom', {
         providerConfigs: {
           codex: {
             customModels: 'settings-custom',
           },
         },
-      })).toBe('settings-custom');
+      })).toBe('openai-codex/settings-custom');
     });
   });
 

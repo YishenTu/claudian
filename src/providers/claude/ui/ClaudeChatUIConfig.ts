@@ -7,6 +7,7 @@ import type {
 import { CLAUDE_PROVIDER_ICON } from '../../../shared/icons';
 import { getCustomModelIds } from '../env/claudeModelEnv';
 import { getClaudeModelOptions } from '../modelOptions';
+import { toClaudeRuntimeModelId } from '../modelSelection';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import {
   DEFAULT_CLAUDE_MODELS,
@@ -33,7 +34,10 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
-    return getClaudeModelOptions(settings).some((option: ProviderUIOption) => option.value === model);
+    const runtimeModel = toClaudeRuntimeModelId(model);
+    return getClaudeModelOptions(settings).some((option: ProviderUIOption) =>
+      option.value === model || toClaudeRuntimeModelId(option.value) === runtimeModel
+    );
   },
 
   isAdaptiveReasoningModel(_model: string, _settings: Record<string, unknown>): boolean {
@@ -41,43 +45,51 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
   },
 
   getReasoningOptions(model: string, _settings: Record<string, unknown>): ProviderReasoningOption[] {
-    const levels = supportsXHighEffort(model)
+    const runtimeModel = toClaudeRuntimeModelId(model);
+    const levels = supportsXHighEffort(runtimeModel)
       ? EFFORT_LEVELS
       : EFFORT_LEVELS.filter(e => e.value !== 'xhigh');
     return levels.map(e => ({ value: e.value, label: e.label }));
   },
 
   getDefaultReasoningValue(model: string, _settings: Record<string, unknown>): string {
-    return DEFAULT_EFFORT_LEVEL[model] ?? 'high';
+    return DEFAULT_EFFORT_LEVEL[toClaudeRuntimeModelId(model)] ?? 'high';
   },
 
   getContextWindowSize(model: string, customLimits?: Record<string, number>): number {
-    return getContextWindowSize(model, customLimits);
+    return getContextWindowSize(toClaudeRuntimeModelId(model), customLimits);
   },
 
   isDefaultModel(model: string): boolean {
-    return DEFAULT_CLAUDE_MODELS.some(m => m.value === model);
+    const runtimeModel = toClaudeRuntimeModelId(model);
+    return DEFAULT_CLAUDE_MODELS.some(m => m.value === runtimeModel);
   },
 
   applyModelDefaults(model: string, settings: unknown): void {
     const target = settings as Record<string, unknown>;
 
-    if (DEFAULT_CLAUDE_MODELS.some(m => m.value === model)) {
-      target.effortLevel = DEFAULT_EFFORT_LEVEL[model] ?? 'high';
-      updateClaudeProviderSettings(target, { lastModel: model });
+    const runtimeModel = toClaudeRuntimeModelId(model);
+    if (DEFAULT_CLAUDE_MODELS.some(m => m.value === runtimeModel)) {
+      target.effortLevel = DEFAULT_EFFORT_LEVEL[runtimeModel] ?? 'high';
+      updateClaudeProviderSettings(target, { lastModel: runtimeModel });
     } else {
       target.lastCustomModel = model;
-      target.effortLevel = normalizeEffortLevel(model, target.effortLevel);
+      target.effortLevel = normalizeEffortLevel(runtimeModel, target.effortLevel);
     }
   },
 
   normalizeModelVariant(model: string, settings) {
     const claudeSettings = getClaudeProviderSettings(settings);
-    return normalizeVisibleModelVariant(
-      model,
+    const normalizedRuntimeModel = normalizeVisibleModelVariant(
+      toClaudeRuntimeModelId(model),
       claudeSettings.enableOpus1M,
       claudeSettings.enableSonnet1M,
     );
+    const option = getClaudeModelOptions(settings).find(candidate =>
+      candidate.value === normalizedRuntimeModel
+      || toClaudeRuntimeModelId(candidate.value) === normalizedRuntimeModel
+    );
+    return option?.value ?? normalizedRuntimeModel;
   },
 
   getCustomModelIds(envVars: Record<string, string>): Set<string> {

@@ -6,6 +6,7 @@ import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { extractAssistantText } from '../auxiliary/extractAssistantText';
+import { toClaudeRuntimeModelId } from '../modelSelection';
 import {
   getClaudeProviderSettings,
   resolveClaudeSettingSources,
@@ -75,7 +76,7 @@ export async function runColdStartQuery(
     );
   const claudeSettings = getClaudeProviderSettings(settings);
 
-  const selectedModel = config.model ?? (settings.model as string);
+  const selectedModel = toClaudeRuntimeModelId(config.model ?? (settings.model as string));
 
   const options: Options = {
     cwd: vaultPath,

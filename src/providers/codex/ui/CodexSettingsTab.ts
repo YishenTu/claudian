@@ -9,6 +9,7 @@ import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import { parseConfiguredCustomModelIds, resolveCodexModelSelection } from '../modelOptions';
+import { toCodexRuntimeModelId } from '../modelSelection';
 import { isWindowsStyleCliReference } from '../runtime/CodexBinaryLocator';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
 import { DEFAULT_CODEX_PRIMARY_MODEL } from '../types/models';
@@ -286,7 +287,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
           }
 
           const previousCustomModelIds = new Set(parseConfiguredCustomModelIds(previousCustomModels));
-          if (!previousCustomModelIds.has(currentSavedModel)) {
+          if (!previousCustomModelIds.has(toCodexRuntimeModelId(currentSavedModel))) {
             return false;
           }
 

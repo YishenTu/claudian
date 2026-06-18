@@ -1,4 +1,5 @@
 import type { Conversation } from '../types';
+import { toProviderRuntimeModelId } from './modelSelection';
 import { ProviderRegistry } from './ProviderRegistry';
 import type { ProviderChatUIConfig, ProviderId } from './types';
 
@@ -121,12 +122,27 @@ export class ProviderSettingsCoordinator {
       return false;
     }
 
-    const isValid = ProviderRegistry.getRegisteredProviderIds().some((providerId) =>
-      ProviderRegistry.getChatUIConfig(providerId)
-        .getModelOptions(settings)
-        .some((option) => option.value === currentModel)
-    );
-    if (isValid) {
+    for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
+      const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+      if (!uiConfig.ownsModel(currentModel, settings)) {
+        continue;
+      }
+
+      const normalizedModel = normalizeProviderModel(uiConfig, settings, currentModel);
+      const currentRuntimeModel = toProviderRuntimeModelId(providerId, currentModel);
+      const isValid = normalizedModel !== undefined
+        && uiConfig.getModelOptions(settings).some((option) =>
+          option.value === normalizedModel
+          && toProviderRuntimeModelId(providerId, option.value) === currentRuntimeModel
+        );
+      if (!isValid) {
+        continue;
+      }
+
+      if (normalizedModel !== currentModel) {
+        settings.titleGenerationModel = normalizedModel;
+        return true;
+      }
       return false;
     }
 

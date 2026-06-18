@@ -6,6 +6,7 @@ import * as path from 'path';
 
 import type { PreparedChatTurn } from '@/core/runtime/types';
 import type { StreamChunk } from '@/core/types/chat';
+import { encodeCodexModelSelectionId } from '@/providers/codex/modelSelection';
 import { CODEX_SPARK_MODEL, DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 // ---------------------------------------------------------------------------
@@ -519,7 +520,7 @@ describe('CodexChatRuntime', () => {
     it('sends reasoning summary off for GPT-5.3 Codex Spark turns', async () => {
       runtime.cleanup();
       runtime = new CodexChatRuntime(createMockPlugin({
-        model: CODEX_SPARK_MODEL,
+        model: encodeCodexModelSelectionId(CODEX_SPARK_MODEL),
         providerConfigs: {
           codex: {
             customModels: CODEX_SPARK_MODEL,

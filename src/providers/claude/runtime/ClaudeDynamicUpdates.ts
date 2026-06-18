@@ -9,6 +9,7 @@ import type {
   ChatRuntimeQueryOptions,
 } from '../../../core/runtime/types';
 import type { ClaudianSettings, PermissionMode } from '../../../core/types/settings';
+import { toClaudeRuntimeModelId } from '../modelSelection';
 import {
   resolveEffortLevel,
 } from '../types/models';
@@ -61,7 +62,7 @@ export async function applyClaudeDynamicUpdates(
   }
 
   const settings = deps.getScopedSettings();
-  const selectedModel = queryOptions?.model || settings.model;
+  const selectedModel = toClaudeRuntimeModelId(queryOptions?.model || settings.model);
   const permissionMode = deps.getPermissionMode();
 
   const currentConfig = deps.getCurrentConfig();

@@ -106,7 +106,7 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('reconcileTitleGenerationModelSelection', () => {
-    it('keeps custom title models while they are still available', () => {
+    it('migrates available Claude custom title models to provider-qualified ids', () => {
       const settings: Record<string, unknown> = {
         titleGenerationModel: 'claude-opus-4-6',
         providerConfigs: {
@@ -119,8 +119,8 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(
         ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
-      ).toBe(false);
-      expect(settings.titleGenerationModel).toBe('claude-opus-4-6');
+      ).toBe(true);
+      expect(settings.titleGenerationModel).toBe('claude-code/claude-opus-4-6');
     });
 
     it('clears titleGenerationModel when no provider exposes the saved model', () => {
@@ -140,7 +140,24 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.titleGenerationModel).toBe('');
     });
 
-    it('keeps Codex custom title models while they are still available', () => {
+    it('clears stale provider-qualified custom title models instead of retargeting to a fallback', () => {
+      const settings: Record<string, unknown> = {
+        titleGenerationModel: 'openai-codex/my-custom-model',
+        providerConfigs: {
+          codex: {
+            enabled: true,
+            customModels: '',
+          },
+        },
+      };
+
+      expect(
+        ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
+      ).toBe(true);
+      expect(settings.titleGenerationModel).toBe('');
+    });
+
+    it('migrates available Codex custom title models to provider-qualified ids', () => {
       const settings: Record<string, unknown> = {
         titleGenerationModel: 'my-custom-model',
         providerConfigs: {
@@ -153,8 +170,8 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(
         ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
-      ).toBe(false);
-      expect(settings.titleGenerationModel).toBe('my-custom-model');
+      ).toBe(true);
+      expect(settings.titleGenerationModel).toBe('openai-codex/my-custom-model');
     });
   });
 
