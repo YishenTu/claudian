@@ -806,6 +806,102 @@ describe('CodexHistoryStore', () => {
       expect(messages[0]).toMatchObject({ role: 'assistant', content: 'Ready.' });
     });
 
+    it('should skip Conductor interrupt control envelope persisted as user message', () => {
+      const conductorControlText = [
+        '<system_instruction>',
+        'You are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.',
+        '</system_instruction>',
+        '',
+        '<turn_aborted>',
+        'The user interrupted the previous turn on purpose.',
+        '</turn_aborted>',
+        '',
+        '<user-preferences>',
+        'dev notes and throwaway scripts should be placed inside .context/',
+        '</user-preferences>',
+      ].join('\n');
+
+      const content = [
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: conductorControlText }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Fix the interrupt rendering bug.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Fixed.' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toMatchObject({ role: 'user', content: 'Fix the interrupt rendering bug.' });
+      expect(messages[1]).toMatchObject({ role: 'assistant', content: 'Fixed.' });
+    });
+
+    it('should strip leading Conductor control blocks and keep visible user text', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{
+              type: 'input_text',
+              text: [
+                '<system_instruction>',
+                'You are working inside Conductor.',
+                '</system_instruction>',
+                '',
+                '<turn_aborted>',
+                'The user interrupted the previous turn on purpose.',
+                '</turn_aborted>',
+                '',
+                'Hide the interrupt envelope, but keep this prompt.',
+              ].join('\n'),
+            }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Done.' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toMatchObject({
+        role: 'user',
+        content: 'Hide the interrupt envelope, but keep this prompt.',
+      });
+      expect(messages[1]).toMatchObject({ role: 'assistant', content: 'Done.' });
+    });
+
     it('should set displayContent stripping bracket context from user messages', () => {
       const content = [
         JSON.stringify({

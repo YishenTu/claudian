@@ -58,10 +58,18 @@ type SaveOptions = {
 
 export type HistoryConversationOpenState = 'closed' | 'open' | 'current';
 
+export type HistoryConversationStatus = {
+  openState: HistoryConversationOpenState;
+  isRunning: boolean;
+  location?: 'current-view' | 'other-view';
+  tabIndex?: number;
+};
+
 type HistoryRenderOptions = {
   onSelectConversation: (id: string) => Promise<void>;
   onOpenConversationInNewTab?: (id: string, activate?: boolean) => Promise<void>;
   getConversationOpenState?: (id: string) => HistoryConversationOpenState;
+  getConversationStatus?: (id: string) => HistoryConversationStatus;
   onRerender: () => void;
 };
 
@@ -575,20 +583,36 @@ export class ConversationController {
     });
 
     for (const conv of conversations) {
-      const isCurrent = conv.id === state.currentConversationId;
+      const fallbackOpenState: HistoryConversationOpenState =
+        conv.id === state.currentConversationId ? 'current' : 'closed';
+      const conversationStatus = this.getHistoryConversationStatus(conv.id, fallbackOpenState, options);
+      const { openState, isRunning } = conversationStatus;
+      const isCurrent = openState === 'current';
+      const isOpen = openState === 'open';
       const item = list.createDiv({
-        cls: `claudian-history-item${isCurrent ? ' active' : ''}`,
+        cls: [
+          'claudian-history-item',
+          isCurrent ? 'active' : '',
+          isOpen ? 'open' : '',
+          isRunning ? 'running' : '',
+        ].filter(Boolean).join(' '),
       });
+      item.setAttribute('data-open-state', openState);
+      item.setAttribute('data-running', isRunning ? 'true' : 'false');
+      item.setAttribute('data-tab-location', conversationStatus.location ?? 'current-view');
+      if (typeof conversationStatus.tabIndex === 'number') {
+        item.setAttribute('data-tab-index', String(conversationStatus.tabIndex));
+      }
 
       const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
-      setIcon(iconEl, isCurrent ? 'message-square-dot' : 'message-square');
+      setIcon(iconEl, this.getHistoryItemIcon(openState, isRunning));
 
       const content = item.createDiv({ cls: 'claudian-history-item-content' });
       const titleEl = content.createDiv({ cls: 'claudian-history-item-title', text: conv.title });
       titleEl.setAttribute('title', conv.title);
       content.createDiv({
         cls: 'claudian-history-item-date',
-        text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.createdAt),
+        text: this.getHistoryItemStatusText(conversationStatus, conv.lastResponseAt ?? conv.createdAt),
       });
 
       if (!isCurrent) {
@@ -657,6 +681,24 @@ export class ConversationController {
         });
       }
 
+      if (openState === 'closed' && options.onOpenConversationInNewTab) {
+        const openInNewTabBtn = actions.createEl('button', {
+          cls: 'claudian-action-btn claudian-open-new-tab-btn',
+        });
+        setIcon(openInNewTabBtn, 'square-plus');
+        openInNewTabBtn.setAttribute('aria-label', 'Open in new tab');
+        openInNewTabBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          runConversationAction(
+            () => this.runHistoryAction(
+              () => options.onOpenConversationInNewTab?.(conv.id, true),
+              'Failed to load conversation',
+            ),
+            'Failed to load conversation',
+          );
+        });
+      }
+
       const renameBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
       setIcon(renameBtn, 'pencil');
       renameBtn.setAttribute('aria-label', 'Rename');
@@ -679,6 +721,69 @@ export class ConversationController {
         );
       });
     }
+  }
+
+  private getHistoryConversationStatus(
+    conversationId: string,
+    fallbackOpenState: HistoryConversationOpenState,
+    options: HistoryRenderOptions,
+  ): HistoryConversationStatus {
+    const status = options.getConversationStatus?.(conversationId);
+    if (status) return status;
+
+    return {
+      openState: options.getConversationOpenState?.(conversationId) ?? fallbackOpenState,
+      isRunning: false,
+    };
+  }
+
+  private getHistoryItemStatusText(
+    status: HistoryConversationStatus,
+    timestamp: number,
+  ): string {
+    const { openState, isRunning } = status;
+    const location = status.location ?? 'current-view';
+
+    if (openState !== 'closed' && location === 'other-view') {
+      return isRunning ? 'Running in another pane' : 'Open in another pane';
+    }
+
+    if (isRunning) {
+      if (openState === 'closed') return 'Running';
+      return `Running in ${this.getHistoryTabLabel(status)}`;
+    }
+
+    switch (openState) {
+      case 'current':
+        return typeof status.tabIndex === 'number'
+          ? `Current tab ${status.tabIndex}`
+          : 'Current session';
+      case 'open':
+        return `Open in ${this.getHistoryTabLabel(status)}`;
+      case 'closed':
+        return this.formatDate(timestamp);
+    }
+  }
+
+  private getHistoryTabLabel(status: HistoryConversationStatus): string {
+    if (typeof status.tabIndex === 'number') {
+      return `tab ${status.tabIndex}`;
+    }
+
+    if (status.openState === 'current') {
+      return 'current tab';
+    }
+
+    return 'tab';
+  }
+
+  private getHistoryItemIcon(
+    openState: HistoryConversationOpenState,
+    isRunning: boolean,
+  ): string {
+    if (isRunning) return 'loader-2';
+    if (openState === 'current') return 'message-square-dot';
+    return 'message-square';
   }
 
   private isHistoryNewTabModifierClick(event: MouseEvent): boolean {
@@ -705,9 +810,10 @@ export class ConversationController {
     event: MouseEvent,
   ): void {
     const menu = new Menu();
-    const openState = options.getConversationOpenState?.(conversationId) ?? (isCurrent ? 'current' : 'closed');
+    const fallbackOpenState: HistoryConversationOpenState = isCurrent ? 'current' : 'closed';
+    const { openState } = this.getHistoryConversationStatus(conversationId, fallbackOpenState, options);
 
-    if (!isCurrent) {
+    if (openState !== 'current') {
       if (openState === 'closed' && options.onOpenConversationInNewTab) {
         menu.addItem((menuItem) => menuItem
           .setTitle('Open in new tab')

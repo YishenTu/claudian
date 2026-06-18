@@ -61,8 +61,9 @@ export class TabBar {
       text: String(item.index),
     });
 
-    // Tooltip with full title (aria-label only; adding title too causes double tooltip)
+    // Native hover tooltip with the full title, while preserving an accessible label.
     badgeEl.setAttribute('aria-label', item.title);
+    badgeEl.setAttribute('title', item.title);
     badgeEl.setAttribute('data-provider', item.providerId);
 
     // Click handler to switch tab

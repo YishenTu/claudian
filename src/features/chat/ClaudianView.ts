@@ -13,7 +13,7 @@ import {
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
 } from '../../utils/animationFrame';
-import type { HistoryConversationOpenState } from './controllers/ConversationController';
+import type { HistoryConversationStatus } from './controllers/ConversationController';
 import {
   getTabProviderId,
   onProviderAvailabilityChanged,
@@ -187,6 +187,7 @@ export class ClaudianView extends ItemView {
       {
         onTabCreated: () => {
           this.updateTabBar();
+          this.updateHistoryDropdown();
           this.updateNavRowLocation();
           this.persistTabState();
           this.syncProviderBrandColor();
@@ -200,13 +201,18 @@ export class ClaudianView extends ItemView {
         },
         onTabClosed: () => {
           this.updateTabBar();
+          this.updateHistoryDropdown();
           this.persistTabState();
         },
-        onTabStreamingChanged: () => this.updateTabBar(),
+        onTabStreamingChanged: () => {
+          this.updateTabBar();
+          this.updateHistoryDropdown();
+        },
         onTabTitleChanged: () => this.updateTabBar(),
         onTabAttentionChanged: () => this.updateTabBar(),
         onTabConversationChanged: () => {
           this.updateTabBar();
+          this.updateHistoryDropdown();
           this.persistTabState();
           this.syncProviderBrandColor();
         },
@@ -538,7 +544,7 @@ export class ClaudianView extends ItemView {
         onSelectConversation: (id) => this.openHistoryConversation(id),
         onOpenConversationInNewTab: (id, activate) =>
           this.openHistoryConversationInNewTab(id, activate),
-        getConversationOpenState: (id) => this.getHistoryConversationOpenState(id),
+        getConversationStatus: (id) => this.getHistoryConversationStatus(id),
       });
     }
   }
@@ -559,27 +565,52 @@ export class ClaudianView extends ItemView {
     this.historyDropdown?.removeClass('visible');
   }
 
-  private getHistoryConversationOpenState(conversationId: string): HistoryConversationOpenState {
+  private getHistoryConversationStatus(conversationId: string): HistoryConversationStatus {
     const activeTab = this.tabManager?.getActiveTab();
     if (activeTab?.conversationId === conversationId) {
-      return 'current';
+      return {
+        openState: 'current',
+        isRunning: activeTab.state.isStreaming,
+        location: 'current-view',
+        tabIndex: this.getHistoryTabIndex(activeTab),
+      };
     }
 
-    if (this.findTabWithConversation(conversationId)) {
-      return 'open';
+    const localTab = this.findTabWithConversation(conversationId);
+    if (localTab) {
+      return {
+        openState: 'open',
+        isRunning: localTab.state.isStreaming,
+        location: 'current-view',
+        tabIndex: this.getHistoryTabIndex(localTab),
+      };
     }
 
     const crossViewResult = this.plugin.findConversationAcrossViews(conversationId);
     if (crossViewResult && crossViewResult.view !== this) {
-      return 'open';
+      const crossViewTab = crossViewResult.view.getTabManager()?.getTab(crossViewResult.tabId);
+      return {
+        openState: 'open',
+        isRunning: crossViewTab?.state.isStreaming ?? false,
+        location: 'other-view',
+      };
     }
 
-    return 'closed';
+    return {
+      openState: 'closed',
+      isRunning: false,
+      location: 'current-view',
+    };
   }
 
   private findTabWithConversation(conversationId: string): TabData | null {
     const tabs = this.tabManager?.getAllTabs() ?? [];
     return tabs.find(tab => tab.conversationId === conversationId) ?? null;
+  }
+
+  private getHistoryTabIndex(tab: TabData): number | undefined {
+    const index = this.tabManager?.getAllTabs().findIndex(candidate => candidate.id === tab.id) ?? -1;
+    return index >= 0 ? index + 1 : undefined;
   }
 
   // ============================================

@@ -86,9 +86,13 @@
 }
 
 .claudian-history-item.active {
-  background: var(--background-secondary);
+  background: var(--background-modifier-hover);
   border-inline-start: 2px solid var(--interactive-accent);
   padding-inline-start: 10px;
+}
+
+.claudian-history-item.active:hover {
+  background: var(--background-modifier-active-hover, var(--background-modifier-hover));
 }
 
 .claudian-history-item.active .claudian-history-item-icon {
@@ -101,6 +105,37 @@
 
 .claudian-history-item.active .claudian-history-item-date {
   color: var(--text-faint);
+}
+
+.claudian-history-item.open {
+  background: var(--background-modifier-hover);
+  border-inline-start: 2px solid var(--interactive-accent);
+  padding-inline-start: 10px;
+}
+
+.claudian-history-item.open:hover {
+  background: var(--background-modifier-active-hover, var(--background-modifier-hover));
+}
+
+.claudian-history-item.open .claudian-history-item-icon {
+  color: var(--interactive-accent);
+}
+
+.claudian-history-item.open .claudian-history-item-date {
+  color: var(--text-muted);
+}
+
+.claudian-history-item.running .claudian-history-item-icon {
+  color: var(--interactive-accent);
+}
+
+.claudian-history-item.running .claudian-history-item-icon svg {
+  animation: spin 1s linear infinite;
+}
+
+.claudian-history-item.running .claudian-history-item-date {
+  color: var(--interactive-accent);
+  font-weight: 500;
 }
 
 .claudian-history-item-content {
@@ -136,6 +171,10 @@
   opacity: 1;
 }
 
+.claudian-history-item:focus-within .claudian-history-item-actions {
+  opacity: 1;
+}
+
 .claudian-action-btn {
   background: transparent;
   border: none;
@@ -158,6 +197,10 @@
 
 .claudian-delete-btn:hover {
   color: var(--color-red);
+}
+
+.claudian-open-new-tab-btn:hover {
+  color: var(--interactive-accent);
 }
 
 .claudian-rename-input {
