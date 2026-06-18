@@ -52,6 +52,128 @@ describe('ClaudianView tab controls', () => {
     expect(newTabButtonEl.getAttribute('aria-disabled')).toBeNull();
     expect(newTabButtonEl.getAttribute('aria-hidden')).toBeNull();
   });
+
+  it('keeps tab controls in the view-owned input row', () => {
+    const navRowContent = createMockEl();
+    const inputNavRowHostEl = createMockEl();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.containerEl = createMockEl();
+    view.navRowContent = navRowContent;
+    view.inputNavRowHostEl = inputNavRowHostEl;
+    view.tabBar = {
+      captureScrollPosition: jest.fn(),
+      restoreScrollPosition: jest.fn(),
+    };
+
+    view.attachNavRowContentToInputFooter();
+
+    expect(inputNavRowHostEl.children).toContain(navRowContent);
+    expect(view.tabBar.captureScrollPosition).toHaveBeenCalledTimes(1);
+    expect(view.tabBar.restoreScrollPosition).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves only the active tab input into the stable input slot', () => {
+    const activeInputSlotEl = createMockEl();
+    const tab1 = {
+      id: 'tab-1',
+      dom: {
+        contentEl: createMockEl(),
+        inputComposerEl: createMockEl(),
+        inputContainerEl: createMockEl(),
+      },
+    };
+    const tab2 = {
+      id: 'tab-2',
+      dom: {
+        contentEl: createMockEl(),
+        inputComposerEl: createMockEl(),
+        inputContainerEl: createMockEl(),
+      },
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.activeInputSlotEl = activeInputSlotEl;
+    view.tabManager = {
+      getActiveTab: jest.fn()
+        .mockReturnValueOnce(tab1)
+        .mockReturnValueOnce(tab2),
+      getTab: jest.fn((id: string) => id === 'tab-1' ? tab1 : tab2),
+    };
+
+    view.updateInputLocation();
+    view.updateInputLocation();
+
+    expect(activeInputSlotEl.children).toContain(tab2.dom.inputComposerEl);
+    expect(activeInputSlotEl.children).not.toContain(tab1.dom.inputComposerEl);
+    expect(tab1.dom.contentEl.children).toContain(tab1.dom.inputComposerEl);
+  });
+
+  it('preserves active pending prompt siblings during same-tab input updates', () => {
+    const activeInputSlotEl = createMockEl();
+    const inputComposerEl = activeInputSlotEl.createDiv();
+    const pendingPromptEl = inputComposerEl.createDiv({ cls: 'claudian-ask-question-inline' });
+    const tab = {
+      id: 'tab-1',
+      dom: {
+        contentEl: createMockEl(),
+        inputComposerEl,
+        inputContainerEl: inputComposerEl.createDiv({ cls: 'claudian-input-container' }),
+      },
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.defineProperty(inputComposerEl, 'parentElement', {
+      configurable: true,
+      get: () => activeInputSlotEl,
+    });
+    view.activeInputTabId = 'tab-1';
+    view.activeInputSlotEl = activeInputSlotEl;
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue(tab),
+      getTab: jest.fn().mockReturnValue(tab),
+    };
+
+    view.updateInputLocation();
+
+    expect(activeInputSlotEl.children).toContain(inputComposerEl);
+    expect(inputComposerEl.children).toContain(pendingPromptEl);
+  });
+
+  it('clears the stable input slot when no tab is active', () => {
+    const activeInputSlotEl = createMockEl();
+    const staleInputEl = activeInputSlotEl.createDiv();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.activeInputTabId = 'tab-1';
+    view.activeInputSlotEl = activeInputSlotEl;
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue(null),
+    };
+
+    view.updateInputLocation();
+
+    expect(activeInputSlotEl.children).not.toContain(staleInputEl);
+    expect(view.activeInputTabId).toBeNull();
+  });
+
+  it('toggles the history dropdown when the history button is clicked', () => {
+    const historyDropdown = createMockEl();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.historyDropdown = historyDropdown;
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue(null),
+    };
+
+    view.toggleHistoryDropdown();
+
+    expect(historyDropdown.hasClass('visible')).toBe(true);
+
+    view.toggleHistoryDropdown();
+
+    expect(historyDropdown.hasClass('visible')).toBe(false);
+  });
 });
 
 describe('ClaudianView Escape handling', () => {

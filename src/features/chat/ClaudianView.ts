@@ -39,6 +39,10 @@ export class ClaudianView extends ItemView {
   private tabBarContainerEl: HTMLElement | null = null;
   private tabContentEl: HTMLElement | null = null;
   private navRowContent: HTMLElement | null = null;
+  private inputFooterEl: HTMLElement | null = null;
+  private inputNavRowHostEl: HTMLElement | null = null;
+  private activeInputSlotEl: HTMLElement | null = null;
+  private activeInputTabId: TabId | null = null;
 
   // DOM Elements
   private viewContainerEl: HTMLElement | null = null;
@@ -174,6 +178,7 @@ export class ClaudianView extends ItemView {
 
     this.navRowContent = this.buildNavRowContent();
     this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
+    this.buildInputFooter();
 
     this.tabManager = new TabManager(
       this.plugin,
@@ -183,20 +188,27 @@ export class ClaudianView extends ItemView {
         onTabCreated: () => {
           this.updateTabBar();
           this.updateHistoryDropdown();
-          this.attachNavRowContentToActiveTab();
+          this.updateInputLocation();
           this.persistTabState();
+          this.syncProviderBrandColor();
+        },
+        onActiveTabChanged: () => {
+          this.updateTabBar();
+          this.updateHistoryDropdown();
+          this.updateInputLocation();
           this.syncProviderBrandColor();
         },
         onTabSwitched: () => {
           this.updateTabBar();
           this.updateHistoryDropdown();
-          this.attachNavRowContentToActiveTab();
+          this.updateInputLocation();
           this.persistTabState();
           this.syncProviderBrandColor();
         },
         onTabClosed: () => {
           this.updateTabBar();
           this.updateHistoryDropdown();
+          this.updateInputLocation();
           this.persistTabState();
         },
         onTabStreamingChanged: () => {
@@ -221,7 +233,8 @@ export class ClaudianView extends ItemView {
     this.wireEventHandlers();
     await this.restoreOrCreateTabs();
     this.syncProviderBrandColor();
-    this.attachNavRowContentToActiveTab();
+    this.attachNavRowContentToInputFooter();
+    this.updateInputLocation();
     this.updateTabBarVisibility();
     this.tabManager?.primeProviderRuntime();
   }
@@ -239,6 +252,7 @@ export class ClaudianView extends ItemView {
 
     await this.persistTabStateImmediate();
 
+    this.restoreActiveInputToTabContent();
     await this.tabManager?.destroy();
     this.tabManager = null;
 
@@ -323,13 +337,62 @@ export class ClaudianView extends ItemView {
     return wrapper;
   }
 
-  private attachNavRowContentToActiveTab(): void {
+  private buildInputFooter(): void {
+    if (!this.viewContainerEl) return;
+
+    this.inputFooterEl = this.viewContainerEl.createDiv({ cls: 'claudian-input-footer' });
+    this.inputNavRowHostEl = this.inputFooterEl.createDiv({
+      cls: 'claudian-input-nav-row claudian-view-input-nav-row',
+    });
+    this.activeInputSlotEl = this.inputFooterEl.createDiv({ cls: 'claudian-active-input-slot' });
+  }
+
+  private attachNavRowContentToInputFooter(): void {
+    if (!this.inputNavRowHostEl || !this.navRowContent) return;
+
+    this.tabBar?.captureScrollPosition();
+    this.inputNavRowHostEl.appendChild(this.navRowContent);
+    this.tabBar?.restoreScrollPosition();
+  }
+
+  private updateInputLocation(): void {
     const activeTab = this.tabManager?.getActiveTab();
-    if (!activeTab || !this.navRowContent) {
+    if (!this.activeInputSlotEl) return;
+
+    if (!activeTab) {
+      this.activeInputSlotEl.empty();
+      this.activeInputTabId = null;
       return;
     }
 
-    activeTab.dom.navRowEl.appendChild(this.navRowContent);
+    if (this.activeInputTabId && this.activeInputTabId !== activeTab.id) {
+      const previousTab = this.tabManager?.getTab(this.activeInputTabId);
+      if (previousTab) {
+        previousTab.dom.contentEl.appendChild(previousTab.dom.inputComposerEl);
+      }
+    }
+
+    if (this.activeInputTabId === activeTab.id) {
+      if (activeTab.dom.inputComposerEl.parentElement !== this.activeInputSlotEl) {
+        this.activeInputSlotEl.appendChild(activeTab.dom.inputComposerEl);
+      }
+      return;
+    }
+
+    this.activeInputSlotEl.empty();
+    this.activeInputSlotEl.appendChild(activeTab.dom.inputComposerEl);
+    this.activeInputTabId = activeTab.id;
+  }
+
+  private restoreActiveInputToTabContent(): void {
+    if (!this.activeInputTabId) return;
+
+    const activeInputTab = this.tabManager?.getTab(this.activeInputTabId);
+    if (activeInputTab) {
+      activeInputTab.dom.contentEl.appendChild(activeInputTab.dom.inputComposerEl);
+    }
+    this.activeInputSlotEl?.empty();
+    this.activeInputTabId = null;
   }
 
   /** Refreshes tab controls after settings that affect tab availability change. */
@@ -688,5 +751,12 @@ export class ClaudianView extends ItemView {
   /** Gets the tab manager. */
   getTabManager(): TabManager | null {
     return this.tabManager;
+  }
+
+  /** Gets shared view controls that should preserve active tab selection context. */
+  getSharedSelectionFocusScopeEls(): HTMLElement[] {
+    return [
+      this.inputNavRowHostEl,
+    ].filter((el): el is HTMLElement => el !== null);
   }
 }

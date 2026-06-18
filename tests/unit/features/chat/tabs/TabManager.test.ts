@@ -336,6 +336,35 @@ describe('TabManager - Tab Lifecycle', () => {
       // Service initialization is now lazy (on first query), not on switch
       expect(mockInitializeTabService).not.toHaveBeenCalled();
     });
+
+    it('notifies active tab change before cold conversation load completes', async () => {
+      const callbacks: TabManagerCallbacks = {
+        onActiveTabChanged: jest.fn(),
+        onTabSwitched: jest.fn(),
+      };
+      const manager = createManager({ callbacks });
+      const tab1 = await manager.createTab();
+      const tab2 = await manager.createTab();
+      let resolveSwitchTo!: () => void;
+      const pendingSwitch = new Promise<void>(resolve => {
+        resolveSwitchTo = resolve;
+      });
+
+      tab1!.conversationId = 'conv-1';
+      tab1!.state.messages = [];
+      tab1!.controllers.conversationController!.switchTo = jest.fn().mockReturnValue(pendingSwitch);
+      jest.clearAllMocks();
+
+      const switchPromise = manager.switchToTab(tab1!.id);
+
+      expect(callbacks.onActiveTabChanged).toHaveBeenCalledWith(tab2!.id, tab1!.id);
+      expect(callbacks.onTabSwitched).not.toHaveBeenCalled();
+
+      resolveSwitchTo();
+      await switchPromise;
+
+      expect(callbacks.onTabSwitched).toHaveBeenCalledWith(tab2!.id, tab1!.id);
+    });
   });
 
   describe('closeTab', () => {

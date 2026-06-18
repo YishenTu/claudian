@@ -5,6 +5,7 @@ import { Notice, Platform } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { SelectionController } from '@/features/chat/controllers/SelectionController';
 import { ChatState } from '@/features/chat/state/ChatState';
 import {
   activateTab,
@@ -1241,9 +1242,6 @@ describe('Tab - Event Wiring', () => {
       const inputListeners = (tab.dom.inputEl as any).getEventListeners();
       expect(inputListeners.get('keydown')).toBeDefined();
       expect(inputListeners.get('input')).toBeDefined();
-      // focusin is registered on contentEl (not inputEl) to catch focus on any sidebar element
-      const contentListeners = (tab.dom.contentEl as any).getEventListeners();
-      expect(contentListeners.get('focusin')).toBeDefined();
     });
 
     it('should store cleanup functions for memory management', () => {
@@ -1256,7 +1254,7 @@ describe('Tab - Event Wiring', () => {
 
       wireTabInputEvents(tab, options.plugin);
 
-      expect(tab.dom.eventCleanups.length).toBe(4); // keydown, input, focus, scroll
+      expect(tab.dom.eventCleanups.length).toBe(3); // keydown, input, scroll
     });
   });
 });
@@ -1770,6 +1768,27 @@ describe('Tab - Controller Initialization', () => {
       expect(tab.controllers.selectionController).toBeDefined();
     });
 
+    it('should include shared view controls in the selection focus scope', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const sharedFocusScopeEl = createMockEl();
+      const mockComponent = {
+        getSharedSelectionFocusScopeEls: jest.fn(() => [sharedFocusScopeEl]),
+      } as any;
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+
+      expect(SelectionController).toHaveBeenCalledWith(
+        options.plugin.app,
+        tab.dom.selectionIndicatorEl,
+        tab.dom.inputEl,
+        tab.dom.contextRowEl,
+        expect.any(Function),
+        [tab.dom.contentEl, tab.dom.inputComposerEl, sharedFocusScopeEl],
+      );
+    });
+
     it('should create StreamController', () => {
       const options = createMockOptions();
       const tab = createTab(options);
@@ -2259,25 +2278,6 @@ describe('Tab - Event Handler Behavior', () => {
 
       expect(mockFileContextManager.handleInputChange).toHaveBeenCalled();
       expect(mockInstructionModeManager.handleInputChange).toHaveBeenCalled();
-    });
-  });
-
-  describe('wireTabInputEvents - focus handler', () => {
-    it('should show selection highlight on focusin (any sidebar element)', () => {
-      const options = createMockOptions();
-      const tab = createTab(options);
-
-      tab.controllers.selectionController = mockSelectionController as any;
-      tab.controllers.inputController = mockInputController as any;
-
-      wireTabInputEvents(tab, options.plugin);
-
-      const listeners = (tab.dom.contentEl as any).getEventListeners();
-      const focusHandler = listeners.get('focusin')[0];
-      // Simulate focus entering from outside (relatedTarget is null)
-      focusHandler({ relatedTarget: null });
-
-      expect(mockSelectionController.showHighlight).toHaveBeenCalled();
     });
   });
 

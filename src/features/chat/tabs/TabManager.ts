@@ -262,6 +262,7 @@ export class TabManager implements TabManagerInterface {
       // Activate new tab
       this.activeTabId = tabId;
       activateTab(tab);
+      this.callbacks.onActiveTabChanged?.(previousTabId, tabId);
 
       // Load conversation if not already loaded
       if (tab.conversationId && tab.state.messages.length === 0) {

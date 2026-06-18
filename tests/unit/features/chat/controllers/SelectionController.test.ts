@@ -59,8 +59,8 @@ function createMockEventTarget() {
     removeEventListener: jest.fn((event: string, listener: (...args: unknown[]) => void) => {
       listeners.get(event)?.delete(listener);
     }),
-    trigger: (event: string) => {
-      listeners.get(event)?.forEach(handler => handler());
+    trigger: (event: string, eventData: unknown = {}) => {
+      listeners.get(event)?.forEach(handler => handler(eventData));
     },
     contains: jest.fn((node: unknown) => node === el || containedNodes.has(node)),
     addContainedNode: (node: unknown) => {
@@ -195,6 +195,98 @@ describe('SelectionController', () => {
 
     expect(controller.hasSelection()).toBe(true);
     expect(indicatorEl.style.display).toBe('block');
+  });
+
+  it('preserves selection when a relocated composer outside tab content has focus', () => {
+    const contentScopeEl = createMockEventTarget();
+    const composerScopeEl = createMockEventTarget();
+    composerScopeEl.addContainedNode(inputEl);
+    controller = new SelectionController(
+      app,
+      indicatorEl,
+      inputEl,
+      contextRowEl,
+      undefined,
+      [contentScopeEl, composerScopeEl],
+    );
+
+    controller.start();
+    jest.advanceTimersByTime(250);
+    expect(controller.hasSelection()).toBe(true);
+
+    app.workspace.getActiveViewOfType.mockReturnValue(null);
+    (global as any).document.activeElement = inputEl;
+    jest.advanceTimersByTime(250);
+
+    expect(controller.hasSelection()).toBe(true);
+    expect(indicatorEl.style.display).toBe('block');
+  });
+
+  it('preserves selection when shared footer controls have focus', () => {
+    const contentScopeEl = createMockEventTarget();
+    const composerScopeEl = createMockEventTarget();
+    const footerScopeEl = createMockEventTarget();
+    const historyButton = {};
+    footerScopeEl.addContainedNode(historyButton);
+    controller = new SelectionController(
+      app,
+      indicatorEl,
+      inputEl,
+      contextRowEl,
+      undefined,
+      [contentScopeEl, composerScopeEl, footerScopeEl],
+    );
+
+    controller.start();
+    jest.advanceTimersByTime(250);
+    expect(controller.hasSelection()).toBe(true);
+
+    app.workspace.getActiveViewOfType.mockReturnValue(null);
+    (global as any).document.activeElement = historyButton;
+    jest.advanceTimersByTime(250);
+
+    expect(controller.hasSelection()).toBe(true);
+    expect(indicatorEl.style.display).toBe('block');
+  });
+
+  it('shows selection highlight when focus enters shared footer controls', () => {
+    const footerScopeEl = createMockEventTarget();
+    controller = new SelectionController(
+      app,
+      indicatorEl,
+      inputEl,
+      contextRowEl,
+      undefined,
+      [focusScopeEl, footerScopeEl],
+    );
+    controller.start();
+    jest.advanceTimersByTime(250);
+    (showSelectionHighlight as jest.Mock).mockClear();
+
+    footerScopeEl.trigger('focusin', { relatedTarget: null });
+
+    expect(showSelectionHighlight).toHaveBeenCalledWith(editorView, 0, 4);
+  });
+
+  it('does not re-show selection highlight when focus moves inside chat focus scopes', () => {
+    const footerScopeEl = createMockEventTarget();
+    const footerButton = {};
+    footerScopeEl.addContainedNode(footerButton);
+    controller = new SelectionController(
+      app,
+      indicatorEl,
+      inputEl,
+      contextRowEl,
+      undefined,
+      [focusScopeEl, footerScopeEl],
+    );
+    controller.start();
+    jest.advanceTimersByTime(250);
+    (showSelectionHighlight as jest.Mock).mockClear();
+
+    focusScopeEl.trigger('focusin', { relatedTarget: footerButton });
+
+    expect(showSelectionHighlight).not.toHaveBeenCalled();
   });
 
   it('shows fake highlight when focus moves to another sidebar control in edit mode', () => {

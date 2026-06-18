@@ -1,21 +1,40 @@
 .claudian-tab-bar-container {
   display: flex;
   align-items: center;
+  flex: 1 1 auto;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .claudian-tab-badges {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.claudian-tab-badges::-webkit-scrollbar {
+  display: none;
 }
 
 .claudian-tab-badge {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 24px;
   width: 24px;
+  max-width: 24px;
   height: 24px;
+  box-sizing: border-box;
+  padding: 0;
   border-radius: 4px;
   border: 2px solid var(--background-modifier-border);
   font-size: 12px;
@@ -23,7 +42,18 @@
   cursor: pointer;
   color: var(--text-muted);
   background: var(--background-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.claudian-tab-badge-expanded {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  width: auto;
+  max-width: none;
+  padding: 0 8px;
 }
 
 .claudian-tab-badge:hover {

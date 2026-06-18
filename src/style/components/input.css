@@ -4,6 +4,16 @@
   padding: 12px 0 0 0;
 }
 
+.claudian-input-footer {
+  position: relative;
+  flex-shrink: 0;
+  padding: 12px 0 0 0;
+}
+
+.claudian-active-input-slot > .claudian-input-composer > .claudian-input-container {
+  padding-top: 0;
+}
+
 /* Input wrapper (border container) - flex column so textarea expands when no chips */
 /* Height calculation: context row (36px) + textarea min (60px) + toolbar (38px) + border (2px) = 136px */
 .claudian-input-wrapper {
@@ -42,6 +52,10 @@
   justify-content: space-between;
   padding: 0 0 8px 0;
   min-height: 0;
+}
+
+.claudian-input-nav-row:empty {
+  display: none;
 }
 
 .claudian-input-nav-content {

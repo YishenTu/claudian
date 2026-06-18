@@ -62,6 +62,9 @@ export interface TabManagerViewHost extends Component {
 
   /** Gets the tab manager instance (used for cross-view coordination). */
   getTabManager(): TabManagerInterface | null;
+
+  /** Gets view-owned elements that should preserve active tab selection context. */
+  getSharedSelectionFocusScopeEls?(): HTMLElement[];
 }
 
 /**
@@ -139,6 +142,8 @@ export interface TabDOMElements {
   /** Container for status panel (fixed between messages and input). */
   statusPanelContainerEl: HTMLElement;
 
+  /** Per-tab composer root. Inline prompts render here as siblings of the input container. */
+  inputComposerEl: HTMLElement;
   inputContainerEl: HTMLElement;
   queueIndicatorEl: HTMLElement;
   inputWrapper: HTMLElement;
@@ -240,6 +245,9 @@ export interface PersistedTabManagerState {
 export interface TabManagerCallbacks {
   /** Called when a tab is created. */
   onTabCreated?: (tab: TabData) => void;
+
+  /** Called immediately after the active tab changes, before async tab loading completes. */
+  onActiveTabChanged?: (fromTabId: TabId | null, toTabId: TabId) => void;
 
   /** Called when switching to a different tab. */
   onTabSwitched?: (fromTabId: TabId | null, toTabId: TabId) => void;

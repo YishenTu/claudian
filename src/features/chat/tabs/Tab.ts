@@ -49,7 +49,7 @@ import { StatusPanel } from '../ui/StatusPanel';
 import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
 import { getTabProviderId } from './providerResolution';
-import type { TabData, TabDOMElements, TabId, TabProviderContext } from './types';
+import type { TabData, TabDOMElements, TabId, TabManagerViewHost, TabProviderContext } from './types';
 import { generateTabId } from './types';
 
 type TabProviderSettings = Record<string, unknown> & {
@@ -60,6 +60,11 @@ type TabProviderSettings = Record<string, unknown> & {
   permissionMode: string;
   customContextLimits?: Record<string, number>;
 };
+
+function getSharedSelectionFocusScopeEls(component: Component): HTMLElement[] {
+  const host = component as Partial<TabManagerViewHost>;
+  return host.getSharedSelectionFocusScopeEls?.() ?? [];
+}
 
 /**
  * Returns model options for a blank tab.
@@ -529,7 +534,8 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   const messagesEl = messagesWrapperEl.createDiv({ cls: 'claudian-messages' });
   const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
   const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
-  const inputContainerEl = contentEl.createDiv({ cls: 'claudian-input-container' });
+  const inputComposerEl = contentEl.createDiv({ cls: 'claudian-input-composer' });
+  const inputContainerEl = inputComposerEl.createDiv({ cls: 'claudian-input-container' });
   const queueIndicatorEl = inputContainerEl.createDiv({ cls: 'claudian-input-queue-row' });
   const navRowEl = inputContainerEl.createDiv({ cls: 'claudian-input-nav-row' });
   const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
@@ -548,6 +554,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     messagesEl,
     welcomeEl,
     statusPanelContainerEl,
+    inputComposerEl,
     inputContainerEl,
     queueIndicatorEl,
     inputWrapper,
@@ -1263,7 +1270,7 @@ export function initializeTabControllers(
     dom.inputEl,
     dom.contextRowEl,
     () => autoResizeTextarea(dom.inputEl),
-    dom.contentEl,
+    [dom.contentEl, dom.inputComposerEl, ...getSharedSelectionFocusScopeEls(component)],
   );
 
   tab.controllers.browserSelectionController = new BrowserSelectionController(
@@ -1546,14 +1553,6 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
   };
   dom.inputEl.addEventListener('input', inputHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('input', inputHandler));
-
-  // Sidebar focus handler — show selection highlight when focus enters the tab from outside
-  const focusHandler = (e: FocusEvent) => {
-    if (e.relatedTarget && dom.contentEl.contains(e.relatedTarget as Node)) return;
-    controllers.selectionController?.showHighlight();
-  };
-  dom.contentEl.addEventListener('focusin', focusHandler);
-  dom.eventCleanups.push(() => dom.contentEl.removeEventListener('focusin', focusHandler));
 
   // Scroll listener for auto-scroll control (tracks position always, not just during streaming)
   const SCROLL_THRESHOLD = 20; // pixels from bottom to consider "at bottom"
