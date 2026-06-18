@@ -35,7 +35,7 @@
   display: flex;
 }
 
-/* Nav row (tab badges start, header icons end) - above input wrapper */
+/* Nav row (tab badges start, action icons end) - above input wrapper */
 .claudian-input-nav-row {
   display: flex;
   align-items: center;
@@ -52,9 +52,35 @@
   min-width: 0;
 }
 
-/* Header mode: hide nav row above input (content moved to header) */
-.claudian-container--header-mode .claudian-input-nav-row {
-  display: none;
+.claudian-input-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+.claudian-input-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-faint);
+  transition: color 0.15s ease;
+}
+
+.claudian-input-nav-btn:hover {
+  color: var(--text-normal);
+}
+
+.claudian-input-nav-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-new-tab-btn svg {
+  width: 16.8px;
+  height: 16.8px;
 }
 
 /* Selection indicator (shown when text is selected in editor) */

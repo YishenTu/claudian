@@ -53,9 +53,6 @@ export interface KeyboardNavigationSettings {
   focusInputKey: string;       // Key to focus input (default: 'i', like vim insert mode)
 }
 
-/** Tab bar position setting. */
-export type TabBarPosition = 'input' | 'header';
-
 export const CHAT_VIEW_PLACEMENTS = [
   'right-sidebar',
   'left-sidebar',
@@ -142,7 +139,6 @@ export interface ClaudianSettings {
 
   // UI preferences
   maxTabs: number;
-  tabBarPosition: TabBarPosition;
   enableAutoScroll: boolean;
   deferMathRenderingDuringStreaming: boolean;
   expandFileEditsByDefault: boolean;

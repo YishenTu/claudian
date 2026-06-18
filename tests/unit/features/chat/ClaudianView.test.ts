@@ -7,7 +7,6 @@ const MockScope = Scope as typeof Scope & { instances: Scope[] };
 
 function createViewHarness(options: {
   canCreateTab: boolean;
-  tabBarPosition?: 'input' | 'header';
   tabCount?: number;
 }): {
   newTabButtonEl: ReturnType<typeof createMockEl>;
@@ -17,9 +16,7 @@ function createViewHarness(options: {
   const view = Object.create(ClaudianView.prototype) as any;
 
   view.plugin = {
-    settings: {
-      tabBarPosition: options.tabBarPosition ?? 'input',
-    },
+    settings: {},
   };
   view.tabManager = {
     canCreateTab: jest.fn().mockReturnValue(options.canCreateTab),
@@ -27,7 +24,6 @@ function createViewHarness(options: {
   };
   view.tabBarContainerEl = createMockEl();
   view.logoEl = createMockEl();
-  view.titleTextEl = createMockEl();
   view.newTabButtonEl = newTabButtonEl;
 
   return { newTabButtonEl, view };

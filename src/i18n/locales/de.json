@@ -285,12 +285,6 @@
       "desc": "Maximale Anzahl gleichzeitiger Chat-Tabs (3-10). Jeder Tab verwendet eine separate Claude-Sitzung.",
       "warning": "Mehr als 5 Tabs können Leistung und Speichernutzung beeinträchtigen."
     },
-    "tabBarPosition": {
-      "name": "Tab-Leiste Position",
-      "desc": "Wählen Sie, wo Tab-Badges und Aktionsschaltflächen angezeigt werden",
-      "input": "Über Eingabefeld (Standard)",
-      "header": "In Kopfzeile"
-    },
     "enableAutoScroll": {
       "name": "Automatisches Scrollen während Streaming",
       "desc": "Automatisch nach unten scrollen, während Claude Antworten streamt. Deaktivieren, um oben zu bleiben und von Anfang an zu lesen."

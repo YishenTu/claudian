@@ -207,24 +207,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     new Setting(container).setName(t('settings.display')).setHeading();
 
-    new Setting(container)
-      .setName(t('settings.tabBarPosition.name'))
-      .setDesc(t('settings.tabBarPosition.desc'))
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption('input', t('settings.tabBarPosition.input'))
-          .addOption('header', t('settings.tabBarPosition.header'))
-          .setValue(this.plugin.settings.tabBarPosition ?? 'input')
-          .onChange(async (value) => {
-            this.plugin.settings.tabBarPosition = value as 'input' | 'header';
-            await this.plugin.saveSettings();
-
-            for (const view of this.plugin.getAllViews()) {
-              view.updateLayoutForPosition();
-            }
-          });
-      });
-
     const maxTabsSetting = new Setting(container)
       .setName(t('settings.maxTabs.name'))
       .setDesc(t('settings.maxTabs.desc'));

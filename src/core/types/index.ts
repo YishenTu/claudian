@@ -25,7 +25,6 @@ export {
   type KeyboardNavigationSettings,
   type PermissionMode,
   type SlashCommand,
-  type TabBarPosition,
 } from './settings';
 
 // Diff types

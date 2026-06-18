@@ -1,4 +1,4 @@
-/* Header - logo, title/tabs slot, and actions */
+/* Header - logo and title */
 .claudian-header {
   position: relative;
   display: flex;
@@ -6,21 +6,12 @@
   padding: 0 12px 12px 12px;
 }
 
-/* Title slot: contains logo + title (or tabs in header mode) */
-.claudian-title-slot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;  /* Allow flex item to shrink below content size */
-}
-
-/* Legacy class for backwards compatibility */
 .claudian-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .claudian-title-text {
@@ -33,45 +24,4 @@
   display: flex;
   align-items: center;
   color: var(--claudian-brand);
-}
-
-/* Header actions (end side - always stays at end via margin-inline-start: auto) */
-.claudian-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-  margin-inline-start: auto;
-}
-
-.claudian-header-actions-slot {
-  /* No margin-inline-start: auto here; it's set by the base .claudian-header-actions */
-}
-
-.claudian-header .claudian-tab-bar-container {
-  display: flex;
-  gap: 4px;
-}
-
-.claudian-header-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--text-faint);
-  transition: color 0.15s ease;
-}
-
-.claudian-header-btn:hover {
-  color: var(--text-normal);
-}
-
-.claudian-header-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-.claudian-new-tab-btn svg {
-  width: 16.8px;
-  height: 16.8px;
 }

@@ -285,12 +285,6 @@
       "desc": "Número máximo de pestañas de chat simultáneas (3-10). Cada pestaña usa una sesión de Claude separada.",
       "warning": "Más de 5 pestañas puede afectar el rendimiento y el uso de memoria."
     },
-    "tabBarPosition": {
-      "name": "Posición de la barra de pestañas",
-      "desc": "Elige dónde mostrar las insignias de pestañas y los botones de acción",
-      "input": "Sobre el área de entrada (predeterminado)",
-      "header": "En el encabezado"
-    },
     "enableAutoScroll": {
       "name": "Desplazamiento automático durante streaming",
       "desc": "Desplazarse automáticamente hacia abajo mientras Claude transmite respuestas. Desactivar para quedarse arriba y leer desde el principio."
