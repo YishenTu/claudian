@@ -153,10 +153,28 @@ export interface CommandExecutionItem {
   durationMs: number | null;
 }
 
-export interface CommandAction {
-  type: string;
-  command: string;
-}
+export type CommandAction =
+  | {
+    type: 'read';
+    command: string;
+    name: string;
+    path: string;
+  }
+  | {
+    type: 'listFiles';
+    command: string;
+    path: string | null;
+  }
+  | {
+    type: 'search';
+    command: string;
+    query: string | null;
+    path: string | null;
+  }
+  | {
+    type: 'unknown';
+    command: string;
+  };
 
 export interface FileChangeItem {
   type: 'fileChange';

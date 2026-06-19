@@ -5,6 +5,7 @@ import type {
 } from '../../../core/runtime/types';
 import type { ApprovalDecision } from '../../../core/types';
 import { normalizeCodexToolName } from '../normalization/codexToolNormalization';
+import { buildCodexCommandApprovalDisplay } from './codexApprovalDisplay';
 import type {
   CommandApprovalRequest,
   CommandExecutionApprovalDecision,
@@ -88,6 +89,7 @@ export class CodexServerRequestRouter {
       proposedNetworkPolicyAmendments: params.proposedNetworkPolicyAmendments ?? null,
     };
     const description = describeCommandApproval(params);
+    const commandDisplay = buildCodexCommandApprovalDisplay(params);
 
     if (requestId !== undefined) {
       this.pendingApprovalRequests.set(requestId, params.threadId);
@@ -95,6 +97,8 @@ export class CodexServerRequestRouter {
 
     try {
       const decision = await this.approvalCallback(toolName, input, description, {
+        displayToolName: 'Command',
+        ...(commandDisplay ? { commandDisplay } : {}),
         ...(params.reason ? { decisionReason: params.reason } : {}),
         ...(params.networkApprovalContext ? { networkApprovalContext: params.networkApprovalContext } : {}),
         ...(params.additionalPermissions ? { additionalPermissions: params.additionalPermissions } : {}),

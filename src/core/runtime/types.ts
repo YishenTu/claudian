@@ -21,10 +21,22 @@ export interface ApprovalNetworkContext {
   protocol: string;
 }
 
+export interface ApprovalCommandDisplayAction {
+  label?: string;
+  command: string;
+}
+
+export interface ApprovalCommandDisplay {
+  actions: ApprovalCommandDisplayAction[];
+  exactCommand: string;
+}
+
 export interface ApprovalCallbackOptions {
   decisionReason?: string;
   blockedPath?: string;
   agentID?: string;
+  displayToolName?: string;
+  commandDisplay?: ApprovalCommandDisplay;
   decisionOptions?: ApprovalDecisionOption[];
   networkApprovalContext?: ApprovalNetworkContext;
   additionalPermissions?: unknown;

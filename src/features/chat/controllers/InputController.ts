@@ -21,6 +21,7 @@ import {
 } from '../../../core/runtime/QueuedTurn';
 import type {
   ApprovalCallbackOptions,
+  ApprovalCommandDisplay,
   ApprovalDecisionOption,
   ChatRuntimeQueryOptions,
   ChatTurnRequest,
@@ -73,6 +74,91 @@ const DEFAULT_APPROVAL_DECISION_OPTIONS: ApprovalDecisionOption[] =
 
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function renderApprovalCommandDisplay(
+  headerEl: HTMLElement,
+  display: ApprovalCommandDisplay,
+): void {
+  const suspicious = hasSuspiciousCommandText(display);
+  if (suspicious) {
+    headerEl.createDiv({
+      text: 'This command contains invisible or bidirectional control characters. Review the exact command carefully.',
+      cls: 'claudian-ask-approval-warning',
+    });
+  }
+
+  if (display.actions.length > 0) {
+    const actionListEl = headerEl.createDiv({
+      cls: 'claudian-ask-approval-command-list',
+    });
+    for (const action of display.actions) {
+      const actionEl = actionListEl.createDiv({
+        cls: 'claudian-ask-approval-command-action',
+      });
+      if (action.label) {
+        actionEl.createDiv({
+          text: action.label,
+          cls: 'claudian-ask-approval-command-label',
+        });
+      }
+      actionEl.createDiv({
+        text: action.command,
+        cls: 'claudian-ask-approval-readable-command',
+      });
+    }
+  }
+
+  if (!display.exactCommand) {
+    return;
+  }
+
+  if (display.actions.length === 0) {
+    headerEl.createDiv({
+      text: display.exactCommand,
+      cls: 'claudian-ask-approval-desc claudian-ask-approval-raw-command',
+    });
+    return;
+  }
+
+  const rawDetails = headerEl.createEl('details', {
+    cls: 'claudian-ask-approval-raw-details',
+  });
+  if (suspicious) {
+    rawDetails.setAttribute('open', '');
+  }
+  rawDetails.createEl('summary', {
+    text: 'Show exact command',
+    cls: 'claudian-ask-approval-raw-summary',
+  });
+  rawDetails.createDiv({
+    text: display.exactCommand,
+    cls: 'claudian-ask-approval-desc claudian-ask-approval-raw-command',
+  });
+}
+
+function hasSuspiciousCommandText(display: ApprovalCommandDisplay): boolean {
+  return [display.exactCommand, ...display.actions.map(action => action.command)]
+    .some(text => Array.from(text).some(isSuspiciousCommandCharacter));
+}
+
+function isSuspiciousCommandCharacter(character: string): boolean {
+  const codePoint = character.codePointAt(0);
+  if (codePoint === undefined) {
+    return false;
+  }
+
+  return codePoint <= 0x08
+    || codePoint === 0x0B
+    || codePoint === 0x0C
+    || (codePoint >= 0x0E && codePoint <= 0x1F)
+    || (codePoint >= 0x7F && codePoint <= 0x9F)
+    || codePoint === 0x061C
+    || (codePoint >= 0x200B && codePoint <= 0x200F)
+    || (codePoint >= 0x202A && codePoint <= 0x202E)
+    || codePoint === 0x2060
+    || (codePoint >= 0x2066 && codePoint <= 0x2069)
+    || codePoint === 0xFEFF;
 }
 
 export interface InputControllerDeps {
@@ -1458,7 +1544,10 @@ export class InputController {
     const iconEl = toolEl.createSpan({ cls: 'claudian-ask-approval-icon' });
     iconEl.setAttribute('aria-hidden', 'true');
     setToolIcon(iconEl, toolName);
-    toolEl.createSpan({ text: toolName, cls: 'claudian-ask-approval-tool-name' });
+    toolEl.createSpan({
+      text: approvalOptions?.displayToolName ?? toolName,
+      cls: 'claudian-ask-approval-tool-name',
+    });
 
     if (approvalOptions?.decisionReason) {
       headerEl.createDiv({ text: approvalOptions.decisionReason, cls: 'claudian-ask-approval-reason' });
@@ -1470,7 +1559,15 @@ export class InputController {
       headerEl.createDiv({ text: `Agent: ${approvalOptions.agentID}`, cls: 'claudian-ask-approval-agent' });
     }
 
-    headerEl.createDiv({ text: description, cls: 'claudian-ask-approval-desc' });
+    if (approvalOptions?.networkApprovalContext) {
+      headerEl.createDiv({ text: description, cls: 'claudian-ask-approval-desc' });
+    }
+
+    if (approvalOptions?.commandDisplay) {
+      renderApprovalCommandDisplay(headerEl, approvalOptions.commandDisplay);
+    } else if (!approvalOptions?.networkApprovalContext) {
+      headerEl.createDiv({ text: description, cls: 'claudian-ask-approval-desc' });
+    }
 
     const decisionOptions = approvalOptions?.decisionOptions ?? DEFAULT_APPROVAL_DECISION_OPTIONS;
     const optionDecisionMap = new Map<string, ApprovalDecision>();

@@ -2524,6 +2524,105 @@ describe('InputController - Message Queue', () => {
       await approvalPromise;
     });
 
+    it('renders structured command actions with the exact command collapsed', async () => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+
+      const approvalPromise = controller.handleApprovalRequest(
+        'Bash',
+        { command: 'powershell.exe -Command "Get-ChildItem -Force"' },
+        'Execute: powershell.exe -Command "Get-ChildItem -Force"',
+        {
+          displayToolName: 'Command',
+          commandDisplay: {
+            actions: [
+              { label: 'List files', command: 'Get-ChildItem -Force' },
+            ],
+            exactCommand: 'powershell.exe -Command "Get-ChildItem -Force"',
+          },
+        },
+      );
+
+      expect(parentEl.querySelector('claudian-ask-approval-tool-name')?.textContent)
+        .toBe('Command');
+      expect(parentEl.querySelector('claudian-ask-approval-command-label')?.textContent)
+        .toBe('List files');
+      expect(parentEl.querySelector('claudian-ask-approval-readable-command')?.textContent)
+        .toBe('Get-ChildItem -Force');
+      expect(parentEl.querySelector('claudian-ask-approval-raw-command')?.textContent)
+        .toBe('powershell.exe -Command "Get-ChildItem -Force"');
+      expect(parentEl.querySelector('claudian-ask-approval-warning')).toBeNull();
+
+      controller.dismissPendingApproval();
+      await approvalPromise;
+    });
+
+    it('shows unsupported commands neutrally without a security warning', async () => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+
+      const approvalPromise = controller.handleApprovalRequest(
+        'Bash',
+        { command: 'Write-Output "hello"' },
+        'Execute: Write-Output "hello"',
+        {
+          commandDisplay: {
+            actions: [],
+            exactCommand: 'Write-Output "hello"',
+          },
+        },
+      );
+
+      expect(parentEl.querySelector('claudian-ask-approval-raw-command')?.textContent)
+        .toBe('Write-Output "hello"');
+      expect(parentEl.querySelector('claudian-ask-approval-warning')).toBeNull();
+
+      controller.dismissPendingApproval();
+      await approvalPromise;
+    });
+
+    it('exposes the exact command and warns for invisible spoofing characters', async () => {
+      const parentEl = createMockEl();
+      const inputContainerEl = createMockEl();
+      (inputContainerEl as any).parentElement = parentEl;
+      deps.getInputContainerEl = () => inputContainerEl as any;
+
+      controller = new InputController(deps);
+
+      const exactCommand = 'Write-Output safe\u202Etxt.exe';
+      const approvalPromise = controller.handleApprovalRequest(
+        'Bash',
+        { command: exactCommand },
+        `Execute: ${exactCommand}`,
+        {
+          commandDisplay: {
+            actions: [
+              { label: 'Command', command: 'Write-Output safe.txt' },
+            ],
+            exactCommand,
+          },
+        },
+      );
+
+      expect(parentEl.querySelector('claudian-ask-approval-warning')?.textContent)
+        .toContain('invisible or bidirectional');
+      expect(parentEl.querySelector('claudian-ask-approval-raw-details')?.getAttribute('open'))
+        .toBe('');
+      expect(parentEl.querySelector('claudian-ask-approval-raw-command')?.textContent)
+        .toBe(exactCommand);
+
+      controller.dismissPendingApproval();
+      await approvalPromise;
+    });
+
     it('should render provider-supplied approval options and network-specific context', async () => {
       const parentEl = createMockEl();
       const inputContainerEl = createMockEl();

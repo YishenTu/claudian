@@ -31,14 +31,30 @@ describe('CodexServerRequestRouter', () => {
       mockApprovalCallback.mockResolvedValue('allow');
       const result = await router.handleServerRequest(
         'item/commandExecution/requestApproval',
-        baseParams,
+        {
+          ...baseParams,
+          command: 'powershell.exe -Command "Get-ChildItem -Force"',
+          commandActions: [
+            { type: 'listFiles', command: 'Get-ChildItem -Force', path: null },
+          ],
+        },
       );
 
       expect(mockApprovalCallback).toHaveBeenCalledWith(
         'Bash',
-        expect.objectContaining({ command: 'echo test' }),
+        expect.objectContaining({
+          command: 'powershell.exe -Command "Get-ChildItem -Force"',
+        }),
         expect.any(String),
-        expect.any(Object),
+        expect.objectContaining({
+          displayToolName: 'Command',
+          commandDisplay: {
+            actions: [
+              { label: 'List files', command: 'Get-ChildItem -Force' },
+            ],
+            exactCommand: 'powershell.exe -Command "Get-ChildItem -Force"',
+          },
+        }),
       );
       expect(result).toEqual({ decision: 'accept' });
     });
