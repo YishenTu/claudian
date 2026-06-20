@@ -41,7 +41,7 @@
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0",
-    "obsidian": "latest",
+    "obsidian": "^1.12.3",
     "ts-jest": "^29.4.9",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
