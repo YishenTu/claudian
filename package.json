@@ -53,5 +53,10 @@
     "@modelcontextprotocol/sdk": "~1.29.0",
     "smol-toml": "^1.6.1",
     "tslib": "^2.8.1"
+  },
+  "overrides": {
+    "@babel/core": "7.29.7",
+    "hono": "4.12.26",
+    "js-yaml": "4.2.0"
   }
 }

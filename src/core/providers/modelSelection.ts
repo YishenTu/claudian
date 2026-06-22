@@ -48,7 +48,7 @@ export function decodeProviderModelSelectionId(
     }
 
     return {
-      providerId: providerId as ProviderId,
+      providerId,
       modelId,
     };
   }
