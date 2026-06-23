@@ -41,10 +41,14 @@ import { buildCursorContext } from './utils/editor';
 import { revealWorkspaceLeaf } from './utils/obsidianCompat';
 import { getVaultPath } from './utils/path';
 
+const INPUT_FOCUS_RETRY_DELAY_MS = 100;
+const INPUT_FOCUS_MAX_ATTEMPTS = 3;
+
 function isClaudianView(value: unknown): value is ClaudianView {
   return !!value
     && typeof value === 'object'
-    && typeof (value as { getTabManager?: unknown }).getTabManager === 'function';
+    && typeof (value as { getTabManager?: unknown }).getTabManager === 'function'
+    && typeof (value as { focusActiveInput?: unknown }).focusActiveInput === 'function';
 }
 
 export default class ClaudianPlugin extends Plugin {
@@ -210,7 +214,30 @@ export default class ClaudianPlugin extends Plugin {
 
     if (leaf) {
       await revealWorkspaceLeaf(workspace, leaf);
+      this.focusInputAfterReveal(leaf);
     }
+  }
+
+  private focusInputAfterReveal(leaf: WorkspaceLeaf, attempt = 1): void {
+    window.setTimeout(() => {
+      const mostRecentLeaf = this.app.workspace.getMostRecentLeaf?.();
+      if (mostRecentLeaf && mostRecentLeaf !== leaf) {
+        return;
+      }
+
+      const { view } = leaf;
+      if (!isClaudianView(view)) {
+        if (attempt < INPUT_FOCUS_MAX_ATTEMPTS) {
+          this.focusInputAfterReveal(leaf, attempt + 1);
+        }
+        return;
+      }
+
+      const didFocus = view.focusActiveInput();
+      if (!didFocus && attempt < INPUT_FOCUS_MAX_ATTEMPTS) {
+        this.focusInputAfterReveal(leaf, attempt + 1);
+      }
+    }, INPUT_FOCUS_RETRY_DELAY_MS);
   }
 
   private getLeafForPlacement(placement: ChatViewPlacement): WorkspaceLeaf | null {

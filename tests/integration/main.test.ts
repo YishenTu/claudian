@@ -134,6 +134,60 @@ describe('ClaudianPlugin', () => {
       expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockLeaf);
     });
 
+    it('should focus the active tab input after revealing a Claudian leaf', async () => {
+      const focusActiveInput = jest.fn().mockReturnValue(true);
+      const mockLeaf = {
+        id: 'existing-leaf',
+        view: {
+          getTabManager: jest.fn(),
+          focusActiveInput,
+        },
+      };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([mockLeaf]);
+
+      await plugin.onload();
+
+      jest.useFakeTimers();
+      try {
+        await plugin.activateView();
+
+        expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockLeaf);
+        expect(focusActiveInput).not.toHaveBeenCalled();
+
+        jest.advanceTimersByTime(100);
+
+        expect(focusActiveInput).toHaveBeenCalledTimes(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('should not focus after reveal if another leaf becomes most recent', async () => {
+      const focusActiveInput = jest.fn().mockReturnValue(true);
+      const mockLeaf = {
+        id: 'existing-leaf',
+        view: {
+          getTabManager: jest.fn(),
+          focusActiveInput,
+        },
+      };
+      const otherLeaf = { id: 'other-leaf' };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([mockLeaf]);
+      mockApp.workspace.getMostRecentLeaf = jest.fn().mockReturnValue(otherLeaf);
+
+      await plugin.onload();
+
+      jest.useFakeTimers();
+      try {
+        await plugin.activateView();
+        jest.advanceTimersByTime(100);
+
+        expect(focusActiveInput).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('should create new leaf in right sidebar by default if view does not exist', async () => {
       const mockRightLeaf = {
         setViewState: jest.fn().mockResolvedValue(undefined),
@@ -199,6 +253,43 @@ describe('ClaudianPlugin', () => {
         type: VIEW_TYPE_CLAUDIAN,
         active: true,
       });
+    });
+
+    it('should focus the active tab input after creating a main editor leaf', async () => {
+      const focusActiveInput = jest.fn()
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true);
+      const mockMainLeaf = {
+        setViewState: jest.fn().mockResolvedValue(undefined),
+        view: {
+          getTabManager: jest.fn(),
+          focusActiveInput,
+        },
+      };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([]);
+      mockApp.workspace.getLeaf.mockReturnValue(mockMainLeaf);
+
+      await plugin.onload();
+      plugin.settings.chatViewPlacement = 'main-tab';
+
+      jest.useFakeTimers();
+      try {
+        await plugin.activateView();
+
+        expect(mockApp.workspace.getLeaf).toHaveBeenCalledWith('tab');
+        expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockMainLeaf);
+        expect(focusActiveInput).not.toHaveBeenCalled();
+
+        jest.advanceTimersByTime(100);
+
+        expect(focusActiveInput).toHaveBeenCalledTimes(1);
+
+        jest.advanceTimersByTime(100);
+
+        expect(focusActiveInput).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('should handle null main leaf gracefully when chatViewPlacement is main-tab', async () => {
