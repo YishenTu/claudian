@@ -16,6 +16,7 @@ import type {
   ManagedMcpServer,
   UsageInfo,
 } from '../../../core/types';
+import { t } from '../../../i18n/i18n';
 import { appendCheckIcon, appendMcpIcon, createProviderIconSvg } from '../../../shared/icons';
 import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
 import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
@@ -57,6 +58,7 @@ export interface ToolbarCallbacks {
   getEnvironmentVariables?: () => string;
   getUIConfig: () => ProviderChatUIConfig;
   getCapabilities: () => ProviderCapabilities;
+  onOpenPrompts?: () => void;
 }
 
 export class ModelSelector {
@@ -1230,6 +1232,16 @@ export function createInputToolbar(
   const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);
   const modeSelector = new ModeSelector(parentEl, callbacks);
+
+  if (callbacks.onOpenPrompts) {
+    const promptBtn = parentEl.createDiv({ cls: 'claudian-prompt-toolbar-btn' });
+    setIcon(promptBtn, 'book-text');
+    promptBtn.setAttribute('aria-label', t('prompts.title'));
+    promptBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      callbacks.onOpenPrompts?.();
+    });
+  }
 
   return {
     modelSelector,
