@@ -4,6 +4,7 @@ import { Notice } from 'obsidian';
 import { SESSIONS_PATH, SessionStorage } from '../../core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from '../../core/bootstrap/storage';
 import { CLAUDIAN_STORAGE_PATH } from '../../core/bootstrap/StoragePaths';
+import { PromptLibraryStorage } from '../../core/storage/PromptLibraryStorage';
 import { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../settings/ClaudianSettingsStorage';
 
@@ -14,6 +15,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export class SharedStorageService implements SharedAppStorage {
   readonly claudianSettings: ClaudianSettingsStorage;
   readonly sessions: SessionStorage;
+  readonly prompts: PromptLibraryStorage;
 
   private adapter: VaultFileAdapter;
   private plugin: Plugin;
@@ -23,6 +25,7 @@ export class SharedStorageService implements SharedAppStorage {
     this.adapter = new VaultFileAdapter(plugin.app);
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
     this.sessions = new SessionStorage(this.adapter);
+    this.prompts = new PromptLibraryStorage(this.adapter);
   }
 
   async initialize(): Promise<{ claudian: Record<string, unknown> }> {
