@@ -45,6 +45,7 @@ import { ImageContextManager } from '../ui/ImageContext';
 import { createInputToolbar } from '../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../ui/InstructionModeManager';
 import { NavigationSidebar } from '../ui/NavigationSidebar';
+import { PromptLibraryPanel } from '../ui/PromptLibraryPanel';
 import { StatusPanel } from '../ui/StatusPanel';
 import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
@@ -822,6 +823,17 @@ function initializeInputToolbar(
     };
   };
 
+  const promptPanel = new PromptLibraryPanel(dom.inputContainerEl, {
+    storage: plugin.storage.prompts,
+    getApp: () => plugin.app,
+    onInsert: (content) => {
+      dom.inputEl.value = content;
+      autoResizeTextarea(dom.inputEl);
+      dom.inputEl.focus();
+    },
+  });
+  dom.eventCleanups.push(() => promptPanel.hide());
+
   const toolbarComponents = createInputToolbar(inputToolbar, {
     getUIConfig: () => {
       if (tab.lifecycleState === 'blank') {
@@ -942,6 +954,9 @@ function initializeInputToolbar(
         'claudian-input-plan-mode',
         mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
       );
+    },
+    onOpenPrompts: () => {
+      void promptPanel.toggle();
     },
   });
 
