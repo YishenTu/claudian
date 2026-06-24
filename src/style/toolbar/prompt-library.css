@@ -1,0 +1,129 @@
+/* Prompt library toolbar button + popover */
+
+.claudian-prompt-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.claudian-prompt-toolbar-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-prompt-toolbar-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-prompt-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 4px;
+  max-height: 340px;
+  overflow-y: auto;
+  z-index: 100;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-s);
+  padding: 8px;
+}
+
+.claudian-prompt-header {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.claudian-prompt-search {
+  flex: 1;
+}
+
+.claudian-prompt-new-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.claudian-prompt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.claudian-prompt-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.claudian-prompt-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-prompt-row-body {
+  flex: 1;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.claudian-prompt-row-name {
+  font-weight: 600;
+  font-size: var(--font-ui-small);
+}
+
+.claudian-prompt-row-snippet {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.claudian-prompt-row-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.claudian-prompt-action {
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-prompt-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-prompt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.claudian-prompt-name-input,
+.claudian-prompt-content-input {
+  width: 100%;
+}
+
+.claudian-prompt-content-input {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.claudian-prompt-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
