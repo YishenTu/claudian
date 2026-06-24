@@ -69,6 +69,23 @@
       "copyFailed": "複製到剪貼簿失敗"
     }
   },
+  "prompts": {
+    "title": "Prompts",
+    "searchPlaceholder": "Search prompts",
+    "new": "New prompt",
+    "edit": "Edit",
+    "name": "Name",
+    "content": "Content",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this prompt?",
+    "empty": "No prompts yet. Create one to get started.",
+    "namePlaceholder": "Prompt name",
+    "contentPlaceholder": "Prompt content…",
+    "loadError": "Failed to load prompts",
+    "saveError": "Failed to save prompt"
+  },
   "settings": {
     "title": "Claudian 設定",
     "tabs": {

@@ -69,6 +69,23 @@
       "copyFailed": "No se pudo copiar al portapapeles"
     }
   },
+  "prompts": {
+    "title": "Prompts",
+    "searchPlaceholder": "Search prompts",
+    "new": "New prompt",
+    "edit": "Edit",
+    "name": "Name",
+    "content": "Content",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this prompt?",
+    "empty": "No prompts yet. Create one to get started.",
+    "namePlaceholder": "Prompt name",
+    "contentPlaceholder": "Prompt content…",
+    "loadError": "Failed to load prompts",
+    "saveError": "Failed to save prompt"
+  },
   "settings": {
     "title": "Configuración de Claudian",
     "tabs": {
