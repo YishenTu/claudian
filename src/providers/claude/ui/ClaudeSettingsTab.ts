@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { Setting } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
@@ -10,6 +10,7 @@ import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
 import { resolveClaudeModelSelection } from '../modelOptions';
+import { ClaudeModelDiscoveryService } from '../runtime/ClaudeModelDiscoveryService';
 import {
   CLAUDE_SAFE_MODES,
   type ClaudeSafeMode,
@@ -176,6 +177,41 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     // --- Models ---
 
     new Setting(container).setName(t('settings.models')).setHeading();
+
+    new Setting(container)
+      .setName('Discover models')
+      .setDesc(claudeSettings.discoveredModels.length > 0
+        ? `${claudeSettings.discoveredModels.length} models cached from Anthropic API.`
+        : 'Fetch available models from the Anthropic API.')
+      .addButton((button) => {
+        button.setButtonText('Discover').onClick(async () => {
+          button.setDisabled(true);
+          const result = await new ClaudeModelDiscoveryService(context.plugin).discoverModels();
+          if (result.diagnostics) {
+            new Notice(`Model discovery failed: ${result.diagnostics}`);
+            button.setDisabled(false);
+            return;
+          }
+          updateClaudeProviderSettings(settingsBag, { discoveredModels: result.models });
+          reconcileActiveClaudeModelSelection();
+          await context.plugin.saveSettings();
+          context.refreshModelSelectors();
+          new Notice(`Discovered ${result.models.length} models.`);
+          button.setDisabled(false);
+        });
+      })
+      .addButton((button) => {
+        if (claudeSettings.discoveredModels.length === 0) {
+          return;
+        }
+        button.setButtonText('Clear').onClick(async () => {
+          updateClaudeProviderSettings(settingsBag, { discoveredModels: [] });
+          reconcileActiveClaudeModelSelection();
+          await context.plugin.saveSettings();
+          context.refreshModelSelectors();
+          new Notice('Cleared discovered models. Using default model list.');
+        });
+      });
 
     new Setting(container)
       .setName(t('settings.enableOpus1M.name'))

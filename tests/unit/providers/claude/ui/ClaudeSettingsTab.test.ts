@@ -79,6 +79,15 @@ jest.mock('obsidian', () => {
       callback(component);
       return this;
     }
+
+    addButton(callback: (button: { setButtonText: (t: string) => any; onClick: (cb: () => void) => any; setDisabled: (v: boolean) => any }) => void) {
+      callback({
+        setButtonText: () => ({ onClick: () => ({}) }),
+        onClick: () => ({}),
+        setDisabled: () => ({}),
+      });
+      return this;
+    }
   }
 
   return {
