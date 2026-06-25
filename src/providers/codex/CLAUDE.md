@@ -46,7 +46,7 @@ For normal turns, the turn ID comes from the `turn/start` RPC response. For comp
 
 ### JSONL Format Duality
 
-A single session file may contain both legacy (`type: 'event'`) and modern (`type: 'event_msg'`, `type: 'response_item'`) records. The parser scans all records and uses the modern path if any modern records are present. A `type: 'compacted'` record completely resets the turn context and replays from `replacement_history`.
+A single session file may contain both legacy (`type: 'event'`) and modern (`type: 'event_msg'`, `type: 'response_item'`) records. The parser scans all records and uses the modern path if any modern records are present. For visible history, do not replay `type: 'compacted'` `replacement_history`. Codex uses that field as compacted provider context, and real auto-compaction records may contain only user messages plus an encrypted compaction blob. Replaying it erases assistant responses and tool progress from the UI. The durable visible compaction marker is `event_msg:context_compacted`.
 
 ### Image Lifecycle
 

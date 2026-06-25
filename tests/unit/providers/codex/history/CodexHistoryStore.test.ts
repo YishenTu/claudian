@@ -2090,13 +2090,16 @@ describe('CodexHistoryStore', () => {
   });
 
   describe('parseCodexSessionContent - context_compacted boundary', () => {
-    it('applies compacted replacement_history before rendering the compact boundary', () => {
+    it('preserves visible transcript records instead of replaying compacted replacement_history', () => {
       const content = [
         JSON.stringify({ timestamp: '2026-03-03T16:00:00.000Z', type: 'event_msg', payload: { type: 'task_started' } }),
         JSON.stringify({ timestamp: '2026-03-03T16:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] } }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:01.500Z', type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'call-1', arguments: '{"cmd":"npm test"}' } }),
+        JSON.stringify({ timestamp: '2026-03-03T16:00:01.700Z', type: 'response_item', payload: { type: 'function_call_output', call_id: 'call-1', output: 'Process exited with code 0\nOutput:\npassed' } }),
         JSON.stringify({ timestamp: '2026-03-03T16:00:02.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Hi there!' }] } }),
         JSON.stringify({ timestamp: '2026-03-03T16:00:03.000Z', type: 'event_msg', payload: { type: 'task_complete' } }),
-        // Compaction happens here
+        JSON.stringify({ timestamp: '2026-03-03T16:00:03.500Z', type: 'event_msg', payload: { type: 'task_started' } }),
+        // Compaction replacement_history is provider context, not visible UI history.
         JSON.stringify({
           timestamp: '2026-03-03T16:00:04.000Z',
           type: 'compacted',
@@ -2107,6 +2110,11 @@ describe('CodexHistoryStore', () => {
                 type: 'message',
                 role: 'user',
                 content: [{ type: 'input_text', text: '<COMPACTION_SUMMARY>\nSummary after compact' }],
+              },
+              {
+                type: 'message',
+                role: 'user',
+                content: [{ type: 'input_text', text: 'replacement-only user message' }],
               },
               {
                 type: 'compaction',
@@ -2125,11 +2133,23 @@ describe('CodexHistoryStore', () => {
 
       const messages = parseCodexSessionContent(content);
 
-      expect(messages.map(m => m.content)).not.toContain('hello');
-      expect(messages.map(m => m.content)).not.toContain('Hi there!');
+      expect(messages.map(m => m.content)).toContain('hello');
+      expect(messages.map(m => m.content)).toContain('Hi there!');
+      expect(messages.map(m => m.content)).not.toContain('<COMPACTION_SUMMARY>\nSummary after compact');
+      expect(messages.map(m => m.content)).not.toContain('replacement-only user message');
+
+      const firstAssistant = messages.find(m => m.role === 'assistant' && m.content === 'Hi there!');
+      expect(firstAssistant).toBeDefined();
+      expect(firstAssistant!.toolCalls).toHaveLength(1);
+      expect(firstAssistant!.toolCalls![0]).toMatchObject({
+        id: 'call-1',
+        name: 'Bash',
+        status: 'completed',
+      });
+
       expect(messages[0]).toMatchObject({
         role: 'user',
-        content: '<COMPACTION_SUMMARY>\nSummary after compact',
+        content: 'hello',
       });
 
       const compactMsg = messages.find(m =>
@@ -2139,20 +2159,20 @@ describe('CodexHistoryStore', () => {
       expect(compactMsg!.role).toBe('assistant');
       expect(compactMsg!.content).toBe('');
 
-      // context_compacted should appear after the compacted replacement history
+      // context_compacted should appear after the preserved pre-compaction transcript.
       const compactIdx = messages.indexOf(compactMsg!);
       expect(compactIdx).toBeGreaterThan(0);
 
       const beforeCompact = messages[compactIdx - 1];
-      expect(beforeCompact.role).toBe('user');
-      expect(beforeCompact.content).toBe('<COMPACTION_SUMMARY>\nSummary after compact');
+      expect(beforeCompact.role).toBe('assistant');
+      expect(beforeCompact.content).toBe('Hi there!');
 
       const afterCompact = messages[compactIdx + 1];
       expect(afterCompact.role).toBe('user');
       expect(afterCompact.content).toContain('continue');
     });
 
-    it('uses the latest compacted replacement_history when multiple compactions occur', () => {
+    it('renders compact boundaries without surfacing replacement_history summaries', () => {
       const content = [
         JSON.stringify({
           timestamp: '2026-03-03T16:00:00.000Z',
@@ -2189,14 +2209,12 @@ describe('CodexHistoryStore', () => {
       const messages = parseCodexSessionContent(content);
 
       expect(messages).toHaveLength(2);
-      expect(messages[0]).toMatchObject({
-        role: 'user',
-        content: 'Second summary',
-      });
+      expect(messages.map(m => m.content)).not.toContain('First summary');
+      expect(messages.map(m => m.content)).not.toContain('Second summary');
       const compactMessages = messages.filter(m =>
         m.contentBlocks?.some(b => b.type === 'context_compacted'),
       );
-      expect(compactMessages).toHaveLength(1);
+      expect(compactMessages).toHaveLength(2);
     });
   });
 });

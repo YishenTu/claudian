@@ -107,11 +107,6 @@ interface PersistedCompactionPayload {
   encrypted_content?: string;
 }
 
-interface PersistedCompactedPayload {
-  message?: string;
-  replacement_history?: PersistedPayload[];
-}
-
 interface ParsedSessionRecord {
   timestamp: number;
   type?: string;
@@ -967,37 +962,6 @@ function processPersistedPayload(
   }
 }
 
-function applyCompactedReplacementHistory(
-  payload: PersistedCompactedPayload | undefined,
-  timestamp: number,
-  ctx: PersistedParseContext,
-): void {
-  ctx.turns.clear();
-  ctx.turnOrder.length = 0;
-  ctx.currentTurnId = null;
-  ctx.toolCallToTurn.clear();
-  ctx.suppressedToolOutputIds.clear();
-  ctx.terminalSessionToCommandId.clear();
-  ctx.stdinCallToCommandId.clear();
-  ctx.turnCounter = 0;
-
-  const replacementHistory = Array.isArray(payload?.replacement_history)
-    ? payload.replacement_history
-    : [];
-
-  for (const [index, item] of replacementHistory.entries()) {
-    processPersistedPayload(item, timestamp + index, index, ctx);
-  }
-
-  if (ctx.currentTurnId) {
-    const turn = ctx.turns.get(ctx.currentTurnId);
-    if (turn) {
-      closeAssistantBubble(turn);
-    }
-    ctx.currentTurnId = null;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // event_msg processing
 // ---------------------------------------------------------------------------
@@ -1411,7 +1375,8 @@ function parseModernSessionTurns(records: ParsedSessionRecord[]): CodexParsedTur
     }
 
     if (parsed.type === 'compacted') {
-      applyCompactedReplacementHistory(parsed.payload as PersistedCompactedPayload | undefined, timestamp, ctx);
+      // Codex replacement_history is compacted provider context, not a role-complete
+      // UI transcript. The durable visible marker is event_msg:context_compacted.
       continue;
     }
 
