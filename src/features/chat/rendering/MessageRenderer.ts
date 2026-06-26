@@ -277,11 +277,11 @@ export class MessageRenderer {
         void this.renderContent(textEl, textToShow);
         this.addUserCopyButton(msgEl, textToShow);
       }
-      if (msg.userMessageId && this.isRewindEligible(allMessages, index)) {
-        if (this.rewindCallback) {
+      if (msg.userMessageId) {
+        if (this.rewindCallback && this.isRewindEligible(allMessages, index)) {
           this.addRewindButton(msgEl, msg.id);
         }
-        if (this.forkCallback) {
+        if (this.forkCallback && this.isForkEligible(allMessages, index)) {
           this.addForkButton(msgEl, msg.id);
         }
       }
@@ -312,6 +312,12 @@ export class MessageRenderer {
   }
 
   private isRewindEligible(allMessages?: ChatMessage[], index?: number): boolean {
+    if (!allMessages || index === undefined) return false;
+    const ctx = findRewindContext(allMessages, index);
+    return ctx.hasResponse;
+  }
+
+  private isForkEligible(allMessages?: ChatMessage[], index?: number): boolean {
     if (!allMessages || index === undefined) return false;
     const ctx = findRewindContext(allMessages, index);
     return !!ctx.prevAssistantUuid && ctx.hasResponse;
@@ -767,22 +773,32 @@ export class MessageRenderer {
 
   refreshActionButtons(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
     if (!msg.userMessageId) return;
-    if (!this.isRewindEligible(allMessages, index)) return;
+    const canRewind = this.isRewindEligible(allMessages, index);
+    const canFork = this.isForkEligible(allMessages, index);
+    if (!canRewind && !canFork) return;
     const msgEl = this.liveMessageEls.get(msg.id);
     if (!msgEl) return;
 
-    if (this.rewindCallback && !msgEl.querySelector('.claudian-message-rewind-btn')) {
+    if (canRewind && this.rewindCallback && !msgEl.querySelector('.claudian-message-rewind-btn')) {
       this.addRewindButton(msgEl, msg.id);
     }
-    if (this.forkCallback && !msgEl.querySelector('.claudian-message-fork-btn')) {
+    if (canFork && this.forkCallback && !msgEl.querySelector('.claudian-message-fork-btn')) {
       this.addForkButton(msgEl, msg.id);
     }
-    this.cleanupLiveMessageEl(msg.id, msgEl);
+    this.cleanupLiveMessageEl(msg.id, msgEl, { canRewind, canFork });
   }
 
-  private cleanupLiveMessageEl(msgId: string, msgEl: HTMLElement): void {
-    const needsRewind = this.rewindCallback && !msgEl.querySelector('.claudian-message-rewind-btn');
-    const needsFork = this.forkCallback && !msgEl.querySelector('.claudian-message-fork-btn');
+  private cleanupLiveMessageEl(
+    msgId: string,
+    msgEl: HTMLElement,
+    expectedActions: { canRewind: boolean; canFork: boolean },
+  ): void {
+    const needsRewind = expectedActions.canRewind
+      && this.rewindCallback
+      && !msgEl.querySelector('.claudian-message-rewind-btn');
+    const needsFork = expectedActions.canFork
+      && this.forkCallback
+      && !msgEl.querySelector('.claudian-message-fork-btn');
     if (!needsRewind && !needsFork) {
       this.liveMessageEls.delete(msgId);
     }

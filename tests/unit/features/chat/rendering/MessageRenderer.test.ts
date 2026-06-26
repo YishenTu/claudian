@@ -346,6 +346,32 @@ describe('MessageRenderer', () => {
     expect(messagesEl.querySelector('.claudian-message-rewind-btn')).not.toBeNull();
   });
 
+  it('adds rewind but not fork for a completed first user message', () => {
+    const messagesEl = createMockEl();
+    const rewindCallback = jest.fn().mockResolvedValue(undefined);
+    const forkCallback = jest.fn().mockResolvedValue(undefined);
+    const renderer = new MessageRenderer(
+      { app: {}, settings: { mediaFolder: '' } } as any,
+      createMockComponent() as any,
+      messagesEl,
+      rewindCallback,
+      forkCallback,
+      mockCapabilities(),
+    );
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+    const allMessages: ChatMessage[] = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, userMessageId: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'response', timestamp: 2, assistantMessageId: 'resp-a' },
+    ];
+
+    renderer.renderStoredMessage(allMessages[0], allMessages, 0);
+
+    expect(messagesEl.querySelector('.claudian-message-rewind-btn')).not.toBeNull();
+    expect(messagesEl.querySelector('.claudian-message-fork-btn')).toBeNull();
+    expect((renderer as any).liveMessageEls.has('u1')).toBe(false);
+  });
+
   it('does not add a rewind button when stored render is called without context', () => {
     const messagesEl = createMockEl();
     const rewindCallback = jest.fn().mockResolvedValue(undefined);
@@ -402,6 +428,38 @@ describe('MessageRenderer', () => {
     await Promise.resolve();
 
     expect(rewindCallback).toHaveBeenCalledWith('u1', 'conversation');
+  });
+
+  it('refreshes rewind but not fork for a streamed first user message', () => {
+    const messagesEl = createMockEl();
+    const rewindCallback = jest.fn().mockResolvedValue(undefined);
+    const forkCallback = jest.fn().mockResolvedValue(undefined);
+    const renderer = new MessageRenderer(
+      { app: {}, settings: { mediaFolder: '' } } as any,
+      createMockComponent() as any,
+      messagesEl,
+      rewindCallback,
+      forkCallback,
+      mockCapabilities(),
+    );
+    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
+
+    const userMsg: ChatMessage = {
+      id: 'u1',
+      role: 'user',
+      content: 'hello',
+      timestamp: 1,
+      userMessageId: 'user-u',
+    };
+    renderer.addMessage(userMsg);
+
+    renderer.refreshActionButtons(userMsg, [
+      userMsg,
+      { id: 'a1', role: 'assistant', content: 'response', timestamp: 2, assistantMessageId: 'resp-a' },
+    ], 0);
+
+    expect(messagesEl.querySelector('.claudian-message-rewind-btn')).not.toBeNull();
+    expect(messagesEl.querySelector('.claudian-message-fork-btn')).toBeNull();
   });
 
   // ============================================

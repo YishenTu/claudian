@@ -2574,7 +2574,7 @@ describe('ConversationController - Rewind', () => {
     expect(mockAgentService.rewind).not.toHaveBeenCalled();
   });
 
-  it('should show Notice when no previous assistant with uuid exists', async () => {
+  it('should allow rewind when no previous assistant with uuid exists', async () => {
     deps.state.messages = [
       { id: 'm1', role: 'user', content: 'test', timestamp: 1, userMessageId: 'u1' },
       { id: 'm2', role: 'assistant', content: '', timestamp: 2, assistantMessageId: 'a1' },
@@ -2582,8 +2582,7 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m1');
 
-    expect(mockNotice).toHaveBeenCalled();
-    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockAgentService.rewind).toHaveBeenCalledWith('u1', undefined, 'code-and-conversation');
   });
 
   it('should show Notice when no response assistant with uuid exists', async () => {
@@ -2663,6 +2662,37 @@ describe('ConversationController - Rewind', () => {
     expect(noticeMsg).toContain('1');
 
     truncateSpy.mockRestore();
+  });
+
+  it('should rewind to before the first user message and clear provider session state', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'user', content: 'first prompt', timestamp: 1, userMessageId: 'user-uuid' },
+      { id: 'm2', role: 'assistant', content: 'resp', timestamp: 2, assistantMessageId: 'resp-a' },
+    ];
+    (deps.plugin.getConversationSync as jest.Mock).mockReturnValue({
+      id: 'conv-1',
+      providerId: 'claude',
+      sessionId: 'old-session',
+      providerState: { providerSessionId: 'old-session' },
+      messages: deps.state.messages,
+    });
+
+    await controller.rewind('m1');
+
+    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', undefined, 'code-and-conversation');
+    expect(mockAgentService.buildSessionUpdates).not.toHaveBeenCalled();
+    expect(deps.state.messages).toEqual([]);
+    expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+      'conv-1',
+      expect.objectContaining({
+        messages: [],
+        sessionId: null,
+        providerState: undefined,
+        resumeAtMessageId: undefined,
+      })
+    );
+    expect(deps.getInputEl().value).toBe('first prompt');
   });
 
   it('should pass conversation-only mode and keep file changes', async () => {

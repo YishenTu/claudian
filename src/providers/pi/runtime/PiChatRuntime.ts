@@ -438,7 +438,7 @@ export class PiChatRuntime implements ChatRuntime {
 
   async rewind(
     _userMessageId: string,
-    _assistantMessageId: string,
+    _assistantMessageId: string | undefined,
     _mode?: ChatRewindMode,
   ): Promise<ChatRewindResult> {
     return { canRewind: false };

@@ -54,6 +54,7 @@ export interface ConversationControllerDeps {
 
 type SaveOptions = {
   resumeAtMessageId?: string;
+  resetProviderSession?: boolean;
 };
 
 export type HistoryConversationOpenState = 'closed' | 'open' | 'current';
@@ -310,7 +311,7 @@ export class ConversationController {
     }
 
     const rewindCtx = findRewindContext(msgs, userIdx);
-    if (!rewindCtx.hasResponse || !rewindCtx.prevAssistantUuid) {
+    if (!rewindCtx.hasResponse) {
       new Notice(t('chat.rewind.unavailableNoUuid'));
       return;
     }
@@ -361,7 +362,10 @@ export class ConversationController {
     const filesChanged = result.filesChanged?.length ?? 0;
     let saveError: string | null = null;
     try {
-      await this.save(false, { resumeAtMessageId: prevAssistantUuid });
+      await this.save(false, {
+        resumeAtMessageId: prevAssistantUuid,
+        resetProviderSession: !prevAssistantUuid,
+      });
     } catch (e) {
       saveError = e instanceof Error ? e.message : 'Failed to save';
     }
@@ -422,7 +426,7 @@ export class ConversationController {
 
     const conversation = plugin.getConversationSync(state.currentConversationId!);
 
-    const { updates: sessionUpdates } = agentService
+    const { updates: sessionUpdates } = agentService && !options?.resetProviderSession
       ? agentService.buildSessionUpdates({ conversation, sessionInvalidated })
       : { updates: {} };
 
@@ -441,6 +445,10 @@ export class ConversationController {
 
     if (options) {
       updates.resumeAtMessageId = options.resumeAtMessageId;
+      if (options.resetProviderSession) {
+        updates.sessionId = null;
+        updates.providerState = undefined;
+      }
     }
 
     await plugin.updateConversation(state.currentConversationId!, updates);

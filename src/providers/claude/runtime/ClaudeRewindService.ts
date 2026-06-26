@@ -32,11 +32,12 @@ export interface ClaudeRewindBackup {
 }
 
 export interface ExecuteClaudeRewindDeps {
-  assistantMessageId: string;
+  assistantMessageId: string | undefined;
   mode: ChatRewindMode;
   rewindFiles: (userMessageId: string, dryRun?: boolean) => Promise<RewindFilesResult>;
   closePersistentQuery: (reason: string) => void;
   setPendingResumeAt: (assistantMessageId: string) => void;
+  resetSession: () => void;
   vaultPath: string | null;
 }
 
@@ -170,8 +171,12 @@ export async function executeClaudeRewind(
   deps: ExecuteClaudeRewindDeps,
 ): Promise<ChatRewindResult> {
   if (deps.mode === 'conversation') {
-    deps.setPendingResumeAt(deps.assistantMessageId);
-    deps.closePersistentQuery('conversation rewind');
+    if (deps.assistantMessageId) {
+      deps.setPendingResumeAt(deps.assistantMessageId);
+      deps.closePersistentQuery('conversation rewind');
+    } else {
+      deps.resetSession();
+    }
     return { canRewind: true, filesChanged: [] };
   }
 
@@ -190,8 +195,12 @@ export async function executeClaudeRewind(
       return result;
     }
 
-    deps.setPendingResumeAt(deps.assistantMessageId);
-    deps.closePersistentQuery('rewind');
+    if (deps.assistantMessageId) {
+      deps.setPendingResumeAt(deps.assistantMessageId);
+      deps.closePersistentQuery('rewind');
+    } else {
+      deps.resetSession();
+    }
     return {
       ...result,
       filesChanged: preview.filesChanged,

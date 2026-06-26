@@ -3541,6 +3541,24 @@ describe('ClaudianService', () => {
       expect((service as any).persistentQuery).toBeNull();
     });
 
+    it('conversation-only mode resets the session when rewinding before the first assistant checkpoint', async () => {
+      const mockRewindFiles = jest.fn();
+      const mockInterrupt = jest.fn().mockResolvedValue(undefined);
+      service.setSessionId('old-session');
+      (service as any).persistentQuery = { rewindFiles: mockRewindFiles, interrupt: mockInterrupt };
+      (service as any).messageChannel = { close: jest.fn() };
+      (service as any).queryAbortController = { abort: jest.fn() };
+      (service as any).shuttingDown = false;
+
+      const result = await service.rewind('user-uuid', undefined, 'conversation');
+
+      expect(mockRewindFiles).not.toHaveBeenCalled();
+      expect(result).toEqual({ canRewind: true, filesChanged: [] });
+      expect((service as any).pendingResumeAt).toBeUndefined();
+      expect(service.getSessionId()).toBeNull();
+      expect((service as any).persistentQuery).toBeNull();
+    });
+
     it('dry-runs first to capture filesChanged, then performs actual rewind', async () => {
       // SDK only returns filesChanged on dry run, not on actual rewind
       const mockRewindFiles = jest.fn()
@@ -3562,6 +3580,26 @@ describe('ClaudianService', () => {
       expect(result.insertions).toBe(5);
       expect(result.deletions).toBe(3);
       expect((service as any).pendingResumeAt).toBe('assistant-uuid');
+      expect((service as any).persistentQuery).toBeNull();
+    });
+
+    it('resets the session after code rewind without a previous assistant checkpoint', async () => {
+      const mockRewindFiles = jest.fn()
+        .mockResolvedValueOnce({ canRewind: true, filesChanged: ['a.txt'] })
+        .mockResolvedValueOnce({ canRewind: true });
+      const mockInterrupt = jest.fn().mockResolvedValue(undefined);
+      service.setSessionId('old-session');
+      (service as any).persistentQuery = { rewindFiles: mockRewindFiles, interrupt: mockInterrupt };
+      (service as any).messageChannel = { close: jest.fn() };
+      (service as any).queryAbortController = { abort: jest.fn() };
+      (service as any).shuttingDown = false;
+
+      const result = await service.rewind('user-uuid', undefined);
+
+      expect(result.canRewind).toBe(true);
+      expect(result.filesChanged).toEqual(['a.txt']);
+      expect((service as any).pendingResumeAt).toBeUndefined();
+      expect(service.getSessionId()).toBeNull();
       expect((service as any).persistentQuery).toBeNull();
     });
 
