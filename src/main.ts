@@ -175,6 +175,35 @@ export default class ClaudianPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'enable-remote-control',
+      name: 'Enable remote control (current session)',
+      checkCallback: (checking: boolean) => {
+        const view = this.getView();
+        if (!view) return false;
+
+        const tabManager = view.getTabManager();
+        if (!tabManager) return false;
+
+        const runtime = tabManager.getActiveTab()?.service ?? null;
+        if (!runtime || typeof runtime.enableRemoteControl !== 'function') return false;
+        if (!runtime.isReady()) return false;
+
+        if (!checking) {
+          void (async () => {
+            try {
+              const result = await runtime.enableRemoteControl!(true);
+              new Notice(`Remote control enabled.\n${JSON.stringify(result)}`, 15000);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              new Notice(`Remote control failed: ${message}`, 8000);
+            }
+          })();
+        }
+        return true;
+      },
+    });
+
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
   }
 
