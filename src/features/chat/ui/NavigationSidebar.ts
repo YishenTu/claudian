@@ -5,8 +5,7 @@ import {
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
 } from '../../../utils/animationFrame';
-
-const TOC_TITLE_MAX_LENGTH = 80;
+import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
 
 /**
  * Floating sidebar for navigating chat history.
@@ -85,9 +84,11 @@ export class NavigationSidebar {
     this.parentEl.ownerDocument?.addEventListener?.('click', this.outsideClickHandler);
 
     if (typeof MutationObserver !== 'undefined') {
-      this.mutationObserver = new MutationObserver(() => {
+      this.mutationObserver = new MutationObserver((mutations) => {
         this.updateVisibility();
-        this.refreshOpenDirectory();
+        if (this.shouldRefreshDirectory(mutations)) {
+          this.refreshOpenDirectory();
+        }
       });
       this.mutationObserver.observe(this.messagesEl, {
         childList: true,
@@ -133,17 +134,40 @@ export class NavigationSidebar {
     if (explicitTitle) return explicitTitle;
 
     const contentEl = el.querySelector<HTMLElement>('.claudian-message-content');
-    return this.formatDirectoryTitle(contentEl?.textContent ?? el.textContent ?? '');
+    return formatConversationDirectoryTitle(contentEl?.textContent ?? el.textContent ?? '');
   }
 
-  private formatDirectoryTitle(text: string): string {
-    const firstLine = text
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .find(Boolean);
-    if (!firstLine) return '';
-    if (firstLine.length <= TOC_TITLE_MAX_LENGTH) return firstLine;
-    return `${firstLine.slice(0, TOC_TITLE_MAX_LENGTH - 3)}...`;
+  private shouldRefreshDirectory(mutations: MutationRecord[]): boolean {
+    if (!this.tocPopover) return false;
+    return mutations.some((mutation) => {
+      if (mutation.type === 'attributes') {
+        return mutation.attributeName === 'data-toc-title'
+          && this.isDirectoryMessageElement(mutation.target);
+      }
+      if (mutation.type !== 'childList') return false;
+      return Array.from(mutation.addedNodes).some(node => this.nodeContainsDirectoryMessage(node))
+        || Array.from(mutation.removedNodes).some(node => this.nodeContainsDirectoryMessage(node));
+    });
+  }
+
+  private nodeContainsDirectoryMessage(node: Node): boolean {
+    if (this.isDirectoryMessageElement(node)) return true;
+    const candidate = node as { querySelector?: (selector: string) => Element | null };
+    return typeof candidate.querySelector === 'function'
+      && candidate.querySelector('.claudian-message-user, [data-role="user"]') !== null;
+  }
+
+  private isDirectoryMessageElement(node: Node): boolean {
+    const candidate = node as {
+      matches?: (selector: string) => boolean;
+      classList?: { contains?: (className: string) => boolean };
+      getAttribute?: (name: string) => string | null;
+    };
+    if (typeof candidate.matches === 'function') {
+      return candidate.matches('.claudian-message-user, [data-role="user"]');
+    }
+    return candidate.classList?.contains?.('claudian-message-user') === true
+      || candidate.getAttribute?.('data-role') === 'user';
   }
 
   private toggleDirectory(): void {

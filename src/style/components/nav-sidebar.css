@@ -61,8 +61,14 @@
     padding: 8px;
     border: 1px solid var(--background-modifier-border);
     border-radius: 8px;
-    background: var(--background-primary);
+    overflow: hidden;
+    background-color: #ffffff;
+    background-image: linear-gradient(var(--background-primary), var(--background-primary));
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+body.theme-dark .claudian-nav-toc-popover {
+    background-color: #1e1e1e;
 }
 
 .claudian-nav-toc-title {
@@ -77,9 +83,13 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-height: 0;
 }
 
 .claudian-nav-toc-item {
+    box-sizing: border-box;
+    min-height: calc(1.35em + 12px);
+    max-width: 100%;
     padding: 6px 8px;
     border-radius: 6px;
     color: var(--text-normal);

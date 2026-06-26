@@ -761,7 +761,7 @@ describe('NavigationSidebar', () => {
     it('should refresh an open directory to an empty state when user messages are removed', () => {
       messagesEl.scrollHeight = 2000;
       messagesEl.clientHeight = 500;
-      addMessage(messagesEl, 'user', 0, 'First prompt');
+      const userMsg = addMessage(messagesEl, 'user', 0, 'First prompt');
 
       sidebar = new NavigationSidebar(
         parentEl as unknown as HTMLElement,
@@ -773,13 +773,82 @@ describe('NavigationSidebar', () => {
       expect(parentEl.querySelector('.claudian-nav-toc-popover')).not.toBeNull();
 
       messagesEl.empty();
-      mutationCallback?.([], {} as MutationObserver);
+      mutationCallback?.([
+        {
+          type: 'childList',
+          target: messagesEl,
+          addedNodes: [],
+          removedNodes: [userMsg],
+        } as unknown as MutationRecord,
+      ], {} as MutationObserver);
       jest.advanceTimersByTime(16);
 
       const emptyState = parentEl.querySelector('.claudian-nav-toc-empty');
       expect(directoryBtn.classList.contains('claudian-hidden')).toBe(false);
       expect(parentEl.querySelector('.claudian-nav-toc-popover')).not.toBeNull();
       expect(emptyState?.textContent).toBe('No user prompts in this conversation');
+    });
+
+    it('should not rebuild an open directory for assistant content mutations', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      addMessage(messagesEl, 'user', 0, 'First prompt');
+      const assistantMsg = addMessage(messagesEl, 'assistant', 120);
+      const assistantContent = assistantMsg.createDiv({ cls: 'claudian-message-content' });
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      const directoryBtn = getDirectoryButton(parentEl);
+      directoryBtn.click();
+      const originalPopover = parentEl.querySelector('.claudian-nav-toc-popover');
+      expect(originalPopover).not.toBeNull();
+
+      const assistantChunk = assistantContent.createDiv({ text: 'Streaming response chunk' });
+      mutationCallback?.([
+        {
+          type: 'childList',
+          target: assistantContent,
+          addedNodes: [assistantChunk],
+          removedNodes: [],
+        } as unknown as MutationRecord,
+      ], {} as MutationObserver);
+      jest.advanceTimersByTime(16);
+
+      expect(parentEl.querySelector('.claudian-nav-toc-popover')).toBe(originalPopover);
+    });
+
+    it('should refresh an open directory when a user message toc title changes', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      const userMsg = addMessage(messagesEl, 'user', 0, 'First prompt');
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      getDirectoryButton(parentEl).click();
+      const originalPopover = parentEl.querySelector('.claudian-nav-toc-popover');
+      expect(originalPopover).not.toBeNull();
+
+      userMsg.setAttribute('data-toc-title', 'Updated prompt');
+      mutationCallback?.([
+        {
+          type: 'attributes',
+          target: userMsg,
+          attributeName: 'data-toc-title',
+        } as unknown as MutationRecord,
+      ], {} as MutationObserver);
+      jest.advanceTimersByTime(16);
+
+      const updatedPopover = parentEl.querySelector('.claudian-nav-toc-popover');
+      const items = parentEl.querySelectorAll('.claudian-nav-toc-item');
+      expect(updatedPopover).not.toBe(originalPopover);
+      expect(items).toHaveLength(1);
+      expect(items[0].textContent).toBe('1. Updated prompt');
     });
   });
 

@@ -20,6 +20,7 @@ import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLi
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 import { escapeMathDelimitersForStreaming } from '../../../utils/markdownMath';
 import { findRewindContext } from '../rewind';
+import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
 import { resolveSubagentLifecycleAdapter } from './subagentLifecycleResolution';
 import {
   renderStoredAsyncSubagent,
@@ -44,8 +45,6 @@ function runRendererAction(action: () => Promise<void>): void {
     // UI actions already surface expected failures locally.
   });
 }
-
-const TOC_TITLE_MAX_LENGTH = 80;
 
 export class MessageRenderer {
   private app: App;
@@ -107,18 +106,8 @@ export class MessageRenderer {
     return msg.displayContent ?? extractUserDisplayContent(msg.content) ?? msg.content;
   }
 
-  private getMessageTocTitle(text: string): string {
-    const firstLine = text
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .find(Boolean);
-    if (!firstLine) return '';
-    if (firstLine.length <= TOC_TITLE_MAX_LENGTH) return firstLine;
-    return `${firstLine.slice(0, TOC_TITLE_MAX_LENGTH - 3)}...`;
-  }
-
   private applyTocTitle(msgEl: HTMLElement, text: string): void {
-    const tocTitle = this.getMessageTocTitle(text);
+    const tocTitle = formatConversationDirectoryTitle(text);
     if (tocTitle) {
       msgEl.setAttribute('data-toc-title', tocTitle);
     } else {
