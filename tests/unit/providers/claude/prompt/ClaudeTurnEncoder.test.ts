@@ -47,6 +47,7 @@ describe('encodeClaudeTurn', () => {
     const request: ChatTurnRequest = {
       text: '/compact',
       currentNotePath: 'notes/test.md',
+      contextFiles: ['notes/a.md'],
       editorSelection: { notePath: 'test.md', mode: 'selection', selectedText: 'selected' } as any,
       browserSelection: { source: 'surfing-view', selectedText: 'browser text' } as any,
     };
@@ -54,6 +55,7 @@ describe('encodeClaudeTurn', () => {
 
     expect(result.persistedContent).toBe('/compact');
     expect(result.prompt).toBe('/compact');
+    expect(result.prompt).not.toContain('<context_files>');
   });
 
   it('should append current note context', () => {
@@ -65,6 +67,17 @@ describe('encodeClaudeTurn', () => {
 
     expect(result.persistedContent).toContain('<current_note>');
     expect(result.persistedContent).toContain('notes/test.md');
+  });
+
+  it('should append focused context files', () => {
+    const request: ChatTurnRequest = {
+      text: 'review these',
+      contextFiles: ['notes/a.md', 'notes/b.md'],
+    };
+    const result = encodeClaudeTurn(request, mcpManager);
+
+    expect(result.persistedContent).toContain('<context_files>\nnotes/a.md, notes/b.md\n</context_files>');
+    expect(result.prompt).toContain('<context_files>\nnotes/a.md, notes/b.md\n</context_files>');
   });
 
   it('should append editor selection context', () => {

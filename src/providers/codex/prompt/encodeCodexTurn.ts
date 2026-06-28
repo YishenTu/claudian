@@ -1,4 +1,5 @@
 import type { ChatTurnRequest, PreparedChatTurn } from '../../../core/runtime/types';
+import { appendContextFiles } from '../../../utils/context';
 
 function isCompactCommand(text: string): boolean {
   return /^\/compact(\s|$)/i.test(text);
@@ -45,7 +46,10 @@ export function encodeCodexTurn(request: ChatTurnRequest): PreparedChatTurn {
     }
   }
 
-  const prompt = sections.join('');
+  let prompt = sections.join('');
+  if (request.contextFiles && request.contextFiles.length > 0) {
+    prompt = appendContextFiles(prompt, request.contextFiles);
+  }
 
   return {
     request,

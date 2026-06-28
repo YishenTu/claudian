@@ -10,6 +10,7 @@ describe('buildOpencodePromptText', () => {
         url: 'https://example.com',
       },
       currentNotePath: 'notes/today.md',
+      contextFiles: ['notes/a.md', 'notes/b.md'],
       editorSelection: {
         mode: 'selection',
         notePath: 'notes/today.md',
@@ -23,6 +24,7 @@ describe('buildOpencodePromptText', () => {
     expect(prompt).toContain('Summarize this');
     expect(prompt).toContain('<current_note>');
     expect(prompt).toContain('notes/today.md');
+    expect(prompt).toContain('<context_files>\nnotes/a.md, notes/b.md\n</context_files>');
     expect(prompt).toContain('<editor_selection path="notes/today.md" lines="4-5">');
     expect(prompt).toContain('<browser_selection source="browser:https://example.com" title="Example" url="https://example.com">');
   });

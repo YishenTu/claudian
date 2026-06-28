@@ -34,6 +34,7 @@ function createMockFileContextManager() {
   return {
     startSession: jest.fn(),
     getCurrentNotePath: jest.fn().mockReturnValue(null),
+    getAttachedFiles: jest.fn().mockReturnValue(new Set<string>()),
     shouldSendCurrentNote: jest.fn().mockReturnValue(false),
     markCurrentNoteSent: jest.fn(),
     transformContextMentions: jest.fn().mockImplementation((text: string) => text),
@@ -172,6 +173,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     getFileContextManager: () => ({
       startSession: jest.fn(),
       getCurrentNotePath: jest.fn().mockReturnValue(null),
+      getAttachedFiles: jest.fn().mockReturnValue(new Set<string>()),
       shouldSendCurrentNote: jest.fn().mockReturnValue(false),
       markCurrentNoteSent: jest.fn(),
       transformContextMentions: jest.fn().mockImplementation((text: string) => text),
@@ -977,12 +979,79 @@ describe('InputController - Message Queue', () => {
       expect(deps.state.messages[0].content).not.toBe('@server-a MCP hello');
     });
 
+    it('should pass an already-sent current note chip as focused context files', async () => {
+      const fileContextManager = createMockFileContextManager();
+      (fileContextManager.getCurrentNotePath as jest.Mock).mockReturnValue('notes/session.md');
+      (fileContextManager.shouldSendCurrentNote as jest.Mock).mockReturnValue(false);
+      (fileContextManager.getAttachedFiles as jest.Mock).mockReturnValue(new Set([
+        'notes/session.md',
+      ]));
+
+      deps = createSendableDeps({
+        getFileContextManager: () => fileContextManager as any,
+      });
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Use the attached note';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const prepareTurnCall = ((deps as any).mockAgentService.prepareTurn as jest.Mock).mock.calls[0];
+      expect(prepareTurnCall[0]).toMatchObject({
+        text: 'Use the attached note',
+        currentNotePath: undefined,
+        contextFiles: ['notes/session.md'],
+      });
+
+      const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
+      expect(queryCall[0].prompt).toContain('<context_files>\nnotes/session.md\n</context_files>');
+      expect(queryCall[0].prompt).not.toContain('<current_note>');
+    });
+
+    it('should pass attached file chips as deduped focused context files', async () => {
+      const fileContextManager = createMockFileContextManager();
+      (fileContextManager.getCurrentNotePath as jest.Mock).mockReturnValue('notes/current.md');
+      (fileContextManager.shouldSendCurrentNote as jest.Mock).mockReturnValue(true);
+      (fileContextManager.getAttachedFiles as jest.Mock).mockReturnValue(new Set([
+        'notes/current.md',
+        'notes/attached.md',
+        'notes/spaced.md',
+        ' notes/spaced.md ',
+        '',
+      ]));
+
+      deps = createSendableDeps({
+        getFileContextManager: () => fileContextManager as any,
+      });
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Review the attached notes';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const prepareTurnCall = ((deps as any).mockAgentService.prepareTurn as jest.Mock).mock.calls[0];
+      expect(prepareTurnCall[0]).toMatchObject({
+        text: 'Review the attached notes',
+        currentNotePath: 'notes/current.md',
+        contextFiles: ['notes/attached.md', 'notes/spaced.md'],
+      });
+
+      const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
+      expect(queryCall[0].prompt).toContain('<current_note>\nnotes/current.md\n</current_note>');
+      expect(queryCall[0].prompt).toContain('<context_files>\nnotes/attached.md, notes/spaced.md\n</context_files>');
+    });
+
     it('should prepend current note only once per session', async () => {
       const prompts: string[] = [];
       let currentNoteSent = false;
       const fileContextManager = {
         startSession: jest.fn(),
         getCurrentNotePath: jest.fn().mockReturnValue('notes/session.md'),
+        getAttachedFiles: jest.fn().mockReturnValue(new Set<string>()),
         shouldSendCurrentNote: jest.fn().mockImplementation(() => !currentNoteSent),
         markCurrentNoteSent: jest.fn().mockImplementation(() => { currentNoteSent = true; }),
         transformContextMentions: jest.fn().mockImplementation((text: string) => text),
@@ -1008,6 +1077,7 @@ describe('InputController - Message Queue', () => {
       const fileContextManager = {
         startSession: jest.fn(),
         getCurrentNotePath: jest.fn().mockReturnValue('notes/session.md'),
+        getAttachedFiles: jest.fn().mockReturnValue(new Set(['notes/session.md'])),
         shouldSendCurrentNote: jest.fn().mockReturnValue(true),
         markCurrentNoteSent: jest.fn(),
         transformContextMentions: jest.fn().mockImplementation((text: string) => text),
@@ -1026,6 +1096,8 @@ describe('InputController - Message Queue', () => {
 
       expect(deps.state.messages[0].content).toBe('/compact');
       expect(deps.state.messages[0].currentNote).toBeUndefined();
+      const prepareTurnCall = ((deps as any).mockAgentService.prepareTurn as jest.Mock).mock.calls[0];
+      expect(prepareTurnCall[0].contextFiles).toBeUndefined();
     });
 
     it('should include MCP options in query when mentions are present', async () => {

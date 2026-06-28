@@ -2,7 +2,7 @@ import type { ChatTurnRequest } from '../../../core/runtime/types';
 import type { ChatMessage } from '../../../core/types';
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
-import { appendCurrentNote } from '../../../utils/context';
+import { appendContextFiles, appendCurrentNote } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import { buildContextFromHistory, buildPromptWithHistoryContext } from '../../../utils/session';
 import type { AcpContentBlock } from '../../acp';
@@ -15,6 +15,10 @@ export function buildOpencodePromptText(
 
   if (request.currentNotePath) {
     prompt = appendCurrentNote(prompt, request.currentNotePath);
+  }
+
+  if (request.contextFiles && request.contextFiles.length > 0) {
+    prompt = appendContextFiles(prompt, request.contextFiles);
   }
 
   if (request.editorSelection && request.editorSelection.mode !== 'none') {
