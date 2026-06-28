@@ -723,6 +723,7 @@ export class InputController {
 
     const currentNotePath = fileContextManager?.getCurrentNotePath() || null;
     const shouldSendCurrentNote = fileContextManager?.shouldSendCurrentNote(currentNotePath) ?? false;
+    const currentNoteContextPath = shouldSendCurrentNote && currentNotePath ? currentNotePath : null;
 
     const editorContext = options.editorContextOverride !== undefined
       ? options.editorContextOverride
@@ -739,6 +740,15 @@ export class InputController {
     const transformedText = !isCompact && fileContextManager
       ? fileContextManager.transformContextMentions(options.content)
       : options.content;
+    const attachedFiles = !isCompact && fileContextManager
+      ? Array.from(fileContextManager.getAttachedFiles())
+      : [];
+    const contextFiles = attachedFiles
+      .map(filePath => filePath.trim())
+      .filter(filePath => filePath.length > 0 && filePath !== currentNoteContextPath);
+    const dedupedContextFiles = contextFiles.length > 0
+      ? Array.from(new Set(contextFiles))
+      : undefined;
     const enabledMcpServers = mcpServerSelector?.getEnabledServers();
 
     return {
@@ -746,7 +756,8 @@ export class InputController {
       turnRequest: {
         text: transformedText,
         images: options.images,
-        currentNotePath: shouldSendCurrentNote && currentNotePath ? currentNotePath : undefined,
+        currentNotePath: currentNoteContextPath ?? undefined,
+        contextFiles: dedupedContextFiles,
         editorSelection: editorContext,
         browserSelection: browserContext,
         canvasSelection: canvasContext,

@@ -24,6 +24,17 @@ describe('encodeCodexTurn', () => {
     expect(result.persistedContent).toBe('Fix this');
   });
 
+  it('should include focused context files', () => {
+    const request: ChatTurnRequest = {
+      text: 'Review these',
+      contextFiles: ['notes/a.md', 'notes/b.md'],
+    };
+    const result = encodeCodexTurn(request);
+
+    expect(result.prompt).toContain('<context_files>\nnotes/a.md, notes/b.md\n</context_files>');
+    expect(result.persistedContent).toBe('Review these');
+  });
+
   it('should include editor selection context', () => {
     const request: ChatTurnRequest = {
       text: 'Explain this',
@@ -151,6 +162,7 @@ describe('encodeCodexTurn', () => {
       const request: ChatTurnRequest = {
         text: '/compact',
         currentNotePath: 'note.md',
+        contextFiles: ['notes/a.md'],
         editorSelection: { notePath: 'src/main.ts', mode: 'selection', selectedText: 'code' },
         browserSelection: { source: 'chrome', selectedText: 'web text', url: 'https://example.com' },
         canvasSelection: { canvasPath: 'c.canvas', nodeIds: ['n1'] },
@@ -160,6 +172,7 @@ describe('encodeCodexTurn', () => {
       expect(result.isCompact).toBe(true);
       expect(result.prompt).toBe('/compact');
       expect(result.prompt).not.toContain('[Current note');
+      expect(result.prompt).not.toContain('<context_files>');
       expect(result.prompt).not.toContain('[Editor selection');
       expect(result.prompt).not.toContain('[Browser selection');
       expect(result.prompt).not.toContain('[Canvas selection');
