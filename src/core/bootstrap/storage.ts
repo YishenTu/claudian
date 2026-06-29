@@ -1,4 +1,5 @@
 import type { AppSessionStorage, AppTabManagerState } from '../providers/types';
+import type { PromptLibraryStorage } from '../storage/PromptLibraryStorage';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 
 /**
@@ -16,5 +17,6 @@ export interface SharedAppStorage {
   setTabManagerState(state: AppTabManagerState): Promise<void>;
   getTabManagerState(): Promise<AppTabManagerState | null>;
   sessions: AppSessionStorage;
+  prompts: PromptLibraryStorage;
   getAdapter(): VaultFileAdapter;
 }

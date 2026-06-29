@@ -245,4 +245,21 @@ export type TranslationKey =
 
   // Settings - Language
   | 'settings.language.name'
-  | 'settings.language.desc';
+  | 'settings.language.desc'
+
+  // Prompts (prompt library)
+  | 'prompts.title'
+  | 'prompts.searchPlaceholder'
+  | 'prompts.new'
+  | 'prompts.edit'
+  | 'prompts.name'
+  | 'prompts.content'
+  | 'prompts.save'
+  | 'prompts.cancel'
+  | 'prompts.delete'
+  | 'prompts.deleteConfirm'
+  | 'prompts.empty'
+  | 'prompts.namePlaceholder'
+  | 'prompts.contentPlaceholder'
+  | 'prompts.loadError'
+  | 'prompts.saveError';

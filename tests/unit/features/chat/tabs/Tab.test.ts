@@ -431,6 +431,12 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       },
     },
     mcpManager: { getMcpServers: jest.fn().mockReturnValue([]) },
+    storage: {
+      prompts: {
+        load: jest.fn().mockResolvedValue([]),
+        save: jest.fn().mockResolvedValue(undefined),
+      },
+    },
     agentManager: claudeAgentMentionProvider,
     codexAgentMentionProvider,
     getConversationById: jest.fn().mockResolvedValue(null),

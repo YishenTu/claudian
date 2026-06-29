@@ -69,6 +69,23 @@
       "copyFailed": "复制到剪贴板失败"
     }
   },
+  "prompts": {
+    "title": "提示词",
+    "searchPlaceholder": "搜索提示词",
+    "new": "新建提示词",
+    "edit": "编辑",
+    "name": "名称",
+    "content": "内容",
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "deleteConfirm": "确定删除这个提示词吗？",
+    "empty": "还没有提示词，新建一个开始吧。",
+    "namePlaceholder": "提示词名称",
+    "contentPlaceholder": "提示词内容…",
+    "loadError": "加载提示词失败",
+    "saveError": "保存提示词失败"
+  },
   "settings": {
     "title": "Claudian 设置",
     "tabs": {
