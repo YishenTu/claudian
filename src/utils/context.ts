@@ -1,25 +1,28 @@
 /**
  * Claudian - Context Utilities
  *
- * Current note and context file formatting for prompts.
+ * Note and context file formatting for prompts.
  */
 
-// Matches <current_note> at the START of prompt (legacy format)
-const CURRENT_NOTE_PREFIX_REGEX = /^<current_note>\n[\s\S]*?<\/current_note>\n\n/;
-// Matches <current_note> at the END of prompt (current format)
-const CURRENT_NOTE_SUFFIX_REGEX = /\n\n<current_note>\n[\s\S]*?<\/current_note>$/;
+const LINKED_NOTE_TAG = 'linked_note';
+const NOTE_CONTEXT_TAG_PATTERN = '(linked_note|current_note)';
+
+// Matches note context at the START of prompt (legacy placement)
+const NOTE_CONTEXT_PREFIX_REGEX = new RegExp(`^<${NOTE_CONTEXT_TAG_PATTERN}>\\n[\\s\\S]*?<\\/\\1>\\n\\n`);
+// Matches note context at the END of prompt (current placement)
+const NOTE_CONTEXT_SUFFIX_REGEX = new RegExp(`\\n\\n<${NOTE_CONTEXT_TAG_PATTERN}>\\n[\\s\\S]*?<\\/\\1>$`);
 
 /**
  * Pattern to match XML context tags appended to prompts.
  * These tags are always preceded by \n\n separator.
- * Matches: current_note, editor_selection (with attributes), editor_cursor (with attributes),
+ * Matches: linked_note/current_note, editor_selection (with attributes), editor_cursor (with attributes),
  * context_files, canvas_selection, browser_selection
  */
-export const XML_CONTEXT_PATTERN = /\n\n<(?:current_note|editor_selection|editor_cursor|context_files|canvas_selection|browser_selection)[\s>]/;
+export const XML_CONTEXT_PATTERN = /\n\n<(?:linked_note|current_note|editor_selection|editor_cursor|context_files|canvas_selection|browser_selection)[\s>]/;
 const BRACKET_CONTEXT_PATTERN = /\n\[(?:Current note|Editor selection from|Browser selection from|Canvas selection from)\b/;
 
 export function formatCurrentNote(notePath: string): string {
-  return `<current_note>\n${notePath}\n</current_note>`;
+  return `<${LINKED_NOTE_TAG}>\n${notePath}\n</${LINKED_NOTE_TAG}>`;
 }
 
 export function appendCurrentNote(prompt: string, notePath: string): string {
@@ -27,17 +30,15 @@ export function appendCurrentNote(prompt: string, notePath: string): string {
 }
 
 /**
- * Strips current note context from a prompt (both prefix and suffix formats).
- * Handles legacy (prefix) and current (suffix) formats.
+ * Strips note context from a prompt.
+ * Handles legacy <current_note> tags and canonical <linked_note> tags.
  */
 export function stripCurrentNoteContext(prompt: string): string {
-  // Try prefix format first (legacy)
-  const strippedPrefix = prompt.replace(CURRENT_NOTE_PREFIX_REGEX, '');
+  const strippedPrefix = prompt.replace(NOTE_CONTEXT_PREFIX_REGEX, '');
   if (strippedPrefix !== prompt) {
     return strippedPrefix;
   }
-  // Try suffix format (current)
-  return prompt.replace(CURRENT_NOTE_SUFFIX_REGEX, '');
+  return prompt.replace(NOTE_CONTEXT_SUFFIX_REGEX, '');
 }
 
 /**
@@ -99,7 +100,7 @@ export function extractUserQuery(prompt: string): string {
 
   // No XML context - return the whole prompt stripped of any remaining tags
   return prompt
-    .replace(/<current_note>[\s\S]*?<\/current_note>\s*/g, '')
+    .replace(/<(linked_note|current_note)>[\s\S]*?<\/\1>\s*/g, '')
     .replace(/<editor_selection[\s\S]*?<\/editor_selection>\s*/g, '')
     .replace(/<editor_cursor[\s\S]*?<\/editor_cursor>\s*/g, '')
     .replace(/<context_files>[\s\S]*?<\/context_files>\s*/g, '')

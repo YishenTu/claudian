@@ -63,7 +63,7 @@ describe('encodeClaudeTurn', () => {
     };
     const result = encodeClaudeTurn(request, mcpManager);
 
-    expect(result.persistedContent).toContain('<current_note>');
+    expect(result.persistedContent).toContain('<linked_note>');
     expect(result.persistedContent).toContain('notes/test.md');
   });
 

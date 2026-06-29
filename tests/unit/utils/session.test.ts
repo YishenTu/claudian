@@ -684,7 +684,7 @@ describe('session utilities', () => {
       expect(result).toBe(historyContext);
     });
 
-    it('avoids duplication when XML-wrapped content matches display content', () => {
+    it('avoids duplication when legacy XML-wrapped content matches display content', () => {
       const prompt = [
         '<current_note>',
         'notes/file.md',
@@ -728,8 +728,8 @@ describe('session utilities', () => {
 
     describe('new format (user content before XML context)', () => {
       it('avoids duplication when actualPrompt matches last user message', () => {
-        const prompt = 'Explain this\n\n<current_note>\ntest.md\n</current_note>';
-        const actualPrompt = 'Explain this\n\n<current_note>\ntest.md\n</current_note>';
+        const prompt = 'Explain this\n\n<linked_note>\ntest.md\n</linked_note>';
+        const actualPrompt = 'Explain this\n\n<linked_note>\ntest.md\n</linked_note>';
         const messages: ChatMessage[] = [
           {
             id: 'msg-1',
@@ -747,8 +747,8 @@ describe('session utilities', () => {
       });
 
       it('appends prompt when actualPrompt differs from last user message', () => {
-        const oldPrompt = 'First question\n\n<current_note>\nold.md\n</current_note>';
-        const newPrompt = 'Second question\n\n<current_note>\nnew.md\n</current_note>';
+        const oldPrompt = 'First question\n\n<linked_note>\nold.md\n</linked_note>';
+        const newPrompt = 'Second question\n\n<linked_note>\nnew.md\n</linked_note>';
         const messages: ChatMessage[] = [
           {
             id: 'msg-1',
@@ -785,7 +785,7 @@ describe('session utilities', () => {
       });
 
       it('extracts user query from content with multiple XML context tags', () => {
-        const prompt = 'Update code\n\n<current_note>\ntest.md\n</current_note>\n\n<editor_selection path="test.md">\nselected\n</editor_selection>';
+        const prompt = 'Update code\n\n<linked_note>\ntest.md\n</linked_note>\n\n<editor_selection path="test.md">\nselected\n</editor_selection>';
         const messages: ChatMessage[] = [
           {
             id: 'msg-1',
@@ -803,7 +803,7 @@ describe('session utilities', () => {
       });
 
       it('falls back to extractUserQuery when displayContent is not available', () => {
-        const prompt = 'Help me\n\n<current_note>\nfile.md\n</current_note>';
+        const prompt = 'Help me\n\n<linked_note>\nfile.md\n</linked_note>';
         const messages: ChatMessage[] = [
           {
             id: 'msg-1',

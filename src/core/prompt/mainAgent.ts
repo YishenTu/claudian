@@ -62,9 +62,9 @@ User messages have the query first, followed by optional XML context tags:
 \`\`\`
 User's question or request here
 
-<current_note>
+<linked_note>
 path/to/note.md
-</current_note>
+</linked_note>
 
 <editor_selection path="path/to/note.md" lines="10-15">
 selected text content
@@ -76,7 +76,7 @@ selected content from an Obsidian browser view
 \`\`\`
 
 - The user's query/instruction always comes first in the message.
-- \`<current_note>\`: The note the user is currently viewing/focused on. Read this to understand context.
+- \`<linked_note>\`: The note this session is linked to. Read this to understand session context. Legacy messages may use \`<current_note>\` for the same context.
 - \`<editor_selection>\`: Text currently selected in the editor, with file path and line numbers.
 - \`<browser_selection>\`: Text selected in an Obsidian browser/web view (for example Surfing), including optional source/title/url metadata.
 - \`@filename.md\`: Files mentioned with @ in the query. Read these files when referenced.

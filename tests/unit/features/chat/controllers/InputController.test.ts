@@ -1000,8 +1000,8 @@ describe('InputController - Message Queue', () => {
       inputEl.value = 'Second message';
       await controller.sendMessage();
 
-      expect(prompts[0]).toContain('<current_note>');
-      expect(prompts[1]).not.toContain('<current_note>');
+      expect(prompts[0]).toContain('<linked_note>');
+      expect(prompts[1]).not.toContain('<linked_note>');
     });
 
     it('should not persist currentNote metadata for /compact turns', async () => {
