@@ -7,19 +7,64 @@ import {
   terminateSpawnedProcess,
   type WindowsCmdShimSpawnSpec,
 } from '../../../utils/windowsCmdShim';
+import type { ClaudeExecutionContext } from './ClaudeExecutionContext';
+
+function quotePosixShellArgument(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, "'\"'\"'")}'`;
+}
+
+function buildWslEnv(env: SpawnOptions['env']): SpawnOptions['env'] {
+  const propagated = Object.keys(env)
+    .filter(key => /^(?:ANTHROPIC_|CLAUDE_)/i.test(key));
+  const existing = (env.WSLENV ?? '').split(':').filter(Boolean);
+  return {
+    ...env,
+    WSLENV: [...new Set([...existing, ...propagated])].join(':'),
+  };
+}
 
 export function createCustomSpawnFunction(
-  enhancedPath: string
+  enhancedPath: string,
+  executionContext?: ClaudeExecutionContext,
 ): (options: SpawnOptions) => SpawnedProcess {
   return (options: SpawnOptions): SpawnedProcess => {
     let { command } = options;
     let { args } = options;
-    const { cwd, env, signal } = options;
+    let { cwd, env } = options;
+    const { signal } = options;
     const shouldPipeStderr = !!env?.DEBUG_CLAUDE_AGENT_SDK;
+
+    if (executionContext?.method === 'wsl') {
+      if (cliPathRequiresNode(command)) {
+        args = [command, ...args];
+        command = 'node';
+      }
+      const shellCommand = [
+        'exec',
+        quotePosixShellArgument(command),
+        ...args.map(quotePosixShellArgument),
+      ].join(' ');
+      command = 'wsl.exe';
+      args = [
+        '--distribution',
+        executionContext.distroName!,
+        '--cd',
+        executionContext.targetVaultPath,
+        '--exec',
+        'sh',
+        '-lc',
+        'exec "$SHELL" -lic "$1"',
+        'sh',
+        shellCommand,
+      ];
+      cwd = executionContext.hostVaultPath;
+      env = buildWslEnv(env);
+    }
 
     // The SDK only routes some script extensions through `node`; normalize the
     // remaining Node-backed paths here before Electron spawns with shell=false.
-    if (command === 'node' || cliPathRequiresNode(command)) {
+    if (executionContext?.method !== 'wsl' && (command === 'node' || cliPathRequiresNode(command))) {
       const nodeFullPath = findNodeExecutable(enhancedPath);
       if (command === 'node') {
         if (nodeFullPath) {

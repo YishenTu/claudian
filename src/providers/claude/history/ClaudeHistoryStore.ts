@@ -60,9 +60,11 @@ export {
 export async function loadSDKSessionMessages(
   vaultPath: string,
   sessionId: string,
-  resumeAtMessageId?: string
+  resumeAtMessageId?: string,
+  projectsPath?: string,
+  toHostPath?: (value: string) => string | null,
 ): Promise<SDKSessionLoadResult> {
-  const result = await readSDKSession(vaultPath, sessionId);
+  const result = await readSDKSession(vaultPath, sessionId, projectsPath);
 
   if (result.error) {
     return { messages: [], skippedLines: result.skippedLines, error: result.error };
@@ -84,7 +86,7 @@ export async function loadSDKSessionMessages(
     // Skip synthetic assistant messages (e.g., "No response requested." after /compact)
     if (sdkMsg.type === 'assistant' && sdkMsg.message?.model === '<synthetic>') continue;
 
-    const chatMsg = parseSDKMessageToChat(sdkMsg, toolResults);
+    const chatMsg = parseSDKMessageToChat(sdkMsg, toolResults, toHostPath);
     if (!chatMsg) continue;
 
     if (chatMsg.role === 'assistant') {
@@ -145,7 +147,7 @@ export async function loadSDKSessionMessages(
           if (subagent.agentId && isValidAgentId(subagent.agentId)) {
             sidecarLoads.push({
               subagent,
-              promise: loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId),
+              promise: loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId, projectsPath),
             });
           }
         }

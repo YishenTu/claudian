@@ -9,14 +9,26 @@ import {
 import type { CodexLaunchSpec } from './codexLaunchTypes';
 
 const SIGKILL_TIMEOUT_MS = 3_000;
+const STDERR_BUFFER_LIMIT = 8_192;
 
 type ExitCallback = (code: number | null, signal: string | null) => void;
+
+function decodeStderrChunk(chunk: Buffer | string): string {
+  if (typeof chunk === 'string') {
+    return chunk;
+  }
+
+  const sample = chunk.subarray(0, Math.min(chunk.length, 64));
+  const zeroBytes = sample.filter(byte => byte === 0).length;
+  return zeroBytes >= 4 ? chunk.toString('utf16le') : chunk.toString('utf8');
+}
 
 export class CodexAppServerProcess {
   private proc: ChildProcess | null = null;
   private alive = false;
   private exitCallbacks: ExitCallback[] = [];
   private resolvedSpawnSpec: WindowsCmdShimSpawnSpec | null = null;
+  private stderrBuffer = '';
 
   constructor(
     private readonly launchSpec: Pick<CodexLaunchSpec, 'command' | 'args' | 'spawnCwd' | 'env'>,
@@ -35,6 +47,11 @@ export class CodexAppServerProcess {
     });
 
     this.alive = true;
+    this.stderrBuffer = '';
+    this.proc.stderr?.on('data', (chunk: Buffer | string) => {
+      const text = decodeStderrChunk(chunk);
+      this.stderrBuffer = `${this.stderrBuffer}${text}`.slice(-STDERR_BUFFER_LIMIT);
+    });
 
     this.proc.on('exit', (code, signal) => {
       this.alive = false;
@@ -65,6 +82,10 @@ export class CodexAppServerProcess {
 
   isAlive(): boolean {
     return this.alive;
+  }
+
+  getStderrSnapshot(): string {
+    return this.stderrBuffer.trim();
   }
 
   onExit(callback: ExitCallback): void {

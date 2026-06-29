@@ -108,6 +108,17 @@ If you encounter `spawn claude ENOENT` or `Claude CLI not found`, the plugin can
 
 **Alternative**: Add your Node.js bin directory to PATH in Settings → Environment → Custom variables.
 
+### Claude Code in WSL
+
+On Windows, Claude can run inside either WSL 1 or WSL 2:
+
+1. Install and sign in to Claude Code inside the WSL distro.
+2. In the Claude provider settings, choose `WSL 1` or `WSL 2`.
+3. Click **Get** and select a distro matching that WSL version.
+4. Leave the CLI path empty to use `claude` from the distro's login shell, or enter a Linux command/path such as `/home/you/.local/bin/claude`.
+
+WSL mode uses the selected distro's Linux working directory, user settings, plugins, agents, and conversation records under `~/.claude`. Windows and WSL Claude histories are intentionally separate. Vaults on Windows drives and vaults under `\\wsl$\<distro>\...` are supported; a WSL UNC vault must belong to the selected distro.
+
 ### npm CLI and Node.js not in same directory
 
 If using npm-installed CLI, check if `claude` and `node` are in the same directory:

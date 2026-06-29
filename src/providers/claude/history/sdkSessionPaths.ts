@@ -11,7 +11,9 @@ import type { SDKNativeMessage, SDKSessionReadResult } from './sdkHistoryTypes';
  * This handles Unicode characters and special chars.
  */
 export function encodeVaultPathForSDK(vaultPath: string): string {
-  const absolutePath = path.resolve(vaultPath);
+  const absolutePath = vaultPath.startsWith('/')
+    ? path.posix.normalize(vaultPath)
+    : path.resolve(vaultPath);
   return absolutePath.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
@@ -34,28 +36,39 @@ export function isValidSessionId(sessionId: string): boolean {
   return isPathSafeId(sessionId);
 }
 
-export function getSDKSessionPath(vaultPath: string, sessionId: string): string {
+export function getSDKSessionPath(
+  vaultPath: string,
+  sessionId: string,
+  projectsPath = getSDKProjectsPath(),
+): string {
   if (!isValidSessionId(sessionId)) {
     throw new Error(`Invalid session ID: ${sessionId}`);
   }
 
-  const projectsPath = getSDKProjectsPath();
   const encodedVault = encodeVaultPathForSDK(vaultPath);
   return path.join(projectsPath, encodedVault, `${sessionId}.jsonl`);
 }
 
-export function sdkSessionExists(vaultPath: string, sessionId: string): boolean {
+export function sdkSessionExists(
+  vaultPath: string,
+  sessionId: string,
+  projectsPath = getSDKProjectsPath(),
+): boolean {
   try {
-    const sessionPath = getSDKSessionPath(vaultPath, sessionId);
+    const sessionPath = getSDKSessionPath(vaultPath, sessionId, projectsPath);
     return existsSync(sessionPath);
   } catch {
     return false;
   }
 }
 
-export async function deleteSDKSession(vaultPath: string, sessionId: string): Promise<void> {
+export async function deleteSDKSession(
+  vaultPath: string,
+  sessionId: string,
+  projectsPath = getSDKProjectsPath(),
+): Promise<void> {
   try {
-    const sessionPath = getSDKSessionPath(vaultPath, sessionId);
+    const sessionPath = getSDKSessionPath(vaultPath, sessionId, projectsPath);
     if (!existsSync(sessionPath)) {
       return;
     }
@@ -69,9 +82,10 @@ export async function deleteSDKSession(vaultPath: string, sessionId: string): Pr
 export async function readSDKSession(
   vaultPath: string,
   sessionId: string,
+  projectsPath = getSDKProjectsPath(),
 ): Promise<SDKSessionReadResult> {
   try {
-    const sessionPath = getSDKSessionPath(vaultPath, sessionId);
+    const sessionPath = getSDKSessionPath(vaultPath, sessionId, projectsPath);
     if (!existsSync(sessionPath)) {
       return { messages: [], skippedLines: 0 };
     }

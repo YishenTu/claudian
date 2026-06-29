@@ -8,12 +8,17 @@ import { McpSettingsManager } from '../../../features/settings/ui/McpSettingsMan
 import { t } from '../../../i18n/i18n';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
+import {
+  listWslDistributions,
+  type WslDistribution,
+} from '../../../utils/wslDistributions';
 import { getClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
 import { resolveClaudeModelSelection } from '../modelOptions';
 import {
   CLAUDE_SAFE_MODES,
   type ClaudeSafeMode,
   getClaudeProviderSettings,
+  isClaudeWslInstallationMethod,
   updateClaudeProviderSettings,
 } from '../settings';
 import { AgentSettings } from './AgentSettings';
@@ -48,14 +53,61 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName(t('settings.setup')).setHeading();
 
     const hostnameKey = getHostnameKey();
-    const platformDesc = process.platform === 'win32'
-      ? t('settings.cliPath.descWindows')
-      : t('settings.cliPath.descUnix');
-    const cliPathDescription = `${t('settings.cliPath.desc')} ${platformDesc}`;
+    const isWindowsHost = process.platform === 'win32';
+    let installationMethod = claudeSettings.installationMethod;
+    let wslDistroOverride = claudeSettings.wslDistroOverride;
+    let availableWslDistributions: WslDistribution[] = [];
+    let wslDistroSettingEl: HTMLElement | null = null;
+    let wslDistroSelectEl: HTMLSelectElement | null = null;
+
+    if (isWindowsHost) {
+      new Setting(container)
+        .setName('Installation method')
+        .setDesc('How Claudian should launch Claude code on Windows.')
+        .addDropdown((dropdown) => {
+          dropdown
+            .addOption('native-windows', 'Native Windows')
+            .addOption('wsl1', 'WSL 1')
+            .addOption('wsl2', 'WSL 2');
+          if (installationMethod === 'wsl-unconfigured') {
+            dropdown.addOption('wsl-unconfigured', 'Select WSL version...');
+          }
+          dropdown
+            .setValue(installationMethod)
+            .onChange(async (value) => {
+              installationMethod = value === 'wsl1' || value === 'wsl2'
+                ? value
+                : 'native-windows';
+              wslDistroOverride = '';
+              updateClaudeProviderSettings(settingsBag, { installationMethod });
+              refreshInstallationMethodUI();
+              refreshWslDistroOptions();
+              await persistExecutionSettings();
+            });
+        });
+    }
+
+    const getCliPathCopy = (): { desc: string; placeholder: string } => {
+      if (isWindowsHost && isClaudeWslInstallationMethod(installationMethod)) {
+        return {
+          desc: 'Linux-side Claude command or absolute path inside WSL. Leave empty to use `claude` from the selected distro.',
+          placeholder: 'claude',
+        };
+      }
+      const platformDesc = isWindowsHost
+        ? t('settings.cliPath.descWindows')
+        : t('settings.cliPath.descUnix');
+      return {
+        desc: `${t('settings.cliPath.desc')} ${platformDesc}`,
+        placeholder: isWindowsHost
+          ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli-wrapper.cjs'
+          : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs',
+      };
+    };
 
     const cliPathSetting = new Setting(container)
       .setName(t('settings.cliPath.name'))
-      .setDesc(cliPathDescription);
+      .setDesc(getCliPathCopy().desc);
 
     const validationEl = container.createDiv({
       cls: 'claudian-cli-path-validation claudian-setting-validation claudian-setting-validation-error claudian-hidden',
@@ -64,6 +116,12 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const validatePath = (value: string): string | null => {
       const trimmed = value.trim();
       if (!trimmed) return null;
+      if (isWindowsHost && isClaudeWslInstallationMethod(installationMethod)) {
+        if (/^[A-Za-z]:[\\/]|^\\\\|\.(?:exe|cmd|bat|ps1)$/i.test(trimmed)) {
+          return 'WSL mode expects a Linux command or Linux absolute path.';
+        }
+        return null;
+      }
 
       const expandedPath = expandHomePath(trimmed);
 
@@ -99,6 +157,47 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const cliPathsByHost = { ...claudeSettings.cliPathsByHost };
     let cliPathInputEl: HTMLInputElement | null = null;
 
+    const refreshWslDistroOptions = (): void => {
+      if (!wslDistroSelectEl) return;
+      wslDistroSelectEl.empty();
+      wslDistroSelectEl.createEl('option', { text: 'Select a distro', value: '' });
+      const expectedVersion = installationMethod === 'wsl1' ? 1 : 2;
+      for (const distro of availableWslDistributions.filter(item => item.version === expectedVersion)) {
+        wslDistroSelectEl.createEl('option', {
+          text: `${distro.name} (WSL ${distro.version})`,
+          value: distro.name,
+        });
+      }
+      wslDistroSelectEl.value = wslDistroOverride;
+    };
+
+    const refreshInstallationMethodUI = (): void => {
+      const copy = getCliPathCopy();
+      cliPathSetting.setDesc(copy.desc);
+      if (cliPathInputEl) {
+        cliPathInputEl.placeholder = copy.placeholder;
+        updateCliPathValidation(cliPathInputEl.value, cliPathInputEl);
+      }
+      wslDistroSettingEl?.toggleClass(
+        'claudian-hidden',
+        !isClaudeWslInstallationMethod(installationMethod),
+      );
+    };
+
+    const persistExecutionSettings = async (): Promise<void> => {
+      await context.plugin.saveSettings();
+      claudeWorkspace.cliResolver.reset();
+      try {
+        await claudeWorkspace.refreshExecutionResources();
+      } catch {
+        // The settings UI remains usable while the WSL selection is incomplete.
+      }
+      const view = context.plugin.getView();
+      await view?.getTabManager()?.broadcastToAllTabs(
+        service => Promise.resolve(service.cleanup()),
+      );
+    };
+
     const persistCliPath = async (value: string): Promise<boolean> => {
       const isValid = updateCliPathValidation(value, cliPathInputEl ?? undefined);
       if (!isValid) {
@@ -113,22 +212,13 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       }
 
       updateClaudeProviderSettings(settingsBag, { cliPathsByHost: { ...cliPathsByHost } });
-      await context.plugin.saveSettings();
-      claudeWorkspace.cliResolver.reset();
-      const view = context.plugin.getView();
-      await view?.getTabManager()?.broadcastToAllTabs(
-        (service) => Promise.resolve(service.cleanup())
-      );
+      await persistExecutionSettings();
       return true;
     };
 
     cliPathSetting.addText((text) => {
-      const placeholder = process.platform === 'win32'
-        ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli-wrapper.cjs'
-        : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs';
-
       text
-        .setPlaceholder(placeholder)
+        .setPlaceholder(getCliPathCopy().placeholder)
         .setValue(currentValue)
         .onChange(async (value) => {
           await persistCliPath(value);
@@ -138,6 +228,35 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
       updateCliPathValidation(currentValue, text.inputEl);
     });
+
+    if (isWindowsHost) {
+      const distroSetting = new Setting(container)
+        .setName('WSL distro')
+        .setDesc('Select an installed distro matching the chosen WSL version.');
+      wslDistroSettingEl = distroSetting.settingEl;
+      distroSetting
+        .addDropdown((dropdown) => {
+          wslDistroSelectEl = dropdown.selectEl;
+          refreshWslDistroOptions();
+          dropdown.onChange(async (value) => {
+            wslDistroOverride = value;
+            updateClaudeProviderSettings(settingsBag, { wslDistroOverride: value });
+            await persistExecutionSettings();
+          });
+        })
+        .addButton((button) => button
+          .setButtonText('Get')
+          .onClick(async () => {
+            try {
+              availableWslDistributions = await listWslDistributions();
+              refreshWslDistroOptions();
+            } catch {
+              availableWslDistributions = [];
+              refreshWslDistroOptions();
+            }
+          }));
+      refreshInstallationMethodUI();
+    }
 
     // --- Safety ---
 

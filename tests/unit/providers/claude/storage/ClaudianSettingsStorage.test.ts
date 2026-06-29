@@ -215,7 +215,7 @@ describe('ClaudianSettingsStorage', () => {
               'host-b': '/custom/codex-b',
             },
             installationMethodsByHost: {
-              'host-a': 'wsl',
+              'host-a': 'wsl2',
               'host-b': 'native-windows',
             },
             wslDistroOverridesByHost: {
@@ -255,9 +255,9 @@ describe('ClaudianSettingsStorage', () => {
         'device:current': '/custom/codex-a',
         'host-b': '/custom/codex-b',
       });
-      expect(codexSettings.installationMethod).toBe('wsl');
+      expect(codexSettings.installationMethod).toBe('wsl2');
       expect(codexSettings.installationMethodsByHost).toEqual({
-        'device:current': 'wsl',
+        'device:current': 'wsl2',
         'host-b': 'native-windows',
       });
       expect(codexSettings.wslDistroOverride).toBe('Ubuntu');
@@ -343,7 +343,7 @@ describe('ClaudianSettingsStorage', () => {
         providerConfigs: {
           codex: {
             installationMethodsByHost: {
-              'host-b': 'wsl',
+              'host-b': 'wsl2',
             },
             wslDistroOverridesByHost: {
               'host-b': 'Ubuntu',
