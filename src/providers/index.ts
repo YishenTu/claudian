@@ -2,6 +2,8 @@ import { ProviderRegistry } from '../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../core/providers/ProviderWorkspaceRegistry';
 import { claudeWorkspaceRegistration } from './claude/app/ClaudeWorkspaceServices';
 import { claudeProviderRegistration } from './claude/registration';
+import { codeBuddyWorkspaceRegistration } from './codebuddy/app/CodeBuddyWorkspaceServices';
+import { codeBuddyProviderRegistration } from './codebuddy/registration';
 import { codexWorkspaceRegistration } from './codex/app/CodexWorkspaceServices';
 import { codexProviderRegistration } from './codex/registration';
 import { opencodeWorkspaceRegistration } from './opencode/app/OpencodeWorkspaceServices';
@@ -19,10 +21,12 @@ export function registerBuiltInProviders(): void {
   ProviderRegistry.register('claude', claudeProviderRegistration);
   ProviderRegistry.register('codex', codexProviderRegistration);
   ProviderRegistry.register('opencode', opencodeProviderRegistration);
+  ProviderRegistry.register('codebuddy', codeBuddyProviderRegistration);
   ProviderRegistry.register('pi', piProviderRegistration);
   ProviderWorkspaceRegistry.register('claude', claudeWorkspaceRegistration);
   ProviderWorkspaceRegistry.register('codex', codexWorkspaceRegistration);
   ProviderWorkspaceRegistry.register('opencode', opencodeWorkspaceRegistration);
+  ProviderWorkspaceRegistry.register('codebuddy', codeBuddyWorkspaceRegistration);
   ProviderWorkspaceRegistry.register('pi', piWorkspaceRegistration);
   builtInProvidersRegistered = true;
 }
