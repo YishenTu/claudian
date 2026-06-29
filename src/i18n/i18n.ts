@@ -11,6 +11,7 @@ import * as es from './locales/es.json';
 import * as fr from './locales/fr.json';
 import * as ja from './locales/ja.json';
 import * as ko from './locales/ko.json';
+import * as pl from './locales/pl.json';
 import * as pt from './locales/pt.json';
 import * as ru from './locales/ru.json';
 import * as zhCN from './locales/zh-CN.json';
@@ -28,6 +29,7 @@ const translations: Record<Locale, typeof en> = {
   es,
   ru,
   pt,
+  pl,
 };
 
 const DEFAULT_LOCALE: Locale = 'en';
@@ -135,6 +137,7 @@ export function getLocaleDisplayName(locale: Locale): string {
     'es': 'Español',
     'ru': 'Русский',
     'pt': 'Português',
+    'pl': 'Polski',
   };
   return names[locale] || locale;
 }
