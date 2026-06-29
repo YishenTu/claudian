@@ -112,6 +112,7 @@ function createMockCallbacks(options: {
 describe('FileContextManager', () => {
   let containerEl: MockElement;
   let inputEl: HTMLTextAreaElement;
+  let mockInputWrapper: MockElement;
 
   beforeEach(() => {
     jest.useFakeTimers();
@@ -119,12 +120,20 @@ describe('FileContextManager', () => {
     mockVaultPath = '/vault';
     mockScanPaths.mockReturnValue([]);
     containerEl = createMockEl();
-    inputEl = {
-      value: '',
-      selectionStart: 0,
-      selectionEnd: 0,
-      focus: jest.fn(),
-    } as unknown as HTMLTextAreaElement;
+    mockInputWrapper = createMockEl();
+    mockInputWrapper.className = 'claudian-input-wrapper';
+
+    const mockInput = createMockEl('textarea');
+    mockInput.value = '';
+    mockInput.selectionStart = 0;
+    mockInput.selectionEnd = 0;
+    mockInput.focus = jest.fn();
+    mockInput.closest = jest.fn((selector) => {
+      if (selector === '.claudian-input-wrapper') return mockInputWrapper;
+      return null;
+    });
+
+    inputEl = mockInput;
   });
 
   afterEach(() => {
@@ -870,6 +879,182 @@ describe('FileContextManager', () => {
 
       await openCallback('notes/missing.md');
       expect(NoticeMock).toHaveBeenCalledWith(expect.stringContaining('Could not open file'));
+      manager.destroy();
+    });
+  });
+
+  describe('drag and drop', () => {
+    it('should show drop overlay on dragenter with valid files', () => {
+      const app = createMockApp();
+      const manager = new FileContextManager(
+        app, containerEl as any, inputEl, createMockCallbacks()
+      );
+
+      const dragEnterHandler = mockInputWrapper._eventListeners.get('dragenter')?.[0];
+      expect(dragEnterHandler).toBeDefined();
+
+      // Mock internal Obsidian draggedItems
+      (app as any).dragManager = {
+        draggedItems: [{ file: createMockTFile('notes/drop.md') }],
+      };
+
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        dataTransfer: {
+          types: [],
+        },
+      } as any;
+
+      dragEnterHandler!(event);
+
+      const overlay = mockInputWrapper.querySelector('.claudian-file-drop-overlay');
+      expect(overlay).toBeDefined();
+      expect(overlay?.hasClass('visible')).toBe(true);
+
+      manager.destroy();
+    });
+
+    it('should hide drop overlay on dragleave', () => {
+      const app = createMockApp();
+      const manager = new FileContextManager(
+        app, containerEl as any, inputEl, createMockCallbacks()
+      );
+
+      const dragLeaveHandler = mockInputWrapper._eventListeners.get('dragleave')?.[0];
+      const overlay = mockInputWrapper.querySelector('.claudian-file-drop-overlay');
+      overlay?.addClass('visible');
+
+      // Mock bounding box so dragleave client position is outside the wrapper
+      mockInputWrapper.getBoundingClientRect = () => ({
+        top: 10,
+        left: 10,
+        width: 100,
+        height: 100,
+        right: 110,
+        bottom: 110,
+        x: 10,
+        y: 10,
+        toJSON: () => {},
+      });
+
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        clientX: 5,
+        clientY: 5,
+      } as any;
+
+      dragLeaveHandler!(event);
+      expect(overlay?.hasClass('visible')).toBe(false);
+
+      manager.destroy();
+    });
+
+    it('should attach file and insert text on drop from internal explorer', async () => {
+      const app = createMockApp();
+      const manager = new FileContextManager(
+        app, containerEl as any, inputEl, createMockCallbacks()
+      );
+
+      const dropHandler = mockInputWrapper._eventListeners.get('drop')?.[0];
+      expect(dropHandler).toBeDefined();
+
+      // Mock internal Obsidian draggedItems (including folder and file)
+      const mockFile = createMockTFile('notes/alpha.md');
+      const mockFolder = new (jest.requireMock('obsidian').TFolder)('notes/sub');
+
+      (app as any).dragManager = {
+        draggedItems: [
+          { file: mockFile },
+          { file: mockFolder },
+        ],
+      };
+
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        dataTransfer: {
+          types: [],
+          files: [],
+        },
+      } as any;
+
+      await dropHandler!(event);
+
+      expect(inputEl.value).toBe('@notes/alpha.md @notes/sub/ ');
+      expect(manager.getAttachedFiles().has('notes/alpha.md')).toBe(true);
+      expect(manager.getAttachedFiles().has('notes/sub')).toBe(true);
+
+      manager.destroy();
+    });
+
+    it('should attach file and insert text on drop from internal explorer using dataTransfer URIs', async () => {
+      const app = createMockApp();
+      const manager = new FileContextManager(
+        app, containerEl as any, inputEl, createMockCallbacks()
+      );
+
+      const dropHandler = mockInputWrapper._eventListeners.get('drop')?.[0];
+      expect(dropHandler).toBeDefined();
+
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        dataTransfer: {
+          types: ['text/plain', 'text/uri-list'],
+          getData: jest.fn((type) => {
+            if (type === 'text/plain') {
+              return 'obsidian://open?vault=DragonXing&file=notes%2Falpha.md\nobsidian://open?vault=DragonXing&file=notes%2Fsub';
+            }
+            return '';
+          }),
+        },
+      } as any;
+
+      // Mock TFolder for folder check
+      const TFolderMock = jest.requireMock('obsidian').TFolder;
+      const folderMock = new TFolderMock('notes/sub');
+      app.vault.getAbstractFileByPath = jest.fn((p) => {
+        if (p === 'notes/alpha.md') return createMockTFile('notes/alpha.md');
+        if (p === 'notes/sub') return folderMock;
+        return null;
+      });
+
+      await dropHandler!(event);
+
+      expect(inputEl.value).toBe('@notes/alpha.md @notes/sub/ ');
+      expect(manager.getAttachedFiles().has('notes/alpha.md')).toBe(true);
+      expect(manager.getAttachedFiles().has('notes/sub')).toBe(true);
+
+      manager.destroy();
+    });
+
+    it('should attach file and insert text on drop from external OS drag', async () => {
+      const app = createMockApp();
+      const manager = new FileContextManager(
+        app, containerEl as any, inputEl, createMockCallbacks()
+      );
+
+      const dropHandler = mockInputWrapper._eventListeners.get('drop')?.[0];
+
+      // Mock external file
+      const event = {
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        dataTransfer: {
+          types: ['Files'],
+          files: [
+            { path: '/vault/notes/external.md', name: 'external.md' },
+          ],
+        },
+      } as any;
+
+      await dropHandler!(event);
+
+      expect(inputEl.value).toBe('@notes/external.md ');
+      expect(manager.getAttachedFiles().has('notes/external.md')).toBe(true);
+
       manager.destroy();
     });
   });
