@@ -157,6 +157,56 @@ describe('ClaudianView tab controls', () => {
     expect(view.activeInputTabId).toBeNull();
   });
 
+  it('focuses active input through the navigation controller', () => {
+    const focusInput = jest.fn();
+    const inputFocus = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue({
+        controllers: {
+          navigationController: { focusInput },
+        },
+        dom: {
+          inputEl: { focus: inputFocus },
+        },
+      }),
+    };
+
+    expect(view.focusActiveInput()).toBe(true);
+    expect(focusInput).toHaveBeenCalledTimes(1);
+    expect(inputFocus).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the active tab input element when no navigation controller exists', () => {
+    const inputFocus = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue({
+        controllers: {
+          navigationController: null,
+        },
+        dom: {
+          inputEl: { focus: inputFocus },
+        },
+      }),
+    };
+
+    expect(view.focusActiveInput()).toBe(true);
+    expect(inputFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not focus when there is no active tab', () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue(null),
+    };
+
+    expect(view.focusActiveInput()).toBe(false);
+  });
+
   it('toggles the history dropdown when the history button is clicked', () => {
     const historyDropdown = createMockEl();
     const view = Object.create(ClaudianView.prototype) as any;

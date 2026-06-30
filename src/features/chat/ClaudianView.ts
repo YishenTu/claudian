@@ -748,6 +748,23 @@ export class ClaudianView extends ItemView {
     return this.tabManager?.getActiveTab() ?? null;
   }
 
+  /** Focuses the active tab input if the view has an active tab. */
+  focusActiveInput(): boolean {
+    const activeTab = this.getActiveTab();
+    if (!activeTab) {
+      return false;
+    }
+
+    const navigationController = activeTab.controllers.navigationController;
+    if (navigationController) {
+      navigationController.focusInput();
+      return true;
+    }
+
+    activeTab.dom.inputEl.focus();
+    return true;
+  }
+
   /** Gets the tab manager. */
   getTabManager(): TabManager | null {
     return this.tabManager;
