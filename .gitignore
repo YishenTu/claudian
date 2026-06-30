@@ -5,6 +5,7 @@ styles.css
 *.js.map
 dist/
 build/
+.history/
 
 # Dependencies
 node_modules/

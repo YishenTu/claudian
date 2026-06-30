@@ -1,6 +1,6 @@
 import {
-  CLAUDIAN_SETTINGS_PATH,
   LEGACY_CLAUDIAN_SETTINGS_PATH,
+  OLD_CLAUDIAN_SETTINGS_PATH,
 } from '../../core/bootstrap/StoragePaths';
 import {
   normalizeHiddenCommandList,
@@ -40,8 +40,8 @@ import {
 import { DEFAULT_CLAUDIAN_SETTINGS } from './defaultSettings';
 
 export {
-  CLAUDIAN_SETTINGS_PATH,
   LEGACY_CLAUDIAN_SETTINGS_PATH,
+  OLD_CLAUDIAN_SETTINGS_PATH,
 };
 
 export type StoredClaudianSettings = ClaudianSettings;
@@ -272,7 +272,11 @@ function mergeLegacyClaudeHiddenCommands(
 }
 
 export class ClaudianSettingsStorage {
-  constructor(private adapter: VaultFileAdapter) {}
+  private readonly settingsPath: string;
+
+  constructor(private adapter: VaultFileAdapter) {
+    this.settingsPath = `${adapter.pluginStoragePath}/claudian-settings.json`;
+  }
 
   async load(): Promise<StoredClaudianSettings> {
     const settingsPath = await this.getLoadPath();
@@ -339,7 +343,7 @@ export class ClaudianSettingsStorage {
     );
 
     if (
-      settingsPath !== CLAUDIAN_SETTINGS_PATH
+      settingsPath !== this.settingsPath
       || (
       hasLegacyTopLevelProviderFields(stored)
       || 'show1MModel' in stored
@@ -371,12 +375,12 @@ export class ClaudianSettingsStorage {
       null,
       2,
     );
-    await this.adapter.write(CLAUDIAN_SETTINGS_PATH, content);
+    await this.adapter.write(this.settingsPath, content);
     await this.deleteLegacyFileIfPresent();
   }
 
   async exists(): Promise<boolean> {
-    if (await this.adapter.exists(CLAUDIAN_SETTINGS_PATH)) {
+    if (await this.adapter.exists(this.settingsPath)) {
       return true;
     }
 
@@ -416,8 +420,12 @@ export class ClaudianSettingsStorage {
   }
 
   private async getLoadPath(): Promise<string | null> {
-    if (await this.adapter.exists(CLAUDIAN_SETTINGS_PATH)) {
-      return CLAUDIAN_SETTINGS_PATH;
+    if (await this.adapter.exists(this.settingsPath)) {
+      return this.settingsPath;
+    }
+
+    if (await this.adapter.exists(OLD_CLAUDIAN_SETTINGS_PATH)) {
+      return OLD_CLAUDIAN_SETTINGS_PATH;
     }
 
     if (await this.adapter.exists(LEGACY_CLAUDIAN_SETTINGS_PATH)) {
@@ -428,6 +436,9 @@ export class ClaudianSettingsStorage {
   }
 
   private async deleteLegacyFileIfPresent(): Promise<void> {
+    if (await this.adapter.exists(OLD_CLAUDIAN_SETTINGS_PATH)) {
+      await this.adapter.delete(OLD_CLAUDIAN_SETTINGS_PATH);
+    }
     if (await this.adapter.exists(LEGACY_CLAUDIAN_SETTINGS_PATH)) {
       await this.adapter.delete(LEGACY_CLAUDIAN_SETTINGS_PATH);
     }

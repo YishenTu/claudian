@@ -280,6 +280,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     );
     const promptSettings = this.getSystemPromptSettings(cwd);
     const artifacts = await prepareOpencodeLaunchArtifacts({
+      configDir: this.plugin.app.vault.configDir,
       runtimeEnv,
       settings: promptSettings,
       workspaceRoot: cwd,

@@ -6,22 +6,35 @@ import type {
   ConversationMeta,
   SessionMetadata,
 } from '../types';
-import { LEGACY_SESSIONS_PATH, SESSIONS_PATH } from './StoragePaths';
+import { LEGACY_SESSIONS_PATH, OLD_SESSIONS_PATH } from './StoragePaths';
 
 export {
   LEGACY_SESSIONS_PATH,
-  SESSIONS_PATH,
+  OLD_SESSIONS_PATH,
 };
 
 export class SessionStorage {
-  constructor(private adapter: VaultFileAdapter) {}
+  private readonly sessionsPath: string;
+
+  constructor(private adapter: VaultFileAdapter) {
+    this.sessionsPath = `${adapter.pluginStoragePath}/sessions`;
+  }
+
+  /** The vault-relative directory where session metadata is stored. */
+  get sessionStoragePath(): string {
+    return this.sessionsPath;
+  }
 
   getMetadataPath(id: string): string {
-    return `${SESSIONS_PATH}/${id}.meta.json`;
+    return `${this.sessionsPath}/${id}.meta.json`;
   }
 
   getLegacyMetadataPath(id: string): string {
     return `${LEGACY_SESSIONS_PATH}/${id}.meta.json`;
+  }
+
+  getOldMetadataPath(id: string): string {
+    return `${OLD_SESSIONS_PATH}/${id}.meta.json`;
   }
 
   async saveMetadata(metadata: SessionMetadata): Promise<void> {
@@ -68,7 +81,7 @@ export class SessionStorage {
         const raw = JSON.parse(content) as SessionMetadata;
         metas.push(raw);
 
-        if (filePath.startsWith(`${LEGACY_SESSIONS_PATH}/`)) {
+        if (filePath.startsWith(`${LEGACY_SESSIONS_PATH}/`) || filePath.startsWith(`${OLD_SESSIONS_PATH}/`)) {
           await this.saveMetadata(raw);
         }
       } catch {
@@ -129,6 +142,11 @@ export class SessionStorage {
       return filePath;
     }
 
+    const oldFilePath = this.getOldMetadataPath(id);
+    if (await this.adapter.exists(oldFilePath)) {
+      return oldFilePath;
+    }
+
     const legacyFilePath = this.getLegacyMetadataPath(id);
     if (await this.adapter.exists(legacyFilePath)) {
       return legacyFilePath;
@@ -138,6 +156,11 @@ export class SessionStorage {
   }
 
   private async deleteLegacyMetadataIfPresent(id: string): Promise<void> {
+    const oldFilePath = this.getOldMetadataPath(id);
+    if (await this.adapter.exists(oldFilePath)) {
+      await this.adapter.delete(oldFilePath);
+    }
+
     const legacyFilePath = this.getLegacyMetadataPath(id);
     if (await this.adapter.exists(legacyFilePath)) {
       await this.adapter.delete(legacyFilePath);
@@ -145,12 +168,20 @@ export class SessionStorage {
   }
 
   private async listUniqueMetadataFiles(): Promise<string[]> {
-    const preferredFiles = await this.listMetadataFiles(SESSIONS_PATH);
+    const preferredFiles = await this.listMetadataFiles(this.sessionsPath);
+    const oldFiles = await this.listMetadataFiles(OLD_SESSIONS_PATH);
     const fallbackFiles = await this.listMetadataFiles(LEGACY_SESSIONS_PATH);
     const filesByName = new Map<string, string>();
 
     for (const filePath of preferredFiles) {
       filesByName.set(this.getFileName(filePath), filePath);
+    }
+
+    for (const filePath of oldFiles) {
+      const fileName = this.getFileName(filePath);
+      if (!filesByName.has(fileName)) {
+        filesByName.set(fileName, filePath);
+      }
     }
 
     for (const filePath of fallbackFiles) {

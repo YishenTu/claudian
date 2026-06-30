@@ -12,6 +12,11 @@ export class VaultFileAdapter {
 
   constructor(private app: App) {}
 
+  /** Vault-relative path to this plugin's storage directory, respecting Obsidian's config folder. */
+  get pluginStoragePath(): string {
+    return `${this.app.vault.configDir}/plugins/realclaudian`;
+  }
+
   async exists(path: string): Promise<boolean> {
     return this.app.vault.adapter.exists(path);
   }

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/StoragePaths';
+import { getClaudianPluginPath } from '../../../core/bootstrap/StoragePaths';
 import {
   buildSystemPrompt,
   computeSystemPromptKey,
@@ -58,6 +58,8 @@ const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfi
 
 export interface PrepareOpencodeLaunchArtifactsParams {
   artifactsSubdir?: string;
+  /** Obsidian config directory relative to the vault root (e.g. ".obsidian"). */
+  configDir: string;
   defaultAgentId?: string;
   managedAgents?: readonly OpencodeManagedAgentConfig[];
   runtimeEnv: NodeJS.ProcessEnv;
@@ -73,7 +75,7 @@ export async function prepareOpencodeLaunchArtifacts(
 ): Promise<OpencodeLaunchArtifacts> {
   const artifactsDir = path.join(
     params.workspaceRoot,
-    CLAUDIAN_STORAGE_PATH,
+    getClaudianPluginPath(params.configDir),
     params.artifactsSubdir ?? 'opencode',
   );
   const systemPromptPath = path.join(artifactsDir, 'system.md');
