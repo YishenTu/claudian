@@ -20,7 +20,7 @@ import {
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { AutoTurnResult } from '../../../core/runtime/types';
 import { TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
-import type { ChatMessage, ClaudianSettings, Conversation, StreamChunk } from '../../../core/types';
+import type { ChatMessage, ClaudianSettings, Conversation, StreamChunk, EnvironmentScope } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -825,7 +825,73 @@ function initializeInputToolbar(
     getCapabilities: () => getTabCapabilities(tab, plugin),
     getSettings: () => getTabSettingsSnapshot(tab, plugin),
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
+    getEnvSnippets: () => plugin.settings.envSnippets,
+    getProviderId: () => tab.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
     onModelChange: async (model: string) => {
+      if (model.startsWith('snippet:')) {
+        const snippetId = model.slice('snippet:'.length);
+        const snippet = plugin.settings.envSnippets.find(s => s.id === snippetId);
+        if (snippet) {
+          try {
+            const currentProvider = tab.providerId;
+            const scope: EnvironmentScope = tab.providerId ? `provider:${tab.providerId}` : 'shared';
+            
+            await plugin.applyEnvSnippet(snippet, scope);
+            
+            const newModel = plugin.settings.model;
+            const newProvider = getEnabledProviderForModel(newModel, plugin.settings);
+            
+            if (tab.lifecycleState === 'blank') {
+              tab.draftModel = newModel;
+              const didProviderChange = newProvider !== currentProvider;
+              if (tab.service) {
+                cleanupTabRuntime(tab);
+              }
+              tab.providerId = newProvider;
+              if (didProviderChange) {
+                syncTabProviderServices(tab, plugin);
+              }
+              syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
+            } else {
+              if (newProvider !== currentProvider) {
+                new Notice('Cannot switch provider on a bound session. Start a new tab instead.');
+                return;
+              }
+            }
+            
+            new Notice(`Applied environment snippet "${snippet.name}"`);
+            
+            const uiConfig = getTabChatUIConfig(tab, plugin);
+            const providerSettings = getTabSettingsSnapshot(tab, plugin);
+            await uiConfig.prepareModelMetadata?.(newModel, plugin.settings, { plugin });
+            
+            tab.ui.thinkingBudgetSelector?.updateDisplay();
+            tab.ui.serviceTierToggle?.updateDisplay();
+            tab.ui.modelSelector?.updateDisplay();
+            tab.ui.modeSelector?.updateDisplay();
+            tab.ui.modelSelector?.renderOptions();
+            tab.ui.modeSelector?.renderOptions();
+            
+            if (tab.lifecycleState !== 'blank') {
+              const currentUsage = tab.state.usage;
+              if (currentUsage) {
+                const newContextWindow = uiConfig.getContextWindowSize(
+                  newModel,
+                  providerSettings.customContextLimits,
+                  providerSettings,
+                );
+                tab.state.usage = recalculateUsageForModel(currentUsage, newModel, newContextWindow);
+              }
+            } else {
+              applyProviderUIGating(tab, plugin);
+            }
+          } catch (e) {
+            new Notice('Failed to apply environment snippet');
+          }
+        }
+        return;
+      }
+
       // For blank tabs, update draft model and derive provider
       if (tab.lifecycleState === 'blank') {
         const previousProvider = tab.providerId;

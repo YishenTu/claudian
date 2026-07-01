@@ -15,7 +15,9 @@ import type {
 import type {
   ManagedMcpServer,
   UsageInfo,
+  EnvSnippet,
 } from '../../../core/types';
+import { t } from '../../../i18n/i18n';
 import { appendCheckIcon, appendMcpIcon, createProviderIconSvg } from '../../../shared/icons';
 import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
 import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
@@ -57,6 +59,8 @@ export interface ToolbarCallbacks {
   getEnvironmentVariables?: () => string;
   getUIConfig: () => ProviderChatUIConfig;
   getCapabilities: () => ProviderCapabilities;
+  getEnvSnippets?: () => EnvSnippet[];
+  getProviderId?: () => string;
 }
 
 export class ModelSelector {
@@ -73,10 +77,35 @@ export class ModelSelector {
   private getAvailableModels() {
     const settings = this.callbacks.getSettings();
     const uiConfig = this.callbacks.getUIConfig();
-    return uiConfig.getModelOptions({
+    const models = uiConfig.getModelOptions({
       ...settings,
       environmentVariables: this.callbacks.getEnvironmentVariables?.(),
     });
+
+    if (this.callbacks.getEnvSnippets && this.callbacks.getProviderId) {
+      const providerId = this.callbacks.getProviderId();
+      const scope = `provider:${providerId}`;
+      const snippets = this.callbacks.getEnvSnippets().filter((snippet) => {
+        if (!snippet.scope || snippet.scope === 'shared') {
+          return true;
+        }
+        return snippet.scope === scope;
+      });
+
+      if (snippets.length > 0) {
+        const groupName = t('settings.envSnippets.name');
+        for (const snippet of snippets) {
+          models.push({
+            value: `snippet:${snippet.id}`,
+            label: snippet.name,
+            description: snippet.description || 'Apply environment variables',
+            group: groupName,
+          });
+        }
+      }
+    }
+
+    return models;
   }
 
   private render() {
@@ -124,14 +153,19 @@ export class ModelSelector {
         option.addClass('selected');
       }
 
-      const icon = model.providerIcon ?? this.callbacks.getUIConfig().getProviderIcon?.();
-      if (icon) {
-        option.appendChild(createProviderIconSvg(icon, {
-          className: 'claudian-model-provider-icon',
-          height: 12,
-          ownerDocument: option.ownerDocument,
-          width: 12,
-        }));
+      if (model.value.startsWith('snippet:')) {
+        const iconEl = option.createSpan({ cls: 'claudian-model-provider-icon claudian-snippet-icon' });
+        setIcon(iconEl, 'clipboard-paste');
+      } else {
+        const icon = model.providerIcon ?? this.callbacks.getUIConfig().getProviderIcon?.();
+        if (icon) {
+          option.appendChild(createProviderIconSvg(icon, {
+            className: 'claudian-model-provider-icon',
+            height: 12,
+            ownerDocument: option.ownerDocument,
+            width: 12,
+          }));
+        }
       }
       option.createSpan({ text: model.label });
       if (model.description) {
