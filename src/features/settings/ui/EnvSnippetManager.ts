@@ -384,7 +384,16 @@ export class EnvSnippetManager {
       return !snippet.scope || snippet.scope === 'shared';
     }
 
-    return snippet.scope === this.scope;
+    if (snippet.scope === this.scope) {
+      return true;
+    }
+
+    if (!snippet.scope) {
+      const updates = getEnvironmentScopeUpdates(snippet.envVars);
+      return updates.some(u => u.scope === this.scope);
+    }
+
+    return false;
   }
 
   private syncTextareaValue(scope: EnvironmentScope, value: string): void {
