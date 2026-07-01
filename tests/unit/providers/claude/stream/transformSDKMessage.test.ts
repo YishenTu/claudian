@@ -1252,6 +1252,40 @@ describe('transformSDKMessage', () => {
       ]);
     });
 
+    it('matches fable family against SDK modelUsage keys via a version-profile suffix', () => {
+      const message = msg({
+        type: 'result',
+        modelUsage: {
+          'claude-haiku-4-5-20251001': {
+            inputTokens: 1000,
+            outputTokens: 300,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 200000,
+            maxOutputTokens: 32000,
+          },
+          'claude-fable-5-v1:0': {
+            inputTokens: 1000,
+            outputTokens: 300,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            webSearchRequests: 0,
+            costUSD: 0.01,
+            contextWindow: 1000000,
+            maxOutputTokens: 32000,
+          },
+        },
+      });
+
+      const results = [...transformSDKMessage(message, { intendedModel: 'claude-fable-5' })];
+
+      expect(results).toEqual([
+        { type: 'context_window', contextWindow: 1000000 },
+      ]);
+    });
+
     it('matches provider-qualified custom model ids against SDK modelUsage keys', () => {
       const message = msg({
         type: 'result',

@@ -13,6 +13,7 @@ export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; descrip
   { value: 'sonnet[1m]', label: 'Sonnet 1M', description: 'Balanced performance (1M context window)' },
   { value: 'opus', label: 'Opus', description: 'Most capable' },
   { value: 'opus[1m]', label: 'Opus 1M', description: 'Most capable (1M context window)' },
+  { value: 'claude-fable-5', label: 'Fable 5 ($$$)', description: "Anthropic's most capable model — premium pricing above Opus" },
 ];
 
 /** Effort levels for adaptive thinking models. */
@@ -33,6 +34,7 @@ export const DEFAULT_EFFORT_LEVEL: Record<string, EffortLevel> = {
   'sonnet[1m]': 'high',
   'opus': 'high',
   'opus[1m]': 'high',
+  'claude-fable-5': 'high',
 };
 
 const ONE_M_SUFFIX = '[1m]';
@@ -49,6 +51,11 @@ function has1MContextSuffix(model: string): boolean {
 function isBuiltInFamilyVariant(model: string, family: 'sonnet' | 'opus'): boolean {
   const normalized = normalizeModelId(model);
   return normalized === family || normalized === `${family}${ONE_M_SUFFIX}`;
+}
+
+/** Fable is a standalone tier (not a haiku/sonnet/opus version bump) — always 1M context, no [1m] toggle. */
+function isFableModel(model: string): boolean {
+  return /claude-fable-\d+/.test(normalizeModelId(model));
 }
 
 function isValidContextLimit(limit: unknown): limit is number {
@@ -81,12 +88,13 @@ export function isDefaultClaudeModel(model: string): boolean {
 }
 
 /**
- * Whether the model supports the `xhigh` effort level. Opus 4.7+ only — the SDK
- * silently falls back to `high` on other models.
+ * Whether the model supports the `xhigh` effort level. Supported on Opus 4.7+
+ * and Fable — the SDK silently falls back to `high` on other models.
  */
 export function supportsXHighEffort(model: string): boolean {
   const normalized = normalizeModelId(model);
   if (isBuiltInFamilyVariant(normalized, 'opus')) return true;
+  if (isFableModel(normalized)) return true;
   return /claude-opus-(4-[7-9]|[5-9])/.test(normalized);
 }
 
@@ -160,7 +168,7 @@ export function getContextWindowSize(
     return customLimit;
   }
 
-  if (has1MContextSuffix(model)) {
+  if (has1MContextSuffix(model) || isFableModel(model)) {
     return CONTEXT_WINDOW_1M;
   }
 
