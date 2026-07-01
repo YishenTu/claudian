@@ -173,6 +173,7 @@ export class OpencodeAuxQueryRunner implements AuxQueryRunner {
     const auxAgentId = OPENCODE_AUX_AGENT_IDS[this.options.agentProfile];
     const artifacts = await prepareOpencodeLaunchArtifacts({
       artifactsSubdir: `opencode/auxiliary/${this.options.artifactPurpose}`,
+      configDir: this.plugin.app.vault.configDir,
       defaultAgentId: auxAgentId,
       managedAgents: [buildOpencodeAuxAgentConfig(this.options.agentProfile)],
       runtimeEnv,

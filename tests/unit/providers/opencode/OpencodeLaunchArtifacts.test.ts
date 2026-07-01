@@ -158,6 +158,7 @@ describe('prepareOpencodeLaunchArtifacts', () => {
     }), 'utf8');
 
     const result = await prepareOpencodeLaunchArtifacts({
+      configDir: '.obsidian',
       runtimeEnv: {
         HOME: tmpRoot,
         OPENCODE_CONFIG: baseConfigPath,
@@ -171,8 +172,8 @@ describe('prepareOpencodeLaunchArtifacts', () => {
       workspaceRoot: tmpRoot,
     });
 
-    expect(result.configPath).toBe(path.join(tmpRoot, '.claudian', 'opencode', 'config.json'));
-    expect(result.systemPromptPath).toBe(path.join(tmpRoot, '.claudian', 'opencode', 'system.md'));
+    expect(result.configPath).toBe(path.join(tmpRoot, '.obsidian', 'plugins', 'realclaudian', 'opencode', 'config.json'));
+    expect(result.systemPromptPath).toBe(path.join(tmpRoot, '.obsidian', 'plugins', 'realclaudian', 'opencode', 'system.md'));
     expect(result.configContent).toContain(`"prompt": "{file:${result.systemPromptPath}}"`);
     const generatedConfig = JSON.parse(await fs.readFile(result.configPath, 'utf8'));
     expect(generatedConfig).toMatchObject({
@@ -226,6 +227,7 @@ describe('prepareOpencodeLaunchArtifacts', () => {
     };
     const first = await prepareOpencodeLaunchArtifacts({
       ...baseParams,
+      configDir: '.obsidian',
       runtimeEnv: {
         HOME: tmpRoot,
       } as NodeJS.ProcessEnv,
@@ -233,6 +235,7 @@ describe('prepareOpencodeLaunchArtifacts', () => {
 
     const second = await prepareOpencodeLaunchArtifacts({
       ...baseParams,
+      configDir: '.obsidian',
       runtimeEnv: {
         HOME: tmpRoot,
         OPENCODE_DB: first.databasePath ?? undefined,
@@ -249,6 +252,7 @@ describe('prepareOpencodeLaunchArtifacts', () => {
     const databaseDir = path.join(xdgDataHome, 'opencode');
 
     const result = await prepareOpencodeLaunchArtifacts({
+      configDir: '.obsidian',
       runtimeEnv: {
         HOME: path.join(tmpRoot, 'home'),
         XDG_DATA_HOME: xdgDataHome,

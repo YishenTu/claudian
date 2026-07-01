@@ -3,9 +3,9 @@ import '@/providers';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import {
-  CLAUDIAN_SETTINGS_PATH,
   ClaudianSettingsStorage,
   LEGACY_CLAUDIAN_SETTINGS_PATH,
+  OLD_CLAUDIAN_SETTINGS_PATH,
 } from '@/providers/claude/storage/ClaudianSettingsStorage';
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
@@ -21,7 +21,11 @@ jest.mock('@/utils/env', () => ({
   getLegacyHostnameKey: () => mockGetLegacyHostnameKey(),
 }));
 
+const MOCK_PLUGIN_PATH = '.obsidian/plugins/realclaudian';
+const EXPECTED_SETTINGS_PATH = `${MOCK_PLUGIN_PATH}/claudian-settings.json`;
+
 const mockAdapter = {
+  pluginStoragePath: MOCK_PLUGIN_PATH,
   exists: jest.fn(),
   read: jest.fn(),
   write: jest.fn(),
@@ -56,7 +60,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(mockAdapter.read).not.toHaveBeenCalled();
     });
 
-    it('loads legacy .claude settings and migrates them to .claudian', async () => {
+    it('loads legacy .claude settings and migrates them to the plugin folder', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
         path === LEGACY_CLAUDIAN_SETTINGS_PATH
       ));
@@ -75,10 +79,35 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.model).toBe('claude-opus-4-5');
       expect(result.userName).toBe('MigratedUser');
       expect(mockAdapter.write).toHaveBeenCalledWith(
-        CLAUDIAN_SETTINGS_PATH,
+        EXPECTED_SETTINGS_PATH,
         expect.any(String),
       );
       expect(mockAdapter.delete).toHaveBeenCalledWith(LEGACY_CLAUDIAN_SETTINGS_PATH);
+    });
+
+    it('loads old .claudian settings and migrates them to the plugin folder', async () => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === OLD_CLAUDIAN_SETTINGS_PATH
+      ));
+      mockAdapter.read.mockImplementation(async (path: string) => {
+        if (path === OLD_CLAUDIAN_SETTINGS_PATH) {
+          return JSON.stringify({
+            model: 'claude-sonnet-4-5',
+            userName: 'OldPathUser',
+          });
+        }
+        return '{}';
+      });
+
+      const result = await storage.load();
+
+      expect(result.model).toBe('claude-sonnet-4-5');
+      expect(result.userName).toBe('OldPathUser');
+      expect(mockAdapter.write).toHaveBeenCalledWith(
+        EXPECTED_SETTINGS_PATH,
+        expect.any(String),
+      );
+      expect(mockAdapter.delete).toHaveBeenCalledWith(OLD_CLAUDIAN_SETTINGS_PATH);
     });
 
     it('should parse valid JSON and merge with defaults', async () => {
@@ -518,7 +547,7 @@ describe('ClaudianSettingsStorage', () => {
       await storage.save(settings);
 
       expect(mockAdapter.write).toHaveBeenCalledWith(
-        CLAUDIAN_SETTINGS_PATH,
+        EXPECTED_SETTINGS_PATH,
         expect.any(String)
       );
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
@@ -541,17 +570,18 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent).not.toHaveProperty('slashCommands');
     });
 
-    it('deletes the legacy settings file after writing the new path', async () => {
+    it('deletes legacy and old settings files after writing the new path', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
-        path === LEGACY_CLAUDIAN_SETTINGS_PATH
+        path === LEGACY_CLAUDIAN_SETTINGS_PATH || path === OLD_CLAUDIAN_SETTINGS_PATH
       ));
 
       await storage.save(DEFAULT_SETTINGS);
 
       expect(mockAdapter.write).toHaveBeenCalledWith(
-        CLAUDIAN_SETTINGS_PATH,
+        EXPECTED_SETTINGS_PATH,
         expect.any(String),
       );
+      expect(mockAdapter.delete).toHaveBeenCalledWith(OLD_CLAUDIAN_SETTINGS_PATH);
       expect(mockAdapter.delete).toHaveBeenCalledWith(LEGACY_CLAUDIAN_SETTINGS_PATH);
     });
 
@@ -565,24 +595,24 @@ describe('ClaudianSettingsStorage', () => {
   describe('exists', () => {
     it('should return true when the new file exists', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
-        path === CLAUDIAN_SETTINGS_PATH
+        path === EXPECTED_SETTINGS_PATH
       ));
 
       const result = await storage.exists();
 
       expect(result).toBe(true);
-      expect(mockAdapter.exists).toHaveBeenCalledWith(CLAUDIAN_SETTINGS_PATH);
+      expect(mockAdapter.exists).toHaveBeenCalledWith(EXPECTED_SETTINGS_PATH);
     });
 
-    it('should return true when only the legacy file exists', async () => {
+    it('should return true when only the legacy or old file exists', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
-        path === LEGACY_CLAUDIAN_SETTINGS_PATH
+        path === LEGACY_CLAUDIAN_SETTINGS_PATH || path === OLD_CLAUDIAN_SETTINGS_PATH
       ));
 
       const result = await storage.exists();
 
       expect(result).toBe(true);
-      expect(mockAdapter.exists).toHaveBeenCalledWith(CLAUDIAN_SETTINGS_PATH);
+      expect(mockAdapter.exists).toHaveBeenCalledWith(EXPECTED_SETTINGS_PATH);
       expect(mockAdapter.exists).toHaveBeenCalledWith(LEGACY_CLAUDIAN_SETTINGS_PATH);
     });
 
