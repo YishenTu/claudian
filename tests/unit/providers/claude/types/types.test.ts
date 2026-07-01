@@ -700,9 +700,18 @@ describe('types.ts', () => {
       expect(supportsXHighEffort('claude-opus-5')).toBe(true);
     });
 
-    it('returns false for non-opus models and older opus ids', () => {
-      expect(supportsXHighEffort('sonnet')).toBe(false);
+    it('returns true for sonnet aliases and sonnet 5+ ids', () => {
+      expect(supportsXHighEffort('sonnet')).toBe(true);
+      expect(supportsXHighEffort('sonnet[1m]')).toBe(true);
+      expect(supportsXHighEffort('claude-sonnet-5')).toBe(true);
+      expect(supportsXHighEffort('claude-sonnet-5-20260101')).toBe(true);
+      expect(supportsXHighEffort('claude-sonnet-6')).toBe(true);
+    });
+
+    it('returns false for non-opus/non-sonnet-5 models and older ids', () => {
+      expect(supportsXHighEffort('haiku')).toBe(false);
       expect(supportsXHighEffort('claude-sonnet-4-5')).toBe(false);
+      expect(supportsXHighEffort('claude-sonnet-4-6')).toBe(false);
       expect(supportsXHighEffort('claude-opus-4-6')).toBe(false);
     });
   });

@@ -81,13 +81,17 @@ export function isDefaultClaudeModel(model: string): boolean {
 }
 
 /**
- * Whether the model supports the `xhigh` effort level. Opus 4.7+ only — the SDK
- * silently falls back to `high` on other models.
+ * Whether the model supports the `xhigh` effort level. Supported on Opus 4.7+
+ * and Sonnet 5+ — the SDK silently falls back to `high` on other models.
  */
 export function supportsXHighEffort(model: string): boolean {
   const normalized = normalizeModelId(model);
   if (isBuiltInFamilyVariant(normalized, 'opus')) return true;
-  return /claude-opus-(4-[7-9]|[5-9])/.test(normalized);
+  if (isBuiltInFamilyVariant(normalized, 'sonnet')) return true;
+  return (
+    /claude-opus-(4-[7-9]|[5-9])/.test(normalized) ||
+    /claude-sonnet-(?:[5-9]|\d{2,})(?:-\d{8})?(?:-|$)/.test(normalized)
+  );
 }
 
 /** Clamp stored effort values to what the selected model actually supports. */
