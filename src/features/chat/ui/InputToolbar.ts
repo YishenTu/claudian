@@ -18,6 +18,7 @@ import type {
   EnvSnippet,
 } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
+import { parseEnvironmentVariables } from '../../../utils/env';
 import { appendCheckIcon, appendMcpIcon, createProviderIconSvg } from '../../../shared/icons';
 import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
 import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
@@ -116,20 +117,43 @@ export class ModelSelector {
 
     this.dropdownEl = this.container.createDiv({ cls: 'claudian-model-dropdown' });
     this.renderOptions();
+
+    this.container.addEventListener('mouseleave', () => {
+      this.dropdownEl?.removeClass('hidden');
+    });
   }
 
   updateDisplay() {
     if (!this.buttonEl) return;
     const currentModel = this.callbacks.getSettings().model;
     const models = this.getAvailableModels();
-    const modelInfo = models.find(m => m.value === currentModel);
 
+    let activeSnippetLabel: string | undefined;
+    const snippets = this.callbacks.getEnvSnippets?.() || [];
+    const currentEnvText = this.callbacks.getEnvironmentVariables?.() || '';
+    if (snippets.length > 0 && currentEnvText) {
+      for (const snippet of snippets) {
+        const snippetVars = parseEnvironmentVariables(snippet.envVars);
+        const currentVars = parseEnvironmentVariables(currentEnvText);
+        const keys = Object.keys(snippetVars).filter(k => k !== 'PATH');
+        if (keys.length > 0 && keys.every(k => currentVars[k] === snippetVars[k])) {
+          activeSnippetLabel = snippet.name;
+          break;
+        }
+      }
+    }
+
+    const modelInfo = models.find(m => m.value === currentModel);
     const displayModel = modelInfo || models[0];
 
     this.buttonEl.empty();
 
     const labelEl = this.buttonEl.createSpan({ cls: 'claudian-model-label' });
-    labelEl.setText(displayModel?.label || 'Unknown');
+    let labelText = displayModel?.label || 'Unknown';
+    if (activeSnippetLabel) {
+      labelText = `${activeSnippetLabel} (${labelText})`;
+    }
+    labelEl.setText(labelText);
   }
 
   renderOptions() {
@@ -140,6 +164,9 @@ export class ModelSelector {
     const models = this.getAvailableModels();
     const reversed = [...models].reverse();
 
+    const snippets = this.callbacks.getEnvSnippets?.() || [];
+    const currentEnvText = this.callbacks.getEnvironmentVariables?.() || '';
+
     let lastGroup: string | undefined;
     for (const model of reversed) {
       if (model.group && model.group !== lastGroup) {
@@ -149,7 +176,22 @@ export class ModelSelector {
       }
 
       const option = this.dropdownEl.createDiv({ cls: 'claudian-model-option' });
-      if (model.value === currentModel) {
+
+      let isSelected = model.value === currentModel;
+      if (model.value.startsWith('snippet:')) {
+        const snippetId = model.value.slice('snippet:'.length);
+        const snippet = snippets.find(s => s.id === snippetId);
+        if (snippet && currentEnvText) {
+          const snippetVars = parseEnvironmentVariables(snippet.envVars);
+          const currentVars = parseEnvironmentVariables(currentEnvText);
+          const keys = Object.keys(snippetVars).filter(k => k !== 'PATH');
+          if (keys.length > 0 && keys.every(k => currentVars[k] === snippetVars[k])) {
+            isSelected = true;
+          }
+        }
+      }
+
+      if (isSelected) {
         option.addClass('selected');
       }
 
@@ -174,6 +216,7 @@ export class ModelSelector {
 
       option.addEventListener('click', (e) => {
         e.stopPropagation();
+        this.dropdownEl?.addClass('hidden');
         runToolbarAction(async () => {
           await this.callbacks.onModelChange(model.value);
           this.updateDisplay();
