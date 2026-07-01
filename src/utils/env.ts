@@ -332,14 +332,14 @@ export function parseEnvironmentVariables(input: string): Record<string, string>
     if (eqIndex > 0) {
       const key = normalized.substring(0, eqIndex).trim();
       let value = normalized.substring(eqIndex + 1).trim();
-      
       // Define matching pairs of quotes to strip
       const quotePairs = [
         ['"', '"'],
         ["'", "'"],
         ['“', '”'],
+        ['"', '”'],  // mixed standard leading and curved trailing double quote
+        ['“', '"'],  // mixed curved leading and standard trailing double quote
         ['\\"', '\\"'],
-        ['\\"', '”'], // handles escaped leading quote + curved trailing quote
       ];
       
       for (const [start, end] of quotePairs) {
