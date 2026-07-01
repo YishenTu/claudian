@@ -1,0 +1,30 @@
+.claudian-send-stop-container {
+  flex-shrink: 0;
+}
+
+.claudian-send-stop-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--claudian-brand);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.claudian-send-stop-btn:hover {
+  opacity: 0.85;
+}
+
+.claudian-send-stop-btn svg {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+.claudian-send-stop-btn--streaming {
+  /* Same brand color, icon switches to square — no extra color change needed */
+}
