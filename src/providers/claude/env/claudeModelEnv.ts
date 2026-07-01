@@ -2,13 +2,14 @@ import { formatCustomModelLabel } from '../modelLabels';
 
 const CUSTOM_MODEL_ENV_KEYS = [
   'ANTHROPIC_MODEL',
+  'CLAUDE_CODE_LLM_MODEL',
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
 ] as const;
 
 function getModelTypeFromEnvKey(envKey: string): string {
-  if (envKey === 'ANTHROPIC_MODEL') return 'model';
+  if (envKey === 'ANTHROPIC_MODEL' || envKey === 'CLAUDE_CODE_LLM_MODEL') return 'model';
   const match = envKey.match(/ANTHROPIC_DEFAULT_(\w+)_MODEL/);
   return match ? match[1].toLowerCase() : envKey;
 }
@@ -61,6 +62,9 @@ export function getModelsFromEnvironment(
 export function getCurrentModelFromEnvironment(envVars: Record<string, string>): string | null {
   if (envVars.ANTHROPIC_MODEL) {
     return envVars.ANTHROPIC_MODEL;
+  }
+  if (envVars.CLAUDE_CODE_LLM_MODEL) {
+    return envVars.CLAUDE_CODE_LLM_MODEL;
   }
   if (envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL) {
     return envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL;

@@ -339,45 +339,12 @@ export class EnvSnippetManager {
       snippet.scope ?? this.scope,
     );
 
-    if (updates.length === 1) {
-      const [update] = updates;
+    for (const update of updates) {
       this.syncTextareaValue(update.scope, update.envText);
-      await this.plugin.applyEnvironmentVariables(update.scope, update.envText);
-    } else if (updates.length > 1) {
-      for (const update of updates) {
-        this.syncTextareaValue(update.scope, update.envText);
-      }
-      await this.plugin.applyEnvironmentVariablesBatch(updates);
     }
 
-    // Legacy snippets without contextLimits don't modify limits
-    if (snippet.contextLimits) {
-      this.plugin.settings.customContextLimits = {
-        ...this.plugin.settings.customContextLimits,
-        ...snippet.contextLimits,
-      };
-    }
-
-    // Legacy snippets without modelAliases don't modify aliases. Snippets saved
-    // with alias fields clear aliases for their own model IDs when left empty.
-    if (snippet.modelAliases) {
-      const modelIds = ProviderRegistry.getCustomModelIds(parseEnvironmentVariables(snippet.envVars));
-      const nextAliases = { ...(this.plugin.settings.customModelAliases ?? {}) };
-      for (const modelId of modelIds) {
-        const alias = snippet.modelAliases[modelId]?.trim();
-        if (alias) {
-          nextAliases[modelId] = alias;
-        } else {
-          delete nextAliases[modelId];
-        }
-      }
-      this.plugin.settings.customModelAliases = nextAliases;
-    }
-    await this.plugin.saveSettings();
-
+    await this.plugin.applyEnvSnippet(snippet, this.scope);
     this.onContextLimitsChange?.();
-    const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as ClaudianView | undefined;
-    view?.refreshModelSelector();
   }
 
   private editSnippet(snippet: EnvSnippet) {
@@ -417,7 +384,16 @@ export class EnvSnippetManager {
       return !snippet.scope || snippet.scope === 'shared';
     }
 
-    return snippet.scope === this.scope;
+    if (snippet.scope === this.scope) {
+      return true;
+    }
+
+    if (!snippet.scope) {
+      const updates = getEnvironmentScopeUpdates(snippet.envVars);
+      return updates.some(u => u.scope === this.scope);
+    }
+
+    return false;
   }
 
   private syncTextareaValue(scope: EnvironmentScope, value: string): void {
