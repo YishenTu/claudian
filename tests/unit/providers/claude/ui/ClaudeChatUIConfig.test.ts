@@ -15,6 +15,7 @@ describe('claudeChatUIConfig', () => {
         'haiku',
         'sonnet',
         'opus',
+        'claude-fable-5',
         'claude-code/claude-opus-4-6',
         'claude-code/claude-opus-4-6[1m]',
       ]);
@@ -45,6 +46,7 @@ describe('claudeChatUIConfig', () => {
         'haiku',
         'sonnet',
         'opus',
+        'claude-fable-5',
         'claude-code/claude-opus-4-6',
       ]);
     });
@@ -61,6 +63,22 @@ describe('claudeChatUIConfig', () => {
       expect(options.at(-1)).toEqual({
         value: 'claude-code/claude-opus-4-5-20251101',
         label: 'Opus 4.5 (2511)',
+        description: 'Custom model',
+      });
+    });
+
+    it('formats a future fable custom model id without the built-in default', () => {
+      const options = claudeChatUIConfig.getModelOptions({
+        providerConfigs: {
+          claude: {
+            customModels: 'claude-fable-6',
+          },
+        },
+      });
+
+      expect(options.at(-1)).toEqual({
+        value: 'claude-code/claude-fable-6',
+        label: 'Fable 6',
         description: 'Custom model',
       });
     });
@@ -134,6 +152,12 @@ describe('claudeChatUIConfig', () => {
 
     it('keeps xhigh on supported opus models', () => {
       const options = claudeChatUIConfig.getReasoningOptions('claude-opus-4-7', {});
+
+      expect(options.map(option => option.value)).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    });
+
+    it('keeps xhigh on fable models', () => {
+      const options = claudeChatUIConfig.getReasoningOptions('claude-fable-5', {});
 
       expect(options.map(option => option.value)).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
     });

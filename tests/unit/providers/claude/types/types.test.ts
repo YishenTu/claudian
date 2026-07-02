@@ -648,25 +648,37 @@ describe('types.ts', () => {
       });
     });
 
+    describe('fable models', () => {
+      it('should default to 1M context window with no [1m] suffix needed', () => {
+        expect(getContextWindowSize('claude-fable-5')).toBe(CONTEXT_WINDOW_1M);
+        expect(getContextWindowSize('claude-fable-6')).toBe(CONTEXT_WINDOW_1M);
+      });
+
+      it('should prefer custom limits over the fable default', () => {
+        const customLimits = { 'claude-fable-5': 500000 };
+        expect(getContextWindowSize('claude-fable-5', customLimits)).toBe(500000);
+      });
+    });
+
     describe('filterVisibleModelOptions', () => {
       it('should hide 1M variants when toggles are disabled', () => {
         const models = filterVisibleModelOptions(DEFAULT_CLAUDE_MODELS, false, false).map((model) => model.value);
-        expect(models).toEqual(['haiku', 'sonnet', 'opus']);
+        expect(models).toEqual(['haiku', 'sonnet', 'opus', 'claude-fable-5']);
       });
 
       it('should swap in 1M variants when toggles are enabled', () => {
         const models = filterVisibleModelOptions(DEFAULT_CLAUDE_MODELS, true, true).map((model) => model.value);
-        expect(models).toEqual(['haiku', 'sonnet[1m]', 'opus[1m]']);
+        expect(models).toEqual(['haiku', 'sonnet[1m]', 'opus[1m]', 'claude-fable-5']);
       });
 
       it('should swap only opus when enableOpus1M is true and enableSonnet1M is false', () => {
         const models = filterVisibleModelOptions(DEFAULT_CLAUDE_MODELS, true, false).map((model) => model.value);
-        expect(models).toEqual(['haiku', 'sonnet', 'opus[1m]']);
+        expect(models).toEqual(['haiku', 'sonnet', 'opus[1m]', 'claude-fable-5']);
       });
 
       it('should swap only sonnet when enableSonnet1M is true and enableOpus1M is false', () => {
         const models = filterVisibleModelOptions(DEFAULT_CLAUDE_MODELS, false, true).map((model) => model.value);
-        expect(models).toEqual(['haiku', 'sonnet[1m]', 'opus']);
+        expect(models).toEqual(['haiku', 'sonnet[1m]', 'opus', 'claude-fable-5']);
       });
     });
 
@@ -700,10 +712,24 @@ describe('types.ts', () => {
       expect(supportsXHighEffort('claude-opus-5')).toBe(true);
     });
 
-    it('returns false for non-opus models and older opus ids', () => {
-      expect(supportsXHighEffort('sonnet')).toBe(false);
+    it('returns true for sonnet aliases and sonnet 5+ ids', () => {
+      expect(supportsXHighEffort('sonnet')).toBe(true);
+      expect(supportsXHighEffort('sonnet[1m]')).toBe(true);
+      expect(supportsXHighEffort('claude-sonnet-5')).toBe(true);
+      expect(supportsXHighEffort('claude-sonnet-5-20260101')).toBe(true);
+      expect(supportsXHighEffort('claude-sonnet-6')).toBe(true);
+    });
+
+    it('returns false for non-opus/non-sonnet-5 models and older ids', () => {
+      expect(supportsXHighEffort('haiku')).toBe(false);
       expect(supportsXHighEffort('claude-sonnet-4-5')).toBe(false);
+      expect(supportsXHighEffort('claude-sonnet-4-6')).toBe(false);
       expect(supportsXHighEffort('claude-opus-4-6')).toBe(false);
+    });
+
+    it('returns true for fable models', () => {
+      expect(supportsXHighEffort('claude-fable-5')).toBe(true);
+      expect(supportsXHighEffort('claude-fable-6')).toBe(true);
     });
   });
 

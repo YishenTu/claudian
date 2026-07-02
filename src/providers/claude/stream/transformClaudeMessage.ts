@@ -105,7 +105,7 @@ interface ContextWindowEntry {
 
 interface ClaudeModelSignature {
   normalizedModel: string;
-  family: 'haiku' | 'sonnet' | 'opus';
+  family: 'haiku' | 'sonnet' | 'opus' | 'fable';
   is1M: boolean;
   major?: string;
   minor?: string;
@@ -135,7 +135,7 @@ function parseClaudeModelSignature(model: string): ClaudeModelSignature | null {
   }
 
   const versionedMatch = normalized.match(
-    /^claude-(haiku|sonnet|opus)-(\d+)(?:-(\d+))?(?:-(\d{8}))?(?:-v\d+:\d+)?(\[1m\])?$/,
+    /^claude-(haiku|sonnet|opus|fable)-(\d+)(?:-(\d+))?(?:-(\d{8}))?(?:-v\d+:\d+)?(\[1m\])?$/,
   );
   if (versionedMatch) {
     const [, familyMatch, major, minor, date, oneMillionSuffix] = versionedMatch;
