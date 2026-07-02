@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { Setting } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
@@ -226,6 +226,34 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     }
 
     refreshInstallationMethodUI();
+
+    // --- History ---
+
+    new Setting(container).setName('History').setHeading();
+
+    new Setting(container)
+      .setName('Import Codex history')
+      .setDesc('Scan native Codex sessions for this vault and its subfolders, then add missing sessions to Claudian history.')
+      .addButton((button) => {
+        button
+          .setButtonText('Import')
+          .onClick(async () => {
+            button.setDisabled(true);
+            button.setButtonText('Importing...');
+            try {
+              const result = await context.plugin.importCodexNativeSessionsForCurrentVault();
+              new Notice(
+                `Imported ${result.imported.length} Codex session${result.imported.length === 1 ? '' : 's'}. `
+                + `Skipped ${result.skippedDuplicate} duplicate${result.skippedDuplicate === 1 ? '' : 's'}.`
+              );
+            } catch {
+              new Notice('Failed to import Codex history');
+            } finally {
+              button.setButtonText('Import');
+              button.setDisabled(false);
+            }
+          });
+      });
 
     // --- Safety ---
 
