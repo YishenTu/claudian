@@ -99,6 +99,12 @@ const CODEX_ENTRIES: ProviderCommandEntry[] = [
   },
 ];
 
+const CODEX_COMPACT_ENTRY: ProviderCommandEntry = {
+  id: 'codex-builtin-compact', providerId: 'codex', kind: 'command', name: 'compact',
+  description: 'Compact conversation history', content: '', scope: 'system', source: 'builtin',
+  isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/',
+};
+
 describe('SlashCommandDropdown - provider catalog', () => {
   let containerEl: any;
   let inputEl: any;
@@ -151,7 +157,9 @@ describe('SlashCommandDropdown - provider catalog', () => {
 
   describe('Codex provider (/ and $ triggers)', () => {
     it('shows Codex skills on $ trigger', async () => {
-      const getProviderEntries = jest.fn().mockResolvedValue(CODEX_ENTRIES);
+      const getProviderEntries = jest.fn((context: { includeBuiltIns: boolean }) => Promise.resolve(
+        context.includeBuiltIns ? [CODEX_COMPACT_ENTRY, ...CODEX_ENTRIES] : CODEX_ENTRIES
+      ));
       const dropdown = new SlashCommandDropdown(
         containerEl, inputEl, callbacks, { providerConfig: CODEX_CONFIG, getProviderEntries }
       );
@@ -165,6 +173,11 @@ describe('SlashCommandDropdown - provider catalog', () => {
       expect(names).toContain('$analyze');
       // Built-ins should NOT show on $ trigger
       expect(names).not.toContain('clear');
+      expect(names).not.toContain('/compact');
+      expect(getProviderEntries).toHaveBeenCalledWith({
+        includeBuiltIns: false,
+        triggerChar: '$',
+      });
 
       dropdown.destroy();
     });
@@ -183,6 +196,42 @@ describe('SlashCommandDropdown - provider catalog', () => {
       const names = getRenderedCommandNames(containerEl);
       expect(names).toContain('/clear');
       expect(names).toContain('$analyze');
+
+      dropdown.destroy();
+    });
+
+    it('shows Codex provider slash built-ins only for the / trigger', async () => {
+      const getProviderEntries = jest.fn((context: { includeBuiltIns: boolean }) => Promise.resolve(
+        context.includeBuiltIns ? [CODEX_COMPACT_ENTRY, ...CODEX_ENTRIES] : CODEX_ENTRIES
+      ));
+      const dropdown = new SlashCommandDropdown(
+        containerEl, inputEl, callbacks, { providerConfig: CODEX_CONFIG, getProviderEntries }
+      );
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      let names = getRenderedCommandNames(containerEl);
+      expect(names).toContain('/compact');
+      expect(getProviderEntries).toHaveBeenCalledWith({
+        includeBuiltIns: true,
+        triggerChar: '/',
+      });
+
+      inputEl.value = '$';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      names = getRenderedCommandNames(containerEl);
+      expect(names).toContain('$analyze');
+      expect(names).not.toContain('/compact');
+      expect(getProviderEntries).toHaveBeenCalledWith({
+        includeBuiltIns: false,
+        triggerChar: '$',
+      });
 
       dropdown.destroy();
     });

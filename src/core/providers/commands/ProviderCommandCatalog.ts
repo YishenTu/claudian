@@ -10,8 +10,13 @@ export interface ProviderCommandDropdownConfig {
   commandPrefix: string;
 }
 
+export interface ProviderCommandDropdownContext {
+  includeBuiltIns: boolean;
+  triggerChar?: string;
+}
+
 export interface ProviderCommandCatalog {
-  listDropdownEntries(context: { includeBuiltIns: boolean }): Promise<ProviderCommandEntry[]>;
+  listDropdownEntries(context: ProviderCommandDropdownContext): Promise<ProviderCommandEntry[]>;
   listVaultEntries(): Promise<ProviderCommandEntry[]>;
   saveVaultEntry(entry: ProviderCommandEntry): Promise<void>;
   deleteVaultEntry(entry: ProviderCommandEntry): Promise<void>;

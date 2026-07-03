@@ -1724,6 +1724,25 @@ describe('TabManager - Provider Command Catalog', () => {
     expect(entries[0].displayPrefix).toBe('$');
   });
 
+  it('should forward slash dropdown built-in context to the provider catalog', async () => {
+    ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: mockCatalog as any });
+
+    const manager = createManager({
+      tabFactory: () => createMockTabData({ id: 'tab-1', providerId: 'codex' }),
+    });
+
+    await manager.createTab();
+
+    const options = mockInitializeTabUI.mock.calls[0][2];
+    const catalogConfig = options.getProviderCatalogConfig();
+    await catalogConfig.getEntries({ includeBuiltIns: true, triggerChar: '/' });
+
+    expect(mockCatalog.listDropdownEntries).toHaveBeenCalledWith({
+      includeBuiltIns: true,
+      triggerChar: '/',
+    });
+  });
+
   it('should resolve the blank-tab catalog from draftModel instead of stale providerId', async () => {
     const claudeCatalog = {
       listDropdownEntries: jest.fn().mockResolvedValue([
