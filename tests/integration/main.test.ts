@@ -738,6 +738,35 @@ describe('ClaudianPlugin', () => {
       expect(updated?.messages).toEqual(messages);
     });
 
+    it('should preserve image data when updating conversation messages', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      const messages = [
+        {
+          id: 'msg-1',
+          role: 'user' as const,
+          content: 'See attached image',
+          timestamp: Date.now(),
+          images: [
+            {
+              id: 'img-1',
+              name: 'pasted.png',
+              mediaType: 'image/png' as const,
+              data: 'YmFzZTY0',
+              size: 10,
+              source: 'paste' as const,
+            },
+          ],
+        },
+      ];
+
+      await plugin.updateConversation(conv.id, { messages });
+
+      const updated = await plugin.getConversationById(conv.id);
+      expect(updated?.messages[0].images?.[0].data).toBe('YmFzZTY0');
+    });
+
     it('should update conversation sessionId', async () => {
       await plugin.onload();
 
