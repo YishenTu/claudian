@@ -31,6 +31,12 @@ import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSet
 import type ClaudianPlugin from '../../../main';
 import { getGeminiProviderSettings, migrateLegacyGeminiModelId } from '../settings';
 import { getGeminiState } from '../types';
+import {
+  GEMINI_VAULT_TOOLS,
+  GEMINI_VAULT_WRITE_TOOLS,
+  executeGeminiVaultTool,
+  isGeminiVaultTool,
+} from './geminiVaultTools';
 
 export interface GeminiRuntimeServices {
   mcpManager: McpServerManager;
@@ -105,6 +111,18 @@ export class GeminiChatRuntime implements ChatRuntime {
     return settings.enabled;
   }
 
+  private buildSystemInstruction(): string {
+    const vaultName = this.plugin.app.vault.getName();
+    return [
+      `You are an AI assistant embedded in the user's Obsidian vault "${vaultName}".`,
+      'You have function tools to work with the vault files: list_files, read_file, write_file, edit_file, and search_notes.',
+      'When the user asks about their notes or files, or asks you to create or modify content, use these tools instead of saying you cannot access files.',
+      'All file paths are vault-relative, e.g. "Folder/Note.md". Markdown is the primary format.',
+      'Before editing an existing file, read it first so edits use exact text from the file.',
+      'Respond in the language the user writes in.',
+    ].join('\n');
+  }
+
   private resolveSelectedModel(queryOptions?: ChatRuntimeQueryOptions): string | null {
     if (typeof queryOptions?.model === 'string' && queryOptions.model) {
       return queryOptions.model;
@@ -159,10 +177,10 @@ export class GeminiChatRuntime implements ChatRuntime {
       return;
     }
 
-    // Connect MCP Servers
+    // Built-in vault file tools + MCP servers
     const activeServers = this.mcpManager.getActiveServers(turn.mcpMentions);
     const mcpClients = new Map<string, { client: Client; serverName: string }>();
-    const tools: FunctionDeclaration[] = [];
+    const tools: FunctionDeclaration[] = [...GEMINI_VAULT_TOOLS];
 
     for (const [serverName, config] of Object.entries(activeServers)) {
       try {
@@ -194,8 +212,9 @@ export class GeminiChatRuntime implements ChatRuntime {
       parts: [{ text: msg.content }],
     }));
 
-    const model = genAI.getGenerativeModel({ 
+    const model = genAI.getGenerativeModel({
       model: modelId,
+      systemInstruction: this.buildSystemInstruction(),
       tools: tools.length > 0 ? [{ functionDeclarations: tools }] : undefined
     });
     
@@ -251,7 +270,25 @@ export class GeminiChatRuntime implements ChatRuntime {
             let toolResultContent = '';
             let isError = false;
 
-            if (mcpInfo) {
+            if (isGeminiVaultTool(call.name)) {
+              const needsApproval = GEMINI_VAULT_WRITE_TOOLS.has(call.name);
+              const approved = needsApproval && this.approvalCallback
+                ? await this.approvalCallback(call.name, call.args as Record<string, unknown>, `Call ${call.name}`)
+                : 'allow';
+
+              if (approved === 'allow' || approved === 'allow-always') {
+                const result = await executeGeminiVaultTool(
+                  this.plugin,
+                  call.name,
+                  (call.args ?? {}) as Record<string, unknown>,
+                );
+                toolResultContent = result.content;
+                isError = result.isError;
+              } else {
+                toolResultContent = 'User denied permission to use this tool.';
+                isError = true;
+              }
+            } else if (mcpInfo) {
               const approved = this.approvalCallback 
                 ? await this.approvalCallback(call.name, call.args as Record<string, unknown>, `Call ${call.name}`)
                 : 'allow';
