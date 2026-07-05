@@ -50,6 +50,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.3.159",
     "@codemirror/state": "^6.5.0",
     "@codemirror/view": "^6.38.6",
+    "@google/generative-ai": "^0.21.0",
     "@modelcontextprotocol/sdk": "~1.29.0",
     "smol-toml": "^1.6.1",
     "tslib": "^2.8.1"
