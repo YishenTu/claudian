@@ -1,20 +1,18 @@
-import * as path from 'node:path';
-import * as fs from 'node:fs/promises';
-
 import type { ManagedMcpServer } from '../../../core/types';
 import type { AppMcpStorage } from '../../../core/providers/types';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 
-export class GeminiMcpStorage implements AppMcpStorage {
-  private mcpPath: string;
+export const GEMINI_MCP_CONFIG_PATH = '.gemini/mcp.json';
 
-  constructor(vaultAdapter: VaultFileAdapter) {
-    this.mcpPath = path.join(vaultAdapter.getBasePath(), '.gemini', 'mcp.json');
-  }
+export class GeminiMcpStorage implements AppMcpStorage {
+  constructor(private vaultAdapter: VaultFileAdapter) {}
 
   async load(): Promise<ManagedMcpServer[]> {
     try {
-      const content = await fs.readFile(this.mcpPath, 'utf-8');
+      if (!(await this.vaultAdapter.exists(GEMINI_MCP_CONFIG_PATH))) {
+        return [];
+      }
+      const content = await this.vaultAdapter.read(GEMINI_MCP_CONFIG_PATH);
       const data = JSON.parse(content);
       return data?.mcpServers ? data.mcpServers : [];
     } catch {
@@ -24,8 +22,7 @@ export class GeminiMcpStorage implements AppMcpStorage {
 
   async save(servers: ManagedMcpServer[]): Promise<void> {
     try {
-      await fs.mkdir(path.dirname(this.mcpPath), { recursive: true });
-      await fs.writeFile(this.mcpPath, JSON.stringify({ mcpServers: servers }, null, 2), 'utf-8');
+      await this.vaultAdapter.write(GEMINI_MCP_CONFIG_PATH, JSON.stringify({ mcpServers: servers }, null, 2));
     } catch {
       // Ignore
     }
