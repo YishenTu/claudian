@@ -22,6 +22,17 @@ function normalizeOptionalString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function shouldPersistCodexInstallationSettings(): boolean {
+  return process.platform === 'win32';
+}
+
+function omitCurrentHost<T>(entries: Record<string, T>, hostnameKey: string): Record<string, T> {
+  const next = { ...entries };
+  delete next[hostnameKey];
+  delete next[getLegacyHostnameKey()];
+  return next;
+}
+
 export interface CodexProviderSettings {
   enabled: boolean;
   safeMode: CodexSafeMode;
@@ -175,32 +186,41 @@ export function updateCodexProviderSettings(
 ): CodexProviderSettings {
   const current = getCodexProviderSettings(settings);
   const hostnameKey = getHostnameKey();
-  const installationMethodsByHost = 'installationMethodsByHost' in updates
+  const persistInstallationSettings = shouldPersistCodexInstallationSettings();
+  const updatedInstallationMethodsByHost = 'installationMethodsByHost' in updates
     ? normalizeInstallationMethodsByHost(updates.installationMethodsByHost)
     : { ...current.installationMethodsByHost };
-  const wslDistroOverridesByHost = 'wslDistroOverridesByHost' in updates
+  const updatedWslDistroOverridesByHost = 'wslDistroOverridesByHost' in updates
     ? normalizeHostnameCliPaths(updates.wslDistroOverridesByHost)
     : { ...current.wslDistroOverridesByHost };
+  const installationMethodsByHost = persistInstallationSettings
+    ? updatedInstallationMethodsByHost
+    : omitCurrentHost(updatedInstallationMethodsByHost, hostnameKey);
+  const wslDistroOverridesByHost = persistInstallationSettings
+    ? updatedWslDistroOverridesByHost
+    : omitCurrentHost(updatedWslDistroOverridesByHost, hostnameKey);
 
   if (
-    Object.keys(installationMethodsByHost).length === 0
+    persistInstallationSettings
+    && Object.keys(installationMethodsByHost).length === 0
     && current.installationMethod !== DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod
   ) {
     installationMethodsByHost[hostnameKey] = current.installationMethod;
   }
 
   if (
-    Object.keys(wslDistroOverridesByHost).length === 0
+    persistInstallationSettings
+    && Object.keys(wslDistroOverridesByHost).length === 0
     && current.wslDistroOverride
   ) {
     wslDistroOverridesByHost[hostnameKey] = current.wslDistroOverride;
   }
 
-  if ('installationMethod' in updates) {
+  if (persistInstallationSettings && 'installationMethod' in updates) {
     installationMethodsByHost[hostnameKey] = normalizeCodexInstallationMethod(updates.installationMethod);
   }
 
-  if ('wslDistroOverride' in updates) {
+  if (persistInstallationSettings && 'wslDistroOverride' in updates) {
     const normalizedDistroOverride = normalizeOptionalString(updates.wslDistroOverride);
     if (normalizedDistroOverride) {
       wslDistroOverridesByHost[hostnameKey] = normalizedDistroOverride;
@@ -212,11 +232,13 @@ export function updateCodexProviderSettings(
   const next: CodexProviderSettings = {
     ...current,
     ...updates,
-    installationMethod: installationMethodsByHost[hostnameKey]
-      ?? DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod,
+    installationMethod: persistInstallationSettings
+      ? installationMethodsByHost[hostnameKey] ?? DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod
+      : DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod,
     installationMethodsByHost,
-    wslDistroOverride: wslDistroOverridesByHost[hostnameKey]
-      ?? DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride,
+    wslDistroOverride: persistInstallationSettings
+      ? wslDistroOverridesByHost[hostnameKey] ?? DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride
+      : DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride,
     wslDistroOverridesByHost,
   };
 

@@ -14,6 +14,7 @@ import { getPiProviderSettings } from '@/providers/pi/settings';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
+const originalPlatform = process.platform;
 
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
@@ -33,6 +34,7 @@ describe('ClaudianSettingsStorage', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
     // Reset mock implementations to default resolved values
     mockAdapter.exists.mockResolvedValue(false);
     mockAdapter.read.mockResolvedValue('{}');
@@ -41,6 +43,10 @@ describe('ClaudianSettingsStorage', () => {
     mockGetHostnameKey.mockReturnValue('host-a');
     mockGetLegacyHostnameKey.mockReturnValue('legacy-host');
     storage = new ClaudianSettingsStorage(mockAdapter);
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
   describe('load', () => {
@@ -198,6 +204,7 @@ describe('ClaudianSettingsStorage', () => {
     });
 
     it('migrates current legacy hostname-scoped provider settings to the opaque device key', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
       mockGetHostnameKey.mockReturnValue('device:current');
       mockGetLegacyHostnameKey.mockReturnValue('host-a');
       mockAdapter.exists.mockResolvedValue(true);
@@ -296,6 +303,48 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.providerConfigs.pi.cliPathsByHost).toEqual({
         'device:current': '/custom/pi-a',
         'host-b': '/custom/pi-b',
+      });
+    });
+
+    it('clears Codex Windows installation settings on non-Windows hosts during normalization', async () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        providerConfigs: {
+          codex: {
+            cliPathsByHost: {
+              'host-a': '/opt/homebrew/bin/codex',
+            },
+            installationMethodsByHost: {
+              'host-a': 'native-windows',
+              'host-b': 'wsl',
+            },
+            wslDistroOverridesByHost: {
+              'host-a': 'Ubuntu',
+              'host-b': 'Debian',
+            },
+          },
+        },
+      }));
+
+      const result = await storage.load();
+      const codexSettings = getCodexProviderSettings(result);
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(codexSettings.cliPathsByHost).toEqual({
+        'host-a': '/opt/homebrew/bin/codex',
+      });
+      expect(codexSettings.installationMethodsByHost).toEqual({
+        'host-b': 'wsl',
+      });
+      expect(codexSettings.wslDistroOverridesByHost).toEqual({
+        'host-b': 'Debian',
+      });
+      expect(writtenContent.providerConfigs.codex.installationMethodsByHost).toEqual({
+        'host-b': 'wsl',
+      });
+      expect(writtenContent.providerConfigs.codex.wslDistroOverridesByHost).toEqual({
+        'host-b': 'Debian',
       });
     });
 

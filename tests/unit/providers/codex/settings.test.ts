@@ -9,6 +9,7 @@ import { CODEX_SPARK_MODEL } from '@/providers/codex/types/models';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
+const originalPlatform = process.platform;
 
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
@@ -21,6 +22,10 @@ describe('codex settings', () => {
     jest.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('host-a');
     mockGetLegacyHostnameKey.mockReturnValue('legacy-host');
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
   it('defaults installationMethod to native-windows and leaves wslDistroOverride empty', () => {
@@ -107,6 +112,7 @@ describe('codex settings', () => {
   });
 
   it('round-trips installationMethod and trims wslDistroOverride on update for the current host', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
     const settingsBag: Record<string, unknown> = {
       providerConfigs: {
         codex: {},
@@ -133,6 +139,7 @@ describe('codex settings', () => {
   });
 
   it('preserves another host installation settings when updating the current host', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
     const settingsBag: Record<string, unknown> = {
       providerConfigs: {
         codex: {
@@ -156,6 +163,44 @@ describe('codex settings', () => {
       'host-a': 'native-windows',
     });
     expect(next.wslDistroOverridesByHost).toEqual({
+      'host-b': 'Debian',
+    });
+  });
+
+  it('does not persist Windows installation settings on non-Windows hosts', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const settingsBag: Record<string, unknown> = {
+      providerConfigs: {
+        codex: {
+          installationMethodsByHost: {
+            'host-a': 'wsl',
+            'host-b': 'wsl',
+          },
+          wslDistroOverridesByHost: {
+            'host-a': 'Ubuntu-24.04',
+            'host-b': 'Debian',
+          },
+        },
+      },
+    };
+
+    const next = updateCodexProviderSettings(
+      settingsBag,
+      getCodexProviderSettings(settingsBag),
+    );
+
+    expect(next.installationMethod).toBe(DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod);
+    expect(next.installationMethodsByHost).toEqual({
+      'host-b': 'wsl',
+    });
+    expect(next.wslDistroOverride).toBe(DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride);
+    expect(next.wslDistroOverridesByHost).toEqual({
+      'host-b': 'Debian',
+    });
+    expect(getCodexProviderSettings(settingsBag).installationMethodsByHost).toEqual({
+      'host-b': 'wsl',
+    });
+    expect(getCodexProviderSettings(settingsBag).wslDistroOverridesByHost).toEqual({
       'host-b': 'Debian',
     });
   });
