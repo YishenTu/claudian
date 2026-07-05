@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 import type { AuxQueryConfig, AuxQueryRunner } from '../../../core/auxiliary/AuxQueryRunner';
 import type ClaudianPlugin from '../../../main';
-import { getGeminiProviderSettings } from '../settings';
+import { getGeminiProviderSettings, migrateLegacyGeminiModelId } from '../settings';
 
 export class GeminiAuxQueryRunner implements AuxQueryRunner {
   constructor(private plugin: ClaudianPlugin) {}
@@ -17,7 +17,9 @@ export class GeminiAuxQueryRunner implements AuxQueryRunner {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const modelId = config.model || settings.visibleModels[0] || 'gemini-1.5-pro';
+    const modelId = migrateLegacyGeminiModelId(
+      config.model || settings.visibleModels[0] || 'gemini-2.5-flash',
+    );
 
     const model = genAI.getGenerativeModel({
       model: modelId,

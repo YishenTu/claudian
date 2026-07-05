@@ -1,4 +1,5 @@
 import type { ProviderChatUIConfig, ProviderIconSvg, ProviderReasoningOption, ProviderUIOption } from '../../../core/providers/types';
+import { getGeminiProviderSettings, migrateLegacyGeminiModelId } from '../settings';
 
 export const GEMINI_ICON: ProviderIconSvg = {
   kind: 'path',
@@ -7,22 +8,39 @@ export const GEMINI_ICON: ProviderIconSvg = {
 };
 
 const GEMINI_MODELS = [
-  { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro', contextWindow: 2000000 },
-  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', contextWindow: 1000000 },
-  { id: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash (Exp)', contextWindow: 1000000 },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', contextWindow: 1048576 },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', contextWindow: 1048576 },
+  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', contextWindow: 1048576 },
+  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', contextWindow: 1048576 },
+  { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash-Lite', contextWindow: 1048576 },
 ];
 
 export const geminiChatUIConfig: ProviderChatUIConfig = {
-  getModelOptions(): ProviderUIOption[] {
-    return GEMINI_MODELS.map(m => ({
+  getModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
+    const providerSettings = getGeminiProviderSettings(settings);
+    
+    // Combine fetched models with hardcoded defaults, preferring fetched ones if they overlap
+    const modelsMap = new Map<string, { id: string; label: string; contextWindow: number }>();
+    
+    for (const m of GEMINI_MODELS) {
+      modelsMap.set(m.id, m);
+    }
+    
+    if (providerSettings.fetchedModels && providerSettings.fetchedModels.length > 0) {
+      for (const m of providerSettings.fetchedModels) {
+        modelsMap.set(m.id, { id: m.id, label: m.label, contextWindow: 2000000 }); // Default 2M context for Gemini 1.5+ models
+      }
+    }
+    
+    return Array.from(modelsMap.values()).map(m => ({
       value: m.id,
       label: m.label,
       providerIcon: GEMINI_ICON,
     }));
   },
 
-  ownsModel(model: string): boolean {
-    return model.startsWith('gemini-');
+  ownsModel(model: string, settings: Record<string, unknown>): boolean {
+    return model.startsWith('gemini-') || model.startsWith('learnlm-') || model.startsWith('models/');
   },
 
   isAdaptiveReasoningModel(): boolean {
@@ -37,9 +55,9 @@ export const geminiChatUIConfig: ProviderChatUIConfig = {
     return 'none';
   },
 
-  getContextWindowSize(model: string): number {
+  getContextWindowSize(model: string, customLimits?: Record<string, number>, settings?: Record<string, unknown>): number {
     const found = GEMINI_MODELS.find(m => m.id === model);
-    return found?.contextWindow ?? 1000000;
+    return found?.contextWindow ?? 2000000;
   },
 
   isDefaultModel(model: string): boolean {
@@ -51,7 +69,7 @@ export const geminiChatUIConfig: ProviderChatUIConfig = {
   },
 
   normalizeModelVariant(model: string): string {
-    return model;
+    return migrateLegacyGeminiModelId(model);
   },
 
   getCustomModelIds(): Set<string> {

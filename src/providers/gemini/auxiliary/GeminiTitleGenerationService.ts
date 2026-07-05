@@ -12,7 +12,7 @@ export class GeminiTitleGenerationService extends QueryBackedTitleGenerationServ
         const titleModel = typeof settings.titleGenerationModel === 'string'
           ? settings.titleGenerationModel
           : '';
-        return geminiChatUIConfig.ownsModel(titleModel) ? titleModel : undefined;
+        return geminiChatUIConfig.ownsModel(titleModel, settings) ? titleModel : undefined;
       },
     });
   }

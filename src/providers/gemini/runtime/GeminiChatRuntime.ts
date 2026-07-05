@@ -26,9 +26,10 @@ import type {
   PreparedChatTurn,
   SessionUpdateResult,
 } from '../../../core/runtime/types';
-import type { ChatMessage, SlashCommand, StreamChunk, ToolCallInfo } from '../../../core/types';
+import type { ChatMessage, Conversation, SlashCommand, StreamChunk, ToolCallInfo } from '../../../core/types';
+import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type ClaudianPlugin from '../../../main';
-import { getGeminiProviderSettings } from '../settings';
+import { getGeminiProviderSettings, migrateLegacyGeminiModelId } from '../settings';
 import { getGeminiState } from '../types';
 
 export interface GeminiRuntimeServices {
@@ -104,6 +105,19 @@ export class GeminiChatRuntime implements ChatRuntime {
     return settings.enabled;
   }
 
+  private resolveSelectedModel(queryOptions?: ChatRuntimeQueryOptions): string | null {
+    if (typeof queryOptions?.model === 'string' && queryOptions.model) {
+      return queryOptions.model;
+    }
+
+    const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+      this.plugin.settings as unknown as Record<string, unknown>,
+      this.providerId,
+    );
+    const model = typeof snapshot.model === 'string' ? snapshot.model : '';
+    return model || null;
+  }
+
   private async connectMcpClient(serverConfig: any): Promise<Client | null> {
     const type = getMcpServerType(serverConfig);
     let transport: Transport;
@@ -171,7 +185,9 @@ export class GeminiChatRuntime implements ChatRuntime {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const modelId = queryOptions?.model || settings.visibleModels[0] || 'gemini-1.5-pro';
+    const modelId = migrateLegacyGeminiModelId(
+      this.resolveSelectedModel(queryOptions) || settings.visibleModels[0] || 'gemini-2.5-flash',
+    );
     
     const history = (conversationHistory || []).map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
@@ -214,8 +230,9 @@ export class GeminiChatRuntime implements ChatRuntime {
         for await (const chunk of result.stream) {
           if (this.abortController.signal.aborted) break;
           
-          if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-            functionCalls.push(...chunk.functionCalls);
+          const chunkFunctionCalls = chunk.functionCalls();
+          if (chunkFunctionCalls && chunkFunctionCalls.length > 0) {
+            functionCalls.push(...chunkFunctionCalls);
           }
           
           const text = chunk.text();
@@ -245,7 +262,8 @@ export class GeminiChatRuntime implements ChatRuntime {
                     name: mcpInfo.serverName,
                     arguments: call.args as Record<string, unknown>
                   });
-                  toolResultContent = mcpResult.content.map((c: any) => c.text).join('\n');
+                  const resultContent = mcpResult.content as { text?: string }[] | undefined;
+                  toolResultContent = (resultContent ?? []).map((c) => c.text ?? '').join('\n');
                   isError = !!mcpResult.isError;
                 } catch (err) {
                   toolResultContent = String(err);

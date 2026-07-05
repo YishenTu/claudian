@@ -186,9 +186,10 @@ export function setSharedEnvironmentVariables(
 }
 
 export function getProviderEnvironmentVariables(
-  settings: Record<string, unknown>,
+  settings: Record<string, unknown> | undefined | null,
   providerId: ProviderId,
 ): string {
+  if (!settings) return '';
   const providerConfig = getProviderConfig(settings, providerId);
   if (typeof providerConfig.environmentVariables === 'string') {
     return providerConfig.environmentVariables;
