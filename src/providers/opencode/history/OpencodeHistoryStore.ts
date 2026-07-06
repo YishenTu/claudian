@@ -2,9 +2,13 @@ import * as fs from 'node:fs';
 
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
-import type { ChatMessage, ContentBlock, ToolCallInfo } from '../../../core/types';
+import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import { extractUserQuery } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
+import {
+  buildImageAttachmentFromBase64,
+  parseImageDataUri,
+} from '../../../utils/imageAttachment';
 import {
   normalizeOpencodeToolInput,
   normalizeOpencodeToolName,
@@ -146,10 +150,12 @@ function mapStoredMessage(
 
   if (role === 'user') {
     const promptText = extractUserQuery(getJoinedTextParts(message.parts));
+    const images = buildUserImages(message.parts, id);
     return {
       assistantMessageId: undefined,
       content: promptText,
       id,
+      ...(images.length > 0 ? { images } : {}),
       role: 'user',
       timestamp: createdAt,
       userMessageId: id,
@@ -398,6 +404,36 @@ function getJoinedTextParts(parts: StoredRow[]): string {
     .filter((part) => getString(part.type) === 'text' && !getBoolean(part.ignored))
     .map((part) => getString(part.text) ?? '')
     .join('');
+}
+
+function buildUserImages(parts: StoredRow[], messageId: string): ImageAttachment[] {
+  const images: ImageAttachment[] = [];
+
+  for (const part of parts) {
+    if (getString(part.type) !== 'file') {
+      continue;
+    }
+
+    const parsed = parseImageDataUri(getString(part.url));
+    const mime = getString(part.mime);
+    const mediaType = parsed?.mediaType ?? mime;
+    const data = parsed?.data;
+    if (!data || !mediaType) {
+      continue;
+    }
+
+    const image = buildImageAttachmentFromBase64({
+      data,
+      id: `opencode-img-${messageId}-${images.length}`,
+      mediaType,
+      name: getString(part.filename) ?? getString(part.name) ?? `image-${images.length + 1}.${String(mediaType).split('/')[1] ?? 'img'}`,
+    });
+    if (image) {
+      images.push(image);
+    }
+  }
+
+  return images;
 }
 
 function getDurationSeconds(part: StoredRow): number | undefined {

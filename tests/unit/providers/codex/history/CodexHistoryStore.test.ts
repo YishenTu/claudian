@@ -94,6 +94,49 @@ describe('CodexHistoryStore', () => {
         { type: 'text', content: 'Done.' },
       ]);
     });
+
+    it('rehydrates user images from persisted input_image parts', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-07-06T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              { type: 'input_text', text: '<image name=[Image #1] path="/tmp/1-image-1.png">' },
+              { type: 'input_image', image_url: 'data:image/png;base64,aGVsbG8=' },
+              { type: 'input_text', text: '</image>' },
+              { type: 'input_text', text: 'What is in this image?' },
+            ],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-06T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'It says hello.' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages[0]).toMatchObject({
+        content: 'What is in this image?',
+        images: [{
+          data: 'aGVsbG8=',
+          id: 'codex-img-turn-1-0',
+          mediaType: 'image/png',
+          name: 'image-1.png',
+          size: 5,
+          source: 'paste',
+        }],
+        role: 'user',
+      });
+    });
   });
 
   describe('parseCodexSessionFile - tools session', () => {

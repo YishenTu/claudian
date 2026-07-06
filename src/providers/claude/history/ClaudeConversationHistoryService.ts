@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   Conversation,
   ForkSource,
+  ImageAttachment,
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
@@ -151,13 +152,60 @@ function ensureTaskToolCall(
   return taskToolCall;
 }
 
+function hasImageData(image: ImageAttachment | undefined): boolean {
+  return typeof image?.data === 'string' && image.data.length > 0;
+}
+
+function mergeImageAttachments(
+  current: ImageAttachment[] | undefined,
+  incoming: ImageAttachment[] | undefined,
+): ImageAttachment[] | undefined {
+  if (!incoming?.length) {
+    return current;
+  }
+  if (!current?.length) {
+    return incoming;
+  }
+
+  const merged = [...current];
+  for (const [index, incomingImage] of incoming.entries()) {
+    const currentImage = merged[index];
+    if (!currentImage) {
+      merged.push(incomingImage);
+      continue;
+    }
+
+    if (!hasImageData(currentImage) && hasImageData(incomingImage)) {
+      merged[index] = {
+        ...currentImage,
+        data: incomingImage.data,
+        mediaType: incomingImage.mediaType,
+        name: currentImage.name || incomingImage.name,
+        size: incomingImage.size,
+        source: currentImage.source ?? incomingImage.source,
+      };
+    }
+  }
+
+  return merged;
+}
+
+function mergeDuplicateMessage(target: ChatMessage, incoming: ChatMessage): void {
+  target.images = mergeImageAttachments(target.images, incoming.images);
+}
+
 function dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
-  const seen = new Set<string>();
+  const byId = new Map<string, ChatMessage>();
   const result: ChatMessage[] = [];
 
   for (const message of messages) {
-    if (seen.has(message.id)) continue;
-    seen.add(message.id);
+    const existing = byId.get(message.id);
+    if (existing) {
+      mergeDuplicateMessage(existing, message);
+      continue;
+    }
+
+    byId.set(message.id, message);
     result.push(message);
   }
 

@@ -1197,6 +1197,27 @@ describe('CodexNotificationRouter', () => {
       ]);
     });
 
+    it('hides generated image placeholder tags from userMessage boundaries', () => {
+      router.handleNotification('item/started', {
+        item: {
+          type: 'userMessage',
+          id: 'u1',
+          content: [
+            { type: 'text', text: '<image name=[Image #1] path="/tmp/1-image-1.png">' },
+            { type: 'localImage', path: '/tmp/1-image-1.png' },
+            { type: 'text', text: '</image>' },
+            { type: 'text', text: 'what was in this img?' },
+          ],
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toEqual([
+        { type: 'user_message_start', itemId: 'u1', content: 'what was in this img?' },
+      ]);
+    });
+
     it('maps agentMessage item/started to an assistant_message_start chunk', () => {
       router.handleNotification('item/started', {
         item: { type: 'agentMessage', id: 'a1', text: '', phase: 'streaming', memoryCitation: null },

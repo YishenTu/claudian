@@ -4,11 +4,14 @@ import type {
   ChatMessage,
   ContentBlock,
   ImageAttachment,
-  ImageMediaType,
   ToolCallInfo,
 } from '../../../core/types';
 import { extractUserDisplayContent } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
+import {
+  buildImageAttachmentFromBase64,
+  parseImageDataUri,
+} from '../../../utils/imageAttachment';
 import { isCompactionCanceledStderr, isInterruptSignalText } from '../../../utils/interrupt';
 import { extractToolResultContent } from '../sdk/toolResultContent';
 import type {
@@ -42,7 +45,10 @@ function isRebuiltContextContent(textContent: string): boolean {
     || textContent.includes('\n\nA:');
 }
 
-function extractImages(content: string | SDKNativeContentBlock[] | undefined): ImageAttachment[] | undefined {
+function extractImages(
+  content: string | SDKNativeContentBlock[] | undefined,
+  messageId: string,
+): ImageAttachment[] | undefined {
   if (!content || typeof content === 'string') {
     return undefined;
   }
@@ -58,14 +64,18 @@ function extractImages(content: string | SDKNativeContentBlock[] | undefined): I
     return undefined;
   }
 
-  return imageBlocks.map((block, index) => ({
-    id: `sdk-img-${Date.now()}-${index}`,
-    name: `image-${index + 1}`,
-    mediaType: block.source.media_type as ImageMediaType,
-    data: block.source.data,
-    size: Math.ceil(block.source.data.length * 0.75),
-    source: 'paste' as const,
-  }));
+  const images = imageBlocks.flatMap((block, index): ImageAttachment[] => {
+    const parsedDataUri = parseImageDataUri(block.source.data);
+    const image = buildImageAttachmentFromBase64({
+      data: parsedDataUri?.data ?? block.source.data,
+      id: `sdk-img-${messageId}-${index}`,
+      mediaType: parsedDataUri?.mediaType ?? block.source.media_type,
+      name: `image-${index + 1}`,
+    });
+    return image ? [image] : [];
+  });
+
+  return images.length > 0 ? images : undefined;
 }
 
 function extractToolCalls(
@@ -177,7 +187,9 @@ export function parseSDKMessageToChat(
 
   const content = sdkMsg.message?.content;
   const textContent = extractTextContent(content);
-  const images = sdkMsg.type === 'user' ? extractImages(content) : undefined;
+  const timestamp = sdkMsg.timestamp ? new Date(sdkMsg.timestamp).getTime() : Date.now();
+  const messageId = sdkMsg.uuid || `sdk-${timestamp}`;
+  const images = sdkMsg.type === 'user' ? extractImages(content, messageId) : undefined;
 
   const hasToolUse = Array.isArray(content) && content.some(block => block.type === 'tool_use');
   const hasImages = !!images && images.length > 0;
@@ -185,7 +197,6 @@ export function parseSDKMessageToChat(
     return null;
   }
 
-  const timestamp = sdkMsg.timestamp ? new Date(sdkMsg.timestamp).getTime() : Date.now();
   const commandNameMatch = sdkMsg.type === 'user'
     ? textContent.match(/<command-name>(\/[^<]+)<\/command-name>/)
     : null;
