@@ -8,6 +8,7 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
+import { maybeGetClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
 import {
   deleteSDKSession,
@@ -168,6 +169,7 @@ async function enrichAsyncSubagentToolCalls(
   subagentData: Record<string, SubagentInfo>,
   vaultPath: string,
   sessionIds: string[],
+  projectsPath?: string,
 ): Promise<void> {
   const uniqueSessionIds = [...new Set(sessionIds)];
   if (uniqueSessionIds.length === 0) return;
@@ -184,7 +186,9 @@ async function enrichAsyncSubagentToolCalls(
 
       let loader = loaderCache.get(cacheKey);
       if (!loader) {
-        loader = loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId);
+        loader = projectsPath
+          ? loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId, projectsPath)
+          : loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId);
         loaderCache.set(cacheKey, loader);
       }
 
@@ -310,6 +314,25 @@ function sanitizeProviderState(
   return Object.fromEntries(sanitizedEntries);
 }
 
+function resolveHistoryPaths(vaultPath: string): {
+  sessionVaultPath: string;
+  projectsPath?: string;
+  toHostPath?: (value: string) => string | null;
+} {
+  const workspace = maybeGetClaudeWorkspaceServices();
+  if (!workspace) return { sessionVaultPath: vaultPath };
+  const context = workspace.resolveExecutionContext(vaultPath);
+  return {
+    sessionVaultPath: context.targetVaultPath,
+    projectsPath: context.claudeHomeHost
+      ? `${context.claudeHomeHost}\\projects`
+      : undefined,
+    toHostPath: context.method === 'wsl'
+      ? value => context.toHostPath(value)
+      : undefined,
+  };
+}
+
 export class ClaudeConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedConversationIds = new Set<string>();
 
@@ -363,6 +386,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     }
 
     const state = getClaudeState(conversation.providerState);
+    const { sessionVaultPath, projectsPath, toHostPath } = resolveHistoryPaths(vaultPath);
     const isPendingFork = this.isPendingForkConversation(conversation);
     const allSessionIds: string[] = isPendingFork
       ? [state.forkSource!.sessionId]
@@ -385,7 +409,10 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       : (state.providerSessionId ?? conversation.sessionId);
 
     for (const sessionId of allSessionIds) {
-      if (!sdkSessionExists(vaultPath, sessionId)) {
+      const sessionExists = projectsPath
+        ? sdkSessionExists(sessionVaultPath, sessionId, projectsPath)
+        : sdkSessionExists(sessionVaultPath, sessionId);
+      if (!sessionExists) {
         missingSessionCount++;
         continue;
       }
@@ -394,7 +421,15 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       const truncateAt = isCurrentSession
         ? (isPendingFork ? state.forkSource!.resumeAt : conversation.resumeAtMessageId)
         : undefined;
-      const result = await loadSDKSessionMessages(vaultPath, sessionId, truncateAt);
+      const result = projectsPath || toHostPath
+        ? await loadSDKSessionMessages(
+            sessionVaultPath,
+            sessionId,
+            truncateAt,
+            projectsPath,
+            toHostPath,
+          )
+        : await loadSDKSessionMessages(sessionVaultPath, sessionId, truncateAt);
 
       if (result.error) {
         errorCount++;
@@ -421,8 +456,9 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     if (state.subagentData) {
       await enrichAsyncSubagentToolCalls(
         state.subagentData,
-        vaultPath,
+        sessionVaultPath,
         allSessionIds,
+        projectsPath,
       );
       applySubagentData(merged, state.subagentData);
     }
@@ -441,6 +477,11 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       return;
     }
 
-    await deleteSDKSession(vaultPath, sessionId);
+    const { sessionVaultPath, projectsPath } = resolveHistoryPaths(vaultPath);
+    if (projectsPath) {
+      await deleteSDKSession(sessionVaultPath, sessionId, projectsPath);
+    } else {
+      await deleteSDKSession(sessionVaultPath, sessionId);
+    }
   }
 }

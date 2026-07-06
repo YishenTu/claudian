@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { Notice } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -114,6 +115,7 @@ export class CodexChatRuntime implements ChatRuntime {
   private launchSpec: CodexLaunchSpec | null = null;
   private runtimeContext: CodexRuntimeContext | null = null;
   private notificationRouter: CodexNotificationRouter | null = null;
+  private lastStartupNoticeMessage: string | null = null;
   private serverRequestRouter = new CodexServerRequestRouter();
   private ready = false;
   private readyListeners = new Set<(ready: boolean) => void>();
@@ -215,29 +217,42 @@ export class CodexChatRuntime implements ChatRuntime {
   }
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
-    const promptSettings = this.getSystemPromptSettings();
-    const promptKey = computeSystemPromptKey(promptSettings);
-    const launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, this.providerId);
-    const clientConfigKey = [promptKey, JSON.stringify({
-      command: launchSpec.command,
-      args: launchSpec.args,
-      spawnCwd: launchSpec.spawnCwd,
-      targetCwd: launchSpec.targetCwd,
-      target: launchSpec.target,
-    })].join('::');
-    const shouldRebuild = !this.process
-      || !this.transport
-      || !this.process.isAlive()
-      || options?.force === true
-      || this.clientConfigKey !== clientConfigKey;
+    try {
+      const promptSettings = this.getSystemPromptSettings();
+      const promptKey = computeSystemPromptKey(promptSettings);
+      const launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, this.providerId);
+      const clientConfigKey = [promptKey, JSON.stringify({
+        command: launchSpec.command,
+        args: launchSpec.args,
+        spawnCwd: launchSpec.spawnCwd,
+        targetCwd: launchSpec.targetCwd,
+        target: launchSpec.target,
+      })].join('::');
+      const shouldRebuild = !this.process
+        || !this.transport
+        || !this.process.isAlive()
+        || options?.force === true
+        || this.clientConfigKey !== clientConfigKey;
 
-    if (shouldRebuild) {
-      await this.shutdownProcess();
-      await this.startAppServer(launchSpec, clientConfigKey);
+      if (shouldRebuild) {
+        await this.shutdownProcess();
+        await this.startAppServer(launchSpec, clientConfigKey);
+      }
+
+      this.lastStartupNoticeMessage = null;
+      this.setReady(true);
+      return shouldRebuild;
+    } catch (error) {
+      if (process.platform === 'win32') {
+        const message = error instanceof Error ? error.message : String(error);
+        const noticeMessage = `Codex failed to start: ${message}`;
+        if (noticeMessage !== this.lastStartupNoticeMessage) {
+          this.lastStartupNoticeMessage = noticeMessage;
+          new Notice(noticeMessage);
+        }
+      }
+      throw error;
     }
-
-    this.setReady(true);
-    return shouldRebuild;
   }
 
   async *query(

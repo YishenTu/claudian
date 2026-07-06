@@ -27,8 +27,14 @@ export class CodexRpcTransport {
     const rl = createInterface({ input: this.proc.stdout });
     rl.on('line', (line) => this.handleLine(line));
 
-    this.proc.onExit(() => {
-      this.rejectAllPending(new Error('App-server process exited'));
+    this.proc.onExit((code, signal) => {
+      const exitDetails = [
+        code !== null ? `code ${code}` : null,
+        signal ? `signal ${signal}` : null,
+      ].filter(Boolean).join(', ');
+      const stderr = this.proc.getStderrSnapshot();
+      const message = `App-server process exited${exitDetails ? ` (${exitDetails})` : ''}`;
+      this.rejectAllPending(new Error(stderr ? `${message}\n\n${stderr}` : message));
     });
   }
 

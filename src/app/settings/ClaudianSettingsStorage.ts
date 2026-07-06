@@ -133,7 +133,7 @@ function normalizeProviderConfigs(value: unknown): ProviderConfigMap {
 }
 
 const HOST_SCOPED_PROVIDER_CONFIG_FIELDS: Record<string, string[]> = {
-  claude: ['cliPathsByHost'],
+  claude: ['cliPathsByHost', 'installationMethodsByHost', 'wslDistroOverridesByHost'],
   codex: ['cliPathsByHost', 'installationMethodsByHost', 'wslDistroOverridesByHost'],
   opencode: ['cliPathsByHost'],
   pi: ['cliPathsByHost'],

@@ -1,6 +1,7 @@
 import type { SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
 
+import type { ClaudeExecutionContext } from '@/providers/claude/runtime/ClaudeExecutionContext';
 import { createCustomSpawnFunction } from '@/providers/claude/runtime/customSpawn';
 import * as env from '@/utils/env';
 
@@ -210,6 +211,78 @@ describe('createCustomSpawnFunction', () => {
 
     expect(findNodeExecutable).not.toHaveBeenCalled();
     expect(spawnMock).toHaveBeenCalledWith('python', ['script.py'], expect.any(Object));
+  });
+
+  it('launches Claude through the selected WSL distro and propagates Claude env vars', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+    const context: ClaudeExecutionContext = {
+      method: 'wsl',
+      hostVaultPath: 'C:\\Vault',
+      targetVaultPath: '/mnt/c/Vault',
+      cliCommand: 'claude',
+      distroName: 'Ubuntu',
+      wslVersion: 2,
+      toTargetPath: value => value,
+      toHostPath: value => value,
+    };
+
+    const spawnFn = createCustomSpawnFunction('C:\\Windows', context);
+    spawnFn({
+      command: 'claude',
+      args: ['--model', 'claude sonnet'],
+      cwd: '/mnt/c/Vault',
+      env: {
+        ANTHROPIC_API_KEY: 'secret',
+        CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
+        PATH: 'C:\\Windows',
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      'wsl.exe',
+      expect.arrayContaining([
+        '--distribution',
+        'Ubuntu',
+        '--cd',
+        '/mnt/c/Vault',
+      ]),
+      expect.objectContaining({
+        cwd: 'C:\\Vault',
+        env: expect.objectContaining({
+          WSLENV: expect.stringContaining('ANTHROPIC_API_KEY'),
+        }),
+      }),
+    );
+    const args = spawnMock.mock.calls[0][1];
+    expect(args.at(-1)).toContain("'claude sonnet'");
+  });
+
+  it('uses the WSL node executable for a Linux cli-wrapper.cjs path', () => {
+    const mockProcess = createMockProcess();
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+    const context: ClaudeExecutionContext = {
+      method: 'wsl',
+      hostVaultPath: 'C:\\Vault',
+      targetVaultPath: '/mnt/c/Vault',
+      cliCommand: '/home/tong/claude/cli-wrapper.cjs',
+      distroName: 'Ubuntu',
+      wslVersion: 2,
+      toTargetPath: value => value,
+      toHostPath: value => value,
+    };
+
+    createCustomSpawnFunction('C:\\Windows', context)({
+      command: '/home/tong/claude/cli-wrapper.cjs',
+      args: ['--model', 'sonnet'],
+      cwd: '/mnt/c/Vault',
+      env: {},
+      signal: new AbortController().signal,
+    });
+
+    const args = spawnMock.mock.calls[0][1];
+    expect(args.at(-1)).toContain('exec node /home/tong/claude/cli-wrapper.cjs');
   });
 
   it('wraps manually configured Windows .cmd commands through cmd.exe', () => {

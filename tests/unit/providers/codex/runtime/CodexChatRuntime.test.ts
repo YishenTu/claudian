@@ -1,6 +1,7 @@
 import '@/providers';
 
 import * as fs from 'fs';
+import { Notice } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -458,6 +459,26 @@ describe('CodexChatRuntime', () => {
       expect((MockedProcessClass as jest.Mock).mock.calls.length).toBe(firstCallCount + 1);
       expect(mockTransportDispose).toHaveBeenCalled();
       expect(mockProcessShutdown).toHaveBeenCalled();
+    });
+
+    it('shows one native Notice for repeated Windows startup errors', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      mockResolveLaunchSpec.mockImplementation(() => {
+        throw new Error('Select a WSL distro');
+      });
+
+      try {
+        await expect(runtime.ensureReady()).rejects.toThrow('Select a WSL distro');
+        await expect(runtime.ensureReady()).rejects.toThrow('Select a WSL distro');
+
+        expect(Notice).toHaveBeenCalledTimes(1);
+        expect(Notice).toHaveBeenCalledWith(
+          'Codex failed to start: Select a WSL distro',
+        );
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform });
+      }
     });
   });
 

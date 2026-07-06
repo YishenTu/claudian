@@ -21,6 +21,7 @@ import {
 import {
   resolveEffortLevel,
 } from '../types/models';
+import { resolveClaudeExecutionContext } from './ClaudeExecutionContext';
 import { createCustomSpawnFunction } from './customSpawn';
 import {
   DISABLED_BUILTIN_SUBAGENTS,
@@ -76,6 +77,7 @@ export class QueryOptionsBuilder {
     if (currentConfig.pluginsKey !== newConfig.pluginsKey) return true;
     if (currentConfig.settingSources !== newConfig.settingSources) return true;
     if (currentConfig.claudeCliPath !== newConfig.claudeCliPath) return true;
+    if (currentConfig.executionTargetKey !== newConfig.executionTargetKey) return true;
 
     // Note: Permission mode is handled dynamically via setPermissionMode() in ClaudianService.
     // Since allowDangerouslySkipPermissions is always true, both directions work without restart.
@@ -96,10 +98,15 @@ export class QueryOptionsBuilder {
     externalContextPaths?: string[]
   ): PersistentQueryConfig {
     const claudeSettings = getClaudeProviderSettings(ctx.settings);
+    const executionContext = resolveClaudeExecutionContext({
+      settings: ctx.settings,
+      hostVaultPath: ctx.vaultPath,
+      resolvedCliPath: ctx.cliPath,
+    });
     const systemPromptSettings: SystemPromptSettings = {
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
-      vaultPath: ctx.vaultPath,
+      vaultPath: executionContext.targetVaultPath,
       userName: ctx.settings.userName,
     };
 
@@ -126,6 +133,12 @@ export class QueryOptionsBuilder {
       externalContextPaths: externalContextPaths || [],
       settingSources: settingSources.join(','),
       claudeCliPath: ctx.cliPath,
+      executionTargetKey: [
+        executionContext.method,
+        executionContext.distroName ?? '',
+        executionContext.wslVersion ?? '',
+        executionContext.targetVaultPath,
+      ].join('|'),
       enableChrome: claudeSettings.enableChrome,
       enableAutoMode: claudeSettings.safeMode === 'auto',
     };
@@ -167,7 +180,7 @@ export class QueryOptionsBuilder {
     }
 
     if (ctx.externalContextPaths && ctx.externalContextPaths.length > 0) {
-      options.additionalDirectories = ctx.externalContextPaths;
+      options.additionalDirectories = QueryOptionsBuilder.mapExternalPaths(ctx);
     }
 
     return options;
@@ -215,7 +228,7 @@ export class QueryOptionsBuilder {
     }
 
     if (ctx.externalContextPaths && ctx.externalContextPaths.length > 0) {
-      options.additionalDirectories = ctx.externalContextPaths;
+      options.additionalDirectories = QueryOptionsBuilder.mapExternalPaths(ctx);
     }
 
     return options;
@@ -267,18 +280,23 @@ export class QueryOptionsBuilder {
     abortController?: AbortController,
   ): { options: Options; claudeSettings: ReturnType<typeof getClaudeProviderSettings> } {
     const claudeSettings = getClaudeProviderSettings(ctx.settings);
+    const executionContext = resolveClaudeExecutionContext({
+      settings: ctx.settings,
+      hostVaultPath: ctx.vaultPath,
+      resolvedCliPath: ctx.cliPath,
+    });
     const systemPromptSettings: SystemPromptSettings = {
       mediaFolder: ctx.settings.mediaFolder,
       customPrompt: ctx.settings.systemPrompt,
-      vaultPath: ctx.vaultPath,
+      vaultPath: executionContext.targetVaultPath,
       userName: ctx.settings.userName,
     };
     const options: Options = {
-      cwd: ctx.vaultPath,
+      cwd: executionContext.targetVaultPath,
       systemPrompt: buildSystemPrompt(systemPromptSettings),
       model,
       abortController,
-      pathToClaudeCodeExecutable: ctx.cliPath,
+      pathToClaudeCodeExecutable: executionContext.cliCommand,
       settingSources: resolveClaudeSettingSources(claudeSettings.loadUserSettings),
       env: {
         ...process.env,
@@ -289,7 +307,7 @@ export class QueryOptionsBuilder {
     };
 
     QueryOptionsBuilder.applyExtraArgs(options, claudeSettings);
-    options.spawnClaudeCodeProcess = createCustomSpawnFunction(ctx.enhancedPath);
+    options.spawnClaudeCodeProcess = createCustomSpawnFunction(ctx.enhancedPath, executionContext);
 
     return { options, claudeSettings };
   }
@@ -310,6 +328,19 @@ export class QueryOptionsBuilder {
     const aKey = [...(a || [])].sort().join('|');
     const bKey = [...(b || [])].sort().join('|');
     return aKey !== bKey;
+  }
+
+  private static mapExternalPaths(
+    ctx: QueryOptionsContext & { externalContextPaths?: string[] },
+  ): string[] {
+    const executionContext = resolveClaudeExecutionContext({
+      settings: ctx.settings,
+      hostVaultPath: ctx.vaultPath,
+      resolvedCliPath: ctx.cliPath,
+    });
+    return (ctx.externalContextPaths ?? [])
+      .map(value => executionContext.toTargetPath(value))
+      .filter((value): value is string => !!value);
   }
 
 }

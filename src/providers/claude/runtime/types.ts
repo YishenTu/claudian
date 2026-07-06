@@ -107,6 +107,7 @@ export interface PersistentQueryConfig {
   externalContextPaths: string[];
   settingSources: string;
   claudeCliPath: string;
+  executionTargetKey: string;
   enableChrome: boolean;
   enableAutoMode: boolean;
 }

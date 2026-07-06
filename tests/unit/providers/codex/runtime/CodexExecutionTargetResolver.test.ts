@@ -1,15 +1,13 @@
-import {
-  parseDefaultWslDistroListOutput,
-  resolveCodexExecutionTarget,
-} from '@/providers/codex/runtime/CodexExecutionTargetResolver';
+import { resolveCodexExecutionTarget } from '@/providers/codex/runtime/CodexExecutionTargetResolver';
 
 describe('resolveCodexExecutionTarget', () => {
-  it('infers the WSL distro from a \\\\wsl$ workspace path', () => {
+  it('uses the explicitly selected distro for a \\\\wsl$ workspace path', () => {
     const target = resolveCodexExecutionTarget({
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethod: 'wsl2',
+            wslDistroOverride: 'Ubuntu',
           },
         },
       },
@@ -19,6 +17,7 @@ describe('resolveCodexExecutionTarget', () => {
 
     expect(target).toMatchObject({
       method: 'wsl',
+      wslVersion: 2,
       platformFamily: 'unix',
       platformOs: 'linux',
       distroName: 'Ubuntu',
@@ -30,7 +29,7 @@ describe('resolveCodexExecutionTarget', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethod: 'wsl2',
             wslDistroOverride: 'Debian',
           },
         },
@@ -41,28 +40,29 @@ describe('resolveCodexExecutionTarget', () => {
 
     expect(target).toMatchObject({
       method: 'wsl',
+      wslVersion: 2,
       distroName: 'Debian',
     });
   });
 
-  it('falls back to the default WSL distro when the workspace path is a Windows drive path', () => {
+  it('keeps the distro unset until the user explicitly selects one', () => {
     const target = resolveCodexExecutionTarget({
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethod: 'wsl1',
           },
         },
       },
       hostPlatform: 'win32',
       hostVaultPath: 'C:\\repo',
-      resolveDefaultWslDistro: () => 'Ubuntu',
     });
 
     expect(target).toMatchObject({
       method: 'wsl',
-      distroName: 'Ubuntu',
+      wslVersion: 1,
     });
+    expect(target.distroName).toBeUndefined();
   });
 
   it('preserves native host execution on non-Windows hosts', () => {
@@ -70,7 +70,7 @@ describe('resolveCodexExecutionTarget', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethod: 'wsl2',
           },
         },
       },
@@ -83,23 +83,5 @@ describe('resolveCodexExecutionTarget', () => {
       platformFamily: 'unix',
       platformOs: 'macos',
     });
-  });
-});
-
-describe('parseDefaultWslDistroListOutput', () => {
-  it('extracts the starred default distro from wsl --list --verbose output', () => {
-    expect(parseDefaultWslDistroListOutput(`
-  NAME              STATE           VERSION
-* Ubuntu-24.04      Running         2
-  Debian            Stopped         2
-`)).toBe('Ubuntu-24.04');
-  });
-
-  it('returns undefined when no default distro marker is present', () => {
-    expect(parseDefaultWslDistroListOutput(`
-NAME              STATE           VERSION
-Ubuntu-24.04      Running         2
-Debian            Stopped         2
-`)).toBeUndefined();
   });
 });

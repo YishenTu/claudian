@@ -1,6 +1,7 @@
 import type { SDKMessage, SDKResultError } from '@anthropic-ai/claude-agent-sdk';
 
 import type { SDKToolUseResult, StreamChunk, UsageInfo } from '../../../core/types';
+import { mapClaudeToolInputPaths } from '../runtime/ClaudePathMapping';
 import { isBlockedMessage } from '../sdk/messages';
 import { extractToolResultContent } from '../sdk/toolResultContent';
 import type { TransformEvent } from '../sdk/types';
@@ -74,6 +75,7 @@ export interface TransformOptions {
   streamState?: TransformStreamState;
   /** Tracks prompt-token usage across Anthropic-compatible stream events. */
   usageState?: TransformUsageState;
+  toHostPath?: (value: string) => string | null;
 }
 
 export interface MessageUsage {
@@ -414,7 +416,9 @@ export function* transformSDKMessage(
             yield emitToolUse(parentToolUseId, {
               id: block.id || `tool-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
               name: block.name || 'unknown',
-              input: getToolInput(block.input),
+              input: options?.toHostPath
+                ? mapClaudeToolInputPaths(getToolInput(block.input), options.toHostPath)
+                : getToolInput(block.input),
             });
           }
         }

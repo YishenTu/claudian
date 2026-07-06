@@ -10,6 +10,12 @@ import {
 export const CLAUDE_SAFE_MODES = ['acceptEdits', 'auto', 'default'] as const;
 export type ClaudeSafeMode = typeof CLAUDE_SAFE_MODES[number];
 export type ClaudeSettingSource = 'user' | 'project' | 'local';
+export type ClaudeInstallationMethod =
+  | 'native-windows'
+  | 'wsl1'
+  | 'wsl2'
+  | 'wsl-unconfigured';
+export type ClaudeHostnameInstallationMethods = Record<string, ClaudeInstallationMethod>;
 
 export interface ClaudeProviderSettings {
   safeMode: ClaudeSafeMode;
@@ -24,6 +30,10 @@ export interface ClaudeProviderSettings {
   lastModel: string;
   environmentVariables: string;
   environmentHash: string;
+  installationMethod: ClaudeInstallationMethod;
+  installationMethodsByHost: ClaudeHostnameInstallationMethods;
+  wslDistroOverride: string;
+  wslDistroOverridesByHost: HostnameCliPaths;
 }
 
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
@@ -39,6 +49,10 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   lastModel: 'haiku',
   environmentVariables: '',
   environmentHash: '',
+  installationMethod: 'native-windows',
+  installationMethodsByHost: {},
+  wslDistroOverride: '',
+  wslDistroOverridesByHost: {},
 });
 
 function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
@@ -61,6 +75,27 @@ function normalizeClaudeSafeMode(value: unknown): ClaudeSafeMode | undefined {
     : undefined;
 }
 
+function normalizeClaudeInstallationMethod(value: unknown): ClaudeInstallationMethod {
+  if (value === 'wsl1' || value === 'wsl2' || value === 'wsl-unconfigured') return value;
+  if (value === 'wsl') return 'wsl-unconfigured';
+  return 'native-windows';
+}
+
+function normalizeInstallationMethodsByHost(value: unknown): ClaudeHostnameInstallationMethods {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key.trim())
+      .map(([key, entry]) => [key, normalizeClaudeInstallationMethod(entry)]),
+  );
+}
+
+export function isClaudeWslInstallationMethod(
+  value: ClaudeInstallationMethod,
+): value is 'wsl1' | 'wsl2' {
+  return value === 'wsl1' || value === 'wsl2';
+}
+
 export function getClaudeProviderSettings(
   settings: Record<string, unknown>,
 ): ClaudeProviderSettings {
@@ -75,6 +110,11 @@ export function getClaudeProviderSettings(
       getLegacyHostnameKey(),
     )
     : normalizedCliPathsByHost;
+  const hostnameKey = typeof getHostnameKey === 'function' ? getHostnameKey() : '';
+  const installationMethodsByHost = normalizeInstallationMethodsByHost(config.installationMethodsByHost);
+  const wslDistroOverridesByHost = normalizeHostnameCliPaths(config.wslDistroOverridesByHost);
+  const installationMethod = installationMethodsByHost[hostnameKey]
+    ?? normalizeClaudeInstallationMethod(config.installationMethod);
 
   return {
     safeMode: normalizeClaudeSafeMode(config.safeMode)
@@ -110,6 +150,13 @@ export function getClaudeProviderSettings(
     environmentHash: (config.environmentHash as string | undefined)
       ?? (settings.lastEnvHash as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentHash,
+    installationMethod,
+    installationMethodsByHost,
+    wslDistroOverride: installationMethod === 'wsl-unconfigured'
+      ? ''
+      : wslDistroOverridesByHost[hostnameKey]
+        ?? (typeof config.wslDistroOverride === 'string' ? config.wslDistroOverride.trim() : ''),
+    wslDistroOverridesByHost,
   };
 }
 
@@ -126,13 +173,43 @@ export function updateClaudeProviderSettings(
   updates: Partial<ClaudeProviderSettings>,
 ): ClaudeProviderSettings {
   const current = getClaudeProviderSettings(settings);
+  const hostnameKey = typeof getHostnameKey === 'function' ? getHostnameKey() : '';
+  const installationMethodsByHost = 'installationMethodsByHost' in updates
+    ? normalizeInstallationMethodsByHost(updates.installationMethodsByHost)
+    : { ...current.installationMethodsByHost };
+  const wslDistroOverridesByHost = 'wslDistroOverridesByHost' in updates
+    ? normalizeHostnameCliPaths(updates.wslDistroOverridesByHost)
+    : { ...current.wslDistroOverridesByHost };
+
+  if ('installationMethod' in updates) {
+    const method = normalizeClaudeInstallationMethod(updates.installationMethod);
+    if (method !== current.installationMethod) delete wslDistroOverridesByHost[hostnameKey];
+    installationMethodsByHost[hostnameKey] = method;
+  }
+  if ('wslDistroOverride' in updates) {
+    const distro = typeof updates.wslDistroOverride === 'string'
+      ? updates.wslDistroOverride.trim()
+      : '';
+    if (distro) wslDistroOverridesByHost[hostnameKey] = distro;
+    else delete wslDistroOverridesByHost[hostnameKey];
+  }
+
   const next = {
     ...current,
     ...updates,
     safeMode: 'safeMode' in updates
       ? normalizeClaudeSafeMode(updates.safeMode) ?? current.safeMode
       : current.safeMode,
+    installationMethod: installationMethodsByHost[hostnameKey]
+      ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.installationMethod,
+    installationMethodsByHost,
+    wslDistroOverride: wslDistroOverridesByHost[hostnameKey] ?? '',
+    wslDistroOverridesByHost,
   };
-  setProviderConfig(settings, 'claude', next);
+  setProviderConfig(settings, 'claude', {
+    ...next,
+    installationMethodsByHost,
+    wslDistroOverridesByHost,
+  });
   return next;
 }

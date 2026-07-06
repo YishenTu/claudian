@@ -1,17 +1,18 @@
-import { execFileSync } from 'child_process';
-
-import { getCodexProviderSettings } from '../settings';
+import {
+  getCodexProviderSettings,
+  isCodexWslInstallationMethod,
+} from '../settings';
 import type {
   CodexExecutionPlatformFamily,
   CodexExecutionPlatformOs,
   CodexExecutionTarget,
 } from './codexLaunchTypes';
+export { inferWslDistroFromWindowsPath } from '../../../utils/wslPathMapper';
 
 export interface ResolveCodexExecutionTargetOptions {
   settings: Record<string, unknown>;
   hostPlatform?: NodeJS.Platform;
   hostVaultPath?: string | null;
-  resolveDefaultWslDistro?: () => string | undefined;
 }
 
 function resolveHostPlatformOs(hostPlatform: NodeJS.Platform): CodexExecutionPlatformOs {
@@ -30,45 +31,6 @@ function resolveHostPlatformFamily(hostPlatform: NodeJS.Platform): CodexExecutio
   return hostPlatform === 'win32' ? 'windows' : 'unix';
 }
 
-export function inferWslDistroFromWindowsPath(hostPath: string | null | undefined): string | undefined {
-  if (!hostPath) {
-    return undefined;
-  }
-
-  const normalized = hostPath.replace(/\//g, '\\');
-  const match = normalized.match(/^\\\\wsl\$\\([^\\]+)(?:\\|$)/i);
-  return match?.[1] || undefined;
-}
-
-export function parseDefaultWslDistroListOutput(output: string): string | undefined {
-  for (const line of output.replace(/\uFEFF/g, '').split(/\r?\n/)) {
-    const trimmed = line.trimStart();
-    if (!trimmed.startsWith('*')) {
-      continue;
-    }
-
-    const candidate = trimmed.slice(1).trimStart().split(/\s{2,}/)[0]?.trim();
-    if (candidate) {
-      return candidate;
-    }
-  }
-
-  return undefined;
-}
-
-function resolveDefaultWslDistroName(): string | undefined {
-  try {
-    const output = execFileSync('wsl.exe', ['--list', '--verbose'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      windowsHide: true,
-    });
-    return parseDefaultWslDistroListOutput(output);
-  } catch {
-    return undefined;
-  }
-}
-
 export function resolveCodexExecutionTarget(
   options: ResolveCodexExecutionTargetOptions,
 ): CodexExecutionTarget {
@@ -82,18 +44,18 @@ export function resolveCodexExecutionTarget(
   }
 
   const codexSettings = getCodexProviderSettings(options.settings);
-  if (codexSettings.installationMethod === 'wsl') {
-    const distroName = codexSettings.wslDistroOverride
-      || inferWslDistroFromWindowsPath(options.hostVaultPath)
-      || options.resolveDefaultWslDistro?.()
-      || resolveDefaultWslDistroName();
-
+  if (isCodexWslInstallationMethod(codexSettings.installationMethod)) {
     return {
       method: 'wsl',
       platformFamily: 'unix',
       platformOs: 'linux',
-      distroName,
+      distroName: codexSettings.wslDistroOverride || undefined,
+      wslVersion: codexSettings.installationMethod === 'wsl1' ? 1 : 2,
     };
+  }
+
+  if (codexSettings.installationMethod === 'wsl-unconfigured') {
+    throw new Error('Legacy WSL configuration detected. Select WSL 1 or WSL 2 in Codex settings.');
   }
 
   return {

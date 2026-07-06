@@ -11,11 +11,27 @@ import { CODEX_SPARK_MODEL } from './types/models';
 
 export type CodexSafeMode = 'workspace-write' | 'read-only';
 export type CodexReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
-export type CodexInstallationMethod = 'native-windows' | 'wsl';
+export type CodexInstallationMethod =
+  | 'native-windows'
+  | 'wsl1'
+  | 'wsl2'
+  | 'wsl-unconfigured';
 export type HostnameInstallationMethods = Record<string, CodexInstallationMethod>;
 
 function normalizeCodexInstallationMethod(value: unknown): CodexInstallationMethod {
-  return value === 'wsl' ? 'wsl' : 'native-windows';
+  if (value === 'wsl1' || value === 'wsl2' || value === 'wsl-unconfigured') {
+    return value;
+  }
+  if (value === 'wsl') {
+    return 'wsl-unconfigured';
+  }
+  return 'native-windows';
+}
+
+export function isCodexWslInstallationMethod(
+  value: CodexInstallationMethod,
+): value is 'wsl1' | 'wsl2' {
+  return value === 'wsl1' || value === 'wsl2';
 }
 
 function normalizeOptionalString(value: unknown): string {
@@ -129,6 +145,12 @@ export function getCodexProviderSettings(
   const hasHostScopedWslDistroOverrides = Object.keys(wslDistroOverridesByHost).length > 0;
   const legacyInstallationMethod = normalizeCodexInstallationMethod(config.installationMethod);
   const legacyWslDistroOverride = normalizeOptionalString(config.wslDistroOverride);
+  const installationMethod = installationMethodsByHost[hostnameKey]
+    ?? (
+      hasHostScopedInstallationMethods
+        ? DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod
+        : legacyInstallationMethod
+    );
 
   return {
     enabled: (config.enabled as boolean | undefined)
@@ -152,14 +174,11 @@ export function getCodexProviderSettings(
     environmentHash: (config.environmentHash as string | undefined)
       ?? (settings.lastCodexEnvHash as string | undefined)
       ?? DEFAULT_CODEX_PROVIDER_SETTINGS.environmentHash,
-    installationMethod: installationMethodsByHost[hostnameKey]
-      ?? (
-        hasHostScopedInstallationMethods
-          ? DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod
-          : legacyInstallationMethod
-      ),
+    installationMethod,
     installationMethodsByHost,
-    wslDistroOverride: wslDistroOverridesByHost[hostnameKey]
+    wslDistroOverride: installationMethod === 'wsl-unconfigured'
+      ? ''
+      : wslDistroOverridesByHost[hostnameKey]
       ?? (
         hasHostScopedWslDistroOverrides
           ? DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride
@@ -197,7 +216,11 @@ export function updateCodexProviderSettings(
   }
 
   if ('installationMethod' in updates) {
-    installationMethodsByHost[hostnameKey] = normalizeCodexInstallationMethod(updates.installationMethod);
+    const nextInstallationMethod = normalizeCodexInstallationMethod(updates.installationMethod);
+    if (nextInstallationMethod !== current.installationMethod) {
+      delete wslDistroOverridesByHost[hostnameKey];
+    }
+    installationMethodsByHost[hostnameKey] = nextInstallationMethod;
   }
 
   if ('wslDistroOverride' in updates) {
