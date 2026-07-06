@@ -78,7 +78,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const getCliPathCopy = (): { desc: string; placeholder: string } => {
       if (!isWindowsHost) {
         return {
-          desc: 'Custom path to the local Codex CLI. Leave empty for auto-detection from PATH.',
+          desc: 'Custom path to the local Codex CLI. Leave empty to prefer known Codex installs, then PATH.',
           placeholder: '/usr/local/bin/codex',
         };
       }
@@ -91,7 +91,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       }
 
       return {
-        desc: 'Custom path to the local Codex CLI. Leave empty for auto-detection from PATH. Use the native Windows executable path, usually `codex.exe`.',
+        desc: 'Custom path to the local Codex CLI. Leave empty to auto-detect from PATH. Use the native Windows executable path, usually `codex.exe`.',
         placeholder: 'C:\\Users\\you\\AppData\\Roaming\\npm\\codex.exe',
       };
     };

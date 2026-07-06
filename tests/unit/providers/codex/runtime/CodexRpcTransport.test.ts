@@ -24,6 +24,7 @@ function createMockServerProcess(): CodexAppServerProcess & {
     stderr: new Readable({ read() {} }),
     isAlive: jest.fn().mockReturnValue(true),
     onExit: jest.fn(),
+    getStderrSnapshot: jest.fn().mockReturnValue(''),
     _stdout: stdout,
     _stdin: stdin,
     _written: written,
@@ -201,6 +202,19 @@ describe('CodexRpcTransport', () => {
       exitCb(1, 'SIGTERM');
 
       await expect(promise).rejects.toThrow();
+    });
+
+    it('includes stderr when rejecting pending requests after process exit', async () => {
+      (proc.getStderrSnapshot as jest.Mock).mockReturnValue(
+        'failed to load configuration: ~/.codex/config.toml: unknown variant priority',
+      );
+      const exitCb = (proc.onExit as jest.Mock).mock.calls[0][0];
+
+      const promise = transport.request('initialize', {});
+
+      exitCb(1, null);
+
+      await expect(promise).rejects.toThrow('unknown variant priority');
     });
   });
 

@@ -155,14 +155,25 @@ describe('CodexAppServerProcess', () => {
     });
   });
 
+  describe('stderr snapshot', () => {
+    it('keeps a bounded stderr snapshot for startup failures', () => {
+      const server = new CodexAppServerProcess(createLaunchSpec());
+      server.start();
+
+      mockProc.stderr?.emit('data', 'failed to load configuration');
+
+      expect(server.getStderrSnapshot()).toContain('failed to load configuration');
+    });
+  });
+
   describe('onExit', () => {
-    it('calls registered exit callback when process exits', () => {
+    it('calls registered exit callback when process closes', () => {
       const server = new CodexAppServerProcess(createLaunchSpec());
       const exitCallback = jest.fn();
       server.onExit(exitCallback);
       server.start();
 
-      mockProc.emit('exit', 1, 'SIGTERM');
+      mockProc.emit('close', 1, 'SIGTERM');
 
       expect(exitCallback).toHaveBeenCalledWith(1, 'SIGTERM');
     });
@@ -174,9 +185,26 @@ describe('CodexAppServerProcess', () => {
       const exitCallback = jest.fn();
       server.onExit(exitCallback);
 
-      mockProc.emit('exit', 0, null);
+      mockProc.emit('close', 0, null);
 
       expect(exitCallback).toHaveBeenCalledWith(0, null);
+    });
+
+    it('waits for close before notifying so late stderr is included', () => {
+      const server = new CodexAppServerProcess(createLaunchSpec());
+      const exitCallback = jest.fn(() => {
+        expect(server.getStderrSnapshot()).toContain('unknown variant priority');
+      });
+      server.onExit(exitCallback);
+      server.start();
+
+      mockProc.emit('exit', 1, null);
+      mockProc.stderr?.emit('data', 'unknown variant priority');
+      expect(exitCallback).not.toHaveBeenCalled();
+
+      mockProc.emit('close', 1, null);
+
+      expect(exitCallback).toHaveBeenCalledWith(1, null);
     });
   });
 

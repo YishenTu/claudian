@@ -9,12 +9,19 @@ import {
 
 describe('CodexBinaryLocator', () => {
   let tempDir: string;
+  const originalHome = process.env.HOME;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-binary-locator-'));
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -34,6 +41,39 @@ describe('CodexBinaryLocator', () => {
     fs.writeFileSync(pathBinary, '');
 
     expect(findCodexBinaryPath(pathDir, 'win32')).toBe(pathBinary);
+  });
+
+  it('prefers the macOS Codex app bundle over generic PATH auto-detection', () => {
+    process.env.HOME = tempDir;
+    const appDir = path.join(tempDir, 'Applications', 'Codex.app', 'Contents', 'Resources');
+    const appBinary = path.join(appDir, 'codex');
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.writeFileSync(appBinary, '');
+
+    expect(findCodexBinaryPath('', 'darwin')).toBe(appBinary);
+  });
+
+  it('honors an explicit runtime PATH before preferred macOS Codex locations', () => {
+    process.env.HOME = tempDir;
+    const explicitDir = path.join(tempDir, 'explicit-bin');
+    const explicitBinary = path.join(explicitDir, 'codex');
+    const appDir = path.join(tempDir, 'Applications', 'Codex.app', 'Contents', 'Resources');
+    fs.mkdirSync(explicitDir, { recursive: true });
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.writeFileSync(explicitBinary, '');
+    fs.writeFileSync(path.join(appDir, 'codex'), '');
+
+    expect(findCodexBinaryPath(explicitDir, 'darwin')).toBe(explicitBinary);
+  });
+
+  it('prefers a user-local Codex binary before generic Unix PATH auto-detection', () => {
+    process.env.HOME = tempDir;
+    const localDir = path.join(tempDir, '.local', 'bin');
+    const localBinary = path.join(localDir, 'codex');
+    fs.mkdirSync(localDir, { recursive: true });
+    fs.writeFileSync(localBinary, '');
+
+    expect(findCodexBinaryPath('', 'linux')).toBe(localBinary);
   });
 
   it('prefers a hostname-specific configured path', () => {

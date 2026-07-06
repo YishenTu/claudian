@@ -435,7 +435,7 @@ describe('CodexSettingsTab', () => {
     codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
     const cliPathSetting = findSetting('Codex CLI path');
-    expect(cliPathSetting.desc).toBe('Custom path to the local Codex CLI. Leave empty for auto-detection from PATH.');
+    expect(cliPathSetting.desc).toBe('Custom path to the local Codex CLI. Leave empty to prefer known Codex installs, then PATH.');
     expect(cliPathSetting.textComponents[0].placeholder).toBe('/usr/local/bin/codex');
 
     await cliPathSetting.textComponents[0].onChangeCallback?.('codex');
