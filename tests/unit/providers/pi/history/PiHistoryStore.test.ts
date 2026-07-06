@@ -69,6 +69,41 @@ describe('PiHistoryStore', () => {
     expect(messages[0].displayContent).toBeUndefined();
   });
 
+  it('rehydrates user image content parts', () => {
+    const content = [
+      JSON.stringify({
+        id: 'u1',
+        type: 'entry',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'What is in this image?' },
+            {
+              type: 'image',
+              mimeType: 'image/png',
+              data: 'aGVsbG8=',
+            },
+          ],
+        },
+      }),
+    ].join('\n');
+
+    const messages = parsePiSessionContent(content);
+
+    expect(messages[0]).toMatchObject({
+      content: 'What is in this image?',
+      images: [{
+        data: 'aGVsbG8=',
+        id: 'pi-img-u1-0',
+        mediaType: 'image/png',
+        name: 'image-1.png',
+        size: 5,
+        source: 'paste',
+      }],
+      role: 'user',
+    });
+  });
+
   it('attaches tool results to the previous assistant tool call', () => {
     const content = [
       JSON.stringify({

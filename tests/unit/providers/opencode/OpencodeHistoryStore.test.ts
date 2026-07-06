@@ -91,6 +91,45 @@ describe('mapOpencodeMessages', () => {
     ]);
   });
 
+  it('rehydrates user file image parts', () => {
+    const messages = mapOpencodeMessages([
+      {
+        info: {
+          id: 'msg-user',
+          role: 'user',
+          time: { created: 1_000 },
+        },
+        parts: [
+          {
+            id: 'part-text',
+            text: 'What is in this image?',
+            type: 'text',
+          },
+          {
+            filename: 'screenshot.png',
+            id: 'part-image',
+            mime: 'image/png',
+            type: 'file',
+            url: 'data:image/png;base64,aGVsbG8=',
+          },
+        ],
+      },
+    ]);
+
+    expect(messages[0]).toMatchObject({
+      content: 'What is in this image?',
+      images: [{
+        data: 'aGVsbG8=',
+        id: 'opencode-img-msg-user-0',
+        mediaType: 'image/png',
+        name: 'screenshot.png',
+        size: 5,
+        source: 'paste',
+      }],
+      role: 'user',
+    });
+  });
+
   it('hydrates stored question tools with resolved answers', () => {
     const messages = mapOpencodeMessages([
       {

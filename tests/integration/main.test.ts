@@ -738,6 +738,35 @@ describe('ClaudianPlugin', () => {
       expect(updated?.messages).toEqual(messages);
     });
 
+    it('should preserve image data when updating conversation messages', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      const messages = [
+        {
+          id: 'msg-1',
+          role: 'user' as const,
+          content: 'See attached image',
+          timestamp: Date.now(),
+          images: [
+            {
+              id: 'img-1',
+              name: 'pasted.png',
+              mediaType: 'image/png' as const,
+              data: 'YmFzZTY0',
+              size: 10,
+              source: 'paste' as const,
+            },
+          ],
+        },
+      ];
+
+      await plugin.updateConversation(conv.id, { messages });
+
+      const updated = await plugin.getConversationById(conv.id);
+      expect(updated?.messages[0].images?.[0].data).toBe('YmFzZTY0');
+    });
+
     it('should update conversation sessionId', async () => {
       await plugin.onload();
 
@@ -1001,6 +1030,71 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('loadSdkMessagesForConversation - fork branch', () => {
+    it('should repair blank image data from Claude SDK history during hydration', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      await plugin.updateConversation(conv.id, {
+        providerState: {
+          providerSessionId: 'session-with-image',
+        },
+        messages: [
+          {
+            id: 'user-with-image',
+            role: 'user',
+            content: 'See attached image',
+            timestamp: 1000,
+            images: [{
+              id: 'img-blank',
+              name: 'pasted.png',
+              mediaType: 'image/png',
+              data: '',
+              size: 0,
+              source: 'paste',
+            }],
+          },
+        ],
+      });
+
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
+        messages: [
+          {
+            id: 'user-with-image',
+            role: 'user',
+            content: 'See attached image',
+            timestamp: 1000,
+            images: [{
+              id: 'sdk-img-user-with-image-0',
+              name: 'image-1',
+              mediaType: 'image/png',
+              data: 'aGVsbG8=',
+              size: 5,
+              source: 'paste',
+            }],
+          },
+        ],
+        skippedLines: 0,
+      });
+
+      const loaded = await plugin.getConversationById(conv.id);
+
+      expect(loadSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        'session-with-image',
+        undefined
+      );
+      expect(loaded?.messages[0].images?.[0]).toMatchObject({
+        id: 'img-blank',
+        data: 'aGVsbG8=',
+        mediaType: 'image/png',
+        size: 5,
+      });
+
+      existsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
     it('should load from forkSource.sessionId and truncate at forkSource.resumeAt for pending fork', async () => {
       await plugin.onload();
 
