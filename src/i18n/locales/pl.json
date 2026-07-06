@@ -62,7 +62,7 @@
       "copyAriaLabel": "Kopiuj wynik ostatniego polecenia",
       "clearAriaLabel": "Wyczyść wynik bash",
       "commandLabel": "{command}",
-      "statusLabel": "Status: {status}",
+      "statusLabel": "Stan: {status}",
       "collapseOutput": "Zwiń wynik polecenia",
       "expandOutput": "Rozwiń wynik polecenia",
       "running": "Uruchamianie...",
