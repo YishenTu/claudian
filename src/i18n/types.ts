@@ -49,6 +49,19 @@ export type TranslationKey =
   | 'chat.bangBash.running'
   | 'chat.bangBash.copyFailed'
 
+  // Chat - Usage limits
+  | 'chat.usageLimits.buttonLabel'
+  | 'chat.usageLimits.title'
+  | 'chat.usageLimits.loading'
+  | 'chat.usageLimits.sessionLabel'
+  | 'chat.usageLimits.weeklyLabel'
+  | 'chat.usageLimits.weeklyScopedLabel'
+  | 'chat.usageLimits.percentUsed'
+  | 'chat.usageLimits.resetsAtTime'
+  | 'chat.usageLimits.resetsAtDay'
+  | 'chat.usageLimits.errorNoCredentials'
+  | 'chat.usageLimits.errorFetch'
+
   // Chat - Fork
   | 'chat.fork.ariaLabel'
   | 'chat.fork.chooseTarget'

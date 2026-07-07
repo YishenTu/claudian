@@ -19,6 +19,7 @@ import type {
 import { appendCheckIcon, appendMcpIcon, createProviderIconSvg } from '../../../shared/icons';
 import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
 import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
+import { UsageLimitsMeter } from './UsageLimitsMeter';
 
 interface ElectronOpenDialogResult {
   canceled: boolean;
@@ -1217,6 +1218,7 @@ export function createInputToolbar(
   modeSelector: ModeSelector;
   thinkingBudgetSelector: ThinkingBudgetSelector;
   contextUsageMeter: ContextUsageMeter | null;
+  usageLimitsMeter: UsageLimitsMeter;
   externalContextSelector: ExternalContextSelector;
   mcpServerSelector: McpServerSelector;
   permissionToggle: PermissionToggle;
@@ -1226,6 +1228,7 @@ export function createInputToolbar(
   const thinkingBudgetSelector = new ThinkingBudgetSelector(parentEl, callbacks);
   const serviceTierToggle = new ServiceTierToggle(parentEl, callbacks);
   const contextUsageMeter = new ContextUsageMeter(parentEl);
+  const usageLimitsMeter = new UsageLimitsMeter(parentEl);
   const externalContextSelector = new ExternalContextSelector(parentEl, callbacks);
   const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);
@@ -1237,6 +1240,7 @@ export function createInputToolbar(
     thinkingBudgetSelector,
     serviceTierToggle,
     contextUsageMeter,
+    usageLimitsMeter,
     externalContextSelector,
     mcpServerSelector,
     permissionToggle,

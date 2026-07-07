@@ -67,6 +67,19 @@
       "expandOutput": "Expandir a saída do comando",
       "running": "Executando...",
       "copyFailed": "Falha ao copiar para a área de transferência"
+    },
+    "usageLimits": {
+      "buttonLabel": "Limites de uso",
+      "title": "Limites de uso",
+      "loading": "Carregando uso...",
+      "sessionLabel": "Sessão atual (5 h)",
+      "weeklyLabel": "Semana atual (todos os modelos)",
+      "weeklyScopedLabel": "Semana atual (principais modelos)",
+      "percentUsed": "{percent}% usado",
+      "resetsAtTime": "Redefine às {time}",
+      "resetsAtDay": "Redefine {day}, {time}",
+      "errorNoCredentials": "Credenciais do Claude Code não encontradas. Entre com `claude` em um terminal primeiro.",
+      "errorFetch": "Não foi possível carregar os limites de uso. Disponível apenas para contas Pro/Max."
     }
   },
   "settings": {

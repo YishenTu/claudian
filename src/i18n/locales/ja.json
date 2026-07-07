@@ -67,6 +67,19 @@
       "expandOutput": "コマンド出力を展開",
       "running": "実行中...",
       "copyFailed": "クリップボードへのコピーに失敗しました"
+    },
+    "usageLimits": {
+      "buttonLabel": "使用制限",
+      "title": "使用制限",
+      "loading": "使用状況を読み込み中...",
+      "sessionLabel": "現在のセッション（5時間）",
+      "weeklyLabel": "今週（全モデル）",
+      "weeklyScopedLabel": "今週（上位モデル）",
+      "percentUsed": "{percent}% 使用済み",
+      "resetsAtTime": "{time} にリセット",
+      "resetsAtDay": "{day} {time} にリセット",
+      "errorNoCredentials": "Claude Code の認証情報が見つかりません。まずターミナルで `claude` にサインインしてください。",
+      "errorFetch": "使用制限を読み込めませんでした。Pro/Max サブスクリプションのみ利用可能です。"
     }
   },
   "settings": {

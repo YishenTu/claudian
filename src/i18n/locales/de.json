@@ -67,6 +67,19 @@
       "expandOutput": "Befehlsausgabe ausklappen",
       "running": "Wird ausgeführt...",
       "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
+    },
+    "usageLimits": {
+      "buttonLabel": "Nutzungslimits",
+      "title": "Nutzungslimits",
+      "loading": "Nutzung wird geladen...",
+      "sessionLabel": "Aktuelle Sitzung (5 Std.)",
+      "weeklyLabel": "Aktuelle Woche (alle Modelle)",
+      "weeklyScopedLabel": "Aktuelle Woche (Top-Modelle)",
+      "percentUsed": "{percent}% verbraucht",
+      "resetsAtTime": "Zurücksetzung um {time}",
+      "resetsAtDay": "Zurücksetzung {day}, {time}",
+      "errorNoCredentials": "Claude Code-Anmeldedaten nicht gefunden. Melden Sie sich zuerst mit `claude` im Terminal an.",
+      "errorFetch": "Nutzungslimits konnten nicht geladen werden. Nur für Pro/Max-Abonnements verfügbar."
     }
   },
   "settings": {

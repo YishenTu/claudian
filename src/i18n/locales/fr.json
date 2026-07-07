@@ -67,6 +67,19 @@
       "expandOutput": "Développer la sortie de la commande",
       "running": "Exécution...",
       "copyFailed": "Échec de la copie dans le presse-papiers"
+    },
+    "usageLimits": {
+      "buttonLabel": "Limites d'utilisation",
+      "title": "Limites d'utilisation",
+      "loading": "Chargement de l'utilisation...",
+      "sessionLabel": "Session actuelle (5 h)",
+      "weeklyLabel": "Semaine actuelle (tous les modèles)",
+      "weeklyScopedLabel": "Semaine actuelle (meilleurs modèles)",
+      "percentUsed": "{percent}% utilisé",
+      "resetsAtTime": "Réinitialisation à {time}",
+      "resetsAtDay": "Réinitialisation {day}, {time}",
+      "errorNoCredentials": "Identifiants Claude Code introuvables. Connectez-vous d'abord avec `claude` dans un terminal.",
+      "errorFetch": "Impossible de charger les limites d'utilisation. Disponible uniquement pour les comptes Pro/Max."
     }
   },
   "settings": {

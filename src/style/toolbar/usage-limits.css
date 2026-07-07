@@ -1,0 +1,125 @@
+/* Usage limits meter (toolbar icon + popover) */
+
+.claudian-usage-limits {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-inline-start: 4px;
+}
+
+.claudian-usage-limits-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.claudian-usage-limits-icon:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.claudian-usage-limits-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.claudian-usage-limits-icon.is-warning {
+  color: var(--color-orange, var(--text-warning, var(--text-muted)));
+}
+
+.claudian-usage-limits-icon.is-critical {
+  color: var(--text-error);
+}
+
+/* Popover */
+
+.claudian-usage-limits-popover {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  width: 260px;
+  padding: 12px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-s);
+  z-index: 200;
+}
+
+.claudian-usage-limits-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-normal);
+  margin-bottom: 10px;
+}
+
+.claudian-usage-limits-loading,
+.claudian-usage-limits-error {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
+.claudian-usage-limits-row {
+  margin-bottom: 12px;
+}
+
+.claudian-usage-limits-row:last-child {
+  margin-bottom: 0;
+}
+
+.claudian-usage-limits-row-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.claudian-usage-limits-row-label {
+  font-size: 12px;
+  color: var(--text-normal);
+}
+
+.claudian-usage-limits-row-percent {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.claudian-usage-limits-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.claudian-usage-limits-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.claudian-usage-limits-bar-fill.is-normal {
+  background: var(--interactive-accent);
+}
+
+.claudian-usage-limits-bar-fill.is-warning {
+  background: var(--color-orange, var(--interactive-accent));
+}
+
+.claudian-usage-limits-bar-fill.is-critical {
+  background: var(--text-error);
+}
+
+.claudian-usage-limits-row-reset {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}

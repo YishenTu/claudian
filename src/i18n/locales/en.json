@@ -67,6 +67,19 @@
       "expandOutput": "Expand command output",
       "running": "Running...",
       "copyFailed": "Failed to copy to clipboard"
+    },
+    "usageLimits": {
+      "buttonLabel": "Usage limits",
+      "title": "Usage limits",
+      "loading": "Loading usage...",
+      "sessionLabel": "Current session (5h)",
+      "weeklyLabel": "Current week (all models)",
+      "weeklyScopedLabel": "Current week (top models)",
+      "percentUsed": "{percent}% used",
+      "resetsAtTime": "Resets at {time}",
+      "resetsAtDay": "Resets {day}, {time}",
+      "errorNoCredentials": "Claude Code credentials not found. Sign in with `claude` in a terminal first.",
+      "errorFetch": "Could not load usage limits. This is only available for Pro/Max subscription accounts."
     }
   },
   "settings": {

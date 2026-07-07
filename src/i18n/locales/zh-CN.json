@@ -67,6 +67,19 @@
       "expandOutput": "展开命令输出",
       "running": "运行中...",
       "copyFailed": "复制到剪贴板失败"
+    },
+    "usageLimits": {
+      "buttonLabel": "用量限制",
+      "title": "用量限制",
+      "loading": "正在加载用量...",
+      "sessionLabel": "当前会话（5 小时）",
+      "weeklyLabel": "本周（所有模型）",
+      "weeklyScopedLabel": "本周（顶级模型）",
+      "percentUsed": "已使用 {percent}%",
+      "resetsAtTime": "{time} 重置",
+      "resetsAtDay": "{day} {time} 重置",
+      "errorNoCredentials": "未找到 Claude Code 凭据。请先在终端中使用 `claude` 登录。",
+      "errorFetch": "无法加载用量限制。仅适用于 Pro/Max 订阅账户。"
     }
   },
   "settings": {

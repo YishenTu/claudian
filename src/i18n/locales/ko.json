@@ -67,6 +67,19 @@
       "expandOutput": "명령 출력 펼치기",
       "running": "실행 중...",
       "copyFailed": "클립보드에 복사하지 못했습니다"
+    },
+    "usageLimits": {
+      "buttonLabel": "사용 한도",
+      "title": "사용 한도",
+      "loading": "사용량 불러오는 중...",
+      "sessionLabel": "현재 세션 (5시간)",
+      "weeklyLabel": "이번 주 (전체 모델)",
+      "weeklyScopedLabel": "이번 주 (상위 모델)",
+      "percentUsed": "{percent}% 사용됨",
+      "resetsAtTime": "{time}에 초기화",
+      "resetsAtDay": "{day} {time}에 초기화",
+      "errorNoCredentials": "Claude Code 자격 증명을 찾을 수 없습니다. 먼저 터미널에서 `claude`로 로그인하세요.",
+      "errorFetch": "사용 한도를 불러올 수 없습니다. Pro/Max 구독 계정에서만 사용할 수 있습니다."
     }
   },
   "settings": {
