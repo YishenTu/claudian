@@ -18,13 +18,13 @@ import {
 import { ProviderRegistry } from './core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
-import type { ProviderId } from './core/providers/types';
-import type { AppTabManagerState } from './core/providers/types';
+import type { AppTabManagerState, ProviderId } from './core/providers/types';
 import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
 import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
+  SessionMetadata,
 } from './core/types';
 import {
   VIEW_TYPE_CLAUDIAN,
@@ -35,6 +35,7 @@ import { type InlineEditContext, InlineEditModal } from './features/inline-edit/
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n/i18n';
 import type { Locale } from './i18n/types';
+import { type CodexNativeSessionImportResult, importCodexNativeSessionsForVault } from './providers/codex/history/CodexNativeSessionImport';
 import { OPENCODE_PLAN_MODE_ID, OPENCODE_SAFE_MODE_ID } from './providers/opencode/modes';
 import { extractUserDisplayContent } from './utils/context';
 import { buildCursorContext } from './utils/editor';
@@ -315,27 +316,7 @@ export default class ClaudianPlugin extends Plugin {
     const didNormalizeModelVariants = this.normalizeModelVariantSettings();
 
     const allMetadata = await this.storage.sessions.listMetadata();
-    this.conversations = allMetadata.map(meta => {
-      const resumeSessionId = meta.sessionId !== undefined ? meta.sessionId : meta.id;
-
-      return {
-        id: meta.id,
-        providerId: meta.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
-        title: meta.title,
-        createdAt: meta.createdAt,
-        updatedAt: meta.updatedAt,
-        lastResponseAt: meta.lastResponseAt,
-        sessionId: resumeSessionId,
-        providerState: meta.providerState,
-        messages: [],
-        currentNote: meta.currentNote,
-        externalContextPaths: meta.externalContextPaths,
-        enabledMcpServers: meta.enabledMcpServers,
-        usage: meta.usage,
-        titleGenerationStatus: meta.titleGenerationStatus,
-        resumeAtMessageId: meta.resumeAtMessageId,
-      };
-    }).sort(
+    this.conversations = allMetadata.map(meta => this.metadataToConversation(meta)).sort(
       (a, b) => (b.lastResponseAt ?? b.updatedAt) - (a.lastResponseAt ?? a.updatedAt)
     );
     setLocale(this.settings.locale as Locale);
@@ -592,6 +573,58 @@ export default class ClaudianPlugin extends Plugin {
       ?? extractUserDisplayContent(firstUserMsg.content)
       ?? firstUserMsg.content;
     return previewText.substring(0, 50) + (previewText.length > 50 ? '...' : '');
+  }
+
+  private metadataToConversation(meta: SessionMetadata): Conversation {
+    const resumeSessionId = meta.sessionId !== undefined ? meta.sessionId : meta.id;
+
+    return {
+      id: meta.id,
+      providerId: meta.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
+      title: meta.title,
+      createdAt: meta.createdAt,
+      updatedAt: meta.updatedAt,
+      lastResponseAt: meta.lastResponseAt,
+      sessionId: resumeSessionId,
+      providerState: meta.providerState,
+      messages: [],
+      currentNote: meta.currentNote,
+      externalContextPaths: meta.externalContextPaths,
+      enabledMcpServers: meta.enabledMcpServers,
+      usage: meta.usage,
+      titleGenerationStatus: meta.titleGenerationStatus,
+      resumeAtMessageId: meta.resumeAtMessageId,
+    };
+  }
+
+  async importCodexNativeSessionsForCurrentVault(): Promise<CodexNativeSessionImportResult> {
+    const vaultPath = getVaultPath(this.app);
+    const emptyResult: CodexNativeSessionImportResult = {
+      imported: [],
+      skippedDuplicate: 0,
+      skippedOtherWorkspace: 0,
+      scanned: 0,
+    };
+    if (!vaultPath) {
+      return emptyResult;
+    }
+
+    const existingMetadata = await this.storage.sessions.listMetadata();
+    const result = importCodexNativeSessionsForVault({
+      existingMetadata,
+      vaultPath,
+    });
+
+    for (const meta of result.imported) {
+      await this.storage.sessions.saveMetadata(meta);
+      this.conversations.push(this.metadataToConversation(meta));
+    }
+
+    this.conversations.sort(
+      (a, b) => (b.lastResponseAt ?? b.updatedAt) - (a.lastResponseAt ?? a.updatedAt)
+    );
+
+    return result;
   }
 
   private async loadSdkMessagesForConversation(conversation: Conversation): Promise<void> {
