@@ -3,6 +3,7 @@ import type { Component, WorkspaceLeaf } from 'obsidian';
 import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
+import type { VoiceInputControlsHandle } from '../../voice/VoiceInputControls';
 import type { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import type { CanvasSelectionController } from '../controllers/CanvasSelectionController';
 import type { ConversationController } from '../controllers/ConversationController';
@@ -129,6 +130,8 @@ export interface TabUIComponents {
   contextUsageMeter: ContextUsageMeter | null;
   statusPanel: StatusPanel | null;
   navigationSidebar: NavigationSidebar | null;
+  /** Handle for the per-tab voice input controls (mic/waveform + queued badge). */
+  voiceControls: VoiceInputControlsHandle | null;
 }
 
 /**

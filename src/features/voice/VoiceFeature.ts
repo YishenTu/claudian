@@ -1,9 +1,11 @@
-// Lifecycle facade the plugin uses to turn voice mode on and off.
+// Lifecycle facade the plugin uses to drive voice: full conversation mode AND
+// one-shot dictation. Both share a single reference-counted bridge (one mic) via
+// ResidentBridge, so repeat dictation stays warm without holding the mic when
+// idle.
 //
 // Owns the stream bus (so the StreamController can forward chunks without
-// knowing about voice internals) and the VoiceController it drives. The bus is
-// created eagerly and exposed on the plugin as `voiceBus`, so the single guarded
-// tap in StreamController is a cheap no-op until voice is actually enabled.
+// knowing about voice internals) and exposes it on the plugin as `voiceBus`, so
+// the single guarded tap in StreamController is a cheap no-op until voice runs.
 
 import { dirname } from 'node:path';
 
@@ -11,7 +13,9 @@ import { Notice } from 'obsidian';
 
 import type { StreamChunk } from '../../core/types';
 import type ClaudianPlugin from '../../main';
-import { VoiceController, type VoiceRuntimeConfig, type VoiceStreamBus } from './VoiceController';
+import { DictationController, type DictationState } from './DictationController';
+import { ResidentBridge } from './ResidentBridge';
+import { VoiceController, type VoiceRuntimeConfig, type VoiceState, type VoiceStreamBus } from './VoiceController';
 
 /**
  * A tiny synchronous fan-out bus for stream chunks. The StreamController calls
@@ -45,23 +49,43 @@ export class VoiceStreamBusImpl implements VoiceStreamBus {
 export class VoiceFeature {
   private readonly plugin: ClaudianPlugin;
   private readonly bus: VoiceStreamBusImpl;
+  private readonly residentBridge: ResidentBridge;
+  private readonly dictation: DictationController;
+
   private controller: VoiceController | null = null;
   private starting = false;
+
+  // Conversation-state listeners (per-tab waveform indicators). The current
+  // state is replayed to new subscribers so a freshly-built tab reflects an
+  // already-running session.
+  private readonly conversationStateListeners = new Set<(state: VoiceState) => void>();
+  private conversationState: VoiceState = 'idle';
+  private unsubscribeControllerState: (() => void) | null = null;
 
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
     this.bus = new VoiceStreamBusImpl();
     // Expose the bus so StreamController's guarded tap can reach it.
     this.plugin.voiceBus = this.bus;
+
+    this.residentBridge = new ResidentBridge(() => this.resolveConfig());
+    this.dictation = new DictationController(plugin, () => this.residentBridge.acquire());
   }
 
-  /** True while a voice session is running. */
+  /** True while a full conversation session is running. */
   isRunning(): boolean {
     return this.controller !== null;
   }
 
-  /** Toggle voice mode on/off. */
-  async toggle(): Promise<void> {
+  /** True while a one-shot dictation capture is in flight. */
+  isDictating(): boolean {
+    return this.dictation.isListening();
+  }
+
+  // ---- full conversation mode ----
+
+  /** Toggle full conversation voice mode on/off. */
+  async toggleConversation(): Promise<void> {
     if (this.isRunning()) {
       await this.disable();
     } else {
@@ -69,40 +93,118 @@ export class VoiceFeature {
     }
   }
 
-  /** Start a voice session using the current settings. */
+  /** Back-compat alias for the existing `toggle-voice-mode` command. */
+  async toggle(): Promise<void> {
+    await this.toggleConversation();
+  }
+
+  /** Start a conversation session using the current settings. */
   async enable(): Promise<void> {
     if (this.controller || this.starting) {
       return;
     }
-
-    const config = this.resolveConfig();
-    if (!config) {
-      return; // resolveConfig surfaced the reason via Notice
+    if (!this.hasBridgeConfig()) {
+      this.noticeMissingConfig();
+      return;
     }
 
     this.starting = true;
-    const controller = new VoiceController(this.plugin, this.bus, config);
+    const controller = new VoiceController(this.plugin, this.bus, () => this.residentBridge.acquire());
     try {
+      // Reflect controller state into the shared conversation-state stream so
+      // per-tab waveform indicators animate live.
+      this.unsubscribeControllerState = controller.onStateChange((state) => {
+        this.setConversationState(state);
+      });
       await controller.start();
       this.controller = controller;
       new Notice('Voice mode on — listening.');
     } catch {
-      // VoiceController.start() already surfaced the failure via Notice and
-      // tore itself down; just stay disabled.
+      // VoiceController.start() surfaced the failure via Notice (or the bridge
+      // did); just stay disabled and drop the state subscription.
+      this.unsubscribeControllerState?.();
+      this.unsubscribeControllerState = null;
       this.controller = null;
+      this.setConversationState('idle');
     } finally {
       this.starting = false;
     }
   }
 
-  /** Stop the running voice session, if any. */
+  /** Stop the running conversation session, if any. */
   async disable(): Promise<void> {
     const controller = this.controller;
     this.controller = null;
+    this.unsubscribeControllerState?.();
+    this.unsubscribeControllerState = null;
     if (controller) {
       await controller.stop();
       new Notice('Voice mode off.');
     }
+    this.setConversationState('idle');
+  }
+
+  /**
+   * Subscribe to conversation turn-state. Fires immediately with the current
+   * state, then on every change. Used by per-tab waveform indicators.
+   */
+  onConversationStateChange(listener: (state: VoiceState) => void): () => void {
+    this.conversationStateListeners.add(listener);
+    listener(this.conversationState);
+    return () => {
+      this.conversationStateListeners.delete(listener);
+    };
+  }
+
+  // ---- dictation mode ----
+
+  /** Start (or cancel, if already capturing) a one-shot dictation. */
+  async startDictation(): Promise<void> {
+    if (!this.hasBridgeConfig()) {
+      this.noticeMissingConfig();
+      return;
+    }
+    await this.dictation.toggle();
+  }
+
+  /** Subscribe to dictation capture state (for the mic button active look). */
+  onDictationStateChange(listener: (state: DictationState) => void): () => void {
+    return this.dictation.onStateChange(listener);
+  }
+
+  // ---- teardown ----
+
+  /** Full teardown on plugin unload: stop conversation, dictation, and bridge. */
+  async dispose(): Promise<void> {
+    await this.disable();
+    this.dictation.dispose();
+    await this.residentBridge.shutdown();
+  }
+
+  // ---- helpers ----
+
+  private setConversationState(state: VoiceState): void {
+    if (this.conversationState === state) {
+      return;
+    }
+    this.conversationState = state;
+    for (const listener of this.conversationStateListeners) {
+      try {
+        listener(state);
+      } catch {
+        // A listener error must never disrupt the turn loop.
+      }
+    }
+  }
+
+  /** Whether the bridge script path is configured (buttons are always shown,
+   *  but need a path before they can do anything). */
+  private hasBridgeConfig(): boolean {
+    return (this.plugin.settings.voiceBridgeScriptPath?.trim() ?? '') !== '';
+  }
+
+  private noticeMissingConfig(): void {
+    new Notice('Voice: set the bridge script path in Claudian settings first.');
   }
 
   /** Resolve the Python bridge launch config from settings, or explain why not. */
@@ -110,7 +212,7 @@ export class VoiceFeature {
     const settings = this.plugin.settings;
     const bridgeScriptPath = settings.voiceBridgeScriptPath?.trim() ?? '';
     if (bridgeScriptPath === '') {
-      new Notice('Voice: set the bridge script path in Claudian settings first.');
+      this.noticeMissingConfig();
       return null;
     }
     const pythonPath = settings.voicePythonPath?.trim() || 'python3';

@@ -61,7 +61,9 @@ export default class ClaudianPlugin extends Plugin {
   storage!: SharedAppStorage;
   /** Stream chunk bus for the voice feature; StreamController taps this. */
   voiceBus?: VoiceStreamBusImpl;
-  private voiceFeature: VoiceFeature | null = null;
+  /** Voice facade (conversation + dictation). Per-tab input controls call into
+   *  this; null until onload wires it. */
+  voiceFeature: VoiceFeature | null = null;
   private conversations: Conversation[] = [];
   private lastKnownTabManagerState: AppTabManagerState | null = null;
 
@@ -197,13 +199,13 @@ export default class ClaudianPlugin extends Plugin {
       id: 'toggle-voice-mode',
       name: 'Toggle voice mode',
       callback: () => {
-        void this.voiceFeature?.toggle();
+        void this.voiceFeature?.toggleConversation();
       },
     });
   }
 
   onunload(): void {
-    void this.voiceFeature?.disable();
+    void this.voiceFeature?.dispose();
     void this.persistOpenTabStates();
   }
 

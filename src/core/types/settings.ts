@@ -151,6 +151,9 @@ export interface ClaudianSettings {
   voiceEnabled?: boolean;
   voicePythonPath?: string;
   voiceBridgeScriptPath?: string;
+  // When true, a dictated transcript sends immediately instead of being
+  // inserted into the input for the user to review/edit before sending.
+  voiceDictationAutoSend?: boolean;
 
   // Allow provider-specific extension fields
   [key: string]: unknown;

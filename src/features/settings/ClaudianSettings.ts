@@ -520,6 +520,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
           }),
       );
 
+    new Setting(container)
+      .setName('Auto-send dictation')
+      .setDesc('When on, dictation sends immediately instead of inserting into the input for review.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.voiceDictationAutoSend ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.voiceDictationAutoSend = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
     // --- Hotkeys ---
 
     new Setting(container).setName(t('settings.hotkeys')).setHeading();

@@ -11,9 +11,10 @@ import { Notice } from 'obsidian';
 import type { StreamChunk } from '../../core/types';
 import type ClaudianPlugin from '../../main';
 import type { TabData } from '../chat/tabs/types';
+import type { BridgeLease } from './ResidentBridge';
 import { chunkForSpeech, splitSentences } from './sentences';
 import { speakable } from './speakable';
-import { VoiceBridge, type VoiceEvent } from './VoiceBridge';
+import { type VoiceBridge, type VoiceEvent } from './VoiceBridge';
 
 /** Half-duplex turn state. The mic is never armed while speaking. */
 export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -37,13 +38,20 @@ const TRANSCRIPT_DUP_WINDOW_MS = 1500;
 export class VoiceController {
   private readonly plugin: ClaudianPlugin;
   private readonly bus: VoiceStreamBus;
-  private readonly config: VoiceRuntimeConfig;
+  // Acquires the shared resident bridge on start; released on stop. The
+  // controller never closes the bridge itself — the ResidentBridge owns that.
+  private readonly acquireBridge: () => Promise<BridgeLease>;
 
   private bridge: VoiceBridge | null = null;
+  private lease: BridgeLease | null = null;
   private state: VoiceState = 'idle';
 
   private unsubscribeBridge: (() => void) | null = null;
   private unsubscribeBus: (() => void) | null = null;
+
+  // Live state listeners (e.g. the per-tab waveform indicator). Notified on
+  // every state transition so the UI can animate from turn state alone.
+  private readonly stateListeners = new Set<(state: VoiceState) => void>();
 
   // Running buffer of streamed assistant text; complete sentences are peeled off
   // for TTS and the incomplete tail is carried to the next chunk.
@@ -57,34 +65,27 @@ export class VoiceController {
   private lastTranscript = '';
   private lastTranscriptAt = 0;
 
-  constructor(plugin: ClaudianPlugin, bus: VoiceStreamBus, config: VoiceRuntimeConfig) {
+  constructor(
+    plugin: ClaudianPlugin,
+    bus: VoiceStreamBus,
+    acquireBridge: () => Promise<BridgeLease>,
+  ) {
     this.plugin = plugin;
     this.bus = bus;
-    this.config = config;
+    this.acquireBridge = acquireBridge;
   }
 
-  /** Spawn the bridge, subscribe to audio + stream events, and arm the mic. */
+  /** Acquire the shared bridge, subscribe to audio + stream events, arm mic. */
   async start(): Promise<void> {
     if (this.bridge) {
       return;
     }
 
-    const bridge = new VoiceBridge(
-      this.config.pythonPath,
-      this.config.bridgeScriptPath,
-      this.config.cwd,
-    );
-    this.bridge = bridge;
-    this.unsubscribeBridge = bridge.onEvent((event) => this.handleBridgeEvent(event));
-
-    try {
-      await bridge.start();
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      new Notice(`Voice: failed to start bridge — ${detail}`);
-      await this.stop();
-      throw error;
-    }
+    // Cold start (model load) surfaces its own Notice/errors in ResidentBridge.
+    const lease = await this.acquireBridge();
+    this.lease = lease;
+    this.bridge = lease.bridge;
+    this.unsubscribeBridge = lease.bridge.onEvent((event) => this.handleBridgeEvent(event));
 
     // Tap the chat stream only once the bridge is live, so text→speech is wired.
     this.unsubscribeBus = this.bus.subscribe((chunk) => this.handleStreamChunk(chunk));
@@ -99,19 +100,46 @@ export class VoiceController {
     this.unsubscribeBridge?.();
     this.unsubscribeBridge = null;
 
-    const bridge = this.bridge;
     this.bridge = null;
     this.resetTurnBuffers();
-    this.state = 'idle';
+    this.setState('idle');
 
-    if (bridge) {
-      await bridge.close();
-    }
+    // Release our hold on the shared bridge; ResidentBridge handles linger/close.
+    const lease = this.lease;
+    this.lease = null;
+    lease?.release();
   }
 
   /** Current turn state (exposed for status/debug). */
   getState(): VoiceState {
     return this.state;
+  }
+
+  /**
+   * Subscribe to turn-state transitions. The listener fires immediately with the
+   * current state, then on every change. Returns an unsubscribe function.
+   */
+  onStateChange(listener: (state: VoiceState) => void): () => void {
+    this.stateListeners.add(listener);
+    listener(this.state);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
+  }
+
+  /** Transition to a new state and notify listeners (no-op if unchanged). */
+  private setState(next: VoiceState): void {
+    if (this.state === next) {
+      return;
+    }
+    this.state = next;
+    for (const listener of this.stateListeners) {
+      try {
+        listener(next);
+      } catch {
+        // A listener error must never disrupt the turn loop.
+      }
+    }
   }
 
   // ---- bridge events ----
@@ -176,7 +204,7 @@ export class VoiceController {
       this.resetTurnBuffers();
     }
 
-    this.state = 'thinking';
+    this.setState('thinking');
     // Submit the transcript as if the user typed it. sendMessage owns its own
     // error handling; guard the promise so a rejection can't go unhandled.
     void tab.controllers.inputController.sendMessage({ content: trimmed }).catch(() => {
@@ -240,7 +268,7 @@ export class VoiceController {
     for (const clip of chunkForSpeech(prose)) {
       this.bridge?.speak(clip);
       this.pendingSpeaks += 1;
-      this.state = 'speaking';
+      this.setState('speaking');
     }
   }
 
@@ -256,11 +284,11 @@ export class VoiceController {
 
   private armListen(): void {
     if (!this.bridge) {
-      this.state = 'idle';
+      this.setState('idle');
       return;
     }
     this.bridge.listen();
-    this.state = 'listening';
+    this.setState('listening');
   }
 
   private resetTurnBuffers(): void {

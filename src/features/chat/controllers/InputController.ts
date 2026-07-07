@@ -109,6 +109,13 @@ export interface InputControllerDeps {
   openConversation?: (conversationId: string) => Promise<void>;
   onForkAll?: () => Promise<void>;
   restorePrePlanPermissionModeIfNeeded?: () => void;
+  /**
+   * Fired at the end of every updateQueueIndicator() pass — i.e. on every queue
+   * mutation (enqueue, discard, withdraw, process). Lets out-of-band UI (the
+   * hands-free voice queued-input badge) re-render in sync without observing the
+   * DOM. Additive and optional so nothing else needs to wire it.
+   */
+  onQueueChanged?: () => void;
 }
 
 export class InputController {
@@ -610,6 +617,13 @@ export class InputController {
   // ============================================
 
   updateQueueIndicator(): void {
+    this.renderQueueIndicator();
+    // Notify out-of-band UI (e.g. the voice queued-input badge) on every queue
+    // mutation. Kept after the render so observers see settled queue state.
+    this.deps.onQueueChanged?.();
+  }
+
+  private renderQueueIndicator(): void {
     const { state } = this.deps;
     const indicatorEl = state.queueIndicatorEl;
     if (!indicatorEl) return;
