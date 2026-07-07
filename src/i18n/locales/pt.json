@@ -76,8 +76,10 @@
       "weeklyLabel": "Semana atual (todos os modelos)",
       "weeklyScopedLabel": "Semana atual (principais modelos)",
       "percentUsed": "{percent}% usado",
-      "resetsAtTime": "Redefine às {time}",
-      "resetsAtDay": "Redefine {day}, {time}",
+      "resetsInDays": "Redefine em {days} d {hours} h",
+      "resetsInHours": "Redefine em {hours} h {minutes} min",
+      "resetsInMinutes": "Redefine em {minutes} min",
+      "resetsSoon": "Redefine em instantes",
       "errorNoCredentials": "Credenciais do Claude Code não encontradas. Entre com `claude` em um terminal primeiro.",
       "errorFetch": "Não foi possível carregar os limites de uso. Disponível apenas para contas Pro/Max."
     }

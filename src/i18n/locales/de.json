@@ -76,8 +76,10 @@
       "weeklyLabel": "Aktuelle Woche (alle Modelle)",
       "weeklyScopedLabel": "Aktuelle Woche (Top-Modelle)",
       "percentUsed": "{percent}% verbraucht",
-      "resetsAtTime": "Zurücksetzung um {time}",
-      "resetsAtDay": "Zurücksetzung {day}, {time}",
+      "resetsInDays": "Zurücksetzung in {days} T {hours} Std.",
+      "resetsInHours": "Zurücksetzung in {hours} Std. {minutes} Min.",
+      "resetsInMinutes": "Zurücksetzung in {minutes} Min.",
+      "resetsSoon": "Zurücksetzung in Kürze",
       "errorNoCredentials": "Claude Code-Anmeldedaten nicht gefunden. Melden Sie sich zuerst mit `claude` im Terminal an.",
       "errorFetch": "Nutzungslimits konnten nicht geladen werden. Nur für Pro/Max-Abonnements verfügbar."
     }

@@ -76,8 +76,10 @@
       "weeklyLabel": "今週（全モデル）",
       "weeklyScopedLabel": "今週（上位モデル）",
       "percentUsed": "{percent}% 使用済み",
-      "resetsAtTime": "{time} にリセット",
-      "resetsAtDay": "{day} {time} にリセット",
+      "resetsInDays": "あと {days}日 {hours}時間でリセット",
+      "resetsInHours": "あと {hours}時間 {minutes}分でリセット",
+      "resetsInMinutes": "あと {minutes}分でリセット",
+      "resetsSoon": "まもなくリセット",
       "errorNoCredentials": "Claude Code の認証情報が見つかりません。まずターミナルで `claude` にサインインしてください。",
       "errorFetch": "使用制限を読み込めませんでした。Pro/Max サブスクリプションのみ利用可能です。"
     }

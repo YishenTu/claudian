@@ -76,8 +76,10 @@
       "weeklyLabel": "Semaine actuelle (tous les modèles)",
       "weeklyScopedLabel": "Semaine actuelle (meilleurs modèles)",
       "percentUsed": "{percent}% utilisé",
-      "resetsAtTime": "Réinitialisation à {time}",
-      "resetsAtDay": "Réinitialisation {day}, {time}",
+      "resetsInDays": "Réinitialisation dans {days} j {hours} h",
+      "resetsInHours": "Réinitialisation dans {hours} h {minutes} min",
+      "resetsInMinutes": "Réinitialisation dans {minutes} min",
+      "resetsSoon": "Réinitialisation imminente",
       "errorNoCredentials": "Identifiants Claude Code introuvables. Connectez-vous d'abord avec `claude` dans un terminal.",
       "errorFetch": "Impossible de charger les limites d'utilisation. Disponible uniquement pour les comptes Pro/Max."
     }

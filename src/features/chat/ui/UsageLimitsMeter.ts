@@ -21,18 +21,23 @@ function formatResetTime(resetsAt: string | null): string | null {
     return null;
   }
 
-  const now = new Date();
-  const sameDay =
-    resetDate.getFullYear() === now.getFullYear() &&
-    resetDate.getMonth() === now.getMonth() &&
-    resetDate.getDate() === now.getDate();
-
-  const time = resetDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  if (sameDay) {
-    return t('chat.usageLimits.resetsAtTime', { time });
+  const remainingMs = resetDate.getTime() - Date.now();
+  if (remainingMs <= 0) {
+    return t('chat.usageLimits.resetsSoon');
   }
-  const day = resetDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-  return t('chat.usageLimits.resetsAtDay', { day, time });
+
+  const totalMinutes = Math.ceil(remainingMs / 60_000);
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return t('chat.usageLimits.resetsInDays', { days, hours });
+  }
+  if (hours > 0) {
+    return t('chat.usageLimits.resetsInHours', { hours, minutes });
+  }
+  return t('chat.usageLimits.resetsInMinutes', { minutes });
 }
 
 function severityClass(utilization: number): string {

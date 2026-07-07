@@ -76,8 +76,10 @@
       "weeklyLabel": "本周（所有模型）",
       "weeklyScopedLabel": "本周（顶级模型）",
       "percentUsed": "已使用 {percent}%",
-      "resetsAtTime": "{time} 重置",
-      "resetsAtDay": "{day} {time} 重置",
+      "resetsInDays": "{days} 天 {hours} 小时后重置",
+      "resetsInHours": "{hours} 小时 {minutes} 分钟后重置",
+      "resetsInMinutes": "{minutes} 分钟后重置",
+      "resetsSoon": "即将重置",
       "errorNoCredentials": "未找到 Claude Code 凭据。请先在终端中使用 `claude` 登录。",
       "errorFetch": "无法加载用量限制。仅适用于 Pro/Max 订阅账户。"
     }

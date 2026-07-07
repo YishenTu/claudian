@@ -76,8 +76,10 @@
       "weeklyLabel": "Текущая неделя (все модели)",
       "weeklyScopedLabel": "Текущая неделя (топ-модели)",
       "percentUsed": "{percent}% использовано",
-      "resetsAtTime": "Сброс в {time}",
-      "resetsAtDay": "Сброс {day}, {time}",
+      "resetsInDays": "Сброс через {days} д {hours} ч",
+      "resetsInHours": "Сброс через {hours} ч {minutes} мин",
+      "resetsInMinutes": "Сброс через {minutes} мин",
+      "resetsSoon": "Сброс совсем скоро",
       "errorNoCredentials": "Учётные данные Claude Code не найдены. Сначала войдите через `claude` в терминале.",
       "errorFetch": "Не удалось загрузить лимиты. Доступно только для подписок Pro/Max."
     }

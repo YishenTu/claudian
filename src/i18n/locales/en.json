@@ -76,8 +76,10 @@
       "weeklyLabel": "Current week (all models)",
       "weeklyScopedLabel": "Current week (top models)",
       "percentUsed": "{percent}% used",
-      "resetsAtTime": "Resets at {time}",
-      "resetsAtDay": "Resets {day}, {time}",
+      "resetsInDays": "Resets in {days}d {hours}h",
+      "resetsInHours": "Resets in {hours}h {minutes}m",
+      "resetsInMinutes": "Resets in {minutes}m",
+      "resetsSoon": "Resets in a moment",
       "errorNoCredentials": "Claude Code credentials not found. Sign in with `claude` in a terminal first.",
       "errorFetch": "Could not load usage limits. This is only available for Pro/Max subscription accounts."
     }

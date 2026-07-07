@@ -57,8 +57,10 @@ export type TranslationKey =
   | 'chat.usageLimits.weeklyLabel'
   | 'chat.usageLimits.weeklyScopedLabel'
   | 'chat.usageLimits.percentUsed'
-  | 'chat.usageLimits.resetsAtTime'
-  | 'chat.usageLimits.resetsAtDay'
+  | 'chat.usageLimits.resetsInDays'
+  | 'chat.usageLimits.resetsInHours'
+  | 'chat.usageLimits.resetsInMinutes'
+  | 'chat.usageLimits.resetsSoon'
   | 'chat.usageLimits.errorNoCredentials'
   | 'chat.usageLimits.errorFetch'
 
