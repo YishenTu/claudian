@@ -57,6 +57,15 @@ export function getClaudeModelOptions(settings: Record<string, unknown>): Provid
   }
 
   const claudeSettings = getClaudeProviderSettings(settings);
+
+  if (claudeSettings.discoveredModels.length > 0) {
+    return claudeSettings.discoveredModels.map(model => ({
+      value: model.id,
+      label: customModelAliases[model.id] ?? model.displayName,
+      description: model.createdAt ? `Created ${model.createdAt.slice(0, 10)}` : undefined,
+    }));
+  }
+
   const models = filterVisibleModelOptions(
     [...DEFAULT_CLAUDE_MODELS],
     claudeSettings.enableOpus1M,

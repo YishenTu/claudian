@@ -1,8 +1,10 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 ## Project Overview
 
-Claudian is an Obsidian plugin that embeds provider-backed chat runtimes in a sidebar and inline-edit flow. Claude is the default provider. Codex is optional and joins the same conversation model through `Conversation.providerId` plus provider-owned `providerState`.
+Claudian is an Obsidian plugin that embeds provider-backed chat runtimes in a sidebar and inline-edit flow. Claude is the default provider. Codex, Opencode, and Pi are optional providers that join the same conversation model through `Conversation.providerId` plus provider-owned `providerState`. Build output is `main.js` + `styles.css` + `manifest.json` — standard Obsidian plugin artifacts.
 
 ## Architecture Status
 
@@ -16,14 +18,20 @@ Claudian is an Obsidian plugin that embeds provider-backed chat runtimes in a si
 ## Commands
 
 ```bash
-npm run dev
-npm run build
-npm run typecheck
-npm run lint
-npm run lint:fix
-npm run test
-npm run test:watch
-npm run test:coverage
+npm run dev              # watch mode (CSS build + esbuild)
+npm run build            # production build
+npm run typecheck        # tsc --noEmit
+npm run lint             # eslint
+npm run lint:fix         # eslint --fix
+npm run test             # all tests (unit + integration)
+npm run test:watch       # jest watch mode
+npm run test:coverage    # coverage report
+
+# Run a single test file
+npm run test -- --testPathPattern="tests/unit/cruntime"
+
+# Run a single test by name
+npm run test -- -t "should handle stream chunks"
 ```
 
 ## Architecture
@@ -51,6 +59,15 @@ npm run test:coverage -- --selectProjects unit
 ```
 
 Tests mirror the `src/` layout under `tests/unit/` and `tests/integration/`.
+
+## Path Aliases
+
+| Alias | Maps to |
+|-------|---------|
+| `@/*` | `./src/*` |
+| `@test/*` | `./tests/*` |
+
+These are configured in `tsconfig.json` and mirrored in `jest.config.js` via `moduleNameMapper`.
 
 ## Storage
 

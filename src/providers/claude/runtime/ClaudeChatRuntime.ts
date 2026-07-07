@@ -1204,7 +1204,9 @@ export class ClaudianService implements ChatRuntime {
                 effectiveQueryOptions
               );
             } catch (retryError) {
-              const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
+              const msg = retryError instanceof Error
+                ? retryError.message
+                : `Non-Error thrown: ${JSON.stringify(retryError) ?? String(retryError)}`;
               yield { type: 'error', content: msg };
             } finally {
               this.coldStartInProgress = false;
@@ -1246,7 +1248,9 @@ export class ClaudianService implements ChatRuntime {
         return;
       }
 
-      const msg = error instanceof Error ? error.message : 'Unknown error';
+      const msg = error instanceof Error
+        ? error.message
+        : `Non-Error thrown: ${JSON.stringify(error) ?? String(error)}`;
       yield { type: 'error', content: msg };
     } finally {
       this.coldStartInProgress = false;
@@ -1595,7 +1599,9 @@ export class ClaudianService implements ChatRuntime {
       if (isSessionExpiredError(error)) {
         throw error;
       }
-      const msg = error instanceof Error ? error.message : 'Unknown error';
+      const msg = error instanceof Error
+        ? error.message
+        : `Non-Error thrown: ${JSON.stringify(error) ?? String(error)}`;
       yield { type: 'error', content: msg };
     } finally {
       this.sessionManager.clearPendingModel();
