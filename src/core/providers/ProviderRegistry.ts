@@ -218,7 +218,7 @@ class RoutedTitleGenerationService implements TitleGenerationService {
     callback: TitleGenerationCallback,
   ): Promise<void> {
     const providerId = ProviderRegistry.resolveTitleGenerationProviderId(
-      this.plugin.settings as unknown as Record<string, unknown>,
+      this.plugin.settings,
     );
     const service = ProviderRegistry.createTitleGenerationService(this.plugin, providerId);
     const generation = { service };

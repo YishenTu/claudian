@@ -218,7 +218,7 @@ export class PiChatRuntime implements ChatRuntime {
   async reloadMcpServers(): Promise<void> {}
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
-    const settings = getPiProviderSettings(this.plugin.settings as unknown as Record<string, unknown>);
+    const settings = getPiProviderSettings(this.plugin.settings);
     if (!settings.enabled) {
       this.setReady(false);
       return false;
@@ -227,7 +227,7 @@ export class PiChatRuntime implements ChatRuntime {
     const allowSessionCreation = options?.allowSessionCreation !== false;
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
     const resolvedCliPath = this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
-    const runtimeEnvText = getRuntimeEnvironmentText(this.plugin.settings as unknown as Record<string, unknown>, 'pi');
+    const runtimeEnvText = getRuntimeEnvironmentText(this.plugin.settings, 'pi');
     if (allowSessionCreation) {
       await this.materializePendingFork(cwd, runtimeEnvText);
     }
@@ -864,7 +864,7 @@ export class PiChatRuntime implements ChatRuntime {
 
   private getProviderSettings(): Record<string, unknown> {
     return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.plugin.settings as unknown as Record<string, unknown>,
+      this.plugin.settings,
       this.providerId,
     );
   }

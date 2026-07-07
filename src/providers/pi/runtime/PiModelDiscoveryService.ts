@@ -20,10 +20,10 @@ export class PiModelDiscoveryService {
   constructor(private readonly plugin: ClaudianPlugin) {}
 
   async discoverModels(): Promise<PiModelDiscoveryResult> {
-    const settings = getPiProviderSettings(this.plugin.settings as unknown as Record<string, unknown>);
+    const settings = getPiProviderSettings(this.plugin.settings);
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
     const command = this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
-    const envText = getRuntimeEnvironmentText(this.plugin.settings as unknown as Record<string, unknown>, 'pi');
+    const envText = getRuntimeEnvironmentText(this.plugin.settings, 'pi');
     const env = {
       ...process.env,
       ...parseEnvironmentVariables(envText),

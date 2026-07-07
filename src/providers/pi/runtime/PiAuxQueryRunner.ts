@@ -205,7 +205,7 @@ export class PiAuxQueryRunner implements AuxQueryRunner {
     }
 
     const projectedSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.plugin.settings as unknown as Record<string, unknown>,
+      this.plugin.settings,
       'pi',
     );
     const selectedModel = typeof projectedSettings.model === 'string'
