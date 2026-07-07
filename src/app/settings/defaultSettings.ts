@@ -57,4 +57,5 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   voicePythonPath: 'python3',
   voiceBridgeScriptPath: '',
   voiceDictationAutoSend: false,
+  voiceConfirmWindowMs: 2000,
 };

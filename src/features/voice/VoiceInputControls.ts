@@ -11,6 +11,7 @@ import { setIcon } from 'obsidian';
 
 import type ClaudianPlugin from '../../main';
 import type { TabData } from '../chat/tabs/types';
+import { createPendingCommandBadge } from './PendingCommandBadge';
 import { createQueuedInputBadge } from './QueuedInputBadge';
 import type { VoiceState } from './VoiceController';
 import { type WaveformMode,waveformModeClass, waveformModeForState } from './waveformState';
@@ -50,6 +51,13 @@ export function createVoiceInputControls(
   // already-queued message if the controls mount after a queue is set.
   const queuedBadge = createQueuedInputBadge(container, tab);
 
+  // Pending-command badge: shows the command held in the confirm window with a ✕
+  // to cancel it hands-free. Driven by the feature's pending stream, so it works
+  // across tab rebuilds and reflects an already-held command at mount.
+  const pendingBadge = voice
+    ? createPendingCommandBadge(container, voice)
+    : { destroy: () => {} };
+
   // --- Dictation mic button ---
   const micBtn = container.createDiv({ cls: 'claudian-voice-mic-btn' });
   micBtn.setAttribute('role', 'button');
@@ -65,6 +73,14 @@ export function createVoiceInputControls(
   convoBtn.setAttribute('title', 'Voice conversation');
   const convoIcon = convoBtn.createSpan({ cls: 'claudian-voice-convo-icon' });
   setIcon(convoIcon, 'audio-lines');
+
+  // --- Mute-mic toggle button (pauses capture; session stays warm) ---
+  const muteBtn = container.createDiv({ cls: 'claudian-voice-mute-btn' });
+  muteBtn.setAttribute('role', 'button');
+  muteBtn.setAttribute('aria-label', 'Mute microphone');
+  muteBtn.setAttribute('title', 'Mute microphone');
+  const muteIcon = muteBtn.createSpan({ cls: 'claudian-voice-mute-icon' });
+  setIcon(muteIcon, 'mic-off');
 
   // --- Inline waveform indicator (hidden until conversation is active) ---
   // Appended into the wrapper via the codebase's createDiv idiom; CSS `order:-1`
@@ -88,6 +104,9 @@ export function createVoiceInputControls(
   convoBtn.addEventListener('click', () => {
     void voice?.toggleConversation();
   });
+  muteBtn.addEventListener('click', () => {
+    voice?.toggleMute();
+  });
 
   const applyWaveformMode = (mode: WaveformMode): void => {
     indicator.classList.remove(
@@ -102,6 +121,8 @@ export function createVoiceInputControls(
     const active = state !== 'idle';
     convoBtn.toggleClass('active', active);
     indicator.toggleClass('claudian-hidden', !active);
+    // Mute only makes sense while a conversation is running.
+    muteBtn.toggleClass('claudian-hidden', !active);
     applyWaveformMode(waveformModeForState(state));
   };
 
@@ -109,10 +130,20 @@ export function createVoiceInputControls(
     micBtn.toggleClass('active', listening);
   };
 
-  // Subscribe to live voice state. Both fire immediately with current state.
+  const applyMuteState = (muted: boolean): void => {
+    muteBtn.toggleClass('active', muted);
+    muteBtn.setAttribute('aria-label', muted ? 'Unmute microphone' : 'Mute microphone');
+    muteBtn.setAttribute('title', muted ? 'Unmute microphone' : 'Mute microphone');
+  };
+
+  // Mute button starts hidden until a conversation is active.
+  muteBtn.addClass('claudian-hidden');
+
+  // Subscribe to live voice state. All fire immediately with current state.
   const unsubConvo = voice?.onConversationStateChange(applyConversationState) ?? (() => {});
   const unsubDict = voice?.onDictationStateChange((s) => applyDictationState(s === 'listening'))
     ?? (() => {});
+  const unsubMute = voice?.onMuteChange(applyMuteState) ?? (() => {});
 
   // Reflect any message already queued when the controls mount (e.g. a tab
   // rebuilt mid-turn). Subsequent changes arrive via notifyQueueChanged().
@@ -123,7 +154,9 @@ export function createVoiceInputControls(
     destroy: () => {
       unsubConvo();
       unsubDict();
+      unsubMute();
       queuedBadge.destroy();
+      pendingBadge.destroy();
       container.remove?.();
       indicator.remove?.();
     },

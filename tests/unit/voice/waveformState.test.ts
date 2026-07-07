@@ -16,6 +16,14 @@ describe('waveformModeForState', () => {
   it('maps speaking to speaking', () => {
     expect(waveformModeForState('speaking')).toBe('speaking');
   });
+
+  it('reuses the listening motion for a pending (held) command', () => {
+    expect(waveformModeForState('pending')).toBe('listening');
+  });
+
+  it('maps muted to calm (mic paused, session warm)', () => {
+    expect(waveformModeForState('muted')).toBe('calm');
+  });
 });
 
 describe('waveformModeClass', () => {

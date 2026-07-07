@@ -11,7 +11,8 @@
 
 /* --- Shared button chrome (mirrors the service-tier toggle button) --- */
 .claudian-voice-mic-btn,
-.claudian-voice-convo-btn {
+.claudian-voice-convo-btn,
+.claudian-voice-mute-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -26,21 +27,30 @@
 }
 
 .claudian-voice-mic-btn:hover,
-.claudian-voice-convo-btn:hover {
+.claudian-voice-convo-btn:hover,
+.claudian-voice-mute-btn:hover {
   background: var(--background-modifier-hover);
 }
 
 .claudian-voice-mic-icon,
-.claudian-voice-convo-icon {
+.claudian-voice-convo-icon,
+.claudian-voice-mute-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
 .claudian-voice-mic-icon svg,
-.claudian-voice-convo-icon svg {
+.claudian-voice-convo-icon svg,
+.claudian-voice-mute-icon svg {
   width: 14px;
   height: 14px;
+}
+
+/* Active mute: red-tinted so a paused mic reads as intentionally off. */
+.claudian-voice-mute-btn.active {
+  color: var(--text-error, #e05252);
+  background: rgba(224, 82, 82, 0.14);
 }
 
 /* Active dictation: warm accent + a gentle pulse so it reads as "listening". */
@@ -142,6 +152,87 @@
 
 @media (prefers-reduced-motion: reduce) {
   .claudian-voice-queued-dot {
+    animation: none;
+    opacity: 0.9;
+  }
+}
+
+/* --- Pending-command badge (confirm window "about to send unless cancelled") --- */
+/* Appears while a spoken command is held in the confirm window, so it can be
+   cancelled by voice or the ✕ before it submits. Amber-tinted to distinguish it
+   from the brand-colored queued-input badge. */
+.claudian-voice-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  height: 20px;
+  padding: 0 4px 0 6px;
+  border-radius: 10px;
+  color: var(--text-warning, #c08a2d);
+  background: rgba(192, 138, 45, 0.14);
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.claudian-voice-pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-warning, #c08a2d);
+  flex-shrink: 0;
+  /* Faster pulse than the queued badge to signal an imminent, timed send. */
+  animation: claudian-voice-pending-pulse 0.9s ease-in-out infinite;
+}
+
+.claudian-voice-pending-label {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.claudian-voice-pending-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+  min-width: 0;
+}
+
+.claudian-voice-pending-kill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-warning, #c08a2d);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.claudian-voice-pending-kill:hover {
+  background: rgba(192, 138, 45, 0.24);
+}
+
+.claudian-voice-pending-kill svg {
+  width: 12px;
+  height: 12px;
+}
+
+@keyframes claudian-voice-pending-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudian-voice-pending-dot {
     animation: none;
     opacity: 0.9;
   }

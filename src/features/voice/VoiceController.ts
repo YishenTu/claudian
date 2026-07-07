@@ -15,9 +15,18 @@ import type { BridgeLease } from './ResidentBridge';
 import { chunkForSpeech, splitSentences } from './sentences';
 import { speakable } from './speakable';
 import { type VoiceBridge, type VoiceEvent } from './VoiceBridge';
+import { isCancelPhrase } from './voiceCommands';
 
-/** Half-duplex turn state. The mic is never armed while speaking. */
-export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
+/**
+ * Half-duplex turn state. The mic is never armed while speaking.
+ * - `pending` a spoken command is held in the confirm window, cancellable by
+ *   voice or the ✕ badge; the mic stays armed to catch a cancel phrase.
+ * - `muted`   the mic is paused (button) but the session/bridge stays warm.
+ */
+export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'pending' | 'muted';
+
+/** Fallback confirm-window hold (ms) when the setting is absent/invalid. */
+const DEFAULT_CONFIRM_WINDOW_MS = 2000;
 
 /** Minimal event bus the StreamController forwards chunks into. */
 export interface VoiceStreamBus {
@@ -52,6 +61,18 @@ export class VoiceController {
   // Live state listeners (e.g. the per-tab waveform indicator). Notified on
   // every state transition so the UI can animate from turn state alone.
   private readonly stateListeners = new Set<(state: VoiceState) => void>();
+
+  // Confirm-window buffer: a spoken command is held here (not yet submitted) so
+  // it can be cancelled by voice ("cancel"/"scratch that") or the ✕ badge. More
+  // speech during the window replaces it and restarts the hold (refine-by-pause).
+  private pendingCommand: string | null = null;
+  private confirmTimer: number | null = null;
+  private readonly pendingListeners = new Set<(command: string | null) => void>();
+
+  // Mute: pause mic capture while keeping the bridge/session warm. Speaking is
+  // allowed to finish; the mic parks in `muted` instead of re-arming.
+  private muted = false;
+  private readonly muteListeners = new Set<(muted: boolean) => void>();
 
   // Running buffer of streamed assistant text; complete sentences are peeled off
   // for TTS and the incomplete tail is carried to the next chunk.
@@ -101,6 +122,9 @@ export class VoiceController {
     this.unsubscribeBridge = null;
 
     this.bridge = null;
+    this.clearConfirmTimer();
+    this.setPendingCommand(null);
+    this.setMuted(false);
     this.resetTurnBuffers();
     this.setState('idle');
 
@@ -125,6 +149,55 @@ export class VoiceController {
     return () => {
       this.stateListeners.delete(listener);
     };
+  }
+
+  /** The command currently held in the confirm window, or null. */
+  getPendingCommand(): string | null {
+    return this.pendingCommand;
+  }
+
+  /**
+   * Subscribe to confirm-window changes (a command is held, refined, or
+   * cleared). Fires immediately with the current value, then on every change.
+   */
+  onPendingCommandChange(listener: (command: string | null) => void): () => void {
+    this.pendingListeners.add(listener);
+    listener(this.pendingCommand);
+    return () => {
+      this.pendingListeners.delete(listener);
+    };
+  }
+
+  /** Whether the mic is currently paused (muted). */
+  isMuted(): boolean {
+    return this.muted;
+  }
+
+  /** Subscribe to mute changes. Fires immediately, then on every change. */
+  onMuteChange(listener: (muted: boolean) => void): () => void {
+    this.muteListeners.add(listener);
+    listener(this.muted);
+    return () => {
+      this.muteListeners.delete(listener);
+    };
+  }
+
+  /** Flip the mic pause on/off. */
+  toggleMute(): void {
+    this.setMuted(!this.muted);
+  }
+
+  /**
+   * Cancel the command held in the confirm window (voice "cancel" or the ✕
+   * badge) and return to normal listening. No-op if nothing is pending.
+   */
+  cancelPending(): void {
+    if (this.pendingCommand === null) {
+      return;
+    }
+    this.clearConfirmTimer();
+    this.setPendingCommand(null);
+    this.armListen();
   }
 
   /** Transition to a new state and notify listeners (no-op if unchanged). */
@@ -170,11 +243,25 @@ export class VoiceController {
   private handleTranscript(text: string): void {
     const trimmed = text.trim();
 
-    // Empty transcript = silence/noise. Re-arm the mic if we were listening.
+    // Empty transcript = silence/noise. Re-arm depending on where we are.
     if (trimmed === '') {
-      if (this.state === 'listening') {
+      if (this.state === 'pending') {
+        // Keep catching a cancel phrase until the hold timer fires.
+        this.armForConfirm();
+      } else if (this.state === 'listening') {
         this.armListen();
       }
+      return;
+    }
+
+    // Inside the confirm window: the utterance is either a cancel or a refine.
+    if (this.state === 'pending') {
+      if (isCancelPhrase(trimmed)) {
+        this.cancelPending();
+        return;
+      }
+      // Refine: replace the held command and restart the hold (pause-to-submit).
+      this.startConfirmWindow(trimmed);
       return;
     }
 
@@ -204,12 +291,13 @@ export class VoiceController {
       this.resetTurnBuffers();
     }
 
-    this.setState('thinking');
-    // Submit the transcript as if the user typed it. sendMessage owns its own
-    // error handling; guard the promise so a rejection can't go unhandled.
-    void tab.controllers.inputController.sendMessage({ content: trimmed }).catch(() => {
-      /* sendMessage surfaces its own errors via Notice */
-    });
+    // Confirm window: hold the command so it can be cancelled before it runs.
+    // A window of 0 submits immediately (legacy behavior).
+    if (this.confirmWindowMs() > 0) {
+      this.startConfirmWindow(trimmed);
+      return;
+    }
+    this.submitCommand(trimmed);
   }
 
   private handleSpeakDone(): void {
@@ -287,8 +375,119 @@ export class VoiceController {
       this.setState('idle');
       return;
     }
+    // Muted: keep the session warm but don't capture; park in `muted`.
+    if (this.muted) {
+      this.setState('muted');
+      return;
+    }
     this.bridge.listen();
     this.setState('listening');
+  }
+
+  /** Re-arm the mic during the confirm window WITHOUT leaving `pending` state,
+   *  so the badge stays up while we listen only for a cancel phrase. */
+  private armForConfirm(): void {
+    // If muted, we can't hear a cancel — the hold timer still submits on expiry,
+    // and the ✕ badge remains available.
+    if (!this.bridge || this.muted) {
+      return;
+    }
+    this.bridge.listen();
+  }
+
+  // ---- confirm window ----
+
+  /** Resolve the configured hold window (ms), clamped to a sane non-negative. */
+  private confirmWindowMs(): number {
+    const raw = this.plugin.settings.voiceConfirmWindowMs;
+    return typeof raw === 'number' && raw >= 0 ? raw : DEFAULT_CONFIRM_WINDOW_MS;
+  }
+
+  /** Hold a command in the confirm window and (re)start the cancel timer. */
+  private startConfirmWindow(command: string): void {
+    this.clearConfirmTimer();
+    this.setPendingCommand(command);
+    this.setState('pending');
+    this.armForConfirm();
+    this.confirmTimer = window.setTimeout(() => {
+      this.confirmTimer = null;
+      const held = this.pendingCommand;
+      this.setPendingCommand(null);
+      if (held !== null) {
+        this.submitCommand(held);
+      } else {
+        this.armListen();
+      }
+    }, this.confirmWindowMs());
+  }
+
+  private clearConfirmTimer(): void {
+    if (this.confirmTimer !== null) {
+      window.clearTimeout(this.confirmTimer);
+      this.confirmTimer = null;
+    }
+  }
+
+  /** Submit a command to the active tab as if the user typed it. */
+  private submitCommand(command: string): void {
+    const tab = this.getActiveTab();
+    if (!tab || !tab.controllers.inputController) {
+      new Notice('Voice: no active Claudian tab to send to.');
+      this.armListen();
+      return;
+    }
+    this.setState('thinking');
+    // sendMessage owns its own error handling; guard the promise so a rejection
+    // can't go unhandled.
+    void tab.controllers.inputController.sendMessage({ content: command }).catch(() => {
+      /* sendMessage surfaces its own errors via Notice */
+    });
+  }
+
+  private setPendingCommand(command: string | null): void {
+    if (this.pendingCommand === command) {
+      return;
+    }
+    this.pendingCommand = command;
+    for (const listener of this.pendingListeners) {
+      try {
+        listener(command);
+      } catch {
+        // A listener error must never disrupt the turn loop.
+      }
+    }
+  }
+
+  // ---- mute ----
+
+  /** Pause/resume mic capture while keeping the bridge warm. */
+  private setMuted(muted: boolean): void {
+    if (this.muted === muted) {
+      return;
+    }
+    this.muted = muted;
+    for (const listener of this.muteListeners) {
+      try {
+        listener(muted);
+      } catch {
+        // A listener error must never disrupt the turn loop.
+      }
+    }
+
+    if (muted) {
+      // Pause now if the mic is (or would be) live. Speaking is left to finish;
+      // maybeReArm/armListen then parks in `muted` when it's the mic's turn.
+      if (this.state === 'listening' || this.state === 'pending') {
+        this.bridge?.interrupt();
+        // Drop any held command — nothing should auto-submit while paused.
+        this.clearConfirmTimer();
+        this.setPendingCommand(null);
+        this.setState('muted');
+      }
+    } else if (this.state === 'muted') {
+      // Unmute from a paused mic: resume listening.
+      this.armListen();
+    }
   }
 
   private resetTurnBuffers(): void {

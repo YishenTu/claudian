@@ -532,6 +532,26 @@ export class ClaudianSettingTab extends PluginSettingTab {
           }),
       );
 
+    new Setting(container)
+      .setName('Command confirm window')
+      .setDesc(
+        'Milliseconds a spoken command waits before submitting, so you can cancel it ' +
+          'by voice ("cancel", "scratch that") or the ✕ badge. Speaking again refines the ' +
+          'pending command and restarts the hold. Set 0 to submit immediately.',
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder('2000')
+          .setValue(String(this.plugin.settings.voiceConfirmWindowMs ?? 2000))
+          .onChange(async (value) => {
+            const parsed = Number.parseInt(value.trim(), 10);
+            // Ignore non-numeric/negative input; clamp keeps the window sane.
+            this.plugin.settings.voiceConfirmWindowMs =
+              Number.isFinite(parsed) && parsed >= 0 ? parsed : 2000;
+            await this.plugin.saveSettings();
+          }),
+      );
+
     // --- Hotkeys ---
 
     new Setting(container).setName(t('settings.hotkeys')).setHeading();

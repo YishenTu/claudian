@@ -62,6 +62,16 @@ export class VoiceFeature {
   private conversationState: VoiceState = 'idle';
   private unsubscribeControllerState: (() => void) | null = null;
 
+  // Confirm-window + mute state, cached here so per-tab controls (which outlive
+  // any single controller instance) can subscribe once and stay in sync.
+  private readonly pendingCommandListeners = new Set<(command: string | null) => void>();
+  private pendingCommand: string | null = null;
+  private unsubscribeControllerPending: (() => void) | null = null;
+
+  private readonly muteListeners = new Set<(muted: boolean) => void>();
+  private muted = false;
+  private unsubscribeControllerMute: (() => void) | null = null;
+
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
     this.bus = new VoiceStreamBusImpl();
@@ -116,16 +126,24 @@ export class VoiceFeature {
       this.unsubscribeControllerState = controller.onStateChange((state) => {
         this.setConversationState(state);
       });
+      // Fan out the confirm-window + mute state to per-tab controls too.
+      this.unsubscribeControllerPending = controller.onPendingCommandChange((command) => {
+        this.setPendingCommand(command);
+      });
+      this.unsubscribeControllerMute = controller.onMuteChange((muted) => {
+        this.setMuted(muted);
+      });
       await controller.start();
       this.controller = controller;
       new Notice('Voice mode on — listening.');
     } catch {
       // VoiceController.start() surfaced the failure via Notice (or the bridge
-      // did); just stay disabled and drop the state subscription.
-      this.unsubscribeControllerState?.();
-      this.unsubscribeControllerState = null;
+      // did); just stay disabled and drop the state subscriptions.
+      this.detachControllerSubscriptions();
       this.controller = null;
       this.setConversationState('idle');
+      this.setPendingCommand(null);
+      this.setMuted(false);
     } finally {
       this.starting = false;
     }
@@ -135,13 +153,24 @@ export class VoiceFeature {
   async disable(): Promise<void> {
     const controller = this.controller;
     this.controller = null;
-    this.unsubscribeControllerState?.();
-    this.unsubscribeControllerState = null;
+    this.detachControllerSubscriptions();
     if (controller) {
       await controller.stop();
       new Notice('Voice mode off.');
     }
     this.setConversationState('idle');
+    this.setPendingCommand(null);
+    this.setMuted(false);
+  }
+
+  /** Drop all live controller subscriptions (state, pending, mute). */
+  private detachControllerSubscriptions(): void {
+    this.unsubscribeControllerState?.();
+    this.unsubscribeControllerState = null;
+    this.unsubscribeControllerPending?.();
+    this.unsubscribeControllerPending = null;
+    this.unsubscribeControllerMute?.();
+    this.unsubscribeControllerMute = null;
   }
 
   /**
@@ -154,6 +183,38 @@ export class VoiceFeature {
     return () => {
       this.conversationStateListeners.delete(listener);
     };
+  }
+
+  /**
+   * Subscribe to the confirm-window command (held / refined / cleared). Fires
+   * immediately with the current value, then on every change. Used by the
+   * per-tab pending-command badge.
+   */
+  onPendingCommandChange(listener: (command: string | null) => void): () => void {
+    this.pendingCommandListeners.add(listener);
+    listener(this.pendingCommand);
+    return () => {
+      this.pendingCommandListeners.delete(listener);
+    };
+  }
+
+  /** Cancel the command held in the confirm window (✕ badge / voice cancel). */
+  cancelPending(): void {
+    this.controller?.cancelPending();
+  }
+
+  /** Subscribe to mic mute state. Fires immediately, then on every change. */
+  onMuteChange(listener: (muted: boolean) => void): () => void {
+    this.muteListeners.add(listener);
+    listener(this.muted);
+    return () => {
+      this.muteListeners.delete(listener);
+    };
+  }
+
+  /** Toggle the mic pause (no-op unless a conversation is running). */
+  toggleMute(): void {
+    this.controller?.toggleMute();
   }
 
   // ---- dictation mode ----
@@ -191,6 +252,34 @@ export class VoiceFeature {
     for (const listener of this.conversationStateListeners) {
       try {
         listener(state);
+      } catch {
+        // A listener error must never disrupt the turn loop.
+      }
+    }
+  }
+
+  private setPendingCommand(command: string | null): void {
+    if (this.pendingCommand === command) {
+      return;
+    }
+    this.pendingCommand = command;
+    for (const listener of this.pendingCommandListeners) {
+      try {
+        listener(command);
+      } catch {
+        // A listener error must never disrupt the turn loop.
+      }
+    }
+  }
+
+  private setMuted(muted: boolean): void {
+    if (this.muted === muted) {
+      return;
+    }
+    this.muted = muted;
+    for (const listener of this.muteListeners) {
+      try {
+        listener(muted);
       } catch {
         // A listener error must never disrupt the turn loop.
       }
