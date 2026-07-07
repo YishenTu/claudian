@@ -4,6 +4,7 @@ import * as es from '@/i18n/locales/es.json';
 import * as fr from '@/i18n/locales/fr.json';
 import * as ja from '@/i18n/locales/ja.json';
 import * as ko from '@/i18n/locales/ko.json';
+import * as pl from '@/i18n/locales/pl.json';
 import * as pt from '@/i18n/locales/pt.json';
 import * as ru from '@/i18n/locales/ru.json';
 import * as zhCN from '@/i18n/locales/zh-CN.json';
@@ -19,6 +20,7 @@ const locales = {
   fr,
   ja,
   ko,
+  pl,
   pt,
   ru,
   'zh-CN': zhCN,

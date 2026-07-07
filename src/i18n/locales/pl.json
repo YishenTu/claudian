@@ -1,0 +1,322 @@
+{
+  "common": {
+    "save": "Zapisz",
+    "cancel": "Anuluj",
+    "delete": "Usuń",
+    "edit": "Edytuj",
+    "add": "Dodaj",
+    "remove": "Usuń",
+    "clear": "Wyczyść",
+    "clearAll": "Wyczyść wszystko",
+    "loading": "Ładowanie",
+    "error": "Błąd",
+    "success": "Sukces",
+    "warning": "Ostrzeżenie",
+    "confirm": "Potwierdź",
+    "settings": "Ustawienia",
+    "advanced": "Zaawansowane",
+    "enabled": "Włączone",
+    "disabled": "Wyłączone",
+    "platform": "Platforma",
+    "refresh": "Odśwież",
+    "rewind": "Cofnij"
+  },
+  "chat": {
+    "rewind": {
+      "confirmMessage": "Cofnąć do tego momentu? Zmiany w plikach po tej wiadomości zostaną wycofane. Cofanie nie ma wpływu na pliki edytowane ręcznie lub przez bash.",
+      "confirmMessageConversationOnly": "Cofnąć konwersację do tego momentu? Zmiany w plikach zostaną zachowane.",
+      "confirmButton": "Cofnij",
+      "ariaLabel": "Cofnij do tego momentu",
+      "menuConversationOnly": "Cofnij tylko konwersację",
+      "menuCodeAndConversation": "Cofnij kod + konwersację",
+      "notice": "Cofnięto: przywrócono pliki ({count})",
+      "noticeConversationOnly": "Cofnięto konwersację; zmiany w plikach zostały zachowane",
+      "noticeSaveFailed": "Cofnięto: przywrócono pliki ({count}), ale nie udało się zapisać stanu: {error}",
+      "noticeConversationOnlySaveFailed": "Cofnięto konwersację, ale nie udało się zapisać stanu: {error}",
+      "failed": "Cofanie nie powiodło się: {error}",
+      "cannot": "Nie można cofnąć: {error}",
+      "unavailableStreaming": "Nie można cofnąć podczas generowania odpowiedzi",
+      "unavailableNoUuid": "Nie można cofnąć: brak identyfikatorów wiadomości"
+    },
+    "fork": {
+      "ariaLabel": "Nowa gałąź konwersacji (Fork)",
+      "chooseTarget": "Nowa gałąź konwersacji ",
+      "targetNewTab": "Nowa karta",
+      "targetCurrentTab": "Bieżąca karta",
+      "maxTabsReached": "Nie można stworzyć nowej gałęzi: osiągnięto maksymalną liczbę kart ({count})",
+      "notice": "Stworzono nową gałąź w nowej karcie",
+      "noticeCurrentTab": "Stworzono nową gałąź w bieżącej karcie",
+      "failed": "Stworzenie gałęzi nie powiodło się: {error}",
+      "unavailableStreaming": "Nie można stworzyć gałęzi podczas generowania odpowiedzi",
+      "unavailableNoUuid": "Nie można stworzyć gałęzi: brak identyfikatorów wiadomości",
+      "unavailableNoResponse": "Nie można stworzyć gałęzi: brak wiadomości, z których można stworzyć gałąź",
+      "errorMessageNotFound": "Wiadomość nie została znaleziona",
+      "errorNoSession": "Brak dostępnego ID sesji",
+      "errorNoActiveTab": "Brak aktywnej karty",
+      "commandNoMessages": "Nie można stworzyć gałęzi: brak wiadomości w konwersacji",
+      "commandNoAssistantUuid": "Nie można stworzyć gałęzi: brak odpowiedzi asystenta z identyfikatorami"
+    },
+    "bangBash": {
+      "placeholder": "> Uruchom polecenie bash...",
+      "commandPanel": "Panel poleceń",
+      "copyAriaLabel": "Kopiuj wynik ostatniego polecenia",
+      "clearAriaLabel": "Wyczyść wynik bash",
+      "commandLabel": "{command}",
+      "statusLabel": "Stan: {status}",
+      "collapseOutput": "Zwiń wynik polecenia",
+      "expandOutput": "Rozwiń wynik polecenia",
+      "running": "Uruchamianie...",
+      "copyFailed": "Nie udało się skopiować do schowka"
+    }
+  },
+  "settings": {
+    "title": "Ustawienia Claudian",
+    "tabs": {
+      "general": "Ogólne",
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "display": "Wyświetlanie",
+    "conversations": "Konwersacje",
+    "content": "Zawartość",
+    "input": "Wejście",
+    "setup": "Konfiguracja",
+    "models": "Modele",
+    "experimental": "Eksperymentalne",
+    "userName": {
+      "name": "Jak Claudian powinien się do Ciebie zwracać?",
+      "desc": "Twoje imię do spersonalizowanych powitań (pozostaw puste dla ogólnych powitań)"
+    },
+    "excludedTags": {
+      "name": "Wykluczone tagi",
+      "desc": "Notatki z tymi tagami nie będą automatycznie ładowane jako kontekst (jeden na linię, bez znaku #)"
+    },
+    "mediaFolder": {
+      "name": "Folder multimediów",
+      "desc": "Folder zawierający załączniki/obrazy. Gdy notatki używają ![[image.jpg]], Claude sprawdzi ten folder. Pozostaw puste dla głównego katalogu (vault root)."
+    },
+    "systemPrompt": {
+      "name": "Własny prompt systemowy",
+      "desc": "Dodatkowe instrukcje dołączane do domyślnego promptu systemowego"
+    },
+    "autoTitle": {
+      "name": "Automatyczne generowanie tytułów konwersacji",
+      "desc": "Automatycznie generuje tytuły konwersacji po wysłaniu pierwszej wiadomości użytkownika."
+    },
+    "titleModel": {
+      "name": "Model generowania tytułów",
+      "desc": "Model używany do automatycznego generowania tytułów konwersacji.",
+      "auto": "Automatyczny (Haiku)"
+    },
+    "navMappings": {
+      "name": "Mapowanie nawigacji w stylu Vim",
+      "desc": "Jedno mapowanie na linię. Format: \"map <klawisz> <akcja>\" (akcje: scrollUp, scrollDown, focusInput)."
+    },
+    "requireCommandOrControlEnterToSend": {
+      "name": "Wymagaj Command/Ctrl+Enter do wysłania",
+      "desc": "Gdy włączone, Enter wstawia nową linię. Command+Enter wysyła na macOS; Ctrl+Enter wysyła na Windows i Linux."
+    },
+    "hotkeys": "Skróty klawiszowe",
+    "inlineEditHotkey": {
+      "name": "Edycja w miejscu (Inline Edit)",
+      "descWithKey": "Aktualny skrót: {hotkey}",
+      "descNoKey": "Brak ustawionego skrótu",
+      "btnChange": "Zmień",
+      "btnSet": "Ustaw skrót"
+    },
+    "openChatHotkey": {
+      "name": "Otwórz czat",
+      "descWithKey": "Aktualny skrót: {hotkey}",
+      "descNoKey": "Brak ustawionego skrótu",
+      "btnChange": "Zmień",
+      "btnSet": "Ustaw skrót"
+    },
+    "newSessionHotkey": {
+      "name": "Nowa sesja",
+      "descWithKey": "Aktualny skrót: {hotkey}",
+      "descNoKey": "Brak ustawionego skrótu",
+      "btnChange": "Zmień",
+      "btnSet": "Ustaw skrót"
+    },
+    "newTabHotkey": {
+      "name": "Nowa karta",
+      "descWithKey": "Aktualny skrót: {hotkey}",
+      "descNoKey": "Brak ustawionego skrótu",
+      "btnChange": "Zmień",
+      "btnSet": "Ustaw skrót"
+    },
+    "closeTabHotkey": {
+      "name": "Zamknij kartę",
+      "descWithKey": "Aktualny skrót: {hotkey}",
+      "descNoKey": "Brak ustawionego skrótu",
+      "btnChange": "Zmień",
+      "btnSet": "Ustaw skrót"
+    },
+    "slashCommands": {
+      "name": "Polecenia i umiejętności (Commands and Skills)",
+      "desc": "Zarządzaj poleceniami i umiejętnościami na poziomie repozytorium (vault) zapisanymi w .claude/commands/ oraz .claude/skills/. Wywoływane przez /nazwa."
+    },
+    "hiddenSlashCommands": {
+      "name": "Ukryte polecenia i umiejętności",
+      "desc": "Ukryj określone polecenia i umiejętności z listy rozwijanej. Przydatne do ukrywania wpisów Claude Code, które nie są istotne dla Claudian. Wpisz nazwy bez ukośnika, po jednej w linii.",
+      "placeholder": "commit\nbuild\ntest"
+    },
+    "mcpServers": {
+      "name": "Serwery MCP",
+      "desc": "Zarządzaj konfiguracjami serwerów MCP na poziomie repozytorium (vault) zapisanymi w .claude/mcp.json. Serwery z trybem zapisywania kontekstu wymagają @wzmianki, aby je aktywować."
+    },
+    "plugins": {
+      "name": "Wtyczki Claude Code",
+      "desc": "Zarządzaj wtyczkami Claude Code wykrytymi w ~/.claude/plugins. Włączone wtyczki są zapisywane dla każdego repozytorium w .claude/settings.json."
+    },
+    "subagents": {
+      "name": "Podagenci",
+      "desc": "Zarządzaj podagentami na poziomie repozytorium (vault) zapisanymi w .claude/agents/. Każdy plik Markdown definiuje jednego niestandardowego agenta.",
+      "noAgents": "Brak skonfigurowanych podagentów. Kliknij +, aby utworzyć jednego.",
+      "deleteConfirm": "Usunąć podagenta \"{name}\"?",
+      "saveFailed": "Nie udało się zapisać podagenta: {message}",
+      "refreshFailed": "Nie udało się odświeżyć podagentów: {message}",
+      "deleteFailed": "Nie udało się usunąć podagenta: {message}",
+      "renameCleanupFailed": "Ostrzeżenie: nie można usunąć starego pliku dla \"{name}\"",
+      "created": "Podagent \"{name}\" został utworzony",
+      "updated": "Podagent \"{name}\" został zaktualizowany",
+      "deleted": "Podagent \"{name}\" został usunięty",
+      "duplicateName": "Agent o nazwie \"{name}\" już istnieje",
+      "descriptionRequired": "Opis jest wymagany",
+      "promptRequired": "Prompt systemowy jest wymagany",
+      "modal": {
+        "titleEdit": "Edytuj podagenta",
+        "titleAdd": "Dodaj podagenta",
+        "name": "Nazwa",
+        "nameDesc": "Tylko małe litery, cyfry i myślniki",
+        "namePlaceholder": "code-reviewer",
+        "description": "Opis",
+        "descriptionDesc": "Krótki opis tego agenta",
+        "descriptionPlaceholder": "Sprawdza kod pod kątem błędów i stylu",
+        "advancedOptions": "Opcje zaawansowane",
+        "model": "Model",
+        "modelDesc": "Nadpisanie modelu dla tego agenta",
+        "tools": "Narzędzia",
+        "toolsDesc": "Rozdzielona przecinkami lista dozwolonych narzędzi (puste = wszystkie)",
+        "disallowedTools": "Niedozwolone narzędzia",
+        "disallowedToolsDesc": "Rozdzielona przecinkami lista narzędzi, które mają być niedozwolone",
+        "skills": "Umiejętności",
+        "skillsDesc": "Rozdzielona przecinkami lista umiejętności",
+        "prompt": "Prompt systemowy",
+        "promptDesc": "Instrukcje dla agenta",
+        "promptPlaceholder": "Jesteś recenzentem kodu. Przeanalizuj podany kod pod kątem..."
+      }
+    },
+    "safety": "Bezpieczeństwo",
+    "loadUserSettings": {
+      "name": "Załaduj ustawienia użytkownika Claude",
+      "desc": "Załaduj ~/.claude/settings.json. Gdy włączone, reguły uprawnień użytkownika Claude Code mogą pomijać tryb bezpieczny (Safe mode)."
+    },
+    "claudeSafeMode": {
+      "name": "Tryb bezpieczny",
+      "desc": "Tryb uprawnień używany, gdy przełącznik Safe jest aktywny."
+    },
+    "codexSafeMode": {
+      "name": "Tryb bezpieczny",
+      "desc": "Tryb piaskownicy (sandbox) używany, gdy przełącznik Safe jest aktywny."
+    },
+    "environment": "Środowisko",
+    "customVariables": {
+      "name": "Zmienne niestandardowe",
+      "desc": "Zmienne środowiskowe dla Claude SDK (format KLUCZ=WARTOŚĆ, jedna na linię). Obsługiwany prefiks eksportu powłoki (shell export)."
+    },
+    "envSnippets": {
+      "name": "Fragmenty kodu (Snippets)",
+      "addBtn": "Dodaj fragment kodu",
+      "noSnippets": "Nie ma jeszcze zapisanych fragmentów środowiska. Kliknij +, aby zapisać bieżącą konfigurację środowiska.",
+      "nameRequired": "Proszę wprowadzić nazwę dla fragmentu kodu",
+      "modal": {
+        "titleEdit": "Edytuj fragment kodu",
+        "titleSave": "Zapisz fragment kodu",
+        "name": "Nazwa",
+        "namePlaceholder": "Opisowa nazwa dla tej konfiguracji środowiska",
+        "description": "Opis",
+        "descPlaceholder": "Opcjonalny opis",
+        "envVars": "Zmienne środowiskowe",
+        "envVarsPlaceholder": "Format KLUCZ=WARTOŚĆ, jedna na linię (obsługiwany prefiks export)",
+        "save": "Zapisz",
+        "update": "Aktualizuj",
+        "cancel": "Anuluj"
+      }
+    },
+    "customModelOverrides": {
+      "name": "Niestandardowe nadpisania modeli",
+      "desc": "Ustaw aliasy selektora modeli i rozmiary okna kontekstowego dla niestandardowych modeli."
+    },
+    "customModelAliases": {
+      "placeholder": "Alias"
+    },
+    "customContextLimits": {
+      "name": "Niestandardowe limity kontekstu",
+      "desc": "Ustaw rozmiary okna kontekstowego dla swoich niestandardowych modeli. Pozostaw puste, aby użyć domyślnego (200k tokenów).",
+      "invalid": "Nieprawidłowy format. Użyj: 256k, 1m lub dokładnej liczby (1000-10000000)."
+    },
+    "enableOpus1M": {
+      "name": "Okno kontekstowe Opus 1M",
+      "desc": "Pokaż Opus 1M w selektorze modeli. Zawarte w planach Max, Team i Enterprise. Użytkownicy API i Pro wymagają dodatkowych opłat za zużycie."
+    },
+    "enableSonnet1M": {
+      "name": "Okno kontekstowe Sonnet 1M",
+      "desc": "Pokaż Sonnet 1M w selektorze modeli. Wymaga dodatkowego zużycia w planach Max, Team i Enterprise. Użytkownicy API i Pro wymagają dodatkowych opłat za zużycie."
+    },
+    "customModels": {
+      "name": "Niestandardowe modele",
+      "desc": "Dołącz dodatkowe identyfikatory modeli Claude do listy wyboru, jeden na linię. Nadpisania modeli środowiskowych nadal zastępują listę wyboru.",
+      "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
+    },
+    "enableChrome": {
+      "name": "Włącz rozszerzenie Chrome",
+      "desc": "Zezwól Claude na interakcję z Chrome za pomocą rozszerzenia claude-in-chrome. Wymaga zainstalowanego rozszerzenia. Wymaga restartu sesji."
+    },
+    "enableBangBash": {
+      "name": "Włącz tryb bash (!)",
+      "desc": "Wpisz ! w pustym polu wejściowym, aby wejść w tryb bash. Uruchamia polecenia bezpośrednio przez child_process w Node.js. Wymaga ponownego otwarcia widoku.",
+      "validation": {
+        "noNode": "Nie znaleziono Node.js w zmiennej PATH. Zainstaluj Node.js lub sprawdź swoją konfigurację PATH."
+      }
+    },
+    "maxTabs": {
+      "name": "Maksymalna liczba kart czatu",
+      "desc": "Maksymalna liczba jednocześnie otwartych kart czatu (3-10). Każda karta korzysta z osobnej sesji Claude.",
+      "warning": "Więcej niż 5 kart może wpłynąć na wydajność i zużycie pamięci."
+    },
+    "enableAutoScroll": {
+      "name": "Automatyczne przewijanie podczas generowania",
+      "desc": "Automatycznie przewijaj na sam dół, gdy Claude generuje odpowiedzi strumieniowo. Wyłącz, aby pozostać na górze i czytać od początku."
+    },
+    "deferMathRenderingDuringStreaming": {
+      "name": "Odłóż renderowanie matematyczne podczas generowania strumieniowego",
+      "desc": "Pokazuj surowy kod LaTeX podczas generowania odpowiedzi strumieniowo, a następnie renderuj zapis matematyczny po zakończeniu każdego bloku tekstu."
+    },
+    "expandFileEditsByDefault": {
+      "name": "Domyślnie rozwijaj edycje plików",
+      "desc": "Pokazuj rozwinięte różnice (diffs) zapisu i edycji, gdy pojawią się po raz pierwszy."
+    },
+    "chatViewPlacement": {
+      "name": "Otwórz Claudian w",
+      "desc": "Wybierz, gdzie otwiera się panel czatu po jego utworzeniu",
+      "rightSidebar": "Prawy pasek boczny",
+      "leftSidebar": "Lewy pasek boczny",
+      "mainTab": "Główna karta edytora"
+    },
+    "cliPath": {
+      "name": "Ścieżka do Claude CLI",
+      "desc": "Niestandardowa ścieżka do Claude Code CLI. Pozostaw puste dla automatycznego wykrywania.",
+      "descWindows": "Dla natywnego instalatora użyj claude.exe. Dla instalacji przez npm/pnpm/yarn lub inny menedżer pakietów, użyj ścieżki cli-wrapper.cjs (nie claude.cmd).",
+      "descUnix": "Wklej wynik polecenia \"which claude\" — działa zarówno dla instalacji natywnych, jak i poprzez npm/pnpm/yarn.",
+      "validation": {
+        "notExist": "Ścieżka nie istnieje",
+        "isDirectory": "Ścieżka jest katalogiem, a nie plikiem"
+      }
+    },
+    "language": {
+      "name": "Język",
+      "desc": "Zmień język wyświetlania interfejsu wtyczki"
+    }
+  }
+}

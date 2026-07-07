@@ -30,6 +30,7 @@ export const SUPPORTED_LOCALES: LocaleInfo[] = [
   { code: 'es', name: 'Español', englishName: 'Spanish', flag: '🇪🇸' },
   { code: 'ru', name: 'Русский', englishName: 'Russian', flag: '🇷🇺' },
   { code: 'pt', name: 'Português', englishName: 'Portuguese', flag: '🇧🇷' },
+  { code: 'pl', name: 'Polski', englishName: 'Polish', flag: '🇵🇱' },
 ];
 
 /**

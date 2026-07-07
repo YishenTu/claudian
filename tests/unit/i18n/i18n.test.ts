@@ -129,11 +129,12 @@ describe('i18n', () => {
       expect(locales).toContain('es');
       expect(locales).toContain('ru');
       expect(locales).toContain('pt');
+      expect(locales).toContain('pl');
     });
 
-    it('returns exactly 10 locales', () => {
+    it('returns exactly 11 locales', () => {
       const locales = getAvailableLocales();
-      expect(locales).toHaveLength(10);
+      expect(locales).toHaveLength(11);
     });
   });
 
@@ -176,6 +177,10 @@ describe('i18n', () => {
 
     it('returns Portuguese name for pt', () => {
       expect(getLocaleDisplayName('pt')).toBe('Português');
+    });
+
+    it('returns Polish name for pl', () => {
+      expect(getLocaleDisplayName('pl')).toBe('Polski');
     });
 
     it('returns locale code for unknown locale', () => {
@@ -236,6 +241,13 @@ describe('i18n', () => {
 
     it('translates correctly in Portuguese', () => {
       setLocale('pt');
+      const result = t('common.save' as TranslationKey);
+      expect(typeof result).toBe('string');
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('translates correctly in Polish', () => {
+      setLocale('pl');
       const result = t('common.save' as TranslationKey);
       expect(typeof result).toBe('string');
       expect(result.length).toBeGreaterThan(0);
