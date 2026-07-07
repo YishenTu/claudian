@@ -52,4 +52,8 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   chatViewPlacement: 'right-sidebar',
 
   hiddenProviderCommands: getDefaultHiddenProviderCommands(),
+
+  voiceEnabled: false,
+  voicePythonPath: 'python3',
+  voiceBridgeScriptPath: '',
 };

@@ -147,6 +147,11 @@ export interface ClaudianSettings {
   // Provider command visibility
   hiddenProviderCommands: HiddenProviderCommands;
 
+  // Voice mode (spawns the voicecode Python bridge as a subprocess)
+  voiceEnabled?: boolean;
+  voicePythonPath?: string;
+  voiceBridgeScriptPath?: string;
+
   // Allow provider-specific extension fields
   [key: string]: unknown;
 }

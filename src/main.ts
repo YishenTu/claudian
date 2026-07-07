@@ -41,6 +41,7 @@ import type { ChatViewPlacement, EnvironmentScope } from './core/types/settings'
 import { ClaudianView } from './features/chat/ClaudianView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
+import { VoiceFeature, type VoiceStreamBusImpl } from './features/voice/VoiceFeature';
 import { setLocale } from './i18n/i18n';
 import type { Locale } from './i18n/types';
 import { OPENCODE_PLAN_MODE_ID, OPENCODE_SAFE_MODE_ID } from './providers/opencode/modes';
@@ -58,6 +59,9 @@ function isClaudianView(value: unknown): value is ClaudianView {
 export default class ClaudianPlugin extends Plugin {
   settings!: ClaudianSettings;
   storage!: SharedAppStorage;
+  /** Stream chunk bus for the voice feature; StreamController taps this. */
+  voiceBus?: VoiceStreamBusImpl;
+  private voiceFeature: VoiceFeature | null = null;
   private conversations: Conversation[] = [];
   private lastKnownTabManagerState: AppTabManagerState | null = null;
 
@@ -184,9 +188,22 @@ export default class ClaudianPlugin extends Plugin {
     });
 
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
+
+    // Voice mode: spawns the voicecode Python bridge on demand. The feature
+    // installs its stream bus (this.voiceBus) in its constructor so the guarded
+    // tap in StreamController is a no-op until voice is enabled.
+    this.voiceFeature = new VoiceFeature(this);
+    this.addCommand({
+      id: 'toggle-voice-mode',
+      name: 'Toggle voice mode',
+      callback: () => {
+        void this.voiceFeature?.toggle();
+      },
+    });
   }
 
   onunload(): void {
+    void this.voiceFeature?.disable();
     void this.persistOpenTabStates();
   }
 

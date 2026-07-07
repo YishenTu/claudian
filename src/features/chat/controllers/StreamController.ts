@@ -117,6 +117,10 @@ export class StreamController {
   async handleStreamChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
     const { state } = this.deps;
 
+    // Voice tap: forward every handled chunk to the voice stream bus. No-op when
+    // voice mode has never been enabled (voiceBus is undefined / has no subscribers).
+    this.deps.plugin.voiceBus?.emit(chunk);
+
     switch (chunk.type) {
       case 'thinking':
         // Flush pending tools before rendering new content type

@@ -475,6 +475,51 @@ export class ClaudianSettingTab extends PluginSettingTab {
         });
       });
 
+    // --- Voice ---
+    // Plain English strings (not i18n keys): this section is an additive fork
+    // feature and the locale files don't carry keys for it. Setting.setName
+    // accepts a raw string, matching the Environment section above.
+
+    new Setting(container).setName('Voice').setHeading();
+
+    new Setting(container)
+      .setName('Enable voice mode')
+      .setDesc('Hands-free voice conversation via the voicecode Python bridge. Toggle at runtime with the "Toggle voice mode" command.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.voiceEnabled ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.voiceEnabled = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(container)
+      .setName('Python path')
+      .setDesc('Python interpreter used to run the voice bridge (e.g. python3, or an absolute venv path).')
+      .addText((text) =>
+        text
+          .setPlaceholder('python3')
+          .setValue(this.plugin.settings.voicePythonPath ?? '')
+          .onChange(async (value) => {
+            this.plugin.settings.voicePythonPath = value.trim();
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(container)
+      .setName('Bridge script path')
+      .setDesc('Absolute path to voice_bridge.py in the voicecode repo. Its directory is used as the working directory.')
+      .addText((text) =>
+        text
+          .setPlaceholder('/path/to/voicecode/voice_bridge.py')
+          .setValue(this.plugin.settings.voiceBridgeScriptPath ?? '')
+          .onChange(async (value) => {
+            this.plugin.settings.voiceBridgeScriptPath = value.trim();
+            await this.plugin.saveSettings();
+          }),
+      );
+
     // --- Hotkeys ---
 
     new Setting(container).setName(t('settings.hotkeys')).setHeading();
