@@ -297,6 +297,10 @@
       "name": "ファイル編集をデフォルトで展開",
       "desc": "Write と Edit の diff が最初に表示されるとき、展開した状態で表示します。"
     },
+    "showTabTitlesByDefault": {
+      "name": "Show tab titles by default",
+      "desc": "Display the conversation title on tab badges instead of the tab number. Double-click a tab to switch the other way."
+    },
     "chatViewPlacement": {
       "name": "Claudian を開く場所",
       "desc": "チャットパネルを作成するときに開く場所を選択します",

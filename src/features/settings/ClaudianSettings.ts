@@ -287,6 +287,20 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(container)
+      .setName(t('settings.showTabTitlesByDefault.name'))
+      .setDesc(t('settings.showTabTitlesByDefault.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showTabTitlesByDefault ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.showTabTitlesByDefault = value;
+            await this.plugin.saveSettings();
+            // Reflect the change immediately in any open chat view.
+            this.plugin.getAllViews().forEach((view) => view.refreshTabBar());
+          })
+      );
+
     // --- Conversations ---
 
     new Setting(container).setName(t('settings.conversations')).setHeading();

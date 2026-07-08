@@ -293,6 +293,8 @@ export class ClaudianView extends ItemView {
       onNewTab: () => {
         void this.createNewTab().catch(() => new Notice('Failed to create tab'));
       },
+    }, {
+      getShowTitlesByDefault: () => this.plugin.settings.showTabTitlesByDefault ?? false,
     });
     fragment.appendChild(this.tabBarContainerEl);
 
@@ -432,6 +434,11 @@ export class ClaudianView extends ItemView {
       return;
     }
     this.updateTabBarVisibility();
+  }
+
+  /** Public hook to re-render the tab bar (e.g. after a relevant setting change). */
+  refreshTabBar(): void {
+    this.updateTabBar();
   }
 
   private updateTabBar(): void {

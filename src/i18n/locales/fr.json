@@ -297,6 +297,10 @@
       "name": "Développer les modifications de fichiers par défaut",
       "desc": "Afficher les diffs Write et Edit développés lors de leur première apparition."
     },
+    "showTabTitlesByDefault": {
+      "name": "Afficher les titres d'onglets par défaut",
+      "desc": "Afficher le titre de la conversation sur les onglets au lieu du numéro. Double-cliquez sur un onglet pour basculer dans l'autre sens."
+    },
     "chatViewPlacement": {
       "name": "Ouvrir Claudian dans",
       "desc": "Choisissez où le panneau de chat s'ouvre lors de sa création",

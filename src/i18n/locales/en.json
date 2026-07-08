@@ -297,6 +297,10 @@
       "name": "Expand file edits by default",
       "desc": "Show Write and Edit diffs expanded when they first appear."
     },
+    "showTabTitlesByDefault": {
+      "name": "Show tab titles by default",
+      "desc": "Display the conversation title on tab badges instead of the tab number. Double-click a tab to switch the other way."
+    },
     "chatViewPlacement": {
       "name": "Open Claudian in",
       "desc": "Choose where the chat panel opens when it is created",

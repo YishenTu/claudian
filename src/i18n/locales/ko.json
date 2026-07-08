@@ -297,6 +297,10 @@
       "name": "파일 편집을 기본적으로 펼치기",
       "desc": "Write 및 Edit diff가 처음 표시될 때 펼친 상태로 보여줍니다."
     },
+    "showTabTitlesByDefault": {
+      "name": "Show tab titles by default",
+      "desc": "Display the conversation title on tab badges instead of the tab number. Double-click a tab to switch the other way."
+    },
     "chatViewPlacement": {
       "name": "Claudian 열 위치",
       "desc": "채팅 패널이 생성될 때 열릴 위치를 선택합니다",
