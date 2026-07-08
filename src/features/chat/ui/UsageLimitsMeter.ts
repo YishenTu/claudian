@@ -10,8 +10,6 @@ import type { AccountUsageLimits, UsageLimitWindow } from '../../../core/usage/U
 import { usageLimitsService } from '../../../core/usage/UsageLimitsService';
 import { t } from '../../../i18n/i18n';
 
-const AUTO_REFRESH_MS = 5 * 60_000;
-
 /** How the reset time is displayed: remaining countdown or absolute clock time. */
 export type ResetDisplayMode = 'remaining' | 'absolute';
 
@@ -89,7 +87,6 @@ export class UsageLimitsMeter {
   private container: HTMLElement;
   private iconEl: HTMLElement;
   private popoverEl: HTMLElement | null = null;
-  private refreshTimer: number | null = null;
   private documentClickHandler: ((e: MouseEvent) => void) | null = null;
   private getSettings: (() => Record<string, unknown>) | null = null;
 
@@ -119,8 +116,8 @@ export class UsageLimitsMeter {
       }
     });
 
-    // Keep the tooltip badge fresh in the background (cheap: cached snapshot).
-    this.scheduleBackgroundRefresh();
+    // No background polling: usage is fetched only when the user opens the
+    // popover, so the plugin never talks to the network on its own.
   }
 
   setVisible(visible: boolean): void {
@@ -132,24 +129,7 @@ export class UsageLimitsMeter {
 
   destroy(): void {
     this.closePopover();
-    if (this.refreshTimer !== null) {
-      window.clearInterval(this.refreshTimer);
-      this.refreshTimer = null;
-    }
     this.container.remove();
-  }
-
-  private scheduleBackgroundRefresh(): void {
-    const refresh = () => {
-      void usageLimitsService
-        .getLimits()
-        .then((limits) => this.updateBadge(limits))
-        .catch(() => {
-          /* silently ignore in background */
-        });
-    };
-    refresh();
-    this.refreshTimer = window.setInterval(refresh, AUTO_REFRESH_MS);
   }
 
   private updateBadge(limits: AccountUsageLimits): void {
@@ -175,6 +155,7 @@ export class UsageLimitsMeter {
   private openPopover(): void {
     this.popoverEl = this.container.createDiv({ cls: 'claudian-usage-limits-popover' });
     this.renderLoading();
+    this.positionPopover();
 
     this.documentClickHandler = (e: MouseEvent) => {
       if (this.popoverEl && !this.container.contains(e.target as Node)) {
@@ -192,6 +173,51 @@ export class UsageLimitsMeter {
       .catch((error: unknown) => {
         this.renderError(error);
       });
+  }
+
+  /**
+   * Keep the popover fully inside the plugin's view container. The popover is
+   * anchored to the left of its icon by default and shifted horizontally so it
+   * never spills past the panel edges (important in the narrow side panel).
+   */
+  private positionPopover(): void {
+    const popover = this.popoverEl;
+    if (!popover) {
+      return;
+    }
+
+    // The popover is created fresh on every open, so it starts at the CSS
+    // default anchor (left: 0). We only ever add a dynamic horizontal shift.
+    const view = this.container.closest('.view-content') as HTMLElement | null;
+    const win = this.container.ownerDocument.defaultView;
+    const boundRect = view
+      ? view.getBoundingClientRect()
+      : win
+        ? { left: 0, right: win.innerWidth }
+        : null;
+    if (!boundRect) {
+      return;
+    }
+
+    const margin = 8;
+
+    // Never let the popover be wider than the available panel width.
+    const available = boundRect.right - boundRect.left - margin * 2;
+    if (available > 0) {
+      popover.style.maxWidth = `${Math.max(180, Math.floor(available))}px`;
+    }
+
+    const rect = popover.getBoundingClientRect();
+    let shift = 0;
+    if (rect.right > boundRect.right - margin) {
+      shift = boundRect.right - margin - rect.right;
+    }
+    if (rect.left + shift < boundRect.left + margin) {
+      shift = boundRect.left + margin - rect.left;
+    }
+    if (shift !== 0) {
+      popover.style.left = `${Math.round(shift)}px`;
+    }
   }
 
   private closePopover(): void {

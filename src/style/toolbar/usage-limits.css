@@ -42,7 +42,7 @@
 .claudian-usage-limits-popover {
   position: absolute;
   bottom: 100%;
-  right: 0;
+  left: 0;
   margin-bottom: 8px;
   width: 260px;
   padding: 12px;
