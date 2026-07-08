@@ -413,6 +413,30 @@ describe('InlineEditService', () => {
       expect(options?.maxThinkingTokens).toBeUndefined();
     });
 
+    it('should use the model override when provided', async () => {
+      mockPlugin.settings.model = 'sonnet';
+      service = new InlineEditService(mockPlugin);
+      service.setModelOverride('opus');
+
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: '<replacement>fixed</replacement>' }] },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.editText({
+        mode: 'selection',
+        selectedText: 'test',
+        instruction: 'fix',
+        notePath: 'test.md',
+      });
+
+      expect(getLastOptions()?.model).toBe('opus');
+    });
+
     it('should set adaptive thinking with effort for custom models', async () => {
       mockPlugin.settings.model = 'custom-model';
       mockPlugin.settings.thinkingBudget = 'medium';
