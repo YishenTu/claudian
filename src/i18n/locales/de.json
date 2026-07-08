@@ -80,6 +80,8 @@
       "resetsInHours": "Zurücksetzung in {hours} Std. {minutes} Min.",
       "resetsInMinutes": "Zurücksetzung in {minutes} Min.",
       "resetsSoon": "Zurücksetzung in Kürze",
+      "resetsAtTime": "Zurücksetzung um {time}",
+      "resetsAtDay": "Zurücksetzung {day}, {time}",
       "errorNoCredentials": "Claude Code-Anmeldedaten nicht gefunden. Melden Sie sich zuerst mit `claude` im Terminal an.",
       "errorFetch": "Nutzungslimits konnten nicht geladen werden. Nur für Pro/Max-Abonnements verfügbar."
     }
@@ -278,6 +280,12 @@
     "enableSonnet1M": {
       "name": "Sonnet 1M Kontextfenster",
       "desc": "Sonnet 1M in der Modellauswahl anzeigen. Erfordert zusätzliche Nutzung bei Max-, Team- und Enterprise-Plänen. API- und Pro-Nutzer benötigen zusätzliche Nutzung."
+    },
+    "usageLimitsResetDisplay": {
+      "name": "Anzeige der Limit-Zurücksetzung",
+      "desc": "Wie die Zurücksetzungszeit im Nutzungslimit-Panel angezeigt wird: verbleibende Zeit oder genaue Uhrzeit.",
+      "optionRemaining": "Verbleibende Zeit (z. B. in 4 Std. 20 Min.)",
+      "optionAbsolute": "Genaue Uhrzeit (z. B. um 3:49 Uhr)"
     },
     "customModels": {
       "name": "Custom models",

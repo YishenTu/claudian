@@ -80,6 +80,8 @@
       "resetsInHours": "あと {hours}時間 {minutes}分でリセット",
       "resetsInMinutes": "あと {minutes}分でリセット",
       "resetsSoon": "まもなくリセット",
+      "resetsAtTime": "{time} にリセット",
+      "resetsAtDay": "{day} {time} にリセット",
       "errorNoCredentials": "Claude Code の認証情報が見つかりません。まずターミナルで `claude` にサインインしてください。",
       "errorFetch": "使用制限を読み込めませんでした。Pro/Max サブスクリプションのみ利用可能です。"
     }
@@ -278,6 +280,12 @@
     "enableSonnet1M": {
       "name": "Sonnet 1Mコンテキストウィンドウ",
       "desc": "モデルセレクターにSonnet 1Mを表示します。Max、Team、Enterpriseプランでは追加使用量が必要です。APIおよびProユーザーは追加使用量が必要です。"
+    },
+    "usageLimitsResetDisplay": {
+      "name": "使用制限リセットの表示",
+      "desc": "使用制限パネルでのリセット時刻の表示方法：残り時間または正確な時刻。",
+      "optionRemaining": "残り時間（例：あと 4時間 20分）",
+      "optionAbsolute": "正確な時刻（例：3:49 に）"
     },
     "customModels": {
       "name": "Custom models",

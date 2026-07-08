@@ -12,15 +12,10 @@ import { t } from '../../../i18n/i18n';
 
 const AUTO_REFRESH_MS = 5 * 60_000;
 
-function formatResetTime(resetsAt: string | null): string | null {
-  if (!resetsAt) {
-    return null;
-  }
-  const resetDate = new Date(resetsAt);
-  if (isNaN(resetDate.getTime())) {
-    return null;
-  }
+/** How the reset time is displayed: remaining countdown or absolute clock time. */
+export type ResetDisplayMode = 'remaining' | 'absolute';
 
+function formatRemaining(resetDate: Date): string {
   const remainingMs = resetDate.getTime() - Date.now();
   if (remainingMs <= 0) {
     return t('chat.usageLimits.resetsSoon');
@@ -40,6 +35,46 @@ function formatResetTime(resetsAt: string | null): string | null {
   return t('chat.usageLimits.resetsInMinutes', { minutes });
 }
 
+function formatAbsolute(resetDate: Date): string {
+  const now = new Date();
+  const sameDay =
+    resetDate.getFullYear() === now.getFullYear() &&
+    resetDate.getMonth() === now.getMonth() &&
+    resetDate.getDate() === now.getDate();
+
+  const time = resetDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  if (sameDay) {
+    return t('chat.usageLimits.resetsAtTime', { time });
+  }
+  const day = resetDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  return t('chat.usageLimits.resetsAtDay', { day, time });
+}
+
+function formatResetTime(resetsAt: string | null, mode: ResetDisplayMode): string | null {
+  if (!resetsAt) {
+    return null;
+  }
+  const resetDate = new Date(resetsAt);
+  if (isNaN(resetDate.getTime())) {
+    return null;
+  }
+  return mode === 'absolute' ? formatAbsolute(resetDate) : formatRemaining(resetDate);
+}
+
+function resolveResetDisplayMode(settings: Record<string, unknown> | null): ResetDisplayMode {
+  const configs = settings?.providerConfigs;
+  if (configs && typeof configs === 'object') {
+    const claude = (configs as Record<string, unknown>)['claude'];
+    if (claude && typeof claude === 'object') {
+      const mode = (claude as Record<string, unknown>)['usageLimitsResetDisplay'];
+      if (mode === 'absolute') {
+        return 'absolute';
+      }
+    }
+  }
+  return 'remaining';
+}
+
 function severityClass(utilization: number): string {
   if (utilization >= 90) {
     return 'is-critical';
@@ -56,8 +91,10 @@ export class UsageLimitsMeter {
   private popoverEl: HTMLElement | null = null;
   private refreshTimer: number | null = null;
   private documentClickHandler: ((e: MouseEvent) => void) | null = null;
+  private getSettings: (() => Record<string, unknown>) | null = null;
 
-  constructor(parentEl: HTMLElement) {
+  constructor(parentEl: HTMLElement, getSettings?: () => Record<string, unknown>) {
+    this.getSettings = getSettings ?? null;
     this.container = parentEl.createDiv({ cls: 'claudian-usage-limits' });
 
     this.iconEl = this.container.createDiv({
@@ -239,7 +276,8 @@ export class UsageLimitsMeter {
     });
     fillEl.style.width = `${window.utilization}%`;
 
-    const resetText = formatResetTime(window.resetsAt);
+    const mode = resolveResetDisplayMode(this.getSettings ? this.getSettings() : null);
+    const resetText = formatResetTime(window.resetsAt, mode);
     if (resetText) {
       rowEl.createDiv({ cls: 'claudian-usage-limits-row-reset', text: resetText });
     }

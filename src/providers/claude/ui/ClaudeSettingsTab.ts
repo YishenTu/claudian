@@ -206,6 +206,22 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       );
 
     new Setting(container)
+      .setName(t('settings.usageLimitsResetDisplay.name'))
+      .setDesc(t('settings.usageLimitsResetDisplay.desc'))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('remaining', t('settings.usageLimitsResetDisplay.optionRemaining'))
+          .addOption('absolute', t('settings.usageLimitsResetDisplay.optionAbsolute'))
+          .setValue(claudeSettings.usageLimitsResetDisplay)
+          .onChange(async (value) => {
+            updateClaudeProviderSettings(settingsBag, {
+              usageLimitsResetDisplay: value === 'absolute' ? 'absolute' : 'remaining',
+            });
+            await context.plugin.saveSettings();
+          })
+      );
+
+    new Setting(container)
       .setName(t('settings.customModels.name'))
       .setDesc(t('settings.customModels.desc'))
       .addTextArea((text) => {

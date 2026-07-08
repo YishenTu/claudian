@@ -1228,7 +1228,7 @@ export function createInputToolbar(
   const thinkingBudgetSelector = new ThinkingBudgetSelector(parentEl, callbacks);
   const serviceTierToggle = new ServiceTierToggle(parentEl, callbacks);
   const contextUsageMeter = new ContextUsageMeter(parentEl);
-  const usageLimitsMeter = new UsageLimitsMeter(parentEl);
+  const usageLimitsMeter = new UsageLimitsMeter(parentEl, () => callbacks.getSettings());
   const externalContextSelector = new ExternalContextSelector(parentEl, callbacks);
   const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);

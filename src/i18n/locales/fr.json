@@ -80,6 +80,8 @@
       "resetsInHours": "Réinitialisation dans {hours} h {minutes} min",
       "resetsInMinutes": "Réinitialisation dans {minutes} min",
       "resetsSoon": "Réinitialisation imminente",
+      "resetsAtTime": "Réinitialisation à {time}",
+      "resetsAtDay": "Réinitialisation {day}, {time}",
       "errorNoCredentials": "Identifiants Claude Code introuvables. Connectez-vous d'abord avec `claude` dans un terminal.",
       "errorFetch": "Impossible de charger les limites d'utilisation. Disponible uniquement pour les comptes Pro/Max."
     }
@@ -278,6 +280,12 @@
     "enableSonnet1M": {
       "name": "Fenêtre de contexte Sonnet 1M",
       "desc": "Afficher Sonnet 1M dans le sélecteur de modèle. Nécessite une utilisation supplémentaire sur les plans Max, Team et Enterprise. Les utilisateurs API et Pro nécessitent une utilisation supplémentaire."
+    },
+    "usageLimitsResetDisplay": {
+      "name": "Affichage de la réinitialisation des limites",
+      "desc": "Comment l'heure de réinitialisation s'affiche dans le panneau des limites : temps restant ou heure exacte.",
+      "optionRemaining": "Temps restant (p. ex. dans 4 h 20 min)",
+      "optionAbsolute": "Heure exacte (p. ex. à 3 h 49)"
     },
     "customModels": {
       "name": "Custom models",

@@ -11,6 +11,8 @@ export const CLAUDE_SAFE_MODES = ['acceptEdits', 'auto', 'default'] as const;
 export type ClaudeSafeMode = typeof CLAUDE_SAFE_MODES[number];
 export type ClaudeSettingSource = 'user' | 'project' | 'local';
 
+export type UsageLimitsResetDisplay = 'remaining' | 'absolute';
+
 export interface ClaudeProviderSettings {
   safeMode: ClaudeSafeMode;
   cliPath: string;
@@ -20,6 +22,7 @@ export interface ClaudeProviderSettings {
   enableBangBash: boolean;
   enableOpus1M: boolean;
   enableSonnet1M: boolean;
+  usageLimitsResetDisplay: UsageLimitsResetDisplay;
   customModels: string;
   lastModel: string;
   environmentVariables: string;
@@ -35,6 +38,7 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   enableBangBash: false,
   enableOpus1M: false,
   enableSonnet1M: false,
+  usageLimitsResetDisplay: 'remaining',
   customModels: '',
   lastModel: 'haiku',
   environmentVariables: '',
@@ -53,6 +57,10 @@ function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
     }
   }
   return result;
+}
+
+function normalizeUsageLimitsResetDisplay(value: unknown): UsageLimitsResetDisplay | undefined {
+  return value === 'remaining' || value === 'absolute' ? value : undefined;
 }
 
 function normalizeClaudeSafeMode(value: unknown): ClaudeSafeMode | undefined {
@@ -99,6 +107,8 @@ export function getClaudeProviderSettings(
     enableSonnet1M: (config.enableSonnet1M as boolean | undefined)
       ?? (settings.enableSonnet1M as boolean | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.enableSonnet1M,
+    usageLimitsResetDisplay: normalizeUsageLimitsResetDisplay(config.usageLimitsResetDisplay)
+      ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.usageLimitsResetDisplay,
     customModels: (config.customModels as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.customModels,
     lastModel: (config.lastModel as string | undefined)

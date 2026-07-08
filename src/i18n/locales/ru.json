@@ -80,6 +80,8 @@
       "resetsInHours": "Сброс через {hours} ч {minutes} мин",
       "resetsInMinutes": "Сброс через {minutes} мин",
       "resetsSoon": "Сброс совсем скоро",
+      "resetsAtTime": "Сброс в {time}",
+      "resetsAtDay": "Сброс {day}, {time}",
       "errorNoCredentials": "Учётные данные Claude Code не найдены. Сначала войдите через `claude` в терминале.",
       "errorFetch": "Не удалось загрузить лимиты. Доступно только для подписок Pro/Max."
     }
@@ -278,6 +280,12 @@
     "enableSonnet1M": {
       "name": "Контекстное окно Sonnet 1M",
       "desc": "Показать Sonnet 1M в селекторе моделей. Требуется дополнительное использование в планах Max, Team и Enterprise. Пользователям API и Pro требуется дополнительное использование."
+    },
+    "usageLimitsResetDisplay": {
+      "name": "Отображение сброса лимитов",
+      "desc": "Как показывать время сброса на панели лимитов: оставшееся время или точное время.",
+      "optionRemaining": "Оставшееся время (напр., через 4 ч 20 мин)",
+      "optionAbsolute": "Точное время (напр., в 3:49)"
     },
     "customModels": {
       "name": "Custom models",

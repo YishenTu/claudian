@@ -80,6 +80,8 @@
       "resetsInHours": "Resets in {hours}h {minutes}m",
       "resetsInMinutes": "Resets in {minutes}m",
       "resetsSoon": "Resets in a moment",
+      "resetsAtTime": "Resets at {time}",
+      "resetsAtDay": "Resets {day}, {time}",
       "errorNoCredentials": "Claude Code credentials not found. Sign in with `claude` in a terminal first.",
       "errorFetch": "Could not load usage limits. This is only available for Pro/Max subscription accounts."
     }
@@ -278,6 +280,12 @@
     "enableSonnet1M": {
       "name": "Sonnet 1M context window",
       "desc": "Show Sonnet 1M in the model selector. Requires extra usage on Max, Team, and Enterprise plans. API and Pro users need extra usage."
+    },
+    "usageLimitsResetDisplay": {
+      "name": "Usage limit reset display",
+      "desc": "How the reset time is shown in the usage limits panel: time remaining until reset, or the exact reset time.",
+      "optionRemaining": "Time remaining (e.g. in 4h 20m)",
+      "optionAbsolute": "Exact time (e.g. at 3:49 AM)"
     },
     "customModels": {
       "name": "Custom models",

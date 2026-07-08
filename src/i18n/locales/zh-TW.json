@@ -80,6 +80,8 @@
       "resetsInHours": "{hours} 小時 {minutes} 分鐘後重設",
       "resetsInMinutes": "{minutes} 分鐘後重設",
       "resetsSoon": "即將重設",
+      "resetsAtTime": "{time} 重設",
+      "resetsAtDay": "{day} {time} 重設",
       "errorNoCredentials": "找不到 Claude Code 憑證。請先在終端機中使用 `claude` 登入。",
       "errorFetch": "無法載入用量限制。僅適用於 Pro/Max 訂閱帳戶。"
     }
@@ -278,6 +280,12 @@
     "enableSonnet1M": {
       "name": "Sonnet 1M 上下文視窗",
       "desc": "在模型選擇器中顯示 Sonnet 1M。Max、Team 和 Enterprise 方案需要額外用量。API 和 Pro 使用者需要額外用量。"
+    },
+    "usageLimitsResetDisplay": {
+      "name": "用量限制重設顯示",
+      "desc": "用量限制面板中重設時間的顯示方式：剩餘時間或確切時間。",
+      "optionRemaining": "剩餘時間（例如：4 小時 20 分鐘後）",
+      "optionAbsolute": "確切時間（例如：凌晨 3:49）"
     },
     "customModels": {
       "name": "Custom models",

@@ -80,6 +80,8 @@
       "resetsInHours": "Redefine em {hours} h {minutes} min",
       "resetsInMinutes": "Redefine em {minutes} min",
       "resetsSoon": "Redefine em instantes",
+      "resetsAtTime": "Redefine às {time}",
+      "resetsAtDay": "Redefine {day}, {time}",
       "errorNoCredentials": "Credenciais do Claude Code não encontradas. Entre com `claude` em um terminal primeiro.",
       "errorFetch": "Não foi possível carregar os limites de uso. Disponível apenas para contas Pro/Max."
     }
@@ -278,6 +280,12 @@
     "enableSonnet1M": {
       "name": "Janela de contexto Sonnet 1M",
       "desc": "Mostrar Sonnet 1M no seletor de modelos. Requer uso adicional nos planos Max, Team e Enterprise. Usuários de API e Pro precisam de uso adicional."
+    },
+    "usageLimitsResetDisplay": {
+      "name": "Exibição da redefinição de limites",
+      "desc": "Como o horário de redefinição é mostrado no painel de limites de uso: tempo restante ou horário exato.",
+      "optionRemaining": "Tempo restante (ex.: em 4 h 20 min)",
+      "optionAbsolute": "Horário exato (ex.: às 3:49)"
     },
     "customModels": {
       "name": "Custom models",
