@@ -600,14 +600,13 @@ describe('ClaudianService', () => {
   // MessageChannel tests moved to tests/unit/core/agent/MessageChannel.test.ts
 
   describe('persistent query updates', () => {
-    it('updates model on the active persistent query', async () => {
+    it('uses a query model override when starting the persistent query', async () => {
       const chunks: any[] = [];
       for await (const chunk of service.query('hello', undefined, undefined, { model: 'claude-opus-4-5' })) {
         chunks.push(chunk);
       }
 
-      const response = getLastResponse();
-      expect(response?.setModel).toHaveBeenCalledWith('claude-opus-4-5');
+      expect(getLastOptions()?.model).toBe('claude-opus-4-5');
     });
   });
 
@@ -1651,8 +1650,7 @@ describe('ClaudianService', () => {
         model: 'claude-opus-4-5',
       })) chunks2.push(c);
 
-      const response = getLastResponse();
-      expect(response?.setModel).toHaveBeenCalledWith('claude-opus-4-5');
+      expect(getLastOptions()?.model).toBe('claude-opus-4-5');
     });
 
     it('falls back to cold-start when restart fails during dynamic updates', async () => {

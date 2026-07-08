@@ -5,6 +5,7 @@ import type { App, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
+import { resolveConversationModel } from '../../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID, type InlineEditMode, type InlineEditService, type ProviderId } from '../../../core/providers/types';
@@ -347,7 +348,9 @@ class InlineEditController {
       ?? activeTab?.providerId
       ?? DEFAULT_CHAT_PROVIDER_ID;
     this.inlineEditService = ProviderRegistry.createInlineEditService(plugin, providerId);
-    const auxiliaryModel = activeTab?.service?.providerId === providerId
+    const auxiliaryModel = conversation
+      ? resolveConversationModel(plugin.settings, providerId, conversation).model
+      : activeTab?.service?.providerId === providerId
       ? activeTab.service.getAuxiliaryModel?.()
       : activeTab?.providerId === providerId
       ? activeTab?.draftModel

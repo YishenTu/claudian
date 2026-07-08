@@ -48,6 +48,7 @@ export interface ConversationControllerDeps {
   getTitleGenerationService: () => TitleGenerationService | null;
   getStatusPanel: () => StatusPanel | null;
   getAgentService?: () => ChatRuntime | null;
+  getSelectedModel?: () => string | null;
   ensureServiceForConversation?: (conversation: Conversation | null) => Promise<void>;
   dismissPendingInlinePrompts?: () => void;
 }
@@ -410,9 +411,11 @@ export class ConversationController {
     // New conversations always use SDK-native storage.
     if (!state.currentConversationId && state.messages.length > 0) {
       const initialSessionId = agentService?.getSessionId() ?? undefined;
+      const selectedModel = this.deps.getSelectedModel?.() ?? undefined;
       const conversation = await plugin.createConversation({
         providerId: agentService?.providerId,
         sessionId: initialSessionId,
+        ...(selectedModel ? { selectedModel } : {}),
       });
       state.currentConversationId = conversation.id;
     }

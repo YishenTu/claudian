@@ -68,5 +68,5 @@ export function toProviderRuntimeModelId(
   value: string,
 ): string {
   const decoded = decodeProviderModelSelectionId(value);
-  return decoded?.providerId === providerId ? decoded.modelId : value;
+  return decoded && decoded.providerId === providerId ? decoded.modelId : value;
 }

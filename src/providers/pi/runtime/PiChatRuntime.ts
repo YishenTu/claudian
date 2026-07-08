@@ -133,6 +133,7 @@ export class PiChatRuntime implements ChatRuntime {
 
   private activeTurn: ActiveTurn | null = null;
   private currentLaunchKey: string | null = null;
+  private currentConversationModel: string | null = null;
   private currentModel: string | null = null;
   private currentSessionTarget: string | null = null;
   private currentThinkingLevel: string | null = null;
@@ -183,7 +184,9 @@ export class PiChatRuntime implements ChatRuntime {
   setResumeCheckpoint(_checkpointId: string | undefined): void {}
 
   syncConversationState(conversation: ChatRuntimeConversationState | null): void {
+    this.setCurrentConversationModel(conversation?.selectedModel);
     if (!conversation) {
+      this.currentConversationModel = null;
       this.sessionId = null;
       this.sessionFile = null;
       this.leafEntryId = null;
@@ -289,6 +292,9 @@ export class PiChatRuntime implements ChatRuntime {
     conversationHistory?: ChatMessage[],
     queryOptions?: ChatRuntimeQueryOptions,
   ): AsyncGenerator<StreamChunk> {
+    if (queryOptions?.model) {
+      this.setCurrentConversationModel(queryOptions.model);
+    }
     this.currentTurnMetadata = {};
     let isReady: boolean;
     try {
@@ -427,7 +433,7 @@ export class PiChatRuntime implements ChatRuntime {
   }
 
   getAuxiliaryModel(): string | null {
-    return this.currentModel;
+    return this.currentConversationModel ?? this.currentModel;
   }
 
   cleanup(): void {
@@ -863,10 +869,19 @@ export class PiChatRuntime implements ChatRuntime {
   }
 
   private getProviderSettings(): Record<string, unknown> {
-    return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+    const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
       this.plugin.settings,
       this.providerId,
     );
+    if (this.currentConversationModel) {
+      settings.model = this.currentConversationModel;
+    }
+    return settings;
+  }
+
+  private setCurrentConversationModel(model: unknown): void {
+    const selectedModel = typeof model === 'string' ? model.trim() : '';
+    this.currentConversationModel = selectedModel || null;
   }
 
   private resolveSelectedModel(

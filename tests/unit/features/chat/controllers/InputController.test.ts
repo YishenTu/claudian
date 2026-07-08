@@ -1054,6 +1054,41 @@ describe('InputController - Message Queue', () => {
       expect(queryCall[0].mcpMentions).toBe(mcpMentions);
     });
 
+    it('should pass the selected model in runtime query options', async () => {
+      deps = createSendableDeps({
+        getAuxiliaryModel: () => 'opus',
+      });
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'hello';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const queryCall = ((deps as any).mockAgentService.query as jest.Mock).mock.calls[0];
+      expect(queryCall[2]).toEqual({ model: 'opus' });
+    });
+
+    it('should persist the selected model when title generation creates the first-send conversation', async () => {
+      deps = createSendableDeps({
+        getAuxiliaryModel: () => 'opus',
+      }, null);
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'hello';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.plugin.createConversation).toHaveBeenCalledWith({
+        providerId: 'claude',
+        sessionId: undefined,
+        selectedModel: 'opus',
+      });
+    });
+
     it('should append browser selection context when available', async () => {
       const mockAgentService = createMockAgentService();
       const localDeps = createSendableDeps({

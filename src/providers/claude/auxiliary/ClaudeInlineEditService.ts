@@ -5,7 +5,7 @@ import {
   getInlineEditSystemPrompt,
   parseInlineEditResponse,
 } from '../../../core/prompt/inlineEdit';
-import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
+import { getProviderSettingsSnapshotWithModel } from '../../../core/providers/conversationModel';
 import type {
   InlineEditRequest,
   InlineEditResult,
@@ -50,6 +50,7 @@ export function createReadOnlyHook(): HookCallbackMatcher {
 export class InlineEditService {
   private plugin: ClaudianPlugin;
   private abortController: AbortController | null = null;
+  private modelOverride: string | undefined;
   private sessionId: string | null = null;
 
   constructor(plugin: ClaudianPlugin) {
@@ -57,10 +58,16 @@ export class InlineEditService {
   }
 
   private getScopedSettings(): Record<string, unknown> {
-    return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+    return getProviderSettingsSnapshotWithModel(
       this.plugin.settings,
       'claude',
+      this.modelOverride,
     );
+  }
+
+  setModelOverride(model?: string): void {
+    const trimmed = model?.trim();
+    this.modelOverride = trimmed ? trimmed : undefined;
   }
 
   resetConversation(): void {

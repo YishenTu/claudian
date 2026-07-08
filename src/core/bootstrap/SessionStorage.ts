@@ -114,6 +114,7 @@ export class SessionStorage {
       updatedAt: conversation.updatedAt,
       lastResponseAt: conversation.lastResponseAt,
       sessionId: conversation.sessionId,
+      selectedModel: conversation.selectedModel,
       providerState: providerState && Object.keys(providerState).length > 0 ? providerState : undefined,
       currentNote: conversation.currentNote,
       externalContextPaths: conversation.externalContextPaths,

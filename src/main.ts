@@ -11,6 +11,10 @@ import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SharedAppStorage } from './core/bootstrap/storage';
 import {
+  normalizeProviderModelSelection,
+  resolveConversationModel,
+} from './core/providers/conversationModel';
+import {
   getEnvironmentVariablesForScope as getScopedEnvironmentVariables,
   getRuntimeEnvironmentText,
   setEnvironmentVariablesForScope,
@@ -326,6 +330,7 @@ export default class ClaudianPlugin extends Plugin {
         updatedAt: meta.updatedAt,
         lastResponseAt: meta.lastResponseAt,
         sessionId: resumeSessionId,
+        selectedModel: meta.selectedModel,
         providerState: meta.providerState,
         messages: [],
         currentNote: meta.currentNote,
@@ -597,6 +602,22 @@ export default class ClaudianPlugin extends Plugin {
     return previewText.substring(0, 50) + (previewText.length > 50 ? '...' : '');
   }
 
+  private async ensureConversationSelectedModel(conversation: Conversation): Promise<void> {
+    const resolved = resolveConversationModel(
+      this.settings,
+      conversation.providerId,
+      conversation,
+    );
+    if (!resolved.shouldPersist || !resolved.model || conversation.selectedModel === resolved.model) {
+      return;
+    }
+
+    conversation.selectedModel = resolved.model;
+    await this.storage.sessions.saveMetadata(
+      this.storage.sessions.toSessionMetadata(conversation)
+    );
+  }
+
   private async loadSdkMessagesForConversation(conversation: Conversation): Promise<void> {
     await ProviderRegistry
       .getConversationHistoryService(conversation.providerId)
@@ -606,9 +627,19 @@ export default class ClaudianPlugin extends Plugin {
   async createConversation(options?: {
     providerId?: ProviderId;
     sessionId?: string;
+    selectedModel?: string;
   }): Promise<Conversation> {
     const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
     const sessionId = options?.sessionId;
+    const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+      this.settings,
+      providerId,
+    );
+    const selectedModel = normalizeProviderModelSelection(
+      providerId,
+      this.settings,
+      options?.selectedModel ?? providerSettings.model,
+    ) ?? undefined;
     const conversationId = sessionId ?? this.generateConversationId();
     const conversation: Conversation = {
       id: conversationId,
@@ -617,6 +648,7 @@ export default class ClaudianPlugin extends Plugin {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       sessionId: sessionId ?? null,
+      selectedModel,
       messages: [],
     };
 
@@ -632,6 +664,7 @@ export default class ClaudianPlugin extends Plugin {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return null;
 
+    await this.ensureConversationSelectedModel(conversation);
     await this.loadSdkMessagesForConversation(conversation);
 
     return conversation;
@@ -682,6 +715,18 @@ export default class ClaudianPlugin extends Plugin {
     // providerId is immutable — strip it from updates to prevent accidental mutation
     const safeUpdates = { ...updates };
     delete safeUpdates.providerId;
+    if ('selectedModel' in safeUpdates) {
+      const selectedModel = normalizeProviderModelSelection(
+        conversation.providerId,
+        this.settings,
+        safeUpdates.selectedModel,
+      );
+      if (selectedModel) {
+        safeUpdates.selectedModel = selectedModel;
+      } else {
+        delete safeUpdates.selectedModel;
+      }
+    }
     Object.assign(conversation, safeUpdates, { updatedAt: Date.now() });
 
     await this.storage.sessions.saveMetadata(
@@ -693,6 +738,7 @@ export default class ClaudianPlugin extends Plugin {
     const conversation = this.conversations.find(c => c.id === id) || null;
 
     if (conversation) {
+      await this.ensureConversationSelectedModel(conversation);
       await this.loadSdkMessagesForConversation(conversation);
     }
 

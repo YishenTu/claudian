@@ -435,6 +435,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
     codexAgentMentionProvider,
     getConversationById: jest.fn().mockResolvedValue(null),
     getConversationSync: jest.fn().mockReturnValue(null),
+    updateConversation: jest.fn().mockResolvedValue(undefined),
     saveSettings: jest.fn().mockResolvedValue(undefined),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
     ...overrides,
@@ -963,7 +964,7 @@ describe('Tab - Service Initialization', () => {
       expect(createTitleGenerationServiceSpy).not.toHaveBeenCalledWith(plugin, 'codex');
     });
 
-    it('surfaces provider-scoped model settings for inactive-provider tabs and saves back to that provider snapshot', async () => {
+    it('surfaces provider-scoped model settings for inactive-provider tabs and stores bound model changes on the conversation', async () => {
       const plugin = createMockPlugin({
         settings: {
           excludedTags: [],
@@ -1026,7 +1027,10 @@ describe('Tab - Service Initialization', () => {
         claude: 'claude-sonnet-4-5',
         codex: DEFAULT_CODEX_PRIMARY_MODEL,
       }));
-      expect(plugin.saveSettings).toHaveBeenCalled();
+      expect(plugin.updateConversation).toHaveBeenCalledWith('conv-codex-settings', {
+        selectedModel: DEFAULT_CODEX_PRIMARY_MODEL,
+      });
+      expect(plugin.saveSettings).not.toHaveBeenCalled();
     });
 
     it('maps shared permission mode selections onto managed OpenCode modes', async () => {
@@ -3603,7 +3607,10 @@ describe('Tab - Cross-Provider Model Rejection', () => {
     await toolbarCallbacks.onModelChange('opus');
 
     expect(Notice).not.toHaveBeenCalled();
-    expect(plugin.saveSettings).toHaveBeenCalled();
+    expect(plugin.updateConversation).toHaveBeenCalledWith('conv-1', {
+      selectedModel: 'opus',
+    });
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
   });
 });
 
