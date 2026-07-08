@@ -297,6 +297,10 @@
       "name": "Раскрывать правки файлов по умолчанию",
       "desc": "Показывать diff для Write и Edit раскрытым при первом появлении."
     },
+    "showTabTitlesByDefault": {
+      "name": "Show tab titles by default",
+      "desc": "Display the conversation title on tab badges instead of the tab number. Double-click a tab to switch the other way."
+    },
     "chatViewPlacement": {
       "name": "Открывать Claudian в",
       "desc": "Выберите, где открывается панель чата при создании",

@@ -16,21 +16,35 @@ export interface TabBarCallbacks {
   onNewTab: () => void;
 }
 
+/** Optional configuration for TabBar rendering. */
+export interface TabBarOptions {
+  /**
+   * Whether badges should display the conversation title by default
+   * instead of the tab number. Read lazily so the setting applies live.
+   * Defaults to `false` (number-first, legacy behavior).
+   */
+  getShowTitlesByDefault?: () => boolean;
+}
+
 /**
  * TabBar renders minimal numbered badge navigation.
  */
 export class TabBar {
   private containerEl: HTMLElement;
   private callbacks: TabBarCallbacks;
-  private expandedTitleTabIds = new Set<TabId>();
+  private readonly getShowTitlesByDefault: () => boolean;
+  // Tabs whose display the user has flipped away from the current default via
+  // double-click (title <-> number). Interpreted relative to the default mode.
+  private toggledTabIds = new Set<TabId>();
   private lastKnownScrollLeft = 0;
   private readonly handleScroll = (): void => {
     this.captureScrollPosition();
   };
 
-  constructor(containerEl: HTMLElement, callbacks: TabBarCallbacks) {
+  constructor(containerEl: HTMLElement, callbacks: TabBarCallbacks, options?: TabBarOptions) {
     this.containerEl = containerEl;
     this.callbacks = callbacks;
+    this.getShowTitlesByDefault = options?.getShowTitlesByDefault ?? (() => false);
     this.build();
   }
 
@@ -71,12 +85,12 @@ export class TabBar {
       stateClass = 'claudian-tab-badge-streaming';
     }
 
-    const isTitleExpanded = this.expandedTitleTabIds.has(item.id);
+    const showTitle = this.shouldShowTitle(item);
     const badgeEl = this.containerEl.createDiv({
       cls: [
         'claudian-tab-badge',
         stateClass,
-        isTitleExpanded ? 'claudian-tab-badge-expanded' : '',
+        showTitle ? 'claudian-tab-badge-expanded' : '',
       ].filter(Boolean).join(' '),
       text: this.getBadgeLabel(item),
     });
@@ -84,7 +98,7 @@ export class TabBar {
     // Obsidian uses aria-label for hover tooltips here; adding title causes duplicate tooltip text.
     badgeEl.setAttribute('aria-label', item.title);
     badgeEl.setAttribute('data-provider', item.providerId);
-    badgeEl.setAttribute('data-title-expanded', isTitleExpanded ? 'true' : 'false');
+    badgeEl.setAttribute('data-title-expanded', showTitle ? 'true' : 'false');
 
     // Click handler to switch tab
     badgeEl.addEventListener('click', () => {
@@ -112,7 +126,7 @@ export class TabBar {
     this.containerEl.empty();
     this.containerEl.removeClass('claudian-tab-badges');
     this.containerEl.removeEventListener('scroll', this.handleScroll);
-    this.expandedTitleTabIds.clear();
+    this.toggledTabIds.clear();
     this.lastKnownScrollLeft = 0;
   }
 
@@ -140,28 +154,48 @@ export class TabBar {
 
   private pruneExpandedTitleState(items: TabBarItem[]): void {
     const visibleTabIds = new Set(items.map(item => item.id));
-    for (const tabId of this.expandedTitleTabIds) {
+    for (const tabId of this.toggledTabIds) {
       if (!visibleTabIds.has(tabId)) {
-        this.expandedTitleTabIds.delete(tabId);
+        this.toggledTabIds.delete(tabId);
       }
     }
   }
 
   private toggleBadgeTitle(item: TabBarItem, badgeEl: HTMLElement): void {
-    if (this.expandedTitleTabIds.has(item.id)) {
-      this.expandedTitleTabIds.delete(item.id);
+    // A tab with no displayable title can only ever show its number, so nothing to toggle.
+    if (!this.hasDisplayableTitle(item)) return;
+
+    if (this.toggledTabIds.has(item.id)) {
+      this.toggledTabIds.delete(item.id);
     } else {
-      this.expandedTitleTabIds.add(item.id);
+      this.toggledTabIds.add(item.id);
     }
 
-    const isTitleExpanded = this.expandedTitleTabIds.has(item.id);
+    const showTitle = this.shouldShowTitle(item);
     badgeEl.textContent = this.getBadgeLabel(item);
-    badgeEl.toggleClass('claudian-tab-badge-expanded', isTitleExpanded);
-    badgeEl.setAttribute('data-title-expanded', isTitleExpanded ? 'true' : 'false');
+    badgeEl.toggleClass('claudian-tab-badge-expanded', showTitle);
+    badgeEl.setAttribute('data-title-expanded', showTitle ? 'true' : 'false');
+  }
+
+  /** Whether the item has a meaningful title worth displaying (not empty / placeholder). */
+  private hasDisplayableTitle(item: TabBarItem): boolean {
+    const title = item.title?.trim();
+    return Boolean(title) && title !== 'New Chat';
+  }
+
+  /**
+   * Resolves whether a badge shows its title (vs its number).
+   * Starts from the configured default, then flips for any tab the user
+   * toggled via double-click. Tabs without a real title always show the number.
+   */
+  private shouldShowTitle(item: TabBarItem): boolean {
+    if (!this.hasDisplayableTitle(item)) return false;
+    const base = this.getShowTitlesByDefault();
+    return this.toggledTabIds.has(item.id) ? !base : base;
   }
 
   private getBadgeLabel(item: TabBarItem): string {
-    if (!this.expandedTitleTabIds.has(item.id)) {
+    if (!this.shouldShowTitle(item)) {
       return String(item.index);
     }
 

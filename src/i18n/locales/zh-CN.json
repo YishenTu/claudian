@@ -297,6 +297,10 @@
       "name": "默认展开文件编辑",
       "desc": "Write 和 Edit diff 首次出现时以展开状态显示。"
     },
+    "showTabTitlesByDefault": {
+      "name": "Show tab titles by default",
+      "desc": "Display the conversation title on tab badges instead of the tab number. Double-click a tab to switch the other way."
+    },
     "chatViewPlacement": {
       "name": "Claudian 打开位置",
       "desc": "选择新建聊天面板时的打开位置",
