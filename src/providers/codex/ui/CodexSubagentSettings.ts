@@ -1,34 +1,41 @@
 import type { App } from 'obsidian';
 import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
+import { t } from '../../../i18n/i18n';
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import type { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
 import { DEFAULT_CODEX_PRIMARY_MODEL } from '../types/models';
 import type { CodexSubagentDefinition } from '../types/subagent';
 
-const REASONING_EFFORT_OPTIONS = [
-  { value: '', label: 'Inherit' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'xhigh', label: 'Extra High' },
-] as const;
+function getReasoningEffortOptions() {
+  return [
+    { value: '', label: t('settings.codexSubagents.reasoningEffort.inherit') },
+    { value: 'low', label: t('settings.codexSubagents.reasoningEffort.low') },
+    { value: 'medium', label: t('settings.codexSubagents.reasoningEffort.medium') },
+    { value: 'high', label: t('settings.codexSubagents.reasoningEffort.high') },
+    { value: 'xhigh', label: t('settings.codexSubagents.reasoningEffort.xhigh') },
+  ] as const;
+}
 
-const SANDBOX_MODE_OPTIONS = [
-  { value: '', label: 'Inherit' },
-  { value: 'read-only', label: 'Read only' },
-  { value: 'danger-full-access', label: 'Danger full access' },
-  { value: 'workspace-write', label: 'Workspace write' },
-] as const;
+function getSandboxModeOptions() {
+  return [
+    { value: '', label: t('settings.codexSubagents.sandboxMode.inherit') },
+    { value: 'read-only', label: t('settings.codexSubagents.sandboxMode.readOnly') },
+    { value: 'danger-full-access', label: t('settings.codexSubagents.sandboxMode.dangerFullAccess') },
+    { value: 'workspace-write', label: t('settings.codexSubagents.sandboxMode.workspaceWrite') },
+  ] as const;
+}
 
 const MAX_NAME_LENGTH = 64;
 const CODEX_AGENT_NAME_PATTERN = /^[a-z0-9_-]+$/;
 const CODEX_NICKNAME_PATTERN = /^[A-Za-z0-9 _-]+$/;
 
 export function validateCodexSubagentName(name: string): string | null {
-  if (!name) return 'Subagent name is required';
-  if (name.length > MAX_NAME_LENGTH) return `Subagent name must be ${MAX_NAME_LENGTH} characters or fewer`;
-  if (!CODEX_AGENT_NAME_PATTERN.test(name)) return 'Subagent name can only contain lowercase letters, numbers, hyphens, and underscores';
+  if (!name) return t('settings.codexSubagents.validation.nameRequired');
+  if (name.length > MAX_NAME_LENGTH) {
+    return t('settings.codexSubagents.validation.nameTooLong', { count: MAX_NAME_LENGTH });
+  }
+  if (!CODEX_AGENT_NAME_PATTERN.test(name)) return t('settings.codexSubagents.validation.nameInvalid');
   return null;
 }
 
@@ -39,12 +46,12 @@ export function validateCodexNicknameCandidates(candidates: string[]): string | 
   const seen = new Set<string>();
   for (const candidate of normalized) {
     if (!CODEX_NICKNAME_PATTERN.test(candidate)) {
-      return 'Nickname candidates can only contain ASCII letters, numbers, spaces, hyphens, and underscores';
+      return t('settings.codexSubagents.validation.nicknameInvalid');
     }
 
     const dedupeKey = candidate.toLowerCase();
     if (seen.has(dedupeKey)) {
-      return 'Nickname candidates must be unique';
+      return t('settings.codexSubagents.validation.nicknameDuplicate');
     }
     seen.add(dedupeKey);
   }
@@ -94,23 +101,23 @@ class CodexSubagentModal extends Modal {
   }
 
   onOpen() {
-    this.setTitle(this.existing ? 'Edit Codex Subagent' : 'Add Codex Subagent');
+    this.setTitle(this.existing ? t('settings.codexSubagents.modal.titleEdit') : t('settings.codexSubagents.modal.titleAdd'));
     this.modalEl.addClass('claudian-sp-modal');
 
     const { contentEl } = this;
 
     new Setting(contentEl)
-      .setName('Name')
-      .setDesc('Agent name Codex uses when spawning (lowercase, hyphens, underscores)')
+      .setName(t('settings.subagents.modal.name'))
+      .setDesc(t('settings.codexSubagents.modal.nameDesc'))
       .addText(text => {
         this._nameInput = text.inputEl;
         text.setValue(this.existing?.name ?? '')
-          .setPlaceholder('Code_reviewer');
+          .setPlaceholder(t('settings.codexSubagents.modal.namePlaceholder'));
       });
 
     new Setting(contentEl)
-      .setName('Description')
-      .setDesc('When Codex should use this agent')
+      .setName(t('settings.subagents.modal.description'))
+      .setDesc(t('settings.codexSubagents.modal.descriptionDesc'))
       .addText(text => {
         this._descInput = text.inputEl;
         text.setValue(this.existing?.description ?? '')
@@ -120,7 +127,7 @@ class CodexSubagentModal extends Modal {
     // Advanced options
     const details = contentEl.createEl('details', { cls: 'claudian-sp-advanced-section' });
     details.createEl('summary', {
-      text: 'Advanced options',
+      text: t('settings.subagents.modal.advancedOptions'),
       cls: 'claudian-sp-advanced-summary',
     });
     if (
@@ -133,8 +140,8 @@ class CodexSubagentModal extends Modal {
     }
 
     new Setting(details)
-      .setName('Model')
-      .setDesc('Model override (leave empty to inherit)')
+      .setName(t('settings.subagents.modal.model'))
+      .setDesc(t('settings.codexSubagents.modal.modelDesc'))
       .addText(text => {
         this._modelInput = text.inputEl;
         text.setValue(this.existing?.model ?? '')
@@ -142,10 +149,10 @@ class CodexSubagentModal extends Modal {
       });
 
     new Setting(details)
-      .setName('Reasoning effort')
-      .setDesc('Model reasoning effort level')
+      .setName(t('settings.codexSubagents.reasoningEffort.name'))
+      .setDesc(t('settings.codexSubagents.reasoningEffort.desc'))
       .addDropdown(dropdown => {
-        for (const opt of REASONING_EFFORT_OPTIONS) {
+        for (const opt of getReasoningEffortOptions()) {
           dropdown.addOption(opt.value, opt.label);
         }
         dropdown.setValue(this._reasoningEffort);
@@ -153,10 +160,10 @@ class CodexSubagentModal extends Modal {
       });
 
     new Setting(details)
-      .setName('Sandbox mode')
-      .setDesc('Sandbox restriction for this agent')
+      .setName(t('settings.codexSubagents.sandboxMode.name'))
+      .setDesc(t('settings.codexSubagents.sandboxMode.desc'))
       .addDropdown(dropdown => {
-        for (const opt of SANDBOX_MODE_OPTIONS) {
+        for (const opt of getSandboxModeOptions()) {
           dropdown.addOption(opt.value, opt.label);
         }
         dropdown.setValue(this._sandboxMode);
@@ -164,8 +171,8 @@ class CodexSubagentModal extends Modal {
       });
 
     new Setting(details)
-      .setName('Nickname candidates')
-      .setDesc('Comma-separated display nicknames (e.g., atlas, delta, echo)')
+      .setName(t('settings.codexSubagents.nicknameCandidates.name'))
+      .setDesc(t('settings.codexSubagents.nicknameCandidates.desc'))
       .addText(text => {
         this._nicknamesInput = text.inputEl;
         text.setValue(this.existing?.nicknameCandidates?.join(', ') ?? '');
@@ -173,14 +180,14 @@ class CodexSubagentModal extends Modal {
 
     // Developer instructions
     new Setting(contentEl)
-      .setName('Developer instructions')
-      .setDesc('Core instructions that define the agent\'s behavior');
+      .setName(t('settings.codexSubagents.developerInstructions.name'))
+      .setDesc(t('settings.codexSubagents.developerInstructions.desc'));
 
     const instructionsArea = contentEl.createEl('textarea', {
       cls: 'claudian-sp-content-area',
       attr: {
         rows: '10',
-        placeholder: 'Review code like an owner.\nPrioritize correctness, security, and missing test coverage.',
+        placeholder: t('settings.codexSubagents.developerInstructions.placeholder'),
       },
     });
     instructionsArea.value = this.existing?.developerInstructions ?? '';
@@ -197,13 +204,13 @@ class CodexSubagentModal extends Modal {
 
       const description = this._descInput.value.trim();
       if (!description) {
-        new Notice('Description is required');
+        new Notice(t('settings.subagents.descriptionRequired'));
         return;
       }
 
       const developerInstructions = this._instructionsArea.value;
       if (!developerInstructions.trim()) {
-        new Notice('Developer instructions are required');
+        new Notice(t('settings.codexSubagents.developerInstructions.required'));
         return;
       }
 
@@ -222,7 +229,7 @@ class CodexSubagentModal extends Modal {
              a.persistenceKey !== this.existing?.persistenceKey,
       );
       if (duplicate) {
-        new Notice(`A subagent named "${name}" already exists`);
+        new Notice(t('settings.subagents.duplicateName', { name }));
         return;
       }
 
@@ -242,7 +249,7 @@ class CodexSubagentModal extends Modal {
         await this.onSave(agent);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
-        new Notice(`Failed to save subagent: ${message}`);
+        new Notice(t('settings.subagents.saveFailed', { message }));
         return;
       }
       this.close();
@@ -252,13 +259,13 @@ class CodexSubagentModal extends Modal {
     const buttonContainer = contentEl.createDiv({ cls: 'claudian-sp-modal-buttons' });
 
     const cancelBtn = buttonContainer.createEl('button', {
-      text: 'Cancel',
+      text: t('common.cancel'),
       cls: 'claudian-cancel-btn',
     });
     cancelBtn.addEventListener('click', () => this.close());
 
     const saveBtn = buttonContainer.createEl('button', {
-      text: 'Save',
+      text: t('common.save'),
       cls: 'claudian-save-btn',
     });
     saveBtn.addEventListener('click', () => {
@@ -296,27 +303,27 @@ export class CodexSubagentSettings {
     }
 
     const headerEl = this.containerEl.createDiv({ cls: 'claudian-sp-header' });
-    headerEl.createSpan({ text: 'Codex Subagents', cls: 'claudian-sp-label' });
+    headerEl.createSpan({ text: t('settings.codexSubagents.header'), cls: 'claudian-sp-label' });
 
     const actionsEl = headerEl.createDiv({ cls: 'claudian-sp-header-actions' });
 
     const refreshBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': 'Refresh' },
+      attr: { 'aria-label': t('common.refresh') },
     });
     setIcon(refreshBtn, 'refresh-cw');
     refreshBtn.addEventListener('click', () => { void this.render(); });
 
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': 'Add' },
+      attr: { 'aria-label': t('common.add') },
     });
     setIcon(addBtn, 'plus');
     addBtn.addEventListener('click', () => this.openModal(null));
 
     if (this.agents.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
-      emptyEl.setText('No Codex subagents in vault. Click + to create one.');
+      emptyEl.setText(t('settings.codexSubagents.noAgents'));
       return;
     }
 
@@ -347,14 +354,14 @@ export class CodexSubagentSettings {
 
     const editBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': 'Edit' },
+      attr: { 'aria-label': t('common.edit') },
     });
     setIcon(editBtn, 'pencil');
     editBtn.addEventListener('click', () => this.openModal(agent));
 
     const deleteBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
-      attr: { 'aria-label': 'Delete' },
+      attr: { 'aria-label': t('common.delete') },
     });
     setIcon(deleteBtn, 'trash-2');
     deleteBtn.addEventListener('click', () => {
@@ -362,16 +369,17 @@ export class CodexSubagentSettings {
       if (!this.app) return;
       const confirmed = await confirmDelete(
         this.app,
-        `Delete subagent "${agent.name}"?`,
+        t('settings.subagents.deleteConfirm', { name: agent.name }),
       );
       if (!confirmed) return;
       try {
         await this.storage.delete(agent);
         await this.render();
         this.onChanged?.();
-        new Notice(`Subagent "${agent.name}" deleted`);
-      } catch {
-        new Notice('Failed to delete subagent');
+        new Notice(t('settings.subagents.deleted', { name: agent.name }));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        new Notice(t('settings.subagents.deleteFailed', { message }));
       }
       })();
     });
@@ -390,8 +398,8 @@ export class CodexSubagentSettings {
         this.onChanged?.();
         new Notice(
           existing
-            ? `Subagent "${agent.name}" updated`
-            : `Subagent "${agent.name}" created`,
+            ? t('settings.subagents.updated', { name: agent.name })
+            : t('settings.subagents.created', { name: agent.name }),
         );
       },
     );

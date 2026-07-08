@@ -113,10 +113,6 @@ jest.mock('@/providers/codex/ui/CodexSubagentSettings', () => ({
   CodexSubagentSettings: jest.fn(),
 }));
 
-jest.mock('@/i18n/i18n', () => ({
-  t: (key: string) => key,
-}));
-
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),

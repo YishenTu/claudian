@@ -213,12 +213,12 @@
       "desc": "Carga ~/.claude/settings.json. Cuando está habilitado, las reglas de permisos del usuario pueden eludir el modo seguro."
     },
     "claudeSafeMode": {
-      "name": "Safe mode",
-      "desc": "Permission mode used when the Safe toggle is active."
+      "name": "Modo seguro",
+      "desc": "Modo de permisos usado cuando el interruptor Seguro está activo."
     },
     "codexSafeMode": {
-      "name": "Safe mode",
-      "desc": "Sandbox mode used when the Safe toggle is active."
+      "name": "Modo seguro",
+      "desc": "Modo de sandbox usado cuando el interruptor Seguro está activo."
     },
     "environment": "Entorno",
     "customVariables": {
@@ -265,8 +265,8 @@
       "desc": "Mostrar Sonnet 1M en el selector de modelos. Requiere uso adicional en planes Max, Team y Enterprise. Usuarios de API y Pro necesitan uso adicional."
     },
     "customModels": {
-      "name": "Custom models",
-      "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
+      "name": "Modelos personalizados",
+      "desc": "Añade IDs de modelos de Claude al selector, uno por línea. Las sobrescrituras de modelo desde el entorno siguen reemplazando el selector.",
       "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
     },
     "enableChrome": {
@@ -317,6 +317,138 @@
     "language": {
       "name": "Idioma",
       "desc": "Cambiar el idioma de visualización de la interfaz del plugin"
+    },
+    "codex": {
+      "enableProvider": {
+        "name": "Activar proveedor Codex",
+        "desc": "Cuando está activado, los modelos Codex aparecen en el selector de modelos para nuevas conversaciones. Las sesiones Codex existentes se conservan."
+      },
+      "installationMethod": {
+        "name": "Método de instalación",
+        "desc": "Cómo debe iniciar Claudian Codex en Windows. Windows nativo usa una ruta de ejecutable de Windows. WSL inicia la CLI de Linux dentro de una distribución seleccionada.",
+        "nativeWindows": "Windows nativo",
+        "wsl": "WSL"
+      },
+      "cliPath": {
+        "name": "Ruta de la CLI de Codex",
+        "descUnix": "Ruta personalizada a la CLI local de Codex. Déjala vacía para preferir instalaciones conocidas de Codex y luego PATH.",
+        "descWindows": "Ruta personalizada a la CLI local de Codex. Déjala vacía para autodetectar desde PATH. Usa la ruta del ejecutable nativo de Windows, normalmente `codex.exe`.",
+        "descWsl": "Comando de Codex del lado Linux o ruta absoluta para ejecutar dentro de WSL. Déjala vacía para buscar en PATH dentro de la distribución seleccionada.",
+        "validation": {
+          "wslWindowsPath": "El modo WSL espera un comando Linux o una ruta absoluta de Linux, no una ruta de ejecutable de Windows."
+        }
+      },
+      "wslDistroOverride": {
+        "name": "Sobrescritura de distribución WSL",
+        "desc": "Sobrescritura avanzada opcional. Déjala vacía para inferir la distribución desde una ruta de espacio de trabajo WSL cuando sea posible; si no, se usa la distribución WSL predeterminada."
+      },
+      "safeMode": {
+        "workspaceWrite": "Escritura en espacio de trabajo",
+        "readOnly": "Solo lectura"
+      },
+      "customModels": {
+        "name": "Modelos personalizados",
+        "desc": "Añade IDs de modelos Codex al selector, uno por línea. `OPENAI_MODEL` sigue teniendo prioridad cuando está definido.",
+        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
+      },
+      "reasoningSummary": {
+        "name": "Resumen de razonamiento",
+        "desc": "Muestra un resumen del proceso de razonamiento del modelo en el bloque de pensamiento.",
+        "auto": "Auto",
+        "concise": "Conciso",
+        "detailed": "Detallado",
+        "off": "Desactivado"
+      },
+      "skills": {
+        "name": "Habilidades de Codex",
+        "desc": "Gestiona habilidades Codex de nivel vault guardadas en .codex/skills/ o .agents/skills/. Las habilidades de nivel home se excluyen aquí.",
+        "hiddenName": "Habilidades ocultas",
+        "hiddenDesc": "Oculta habilidades Codex específicas del desplegable. Introduce nombres de habilidad sin el $ inicial, uno por línea.",
+        "hiddenPlaceholder": "analyze\nexplain\nfix"
+      },
+      "subagents": {
+        "name": "Subagentes de Codex",
+        "desc": "Gestiona subagentes Codex de nivel vault guardados en .codex/agents/. Cada archivo TOML define un agente personalizado."
+      },
+      "mcp": {
+        "descBeforeCommand": "Codex gestiona servidores MCP mediante su propia CLI. Configúralos con ",
+        "descAfterCommand": " y estarán disponibles en Claudian. ",
+        "learnMore": "Más información"
+      },
+      "environment": {
+        "name": "Entorno de Codex",
+        "desc": "Solo variables de ejecución propiedad de Codex. Úsalo para ajustes OPENAI_* y CODEX_*. Si la autodetección de Codex necesita ayuda, añade su directorio de instalación al PATH compartido en lugar de esta sección del proveedor."
+      }
+    },
+    "codexSkills": {
+      "modal": {
+        "titleEdit": "Editar habilidad de Codex",
+        "titleAdd": "Añadir habilidad de Codex",
+        "directory": "Directorio",
+        "directoryDesc": "Dónde guardar la habilidad",
+        "skillName": "Nombre de habilidad",
+        "skillNameDesc": "El nombre usado después de $ (por ejemplo, \"analyze\" para $analyze)",
+        "description": "Descripción",
+        "descriptionDesc": "Descripción opcional mostrada en el desplegable",
+        "instructions": "Instrucciones",
+        "instructionsDesc": "Instrucciones de la habilidad (contenido de SKILL.md)",
+        "instructionsPlaceholder": "Analyze the code for..."
+      },
+      "instructionsRequired": "Las instrucciones son obligatorias",
+      "saveFailed": "No se pudo guardar la habilidad de Codex",
+      "header": "Habilidades de Codex",
+      "noSkills": "No hay habilidades Codex en el vault. Haz clic en + para crear una.",
+      "skillBadge": "habilidad",
+      "deleted": "Habilidad de Codex \"{name}\" eliminada",
+      "deleteFailed": "No se pudo eliminar la habilidad de Codex",
+      "created": "Habilidad de Codex \"{name}\" creada",
+      "updated": "Habilidad de Codex \"{name}\" actualizada"
+    },
+    "codexSubagents": {
+      "modal": {
+        "titleEdit": "Editar subagente de Codex",
+        "titleAdd": "Añadir subagente de Codex",
+        "nameDesc": "Nombre de agente que Codex usa al generarlo (minúsculas, guiones y guiones bajos)",
+        "descriptionDesc": "Cuándo debería usar Codex este agente",
+        "modelDesc": "Sobrescritura de modelo (vacío = heredar)",
+        "namePlaceholder": "code_reviewer"
+      },
+      "reasoningEffort": {
+        "name": "Esfuerzo de razonamiento",
+        "desc": "Nivel de esfuerzo de razonamiento del modelo",
+        "inherit": "Heredar",
+        "low": "Bajo",
+        "medium": "Medio",
+        "high": "Alto",
+        "xhigh": "Muy alto"
+      },
+      "sandboxMode": {
+        "name": "Modo sandbox",
+        "desc": "Restricción de sandbox para este agente",
+        "inherit": "Heredar",
+        "readOnly": "Solo lectura",
+        "dangerFullAccess": "Acceso total",
+        "workspaceWrite": "Escritura en espacio de trabajo"
+      },
+      "nicknameCandidates": {
+        "name": "Candidatos de apodo",
+        "desc": "Apodos visibles separados por comas (p. ej., atlas, delta, echo)"
+      },
+      "developerInstructions": {
+        "name": "Instrucciones de desarrollador",
+        "desc": "Instrucciones centrales que definen el comportamiento del agente",
+        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
+        "required": "Las instrucciones de desarrollador son obligatorias"
+      },
+      "validation": {
+        "nameRequired": "El nombre del subagente es obligatorio",
+        "nameTooLong": "El nombre del subagente debe tener {count} caracteres o menos",
+        "nameInvalid": "El nombre del subagente solo puede contener letras minúsculas, números, guiones y guiones bajos",
+        "nicknameInvalid": "Los candidatos de apodo solo pueden contener letras ASCII, números, espacios, guiones y guiones bajos",
+        "nicknameDuplicate": "Los candidatos de apodo deben ser únicos"
+      },
+      "header": "Subagentes de Codex",
+      "noAgents": "No hay subagentes Codex en el vault. Haz clic en + para crear uno."
     }
   }
 }

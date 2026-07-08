@@ -213,12 +213,12 @@
       "desc": "載入 ~/.claude/settings.json。啟用後，使用者的 Claude Code 權限規則可能繞過安全模式。"
     },
     "claudeSafeMode": {
-      "name": "Safe mode",
-      "desc": "Permission mode used when the Safe toggle is active."
+      "name": "安全模式",
+      "desc": "啟用 Safe 開關時使用的權限模式。"
     },
     "codexSafeMode": {
-      "name": "Safe mode",
-      "desc": "Sandbox mode used when the Safe toggle is active."
+      "name": "安全模式",
+      "desc": "啟用 Safe 開關時使用的沙盒模式。"
     },
     "environment": "環境",
     "customVariables": {
@@ -265,8 +265,8 @@
       "desc": "在模型選擇器中顯示 Sonnet 1M。Max、Team 和 Enterprise 方案需要額外用量。API 和 Pro 使用者需要額外用量。"
     },
     "customModels": {
-      "name": "Custom models",
-      "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
+      "name": "自訂模型",
+      "desc": "向選擇器追加額外的 Claude 模型 ID，每行一個。環境中的模型覆寫仍會取代選擇器。",
       "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
     },
     "enableChrome": {
@@ -317,6 +317,138 @@
     "language": {
       "name": "語言",
       "desc": "更改插件介面的顯示語言"
+    },
+    "codex": {
+      "enableProvider": {
+        "name": "啟用 Codex 提供者",
+        "desc": "啟用後，Codex 模型會出現在新對話的模型選擇器中。現有 Codex 工作階段會保留。"
+      },
+      "installationMethod": {
+        "name": "安裝方式",
+        "desc": "Claudian 在 Windows 上啟動 Codex 的方式。原生 Windows 使用 Windows 可執行檔路徑；WSL 會在所選發行版內啟動 Linux CLI。",
+        "nativeWindows": "原生 Windows",
+        "wsl": "WSL"
+      },
+      "cliPath": {
+        "name": "Codex CLI 路徑",
+        "descUnix": "本機 Codex CLI 的自訂路徑。留空會優先使用已知 Codex 安裝，然後查找 PATH。",
+        "descWindows": "本機 Codex CLI 的自訂路徑。留空會從 PATH 自動偵測。請使用原生 Windows 可執行檔路徑，通常為 `codex.exe`。",
+        "descWsl": "在 WSL 內執行的 Linux 端 Codex 命令或絕對路徑。留空會在所選發行版內查找 PATH。",
+        "validation": {
+          "wslWindowsPath": "WSL 模式需要 Linux 命令或 Linux 絕對路徑，而不是 Windows 可執行檔路徑。"
+        }
+      },
+      "wslDistroOverride": {
+        "name": "WSL 發行版覆寫",
+        "desc": "可選進階覆寫。留空時會盡可能從 WSL 工作區路徑推斷發行版，否則使用預設 WSL 發行版。"
+      },
+      "safeMode": {
+        "workspaceWrite": "工作區可寫",
+        "readOnly": "唯讀"
+      },
+      "customModels": {
+        "name": "自訂模型",
+        "desc": "向選擇器追加額外的 Codex 模型 ID，每行一個。設定 `OPENAI_MODEL` 時仍優先生效。",
+        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
+      },
+      "reasoningSummary": {
+        "name": "推理摘要",
+        "desc": "在思考區塊中顯示模型推理過程的摘要。",
+        "auto": "自動",
+        "concise": "簡潔",
+        "detailed": "詳細",
+        "off": "關閉"
+      },
+      "skills": {
+        "name": "Codex 技能",
+        "desc": "管理儲存在 .codex/skills/ 或 .agents/skills/ 中的 Vault 層級 Codex 技能。此處不包含主目錄層級技能。",
+        "hiddenName": "隱藏技能",
+        "hiddenDesc": "從下拉選單中隱藏特定 Codex 技能。每行輸入一個技能名稱，不帶前導 $。",
+        "hiddenPlaceholder": "analyze\nexplain\nfix"
+      },
+      "subagents": {
+        "name": "Codex 子代理",
+        "desc": "管理儲存在 .codex/agents/ 中的 Vault 層級 Codex 子代理。每個 TOML 檔案定義一個自訂代理。"
+      },
+      "mcp": {
+        "descBeforeCommand": "Codex 透過自己的 CLI 管理 MCP 伺服器。請使用 ",
+        "descAfterCommand": " 進行設定，它們會在 Claudian 中可用。",
+        "learnMore": "了解更多"
+      },
+      "environment": {
+        "name": "Codex 環境",
+        "desc": "僅限 Codex 擁有的執行階段變數。用於 OPENAI_* 和 CODEX_* 設定。如果 Codex 自動偵測需要協助，請把安裝目錄新增到共享 PATH，而不是此提供者環境。"
+      }
+    },
+    "codexSkills": {
+      "modal": {
+        "titleEdit": "編輯 Codex 技能",
+        "titleAdd": "新增 Codex 技能",
+        "directory": "目錄",
+        "directoryDesc": "技能的儲存位置",
+        "skillName": "技能名稱",
+        "skillNameDesc": "在 $ 後使用的名稱（例如 $analyze 的名稱為「analyze」）",
+        "description": "描述",
+        "descriptionDesc": "下拉選單中顯示的可選描述",
+        "instructions": "指令",
+        "instructionsDesc": "技能指令（SKILL.md 內容）",
+        "instructionsPlaceholder": "Analyze the code for..."
+      },
+      "instructionsRequired": "指令為必填項",
+      "saveFailed": "儲存 Codex 技能失敗",
+      "header": "Codex 技能",
+      "noSkills": "Vault 中沒有 Codex 技能。點擊 + 建立一個。",
+      "skillBadge": "技能",
+      "deleted": "已刪除 Codex 技能「{name}」",
+      "deleteFailed": "刪除 Codex 技能失敗",
+      "created": "已建立 Codex 技能「{name}」",
+      "updated": "已更新 Codex 技能「{name}」"
+    },
+    "codexSubagents": {
+      "modal": {
+        "titleEdit": "編輯 Codex 子代理",
+        "titleAdd": "新增 Codex 子代理",
+        "nameDesc": "Codex 衍生代理時使用的代理名稱（小寫、連字符、底線）",
+        "descriptionDesc": "Codex 應在何時使用該代理",
+        "modelDesc": "模型覆寫（留空表示繼承）",
+        "namePlaceholder": "code_reviewer"
+      },
+      "reasoningEffort": {
+        "name": "推理強度",
+        "desc": "模型推理強度級別",
+        "inherit": "繼承",
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+        "xhigh": "極高"
+      },
+      "sandboxMode": {
+        "name": "沙盒模式",
+        "desc": "該代理的沙盒限制",
+        "inherit": "繼承",
+        "readOnly": "唯讀",
+        "dangerFullAccess": "完整存取",
+        "workspaceWrite": "工作區可寫"
+      },
+      "nicknameCandidates": {
+        "name": "暱稱候選",
+        "desc": "顯示暱稱，使用逗號分隔（例如 atlas, delta, echo）"
+      },
+      "developerInstructions": {
+        "name": "開發者指令",
+        "desc": "定義代理行為的核心指令",
+        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
+        "required": "開發者指令為必填項"
+      },
+      "validation": {
+        "nameRequired": "子代理名稱為必填項",
+        "nameTooLong": "子代理名稱必須不超過 {count} 個字元",
+        "nameInvalid": "子代理名稱只能包含小寫字母、數字、連字符和底線",
+        "nicknameInvalid": "暱稱候選只能包含 ASCII 字母、數字、空格、連字符和底線",
+        "nicknameDuplicate": "暱稱候選必須唯一"
+      },
+      "header": "Codex 子代理",
+      "noAgents": "Vault 中沒有 Codex 子代理。點擊 + 建立一個。"
     }
   }
 }

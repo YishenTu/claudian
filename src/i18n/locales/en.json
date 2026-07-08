@@ -317,6 +317,138 @@
     "language": {
       "name": "Language",
       "desc": "Change the display language of the plugin interface"
+    },
+    "codex": {
+      "enableProvider": {
+        "name": "Enable Codex provider",
+        "desc": "When enabled, Codex models appear in the model selector for new conversations. Existing Codex sessions are preserved."
+      },
+      "installationMethod": {
+        "name": "Installation method",
+        "desc": "How Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.",
+        "nativeWindows": "Native Windows",
+        "wsl": "WSL"
+      },
+      "cliPath": {
+        "name": "Codex CLI path",
+        "descUnix": "Custom path to the local Codex CLI. Leave empty to prefer known Codex installs, then PATH.",
+        "descWindows": "Custom path to the local Codex CLI. Leave empty to auto-detect from PATH. Use the native Windows executable path, usually `codex.exe`.",
+        "descWsl": "Linux-side Codex command or absolute path to run inside WSL. Leave empty for PATH lookup inside the selected distro.",
+        "validation": {
+          "wslWindowsPath": "WSL mode expects a Linux command or Linux absolute path, not a Windows executable path."
+        }
+      },
+      "wslDistroOverride": {
+        "name": "WSL distro override",
+        "desc": "Optional advanced override. Leave empty to infer the distro from a WSL workspace path when possible, otherwise use the default WSL distro."
+      },
+      "safeMode": {
+        "workspaceWrite": "Workspace write",
+        "readOnly": "Read only"
+      },
+      "customModels": {
+        "name": "Custom models",
+        "desc": "Append additional Codex model IDs to the picker, one per line. `OPENAI_MODEL` still takes precedence when set.",
+        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
+      },
+      "reasoningSummary": {
+        "name": "Reasoning summary",
+        "desc": "Show a summary of the model's reasoning process in the thinking block.",
+        "auto": "Auto",
+        "concise": "Concise",
+        "detailed": "Detailed",
+        "off": "Off"
+      },
+      "skills": {
+        "name": "Codex skills",
+        "desc": "Manage vault-level Codex skills stored in .codex/skills/ or .agents/skills/. Home-level skills are excluded here.",
+        "hiddenName": "Hidden Skills",
+        "hiddenDesc": "Hide specific Codex skills from the dropdown. Enter skill names without the leading $, one per line.",
+        "hiddenPlaceholder": "analyze\nexplain\nfix"
+      },
+      "subagents": {
+        "name": "Codex subagents",
+        "desc": "Manage vault-level Codex subagents stored in .codex/agents/. Each TOML file defines one custom agent."
+      },
+      "mcp": {
+        "descBeforeCommand": "Codex manages MCP servers via its own CLI. Configure with ",
+        "descAfterCommand": " and they will be available in Claudian. ",
+        "learnMore": "Learn more"
+      },
+      "environment": {
+        "name": "Codex environment",
+        "desc": "Codex-owned runtime variables only. Use this for OPENAI_* and CODEX_* settings. If Codex auto-detection needs help, add its install directory to shared PATH instead of this provider section."
+      }
+    },
+    "codexSkills": {
+      "modal": {
+        "titleEdit": "Edit Codex Skill",
+        "titleAdd": "Add Codex Skill",
+        "directory": "Directory",
+        "directoryDesc": "Where to store the skill",
+        "skillName": "Skill name",
+        "skillNameDesc": "The name used after $ (e.g., \"analyze\" for $analyze)",
+        "description": "Description",
+        "descriptionDesc": "Optional description shown in dropdown",
+        "instructions": "Instructions",
+        "instructionsDesc": "The skill instructions (SKILL.md content)",
+        "instructionsPlaceholder": "Analyze the code for..."
+      },
+      "instructionsRequired": "Instructions are required",
+      "saveFailed": "Failed to save Codex skill",
+      "header": "Codex Skills",
+      "noSkills": "No Codex skills in vault. Click + to create one.",
+      "skillBadge": "skill",
+      "deleted": "Codex skill \"{name}\" deleted",
+      "deleteFailed": "Failed to delete Codex skill",
+      "created": "Codex skill \"{name}\" created",
+      "updated": "Codex skill \"{name}\" updated"
+    },
+    "codexSubagents": {
+      "modal": {
+        "titleEdit": "Edit Codex Subagent",
+        "titleAdd": "Add Codex Subagent",
+        "nameDesc": "Agent name Codex uses when spawning (lowercase, hyphens, underscores)",
+        "descriptionDesc": "When Codex should use this agent",
+        "modelDesc": "Model override (leave empty to inherit)",
+        "namePlaceholder": "code_reviewer"
+      },
+      "reasoningEffort": {
+        "name": "Reasoning effort",
+        "desc": "Model reasoning effort level",
+        "inherit": "Inherit",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "xhigh": "Extra High"
+      },
+      "sandboxMode": {
+        "name": "Sandbox mode",
+        "desc": "Sandbox restriction for this agent",
+        "inherit": "Inherit",
+        "readOnly": "Read only",
+        "dangerFullAccess": "Danger full access",
+        "workspaceWrite": "Workspace write"
+      },
+      "nicknameCandidates": {
+        "name": "Nickname candidates",
+        "desc": "Comma-separated display nicknames (e.g., atlas, delta, echo)"
+      },
+      "developerInstructions": {
+        "name": "Developer instructions",
+        "desc": "Core instructions that define the agent's behavior",
+        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
+        "required": "Developer instructions are required"
+      },
+      "validation": {
+        "nameRequired": "Subagent name is required",
+        "nameTooLong": "Subagent name must be {count} characters or fewer",
+        "nameInvalid": "Subagent name can only contain lowercase letters, numbers, hyphens, and underscores",
+        "nicknameInvalid": "Nickname candidates can only contain ASCII letters, numbers, spaces, hyphens, and underscores",
+        "nicknameDuplicate": "Nickname candidates must be unique"
+      },
+      "header": "Codex Subagents",
+      "noAgents": "No Codex subagents in vault. Click + to create one."
     }
   }
 }

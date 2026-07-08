@@ -76,6 +76,22 @@ const localizedKeys = [
   'settings.enableBangBash.validation.noNode',
   'settings.requireCommandOrControlEnterToSend.name',
   'settings.requireCommandOrControlEnterToSend.desc',
+  'settings.claudeSafeMode.name',
+  'settings.claudeSafeMode.desc',
+  'settings.codexSafeMode.name',
+  'settings.codexSafeMode.desc',
+  'settings.customModels.name',
+  'settings.customModels.desc',
+  'settings.codex.enableProvider.name',
+  'settings.codex.enableProvider.desc',
+  'settings.codex.customModels.name',
+  'settings.codex.customModels.desc',
+  'settings.codex.reasoningSummary.name',
+  'settings.codex.skills.name',
+  'settings.codex.subagents.name',
+  'settings.codex.environment.name',
+  'settings.codexSkills.noSkills',
+  'settings.codexSubagents.noAgents',
 ] as const;
 
 const staleBangBashDesc =

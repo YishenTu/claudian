@@ -213,12 +213,12 @@
       "desc": "Lädt ~/.claude/settings.json. Wenn aktiviert, können Benutzer-Claude-Code-Berechtigungsregeln den Sicherheitsmodus umgehen."
     },
     "claudeSafeMode": {
-      "name": "Safe mode",
-      "desc": "Permission mode used when the Safe toggle is active."
+      "name": "Sicherheitsmodus",
+      "desc": "Berechtigungsmodus, der verwendet wird, wenn der Safe-Schalter aktiv ist."
     },
     "codexSafeMode": {
-      "name": "Safe mode",
-      "desc": "Sandbox mode used when the Safe toggle is active."
+      "name": "Sicherheitsmodus",
+      "desc": "Sandbox-Modus, der verwendet wird, wenn der Safe-Schalter aktiv ist."
     },
     "environment": "Umgebung",
     "customVariables": {
@@ -249,7 +249,7 @@
       "desc": "Legen Sie Aliasnamen in der Modellauswahl und Kontextfenstergrößen für benutzerdefinierte Modelle fest."
     },
     "customModelAliases": {
-      "placeholder": "Alias"
+      "placeholder": "Aliasname"
     },
     "customContextLimits": {
       "name": "Benutzerdefinierte Kontextlimits",
@@ -265,8 +265,8 @@
       "desc": "Sonnet 1M in der Modellauswahl anzeigen. Erfordert zusätzliche Nutzung bei Max-, Team- und Enterprise-Plänen. API- und Pro-Nutzer benötigen zusätzliche Nutzung."
     },
     "customModels": {
-      "name": "Custom models",
-      "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
+      "name": "Benutzerdefinierte Modelle",
+      "desc": "Füge zusätzliche Claude-Modell-IDs zur Auswahl hinzu, eine pro Zeile. Modellüberschreibungen aus der Umgebung ersetzen die Auswahl weiterhin.",
       "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
     },
     "enableChrome": {
@@ -317,6 +317,138 @@
     "language": {
       "name": "Sprache",
       "desc": "Anzeigesprache der Plugin-Oberfläche ändern"
+    },
+    "codex": {
+      "enableProvider": {
+        "name": "Codex-Anbieter aktivieren",
+        "desc": "Wenn aktiviert, erscheinen Codex-Modelle in der Modellauswahl für neue Unterhaltungen. Bestehende Codex-Sitzungen bleiben erhalten."
+      },
+      "installationMethod": {
+        "name": "Installationsmethode",
+        "desc": "Wie Claudian Codex unter Windows starten soll. Native Windows verwendet einen Windows-Programmpfad. WSL startet die Linux-CLI in einer ausgewählten Distribution.",
+        "nativeWindows": "Natives Windows",
+        "wsl": "WSL"
+      },
+      "cliPath": {
+        "name": "Codex-CLI-Pfad",
+        "descUnix": "Benutzerdefinierter Pfad zur lokalen Codex-CLI. Leer lassen, um bekannte Codex-Installationen und dann PATH zu bevorzugen.",
+        "descWindows": "Benutzerdefinierter Pfad zur lokalen Codex-CLI. Leer lassen für automatische Erkennung über PATH. Verwende den nativen Windows-Programmpfad, normalerweise `codex.exe`.",
+        "descWsl": "Linux-seitiger Codex-Befehl oder absoluter Pfad zur Ausführung in WSL. Leer lassen für PATH-Suche in der ausgewählten Distribution.",
+        "validation": {
+          "wslWindowsPath": "Der WSL-Modus erwartet einen Linux-Befehl oder absoluten Linux-Pfad, keinen Windows-Programmpfad."
+        }
+      },
+      "wslDistroOverride": {
+        "name": "WSL-Distribution überschreiben",
+        "desc": "Optionale erweiterte Überschreibung. Leer lassen, um die Distribution möglichst aus einem WSL-Workspace-Pfad abzuleiten, sonst wird die Standard-WSL-Distribution verwendet."
+      },
+      "safeMode": {
+        "workspaceWrite": "Workspace schreiben",
+        "readOnly": "Nur lesen"
+      },
+      "customModels": {
+        "name": "Benutzerdefinierte Modelle",
+        "desc": "Füge zusätzliche Codex-Modell-IDs zur Auswahl hinzu, eine pro Zeile. `OPENAI_MODEL` hat weiterhin Vorrang, wenn gesetzt.",
+        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
+      },
+      "reasoningSummary": {
+        "name": "Reasoning-Zusammenfassung",
+        "desc": "Zeigt eine Zusammenfassung des Reasoning-Prozesses des Modells im Denkblock.",
+        "auto": "Automatisch",
+        "concise": "Kurz",
+        "detailed": "Ausführlich",
+        "off": "Aus"
+      },
+      "skills": {
+        "name": "Codex-Fähigkeiten",
+        "desc": "Verwalte Vault-Codex-Fähigkeiten in .codex/skills/ oder .agents/skills/. Fähigkeiten auf Home-Ebene sind hier ausgeschlossen.",
+        "hiddenName": "Ausgeblendete Fähigkeiten",
+        "hiddenDesc": "Blende bestimmte Codex-Fähigkeiten aus dem Dropdown aus. Gib Fähigkeitsnamen ohne führendes $ ein, einen pro Zeile.",
+        "hiddenPlaceholder": "analyze\nexplain\nfix"
+      },
+      "subagents": {
+        "name": "Codex-Sub-Agenten",
+        "desc": "Verwalte Vault-Codex-Sub-Agenten in .codex/agents/. Jede TOML-Datei definiert einen benutzerdefinierten Agenten."
+      },
+      "mcp": {
+        "descBeforeCommand": "Codex verwaltet MCP-Server über seine eigene CLI. Konfiguriere mit ",
+        "descAfterCommand": ", dann sind sie in Claudian verfügbar. ",
+        "learnMore": "Mehr erfahren"
+      },
+      "environment": {
+        "name": "Codex-Umgebung",
+        "desc": "Nur Codex-eigene Laufzeitvariablen. Verwende dies für OPENAI_*- und CODEX_*-Einstellungen. Wenn die Codex-Autoerkennung Hilfe braucht, füge das Installationsverzeichnis dem gemeinsamen PATH hinzu statt diesem Anbieterabschnitt."
+      }
+    },
+    "codexSkills": {
+      "modal": {
+        "titleEdit": "Codex-Fähigkeit bearbeiten",
+        "titleAdd": "Codex-Fähigkeit hinzufügen",
+        "directory": "Verzeichnis",
+        "directoryDesc": "Speicherort der Fähigkeit",
+        "skillName": "Name der Fähigkeit",
+        "skillNameDesc": "Der Name nach $ (z. B. \"analyze\" für $analyze)",
+        "description": "Beschreibung",
+        "descriptionDesc": "Optionale Beschreibung im Dropdown",
+        "instructions": "Anweisungen",
+        "instructionsDesc": "Anweisungen der Fähigkeit (SKILL.md-Inhalt)",
+        "instructionsPlaceholder": "Analyze the code for..."
+      },
+      "instructionsRequired": "Anweisungen sind erforderlich",
+      "saveFailed": "Codex-Fähigkeit konnte nicht gespeichert werden",
+      "header": "Codex-Fähigkeiten",
+      "noSkills": "Keine Codex-Fähigkeiten im Vault. Klicke auf +, um eine zu erstellen.",
+      "skillBadge": "Fähigkeit",
+      "deleted": "Codex-Fähigkeit \"{name}\" gelöscht",
+      "deleteFailed": "Codex-Fähigkeit konnte nicht gelöscht werden",
+      "created": "Codex-Fähigkeit \"{name}\" erstellt",
+      "updated": "Codex-Fähigkeit \"{name}\" aktualisiert"
+    },
+    "codexSubagents": {
+      "modal": {
+        "titleEdit": "Codex-Sub-Agent bearbeiten",
+        "titleAdd": "Codex-Sub-Agent hinzufügen",
+        "nameDesc": "Agentenname, den Codex beim Starten verwendet (Kleinbuchstaben, Bindestriche, Unterstriche)",
+        "descriptionDesc": "Wann Codex diesen Agenten verwenden soll",
+        "modelDesc": "Modellüberschreibung (leer lassen zum Vererben)",
+        "namePlaceholder": "code_reviewer"
+      },
+      "reasoningEffort": {
+        "name": "Reasoning-Aufwand",
+        "desc": "Reasoning-Aufwandsstufe des Modells",
+        "inherit": "Vererben",
+        "low": "Niedrig",
+        "medium": "Mittel",
+        "high": "Hoch",
+        "xhigh": "Sehr hoch"
+      },
+      "sandboxMode": {
+        "name": "Sandbox-Modus",
+        "desc": "Sandbox-Beschränkung für diesen Agenten",
+        "inherit": "Vererben",
+        "readOnly": "Nur lesen",
+        "dangerFullAccess": "Vollzugriff",
+        "workspaceWrite": "Workspace schreiben"
+      },
+      "nicknameCandidates": {
+        "name": "Nickname-Kandidaten",
+        "desc": "Kommagetrennte Anzeige-Nicknames (z. B. atlas, delta, echo)"
+      },
+      "developerInstructions": {
+        "name": "Entwickleranweisungen",
+        "desc": "Kernanweisungen, die das Verhalten des Agenten definieren",
+        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
+        "required": "Entwickleranweisungen sind erforderlich"
+      },
+      "validation": {
+        "nameRequired": "Sub-Agent-Name ist erforderlich",
+        "nameTooLong": "Sub-Agent-Name darf höchstens {count} Zeichen lang sein",
+        "nameInvalid": "Sub-Agent-Name darf nur Kleinbuchstaben, Zahlen, Bindestriche und Unterstriche enthalten",
+        "nicknameInvalid": "Nickname-Kandidaten dürfen nur ASCII-Buchstaben, Zahlen, Leerzeichen, Bindestriche und Unterstriche enthalten",
+        "nicknameDuplicate": "Nickname-Kandidaten müssen eindeutig sein"
+      },
+      "header": "Codex-Sub-Agenten",
+      "noAgents": "Keine Codex-Sub-Agenten im Vault. Klicke auf +, um einen zu erstellen."
     }
   }
 }

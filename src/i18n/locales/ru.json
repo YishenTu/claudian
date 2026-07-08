@@ -213,12 +213,12 @@
       "desc": "Загружает ~/.claude/settings.json. При включении пользовательские правила разрешений Claude Code могут обходить безопасный режим."
     },
     "claudeSafeMode": {
-      "name": "Safe mode",
-      "desc": "Permission mode used when the Safe toggle is active."
+      "name": "Безопасный режим",
+      "desc": "Режим разрешений, используемый, когда переключатель Safe активен."
     },
     "codexSafeMode": {
-      "name": "Safe mode",
-      "desc": "Sandbox mode used when the Safe toggle is active."
+      "name": "Безопасный режим",
+      "desc": "Режим песочницы, используемый, когда переключатель Safe активен."
     },
     "environment": "Окружение",
     "customVariables": {
@@ -265,8 +265,8 @@
       "desc": "Показать Sonnet 1M в селекторе моделей. Требуется дополнительное использование в планах Max, Team и Enterprise. Пользователям API и Pro требуется дополнительное использование."
     },
     "customModels": {
-      "name": "Custom models",
-      "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
+      "name": "Пользовательские модели",
+      "desc": "Добавьте дополнительные ID моделей Claude в список выбора, по одному на строку. Переопределения модели из окружения по-прежнему заменяют список.",
       "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
     },
     "enableChrome": {
@@ -317,6 +317,138 @@
     "language": {
       "name": "Язык",
       "desc": "Изменить язык интерфейса плагина"
+    },
+    "codex": {
+      "enableProvider": {
+        "name": "Включить провайдера Codex",
+        "desc": "Когда включено, модели Codex появляются в выборе моделей для новых бесед. Существующие сеансы Codex сохраняются."
+      },
+      "installationMethod": {
+        "name": "Способ установки",
+        "desc": "Как Claudian должен запускать Codex в Windows. Нативный Windows использует путь к Windows-исполняемому файлу. WSL запускает Linux CLI внутри выбранного дистрибутива.",
+        "nativeWindows": "Нативный Windows",
+        "wsl": "WSL"
+      },
+      "cliPath": {
+        "name": "Путь к Codex CLI",
+        "descUnix": "Пользовательский путь к локальному Codex CLI. Оставьте пустым, чтобы сначала использовать известные установки Codex, затем PATH.",
+        "descWindows": "Пользовательский путь к локальному Codex CLI. Оставьте пустым для автоопределения через PATH. Используйте путь к нативному Windows-исполняемому файлу, обычно `codex.exe`.",
+        "descWsl": "Linux-команда Codex или абсолютный путь для запуска внутри WSL. Оставьте пустым для поиска в PATH выбранного дистрибутива.",
+        "validation": {
+          "wslWindowsPath": "В режиме WSL ожидается Linux-команда или абсолютный Linux-путь, а не путь к Windows-исполняемому файлу."
+        }
+      },
+      "wslDistroOverride": {
+        "name": "Переопределение дистрибутива WSL",
+        "desc": "Необязательное расширенное переопределение. Оставьте пустым, чтобы по возможности определить дистрибутив из пути рабочей области WSL, иначе будет использован дистрибутив WSL по умолчанию."
+      },
+      "safeMode": {
+        "workspaceWrite": "Запись в рабочую область",
+        "readOnly": "Только чтение"
+      },
+      "customModels": {
+        "name": "Пользовательские модели",
+        "desc": "Добавьте дополнительные ID моделей Codex в список выбора, по одному на строку. `OPENAI_MODEL` по-прежнему имеет приоритет, если задан.",
+        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
+      },
+      "reasoningSummary": {
+        "name": "Сводка рассуждений",
+        "desc": "Показывать сводку процесса рассуждений модели в блоке размышлений.",
+        "auto": "Авто",
+        "concise": "Кратко",
+        "detailed": "Подробно",
+        "off": "Выкл."
+      },
+      "skills": {
+        "name": "Навыки Codex",
+        "desc": "Управляйте навыками Codex уровня vault, сохраненными в .codex/skills/ или .agents/skills/. Навыки уровня home здесь исключены.",
+        "hiddenName": "Скрытые навыки",
+        "hiddenDesc": "Скрыть отдельные навыки Codex из списка. Введите имена навыков без начального $, по одному на строку.",
+        "hiddenPlaceholder": "analyze\nexplain\nfix"
+      },
+      "subagents": {
+        "name": "Субагенты Codex",
+        "desc": "Управляйте субагентами Codex уровня vault, сохраненными в .codex/agents/. Каждый TOML-файл задает одного пользовательского агента."
+      },
+      "mcp": {
+        "descBeforeCommand": "Codex управляет MCP-серверами через собственный CLI. Настройте через ",
+        "descAfterCommand": ", и они будут доступны в Claudian. ",
+        "learnMore": "Подробнее"
+      },
+      "environment": {
+        "name": "Окружение Codex",
+        "desc": "Только переменные среды выполнения, принадлежащие Codex. Используйте для настроек OPENAI_* и CODEX_*. Если автоопределению Codex нужна помощь, добавьте каталог установки в общий PATH, а не в этот раздел провайдера."
+      }
+    },
+    "codexSkills": {
+      "modal": {
+        "titleEdit": "Редактировать навык Codex",
+        "titleAdd": "Добавить навык Codex",
+        "directory": "Каталог",
+        "directoryDesc": "Где хранить навык",
+        "skillName": "Имя навыка",
+        "skillNameDesc": "Имя, используемое после $ (например, \"analyze\" для $analyze)",
+        "description": "Описание",
+        "descriptionDesc": "Необязательное описание, отображаемое в списке",
+        "instructions": "Инструкции",
+        "instructionsDesc": "Инструкции навыка (содержимое SKILL.md)",
+        "instructionsPlaceholder": "Analyze the code for..."
+      },
+      "instructionsRequired": "Инструкции обязательны",
+      "saveFailed": "Не удалось сохранить навык Codex",
+      "header": "Навыки Codex",
+      "noSkills": "В vault нет навыков Codex. Нажмите +, чтобы создать навык.",
+      "skillBadge": "навык",
+      "deleted": "Навык Codex \"{name}\" удален",
+      "deleteFailed": "Не удалось удалить навык Codex",
+      "created": "Навык Codex \"{name}\" создан",
+      "updated": "Навык Codex \"{name}\" обновлен"
+    },
+    "codexSubagents": {
+      "modal": {
+        "titleEdit": "Редактировать субагента Codex",
+        "titleAdd": "Добавить субагента Codex",
+        "nameDesc": "Имя агента, которое Codex использует при запуске (строчные буквы, дефисы, подчеркивания)",
+        "descriptionDesc": "Когда Codex должен использовать этого агента",
+        "modelDesc": "Переопределение модели (пусто = наследовать)",
+        "namePlaceholder": "code_reviewer"
+      },
+      "reasoningEffort": {
+        "name": "Усилие рассуждения",
+        "desc": "Уровень усилия рассуждения модели",
+        "inherit": "Наследовать",
+        "low": "Низкий",
+        "medium": "Средний",
+        "high": "Высокий",
+        "xhigh": "Очень высокий"
+      },
+      "sandboxMode": {
+        "name": "Режим песочницы",
+        "desc": "Ограничение песочницы для этого агента",
+        "inherit": "Наследовать",
+        "readOnly": "Только чтение",
+        "dangerFullAccess": "Полный доступ",
+        "workspaceWrite": "Запись в рабочую область"
+      },
+      "nicknameCandidates": {
+        "name": "Варианты псевдонимов",
+        "desc": "Отображаемые псевдонимы через запятую (например: atlas, delta, echo)"
+      },
+      "developerInstructions": {
+        "name": "Инструкции разработчика",
+        "desc": "Основные инструкции, определяющие поведение агента",
+        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
+        "required": "Инструкции разработчика обязательны"
+      },
+      "validation": {
+        "nameRequired": "Имя субагента обязательно",
+        "nameTooLong": "Имя субагента должно быть не длиннее {count} символов",
+        "nameInvalid": "Имя субагента может содержать только строчные буквы, цифры, дефисы и подчеркивания",
+        "nicknameInvalid": "Варианты псевдонимов могут содержать только ASCII-буквы, цифры, пробелы, дефисы и подчеркивания",
+        "nicknameDuplicate": "Варианты псевдонимов должны быть уникальными"
+      },
+      "header": "Субагенты Codex",
+      "noAgents": "В vault нет субагентов Codex. Нажмите +, чтобы создать одного."
     }
   }
 }

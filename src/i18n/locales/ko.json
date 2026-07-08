@@ -213,12 +213,12 @@
       "desc": "~/.claude/settings.json을 로드합니다. 활성화하면 사용자의 Claude Code 허용 규칙이 보안 모드를 우회할 수 있습니다."
     },
     "claudeSafeMode": {
-      "name": "Safe mode",
-      "desc": "Permission mode used when the Safe toggle is active."
+      "name": "안전 모드",
+      "desc": "Safe 토글이 활성화되었을 때 사용하는 권한 모드입니다."
     },
     "codexSafeMode": {
-      "name": "Safe mode",
-      "desc": "Sandbox mode used when the Safe toggle is active."
+      "name": "안전 모드",
+      "desc": "Safe 토글이 활성화되었을 때 사용하는 샌드박스 모드입니다."
     },
     "environment": "환경",
     "customVariables": {
@@ -265,8 +265,8 @@
       "desc": "모델 선택기에서 Sonnet 1M을 표시합니다. Max, Team, Enterprise 플랜에서 추가 사용량이 필요합니다. API 및 Pro 사용자는 추가 사용량이 필요합니다."
     },
     "customModels": {
-      "name": "Custom models",
-      "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
+      "name": "사용자 지정 모델",
+      "desc": "추가 Claude 모델 ID를 한 줄에 하나씩 선택기에 추가합니다. 환경 모델 재정의는 계속 선택기를 대체합니다.",
       "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
     },
     "enableChrome": {
@@ -317,6 +317,138 @@
     "language": {
       "name": "언어",
       "desc": "플러그인 인터페이스의 표시 언어 변경"
+    },
+    "codex": {
+      "enableProvider": {
+        "name": "Codex 공급자 활성화",
+        "desc": "활성화하면 새 대화의 모델 선택기에 Codex 모델이 표시됩니다. 기존 Codex 세션은 유지됩니다."
+      },
+      "installationMethod": {
+        "name": "설치 방식",
+        "desc": "Windows에서 Claudian이 Codex를 실행하는 방식입니다. 네이티브 Windows는 Windows 실행 파일 경로를 사용하고, WSL은 선택한 배포판 안에서 Linux CLI를 실행합니다.",
+        "nativeWindows": "네이티브 Windows",
+        "wsl": "WSL"
+      },
+      "cliPath": {
+        "name": "Codex CLI 경로",
+        "descUnix": "로컬 Codex CLI의 사용자 지정 경로입니다. 비워 두면 알려진 Codex 설치를 먼저 사용한 뒤 PATH를 찾습니다.",
+        "descWindows": "로컬 Codex CLI의 사용자 지정 경로입니다. 비워 두면 PATH에서 자동 감지합니다. 일반적으로 `codex.exe`인 네이티브 Windows 실행 파일 경로를 사용하세요.",
+        "descWsl": "WSL 안에서 실행할 Linux 측 Codex 명령 또는 절대 경로입니다. 비워 두면 선택한 배포판의 PATH에서 찾습니다.",
+        "validation": {
+          "wslWindowsPath": "WSL 모드에는 Windows 실행 파일 경로가 아니라 Linux 명령 또는 Linux 절대 경로가 필요합니다."
+        }
+      },
+      "wslDistroOverride": {
+        "name": "WSL 배포판 재정의",
+        "desc": "선택적 고급 재정의입니다. 비워 두면 가능한 경우 WSL 작업공간 경로에서 배포판을 추론하고, 그렇지 않으면 기본 WSL 배포판을 사용합니다."
+      },
+      "safeMode": {
+        "workspaceWrite": "작업공간 쓰기",
+        "readOnly": "읽기 전용"
+      },
+      "customModels": {
+        "name": "사용자 지정 모델",
+        "desc": "추가 Codex 모델 ID를 한 줄에 하나씩 선택기에 추가합니다. `OPENAI_MODEL`이 설정되어 있으면 계속 우선 적용됩니다.",
+        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
+      },
+      "reasoningSummary": {
+        "name": "추론 요약",
+        "desc": "생각 블록에 모델의 추론 과정 요약을 표시합니다.",
+        "auto": "자동",
+        "concise": "간결",
+        "detailed": "상세",
+        "off": "끄기"
+      },
+      "skills": {
+        "name": "Codex 스킬",
+        "desc": ".codex/skills/ 또는 .agents/skills/에 저장된 vault 수준 Codex 스킬을 관리합니다. 홈 수준 스킬은 여기에서 제외됩니다.",
+        "hiddenName": "숨긴 스킬",
+        "hiddenDesc": "드롭다운에서 특정 Codex 스킬을 숨깁니다. 앞의 $ 없이 스킬 이름을 한 줄에 하나씩 입력하세요.",
+        "hiddenPlaceholder": "analyze\nexplain\nfix"
+      },
+      "subagents": {
+        "name": "Codex 하위 에이전트",
+        "desc": ".codex/agents/에 저장된 vault 수준 Codex 하위 에이전트를 관리합니다. 각 TOML 파일은 사용자 지정 에이전트 하나를 정의합니다."
+      },
+      "mcp": {
+        "descBeforeCommand": "Codex는 자체 CLI로 MCP 서버를 관리합니다. ",
+        "descAfterCommand": " 명령으로 구성하면 Claudian에서 사용할 수 있습니다. ",
+        "learnMore": "자세히 알아보기"
+      },
+      "environment": {
+        "name": "Codex 환경",
+        "desc": "Codex 전용 런타임 변수만 입력하세요. OPENAI_* 및 CODEX_* 설정에 사용합니다. Codex 자동 감지에 도움이 필요하면 이 공급자 섹션 대신 공유 PATH에 설치 디렉터리를 추가하세요."
+      }
+    },
+    "codexSkills": {
+      "modal": {
+        "titleEdit": "Codex 스킬 편집",
+        "titleAdd": "Codex 스킬 추가",
+        "directory": "디렉터리",
+        "directoryDesc": "스킬을 저장할 위치",
+        "skillName": "스킬 이름",
+        "skillNameDesc": "$ 뒤에 사용할 이름입니다(예: $analyze의 경우 \"analyze\")",
+        "description": "설명",
+        "descriptionDesc": "드롭다운에 표시할 선택적 설명",
+        "instructions": "지침",
+        "instructionsDesc": "스킬 지침(SKILL.md 내용)",
+        "instructionsPlaceholder": "Analyze the code for..."
+      },
+      "instructionsRequired": "지침은 필수입니다",
+      "saveFailed": "Codex 스킬 저장 실패",
+      "header": "Codex 스킬",
+      "noSkills": "Vault에 Codex 스킬이 없습니다. +를 클릭해 만드세요.",
+      "skillBadge": "스킬",
+      "deleted": "Codex 스킬 \"{name}\" 삭제됨",
+      "deleteFailed": "Codex 스킬 삭제 실패",
+      "created": "Codex 스킬 \"{name}\" 생성됨",
+      "updated": "Codex 스킬 \"{name}\" 업데이트됨"
+    },
+    "codexSubagents": {
+      "modal": {
+        "titleEdit": "Codex 하위 에이전트 편집",
+        "titleAdd": "Codex 하위 에이전트 추가",
+        "nameDesc": "Codex가 생성할 때 사용하는 에이전트 이름(소문자, 하이픈, 밑줄)",
+        "descriptionDesc": "Codex가 이 에이전트를 사용해야 하는 시점",
+        "modelDesc": "모델 재정의(비워 두면 상속)",
+        "namePlaceholder": "code_reviewer"
+      },
+      "reasoningEffort": {
+        "name": "추론 강도",
+        "desc": "모델 추론 강도 수준",
+        "inherit": "상속",
+        "low": "낮음",
+        "medium": "중간",
+        "high": "높음",
+        "xhigh": "매우 높음"
+      },
+      "sandboxMode": {
+        "name": "샌드박스 모드",
+        "desc": "이 에이전트의 샌드박스 제한",
+        "inherit": "상속",
+        "readOnly": "읽기 전용",
+        "dangerFullAccess": "전체 액세스",
+        "workspaceWrite": "작업공간 쓰기"
+      },
+      "nicknameCandidates": {
+        "name": "닉네임 후보",
+        "desc": "표시 닉네임을 쉼표로 구분합니다(예: atlas, delta, echo)"
+      },
+      "developerInstructions": {
+        "name": "개발자 지침",
+        "desc": "에이전트 동작을 정의하는 핵심 지침",
+        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
+        "required": "개발자 지침은 필수입니다"
+      },
+      "validation": {
+        "nameRequired": "하위 에이전트 이름은 필수입니다",
+        "nameTooLong": "하위 에이전트 이름은 {count}자 이하여야 합니다",
+        "nameInvalid": "하위 에이전트 이름은 소문자, 숫자, 하이픈, 밑줄만 포함할 수 있습니다",
+        "nicknameInvalid": "닉네임 후보는 ASCII 문자, 숫자, 공백, 하이픈, 밑줄만 포함할 수 있습니다",
+        "nicknameDuplicate": "닉네임 후보는 고유해야 합니다"
+      },
+      "header": "Codex 하위 에이전트",
+      "noAgents": "Vault에 Codex 하위 에이전트가 없습니다. +를 클릭해 만드세요."
     }
   }
 }

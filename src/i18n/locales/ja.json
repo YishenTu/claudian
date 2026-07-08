@@ -213,12 +213,12 @@
       "desc": "~/.claude/settings.json を読み込みます。有効にすると、ユーザーの Claude Code 許可ルールがセキュリティモードをバイパスする可能性があります。"
     },
     "claudeSafeMode": {
-      "name": "Safe mode",
-      "desc": "Permission mode used when the Safe toggle is active."
+      "name": "セーフモード",
+      "desc": "Safe トグルが有効なときに使用する権限モードです。"
     },
     "codexSafeMode": {
-      "name": "Safe mode",
-      "desc": "Sandbox mode used when the Safe toggle is active."
+      "name": "セーフモード",
+      "desc": "Safe トグルが有効なときに使用するサンドボックスモードです。"
     },
     "environment": "環境",
     "customVariables": {
@@ -265,8 +265,8 @@
       "desc": "モデルセレクターにSonnet 1Mを表示します。Max、Team、Enterpriseプランでは追加使用量が必要です。APIおよびProユーザーは追加使用量が必要です。"
     },
     "customModels": {
-      "name": "Custom models",
-      "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
+      "name": "カスタムモデル",
+      "desc": "追加の Claude モデル ID を1行に1つずつピッカーに追加します。環境変数によるモデル上書きは引き続きピッカーを置き換えます。",
       "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
     },
     "enableChrome": {
@@ -317,6 +317,138 @@
     "language": {
       "name": "言語",
       "desc": "プラグインインターフェースの表示言語を変更"
+    },
+    "codex": {
+      "enableProvider": {
+        "name": "Codex プロバイダーを有効化",
+        "desc": "有効にすると、新しい会話のモデルセレクターに Codex モデルが表示されます。既存の Codex セッションは保持されます。"
+      },
+      "installationMethod": {
+        "name": "インストール方式",
+        "desc": "Windows で Claudian が Codex を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",
+        "nativeWindows": "ネイティブ Windows",
+        "wsl": "WSL"
+      },
+      "cliPath": {
+        "name": "Codex CLI パス",
+        "descUnix": "ローカル Codex CLI のカスタムパス。空欄の場合は既知の Codex インストール、次に PATH を優先します。",
+        "descWindows": "ローカル Codex CLI のカスタムパス。空欄の場合は PATH から自動検出します。通常は `codex.exe` のネイティブ Windows 実行ファイルパスを使用してください。",
+        "descWsl": "WSL 内で実行する Linux 側の Codex コマンドまたは絶対パス。空欄の場合は選択したディストリビューション内の PATH を検索します。",
+        "validation": {
+          "wslWindowsPath": "WSL モードでは Windows 実行ファイルパスではなく、Linux コマンドまたは Linux 絶対パスが必要です。"
+        }
+      },
+      "wslDistroOverride": {
+        "name": "WSL ディストリビューション上書き",
+        "desc": "任意の詳細上書き。空欄の場合、可能なら WSL ワークスペースパスから推測し、それ以外は既定の WSL ディストリビューションを使用します。"
+      },
+      "safeMode": {
+        "workspaceWrite": "ワークスペース書き込み",
+        "readOnly": "読み取り専用"
+      },
+      "customModels": {
+        "name": "カスタムモデル",
+        "desc": "追加の Codex モデル ID を1行に1つずつピッカーに追加します。`OPENAI_MODEL` が設定されている場合は引き続き優先されます。",
+        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
+      },
+      "reasoningSummary": {
+        "name": "推論サマリー",
+        "desc": "思考ブロックにモデルの推論プロセスのサマリーを表示します。",
+        "auto": "自動",
+        "concise": "簡潔",
+        "detailed": "詳細",
+        "off": "オフ"
+      },
+      "skills": {
+        "name": "Codex スキル",
+        "desc": ".codex/skills/ または .agents/skills/ に保存された Vault レベルの Codex スキルを管理します。ホームレベルのスキルはここでは除外されます。",
+        "hiddenName": "非表示のスキル",
+        "hiddenDesc": "特定の Codex スキルをドロップダウンから非表示にします。先頭の $ なしでスキル名を1行に1つ入力してください。",
+        "hiddenPlaceholder": "analyze\nexplain\nfix"
+      },
+      "subagents": {
+        "name": "Codex サブエージェント",
+        "desc": ".codex/agents/ に保存された Vault レベルの Codex サブエージェントを管理します。各 TOML ファイルがカスタムエージェントを1つ定義します。"
+      },
+      "mcp": {
+        "descBeforeCommand": "Codex は独自の CLI で MCP サーバーを管理します。",
+        "descAfterCommand": " で設定すると Claudian で利用できます。",
+        "learnMore": "詳しく見る"
+      },
+      "environment": {
+        "name": "Codex 環境",
+        "desc": "Codex が所有するランタイム変数のみ。OPENAI_* と CODEX_* 設定に使用します。Codex の自動検出に補助が必要な場合は、このプロバイダー環境ではなく共有 PATH にインストールディレクトリを追加してください。"
+      }
+    },
+    "codexSkills": {
+      "modal": {
+        "titleEdit": "Codex スキルを編集",
+        "titleAdd": "Codex スキルを追加",
+        "directory": "ディレクトリ",
+        "directoryDesc": "スキルの保存先",
+        "skillName": "スキル名",
+        "skillNameDesc": "$ の後に使う名前（例: $analyze の場合は \"analyze\"）",
+        "description": "説明",
+        "descriptionDesc": "ドロップダウンに表示される任意の説明",
+        "instructions": "指示",
+        "instructionsDesc": "スキルの指示（SKILL.md の内容）",
+        "instructionsPlaceholder": "Analyze the code for..."
+      },
+      "instructionsRequired": "指示は必須です",
+      "saveFailed": "Codex スキルの保存に失敗しました",
+      "header": "Codex スキル",
+      "noSkills": "Vault に Codex スキルがありません。+ をクリックして作成してください。",
+      "skillBadge": "スキル",
+      "deleted": "Codex スキル「{name}」を削除しました",
+      "deleteFailed": "Codex スキルの削除に失敗しました",
+      "created": "Codex スキル「{name}」を作成しました",
+      "updated": "Codex スキル「{name}」を更新しました"
+    },
+    "codexSubagents": {
+      "modal": {
+        "titleEdit": "Codex サブエージェントを編集",
+        "titleAdd": "Codex サブエージェントを追加",
+        "nameDesc": "Codex が起動時に使用するエージェント名（小文字、ハイフン、アンダースコア）",
+        "descriptionDesc": "Codex がこのエージェントを使うべきタイミング",
+        "modelDesc": "モデル上書き（空欄で継承）",
+        "namePlaceholder": "code_reviewer"
+      },
+      "reasoningEffort": {
+        "name": "推論強度",
+        "desc": "モデル推論強度レベル",
+        "inherit": "継承",
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+        "xhigh": "非常に高い"
+      },
+      "sandboxMode": {
+        "name": "サンドボックスモード",
+        "desc": "このエージェントのサンドボックス制限",
+        "inherit": "継承",
+        "readOnly": "読み取り専用",
+        "dangerFullAccess": "完全アクセス",
+        "workspaceWrite": "ワークスペース書き込み"
+      },
+      "nicknameCandidates": {
+        "name": "ニックネーム候補",
+        "desc": "表示ニックネームをカンマ区切りで指定（例: atlas, delta, echo）"
+      },
+      "developerInstructions": {
+        "name": "開発者指示",
+        "desc": "エージェントの動作を定義する中核の指示",
+        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
+        "required": "開発者指示は必須です"
+      },
+      "validation": {
+        "nameRequired": "サブエージェント名は必須です",
+        "nameTooLong": "サブエージェント名は {count} 文字以内にしてください",
+        "nameInvalid": "サブエージェント名には小文字、数字、ハイフン、アンダースコアのみ使用できます",
+        "nicknameInvalid": "ニックネーム候補には ASCII 文字、数字、スペース、ハイフン、アンダースコアのみ使用できます",
+        "nicknameDuplicate": "ニックネーム候補は一意である必要があります"
+      },
+      "header": "Codex サブエージェント",
+      "noAgents": "Vault に Codex サブエージェントがありません。+ をクリックして作成してください。"
     }
   }
 }

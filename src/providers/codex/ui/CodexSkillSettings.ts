@@ -2,6 +2,7 @@ import { type App, Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
+import { t } from '../../../i18n/i18n';
 import { validateCommandName } from '../../../utils/slashCommand';
 import {
   CODEX_SKILL_ROOT_OPTIONS,
@@ -43,14 +44,14 @@ export class CodexSkillModal extends Modal {
   }
 
   onOpen() {
-    this.setTitle(this.existing ? 'Edit Codex Skill' : 'Add Codex Skill');
+    this.setTitle(this.existing ? t('settings.codexSkills.modal.titleEdit') : t('settings.codexSkills.modal.titleAdd'));
     this.modalEl.addClass('claudian-sp-modal');
 
     const { contentEl } = this;
 
     new Setting(contentEl)
-      .setName('Directory')
-      .setDesc('Where to store the skill')
+      .setName(t('settings.codexSkills.modal.directory'))
+      .setDesc(t('settings.codexSkills.modal.directoryDesc'))
       .addDropdown(dropdown => {
         for (const opt of CODEX_SKILL_ROOT_OPTIONS) {
           dropdown.addOption(opt.id, opt.label);
@@ -60,8 +61,8 @@ export class CodexSkillModal extends Modal {
       });
 
     new Setting(contentEl)
-      .setName('Skill name')
-      .setDesc('The name used after $ (e.g., "analyze" for $analyze)')
+      .setName(t('settings.codexSkills.modal.skillName'))
+      .setDesc(t('settings.codexSkills.modal.skillNameDesc'))
       .addText(text => {
         this._nameInput = text.inputEl;
         text.setValue(this.existing?.name || '')
@@ -69,20 +70,20 @@ export class CodexSkillModal extends Modal {
       });
 
     new Setting(contentEl)
-      .setName('Description')
-      .setDesc('Optional description shown in dropdown')
+      .setName(t('settings.codexSkills.modal.description'))
+      .setDesc(t('settings.codexSkills.modal.descriptionDesc'))
       .addText(text => {
         this._descInput = text.inputEl;
         text.setValue(this.existing?.description || '');
       });
 
     new Setting(contentEl)
-      .setName('Instructions')
-      .setDesc('The skill instructions (SKILL.md content)');
+      .setName(t('settings.codexSkills.modal.instructions'))
+      .setDesc(t('settings.codexSkills.modal.instructionsDesc'));
 
     const contentArea = contentEl.createEl('textarea', {
       cls: 'claudian-sp-content-area',
-      attr: { rows: '10', placeholder: 'Analyze the code for...' },
+      attr: { rows: '10', placeholder: t('settings.codexSkills.modal.instructionsPlaceholder') },
     });
     contentArea.value = this.existing?.content || '';
     this._contentArea = contentArea;
@@ -97,7 +98,7 @@ export class CodexSkillModal extends Modal {
 
       const content = this._contentArea.value;
       if (!content.trim()) {
-        new Notice('Instructions are required');
+        new Notice(t('settings.codexSkills.instructionsRequired'));
         return;
       }
 
@@ -123,7 +124,7 @@ export class CodexSkillModal extends Modal {
       try {
         await this.onSave(entry);
       } catch {
-        new Notice('Failed to save Codex skill');
+        new Notice(t('settings.codexSkills.saveFailed'));
         return;
       }
       this.close();
@@ -133,13 +134,13 @@ export class CodexSkillModal extends Modal {
     const buttonContainer = contentEl.createDiv({ cls: 'claudian-sp-modal-buttons' });
 
     const cancelBtn = buttonContainer.createEl('button', {
-      text: 'Cancel',
+      text: t('common.cancel'),
       cls: 'claudian-cancel-btn',
     });
     cancelBtn.addEventListener('click', () => this.close());
 
     const saveBtn = buttonContainer.createEl('button', {
-      text: 'Save',
+      text: t('common.save'),
       cls: 'claudian-save-btn',
     });
     saveBtn.addEventListener('click', () => {
@@ -185,26 +186,26 @@ export class CodexSkillSettings {
     }
 
     const headerEl = this.containerEl.createDiv({ cls: 'claudian-sp-header' });
-    headerEl.createSpan({ text: 'Codex Skills', cls: 'claudian-sp-label' });
+    headerEl.createSpan({ text: t('settings.codexSkills.header'), cls: 'claudian-sp-label' });
 
     const actionsEl = headerEl.createDiv({ cls: 'claudian-sp-header-actions' });
     const refreshBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': 'Refresh' },
+      attr: { 'aria-label': t('common.refresh') },
     });
     setIcon(refreshBtn, 'refresh-cw');
     refreshBtn.addEventListener('click', () => { void this.refresh(); });
 
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': 'Add' },
+      attr: { 'aria-label': t('common.add') },
     });
     setIcon(addBtn, 'plus');
     addBtn.addEventListener('click', () => this.openModal(null));
 
     if (this.entries.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-sp-empty-state' });
-      emptyEl.setText('No Codex skills in vault. Click + to create one.');
+      emptyEl.setText(t('settings.codexSkills.noSkills'));
       return;
     }
 
@@ -221,7 +222,7 @@ export class CodexSkillSettings {
     const headerRow = infoEl.createDiv({ cls: 'claudian-sp-item-header' });
     const nameEl = headerRow.createSpan({ cls: 'claudian-sp-item-name' });
     nameEl.setText(`$${entry.name}`);
-    headerRow.createSpan({ text: 'skill', cls: 'claudian-slash-item-badge' });
+    headerRow.createSpan({ text: t('settings.codexSkills.skillBadge'), cls: 'claudian-slash-item-badge' });
 
     if (entry.description) {
       const descEl = infoEl.createDiv({ cls: 'claudian-sp-item-desc' });
@@ -233,7 +234,7 @@ export class CodexSkillSettings {
     if (entry.isEditable) {
       const editBtn = actionsEl.createEl('button', {
         cls: 'claudian-settings-action-btn',
-        attr: { 'aria-label': 'Edit' },
+        attr: { 'aria-label': t('common.edit') },
       });
       setIcon(editBtn, 'pencil');
       editBtn.addEventListener('click', () => this.openModal(entry));
@@ -242,16 +243,16 @@ export class CodexSkillSettings {
     if (entry.isDeletable) {
       const deleteBtn = actionsEl.createEl('button', {
         cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
-        attr: { 'aria-label': 'Delete' },
+        attr: { 'aria-label': t('common.delete') },
       });
       setIcon(deleteBtn, 'trash-2');
       deleteBtn.addEventListener('click', () => {
         void (async (): Promise<void> => {
         try {
           await this.deleteEntry(entry);
-          new Notice(`Codex skill "$${entry.name}" deleted`);
+          new Notice(t('settings.codexSkills.deleted', { name: entry.name }));
         } catch {
-          new Notice('Failed to delete Codex skill');
+          new Notice(t('settings.codexSkills.deleteFailed'));
         }
         })();
       });
@@ -267,7 +268,7 @@ export class CodexSkillSettings {
       async (entry) => {
         await this.catalog.saveVaultEntry(entry);
         await this.render();
-        new Notice(`Codex skill "$${entry.name}" ${existing ? 'updated' : 'created'}`);
+        new Notice(t(existing ? 'settings.codexSkills.updated' : 'settings.codexSkills.created', { name: entry.name }));
       }
     );
     modal.open();
