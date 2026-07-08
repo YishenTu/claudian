@@ -2,7 +2,7 @@ import {
   inferWslDistroFromWindowsPath,
   resolveCodexExecutionTarget,
 } from './CodexExecutionTargetResolver';
-import type { CodexLaunchSpec } from './codexLaunchTypes';
+import type { CodexExecutionTarget, CodexLaunchSpec } from './codexLaunchTypes';
 import { createCodexPathMapper } from './CodexPathMapper';
 
 export interface BuildCodexLaunchSpecOptions {
@@ -10,6 +10,7 @@ export interface BuildCodexLaunchSpecOptions {
   resolvedCliCommand: string | null;
   hostVaultPath: string | null;
   env: Record<string, string>;
+  executionTarget?: CodexExecutionTarget;
   hostPlatform?: NodeJS.Platform;
   resolveDefaultWslDistro?: () => string | undefined;
 }
@@ -19,7 +20,7 @@ const CODEX_APP_SERVER_ARGS = Object.freeze(['app-server', '--listen', 'stdio://
 export function buildCodexLaunchSpec(
   options: BuildCodexLaunchSpecOptions,
 ): CodexLaunchSpec {
-  const target = resolveCodexExecutionTarget({
+  const target = options.executionTarget ?? resolveCodexExecutionTarget({
     settings: options.settings,
     hostPlatform: options.hostPlatform,
     hostVaultPath: options.hostVaultPath,

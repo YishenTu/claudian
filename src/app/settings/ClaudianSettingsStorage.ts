@@ -6,6 +6,7 @@ import {
   normalizeHiddenCommandList,
   normalizeHiddenProviderCommands,
 } from '../../core/providers/commands/hiddenCommands';
+import { setProviderConfig } from '../../core/providers/providerConfig';
 import {
   getSharedEnvironmentVariables,
   inferEnvironmentSnippetScope,
@@ -26,8 +27,7 @@ import {
   updateClaudeProviderSettings,
 } from '../../providers/claude/settings';
 import {
-  getCodexProviderSettings,
-  updateCodexProviderSettings,
+  normalizeCodexStoredConfig,
 } from '../../providers/codex/settings';
 import {
   getOpencodeProviderSettings,
@@ -321,10 +321,8 @@ export class ClaudianSettingsStorage {
       merged,
       getClaudeProviderSettings(legacyProviderSettings),
     );
-    updateCodexProviderSettings(
-      merged,
-      getCodexProviderSettings(legacyProviderSettings),
-    );
+    const codexConfigNormalization = normalizeCodexStoredConfig(legacyProviderSettings);
+    setProviderConfig(merged, 'codex', codexConfigNormalization.config);
     updateOpencodeProviderSettings(
       merged,
       getOpencodeProviderSettings(legacyProviderSettings),
@@ -356,6 +354,7 @@ export class ClaudianSettingsStorage {
         'customModelAliases' in stored
         && JSON.stringify(customModelAliases) !== JSON.stringify(stored.customModelAliases ?? {})
       )
+      || codexConfigNormalization.changed
       || didNormalizeHostScopedProviderConfigs
       )
     ) {

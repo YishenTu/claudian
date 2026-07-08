@@ -18,7 +18,7 @@ import {
 import { ProviderRegistry } from './core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
-import type { ProviderId } from './core/providers/types';
+import type { ProviderCliResolutionContext, ProviderId } from './core/providers/types';
 import type { AppTabManagerState } from './core/providers/types';
 import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
 import type {
@@ -528,13 +528,16 @@ export default class ClaudianPlugin extends Plugin {
     );
   }
 
-  getResolvedProviderCliPath(providerId: ProviderId): string | null {
+  getResolvedProviderCliPath(
+    providerId: ProviderId,
+    context?: ProviderCliResolutionContext,
+  ): string | null {
     const cliResolver = ProviderWorkspaceRegistry.getCliResolver(providerId);
     if (!cliResolver) {
       return null;
     }
 
-    return cliResolver.resolveFromSettings(this.settings);
+    return cliResolver.resolveFromSettings(this.settings, context);
   }
 
   private reconcileModelWithEnvironment(providerIds: ProviderId[] = ProviderRegistry.getRegisteredProviderIds()): {

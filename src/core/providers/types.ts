@@ -312,8 +312,15 @@ export interface ProviderChatUIConfig {
 // Provider-owned boundary services
 // ---------------------------------------------------------------------------
 
+export interface ProviderCliResolutionContext {
+  executionTarget?: unknown;
+}
+
 export interface ProviderCliResolver {
-  resolveFromSettings(settings: Record<string, unknown>): string | null;
+  resolveFromSettings(
+    settings: Record<string, unknown>,
+    context?: ProviderCliResolutionContext,
+  ): string | null;
   reset(): void;
 }
 

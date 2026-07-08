@@ -348,6 +348,34 @@ describe('ClaudianSettingsStorage', () => {
       });
     });
 
+    it('strips legacy Codex installation scalar fields from non-Windows provider config', async () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        providerConfigs: {
+          codex: {
+            enabled: true,
+            installationMethod: 'wsl',
+            wslDistroOverride: 'Ubuntu',
+            cliPathsByHost: {
+              'host-a': '/opt/homebrew/bin/codex',
+            },
+          },
+        },
+      }));
+
+      const result = await storage.load();
+      const codexConfig = result.providerConfigs.codex as Record<string, unknown>;
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(getCodexProviderSettings(result).installationMethod).toBe('native-windows');
+      expect(getCodexProviderSettings(result).wslDistroOverride).toBe('');
+      expect(codexConfig).not.toHaveProperty('installationMethod');
+      expect(codexConfig).not.toHaveProperty('wslDistroOverride');
+      expect(writtenContent.providerConfigs.codex).not.toHaveProperty('installationMethod');
+      expect(writtenContent.providerConfigs.codex).not.toHaveProperty('wslDistroOverride');
+    });
+
     it('should preserve legacy codexCliPath field', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
@@ -572,7 +600,9 @@ describe('ClaudianSettingsStorage', () => {
       );
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
       expect(writtenContent.model).toBe('claude-opus-4-5');
+      expect(writtenContent.providerConfigs.codex).not.toHaveProperty('installationMethod');
       expect(writtenContent.providerConfigs.codex.installationMethodsByHost).toEqual({});
+      expect(writtenContent.providerConfigs.codex).not.toHaveProperty('wslDistroOverride');
       expect(writtenContent.providerConfigs.codex.wslDistroOverridesByHost).toEqual({});
     });
 

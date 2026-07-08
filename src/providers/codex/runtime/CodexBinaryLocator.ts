@@ -6,6 +6,7 @@ import { findCliBinaryPath, resolveConfiguredCliPath } from '../../../utils/cliB
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import type { CodexInstallationMethod } from '../settings';
+import type { CodexExecutionTarget } from './codexLaunchTypes';
 
 export function isWindowsStyleCliReference(value: string | null | undefined): boolean {
   const trimmed = (value ?? '').trim();
@@ -129,10 +130,18 @@ export function resolveCodexCliPath(
   hostnamePath: string | undefined,
   legacyPath: string | undefined,
   envText: string,
-  options: { installationMethod?: CodexInstallationMethod; hostPlatform?: NodeJS.Platform } = {},
+  options: {
+    executionTarget?: CodexExecutionTarget;
+    installationMethod?: CodexInstallationMethod;
+    hostPlatform?: NodeJS.Platform;
+  } = {},
 ): string | null {
   const hostPlatform = options.hostPlatform ?? process.platform;
-  if (hostPlatform === 'win32' && options.installationMethod === 'wsl') {
+  const isWslTarget = options.executionTarget
+    ? options.executionTarget.method === 'wsl'
+    : hostPlatform === 'win32' && options.installationMethod === 'wsl';
+
+  if (isWslTarget) {
     const configuredCommand = [hostnamePath, legacyPath]
       .map(value => (value ?? '').trim())
       .find(value => value.length > 0 && !isWindowsStyleCliReference(value));

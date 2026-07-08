@@ -3,6 +3,7 @@ import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import type { InitializeResult } from './codexAppServerTypes';
+import { resolveCodexExecutionTarget } from './CodexExecutionTargetResolver';
 import { buildCodexLaunchSpec } from './CodexLaunchSpecBuilder';
 import type { CodexLaunchSpec } from './codexLaunchTypes';
 import type { CodexRpcTransport } from './CodexRpcTransport';
@@ -37,11 +38,18 @@ export function resolveCodexAppServerLaunchSpec(
   plugin: ClaudianPlugin,
   providerId: ProviderId = 'codex',
 ): CodexLaunchSpec {
+  const hostVaultPath = getCodexAppServerWorkingDirectory(plugin);
+  const executionTarget = resolveCodexExecutionTarget({
+    settings: plugin.settings,
+    hostVaultPath,
+  });
+
   return buildCodexLaunchSpec({
     settings: plugin.settings,
-    resolvedCliCommand: plugin.getResolvedProviderCliPath(providerId),
-    hostVaultPath: getCodexAppServerWorkingDirectory(plugin),
+    resolvedCliCommand: plugin.getResolvedProviderCliPath(providerId, { executionTarget }),
+    hostVaultPath,
     env: buildCodexAppServerEnvironment(plugin, providerId),
+    executionTarget,
   });
 }
 

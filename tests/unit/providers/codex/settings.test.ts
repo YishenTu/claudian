@@ -3,6 +3,7 @@ import {
   DEFAULT_CODEX_PROVIDER_SETTINGS,
   getCodexProviderSettings,
   getEffectiveCodexReasoningSummary,
+  normalizeCodexStoredConfig,
   updateCodexProviderSettings,
 } from '@/providers/codex/settings';
 import { CODEX_SPARK_MODEL } from '@/providers/codex/types/models';
@@ -203,6 +204,74 @@ describe('codex settings', () => {
     expect(getCodexProviderSettings(settingsBag).wslDistroOverridesByHost).toEqual({
       'host-b': 'Debian',
     });
+  });
+
+  it('normalizes stored Codex config without treating effective defaults as persisted fields', () => {
+    const result = normalizeCodexStoredConfig(
+      {
+        providerConfigs: {
+          codex: {
+            enabled: true,
+            installationMethod: 'native-windows',
+            wslDistroOverride: '',
+            installationMethodsByHost: {
+              'host-a': 'wsl',
+              'host-b': 'wsl',
+            },
+            wslDistroOverridesByHost: {
+              'host-a': 'Ubuntu-24.04',
+              'host-b': 'Debian',
+            },
+          },
+        },
+      },
+      {
+        platform: 'darwin',
+        hostnameKey: 'host-a',
+        legacyHostnameKey: 'legacy-host',
+      },
+    );
+
+    expect(result.changed).toBe(true);
+    expect(result.config).toMatchObject({
+      enabled: true,
+      installationMethodsByHost: {
+        'host-b': 'wsl',
+      },
+      wslDistroOverridesByHost: {
+        'host-b': 'Debian',
+      },
+    });
+    expect(result.config).not.toHaveProperty('installationMethod');
+    expect(result.config).not.toHaveProperty('wslDistroOverride');
+  });
+
+  it('migrates legacy Windows Codex installation scalars into current host maps', () => {
+    const result = normalizeCodexStoredConfig(
+      {
+        providerConfigs: {
+          codex: {
+            installationMethod: 'wsl',
+            wslDistroOverride: ' Ubuntu ',
+          },
+        },
+      },
+      {
+        platform: 'win32',
+        hostnameKey: 'host-a',
+        legacyHostnameKey: 'legacy-host',
+      },
+    );
+
+    expect(result.changed).toBe(true);
+    expect(result.config.installationMethodsByHost).toEqual({
+      'host-a': 'wsl',
+    });
+    expect(result.config.wslDistroOverridesByHost).toEqual({
+      'host-a': 'Ubuntu',
+    });
+    expect(result.config).not.toHaveProperty('installationMethod');
+    expect(result.config).not.toHaveProperty('wslDistroOverride');
   });
 
   it('forces reasoning summary off for GPT-5.3 Codex Spark', () => {

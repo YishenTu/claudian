@@ -100,4 +100,34 @@ describe('CodexCliResolver', () => {
 
     expect(resolved).toBe('codex');
   });
+
+  it('uses the supplied execution target when resolving from settings', () => {
+    mockedExists.mockReturnValue(false);
+
+    const resolver = new CodexCliResolver();
+    const resolved = resolver.resolveFromSettings(
+      {
+        providerConfigs: {
+          codex: {
+            installationMethodsByHost: {
+              'current-host': 'native-windows',
+            },
+            cliPathsByHost: {
+              'current-host': 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
+            },
+          },
+        },
+      },
+      {
+        executionTarget: {
+          method: 'wsl',
+          platformFamily: 'unix',
+          platformOs: 'linux',
+          distroName: 'Ubuntu',
+        },
+      },
+    );
+
+    expect(resolved).toBe('codex');
+  });
 });

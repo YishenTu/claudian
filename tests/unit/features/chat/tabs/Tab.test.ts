@@ -3511,6 +3511,29 @@ describe('Tab - Blank Tab Model Selector', () => {
       ...claudeModels.map(m => ({ ...m, group: 'Claude' })),
     ]);
   });
+
+  it('includes Codex models for blank tabs even when saved provider state is Claude-only', () => {
+    const result = getBlankTabModelOptions({
+      settingsProvider: 'claude',
+      model: 'haiku',
+      savedProviderModel: {
+        claude: 'haiku',
+      },
+      providerConfigs: {
+        claude: {},
+        codex: {
+          enabled: true,
+        },
+      },
+    });
+
+    expect(result).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: DEFAULT_CODEX_PRIMARY_MODEL,
+        group: 'Codex',
+      }),
+    ]));
+  });
 });
 
 describe('Tab - Cross-Provider Model Rejection', () => {

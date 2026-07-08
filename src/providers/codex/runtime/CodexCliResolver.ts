@@ -1,31 +1,39 @@
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
+import type { ProviderCliResolutionContext } from '../../../core/providers/types';
 import type { HostnameCliPaths } from '../../../core/types/settings';
 import { getHostnameKey } from '../../../utils/env';
 import type { CodexInstallationMethod } from '../settings';
 import { getCodexProviderSettings } from '../settings';
 import { resolveCodexCliPath } from './CodexBinaryLocator';
+import { resolveCodexExecutionTarget } from './CodexExecutionTargetResolver';
+import type { CodexExecutionTarget } from './codexLaunchTypes';
 
 export class CodexCliResolver {
   private resolvedPath: string | null = null;
   private lastHostnamePath = '';
   private lastLegacyPath = '';
   private lastEnvText = '';
-  private lastInstallationMethod = '';
+  private lastExecutionTargetKey = '';
   private readonly cachedHostname = getHostnameKey();
 
-  resolveFromSettings(settings: Record<string, unknown>): string | null {
+  resolveFromSettings(
+    settings: Record<string, unknown>,
+    context: ProviderCliResolutionContext = {},
+  ): string | null {
     const codexSettings = getCodexProviderSettings(settings);
     const hostnamePath = (codexSettings.cliPathsByHost[this.cachedHostname] ?? '').trim();
     const legacyPath = codexSettings.cliPath.trim();
     const envText = getRuntimeEnvironmentText(settings, 'codex');
-    const installationMethod = codexSettings.installationMethod;
+    const executionTarget = getCodexExecutionTargetFromContext(context)
+      ?? resolveCodexExecutionTarget({ settings });
+    const executionTargetKey = getCodexExecutionTargetCacheKey(executionTarget);
 
     if (
       this.resolvedPath &&
       hostnamePath === this.lastHostnamePath &&
       legacyPath === this.lastLegacyPath &&
       envText === this.lastEnvText &&
-      installationMethod === this.lastInstallationMethod
+      executionTargetKey === this.lastExecutionTargetKey
     ) {
       return this.resolvedPath;
     }
@@ -33,10 +41,10 @@ export class CodexCliResolver {
     this.lastHostnamePath = hostnamePath;
     this.lastLegacyPath = legacyPath;
     this.lastEnvText = envText;
-    this.lastInstallationMethod = installationMethod;
+    this.lastExecutionTargetKey = executionTargetKey;
 
     this.resolvedPath = resolveCodexCliPath(hostnamePath, legacyPath, envText, {
-      installationMethod,
+      executionTarget,
     });
     return this.resolvedPath;
   }
@@ -47,6 +55,7 @@ export class CodexCliResolver {
     envText: string,
     options: {
       installationMethod?: CodexInstallationMethod;
+      executionTarget?: CodexExecutionTarget;
       hostPlatform?: NodeJS.Platform;
     } = {},
   ): string | null {
@@ -60,6 +69,34 @@ export class CodexCliResolver {
     this.lastHostnamePath = '';
     this.lastLegacyPath = '';
     this.lastEnvText = '';
-    this.lastInstallationMethod = '';
+    this.lastExecutionTargetKey = '';
   }
+}
+
+function isCodexExecutionTarget(value: unknown): value is CodexExecutionTarget {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<CodexExecutionTarget>;
+  return candidate.method === 'host-native'
+    || candidate.method === 'native-windows'
+    || candidate.method === 'wsl';
+}
+
+function getCodexExecutionTargetFromContext(
+  context: ProviderCliResolutionContext,
+): CodexExecutionTarget | null {
+  return isCodexExecutionTarget(context.executionTarget)
+    ? context.executionTarget
+    : null;
+}
+
+function getCodexExecutionTargetCacheKey(target: CodexExecutionTarget): string {
+  return [
+    target.method,
+    target.platformFamily,
+    target.platformOs,
+    target.distroName ?? '',
+  ].join(':');
 }
