@@ -15,6 +15,7 @@ const sdkMock = sdkModule as unknown as {
   setMockMessages: (messages: any[], options?: { appendResult?: boolean }) => void;
   resetMockMessages: () => void;
   simulateCrash: (afterChunks?: number) => void;
+  getLastOptions: () => { model?: string } | undefined;
   query: typeof sdkModule.query;
 };
 
@@ -233,6 +234,17 @@ describe('ClaudianService', () => {
 
       expect(result).toBe(true);
       expect(startPersistentQuerySpy).toHaveBeenCalled();
+    });
+
+    it('should use the synced conversation model when starting a persistent query', async () => {
+      service.syncConversationState({
+        sessionId: null,
+        selectedModel: 'claude-3-opus',
+      });
+
+      await service.ensureReady();
+
+      expect(sdkMock.getLastOptions()?.model).toBe('claude-3-opus');
     });
 
     it('should return false (no-op) when config unchanged and query running', async () => {

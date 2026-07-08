@@ -22,6 +22,7 @@ import {
 import type {
   ApprovalCallbackOptions,
   ApprovalDecisionOption,
+  ChatRuntimeQueryOptions,
   ChatTurnRequest,
 } from '../../../core/runtime/types';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
@@ -403,7 +404,11 @@ export class InputController {
       // Pass history WITHOUT current turn (userMsg + assistantMsg we just added)
       // This prevents duplication when rebuilding context for new sessions
       const previousMessages = state.messages.slice(0, -2);
-      for await (const chunk of agentService.query(preparedTurn, previousMessages)) {
+      const selectedModel = this.getAuxiliaryModel();
+      const queryOptions: ChatRuntimeQueryOptions | undefined = selectedModel
+        ? { model: selectedModel }
+        : undefined;
+      for await (const chunk of agentService.query(preparedTurn, previousMessages, queryOptions)) {
         if (state.streamGeneration !== streamGeneration) {
           wasInvalidated = true;
           break;
@@ -1121,9 +1126,11 @@ export class InputController {
 
     if (!state.currentConversationId) {
       const sessionId = this.getAgentService()?.getSessionId() ?? undefined;
+      const selectedModel = this.getAuxiliaryModel() ?? undefined;
       const conversation = await plugin.createConversation({
         providerId: this.getActiveProviderId(),
         sessionId,
+        ...(selectedModel ? { selectedModel } : {}),
       });
       state.currentConversationId = conversation.id;
     }

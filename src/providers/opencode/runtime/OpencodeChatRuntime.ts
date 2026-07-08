@@ -19,6 +19,7 @@ import type {
   AutoTurnCallback,
   ChatRewindMode,
   ChatRewindResult,
+  ChatRuntimeConversationState,
   ChatRuntimeEnsureReadyOptions,
   ChatRuntimeQueryOptions,
   ChatTurnMetadata,
@@ -151,6 +152,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private currentSessionEffortValue: string | null = null;
   private currentSessionEffortValues = new Set<string>();
   private currentSessionModelId: string | null = null;
+  private currentConversationModel: string | null = null;
   private currentSessionModeId: string | null = null;
   private currentTurnMetadata: ChatTurnMetadata = {};
   private loadedSessionId: string | null = null;
@@ -200,8 +202,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
   setResumeCheckpoint(_checkpointId: string | undefined): void {}
 
   syncConversationState(
-    conversation: { providerState?: Record<string, unknown>; sessionId?: string | null } | null,
+    conversation: ChatRuntimeConversationState | null,
   ): void {
+    this.setCurrentConversationModel(conversation?.selectedModel);
     const previousSessionId = this.sessionId;
     const nextSessionId = conversation?.sessionId ?? null;
     if (this.sessionId !== nextSessionId) {
@@ -340,6 +343,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
     conversationHistory?: ChatMessage[],
     queryOptions?: ChatRuntimeQueryOptions,
   ): AsyncGenerator<StreamChunk> {
+    if (queryOptions?.model) {
+      this.setCurrentConversationModel(queryOptions.model);
+    }
     const previousMessages = conversationHistory ?? [];
     const expectedSessionId = this.sessionId;
     let shouldBootstrapHistory = previousMessages.length > 0
@@ -693,10 +699,14 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   private getProviderSettings(): Record<string, unknown> {
-    return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+    const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
       this.plugin.settings,
       this.providerId,
     );
+    if (this.currentConversationModel) {
+      settings.model = this.currentConversationModel;
+    }
+    return settings;
   }
 
   private resolveSelectedRawModelId(queryOptions?: ChatRuntimeQueryOptions): string | null {
@@ -731,7 +741,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   getAuxiliaryModel(): string | null {
-    return this.getActiveDisplayModel() ?? null;
+    return this.currentConversationModel ?? this.getActiveDisplayModel() ?? null;
+  }
+
+  private setCurrentConversationModel(model: unknown): void {
+    const selectedModel = typeof model === 'string' ? model.trim() : '';
+    this.currentConversationModel = selectedModel || null;
   }
 
   private getActiveDisplayModel(queryOptions?: ChatRuntimeQueryOptions): string | undefined {

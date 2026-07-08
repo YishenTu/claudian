@@ -636,6 +636,66 @@ describe('ClaudianPlugin', () => {
       expect(fetched?.id).toBe(conv.id);
     });
 
+    it('should store the selected model in conversation metadata', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation({ selectedModel: 'opus' });
+      const fetched = await plugin.getConversationById(conv.id);
+
+      expect(conv.selectedModel).toBe('opus');
+      expect(fetched?.selectedModel).toBe('opus');
+    });
+
+    it('should preserve custom selected models that are not in picker options', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation({
+        providerId: 'codex',
+        selectedModel: 'gpt-5.4-experimental',
+      });
+      const fetched = await plugin.getConversationById(conv.id);
+
+      expect(conv.selectedModel).toBe('gpt-5.4-experimental');
+      expect(fetched?.selectedModel).toBe('gpt-5.4-experimental');
+    });
+
+    it('should lazily migrate missing selected model from usage metadata', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      delete (conv as { selectedModel?: string }).selectedModel;
+      conv.usage = {
+        model: 'opus',
+        inputTokens: 1,
+        contextTokens: 1,
+        contextWindow: 200000,
+        percentage: 1,
+      };
+      const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata');
+      saveMetadataSpy.mockClear();
+
+      const fetched = await plugin.getConversationById(conv.id);
+
+      expect(fetched?.selectedModel).toBe('opus');
+      expect(saveMetadataSpy).toHaveBeenCalledWith(expect.objectContaining({
+        selectedModel: 'opus',
+      }));
+    });
+
+    it('should not permanently default legacy conversations with unknown model metadata', async () => {
+      await plugin.onload();
+
+      const conv = await plugin.createConversation();
+      delete (conv as { selectedModel?: string }).selectedModel;
+      const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata');
+      saveMetadataSpy.mockClear();
+
+      const fetched = await plugin.getConversationById(conv.id);
+
+      expect(fetched?.selectedModel).toBeUndefined();
+      expect(saveMetadataSpy).not.toHaveBeenCalled();
+    });
+
     it('should generate default title with timestamp', async () => {
       await plugin.onload();
 

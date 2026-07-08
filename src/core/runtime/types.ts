@@ -77,7 +77,7 @@ export interface ChatRuntimeEnsureReadyOptions {
 
 export type ChatRuntimeConversationState = Pick<
   Conversation,
-  'sessionId' | 'providerState'
+  'sessionId' | 'providerState' | 'selectedModel'
 >;
 
 export interface SessionUpdateResult {

@@ -2,6 +2,10 @@ import type { EventRef, WorkspaceLeaf } from 'obsidian';
 import { ItemView, Notice, Scope, setIcon } from 'obsidian';
 
 import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
+import {
+  getProviderSettingsSnapshotWithModel,
+  resolveConversationModel,
+} from '../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
@@ -105,9 +109,18 @@ export class ClaudianView extends ItemView {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
       onProviderAvailabilityChanged(tab, this.plugin);
       const providerId = getTabProviderId(tab, this.plugin);
-      const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+      const conversation = tab.conversationId
+        ? this.plugin.getConversationSync(tab.conversationId)
+        : null;
+      const modelOverride = conversation
+        ? resolveConversationModel(this.plugin.settings, providerId, conversation).model
+        : tab.lifecycleState === 'blank'
+        ? tab.draftModel
+        : tab.service?.getAuxiliaryModel?.() ?? null;
+      const providerSettings = getProviderSettingsSnapshotWithModel(
         this.plugin.settings,
         providerId,
+        modelOverride,
       );
       const model = providerSettings.model;
       const uiConfig = ProviderRegistry.getChatUIConfig(providerId);

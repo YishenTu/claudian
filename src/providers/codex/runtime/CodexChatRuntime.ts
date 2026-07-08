@@ -137,6 +137,7 @@ export class CodexChatRuntime implements ChatRuntime {
   private autoTurnCallback: AutoTurnCallback | null = null;
   private resumeCheckpoint: string | undefined;
   private activeInputBundles = new Set<CodexInputBundle>();
+  private currentConversationModel: string | null = null;
 
   // Fork state
   private pendingFork: ForkSource | null = null;
@@ -179,6 +180,7 @@ export class CodexChatRuntime implements ChatRuntime {
     _externalContextPaths?: string[],
   ): void {
     if (!conversation) {
+      this.currentConversationModel = null;
       this.session.reset();
       this.loadedThreadId = null;
       this.currentThreadPath = null;
@@ -186,6 +188,7 @@ export class CodexChatRuntime implements ChatRuntime {
       return;
     }
 
+    this.setCurrentConversationModel(conversation.selectedModel);
     const state = getCodexState(conversation.providerState);
 
     // Pending fork: store fork metadata, don't set the source thread as our session
@@ -245,6 +248,9 @@ export class CodexChatRuntime implements ChatRuntime {
     _conversationHistory?: ChatMessage[],
     queryOptions?: ChatRuntimeQueryOptions,
   ): AsyncGenerator<StreamChunk> {
+    if (queryOptions?.model) {
+      this.setCurrentConversationModel(queryOptions.model);
+    }
     this.resetTurnMetadata();
     let turn = originalTurn;
     await this.ensureReady();
@@ -787,14 +793,23 @@ export class CodexChatRuntime implements ChatRuntime {
   }
 
   private getProviderSettings(): Record<string, unknown> {
-    return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+    const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
       this.plugin.settings,
       this.providerId,
     );
+    if (this.currentConversationModel) {
+      settings.model = this.currentConversationModel;
+    }
+    return settings;
   }
 
   getAuxiliaryModel(): string | null {
-    return this.resolveModel() ?? null;
+    return this.currentConversationModel ?? this.resolveModel() ?? null;
+  }
+
+  private setCurrentConversationModel(model: unknown): void {
+    const selectedModel = typeof model === 'string' ? model.trim() : '';
+    this.currentConversationModel = selectedModel || null;
   }
 
   private resolveModel(queryOptions?: ChatRuntimeQueryOptions): string | undefined {

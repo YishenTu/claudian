@@ -1,5 +1,6 @@
 import { TFile } from 'obsidian';
 
+import { resolveConversationModel } from '../../../core/providers/conversationModel';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
@@ -336,7 +337,24 @@ export class StreamController {
   }
 
   private getActiveProviderModel(): string | undefined {
-    const providerId = this.deps.getAgentService?.()?.providerId;
+    const conversation = this.deps.state.currentConversationId
+      ? this.deps.plugin.getConversationSync(this.deps.state.currentConversationId)
+      : null;
+    if (conversation) {
+      return resolveConversationModel(
+        this.deps.plugin.settings,
+        conversation.providerId,
+        conversation,
+      ).model;
+    }
+
+    const service = this.deps.getAgentService?.();
+    const serviceModel = service?.getAuxiliaryModel?.();
+    if (serviceModel) {
+      return serviceModel;
+    }
+
+    const providerId = service?.providerId;
     if (!providerId) {
       return undefined;
     }

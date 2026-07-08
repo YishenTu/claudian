@@ -142,6 +142,7 @@ export class ClaudianService implements ChatRuntime {
   private permissionModeSyncCallback: ((sdkMode: string) => void) | null = null;
   private vaultPath: string | null = null;
   private currentExternalContextPaths: string[] = [];
+  private currentConversationModel: string | null = null;
   private readyStateListeners = new Set<(ready: boolean) => void>();
 
   // Modular components
@@ -225,6 +226,10 @@ export class ClaudianService implements ChatRuntime {
     return metadata;
   }
 
+  getAuxiliaryModel(): string | null {
+    return this.currentConversationModel;
+  }
+
   onReadyStateChange(listener: (ready: boolean) => void): () => void {
     this.readyStateListeners.add(listener);
     try {
@@ -293,6 +298,11 @@ export class ClaudianService implements ChatRuntime {
     return nextChunk;
   }
 
+  private setCurrentConversationModel(model: unknown): void {
+    const selectedModel = typeof model === 'string' ? model.trim() : '';
+    this.currentConversationModel = selectedModel || null;
+  }
+
   setPendingResumeAt(uuid: string | undefined): void {
     this.pendingResumeAt = uuid;
   }
@@ -319,12 +329,14 @@ export class ClaudianService implements ChatRuntime {
     externalContextPaths?: string[],
   ): void {
     if (!conversation) {
+      this.currentConversationModel = null;
       this.pendingForkSession = false;
       this.pendingResumeAt = undefined;
       this.setSessionId(null, externalContextPaths);
       return;
     }
 
+    this.setCurrentConversationModel(conversation.selectedModel);
     const resolvedSessionId = this.applyForkState(conversation);
     this.setSessionId(resolvedSessionId, externalContextPaths);
   }
@@ -633,10 +645,14 @@ export class ClaudianService implements ChatRuntime {
    * Builds the base query options context from current state.
    */
   private getScopedSettings(): ClaudianSettings {
-    return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+    const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
       this.plugin.settings,
       this.providerId,
     );
+    if (this.currentConversationModel) {
+      settings.model = this.currentConversationModel;
+    }
+    return settings;
   }
 
   private buildQueryOptionsContext(vaultPath: string, cliPath: string): QueryOptionsContext {
@@ -1104,6 +1120,9 @@ export class ClaudianService implements ChatRuntime {
     const images = normalized.request.images;
     const conversationHistory = normalized.conversationHistory;
     const queryOptions = normalized.queryOptions;
+    if (queryOptions?.model) {
+      this.setCurrentConversationModel(queryOptions.model);
+    }
 
     const vaultPath = getVaultPath(this.plugin.app);
     if (!vaultPath) {
