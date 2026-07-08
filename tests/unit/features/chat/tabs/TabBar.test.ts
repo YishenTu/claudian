@@ -136,6 +136,37 @@ describe('TabBar', () => {
       expect(badge.getAttribute('data-title-expanded')).toBe('false');
     });
 
+    it('should notify when title expansion state changes', () => {
+      const containerEl = createMockEl();
+      const callbacks = {
+        ...createMockCallbacks(),
+        onTitleExpansionChanged: jest.fn(),
+      };
+      const tabBar = new TabBar(containerEl, callbacks);
+
+      tabBar.update([createTabBarItem({ id: 'tab-2', index: 2, title: 'My Conversation' })]);
+
+      const badge = containerEl._children[0];
+      badge.dispatchEvent('dblclick', { preventDefault: jest.fn(), stopPropagation: jest.fn() });
+      badge.dispatchEvent('dblclick', { preventDefault: jest.fn(), stopPropagation: jest.fn() });
+
+      expect(callbacks.onTitleExpansionChanged).toHaveBeenNthCalledWith(1, ['tab-2']);
+      expect(callbacks.onTitleExpansionChanged).toHaveBeenNthCalledWith(2, []);
+    });
+
+    it('should render restored expanded title state', () => {
+      const containerEl = createMockEl();
+      const callbacks = createMockCallbacks();
+      const tabBar = new TabBar(containerEl, callbacks);
+
+      tabBar.setExpandedTitleTabIds(['tab-1']);
+      tabBar.update([createTabBarItem({ id: 'tab-1', index: 1, title: 'Restored Title' })]);
+
+      expect(containerEl._children[0].textContent).toBe('Restored Title');
+      expect(containerEl._children[0].getAttribute('data-title-expanded')).toBe('true');
+      expect(tabBar.getExpandedTitleTabIds()).toEqual(['tab-1']);
+    });
+
     it('should truncate expanded title labels with a literal ellipsis suffix', () => {
       const containerEl = createMockEl();
       const callbacks = createMockCallbacks();

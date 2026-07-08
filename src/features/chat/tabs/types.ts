@@ -237,6 +237,7 @@ export interface PersistedTabState {
 export interface PersistedTabManagerState {
   openTabs: PersistedTabState[];
   activeTabId: TabId | null;
+  expandedTitleTabIds?: TabId[];
 }
 
 /**

@@ -4,7 +4,7 @@ import { ItemView, Notice, Scope, setIcon } from 'obsidian';
 import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
-import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
+import { type AppTabManagerState, DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import type ClaudianPlugin from '../../main';
 import { createProviderIconSvg } from '../../shared/icons';
@@ -293,6 +293,7 @@ export class ClaudianView extends ItemView {
       onNewTab: () => {
         void this.createNewTab().catch(() => new Notice('Failed to create tab'));
       },
+      onTitleExpansionChanged: () => this.persistTabState(),
     });
     fragment.appendChild(this.tabBarContainerEl);
 
@@ -704,6 +705,8 @@ export class ClaudianView extends ItemView {
     const persistedState = await this.plugin.storage.getTabManagerState();
     if (persistedState && persistedState.openTabs.length > 0) {
       await this.tabManager.restoreState(persistedState);
+      this.tabBar?.setExpandedTitleTabIds(persistedState.expandedTitleTabIds ?? []);
+      this.updateTabBar();
       return;
     }
 
@@ -719,8 +722,8 @@ export class ClaudianView extends ItemView {
     }
     this.pendingPersist = window.setTimeout(() => {
       this.pendingPersist = null;
-      if (!this.tabManager) return;
-      const state = this.tabManager.getPersistedState();
+      const state = this.getPersistedTabState();
+      if (!state) return;
       this.plugin.persistTabManagerState(state).catch(() => {
         // Silently ignore persistence errors
       });
@@ -734,9 +737,23 @@ export class ClaudianView extends ItemView {
       window.clearTimeout(this.pendingPersist);
       this.pendingPersist = null;
     }
-    if (!this.tabManager) return;
-    const state = this.tabManager.getPersistedState();
+    const state = this.getPersistedTabState();
+    if (!state) return;
     await this.plugin.persistTabManagerState(state);
+  }
+
+  private getPersistedTabState(): AppTabManagerState | null {
+    if (!this.tabManager) return null;
+
+    const state = this.tabManager.getPersistedState();
+    const openTabIds = new Set(state.openTabs.map(tab => tab.tabId));
+    const expandedTitleTabIds = (this.tabBar?.getExpandedTitleTabIds() ?? [])
+      .filter(tabId => openTabIds.has(tabId));
+
+    return {
+      ...state,
+      ...(expandedTitleTabIds.length > 0 ? { expandedTitleTabIds } : {}),
+    };
   }
 
   // ============================================

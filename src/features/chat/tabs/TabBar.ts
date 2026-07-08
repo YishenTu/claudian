@@ -14,6 +14,9 @@ export interface TabBarCallbacks {
 
   /** Called when the new tab button is clicked. */
   onNewTab: () => void;
+
+  /** Called when badge title expansion state changes. */
+  onTitleExpansionChanged?: (expandedTitleTabIds: TabId[]) => void;
 }
 
 /**
@@ -57,6 +60,14 @@ export class TabBar {
     }
 
     this.restoreScrollPosition();
+  }
+
+  getExpandedTitleTabIds(): TabId[] {
+    return Array.from(this.expandedTitleTabIds);
+  }
+
+  setExpandedTitleTabIds(tabIds: readonly TabId[]): void {
+    this.expandedTitleTabIds = new Set(tabIds);
   }
 
   /** Renders a single tab badge. */
@@ -158,6 +169,7 @@ export class TabBar {
     badgeEl.textContent = this.getBadgeLabel(item);
     badgeEl.toggleClass('claudian-tab-badge-expanded', isTitleExpanded);
     badgeEl.setAttribute('data-title-expanded', isTitleExpanded ? 'true' : 'false');
+    this.callbacks.onTitleExpansionChanged?.(this.getExpandedTitleTabIds());
   }
 
   private getBadgeLabel(item: TabBarItem): string {

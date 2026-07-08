@@ -88,6 +88,7 @@ export interface ProviderSettingsReconciler {
 export interface AppTabManagerState {
   openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }>;
   activeTabId: string | null;
+  expandedTitleTabIds?: string[];
 }
 
 /** Provider-neutral session metadata storage. */

@@ -388,6 +388,24 @@ describe('StorageService convenience methods', () => {
       expect(result!.activeTabId).toBeNull();
     });
 
+    it('returns valid expanded title tab ids', async () => {
+      const state = {
+        openTabs: [
+          { tabId: 'tab-1', conversationId: 'conv-1' },
+          { tabId: 'tab-2', conversationId: null },
+        ],
+        activeTabId: 'tab-1',
+        expandedTitleTabIds: ['tab-2', 'missing-tab', 'tab-2', 'tab-1'],
+      };
+      const { plugin } = createMockPlugin({
+        dataJson: { tabManagerState: state },
+      });
+      const storage = new StorageService(plugin);
+
+      const result = await storage.getTabManagerState();
+      expect(result!.expandedTitleTabIds).toEqual(['tab-2', 'tab-1']);
+    });
+
     it('returns null when loadData throws', async () => {
       const { plugin } = createMockPlugin({});
       (plugin.loadData as jest.Mock).mockRejectedValue(new Error('Read error'));

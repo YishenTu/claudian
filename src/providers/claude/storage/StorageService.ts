@@ -4,6 +4,8 @@ import { Notice } from 'obsidian';
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../../../app/settings/ClaudianSettingsStorage';
 import { SESSIONS_PATH, SessionStorage } from '../../../core/bootstrap/SessionStorage';
 import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/StoragePaths';
+import { normalizeTabManagerState } from '../../../core/bootstrap/tabManagerState';
+import type { AppTabManagerState } from '../../../core/providers/types';
 import { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type {
   SlashCommand,
@@ -120,51 +122,12 @@ export class StorageService {
     try {
       const data: unknown = await this.plugin.loadData();
       if (isRecord(data) && data.tabManagerState) {
-        return this.validateTabManagerState(data.tabManagerState);
+        return normalizeTabManagerState(data.tabManagerState);
       }
       return null;
     } catch {
       return null;
     }
-  }
-
-  private validateTabManagerState(data: unknown): TabManagerPersistedState | null {
-    if (!data || typeof data !== 'object') {
-      return null;
-    }
-
-    const state = data as Record<string, unknown>;
-
-    if (!Array.isArray(state.openTabs)) {
-      return null;
-    }
-
-    const validatedTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }> = [];
-    for (const tab of state.openTabs) {
-      if (!tab || typeof tab !== 'object') {
-        continue; // Skip invalid entries
-      }
-      const tabObj = tab as Record<string, unknown>;
-      if (typeof tabObj.tabId !== 'string') {
-        continue; // Skip entries without valid tabId
-      }
-      validatedTabs.push({
-        tabId: tabObj.tabId,
-        conversationId:
-          typeof tabObj.conversationId === 'string' ? tabObj.conversationId : null,
-        ...(typeof tabObj.draftModel === 'string'
-          ? { draftModel: tabObj.draftModel }
-          : {}),
-      });
-    }
-
-    const activeTabId =
-      typeof state.activeTabId === 'string' ? state.activeTabId : null;
-
-    return {
-      openTabs: validatedTabs,
-      activeTabId,
-    };
   }
 
   async setTabManagerState(state: TabManagerPersistedState): Promise<void> {
@@ -179,7 +142,4 @@ export class StorageService {
   }
 }
 
-export interface TabManagerPersistedState {
-  openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string | null }>;
-  activeTabId: string | null;
-}
+export type TabManagerPersistedState = AppTabManagerState;

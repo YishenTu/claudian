@@ -174,6 +174,62 @@ describe('ClaudianView tab controls', () => {
 
     expect(historyDropdown.hasClass('visible')).toBe(false);
   });
+
+  it('persists expanded title tab ids with the tab layout snapshot', () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.tabManager = {
+      getPersistedState: jest.fn().mockReturnValue({
+        openTabs: [
+          { tabId: 'tab-1', conversationId: null },
+          { tabId: 'tab-2', conversationId: 'conv-2' },
+        ],
+        activeTabId: 'tab-2',
+      }),
+    };
+    view.tabBar = {
+      getExpandedTitleTabIds: jest.fn().mockReturnValue(['tab-2', 'closed-tab']),
+    };
+
+    expect(view.getPersistedTabState()).toEqual({
+      openTabs: [
+        { tabId: 'tab-1', conversationId: null },
+        { tabId: 'tab-2', conversationId: 'conv-2' },
+      ],
+      activeTabId: 'tab-2',
+      expandedTitleTabIds: ['tab-2'],
+    });
+  });
+
+  it('restores expanded title tab ids after restoring tabs', async () => {
+    const persistedState = {
+      openTabs: [{ tabId: 'tab-1', conversationId: null }],
+      activeTabId: 'tab-1',
+      expandedTitleTabIds: ['tab-1'],
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.plugin = {
+      storage: {
+        getTabManagerState: jest.fn().mockResolvedValue(persistedState),
+      },
+    };
+    view.tabManager = {
+      restoreState: jest.fn().mockResolvedValue(undefined),
+      createTab: jest.fn(),
+    };
+    view.tabBar = {
+      setExpandedTitleTabIds: jest.fn(),
+    };
+    view.updateTabBar = jest.fn();
+
+    await view.restoreOrCreateTabs();
+
+    expect(view.tabManager.restoreState).toHaveBeenCalledWith(persistedState);
+    expect(view.tabBar.setExpandedTitleTabIds).toHaveBeenCalledWith(['tab-1']);
+    expect(view.updateTabBar).toHaveBeenCalledTimes(1);
+    expect(view.tabManager.createTab).not.toHaveBeenCalled();
+  });
 });
 
 describe('ClaudianView Escape handling', () => {
