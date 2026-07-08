@@ -438,6 +438,9 @@ export class ClaudianView extends ItemView {
 
   /** Public hook to re-render the tab bar (e.g. after a relevant setting change). */
   refreshTabBar(): void {
+    // The tab item list is unchanged when only a rendering setting flips, so
+    // force the bar to rebuild rather than skip as a no-op.
+    this.tabBar?.invalidate();
     this.updateTabBar();
   }
 

@@ -36,6 +36,12 @@ export class TabBar {
   // Tabs whose display the user has flipped away from the current default via
   // double-click (title <-> number). Interpreted relative to the default mode.
   private toggledTabIds = new Set<TabId>();
+  // Signature of the last rendered items; used to skip redundant rebuilds.
+  // Rebuilding empties the container and recreates badge nodes, which destroys
+  // the element mid-gesture and breaks native double-click. Skipping no-op
+  // rebuilds (e.g. clicking the already-active tab) keeps badge nodes stable.
+  private lastRenderSignature: string | null = null;
+  private forceNextRender = false;
   private lastKnownScrollLeft = 0;
   private readonly handleScroll = (): void => {
     this.captureScrollPosition();
@@ -59,8 +65,20 @@ export class TabBar {
    * @param items Tab items to render.
    */
   update(items: TabBarItem[]): void {
-    this.captureStableScrollPosition();
     this.pruneExpandedTitleState(items);
+
+    // Skip redundant rebuilds: recreating badge nodes on every call (e.g. when
+    // clicking the already-active tab) destroys the element a double-click is
+    // landing on, which breaks the title/number toggle. Only rebuild when the
+    // rendered inputs actually changed, or when a refresh was forced.
+    const signature = this.computeRenderSignature(items);
+    if (!this.forceNextRender && signature === this.lastRenderSignature) {
+      return;
+    }
+    this.forceNextRender = false;
+    this.lastRenderSignature = signature;
+
+    this.captureStableScrollPosition();
 
     // Clear existing badges
     this.containerEl.empty();
@@ -71,6 +89,32 @@ export class TabBar {
     }
 
     this.restoreScrollPosition();
+  }
+
+  /**
+   * Forces the next update() to rebuild even if the item signature is unchanged.
+   * Used when a rendering input outside the item list changes (e.g. the
+   * "show tab titles by default" setting).
+   */
+  invalidate(): void {
+    this.forceNextRender = true;
+    this.lastRenderSignature = null;
+  }
+
+  /** Builds a stable signature of every input that affects badge rendering. */
+  private computeRenderSignature(items: TabBarItem[]): string {
+    return items
+      .map(item => [
+        item.id,
+        item.index,
+        item.title,
+        item.providerId,
+        item.isActive ? 1 : 0,
+        item.isStreaming ? 1 : 0,
+        item.needsAttention ? 1 : 0,
+        item.canClose ? 1 : 0,
+      ].join(''))
+      .join('');
   }
 
   /** Renders a single tab badge. */
@@ -127,6 +171,8 @@ export class TabBar {
     this.containerEl.removeClass('claudian-tab-badges');
     this.containerEl.removeEventListener('scroll', this.handleScroll);
     this.toggledTabIds.clear();
+    this.lastRenderSignature = null;
+    this.forceNextRender = false;
     this.lastKnownScrollLeft = 0;
   }
 
