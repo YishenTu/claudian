@@ -8,6 +8,7 @@ export interface OctoAgentProviderSettings {
   cliPath: string;
   accessKey: string;
   environmentVariables: string;
+  permissionMode?: string;
 }
 
 export const DEFAULT_OCTO_AGENT_PROVIDER_SETTINGS: Readonly<OctoAgentProviderSettings> =
@@ -18,6 +19,7 @@ export const DEFAULT_OCTO_AGENT_PROVIDER_SETTINGS: Readonly<OctoAgentProviderSet
     enabled: false,
     environmentVariables: '',
     host: '127.0.0.1',
+    permissionMode: 'auto',
     port: 8088,
   });
 
@@ -34,6 +36,7 @@ export function getOctoAgentProviderSettings(
     environmentVariables: asString(config.environmentVariables)
       ?? DEFAULT_OCTO_AGENT_PROVIDER_SETTINGS.environmentVariables,
     host: asString(config.host) ?? DEFAULT_OCTO_AGENT_PROVIDER_SETTINGS.host,
+    permissionMode: asString(config.permissionMode) ?? DEFAULT_OCTO_AGENT_PROVIDER_SETTINGS.permissionMode,
     port: asNumber(config.port) ?? DEFAULT_OCTO_AGENT_PROVIDER_SETTINGS.port,
   };
 }
