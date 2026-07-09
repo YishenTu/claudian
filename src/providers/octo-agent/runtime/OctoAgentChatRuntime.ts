@@ -36,6 +36,7 @@ import { OCTO_AGENT_PROVIDER_CAPABILITIES } from '../capabilities';
 import { getOctoAgentProviderSettings } from '../settings';
 import { getOctoAgentState } from '../types';
 import { OctoAgentClient, type OctoAgentEvent } from './OctoAgentClient';
+import { ensureOctoAgentServerRunning } from './OctoAgentServerLauncher';
 
 interface PendingQuestion {
   resolve: (answer: { choices: string[]; custom: string; cancelled: boolean }) => void;
@@ -73,7 +74,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
   private toolIndex = 0;
   private currentToolId: string | null = null;
   private supportedCommands: SlashCommand[] = [];
-  private serverStartPromise: Promise<void> | null = null;
+  private serverStartPromise: Promise<boolean> | null = null;
 
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
@@ -143,6 +144,19 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     );
     if (!settings.enabled) {
       return false;
+    }
+
+    // Auto-start octo serve if configured and not already running.
+    if (settings.autoStartServer && !this.serverStartPromise) {
+      this.serverStartPromise = ensureOctoAgentServerRunning({ plugin: this.plugin }).finally(() => {
+        this.serverStartPromise = null;
+      });
+    }
+    if (this.serverStartPromise) {
+      const started = await this.serverStartPromise;
+      if (!started) {
+        return false;
+      }
     }
 
     if (!this.client) {
