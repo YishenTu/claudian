@@ -118,6 +118,11 @@ export const PI_PROVIDER_ICON: ProviderIconSvg = {
   ],
 };
 
+export const OCTO_AGENT_PROVIDER_ICON: ProviderIconSvg = {
+  viewBox: '0 0 100 100',
+  path: 'M20 25 h60 v55 h-60 z M28 38 h44 M28 50 h30 M28 62 h20 M25 22 v-8 h50 v8 M50 12 v6',
+};
+
 export interface CreateProviderIconSvgOptions {
   className?: string;
   dataProvider?: string;

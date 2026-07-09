@@ -5,6 +5,7 @@ const PROVIDER_MODEL_SELECTION_PREFIXES: Partial<Record<ProviderId, string>> = {
   codex: 'openai-codex/',
   opencode: 'opencode/',
   pi: 'pi/',
+  'octo-agent': 'octo-agent/',
 };
 
 export interface ProviderModelSelection {
