@@ -36,7 +36,7 @@ import { getVaultPath } from '../../../utils/path';
 import { OCTO_AGENT_PROVIDER_CAPABILITIES } from '../capabilities';
 import { getOctoAgentProviderSettings } from '../settings';
 import { getOctoAgentState } from '../types';
-import { OctoAgentClient, type OctoAgentEvent } from './OctoAgentClient';
+import { OctoAgentClient, type OctoAgentEvent, type OctoAgentUserFile } from './OctoAgentClient';
 import { ensureOctoAgentServerRunning } from './OctoAgentServerLauncher';
 
 interface PendingQuestion {
@@ -103,7 +103,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
 
     if (images.length > 0) {
       const imageParts = (images as ImageAttachment[]).map(
-        (image, index) => `[Image ${index + 1}: ${image.mediaType ?? 'image'}]`,
+        (image, index) => `[Attached image ${index + 1}: ${image.name}]`,
       );
       prompt = `${prompt}\n\n${imageParts.join('\n')}`;
     }
@@ -226,7 +226,11 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     this.client.onEvent = onEvent;
 
     try {
-      this.client.sendMessage(this.sessionId, turn.prompt);
+      this.client.sendMessage(
+        this.sessionId,
+        turn.prompt,
+        this.buildImageFiles(turn.request.images),
+      );
 
       while (!this.activeQuery.done && !this.activeQuery.turnAborted) {
         while (true) {
@@ -484,6 +488,17 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     } catch (error) {
       console.error('Failed to set octo-agent permission mode:', error);
     }
+  }
+
+  private buildImageFiles(images: ImageAttachment[] | undefined): OctoAgentUserFile[] | undefined {
+    if (!images || images.length === 0) {
+      return undefined;
+    }
+    return images.map((image) => ({
+      dataUrl: `data:${image.mediaType};base64,${image.data}`,
+      mimeType: image.mediaType,
+      name: image.name,
+    }));
   }
 
   private handleClientEvent(event: OctoAgentEvent): void {

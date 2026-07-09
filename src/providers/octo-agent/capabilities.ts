@@ -4,7 +4,7 @@ export const OCTO_AGENT_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = 
   providerId: 'octo-agent',
   reasoningControl: 'effort',
   supportsFork: true,
-  supportsImageAttachments: false,
+  supportsImageAttachments: true,
   supportsInstructionMode: true,
   supportsMcpTools: false,
   supportsPersistentRuntime: true,
