@@ -201,8 +201,9 @@ describe('ConversationController', () => {
         expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
       });
 
-      it('should not switch to current conversation', async () => {
+      it('should not switch to current conversation when already loaded', async () => {
         deps.state.currentConversationId = 'same-conv';
+        deps.state.messages = [{ id: 'msg-1', role: 'user', content: 'hello', timestamp: Date.now() }];
 
         await controller.switchTo('same-conv');
 

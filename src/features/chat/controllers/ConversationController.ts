@@ -50,6 +50,7 @@ export interface ConversationControllerDeps {
   getAgentService?: () => ChatRuntime | null;
   getSelectedModel?: () => string | null;
   ensureServiceForConversation?: (conversation: Conversation | null) => Promise<void>;
+  ensureServiceInitialized?: () => Promise<boolean>;
   dismissPendingInlinePrompts?: () => void;
 }
 
@@ -247,7 +248,7 @@ export class ConversationController {
   async switchTo(id: string): Promise<void> {
     const { plugin, state, subagentManager } = this.deps;
 
-    if (id === state.currentConversationId) return;
+    if (id === state.currentConversationId && state.messages.length > 0) return;
     if (state.isStreaming) return;
     if (state.isSwitchingConversation) return;
     if (state.isCreatingConversation) return;
@@ -512,7 +513,11 @@ export class ConversationController {
     this.deps.setWelcomeEl(welcomeEl);
 
     if (state.messages.length === 0 && conversation.sessionId) {
-      const agentService = this.getAgentService();
+      let agentService = this.getAgentService();
+      if (!agentService) {
+        await this.deps.ensureServiceInitialized?.();
+        agentService = this.getAgentService();
+      }
       const serverMessages = await agentService?.loadHistory?.();
       if (serverMessages && serverMessages.length > 0) {
         state.messages = serverMessages;

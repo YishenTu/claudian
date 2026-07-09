@@ -372,6 +372,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
   }
 
   async loadHistory(): Promise<ChatMessage[]> {
+    console.log('[octo-agent] loadHistory called for session:', this.sessionId);
     if (!this.sessionId) {
       return [];
     }
