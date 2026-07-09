@@ -379,10 +379,12 @@ export class OctoAgentChatRuntime implements ChatRuntime {
 
     try {
       const ready = await this.ensureReady({ allowSessionCreation: false });
+      console.log('[octo-agent] loadHistory ensureReady result:', ready, 'client:', !!this.client);
       if (!ready || !this.client) {
         return [];
       }
       const messages = await this.client.getSessionMessages(this.sessionId);
+      console.log('[octo-agent] loadHistory raw messages count:', messages.length);
       return this.convertServerMessages(messages);
     } catch (error) {
       console.error('Failed to load octo-agent history:', error);
@@ -394,19 +396,32 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     const result: ChatMessage[] = [];
     let timestamp = Date.now();
 
+    console.log('[octo-agent] convertServerMessages: raw messages count:', messages.length);
     for (let i = 0; i < messages.length; i++) {
       const message = messages[i];
-      const role = message.role === 'assistant' ? 'assistant' : message.role === 'user' ? 'user' : null;
+      const eventType = (message.type as string) || (message.role as string) || '';
+
+      let role: 'user' | 'assistant' | null = null;
+      if (eventType === 'history_user_message' || eventType === 'user') {
+        role = 'user';
+      } else if (eventType === 'assistant_message' || eventType === 'assistant') {
+        role = 'assistant';
+      }
       if (!role) {
         continue;
       }
 
       const content = typeof message.content === 'string' ? message.content : '';
-      if (!content && (!message.blocks || message.blocks.length === 0)) {
+      if (!content) {
         continue;
       }
 
-      timestamp += 1;
+      if (typeof message.created_at === 'number' && message.created_at > 1_000_000_000_000) {
+        timestamp = message.created_at;
+      } else {
+        timestamp += 1;
+      }
+
       result.push({
         id: `octo-hist-${i}`,
         role,
@@ -415,6 +430,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       });
     }
 
+    console.log('[octo-agent] convertServerMessages: converted count:', result.length);
     return result;
   }
 

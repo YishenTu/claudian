@@ -16,8 +16,10 @@ export interface OctoAgentSession {
 }
 
 export interface OctoAgentMessage {
-  role: string;
+  type?: string;
+  role?: string;
   content?: string;
+  created_at?: number;
   blocks?: unknown[];
 }
 
