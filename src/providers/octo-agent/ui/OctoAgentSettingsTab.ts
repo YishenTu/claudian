@@ -28,6 +28,12 @@ export const octoAgentSettingsTabRenderer: ProviderSettingsTabRenderer = {
       );
 
     new Setting(container)
+      .setName('Server command')
+      .setDesc(
+        "Start octo-agent with: octo serve --cors 'app://obsidian.md'. Required so Obsidian can reach the REST and WebSocket endpoints.",
+      );
+
+    new Setting(container)
       .setName('Host')
       .setDesc('Hostname of the octo-agent server.')
       .addText((text) =>
