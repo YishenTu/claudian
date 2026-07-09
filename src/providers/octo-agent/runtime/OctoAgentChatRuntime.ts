@@ -36,7 +36,7 @@ import { getVaultPath } from '../../../utils/path';
 import { OCTO_AGENT_PROVIDER_CAPABILITIES } from '../capabilities';
 import { getOctoAgentProviderSettings } from '../settings';
 import { getOctoAgentState } from '../types';
-import { OctoAgentClient, type OctoAgentEvent, type OctoAgentUserFile } from './OctoAgentClient';
+import { OctoAgentClient, type OctoAgentEvent, type OctoAgentMessage, type OctoAgentUserFile } from './OctoAgentClient';
 import { ensureOctoAgentServerRunning } from './OctoAgentServerLauncher';
 
 interface PendingQuestion {
@@ -369,6 +369,52 @@ export class OctoAgentChatRuntime implements ChatRuntime {
 
   async loadSubagentFinalResult(): Promise<string | null> {
     return null;
+  }
+
+  async loadHistory(): Promise<ChatMessage[]> {
+    if (!this.sessionId) {
+      return [];
+    }
+
+    try {
+      const ready = await this.ensureReady({ allowSessionCreation: false });
+      if (!ready || !this.client) {
+        return [];
+      }
+      const messages = await this.client.getSessionMessages(this.sessionId);
+      return this.convertServerMessages(messages);
+    } catch (error) {
+      console.error('Failed to load octo-agent history:', error);
+      return [];
+    }
+  }
+
+  private convertServerMessages(messages: OctoAgentMessage[]): ChatMessage[] {
+    const result: ChatMessage[] = [];
+    let timestamp = Date.now();
+
+    for (let i = 0; i < messages.length; i++) {
+      const message = messages[i];
+      const role = message.role === 'assistant' ? 'assistant' : message.role === 'user' ? 'user' : null;
+      if (!role) {
+        continue;
+      }
+
+      const content = typeof message.content === 'string' ? message.content : '';
+      if (!content && (!message.blocks || message.blocks.length === 0)) {
+        continue;
+      }
+
+      timestamp += 1;
+      result.push({
+        id: `octo-hist-${i}`,
+        role,
+        content,
+        timestamp,
+      });
+    }
+
+    return result;
   }
 
   private setReady(ready: boolean): void {

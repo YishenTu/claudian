@@ -237,7 +237,7 @@ export class ConversationController {
     }
 
     await this.deps.ensureServiceForConversation?.(conversation);
-    this.restoreConversation(conversation, { autoAttachFile: true });
+    await this.restoreConversation(conversation, { autoAttachFile: true });
     this.updateWelcomeVisibility();
 
     this.callbacks.onConversationLoaded?.();
@@ -271,7 +271,7 @@ export class ConversationController {
       this.deps.getInputEl().value = '';
       this.deps.clearQueuedMessage();
 
-      this.restoreConversation(conversation);
+      await this.restoreConversation(conversation);
 
       this.deps.getHistoryDropdown()?.removeClass('visible');
       this.updateWelcomeVisibility();
@@ -462,10 +462,10 @@ export class ConversationController {
    * Shared logic for restoring a conversation into the current tab.
    * Used by both loadActive() and switchTo() to avoid duplication.
    */
-  private restoreConversation(
+  private async restoreConversation(
     conversation: Conversation,
     options?: { autoAttachFile?: boolean }
-  ): void {
+  ): Promise<void> {
     const { plugin, state, renderer } = this.deps;
 
     state.currentConversationId = conversation.id;
@@ -510,6 +510,16 @@ export class ConversationController {
       () => this.getGreeting()
     );
     this.deps.setWelcomeEl(welcomeEl);
+
+    if (state.messages.length === 0 && conversation.sessionId) {
+      const agentService = this.getAgentService();
+      const serverMessages = await agentService?.loadHistory?.();
+      if (serverMessages && serverMessages.length > 0) {
+        state.messages = serverMessages;
+        renderer.renderMessages(state.messages, () => this.getGreeting());
+        void plugin.updateConversation(conversation.id, { messages: state.messages });
+      }
+    }
   }
 
   /**
