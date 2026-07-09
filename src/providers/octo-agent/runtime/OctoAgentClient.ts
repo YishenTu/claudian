@@ -30,6 +30,31 @@ export interface OctoAgentUserFile {
   mimeType?: string;
 }
 
+export interface OctoAgentModelEntry {
+  id: string;
+  model: string;
+  baseURL?: string;
+  apiKeyMasked?: string;
+  provider: string;
+  anthropicFormat?: boolean;
+  reasoningEffort?: string;
+  showReasoning?: boolean;
+  vision?: boolean;
+  type?: string;
+  permissionMode?: string;
+}
+
+export interface OctoAgentConfig {
+  models: OctoAgentModelEntry[];
+  defaultModelIdx: number;
+  fontSize: string;
+  language: string;
+  showReasoning: boolean;
+  coauthor?: boolean;
+  workspaceDir: string;
+  permissionMode: string;
+}
+
 export type OctoAgentEvent =
   | { type: 'text_delta'; session_id: string; text: string }
   | { type: 'thinking_delta'; session_id: string; text: string }
@@ -209,6 +234,43 @@ export class OctoAgentClient {
     const record = response as Record<string, any>;
     const sessions = Array.isArray(record.sessions) ? record.sessions : [];
     return sessions.map((session: any) => normalizeSession(session as Record<string, any>));
+  }
+
+  async getConfig(): Promise<OctoAgentConfig | null> {
+    try {
+      const response = await this.fetchJson('/api/config');
+      const record = response as Record<string, any>;
+      const models = Array.isArray(record.models)
+        ? (record.models as Record<string, any>[]).map((m) => ({
+            id: asString(m.id) ?? '',
+            model: asString(m.model) ?? '',
+            baseURL: asString(m.baseURL) ?? asString(m.base_url),
+            apiKeyMasked: asString(m.apiKeyMasked) ?? asString(m.api_key_masked),
+            provider: asString(m.provider) ?? '',
+            anthropicFormat: typeof m.anthropicFormat === 'boolean'
+              ? m.anthropicFormat
+              : undefined,
+            reasoningEffort: asString(m.reasoningEffort),
+            showReasoning: typeof m.showReasoning === 'boolean' ? m.showReasoning : undefined,
+            vision: typeof m.vision === 'boolean' ? m.vision : undefined,
+            type: asString(m.type),
+            permissionMode: asString(m.permissionMode),
+          }))
+        : [];
+      return {
+        coauthor: typeof record.coauthor === 'boolean' ? record.coauthor : undefined,
+        defaultModelIdx: typeof record.defaultModelIdx === 'number' ? record.defaultModelIdx : 0,
+        fontSize: asString(record.fontSize) ?? 'medium',
+        language: asString(record.language) ?? 'en',
+        models,
+        permissionMode: asString(record.permissionMode) ?? 'auto',
+        showReasoning: typeof record.showReasoning === 'boolean' ? record.showReasoning : false,
+        workspaceDir: asString(record.workspaceDir) ?? asString(record.workspace_dir) ?? '',
+      };
+    } catch (error) {
+      console.error('Failed to fetch octo-agent config:', error);
+      return null;
+    }
   }
 
   private openWebSocket(): void {

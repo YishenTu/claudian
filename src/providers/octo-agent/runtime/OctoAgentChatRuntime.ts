@@ -184,6 +184,8 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       }
     }
 
+    await this.refreshConfig();
+
     if (options?.force || !this.sessionId) {
       await this.createSessionIfNeeded(options?.allowSessionCreation !== false);
     }
@@ -290,6 +292,45 @@ export class OctoAgentChatRuntime implements ChatRuntime {
 
   getAuxiliaryModel(): string | null {
     return null;
+  }
+
+  private async refreshConfig(): Promise<void> {
+    if (!this.client) {
+      return;
+    }
+    const config = await this.client.getConfig();
+    console.log('[octo-agent] refreshConfig: models count:', config?.models.length ?? 0, 'defaultIdx:', config?.defaultModelIdx ?? 0);
+    if (!config || config.models.length === 0) {
+      return;
+    }
+
+    const pluginSettings = this.plugin.settings as unknown as Record<string, unknown>;
+    const options = config.models.map((entry, index) => {
+      const isDefault = index === config.defaultModelIdx;
+      return {
+        description: isDefault ? 'Default octo-agent model' : undefined,
+        label: entry.id || entry.model,
+        value: `octo-agent/${entry.model}`,
+      };
+    });
+    pluginSettings.octoAgentModels = options;
+
+    const defaultEntry = config.models[config.defaultModelIdx] ?? config.models[0];
+    if (defaultEntry) {
+      const defaultValue = `octo-agent/${defaultEntry.model}`;
+      const currentModel = pluginSettings.model;
+      if (
+        !currentModel
+        || typeof currentModel !== 'string'
+        || !options.some((option) => option.value === currentModel)
+      ) {
+        pluginSettings.model = defaultValue;
+      }
+    }
+
+    if (config.permissionMode) {
+      pluginSettings.permissionMode = config.permissionMode;
+    }
   }
 
   cleanup(): void {

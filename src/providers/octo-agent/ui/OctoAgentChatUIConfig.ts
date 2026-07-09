@@ -22,7 +22,11 @@ const OCTO_AGENT_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
 };
 
 export const octoAgentChatUIConfig: ProviderChatUIConfig = {
-  getModelOptions(): ProviderUIOption[] {
+  getModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
+    const cached = settings.octoAgentModels as ProviderUIOption[] | undefined;
+    if (cached && cached.length > 0) {
+      return cached;
+    }
     return [OCTO_AGENT_MODEL];
   },
 
@@ -63,7 +67,15 @@ export const octoAgentChatUIConfig: ProviderChatUIConfig = {
     }
   },
 
-  normalizeModelVariant(model: string, _settings: Record<string, unknown>): string {
+  normalizeModelVariant(model: string, settings: Record<string, unknown>): string {
+    const cached = settings.octoAgentModels as ProviderUIOption[] | undefined;
+    if (cached && cached.length > 0) {
+      if (model === 'octo-agent' || cached.some((option) => option.value === model)) {
+        return model;
+      }
+      const defaultOption = cached[0];
+      return defaultOption?.value ?? 'octo-agent/kimi-for-coding';
+    }
     if (model === 'octo-agent' || model === 'octo-agent/kimi-for-coding' || model.startsWith('octo-agent/')) {
       return model;
     }
