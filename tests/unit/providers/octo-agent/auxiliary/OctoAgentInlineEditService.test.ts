@@ -1,8 +1,6 @@
 import { OctoAgentInlineEditService } from '@/providers/octo-agent/auxiliary/OctoAgentInlineEditService';
 import { runOctoAgentAuxQuery } from '@/providers/octo-agent/runtime/OctoAgentAuxQueryRunner';
 
-import type ClaudianPlugin from '../../../main';
-
 jest.mock('@/providers/octo-agent/runtime/OctoAgentAuxQueryRunner');
 const mockedRunQuery = jest.mocked(runOctoAgentAuxQuery);
 
@@ -22,11 +20,11 @@ describe('OctoAgentInlineEditService', () => {
         },
       },
     },
-  } as unknown as ClaudianPlugin;
+  } as unknown as { settings: Record<string, unknown> };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new OctoAgentInlineEditService(mockPlugin);
+    service = new OctoAgentInlineEditService(mockPlugin as any);
   });
 
   it('returns parsed replacement from a selection request', async () => {
@@ -60,6 +58,7 @@ describe('OctoAgentInlineEditService', () => {
       cursorContext: {
         afterCursor: 'after',
         beforeCursor: 'before',
+        column: 0,
         isInbetween: false,
         line: 0,
       },

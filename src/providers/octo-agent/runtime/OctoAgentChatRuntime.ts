@@ -371,6 +371,18 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     this.permissionModeSyncCallback = callback;
   }
 
+  async setPermissionMode(mode: string): Promise<void> {
+    if (!this.client || !this.sessionId) {
+      return;
+    }
+    try {
+      await this.client.setPermissionMode(this.sessionId, mode);
+      console.log('[octo-agent] setPermissionMode synced:', mode);
+    } catch (error) {
+      console.error('Failed to set octo-agent permission mode:', error);
+    }
+  }
+
   setSubagentHookProvider(getState: () => SubagentRuntimeState): void {
     this.subagentHookProvider = getState;
   }

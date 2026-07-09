@@ -1,8 +1,6 @@
 import { OctoAgentInstructionRefineService } from '@/providers/octo-agent/auxiliary/OctoAgentInstructionRefineService';
 import { runOctoAgentAuxQuery } from '@/providers/octo-agent/runtime/OctoAgentAuxQueryRunner';
 
-import type ClaudianPlugin from '../../../main';
-
 jest.mock('@/providers/octo-agent/runtime/OctoAgentAuxQueryRunner');
 const mockedRunQuery = jest.mocked(runOctoAgentAuxQuery);
 
@@ -22,11 +20,11 @@ describe('OctoAgentInstructionRefineService', () => {
         },
       },
     },
-  } as unknown as ClaudianPlugin;
+  } as unknown as { settings: Record<string, unknown> };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new OctoAgentInstructionRefineService(mockPlugin);
+    service = new OctoAgentInstructionRefineService(mockPlugin as any);
   });
 
   it('returns refined instruction wrapped in tags', async () => {

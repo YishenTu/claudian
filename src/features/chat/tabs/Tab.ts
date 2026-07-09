@@ -1002,6 +1002,11 @@ function initializeInputToolbar(
           settings.permissionMode = mode;
         }
       });
+      try {
+        await tab.service?.setPermissionMode?.(mode);
+      } catch (error) {
+        console.error('Failed to sync permission mode to runtime:', error);
+      }
       tab.ui.permissionToggle?.updateDisplay();
       dom.inputWrapper.toggleClass(
         'claudian-input-plan-mode',
