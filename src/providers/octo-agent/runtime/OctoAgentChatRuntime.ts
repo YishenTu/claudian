@@ -528,12 +528,10 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       }
     }
 
-    const settings = getOctoAgentProviderSettings(
-      this.plugin.settings as unknown as Record<string, unknown>,
-    );
-    if (this.plugin.settings.model) {
+    const pluginSettings = this.plugin.settings as unknown as Record<string, unknown>;
+    if (pluginSettings.model) {
       try {
-        const modelId = String(this.plugin.settings.model).replace(/^octo-agent\//, '');
+        const modelId = String(pluginSettings.model).replace(/^octo-agent\//, '');
         if (modelId && modelId !== 'octo-agent') {
           await this.client.setModel(sessionId, modelId);
         }
@@ -542,10 +540,9 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       }
     }
 
-    const permissionMode = typeof settings.environmentVariables === 'string'
-      && settings.environmentVariables.includes('OCTO_PERMISSION_MODE=auto')
-      ? 'auto'
-      : 'interactive';
+    const permissionMode = typeof pluginSettings.permissionMode === 'string'
+      ? pluginSettings.permissionMode
+      : 'auto';
     try {
       await this.client.setPermissionMode(sessionId, permissionMode);
     } catch (error) {

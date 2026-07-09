@@ -9,7 +9,7 @@ import { OCTO_AGENT_PROVIDER_ICON } from '../../../shared/icons';
 const OCTO_AGENT_MODEL: ProviderUIOption = {
   description: 'Runs through the local octo-agent server',
   label: 'Octo Agent',
-  value: 'octo-agent/octo-agent',
+  value: 'octo-agent/kimi-for-coding',
 };
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
@@ -50,7 +50,7 @@ export const octoAgentChatUIConfig: ProviderChatUIConfig = {
   },
 
   isDefaultModel(model: string): boolean {
-    return model === 'octo-agent' || model === 'octo-agent/octo-agent';
+    return model === 'octo-agent' || model === 'octo-agent/kimi-for-coding';
   },
 
   applyModelDefaults(model: string, settings: unknown): void {
@@ -58,16 +58,16 @@ export const octoAgentChatUIConfig: ProviderChatUIConfig = {
       return;
     }
     const settingsBag = settings as Record<string, unknown>;
-    if (model === 'octo-agent' || model === 'octo-agent/octo-agent' || model.startsWith('octo-agent/')) {
+    if (model === 'octo-agent' || model === 'octo-agent/kimi-for-coding' || model.startsWith('octo-agent/')) {
       settingsBag.model = model;
     }
   },
 
   normalizeModelVariant(model: string, _settings: Record<string, unknown>): string {
-    if (model === 'octo-agent' || model === 'octo-agent/octo-agent' || model.startsWith('octo-agent/')) {
+    if (model === 'octo-agent' || model === 'octo-agent/kimi-for-coding' || model.startsWith('octo-agent/')) {
       return model;
     }
-    return 'octo-agent/octo-agent';
+    return 'octo-agent/kimi-for-coding';
   },
 
   getCustomModelIds(): Set<string> {
@@ -79,7 +79,7 @@ export const octoAgentChatUIConfig: ProviderChatUIConfig = {
   },
 
   resolvePermissionMode(settings: Record<string, unknown>): string | null {
-    return typeof settings.permissionMode === 'string' ? settings.permissionMode : 'interactive';
+    return typeof settings.permissionMode === 'string' ? settings.permissionMode : 'auto';
   },
 
   applyPermissionMode(value: string, settings: unknown): void {

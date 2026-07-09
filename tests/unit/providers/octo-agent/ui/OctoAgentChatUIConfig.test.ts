@@ -5,7 +5,7 @@ describe('octoAgentChatUIConfig', () => {
     const options = octoAgentChatUIConfig.getModelOptions({});
 
     expect(options).toHaveLength(1);
-    expect(options[0].value).toBe('octo-agent/octo-agent');
+    expect(options[0].value).toBe('octo-agent/kimi-for-coding');
   });
 
   it('owns octo-agent model selection ids', () => {
@@ -16,15 +16,15 @@ describe('octoAgentChatUIConfig', () => {
   });
 
   it('identifies the octo-agent default model', () => {
-    expect(octoAgentChatUIConfig.isDefaultModel('octo-agent/octo-agent')).toBe(true);
+    expect(octoAgentChatUIConfig.isDefaultModel('octo-agent/kimi-for-coding')).toBe(true);
     expect(octoAgentChatUIConfig.isDefaultModel('octo-agent')).toBe(true);
     expect(octoAgentChatUIConfig.isDefaultModel('claude-code/claude-sonnet-4-5')).toBe(false);
   });
 
   it('normalizes unknown models to the octo-agent default', () => {
-    expect(octoAgentChatUIConfig.normalizeModelVariant('octo-agent/octo-agent', {})).toBe(
-      'octo-agent/octo-agent',
+    expect(octoAgentChatUIConfig.normalizeModelVariant('octo-agent/kimi-for-coding', {})).toBe(
+      'octo-agent/kimi-for-coding',
     );
-    expect(octoAgentChatUIConfig.normalizeModelVariant('unknown', {})).toBe('octo-agent/octo-agent');
+    expect(octoAgentChatUIConfig.normalizeModelVariant('unknown', {})).toBe('octo-agent/kimi-for-coding');
   });
 });
