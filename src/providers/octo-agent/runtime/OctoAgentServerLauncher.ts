@@ -4,6 +4,7 @@ import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { getOctoAgentProviderSettings } from '../settings';
+import { resolveOctoAgentBinary } from './OctoAgentBinaryLocator';
 
 const OBSIDIAN_ORIGIN = 'app://obsidian.md';
 const HEALTH_POLL_INTERVAL_MS = 300;
@@ -63,7 +64,8 @@ export async function ensureOctoAgentServerRunning(options: OctoAgentServerLaunc
     return false;
   }
 
-  const cliPath = settings.cliPath.trim() || 'octo';
+  const cliPathInput = settings.cliPath.trim();
+  const resolvedBinary = resolveOctoAgentBinary(cliPathInput) ?? (cliPathInput || 'octo');
   const args = ['serve', '-d', '--cors', OBSIDIAN_ORIGIN];
 
   if (settings.accessKey) {
@@ -75,13 +77,19 @@ export async function ensureOctoAgentServerRunning(options: OctoAgentServerLaunc
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ...customEnv,
-    PATH: getEnhancedPath(process.env.PATH, cliPath),
+    PATH: getEnhancedPath(process.env.PATH, resolvedBinary),
   };
 
   return new Promise((resolve) => {
-    let exitError: Error | undefined;
+    let settled = false;
+    const settle = (value: boolean) => {
+      if (!settled) {
+        settled = true;
+        resolve(value);
+      }
+    };
 
-    const proc = spawn(cliPath, args, {
+    const proc = spawn(resolvedBinary, args, {
       cwd,
       detached: true,
       env,
@@ -91,11 +99,11 @@ export async function ensureOctoAgentServerRunning(options: OctoAgentServerLaunc
 
     proc.on('error', (error) => {
       console.error('Failed to start octo serve:', error);
-      exitError = error;
+      settle(false);
     });
 
     proc.on('exit', (code, signal) => {
-      if (!exitError && code !== 0 && signal === null) {
+      if (code !== 0 && signal === null) {
         console.error(`octo serve exited with code ${String(code)}`);
       }
     });
@@ -109,7 +117,7 @@ export async function ensureOctoAgentServerRunning(options: OctoAgentServerLaunc
       if (!running) {
         console.error('octo serve did not become ready after auto-start');
       }
-      resolve(running);
+      settle(running);
     }, 300);
   });
 }
