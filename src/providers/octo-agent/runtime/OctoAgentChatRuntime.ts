@@ -31,6 +31,7 @@ import {
   type UsageInfo,
 } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import { appendContextFiles, appendCurrentNote } from '../../../utils/context';
 import { getVaultPath } from '../../../utils/path';
 import { OCTO_AGENT_PROVIDER_CAPABILITIES } from '../capabilities';
 import { getOctoAgentProviderSettings } from '../settings';
@@ -88,20 +89,30 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     const text = request.text;
     const images = request.images ?? [];
 
-    const promptParts: string[] = [text];
+    let prompt = text;
+    if (request.currentNotePath) {
+      prompt = appendCurrentNote(prompt, request.currentNotePath);
+    }
+
+    const externalContextPaths = request.externalContextPaths?.filter(
+      (value): value is string => typeof value === 'string' && value.trim().length > 0,
+    );
+    if (externalContextPaths && externalContextPaths.length > 0) {
+      prompt = appendContextFiles(prompt, externalContextPaths);
+    }
+
     if (images.length > 0) {
-      promptParts.push(
-        ...(images as ImageAttachment[]).map(
-          (image, index) => `\n[Image ${index + 1}: ${image.mediaType ?? 'image'}]`,
-        ),
+      const imageParts = (images as ImageAttachment[]).map(
+        (image, index) => `[Image ${index + 1}: ${image.mediaType ?? 'image'}]`,
       );
+      prompt = `${prompt}\n\n${imageParts.join('\n')}`;
     }
 
     return {
       isCompact: false,
       mcpMentions: new Set(),
       persistedContent: text,
-      prompt: promptParts.join('\n'),
+      prompt,
       request,
     };
   }
