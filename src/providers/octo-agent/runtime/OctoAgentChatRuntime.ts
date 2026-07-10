@@ -580,7 +580,6 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     }
 
     const session = await this.client.createSession({
-      name: 'Claudian',
       source: 'claudian',
     });
     this.sessionId = session.id;

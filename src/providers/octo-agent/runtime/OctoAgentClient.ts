@@ -234,6 +234,13 @@ export class OctoAgentClient {
     });
   }
 
+  async renameSession(sessionId: string, name: string): Promise<void> {
+    await this.fetchJson(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    });
+  }
+
   async listSessions(): Promise<OctoAgentSession[]> {
     const response = await this.fetchJson('/api/sessions');
     const record = response as Record<string, any>;
