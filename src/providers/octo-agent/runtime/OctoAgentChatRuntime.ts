@@ -793,20 +793,20 @@ export class OctoAgentChatRuntime implements ChatRuntime {
 
   private buildDecisionOptions(
     kind: string,
-  ): Array<{ label: string; value: string; description?: string }> | undefined {
+  ): Array<{ label: string; value: string; description?: string; decision?: ApprovalDecision }> | undefined {
     if (kind === 'ok') {
-      return [{ label: 'OK', value: 'allow' }];
+      return [{ label: 'OK', value: 'allow', decision: 'allow' }];
     }
     if (kind === 'yes_no_always') {
       return [
-        { label: 'Yes', value: 'allow' },
-        { label: 'Always', value: 'allow-always' },
-        { label: 'No', value: 'deny' },
+        { label: 'Yes', value: 'allow', decision: 'allow' },
+        { label: 'Always', value: 'allow-always', decision: 'allow-always' },
+        { label: 'No', value: 'deny', decision: 'deny' },
       ];
     }
     return [
-      { label: 'Yes', value: 'allow' },
-      { label: 'No', value: 'deny' },
+      { label: 'Yes', value: 'allow', decision: 'allow' },
+      { label: 'No', value: 'deny', decision: 'deny' },
     ];
   }
 
