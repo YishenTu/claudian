@@ -158,7 +158,7 @@ function getTabSettingsSnapshot(
     plugin.settings,
     providerId,
     getTabSelectedModel(tab, plugin),
-  ) as TabProviderSettings;
+  );
 }
 
 function getWritableTabSettingsSnapshot(
@@ -168,7 +168,7 @@ function getWritableTabSettingsSnapshot(
   return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
     plugin.settings,
     getTabProviderId(tab, plugin),
-  ) as TabProviderSettings;
+  );
 }
 
 function getTabConversation(

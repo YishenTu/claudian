@@ -109,7 +109,7 @@ function normalizeInputModalities(value: unknown): Array<'text' | 'image'> {
 
   const modalities = new Set<'text' | 'image'>();
   for (const entry of value) {
-    if (entry === 'text' || entry === 'image') {
+    if (typeof entry === 'string' && (entry === 'text' || entry === 'image')) {
       modalities.add(entry);
     }
   }

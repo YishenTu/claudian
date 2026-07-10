@@ -101,7 +101,11 @@ export default defineConfig([
     plugins: {
       obsidianmd,
     },
-    rules: stagedObsidianRules,
+    rules: {
+      ...stagedObsidianRules,
+      '@typescript-eslint/no-unsafe-argument': 'error',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+    },
   },
   {
     files: [
