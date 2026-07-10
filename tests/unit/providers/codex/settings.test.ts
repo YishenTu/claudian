@@ -7,6 +7,7 @@ import {
   getCodexProviderSettings,
   getEffectiveCodexReasoningSummary,
   getVisibleCodexModelIds,
+  normalizeCodexModelAliases,
   normalizeCodexStoredConfig,
   normalizeCodexVisibleModels,
   updateCodexProviderSettings,
@@ -37,6 +38,7 @@ describe('codex settings', () => {
     const settings = getCodexProviderSettings({});
 
     expect(settings.customModels).toBe('');
+    expect(settings.modelAliases).toEqual({});
     expect(settings.visibleModels).toBeNull();
     expect(settings.installationMethod).toBe('native-windows');
     expect(settings.wslDistroOverride).toBe('');
@@ -71,6 +73,40 @@ describe('codex settings', () => {
       ['gpt-5.5', 'gpt-5.4-mini'],
       discoveredModels,
     )).toBeNull();
+  });
+
+  it('normalizes model aliases against the discovered catalog', () => {
+    expect(normalizeCodexModelAliases({
+      ' gpt-5.5 ': '  Primary  ',
+      'gpt-5.4-mini': ' ',
+      missing: 'Missing',
+      invalid: 42,
+    }, TEST_CODEX_CATALOG as any)).toEqual({
+      'gpt-5.5': 'Primary',
+    });
+  });
+
+  it('persists aliases only for visible models', () => {
+    const settingsBag: Record<string, unknown> = {
+      providerConfigs: {
+        codex: {
+          discoveredModels: TEST_CODEX_CATALOG,
+          visibleModels: null,
+        },
+      },
+    };
+
+    updateCodexProviderSettings(settingsBag, {
+      modelAliases: {
+        'gpt-5.4-mini': 'Mini',
+        'gpt-5.5': 'Primary',
+      },
+    });
+    updateCodexProviderSettings(settingsBag, { visibleModels: ['gpt-5.5'] });
+
+    expect(getCodexProviderSettings(settingsBag).modelAliases).toEqual({
+      'gpt-5.5': 'Primary',
+    });
   });
 
   it('normalizes and persists the app-server model catalog', () => {

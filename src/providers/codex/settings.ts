@@ -29,6 +29,7 @@ export interface CodexProviderConfig {
   cliPathsByHost: HostnameCliPaths;
   customModels: string;
   discoveredModels: CodexDiscoveredModel[];
+  modelAliases: Record<string, string>;
   visibleModels: string[] | null;
   reasoningSummary: CodexReasoningSummary;
   environmentVariables: string;
@@ -93,6 +94,7 @@ export interface CodexProviderSettings {
   cliPathsByHost: CodexProviderConfig['cliPathsByHost'];
   customModels: CodexProviderConfig['customModels'];
   discoveredModels: CodexProviderConfig['discoveredModels'];
+  modelAliases: CodexProviderConfig['modelAliases'];
   visibleModels: CodexProviderConfig['visibleModels'];
   reasoningSummary: CodexProviderConfig['reasoningSummary'];
   environmentVariables: CodexProviderConfig['environmentVariables'];
@@ -110,6 +112,7 @@ export const DEFAULT_CODEX_PROVIDER_CONFIG: Readonly<CodexProviderConfig> = Obje
   cliPathsByHost: {},
   customModels: '',
   discoveredModels: [],
+  modelAliases: {},
   visibleModels: null,
   reasoningSummary: 'detailed',
   environmentVariables: '',
@@ -201,6 +204,31 @@ export function normalizeCodexVisibleModels(
   return visibleModels;
 }
 
+export function normalizeCodexModelAliases(
+  value: unknown,
+  discoveredModels: CodexDiscoveredModel[] = [],
+): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const knownModelIds = new Set(discoveredModels.map(model => model.model));
+  const normalized: Record<string, string> = {};
+  for (const [rawModelId, rawAlias] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof rawAlias !== 'string') {
+      continue;
+    }
+
+    const modelId = rawModelId.trim();
+    const alias = rawAlias.trim();
+    if (!modelId || !alias || (knownModelIds.size > 0 && !knownModelIds.has(modelId))) {
+      continue;
+    }
+    normalized[modelId] = alias;
+  }
+  return normalized;
+}
+
 export function createCodexVisibleModelFilter(
   value: unknown,
   discoveredModels: CodexDiscoveredModel[],
@@ -220,6 +248,30 @@ export function getVisibleCodexModelIds(
   return visibleModels === null
     ? discoveredModels.map(model => model.model)
     : normalizeCodexVisibleModels(visibleModels, discoveredModels) ?? [];
+}
+
+function pruneCodexModelAliases(
+  aliases: Record<string, string>,
+  visibleModelIds: string[] | null,
+): Record<string, string> {
+  if (visibleModelIds === null) {
+    return aliases;
+  }
+
+  const visible = new Set(visibleModelIds);
+  return Object.fromEntries(
+    Object.entries(aliases).filter(([modelId]) => visible.has(modelId)),
+  );
+}
+
+function getCodexAliasModelIds(
+  visibleModels: string[] | null,
+  discoveredModels: CodexDiscoveredModel[],
+): string[] | null {
+  if (discoveredModels.length === 0 && visibleModels === null) {
+    return null;
+  }
+  return getVisibleCodexModelIds(visibleModels, discoveredModels);
 }
 
 function retargetRemovedCodexSelections(
@@ -320,6 +372,7 @@ function getCodexStoredConfig(
     legacyHostnameKey,
   );
   const discoveredModels = normalizeCodexDiscoveredModels(config.discoveredModels);
+  const visibleModels = normalizeCodexVisibleModels(config.visibleModels, discoveredModels);
 
   return {
     enabled: (config.enabled as boolean | undefined)
@@ -335,7 +388,11 @@ function getCodexStoredConfig(
     customModels: (config.customModels as string | undefined)
       ?? DEFAULT_CODEX_PROVIDER_CONFIG.customModels,
     discoveredModels,
-    visibleModels: normalizeCodexVisibleModels(config.visibleModels, discoveredModels),
+    modelAliases: pruneCodexModelAliases(
+      normalizeCodexModelAliases(config.modelAliases, discoveredModels),
+      getCodexAliasModelIds(visibleModels, discoveredModels),
+    ),
+    visibleModels,
     reasoningSummary: (config.reasoningSummary as CodexReasoningSummary | undefined)
       ?? (settings.codexReasoningSummary as CodexReasoningSummary | undefined)
       ?? DEFAULT_CODEX_PROVIDER_CONFIG.reasoningSummary,
@@ -478,6 +535,10 @@ export function updateCodexProviderSettings(
     'visibleModels' in updates ? updates.visibleModels : current.visibleModels,
     discoveredModels,
   );
+  const modelAliases = pruneCodexModelAliases(
+    normalizeCodexModelAliases(updates.modelAliases ?? current.modelAliases, discoveredModels),
+    getCodexAliasModelIds(visibleModels, discoveredModels),
+  );
 
   if (
     persistInstallationSettings
@@ -512,6 +573,7 @@ export function updateCodexProviderSettings(
     ...current,
     ...updates,
     discoveredModels,
+    modelAliases,
     visibleModels,
     installationMethod: persistInstallationSettings
       ? installationMethodsByHost[hostnameKey] ?? DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod
@@ -530,6 +592,7 @@ export function updateCodexProviderSettings(
     cliPathsByHost: next.cliPathsByHost,
     customModels: next.customModels,
     discoveredModels: next.discoveredModels,
+    modelAliases: next.modelAliases,
     visibleModels: next.visibleModels,
     reasoningSummary: next.reasoningSummary,
     environmentVariables: next.environmentVariables,

@@ -139,6 +139,7 @@ function createPlugin() {
       providerConfigs: {
         codex: {
           discoveredModels: TEST_CODEX_CATALOG,
+          modelAliases: {},
           visibleModels: null,
         },
       },
@@ -211,6 +212,27 @@ describe('CodexModelPicker', () => {
     await flushPromises();
 
     expect(getCodexProviderSettings(plugin.settings).visibleModels).toEqual(['gpt-5.5']);
+  });
+
+  it('persists aliases for selected models', async () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    renderCodexModelPicker(createElement() as any, context, {} as any);
+
+    const aliasInput = findElement(element =>
+      element.classes.has('claudian-provider-model-picker-selected-alias')
+      && element.attrs['aria-label'] === 'Alias for GPT-5.5'
+    );
+    aliasInput.value = 'Primary';
+    aliasInput.trigger('blur');
+    await flushPromises();
+
+    expect(getCodexProviderSettings(plugin.settings).modelAliases).toEqual({
+      'gpt-5.5': 'Primary',
+    });
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes the app-server catalog and saves changed results', async () => {

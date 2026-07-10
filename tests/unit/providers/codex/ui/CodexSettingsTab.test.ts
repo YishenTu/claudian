@@ -526,83 +526,12 @@ describe('CodexSettingsTab', () => {
     expect(mockBroadcastToAllTabs).toHaveBeenCalledTimes(0);
   });
 
-  it('does not switch the active model while the custom models textarea is mid-edit', async () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-    const plugin = createPlugin();
-    const context = createContext(plugin);
-
-    codexSettingsTabRenderer.render(createContainer(), context);
-
-    const customModelsSetting = findSetting('Custom models');
-    const customModelsTextArea = customModelsSetting.textAreaComponents[0];
-
-    await customModelsTextArea.onChangeCallback?.('different-custom-model');
-
-    expect(plugin.settings.providerConfigs.codex.customModels).toBe('my-custom-model');
-    expect(plugin.settings.model).toBe('my-custom-model');
-    expect(mockSaveSettings).not.toHaveBeenCalled();
-    expect(context.refreshModelSelectors).not.toHaveBeenCalled();
-  });
-
-  it('shows current Codex custom model examples in the custom models textarea', () => {
+  it('does not render the legacy custom models textarea', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const plugin = createPlugin();
 
     codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
-    const customModelsSetting = findSetting('Custom models');
-    expect(customModelsSetting.textAreaComponents[0].placeholder).toBe(
-      'gpt-5.4\ngpt-5.3-codex-spark',
-    );
-  });
-
-  it('reconciles removed custom models on blur and clears stale title model selections', async () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-    const plugin = createPlugin({
-      titleGenerationModel: 'my-custom-model',
-    });
-    const context = createContext(plugin);
-
-    codexSettingsTabRenderer.render(createContainer(), context);
-
-    const customModelsSetting = findSetting('Custom models');
-    const customModelsTextArea = customModelsSetting.textAreaComponents[0];
-
-    await customModelsTextArea.onChangeCallback?.('different-custom-model');
-    await customModelsTextArea.trigger('blur');
-
-    expect(plugin.settings.providerConfigs.codex.customModels).toBe('different-custom-model');
-    expect(plugin.settings.model).toBe('gpt-5.6-sol');
-    expect(plugin.settings.titleGenerationModel).toBe('');
-    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
-    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
-  });
-
-  it('reconciles an inactive Codex saved model when a removed custom model was selected', async () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-    const plugin = createPlugin({
-      settingsProvider: 'claude',
-      model: 'haiku',
-      savedProviderModel: {
-        claude: 'haiku',
-        codex: 'my-custom-model',
-      },
-    });
-    const context = createContext(plugin);
-
-    codexSettingsTabRenderer.render(createContainer(), context);
-
-    const customModelsSetting = findSetting('Custom models');
-    const customModelsTextArea = customModelsSetting.textAreaComponents[0];
-
-    await customModelsTextArea.onChangeCallback?.('different-custom-model');
-    await customModelsTextArea.trigger('blur');
-
-    expect(plugin.settings.model).toBe('haiku');
-    expect(plugin.settings.savedProviderModel).toEqual({
-      claude: 'haiku',
-      codex: 'gpt-5.6-sol',
-    });
-    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
+    expect(createdSettings.some(setting => setting.name === 'Custom models')).toBe(false);
   });
 });

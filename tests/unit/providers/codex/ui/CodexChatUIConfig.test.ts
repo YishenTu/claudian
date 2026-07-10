@@ -102,6 +102,20 @@ describe('CodexChatUIConfig', () => {
       ]);
     });
 
+    it('uses configured model aliases as selector labels', () => {
+      const options = codexChatUIConfig.getModelOptions(withDiscoveredModels({
+        providerConfigs: {
+          codex: {
+            modelAliases: {
+              [TEST_CODEX_MODEL]: 'Primary',
+            },
+          },
+        },
+      }));
+
+      expect(options.find(option => option.value === TEST_CODEX_MODEL)?.label).toBe('Primary');
+    });
+
     it('appends settings-defined custom models after the built-in options', () => {
       const options = codexChatUIConfig.getModelOptions(withDiscoveredModels({
         providerConfigs: {
@@ -231,6 +245,10 @@ describe('CodexChatUIConfig', () => {
         providerConfigs: {
           codex: {
             discoveredModels: [],
+            modelAliases: {
+              'gpt-current-session': 'Current',
+              'saved-custom-model': 'Saved',
+            },
             visibleModels: null,
           },
         },
@@ -239,12 +257,12 @@ describe('CodexChatUIConfig', () => {
       expect(options).toEqual([
         {
           value: 'gpt-current-session',
-          label: 'GPT-current Session',
+          label: 'Current',
           description: 'Selected model',
         },
         {
           value: 'openai-codex/saved-custom-model',
-          label: 'saved-custom-model',
+          label: 'Saved',
           description: 'Selected model',
         },
       ]);

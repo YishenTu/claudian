@@ -10,7 +10,10 @@ import {
   LEGACY_CLAUDIAN_SETTINGS_PATH,
 } from '@/providers/claude/storage/ClaudianSettingsStorage';
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
-import { getCodexProviderSettings } from '@/providers/codex/settings';
+import {
+  getCodexProviderSettings,
+  updateCodexProviderSettings,
+} from '@/providers/codex/settings';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { getPiProviderSettings } from '@/providers/pi/settings';
 
@@ -663,6 +666,43 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.providerConfigs.codex).not.toHaveProperty('discoveredModels');
       expect(writtenContent.providerConfigs.codex.visibleModels).toEqual(['gpt-5.4-mini']);
       expect(getCodexProviderSettings(settings).discoveredModels).toEqual(TEST_CODEX_CATALOG);
+    });
+
+    it('preserves Codex model aliases across restart without the runtime catalog', async () => {
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        providerConfigs: {
+          ...DEFAULT_SETTINGS.providerConfigs,
+          codex: {
+            ...DEFAULT_SETTINGS.providerConfigs.codex,
+            discoveredModels: TEST_CODEX_CATALOG,
+            modelAliases: {
+              'gpt-5.5': 'Primary',
+            },
+            visibleModels: null,
+          },
+        },
+      };
+
+      await storage.save(settings);
+      const persistedContent = mockAdapter.write.mock.calls[0][1];
+      const persistedSettings = JSON.parse(persistedContent);
+      expect(persistedSettings.providerConfigs.codex).not.toHaveProperty('discoveredModels');
+      expect(persistedSettings.providerConfigs.codex.modelAliases).toEqual({
+        'gpt-5.5': 'Primary',
+      });
+
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(persistedContent);
+      const reloaded = await storage.load();
+
+      expect(getCodexProviderSettings(reloaded).modelAliases).toEqual({
+        'gpt-5.5': 'Primary',
+      });
+      updateCodexProviderSettings(reloaded, { discoveredModels: TEST_CODEX_CATALOG as any });
+      expect(getCodexProviderSettings(reloaded).modelAliases).toEqual({
+        'gpt-5.5': 'Primary',
+      });
     });
 
     it('deletes the legacy settings file after writing the new path', async () => {

@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 
-import { OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES } from '@/providers/opencode/settings';
+import {
+  getOpencodeProviderSettings,
+  OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES,
+} from '@/providers/opencode/settings';
 import { opencodeSettingsTabRenderer } from '@/providers/opencode/ui/OpencodeSettingsTab';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
@@ -546,7 +549,7 @@ describe('OpencodeSettingsTab', () => {
 
     opencodeSettingsTabRenderer.render(createContainer(), context);
 
-    const catalogEl = findElement('details', 'claudian-opencode-model-picker-catalog');
+    const catalogEl = findElement('details', 'claudian-provider-model-picker-catalog');
     catalogEl.open = true;
     await catalogEl.dispatchMockEvent('toggle');
 
@@ -644,6 +647,32 @@ describe('OpencodeSettingsTab', () => {
       plugin,
       'opencode:deepseek/deepseek-v4-pro',
     );
+    expect(context.refreshModelSelectors).toHaveBeenCalled();
+  });
+
+  it('persists aliases through the shared model picker', async () => {
+    const plugin = createPlugin({
+      providerConfigs: {
+        opencode: {
+          discoveredModels: [
+            { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
+          ],
+          modelAliases: {},
+          visibleModels: ['deepseek/deepseek-v4-pro'],
+        },
+      },
+    });
+    const context = createContext(plugin);
+
+    opencodeSettingsTabRenderer.render(createContainer(), context);
+
+    const aliasInput = findElement('input', 'claudian-provider-model-picker-selected-alias');
+    aliasInput.value = 'V4 Pro';
+    await aliasInput.dispatchMockEvent('blur');
+
+    expect(getOpencodeProviderSettings(plugin.settings).modelAliases).toEqual({
+      'deepseek/deepseek-v4-pro': 'V4 Pro',
+    });
     expect(context.refreshModelSelectors).toHaveBeenCalled();
   });
 });

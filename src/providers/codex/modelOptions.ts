@@ -49,6 +49,9 @@ export function parseConfiguredCustomModelIds(value: string): string[] {
 
 export function getCodexModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
   const codexSettings = getCodexProviderSettings(settings);
+  const getModelLabel = (modelId: string, fallback: string): string => {
+    return codexSettings.modelAliases[modelId] ?? fallback;
+  };
   const visibleModelIds = new Set(getVisibleCodexModelIds(
     codexSettings.visibleModels,
     codexSettings.discoveredModels,
@@ -97,7 +100,7 @@ export function getCodexModelOptions(settings: Record<string, unknown>): Provide
   );
   const models: ProviderUIOption[] = visibleDiscoveredModels.map(model => ({
     value: model.model,
-    label: model.displayName,
+    label: getModelLabel(model.model, model.displayName),
     description: model.description || undefined,
   }));
   const seenModelIds = new Set(visibleDiscoveredModels.map(model => model.model));
@@ -113,7 +116,7 @@ export function getCodexModelOptions(settings: Record<string, unknown>): Provide
     seenModelIds.add(modelId);
     models.push({
       value: modelId,
-      label: formatCodexModelLabel(modelId),
+      label: getModelLabel(modelId, formatCodexModelLabel(modelId)),
       description: 'Selected model',
     });
   }
@@ -122,7 +125,7 @@ export function getCodexModelOptions(settings: Record<string, unknown>): Provide
     seenModelIds.add(model.model);
     models.push({
       value: model.model,
-      label: model.displayName,
+      label: getModelLabel(model.model, model.displayName),
       description: model.description || undefined,
     });
   }
@@ -134,15 +137,19 @@ export function getCodexModelOptions(settings: Record<string, unknown>): Provide
     }
 
     seenModelIds.add(modelId);
-    models.push(
+    const fallbackOption = (
       isCodexModelSelectionId(selection) || !looksLikeCodexModel(modelId)
         ? createCustomCodexModelOption(modelId, 'Selected model')
         : {
           value: modelId,
           label: formatCodexModelLabel(modelId),
           description: 'Selected model',
-        },
+        }
     );
+    models.push({
+      ...fallbackOption,
+      label: getModelLabel(modelId, fallbackOption.label),
+    });
   }
 
   const envModel = getConfiguredEnvCustomModel(settings);
