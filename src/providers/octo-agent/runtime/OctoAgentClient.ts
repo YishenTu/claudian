@@ -77,6 +77,7 @@ export type OctoAgentEvent =
   | { type: 'interrupted'; session_id: string }
   | { type: 'subscribed'; session_id: string }
   | { type: 'toast'; session_id: string; message: string; level?: string }
+  | { type: 'send_rejected'; session_id: string; message: string }
   | { type: 'session_deleted'; session_id: string }
   | { type: 'session_activity'; session_id: string; kind: string }
   | { type: 'unknown'; session_id?: string; raw: any };
@@ -511,6 +512,12 @@ export class OctoAgentClient {
           question_id: asString(record.question_id) ?? '',
           session_id: sessionId,
           type: 'request_user_question',
+        };
+      case 'send_rejected':
+        return {
+          message: asString(record.message) ?? '',
+          session_id: sessionId,
+          type: 'send_rejected',
         };
       case 'dismiss_user_question':
         return {

@@ -80,6 +80,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
   private supportedCommands: SlashCommand[] = [];
   private lastSyncedTitle: string | null = null;
   private sessionDeletedByRemote = false;
+  private shouldRetryAfterSessionNotFound = false;
   private serverStartPromise: Promise<boolean> | null = null;
 
   constructor(plugin: ClaudianPlugin) {
@@ -151,7 +152,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
   }
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
-    if (this.ready && this.client?.isConnected()) {
+    if (this.ready && this.client?.isConnected() && this.sessionId) {
       return true;
     }
 
@@ -254,11 +255,13 @@ export class OctoAgentChatRuntime implements ChatRuntime {
         this.buildImageFiles(turn.request.images),
       );
 
-      const timeout = window.setTimeout(() => {
+      let timeout = window.setTimeout(() => {
         if (this.activeQuery) {
           this.activeQuery.turnAborted = true;
         }
       }, QUERY_TIMEOUT_MS);
+
+      let retriedAfterSessionNotFound = false;
 
       while (!this.activeQuery.done && !this.activeQuery.turnAborted) {
         while (true) {
@@ -269,6 +272,42 @@ export class OctoAgentChatRuntime implements ChatRuntime {
               this.emittedText = true;
             }
             yield chunk;
+          }
+
+          if (this.shouldRetryAfterSessionNotFound && !retriedAfterSessionNotFound) {
+            this.shouldRetryAfterSessionNotFound = false;
+            retriedAfterSessionNotFound = true;
+            yield {
+              type: 'notice',
+              content: 'Previous session was deleted; creating a new session and retrying.',
+              level: 'info',
+            };
+            try {
+              const ready = await this.ensureReady({ force: true });
+              if (!ready || !this.client || !this.sessionId) {
+                yield { type: 'error', content: 'Failed to create a new session after the previous one was deleted.' };
+                this.activeQuery.turnAborted = true;
+                break;
+              }
+              this.client.sendMessage(
+                this.sessionId,
+                turn.prompt,
+                this.buildImageFiles(turn.request.images),
+              );
+              // Reset the inactivity timeout for the retried turn.
+              window.clearTimeout(timeout);
+              timeout = window.setTimeout(() => {
+                if (this.activeQuery) {
+                  this.activeQuery.turnAborted = true;
+                }
+              }, QUERY_TIMEOUT_MS);
+            } catch (error) {
+              yield {
+                type: 'error',
+                content: error instanceof Error ? error.message : 'Failed to retry after session deletion.',
+              };
+              this.activeQuery.turnAborted = true;
+            }
           }
         }
         await eventBuffer.wait(50);
@@ -284,6 +323,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
         }
       }
       this.sessionDeletedByRemote = false;
+      this.shouldRetryAfterSessionNotFound = false;
     } finally {
       this.activeQuery = null;
       this.currentTurnMetadata = {};
@@ -309,6 +349,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     this.sessionInvalidated = false;
     this.lastSyncedTitle = null;
     this.sessionDeletedByRemote = false;
+    this.shouldRetryAfterSessionNotFound = false;
   }
 
   getSessionId(): string | null {
@@ -377,6 +418,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     this.pendingQuestions.clear();
     this.lastSyncedTitle = null;
     this.sessionDeletedByRemote = false;
+    this.shouldRetryAfterSessionNotFound = false;
   }
 
   async rewind(
@@ -673,6 +715,24 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     }
   }
 
+  private handleSessionNotFound(sessionId: string | undefined): void {
+    if (sessionId !== this.sessionId) {
+      return;
+    }
+    this.sessionInvalidated = true;
+    this.sessionId = null;
+    this.shouldRetryAfterSessionNotFound = true;
+  }
+
+  private isSessionNotFoundEvent(event: OctoAgentEvent): boolean {
+    if (event.type !== 'send_rejected' && event.type !== 'error') {
+      return false;
+    }
+    const message = (event as { message?: string }).message ?? '';
+    const lower = message.toLowerCase();
+    return lower.includes('session not found') || lower.includes('not found');
+  }
+
   private handleClientEvent(event: OctoAgentEvent): void {
     if (this.activeQuery) {
       // Handled by the active query loop through the event buffer.
@@ -689,6 +749,10 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       void this.handleUserQuestion(event);
     } else if (event.type === 'session_deleted') {
       this.handleSessionDeleted(event);
+    } else if (event.type === 'send_rejected' || event.type === 'error') {
+      if (this.isSessionNotFoundEvent(event)) {
+        this.handleSessionNotFound((event as { session_id?: string }).session_id);
+      }
     }
   }
 
@@ -796,8 +860,13 @@ export class OctoAgentChatRuntime implements ChatRuntime {
         yield { type: 'notice', content: 'Session was deleted from another client.', level: 'error' };
         break;
       }
+      case 'send_rejected':
       case 'error': {
-        yield { type: 'error', content: event.message };
+        if (this.isSessionNotFoundEvent(event)) {
+          this.handleSessionNotFound(event.session_id);
+        } else {
+          yield { type: 'error', content: event.message };
+        }
         break;
       }
       case 'toast': {
