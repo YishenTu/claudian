@@ -96,6 +96,7 @@ export class OctoAgentClient {
   private intentionallyClosed = false;
   private pendingSubscribes = new Set<string>();
   private baseUrl: string;
+  private closeListener: (() => void) | null = null;
 
   constructor(private readonly options: OctoAgentClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
@@ -105,6 +106,10 @@ export class OctoAgentClient {
     this.callbacks = callbacks;
     this.intentionallyClosed = false;
     this.openWebSocket();
+  }
+
+  setCloseListener(listener: (() => void) | null): void {
+    this.closeListener = listener;
   }
 
   disconnect(): void {
@@ -299,15 +304,25 @@ export class OctoAgentClient {
     this.ws.onclose = () => {
       this.ws = null;
       this.callbacks?.onClose?.();
+      this.closeListener?.();
       if (!this.intentionallyClosed) {
         this.scheduleReconnect();
       }
     };
 
     this.ws.onerror = (event) => {
-      this.callbacks?.onError?.(
-        new Error(event.type === 'error' ? 'WebSocket error' : 'WebSocket error'),
-      );
+      let message = 'WebSocket error';
+      try {
+        const eventMessage = (event as ErrorEvent).message;
+        if (eventMessage) {
+          message = `WebSocket error: ${eventMessage}`;
+        }
+      } catch {
+        // Ignore introspection errors.
+      }
+      const state = this.ws ? readyStateLabel(this.ws.readyState) : 'unknown';
+      const url = this.ws?.url ?? 'unknown';
+      this.callbacks?.onError?.(new Error(`${message} (readyState=${state}, url=${url})`));
     };
 
     this.ws.onmessage = (messageEvent) => {
@@ -505,6 +520,21 @@ function normalizeSession(record: Record<string, any>): OctoAgentSession {
     status: asString(record.status) ?? undefined,
     workingDir: asString(record.working_dir) ?? undefined,
   };
+}
+
+function readyStateLabel(readyState: number): string {
+  switch (readyState) {
+    case WebSocket.CONNECTING:
+      return 'CONNECTING';
+    case WebSocket.OPEN:
+      return 'OPEN';
+    case WebSocket.CLOSING:
+      return 'CLOSING';
+    case WebSocket.CLOSED:
+      return 'CLOSED';
+    default:
+      return String(readyState);
+  }
 }
 
 function asString(value: unknown): string | undefined {

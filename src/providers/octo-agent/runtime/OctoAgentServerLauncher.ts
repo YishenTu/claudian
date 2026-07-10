@@ -18,9 +18,10 @@ export interface OctoAgentServerProbeResult {
   running: boolean;
 }
 
-export async function probeOctoAgentServer(baseUrl: string): Promise<OctoAgentServerProbeResult> {
+export async function probeOctoAgentServer(baseUrl: string, accessKey?: string): Promise<OctoAgentServerProbeResult> {
   try {
-    const response = await fetch(`${baseUrl}/api/health`, {
+    const suffix = accessKey ? `?access_key=${encodeURIComponent(accessKey)}` : '';
+    const response = await fetch(`${baseUrl}/api/health${suffix}`, {
       method: 'GET',
     });
     return { running: response.ok };
@@ -29,10 +30,10 @@ export async function probeOctoAgentServer(baseUrl: string): Promise<OctoAgentSe
   }
 }
 
-async function waitForServer(baseUrl: string, timeoutMs: number): Promise<boolean> {
+async function waitForServer(baseUrl: string, accessKey: string | undefined, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const { running } = await probeOctoAgentServer(baseUrl);
+    const { running } = await probeOctoAgentServer(baseUrl, accessKey);
     if (running) {
       return true;
     }
@@ -55,7 +56,8 @@ export async function ensureOctoAgentServerRunning(options: OctoAgentServerLaunc
   }
 
   const baseUrl = `http://${settings.host}:${settings.port}`;
-  const probe = await probeOctoAgentServer(baseUrl);
+  const accessKey = settings.accessKey || undefined;
+  const probe = await probeOctoAgentServer(baseUrl, accessKey);
   if (probe.running) {
     return true;
   }
@@ -68,8 +70,8 @@ export async function ensureOctoAgentServerRunning(options: OctoAgentServerLaunc
   const resolvedBinary = resolveOctoAgentBinary(cliPathInput) ?? (cliPathInput || 'octo');
   const args = ['serve', '-d', '--cors', OBSIDIAN_ORIGIN];
 
-  if (settings.accessKey) {
-    args.push('--access-key', settings.accessKey);
+  if (accessKey) {
+    args.push('--access-key', accessKey);
   }
 
   const cwd = getVaultPath(plugin.app) ?? undefined;
@@ -113,7 +115,7 @@ export async function ensureOctoAgentServerRunning(options: OctoAgentServerLaunc
     // Daemon mode (-d) should fork into the background quickly; give it a moment
     // before we start polling the health endpoint.
     window.setTimeout(async () => {
-      const running = await waitForServer(baseUrl, HEALTH_POLL_TIMEOUT_MS);
+      const running = await waitForServer(baseUrl, accessKey, HEALTH_POLL_TIMEOUT_MS);
       if (!running) {
         console.error('octo serve did not become ready after auto-start');
       }

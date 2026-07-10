@@ -34,8 +34,10 @@ import type ClaudianPlugin from '../../../main';
 import { appendContextFiles, appendCurrentNote } from '../../../utils/context';
 import { getVaultPath } from '../../../utils/path';
 import { OCTO_AGENT_PROVIDER_CAPABILITIES } from '../capabilities';
+import { toClaudianPermissionMode, toOctoAgentPermissionMode } from '../permissionMode';
 import { getOctoAgentProviderSettings } from '../settings';
 import { getOctoAgentState } from '../types';
+import { octoAgentChatUIConfig } from '../ui/OctoAgentChatUIConfig';
 import { OctoAgentClient, type OctoAgentEvent, type OctoAgentMessage, type OctoAgentUserFile } from './OctoAgentClient';
 import { ensureOctoAgentServerRunning } from './OctoAgentServerLauncher';
 
@@ -74,6 +76,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
   private subagentHookProvider: (() => SubagentRuntimeState) | null = null;
   private toolIndex = 0;
   private currentToolId: string | null = null;
+  private emittedText = false;
   private supportedCommands: SlashCommand[] = [];
   private serverStartPromise: Promise<boolean> | null = null;
 
@@ -209,7 +212,16 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       return;
     }
 
-    const ready = await this.ensureReady();
+    let ready: boolean;
+    try {
+      ready = await this.ensureReady();
+    } catch (error) {
+      yield {
+        type: 'error',
+        content: error instanceof Error ? error.message : 'Octo Agent failed to become ready.',
+      };
+      return;
+    }
     if (!ready || !this.client || !this.sessionId) {
       yield { type: 'error', content: 'Octo Agent is not ready or not connected.' };
       return;
@@ -219,13 +231,19 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     this.currentTurnMetadata = {};
     this.toolIndex = 0;
     this.currentToolId = null;
+    this.emittedText = false;
+    const QUERY_TIMEOUT_MS = 120_000;
 
     const eventBuffer = new OctoAgentEventBuffer();
     const handler = (event: OctoAgentEvent): void => {
       eventBuffer.push(event);
     };
-    const onEvent = (event: OctoAgentEvent): void => handler(event);
-    this.client.onEvent = onEvent;
+    this.client.onEvent = handler;
+    this.client.setCloseListener(() => {
+      if (this.activeQuery) {
+        this.activeQuery.turnAborted = true;
+      }
+    });
 
     try {
       this.client.sendMessage(
@@ -234,23 +252,35 @@ export class OctoAgentChatRuntime implements ChatRuntime {
         this.buildImageFiles(turn.request.images),
       );
 
+      const timeout = window.setTimeout(() => {
+        if (this.activeQuery) {
+          this.activeQuery.turnAborted = true;
+        }
+      }, QUERY_TIMEOUT_MS);
+
       while (!this.activeQuery.done && !this.activeQuery.turnAborted) {
         while (true) {
           const event = eventBuffer.shift();
           if (!event) break;
           for (const chunk of this.handleEvent(event)) {
+            if (chunk.type === 'text' && chunk.content) {
+              this.emittedText = true;
+            }
             yield chunk;
           }
         }
         await eventBuffer.wait(50);
       }
 
-      if (this.activeQuery.turnAborted) {
-        yield { type: 'error', content: 'Turn was interrupted.' };
+      window.clearTimeout(timeout);
+
+      if (this.activeQuery.turnAborted && !this.activeQuery.done) {
+        yield { type: 'error', content: 'Turn was interrupted or timed out.' };
       }
     } finally {
       this.activeQuery = null;
       this.currentTurnMetadata = {};
+      this.client?.setCloseListener(null);
       this.client.onEvent = undefined;
     }
 
@@ -299,7 +329,6 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       return;
     }
     const config = await this.client.getConfig();
-    console.log('[octo-agent] refreshConfig: models count:', config?.models.length ?? 0, 'defaultIdx:', config?.defaultModelIdx ?? 0);
     if (!config || config.models.length === 0) {
       return;
     }
@@ -326,10 +355,6 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       ) {
         pluginSettings.model = defaultValue;
       }
-    }
-
-    if (config.permissionMode) {
-      pluginSettings.permissionMode = config.permissionMode;
     }
   }
 
@@ -376,8 +401,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       return;
     }
     try {
-      await this.client.setPermissionMode(this.sessionId, mode);
-      console.log('[octo-agent] setPermissionMode synced:', mode);
+      await this.client.setPermissionMode(this.sessionId, toOctoAgentPermissionMode(mode));
     } catch (error) {
       console.error('Failed to set octo-agent permission mode:', error);
     }
@@ -425,19 +449,16 @@ export class OctoAgentChatRuntime implements ChatRuntime {
   }
 
   async loadHistory(): Promise<ChatMessage[]> {
-    console.log('[octo-agent] loadHistory called for session:', this.sessionId);
     if (!this.sessionId) {
       return [];
     }
 
     try {
       const ready = await this.ensureReady({ allowSessionCreation: false });
-      console.log('[octo-agent] loadHistory ensureReady result:', ready, 'client:', !!this.client);
       if (!ready || !this.client) {
         return [];
       }
       const messages = await this.client.getSessionMessages(this.sessionId);
-      console.log('[octo-agent] loadHistory raw messages count:', messages.length);
       return this.convertServerMessages(messages);
     } catch (error) {
       console.error('Failed to load octo-agent history:', error);
@@ -449,13 +470,12 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     const result: ChatMessage[] = [];
     let timestamp = Date.now();
 
-    console.log('[octo-agent] convertServerMessages: raw messages count:', messages.length);
     for (let i = 0; i < messages.length; i++) {
       const message = messages[i];
       const eventType = (message.type as string) || (message.role as string) || '';
 
       let role: 'user' | 'assistant' | null = null;
-      if (eventType === 'history_user_message' || eventType === 'user') {
+      if (eventType === 'history_user_message' || eventType === 'user_message' || eventType === 'user') {
         role = 'user';
       } else if (eventType === 'assistant_message' || eventType === 'assistant') {
         role = 'assistant';
@@ -483,7 +503,6 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       });
     }
 
-    console.log('[octo-agent] convertServerMessages: converted count:', result.length);
     return result;
   }
 
@@ -594,7 +613,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     }
 
     const providerSettings = getOctoAgentProviderSettings(pluginSettings);
-    const permissionMode = providerSettings.permissionMode ?? 'auto';
+    const permissionMode = toOctoAgentPermissionMode(providerSettings.permissionMode ?? 'yolo');
     try {
       await this.client.setPermissionMode(sessionId, permissionMode);
     } catch (error) {
@@ -639,9 +658,11 @@ export class OctoAgentChatRuntime implements ChatRuntime {
         break;
       }
       case 'assistant_message': {
-        // The assistant_message event carries the final full response. If we already
-        // streamed deltas, we avoid duplicating content here. Deltas are preferred.
-        // In a future iteration we can compare and emit a final text chunk if needed.
+        // The assistant_message event carries the final full response. Use it as a
+        // fallback when the server did not stream any text deltas.
+        if (!this.emittedText && event.content) {
+          yield { type: 'text', content: event.content };
+        }
         break;
       }
       case 'output': {
@@ -707,6 +728,9 @@ export class OctoAgentChatRuntime implements ChatRuntime {
         const usage = this.buildUsageInfo(event);
         if (usage) {
           yield { type: 'usage', usage, sessionId: event.session_id };
+        }
+        if (event.permission_mode) {
+          this.permissionModeSyncCallback?.(toClaudianPermissionMode(event.permission_mode));
         }
         break;
       }
@@ -873,11 +897,24 @@ export class OctoAgentChatRuntime implements ChatRuntime {
   private buildUsageInfo(
     event: Extract<OctoAgentEvent, { type: 'session_update' }>,
   ): UsageInfo | null {
-    if (typeof event.context_usage !== 'number') {
+    if (typeof event.context_usage !== 'number' || event.context_usage < 0) {
       return null;
     }
 
-    const contextWindow = 200_000;
+    const pluginSettings = this.plugin.settings as unknown as Record<string, unknown>;
+    const customLimits =
+      pluginSettings.customContextLimits && typeof pluginSettings.customContextLimits === 'object' && !Array.isArray(pluginSettings.customContextLimits)
+        ? (pluginSettings.customContextLimits as Record<string, number>)
+        : undefined;
+    const contextWindow = octoAgentChatUIConfig.getContextWindowSize(
+      String(pluginSettings.model ?? ''),
+      customLimits,
+      pluginSettings,
+    );
+    if (contextWindow <= 0) {
+      return null;
+    }
+
     const contextTokens = event.context_usage;
     return {
       contextTokens,

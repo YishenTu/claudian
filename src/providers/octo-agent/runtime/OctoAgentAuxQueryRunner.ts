@@ -1,4 +1,5 @@
 import type ClaudianPlugin from '../../../main';
+import { toOctoAgentPermissionMode } from '../permissionMode';
 import { getOctoAgentProviderSettings } from '../settings';
 import { OctoAgentClient } from './OctoAgentClient';
 
@@ -132,7 +133,7 @@ export async function runOctoAgentAuxQuery(
 
             await client.setPermissionMode(
               sessionId,
-              options.permissionMode ?? 'interactive',
+              toOctoAgentPermissionMode(options.permissionMode ?? 'interactive'),
             );
           }
 

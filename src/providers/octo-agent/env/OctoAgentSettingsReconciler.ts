@@ -1,6 +1,7 @@
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { getOctoAgentProviderSettings } from '../settings';
+import { octoAgentChatUIConfig } from '../ui/OctoAgentChatUIConfig';
 
 export const octoAgentSettingsReconciler: ProviderSettingsReconciler = {
   handleEnvironmentChange(): boolean {
@@ -30,10 +31,14 @@ export const octoAgentSettingsReconciler: ProviderSettingsReconciler = {
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
     const model = typeof settings.model === 'string' ? settings.model : '';
-    if (!model || model === 'octo-agent' || model.startsWith('octo-agent/')) {
+    if (!model || (!model.startsWith('octo-agent') && model !== 'octo-agent')) {
       return false;
     }
-    // The current model does not belong to octo-agent; do not touch it.
+    const normalized = octoAgentChatUIConfig.normalizeModelVariant(model, settings);
+    if (normalized !== model) {
+      settings.model = normalized;
+      return true;
+    }
     return false;
   },
 };

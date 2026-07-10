@@ -19,7 +19,7 @@ export const DEFAULT_OCTO_AGENT_PROVIDER_SETTINGS: Readonly<OctoAgentProviderSet
     enabled: false,
     environmentVariables: '',
     host: '127.0.0.1',
-    permissionMode: 'auto',
+    permissionMode: 'yolo',
     port: 8088,
   });
 

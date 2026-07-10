@@ -5,6 +5,10 @@ import type {
   ProviderUIOption,
 } from '../../../core/providers/types';
 import { OCTO_AGENT_PROVIDER_ICON } from '../../../shared/icons';
+import {
+  isValidClaudianPermissionMode,
+  toClaudianPermissionMode,
+} from '../permissionMode';
 
 const OCTO_AGENT_MODEL: ProviderUIOption = {
   description: 'Runs through the local octo-agent server',
@@ -16,9 +20,9 @@ const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 const OCTO_AGENT_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   activeLabel: 'All tools',
-  activeValue: 'auto',
+  activeValue: 'yolo',
   inactiveLabel: 'Read-only',
-  inactiveValue: 'interactive',
+  inactiveValue: 'normal',
 };
 
 export const octoAgentChatUIConfig: ProviderChatUIConfig = {
@@ -30,25 +34,26 @@ export const octoAgentChatUIConfig: ProviderChatUIConfig = {
     return [OCTO_AGENT_MODEL];
   },
 
-  ownsModel(model: string): boolean {
+  ownsModel(model: string, _settings: Record<string, unknown>): boolean {
     return model === 'octo-agent' || model === 'octo-agent/octo-agent' || model.startsWith('octo-agent/');
   },
 
-  isAdaptiveReasoningModel(): boolean {
+  isAdaptiveReasoningModel(_model: string, _settings: Record<string, unknown>): boolean {
     return false;
   },
 
-  getReasoningOptions(): ProviderReasoningOption[] {
+  getReasoningOptions(_model: string, _settings: Record<string, unknown>): ProviderReasoningOption[] {
     return [];
   },
 
-  getDefaultReasoningValue(): string {
+  getDefaultReasoningValue(_model: string, _settings: Record<string, unknown>): string {
     return 'off';
   },
 
   getContextWindowSize(
     _model: string,
     customLimits?: Record<string, number>,
+    _settings?: Record<string, unknown>,
   ): number {
     return customLimits?.['octo-agent'] ?? DEFAULT_CONTEXT_WINDOW;
   },
@@ -70,10 +75,10 @@ export const octoAgentChatUIConfig: ProviderChatUIConfig = {
   normalizeModelVariant(model: string, settings: Record<string, unknown>): string {
     const cached = settings.octoAgentModels as ProviderUIOption[] | undefined;
     if (cached && cached.length > 0) {
-      if (model === 'octo-agent' || cached.some((option) => option.value === model)) {
+      if (cached.some((option) => option.value === model)) {
         return model;
       }
-      const defaultOption = cached[0];
+      const defaultOption = cached.find((option) => option.value === 'octo-agent/kimi-for-coding') ?? cached[0];
       return defaultOption?.value ?? 'octo-agent/kimi-for-coding';
     }
     if (model === 'octo-agent' || model === 'octo-agent/kimi-for-coding' || model.startsWith('octo-agent/')) {
@@ -82,7 +87,7 @@ export const octoAgentChatUIConfig: ProviderChatUIConfig = {
     return 'octo-agent/kimi-for-coding';
   },
 
-  getCustomModelIds(): Set<string> {
+  getCustomModelIds(_envVars: Record<string, string>): Set<string> {
     return new Set<string>();
   },
 
@@ -91,14 +96,21 @@ export const octoAgentChatUIConfig: ProviderChatUIConfig = {
   },
 
   resolvePermissionMode(settings: Record<string, unknown>): string | null {
-    return typeof settings.permissionMode === 'string' ? settings.permissionMode : 'auto';
+    const value = typeof settings.permissionMode === 'string' ? settings.permissionMode : 'yolo';
+    if (isValidClaudianPermissionMode(value)) {
+      return value;
+    }
+    return toClaudianPermissionMode(value);
   },
 
   applyPermissionMode(value: string, settings: unknown): void {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
       return;
     }
-    (settings as Record<string, unknown>).permissionMode = value;
+    const normalized = isValidClaudianPermissionMode(value)
+      ? value
+      : toClaudianPermissionMode(value);
+    (settings as Record<string, unknown>).permissionMode = normalized;
   },
 
   getProviderIcon() {
