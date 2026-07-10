@@ -69,6 +69,7 @@ export type OctoAgentEvent =
   | { type: 'error'; session_id: string; message: string }
   | { type: 'session_update'; session_id: string; context_usage?: number; status?: string; working_dir?: string; permission_mode?: string; reasoning_effort?: string; show_reasoning?: boolean }
   | { type: 'request_confirmation'; session_id: string; id: string; message: string; kind: string; tool_name?: string; command?: string; diff?: string; input?: string }
+  | { type: 'confirmation_complete'; session_id: string; id: string; result: string }
   | { type: 'request_user_question'; session_id: string; question_id: string; question: string; options: string[]; multi_select: boolean; header?: string }
   | { type: 'dismiss_user_question'; session_id: string; question_id: string }
   | { type: 'history_user_message'; session_id: string; content: string; created_at?: number }
@@ -493,6 +494,13 @@ export class OctoAgentClient {
           session_id: sessionId,
           tool_name: asString(record.tool_name) ?? undefined,
           type: 'request_confirmation',
+        };
+      case 'confirmation_complete':
+        return {
+          id: asString(record.id) ?? '',
+          result: asString(record.result) ?? 'no',
+          session_id: sessionId,
+          type: 'confirmation_complete',
         };
       case 'request_user_question':
         return {

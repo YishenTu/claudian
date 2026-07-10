@@ -642,6 +642,8 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     // while no active query is running (e.g. after reconnect or background task).
     if (event.type === 'request_confirmation') {
       void this.handleConfirmation(event);
+    } else if (event.type === 'confirmation_complete') {
+      this.handleConfirmationComplete(event);
     } else if (event.type === 'request_user_question') {
       void this.handleUserQuestion(event);
     }
@@ -738,6 +740,10 @@ export class OctoAgentChatRuntime implements ChatRuntime {
         void this.handleConfirmation(event);
         break;
       }
+      case 'confirmation_complete': {
+        this.handleConfirmationComplete(event);
+        break;
+      }
       case 'request_user_question': {
         void this.handleUserQuestion(event);
         break;
@@ -764,31 +770,63 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       return;
     }
 
+    // Avoid duplicate handling of the same confirmation.
+    if (this.pendingConfirmations.has(event.id)) {
+      return;
+    }
+
     const callback = this.approvalCallback;
     if (!callback) {
       this.client.confirm(event.id, 'no');
       return;
     }
 
+    let result = 'no';
     try {
-      const decision = await callback(
-        event.tool_name || 'octo-agent',
-        {
-          command: event.command,
-          diff: event.diff,
-          input: event.input,
-          kind: event.kind,
-        },
-        event.message,
-        {
-          decisionOptions: this.buildDecisionOptions(event.kind),
-        },
-      );
-      this.client.confirm(event.id, this.mapApprovalDecision(decision, event.kind));
+      result = await new Promise<string>((resolve, reject) => {
+        this.pendingConfirmations.set(event.id, { resolve });
+        callback(
+          event.tool_name || 'octo-agent',
+          {
+            command: event.command,
+            diff: event.diff,
+            input: event.input,
+            kind: event.kind,
+          },
+          event.message,
+          {
+            decisionOptions: this.buildDecisionOptions(event.kind),
+          },
+        )
+          .then((decision) => resolve(this.mapApprovalDecision(decision, event.kind)))
+          .catch(reject);
+      });
     } catch (error) {
       console.error('Error handling octo-agent confirmation:', error);
-      this.client.confirm(event.id, 'no');
+      result = 'no';
+    } finally {
+      if (this.pendingConfirmations.has(event.id)) {
+        // User answered locally; send the result to the server.
+        this.pendingConfirmations.delete(event.id);
+        this.client.confirm(event.id, result);
+      }
+      // If the entry was removed by confirmation_complete, another client
+      // already answered; do not send a duplicate result.
     }
+  }
+
+  private handleConfirmationComplete(
+    event: Extract<OctoAgentEvent, { type: 'confirmation_complete' }>,
+  ): void {
+    const pending = this.pendingConfirmations.get(event.id);
+    if (!pending) {
+      return;
+    }
+    this.pendingConfirmations.delete(event.id);
+    this.approvalDismisser?.();
+    // Resolve the local await so handleConfirmation exits cleanly. The finally
+    // block will see the confirmation is no longer pending and skip sending.
+    pending.resolve('no');
   }
 
   private buildDecisionOptions(
