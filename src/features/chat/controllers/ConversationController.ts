@@ -457,6 +457,18 @@ export class ConversationController {
 
     await plugin.updateConversation(state.currentConversationId!, updates);
     state.hasPendingConversationSave = false;
+
+    // Sync the final conversation title to the provider session when supported.
+    // Title generation runs before query() and therefore before the session id
+    // exists; this is the earliest point where the session id is guaranteed to be
+    // persisted.
+    if (conversation?.title) {
+      try {
+        await agentService?.renameSession?.(conversation.title);
+      } catch (error) {
+        console.error('Failed to sync conversation title to provider session:', error);
+      }
+    }
   }
 
   /**

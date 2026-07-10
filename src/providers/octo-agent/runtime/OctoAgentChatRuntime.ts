@@ -78,6 +78,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
   private currentToolId: string | null = null;
   private emittedText = false;
   private supportedCommands: SlashCommand[] = [];
+  private lastSyncedTitle: string | null = null;
   private serverStartPromise: Promise<boolean> | null = null;
 
   constructor(plugin: ClaudianPlugin) {
@@ -300,6 +301,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     }
     this.sessionId = null;
     this.sessionInvalidated = false;
+    this.lastSyncedTitle = null;
   }
 
   getSessionId(): string | null {
@@ -366,6 +368,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     this.setReady(false);
     this.pendingConfirmations.clear();
     this.pendingQuestions.clear();
+    this.lastSyncedTitle = null;
   }
 
   async rewind(
@@ -411,8 +414,13 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     if (!this.client || !this.sessionId) {
       return;
     }
+    const trimmed = title.trim();
+    if (!trimmed || trimmed === this.lastSyncedTitle) {
+      return;
+    }
     try {
-      await this.client.renameSession(this.sessionId, title);
+      await this.client.renameSession(this.sessionId, trimmed);
+      this.lastSyncedTitle = trimmed;
     } catch (error) {
       console.error('Failed to rename octo-agent session:', error);
     }
@@ -792,7 +800,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       return;
     }
 
-    let result = 'no';
+    let result: string;
     try {
       result = await new Promise<string>((resolve, reject) => {
         this.pendingConfirmations.set(event.id, { resolve });
