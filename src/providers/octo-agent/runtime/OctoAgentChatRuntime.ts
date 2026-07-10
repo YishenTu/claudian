@@ -79,6 +79,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
   private emittedText = false;
   private supportedCommands: SlashCommand[] = [];
   private lastSyncedTitle: string | null = null;
+  private sessionDeletedByRemote = false;
   private serverStartPromise: Promise<boolean> | null = null;
 
   constructor(plugin: ClaudianPlugin) {
@@ -276,8 +277,13 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       window.clearTimeout(timeout);
 
       if (this.activeQuery.turnAborted && !this.activeQuery.done) {
-        yield { type: 'error', content: 'Turn was interrupted or timed out.' };
+        if (this.sessionDeletedByRemote) {
+          yield { type: 'error', content: 'Session was deleted from another client.' };
+        } else {
+          yield { type: 'error', content: 'Turn was interrupted or timed out.' };
+        }
       }
+      this.sessionDeletedByRemote = false;
     } finally {
       this.activeQuery = null;
       this.currentTurnMetadata = {};
@@ -302,6 +308,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     this.sessionId = null;
     this.sessionInvalidated = false;
     this.lastSyncedTitle = null;
+    this.sessionDeletedByRemote = false;
   }
 
   getSessionId(): string | null {
@@ -369,6 +376,7 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     this.pendingConfirmations.clear();
     this.pendingQuestions.clear();
     this.lastSyncedTitle = null;
+    this.sessionDeletedByRemote = false;
   }
 
   async rewind(
@@ -651,6 +659,20 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     }));
   }
 
+  private handleSessionDeleted(
+    event: Extract<OctoAgentEvent, { type: 'session_deleted' }>,
+  ): void {
+    if (event.session_id !== this.sessionId) {
+      return;
+    }
+    this.sessionDeletedByRemote = true;
+    this.sessionInvalidated = true;
+    this.sessionId = null;
+    if (this.activeQuery) {
+      this.activeQuery.turnAborted = true;
+    }
+  }
+
   private handleClientEvent(event: OctoAgentEvent): void {
     if (this.activeQuery) {
       // Handled by the active query loop through the event buffer.
@@ -665,6 +687,8 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       this.handleConfirmationComplete(event);
     } else if (event.type === 'request_user_question') {
       void this.handleUserQuestion(event);
+    } else if (event.type === 'session_deleted') {
+      this.handleSessionDeleted(event);
     }
   }
 
@@ -765,6 +789,11 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       }
       case 'request_user_question': {
         void this.handleUserQuestion(event);
+        break;
+      }
+      case 'session_deleted': {
+        this.handleSessionDeleted(event);
+        yield { type: 'notice', content: 'Session was deleted from another client.', level: 'error' };
         break;
       }
       case 'error': {
