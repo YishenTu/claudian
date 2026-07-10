@@ -1,6 +1,7 @@
 import type {
   ProviderCommandCatalog,
   ProviderCommandDropdownConfig,
+  ProviderCommandDropdownContext,
 } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { SlashCommand } from '../../../core/types';
@@ -88,7 +89,7 @@ export class CodexSkillCatalog implements ProviderCommandCatalog {
     // Codex dropdown entries come from app-server metadata; runtime commands are ignored.
   }
 
-  async listDropdownEntries(context: { includeBuiltIns: boolean }): Promise<ProviderCommandEntry[]> {
+  async listDropdownEntries(context: ProviderCommandDropdownContext): Promise<ProviderCommandEntry[]> {
     const skills = (await this.listProvider.listSkills())
       .filter(skill => skill.enabled)
       .sort(compareCodexSkillPriority);

@@ -12,6 +12,7 @@ import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { Conversation, SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
+import type { SlashCommandProviderEntryContext } from '../../../shared/components/SlashCommandDropdown';
 import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
 import { revealWorkspaceLeaf } from '../../../utils/obsidianCompat';
 import { getTabProviderId } from './providerResolution';
@@ -951,9 +952,14 @@ export class TabManager implements TabManagerInterface {
 
     return {
       config: catalog.getDropdownConfig(),
-      getEntries: async () => {
+      getEntries: async (context?: SlashCommandProviderEntryContext) => {
         await this.getSdkCommands(tab.id);
-        return catalog.listDropdownEntries({ includeBuiltIns: false });
+        const catalogContext = {
+          includeBuiltIns: context?.includeBuiltIns ?? false,
+          ...(context?.triggerChar ? { triggerChar: context.triggerChar } : {}),
+        };
+
+        return catalog.listDropdownEntries(catalogContext);
       },
     };
   }

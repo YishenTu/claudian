@@ -28,7 +28,10 @@ import { TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
 import type { ChatMessage, ClaudianSettings, Conversation, StreamChunk } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
-import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
+import {
+  SlashCommandDropdown,
+  type SlashCommandProviderEntryContext,
+} from '../../../shared/components/SlashCommandDropdown';
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { BrowserSelectionController } from '../controllers/BrowserSelectionController';
@@ -303,7 +306,7 @@ function sendTabInputMessageFromEnterKey(
 
 type ProviderCatalogInfo = {
   config: ProviderCommandDropdownConfig;
-  getEntries: () => Promise<ProviderCommandEntry[]>;
+  getEntries: (context?: SlashCommandProviderEntryContext) => Promise<ProviderCommandEntry[]>;
 } | null;
 
 function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalogInfo {
@@ -314,7 +317,14 @@ function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalog
 
   return {
     config: catalog.getDropdownConfig(),
-    getEntries: () => catalog.listDropdownEntries({ includeBuiltIns: false }),
+    getEntries: (context?: SlashCommandProviderEntryContext) => {
+      const catalogContext = {
+        includeBuiltIns: context?.includeBuiltIns ?? false,
+        ...(context?.triggerChar ? { triggerChar: context.triggerChar } : {}),
+      };
+
+      return catalog.listDropdownEntries(catalogContext);
+    },
   };
 }
 
@@ -767,7 +777,10 @@ function initializeContextManagers(tab: TabData, plugin: ClaudianPlugin): void {
 function initializeSlashCommands(
   tab: TabData,
   getHiddenCommands?: () => Set<string>,
-  catalogInfo?: { config: ProviderCommandDropdownConfig; getEntries: () => Promise<ProviderCommandEntry[]> } | null,
+  catalogInfo?: {
+    config: ProviderCommandDropdownConfig;
+    getEntries: (context?: SlashCommandProviderEntryContext) => Promise<ProviderCommandEntry[]>;
+  } | null,
 ): void {
   const { dom } = tab;
 

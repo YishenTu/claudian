@@ -1,6 +1,7 @@
 import type {
   ProviderCommandCatalog,
   ProviderCommandDropdownConfig,
+  ProviderCommandDropdownContext,
 } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { SlashCommand } from '../../../core/types';
@@ -62,7 +63,7 @@ export class PiCommandCatalog implements ProviderCommandCatalog {
     this.runtimeCommands = dedupeRuntimeCommands(commands);
   }
 
-  async listDropdownEntries(_context: { includeBuiltIns: boolean }): Promise<ProviderCommandEntry[]> {
+  async listDropdownEntries(_context: ProviderCommandDropdownContext): Promise<ProviderCommandEntry[]> {
     return this.runtimeCommands.map(slashCommandToEntry);
   }
 

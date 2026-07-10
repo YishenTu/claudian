@@ -1,5 +1,8 @@
 import { getBuiltInCommandsForDropdown } from '../../core/commands/builtInCommands';
-import type { ProviderCommandDropdownConfig } from '../../core/providers/commands/ProviderCommandCatalog';
+import type {
+  ProviderCommandDropdownConfig,
+  ProviderCommandDropdownContext,
+} from '../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../core/providers/commands/ProviderCommandEntry';
 import type { SlashCommand } from '../../core/types';
 import { normalizeArgumentHint } from '../../utils/slashCommand';
@@ -21,11 +24,15 @@ export interface SlashCommandDropdownCallbacks {
   onHide: () => void;
 }
 
+export interface SlashCommandProviderEntryContext extends ProviderCommandDropdownContext {
+  triggerChar: string;
+}
+
 export interface SlashCommandDropdownOptions {
   fixed?: boolean;
   hiddenCommands?: Set<string>;
   providerConfig?: ProviderCommandDropdownConfig;
-  getProviderEntries?: () => Promise<ProviderCommandEntry[]>;
+  getProviderEntries?: (context: SlashCommandProviderEntryContext) => Promise<ProviderCommandEntry[]>;
 }
 
 export class SlashCommandDropdown {
@@ -43,9 +50,9 @@ export class SlashCommandDropdown {
   private hiddenCommands: Set<string>;
 
   private providerConfig: ProviderCommandDropdownConfig | null;
-  private getProviderEntries: (() => Promise<ProviderCommandEntry[]>) | null;
-  private cachedProviderEntries: ProviderCommandEntry[] = [];
-  private providerEntriesFetched = false;
+  private getProviderEntries: ((context: SlashCommandProviderEntryContext) => Promise<ProviderCommandEntry[]>) | null;
+  private providerEntriesByContext = new Map<string, ProviderCommandEntry[]>();
+  private activeProviderEntries: ProviderCommandEntry[] = [];
 
   private requestId = 0;
 
@@ -80,12 +87,12 @@ export class SlashCommandDropdown {
 
   setProviderCatalog(
     config: ProviderCommandDropdownConfig,
-    getEntries: () => Promise<ProviderCommandEntry[]>,
+    getEntries: (context: SlashCommandProviderEntryContext) => Promise<ProviderCommandEntry[]>,
   ): void {
     this.providerConfig = config;
     this.getProviderEntries = getEntries;
-    this.cachedProviderEntries = [];
-    this.providerEntriesFetched = false;
+    this.providerEntriesByContext.clear();
+    this.activeProviderEntries = [];
     this.requestId = 0;
   }
 
@@ -181,8 +188,8 @@ export class SlashCommandDropdown {
   }
 
   resetSdkSkillsCache(): void {
-    this.cachedProviderEntries = [];
-    this.providerEntriesFetched = false;
+    this.providerEntriesByContext.clear();
+    this.activeProviderEntries = [];
     this.requestId = 0;
   }
 
@@ -207,11 +214,14 @@ export class SlashCommandDropdown {
     const currentRequest = ++this.requestId;
     const searchLower = searchText.toLowerCase();
 
-    await this.fetchProviderEntries(currentRequest);
+    const includeBuiltIns = isAtPosition0 && this.activeTriggerChar === '/';
+    await this.fetchProviderEntries(currentRequest, {
+      includeBuiltIns,
+      triggerChar: this.activeTriggerChar,
+    });
 
     if (currentRequest !== this.requestId) return;
 
-    const includeBuiltIns = isAtPosition0 && this.activeTriggerChar === '/';
     const allItems = this.buildItemList(includeBuiltIns);
 
     this.filteredItems = allItems
@@ -232,19 +242,34 @@ export class SlashCommandDropdown {
     this.render();
   }
 
-  private async fetchProviderEntries(currentRequest: number): Promise<void> {
-    if (this.providerEntriesFetched || !this.getProviderEntries) return;
+  private async fetchProviderEntries(
+    currentRequest: number,
+    context: SlashCommandProviderEntryContext,
+  ): Promise<void> {
+    this.activeProviderEntries = [];
+    if (!this.getProviderEntries) return;
+
+    const cacheKey = this.getProviderEntryCacheKey(context);
+    const cachedEntries = this.providerEntriesByContext.get(cacheKey);
+    if (cachedEntries) {
+      this.activeProviderEntries = cachedEntries;
+      return;
+    }
 
     try {
-      const entries = await this.getProviderEntries();
+      const entries = await this.getProviderEntries(context);
       if (currentRequest !== this.requestId) return;
       if (entries.length > 0) {
-        this.cachedProviderEntries = entries;
-        this.providerEntriesFetched = true;
+        this.providerEntriesByContext.set(cacheKey, entries);
       }
+      this.activeProviderEntries = entries;
     } catch {
       if (currentRequest !== this.requestId) return;
     }
+  }
+
+  private getProviderEntryCacheKey(context: SlashCommandProviderEntryContext): string {
+    return `${context.triggerChar}:${context.includeBuiltIns ? 'builtins' : 'entries'}`;
   }
 
   private buildItemList(includeBuiltIns: boolean): DropdownItem[] {
@@ -271,7 +296,7 @@ export class SlashCommandDropdown {
       }
     }
 
-    for (const entry of this.cachedProviderEntries) {
+    for (const entry of this.activeProviderEntries) {
       const nameLower = entry.name.toLowerCase();
       if (seenNames.has(nameLower) || this.hiddenCommands.has(nameLower)) {
         continue;
