@@ -73,6 +73,8 @@ export interface StreamControllerDeps {
   updateQueueIndicator: () => void;
   /** Get the agent service from the tab. */
   getAgentService?: () => ChatRuntime | null;
+  /** Id of the tab this controller streams for (tags voice-bus emissions). */
+  getTabId: () => string;
 }
 
 export class StreamController {
@@ -117,9 +119,10 @@ export class StreamController {
   async handleStreamChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
     const { state } = this.deps;
 
-    // Voice tap: forward every handled chunk to the voice stream bus. No-op when
-    // voice mode has never been enabled (voiceBus is undefined / has no subscribers).
-    this.deps.plugin.voiceBus?.emit(chunk);
+    // Voice tap: forward every handled chunk to the voice stream bus, tagged
+    // with this tab's id so voice can filter to the tab it submitted to. No-op
+    // when voice mode has never been enabled (voiceBus has no subscribers).
+    this.deps.plugin.voiceBus?.emit(chunk, this.deps.getTabId());
 
     switch (chunk.type) {
       case 'thinking':

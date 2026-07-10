@@ -164,6 +164,7 @@ function createMockDeps(): StreamControllerDeps {
     getFileContextManager: () => fileContextManager as any,
     updateQueueIndicator: jest.fn(),
     getAgentService: () => agentService as any,
+    getTabId: () => 'tab-1',
   };
 }
 

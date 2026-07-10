@@ -19,27 +19,28 @@ import { StateStream } from './StateStream';
 import { VoiceController, type VoiceRuntimeConfig, type VoiceState, type VoiceStreamBus } from './VoiceController';
 
 /**
- * A tiny synchronous fan-out bus for stream chunks. The StreamController calls
- * `emit` for every chunk it handles; the VoiceController subscribes while voice
- * is running. When there are no subscribers, `emit` is a no-op.
+ * A tiny synchronous fan-out bus for stream chunks. Each tab's StreamController
+ * calls `emit` for every chunk it handles, tagged with its own tab id; the
+ * VoiceController subscribes while voice is running and filters to the tab it
+ * submitted to. When there are no subscribers, `emit` is a no-op.
  */
 export class VoiceStreamBusImpl implements VoiceStreamBus {
-  private readonly listeners = new Set<(chunk: StreamChunk) => void>();
+  private readonly listeners = new Set<(chunk: StreamChunk, tabId: string) => void>();
 
-  emit(chunk: StreamChunk): void {
+  emit(chunk: StreamChunk, tabId: string): void {
     if (this.listeners.size === 0) {
       return;
     }
     for (const listener of this.listeners) {
       try {
-        listener(chunk);
+        listener(chunk, tabId);
       } catch {
         // A voice-side error must never disrupt chat rendering.
       }
     }
   }
 
-  subscribe(listener: (chunk: StreamChunk) => void): () => void {
+  subscribe(listener: (chunk: StreamChunk, tabId: string) => void): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);

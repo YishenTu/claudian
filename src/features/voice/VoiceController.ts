@@ -29,9 +29,11 @@ export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'pendi
 /** Fallback confirm-window hold (ms) when the setting is absent/invalid. */
 const DEFAULT_CONFIRM_WINDOW_MS = 2000;
 
-/** Minimal event bus the StreamController forwards chunks into. */
+/** Minimal event bus the StreamController forwards chunks into. Every chunk is
+ *  tagged with the id of the tab whose stream produced it, so the voice loop
+ *  can ignore streams from other (background) tabs. */
 export interface VoiceStreamBus {
-  subscribe(listener: (chunk: StreamChunk) => void): () => void;
+  subscribe(listener: (chunk: StreamChunk, tabId: string) => void): () => void;
 }
 
 /** Where the Python bridge lives and how to launch it. */
@@ -83,6 +85,12 @@ export class VoiceController {
   private lastTranscript = '';
   private lastTranscriptAt = 0;
 
+  // The tab the last voice command was submitted to. Only chunks from this tab
+  // are spoken — a background tab streaming its own reply must not hijack TTS
+  // or re-arm the mic. Locked at submit (not follow-the-active-tab), matching
+  // how the confirm window and queue behave; cleared with the turn buffers.
+  private targetTabId: string | null = null;
+
   constructor(
     plugin: ClaudianPlugin,
     bus: VoiceStreamBus,
@@ -106,7 +114,7 @@ export class VoiceController {
     this.unsubscribeBridge = lease.bridge.onEvent((event) => this.handleBridgeEvent(event));
 
     // Tap the chat stream only once the bridge is live, so text→speech is wired.
-    this.unsubscribeBus = this.bus.subscribe((chunk) => this.handleStreamChunk(chunk));
+    this.unsubscribeBus = this.bus.subscribe((chunk, tabId) => this.handleStreamChunk(chunk, tabId));
 
     this.armListen();
   }
@@ -257,9 +265,12 @@ export class VoiceController {
 
     // Barge-in: a transcript arriving mid-reply cuts the current turn and starts
     // a fresh one. Cancel the in-flight stream, cut audio, and clear the queue.
+    // The reply being cut belongs to the locked target tab, which may no longer
+    // be the active one — cancel there, not on whatever tab has focus.
     if (state === 'speaking' || state === 'thinking') {
-      if (tab.state.isStreaming) {
-        tab.controllers.inputController.cancelStreaming();
+      const targetTab = this.getTabById(this.targetTabId) ?? tab;
+      if (targetTab.state.isStreaming) {
+        targetTab.controllers.inputController?.cancelStreaming();
       }
       this.bridge?.interrupt();
       this.resetTurnBuffers();
@@ -283,7 +294,12 @@ export class VoiceController {
 
   // ---- chat stream tap ----
 
-  private handleStreamChunk(chunk: StreamChunk): void {
+  private handleStreamChunk(chunk: StreamChunk, tabId: string): void {
+    // Only the tab the voice command went to is spoken; background streams
+    // (other tabs, or a cancelled turn's trailing chunks) are ignored.
+    if (this.targetTabId === null || tabId !== this.targetTabId) {
+      return;
+    }
     switch (chunk.type) {
       case 'text':
         this.ingestText(chunk.content);
@@ -410,6 +426,9 @@ export class VoiceController {
       this.armListen();
       return;
     }
+    // Lock speech to the tab this command goes to; replies streaming in any
+    // other tab stay silent.
+    this.targetTabId = tab.id;
     this.state$.set('thinking');
     // sendMessage owns its own error handling; guard the promise so a rejection
     // can't go unhandled.
@@ -448,9 +467,19 @@ export class VoiceController {
     this.speakBuffer = '';
     this.pendingSpeaks = 0;
     this.turnComplete = false;
+    // Unlock the target tab so a cancelled turn's trailing chunks (e.g. the
+    // `done` emitted by cancelStreaming) can't re-arm the mic or be spoken.
+    this.targetTabId = null;
   }
 
   private getActiveTab(): TabData | null {
     return this.plugin.getView()?.getActiveTab() ?? null;
+  }
+
+  private getTabById(tabId: string | null): TabData | null {
+    if (tabId === null) {
+      return null;
+    }
+    return this.plugin.getView()?.getTabManager()?.getTab(tabId) ?? null;
   }
 }
