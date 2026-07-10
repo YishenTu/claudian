@@ -14,7 +14,7 @@ import type { TabData } from '../chat/tabs/types';
 import { createPendingCommandBadge } from './PendingCommandBadge';
 import { createQueuedInputBadge } from './QueuedInputBadge';
 import type { VoiceState } from './VoiceController';
-import { type WaveformMode,waveformModeClass, waveformModeForState } from './waveformState';
+import { type WaveformMode, waveformModeClass, waveformModeForState } from './waveformState';
 
 /** Number of bars in the waveform indicator. Kept small to stay lightweight. */
 const WAVEFORM_BAR_COUNT = 5;

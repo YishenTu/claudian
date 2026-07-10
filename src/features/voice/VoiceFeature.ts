@@ -15,6 +15,7 @@ import type { StreamChunk } from '../../core/types';
 import type ClaudianPlugin from '../../main';
 import { DictationController, type DictationState } from './DictationController';
 import { ResidentBridge } from './ResidentBridge';
+import { StateStream } from './StateStream';
 import { VoiceController, type VoiceRuntimeConfig, type VoiceState, type VoiceStreamBus } from './VoiceController';
 
 /**
@@ -55,22 +56,14 @@ export class VoiceFeature {
   private controller: VoiceController | null = null;
   private starting = false;
 
-  // Conversation-state listeners (per-tab waveform indicators). The current
-  // state is replayed to new subscribers so a freshly-built tab reflects an
-  // already-running session.
-  private readonly conversationStateListeners = new Set<(state: VoiceState) => void>();
-  private conversationState: VoiceState = 'idle';
-  private unsubscribeControllerState: (() => void) | null = null;
-
-  // Confirm-window + mute state, cached here so per-tab controls (which outlive
-  // any single controller instance) can subscribe once and stay in sync.
-  private readonly pendingCommandListeners = new Set<(command: string | null) => void>();
-  private pendingCommand: string | null = null;
-  private unsubscribeControllerPending: (() => void) | null = null;
-
-  private readonly muteListeners = new Set<(muted: boolean) => void>();
-  private muted = false;
-  private unsubscribeControllerMute: (() => void) | null = null;
+  // Controller state mirrored into feature-lifetime streams, so per-tab controls
+  // (which outlive any single controller instance) can subscribe once and stay
+  // in sync. The current value replays to new subscribers, so a freshly-built
+  // tab reflects an already-running session.
+  private readonly conversationState$ = new StateStream<VoiceState>('idle');
+  private readonly pendingCommand$ = new StateStream<string | null>(null);
+  private readonly muted$ = new StateStream(false);
+  private controllerUnsubs: Array<() => void> = [];
 
   constructor(plugin: ClaudianPlugin) {
     this.plugin = plugin;
@@ -103,11 +96,6 @@ export class VoiceFeature {
     }
   }
 
-  /** Back-compat alias for the existing `toggle-voice-mode` command. */
-  async toggle(): Promise<void> {
-    await this.toggleConversation();
-  }
-
   /** Start a conversation session using the current settings. */
   async enable(): Promise<void> {
     if (this.controller || this.starting) {
@@ -121,18 +109,13 @@ export class VoiceFeature {
     this.starting = true;
     const controller = new VoiceController(this.plugin, this.bus, () => this.residentBridge.acquire());
     try {
-      // Reflect controller state into the shared conversation-state stream so
-      // per-tab waveform indicators animate live.
-      this.unsubscribeControllerState = controller.onStateChange((state) => {
-        this.setConversationState(state);
-      });
-      // Fan out the confirm-window + mute state to per-tab controls too.
-      this.unsubscribeControllerPending = controller.onPendingCommandChange((command) => {
-        this.setPendingCommand(command);
-      });
-      this.unsubscribeControllerMute = controller.onMuteChange((muted) => {
-        this.setMuted(muted);
-      });
+      // Mirror controller state into the feature-lifetime streams so per-tab
+      // controls (waveform, badges, mute button) animate live.
+      this.controllerUnsubs = [
+        controller.onStateChange((state) => this.conversationState$.set(state)),
+        controller.onPendingCommandChange((command) => this.pendingCommand$.set(command)),
+        controller.onMuteChange((muted) => this.muted$.set(muted)),
+      ];
       await controller.start();
       this.controller = controller;
       new Notice('Voice mode on — listening.');
@@ -141,9 +124,7 @@ export class VoiceFeature {
       // did); just stay disabled and drop the state subscriptions.
       this.detachControllerSubscriptions();
       this.controller = null;
-      this.setConversationState('idle');
-      this.setPendingCommand(null);
-      this.setMuted(false);
+      this.resetStreams();
     } finally {
       this.starting = false;
     }
@@ -158,19 +139,21 @@ export class VoiceFeature {
       await controller.stop();
       new Notice('Voice mode off.');
     }
-    this.setConversationState('idle');
-    this.setPendingCommand(null);
-    this.setMuted(false);
+    this.resetStreams();
   }
 
   /** Drop all live controller subscriptions (state, pending, mute). */
   private detachControllerSubscriptions(): void {
-    this.unsubscribeControllerState?.();
-    this.unsubscribeControllerState = null;
-    this.unsubscribeControllerPending?.();
-    this.unsubscribeControllerPending = null;
-    this.unsubscribeControllerMute?.();
-    this.unsubscribeControllerMute = null;
+    for (const unsubscribe of this.controllerUnsubs) {
+      unsubscribe();
+    }
+    this.controllerUnsubs = [];
+  }
+
+  private resetStreams(): void {
+    this.conversationState$.set('idle');
+    this.pendingCommand$.set(null);
+    this.muted$.set(false);
   }
 
   /**
@@ -178,11 +161,7 @@ export class VoiceFeature {
    * state, then on every change. Used by per-tab waveform indicators.
    */
   onConversationStateChange(listener: (state: VoiceState) => void): () => void {
-    this.conversationStateListeners.add(listener);
-    listener(this.conversationState);
-    return () => {
-      this.conversationStateListeners.delete(listener);
-    };
+    return this.conversationState$.subscribe(listener);
   }
 
   /**
@@ -191,11 +170,7 @@ export class VoiceFeature {
    * per-tab pending-command badge.
    */
   onPendingCommandChange(listener: (command: string | null) => void): () => void {
-    this.pendingCommandListeners.add(listener);
-    listener(this.pendingCommand);
-    return () => {
-      this.pendingCommandListeners.delete(listener);
-    };
+    return this.pendingCommand$.subscribe(listener);
   }
 
   /** Cancel the command held in the confirm window (✕ badge / voice cancel). */
@@ -205,11 +180,7 @@ export class VoiceFeature {
 
   /** Subscribe to mic mute state. Fires immediately, then on every change. */
   onMuteChange(listener: (muted: boolean) => void): () => void {
-    this.muteListeners.add(listener);
-    listener(this.muted);
-    return () => {
-      this.muteListeners.delete(listener);
-    };
+    return this.muted$.subscribe(listener);
   }
 
   /** Toggle the mic pause (no-op unless a conversation is running). */
@@ -243,48 +214,6 @@ export class VoiceFeature {
   }
 
   // ---- helpers ----
-
-  private setConversationState(state: VoiceState): void {
-    if (this.conversationState === state) {
-      return;
-    }
-    this.conversationState = state;
-    for (const listener of this.conversationStateListeners) {
-      try {
-        listener(state);
-      } catch {
-        // A listener error must never disrupt the turn loop.
-      }
-    }
-  }
-
-  private setPendingCommand(command: string | null): void {
-    if (this.pendingCommand === command) {
-      return;
-    }
-    this.pendingCommand = command;
-    for (const listener of this.pendingCommandListeners) {
-      try {
-        listener(command);
-      } catch {
-        // A listener error must never disrupt the turn loop.
-      }
-    }
-  }
-
-  private setMuted(muted: boolean): void {
-    if (this.muted === muted) {
-      return;
-    }
-    this.muted = muted;
-    for (const listener of this.muteListeners) {
-      try {
-        listener(muted);
-      } catch {
-        // A listener error must never disrupt the turn loop.
-      }
-    }
-  }
 
   /** Whether the bridge script path is configured (buttons are always shown,
    *  but need a path before they can do anything). */

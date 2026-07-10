@@ -483,18 +483,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
     new Setting(container).setName('Voice').setHeading();
 
     new Setting(container)
-      .setName('Enable voice mode')
-      .setDesc('Hands-free voice conversation via the voicecode Python bridge. Toggle at runtime with the "Toggle voice mode" command.')
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.voiceEnabled ?? false)
-          .onChange(async (value) => {
-            this.plugin.settings.voiceEnabled = value;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(container)
       .setName('Python path')
       .setDesc('Python interpreter used to run the voice bridge (e.g. python3, or an absolute venv path).')
       .addText((text) =>

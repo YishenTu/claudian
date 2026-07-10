@@ -14,6 +14,7 @@ import type { TabData } from '../chat/tabs/types';
 import { autoResizeTextarea } from '../chat/ui/textareaResize';
 import { mergeDictation } from './dictationInsert';
 import type { BridgeLease } from './ResidentBridge';
+import { StateStream } from './StateStream';
 import type { VoiceBridge, VoiceEvent } from './VoiceBridge';
 
 /** Dictation lifecycle, exposed so the mic button can reflect capture state. */
@@ -26,9 +27,11 @@ export class DictationController {
   private lease: BridgeLease | null = null;
   private bridge: VoiceBridge | null = null;
   private unsubscribe: (() => void) | null = null;
-  private state: DictationState = 'idle';
+  // Guards start() while the bridge is still cold-starting, so a rapid second
+  // tap can't acquire a duplicate lease (the first handle would leak).
+  private starting = false;
 
-  private readonly stateListeners = new Set<(state: DictationState) => void>();
+  private readonly state$ = new StateStream<DictationState>('idle');
 
   constructor(plugin: ClaudianPlugin, acquireBridge: () => Promise<BridgeLease>) {
     this.plugin = plugin;
@@ -37,16 +40,12 @@ export class DictationController {
 
   /** True while a capture is in flight. */
   isListening(): boolean {
-    return this.state === 'listening';
+    return this.state$.get() === 'listening';
   }
 
   /** Subscribe to dictation state; fires immediately then on every change. */
   onStateChange(listener: (state: DictationState) => void): () => void {
-    this.stateListeners.add(listener);
-    listener(this.state);
-    return () => {
-      this.stateListeners.delete(listener);
-    };
+    return this.state$.subscribe(listener);
   }
 
   /**
@@ -54,7 +53,7 @@ export class DictationController {
    * Returns once the capture has been armed (not once the transcript lands).
    */
   async toggle(): Promise<void> {
-    if (this.state === 'listening') {
+    if (this.isListening()) {
       this.cancel();
       return;
     }
@@ -63,7 +62,7 @@ export class DictationController {
 
   /** Cancel an in-flight capture and release the bridge. */
   cancel(): void {
-    if (this.state !== 'listening') {
+    if (!this.isListening()) {
       return;
     }
     // interrupt() cuts any capture; we release regardless of what the bridge
@@ -80,18 +79,24 @@ export class DictationController {
   // ---- internals ----
 
   private async start(): Promise<void> {
+    if (this.starting) {
+      return;
+    }
+    this.starting = true;
     let lease: BridgeLease;
     try {
       lease = await this.acquireBridge();
     } catch {
       // ResidentBridge surfaced the reason via Notice.
       return;
+    } finally {
+      this.starting = false;
     }
 
     this.lease = lease;
     this.bridge = lease.bridge;
     this.unsubscribe = lease.bridge.onEvent((event) => this.handleEvent(event));
-    this.setState('listening');
+    this.state$.set('listening');
     lease.bridge.listen();
   }
 
@@ -156,20 +161,6 @@ export class DictationController {
     const lease = this.lease;
     this.lease = null;
     lease?.release();
-    this.setState('idle');
-  }
-
-  private setState(next: DictationState): void {
-    if (this.state === next) {
-      return;
-    }
-    this.state = next;
-    for (const listener of this.stateListeners) {
-      try {
-        listener(next);
-      } catch {
-        // A listener error must never disrupt dictation.
-      }
-    }
+    this.state$.set('idle');
   }
 }

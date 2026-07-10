@@ -128,8 +128,10 @@ export class VoiceBridge {
     this.proc.start();
     this.wireStdout(this.proc.stdout);
 
-    await this.awaitStartupEvent('ready');
-    await this.awaitStartupEvent('initialized');
+    // One waiter for both handshake events: subscribing sequentially would drop
+    // an `initialized` that arrives in the same stdout chunk as `ready` (events
+    // dispatch synchronously) and hang startup until the timeout.
+    await this.awaitStartupEvents(['ready', 'initialized']);
   }
 
   /** Subscribe to bridge events. Returns an unsubscribe function. */
@@ -196,9 +198,10 @@ export class VoiceBridge {
 
   // ---- internals ----
 
-  /** Block until the named handshake event arrives, or reject on timeout/close. */
-  private awaitStartupEvent(want: string): Promise<void> {
+  /** Block until all named handshake events arrive, or reject on timeout/close. */
+  private awaitStartupEvents(wanted: string[]): Promise<void> {
     return new Promise<void>((resolve, reject) => {
+      const remaining = new Set(wanted);
       let settled = false;
       const finish = (fn: () => void): void => {
         if (settled) {
@@ -210,28 +213,29 @@ export class VoiceBridge {
         window.clearTimeout(timer);
         fn();
       };
+      const missing = (): string => [...remaining].join(', ');
 
       const unsubscribeEvent = this.onEvent((event) => {
         if (event.type === 'error') {
           finish(() => reject(new Error(`bridge startup error: ${event.message ?? 'unknown'}`)));
           return;
         }
-        if (event.type === want) {
+        // Unrelated startup chatter is ignored; keep waiting for the rest.
+        remaining.delete(event.type);
+        if (remaining.size === 0) {
           finish(resolve);
-          return;
         }
-        // Ignore unrelated startup chatter; keep waiting for `want`.
       });
 
       const unsubscribeClose = this.proc.onClose((error) => {
-        const detail = error?.message ?? this.proc.getStderrSnapshot() ?? '';
+        const detail = error?.message ?? this.proc.getStderrSnapshot();
         finish(() =>
-          reject(new Error(`bridge closed during startup (expected ${want})${detail ? `: ${detail}` : ''}`)),
+          reject(new Error(`bridge closed during startup (expected ${missing()})${detail ? `: ${detail}` : ''}`)),
         );
       });
 
       const timer = window.setTimeout(() => {
-        finish(() => reject(new Error(`timeout waiting for ${want} event`)));
+        finish(() => reject(new Error(`timeout waiting for ${missing()} event`)));
       }, this.startupTimeoutMs);
     });
   }

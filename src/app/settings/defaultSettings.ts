@@ -53,7 +53,6 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
 
   hiddenProviderCommands: getDefaultHiddenProviderCommands(),
 
-  voiceEnabled: false,
   voicePythonPath: 'python3',
   voiceBridgeScriptPath: '',
   voiceDictationAutoSend: false,

@@ -148,7 +148,6 @@ export interface ClaudianSettings {
   hiddenProviderCommands: HiddenProviderCommands;
 
   // Voice mode (spawns the voicecode Python bridge as a subprocess)
-  voiceEnabled?: boolean;
   voicePythonPath?: string;
   voiceBridgeScriptPath?: string;
   // When true, a dictated transcript sends immediately instead of being
