@@ -22,11 +22,12 @@ export class CodexModelDiscoveryService {
   constructor(private readonly plugin: ClaudianPlugin) {}
 
   async discoverModels(): Promise<CodexModelDiscoveryResult> {
-    const launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
-    const process = new CodexAppServerProcess(launchSpec);
+    let process: CodexAppServerProcess | null = null;
     let transport: CodexRpcTransport | null = null;
 
     try {
+      const launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
+      process = new CodexAppServerProcess(launchSpec);
       process.start();
       transport = new CodexRpcTransport(process);
       transport.start();
@@ -58,14 +59,16 @@ export class CodexModelDiscoveryService {
       return { models: normalizeCodexDiscoveredModels(entries) };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Codex model discovery failed';
-      const stderr = process.getStderrSnapshot();
+      const stderr = process?.getStderrSnapshot() ?? '';
       return {
         diagnostics: stderr ? `${message}\n\n${stderr}` : message,
         models: [],
       };
     } finally {
       transport?.dispose();
-      await process.shutdown().catch(() => {});
+      if (process) {
+        await process.shutdown().catch(() => {});
+      }
     }
   }
 }

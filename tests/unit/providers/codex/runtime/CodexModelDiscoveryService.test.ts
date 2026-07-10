@@ -110,4 +110,19 @@ describe('CodexModelDiscoveryService', () => {
     expect(mockTransportDispose).toHaveBeenCalledTimes(1);
     expect(mockProcessShutdown).toHaveBeenCalledTimes(1);
   });
+
+  it('returns diagnostics when launch-spec resolution fails before process startup', async () => {
+    mockResolveLaunchSpec.mockImplementationOnce(() => {
+      throw new Error('Unable to determine the WSL distro');
+    });
+
+    await expect(
+      new CodexModelDiscoveryService({} as any).discoverModels(),
+    ).resolves.toEqual({
+      diagnostics: 'Unable to determine the WSL distro',
+      models: [],
+    });
+    expect(mockProcessStart).not.toHaveBeenCalled();
+    expect(mockProcessShutdown).not.toHaveBeenCalled();
+  });
 });

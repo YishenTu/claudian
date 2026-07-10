@@ -87,12 +87,26 @@ describe('resolveCodexExecutionTarget', () => {
 });
 
 describe('parseDefaultWslDistroListOutput', () => {
-  it('extracts the starred default distro from wsl --list --verbose output', () => {
-    expect(parseDefaultWslDistroListOutput(`
+  const distroListOutput = `
   NAME              STATE           VERSION
 * Ubuntu-24.04      Running         2
   Debian            Stopped         2
-`)).toBe('Ubuntu-24.04');
+`;
+
+  it('extracts the starred default distro from wsl --list --verbose output', () => {
+    expect(parseDefaultWslDistroListOutput(distroListOutput)).toBe('Ubuntu-24.04');
+  });
+
+  it('decodes the native UTF-16LE output emitted by wsl.exe list commands', () => {
+    expect(parseDefaultWslDistroListOutput(
+      Buffer.from(distroListOutput, 'utf16le'),
+    )).toBe('Ubuntu-24.04');
+  });
+
+  it('continues to accept UTF-8 output when WSL_UTF8 is enabled', () => {
+    expect(parseDefaultWslDistroListOutput(
+      Buffer.from(distroListOutput, 'utf8'),
+    )).toBe('Ubuntu-24.04');
   });
 
   it('returns undefined when no default distro marker is present', () => {

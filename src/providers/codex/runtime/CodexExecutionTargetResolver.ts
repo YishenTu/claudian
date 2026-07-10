@@ -40,8 +40,43 @@ export function inferWslDistroFromWindowsPath(hostPath: string | null | undefine
   return match?.[1] || undefined;
 }
 
-export function parseDefaultWslDistroListOutput(output: string): string | undefined {
-  for (const line of output.replace(/\uFEFF/g, '').split(/\r?\n/)) {
+function looksLikeUtf16Le(output: Buffer): boolean {
+  const sampleLength = Math.min(output.length - (output.length % 2), 512);
+  if (sampleLength < 4) {
+    return false;
+  }
+
+  let evenNullBytes = 0;
+  let oddNullBytes = 0;
+  for (let index = 0; index < sampleLength; index += 2) {
+    if (output[index] === 0) {
+      evenNullBytes += 1;
+    }
+    if (output[index + 1] === 0) {
+      oddNullBytes += 1;
+    }
+  }
+
+  const bytePairs = sampleLength / 2;
+  return oddNullBytes / bytePairs >= 0.2 && oddNullBytes > evenNullBytes * 2;
+}
+
+function decodeWslListOutput(output: string | Buffer): string {
+  if (typeof output === 'string') {
+    return output;
+  }
+
+  const hasUtf16LeBom = output.length >= 2 && output[0] === 0xFF && output[1] === 0xFE;
+  if (hasUtf16LeBom || looksLikeUtf16Le(output)) {
+    return output.toString('utf16le');
+  }
+
+  return output.toString('utf8');
+}
+
+export function parseDefaultWslDistroListOutput(output: string | Buffer): string | undefined {
+  const decodedOutput = decodeWslListOutput(output);
+  for (const line of decodedOutput.replace(/\uFEFF/g, '').split(/\r?\n/)) {
     const trimmed = line.trimStart();
     if (!trimmed.startsWith('*')) {
       continue;
@@ -59,7 +94,6 @@ export function parseDefaultWslDistroListOutput(output: string): string | undefi
 function resolveDefaultWslDistroName(): string | undefined {
   try {
     const output = execFileSync('wsl.exe', ['--list', '--verbose'], {
-      encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       windowsHide: true,
     });
