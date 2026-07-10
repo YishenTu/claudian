@@ -378,6 +378,22 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       );
 
     new Setting(container)
+      .setName('Remote control by default')
+      .setDesc(
+        'Auto-enable Remote Control for every Claude session so it can be driven '
+        + 'from claude.ai/code. Headless mode cannot reuse the persistent bridge, '
+        + 'so reloading Obsidian registers a new claude.ai session each time.',
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(claudeSettings.remoteControlByDefault)
+          .onChange(async (value) => {
+            updateClaudeProviderSettings(settingsBag, { remoteControlByDefault: value });
+            await context.plugin.saveSettings();
+          })
+      );
+
+    new Setting(container)
       .setName(t('settings.enableBangBash.name'))
       .setDesc(t('settings.enableBangBash.desc'))
       .addToggle((toggle) =>
