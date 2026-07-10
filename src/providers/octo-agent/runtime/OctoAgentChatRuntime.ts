@@ -611,8 +611,9 @@ export class OctoAgentChatRuntime implements ChatRuntime {
       }
     }
 
-    const providerSettings = getOctoAgentProviderSettings(pluginSettings);
-    const permissionMode = toOctoAgentPermissionMode(providerSettings.permissionMode ?? 'yolo');
+    const permissionMode = toOctoAgentPermissionMode(
+      (this.plugin.settings.permissionMode as string | undefined) ?? 'yolo',
+    );
     try {
       await this.client.setPermissionMode(sessionId, permissionMode);
     } catch (error) {
