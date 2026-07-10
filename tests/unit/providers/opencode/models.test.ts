@@ -10,6 +10,7 @@ import {
   OPENCODE_DEFAULT_THINKING_LEVEL,
   OPENCODE_SYNTHETIC_MODEL_ID,
   resolveOpencodeBaseModelRawId,
+  resolveOpencodeDefaultThinkingLevel,
   splitOpencodeModelLabel,
 } from '../../../../src/providers/opencode/models';
 import { opencodeChatUIConfig } from '../../../../src/providers/opencode/ui/OpencodeChatUIConfig';
@@ -21,6 +22,19 @@ describe('OpenCode model identity', () => {
     expect(decodeOpencodeModelId(OPENCODE_SYNTHETIC_MODEL_ID)).toBeNull();
     expect(isOpencodeModelSelectionId('opencode:anthropic/claude-sonnet-4')).toBe(true);
     expect(isOpencodeModelSelectionId('claude-sonnet-4')).toBe(false);
+  });
+});
+
+describe('OpenCode thinking defaults', () => {
+  it('falls back to the current provider level when high is unsupported', () => {
+    expect(resolveOpencodeDefaultThinkingLevel(
+      [
+        { label: 'Low', value: 'low' },
+        { label: 'Medium', value: 'medium' },
+      ],
+      undefined,
+      'medium',
+    )).toBe('medium');
   });
 });
 
@@ -232,6 +246,31 @@ describe('opencodeChatUIConfig', () => {
       'opencode:anthropic/claude-sonnet-4',
       settings,
     )).toBe('max');
+  });
+
+  it('defaults ACP thought-level models to high without a saved preference', () => {
+    const settings = {
+      providerConfigs: {
+        opencode: {
+          discoveredModels: [
+            { label: 'Anthropic/Claude Sonnet 4', rawId: 'anthropic/claude-sonnet-4' },
+          ],
+          preferredThinkingByModel: {},
+          thinkingOptionsByModel: {
+            'anthropic/claude-sonnet-4': [
+              { label: 'Low', value: 'low' },
+              { label: 'High', value: 'high' },
+              { label: 'Max', value: 'max' },
+            ],
+          },
+        },
+      },
+    };
+
+    expect(opencodeChatUIConfig.getDefaultReasoningValue(
+      'opencode:anthropic/claude-sonnet-4',
+      settings,
+    )).toBe('high');
   });
 });
 

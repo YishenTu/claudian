@@ -7,6 +7,8 @@ const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockBroadcastToAllTabs = jest.fn().mockResolvedValue(undefined);
+const mockRenderCodexModelPicker = jest.fn();
+const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
 
 jest.mock('fs');
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
@@ -102,7 +104,12 @@ jest.mock('@/providers/codex/app/CodexWorkspaceServices', () => ({
     commandCatalog: null,
     subagentStorage: {},
     refreshAgentMentions: jest.fn(),
+    refreshModelCatalog: mockRefreshModelCatalog,
   })),
+}));
+
+jest.mock('@/providers/codex/ui/CodexModelPicker', () => ({
+  renderCodexModelPicker: (...args: unknown[]) => mockRenderCodexModelPicker(...args),
 }));
 
 jest.mock('@/providers/codex/ui/CodexSkillSettings', () => ({
@@ -327,6 +334,17 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
           ...DEFAULT_CODEX_PROVIDER_SETTINGS,
           enabled: true,
           customModels: 'my-custom-model',
+          discoveredModels: [{
+            model: 'gpt-5.6-sol',
+            displayName: 'GPT-5.6-Sol',
+            description: 'Latest frontier agentic coding model.',
+            supportedReasoningEfforts: [{ value: 'low', description: 'Fast' }],
+            defaultReasoningEffort: 'low',
+            serviceTiers: [],
+            defaultServiceTier: null,
+            inputModalities: ['text', 'image'],
+            isDefault: true,
+          }],
         },
       },
       ...overrides,
@@ -404,6 +422,21 @@ describe('CodexSettingsTab', () => {
     expect(findOptionalSetting('WSL distro override')).toBeUndefined();
   });
 
+  it('renders the app-server model visibility picker', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+    const container = createContainer();
+
+    codexSettingsTabRenderer.render(container, context);
+
+    expect(mockRenderCodexModelPicker).toHaveBeenCalledWith(
+      container,
+      context,
+      expect.objectContaining({ commandCatalog: null }),
+    );
+  });
+
   it('uses host-native CLI path behavior on non-Windows even when WSL is saved', async () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const plugin = createPlugin({
@@ -459,6 +492,7 @@ describe('CodexSettingsTab', () => {
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe('codex');
     expect(mockSaveSettings).toHaveBeenCalled();
     expect(mockBroadcastToAllTabs).toHaveBeenCalled();
+    expect(mockRefreshModelCatalog).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a Windows-native CLI path when installation method is WSL', async () => {
@@ -538,7 +572,7 @@ describe('CodexSettingsTab', () => {
     await customModelsTextArea.trigger('blur');
 
     expect(plugin.settings.providerConfigs.codex.customModels).toBe('different-custom-model');
-    expect(plugin.settings.model).toBe('gpt-5.4-mini');
+    expect(plugin.settings.model).toBe('gpt-5.6-sol');
     expect(plugin.settings.titleGenerationModel).toBe('');
     expect(mockSaveSettings).toHaveBeenCalledTimes(1);
     expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
@@ -567,7 +601,7 @@ describe('CodexSettingsTab', () => {
     expect(plugin.settings.model).toBe('haiku');
     expect(plugin.settings.savedProviderModel).toEqual({
       claude: 'haiku',
-      codex: 'gpt-5.4-mini',
+      codex: 'gpt-5.6-sol',
     });
     expect(mockSaveSettings).toHaveBeenCalledTimes(1);
   });

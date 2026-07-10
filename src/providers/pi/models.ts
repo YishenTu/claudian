@@ -1,3 +1,8 @@
+import {
+  DEFAULT_REASONING_VALUE,
+  resolvePreferredReasoningDefault,
+} from '../../core/providers/reasoning';
+
 export type PiThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface PiDiscoveredModel {
@@ -20,7 +25,7 @@ export interface DecodedPiModelId {
 
 export const PI_SYNTHETIC_MODEL_ID = 'pi';
 export const PI_MODEL_PREFIX = 'pi:';
-export const PI_DEFAULT_THINKING_LEVEL: PiThinkingLevel = 'medium';
+export const PI_DEFAULT_THINKING_LEVEL: PiThinkingLevel = DEFAULT_REASONING_VALUE;
 
 const VALID_THINKING_LEVELS = new Set<PiThinkingLevel>([
   'off',
@@ -193,11 +198,11 @@ export function clampPiThinkingLevel(
     return normalized;
   }
 
-  if (supportedLevels.includes(PI_DEFAULT_THINKING_LEVEL)) {
-    return PI_DEFAULT_THINKING_LEVEL;
+  if (supportedLevels.length === 0) {
+    return 'off';
   }
 
-  return supportedLevels[0] ?? 'off';
+  return resolvePreferredReasoningDefault(supportedLevels, 'medium') as PiThinkingLevel;
 }
 
 function collectExplicitThinkingLevels(record: Record<string, unknown>): Array<PiThinkingLevel | null> {

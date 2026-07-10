@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { Setting } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
@@ -9,10 +9,11 @@ import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import { parseConfiguredCustomModelIds, resolveCodexModelSelection } from '../modelOptions';
+import { getDefaultCodexModel } from '../models';
 import { toCodexRuntimeModelId } from '../modelSelection';
 import { isWindowsStyleCliReference } from '../runtime/CodexBinaryLocator';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
-import { DEFAULT_CODEX_PRIMARY_MODEL } from '../types/models';
+import { renderCodexModelPicker } from './CodexModelPicker';
 import { CodexSkillSettings } from './CodexSkillSettings';
 import { CodexSubagentSettings } from './CodexSubagentSettings';
 
@@ -24,6 +25,15 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const hostnameKey = getHostnameKey();
     const isWindowsHost = process.platform === 'win32';
     let installationMethod = codexSettings.installationMethod;
+    const environmentModelPlaceholder = getDefaultCodexModel(codexSettings.discoveredModels)?.model
+      ?? 'model-id';
+
+    const refreshCodexModelCatalog = async (): Promise<void> => {
+      const result = await codexWorkspace.refreshModelCatalog?.();
+      if (result?.diagnostics) {
+        new Notice(`Codex model discovery failed: ${result.diagnostics}`);
+      }
+    };
 
     const reconcileActiveCodexModelSelection = (): void => {
       const activeProvider = settingsBag.settingsProvider;
@@ -52,6 +62,9 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
           .setValue(codexSettings.enabled)
           .onChange(async (value) => {
             updateCodexProviderSettings(settingsBag, { enabled: value });
+            if (value) {
+              await refreshCodexModelCatalog();
+            }
             await context.plugin.saveSettings();
             context.refreshModelSelectors();
           })
@@ -70,6 +83,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
               installationMethod = value === 'wsl' ? 'wsl' : 'native-windows';
               updateCodexProviderSettings(settingsBag, { installationMethod });
               refreshInstallationMethodUI();
+              await refreshCodexModelCatalog();
               await context.plugin.saveSettings();
             });
         });
@@ -252,6 +266,8 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName(t('settings.models')).setHeading();
 
+    renderCodexModelPicker(container, context, codexWorkspace);
+
     const SUMMARY_OPTIONS: { value: string; label: string }[] = [
       { value: 'auto', label: t('settings.codex.reasoningSummary.auto') },
       { value: 'concise', label: t('settings.codex.reasoningSummary.concise') },
@@ -425,7 +441,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       heading: t('settings.environment'),
       name: t('settings.codex.environment.name'),
       desc: t('settings.codex.environment.desc'),
-      placeholder: `OPENAI_API_KEY=your-key\nOPENAI_BASE_URL=https://api.openai.com/v1\nOPENAI_MODEL=${DEFAULT_CODEX_PRIMARY_MODEL}\nCODEX_SANDBOX=workspace-write`,
+      placeholder: `OPENAI_API_KEY=your-key\nOPENAI_BASE_URL=https://api.openai.com/v1\nOPENAI_MODEL=${environmentModelPlaceholder}\nCODEX_SANDBOX=workspace-write`,
       renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'codex'),
     });
   },

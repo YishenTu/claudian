@@ -3,6 +3,7 @@ import { createCodexSubagentPersistenceKey } from '@/providers/codex/storage/Cod
 import type { CodexSubagentDefinition } from '@/providers/codex/types/subagent';
 import {
   CodexSubagentSettings,
+  getCodexSubagentReasoningEffortOptions,
   validateCodexNicknameCandidates,
   validateCodexSubagentName,
 } from '@/providers/codex/ui/CodexSubagentSettings';
@@ -138,6 +139,17 @@ describe('validateCodexSubagentName', () => {
 });
 
 describe('CodexSubagentSettings', () => {
+  it('offers max reasoning while excluding ultra', () => {
+    expect(getCodexSubagentReasoningEffortOptions().map(option => option.value)).toEqual([
+      '',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+  });
+
   describe('validation', () => {
     it('accepts documented nickname candidates', () => {
       expect(

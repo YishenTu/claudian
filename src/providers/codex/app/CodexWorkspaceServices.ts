@@ -1,4 +1,5 @@
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
+import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
   ProviderCliResolver,
@@ -12,6 +13,12 @@ import { getVaultPath } from '../../../utils/path';
 import { CodexAgentMentionProvider } from '../agents/CodexAgentMentionProvider';
 import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
 import { CodexCliResolver } from '../runtime/CodexCliResolver';
+import { CodexModelDiscoveryService } from '../runtime/CodexModelDiscoveryService';
+import {
+  getCodexProviderSettings,
+  normalizeCodexVisibleModels,
+  updateCodexProviderSettings,
+} from '../settings';
 import { CodexSkillListingService } from '../skills/CodexSkillListingService';
 import { CodexSkillStorage } from '../storage/CodexSkillStorage';
 import { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
@@ -22,6 +29,10 @@ export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
   commandCatalog: ProviderCommandCatalog;
   agentMentionProvider: CodexAgentMentionProvider;
   cliResolver: ProviderCliResolver;
+}
+
+function sameCatalog(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function createCodexCliResolver(): ProviderCliResolver {
@@ -38,6 +49,7 @@ export async function createCodexWorkspaceServices(
   await agentMentionProvider.loadAgents();
 
   const skillListProvider = new CodexSkillListingService(plugin);
+  const modelDiscovery = new CodexModelDiscoveryService(plugin);
   const commandCatalog = new CodexSkillCatalog(
     new CodexSkillStorage(
       vaultAdapter,
@@ -47,7 +59,7 @@ export async function createCodexWorkspaceServices(
     getVaultPath(plugin.app),
   );
 
-  return {
+  const services: CodexWorkspaceServices = {
     subagentStorage,
     commandCatalog,
     agentMentionProvider,
@@ -56,7 +68,46 @@ export async function createCodexWorkspaceServices(
     refreshAgentMentions: async () => {
       await agentMentionProvider.loadAgents();
     },
+    refreshModelCatalog: async () => {
+      const result = await modelDiscovery.discoverModels();
+      if (result.diagnostics) {
+        return { changed: false, diagnostics: result.diagnostics };
+      }
+      if (result.models.length === 0) {
+        return { changed: false, diagnostics: 'Codex app-server returned no visible models' };
+      }
+
+      const currentSettings = getCodexProviderSettings(plugin.settings);
+      const currentModels = currentSettings.discoveredModels;
+      const visibleModels = normalizeCodexVisibleModels(
+        currentSettings.visibleModels,
+        result.models,
+      );
+      const catalogChanged = !sameCatalog(currentModels, result.models);
+      const visibilityChanged = !sameCatalog(currentSettings.visibleModels, visibleModels);
+      if (catalogChanged || visibilityChanged) {
+        updateCodexProviderSettings(plugin.settings, {
+          discoveredModels: result.models,
+          visibleModels,
+        });
+      }
+      const selectionChanged = ProviderSettingsCoordinator.normalizeAllModelVariants(plugin.settings);
+      const persistedSettingsChanged = visibilityChanged || selectionChanged;
+      return {
+        changed: catalogChanged || persistedSettingsChanged,
+        persistedSettingsChanged,
+      };
+    },
   };
+
+  if (getCodexProviderSettings(plugin.settings).enabled) {
+    const result = await services.refreshModelCatalog!();
+    if (result.persistedSettingsChanged) {
+      await plugin.saveSettings();
+    }
+  }
+
+  return services;
 }
 
 export const codexWorkspaceRegistration: ProviderWorkspaceRegistration<CodexWorkspaceServices> = {

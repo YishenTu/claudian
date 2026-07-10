@@ -2,6 +2,7 @@
  * Model type definitions and constants.
  */
 
+import { DEFAULT_REASONING_VALUE } from '../../../core/providers/reasoning';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 
 /** Model identifier (string to support custom models via environment variables). */
@@ -29,12 +30,12 @@ export const EFFORT_LEVELS: { value: EffortLevel; label: string }[] = [
 
 /** Default effort level per model tier. */
 export const DEFAULT_EFFORT_LEVEL: Record<string, EffortLevel> = {
-  'haiku': 'high',
-  'sonnet': 'high',
-  'sonnet[1m]': 'high',
-  'opus': 'high',
-  'opus[1m]': 'high',
-  'claude-fable-5': 'high',
+  'haiku': DEFAULT_REASONING_VALUE,
+  'sonnet': DEFAULT_REASONING_VALUE,
+  'sonnet[1m]': DEFAULT_REASONING_VALUE,
+  'opus': DEFAULT_REASONING_VALUE,
+  'opus[1m]': DEFAULT_REASONING_VALUE,
+  'claude-fable-5': DEFAULT_REASONING_VALUE,
 };
 
 const ONE_M_SUFFIX = '[1m]';
@@ -116,7 +117,7 @@ export function normalizeEffortLevel(
     return effortLevel as EffortLevel;
   }
 
-  return DEFAULT_EFFORT_LEVEL[normalizeModelId(model)] ?? 'high';
+  return DEFAULT_EFFORT_LEVEL[normalizeModelId(model)] ?? DEFAULT_REASONING_VALUE;
 }
 
 export function resolveEffortLevel(

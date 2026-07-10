@@ -644,7 +644,7 @@ describe('OpencodeChatRuntime', () => {
       ],
     });
     expect(plugin.settings.providerConfigs.opencode.preferredThinkingByModel).toEqual({
-      'deepseek/deepseek-v4-pro': 'low',
+      'deepseek/deepseek-v4-pro': 'high',
     });
     expect(plugin.settings.providerConfigs.opencode.thinkingOptionsByModel).toEqual({
       'deepseek/deepseek-v4-pro': [
@@ -654,9 +654,60 @@ describe('OpencodeChatRuntime', () => {
         { label: 'Max', value: 'max' },
       ],
     });
-    expect(plugin.settings.effortLevel).toBe('low');
+    expect(plugin.settings.effortLevel).toBe('high');
     expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
     expect(refreshModelSelector).toHaveBeenCalledTimes(1);
+  });
+
+  it('clamps optimistic high defaults when ACP reports that high is unsupported', async () => {
+    const plugin = createMockPlugin({
+      settings: {
+        effortLevel: 'high',
+        model: 'opencode:custom/model',
+        providerConfigs: {
+          opencode: {
+            discoveredModels: [],
+            preferredThinkingByModel: {},
+            visibleModels: ['custom/model'],
+          },
+        },
+        savedProviderEffort: { opencode: 'high' },
+        savedProviderModel: { opencode: 'opencode:custom/model' },
+        settingsProvider: 'opencode',
+      },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    jest.spyOn(ProviderRegistry, 'resolveSettingsProviderId').mockReturnValue('opencode');
+
+    await (runtime as any).syncSessionModelState({
+      configOptions: [
+        {
+          category: 'model',
+          currentValue: 'custom/model',
+          id: 'model',
+          name: 'Model',
+          options: [{ name: 'Custom Model', value: 'custom/model' }],
+          type: 'select',
+        },
+        {
+          category: 'thought_level',
+          currentValue: 'medium',
+          id: 'effort',
+          name: 'Effort',
+          options: [
+            { name: 'Low', value: 'low' },
+            { name: 'Medium', value: 'medium' },
+          ],
+          type: 'select',
+        },
+      ],
+    });
+
+    expect(plugin.settings.providerConfigs.opencode.preferredThinkingByModel).toEqual({
+      'custom/model': 'medium',
+    });
+    expect(plugin.settings.effortLevel).toBe('medium');
+    expect(plugin.settings.savedProviderEffort.opencode).toBe('medium');
   });
 
   it('warms selected model metadata by switching ACP model config', async () => {

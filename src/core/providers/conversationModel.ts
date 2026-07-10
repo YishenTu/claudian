@@ -138,7 +138,7 @@ export function getProviderSettingsSnapshotWithModel<T extends Record<string, un
   );
   const normalizedModel = normalizeProviderModelSelection(providerId, snapshot, model);
   if (normalizedModel) {
-    (snapshot as Record<string, unknown>)['model'] = normalizedModel;
+    ProviderSettingsCoordinator.projectModelSelection(snapshot, providerId, normalizedModel);
   }
   return snapshot;
 }

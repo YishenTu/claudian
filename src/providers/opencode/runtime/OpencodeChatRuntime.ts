@@ -79,6 +79,7 @@ import {
   OPENCODE_DEFAULT_THINKING_LEVEL,
   OPENCODE_SYNTHETIC_MODEL_ID,
   resolveOpencodeBaseModelRawId,
+  resolveOpencodeDefaultThinkingLevel,
 } from '../models';
 import {
   getManagedOpencodeModes,
@@ -901,6 +902,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const currentBaseRawModelId = currentRawModelId
       ? resolveOpencodeBaseModelRawId(currentRawModelId, discoveredModels)
       : null;
+    const currentPreferredThinking = currentBaseRawModelId
+      ? currentSettings.preferredThinkingByModel[currentBaseRawModelId]
+      : '';
     const thoughtLevelState = extractAcpSessionThoughtLevelState(params);
     const currentThinkingOptions = normalizeOpencodeModelVariants(
       thoughtLevelState.availableLevels.map((level) => ({
@@ -910,6 +914,13 @@ export class OpencodeChatRuntime implements ChatRuntime {
       })),
     );
     const currentThinkingLevel = thoughtLevelState.currentLevel;
+    const defaultThinkingLevel = currentThinkingOptions.length > 0
+      ? resolveOpencodeDefaultThinkingLevel(
+        currentThinkingOptions,
+        currentPreferredThinking,
+        currentThinkingLevel ?? undefined,
+      )
+      : currentThinkingLevel;
     this.currentSessionEffortConfigId = currentThinkingOptions.length > 0
       ? thoughtLevelState.configId
       : null;
@@ -930,11 +941,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const nextVisibleModels = currentSettings.visibleModels.length === 0 && currentBaseRawModelId
       ? [currentBaseRawModelId]
       : currentSettings.visibleModels;
-    const currentPreferredThinking = currentBaseRawModelId
-      ? currentSettings.preferredThinkingByModel[currentBaseRawModelId]
-      : '';
     const shouldSeedCurrentThinking = currentBaseRawModelId
-      && currentThinkingLevel
+      && defaultThinkingLevel
       && (
         !currentPreferredThinking
         || (
@@ -942,10 +950,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
           && !this.currentSessionEffortValues.has(currentPreferredThinking)
         )
       );
-    const nextPreferredThinkingByModel = shouldSeedCurrentThinking && currentBaseRawModelId && currentThinkingLevel
+    const nextPreferredThinkingByModel = shouldSeedCurrentThinking && currentBaseRawModelId && defaultThinkingLevel
       ? {
         ...currentSettings.preferredThinkingByModel,
-        [currentBaseRawModelId]: currentThinkingLevel,
+        [currentBaseRawModelId]: defaultThinkingLevel,
       }
       : currentSettings.preferredThinkingByModel;
     const shouldSeedVisibleModels = !sameStringList(currentSettings.visibleModels, nextVisibleModels);
@@ -967,7 +975,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       const seeded = this.seedActiveModelSelection(
         settingsBag,
         encodeOpencodeModelId(currentBaseRawModelId),
-        currentThinkingLevel,
+        defaultThinkingLevel,
       );
       changed = changed || seeded;
     }
@@ -1010,7 +1018,11 @@ export class OpencodeChatRuntime implements ChatRuntime {
       const savedEffort = typeof savedProviderEffort.opencode === 'string'
         ? savedProviderEffort.opencode.trim()
         : '';
-      if (!savedEffort || savedEffort === OPENCODE_DEFAULT_THINKING_LEVEL) {
+      if (
+        !savedEffort
+        || savedEffort === OPENCODE_DEFAULT_THINKING_LEVEL
+        || !this.currentSessionEffortValues.has(savedEffort)
+      ) {
         savedProviderEffort.opencode = thinkingLevel;
         changed = true;
       }
@@ -1027,7 +1039,11 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
     if (thinkingLevel) {
       const activeEffort = typeof settingsBag.effortLevel === 'string' ? settingsBag.effortLevel : '';
-      if (!activeEffort || activeEffort === OPENCODE_DEFAULT_THINKING_LEVEL) {
+      if (
+        !activeEffort
+        || activeEffort === OPENCODE_DEFAULT_THINKING_LEVEL
+        || !this.currentSessionEffortValues.has(activeEffort)
+      ) {
         settingsBag.effortLevel = thinkingLevel;
         changed = true;
       }

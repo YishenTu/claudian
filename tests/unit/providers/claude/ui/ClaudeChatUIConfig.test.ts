@@ -1,6 +1,11 @@
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 
 describe('claudeChatUIConfig', () => {
+  it('defaults Claude models to high effort', () => {
+    expect(claudeChatUIConfig.getDefaultReasoningValue('haiku', {})).toBe('high');
+    expect(claudeChatUIConfig.getDefaultReasoningValue('custom-model', {})).toBe('high');
+  });
+
   describe('getModelOptions', () => {
     it('appends settings-defined custom models after the built-in options', () => {
       const options = claudeChatUIConfig.getModelOptions({

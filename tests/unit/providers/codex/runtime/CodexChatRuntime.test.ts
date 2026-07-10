@@ -1,5 +1,6 @@
 import '@/providers';
 
+import { CODEX_SPARK_MODEL, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -7,7 +8,6 @@ import * as path from 'path';
 import type { PreparedChatTurn } from '@/core/runtime/types';
 import type { StreamChunk } from '@/core/types/chat';
 import { encodeCodexModelSelectionId } from '@/providers/codex/modelSelection';
-import { CODEX_SPARK_MODEL, DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -120,8 +120,39 @@ async function emitServerRequest(
 function createMockPlugin(overrides: Record<string, unknown> = {}): any {
   return {
     settings: {
-      model: DEFAULT_CODEX_PRIMARY_MODEL,
+      model: TEST_CODEX_MODEL,
       effortLevel: 'medium',
+      providerConfigs: {
+        codex: {
+          discoveredModels: [{
+            model: TEST_CODEX_MODEL,
+            displayName: 'Test Codex Model',
+            description: 'Test model',
+            supportedReasoningEfforts: [
+              { value: 'low', description: 'Fast' },
+              { value: 'medium', description: 'Balanced' },
+              { value: 'max', description: 'Maximum reasoning' },
+            ],
+            defaultReasoningEffort: 'medium',
+            serviceTiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed' }],
+            defaultServiceTier: null,
+            inputModalities: ['text', 'image'],
+            isDefault: true,
+          }, {
+            model: 'gpt-5.4-mini',
+            displayName: 'Test Mini Model',
+            description: 'Test mini model',
+            supportedReasoningEfforts: [
+              { value: 'medium', description: 'Balanced' },
+            ],
+            defaultReasoningEffort: 'medium',
+            serviceTiers: [],
+            defaultServiceTier: null,
+            inputModalities: ['text', 'image'],
+            isDefault: false,
+          }],
+        },
+      },
       systemPrompt: '',
       mediaFolder: '',
       userName: '',
@@ -247,7 +278,7 @@ function threadStartResponse(threadId = 'thread-001') {
       gitInfo: null,
       name: null,
     },
-    model: DEFAULT_CODEX_PRIMARY_MODEL,
+    model: TEST_CODEX_MODEL,
     modelProvider: 'openai_http',
     serviceTier: null,
     cwd: '/test/vault',
@@ -469,7 +500,7 @@ describe('CodexChatRuntime', () => {
       expect(mockTransportRequest).toHaveBeenCalledWith(
         'thread/start',
         expect.objectContaining({
-          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          model: TEST_CODEX_MODEL,
           cwd: '/test/vault',
           persistExtendedHistory: true,
           experimentalRawEvents: true,
@@ -552,7 +583,7 @@ describe('CodexChatRuntime', () => {
 
       const turnStartCall = findCall('turn/start');
       expect(turnStartCall[1]).toMatchObject({
-        model: DEFAULT_CODEX_PRIMARY_MODEL,
+        model: TEST_CODEX_MODEL,
         summary: 'concise',
       });
     });
@@ -1359,7 +1390,7 @@ describe('CodexChatRuntime', () => {
     });
 
     it('sends serviceTier on thread/resume when fast mode is enabled', async () => {
-      const plugin = createMockPlugin({ model: DEFAULT_CODEX_PRIMARY_MODEL, serviceTier: 'fast' });
+      const plugin = createMockPlugin({ model: TEST_CODEX_MODEL, serviceTier: 'fast' });
       const rt = new CodexChatRuntime(plugin);
 
       rt.syncConversationState({
@@ -1374,7 +1405,7 @@ describe('CodexChatRuntime', () => {
 
       const resumeCall = findCall('thread/resume');
       expect(resumeCall).toBeDefined();
-      expect(resumeCall[1].serviceTier).toBe('fast');
+      expect(resumeCall[1].serviceTier).toBe('priority');
 
       rt.cleanup();
     });
@@ -1415,7 +1446,7 @@ describe('CodexChatRuntime', () => {
       yoloRuntime.cleanup();
     });
 
-    it('sends serviceTier fast on thread/start and turn/start when fast mode is enabled', async () => {
+    it('maps the legacy fast selection to the discovered fast service tier', async () => {
       const plugin = createMockPlugin({ serviceTier: 'fast' });
       const rt = new CodexChatRuntime(plugin);
 
@@ -1423,8 +1454,8 @@ describe('CodexChatRuntime', () => {
 
       const threadStartCall = findCall('thread/start');
       const turnStartCall = findCall('turn/start');
-      expect(threadStartCall[1].serviceTier).toBe('fast');
-      expect(turnStartCall[1].serviceTier).toBe('fast');
+      expect(threadStartCall[1].serviceTier).toBe('priority');
+      expect(turnStartCall[1].serviceTier).toBe('priority');
 
       rt.cleanup();
     });
@@ -1760,6 +1791,21 @@ describe('CodexChatRuntime', () => {
   });
 
   describe('query - plan mode (collaborationMode)', () => {
+    it('passes newly advertised effort values through without a hardcoded map', async () => {
+      const plugin = createMockPlugin({ effortLevel: 'max' });
+      const rt = new CodexChatRuntime(plugin);
+      captureHandlers();
+      setupDefaultRequestMock();
+
+      await collectChunks(rt.query(createTurn('delegate this')));
+
+      const turnStartCall = findCall('turn/start');
+      expect(turnStartCall[1].effort).toBe('max');
+      expect(turnStartCall[1].collaborationMode.settings.reasoning_effort).toBe('max');
+
+      rt.cleanup();
+    });
+
     it('includes collaborationMode in turn/start when permissionMode is plan', async () => {
       const plugin = createMockPlugin({ permissionMode: 'plan' });
       const rt = new CodexChatRuntime(plugin);
@@ -1773,7 +1819,7 @@ describe('CodexChatRuntime', () => {
       expect(turnStartCall[1].collaborationMode).toEqual({
         mode: 'plan',
         settings: {
-          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          model: TEST_CODEX_MODEL,
           reasoning_effort: 'medium',
           developer_instructions: null,
         },
@@ -1795,7 +1841,7 @@ describe('CodexChatRuntime', () => {
       expect(turnStartCall[1].collaborationMode).toEqual({
         mode: 'default',
         settings: {
-          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          model: TEST_CODEX_MODEL,
           reasoning_effort: 'medium',
           developer_instructions: null,
         },
@@ -1817,7 +1863,7 @@ describe('CodexChatRuntime', () => {
       expect(turnStartCall[1].collaborationMode).toEqual({
         mode: 'default',
         settings: {
-          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          model: TEST_CODEX_MODEL,
           reasoning_effort: 'medium',
           developer_instructions: null,
         },
@@ -1844,7 +1890,7 @@ describe('CodexChatRuntime', () => {
       expect(turnStartCalls[0][1].collaborationMode).toEqual({
         mode: 'plan',
         settings: {
-          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          model: TEST_CODEX_MODEL,
           reasoning_effort: 'medium',
           developer_instructions: null,
         },
@@ -1852,7 +1898,7 @@ describe('CodexChatRuntime', () => {
       expect(turnStartCalls[1][1].collaborationMode).toEqual({
         mode: 'default',
         settings: {
-          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          model: TEST_CODEX_MODEL,
           reasoning_effort: 'medium',
           developer_instructions: null,
         },

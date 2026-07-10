@@ -132,6 +132,34 @@ function normalizeProviderConfigs(value: unknown): ProviderConfigMap {
   return result;
 }
 
+const RUNTIME_ONLY_PROVIDER_CONFIG_FIELDS: Record<string, string[]> = {
+  codex: ['discoveredModels'],
+};
+
+function projectPersistableProviderConfigs(value: unknown): {
+  changed: boolean;
+  providerConfigs: ProviderConfigMap;
+} {
+  const providerConfigs = normalizeProviderConfigs(value);
+  let changed = false;
+
+  for (const [providerId, fields] of Object.entries(RUNTIME_ONLY_PROVIDER_CONFIG_FIELDS)) {
+    const config = providerConfigs[providerId];
+    if (!config) {
+      continue;
+    }
+
+    for (const field of fields) {
+      if (field in config) {
+        delete config[field];
+        changed = true;
+      }
+    }
+  }
+
+  return { changed, providerConfigs };
+}
+
 const HOST_SCOPED_PROVIDER_CONFIG_FIELDS: Record<string, string[]> = {
   claude: ['cliPathsByHost'],
   codex: ['cliPathsByHost', 'installationMethodsByHost', 'wslDistroOverridesByHost'],
@@ -288,7 +316,10 @@ export class ClaudianSettingsStorage {
     );
     const envSnippets = normalizeEnvSnippets(stored.envSnippets);
     const customModelAliases = normalizeModelAliases(stored.customModelAliases);
-    const providerConfigs = normalizeProviderConfigs(stored.providerConfigs);
+    const {
+      changed: didStripRuntimeProviderConfig,
+      providerConfigs,
+    } = projectPersistableProviderConfigs(stored.providerConfigs);
     const chatViewPlacement = normalizeChatViewPlacement(
       stored.chatViewPlacement,
       stored.openInMainTab,
@@ -355,6 +386,7 @@ export class ClaudianSettingsStorage {
         && JSON.stringify(customModelAliases) !== JSON.stringify(stored.customModelAliases ?? {})
       )
       || codexConfigNormalization.changed
+      || didStripRuntimeProviderConfig
       || didNormalizeHostScopedProviderConfigs
       )
     ) {
@@ -365,8 +397,12 @@ export class ClaudianSettingsStorage {
   }
 
   async save(settings: StoredClaudianSettings): Promise<void> {
+    const { providerConfigs } = projectPersistableProviderConfigs(settings.providerConfigs);
     const content = JSON.stringify(
-      stripLegacyFields(settings),
+      stripLegacyFields({
+        ...settings,
+        providerConfigs,
+      }),
       null,
       2,
     );

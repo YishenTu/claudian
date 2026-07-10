@@ -8,6 +8,7 @@ import {
 } from '../../utils/env';
 import { ensureProviderProjectionMap } from './internal/providerProjection';
 import {
+  clampPiThinkingLevel,
   decodePiModelId,
   findPiModel,
   isPiModelSelectionId,
@@ -438,7 +439,11 @@ function retargetRemovedPiSelections(
 
   const visibleSet = new Set(next.visibleModels);
   const fallbackModelId = next.visibleModels[0];
-  const fallbackEffort = next.preferredThinkingByModel[fallbackModelId] ?? PI_DEFAULT_THINKING_LEVEL;
+  const fallbackModel = findPiModel(next, fallbackModelId);
+  const fallbackEffort = next.preferredThinkingByModel[fallbackModelId]
+    ?? (fallbackModel
+      ? clampPiThinkingLevel(PI_DEFAULT_THINKING_LEVEL, fallbackModel.thinkingLevels)
+      : PI_DEFAULT_THINKING_LEVEL);
 
   const maybeRetargetModel = (value: unknown): string | null => {
     if (typeof value !== 'string' || !isPiModelSelectionId(value) || value === 'pi') {

@@ -1,3 +1,4 @@
+import { DEFAULT_REASONING_VALUE } from '../../../core/providers/reasoning';
 import type {
   ProviderChatUIConfig,
   ProviderPermissionModeToggleConfig,
@@ -53,7 +54,7 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
   },
 
   getDefaultReasoningValue(model: string, _settings: Record<string, unknown>): string {
-    return DEFAULT_EFFORT_LEVEL[toClaudeRuntimeModelId(model)] ?? 'high';
+    return DEFAULT_EFFORT_LEVEL[toClaudeRuntimeModelId(model)] ?? DEFAULT_REASONING_VALUE;
   },
 
   getContextWindowSize(model: string, customLimits?: Record<string, number>): number {
@@ -70,7 +71,7 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
 
     const runtimeModel = toClaudeRuntimeModelId(model);
     if (DEFAULT_CLAUDE_MODELS.some(m => m.value === runtimeModel)) {
-      target.effortLevel = DEFAULT_EFFORT_LEVEL[runtimeModel] ?? 'high';
+      target.effortLevel = DEFAULT_EFFORT_LEVEL[runtimeModel] ?? DEFAULT_REASONING_VALUE;
       updateClaudeProviderSettings(target, { lastModel: runtimeModel });
     } else {
       target.lastCustomModel = model;

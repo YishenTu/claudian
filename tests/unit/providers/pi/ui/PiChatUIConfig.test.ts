@@ -79,6 +79,23 @@ describe('PiChatUIConfig', () => {
     expect(piChatUIConfig.getDefaultReasoningValue('pi:anthropic/claude-sonnet-4', settings)).toBe('high');
   });
 
+  it('defaults reasoning models to high without a saved preference', () => {
+    const settingsWithoutPreference: Record<string, unknown> = {
+      providerConfigs: {
+        pi: {
+          discoveredModels: (settings.providerConfigs as any).pi.discoveredModels,
+          preferredThinkingByModel: {},
+          visibleModels: ['pi:anthropic/claude-sonnet-4'],
+        },
+      },
+    };
+
+    expect(piChatUIConfig.getDefaultReasoningValue(
+      'pi:anthropic/claude-sonnet-4',
+      settingsWithoutPreference,
+    )).toBe('high');
+  });
+
   it('resolves context windows from cached Pi model metadata before falling back', () => {
     const contextSettings: Record<string, unknown> = {
       providerConfigs: {
@@ -137,7 +154,7 @@ describe('PiChatUIConfig', () => {
       { label: 'Medium', value: 'medium' },
       { label: 'High', value: 'high' },
     ]);
-    expect(piChatUIConfig.getDefaultReasoningValue('pi:custom/model', staleSettings)).toBe('medium');
+    expect(piChatUIConfig.getDefaultReasoningValue('pi:custom/model', staleSettings)).toBe('high');
 
     piChatUIConfig.applyReasoningSelection?.('pi:custom/model', 'high', staleSettings);
     expect(getPiProviderSettings(staleSettings).preferredThinkingByModel).toEqual({

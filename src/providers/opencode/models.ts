@@ -1,3 +1,8 @@
+import {
+  DEFAULT_REASONING_VALUE,
+  resolvePreferredReasoningDefault,
+} from '../../core/providers/reasoning';
+
 export interface OpencodeDiscoveredModel {
   description?: string;
   label: string;
@@ -41,6 +46,19 @@ const OPENCODE_VARIANT_ASCENDING_ORDER = [
 const OPENCODE_VARIANT_ASCENDING_RANK = new Map<string, number>(
   OPENCODE_VARIANT_ASCENDING_ORDER.map((value, index) => [value, index] as const),
 );
+
+export function resolveOpencodeDefaultThinkingLevel(
+  options: OpencodeModelVariant[],
+  preferredValue?: string,
+  fallbackValue: string = DEFAULT_REASONING_VALUE,
+): string {
+  const values = options.map(option => option.value);
+  if (preferredValue && (values.length === 0 || values.includes(preferredValue))) {
+    return preferredValue;
+  }
+
+  return resolvePreferredReasoningDefault(values, fallbackValue);
+}
 
 export function isOpencodeModelSelectionId(model: string): boolean {
   return model === OPENCODE_SYNTHETIC_MODEL_ID || model.startsWith(OPENCODE_MODEL_PREFIX);

@@ -1,3 +1,4 @@
+import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { createMockEl } from '@test/helpers/mockElement';
 
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -7,7 +8,6 @@ import {
   type PersistedTabManagerState,
   type TabManagerCallbacks,
 } from '@/features/chat/tabs/types';
-import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 // Mock Tab module functions
 const mockCreateTab = jest.fn();
@@ -1149,7 +1149,7 @@ describe('TabManager - SDK Commands', () => {
       tabFactory: (n) => createMockTabData({
         id: `tab-${n}`,
         lifecycleState: n === 2 ? 'blank' : 'bound_cold',
-        draftModel: n === 2 ? DEFAULT_CODEX_PRIMARY_MODEL : null,
+        draftModel: n === 2 ? TEST_CODEX_MODEL : null,
         providerId: 'claude',
         service: n === 1 ? readyClaudeService : null,
       }),
@@ -1753,7 +1753,7 @@ describe('TabManager - Provider Command Catalog', () => {
       tabFactory: () => createMockTabData({
         id: 'tab-1',
         lifecycleState: 'blank',
-        draftModel: DEFAULT_CODEX_PRIMARY_MODEL,
+        draftModel: TEST_CODEX_MODEL,
         providerId: 'claude',
       }),
     });

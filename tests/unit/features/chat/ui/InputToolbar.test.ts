@@ -1,3 +1,7 @@
+import {
+  TEST_CODEX_MODEL,
+  TEST_CODEX_MODEL_LABEL,
+} from '@test/helpers/codexModels';
 import { createMockEl } from '@test/helpers/mockElement';
 
 import type { UsageInfo } from '@/core/types';
@@ -11,10 +15,6 @@ import {
   ServiceTierToggle,
   ThinkingBudgetSelector,
 } from '@/features/chat/ui/InputToolbar';
-import {
-  DEFAULT_CODEX_PRIMARY_MODEL,
-  DEFAULT_CODEX_PRIMARY_MODEL_LABEL,
-} from '@/providers/codex/types/models';
 
 jest.mock('obsidian', () => ({
   Notice: jest.fn(),
@@ -124,7 +124,7 @@ function createMockUIConfig() {
       planLabel: 'PLAN',
     }),
     getServiceTierToggle: jest.fn().mockImplementation((settings: Record<string, unknown>) =>
-      settings.model === DEFAULT_CODEX_PRIMARY_MODEL
+      settings.model === TEST_CODEX_MODEL
         ? {
           inactiveValue: 'default',
           inactiveLabel: 'Standard',
@@ -298,7 +298,7 @@ describe('ModelSelector', () => {
     const groupedModels = [
       { value: 'opus', label: 'Opus', group: 'Claude' },
       { value: 'sonnet', label: 'Sonnet', group: 'Claude' },
-      { value: DEFAULT_CODEX_PRIMARY_MODEL, label: DEFAULT_CODEX_PRIMARY_MODEL_LABEL, group: 'Codex' },
+      { value: TEST_CODEX_MODEL, label: TEST_CODEX_MODEL_LABEL, group: 'Codex' },
     ];
     const uiConfig = createMockUIConfig();
     uiConfig.getModelOptions.mockReturnValue(groupedModels);
@@ -700,7 +700,7 @@ describe('ServiceTierToggle', () => {
     callbacks = createMockCallbacks({
       getUIConfig: jest.fn().mockReturnValue(uiConfig),
       getSettings: jest.fn().mockReturnValue({
-        model: DEFAULT_CODEX_PRIMARY_MODEL,
+        model: TEST_CODEX_MODEL,
         thinkingBudget: 'off',
         effortLevel: 'medium',
         serviceTier: 'default',
@@ -727,7 +727,7 @@ describe('ServiceTierToggle', () => {
 
   it('renders the icon button in the active state when fast mode is on', () => {
     callbacks.getSettings.mockReturnValue({
-      model: DEFAULT_CODEX_PRIMARY_MODEL,
+      model: TEST_CODEX_MODEL,
       thinkingBudget: 'off',
       effortLevel: 'medium',
       serviceTier: 'fast',
@@ -750,7 +750,7 @@ describe('ServiceTierToggle', () => {
 
   it('toggles from Fast to Standard on click', async () => {
     callbacks.getSettings.mockReturnValue({
-      model: DEFAULT_CODEX_PRIMARY_MODEL,
+      model: TEST_CODEX_MODEL,
       thinkingBudget: 'off',
       effortLevel: 'medium',
       serviceTier: 'fast',

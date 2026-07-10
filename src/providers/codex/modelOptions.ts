@@ -1,13 +1,14 @@
 import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { ProviderUIOption } from '../../core/providers/types';
-import { encodeCodexModelSelectionId, toCodexRuntimeModelId } from './modelSelection';
-import { getCodexProviderSettings } from './settings';
+import { getCodexModelsInPickerOrder, getDefaultCodexModel } from './models';
 import {
-  DEFAULT_CODEX_MODEL_SET,
-  DEFAULT_CODEX_MODELS,
-  DEFAULT_CODEX_PRIMARY_MODEL,
-  formatCodexModelLabel,
-} from './types/models';
+  encodeCodexModelSelectionId,
+  isCodexModelSelectionId,
+  looksLikeCodexModel,
+  toCodexRuntimeModelId,
+} from './modelSelection';
+import { getCodexProviderSettings, getVisibleCodexModelIds } from './settings';
+import { formatCodexModelLabel } from './types/models';
 
 function createCustomCodexModelOption(modelId: string, description: string): ProviderUIOption {
   const runtimeModelId = toCodexRuntimeModelId(modelId);
@@ -25,7 +26,8 @@ function getConfiguredEnvModel(settings: Record<string, unknown>): string | null
 
 export function getConfiguredEnvCustomModel(settings: Record<string, unknown>): string | null {
   const modelId = getConfiguredEnvModel(settings);
-  return modelId && !DEFAULT_CODEX_MODEL_SET.has(modelId) ? modelId : null;
+  const discoveredModels = getCodexProviderSettings(settings).discoveredModels;
+  return modelId && !discoveredModels.some(model => model.model === modelId) ? modelId : null;
 }
 
 export function parseConfiguredCustomModelIds(value: string): string[] {
@@ -46,16 +48,116 @@ export function parseConfiguredCustomModelIds(value: string): string[] {
 }
 
 export function getCodexModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
-  const models = [...DEFAULT_CODEX_MODELS];
-  const seenModelIds = new Set(models.map(model => toCodexRuntimeModelId(model.value)));
+  const codexSettings = getCodexProviderSettings(settings);
+  const visibleModelIds = new Set(getVisibleCodexModelIds(
+    codexSettings.visibleModels,
+    codexSettings.discoveredModels,
+  ));
+  const savedProviderModel = (
+    settings.savedProviderModel
+    && typeof settings.savedProviderModel === 'object'
+    && !Array.isArray(settings.savedProviderModel)
+  )
+    ? settings.savedProviderModel as Record<string, unknown>
+    : null;
+  const pinnedModelIds = new Set<string>();
+  for (const value of [
+    settings.model,
+    savedProviderModel?.codex,
+    getConfiguredEnvModel(settings),
+  ]) {
+    if (typeof value === 'string' && value.trim()) {
+      pinnedModelIds.add(toCodexRuntimeModelId(value));
+    }
+  }
+  const absentPinnedSelections: string[] = [];
+  const currentModel = typeof settings.model === 'string' ? settings.model.trim() : '';
+  if (
+    codexSettings.discoveredModels.length === 0
+    && currentModel
+    && (
+      isCodexModelSelectionId(currentModel)
+      || looksLikeCodexModel(toCodexRuntimeModelId(currentModel))
+    )
+  ) {
+    absentPinnedSelections.push(currentModel);
+  }
+  const savedCodexModel = typeof savedProviderModel?.codex === 'string'
+    ? savedProviderModel.codex.trim()
+    : '';
+  if (codexSettings.discoveredModels.length === 0 && savedCodexModel) {
+    absentPinnedSelections.push(savedCodexModel);
+  }
+
+  const pickerOrderedModels = getCodexModelsInPickerOrder(codexSettings.discoveredModels);
+  const visibleDiscoveredModels = pickerOrderedModels
+    .filter(model => visibleModelIds.has(model.model));
+  const pinnedDiscoveredModels = pickerOrderedModels.filter(model =>
+    !visibleModelIds.has(model.model) && pinnedModelIds.has(model.model)
+  );
+  const models: ProviderUIOption[] = visibleDiscoveredModels.map(model => ({
+    value: model.model,
+    label: model.displayName,
+    description: model.description || undefined,
+  }));
+  const seenModelIds = new Set(visibleDiscoveredModels.map(model => model.model));
+
+  const persistedVisibleModels = codexSettings.visibleModels === null
+    ? []
+    : [...codexSettings.visibleModels].reverse();
+  for (const modelId of persistedVisibleModels) {
+    if (seenModelIds.has(modelId)) {
+      continue;
+    }
+
+    seenModelIds.add(modelId);
+    models.push({
+      value: modelId,
+      label: formatCodexModelLabel(modelId),
+      description: 'Selected model',
+    });
+  }
+
+  for (const model of pinnedDiscoveredModels) {
+    seenModelIds.add(model.model);
+    models.push({
+      value: model.model,
+      label: model.displayName,
+      description: model.description || undefined,
+    });
+  }
+
+  for (const selection of absentPinnedSelections) {
+    const modelId = toCodexRuntimeModelId(selection);
+    if (seenModelIds.has(modelId)) {
+      continue;
+    }
+
+    seenModelIds.add(modelId);
+    models.push(
+      isCodexModelSelectionId(selection) || !looksLikeCodexModel(modelId)
+        ? createCustomCodexModelOption(modelId, 'Selected model')
+        : {
+          value: modelId,
+          label: formatCodexModelLabel(modelId),
+          description: 'Selected model',
+        },
+    );
+  }
 
   const envModel = getConfiguredEnvCustomModel(settings);
   if (envModel) {
-    seenModelIds.add(envModel);
+    const runtimeModelId = toCodexRuntimeModelId(envModel);
+    const existingIndex = models.findIndex(option =>
+      toCodexRuntimeModelId(option.value) === runtimeModelId
+    );
+    if (existingIndex >= 0) {
+      models.splice(existingIndex, 1);
+    }
+    seenModelIds.add(runtimeModelId);
     models.unshift(createCustomCodexModelOption(envModel, 'Custom (env)'));
   }
 
-  const codexSettings = getCodexProviderSettings(settings);
   for (const configuredModelId of parseConfiguredCustomModelIds(codexSettings.customModels)) {
     const modelId = toCodexRuntimeModelId(configuredModelId);
     if (seenModelIds.has(modelId)) {
@@ -95,5 +197,13 @@ export function resolveCodexModelSelection(
     }
   }
 
-  return modelOptions[0]?.value ?? DEFAULT_CODEX_PRIMARY_MODEL;
+  const codexSettings = getCodexProviderSettings(settings);
+  const visibleModelIds = new Set(getVisibleCodexModelIds(
+    codexSettings.visibleModels,
+    codexSettings.discoveredModels,
+  ));
+  const defaultModel = getDefaultCodexModel(
+    codexSettings.discoveredModels.filter(model => visibleModelIds.has(model.model)),
+  );
+  return defaultModel?.model ?? modelOptions[0]?.value ?? null;
 }

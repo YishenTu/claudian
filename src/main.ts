@@ -431,6 +431,17 @@ export default class ClaudianPlugin extends Plugin {
     const affectedProviderIds = this.getAffectedEnvironmentProviders(changedScopes);
     ProviderSettingsCoordinator.handleEnvironmentChange(settingsBag, affectedProviderIds);
     const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(affectedProviderIds);
+    const modelCatalogDiagnostics: string[] = [];
+    for (const providerId of affectedProviderIds) {
+      if (ProviderRegistry.isEnabled(providerId, settingsBag)) {
+        const result = await ProviderWorkspaceRegistry.refreshModelCatalog(providerId);
+        if (result.diagnostics) {
+          modelCatalogDiagnostics.push(
+            `${ProviderRegistry.getProviderDisplayName(providerId)}: ${result.diagnostics}`,
+          );
+        }
+      }
+    }
     await this.saveSettings();
 
     if (invalidatedConversations.length > 0) {
@@ -512,6 +523,9 @@ export default class ClaudianPlugin extends Plugin {
       ? 'Environment variables applied. Sessions will be rebuilt on next message.'
       : 'Environment variables applied.';
     new Notice(noticeText);
+    if (modelCatalogDiagnostics.length > 0) {
+      new Notice(`Model catalog refresh failed:\n${modelCatalogDiagnostics.join('\n')}`);
+    }
   }
 
   /** Returns the runtime environment variables (fixed at plugin load). */

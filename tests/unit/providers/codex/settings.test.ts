@@ -1,12 +1,16 @@
+import { CODEX_SPARK_MODEL, TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
+
 import {
   applyCodexModelDefaults,
+  createCodexVisibleModelFilter,
   DEFAULT_CODEX_PROVIDER_SETTINGS,
   getCodexProviderSettings,
   getEffectiveCodexReasoningSummary,
+  getVisibleCodexModelIds,
   normalizeCodexStoredConfig,
+  normalizeCodexVisibleModels,
   updateCodexProviderSettings,
 } from '@/providers/codex/settings';
-import { CODEX_SPARK_MODEL } from '@/providers/codex/types/models';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
@@ -33,10 +37,114 @@ describe('codex settings', () => {
     const settings = getCodexProviderSettings({});
 
     expect(settings.customModels).toBe('');
+    expect(settings.visibleModels).toBeNull();
     expect(settings.installationMethod).toBe('native-windows');
     expect(settings.wslDistroOverride).toBe('');
     expect(settings.installationMethod).toBe(DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod);
     expect(settings.wslDistroOverride).toBe(DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride);
+  });
+
+  it('treats a null visibility filter as all discovered models', () => {
+    const discoveredModels = [
+      { model: 'gpt-5.5' },
+      { model: 'gpt-5.4-mini' },
+    ] as any;
+
+    expect(getVisibleCodexModelIds(null, discoveredModels)).toEqual([
+      'gpt-5.5',
+      'gpt-5.4-mini',
+    ]);
+  });
+
+  it('normalizes an explicit visibility filter against the discovered catalog', () => {
+    const discoveredModels = [
+      { model: 'gpt-5.5' },
+      { model: 'gpt-5.4-mini' },
+    ] as any;
+
+    expect(normalizeCodexVisibleModels(
+      [' gpt-5.4-mini ', 'missing-model', 'gpt-5.4-mini', 42],
+      discoveredModels,
+    )).toEqual(['gpt-5.4-mini']);
+    expect(normalizeCodexVisibleModels(undefined, discoveredModels)).toBeNull();
+    expect(createCodexVisibleModelFilter(
+      ['gpt-5.5', 'gpt-5.4-mini'],
+      discoveredModels,
+    )).toBeNull();
+  });
+
+  it('normalizes and persists the app-server model catalog', () => {
+    const settingsBag: Record<string, unknown> = {
+      providerConfigs: {
+        codex: {
+          discoveredModels: [{
+            id: 'gpt-5.6-sol',
+            model: 'gpt-5.6-sol',
+            displayName: 'GPT-5.6-Sol',
+            description: 'Latest frontier agentic coding model.',
+            hidden: false,
+            supportedReasoningEfforts: [
+              { reasoningEffort: 'low', description: 'Fast' },
+              { reasoningEffort: 'ultra', description: 'Automatic task delegation' },
+            ],
+            defaultReasoningEffort: 'low',
+            serviceTiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed' }],
+            defaultServiceTier: null,
+            inputModalities: ['text', 'image'],
+            isDefault: true,
+          }],
+        },
+      },
+    };
+
+    const discoveredModels = getCodexProviderSettings(settingsBag).discoveredModels;
+    expect(discoveredModels[0]).toMatchObject({
+      model: 'gpt-5.6-sol',
+      defaultReasoningEffort: 'low',
+      supportedReasoningEfforts: [
+        { value: 'low', description: 'Fast' },
+      ],
+    });
+
+    updateCodexProviderSettings(settingsBag, { discoveredModels });
+    expect(settingsBag).toMatchObject({
+      providerConfigs: {
+        codex: {
+          discoveredModels,
+        },
+      },
+    });
+  });
+
+  it('retargets global Codex projections when their discovered model is hidden', () => {
+    const settingsBag: Record<string, unknown> = {
+      settingsProvider: 'codex',
+      model: 'gpt-5.5',
+      effortLevel: 'high',
+      serviceTier: 'priority',
+      titleGenerationModel: 'gpt-5.5',
+      savedProviderModel: { codex: 'gpt-5.5' },
+      savedProviderEffort: { codex: 'high' },
+      savedProviderServiceTier: { codex: 'priority' },
+      providerConfigs: {
+        codex: {
+          discoveredModels: TEST_CODEX_CATALOG,
+          visibleModels: null,
+        },
+      },
+    };
+
+    updateCodexProviderSettings(settingsBag, { visibleModels: ['gpt-5.4-mini'] });
+
+    expect(settingsBag).toMatchObject({
+      model: 'gpt-5.4-mini',
+      effortLevel: 'medium',
+      serviceTier: 'default',
+      titleGenerationModel: 'gpt-5.4-mini',
+      savedProviderModel: { codex: 'gpt-5.4-mini' },
+      savedProviderEffort: { codex: 'medium' },
+      savedProviderServiceTier: { codex: 'default' },
+    });
   });
 
   it('normalizes invalid installationMethod and wslDistroOverride values', () => {

@@ -1,5 +1,7 @@
 import '@/providers';
 
+import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+
 /**
  * Tests for the model-driven multi-provider tab lifecycle.
  *
@@ -14,7 +16,6 @@ import '@/providers';
  * - provider lock after bind
  */
 import { getProviderForModel } from '@/core/providers/modelRouting';
-import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 describe('Tab Lifecycle - Model-Driven Provider Routing', () => {
   describe('getProviderForModel', () => {
@@ -26,7 +27,7 @@ describe('Tab Lifecycle - Model-Driven Provider Routing', () => {
     });
 
     it('derives codex from Codex model names', () => {
-      expect(getProviderForModel(DEFAULT_CODEX_PRIMARY_MODEL)).toBe('codex');
+      expect(getProviderForModel(TEST_CODEX_MODEL)).toBe('codex');
       expect(getProviderForModel('gpt-4o')).toBe('codex');
       expect(getProviderForModel('o3')).toBe('codex');
       expect(getProviderForModel('o4-mini')).toBe('codex');
@@ -62,12 +63,12 @@ describe('Tab Lifecycle - Blank Tab Behavior', () => {
   });
 
   it('blank tabs derive provider from draft model selection', () => {
-    expect(getProviderForModel(DEFAULT_CODEX_PRIMARY_MODEL)).toBe('codex');
+    expect(getProviderForModel(TEST_CODEX_MODEL)).toBe('codex');
     expect(getProviderForModel('sonnet')).toBe('claude');
   });
 
   it('blank tab with Codex draft model should fall back when Codex is disabled', () => {
-    const draftModel = DEFAULT_CODEX_PRIMARY_MODEL;
+    const draftModel = TEST_CODEX_MODEL;
     const draftProvider = getProviderForModel(draftModel);
 
     // Verify the draft is Codex
@@ -83,7 +84,7 @@ describe('Tab Lifecycle - Blank Tab Behavior', () => {
 describe('Tab Lifecycle - Provider Lock After Bind', () => {
   it('cross-provider model change should be rejected on bound sessions', () => {
     const boundProvider = 'claude';
-    const requestedModel = DEFAULT_CODEX_PRIMARY_MODEL;
+    const requestedModel = TEST_CODEX_MODEL;
     const requestedProvider = getProviderForModel(requestedModel);
 
     // Provider mismatch should be detected
@@ -198,7 +199,7 @@ describe('Tab Lifecycle - Codex Disable Fallback', () => {
   it('blank tab with Codex draft falls back to Claude default when Codex disabled', () => {
     const tab = {
       lifecycleState: 'blank' as const,
-      draftModel: DEFAULT_CODEX_PRIMARY_MODEL,
+      draftModel: TEST_CODEX_MODEL,
       providerId: 'codex' as const,
     };
 

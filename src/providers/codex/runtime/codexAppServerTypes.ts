@@ -1,6 +1,6 @@
 // Local protocol subset for Codex app-server stdio JSON-RPC.
 // Field names match the wire format (camelCase).
-// Probed against codex-cli 0.118.0 on 2026-04-01.
+// Validated against the generated codex-cli 0.144.1 schema on 2026-07-10.
 
 // ---------------------------------------------------------------------------
 // JSON-RPC base
@@ -303,14 +303,49 @@ export interface SkillsListResult {
 }
 
 // ---------------------------------------------------------------------------
+// model/list
+// ---------------------------------------------------------------------------
+
+export interface ModelReasoningEffortOption {
+  reasoningEffort: string;
+  description: string;
+}
+
+export interface ModelServiceTier {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface AppServerModel {
+  id: string;
+  model: string;
+  displayName: string;
+  description: string;
+  hidden: boolean;
+  supportedReasoningEfforts: ModelReasoningEffortOption[];
+  defaultReasoningEffort: string;
+  inputModalities?: Array<'text' | 'image'>;
+  supportsPersonality?: boolean;
+  serviceTiers?: ModelServiceTier[];
+  defaultServiceTier?: string | null;
+  isDefault: boolean;
+}
+
+export interface ModelListResult {
+  data: AppServerModel[];
+  nextCursor?: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // thread/start
 // ---------------------------------------------------------------------------
 
 export interface ThreadStartParams {
-  model: string;
-  cwd: string;
-  approvalPolicy: string;
-  sandbox: string;
+  model?: string;
+  cwd?: string;
+  approvalPolicy?: string;
+  sandbox?: string;
   serviceTier?: string | null;
   baseInstructions?: string;
   experimentalRawEvents?: boolean;

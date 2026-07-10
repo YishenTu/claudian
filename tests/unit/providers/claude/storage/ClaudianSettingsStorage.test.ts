@@ -1,5 +1,7 @@
 import '@/providers';
 
+import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
+
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import {
@@ -397,6 +399,28 @@ describe('ClaudianSettingsStorage', () => {
       expect(getCodexProviderSettings(result).wslDistroOverride).toBe('');
     });
 
+    it('drops a persisted Codex runtime catalog while preserving hand-picked model IDs', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        providerConfigs: {
+          codex: {
+            enabled: true,
+            discoveredModels: TEST_CODEX_CATALOG,
+            visibleModels: ['gpt-5.4-mini'],
+          },
+        },
+      }));
+
+      const result = await storage.load();
+      const codexSettings = getCodexProviderSettings(result);
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(codexSettings.discoveredModels).toEqual([]);
+      expect(codexSettings.visibleModels).toEqual(['gpt-5.4-mini']);
+      expect(writtenContent.providerConfigs.codex).not.toHaveProperty('discoveredModels');
+      expect(writtenContent.providerConfigs.codex.visibleModels).toEqual(['gpt-5.4-mini']);
+    });
+
     it('normalizes invalid Codex installation fields from provider config', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
@@ -618,6 +642,27 @@ describe('ClaudianSettingsStorage', () => {
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
       expect(writtenContent.model).toBe('claude-opus-4-5');
       expect(writtenContent).not.toHaveProperty('slashCommands');
+    });
+
+    it('persists hand-picked Codex model IDs without the runtime catalog', async () => {
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        providerConfigs: {
+          ...DEFAULT_SETTINGS.providerConfigs,
+          codex: {
+            ...DEFAULT_SETTINGS.providerConfigs.codex,
+            discoveredModels: TEST_CODEX_CATALOG,
+            visibleModels: ['gpt-5.4-mini'],
+          },
+        },
+      };
+
+      await storage.save(settings);
+
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+      expect(writtenContent.providerConfigs.codex).not.toHaveProperty('discoveredModels');
+      expect(writtenContent.providerConfigs.codex.visibleModels).toEqual(['gpt-5.4-mini']);
+      expect(getCodexProviderSettings(settings).discoveredModels).toEqual(TEST_CODEX_CATALOG);
     });
 
     it('deletes the legacy settings file after writing the new path', async () => {

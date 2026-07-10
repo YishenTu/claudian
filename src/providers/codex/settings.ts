@@ -1,11 +1,19 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
+import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import {
   getHostnameKey,
   getLegacyHostnameKey,
   migrateLegacyHostnameKeyedMap,
 } from '../../utils/env';
+import {
+  type CodexDiscoveredModel,
+  findCodexModel,
+  getCodexDefaultReasoningEffort,
+  getDefaultCodexModel,
+  normalizeCodexDiscoveredModels,
+} from './models';
 import { toCodexRuntimeModelId } from './modelSelection';
 import { CODEX_SPARK_MODEL } from './types/models';
 
@@ -20,6 +28,8 @@ export interface CodexProviderConfig {
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
   customModels: string;
+  discoveredModels: CodexDiscoveredModel[];
+  visibleModels: string[] | null;
   reasoningSummary: CodexReasoningSummary;
   environmentVariables: string;
   environmentHash: string;
@@ -57,12 +67,33 @@ function omitCurrentHost<T>(entries: Record<string, T>, hostnameKey: string): Re
   return next;
 }
 
+type CodexProjectionKey =
+  | 'savedProviderEffort'
+  | 'savedProviderModel'
+  | 'savedProviderServiceTier';
+
+function ensureCodexProjectionMap(
+  settings: Record<string, unknown>,
+  key: CodexProjectionKey,
+): Record<string, string> {
+  const current = settings[key];
+  if (current && typeof current === 'object' && !Array.isArray(current)) {
+    return current as Record<string, string>;
+  }
+
+  const next: Record<string, string> = {};
+  settings[key] = next;
+  return next;
+}
+
 export interface CodexProviderSettings {
   enabled: CodexProviderConfig['enabled'];
   safeMode: CodexProviderConfig['safeMode'];
   cliPath: CodexProviderConfig['cliPath'];
   cliPathsByHost: CodexProviderConfig['cliPathsByHost'];
   customModels: CodexProviderConfig['customModels'];
+  discoveredModels: CodexProviderConfig['discoveredModels'];
+  visibleModels: CodexProviderConfig['visibleModels'];
   reasoningSummary: CodexProviderConfig['reasoningSummary'];
   environmentVariables: CodexProviderConfig['environmentVariables'];
   environmentHash: CodexProviderConfig['environmentHash'];
@@ -78,6 +109,8 @@ export const DEFAULT_CODEX_PROVIDER_CONFIG: Readonly<CodexProviderConfig> = Obje
   cliPath: '',
   cliPathsByHost: {},
   customModels: '',
+  discoveredModels: [],
+  visibleModels: null,
   reasoningSummary: 'detailed',
   environmentVariables: '',
   environmentHash: '',
@@ -110,6 +143,10 @@ export function applyCodexModelDefaults(
   model: string,
   settings: Record<string, unknown>,
 ): void {
+  const modelMetadata = findCodexModel(getCodexProviderSettings(settings).discoveredModels, model);
+  settings.effortLevel = modelMetadata
+    ? getCodexDefaultReasoningEffort(modelMetadata)
+    : DEFAULT_REASONING_VALUE;
   if (shouldDisableCodexReasoningSummary(model)) {
     updateCodexProviderSettings(settings, { reasoningSummary: 'none' });
   }
@@ -127,6 +164,121 @@ function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
     }
   }
   return result;
+}
+
+export function normalizeCodexVisibleModels(
+  value: unknown,
+  discoveredModels: CodexDiscoveredModel[] = [],
+): string[] | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const knownModelIds = new Set(discoveredModels.map(model => model.model));
+  const visibleModels: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string') {
+      continue;
+    }
+
+    const modelId = entry.trim();
+    if (
+      !modelId
+      || seen.has(modelId)
+      || (knownModelIds.size > 0 && !knownModelIds.has(modelId))
+    ) {
+      continue;
+    }
+
+    seen.add(modelId);
+    visibleModels.push(modelId);
+  }
+
+  return visibleModels;
+}
+
+export function createCodexVisibleModelFilter(
+  value: unknown,
+  discoveredModels: CodexDiscoveredModel[],
+): string[] | null {
+  const normalized = normalizeCodexVisibleModels(value, discoveredModels);
+  return normalized !== null
+    && discoveredModels.length > 0
+    && normalized.length === discoveredModels.length
+    ? null
+    : normalized;
+}
+
+export function getVisibleCodexModelIds(
+  visibleModels: string[] | null,
+  discoveredModels: CodexDiscoveredModel[],
+): string[] {
+  return visibleModels === null
+    ? discoveredModels.map(model => model.model)
+    : normalizeCodexVisibleModels(visibleModels, discoveredModels) ?? [];
+}
+
+function retargetRemovedCodexSelections(
+  settings: Record<string, unknown>,
+  next: CodexProviderSettings,
+): void {
+  if (next.visibleModels === null) {
+    return;
+  }
+
+  const visibleModelIds = new Set(next.visibleModels);
+  if (visibleModelIds.size === 0) {
+    if (findCodexModel(next.discoveredModels, settings.titleGenerationModel as string | undefined)) {
+      settings.titleGenerationModel = '';
+    }
+    return;
+  }
+
+  const fallbackModel = getDefaultCodexModel(
+    next.discoveredModels.filter(model => visibleModelIds.has(model.model)),
+  );
+  if (!fallbackModel) {
+    return;
+  }
+
+  const maybeRetarget = (value: unknown): string | null => {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const model = findCodexModel(next.discoveredModels, value);
+    return model && !visibleModelIds.has(model.model) ? fallbackModel.model : null;
+  };
+  const fallbackServiceTier = fallbackModel.defaultServiceTier ?? 'default';
+
+  const existingSavedModels = settings.savedProviderModel;
+  const savedCodexModel = existingSavedModels
+    && typeof existingSavedModels === 'object'
+    && !Array.isArray(existingSavedModels)
+    ? (existingSavedModels as Record<string, unknown>).codex
+    : undefined;
+  const nextSavedModel = maybeRetarget(savedCodexModel);
+  if (nextSavedModel) {
+    ensureCodexProjectionMap(settings, 'savedProviderModel').codex = nextSavedModel;
+    ensureCodexProjectionMap(settings, 'savedProviderEffort').codex = getCodexDefaultReasoningEffort(fallbackModel);
+    ensureCodexProjectionMap(settings, 'savedProviderServiceTier').codex = fallbackServiceTier;
+  }
+
+  const nextTopLevelModel = maybeRetarget(settings.model);
+  if (nextTopLevelModel) {
+    settings.model = nextTopLevelModel;
+    settings.effortLevel = getCodexDefaultReasoningEffort(fallbackModel);
+    settings.serviceTier = fallbackServiceTier;
+  }
+
+  const nextTitleGenerationModel = maybeRetarget(settings.titleGenerationModel);
+  if (nextTitleGenerationModel) {
+    settings.titleGenerationModel = nextTitleGenerationModel;
+  }
 }
 
 function normalizeInstallationMethodsByHost(value: unknown): HostnameInstallationMethods {
@@ -167,6 +319,7 @@ function getCodexStoredConfig(
     hostnameKey,
     legacyHostnameKey,
   );
+  const discoveredModels = normalizeCodexDiscoveredModels(config.discoveredModels);
 
   return {
     enabled: (config.enabled as boolean | undefined)
@@ -181,6 +334,8 @@ function getCodexStoredConfig(
     cliPathsByHost,
     customModels: (config.customModels as string | undefined)
       ?? DEFAULT_CODEX_PROVIDER_CONFIG.customModels,
+    discoveredModels,
+    visibleModels: normalizeCodexVisibleModels(config.visibleModels, discoveredModels),
     reasoningSummary: (config.reasoningSummary as CodexReasoningSummary | undefined)
       ?? (settings.codexReasoningSummary as CodexReasoningSummary | undefined)
       ?? DEFAULT_CODEX_PROVIDER_CONFIG.reasoningSummary,
@@ -316,6 +471,13 @@ export function updateCodexProviderSettings(
   const wslDistroOverridesByHost = persistInstallationSettings
     ? updatedWslDistroOverridesByHost
     : omitCurrentHost(updatedWslDistroOverridesByHost, hostnameKey);
+  const discoveredModels = normalizeCodexDiscoveredModels(
+    updates.discoveredModels ?? current.discoveredModels,
+  );
+  const visibleModels = normalizeCodexVisibleModels(
+    'visibleModels' in updates ? updates.visibleModels : current.visibleModels,
+    discoveredModels,
+  );
 
   if (
     persistInstallationSettings
@@ -349,6 +511,8 @@ export function updateCodexProviderSettings(
   const next: CodexProviderSettings = {
     ...current,
     ...updates,
+    discoveredModels,
+    visibleModels,
     installationMethod: persistInstallationSettings
       ? installationMethodsByHost[hostnameKey] ?? DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod
       : DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod,
@@ -365,11 +529,16 @@ export function updateCodexProviderSettings(
     cliPath: next.cliPath,
     cliPathsByHost: next.cliPathsByHost,
     customModels: next.customModels,
+    discoveredModels: next.discoveredModels,
+    visibleModels: next.visibleModels,
     reasoningSummary: next.reasoningSummary,
     environmentVariables: next.environmentVariables,
     environmentHash: next.environmentHash,
     installationMethodsByHost,
     wslDistroOverridesByHost,
   });
+  if ('visibleModels' in updates) {
+    retargetRemovedCodexSelections(settings, next);
+  }
   return next;
 }

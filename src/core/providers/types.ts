@@ -237,10 +237,13 @@ export interface ProviderModeSelectorConfig {
   value: string;
 }
 
-/** Static UI configuration owned by the provider (model list, reasoning, context window). */
+/** Synchronous UI projection owned by the provider and backed by provider-owned metadata. */
 export interface ProviderChatUIConfig {
   /** Model options for the selector dropdown. Provider extracts what it needs from the settings bag. */
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[];
+
+  /** Semantic default model, independent from selector display order. */
+  getDefaultModel?(settings: Record<string, unknown>): string | null;
 
   /** Whether this provider owns the given model id. */
   ownsModel(model: string, settings: Record<string, unknown>): boolean;
@@ -371,6 +374,15 @@ export interface ProviderWorkspaceServices {
   mcpServerManager?: McpServerManager | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
   refreshAgentMentions?(): Promise<void>;
+  refreshModelCatalog?(): Promise<ProviderModelCatalogRefreshResult>;
+}
+
+export interface ProviderModelCatalogRefreshResult {
+  /** Whether runtime catalog or persisted selection state changed. */
+  changed: boolean;
+  diagnostics?: string;
+  /** Whether the caller must persist provider settings after the refresh. */
+  persistedSettingsChanged?: boolean;
 }
 
 export interface ProviderSettingsTabRendererContext {

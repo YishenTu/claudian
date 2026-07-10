@@ -1,5 +1,7 @@
 import '@/providers';
 
+import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type {
@@ -8,7 +10,6 @@ import type {
   TitleGenerationResult,
   TitleGenerationService,
 } from '@/core/providers/types';
-import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 describe('ProviderRegistry', () => {
   beforeEach(() => {
@@ -182,7 +183,7 @@ describe('ProviderRegistry', () => {
 
     const service = ProviderRegistry.createTitleGenerationService({
       settings: {
-        titleGenerationModel: DEFAULT_CODEX_PRIMARY_MODEL,
+        titleGenerationModel: TEST_CODEX_MODEL,
         providerConfigs: {
           codex: { enabled: true },
         },
@@ -224,7 +225,7 @@ describe('ProviderRegistry', () => {
     const callback = jest.fn();
 
     const first = service.generateTitle('conv-1', 'first', callback);
-    plugin.settings.titleGenerationModel = DEFAULT_CODEX_PRIMARY_MODEL;
+    plugin.settings.titleGenerationModel = TEST_CODEX_MODEL;
     await service.generateTitle('conv-1', 'second', callback);
     await claudeService.resolve({ success: true, title: 'stale title' });
     await first;

@@ -4,16 +4,16 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 import { t } from '../../../i18n/i18n';
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import type { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
-import { DEFAULT_CODEX_PRIMARY_MODEL } from '../types/models';
 import type { CodexSubagentDefinition } from '../types/subagent';
 
-function getReasoningEffortOptions() {
+export function getCodexSubagentReasoningEffortOptions() {
   return [
     { value: '', label: t('settings.codexSubagents.reasoningEffort.inherit') },
     { value: 'low', label: t('settings.codexSubagents.reasoningEffort.low') },
     { value: 'medium', label: t('settings.codexSubagents.reasoningEffort.medium') },
     { value: 'high', label: t('settings.codexSubagents.reasoningEffort.high') },
     { value: 'xhigh', label: t('settings.codexSubagents.reasoningEffort.xhigh') },
+    { value: 'max', label: 'Max' },
   ] as const;
 }
 
@@ -145,14 +145,14 @@ class CodexSubagentModal extends Modal {
       .addText(text => {
         this._modelInput = text.inputEl;
         text.setValue(this.existing?.model ?? '')
-          .setPlaceholder(DEFAULT_CODEX_PRIMARY_MODEL);
+          .setPlaceholder('Model ID');
       });
 
     new Setting(details)
       .setName(t('settings.codexSubagents.reasoningEffort.name'))
       .setDesc(t('settings.codexSubagents.reasoningEffort.desc'))
       .addDropdown(dropdown => {
-        for (const opt of getReasoningEffortOptions()) {
+        for (const opt of getCodexSubagentReasoningEffortOptions()) {
           dropdown.addOption(opt.value, opt.label);
         }
         dropdown.setValue(this._reasoningEffort);

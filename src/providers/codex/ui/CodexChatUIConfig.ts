@@ -1,3 +1,4 @@
+import { DEFAULT_REASONING_VALUE } from '../../../core/providers/reasoning';
 import type {
   ProviderChatUIConfig,
   ProviderPermissionModeToggleConfig,
@@ -7,21 +8,37 @@ import type {
 } from '../../../core/providers/types';
 import { OPENAI_PROVIDER_ICON } from '../../../shared/icons';
 import { getCodexModelOptions } from '../modelOptions';
-import { isCodexModelSelectionId, toCodexRuntimeModelId } from '../modelSelection';
-import { applyCodexModelDefaults } from '../settings';
 import {
-  DEFAULT_CODEX_MODEL_SET,
-  DEFAULT_CODEX_PRIMARY_MODEL,
-  FAST_TIER_CODEX_DESCRIPTION,
-  FAST_TIER_CODEX_MODEL,
-} from '../types/models';
+  findCodexModel,
+  getCodexDefaultReasoningEffort,
+  getCodexFastServiceTier,
+  getDefaultCodexModel,
+} from '../models';
+import {
+  isCodexModelSelectionId,
+  looksLikeCodexModel,
+  toCodexRuntimeModelId,
+} from '../modelSelection';
+import {
+  applyCodexModelDefaults,
+  getCodexProviderSettings,
+  getVisibleCodexModelIds,
+} from '../settings';
 
 const EFFORT_LEVELS: ProviderReasoningOption[] = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
   { value: 'xhigh', label: 'XHigh' },
+  { value: 'max', label: 'Max' },
 ];
+
+function formatEffortLabel(value: string): string {
+  if (value.toLowerCase() === 'xhigh') {
+    return 'XHigh';
+  }
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
 
 const CODEX_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveValue: 'normal',
@@ -32,23 +49,27 @@ const CODEX_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   planLabel: 'Plan',
 };
 
-const CODEX_SERVICE_TIER_TOGGLE: ProviderServiceTierToggleConfig = {
-  inactiveValue: 'default',
-  inactiveLabel: 'Standard',
-  activeValue: 'fast',
-  activeLabel: 'Fast',
-  description: FAST_TIER_CODEX_DESCRIPTION,
-};
+const DEFAULT_SERVICE_TIER_VALUE = 'default';
+const DEFAULT_SERVICE_TIER_LABEL = 'Standard';
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 
-function looksLikeCodexModel(model: string): boolean {
-  return /^gpt-/i.test(model) || /^o\d/i.test(model);
+function getVisibleDiscoveredModels(settings: Record<string, unknown>) {
+  const codexSettings = getCodexProviderSettings(settings);
+  const visibleModelIds = new Set(getVisibleCodexModelIds(
+    codexSettings.visibleModels,
+    codexSettings.discoveredModels,
+  ));
+  return codexSettings.discoveredModels.filter(model => visibleModelIds.has(model.model));
 }
 
 export const codexChatUIConfig: ProviderChatUIConfig = {
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
     return getCodexModelOptions(settings);
+  },
+
+  getDefaultModel(settings: Record<string, unknown>): string | null {
+    return getDefaultCodexModel(getVisibleDiscoveredModels(settings))?.model ?? null;
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
@@ -70,12 +91,28 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
     return true;
   },
 
-  getReasoningOptions(_model: string, _settings: Record<string, unknown>): ProviderReasoningOption[] {
-    return [...EFFORT_LEVELS];
+  getReasoningOptions(modelId: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
+    const model = findCodexModel(
+      getCodexProviderSettings(settings).discoveredModels,
+      modelId,
+    );
+    if (!model) {
+      return [...EFFORT_LEVELS];
+    }
+
+    return model.supportedReasoningEfforts.map(option => ({
+      value: option.value,
+      label: formatEffortLabel(option.value),
+      ...(option.description ? { description: option.description } : {}),
+    }));
   },
 
-  getDefaultReasoningValue(_model: string, _settings: Record<string, unknown>): string {
-    return 'medium';
+  getDefaultReasoningValue(modelId: string, settings: Record<string, unknown>): string {
+    const model = findCodexModel(
+      getCodexProviderSettings(settings).discoveredModels,
+      modelId,
+    );
+    return model ? getCodexDefaultReasoningEffort(model) : DEFAULT_REASONING_VALUE;
   },
 
   getContextWindowSize(): number {
@@ -83,7 +120,7 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
   },
 
   isDefaultModel(model: string): boolean {
-    return DEFAULT_CODEX_MODEL_SET.has(model);
+    return looksLikeCodexModel(toCodexRuntimeModelId(model)) && !isCodexModelSelectionId(model);
   },
 
   applyModelDefaults(model: string, settings: unknown): void {
@@ -103,12 +140,18 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
       return option.value;
     }
 
-    return DEFAULT_CODEX_PRIMARY_MODEL;
+    const codexSettings = getCodexProviderSettings(settings);
+    const discoveredModels = codexSettings.discoveredModels;
+    if (discoveredModels.length === 0) {
+      return model;
+    }
+
+    return getDefaultCodexModel(getVisibleDiscoveredModels(settings))?.model ?? model;
   },
 
   getCustomModelIds(envVars: Record<string, string>): Set<string> {
     const ids = new Set<string>();
-    if (envVars.OPENAI_MODEL && !DEFAULT_CODEX_MODEL_SET.has(envVars.OPENAI_MODEL)) {
+    if (envVars.OPENAI_MODEL && !looksLikeCodexModel(envVars.OPENAI_MODEL)) {
       ids.add(envVars.OPENAI_MODEL);
     }
     return ids;
@@ -119,7 +162,26 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
   },
 
   getServiceTierToggle(settings): ProviderServiceTierToggleConfig | null {
-    return settings.model === FAST_TIER_CODEX_MODEL ? CODEX_SERVICE_TIER_TOGGLE : null;
+    const model = findCodexModel(
+      getCodexProviderSettings(settings).discoveredModels,
+      typeof settings.model === 'string' ? settings.model : undefined,
+    );
+    if (!model) {
+      return null;
+    }
+
+    const tier = getCodexFastServiceTier(model);
+    if (!tier) {
+      return null;
+    }
+
+    return {
+      inactiveValue: model.defaultServiceTier ?? DEFAULT_SERVICE_TIER_VALUE,
+      inactiveLabel: DEFAULT_SERVICE_TIER_LABEL,
+      activeValue: tier.id,
+      activeLabel: tier.name,
+      description: tier.description || undefined,
+    };
   },
 
   getProviderIcon() {

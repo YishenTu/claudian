@@ -17,10 +17,10 @@ import {
   encodeOpencodeModelId,
   isOpencodeModelSelectionId,
   normalizeOpencodeThinkingOptionsByModel,
-  OPENCODE_DEFAULT_THINKING_LEVEL,
   type OpencodeDiscoveredModel,
   type OpencodeThinkingOptionsByModel,
   resolveOpencodeBaseModelRawId,
+  resolveOpencodeDefaultThinkingLevel,
 } from './models';
 import {
   normalizeManagedOpencodeSelectedMode,
@@ -391,7 +391,10 @@ function retargetRemovedOpencodeSelections(
   const visibleSet = new Set(next.visibleModels);
   const fallbackRawId = next.visibleModels[0];
   const fallbackModelId = encodeOpencodeModelId(fallbackRawId);
-  const fallbackEffort = next.preferredThinkingByModel[fallbackRawId] ?? OPENCODE_DEFAULT_THINKING_LEVEL;
+  const fallbackEffort = resolveOpencodeDefaultThinkingLevel(
+    next.thinkingOptionsByModel[fallbackRawId] ?? [],
+    next.preferredThinkingByModel[fallbackRawId],
+  );
 
   const maybeRetargetModel = (value: unknown): string | null => {
     if (typeof value !== 'string' || !isOpencodeModelSelectionId(value)) {

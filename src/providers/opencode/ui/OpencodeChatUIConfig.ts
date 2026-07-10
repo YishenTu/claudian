@@ -13,6 +13,7 @@ import {
   OPENCODE_DEFAULT_THINKING_LEVEL,
   OPENCODE_SYNTHETIC_MODEL_ID,
   resolveOpencodeBaseModelRawId,
+  resolveOpencodeDefaultThinkingLevel,
 } from '../models';
 import {
   resolveOpencodeModeForPermissionMode,
@@ -275,16 +276,10 @@ function getDefaultThinkingLevelForModel(
   settings: Record<string, unknown>,
 ): string {
   const opencodeSettings = getOpencodeProviderSettings(settings);
-  const preferred = opencodeSettings.preferredThinkingByModel[baseRawId];
-  const supportedValues = new Set(
-    (opencodeSettings.thinkingOptionsByModel[baseRawId] ?? []).map((variant) => variant.value),
+  return resolveOpencodeDefaultThinkingLevel(
+    opencodeSettings.thinkingOptionsByModel[baseRawId] ?? [],
+    opencodeSettings.preferredThinkingByModel[baseRawId],
   );
-  if (preferred && supportedValues.has(preferred)) {
-    return preferred;
-  }
-
-  return opencodeSettings.thinkingOptionsByModel[baseRawId]?.[0]?.value
-    ?? OPENCODE_DEFAULT_THINKING_LEVEL;
 }
 
 function getOpencodeThinkingOptions(

@@ -1,7 +1,8 @@
 import '@/providers';
 
+import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+
 import { getEnabledProviderForModel, getProviderForModel } from '@/core/providers/modelRouting';
-import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 describe('getProviderForModel', () => {
   it('routes Claude default models to claude', () => {
@@ -16,7 +17,7 @@ describe('getProviderForModel', () => {
   });
 
   it('routes Codex default models to codex', () => {
-    expect(getProviderForModel(DEFAULT_CODEX_PRIMARY_MODEL)).toBe('codex');
+    expect(getProviderForModel(TEST_CODEX_MODEL)).toBe('codex');
   });
 
   it('routes unknown models to claude (default)', () => {
@@ -77,7 +78,7 @@ describe('getProviderForModel', () => {
       settingsProvider: 'claude',
       providerConfigs: {
         claude: {
-          environmentVariables: `ANTHROPIC_MODEL=${DEFAULT_CODEX_PRIMARY_MODEL}`,
+          environmentVariables: `ANTHROPIC_MODEL=${TEST_CODEX_MODEL}`,
         },
         codex: {
           enabled: false,
@@ -85,7 +86,7 @@ describe('getProviderForModel', () => {
       },
     };
 
-    expect(getProviderForModel(DEFAULT_CODEX_PRIMARY_MODEL, settings)).toBe('codex');
-    expect(getEnabledProviderForModel(DEFAULT_CODEX_PRIMARY_MODEL, settings)).toBe('claude');
+    expect(getProviderForModel(TEST_CODEX_MODEL, settings)).toBe('codex');
+    expect(getEnabledProviderForModel(TEST_CODEX_MODEL, settings)).toBe('claude');
   });
 });

@@ -1,6 +1,7 @@
+import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+
 import type { Conversation } from '@/core/types';
 import { codexSettingsReconciler } from '@/providers/codex/env/CodexSettingsReconciler';
-import { DEFAULT_CODEX_PRIMARY_MODEL } from '@/providers/codex/types/models';
 
 describe('codexSettingsReconciler', () => {
   it('invalidates both sessionId and providerState when the Codex env hash changes', () => {
@@ -15,10 +16,11 @@ describe('codexSettingsReconciler', () => {
     } as unknown as Conversation;
 
     const settings: Record<string, unknown> = {
-      model: DEFAULT_CODEX_PRIMARY_MODEL,
+      model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
-          environmentVariables: `OPENAI_MODEL=${DEFAULT_CODEX_PRIMARY_MODEL}`,
+          discoveredModels: TEST_CODEX_CATALOG,
+          environmentVariables: `OPENAI_MODEL=${TEST_CODEX_MODEL}`,
           environmentHash: '',
         },
       },
@@ -29,12 +31,12 @@ describe('codexSettingsReconciler', () => {
     expect(result.changed).toBe(true);
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toBeUndefined();
-    expect(settings.model).toBe(DEFAULT_CODEX_PRIMARY_MODEL);
+    expect(settings.model).toBe(TEST_CODEX_MODEL);
   });
 
   it('persists a provider-qualified selection for custom OPENAI_MODEL values', () => {
     const settings: Record<string, unknown> = {
-      model: DEFAULT_CODEX_PRIMARY_MODEL,
+      model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
           environmentVariables: 'OPENAI_MODEL=deepseek-v4-pro',
@@ -89,6 +91,7 @@ describe('codexSettingsReconciler', () => {
       providerConfigs: {
         codex: {
           customModels: '',
+          discoveredModels: TEST_CODEX_CATALOG,
           environmentVariables: 'OPENAI_BASE_URL=https://api.example.com/v1',
           environmentHash: '',
         },
@@ -98,7 +101,7 @@ describe('codexSettingsReconciler', () => {
     const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, []);
 
     expect(result.changed).toBe(true);
-    expect(settings.model).toBe('gpt-5.4-mini');
+    expect(settings.model).toBe(TEST_CODEX_MODEL);
     expect((settings.providerConfigs as any).codex.environmentHash).toBe(
       'OPENAI_BASE_URL=https://api.example.com/v1',
     );

@@ -5,6 +5,7 @@ import type {
   AgentMentionProvider,
   ProviderCliResolver,
   ProviderId,
+  ProviderModelCatalogRefreshResult,
   ProviderRuntimeCommandLoader,
   ProviderSettingsTabRenderer,
   ProviderTabWarmupPolicy,
@@ -95,6 +96,12 @@ export class ProviderWorkspaceRegistry {
 
   static async refreshAgentMentions(providerId: ProviderId): Promise<void> {
     await this.getServices(providerId)?.refreshAgentMentions?.();
+  }
+
+  static async refreshModelCatalog(
+    providerId: ProviderId,
+  ): Promise<ProviderModelCatalogRefreshResult> {
+    return await this.getServices(providerId)?.refreshModelCatalog?.() ?? { changed: false };
   }
 
   static getCliResolver(providerId: ProviderId): ProviderCliResolver | null {
