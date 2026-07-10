@@ -13,6 +13,7 @@ import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i
 import type { Locale, TranslationKey } from '../../i18n/types';
 import type ClaudianPlugin from '../../main';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
+import { DEFAULT_HITL_NOTIFICATION_SOUND_PATH } from '../../utils/hitlNotificationSound';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { renderEnvironmentSettingsSection } from './ui/EnvironmentSettingsSection';
 
@@ -286,6 +287,58 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    // --- Human-in-the-loop alerts ---
+
+    new Setting(container).setName(t('settings.hitlAlerts')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.hitlSound.name'))
+      .setDesc(t('settings.hitlSound.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.hitlNotificationSoundEnabled ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.hitlNotificationSoundEnabled = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(container)
+      .setName(t('settings.hitlSoundVolume.name'))
+      .setDesc(t('settings.hitlSoundVolume.desc'))
+      .addSlider((slider) => {
+        const currentVolume = Math.round(
+          Math.max(0, Math.min(1, this.plugin.settings.hitlNotificationSoundVolume ?? 0.5)) * 100,
+        );
+        slider
+          .setLimits(0, 100, 5)
+          .setValue(currentVolume)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.hitlNotificationSoundVolume = value / 100;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(container)
+      .setName(t('settings.hitlSoundPath.name'))
+      .setDesc(t('settings.hitlSoundPath.desc'))
+      .addText((text) => {
+        text
+          .setPlaceholder(DEFAULT_HITL_NOTIFICATION_SOUND_PATH)
+          .setValue(this.plugin.settings.hitlNotificationSoundPath ?? DEFAULT_HITL_NOTIFICATION_SOUND_PATH)
+          .onChange(async (value) => {
+            this.plugin.settings.hitlNotificationSoundPath = value.trim();
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.addClass('claudian-settings-cli-path-input');
+      })
+      .addButton((button) => {
+        button.setButtonText(t('settings.hitlSoundTest')).onClick(() => {
+          void this.plugin.playHitlNotificationSound(true);
+        });
+      });
 
     // --- Conversations ---
 

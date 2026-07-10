@@ -1342,6 +1342,9 @@ export class InputController {
       throw new Error('Input container is detached from DOM');
     }
 
+    // Alert the user that an approval is waiting (fire-and-forget).
+    void this.deps.plugin.playHitlNotificationSound();
+
     // Build header element, then detach — InlineAskUserQuestion will re-attach it
     const headerEl = parentEl.createDiv({ cls: 'claudian-ask-approval-info' });
     headerEl.remove();

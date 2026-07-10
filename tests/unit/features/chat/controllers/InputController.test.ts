@@ -122,6 +122,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
   return {
     plugin: {
       saveSettings: jest.fn(),
+      playHitlNotificationSound: jest.fn().mockResolvedValue(undefined),
       settings: {
         permissionMode: 'yolo',
         enableAutoTitleGeneration: true,

@@ -105,6 +105,9 @@ describe('types.ts', () => {
         deferMathRenderingDuringStreaming: true,
         expandFileEditsByDefault: false,
         chatViewPlacement: 'right-sidebar',
+        hitlNotificationSoundEnabled: false,
+        hitlNotificationSoundVolume: 0.5,
+        hitlNotificationSoundPath: '.claudian/sounds/approval.wav',
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -159,6 +162,9 @@ describe('types.ts', () => {
         deferMathRenderingDuringStreaming: true,
         expandFileEditsByDefault: false,
         chatViewPlacement: 'right-sidebar',
+        hitlNotificationSoundEnabled: false,
+        hitlNotificationSoundVolume: 0.5,
+        hitlNotificationSoundPath: '.claudian/sounds/approval.wav',
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -214,6 +220,9 @@ describe('types.ts', () => {
         deferMathRenderingDuringStreaming: true,
         expandFileEditsByDefault: true,
         chatViewPlacement: 'right-sidebar',
+        hitlNotificationSoundEnabled: true,
+        hitlNotificationSoundVolume: 0.5,
+        hitlNotificationSoundPath: '.claudian/sounds/approval.wav',
         hiddenProviderCommands: {
           claude: [],
           codex: [],

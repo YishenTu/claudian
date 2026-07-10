@@ -42,6 +42,12 @@ import type { Locale } from './i18n/types';
 import { OPENCODE_PLAN_MODE_ID, OPENCODE_SAFE_MODE_ID } from './providers/opencode/modes';
 import { extractUserDisplayContent } from './utils/context';
 import { buildCursorContext } from './utils/editor';
+import {
+  DEFAULT_HITL_NOTIFICATION_SOUND_PATH,
+  isWaveAudioBuffer,
+  MAX_HITL_NOTIFICATION_SOUND_BYTES,
+  normalizeHitlNotificationSoundPath,
+} from './utils/hitlNotificationSound';
 import { revealWorkspaceLeaf } from './utils/obsidianCompat';
 import { getVaultPath } from './utils/path';
 
@@ -214,6 +220,53 @@ export default class ClaudianPlugin extends Plugin {
 
     if (leaf) {
       await revealWorkspaceLeaf(workspace, leaf);
+    }
+  }
+
+  /**
+   * Plays the configured human-in-the-loop approval alert sound.
+   * Fire-and-forget: failures are logged, never thrown, so the approval
+   * flow is unaffected. `force` bypasses the enabled toggle (used by the
+   * settings "test sound" button).
+   */
+  async playHitlNotificationSound(force = false): Promise<void> {
+    if (!force && !(this.settings.hitlNotificationSoundEnabled ?? false)) {
+      return;
+    }
+    const soundPath = normalizeHitlNotificationSoundPath(
+      this.settings.hitlNotificationSoundPath ?? DEFAULT_HITL_NOTIFICATION_SOUND_PATH,
+    );
+    if (!soundPath) {
+      console.warn('Claudian HITL sound path must be a WAV file inside .claudian/sounds/.');
+      return;
+    }
+    try {
+      const data = await this.app.vault.adapter.readBinary(soundPath);
+      if (
+        data.byteLength <= 0
+        || data.byteLength > MAX_HITL_NOTIFICATION_SOUND_BYTES
+        || !isWaveAudioBuffer(data)
+      ) {
+        console.warn('Claudian HITL sound must be a valid WAV file no larger than 5 MB.');
+        return;
+      }
+      const audioUrl = URL.createObjectURL(new Blob([data], { type: 'audio/wav' }));
+      const audio = new Audio(audioUrl);
+      audio.volume = Math.max(0, Math.min(1, Number(this.settings.hitlNotificationSoundVolume ?? 0.5)));
+      let revoked = false;
+      const cleanup = () => {
+        if (revoked) {
+          return;
+        }
+        revoked = true;
+        URL.revokeObjectURL(audioUrl);
+      };
+      audio.addEventListener('ended', cleanup, { once: true });
+      audio.addEventListener('error', cleanup, { once: true });
+      window.setTimeout(cleanup, 30_000);
+      await audio.play();
+    } catch (error) {
+      console.warn('Could not play Claudian HITL notification sound.', error);
     }
   }
 

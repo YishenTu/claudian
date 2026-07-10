@@ -83,6 +83,20 @@
     "setup": "设置",
     "models": "模型",
     "experimental": "实验性功能",
+    "hitlAlerts": "人工审批提醒",
+    "hitlSound": {
+      "name": "播放审批提示音",
+      "desc": "当提供方请求权限时播放本地 WAV 音效。"
+    },
+    "hitlSoundVolume": {
+      "name": "审批提示音音量",
+      "desc": "人工审批权限提醒使用的音量。"
+    },
+    "hitlSoundPath": {
+      "name": "审批提示音文件",
+      "desc": "库内相对路径的 WAV 文件。出于安全考虑，文件必须位于 .claudian/sounds/ 目录内。"
+    },
+    "hitlSoundTest": "测试提示音",
     "userName": {
       "name": "Claudian 应该如何称呼你？",
       "desc": "用于个性化问候的用户名（留空使用通用问候）"

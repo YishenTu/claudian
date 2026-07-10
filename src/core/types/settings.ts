@@ -144,6 +144,11 @@ export interface ClaudianSettings {
   expandFileEditsByDefault: boolean;
   chatViewPlacement: ChatViewPlacement;
 
+  // Human-in-the-loop approval alerts
+  hitlNotificationSoundEnabled: boolean;
+  hitlNotificationSoundVolume: number;
+  hitlNotificationSoundPath: string;
+
   // Provider command visibility
   hiddenProviderCommands: HiddenProviderCommands;
 

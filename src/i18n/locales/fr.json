@@ -83,6 +83,20 @@
     "setup": "Configuration",
     "models": "Modèles",
     "experimental": "Expérimental",
+    "hitlAlerts": "Alertes d'approbation",
+    "hitlSound": {
+      "name": "Jouer un son d'approbation",
+      "desc": "Joue un son WAV local lorsqu'un fournisseur demande une autorisation."
+    },
+    "hitlSoundVolume": {
+      "name": "Volume du son d'approbation",
+      "desc": "Volume utilisé pour les alertes d'autorisation."
+    },
+    "hitlSoundPath": {
+      "name": "Fichier du son d'approbation",
+      "desc": "Fichier WAV relatif au coffre. Par sécurité, le fichier doit rester dans .claudian/sounds/."
+    },
+    "hitlSoundTest": "Tester le son",
     "userName": {
       "name": "Comment Claudian doit-il vous appeler ?",
       "desc": "Votre nom pour les salutations personnalisées (laisser vide pour les salutations génériques)"

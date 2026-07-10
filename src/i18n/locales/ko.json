@@ -83,6 +83,20 @@
     "setup": "설정",
     "models": "모델",
     "experimental": "실험적 기능",
+    "hitlAlerts": "승인 알림",
+    "hitlSound": {
+      "name": "승인 사운드 재생",
+      "desc": "제공자가 권한을 요청할 때 로컬 WAV 사운드를 재생합니다."
+    },
+    "hitlSoundVolume": {
+      "name": "승인 사운드 볼륨",
+      "desc": "승인 알림에 사용되는 볼륨입니다."
+    },
+    "hitlSoundPath": {
+      "name": "승인 사운드 파일",
+      "desc": "보관함 상대 경로의 WAV 파일. 안전을 위해 파일은 .claudian/sounds/ 안에 있어야 합니다."
+    },
+    "hitlSoundTest": "사운드 테스트",
     "userName": {
       "name": "Claudian이 당신을 어떻게 불러야 합니까?",
       "desc": "개인화된 인사에 사용할 이름 (비워두면 일반 인사)"
