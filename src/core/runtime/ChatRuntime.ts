@@ -51,6 +51,7 @@ export interface ChatRuntime {
   setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void;
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void;
   setPermissionMode?(mode: string): Promise<void>;
+  renameSession?(title: string): Promise<void>;
   setSubagentHookProvider(getState: () => SubagentRuntimeState): void;
   setAutoTurnCallback(callback: AutoTurnCallback | null): void;
   consumeTurnMetadata(): ChatTurnMetadata;

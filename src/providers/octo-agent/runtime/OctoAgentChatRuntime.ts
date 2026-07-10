@@ -407,6 +407,17 @@ export class OctoAgentChatRuntime implements ChatRuntime {
     }
   }
 
+  async renameSession(title: string): Promise<void> {
+    if (!this.client || !this.sessionId) {
+      return;
+    }
+    try {
+      await this.client.renameSession(this.sessionId, title);
+    } catch (error) {
+      console.error('Failed to rename octo-agent session:', error);
+    }
+  }
+
   setSubagentHookProvider(getState: () => SubagentRuntimeState): void {
     this.subagentHookProvider = getState;
   }

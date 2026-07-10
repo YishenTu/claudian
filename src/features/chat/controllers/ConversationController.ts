@@ -919,6 +919,19 @@ export class ConversationController {
       try {
         const newTitle = input.value.trim() || currentTitle;
         await this.deps.plugin.renameConversation(convId, newTitle);
+
+        const conversation = this.deps.plugin.getConversationSync(convId);
+        if (conversation?.providerId === 'octo-agent' && conversation.sessionId) {
+          const agentService = this.deps.getAgentService?.();
+          if (agentService && typeof agentService.renameSession === 'function') {
+            try {
+              await agentService.renameSession(newTitle);
+            } catch (error) {
+              console.error('Failed to sync renamed title to octo-agent:', error);
+            }
+          }
+        }
+
         this.updateHistoryDropdown();
       } catch {
         new Notice('Failed to rename conversation');
