@@ -9,18 +9,23 @@ import {
   parseImageDataUri,
 } from '../../../utils/imageAttachment';
 import {
+  extractCodexUserVisibleText,
   joinCodexUserTextParts,
-  stripCodexImagePlaceholderText,
 } from '../codexUserText';
 import {
+  appendCodexCommandOutput,
+  extractCodexExecCellId,
   isCodexToolOutputError,
   normalizeCodexMcpToolInput,
   normalizeCodexMcpToolName,
   normalizeCodexMcpToolState,
+  normalizeCodexToolCall,
   normalizeCodexToolInput,
   normalizeCodexToolName,
   normalizeCodexToolResult,
   parseCodexArguments,
+  readCodexExecCellIdArgument,
+  stringifyCodexToolOutput,
 } from '../normalization/codexToolNormalization';
 
 interface CodexEvent {
@@ -201,6 +206,8 @@ function createPersistedParseContext(): PersistedParseContext {
     suppressedToolOutputIds: new Set(),
     terminalSessionToCommandId: new Map(),
     stdinCallToCommandId: new Map(),
+    execCellToCommandId: new Map(),
+    waitCallToCommand: new Map(),
     turnCounter: 0,
   };
 }
@@ -407,70 +414,6 @@ function parseSessionRecord(line: string): ParsedSessionRecord | null {
     event: parsed.event,
     payload: parsed.payload,
   };
-}
-
-const CODEX_SYSTEM_MESSAGE_PREFIXES = [
-  '# AGENTS.md instructions',
-];
-
-const CODEX_CONTROL_BLOCK_TAGS = [
-  'system_instruction',
-  'environment_context',
-  'turn_aborted',
-  'user-preferences',
-  'subagent_notification',
-  'skill',
-];
-
-function stripLeadingTaggedBlock(text: string, tagName: string): string | null {
-  const openTag = `<${tagName}>`;
-  if (!text.startsWith(openTag)) {
-    return null;
-  }
-
-  const closeTag = `</${tagName}>`;
-  const closeIndex = text.indexOf(closeTag, openTag.length);
-  if (closeIndex === -1) {
-    return '';
-  }
-
-  return text.slice(closeIndex + closeTag.length);
-}
-
-function stripLeadingCodexControlBlocks(text: string): string {
-  let remaining = text.trimStart();
-  let stripped = true;
-
-  while (stripped) {
-    stripped = false;
-
-    for (const tagName of CODEX_CONTROL_BLOCK_TAGS) {
-      const next = stripLeadingTaggedBlock(remaining, tagName);
-      if (next === null) {
-        continue;
-      }
-
-      remaining = next.trimStart();
-      stripped = true;
-      break;
-    }
-  }
-
-  return remaining;
-}
-
-function extractCodexUserVisibleText(text: string): string | null {
-  const trimmed = stripCodexImagePlaceholderText(text).trimStart();
-  if (!trimmed) {
-    return null;
-  }
-
-  if (CODEX_SYSTEM_MESSAGE_PREFIXES.some(prefix => trimmed.startsWith(prefix))) {
-    return null;
-  }
-
-  const visible = stripCodexImagePlaceholderText(stripLeadingCodexControlBlocks(trimmed)).trim();
-  return visible ? visible : null;
 }
 
 function extractMessageText(content: PersistedMessagePart[] | undefined): string {
@@ -696,6 +639,8 @@ interface PersistedParseContext {
   suppressedToolOutputIds: Set<string>;
   terminalSessionToCommandId: Map<string, string>;
   stdinCallToCommandId: Map<string, string>;
+  execCellToCommandId: Map<string, string>;
+  waitCallToCommand: Map<string, { commandCallId: string; cellId: string }>;
   turnCounter: number;
 }
 
@@ -712,8 +657,20 @@ function processPersistedToolCall(
   const callId = payload.call_id;
   if (!callId) return;
 
-  if (payload.name === 'write_stdin') {
-    const parsedArgs = parseCodexArguments(payload.arguments ?? payload.input);
+  const rawArgs = payload.arguments ?? payload.input;
+  const parsedArgs = parseCodexArguments(rawArgs);
+  const normalized = normalizeCodexToolCall(payload.name, parsedArgs);
+
+  if (normalized.name === 'wait') {
+    const cellId = readCodexExecCellIdArgument(normalized.input);
+    const commandCallId = cellId ? ctx.execCellToCommandId.get(cellId) : undefined;
+    if (cellId && commandCallId) {
+      ctx.waitCallToCommand.set(callId, { commandCallId, cellId });
+      return;
+    }
+  }
+
+  if (normalized.name === 'write_stdin') {
     if (isSilentWriteStdinInput(parsedArgs)) {
       const terminalSessionId = readTerminalSessionIdArgument(parsedArgs);
       const parentCallId = terminalSessionId
@@ -730,15 +687,10 @@ function processPersistedToolCall(
   const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
   const bubble = ensureAssistantBubble(turn, timestamp);
 
-  const rawArgs = payload.arguments ?? payload.input;
-  const parsedArgs = parseCodexArguments(rawArgs);
-  const normalizedName = normalizeCodexToolName(payload.name);
-  const normalizedInput = normalizeCodexToolInput(payload.name, parsedArgs);
-
   const toolCall: ToolCallInfo = {
     id: callId,
-    name: normalizedName,
-    input: normalizedInput,
+    name: normalized.name,
+    input: normalized.input,
     status: 'running',
   };
 
@@ -759,11 +711,18 @@ function processPersistedToolOutput(
   if (!callId) return;
 
   // output can be a string or an array (e.g. view_image returns image objects)
-  const rawOutput = typeof payload.output === 'string'
-    ? payload.output
-    : Array.isArray(payload.output)
-      ? JSON.stringify(payload.output)
-      : '';
+  const rawOutput = stringifyCodexToolOutput(payload.output);
+
+  const waitCall = ctx.waitCallToCommand.get(callId);
+  if (waitCall) {
+    const parentToolCall = findPersistedToolCallById(ctx, waitCall.commandCallId);
+    ctx.execCellToCommandId.delete(waitCall.cellId);
+    if (parentToolCall) {
+      applyPersistedToolOutput(parentToolCall, payload.output, rawOutput, ctx);
+    }
+    ctx.waitCallToCommand.delete(callId);
+    return;
+  }
 
   const parentCommandId = ctx.stdinCallToCommandId.get(callId);
   if (parentCommandId) {
@@ -839,28 +798,24 @@ function isSilentWriteStdinInput(input: Record<string, unknown>): boolean {
   return typeof input.chars !== 'string' || input.chars.length === 0;
 }
 
-function appendCommandOutput(previous: string | undefined, next: string): string {
-  if (!next) return previous ?? '';
-  if (!previous) return next;
-  if (previous.endsWith('\n') || next.startsWith('\n')) return previous + next;
-  return `${previous}\n${next}`;
-}
-
 function readPersistedCommandToolResult(rawOutputText: string): {
   output: string;
   status: 'running' | 'completed' | 'unknown';
   exitCode?: number;
   terminalSessionId?: string;
+  execCellId?: string;
 } {
   const output = normalizeCodexToolResult('Bash', rawOutputText);
   const exitCodeMatch = rawOutputText.match(/(?:Exit code:|Process exited with code)\s*(-?\d+)/i);
   const runningMatch = rawOutputText.match(/Process running with session ID\s*([^\n]+)/i);
+  const execCellId = extractCodexExecCellId(rawOutputText);
 
   return {
     output,
-    status: exitCodeMatch ? 'completed' : runningMatch ? 'running' : 'unknown',
+    status: exitCodeMatch ? 'completed' : runningMatch || execCellId ? 'running' : 'unknown',
     ...(exitCodeMatch ? { exitCode: Number(exitCodeMatch[1] ?? 0) } : {}),
     ...(runningMatch ? { terminalSessionId: (runningMatch[1] ?? '').trim() } : {}),
+    ...(execCellId ? { execCellId } : {}),
   };
 }
 
@@ -873,9 +828,12 @@ function applyPersistedToolOutput(
 ): void {
   if (toolCall.name === 'Bash') {
     const commandResult = readPersistedCommandToolResult(rawOutputText);
-    toolCall.result = appendCommandOutput(toolCall.result, commandResult.output);
+    toolCall.result = appendCodexCommandOutput(toolCall.result, commandResult.output);
     if (commandResult.terminalSessionId) {
       ctx.terminalSessionToCommandId.set(commandResult.terminalSessionId, toolCall.id);
+    }
+    if (commandResult.execCellId) {
+      ctx.execCellToCommandId.set(commandResult.execCellId, toolCall.id);
     }
     if (commandResult.status === 'running') {
       toolCall.status = 'running';

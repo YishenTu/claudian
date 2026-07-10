@@ -397,6 +397,164 @@ describe('CodexHistoryStore', () => {
       expect(patchTool!.status).toBe('completed');
     });
 
+    it('restores completed exec envelopes as their nested tools', () => {
+      const patch = '*** Begin Patch\n*** Update File: note.md\n*** End Patch';
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call',
+            name: 'exec',
+            call_id: 'call_exec_wrapper',
+            input: 'const r = await tools.exec_command({cmd:"ls -1",workdir:"/vault"}); text(r.output);',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call_output',
+            call_id: 'call_exec_wrapper',
+            output: [
+              { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
+              { type: 'input_text', text: 'file.txt\n' },
+            ],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:03.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call',
+            name: 'exec',
+            call_id: 'call_patch_wrapper',
+            input: `const patch = ${JSON.stringify(patch)};\ntext(await tools.apply_patch(patch));`,
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:04.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call_output',
+            call_id: 'call_patch_wrapper',
+            output: [{ type: 'input_text', text: 'Script completed\nOutput:\nApplied patch' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+      const toolCalls = messages.flatMap(message => message.toolCalls ?? []);
+
+      expect(toolCalls).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: 'call_exec_wrapper',
+          name: 'Bash',
+          input: { command: 'ls -1' },
+          status: 'completed',
+          result: 'file.txt\n',
+        }),
+        expect.objectContaining({
+          id: 'call_patch_wrapper',
+          name: 'apply_patch',
+          input: { patch },
+          status: 'completed',
+        }),
+      ]));
+    });
+
+    it('restores yielded exec envelopes as one completed Bash tool', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call',
+            name: 'exec',
+            call_id: 'call_exec_wrapper',
+            input: 'const r = await tools.exec_command({cmd:"npm test"}); text(r.output);',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call_output',
+            call_id: 'call_exec_wrapper',
+            output: [
+              { type: 'input_text', text: 'Script running with cell ID 42\nWall time 10.0 seconds\nOutput:\n' },
+              { type: 'input_text', text: 'tests started\n' },
+            ],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:03.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'wait',
+            call_id: 'call_wait_1',
+            arguments: '{"cell_id":"42","yield_time_ms":30000}',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:04.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call_wait_1',
+            output: [
+              { type: 'input_text', text: 'Script running with cell ID 42\nWall time 30.0 seconds\nOutput:\n' },
+              { type: 'input_text', text: 'tests still running\n' },
+            ],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:05.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'wait',
+            call_id: 'call_wait_2',
+            arguments: '{"cell_id":"42","yield_time_ms":30000}',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:06.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call_wait_2',
+            output: [
+              { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
+              { type: 'input_text', text: 'tests passed\n' },
+            ],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+      const toolCalls = messages.flatMap(message => message.toolCalls ?? []);
+
+      expect(toolCalls).toEqual([expect.objectContaining({
+        id: 'call_exec_wrapper',
+        name: 'Bash',
+        input: { command: 'npm test' },
+        status: 'completed',
+        result: 'tests started\ntests still running\ntests passed\n',
+      })]);
+    });
+
     it('restores raw custom_tool_call apply_patch input as patch text', () => {
       const content = [
         JSON.stringify({
@@ -834,6 +992,46 @@ describe('CodexHistoryStore', () => {
         }),
         JSON.stringify({
           timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Ready.' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({ role: 'assistant', content: 'Ready.' });
+    });
+
+    it('should skip recommended plugin metadata before AGENTS.md instructions', () => {
+      const metadataText = [
+        '<recommended_plugins>',
+        'Install Google Drive when it would help.',
+        '</recommended_plugins>',
+        '# AGENTS.md instructions for /Users/test/project',
+        '',
+        '<INSTRUCTIONS>',
+        'Do good work.',
+        '</INSTRUCTIONS>',
+        '<environment_context>',
+        '  <cwd>/Users/test/project</cwd>',
+        '</environment_context>',
+      ].join('\n');
+      const content = [
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: metadataText }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T00:00:00.000Z',
           type: 'response_item',
           payload: {
             type: 'message',

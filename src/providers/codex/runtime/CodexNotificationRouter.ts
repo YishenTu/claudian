@@ -1,12 +1,17 @@
 import type { ChatTurnMetadata } from '../../../core/runtime/types';
 import type { StreamChunk, UsageInfo } from '../../../core/types';
-import { joinCodexUserTextParts } from '../codexUserText';
+import { extractCodexUserVisibleText, joinCodexUserTextParts } from '../codexUserText';
 import {
+  appendCodexCommandOutput,
+  extractCodexExecCellId,
   isCodexToolOutputError,
+  normalizeCodexToolCall,
   normalizeCodexToolInput,
   normalizeCodexToolName,
   normalizeCodexToolResult,
   parseCodexArguments,
+  readCodexExecCellIdArgument,
+  stringifyCodexToolOutput,
 } from '../normalization/codexToolNormalization';
 import type {
   AgentMessageDeltaNotification,
@@ -40,6 +45,11 @@ interface RawToolResult {
   isError: boolean;
 }
 
+interface WrappedWaitCall {
+  commandCallId: string;
+  cellId: string;
+}
+
 const COLLAB_AGENT_TOOL_MAP: Record<string, string> = {
   spawnAgent: 'spawn_agent',
   wait: 'wait',
@@ -63,6 +73,10 @@ export class CodexNotificationRouter {
   private rawToolNamesByCallId = new Map<string, string>();
   private rawToolInputsByCallId = new Map<string, Record<string, unknown>>();
   private rawToolOutputsByCallId = new Map<string, RawToolResult>();
+  private immediateRawOutputCallIds = new Set<string>();
+  private wrappedCommandCallIdsByCellId = new Map<string, string>();
+  private wrappedCommandOutputByCallId = new Map<string, string>();
+  private wrappedWaitCallsByCallId = new Map<string, WrappedWaitCall>();
   private suppressedRawCallIds = new Set<string>();
   private fileChangeInputsById = new Map<string, Record<string, unknown>>();
 
@@ -127,6 +141,10 @@ export class CodexNotificationRouter {
     this.rawToolNamesByCallId.clear();
     this.rawToolInputsByCallId.clear();
     this.rawToolOutputsByCallId.clear();
+    this.immediateRawOutputCallIds.clear();
+    this.wrappedCommandCallIdsByCellId.clear();
+    this.wrappedCommandOutputByCallId.clear();
+    this.wrappedWaitCallsByCallId.clear();
     this.suppressedRawCallIds.clear();
     this.fileChangeInputsById.clear();
   }
@@ -142,6 +160,10 @@ export class CodexNotificationRouter {
     this.rawToolNamesByCallId.clear();
     this.rawToolInputsByCallId.clear();
     this.rawToolOutputsByCallId.clear();
+    this.immediateRawOutputCallIds.clear();
+    this.wrappedCommandCallIdsByCellId.clear();
+    this.wrappedCommandOutputByCallId.clear();
+    this.wrappedWaitCallsByCallId.clear();
     this.suppressedRawCallIds.clear();
     this.fileChangeInputsById.clear();
   }
@@ -372,6 +394,17 @@ export class CodexNotificationRouter {
     }
 
     const rawArguments = parseRawArguments(item);
+    if (rawName === 'wait') {
+      const cellId = readCodexExecCellIdArgument(rawArguments);
+      const commandCallId = cellId
+        ? this.wrappedCommandCallIdsByCellId.get(cellId)
+        : undefined;
+      if (cellId && commandCallId) {
+        this.wrappedWaitCallsByCallId.set(callId, { commandCallId, cellId });
+        return;
+      }
+    }
+
     if (rawName === 'write_stdin' && isSilentWriteStdinInput(rawArguments)) {
       this.suppressedRawCallIds.add(callId);
       return;
@@ -395,6 +428,8 @@ export class CodexNotificationRouter {
       return;
     }
 
+    // Generic custom tools have no semantic item/completed notification; their raw output is terminal.
+    this.immediateRawOutputCallIds.add(callId);
     this.emitRawToolUse(callId, rawName, item);
   }
 
@@ -404,31 +439,40 @@ export class CodexNotificationRouter {
     item: Record<string, unknown>,
     rawArguments?: Record<string, unknown>,
   ): void {
-    const normalizedName = normalizeCodexToolName(rawName);
-    const input = normalizeCodexToolInput(rawName, rawArguments ?? parseRawArguments(item));
+    const normalized = normalizeCodexToolCall(
+      rawName,
+      rawArguments ?? parseRawArguments(item),
+    );
 
     if (this.rawStartedCallIds.has(callId)) {
-      this.rawToolNamesByCallId.set(callId, normalizedName);
-      this.rawToolInputsByCallId.set(callId, input);
+      this.rawToolNamesByCallId.set(callId, normalized.name);
+      this.rawToolInputsByCallId.set(callId, normalized.input);
       return;
     }
 
     this.rawStartedCallIds.add(callId);
-    this.rawToolNamesByCallId.set(callId, normalizedName);
-    this.rawToolInputsByCallId.set(callId, input);
+    this.rawToolNamesByCallId.set(callId, normalized.name);
+    this.rawToolInputsByCallId.set(callId, normalized.input);
 
     this.resetAssistantSegmentText();
     this.emit({
       type: 'tool_use',
       id: callId,
-      name: normalizedName,
-      input,
+      name: normalized.name,
+      input: normalized.input,
     });
   }
 
   private handleRawToolOutput(item: Record<string, unknown>): void {
     const callId = readRawCallId(item);
     if (!callId) {
+      return;
+    }
+
+    const wrappedWaitCall = this.wrappedWaitCallsByCallId.get(callId);
+    if (wrappedWaitCall) {
+      this.wrappedWaitCallsByCallId.delete(callId);
+      this.handleWrappedWaitOutput(wrappedWaitCall, item.output);
       return;
     }
 
@@ -442,15 +486,72 @@ export class CodexNotificationRouter {
     }
 
     const rawOutput = item.output;
+    const rawOutputText = stringifyCodexToolOutput(rawOutput);
     const content = normalizeRawToolOutput(
       normalizedName,
       rawOutput,
       this.rawToolInputsByCallId.get(callId),
     );
-    this.rawToolOutputsByCallId.set(callId, {
+    const result = {
       content,
-      isError: isCodexToolOutputError(stringifyRawOutput(rawOutput)),
+      isError: isCodexToolOutputError(rawOutputText),
+    };
+
+    if (this.immediateRawOutputCallIds.delete(callId)) {
+      const execCellId = normalizedName === 'Bash'
+        ? extractCodexExecCellId(rawOutputText)
+        : undefined;
+      if (execCellId) {
+        this.wrappedCommandCallIdsByCellId.set(execCellId, callId);
+        this.appendWrappedCommandOutput(callId, content);
+        return;
+      }
+
+      this.emit({ type: 'tool_result', id: callId, ...result });
+      return;
+    }
+
+    this.rawToolOutputsByCallId.set(callId, result);
+  }
+
+  private handleWrappedWaitOutput(waitCall: WrappedWaitCall, rawOutput: unknown): void {
+    const rawOutputText = stringifyCodexToolOutput(rawOutput);
+    const content = normalizeRawToolOutput(
+      'Bash',
+      rawOutput,
+      this.rawToolInputsByCallId.get(waitCall.commandCallId),
+    );
+    const nextCellId = extractCodexExecCellId(rawOutputText);
+
+    if (nextCellId) {
+      this.wrappedCommandCallIdsByCellId.delete(waitCall.cellId);
+      this.wrappedCommandCallIdsByCellId.set(nextCellId, waitCall.commandCallId);
+      this.appendWrappedCommandOutput(waitCall.commandCallId, content);
+      return;
+    }
+
+    const previousOutput = this.wrappedCommandOutputByCallId.get(waitCall.commandCallId);
+    const completeOutput = appendCodexCommandOutput(previousOutput, content);
+    this.wrappedCommandOutputByCallId.delete(waitCall.commandCallId);
+    this.wrappedCommandCallIdsByCellId.delete(waitCall.cellId);
+    this.emit({
+      type: 'tool_result',
+      id: waitCall.commandCallId,
+      content: completeOutput,
+      isError: isCodexToolOutputError(rawOutputText),
     });
+  }
+
+  private appendWrappedCommandOutput(callId: string, content: string): void {
+    if (!content) return;
+
+    const previousOutput = this.wrappedCommandOutputByCallId.get(callId);
+    const completeOutput = appendCodexCommandOutput(previousOutput, content);
+    const delta = completeOutput.slice(previousOutput?.length ?? 0);
+    this.wrappedCommandOutputByCallId.set(callId, completeOutput);
+    if (delta) {
+      this.emit({ type: 'tool_output', id: callId, content: delta });
+    }
   }
 
   private emitMissingRawAgentMessageText(item: Record<string, unknown>): void {
@@ -706,11 +807,18 @@ export class CodexNotificationRouter {
       return;
     }
 
+    const rawContent = this.extractUserMessageText(item.content);
+    const visibleContent = extractCodexUserVisibleText(rawContent);
     this.startedUserMessageIds.add(item.id);
+
+    if (visibleContent === null && rawContent.trim()) {
+      return;
+    }
+
     this.emit({
       type: 'user_message_start',
       itemId: item.id,
-      content: this.extractUserMessageText(item.content),
+      content: visibleContent ?? rawContent,
     });
   }
 
@@ -863,23 +971,7 @@ function normalizeRawToolOutput(
     }
   }
 
-  return normalizeCodexToolResult(normalizedName, stringifyRawOutput(rawOutput));
-}
-
-function stringifyRawOutput(value: unknown): string {
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (value === undefined) {
-    return '';
-  }
-
-  try {
-    const result = JSON.stringify(value);
-    return typeof result === 'string' ? result : String(value);
-  } catch {
-    return String(value);
-  }
+  return normalizeCodexToolResult(normalizedName, stringifyCodexToolOutput(rawOutput));
 }
 
 function buildFileChangeInput(changes: unknown): Record<string, unknown> {

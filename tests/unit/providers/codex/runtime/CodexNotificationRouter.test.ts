@@ -343,6 +343,175 @@ describe('CodexNotificationRouter', () => {
       expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
     });
 
+    it('unwraps exec envelopes and completes them when the raw output arrives', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_exec_wrapper',
+          input: 'const r = await tools.exec_command({cmd:"ls -1",workdir:"/workspace"}); text(r.output);',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_exec_wrapper',
+          output: [
+            { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
+            { type: 'input_text', text: 'file.txt\n' },
+          ],
+        },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_exec_wrapper',
+          name: 'Bash',
+          input: { command: 'ls -1' },
+        },
+        {
+          type: 'tool_result',
+          id: 'call_exec_wrapper',
+          content: 'file.txt\n',
+          isError: false,
+        },
+      ]);
+
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
+    });
+
+    it('keeps yielded exec envelopes running until their wait call completes', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_exec_wrapper',
+          input: 'const r = await tools.exec_command({cmd:"npm test"}); text(r.output);',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_exec_wrapper',
+          output: [
+            { type: 'input_text', text: 'Script running with cell ID 42\nWall time 10.0 seconds\nOutput:\n' },
+            { type: 'input_text', text: 'tests started\n' },
+          ],
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'call_wait_1',
+          arguments: '{"cell_id":"42","yield_time_ms":30000}',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_wait_1',
+          output: [
+            { type: 'input_text', text: 'Script running with cell ID 42\nWall time 30.0 seconds\nOutput:\n' },
+            { type: 'input_text', text: 'tests still running\n' },
+          ],
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'call_wait_2',
+          arguments: '{"cell_id":"42","yield_time_ms":30000}',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_wait_2',
+          output: [
+            { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
+            { type: 'input_text', text: 'tests passed\n' },
+          ],
+        },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_exec_wrapper',
+          name: 'Bash',
+          input: { command: 'npm test' },
+        },
+        {
+          type: 'tool_output',
+          id: 'call_exec_wrapper',
+          content: 'tests started\n',
+        },
+        {
+          type: 'tool_output',
+          id: 'call_exec_wrapper',
+          content: 'tests still running\n',
+        },
+        {
+          type: 'tool_result',
+          id: 'call_exec_wrapper',
+          content: 'tests started\ntests still running\ntests passed\n',
+          isError: false,
+        },
+      ]);
+    });
+
+    it('unwraps apply_patch inside exec envelopes', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const patch = '*** Begin Patch\n*** Update File: note.md\n*** End Patch';
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_patch_wrapper',
+          input: `const patch = ${JSON.stringify(patch)};\ntext(await tools.apply_patch(patch));`,
+        },
+      });
+
+      expect(chunks).toEqual([{
+        type: 'tool_use',
+        id: 'call_patch_wrapper',
+        name: 'apply_patch',
+        input: { patch },
+      }]);
+    });
+
     it('does not normalize raw command output a second time when item/completed arrives', () => {
       router.beginTurn({ isPlanTurn: false });
 
@@ -1215,6 +1384,41 @@ describe('CodexNotificationRouter', () => {
 
       expect(chunks).toEqual([
         { type: 'user_message_start', itemId: 'u1', content: 'what was in this img?' },
+      ]);
+    });
+
+    it('hides recommended plugin metadata from userMessage boundaries', () => {
+      router.handleNotification('item/started', {
+        item: {
+          type: 'userMessage',
+          id: 'metadata',
+          content: [{
+            type: 'text',
+            text: [
+              '<recommended_plugins>',
+              'Install Google Drive when it would help.',
+              '</recommended_plugins>',
+              '# AGENTS.md instructions for /vault',
+              '<INSTRUCTIONS>',
+              'Do good work.',
+              '</INSTRUCTIONS>',
+              '<environment_context>',
+              '  <cwd>/vault</cwd>',
+              '</environment_context>',
+            ].join('\n'),
+          }],
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      router.handleNotification('item/started', {
+        item: { type: 'userMessage', id: 'u1', content: [{ type: 'text', text: 'fix it' }] },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toEqual([
+        { type: 'user_message_start', itemId: 'u1', content: 'fix it' },
       ]);
     });
 
