@@ -449,6 +449,23 @@
       },
       "header": "Codex-Sub-Agenten",
       "noAgents": "Keine Codex-Sub-Agenten im Vault. Klicke auf +, um einen zu erstellen."
+    },
+    "voice": "Sprachmodus",
+    "voicePythonPath": {
+      "name": "Python-Pfad",
+      "desc": "Python-Interpreter zum Ausführen der Voice-Bridge (z. B. python3 oder ein absoluter venv-Pfad)."
+    },
+    "voiceBridgeScriptPath": {
+      "name": "Bridge-Skript-Pfad",
+      "desc": "Absoluter Pfad zu voice_bridge.py im voicecode-Repository. Dessen Verzeichnis wird als Arbeitsverzeichnis verwendet."
+    },
+    "voiceDictationAutoSend": {
+      "name": "Diktat automatisch senden",
+      "desc": "Wenn aktiviert, wird das Diktat sofort gesendet, statt zur Überprüfung in das Eingabefeld eingefügt zu werden."
+    },
+    "voiceConfirmWindowMs": {
+      "name": "Bestätigungsfenster für Befehle",
+      "desc": "Millisekunden, die ein gesprochener Befehl vor dem Senden wartet, damit er per Stimme („cancel“, „scratch that“) oder über das ✕-Symbol abgebrochen werden kann. Erneutes Sprechen verfeinert den Befehl und startet die Wartezeit neu. 0 sendet sofort."
     }
   }
 }

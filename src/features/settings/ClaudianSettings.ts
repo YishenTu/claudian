@@ -476,15 +476,12 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
 
     // --- Voice ---
-    // Plain English strings (not i18n keys): this section is an additive fork
-    // feature and the locale files don't carry keys for it. Setting.setName
-    // accepts a raw string, matching the Environment section above.
 
-    new Setting(container).setName('Voice').setHeading();
+    new Setting(container).setName(t('settings.voice')).setHeading();
 
     new Setting(container)
-      .setName('Python path')
-      .setDesc('Python interpreter used to run the voice bridge (e.g. python3, or an absolute venv path).')
+      .setName(t('settings.voicePythonPath.name'))
+      .setDesc(t('settings.voicePythonPath.desc'))
       .addText((text) =>
         text
           .setPlaceholder('python3')
@@ -496,8 +493,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(container)
-      .setName('Bridge script path')
-      .setDesc('Absolute path to voice_bridge.py in the voicecode repo. Its directory is used as the working directory.')
+      .setName(t('settings.voiceBridgeScriptPath.name'))
+      .setDesc(t('settings.voiceBridgeScriptPath.desc'))
       .addText((text) =>
         text
           .setPlaceholder('/path/to/voicecode/voice_bridge.py')
@@ -509,8 +506,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(container)
-      .setName('Auto-send dictation')
-      .setDesc('When on, dictation sends immediately instead of inserting into the input for review.')
+      .setName(t('settings.voiceDictationAutoSend.name'))
+      .setDesc(t('settings.voiceDictationAutoSend.desc'))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.voiceDictationAutoSend ?? false)
@@ -521,12 +518,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(container)
-      .setName('Command confirm window')
-      .setDesc(
-        'Milliseconds a spoken command waits before submitting, so you can cancel it ' +
-          'by voice ("cancel", "scratch that") or the ✕ badge. Speaking again refines the ' +
-          'pending command and restarts the hold. Set 0 to submit immediately.',
-      )
+      .setName(t('settings.voiceConfirmWindowMs.name'))
+      .setDesc(t('settings.voiceConfirmWindowMs.desc'))
       .addText((text) =>
         text
           .setPlaceholder('2000')

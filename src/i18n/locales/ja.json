@@ -449,6 +449,23 @@
       },
       "header": "Codex サブエージェント",
       "noAgents": "Vault に Codex サブエージェントがありません。+ をクリックして作成してください。"
+    },
+    "voice": "音声モード",
+    "voicePythonPath": {
+      "name": "Python のパス",
+      "desc": "音声ブリッジの実行に使う Python インタープリター(例: python3、または venv の絶対パス)。"
+    },
+    "voiceBridgeScriptPath": {
+      "name": "ブリッジスクリプトのパス",
+      "desc": "voicecode リポジトリ内の voice_bridge.py への絶対パス。そのディレクトリが作業ディレクトリとして使われます。"
+    },
+    "voiceDictationAutoSend": {
+      "name": "音声入力を自動送信",
+      "desc": "オンにすると、音声入力の結果を確認用に入力欄へ挿入せず、すぐに送信します。"
+    },
+    "voiceConfirmWindowMs": {
+      "name": "コマンド確認ウィンドウ",
+      "desc": "話したコマンドが送信されるまでの待機時間(ミリ秒)。この間に音声(「cancel」「scratch that」)または ✕ バッジで取り消せます。続けて話すと保留中のコマンドが更新され、待機時間がリセットされます。0 で即時送信。"
     }
   }
 }

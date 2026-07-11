@@ -449,6 +449,23 @@
       },
       "header": "Codex 하위 에이전트",
       "noAgents": "Vault에 Codex 하위 에이전트가 없습니다. +를 클릭해 만드세요."
+    },
+    "voice": "음성 모드",
+    "voicePythonPath": {
+      "name": "Python 경로",
+      "desc": "음성 브리지를 실행할 Python 인터프리터(예: python3 또는 venv의 절대 경로)."
+    },
+    "voiceBridgeScriptPath": {
+      "name": "브리지 스크립트 경로",
+      "desc": "voicecode 저장소의 voice_bridge.py에 대한 절대 경로. 해당 디렉터리가 작업 디렉터리로 사용됩니다."
+    },
+    "voiceDictationAutoSend": {
+      "name": "받아쓰기 자동 전송",
+      "desc": "켜면 받아쓰기 결과를 검토용으로 입력란에 넣지 않고 즉시 전송합니다."
+    },
+    "voiceConfirmWindowMs": {
+      "name": "명령 확인 대기 시간",
+      "desc": "말한 명령이 전송되기 전에 대기하는 시간(밀리초). 그동안 음성(\"cancel\", \"scratch that\") 또는 ✕ 배지로 취소할 수 있습니다. 다시 말하면 대기 중인 명령이 갱신되고 대기 시간이 다시 시작됩니다. 0이면 즉시 전송합니다."
     }
   }
 }
