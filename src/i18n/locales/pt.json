@@ -97,6 +97,7 @@
       "desc": "Arquivo WAV relativo ao cofre. Por segurança, o arquivo deve permanecer dentro de .claudian/sounds/."
     },
     "hitlSoundTest": "Testar som",
+    "hitlSoundTestFailed": "Não foi possível reproduzir o som de aprovação. Verifique se o arquivo é um WAV válido dentro de .claudian/sounds/.",
     "userName": {
       "name": "Como o Claudian deve chamá-lo?",
       "desc": "Seu nome para saudações personalizadas (deixe vazio para saudações genéricas)"

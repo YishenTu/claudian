@@ -97,6 +97,7 @@
       "desc": "보관함 상대 경로의 WAV 파일. 안전을 위해 파일은 .claudian/sounds/ 안에 있어야 합니다."
     },
     "hitlSoundTest": "사운드 테스트",
+    "hitlSoundTestFailed": "승인 사운드를 재생할 수 없습니다. .claudian/sounds/ 안에 유효한 WAV 파일이 있는지 확인하세요.",
     "userName": {
       "name": "Claudian이 당신을 어떻게 불러야 합니까?",
       "desc": "개인화된 인사에 사용할 이름 (비워두면 일반 인사)"

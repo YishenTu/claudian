@@ -97,6 +97,7 @@
       "desc": "Vault-relative WAV-Datei. Aus Sicherheitsgründen muss die Datei in .claudian/sounds/ liegen."
     },
     "hitlSoundTest": "Ton testen",
+    "hitlSoundTestFailed": "Der Freigabe-Ton konnte nicht abgespielt werden. Prüfe, ob die Datei eine gültige WAV in .claudian/sounds/ ist.",
     "userName": {
       "name": "Wie soll Claudian dich nennen?",
       "desc": "Dein Name für personalisierte Begrüßungen (leer lassen für allgemeine Begrüßungen)"

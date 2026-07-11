@@ -335,8 +335,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.addClass('claudian-settings-cli-path-input');
       })
       .addButton((button) => {
-        button.setButtonText(t('settings.hitlSoundTest')).onClick(() => {
-          void this.plugin.playHitlNotificationSound(true);
+        button.setButtonText(t('settings.hitlSoundTest')).onClick(async () => {
+          const result = await this.plugin.playHitlNotificationSound(true);
+          if (!result.ok) {
+            new Notice(t('settings.hitlSoundTestFailed'));
+          }
         });
       });
 

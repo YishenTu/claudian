@@ -42,8 +42,10 @@ import type { Locale } from './i18n/types';
 import { OPENCODE_PLAN_MODE_ID, OPENCODE_SAFE_MODE_ID } from './providers/opencode/modes';
 import { extractUserDisplayContent } from './utils/context';
 import { buildCursorContext } from './utils/editor';
+import { getDefaultHitlNotificationSound } from './utils/hitlDefaultSound';
 import {
   DEFAULT_HITL_NOTIFICATION_SOUND_PATH,
+  type HitlSoundPlayResult,
   isWaveAudioBuffer,
   MAX_HITL_NOTIFICATION_SOUND_BYTES,
   normalizeHitlNotificationSoundPath,
@@ -224,32 +226,21 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   /**
-   * Plays the configured human-in-the-loop approval alert sound.
-   * Fire-and-forget: failures are logged, never thrown, so the approval
-   * flow is unaffected. `force` bypasses the enabled toggle (used by the
-   * settings "test sound" button).
+   * Plays the human-in-the-loop approval alert sound.
+   * Fire-and-forget: never throws, so the approval flow is unaffected. `force`
+   * bypasses the enabled toggle (used by the settings "test sound" button).
+   * Returns the outcome so the settings tab can surface a Notice on failure;
+   * the approval flow ignores it.
    */
-  async playHitlNotificationSound(force = false): Promise<void> {
+  async playHitlNotificationSound(force = false): Promise<HitlSoundPlayResult> {
     if (!force && !(this.settings.hitlNotificationSoundEnabled ?? false)) {
-      return;
+      return { ok: false, reason: 'disabled' };
     }
-    const soundPath = normalizeHitlNotificationSoundPath(
-      this.settings.hitlNotificationSoundPath ?? DEFAULT_HITL_NOTIFICATION_SOUND_PATH,
-    );
-    if (!soundPath) {
-      console.warn('Claudian HITL sound path must be a WAV file inside .claudian/sounds/.');
-      return;
+    const data = await this.resolveHitlNotificationSoundData();
+    if (!data) {
+      return { ok: false, reason: 'unavailable' };
     }
     try {
-      const data = await this.app.vault.adapter.readBinary(soundPath);
-      if (
-        data.byteLength <= 0
-        || data.byteLength > MAX_HITL_NOTIFICATION_SOUND_BYTES
-        || !isWaveAudioBuffer(data)
-      ) {
-        console.warn('Claudian HITL sound must be a valid WAV file no larger than 5 MB.');
-        return;
-      }
       const audioUrl = URL.createObjectURL(new Blob([data], { type: 'audio/wav' }));
       const audio = new Audio(audioUrl);
       audio.volume = Math.max(0, Math.min(1, Number(this.settings.hitlNotificationSoundVolume ?? 0.5)));
@@ -265,9 +256,37 @@ export default class ClaudianPlugin extends Plugin {
       audio.addEventListener('error', cleanup, { once: true });
       window.setTimeout(cleanup, 30_000);
       await audio.play();
-    } catch (error) {
-      console.warn('Could not play Claudian HITL notification sound.', error);
+      return { ok: true };
+    } catch {
+      return { ok: false, reason: 'playback-failed' };
     }
+  }
+
+  /**
+   * Resolves the approval sound bytes: the user's vault-local WAV when present
+   * and valid, otherwise the bundled CC0 default so the toggle works out of the
+   * box. Returns null only if even the default is somehow unusable.
+   */
+  private async resolveHitlNotificationSoundData(): Promise<ArrayBuffer | null> {
+    const configuredPath = normalizeHitlNotificationSoundPath(
+      this.settings.hitlNotificationSoundPath ?? DEFAULT_HITL_NOTIFICATION_SOUND_PATH,
+    );
+    if (configuredPath) {
+      try {
+        const data = await this.app.vault.adapter.readBinary(configuredPath);
+        if (
+          data.byteLength > 0
+          && data.byteLength <= MAX_HITL_NOTIFICATION_SOUND_BYTES
+          && isWaveAudioBuffer(data)
+        ) {
+          return data;
+        }
+      } catch {
+        // Fall back to the bundled default below.
+      }
+    }
+    const fallback = getDefaultHitlNotificationSound();
+    return isWaveAudioBuffer(fallback) ? fallback : null;
   }
 
   private getLeafForPlacement(placement: ChatViewPlacement): WorkspaceLeaf | null {

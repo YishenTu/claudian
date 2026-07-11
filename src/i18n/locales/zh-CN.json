@@ -97,6 +97,7 @@
       "desc": "库内相对路径的 WAV 文件。出于安全考虑，文件必须位于 .claudian/sounds/ 目录内。"
     },
     "hitlSoundTest": "测试提示音",
+    "hitlSoundTestFailed": "无法播放审批提示音。请检查 .claudian/sounds/ 中是否为有效的 WAV 文件。",
     "userName": {
       "name": "Claudian 应该如何称呼你？",
       "desc": "用于个性化问候的用户名（留空使用通用问候）"

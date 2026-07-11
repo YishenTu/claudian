@@ -10,6 +10,14 @@ export const DEFAULT_HITL_NOTIFICATION_SOUND_PATH = '.claudian/sounds/approval.w
 
 export const MAX_HITL_NOTIFICATION_SOUND_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Outcome of an approval-sound playback attempt. The approval flow ignores this
+ * (fire-and-forget), but the settings "test" button uses it to surface a Notice.
+ */
+export type HitlSoundPlayResult =
+  | { ok: true }
+  | { ok: false; reason: 'disabled' | 'unavailable' | 'playback-failed' };
+
 const HITL_NOTIFICATION_SOUND_DIR = '.claudian/sounds/';
 
 /**

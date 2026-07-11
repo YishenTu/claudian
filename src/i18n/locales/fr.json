@@ -97,6 +97,7 @@
       "desc": "Fichier WAV relatif au coffre. Par sécurité, le fichier doit rester dans .claudian/sounds/."
     },
     "hitlSoundTest": "Tester le son",
+    "hitlSoundTestFailed": "Impossible de lire le son d'approbation. Vérifiez que le fichier est un WAV valide dans .claudian/sounds/.",
     "userName": {
       "name": "Comment Claudian doit-il vous appeler ?",
       "desc": "Votre nom pour les salutations personnalisées (laisser vide pour les salutations génériques)"

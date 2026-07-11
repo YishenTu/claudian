@@ -97,6 +97,7 @@
       "desc": "儲存庫內相對路徑的 WAV 檔案。基於安全考量，檔案必須位於 .claudian/sounds/ 目錄內。"
     },
     "hitlSoundTest": "測試提示音",
+    "hitlSoundTestFailed": "無法播放審批提示音。請確認 .claudian/sounds/ 中為有效的 WAV 檔案。",
     "userName": {
       "name": "Claudian 應該如何稱呼您？",
       "desc": "用於個人化問候的使用者名稱（留空使用通用問候）"

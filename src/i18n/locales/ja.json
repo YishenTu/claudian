@@ -97,6 +97,7 @@
       "desc": "Vault 相対パスの WAV ファイル。安全のため、ファイルは .claudian/sounds/ 内に置く必要があります。"
     },
     "hitlSoundTest": "サウンドをテスト",
+    "hitlSoundTestFailed": "承認サウンドを再生できませんでした。.claudian/sounds/ 内に有効な WAV ファイルがあるか確認してください。",
     "userName": {
       "name": "Claudian はどのように呼びますか？",
       "desc": "パーソナライズされた挨拶に使用する名前（空欄で一般の挨拶）"
