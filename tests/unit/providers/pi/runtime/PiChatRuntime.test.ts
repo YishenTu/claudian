@@ -277,6 +277,31 @@ describe('PiChatRuntime', () => {
     });
   });
 
+  it('awaits new_session before readiness performs dependent state requests', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    await runtime.ensureReady();
+    const transport = mockTransportInstances[0];
+    let resolveReset!: (value: unknown) => void;
+    const resetResponse = new Promise<any>(resolve => { resolveReset = resolve; });
+    const order: string[] = [];
+    transport.request.mockImplementation(async (type: string) => {
+      order.push(type);
+      if (type === 'new_session') {
+        return resetResponse;
+      }
+      return {};
+    });
+
+    runtime.resetSession();
+    const readyPromise = runtime.ensureReady();
+    await flushPromises();
+
+    expect(order).toEqual(['new_session']);
+    resolveReset({ sessionId: 'replacement-session' });
+    await readyPromise;
+    expect(order.slice(0, 2)).toEqual(['new_session', 'get_state']);
+  });
+
   it('emits provider user-message boundaries for accepted prompts and steering turns', async () => {
     const runtime = new PiChatRuntime(createPlugin());
     const iterator = runtime.query(createTurn(runtime));

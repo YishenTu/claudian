@@ -263,6 +263,19 @@ describe('CodexAppServerProcess', () => {
       jest.useRealTimers();
     });
 
+    it('settles after a final deadline when no exit follows SIGKILL', async () => {
+      jest.useFakeTimers();
+      const server = new CodexAppServerProcess(createLaunchSpec());
+      server.start();
+
+      const shutdownPromise = server.shutdown();
+      jest.advanceTimersByTime(6_000);
+
+      await expect(shutdownPromise).resolves.toBeUndefined();
+      expect(mockProc.kill).toHaveBeenCalledWith('SIGKILL');
+      jest.useRealTimers();
+    });
+
     it('resolves immediately if process is not running', async () => {
       const server = new CodexAppServerProcess(createLaunchSpec());
       await server.shutdown();
