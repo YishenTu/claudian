@@ -135,6 +135,8 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       getConversationSync: jest.fn().mockReturnValue(null),
       getConversationById: jest.fn().mockResolvedValue(null),
       createConversation: jest.fn().mockResolvedValue({ id: 'conv-1' }),
+      deleteConversation: jest.fn().mockResolvedValue(undefined),
+      handleMissingProviderSession: jest.fn().mockResolvedValue('deleted'),
     } as any,
     state,
     renderer: {
@@ -213,6 +215,70 @@ function createSendableDeps(
   }
   return result;
 }
+
+describe('InputController - Missing provider session', () => {
+  it('removes only the Claudian record and restores unsent input', async () => {
+    const deps = createSendableDeps();
+    const inputEl = deps.getInputEl();
+    inputEl.value = 'retry this prompt';
+    deps.mockAgentService.query.mockReturnValue(createMockStream([{
+      type: 'error',
+      content: 'No conversation found with session ID: missing-session',
+      code: 'provider_session_missing',
+    }]));
+    const controller = new InputController(deps);
+
+    await controller.sendMessage();
+
+    expect(deps.plugin.handleMissingProviderSession).toHaveBeenCalledWith(
+      'conv-1',
+      undefined,
+    );
+    expect(inputEl.value).toBe('retry this prompt');
+    expect(deps.streamController.handleStreamChunk).not.toHaveBeenCalled();
+  });
+
+  it('does not claim a record was removed when no conversation is active', async () => {
+    const deps = createSendableDeps({}, null);
+    deps.state.currentConversationId = null;
+    (deps.plugin.createConversation as jest.Mock).mockResolvedValue({ id: '' });
+    deps.getInputEl().value = 'retry this prompt';
+    deps.mockAgentService.query.mockReturnValue(createMockStream([{
+      type: 'error',
+      content: 'No conversation found with session ID: missing-session',
+      code: 'provider_session_missing',
+    }]));
+
+    await new InputController(deps).sendMessage();
+
+    expect(deps.plugin.handleMissingProviderSession).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenLastCalledWith(
+      'The provider session no longer exists. Send again to start a new session.',
+    );
+  });
+
+  it('reports that recoverable history was preserved after resetting resume state', async () => {
+    const deps = createSendableDeps();
+    deps.getInputEl().value = 'retry this prompt';
+    (deps.plugin.handleMissingProviderSession as jest.Mock).mockResolvedValue('reset');
+    deps.mockAgentService.query.mockReturnValue(createMockStream([{
+      type: 'error',
+      content: 'No conversation found with session ID: missing-session',
+      code: 'provider_session_missing',
+      providerSessionId: 'missing-session',
+    }]));
+
+    await new InputController(deps).sendMessage();
+
+    expect(deps.plugin.handleMissingProviderSession).toHaveBeenCalledWith(
+      'conv-1',
+      'missing-session',
+    );
+    expect(mockNotice).toHaveBeenLastCalledWith(
+      'The provider session no longer exists. Claudian preserved the recoverable history; send again to rebuild the session.',
+    );
+  });
+});
 
 describe('InputController - Message Queue', () => {
   let controller: InputController;

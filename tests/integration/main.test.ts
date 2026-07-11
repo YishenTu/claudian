@@ -30,6 +30,16 @@ describe('ClaudianPlugin', () => {
   beforeEach(() => {
     // Reset mocks
     jest.clearAllMocks();
+    jest.spyOn(sdkSession, 'locateSDKSession').mockImplementation(async (_vaultPath, sessionId) => ({
+      availability: 'available',
+      sessionPath: `/test/claude-project/${sessionId}.jsonl`,
+    }));
+    jest.spyOn(sdkSession, 'locateSDKSessions').mockImplementation(async (_vaultPath, sessionIds) => new Map(
+      sessionIds.map(sessionId => [sessionId, {
+        availability: 'available' as const,
+        sessionPath: `/test/claude-project/${sessionId}.jsonl`,
+      }]),
+    ));
 
     mockApp = {
       vault: {
@@ -730,6 +740,77 @@ describe('ClaudianPlugin', () => {
 
       expect(result).toBeNull();
     });
+
+    it('should preserve a conversation when local Claude history is missing', async () => {
+      await plugin.onload();
+      const conversation = await plugin.createConversation({
+        sessionId: 'session-removed-after-startup',
+      });
+      const availabilitySpy = jest.mocked(sdkSession.locateSDKSession)
+        .mockResolvedValue({ availability: 'missing' });
+
+      const result = await plugin.switchConversation(conversation.id);
+
+      expect(result?.id).toBe(conversation.id);
+      expect(plugin.getConversationList()).toHaveLength(1);
+      expect(mockApp.vault.adapter.remove).not.toHaveBeenCalledWith(
+        '.claudian/sessions/session-removed-after-startup.meta.json',
+      );
+      availabilitySpy.mockRestore();
+    });
+
+    it('should preserve a conversation whose Claude session belongs to a previous vault path', async () => {
+      await plugin.onload();
+      const conversation = await plugin.createConversation({
+        sessionId: 'session-from-previous-vault-path',
+      });
+      const availabilitySpy = jest.mocked(sdkSession.locateSDKSession)
+        .mockResolvedValue({
+          availability: 'relocated',
+          sessionPath: '/old-project/session-from-previous-vault-path.jsonl',
+        });
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages')
+        .mockResolvedValue({ messages: [], skippedLines: 0 });
+
+      const result = await plugin.switchConversation(conversation.id);
+
+      expect(result?.id).toBe(conversation.id);
+      expect(plugin.getConversationList()).toHaveLength(1);
+      expect(result?.sessionId).toBeNull();
+      expect(result?.providerState).toEqual(expect.objectContaining({
+        previousProviderSessionIds: ['session-from-previous-vault-path'],
+      }));
+      expect(mockApp.vault.adapter.remove).not.toHaveBeenCalledWith(
+        '.claudian/sessions/session-from-previous-vault-path.meta.json',
+      );
+      availabilitySpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('should restore resume metadata when relocated-state persistence fails', async () => {
+      await plugin.onload();
+      const conversation = await plugin.createConversation({
+        sessionId: 'session-relocation-save-failure',
+      });
+      const availabilitySpy = jest.mocked(sdkSession.locateSDKSession)
+        .mockResolvedValue({
+          availability: 'relocated',
+          sessionPath: '/old-project/session-relocation-save-failure.jsonl',
+        });
+      const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages')
+        .mockResolvedValue({ messages: [], skippedLines: 0 });
+      const saveSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata')
+        .mockRejectedValueOnce(new Error('Write failed'));
+
+      const result = await plugin.switchConversation(conversation.id);
+
+      expect(result?.sessionId).toBe('session-relocation-save-failure');
+      expect(result?.providerState).toBeUndefined();
+
+      availabilitySpy.mockRestore();
+      loadSpy.mockRestore();
+      saveSpy.mockRestore();
+    });
   });
 
   describe('deleteConversation', () => {
@@ -756,6 +837,97 @@ describe('ClaudianPlugin', () => {
 
       const list = plugin.getConversationList();
       expect(list.find(c => c.id === conv.id)).toBeUndefined();
+    });
+
+    it('should preserve the provider-native session when requested', async () => {
+      await plugin.onload();
+      const conv = await plugin.createConversation({ sessionId: 'provider-session-1' });
+      const deleteNativeSpy = jest.spyOn(sdkSession, 'deleteSDKSession');
+
+      await plugin.deleteConversation(conv.id, { deleteProviderSession: false });
+
+      expect(deleteNativeSpy).not.toHaveBeenCalled();
+      expect(plugin.getConversationList().find(item => item.id === conv.id)).toBeUndefined();
+      deleteNativeSpy.mockRestore();
+    });
+
+    it('should reset every open tab that references the deleted conversation', async () => {
+      await plugin.onload();
+      const conv = await plugin.createConversation();
+      const cancelStreaming = jest.fn();
+      const createNew = jest.fn().mockResolvedValue(undefined);
+      mockApp.workspace.getLeavesOfType.mockReturnValue([{
+        view: {
+          getTabManager: () => ({
+            getAllTabs: () => [{
+              conversationId: conv.id,
+              controllers: {
+                inputController: { cancelStreaming },
+                conversationController: { createNew },
+              },
+            }],
+          }),
+        },
+      }]);
+
+      await plugin.deleteConversation(conv.id, { deleteProviderSession: false });
+
+      expect(cancelStreaming).toHaveBeenCalledTimes(1);
+      expect(createNew).toHaveBeenCalledWith({ force: true });
+    });
+  });
+
+  describe('handleMissingProviderSession', () => {
+    it('removes the record when every provider transcript segment is missing', async () => {
+      await plugin.onload();
+      const conv = await plugin.createConversation({ sessionId: 'missing-current' });
+      jest.mocked(sdkSession.locateSDKSessions).mockResolvedValue(new Map([
+        ['missing-current', { availability: 'missing' }],
+      ]));
+
+      await expect(plugin.handleMissingProviderSession(
+        conv.id,
+        'missing-current',
+      )).resolves.toBe('deleted');
+      expect(plugin.getConversationList().find(item => item.id === conv.id)).toBeUndefined();
+    });
+
+    it('preserves the record and clears resume state when older history is inaccessible', async () => {
+      await plugin.onload();
+      const conv = await plugin.createConversation({ sessionId: 'missing-current' });
+      await plugin.updateConversation(conv.id, {
+        providerState: {
+          providerSessionId: 'missing-current',
+          previousProviderSessionIds: ['temporarily-inaccessible'],
+        },
+      });
+      jest.mocked(sdkSession.locateSDKSessions).mockResolvedValue(new Map([
+        ['temporarily-inaccessible', { availability: 'unknown' }],
+        ['missing-current', { availability: 'missing' }],
+      ]));
+
+      await expect(plugin.handleMissingProviderSession(
+        conv.id,
+        'missing-current',
+      )).resolves.toBe('reset');
+
+      const preserved = plugin.getConversationSync(conv.id);
+      expect(preserved?.sessionId).toBeNull();
+      expect(preserved?.providerState).toEqual({
+        previousProviderSessionIds: ['temporarily-inaccessible'],
+      });
+    });
+
+    it('preserves metadata when the missing-session disposition cannot be read', async () => {
+      await plugin.onload();
+      const conv = await plugin.createConversation({ sessionId: 'missing-current' });
+      jest.mocked(sdkSession.locateSDKSessions).mockRejectedValueOnce(new Error('EACCES'));
+
+      await expect(plugin.handleMissingProviderSession(
+        conv.id,
+        'missing-current',
+      )).resolves.toBe('preserved');
+      expect(plugin.getConversationSync(conv.id)?.sessionId).toBe('missing-current');
     });
   });
 
@@ -887,7 +1059,48 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('loadSettings with conversations', () => {
+    it('should preserve Claude metadata during startup when local native history is missing', async () => {
+      const timestamp = Date.now();
+      const sessionMeta = JSON.stringify({
+        id: 'conv-stale-1',
+        providerId: 'claude',
+        title: 'Stale Chat',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        sessionId: 'missing-session',
+      });
+
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
+        return path === '.claudian/claudian-settings.json'
+          || path === '.claudian/sessions'
+          || path === '.claudian/sessions/conv-stale-1.meta.json';
+      });
+      mockApp.vault.adapter.list.mockImplementation(async (path: string) => {
+        if (path === '.claudian/sessions') {
+          return { files: ['.claudian/sessions/conv-stale-1.meta.json'], folders: [] };
+        }
+        return { files: [], folders: [] };
+      });
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === '.claudian/sessions/conv-stale-1.meta.json') {
+          return sessionMeta;
+        }
+        if (path === '.claudian/claudian-settings.json') {
+          return JSON.stringify({});
+        }
+        return '';
+      });
+
+      await plugin.loadSettings();
+
+      expect(plugin.getConversationList()).toHaveLength(1);
+      expect(mockApp.vault.adapter.remove).not.toHaveBeenCalledWith(
+        '.claudian/sessions/conv-stale-1.meta.json',
+      );
+    });
+
     it('should load saved conversations from metadata files', async () => {
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const timestamp = Date.now();
       const sessionMeta = JSON.stringify({
         id: 'conv-saved-1',
@@ -933,6 +1146,7 @@ describe('ClaudianPlugin', () => {
       const loaded = await plugin.getConversationById('conv-saved-1');
       expect(loaded?.id).toBe('conv-saved-1');
       expect(loaded?.title).toBe('Saved Chat');
+      existsSpy.mockRestore();
     });
 
     it('should clear session IDs when provider base URL changes', async () => {
@@ -1004,6 +1218,7 @@ describe('ClaudianPlugin', () => {
 
   describe('Multi-session message loading', () => {
     it('should load messages from previousProviderSessionIds when present', async () => {
+      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const timestamp = Date.now();
 
       // Setup conversation with previousProviderSessionIds
@@ -1047,6 +1262,7 @@ describe('ClaudianPlugin', () => {
       const loaded = await plugin.getConversationById('conv-multi-session');
       expect((loaded?.providerState as any)?.previousProviderSessionIds).toEqual(['session-A']);
       expect((loaded?.providerState as any)?.providerSessionId).toBe('session-B');
+      existsSpy.mockRestore();
     });
 
     it('should preserve previousProviderSessionIds through conversation updates', async () => {
@@ -1181,7 +1397,7 @@ describe('ClaudianPlugin', () => {
       const loaded = await plugin.getConversationById(conv.id);
 
       // Should check existence of source session, not the conversation's own session
-      expect(existsSpy).toHaveBeenCalledWith(
+      expect(sdkSession.locateSDKSession).toHaveBeenCalledWith(
         expect.any(String),
         'source-session-abc'
       );
@@ -1220,7 +1436,7 @@ describe('ClaudianPlugin', () => {
       await plugin.getConversationById(conv.id);
 
       // Should load from own session, not forkSource session
-      expect(existsSpy).toHaveBeenCalledWith(
+      expect(sdkSession.locateSDKSession).toHaveBeenCalledWith(
         expect.any(String),
         'own-session-id'
       );

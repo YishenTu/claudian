@@ -14,10 +14,23 @@ import { extractUserQuery, formatCurrentNote } from './context';
 const SESSION_ERROR_PATTERNS = [
   'session expired',
   'session not found',
+  'no conversation found with session id',
   'invalid session',
   'session invalid',
   'process exited with code',
 ] as const;
+
+export function getMissingSessionId(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : '';
+  const match = message.match(/no conversation found with session id:\s*([a-z0-9_-]+)/i);
+  return match?.[1] ?? null;
+}
+
+export function isSessionMissingError(error: unknown, expectedSessionId?: string): boolean {
+  const missingSessionId = getMissingSessionId(error);
+  return !!missingSessionId
+    && (!expectedSessionId || missingSessionId.toLowerCase() === expectedSessionId.toLowerCase());
+}
 
 const SESSION_ERROR_COMPOUND_PATTERNS = [
   { includes: ['session', 'expired'] },

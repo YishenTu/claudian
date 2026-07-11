@@ -22,7 +22,11 @@ import {
 import { ProviderRegistry } from './core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
-import type { ProviderCliResolutionContext, ProviderId } from './core/providers/types';
+import type {
+  ProviderCliResolutionContext,
+  ProviderConversationSessionAvailability,
+  ProviderId,
+} from './core/providers/types';
 import type { AppTabManagerState } from './core/providers/types';
 import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
 import type {
@@ -365,6 +369,54 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
+  private async reconcileConversationProviderSession(
+    conversation: Conversation,
+  ): Promise<void> {
+    const historyService = ProviderRegistry.getConversationHistoryService(
+      conversation.providerId,
+    );
+    if (!historyService.getConversationSessionAvailability) {
+      return;
+    }
+
+    const vaultPath = getVaultPath(this.app);
+    let availability: ProviderConversationSessionAvailability;
+    try {
+      availability = await historyService.getConversationSessionAvailability(
+        conversation,
+        vaultPath,
+      );
+    } catch {
+      return;
+    }
+
+    if (
+      availability !== 'relocated'
+      || !historyService.prepareRelocatedConversationSession
+    ) {
+      return;
+    }
+
+    const previousSessionId = conversation.sessionId;
+    const previousProviderState = conversation.providerState;
+    const previousResumeAtMessageId = conversation.resumeAtMessageId;
+    try {
+      const changed = await historyService.prepareRelocatedConversationSession(
+        conversation,
+        vaultPath,
+      );
+      if (changed) {
+        await this.storage.sessions.saveMetadata(
+          this.storage.sessions.toSessionMetadata(conversation),
+        );
+      }
+    } catch {
+      conversation.sessionId = previousSessionId;
+      conversation.providerState = previousProviderState;
+      conversation.resumeAtMessageId = previousResumeAtMessageId;
+    }
+  }
+
   private backfillConversationResponseTimestamps(): Conversation[] {
     const updated: Conversation[] = [];
     for (const conv of this.conversations) {
@@ -677,6 +729,7 @@ export default class ClaudianPlugin extends Plugin {
   async switchConversation(id: string): Promise<Conversation | null> {
     const conversation = this.conversations.find(c => c.id === id);
     if (!conversation) return null;
+    await this.reconcileConversationProviderSession(conversation);
 
     await this.ensureConversationSelectedModel(conversation);
     await this.loadSdkMessagesForConversation(conversation);
@@ -684,16 +737,21 @@ export default class ClaudianPlugin extends Plugin {
     return conversation;
   }
 
-  async deleteConversation(id: string): Promise<void> {
+  async deleteConversation(
+    id: string,
+    options: { deleteProviderSession?: boolean } = {},
+  ): Promise<void> {
     const index = this.conversations.findIndex(c => c.id === id);
     if (index === -1) return;
 
     const conversation = this.conversations[index];
     this.conversations.splice(index, 1);
 
-    await ProviderRegistry
-      .getConversationHistoryService(conversation.providerId)
-      .deleteConversationSession(conversation, getVaultPath(this.app));
+    if (options.deleteProviderSession !== false) {
+      await ProviderRegistry
+        .getConversationHistoryService(conversation.providerId)
+        .deleteConversationSession(conversation, getVaultPath(this.app));
+    }
 
     await this.storage.sessions.deleteMetadata(id);
 
@@ -707,6 +765,51 @@ export default class ClaudianPlugin extends Plugin {
           await tab.controllers.conversationController?.createNew({ force: true });
         }
       }
+    }
+  }
+
+  async handleMissingProviderSession(
+    id: string,
+    missingProviderSessionId?: string,
+  ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'> {
+    const conversation = this.conversations.find(item => item.id === id);
+    if (!conversation) {
+      return 'not_found';
+    }
+
+    const historyService = ProviderRegistry.getConversationHistoryService(
+      conversation.providerId,
+    );
+    if (!historyService.resolveMissingConversationSession) {
+      await this.deleteConversation(id, { deleteProviderSession: false });
+      return 'deleted';
+    }
+
+    const previousSessionId = conversation.sessionId;
+    const previousProviderState = conversation.providerState;
+    const previousResumeAtMessageId = conversation.resumeAtMessageId;
+    try {
+      const resolution = await historyService.resolveMissingConversationSession(
+        conversation,
+        getVaultPath(this.app),
+        missingProviderSessionId,
+      );
+      if (resolution === 'delete') {
+        await this.deleteConversation(id, { deleteProviderSession: false });
+        return 'deleted';
+      }
+      if (resolution === 'reset') {
+        await this.storage.sessions.saveMetadata(
+          this.storage.sessions.toSessionMetadata(conversation),
+        );
+        return 'reset';
+      }
+      return 'preserved';
+    } catch {
+      conversation.sessionId = previousSessionId;
+      conversation.providerState = previousProviderState;
+      conversation.resumeAtMessageId = previousResumeAtMessageId;
+      return 'preserved';
     }
   }
 
@@ -752,6 +855,7 @@ export default class ClaudianPlugin extends Plugin {
     const conversation = this.conversations.find(c => c.id === id) || null;
 
     if (conversation) {
+      await this.reconcileConversationProviderSession(conversation);
       await this.ensureConversationSelectedModel(conversation);
       await this.loadSdkMessagesForConversation(conversation);
     }

@@ -418,6 +418,33 @@ export class InputController {
           break;
         }
 
+        if (chunk.type === 'error' && chunk.code === 'provider_session_missing') {
+          const staleConversationId = state.currentConversationId;
+          const resolution = staleConversationId
+            ? await plugin.handleMissingProviderSession(
+                staleConversationId,
+                chunk.providerSessionId,
+              )
+            : 'not_found';
+          if (shouldUseInput) {
+            inputEl.value = content;
+            this.deps.resetInputHeight();
+            if (imagesForMessage) {
+              imageContextManager?.setImages(imagesForMessage);
+            }
+          }
+          const notice = resolution === 'deleted'
+            ? 'The provider session no longer exists. Its Claudian record was removed; send again to start a new session.'
+            : resolution === 'reset'
+              ? 'The provider session no longer exists. Claudian preserved the recoverable history; send again to rebuild the session.'
+              : resolution === 'preserved'
+                ? 'The provider session no longer exists. Claudian preserved its record because the remaining history could not be verified.'
+                : 'The provider session no longer exists. Send again to start a new session.';
+          new Notice(notice);
+          wasInvalidated = true;
+          break;
+        }
+
         if (await this.handleProviderMessageBoundaryChunk(chunk)) {
           continue;
         }

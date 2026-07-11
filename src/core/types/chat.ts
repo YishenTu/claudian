@@ -146,7 +146,12 @@ export type StreamChunk =
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult }
   | { type: 'tool_output'; id: string; content: string }
-  | { type: 'error'; content: string }
+  | {
+      type: 'error';
+      content: string;
+      code?: 'provider_session_missing';
+      providerSessionId?: string;
+    }
   | { type: 'notice'; content: string; level?: 'info' | 'warning' }
   | { type: 'done' }
   | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }

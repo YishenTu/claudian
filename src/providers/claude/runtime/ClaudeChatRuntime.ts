@@ -64,7 +64,9 @@ import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
   getLastUserMessage,
+  getMissingSessionId,
   isSessionExpiredError,
+  isSessionMissingError,
 } from '../../../utils/session';
 import { CLAUDE_PROVIDER_CAPABILITIES } from '../capabilities';
 import { loadSubagentFinalResult, loadSubagentToolCalls } from '../history/ClaudeHistoryStore';
@@ -187,6 +189,20 @@ export class ClaudianService implements ChatRuntime {
   private bufferedUsageChunk: StreamChunk & { type: 'usage' } | null = null;
   private streamTransformState = createTransformStreamState();
   private usageTransformState = createTransformUsageState();
+
+  private toProviderSessionMissingChunk(error: unknown): (StreamChunk & { type: 'error' }) | null {
+    if (!isSessionMissingError(error, this.sessionManager.getSessionId() ?? undefined)) {
+      return null;
+    }
+
+    this.sessionManager.invalidateSession();
+    return {
+      type: 'error',
+      content: error instanceof Error ? error.message : 'Provider session not found',
+      code: 'provider_session_missing',
+      providerSessionId: getMissingSessionId(error) ?? undefined,
+    };
+  }
 
   private getLegacyPluginDeps(): ClaudianPlugin & {
     agentManager?: Pick<AppAgentManager, 'setBuiltinAgentNames'>;
@@ -761,6 +777,11 @@ export class ClaudianService implements ChatRuntime {
           const errorInstance = error instanceof Error ? error : new Error(String(error));
           const messageToReplay = this.lastSentMessage;
 
+          if (this.toProviderSessionMissingChunk(errorInstance)) {
+            handler?.onError(errorInstance);
+            return;
+          }
+
           if (!this.crashRecoveryAttempted && messageToReplay && handler && !handler.sawAnyChunk) {
             this.crashRecoveryAttempted = true;
             try {
@@ -1223,12 +1244,21 @@ export class ClaudianService implements ChatRuntime {
                 effectiveQueryOptions
               );
             } catch (retryError) {
-              const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
-              yield { type: 'error', content: msg };
+              const missingSessionChunk = this.toProviderSessionMissingChunk(retryError);
+              yield missingSessionChunk ?? {
+                type: 'error',
+                content: retryError instanceof Error ? retryError.message : 'Unknown error',
+              };
             } finally {
               this.coldStartInProgress = false;
               this.abortController = null;
             }
+            return;
+          }
+
+          const missingSessionChunk = this.toProviderSessionMissingChunk(error);
+          if (missingSessionChunk) {
+            yield missingSessionChunk;
             return;
           }
 
@@ -1259,9 +1289,18 @@ export class ClaudianService implements ChatRuntime {
             effectiveQueryOptions
           );
         } catch (retryError) {
-          const msg = retryError instanceof Error ? retryError.message : 'Unknown error';
-          yield { type: 'error', content: msg };
+          const missingSessionChunk = this.toProviderSessionMissingChunk(retryError);
+          yield missingSessionChunk ?? {
+            type: 'error',
+            content: retryError instanceof Error ? retryError.message : 'Unknown error',
+          };
         }
+        return;
+      }
+
+      const missingSessionChunk = this.toProviderSessionMissingChunk(error);
+      if (missingSessionChunk) {
+        yield missingSessionChunk;
         return;
       }
 

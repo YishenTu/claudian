@@ -6,6 +6,7 @@ import {
   formatToolCallForContext,
   getLastUserMessage,
   isSessionExpiredError,
+  isSessionMissingError,
   truncateToolResult,
 } from '@/utils/session';
 
@@ -19,6 +20,19 @@ describe('session utilities', () => {
     it('returns true for "session not found" error', () => {
       const error = new Error('Session not found');
       expect(isSessionExpiredError(error)).toBe(true);
+    });
+
+    it('returns true for the Claude missing-conversation error', () => {
+      const error = new Error('No conversation found with session ID: session-123');
+      expect(isSessionExpiredError(error)).toBe(true);
+      expect(isSessionMissingError(error)).toBe(true);
+      expect(isSessionMissingError(error, 'session-123')).toBe(true);
+      expect(isSessionMissingError(error, 'different-session')).toBe(false);
+    });
+
+    it('does not classify generic not-found wording as confirmed provider deletion', () => {
+      expect(isSessionMissingError(new Error('Session not found'))).toBe(false);
+      expect(isSessionMissingError(new Error('No conversation found'))).toBe(false);
     });
 
     it('returns true for "invalid session" error', () => {

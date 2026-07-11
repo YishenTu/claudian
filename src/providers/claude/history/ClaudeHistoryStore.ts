@@ -18,9 +18,13 @@ import {
   deleteSDKSession,
   encodeVaultPathForSDK,
   getSDKProjectsPath,
+  getSDKSessionAvailability,
   getSDKSessionPath,
   isValidSessionId,
+  locateSDKSession,
+  locateSDKSessions,
   readSDKSession,
+  readSDKSessionFile,
   sdkSessionExists,
 } from './sdkSessionPaths';
 import {
@@ -44,12 +48,16 @@ export {
   extractXmlTag,
   filterActiveBranch,
   getSDKProjectsPath,
+  getSDKSessionAvailability,
   getSDKSessionPath,
   isValidSessionId,
   loadSubagentFinalResult,
   loadSubagentToolCalls,
+  locateSDKSession,
+  locateSDKSessions,
   parseSDKMessageToChat,
   readSDKSession,
+  readSDKSessionFile,
   sdkSessionExists,
 };
 export {
@@ -60,9 +68,12 @@ export {
 export async function loadSDKSessionMessages(
   vaultPath: string,
   sessionId: string,
-  resumeAtMessageId?: string
+  resumeAtMessageId?: string,
+  sessionPath?: string,
 ): Promise<SDKSessionLoadResult> {
-  const result = await readSDKSession(vaultPath, sessionId);
+  const result = sessionPath
+    ? await readSDKSessionFile(sessionPath)
+    : await readSDKSession(vaultPath, sessionId);
 
   if (result.error) {
     return { messages: [], skippedLines: result.skippedLines, error: result.error };

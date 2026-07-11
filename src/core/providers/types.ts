@@ -414,6 +414,26 @@ export interface ProviderWorkspaceRegistration<
 }
 
 export interface ProviderConversationHistoryService {
+  /**
+   * Reports whether the provider-native session needed to resume a persisted
+   * conversation is still available. Providers that cannot distinguish a
+   * missing session from an inaccessible history store should return unknown.
+   */
+  getConversationSessionAvailability?(
+    conversation: Conversation,
+    vaultPath: string | null,
+  ): Promise<ProviderConversationSessionAvailability>;
+  /** Clears stale resume state so relocated provider history can rebuild natively. */
+  prepareRelocatedConversationSession?(
+    conversation: Conversation,
+    vaultPath: string | null,
+  ): Promise<boolean>;
+  /** Decides whether a confirmed missing resume session makes the whole record disposable. */
+  resolveMissingConversationSession?(
+    conversation: Conversation,
+    vaultPath: string | null,
+    missingProviderSessionId?: string,
+  ): Promise<'delete' | 'reset' | 'preserve'>;
   hydrateConversationHistory(
     conversation: Conversation,
     vaultPath: string | null,
@@ -433,6 +453,12 @@ export interface ProviderConversationHistoryService {
   /** Adds provider-owned persisted metadata to Conversation.providerState before session save. */
   buildPersistedProviderState?(conversation: Conversation): Record<string, unknown> | undefined;
 }
+
+export type ProviderConversationSessionAvailability =
+  | 'available'
+  | 'relocated'
+  | 'missing'
+  | 'unknown';
 
 export type ProviderTaskTerminalStatus = Extract<ToolCallInfo['status'], 'completed' | 'error'>;
 

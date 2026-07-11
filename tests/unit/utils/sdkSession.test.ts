@@ -8,6 +8,7 @@ import {
   encodeVaultPathForSDK,
   filterActiveBranch,
   getSDKProjectsPath,
+  getSDKSessionAvailability,
   getSDKSessionPath,
   isValidSessionId,
   loadSDKSessionMessages,
@@ -174,6 +175,114 @@ describe('sdkSession', () => {
       const exists = sdkSessionExists('/Users/test/vault', 'session-err');
 
       expect(exists).toBe(false);
+    });
+  });
+
+  describe('getSDKSessionAvailability', () => {
+    it('reports an available session', async () => {
+      mockFsPromises.access.mockResolvedValue(undefined);
+
+      await expect(getSDKSessionAvailability(
+        '/Users/test/vault',
+        'session-abc',
+      )).resolves.toBe('available');
+      expect(mockFsPromises.access).toHaveBeenCalledWith(
+        '/Users/test/.claude/projects/-Users-test-vault/session-abc.jsonl',
+      );
+    });
+
+    it('reports a missing session when a complete scan finds no transcript', async () => {
+      mockFsPromises.access.mockRejectedValue(
+        Object.assign(new Error('Missing'), { code: 'ENOENT' }),
+      );
+      mockFsPromises.readdir.mockResolvedValue([]);
+
+      await expect(getSDKSessionAvailability(
+        '/Users/test/vault',
+        'session-missing',
+      )).resolves.toBe('missing');
+    });
+
+    it('reports a session found under a previous vault project as relocated', async () => {
+      mockFsPromises.access.mockRejectedValue(
+        Object.assign(new Error('Missing'), { code: 'ENOENT' }),
+      );
+      mockFsPromises.readdir
+        .mockResolvedValueOnce([{
+          isDirectory: () => true,
+          isFile: () => false,
+          name: '-Users-test-previous-vault',
+        }] as any)
+        .mockResolvedValueOnce([{
+          isDirectory: () => false,
+          isFile: () => true,
+          name: 'session-relocated.jsonl',
+        }] as any);
+
+      await expect(getSDKSessionAvailability(
+        '/Users/test/vault',
+        'session-relocated',
+      )).resolves.toBe('relocated');
+    });
+
+    it('finds relocated sessions in nested project directories', async () => {
+      mockFsPromises.access.mockRejectedValue(
+        Object.assign(new Error('Missing'), { code: 'ENOENT' }),
+      );
+      mockFsPromises.readdir
+        .mockResolvedValueOnce([{
+          isDirectory: () => true,
+          isFile: () => false,
+          name: '-Users-test-current-project',
+        }] as any)
+        .mockResolvedValueOnce([{
+          isDirectory: () => true,
+          isFile: () => false,
+          name: '-Users-test-previous-vault',
+        }] as any)
+        .mockResolvedValueOnce([{
+          isDirectory: () => false,
+          isFile: () => true,
+          name: 'session-nested.jsonl',
+        }] as any);
+
+      await expect(getSDKSessionAvailability(
+        '/Users/test/vault',
+        'session-nested',
+      )).resolves.toBe('relocated');
+    });
+
+    it('reports unknown when the local Claude projects root is absent', async () => {
+      mockFsPromises.access.mockRejectedValue(
+        Object.assign(new Error('Missing'), { code: 'ENOENT' }),
+      );
+      mockFsPromises.readdir.mockRejectedValue(
+        Object.assign(new Error('Missing root'), { code: 'ENOENT' }),
+      );
+
+      await expect(getSDKSessionAvailability(
+        '/Users/test/vault',
+        'session-on-another-machine',
+      )).resolves.toBe('unknown');
+    });
+
+    it('reports unknown for other filesystem failures', async () => {
+      mockFsPromises.access.mockRejectedValue(
+        Object.assign(new Error('Permission denied'), { code: 'EACCES' }),
+      );
+
+      await expect(getSDKSessionAvailability(
+        '/Users/test/vault',
+        'session-inaccessible',
+      )).resolves.toBe('unknown');
+    });
+
+    it('reports unknown for an invalid session ID', async () => {
+      await expect(getSDKSessionAvailability(
+        '/Users/test/vault',
+        '../invalid',
+      )).resolves.toBe('unknown');
+      expect(mockFsPromises.access).not.toHaveBeenCalled();
     });
   });
 
