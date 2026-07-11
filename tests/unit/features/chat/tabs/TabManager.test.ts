@@ -285,6 +285,27 @@ describe('TabManager - Tab Lifecycle', () => {
       expect(manager.getTabCount()).toBe(DEFAULT_MAX_TABS);
     });
 
+    it('reserves capacity before awaited conversation loading', async () => {
+      let releaseConversation!: () => void;
+      const conversationGate = new Promise<any>(resolve => {
+        releaseConversation = () => resolve(null);
+      });
+      const plugin = createMockPlugin({
+        getConversationById: jest.fn().mockReturnValue(conversationGate),
+      });
+      const manager = createManager({ plugin });
+      await manager.createTab();
+      await manager.createTab();
+
+      const third = manager.createTab('conversation-3');
+      const fourth = manager.createTab('conversation-4');
+
+      await expect(fourth).resolves.toBeNull();
+      releaseConversation();
+      await expect(third).resolves.toBeTruthy();
+      expect(manager.getTabCount()).toBe(DEFAULT_MAX_TABS);
+    });
+
     it('should use provided tab ID for restoration', async () => {
       const manager = createManager({ callbacks });
       mockCreateTab.mockImplementationOnce(() =>
@@ -483,6 +504,20 @@ describe('TabManager - Tab Lifecycle', () => {
       await manager.closeTab('tab-with-save', true);
 
       expect(mockSave).toHaveBeenCalled();
+    });
+
+    it('destroys and removes the tab even when save-on-close fails', async () => {
+      const saveError = new Error('save failed');
+      const tab = createMockTabData({ id: 'tab-save-failure' });
+      tab.controllers.conversationController.save = jest.fn().mockRejectedValue(saveError);
+      mockCreateTab.mockReturnValueOnce(tab);
+      const manager = createManager({ callbacks });
+      await manager.createTab();
+      await manager.createTab();
+
+      await expect(manager.closeTab(tab.id, true)).rejects.toBe(saveError);
+      expect(mockDestroyTab).toHaveBeenCalledWith(tab);
+      expect(manager.getTab(tab.id)).toBeNull();
     });
 
     it('should switch to next tab when closing first tab', async () => {
@@ -2108,7 +2143,7 @@ describe('TabManager - Service Initialization Errors', () => {
 });
 
 describe('TabManager - Concurrent Switch Guard', () => {
-  it('should prevent concurrent tab switches', async () => {
+  it('should execute the latest switch requested while another switch is pending', async () => {
     const callbacks: TabManagerCallbacks = {
       onTabSwitched: jest.fn(),
     };
@@ -2132,8 +2167,7 @@ describe('TabManager - Concurrent Switch Guard', () => {
     // Start first switch to tab-1 (will hang on conversationController.switchTo)
     const firstSwitch = manager.switchToTab(tab1!.id);
 
-    // While first switch is in progress, try a second switch.
-    // isSwitchingTab is true, so this should return immediately (lines 143-144)
+    // While the first switch is in progress, retain the newer target.
     await manager.switchToTab(tab2!.id);
 
     expect(mockDeactivateTab).toHaveBeenCalledTimes(1);
@@ -2143,12 +2177,8 @@ describe('TabManager - Concurrent Switch Guard', () => {
     resolveSwitchTo();
     await firstSwitch;
 
-    expect(callbacks.onTabSwitched).toHaveBeenCalledTimes(1);
-
-    // After first switch completes, isSwitchingTab is false
-    // and subsequent switches should work normally
-    await manager.switchToTab(tab2!.id);
     expect(callbacks.onTabSwitched).toHaveBeenCalledTimes(2);
+    expect(manager.getActiveTabId()).toBe(tab2!.id);
   });
 });
 

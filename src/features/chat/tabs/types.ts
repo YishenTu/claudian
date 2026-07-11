@@ -1,5 +1,6 @@
 import type { Component, WorkspaceLeaf } from 'obsidian';
 
+import type { RuntimeSupervisor } from '../../../app/runtime/RuntimeSupervisor';
 import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -29,6 +30,7 @@ import type {
 import type { InstructionModeManager } from '../ui/InstructionModeManager';
 import type { NavigationSidebar } from '../ui/NavigationSidebar';
 import type { StatusPanel } from '../ui/StatusPanel';
+import type { TabSession } from './TabSession';
 
 /**
  * Default number of tabs allowed.
@@ -177,6 +179,8 @@ export type TabLifecycleState = 'blank' | 'bound_cold' | 'bound_active' | 'closi
  * Each tab is an independent chat session with its own runtime instance.
  */
 export interface TabData {
+  /** Authoritative identity and runtime owner for the tab. */
+  session: TabSession;
   /** Unique tab identifier. */
   id: TabId;
 
@@ -197,6 +201,9 @@ export interface TabData {
 
   /** Per-tab chat runtime instance for independent streaming. */
   service: ChatRuntime | null;
+
+  /** Named owner of the per-tab runtime reference. */
+  runtimeSupervisor: RuntimeSupervisor;
 
   /** Whether the service has been initialized (lazy start). */
   serviceInitialized: boolean;

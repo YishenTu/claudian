@@ -55,6 +55,8 @@ import type { CanvasSelectionController } from './CanvasSelectionController';
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';
+import type { ActiveTurnOwner } from './TurnCoordinator';
+import { TurnCoordinator } from './TurnCoordinator';
 
 const APPROVAL_OPTION_MAP: Record<string, ApprovalDecision> = {
   'Deny': 'deny',
@@ -109,6 +111,16 @@ export interface InputControllerDeps {
   openConversation?: (conversationId: string) => Promise<void>;
   onForkAll?: () => Promise<void>;
   restorePrePlanPermissionModeIfNeeded?: () => void;
+  turnOwner?: ActiveTurnOwner;
+}
+
+export interface SendMessageOptions {
+  editorContextOverride?: EditorSelectionContext | null;
+  browserContextOverride?: BrowserSelectionContext | null;
+  canvasContextOverride?: CanvasSelectionContext | null;
+  content?: string;
+  images?: ChatMessage['images'];
+  turnRequestOverride?: ChatTurnRequest;
 }
 
 export class InputController {
@@ -131,9 +143,14 @@ export class InputController {
   }> = [];
   private sawInitialProviderUserMessage = false;
   private awaitingProviderAssistantStart = false;
+  private readonly turnCoordinator: TurnCoordinator<SendMessageOptions>;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
+    this.turnCoordinator = new TurnCoordinator(
+      (options) => this.executeSendMessage(options),
+      deps.turnOwner,
+    );
   }
 
   private getAgentService(): ChatRuntime | null {
@@ -190,14 +207,11 @@ export class InputController {
   // Message Sending
   // ============================================
 
-  async sendMessage(options?: {
-    editorContextOverride?: EditorSelectionContext | null;
-    browserContextOverride?: BrowserSelectionContext | null;
-    canvasContextOverride?: CanvasSelectionContext | null;
-    content?: string;
-    images?: ChatMessage['images'];
-    turnRequestOverride?: ChatTurnRequest;
-  }): Promise<void> {
+  async sendMessage(options?: SendMessageOptions): Promise<void> {
+    await this.turnCoordinator.run(options);
+  }
+
+  private async executeSendMessage(options?: SendMessageOptions): Promise<void> {
     const {
       plugin,
       state,
@@ -327,7 +341,13 @@ export class InputController {
     state.hasPendingConversationSave = true;
     renderer.addMessage(userMsg);
 
-    await this.triggerTitleGeneration();
+    try {
+      await this.triggerTitleGeneration();
+    } catch (error) {
+      this.restoreMessageToInput(this.createQueuedMessage(displayContent, turnRequest));
+      this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
+      throw error;
+    }
 
     const assistantMsg: ChatMessage = {
       id: this.deps.generateId(),
@@ -363,8 +383,8 @@ export class InputController {
       const ready = await this.deps.ensureServiceInitialized();
       if (!ready) {
         new Notice('Failed to initialize agent service. Please try again.');
-        streamController.hideThinkingIndicator();
-        state.isStreaming = false;
+        this.restoreMessageToInput(this.createQueuedMessage(displayContent, turnRequest));
+        this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
         this.activeStreamingAssistantMessage = null;
         this.resetProviderMessageBoundaryState();
         return;
@@ -374,6 +394,8 @@ export class InputController {
     const agentService = this.getAgentService();
     if (!agentService) {
       new Notice('Agent service not available. Please reload the plugin.');
+      this.restoreMessageToInput(this.createQueuedMessage(displayContent, turnRequest));
+      this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
       this.activeStreamingAssistantMessage = null;
       this.resetProviderMessageBoundaryState();
       return;
@@ -1330,9 +1352,12 @@ export class InputController {
         {
           onAccept: (finalInstruction) => {
             void (async (): Promise<void> => {
-              const currentPrompt = plugin.settings.systemPrompt;
-              plugin.settings.systemPrompt = appendMarkdownSnippet(currentPrompt, finalInstruction);
-              await plugin.saveSettings();
+              await plugin.mutateSettings((settings) => {
+                settings.systemPrompt = appendMarkdownSnippet(
+                  settings.systemPrompt,
+                  finalInstruction,
+                );
+              });
 
               new Notice('Instruction added to custom system prompt');
               instructionModeManager?.clear();

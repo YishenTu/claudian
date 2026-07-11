@@ -405,7 +405,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       discoveredModels: TEST_CODEX_CATALOG,
     },
   };
-  return {
+  const plugin: any = {
     app: {
       vault: {
         adapter: { basePath: '/test/vault' },
@@ -454,6 +454,11 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
     ...pluginOverrides,
   };
+  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+    await mutation(plugin.settings);
+    await plugin.saveSettings();
+  });
+  return plugin;
 }
 
 // Helper to create mock MCP manager
@@ -770,7 +775,8 @@ describe('Tab - Service Initialization', () => {
         plugin,
         providerId: 'codex',
       }));
-      expect(tab.service).toBe(newService);
+      expect(tab.runtimeSupervisor.current).toBe(newService);
+      expect(tab.service).toBe(tab.runtimeSupervisor);
     });
 
     it('should NOT call ensureReady for blank tabs (lazy start)', async () => {
@@ -2702,7 +2708,8 @@ describe('Tab - Service Initialization Error Handling', () => {
     await initializeTabService(tab, options.plugin, options.mcpManager);
 
     // Should not change existing service
-    expect(tab.service).toBe(originalService);
+    expect(tab.runtimeSupervisor.current).toBe(originalService);
+    expect(tab.service).toBe(tab.runtimeSupervisor);
     expect(tab.serviceInitialized).toBe(true);
   });
 

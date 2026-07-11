@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 
+import { resolveProviderHost } from '../../../app/providers/resolveProviderHost';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -97,6 +98,8 @@ export class TabManager implements TabManagerInterface {
 
   /** Guard to prevent concurrent tab switches. */
   private isSwitchingTab = false;
+  private pendingSwitchTabId: TabId | null = null;
+  private pendingTabCreations = 0;
 
   /**
    * Gets the current max tabs limit from settings.
@@ -158,11 +161,14 @@ export class TabManager implements TabManagerInterface {
     options: CreateTabOptions = {},
   ): Promise<TabData | null> {
     const maxTabs = this.getMaxTabs();
-    if (this.tabs.size >= maxTabs) {
+    if (this.tabs.size + this.pendingTabCreations >= maxTabs) {
       return null;
     }
+    this.pendingTabCreations += 1;
+    let reservationHeld = true;
 
-    const { activate = true, draftModel } = options;
+    try {
+      const { activate = true, draftModel } = options;
 
     const conversation = conversationId
       ? await this.plugin.getConversationById(conversationId)
@@ -221,6 +227,8 @@ export class TabManager implements TabManagerInterface {
     wireTabInputEvents(tab, this.plugin);
 
     this.tabs.set(tab.id, tab);
+    this.pendingTabCreations -= 1;
+    reservationHeld = false;
     this.callbacks.onTabCreated?.(tab);
 
     if (!this.isRestoringState && (activate || !this.activeTabId)) {
@@ -229,7 +237,12 @@ export class TabManager implements TabManagerInterface {
       this.maybePrimeProviderRuntime(tab);
     }
 
-    return tab;
+      return tab;
+    } finally {
+      if (reservationHeld) {
+        this.pendingTabCreations -= 1;
+      }
+    }
   }
 
   /**
@@ -244,6 +257,7 @@ export class TabManager implements TabManagerInterface {
 
     // Guard against concurrent tab switches
     if (this.isSwitchingTab) {
+      this.pendingSwitchTabId = tabId;
       return;
     }
 
@@ -293,6 +307,11 @@ export class TabManager implements TabManagerInterface {
       this.maybePrimeProviderRuntime(tab);
     } finally {
       this.isSwitchingTab = false;
+      const pendingTabId = this.pendingSwitchTabId;
+      this.pendingSwitchTabId = null;
+      if (pendingTabId && pendingTabId !== this.activeTabId) {
+        await this.switchToTab(pendingTabId);
+      }
     }
   }
 
@@ -319,8 +338,15 @@ export class TabManager implements TabManagerInterface {
       return false;
     }
 
-    // Save conversation before closing
-    await tab.controllers.conversationController?.save();
+    // Save conversation before closing. Cleanup remains mandatory if save fails.
+    let saveError: unknown;
+    let didSaveFail = false;
+    try {
+      await tab.controllers.conversationController?.save();
+    } catch (error) {
+      didSaveFail = true;
+      saveError = error;
+    }
 
     // Capture tab order BEFORE deletion for fallback calculation
     const tabIdsBefore = Array.from(this.tabs.keys());
@@ -352,6 +378,9 @@ export class TabManager implements TabManagerInterface {
       }
     }
 
+    if (didSaveFail) {
+      throw saveError;
+    }
     return true;
   }
 
@@ -851,7 +880,7 @@ export class TabManager implements TabManagerInterface {
     const warmupMode = this.resolveProviderTabWarmupMode({
       conversation,
       externalContextPaths,
-      plugin: this.plugin,
+      plugin: resolveProviderHost(this.plugin),
       runtime,
       tab: {
         conversationId: tab.conversationId,
@@ -924,7 +953,7 @@ export class TabManager implements TabManagerInterface {
         && tab.id === this.activeTabId,
       conversation: context.conversation,
       externalContextPaths: context.externalContextPaths,
-      plugin: this.plugin,
+      plugin: resolveProviderHost(this.plugin),
       runtime: context.runtime,
     });
 

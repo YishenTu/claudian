@@ -18,6 +18,7 @@ import {
   type ScheduledAnimationFrame,
 } from '../../utils/animationFrame';
 import type { HistoryConversationStatus } from './controllers/ConversationController';
+import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
 import {
   getTabProviderId,
   onProviderAvailabilityChanged,
@@ -39,6 +40,7 @@ export class ClaudianView extends ItemView {
 
   // Tab management
   private tabManager: TabManager | null = null;
+  private mentionCacheCoordinator: MentionCacheCoordinator | null = null;
   private tabBar: TabBar | null = null;
   private tabBarContainerEl: HTMLElement | null = null;
   private tabContentEl: HTMLElement | null = null;
@@ -242,6 +244,11 @@ export class ClaudianView extends ItemView {
         },
       }
     );
+    this.mentionCacheCoordinator = new MentionCacheCoordinator(
+      () => (this.tabManager?.getAllTabs() ?? []).map(tab => ({
+        fileContextManager: tab.ui.fileContextManager,
+      })),
+    );
 
     this.wireEventHandlers();
     await this.restoreOrCreateTabs();
@@ -268,6 +275,7 @@ export class ClaudianView extends ItemView {
     this.restoreActiveInputToTabContent();
     await this.tabManager?.destroy();
     this.tabManager = null;
+    this.mentionCacheCoordinator = null;
 
     this.tabBar?.destroy();
     this.tabBar = null;
@@ -672,18 +680,11 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    // Vault events - forward to active tab's file context manager
-    const markCacheDirty = (includesFolders: boolean): void => {
-      const mgr = this.tabManager?.getActiveTab()?.ui.fileContextManager;
-      if (!mgr) return;
-      mgr.markFileCacheDirty();
-      if (includesFolders) mgr.markFolderCacheDirty();
-    };
     this.eventRefs.push(
-      this.plugin.app.vault.on('create', () => markCacheDirty(true)),
-      this.plugin.app.vault.on('delete', () => markCacheDirty(true)),
-      this.plugin.app.vault.on('rename', () => markCacheDirty(true)),
-      this.plugin.app.vault.on('modify', () => markCacheDirty(false))
+      this.plugin.app.vault.on('create', () => this.mentionCacheCoordinator?.markStructureDirty()),
+      this.plugin.app.vault.on('delete', () => this.mentionCacheCoordinator?.markStructureDirty()),
+      this.plugin.app.vault.on('rename', () => this.mentionCacheCoordinator?.markStructureDirty()),
+      this.plugin.app.vault.on('modify', () => this.mentionCacheCoordinator?.markFilesDirty())
     );
 
     // File open event

@@ -118,14 +118,20 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
 
   const imageContextManager = createMockImageContextManager();
   const mockAgentService = createMockAgentService();
+  const pluginSettings = {
+    permissionMode: 'yolo',
+    enableAutoTitleGeneration: true,
+  };
+  const saveSettings = jest.fn();
 
   return {
     plugin: {
-      saveSettings: jest.fn(),
-      settings: {
-        permissionMode: 'yolo',
-        enableAutoTitleGeneration: true,
-      },
+      saveSettings,
+      mutateSettings: jest.fn(async (mutation) => {
+        await mutation(pluginSettings);
+        await saveSettings();
+      }),
+      settings: pluginSettings,
       mcpManager: {
         extractMentions: jest.fn().mockReturnValue(new Set()),
         transformMentions: jest.fn().mockImplementation((text: string) => text),
@@ -2068,7 +2074,9 @@ describe('InputController - Message Queue', () => {
       expect(mockNotice).toHaveBeenCalledWith('Failed to initialize agent service. Please try again.');
       expect(deps.streamController.hideThinkingIndicator).toHaveBeenCalled();
       expect(deps.state.isStreaming).toBe(false);
-      expect(deps.state.hasPendingConversationSave).toBe(true);
+      expect(deps.state.hasPendingConversationSave).toBe(false);
+      expect(deps.state.messages).toEqual([]);
+      expect(inputEl.value).toBe('test message');
       expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
     });
   });
@@ -2090,7 +2098,10 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(mockNotice).toHaveBeenCalledWith('Agent service not available. Please reload the plugin.');
-      expect(deps.state.hasPendingConversationSave).toBe(true);
+      expect(deps.state.hasPendingConversationSave).toBe(false);
+      expect(deps.state.isStreaming).toBe(false);
+      expect(deps.state.messages).toEqual([]);
+      expect(inputEl.value).toBe('test message');
       expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
     });
   });

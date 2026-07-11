@@ -1,6 +1,7 @@
 import type { Component } from 'obsidian';
 import { Notice, Platform } from 'obsidian';
 
+import { resolveProviderHost } from '../../../app/providers/resolveProviderHost';
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
@@ -54,6 +55,7 @@ import { StatusPanel } from '../ui/StatusPanel';
 import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
 import { getTabProviderId } from './providerResolution';
+import { TabSession } from './TabSession';
 import type { TabData, TabDOMElements, TabId, TabManagerViewHost, TabProviderContext } from './types';
 import { generateTabId } from './types';
 
@@ -164,9 +166,10 @@ function getTabSettingsSnapshot(
 function getWritableTabSettingsSnapshot(
   tab: TabProviderContext,
   plugin: ClaudianPlugin,
+  settings: ClaudianSettings = plugin.settings,
 ): TabProviderSettings {
   return ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-    plugin.settings,
+    settings,
     getTabProviderId(tab, plugin),
   );
 }
@@ -351,14 +354,16 @@ async function updateTabProviderSettings(
   update: (settings: TabProviderSettings) => void,
 ): Promise<TabProviderSettings> {
   const providerId = getTabProviderId(tab, plugin);
-  const snapshot = getWritableTabSettingsSnapshot(tab, plugin);
-  update(snapshot);
-  ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
-    plugin.settings,
-    providerId,
-    snapshot,
-  );
-  await plugin.saveSettings();
+  let snapshot!: TabProviderSettings;
+  await plugin.mutateSettings((settings) => {
+    snapshot = getWritableTabSettingsSnapshot(tab, plugin, settings);
+    update(snapshot);
+    ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
+      settings,
+      providerId,
+      snapshot,
+    );
+  });
   return snapshot;
 }
 
@@ -411,7 +416,10 @@ function syncTabProviderServices(
 ): void {
   tab.services.instructionRefineService?.cancel();
   tab.services.instructionRefineService?.resetConversation();
-  tab.services.instructionRefineService = ProviderRegistry.createInstructionRefineService(plugin, tab.providerId);
+  tab.services.instructionRefineService = ProviderRegistry.createInstructionRefineService(
+    resolveProviderHost(plugin),
+    tab.providerId,
+  );
   tab.services.subagentManager.setTaskResultInterpreter?.(
     ProviderRegistry.getTaskResultInterpreter(tab.providerId)
   );
@@ -419,7 +427,9 @@ function syncTabProviderServices(
 
 function ensureTitleGenerationService(tab: TabData, plugin: ClaudianPlugin): void {
   if (!tab.services.titleGenerationService) {
-    tab.services.titleGenerationService = ProviderRegistry.createTitleGenerationService(plugin);
+    tab.services.titleGenerationService = ProviderRegistry.createTitleGenerationService(
+      resolveProviderHost(plugin),
+    );
   }
 }
 
@@ -522,14 +532,53 @@ export function createTab(options: TabCreateOptions): TabData {
     ?? (draftModel
       ? getEnabledProviderForModel(draftModel, plugin.settings)
       : DEFAULT_CHAT_PROVIDER_ID);
-
-  const tab: TabData = {
+  const session = new TabSession({
     id,
     lifecycleState: isBound ? 'bound_cold' : 'blank',
     draftModel,
     providerId: initialProviderId,
     conversationId: conversation?.id ?? null,
-    service: null,
+  });
+  const runtimeSupervisor = session.runtimeSupervisor;
+
+  const tab: TabData = {
+    session,
+    get id() {
+      return session.id;
+    },
+    get lifecycleState() {
+      return session.lifecycleState;
+    },
+    set lifecycleState(value) {
+      session.lifecycleState = value;
+    },
+    get draftModel() {
+      return session.draftModel;
+    },
+    set draftModel(value) {
+      session.draftModel = value;
+    },
+    get providerId() {
+      return session.providerId;
+    },
+    set providerId(value) {
+      session.providerId = value;
+    },
+    get conversationId() {
+      return session.conversationId;
+    },
+    set conversationId(value) {
+      session.conversationId = value;
+    },
+    get service() {
+      return runtimeSupervisor.current ? runtimeSupervisor : null;
+    },
+    set service(runtime) {
+      if (runtime !== runtimeSupervisor) {
+        runtimeSupervisor.setCurrent(runtime);
+      }
+    },
+    runtimeSupervisor,
     serviceInitialized: false,
     state,
     controllers: {
@@ -672,7 +721,10 @@ export async function initializeTabService(
     tab.service = null;
     tab.serviceInitialized = false;
 
-    const runtime = ProviderRegistry.createChatRuntime({ plugin, providerId });
+    const runtime = ProviderRegistry.createChatRuntime({
+      plugin: resolveProviderHost(plugin),
+      providerId,
+    });
     service = runtime;
     unsubscribeReadyState = runtime.onReadyStateChange(() => {});
     tab.dom.eventCleanups.push(() => unsubscribeReadyState?.());
@@ -904,7 +956,7 @@ function initializeInputToolbar(
         await uiConfig.prepareModelMetadata?.(
           model,
           getProviderSettingsSnapshotWithModel(plugin.settings, newProvider, model),
-          { plugin },
+          { plugin: resolveProviderHost(plugin) },
         );
         tab.ui.thinkingBudgetSelector?.updateDisplay();
         tab.ui.serviceTierToggle?.updateDisplay();
@@ -949,7 +1001,11 @@ function initializeInputToolbar(
         }
       }
 
-      await uiConfig.prepareModelMetadata?.(normalizedModel, providerSettings, { plugin });
+      await uiConfig.prepareModelMetadata?.(
+        normalizedModel,
+        providerSettings,
+        { plugin: resolveProviderHost(plugin) },
+      );
       tab.ui.thinkingBudgetSelector?.updateDisplay();
       tab.ui.serviceTierToggle?.updateDisplay();
       tab.ui.modelSelector?.updateDisplay();
@@ -1038,8 +1094,9 @@ function initializeInputToolbar(
 
   // Wire persistence changes
   tab.ui.externalContextSelector.setOnPersistenceChange((paths) => {
-    plugin.settings.persistentExternalContextPaths = paths;
-    void plugin.saveSettings();
+    void plugin.mutateSettings((settings) => {
+      settings.persistentExternalContextPaths = paths;
+    });
   });
 
   refreshTabProviderUI(tab, plugin);
@@ -1490,6 +1547,7 @@ export function initializeTabControllers(
     getAgentService: () => tab.service,
     getSubagentManager: () => services.subagentManager,
     getTabProviderId: () => getTabProviderId(tab, plugin),
+    turnOwner: tab.session,
     ensureServiceInitialized: async () => {
       if (tab.serviceInitialized && tab.lifecycleState === 'bound_active') {
         return true;
@@ -1940,19 +1998,20 @@ async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Pr
 
 export function updatePlanModeUI(tab: TabData, plugin: ClaudianPlugin, mode: string): void {
   const providerId = getTabProviderId(tab, plugin);
-  const snapshot = getWritableTabSettingsSnapshot(tab, plugin);
   const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
-  if (uiConfig.applyPermissionMode) {
-    uiConfig.applyPermissionMode(mode, snapshot);
-  } else {
-    snapshot.permissionMode = mode;
-  }
-  ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
-    plugin.settings,
-    providerId,
-    snapshot,
-  );
-  void plugin.saveSettings();
+  void plugin.mutateSettings((settings) => {
+    const snapshot = getWritableTabSettingsSnapshot(tab, plugin, settings);
+    if (uiConfig.applyPermissionMode) {
+      uiConfig.applyPermissionMode(mode, snapshot);
+    } else {
+      snapshot.permissionMode = mode;
+    }
+    ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
+      settings,
+      providerId,
+      snapshot,
+    );
+  });
   tab.ui.permissionToggle?.updateDisplay();
   tab.dom.inputWrapper.toggleClass(
     'claudian-input-plan-mode',
