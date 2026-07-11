@@ -1,5 +1,5 @@
-import { RuntimeSupervisor } from '../../../app/runtime/RuntimeSupervisor';
 import type { ProviderId } from '../../../core/providers/types';
+import { RuntimeSupervisor } from './RuntimeSupervisor';
 import type { TabLifecycleState } from './types';
 
 export interface TabSessionState {

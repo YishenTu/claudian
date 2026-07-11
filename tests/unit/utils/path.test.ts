@@ -362,8 +362,8 @@ describe('isPathWithinDirectory', () => {
       return path.resolve(value);
     });
 
-    (fs.realpathSync as any) = realpathMock;
-    (fs.realpathSync as any).native = realpathMock;
+    const realpathSpy = jest.spyOn(fs, 'realpathSync').mockImplementation(realpathMock as any);
+    (realpathSpy as any).native = realpathMock;
 
     expect(isPathWithinDirectory('/home/test/.claude/skills/link', '/home/test/.claude', '/vault')).toBe(false);
   });

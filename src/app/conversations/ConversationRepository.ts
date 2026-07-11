@@ -248,13 +248,17 @@ export class ConversationRepository {
 
   private async hydrate(conversation: Conversation): Promise<void> {
     const settings = this.deps.getSettings();
+    const vaultPath = this.deps.getVaultPath();
     await ProviderRegistry
       .getConversationHistoryService(conversation.providerId)
-      .hydrateConversationHistory(conversation, this.deps.getVaultPath(), {
+      .hydrateConversationHistory(conversation, vaultPath, {
         environment: {
           ...process.env,
           ...getRuntimeEnvironmentVariables(settings, conversation.providerId),
         },
+        hostPlatform: process.platform,
+        settings,
+        vaultPath,
       });
   }
 

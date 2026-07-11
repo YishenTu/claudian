@@ -181,9 +181,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       await context.plugin.mutateSettings((settings) => {
         updateCodexProviderSettings(settings, { cliPathsByHost: { ...cliPathsByHost } });
       });
-      await context.plugin.broadcastToActiveViewRuntimes?.(
-        (service) => Promise.resolve(service.cleanup()),
-      );
+      await context.plugin.recycleProviderRuntimes?.('codex');
       return true;
     };
 

@@ -116,9 +116,7 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         updateClaudeProviderSettings(settings, { cliPathsByHost: { ...cliPathsByHost } });
       });
       claudeWorkspace.cliResolver.reset();
-      await context.plugin.broadcastToActiveViewRuntimes?.(
-        (service) => Promise.resolve(service.cleanup()),
-      );
+      await context.plugin.recycleProviderRuntimes?.('claude');
       return true;
     };
 

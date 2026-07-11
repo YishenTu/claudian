@@ -473,6 +473,9 @@ export interface ProviderConversationHistoryService {
 
 export interface ProviderHistoryPathContext {
   environment: NodeJS.ProcessEnv;
+  hostPlatform?: NodeJS.Platform;
+  settings?: Record<string, unknown>;
+  vaultPath?: string | null;
 }
 
 export type ProviderConversationSessionAvailability =

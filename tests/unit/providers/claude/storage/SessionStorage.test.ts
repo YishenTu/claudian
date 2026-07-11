@@ -140,6 +140,22 @@ describe('SessionStorage', () => {
       );
     });
 
+    it('skips mismatched legacy metadata without migrating or modifying it', async () => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${LEGACY_SESSIONS_PATH}/session-requested.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-other',
+        title: 'Mismatched',
+        createdAt: 1,
+        updatedAt: 1,
+      }));
+
+      await expect(storage.loadMetadata('session-requested')).resolves.toBeNull();
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+      expect(mockAdapter.delete).not.toHaveBeenCalled();
+    });
+
     it('loads and parses metadata from JSON file', async () => {
       const metadata = {
         id: 'session-abc',

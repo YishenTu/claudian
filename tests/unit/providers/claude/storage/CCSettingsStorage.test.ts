@@ -73,6 +73,20 @@ describe('CCSettingsStorage', () => {
 
             expect(mockAdapter.write).not.toHaveBeenCalled();
         });
+
+        it('rejects a mutation when the existing settings contain malformed JSON', async () => {
+            mockAdapter.exists.mockResolvedValue(true);
+            mockAdapter.read.mockResolvedValue('invalid json{{{');
+
+            await expect(storage.addAllowRule(createPermissionRule('new-rule')))
+                .rejects.toThrow('invalid JSON');
+
+            expect(mockAdapter.write).not.toHaveBeenCalled();
+            expect(Notice).toHaveBeenCalledTimes(1);
+            expect(Notice).toHaveBeenCalledWith(
+                'Failed to update .claude/settings.json because it contains invalid JSON.',
+            );
+        });
     });
 
     describe('removeRule', () => {
@@ -152,11 +166,12 @@ describe('CCSettingsStorage', () => {
             mockAdapter.exists.mockResolvedValue(true);
             mockAdapter.read.mockResolvedValue('invalid json{{{');
 
-            await storage.save({
+            await expect(storage.save({
                 permissions: { allow: [], deny: [], ask: [] }
-            });
+            })).rejects.toThrow('invalid JSON');
 
             expect(mockAdapter.write).not.toHaveBeenCalled();
+            expect(Notice).toHaveBeenCalledTimes(1);
             expect(Notice).toHaveBeenCalledWith(
                 'Failed to update .claude/settings.json because it contains invalid JSON.',
             );

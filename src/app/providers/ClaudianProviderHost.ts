@@ -104,18 +104,7 @@ export class ClaudianProviderHost implements ProviderHost {
   async recycleProviderRuntimes(providerId: ProviderId): Promise<void> {
     for (const view of this.plugin.getAllViews()) {
       const tabManager = view.getTabManager();
-      if (tabManager?.broadcastToProviderTabs) {
-        await tabManager.broadcastToProviderTabs(
-          providerId,
-          (runtime) => Promise.resolve(runtime.cleanup()),
-        );
-      } else {
-        await tabManager?.broadcastToAllTabs(
-          (runtime) => runtime.providerId === providerId
-            ? Promise.resolve(runtime.cleanup())
-            : Promise.resolve(),
-        );
-      }
+      await tabManager?.recycleProviderRuntimes(providerId);
       view.invalidateProviderCommandCaches?.([providerId]);
       view.refreshModelSelector?.();
     }

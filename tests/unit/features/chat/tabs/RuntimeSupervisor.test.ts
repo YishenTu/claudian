@@ -1,5 +1,5 @@
-import { RuntimeSupervisor } from '@/app/runtime/RuntimeSupervisor';
 import type { ChatRuntime } from '@/core/runtime/ChatRuntime';
+import { RuntimeSupervisor } from '@/features/chat/tabs/RuntimeSupervisor';
 
 function createRuntime(id: string, trace: string[]): ChatRuntime {
   return {
@@ -8,39 +8,6 @@ function createRuntime(id: string, trace: string[]): ChatRuntime {
 }
 
 describe('RuntimeSupervisor', () => {
-  it('delegates readiness, query, cancellation, reset, and callbacks in order', async () => {
-    const trace: string[] = [];
-    const runtime = {
-      providerId: 'codex',
-      ensureReady: jest.fn(async () => {
-        trace.push('ready');
-        return true;
-      }),
-      query: jest.fn(() => (async function* () {
-        trace.push('query');
-        yield { type: 'text', content: 'ok' };
-      })()),
-      cancel: jest.fn(() => { trace.push('cancel'); }),
-      resetSession: jest.fn(() => { trace.push('reset'); }),
-      setApprovalCallback: jest.fn(() => { trace.push('approval'); }),
-      cleanup: jest.fn(() => { trace.push('cleanup'); }),
-    } as unknown as ChatRuntime;
-    const supervisor = new RuntimeSupervisor(runtime);
-
-    await expect(supervisor.ensureReady()).resolves.toBe(true);
-    const chunks = [];
-    for await (const chunk of supervisor.query({} as never)) {
-      chunks.push(chunk);
-    }
-    supervisor.cancel();
-    supervisor.resetSession();
-    supervisor.setApprovalCallback(null);
-    supervisor.cleanup();
-
-    expect(chunks).toEqual([{ type: 'text', content: 'ok' }]);
-    expect(trace).toEqual(['ready', 'query', 'cancel', 'reset', 'approval', 'cleanup']);
-  });
-
   it('owns replacement without introducing implicit cleanup semantics', () => {
     const trace: string[] = [];
     const first = createRuntime('first', trace);

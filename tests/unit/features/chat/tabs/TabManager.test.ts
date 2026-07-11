@@ -1081,6 +1081,38 @@ describe('TabManager - Broadcast', () => {
       expect(broadcastFn).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'opencode' }));
     });
   });
+
+  describe('recycleProviderRuntimes', () => {
+    it('disposes and detaches matching runtimes so the next turn creates a fresh instance', async () => {
+      const opencodeCleanup = jest.fn();
+      const claudeCleanup = jest.fn();
+      manager = createManager({
+        tabFactory: (n) => createMockTabData({
+          id: `tab-${n}`,
+          conversationId: `conversation-${n}`,
+          lifecycleState: 'bound_active',
+          providerId: n === 1 ? 'claude' : 'opencode',
+          runtimeSupervisor: {
+            cleanup: n === 1 ? claudeCleanup : opencodeCleanup,
+          },
+          service: {
+            providerId: n === 1 ? 'claude' : 'opencode',
+          },
+          serviceInitialized: true,
+        }),
+      });
+      await manager.createTab();
+      const opencodeTab = (await manager.createTab())!;
+
+      await manager.recycleProviderRuntimes('opencode');
+
+      expect(opencodeCleanup).toHaveBeenCalledTimes(1);
+      expect(opencodeTab.service).toBeNull();
+      expect(opencodeTab.serviceInitialized).toBe(false);
+      expect(opencodeTab.lifecycleState).toBe('bound_cold');
+      expect(claudeCleanup).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('TabManager - SDK Commands', () => {

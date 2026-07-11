@@ -333,6 +333,35 @@ describe('PluginManager', () => {
 
       expect(ccSettings.setPluginEnabled).not.toHaveBeenCalled();
     });
+
+    it('rolls back the in-memory enabled state when persistence fails', async () => {
+      const installedPlugins = {
+        version: 2,
+        plugins: {
+          'test-plugin@marketplace': [{
+            scope: 'user',
+            installPath: '/path/to/test-plugin',
+            version: '1.0.0',
+            installedAt: '2026-01-01T00:00:00.000Z',
+            lastUpdated: '2026-01-01T00:00:00.000Z',
+          }],
+        },
+      };
+
+      mockFs.existsSync.mockImplementation((p: fs.PathLike) => {
+        return String(p) === installedPluginsPath;
+      });
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(installedPlugins));
+
+      const ccSettings = createMockCCSettingsStorage();
+      ccSettings.setPluginEnabled.mockRejectedValue(new Error('write failed'));
+      const manager = new PluginManager(vaultPath, ccSettings);
+      await manager.loadPlugins();
+
+      await expect(manager.togglePlugin('test-plugin@marketplace')).rejects.toThrow('write failed');
+
+      expect(manager.getPlugins()[0].enabled).toBe(true);
+    });
   });
 
   describe('getPluginsKey', () => {

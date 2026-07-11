@@ -349,6 +349,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
     },
     saveSettings: mockSaveSettings,
     normalizeModelVariantSettings: jest.fn(() => false),
+    recycleProviderRuntimes: jest.fn().mockResolvedValue(undefined),
     getView: jest.fn(() => ({
       getTabManager: jest.fn(() => ({
         broadcastToAllTabs: jest.fn().mockResolvedValue(undefined),

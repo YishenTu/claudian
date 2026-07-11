@@ -10,6 +10,16 @@ jest.mock('@/shared/components/SelectionHighlight', () => ({
   showSelectionHighlight: jest.fn(),
 }));
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 function createSession() {
   const sourceDoc = Text.of(['hello']);
   const editorView: any = {
@@ -27,6 +37,8 @@ function createSession() {
   };
   const service = {
     cancel: jest.fn(),
+    continueConversation: jest.fn(),
+    editText: jest.fn(),
     resetConversation: jest.fn(),
     setModelOverride: jest.fn(),
   };
@@ -55,7 +67,7 @@ function createSession() {
     editedText: 'world',
     sourceSnapshot: { doc: sourceDoc, from: 0, to: 5, text: 'hello' },
   });
-  return { editor, editorView, resolve, session, sourceDoc };
+  return { editor, editorView, resolve, service, session, sourceDoc };
 }
 
 describe('InlineEditSession', () => {
@@ -70,7 +82,7 @@ describe('InlineEditSession', () => {
     session.accept();
 
     expect(editor.replaceRange).not.toHaveBeenCalled();
-    expect(resolve).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledWith({ decision: 'reject' });
     expect(Notice).toHaveBeenCalledWith(
       'Inline edit was not applied because the source document or selection changed.',
     );
@@ -100,5 +112,52 @@ describe('InlineEditSession', () => {
     expect((session as any).isKeyboardEventInContext({ target: previewChild })).toBe(true);
     expect((session as any).isKeyboardEventInContext({ target: editorView.dom })).toBe(true);
     expect((session as any).isKeyboardEventInContext({ target: outside })).toBe(false);
+  });
+
+  it('ignores a provider result that arrives after the session is rejected', async () => {
+    const { editorView, resolve, service, session } = createSession();
+    const result = createDeferred<{ success: true; editedText: string }>();
+    service.editText.mockReturnValue(result.promise);
+    Object.assign(session as any, {
+      editedText: null,
+      inputEl: Object.assign(createMockEl('input'), { value: 'rewrite' }),
+      spinnerEl: createMockEl(),
+    });
+
+    const generation = (session as any).generate();
+    await Promise.resolve();
+    session.reject();
+    editorView.dispatch.mockClear();
+    result.resolve({ success: true, editedText: 'world' });
+    await generation;
+
+    expect(editorView.dispatch).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith({ decision: 'reject' });
+  });
+
+  it('rejects a provider result before previewing when its source snapshot changed', async () => {
+    const { editorView, resolve, service, session } = createSession();
+    const result = createDeferred<{ success: true; editedText: string }>();
+    service.editText.mockReturnValue(result.promise);
+    const showDiff = jest.fn();
+    Object.assign(session as any, {
+      editedText: null,
+      inputEl: Object.assign(createMockEl('input'), { value: 'rewrite' }),
+      showDiffInPlace: showDiff,
+      spinnerEl: createMockEl(),
+    });
+
+    const generation = (session as any).generate();
+    await Promise.resolve();
+    editorView.state.doc = Text.of(['changed']);
+    result.resolve({ success: true, editedText: 'world' });
+    await generation;
+
+    expect(showDiff).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledWith({ decision: 'reject' });
+    expect(Notice).toHaveBeenCalledWith(
+      'Inline edit was not applied because the source document or selection changed.',
+    );
   });
 });

@@ -1,16 +1,14 @@
 import { StateEffect, StateField, type Text } from '@codemirror/state';
 import type { DecorationSet } from '@codemirror/view';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
-import type { App, Editor, MarkdownView } from 'obsidian';
+import type { App, Component, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import { resolveProviderHost } from '../../../app/providers/resolveProviderHost';
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import { resolveConversationModel } from '../../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID, type InlineEditMode, type InlineEditService, type ProviderId } from '../../../core/providers/types';
-import type ClaudianPlugin from '../../../main';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
@@ -28,7 +26,10 @@ import { buildExternalContextDisplayEntries } from '../../../utils/externalConte
 import { externalContextScanner } from '../../../utils/externalContextScanner';
 import { normalizeInsertionText } from '../../../utils/inlineEdit';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
+import type { FeatureHost } from '../../FeatureHost';
 import { renderInlineEditMarkdownPreview } from './inlineEditMarkdownPreview';
+
+type InlineEditHost = FeatureHost & Component;
 
 export type InlineEditContext =
   | { mode: 'selection'; selectedText: string }
@@ -264,7 +265,7 @@ export class InlineEditModal {
 
   constructor(
     private app: App,
-    private plugin: ClaudianPlugin,
+    private plugin: InlineEditHost,
     private editor: Editor,
     private view: MarkdownView,
     private editContext: InlineEditContext,
@@ -335,10 +336,11 @@ export class InlineEditSession {
   private agentReplyRenderVersion = 0;
   private sourceSnapshot: InlineEditSourceSnapshot | null = null;
   private settled = false;
+  private generation = 0;
 
   constructor(
     private app: App,
-    private plugin: ClaudianPlugin,
+    private plugin: InlineEditHost,
     private editorView: EditorView,
     private editor: Editor,
     editContext: InlineEditContext,
@@ -358,7 +360,7 @@ export class InlineEditSession {
       ?? activeTab?.providerId
       ?? DEFAULT_CHAT_PROVIDER_ID;
     this.inlineEditService = ProviderRegistry.createInlineEditService(
-      resolveProviderHost(plugin),
+      plugin.providerHost,
       providerId,
     );
     const auxiliaryModel = conversation
@@ -627,10 +629,11 @@ export class InlineEditSession {
     }
   }
 
-  private async generate() {
-    if (!this.inputEl || !this.spinnerEl) return;
+  private async generate(): Promise<void> {
+    if (this.settled || !this.inputEl || !this.spinnerEl) return;
     const userMessage = this.inputEl.value.trim();
     if (!userMessage) return;
+    const generation = ++this.generation;
 
     const sourceDoc = this.editorView.state.doc;
     this.sourceSnapshot = {
@@ -650,32 +653,49 @@ export class InlineEditSession {
     const contextFiles = this.resolveContextFilesFromMessage(userMessage);
 
     let result;
-    if (this.isConversing) {
-      result = await this.inlineEditService.continueConversation(userMessage, contextFiles);
-    } else {
-      if (this.mode === 'cursor') {
-        result = await this.inlineEditService.editText({
-          mode: 'cursor',
-          instruction: userMessage,
-          notePath: this.notePath,
-          cursorContext: this.cursorContext as CursorContext,
-          contextFiles,
-        });
+    try {
+      if (this.isConversing) {
+        result = await this.inlineEditService.continueConversation(userMessage, contextFiles);
       } else {
-        const lineCount = this.selectedText.split(/\r?\n/).length;
-        result = await this.inlineEditService.editText({
-          mode: 'selection',
-          instruction: userMessage,
-          notePath: this.notePath,
-          selectedText: this.selectedText,
-          startLine: this.startLine,
-          lineCount,
-          contextFiles,
-        });
+        if (this.mode === 'cursor') {
+          result = await this.inlineEditService.editText({
+            mode: 'cursor',
+            instruction: userMessage,
+            notePath: this.notePath,
+            cursorContext: this.cursorContext as CursorContext,
+            contextFiles,
+          });
+        } else {
+          const lineCount = this.selectedText.split(/\r?\n/).length;
+          result = await this.inlineEditService.editText({
+            mode: 'selection',
+            instruction: userMessage,
+            notePath: this.notePath,
+            selectedText: this.selectedText,
+            startLine: this.startLine,
+            lineCount,
+            contextFiles,
+          });
+        }
+      }
+    } catch (error) {
+      if (this.isGenerationActive(generation)) {
+        this.handleError(error instanceof Error ? error.message : 'Error - try again');
+      }
+      return;
+    } finally {
+      if (this.isGenerationActive(generation)) {
+        this.spinnerEl?.addClass('claudian-hidden');
       }
     }
 
-    this.spinnerEl.addClass('claudian-hidden');
+    if (!this.isGenerationActive(generation)) {
+      return;
+    }
+    if (!this.isSourceUnchanged()) {
+      this.rejectStaleSource();
+      return;
+    }
 
     if (result.success) {
       if (result.editedText !== undefined) {
@@ -793,7 +813,7 @@ export class InlineEditSession {
     const textToInsert = this.editedText ?? this.insertedText;
     if (textToInsert !== null) {
       if (!this.isSourceUnchanged()) {
-        new Notice('Inline edit was not applied because the source document or selection changed.');
+        this.rejectStaleSource();
         return;
       }
       // Convert CM6 positions back to Obsidian Editor positions
@@ -835,6 +855,7 @@ export class InlineEditSession {
   }
 
   private cleanup(options?: { keepSelectionHighlight?: boolean }) {
+    this.generation += 1;
     this.inlineEditService.cancel();
     this.inlineEditService.resetConversation();
     this.isConversing = false;
@@ -881,6 +902,21 @@ export class InlineEditSession {
       && snapshot.to >= snapshot.from
       && snapshot.to <= currentLength
       && this.getDocumentSlice(currentDoc, snapshot.from, snapshot.to) === snapshot.text;
+  }
+
+  private isGenerationActive(generation: number): boolean {
+    return !this.settled && generation === this.generation;
+  }
+
+  private rejectStaleSource(): void {
+    if (this.settled) {
+      return;
+    }
+    new Notice('Inline edit was not applied because the source document or selection changed.');
+    this.settled = true;
+    this.cleanup();
+    this.focusEditor();
+    this.resolve({ decision: 'reject' });
   }
 
   private getDocumentSlice(doc: Text, from: number, to: number): string {

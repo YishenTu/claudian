@@ -87,6 +87,32 @@ describe('PiConversationHistoryService', () => {
     expect(conversation.messages.map(message => message.content)).toEqual(['Configured']);
   });
 
+  it('does not trust a vault-local session root that is a symlink outside the vault', async () => {
+    if (process.platform === 'win32') return;
+
+    const vault = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-vault-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-symlink-target-'));
+    const safeHome = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-safe-home-'));
+    const agentDir = path.join(vault, '.pi', 'agent');
+    await fs.mkdir(agentDir, { recursive: true });
+    await fs.symlink(outside, path.join(agentDir, 'sessions'));
+    const outsideFile = path.join(outside, 's1.jsonl');
+    await fs.writeFile(outsideFile, JSON.stringify({
+      id: 'outside',
+      message: { content: 'Outside', role: 'user' },
+      type: 'entry',
+    }));
+    const conversation = createConversation(outsideFile);
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      vault,
+      { environment: { HOME: safeHome } },
+    );
+
+    expect(conversation.messages).toEqual([]);
+  });
+
   it('builds pending fork state from source session metadata', () => {
     const service = new PiConversationHistoryService();
     const conversation = createConversation('/tmp/session.jsonl');

@@ -37,6 +37,11 @@ test('providers are independent from main and features', () => {
   assert.deepEqual(findMatches([path.join(sourceRoot, 'providers')], pattern), []);
 });
 
+test('features are independent from the composition root and app adapters', () => {
+  const pattern = /from\s+['"][^'"]*(?:main['"]|app\/)/;
+  assert.deepEqual(findMatches([path.join(sourceRoot, 'features')], pattern), []);
+});
+
 test('features and shared UI are independent from concrete providers', () => {
   const pattern = /from\s+['"][^'"]*providers\/(?:claude|codex|opencode|pi)/;
   assert.deepEqual(findMatches([

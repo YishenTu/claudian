@@ -428,16 +428,17 @@ describe('McpStorage', () => {
       });
       const storage = new McpStorage(adapter);
 
-      await storage.save([
+      await expect(storage.save([
         {
           name: 'alpha',
           config: { command: 'cmd' },
           enabled: true,
           contextSaving: true,
         },
-      ]);
+      ])).rejects.toThrow('invalid JSON');
 
       expect(adapter._store['.claude/mcp.json']).toBe('not json');
+      expect(Notice).toHaveBeenCalledTimes(1);
       expect(Notice).toHaveBeenCalledWith(
         'Failed to update .claude/mcp.json because it contains invalid JSON.',
       );

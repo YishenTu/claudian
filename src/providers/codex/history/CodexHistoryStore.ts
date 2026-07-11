@@ -1321,18 +1321,26 @@ export async function findCodexSessionFileAsync(
   threadId: string,
   root: string = path.join(os.homedir(), '.codex', 'sessions'),
   timeoutMs = 10_000,
+  dependencies: CodexSessionFileLookupDependencies = {},
 ): Promise<string | null> {
   if (!threadId || !SAFE_SESSION_ID_PATTERN.test(threadId)) {
     return null;
   }
 
-  const deadline = Date.now() + timeoutMs;
-  if (!(await pathExists(root))) {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  const pathExists = dependencies.pathExists ?? defaultPathExists;
+  const readDirectory = dependencies.readDirectory
+    ?? ((value: string) => fsp.readdir(value, { withFileTypes: true }));
+  try {
+    if (!(await runBeforeDeadline(() => pathExists(root), deadline))) {
+      return null;
+    }
+    const directPath = path.join(root, `${threadId}.jsonl`);
+    if (await runBeforeDeadline(() => pathExists(directPath), deadline)) {
+      return directPath;
+    }
+  } catch {
     return null;
-  }
-  const directPath = path.join(root, `${threadId}.jsonl`);
-  if (await pathExists(directPath)) {
-    return directPath;
   }
 
   const stack = [root];
@@ -1342,8 +1350,11 @@ export async function findCodexSessionFileAsync(
 
     let entries: fs.Dirent[];
     try {
-      entries = await fsp.readdir(current, { withFileTypes: true });
+      entries = await runBeforeDeadline(() => readDirectory(current), deadline);
     } catch {
+      if (Date.now() >= deadline) {
+        return null;
+      }
       continue;
     }
     for (const entry of entries) {
@@ -1358,7 +1369,38 @@ export async function findCodexSessionFileAsync(
   return null;
 }
 
-async function pathExists(value: string): Promise<boolean> {
+export interface CodexSessionFileLookupDependencies {
+  pathExists?: (value: string) => Promise<boolean>;
+  readDirectory?: (value: string) => Promise<fs.Dirent[]>;
+}
+
+async function runBeforeDeadline<T>(
+  operation: () => Promise<T>,
+  deadline: number,
+): Promise<T> {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) {
+    throw new Error('Codex history lookup deadline exceeded.');
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error('Codex history lookup deadline exceeded.'));
+    }, remainingMs);
+    operation().then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function defaultPathExists(value: string): Promise<boolean> {
   try {
     await fsp.access(value);
     return true;

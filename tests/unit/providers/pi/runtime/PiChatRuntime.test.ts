@@ -302,6 +302,25 @@ describe('PiChatRuntime', () => {
     expect(order.slice(0, 2)).toEqual(['new_session', 'get_state']);
   });
 
+  it('does not become ready after cleanup interrupts startup', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    let releaseStart!: () => void;
+    const startGate = new Promise<void>(resolve => {
+      releaseStart = resolve;
+    });
+    jest.spyOn(runtime as any, 'startProcess').mockImplementation(async () => {
+      await startGate;
+    });
+
+    const readiness = runtime.ensureReady();
+    await flushPromises();
+    runtime.cleanup();
+    releaseStart();
+
+    await expect(readiness).resolves.toBe(false);
+    expect(runtime.isReady()).toBe(false);
+  });
+
   it('emits provider user-message boundaries for accepted prompts and steering turns', async () => {
     const runtime = new PiChatRuntime(createPlugin());
     const iterator = runtime.query(createTurn(runtime));

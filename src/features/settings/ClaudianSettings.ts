@@ -1,7 +1,6 @@
-import type { App } from 'obsidian';
+import type { App, Plugin } from 'obsidian';
 import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
-import { resolveProviderHost } from '../../app/providers/resolveProviderHost';
 import {
   getHiddenProviderCommands,
   normalizeHiddenCommandList,
@@ -12,9 +11,9 @@ import type { ProviderId } from '../../core/providers/types';
 import type { ChatViewPlacement } from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
-import type ClaudianPlugin from '../../main';
 import { renderEnvironmentSettingsSection } from '../../shared/settings/EnvironmentSettingsSection';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
+import type { FeatureHost } from '../FeatureHost';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 
 type SettingsTabId = string;
@@ -106,10 +105,10 @@ function addHotkeySettingRow(
 }
 
 export class ClaudianSettingTab extends PluginSettingTab {
-  plugin: ClaudianPlugin;
+  plugin: FeatureHost;
   private activeTab: SettingsTabId = 'general';
 
-  constructor(app: App, plugin: ClaudianPlugin) {
+  constructor(app: App, plugin: FeatureHost & Plugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
@@ -165,7 +164,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       }
 
       ProviderWorkspaceRegistry.getSettingsTabRenderer(providerId)?.render(content, {
-        plugin: resolveProviderHost(this.plugin),
+        plugin: this.plugin.providerHost,
         renderHiddenProviderCommandSetting: (
           target,
           targetProviderId,
@@ -505,7 +504,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     renderEnvironmentSettingsSection({
       container,
-      plugin: this.plugin,
+      plugin: this.plugin.providerHost,
       scope: 'shared',
       heading: t('settings.environment'),
       name: 'Shared environment',

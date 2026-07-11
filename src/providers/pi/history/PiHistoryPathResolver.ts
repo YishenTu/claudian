@@ -3,7 +3,7 @@ import * as path from 'node:path';
 
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import { isPathWithinRoot } from '../../../core/storage/pathContainment';
-import { findPiSessionFile } from './PiHistoryStore';
+import { findPiSessionFile, findPiSessionFileInRoot } from './PiHistoryStore';
 
 function getConfiguredSessionDir(context: ProviderHistoryPathContext): string | null {
   const configured = context.environment.PI_CODING_AGENT_SESSION_DIR?.trim();
@@ -25,7 +25,10 @@ function getTrustedRoots(
     roots.push(path.join(configuredAgentDir, 'sessions'));
   }
   if (vaultPath) {
-    roots.push(path.join(vaultPath, '.pi', 'agent', 'sessions'));
+    const vaultSessionRoot = path.join(vaultPath, '.pi', 'agent', 'sessions');
+    if (isPathWithinRoot(vaultSessionRoot, vaultPath)) {
+      roots.push(vaultSessionRoot);
+    }
   }
   const home = context.environment.HOME?.trim()
     || context.environment.USERPROFILE?.trim()
@@ -61,7 +64,7 @@ export function resolvePiSessionFileHint(
   }
 
   for (const root of roots) {
-    const resolved = findPiSessionFile(logicalSessionId, null, root);
+    const resolved = findPiSessionFileInRoot(logicalSessionId, root);
     if (resolved && isPathWithinRoot(resolved, root)) {
       return resolved;
     }

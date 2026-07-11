@@ -6,7 +6,7 @@ import { codexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab'
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
-const mockBroadcastToAllTabs = jest.fn().mockResolvedValue(undefined);
+const mockRecycleProviderRuntimes = jest.fn().mockResolvedValue(undefined);
 const mockRenderCodexModelPicker = jest.fn();
 const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
 
@@ -350,11 +350,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       ...overrides,
     },
     saveSettings: mockSaveSettings,
-    getView: jest.fn(() => ({
-      getTabManager: jest.fn(() => ({
-        broadcastToAllTabs: mockBroadcastToAllTabs,
-      })),
-    })),
+    recycleProviderRuntimes: mockRecycleProviderRuntimes,
     app: {
       vault: {
         adapter: {
@@ -363,11 +359,6 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       },
     },
   };
-  plugin.broadcastToActiveViewRuntimes = jest.fn(async (
-    action: (runtime: { cleanup(): void }) => Promise<void>,
-  ) => {
-    await plugin.getView()?.getTabManager()?.broadcastToAllTabs(action);
-  });
   plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
     await mutation(plugin.settings);
     await plugin.saveSettings();
@@ -481,7 +472,7 @@ describe('CodexSettingsTab', () => {
 
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBeUndefined();
     expect(mockSaveSettings).toHaveBeenCalledTimes(0);
-    expect(mockBroadcastToAllTabs).toHaveBeenCalledTimes(0);
+    expect(mockRecycleProviderRuntimes).toHaveBeenCalledTimes(0);
   });
 
   it('accepts a Linux-side CLI command when installation method is WSL', async () => {
@@ -501,7 +492,7 @@ describe('CodexSettingsTab', () => {
     });
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe('codex');
     expect(mockSaveSettings).toHaveBeenCalled();
-    expect(mockBroadcastToAllTabs).toHaveBeenCalled();
+    expect(mockRecycleProviderRuntimes).toHaveBeenCalledWith('codex');
     expect(mockRefreshModelCatalog).toHaveBeenCalledTimes(1);
   });
 
@@ -533,7 +524,7 @@ describe('CodexSettingsTab', () => {
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe(
       'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe',
     );
-    expect(mockBroadcastToAllTabs).toHaveBeenCalledTimes(0);
+    expect(mockRecycleProviderRuntimes).toHaveBeenCalledTimes(0);
   });
 
   it('does not render the legacy custom models textarea', () => {

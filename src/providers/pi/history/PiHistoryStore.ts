@@ -311,6 +311,23 @@ export function findPiSessionFile(
   return null;
 }
 
+/** Searches exactly one caller-owned root without adding implicit fallback roots. */
+export function findPiSessionFileInRoot(
+  sessionId: string,
+  root: string,
+): string | null {
+  const trimmed = sessionId.trim();
+  if (!trimmed || path.isAbsolute(trimmed) || /[\\/]/.test(trimmed)) {
+    return null;
+  }
+
+  const direct = path.join(root, trimmed.endsWith('.jsonl') ? trimmed : `${trimmed}.jsonl`);
+  if (fileExists(direct)) {
+    return direct;
+  }
+  return findSessionFileInRoot(root, trimmed);
+}
+
 export function derivePiSessionsRootFromSessionPath(sessionPath: string): string | null {
   const normalized = sessionPath.trim();
   if (!normalized) {

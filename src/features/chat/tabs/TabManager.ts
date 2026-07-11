@@ -1,6 +1,5 @@
 import { Notice } from 'obsidian';
 
-import { resolveProviderHost } from '../../../app/providers/resolveProviderHost';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -12,9 +11,9 @@ import type {
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { Conversation, SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
-import type ClaudianPlugin from '../../../main';
 import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
 import { revealWorkspaceLeaf } from '../../../utils/obsidianCompat';
+import type { FeatureHost } from '../../FeatureHost';
 import { getTabProviderId } from './providerResolution';
 import {
   activateTab,
@@ -85,7 +84,7 @@ type ProviderCommandWarmupEntry = {
  * TabManager coordinates multiple chat tabs.
  */
 export class TabManager implements TabManagerInterface {
-  private plugin: ClaudianPlugin;
+  private plugin: FeatureHost;
   private containerEl: HTMLElement;
   private view: TabManagerViewHost;
 
@@ -111,20 +110,20 @@ export class TabManager implements TabManagerInterface {
   }
 
   constructor(
-    plugin: ClaudianPlugin,
+    plugin: FeatureHost,
     containerEl: HTMLElement,
     view: TabManagerViewHost,
     callbacks?: TabManagerCallbacks,
   );
   constructor(
-    plugin: ClaudianPlugin,
+    plugin: FeatureHost,
     legacyArg: unknown,
     containerEl: HTMLElement,
     view: TabManagerViewHost,
     callbacks?: TabManagerCallbacks,
   );
   constructor(
-    plugin: ClaudianPlugin,
+    plugin: FeatureHost,
     arg2: unknown,
     arg3: HTMLElement | TabManagerViewHost,
     arg4?: TabManagerViewHost | TabManagerCallbacks,
@@ -880,7 +879,7 @@ export class TabManager implements TabManagerInterface {
     const warmupMode = this.resolveProviderTabWarmupMode({
       conversation,
       externalContextPaths,
-      plugin: resolveProviderHost(this.plugin),
+      plugin: this.plugin.providerHost,
       runtime,
       tab: {
         conversationId: tab.conversationId,
@@ -953,7 +952,7 @@ export class TabManager implements TabManagerInterface {
         && tab.id === this.activeTabId,
       conversation: context.conversation,
       externalContextPaths: context.externalContextPaths,
-      plugin: resolveProviderHost(this.plugin),
+      plugin: this.plugin.providerHost,
       runtime: context.runtime,
     });
 
@@ -1008,6 +1007,21 @@ export class TabManager implements TabManagerInterface {
       this.filterTabsByProvider(providerIds, (tab) => tab.service?.providerId ?? tab.providerId),
       fn,
     );
+  }
+
+  async recycleProviderRuntimes(providerIds: ProviderId | ProviderId[]): Promise<void> {
+    const tabs = this.filterTabsByProvider(
+      providerIds,
+      (tab) => tab.service?.providerId ?? tab.providerId,
+    );
+    for (const tab of tabs) {
+      tab.runtimeSupervisor.cleanup();
+      tab.service = null;
+      tab.serviceInitialized = false;
+      if (tab.lifecycleState === 'bound_active') {
+        tab.lifecycleState = tab.conversationId ? 'bound_cold' : 'blank';
+      }
+    }
   }
 
   private async broadcastToTabs(

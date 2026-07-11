@@ -265,6 +265,37 @@ describe('OpencodeChatRuntime', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
   });
 
+  it('does not start OpenCode after cleanup invalidates readiness', async () => {
+    const plugin = createMockPlugin({
+      settings: { providerConfigs: { opencode: { enabled: true } } },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    let releaseArtifacts!: () => void;
+    const artifactsGate = new Promise<void>(resolve => {
+      releaseArtifacts = resolve;
+    });
+    jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts').mockImplementation(async () => {
+      await artifactsGate;
+      return {
+        configPath: '/tmp/claudian-opencode-config.json',
+        configContent: '{}\n',
+        databasePath: '/default/opencode.db',
+        launchKey: 'launch-key',
+        systemPromptPath: '/tmp/claudian-opencode-system.md',
+      };
+    });
+    const startProcess = jest.spyOn(runtime as any, 'startProcess').mockResolvedValue(undefined);
+
+    const readiness = runtime.ensureReady({ allowSessionCreation: false });
+    await new Promise(resolve => setImmediate(resolve));
+    runtime.cleanup();
+    releaseArtifacts();
+
+    await expect(readiness).resolves.toBe(false);
+    expect(startProcess).not.toHaveBeenCalled();
+    expect(runtime.isReady()).toBe(false);
+  });
+
   it('settles the owned query when local cancel receives no provider acknowledgement', async () => {
     const runtime = new OpencodeChatRuntime(createMockPlugin());
     runtime.syncConversationState({ providerState: {}, sessionId: 'session-1' });
@@ -286,6 +317,62 @@ describe('OpencodeChatRuntime', () => {
     await expect(firstChunk).resolves.toEqual({ done: false, value: { type: 'done' } });
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
     expect(cancel).toHaveBeenCalledWith({ sessionId: 'session-1' });
+  });
+
+  it('restarts the ACP connection before reusing a session after cancellation', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin({
+      settings: { providerConfigs: { opencode: { enabled: true } } },
+    }));
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-1' });
+    jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts').mockResolvedValue({
+      configPath: '/tmp/claudian-opencode-config.json',
+      configContent: '{}\n',
+      databasePath: '/default/opencode.db',
+      launchKey: 'launch-key',
+      systemPromptPath: '/tmp/claudian-opencode-system.md',
+    });
+    const cancel = jest.fn();
+    const startProcess = jest.spyOn(runtime as any, 'startProcess').mockImplementation(async () => {
+      (runtime as any).process = { isAlive: () => true, shutdown: jest.fn().mockResolvedValue(undefined) };
+      (runtime as any).transport = { dispose: jest.fn(), isClosed: false };
+      (runtime as any).connection = { cancel, dispose: jest.fn() };
+    });
+    jest.spyOn(runtime as any, 'loadSession').mockResolvedValue(true);
+
+    await runtime.ensureReady({ allowSessionCreation: false });
+    (runtime as any).activeTurn = {
+      cancelled: false,
+      queue: { close: jest.fn(), push: jest.fn() },
+      sessionId: 'session-1',
+    };
+    runtime.cancel();
+    await runtime.ensureReady({ allowSessionCreation: false });
+
+    expect(cancel).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    expect(startProcess).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores notifications from a superseded ACP connection generation', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    const push = jest.fn();
+    (runtime as any).sessionId = 'session-1';
+    (runtime as any).connectionGeneration = 2;
+    (runtime as any).activeTurn = {
+      cancelled: false,
+      queue: { close: jest.fn(), push },
+      sessionId: 'session-1',
+    };
+
+    await (runtime as any).handleSessionNotification({
+      sessionId: 'session-1',
+      update: {
+        content: { text: 'stale', type: 'text' },
+        messageId: 'assistant-old',
+        sessionUpdate: 'agent_message_chunk',
+      },
+    }, 1);
+
+    expect(push).not.toHaveBeenCalled();
   });
 
   it('rejects a second overlapping query without replacing the active route', async () => {

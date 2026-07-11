@@ -3,6 +3,7 @@ import * as path from 'path';
 import {
   deriveCodexMemoriesDirFromSessionsRoot,
   deriveCodexSessionsRootFromSessionPath,
+  findCodexSessionFileAsync,
   parseCodexSessionContent,
   parseCodexSessionFile,
   parseCodexSessionTurns,
@@ -11,6 +12,30 @@ import {
 const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures');
 
 describe('CodexHistoryStore', () => {
+  it('settles lookup at the deadline when a directory read never resolves', async () => {
+    jest.useFakeTimers();
+    try {
+      const root = '/virtual/codex/sessions';
+      const pathExists = jest.fn(async (value: string) => value === root);
+      const readDirectory = jest.fn(() => new Promise<never>(() => {}));
+      const lookup = findCodexSessionFileAsync('thread', root, 10, {
+        pathExists,
+        readDirectory,
+      });
+
+      for (let index = 0; index < 10 && !readDirectory.mock.calls.length; index += 1) {
+        await Promise.resolve();
+      }
+      expect(pathExists).toHaveBeenCalled();
+      expect(readDirectory).toHaveBeenCalled();
+      jest.advanceTimersByTime(11);
+
+      await expect(lookup).resolves.toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   describe('path helpers', () => {
     it('derives transcript and memories roots from POSIX session paths', () => {
       const sessionFilePath = '/home/user/.codex/sessions/2026/04/14/rollout-thread.jsonl';

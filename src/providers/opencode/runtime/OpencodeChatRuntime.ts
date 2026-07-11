@@ -150,6 +150,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private activeTurn: ActiveTurn | null = null;
   private approvalCallback: ApprovalCallback | null = null;
   private connection: AcpClientConnection | null = null;
+  private connectionGeneration = 0;
   private contextUsage: AcpUsageUpdate | null = null;
   private currentDatabasePath: string | null = null;
   private currentLaunchKey: string | null = null;
@@ -167,6 +168,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private readonly readyListeners: Array<(ready: boolean) => void> = [];
   private ready = false;
   private readinessFlight: { key: string; promise: Promise<boolean> } | null = null;
+  private disposed = false;
+  private lifecycleGeneration = 0;
+  private restartRequiredAfterCancel = false;
   private sessionInvalidated = false;
   private readonly supportedCommandWaiters: Array<(commands: SlashCommand[]) => void> = [];
   private supportedCommands: SlashCommand[] = [];
@@ -274,6 +278,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
+    if (this.disposed) {
+      return false;
+    }
     const key = JSON.stringify(options ?? {});
     if (this.readinessFlight) {
       if (this.readinessFlight.key === key) {
@@ -283,7 +290,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
       return this.ensureReady(options);
     }
 
-    const promise = this.ensureReadyInternal(options);
+    const generation = this.lifecycleGeneration;
+    const promise = this.ensureReadyInternal(options, generation);
     this.readinessFlight = { key, promise };
     return promise.finally(() => {
       if (this.readinessFlight?.promise === promise) {
@@ -292,7 +300,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     });
   }
 
-  private async ensureReadyInternal(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
+  private async ensureReadyInternal(
+    options: ChatRuntimeEnsureReadyOptions | undefined,
+    generation: number,
+  ): Promise<boolean> {
     const settings = getOpencodeProviderSettings(this.plugin.settings);
     if (!settings.enabled) {
       this.setReady(false);
@@ -312,6 +323,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
       settings: promptSettings,
       workspaceRoot: cwd,
     });
+    if (!this.isLifecycleCurrent(generation)) {
+      return false;
+    }
     this.currentDatabasePath = artifacts.databasePath;
 
     const nextLaunchKey = JSON.stringify({
@@ -328,23 +342,37 @@ export class OpencodeChatRuntime implements ChatRuntime {
       || !this.process.isAlive()
       || this.transport.isClosed
       || options?.force === true
+      || this.restartRequiredAfterCancel
       || this.currentLaunchKey !== nextLaunchKey;
 
     if (shouldRestart) {
       await this.shutdownProcess();
+      if (!this.isLifecycleCurrent(generation)) {
+        return false;
+      }
       await this.startProcess({
         command: resolvedCliPath,
         configPath: artifacts.configPath,
         cwd,
         runtimeEnv,
       });
+      if (!this.isLifecycleCurrent(generation)) {
+        await this.shutdownProcess();
+        return false;
+      }
+      this.restartRequiredAfterCancel = false;
       this.currentLaunchKey = nextLaunchKey;
       this.loadedSessionId = null;
+      this.setReady(true);
     }
 
     if (targetSessionId) {
       if (this.loadedSessionId !== targetSessionId) {
         const loaded = await this.loadSession(targetSessionId, cwd);
+        if (!this.isLifecycleCurrent(generation)) {
+          await this.shutdownProcess();
+          return false;
+        }
         if (!loaded) {
           this.sessionInvalidated = true;
           this.clearActiveSession();
@@ -357,7 +385,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
       if (options?.allowSessionCreation === false) {
         return true;
       }
-      return Boolean(await this.createSession(cwd));
+      const sessionId = await this.createSession(cwd);
+      if (!this.isLifecycleCurrent(generation)) {
+        await this.shutdownProcess();
+        return false;
+      }
+      return Boolean(sessionId);
     }
 
     return true;
@@ -490,9 +523,14 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   cancel(): void {
+    const activeTurn = this.activeTurn;
+    if (!activeTurn || activeTurn.cancelled) {
+      return;
+    }
     if (this.connection && this.sessionId) {
       this.connection.cancel({ sessionId: this.sessionId });
     }
+    this.restartRequiredAfterCancel = true;
     this.settleActiveTurn();
   }
 
@@ -543,6 +581,11 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   cleanup(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.lifecycleGeneration += 1;
     this.activeTurn?.queue.close();
     void this.shutdownProcess();
   }
@@ -657,6 +700,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       }
     });
 
+    const connectionGeneration = ++this.connectionGeneration;
     this.connection = new AcpClientConnection({
       clientInfo: {
         name: 'claudian',
@@ -667,7 +711,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
           readTextFile: (request) => this.readTextFile(request),
           writeTextFile: (request) => this.writeTextFile(request),
         },
-        onSessionNotification: (notification) => this.handleSessionNotification(notification),
+        onSessionNotification: (notification) => this.handleSessionNotification(
+          notification,
+          connectionGeneration,
+        ),
         requestPermission: (request) => this.handlePermissionRequest(request),
       },
       transport: this.transport,
@@ -675,10 +722,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     this.transport.start();
     await this.connection.initialize();
-    this.setReady(true);
   }
 
   private async shutdownProcess(): Promise<void> {
+    this.connectionGeneration += 1;
     this.setReady(false);
     this.settleActiveTurn();
     this.currentSessionModelId = null;
@@ -709,6 +756,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     for (const listener of this.readyListeners) {
       listener(ready);
     }
+  }
+
+  private isLifecycleCurrent(generation: number): boolean {
+    return !this.disposed && generation === this.lifecycleGeneration;
   }
 
   private getSystemPromptSettings(vaultPath: string): SystemPromptSettings {
@@ -1227,7 +1278,11 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
   private async handleSessionNotification(
     notification: AcpSessionNotification,
+    connectionGeneration = this.connectionGeneration,
   ): Promise<void> {
+    if (connectionGeneration !== this.connectionGeneration) {
+      return;
+    }
     if (notification.sessionId !== this.sessionId) {
       return;
     }

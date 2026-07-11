@@ -146,6 +146,8 @@ export class PiChatRuntime implements ChatRuntime {
   private process: PiSubprocess | null = null;
   private ready = false;
   private readinessFlight: { key: string; promise: Promise<boolean> } | null = null;
+  private disposed = false;
+  private lifecycleGeneration = 0;
   private readonly readyListeners = new Set<(ready: boolean) => void>();
   private sessionFile: string | null = null;
   private sessionId: string | null = null;
@@ -223,6 +225,9 @@ export class PiChatRuntime implements ChatRuntime {
   async reloadMcpServers(): Promise<void> {}
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
+    if (this.disposed) {
+      return false;
+    }
     const key = JSON.stringify(options ?? {});
     if (this.readinessFlight) {
       if (this.readinessFlight.key === key) {
@@ -232,7 +237,8 @@ export class PiChatRuntime implements ChatRuntime {
       return this.ensureReady(options);
     }
 
-    const promise = this.ensureReadyInternal(options);
+    const generation = this.lifecycleGeneration;
+    const promise = this.ensureReadyInternal(options, generation);
     this.readinessFlight = { key, promise };
     return promise.finally(() => {
       if (this.readinessFlight?.promise === promise) {
@@ -241,7 +247,10 @@ export class PiChatRuntime implements ChatRuntime {
     });
   }
 
-  private async ensureReadyInternal(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
+  private async ensureReadyInternal(
+    options: ChatRuntimeEnsureReadyOptions | undefined,
+    generation: number,
+  ): Promise<boolean> {
     const settings = getPiProviderSettings(this.plugin.settings);
     if (!settings.enabled) {
       this.setReady(false);
@@ -249,6 +258,9 @@ export class PiChatRuntime implements ChatRuntime {
     }
 
     await this.sessionResetPromise;
+    if (!this.isLifecycleCurrent(generation)) {
+      return false;
+    }
 
     const allowSessionCreation = options?.allowSessionCreation !== false;
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
@@ -256,6 +268,9 @@ export class PiChatRuntime implements ChatRuntime {
     const runtimeEnvText = getRuntimeEnvironmentText(this.plugin.settings, 'pi');
     if (allowSessionCreation) {
       await this.materializePendingFork(cwd, runtimeEnvText);
+      if (!this.isLifecycleCurrent(generation)) {
+        return false;
+      }
     }
 
     const hasSessionTarget = Boolean(this.sessionId || this.sessionFile);
@@ -296,15 +311,30 @@ export class PiChatRuntime implements ChatRuntime {
 
     if (shouldRestart) {
       await this.shutdownProcess();
+      if (!this.isLifecycleCurrent(generation)) {
+        return false;
+      }
       await this.startProcess(launchSpec);
+      if (!this.isLifecycleCurrent(generation)) {
+        await this.shutdownProcess();
+        return false;
+      }
       this.currentLaunchKey = nextLaunchKey;
       this.currentSessionTarget = sessionTarget;
     } else if (canSwitchSessionTarget && this.sessionFile) {
       await this.switchSession(this.sessionFile, launchSpec, nextLaunchKey);
+      if (!this.isLifecycleCurrent(generation)) {
+        await this.shutdownProcess();
+        return false;
+      }
     }
 
     if (allowSessionCreation || hasSessionTarget) {
       await this.refreshStateAndSessionTarget();
+      if (!this.isLifecycleCurrent(generation)) {
+        await this.shutdownProcess();
+        return false;
+      }
     }
     this.setReady(true);
     return true;
@@ -467,6 +497,11 @@ export class PiChatRuntime implements ChatRuntime {
   }
 
   cleanup(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.lifecycleGeneration += 1;
     this.activeTurn?.queue.close();
     this.extensionBridge?.cleanup();
     void this.shutdownProcess();
@@ -986,6 +1021,10 @@ export class PiChatRuntime implements ChatRuntime {
     for (const listener of this.readyListeners) {
       listener(ready);
     }
+  }
+
+  private isLifecycleCurrent(generation: number): boolean {
+    return !this.disposed && generation === this.lifecycleGeneration;
   }
 
   private formatRuntimeError(error: unknown): string {

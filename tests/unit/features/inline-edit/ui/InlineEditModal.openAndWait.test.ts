@@ -116,6 +116,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -221,6 +222,7 @@ describe('InlineEditModal - openAndWait', () => {
           }),
         }),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -330,6 +332,7 @@ describe('InlineEditModal - openAndWait', () => {
           }),
         }),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -444,6 +447,7 @@ describe('InlineEditModal - openAndWait', () => {
           }),
         }),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -538,6 +542,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -680,6 +685,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -785,6 +791,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -916,6 +923,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -1021,6 +1029,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -1150,6 +1159,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -1250,6 +1260,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -1369,6 +1380,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
         getSdkCommands: jest.fn().mockReturnValue([]),
       } as any;
+      plugin.providerHost = plugin;
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -1481,6 +1493,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const oldMarkdown = '```ts\nconst value = 1;\n```';
       const newMarkdown = '```ts\nconst value = 2;\n```';
+      plugin.providerHost = plugin;
       const editor = {
         getCursor: jest.fn((which: string) => which === 'from'
           ? { line: 0, ch: 0 }

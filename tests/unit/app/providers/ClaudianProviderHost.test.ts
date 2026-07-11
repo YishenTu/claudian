@@ -1,5 +1,4 @@
 import { ClaudianProviderHost } from '@/app/providers/ClaudianProviderHost';
-import type { ChatRuntime } from '@/core/runtime/ChatRuntime';
 import type ClaudianPlugin from '@/main';
 
 function createPlugin(overrides: Record<string, unknown> = {}): ClaudianPlugin {
@@ -47,15 +46,10 @@ describe('ClaudianProviderHost', () => {
 
   it('delivers provider runtime recycling to views in their existing order', async () => {
     const trace: string[] = [];
-    const runtime = { cleanup: jest.fn(() => trace.push('cleanup')) } as unknown as ChatRuntime;
     const createView = (id: string) => ({
       getTabManager: () => ({
-        broadcastToProviderTabs: async (
-          providerId: string,
-          action: (service: ChatRuntime) => Promise<void>,
-        ) => {
-          trace.push(`${id}:broadcast:${providerId}`);
-          await action(runtime);
+        recycleProviderRuntimes: async (providerId: string) => {
+          trace.push(`${id}:recycle:${providerId}`);
         },
       }),
       invalidateProviderCommandCaches: (providerIds: string[]) => {
@@ -71,12 +65,10 @@ describe('ClaudianProviderHost', () => {
     await host.recycleProviderRuntimes('opencode');
 
     expect(trace).toEqual([
-      'first:broadcast:opencode',
-      'cleanup',
+      'first:recycle:opencode',
       'first:invalidate:opencode',
       'first:refresh',
-      'second:broadcast:opencode',
-      'cleanup',
+      'second:recycle:opencode',
       'second:invalidate:opencode',
       'second:refresh',
     ]);

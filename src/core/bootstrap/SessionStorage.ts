@@ -61,6 +61,9 @@ export class SessionStorage {
 
       const content = await this.adapter.read(filePath);
       const metadata = JSON.parse(content) as SessionMetadata;
+      if (metadata.id !== id || !isValidSessionMetadataId(metadata.id)) {
+        return null;
+      }
 
       if (filePath !== this.getMetadataPath(id)) {
         await this.saveMetadata(metadata);

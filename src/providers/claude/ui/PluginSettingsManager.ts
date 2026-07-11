@@ -4,6 +4,7 @@ import type {
   AppAgentManager,
   AppPluginManager,
 } from '../../../core/providers/types';
+import { isNotifiedMutationError } from '../../../core/storage/NotifiedMutationError';
 import type { PluginInfo } from '../../../core/types';
 
 export interface PluginSettingsManagerDeps {
@@ -108,9 +109,11 @@ export class PluginSettingsManager {
   private async togglePlugin(pluginId: string) {
     const plugin = this.pluginManager.getPlugins().find(p => p.id === pluginId);
     const wasEnabled = plugin?.enabled ?? false;
+    let didPersistToggle = false;
 
     try {
       await this.pluginManager.togglePlugin(pluginId);
+      didPersistToggle = true;
       await this.agentManager.loadAgents();
 
       try {
@@ -121,9 +124,21 @@ export class PluginSettingsManager {
 
       new Notice(`Plugin "${pluginId}" ${wasEnabled ? 'disabled' : 'enabled'}`);
     } catch (err) {
-      await this.pluginManager.togglePlugin(pluginId);
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      new Notice(`Failed to toggle plugin: ${message}`);
+      if (didPersistToggle) {
+        try {
+          await this.pluginManager.togglePlugin(pluginId);
+        } catch (rollbackError) {
+          if (!isNotifiedMutationError(rollbackError)) {
+            const message = rollbackError instanceof Error ? rollbackError.message : 'Unknown error';
+            new Notice(`Failed to roll back plugin toggle: ${message}`);
+          }
+          return;
+        }
+      }
+      if (!isNotifiedMutationError(err)) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        new Notice(`Failed to toggle plugin: ${message}`);
+      }
     } finally {
       this.render();
     }

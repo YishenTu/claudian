@@ -126,6 +126,8 @@ export class CodexChatRuntime implements ChatRuntime {
   private serverRequestRouter = new CodexServerRequestRouter();
   private ready = false;
   private readinessFlight: { key: string; promise: Promise<boolean> } | null = null;
+  private disposed = false;
+  private lifecycleGeneration = 0;
   private readyListeners = new Set<(ready: boolean) => void>();
   private clientConfigKey: string | null = null;
   private currentTurnId: string | null = null;
@@ -228,6 +230,9 @@ export class CodexChatRuntime implements ChatRuntime {
   }
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
+    if (this.disposed) {
+      throw new Error('Codex runtime has been disposed.');
+    }
     const key = JSON.stringify(options ?? {});
     if (this.readinessFlight) {
       if (this.readinessFlight.key === key) {
@@ -237,7 +242,8 @@ export class CodexChatRuntime implements ChatRuntime {
       return this.ensureReady(options);
     }
 
-    const promise = this.ensureReadyInternal(options);
+    const generation = this.lifecycleGeneration;
+    const promise = this.ensureReadyInternal(options, generation);
     this.readinessFlight = { key, promise };
     return promise.finally(() => {
       if (this.readinessFlight?.promise === promise) {
@@ -246,7 +252,11 @@ export class CodexChatRuntime implements ChatRuntime {
     });
   }
 
-  private async ensureReadyInternal(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
+  private async ensureReadyInternal(
+    options: ChatRuntimeEnsureReadyOptions | undefined,
+    generation: number,
+  ): Promise<boolean> {
+    this.assertLifecycleCurrent(generation);
     const promptSettings = this.getSystemPromptSettings();
     const promptKey = computeSystemPromptKey(promptSettings);
     const launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, this.providerId);
@@ -265,9 +275,15 @@ export class CodexChatRuntime implements ChatRuntime {
 
     if (shouldRebuild) {
       await this.shutdownProcess();
+      this.assertLifecycleCurrent(generation);
       await this.startAppServer(launchSpec, clientConfigKey);
+      if (!this.isLifecycleCurrent(generation)) {
+        await this.shutdownProcess();
+        this.assertLifecycleCurrent(generation);
+      }
     }
 
+    this.assertLifecycleCurrent(generation);
     this.setReady(true);
     return shouldRebuild;
   }
@@ -657,6 +673,11 @@ export class CodexChatRuntime implements ChatRuntime {
   }
 
   cleanup(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.lifecycleGeneration += 1;
     this.cancel();
     this.teardownState();
     this.readyListeners.clear();
@@ -811,6 +832,16 @@ export class CodexChatRuntime implements ChatRuntime {
     this.ready = ready;
     for (const listener of this.readyListeners) {
       listener(ready);
+    }
+  }
+
+  private isLifecycleCurrent(generation: number): boolean {
+    return !this.disposed && generation === this.lifecycleGeneration;
+  }
+
+  private assertLifecycleCurrent(generation: number): void {
+    if (!this.isLifecycleCurrent(generation)) {
+      throw new Error('Codex runtime has been disposed.');
     }
   }
 

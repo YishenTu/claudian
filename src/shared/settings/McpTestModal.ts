@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import { Modal, Notice, setIcon } from 'obsidian';
 
 import type { McpTestResult, McpTool } from '../../core/mcp/McpTester';
+import { isNotifiedMutationError } from '../../core/storage/NotifiedMutationError';
 
 function formatToggleError(error: unknown): string {
   if (!(error instanceof Error)) return 'Failed to update tool setting';
@@ -258,7 +259,9 @@ export class McpTestModal extends Modal {
       container.toggleClass('is-enabled', !wasDisabled);
       this.updateToolState(toolEl, !wasDisabled);
       this.updateToggleAllButton();
-      new Notice(formatToggleError(error));
+      if (!isNotifiedMutationError(error)) {
+        new Notice(formatToggleError(error));
+      }
     } finally {
       checkbox.disabled = false;
     }
@@ -329,7 +332,9 @@ export class McpTestModal extends Modal {
         this.updateToolState(toolEl, isEnabled);
       }
       this.updateToggleAllButton();
-      new Notice(formatToggleError(error));
+      if (!isNotifiedMutationError(error)) {
+        new Notice(formatToggleError(error));
+      }
     }
 
     for (const { checkbox } of this.toolToggles.values()) {
