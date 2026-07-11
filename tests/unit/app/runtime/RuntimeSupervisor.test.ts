@@ -63,4 +63,17 @@ describe('RuntimeSupervisor', () => {
     expect(trace).toEqual(['runtime:cleanup']);
     expect(supervisor.current).toBeNull();
   });
+
+  it('keeps the runtime visible during cleanup and preserves it when cleanup throws', () => {
+    const runtime = {
+      cleanup: jest.fn(() => {
+        expect(supervisor.current).toBe(runtime);
+        throw new Error('cleanup failed');
+      }),
+    } as unknown as ChatRuntime;
+    const supervisor = new RuntimeSupervisor(runtime);
+
+    expect(() => supervisor.cleanup()).toThrow('cleanup failed');
+    expect(supervisor.current).toBe(runtime);
+  });
 });

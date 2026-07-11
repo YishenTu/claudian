@@ -74,8 +74,10 @@ export class RuntimeSupervisor implements ChatRuntime {
 
   cleanup(): void {
     const runtime = this.runtime;
-    this.runtime = null;
     runtime?.cleanup();
+    if (this.runtime === runtime) {
+      this.runtime = null;
+    }
   }
 
   rewind(
