@@ -25,6 +25,7 @@ import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import { Notice } from 'obsidian';
 
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
+import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
   AppAgentManager,
@@ -56,7 +57,6 @@ import type {
   ToolCallInfo,
 } from '../../../core/types';
 import type { ClaudianSettings, PermissionMode } from '../../../core/types/settings';
-import type ClaudianPlugin from '../../../main';
 import { stripCurrentNoteContext } from '../../../utils/context';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
@@ -133,7 +133,7 @@ function isImageAttachmentArray(value: unknown): value is ImageAttachment[] {
 
 export class ClaudianService implements ChatRuntime {
   readonly providerId = CLAUDE_PROVIDER_CAPABILITIES.providerId;
-  private plugin: ClaudianPlugin;
+  private plugin: ProviderHost;
   private agentManager: Pick<AppAgentManager, 'setBuiltinAgentNames'> | null;
   private pluginManager: AppPluginManager | null;
   private abortController: AbortController | null = null;
@@ -204,14 +204,14 @@ export class ClaudianService implements ChatRuntime {
     };
   }
 
-  private getLegacyPluginDeps(): ClaudianPlugin & {
+  private getLegacyPluginDeps(): ProviderHost & {
     agentManager?: Pick<AppAgentManager, 'setBuiltinAgentNames'>;
     pluginManager?: AppPluginManager;
   } {
     return this.plugin;
   }
 
-  constructor(plugin: ClaudianPlugin, services: ClaudeRuntimeServices | McpServerManager) {
+  constructor(plugin: ProviderHost, services: ClaudeRuntimeServices | McpServerManager) {
     this.plugin = plugin;
     const legacyPlugin = this.getLegacyPluginDeps();
 
@@ -1860,6 +1860,9 @@ export class ClaudianService implements ChatRuntime {
           this.currentConfig.permissionMode = mode;
           this.currentConfig.sdkPermissionMode = sdkMode;
         }
+      },
+      notifyAlwaysAppliedOnce: () => {
+        new Notice('Always approval could only be applied once because no permission scope was available.');
       },
     });
   }

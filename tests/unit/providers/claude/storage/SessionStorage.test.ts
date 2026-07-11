@@ -1,5 +1,6 @@
 import '@/providers';
 
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderId } from '@/core/providers/types';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation, SessionMetadata, UsageInfo } from '@/core/types';
@@ -36,6 +37,13 @@ describe('SessionStorage', () => {
       const path = storage.getMetadataPath('session-abc');
       expect(path).toBe('.claudian/sessions/session-abc.meta.json');
     });
+
+    it.each(['', '.', '..', '../escape', 'nested/id', 'nested\\id', '/absolute', '%2Fescape', '%5cescape'])(
+      'rejects unsafe metadata id %p before path construction',
+      (id) => {
+        expect(() => storage.getMetadataPath(id)).toThrow('Invalid session metadata id');
+      },
+    );
   });
 
   describe('saveMetadata', () => {
@@ -383,6 +391,25 @@ describe('SessionStorage', () => {
       expect(metas).toHaveLength(1);
       expect(metas[0].id).toBe('good');
     });
+
+    it('skips metadata whose JSON id does not match the filename without modifying it', async () => {
+      const original = JSON.stringify({
+        id: 'different-id',
+        title: 'Mismatch',
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      mockAdapter.listFiles.mockResolvedValue([
+        '.claudian/sessions/filename-id.meta.json',
+        '.claudian/sessions/%2Funsafe.meta.json',
+      ]);
+      mockAdapter.read.mockResolvedValue(original);
+
+      await expect(storage.listMetadata()).resolves.toEqual([]);
+      expect(mockAdapter.read).toHaveBeenCalledTimes(1);
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+      expect(mockAdapter.delete).not.toHaveBeenCalled();
+    });
   });
 
   describe('listAllConversations', () => {
@@ -592,6 +619,24 @@ describe('SessionStorage', () => {
   });
 
   describe('toSessionMetadata', () => {
+    it('does not fall back to unsanitized state when the provider rejects it', () => {
+      const service = ProviderRegistry.getConversationHistoryService('claude');
+      const sanitizer = jest.spyOn(service, 'buildPersistedProviderState').mockReturnValue(undefined);
+      const conversation: Conversation = {
+        id: 'conv-rejected-provider-state',
+        providerId: 'claude',
+        title: 'Rejected state',
+        createdAt: 1,
+        updatedAt: 1,
+        sessionId: null,
+        messages: [],
+        providerState: { untrustedPath: '/outside/root/session.jsonl' },
+      };
+
+      expect(storage.toSessionMetadata(conversation).providerState).toBeUndefined();
+      sanitizer.mockRestore();
+    });
+
     it('converts Conversation to SessionMetadata', () => {
       const usage: UsageInfo = {
         model: 'claude-opus-4-5',

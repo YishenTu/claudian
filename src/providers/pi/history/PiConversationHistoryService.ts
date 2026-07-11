@@ -1,9 +1,13 @@
 import * as fs from 'node:fs/promises';
 
-import type { ProviderConversationHistoryService } from '../../../core/providers/types';
+import type {
+  ProviderConversationHistoryService,
+  ProviderHistoryPathContext,
+} from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { buildPersistedPiState, getPiState } from '../types';
-import { findPiSessionFile, parsePiSessionContent } from './PiHistoryStore';
+import { resolvePiSessionFileHint } from './PiHistoryPathResolver';
+import { parsePiSessionContent } from './PiHistoryStore';
 
 export class PiConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedKeys = new Map<string, string>();
@@ -11,6 +15,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   async hydrateConversationHistory(
     conversation: Conversation,
     vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<void> {
     const state = getPiState(conversation.providerState);
     if (this.isPendingForkConversation(conversation)) {
@@ -18,8 +23,12 @@ export class PiConversationHistoryService implements ProviderConversationHistory
         return;
       }
 
-      const sourceSessionFile = state.forkSourceSessionFile
-        ?? findPiSessionFile(state.forkSource!.sessionId, vaultPath);
+      const sourceSessionFile = resolvePiSessionFileHint(
+        state.forkSourceSessionFile,
+        state.forkSource!.sessionId,
+        vaultPath,
+        pathContext,
+      );
       if (!sourceSessionFile) {
         this.hydratedKeys.delete(conversation.id);
         return;
@@ -44,13 +53,18 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       return;
     }
 
-    const sessionTarget = state.sessionFile ?? state.sessionId ?? conversation.sessionId;
+    const sessionTarget = state.sessionId ?? conversation.sessionId;
     if (!sessionTarget) {
       this.hydratedKeys.delete(conversation.id);
       return;
     }
 
-    const sessionFile = state.sessionFile ?? findPiSessionFile(sessionTarget, vaultPath);
+    const sessionFile = resolvePiSessionFileHint(
+      state.sessionFile,
+      sessionTarget,
+      vaultPath,
+      pathContext,
+    );
     if (!sessionFile) {
       this.hydratedKeys.delete(conversation.id);
       return;

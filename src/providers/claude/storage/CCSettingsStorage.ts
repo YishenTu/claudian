@@ -1,3 +1,5 @@
+import { Notice } from 'obsidian';
+
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type {
   CCPermissions,
@@ -54,11 +56,12 @@ export class CCSettingsStorage {
     // Preserve CC-specific fields we don't manage
     let existing: Record<string, unknown> = {};
     if (await this.adapter.exists(CC_SETTINGS_PATH)) {
+      const content = await this.adapter.read(CC_SETTINGS_PATH);
       try {
-        const content = await this.adapter.read(CC_SETTINGS_PATH);
         existing = JSON.parse(content) as Record<string, unknown>;
       } catch {
-        // Parse error - start fresh with default settings
+        new Notice('Failed to update .claude/settings.json because it contains invalid JSON.');
+        return;
       }
     }
 

@@ -1,4 +1,4 @@
-import { spawnSync as defaultSpawnSync } from 'node:child_process';
+import { spawn as defaultSpawn } from 'node:child_process';
 
 import { findNodeExecutable } from '../../../utils/env';
 
@@ -21,7 +21,7 @@ interface SqliteModule {
 export interface OpencodeSqliteReaderDependencies {
   findNodeExecutable?: () => string | null;
   requireSqliteModule?: () => SqliteModule | null;
-  spawnSync?: typeof defaultSpawnSync;
+  spawn?: typeof defaultSpawn;
 }
 
 export const OPENCODE_SQLITE_QUERY_MAX_BUFFER = 100 * 1024 * 1024;
@@ -58,11 +58,11 @@ export async function loadOpencodeSessionRows(
     return viaCurrentProcess;
   }
 
-  const viaNodeProcess = loadSessionRowsWithNodeProcess(
+  const viaNodeProcess = await loadSessionRowsWithNodeProcess(
     databasePath,
     sessionId,
     resolvedDependencies.findNodeExecutable,
-    resolvedDependencies.spawnSync,
+    resolvedDependencies.spawn,
   );
   if (viaNodeProcess) {
     return viaNodeProcess;
@@ -71,7 +71,7 @@ export async function loadOpencodeSessionRows(
   return loadSessionRowsWithSqliteCli(
     databasePath,
     sessionId,
-    resolvedDependencies.spawnSync,
+    resolvedDependencies.spawn,
   );
 }
 
@@ -81,7 +81,7 @@ function resolveDependencies(
   return {
     findNodeExecutable,
     requireSqliteModule,
-    spawnSync: defaultSpawnSync,
+    spawn: defaultSpawn,
     ...dependencies,
   };
 }
@@ -129,18 +129,18 @@ function loadSessionRowsWithCurrentProcessSqlite(
   }
 }
 
-function loadSessionRowsWithNodeProcess(
+async function loadSessionRowsWithNodeProcess(
   databasePath: string,
   sessionId: string,
   findNode: () => string | null,
-  spawnSync: typeof defaultSpawnSync,
-): StoredSessionRows | null {
+  spawn: typeof defaultSpawn,
+): Promise<StoredSessionRows | null> {
   const nodePath = findNode();
   if (!nodePath) {
     return null;
   }
 
-  const result = spawnSync(
+  const stdout = await runBufferedChild(
     nodePath,
     [
       '-e',
@@ -150,35 +150,26 @@ function loadSessionRowsWithNodeProcess(
       OPENCODE_MESSAGE_ROW_SQL,
       OPENCODE_PART_ROW_SQL,
     ],
-    {
-      encoding: 'utf8',
-      maxBuffer: OPENCODE_SQLITE_QUERY_MAX_BUFFER,
-      windowsHide: true,
-    },
+    spawn,
   );
-
-  if (result.error || result.status !== 0) {
-    return null;
-  }
-
-  return parseStoredSessionRows(getSpawnStdout(result.stdout));
+  return stdout === null ? null : parseStoredSessionRows(stdout);
 }
 
-function loadSessionRowsWithSqliteCli(
+async function loadSessionRowsWithSqliteCli(
   databasePath: string,
   sessionId: string,
-  spawnSync: typeof defaultSpawnSync,
-): StoredSessionRows | null {
+  spawn: typeof defaultSpawn,
+): Promise<StoredSessionRows | null> {
   const escapedSessionId = escapeSqlLiteral(sessionId);
-  const messageRows = runSqlite3JsonQuery(
+  const messageRows = await runSqlite3JsonQuery(
     databasePath,
     buildOpencodeMessageRowsSql(`'${escapedSessionId}'`),
-    spawnSync,
+    spawn,
   );
-  const partRows = runSqlite3JsonQuery(
+  const partRows = await runSqlite3JsonQuery(
     databasePath,
     buildOpencodePartRowsSql(`'${escapedSessionId}'`),
-    spawnSync,
+    spawn,
   );
 
   if (!messageRows || !partRows) {
@@ -188,26 +179,65 @@ function loadSessionRowsWithSqliteCli(
   return { messageRows, partRows };
 }
 
-function runSqlite3JsonQuery(
+async function runSqlite3JsonQuery(
   databasePath: string,
   sql: string,
-  spawnSync: typeof defaultSpawnSync,
-): StoredRow[] | null {
-  const result = spawnSync(
+  spawn: typeof defaultSpawn,
+): Promise<StoredRow[] | null> {
+  const stdout = await runBufferedChild(
     'sqlite3',
     ['-json', databasePath, sql],
-    {
-      encoding: 'utf8',
-      maxBuffer: OPENCODE_SQLITE_QUERY_MAX_BUFFER,
-      windowsHide: true,
-    },
+    spawn,
   );
+  return stdout === null ? null : parseStoredRows(stdout);
+}
 
-  if (result.error || result.status !== 0) {
-    return null;
-  }
+function runBufferedChild(
+  command: string,
+  args: string[],
+  spawn: typeof defaultSpawn,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let size = 0;
+    let timer: number | null = null;
+    const chunks: Buffer[] = [];
+    let child: ReturnType<typeof defaultSpawn>;
+    try {
+      child = spawn(command, args, {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        windowsHide: true,
+      });
+    } catch {
+      resolve(null);
+      return;
+    }
+    const finish = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) window.clearTimeout(timer);
+      resolve(value);
+    };
 
-  return parseStoredRows(getSpawnStdout(result.stdout));
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > OPENCODE_SQLITE_QUERY_MAX_BUFFER) {
+        child.kill('SIGKILL');
+        finish(null);
+        return;
+      }
+      chunks.push(buffer);
+    });
+    child.once('error', () => finish(null));
+    child.once('close', (code) => {
+      finish(code === 0 ? Buffer.concat(chunks).toString('utf8') : null);
+    });
+    timer = window.setTimeout(() => {
+      child.kill('SIGKILL');
+      finish(null);
+    }, 10_000);
+  });
 }
 
 function parseStoredSessionRows(value: string): StoredSessionRows | null {
@@ -237,12 +267,6 @@ function parseStoredRowsValue(value: unknown): StoredRow[] | null {
   return Array.isArray(value)
     ? value.filter((row): row is StoredRow => isPlainObject(row))
     : null;
-}
-
-function getSpawnStdout(stdout: string | Buffer | null | undefined): string {
-  return typeof stdout === 'string'
-    ? stdout
-    : stdout?.toString('utf8') ?? '';
 }
 
 function escapeSqlLiteral(value: string): string {

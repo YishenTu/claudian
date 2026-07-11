@@ -30,6 +30,7 @@ export interface ClaudeApprovalHandlerDeps {
   getPermissionMode: () => PermissionMode;
   resolveSDKPermissionMode: (mode: PermissionMode) => SDKPermissionMode;
   syncPermissionMode: (mode: PermissionMode, sdkMode: SDKPermissionMode) => void;
+  notifyAlwaysAppliedOnce: () => void;
 }
 
 export function createClaudeApprovalCallback(
@@ -134,6 +135,10 @@ export function createClaudeApprovalCallback(
           decision,
           options.suggestions,
         );
+        if (decision === 'allow-always' && updatedPermissions.length === 0) {
+          deps.notifyAlwaysAppliedOnce();
+          return { behavior: 'allow', updatedInput: input };
+        }
         return { behavior: 'allow', updatedInput: input, updatedPermissions };
       }
 

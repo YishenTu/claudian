@@ -1,3 +1,5 @@
+import { Notice } from 'obsidian';
+
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type {
   ManagedMcpConfigFile,
@@ -96,14 +98,15 @@ export class McpStorage {
 
     let existing: Record<string, unknown> | null = null;
     if (await this.adapter.exists(MCP_CONFIG_PATH)) {
+      const raw = await this.adapter.read(MCP_CONFIG_PATH);
       try {
-        const raw = await this.adapter.read(MCP_CONFIG_PATH);
         const parsed: unknown = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
           existing = parsed as Record<string, unknown>;
         }
       } catch {
-        existing = null;
+        new Notice('Failed to update .claude/mcp.json because it contains invalid JSON.');
+        return;
       }
     }
 

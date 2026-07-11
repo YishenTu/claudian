@@ -39,6 +39,54 @@ describe('PiConversationHistoryService', () => {
     });
   });
 
+  it('rejects an out-of-root metadata path and re-resolves by logical session id', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-home-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-outside-'));
+    const trustedDir = path.join(home, '.pi', 'agent', 'sessions');
+    await fs.mkdir(trustedDir, { recursive: true });
+    const trustedFile = path.join(trustedDir, 's1.jsonl');
+    const outsideFile = path.join(outside, 's1.jsonl');
+    await fs.writeFile(trustedFile, JSON.stringify({
+      id: 'trusted',
+      message: { content: 'Trusted', role: 'user' },
+      type: 'entry',
+    }));
+    await fs.writeFile(outsideFile, JSON.stringify({
+      id: 'outside',
+      message: { content: 'Outside', role: 'user' },
+      type: 'entry',
+    }));
+    const conversation = createConversation(outsideFile);
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { HOME: home } },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['Trusted']);
+    expect(conversation.providerState).toEqual({ sessionFile: outsideFile, sessionId: 's1' });
+  });
+
+  it('accepts a metadata path under the explicitly configured session directory', async () => {
+    const configuredDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-configured-'));
+    const sessionFile = path.join(configuredDir, 'session.jsonl');
+    await fs.writeFile(sessionFile, JSON.stringify({
+      id: 'configured',
+      message: { content: 'Configured', role: 'user' },
+      type: 'entry',
+    }));
+    const conversation = createConversation(sessionFile);
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { PI_CODING_AGENT_SESSION_DIR: configuredDir } },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['Configured']);
+  });
+
   it('builds pending fork state from source session metadata', () => {
     const service = new PiConversationHistoryService();
     const conversation = createConversation('/tmp/session.jsonl');

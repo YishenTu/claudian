@@ -1,3 +1,5 @@
+import * as fsp from 'node:fs/promises';
+
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -1315,6 +1317,56 @@ export function findCodexSessionFile(
   return null;
 }
 
+export async function findCodexSessionFileAsync(
+  threadId: string,
+  root: string = path.join(os.homedir(), '.codex', 'sessions'),
+  timeoutMs = 10_000,
+): Promise<string | null> {
+  if (!threadId || !SAFE_SESSION_ID_PATTERN.test(threadId)) {
+    return null;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  if (!(await pathExists(root))) {
+    return null;
+  }
+  const directPath = path.join(root, `${threadId}.jsonl`);
+  if (await pathExists(directPath)) {
+    return directPath;
+  }
+
+  const stack = [root];
+  while (stack.length > 0 && Date.now() <= deadline) {
+    const current = stack.pop();
+    if (!current) continue;
+
+    let entries: fs.Dirent[];
+    try {
+      entries = await fsp.readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith(`-${threadId}.jsonl`)) {
+        return fullPath;
+      }
+    }
+  }
+  return null;
+}
+
+async function pathExists(value: string): Promise<boolean> {
+  try {
+    await fsp.access(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function parseCodexSessionFile(filePath: string): ChatMessage[] {
   let content: string;
   try {
@@ -1324,6 +1376,22 @@ export function parseCodexSessionFile(filePath: string): ChatMessage[] {
   }
 
   return parseCodexSessionContent(content);
+}
+
+export async function parseCodexSessionFileAsync(
+  filePath: string,
+  timeoutMs = 10_000,
+): Promise<ChatMessage[]> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const content = await fsp.readFile(filePath, { encoding: 'utf-8', signal: controller.signal });
+    return parseCodexSessionContent(content);
+  } catch {
+    return [];
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 export interface CodexParsedTurn {

@@ -13,14 +13,31 @@ export {
   SESSIONS_PATH,
 };
 
+const SAFE_METADATA_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+export function isValidSessionMetadataId(id: string): boolean {
+  return SAFE_METADATA_ID_PATTERN.test(id)
+    && id !== '.'
+    && id !== '..'
+    && !/%(?:2f|5c)/i.test(id);
+}
+
+function assertValidSessionMetadataId(id: string): void {
+  if (!isValidSessionMetadataId(id)) {
+    throw new Error(`Invalid session metadata id: ${JSON.stringify(id)}`);
+  }
+}
+
 export class SessionStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
   getMetadataPath(id: string): string {
+    assertValidSessionMetadataId(id);
     return `${SESSIONS_PATH}/${id}.meta.json`;
   }
 
   getLegacyMetadataPath(id: string): string {
+    assertValidSessionMetadataId(id);
     return `${LEGACY_SESSIONS_PATH}/${id}.meta.json`;
   }
 
@@ -32,6 +49,9 @@ export class SessionStorage {
   }
 
   async loadMetadata(id: string): Promise<SessionMetadata | null> {
+    if (!isValidSessionMetadataId(id)) {
+      return null;
+    }
     const filePath = await this.getLoadPath(id);
 
     try {
@@ -63,9 +83,16 @@ export class SessionStorage {
     const files = await this.listUniqueMetadataFiles();
 
     for (const filePath of files) {
+      const fileId = this.getMetadataIdFromPath(filePath);
+      if (!fileId || !isValidSessionMetadataId(fileId)) {
+        continue;
+      }
       try {
         const content = await this.adapter.read(filePath);
         const raw = JSON.parse(content) as SessionMetadata;
+        if (raw.id !== fileId || !isValidSessionMetadataId(raw.id)) {
+          continue;
+        }
         metas.push(raw);
 
         if (filePath.startsWith(`${LEGACY_SESSIONS_PATH}/`)) {
@@ -100,10 +127,10 @@ export class SessionStorage {
   }
 
   toSessionMetadata(conversation: Conversation): SessionMetadata {
-    const providerState = ProviderRegistry
-      .getConversationHistoryService(conversation.providerId)
-      .buildPersistedProviderState?.(conversation)
-      ?? conversation.providerState;
+    const historyService = ProviderRegistry.getConversationHistoryService(conversation.providerId);
+    const providerState = historyService.buildPersistedProviderState
+      ? historyService.buildPersistedProviderState(conversation)
+      : conversation.providerState;
 
     return {
       id: conversation.id,
@@ -176,5 +203,13 @@ export class SessionStorage {
   private getFileName(filePath: string): string {
     const parts = filePath.split('/');
     return parts[parts.length - 1] ?? filePath;
+  }
+
+  private getMetadataIdFromPath(filePath: string): string | null {
+    const fileName = this.getFileName(filePath);
+    const suffix = '.meta.json';
+    return fileName.endsWith(suffix)
+      ? fileName.slice(0, -suffix.length)
+      : null;
   }
 }

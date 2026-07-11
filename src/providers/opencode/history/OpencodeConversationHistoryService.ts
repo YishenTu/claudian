@@ -1,6 +1,10 @@
-import type { ProviderConversationHistoryService } from '../../../core/providers/types';
+import type {
+  ProviderConversationHistoryService,
+  ProviderHistoryPathContext,
+} from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { getOpencodeState, type OpencodeProviderState } from '../types';
+import { resolveOpencodeDatabasePathHint } from './OpencodeHistoryPathResolver';
 import {
   isOpencodeSessionHydrationDiagnosticMessage,
   loadOpencodeSessionMessages,
@@ -12,6 +16,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   async hydrateConversationHistory(
     conversation: Conversation,
     _vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<void> {
     const sessionId = conversation.sessionId;
     if (!sessionId) {
@@ -20,7 +25,8 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     }
 
     const state = getOpencodeState(conversation.providerState);
-    const hydrationKey = `${sessionId}::${state.databasePath ?? ''}`;
+    const databasePath = resolveOpencodeDatabasePathHint(state.databasePath, pathContext);
+    const hydrationKey = `${sessionId}::${databasePath ?? ''}`;
     if (
       conversation.messages.length > 0
       && this.hydratedKeys.get(conversation.id) === hydrationKey
@@ -28,7 +34,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       return;
     }
 
-    const messages = await loadOpencodeSessionMessages(sessionId, state);
+    const messages = await loadOpencodeSessionMessages(sessionId, { databasePath: databasePath ?? undefined });
     if (messages.length === 0) {
       this.hydratedKeys.delete(conversation.id);
       return;

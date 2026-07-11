@@ -1,3 +1,5 @@
+import { Notice } from 'obsidian';
+
 import { parseClipboardConfig, tryParseClipboardConfig } from '@/core/mcp/McpConfigParser';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { McpStorage } from '@/providers/claude/storage/McpStorage';
@@ -420,7 +422,7 @@ describe('McpStorage', () => {
       expect(saved._claudian).toEqual({ customField: 'keep' });
     });
 
-    it('handles corrupted existing file gracefully', async () => {
+    it('aborts on malformed JSON without replacing the original bytes', async () => {
       const adapter = createMockAdapter({
         '.claude/mcp.json': 'not json',
       });
@@ -435,8 +437,10 @@ describe('McpStorage', () => {
         },
       ]);
 
-      const saved = JSON.parse(adapter._store['.claude/mcp.json']);
-      expect(saved.mcpServers.alpha).toEqual({ command: 'cmd' });
+      expect(adapter._store['.claude/mcp.json']).toBe('not json');
+      expect(Notice).toHaveBeenCalledWith(
+        'Failed to update .claude/mcp.json because it contains invalid JSON.',
+      );
     });
 
     it('preserves extra top-level fields in existing file', async () => {

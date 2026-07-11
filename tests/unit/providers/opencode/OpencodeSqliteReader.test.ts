@@ -1,16 +1,17 @@
-import type { spawnSync as nodeSpawnSync } from 'node:child_process';
+import type { spawn as nodeSpawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { PassThrough } from 'node:stream';
 
 import {
   loadOpencodeSessionRows,
   OPENCODE_MESSAGE_ROW_SQL,
-  OPENCODE_SQLITE_QUERY_MAX_BUFFER,
 } from '../../../../src/providers/opencode/history/OpencodeSqliteReader';
 
-type SpawnSync = typeof nodeSpawnSync;
+type Spawn = typeof nodeSpawn;
 
 describe('loadOpencodeSessionRows', () => {
   let tmpRoot: string;
@@ -48,26 +49,25 @@ describe('loadOpencodeSessionRows', () => {
   });
 
   it('uses a discovered Node executable before the system sqlite3 fallback', async () => {
-    const spawnSync = jest.fn().mockReturnValue({
-      error: undefined,
+    const spawn = createSpawnMock([{
       status: 0,
       stdout: JSON.stringify({
         messageRows: [{ id: 'msg-user' }],
         partRows: [{ id: 'part-user' }],
       }),
-    });
+    }]);
 
     await expect(loadOpencodeSessionRows('/tmp/opencode.db', 'ses-node', {
       findNodeExecutable: () => '/usr/local/bin/node',
       requireSqliteModule: () => null,
-      spawnSync: toSpawnSync(spawnSync),
+      spawn,
     })).resolves.toEqual({
       messageRows: [{ id: 'msg-user' }],
       partRows: [{ id: 'part-user' }],
     });
 
-    expect(spawnSync).toHaveBeenCalledTimes(1);
-    expect(spawnSync).toHaveBeenCalledWith(
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledWith(
       '/usr/local/bin/node',
       [
         '-e',
@@ -78,37 +78,35 @@ describe('loadOpencodeSessionRows', () => {
         expect.stringContaining('from part'),
       ],
       expect.objectContaining({
-        encoding: 'utf8',
-        maxBuffer: OPENCODE_SQLITE_QUERY_MAX_BUFFER,
+        stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
       }),
     );
   });
 
   it('keeps sqlite3 as a buffered compatibility fallback', async () => {
-    const spawnSync = jest.fn()
-      .mockReturnValueOnce({
-        error: undefined,
+    const spawn = createSpawnMock([
+      {
         status: 0,
         stdout: JSON.stringify([{ id: 'msg-user' }]),
-      })
-      .mockReturnValueOnce({
-        error: undefined,
+      },
+      {
         status: 0,
         stdout: JSON.stringify([{ id: 'part-user' }]),
-      });
+      },
+    ]);
 
     await expect(loadOpencodeSessionRows('/tmp/opencode.db', 'ses-with-quote\'s', {
       findNodeExecutable: () => null,
       requireSqliteModule: () => null,
-      spawnSync: toSpawnSync(spawnSync),
+      spawn,
     })).resolves.toEqual({
       messageRows: [{ id: 'msg-user' }],
       partRows: [{ id: 'part-user' }],
     });
 
-    expect(spawnSync).toHaveBeenCalledTimes(2);
-    expect(spawnSync).toHaveBeenNthCalledWith(
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenNthCalledWith(
       1,
       'sqlite3',
       [
@@ -117,12 +115,11 @@ describe('loadOpencodeSessionRows', () => {
         expect.stringContaining("where session_id = 'ses-with-quote''s'"),
       ],
       expect.objectContaining({
-        encoding: 'utf8',
-        maxBuffer: OPENCODE_SQLITE_QUERY_MAX_BUFFER,
+        stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
       }),
     );
-    expect(spawnSync).toHaveBeenNthCalledWith(
+    expect(spawn).toHaveBeenNthCalledWith(
       2,
       'sqlite3',
       [
@@ -131,16 +128,28 @@ describe('loadOpencodeSessionRows', () => {
         expect.stringContaining("where session_id = 'ses-with-quote''s'"),
       ],
       expect.objectContaining({
-        encoding: 'utf8',
-        maxBuffer: OPENCODE_SQLITE_QUERY_MAX_BUFFER,
+        stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
       }),
     );
   });
 });
 
-function toSpawnSync(mock: jest.Mock): SpawnSync {
-  return mock as unknown as SpawnSync;
+function createSpawnMock(
+  outputs: Array<{ status: number; stdout: string }>,
+): Spawn {
+  const mock = jest.fn(() => {
+    const output = outputs.shift() ?? { status: 1, stdout: '' };
+    const child = new EventEmitter() as any;
+    child.stdout = new PassThrough();
+    child.kill = jest.fn();
+    setImmediate(() => {
+      child.stdout.end(output.stdout);
+      child.emit('close', output.status);
+    });
+    return child;
+  });
+  return mock as unknown as Spawn;
 }
 
 function createFixtureDatabase(tmpRoot: string): string {

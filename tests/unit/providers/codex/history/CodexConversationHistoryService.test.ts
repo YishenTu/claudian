@@ -244,6 +244,86 @@ describe('CodexConversationHistoryService', () => {
     );
   });
 
+  it('does not open an out-of-root metadata path and re-resolves by thread id', async () => {
+    const threadId = 'thread-untrusted-path';
+    const trustedDir = path.join(tempHome, '.codex', 'sessions', '2026', '07', '11');
+    const outsideDir = path.join(tempHome, 'synced-other-device');
+    fs.mkdirSync(trustedDir, { recursive: true });
+    fs.mkdirSync(outsideDir, { recursive: true });
+    const trustedPath = path.join(trustedDir, `rollout-${threadId}.jsonl`);
+    const outsidePath = path.join(outsideDir, `rollout-${threadId}.jsonl`);
+    fs.writeFileSync(trustedPath, JSON.stringify({
+      timestamp: '2026-07-11T00:00:00.000Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'Trusted transcript.' }],
+      },
+    }));
+    fs.writeFileSync(outsidePath, JSON.stringify({
+      timestamp: '2026-07-11T00:00:00.000Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'Untrusted transcript.' }],
+      },
+    }));
+    const conversation: Conversation = {
+      id: 'conv-untrusted-path',
+      providerId: 'codex',
+      title: 'Synced metadata path',
+      createdAt: 1,
+      updatedAt: 1,
+      sessionId: threadId,
+      providerState: { threadId, sessionFilePath: outsidePath },
+      messages: [],
+    };
+
+    await new CodexConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { HOME: tempHome } },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['Trusted transcript.']);
+    expect((conversation.providerState as Record<string, unknown>).sessionFilePath).toBe(trustedPath);
+  });
+
+  it('accepts a metadata path under the explicitly configured Codex home', async () => {
+    const configuredHome = path.join(tempHome, 'configured-codex-home');
+    const transcriptPath = path.join(configuredHome, 'sessions', 'session.jsonl');
+    fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
+    fs.writeFileSync(transcriptPath, JSON.stringify({
+      timestamp: '2026-07-11T00:00:00.000Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'Configured transcript.' }],
+      },
+    }));
+    const conversation: Conversation = {
+      id: 'conv-configured-path',
+      providerId: 'codex',
+      title: 'Configured path',
+      createdAt: 1,
+      updatedAt: 1,
+      sessionId: 'configured-thread',
+      providerState: { threadId: 'configured-thread', sessionFilePath: transcriptPath },
+      messages: [],
+    };
+
+    await new CodexConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { CODEX_HOME: configuredHome, HOME: tempHome } },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['Configured transcript.']);
+  });
+
   describe('buildForkProviderState', () => {
     it('stores forkSource with sessionId and resumeAt in providerState', () => {
       const service = new CodexConversationHistoryService();
