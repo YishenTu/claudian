@@ -29,6 +29,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate release version
+        run: node scripts/check-release-version.mjs "${{ github.ref_name }}"
+
       - name: Build
         run: npm run build
 
