@@ -156,7 +156,12 @@ export async function loadSDKSessionMessages(
           if (subagent.agentId && isValidAgentId(subagent.agentId)) {
             sidecarLoads.push({
               subagent,
-              promise: loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId),
+              promise: loadSubagentToolCalls(
+                vaultPath,
+                sessionId,
+                subagent.agentId,
+                sessionPath,
+              ),
             });
           }
         }

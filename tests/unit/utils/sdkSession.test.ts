@@ -277,6 +277,23 @@ describe('sdkSession', () => {
       )).resolves.toBe('unknown');
     });
 
+    it('reports unknown when an unscanned symlink could contain the transcript', async () => {
+      mockFsPromises.access.mockRejectedValue(
+        Object.assign(new Error('Missing'), { code: 'ENOENT' }),
+      );
+      mockFsPromises.readdir.mockResolvedValue([{
+        isDirectory: () => false,
+        isFile: () => false,
+        isSymbolicLink: () => true,
+        name: 'linked-project',
+      }] as any);
+
+      await expect(getSDKSessionAvailability(
+        '/Users/test/vault',
+        'session-in-linked-project',
+      )).resolves.toBe('unknown');
+    });
+
     it('reports unknown for an invalid session ID', async () => {
       await expect(getSDKSessionAvailability(
         '/Users/test/vault',
@@ -2463,6 +2480,44 @@ describe('sdkSession', () => {
       expect(taskToolCall.subagent!.toolCalls).toHaveLength(1);
       expect(taskToolCall.subagent!.toolCalls[0].name).toBe('Grep');
       expect(taskToolCall.subagent!.toolCalls[0].result).toBe('3 matches found');
+    });
+
+    it('loads subagent tool calls beside a relocated session transcript', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockImplementation(async (filePath: any) => {
+        const p = String(filePath);
+        if (p === '/old-project/session-sidecar.jsonl') {
+          return [
+            '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Review"}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Review","prompt":"check","run_in_background":true}}]}}',
+            '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"ae5eb9a"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Launched"}]}}',
+          ].join('\n');
+        }
+        if (p === '/old-project/session-sidecar/subagents/agent-ae5eb9a.jsonl') {
+          return [
+            '{"type":"assistant","timestamp":"2024-01-15T10:02:00Z","message":{"content":[{"type":"tool_use","id":"sub-tool-1","name":"Grep","input":{"pattern":"TODO"}}]}}',
+            '{"type":"user","timestamp":"2024-01-15T10:02:01Z","message":{"content":[{"type":"tool_result","tool_use_id":"sub-tool-1","content":"3 matches found"}]}}',
+          ].join('\n');
+        }
+        return '';
+      });
+
+      const result = await loadSDKSessionMessages(
+        '/Users/test/vault',
+        'session-sidecar',
+        undefined,
+        '/old-project/session-sidecar.jsonl',
+      );
+
+      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Task'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+      expect(mockFsPromises.readFile).toHaveBeenCalledWith(
+        '/old-project/session-sidecar/subagents/agent-ae5eb9a.jsonl',
+        'utf-8',
+      );
+      expect(taskToolCall.subagent!.toolCalls).toEqual([
+        expect.objectContaining({ name: 'Grep', result: '3 matches found' }),
+      ]);
     });
   });
 });

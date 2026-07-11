@@ -3168,6 +3168,44 @@ describe('ClaudianService', () => {
   });
 
   describe('startResponseConsumer - crash recovery', () => {
+    it('closes a persistent query whose resume session is confirmed missing', async () => {
+      const missingSessionError = new Error(
+        'No conversation found with session ID: missing-session',
+      );
+      const mockPQ = {
+        [Symbol.asyncIterator]() { return this; },
+        async next() {
+          throw missingSessionError;
+        },
+        async return() { return { done: true, value: undefined }; },
+        interrupt: jest.fn().mockResolvedValue(undefined),
+      };
+      const onError = jest.fn();
+      const handler = createResponseHandler({
+        id: 'missing-session-test',
+        onChunk: jest.fn(),
+        onDone: jest.fn(),
+        onError,
+      });
+
+      (service as any).sessionManager.setSessionId('missing-session', 'claude-sonnet-4-5');
+      (service as any).persistentQuery = mockPQ;
+      (service as any).messageChannel = { close: jest.fn() };
+      (service as any).queryAbortController = { abort: jest.fn() };
+      (service as any).responseHandlers = [handler];
+      (service as any).shuttingDown = false;
+      (service as any).coldStartInProgress = false;
+      (service as any).responseConsumerRunning = false;
+
+      (service as any).startResponseConsumer();
+      const consumerPromise = (service as any).responseConsumerPromise;
+      await consumerPromise;
+
+      expect(onError).toHaveBeenCalledWith(missingSessionError);
+      expect((service as any).persistentQuery).toBeNull();
+      expect(service.getSessionId()).toBeNull();
+    });
+
     it('should attempt crash recovery when error occurs before any chunks', async () => {
       // Set up persistent query that will throw on iteration
       const crashError = new Error('process crashed');

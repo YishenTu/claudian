@@ -208,6 +208,64 @@ describe('ClaudeConversationHistoryService', () => {
   });
 
   describe('hydrateConversationHistory', () => {
+    it('drops a stale relocated path after the session appears in the current project', async () => {
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation();
+      const currentLocationSpy = jest.spyOn(historyStore, 'locateSDKSession')
+        .mockResolvedValueOnce({
+          availability: 'relocated',
+          sessionPath: '/old-project/session-1.jsonl',
+        })
+        .mockResolvedValueOnce({
+          availability: 'available',
+          sessionPath: '/vault/session-1.jsonl',
+        });
+      const locationsSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockResolvedValue(new Map());
+      const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
+        .mockResolvedValue({ messages: [], skippedLines: 0 });
+
+      await service.getConversationSessionAvailability(conversation, '/vault');
+      await service.getConversationSessionAvailability(conversation, '/vault');
+      await service.hydrateConversationHistory(conversation, '/vault');
+
+      expect(loadSpy).toHaveBeenCalledWith('/vault', 'session-1', undefined);
+
+      currentLocationSpy.mockRestore();
+      locationsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('retains a known relocated path when a later availability check is inconclusive', async () => {
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation();
+      const currentLocationSpy = jest.spyOn(historyStore, 'locateSDKSession')
+        .mockResolvedValueOnce({
+          availability: 'relocated',
+          sessionPath: '/old-project/session-1.jsonl',
+        })
+        .mockResolvedValueOnce({ availability: 'unknown' });
+      const locationsSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockResolvedValue(new Map());
+      const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
+        .mockResolvedValue({ messages: [], skippedLines: 0 });
+
+      await service.getConversationSessionAvailability(conversation, '/vault');
+      await service.getConversationSessionAvailability(conversation, '/vault');
+      await service.hydrateConversationHistory(conversation, '/vault');
+
+      expect(loadSpy).toHaveBeenCalledWith(
+        '/vault',
+        'session-1',
+        undefined,
+        '/old-project/session-1.jsonl',
+      );
+
+      currentLocationSpy.mockRestore();
+      locationsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
     it('replays every relocated session segment from its discovered path', async () => {
       const service = new ClaudeConversationHistoryService();
       const conversation = createConversation({

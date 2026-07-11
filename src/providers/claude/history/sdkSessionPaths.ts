@@ -134,6 +134,10 @@ export async function locateSDKSessions(
         }
       } else if (entry.isDirectory() && entry.name !== 'subagents') {
         pendingDirectories.push(entryPath);
+      } else if (!entry.isDirectory()) {
+        // Do not follow symlinks or special files during a global history scan.
+        // Their contents remain unverified, so absence cannot be definitive.
+        scanComplete = false;
       }
     }
   }

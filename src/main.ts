@@ -781,8 +781,7 @@ export default class ClaudianPlugin extends Plugin {
       conversation.providerId,
     );
     if (!historyService.resolveMissingConversationSession) {
-      await this.deleteConversation(id, { deleteProviderSession: false });
-      return 'deleted';
+      return 'preserved';
     }
 
     const previousSessionId = conversation.sessionId;

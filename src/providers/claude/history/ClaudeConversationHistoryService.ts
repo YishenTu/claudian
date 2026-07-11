@@ -402,10 +402,27 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       new Map([[sessionId, location]]),
     );
     if (location.availability === 'relocated' && location.sessionPath) {
+      const relocatedSessionPaths = new Map(
+        this.relocatedSessionPathsByConversation.get(conversation.id) ?? [],
+      );
+      relocatedSessionPaths.set(sessionId, location.sessionPath);
       this.relocatedSessionPathsByConversation.set(
         conversation.id,
-        new Map([[sessionId, location.sessionPath]]),
+        relocatedSessionPaths,
       );
+    } else if (location.availability !== 'unknown') {
+      const relocatedSessionPaths = new Map(
+        this.relocatedSessionPathsByConversation.get(conversation.id) ?? [],
+      );
+      relocatedSessionPaths.delete(sessionId);
+      if (relocatedSessionPaths.size > 0) {
+        this.relocatedSessionPathsByConversation.set(
+          conversation.id,
+          relocatedSessionPaths,
+        );
+      } else {
+        this.relocatedSessionPathsByConversation.delete(conversation.id);
+      }
     }
     return location.availability;
   }

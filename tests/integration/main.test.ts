@@ -878,6 +878,20 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('handleMissingProviderSession', () => {
+    it('preserves the record when the provider cannot verify a safe disposition', async () => {
+      await plugin.onload();
+      const conv = await plugin.createConversation({
+        providerId: 'codex',
+        sessionId: 'unverified-provider-session',
+      });
+
+      await expect(plugin.handleMissingProviderSession(
+        conv.id,
+        'unverified-provider-session',
+      )).resolves.toBe('preserved');
+      expect(plugin.getConversationSync(conv.id)).toBe(conv);
+    });
+
     it('removes the record when every provider transcript segment is missing', async () => {
       await plugin.onload();
       const conv = await plugin.createConversation({ sessionId: 'missing-current' });

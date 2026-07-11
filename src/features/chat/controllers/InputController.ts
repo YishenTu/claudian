@@ -310,6 +310,8 @@ export class InputController {
         canvasContextOverride: options?.canvasContextOverride,
       });
     const { displayContent, turnRequest } = turnSubmission;
+    const messagesBeforeTurn = state.messages;
+    const hadPendingConversationSave = state.hasPendingConversationSave;
 
     fileContextManager?.markCurrentNoteSent();
 
@@ -419,6 +421,15 @@ export class InputController {
         }
 
         if (chunk.type === 'error' && chunk.code === 'provider_session_missing') {
+          const retryMessage = this.createQueuedMessage(displayContent, {
+            ...turnRequest,
+            images: imagesForMessage ?? turnRequest.images,
+          });
+          const pendingMessagesToRestore = this.mergePendingMessages(
+            this.pendingSteerMessage,
+            state.queuedMessage,
+          );
+          const composerDraftToRestore = this.captureComposerDraft();
           const staleConversationId = state.currentConversationId;
           const resolution = staleConversationId
             ? await plugin.handleMissingProviderSession(
@@ -426,12 +437,14 @@ export class InputController {
                 chunk.providerSessionId,
               )
             : 'not_found';
-          if (shouldUseInput) {
-            inputEl.value = content;
-            this.deps.resetInputHeight();
-            if (imagesForMessage) {
-              imageContextManager?.setImages(imagesForMessage);
-            }
+          if (resolution === 'deleted') {
+            this.restoreMessageToInput(composerDraftToRestore, { mergeWithComposer: true });
+            this.restoreMessageToInput(pendingMessagesToRestore, { mergeWithComposer: true });
+            this.restoreMessageToInput(retryMessage, { mergeWithComposer: true });
+          } else {
+            this.restoreMessageToInput(retryMessage, { mergeWithComposer: true });
+            this.restorePendingSteerMessageToQueue();
+            this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
           }
           const notice = resolution === 'deleted'
             ? 'The provider session no longer exists. Its Claudian record was removed; send again to start a new session.'
@@ -699,6 +712,20 @@ export class InputController {
     }
     this.deps.resetInputHeight();
     inputEl.focus();
+  }
+
+  private captureComposerDraft(): QueuedMessage | null {
+    const content = this.deps.getInputEl().value;
+    const attachedImages = this.deps.getImageContextManager()?.getAttachedImages() ?? [];
+    const images = attachedImages.length > 0 ? [...attachedImages] : undefined;
+    if (!content.trim() && !images) {
+      return null;
+    }
+
+    return this.createQueuedMessage(content, {
+      text: content,
+      images,
+    });
   }
 
   private restorePendingMessagesToInput(): void {
@@ -1134,6 +1161,35 @@ export class InputController {
     state.currentTextEl = null;
     state.currentTextContent = '';
     state.currentThinkingState = null;
+  }
+
+  private rollbackFailedTurn(
+    messagesBeforeTurn: ChatMessage[],
+    hadPendingConversationSave: boolean,
+  ): void {
+    const { state, renderer, streamController } = this.deps;
+    const retainedMessageIds = new Set(messagesBeforeTurn.map(message => message.id));
+    for (const message of state.messages) {
+      if (!retainedMessageIds.has(message.id)) {
+        renderer.removeMessage(message.id);
+      }
+    }
+
+    state.messages = messagesBeforeTurn;
+    state.hasPendingConversationSave = hadPendingConversationSave;
+    streamController.hideThinkingIndicator();
+    state.isStreaming = false;
+    state.cancelRequested = false;
+    state.currentContentEl = null;
+    state.currentTextEl = null;
+    state.currentTextContent = '';
+    state.currentThinkingState = null;
+    state.responseStartTime = null;
+    this.deps.getSubagentManager().resetStreamingState();
+
+    if (messagesBeforeTurn.length === 0) {
+      this.deps.getWelcomeEl()?.removeClass('claudian-hidden');
+    }
   }
 
   // ============================================

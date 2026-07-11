@@ -217,10 +217,11 @@ function createSendableDeps(
 }
 
 describe('InputController - Missing provider session', () => {
-  it('removes only the Claudian record and restores unsent input', async () => {
+  it('rolls back the failed turn and restores unsent input after resume state is reset', async () => {
     const deps = createSendableDeps();
     const inputEl = deps.getInputEl();
     inputEl.value = 'retry this prompt';
+    (deps.plugin.handleMissingProviderSession as jest.Mock).mockResolvedValue('reset');
     deps.mockAgentService.query.mockReturnValue(createMockStream([{
       type: 'error',
       content: 'No conversation found with session ID: missing-session',
@@ -235,7 +236,44 @@ describe('InputController - Missing provider session', () => {
       undefined,
     );
     expect(inputEl.value).toBe('retry this prompt');
+    expect(deps.state.messages).toEqual([]);
+    expect(deps.state.isStreaming).toBe(false);
+    expect(deps.state.hasPendingConversationSave).toBe(false);
+    expect(deps.streamController.hideThinkingIndicator).toHaveBeenCalled();
+    expect(deps.renderer.removeMessage).toHaveBeenCalledTimes(2);
+    expect(deps.conversationController.save).not.toHaveBeenCalled();
     expect(deps.streamController.handleStreamChunk).not.toHaveBeenCalled();
+  });
+
+  it('restores a programmatic queued turn without overwriting a newer draft', async () => {
+    const deps = createSendableDeps();
+    const inputEl = deps.getInputEl();
+    const retryImage = {
+      id: 'retry-image',
+      name: 'retry.png',
+      mediaType: 'image/png' as const,
+      data: 'cmV0cnk=',
+      size: 5,
+      source: 'paste' as const,
+    };
+    inputEl.value = 'newer draft';
+    (deps.plugin.handleMissingProviderSession as jest.Mock).mockResolvedValue('reset');
+    deps.mockAgentService.query.mockReturnValue(createMockStream([{
+      type: 'error',
+      content: 'No conversation found with session ID: missing-session',
+      code: 'provider_session_missing',
+    }]));
+
+    await new InputController(deps).sendMessage({
+      content: 'queued prompt',
+      images: [retryImage],
+      turnRequestOverride: { text: 'provider-ready prompt' },
+    });
+
+    expect(inputEl.value).toBe('queued prompt\n\nnewer draft');
+    expect(deps.getImageContextManager()?.setImages).toHaveBeenCalledWith([retryImage]);
+    expect(deps.state.messages).toEqual([]);
+    expect(deps.state.isStreaming).toBe(false);
   });
 
   it('does not claim a record was removed when no conversation is active', async () => {
@@ -277,6 +315,37 @@ describe('InputController - Missing provider session', () => {
     expect(mockNotice).toHaveBeenLastCalledWith(
       'The provider session no longer exists. Claudian preserved the recoverable history; send again to rebuild the session.',
     );
+  });
+
+  it('preserves drafts and queued follow-ups when deleting the stale record resets the tab', async () => {
+    const deps = createSendableDeps();
+    const inputEl = deps.getInputEl();
+    const imageContextManager = deps.getImageContextManager()!;
+    deps.mockAgentService.query.mockImplementation(() => (async function* () {
+      inputEl.value = 'newer draft';
+      deps.state.queuedMessage = {
+        content: 'queued follow-up',
+        images: undefined,
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      yield {
+        type: 'error',
+        content: 'No conversation found with session ID: missing-session',
+        code: 'provider_session_missing',
+      };
+    })());
+    (deps.plugin.handleMissingProviderSession as jest.Mock).mockImplementation(async () => {
+      inputEl.value = '';
+      deps.state.queuedMessage = null;
+      imageContextManager.clearImages();
+      return 'deleted';
+    });
+
+    await new InputController(deps).sendMessage({ content: 'failed prompt' });
+
+    expect(inputEl.value).toBe('failed prompt\n\nqueued follow-up\n\nnewer draft');
   });
 });
 

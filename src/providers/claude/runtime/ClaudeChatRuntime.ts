@@ -777,8 +777,10 @@ export class ClaudianService implements ChatRuntime {
           const errorInstance = error instanceof Error ? error : new Error(String(error));
           const messageToReplay = this.lastSentMessage;
 
-          if (this.toProviderSessionMissingChunk(errorInstance)) {
+          const missingSessionChunk = this.toProviderSessionMissingChunk(errorInstance);
+          if (missingSessionChunk) {
             handler?.onError(errorInstance);
+            this.closePersistentQuery('provider session missing', { preserveHandlers: true });
             return;
           }
 
