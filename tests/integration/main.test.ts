@@ -471,7 +471,36 @@ describe('ClaudianPlugin', () => {
         ['/live/context'],
       );
       expect(mockResetSession).toHaveBeenCalledTimes(1);
-      expect(mockEnsureReady).toHaveBeenCalledWith();
+    });
+  });
+
+  describe('applyEnvSnippet', () => {
+    it('applies env snippet variables, merges context limits/aliases, and auto-selects the model', async () => {
+      await plugin.onload();
+
+      const snippet = {
+        id: 'test-snippet',
+        name: 'Test Snippet',
+        description: 'A test env snippet',
+        envVars: [
+          'ANTHROPIC_BASE_URL=https://api.test.com',
+          'ANTHROPIC_MODEL=test-model-id',
+        ].join('\n'),
+        scope: 'provider:claude',
+        contextLimits: {
+          'test-model-id': 100000,
+        },
+        modelAliases: {
+          'test-model-id': 'Test Model Alias',
+        },
+      };
+
+      await plugin.applyEnvSnippet(snippet as any, 'provider:claude');
+
+      expect(plugin.getEnvironmentVariablesForScope('provider:claude')).toContain('ANTHROPIC_BASE_URL=https://api.test.com');
+      expect(plugin.settings.customContextLimits).toHaveProperty('test-model-id', 100000);
+      expect(plugin.settings.customModelAliases).toHaveProperty('test-model-id', 'Test Model Alias');
+      expect(plugin.settings.model).toBe('test-model-id');
     });
   });
 

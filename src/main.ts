@@ -10,6 +10,7 @@ import { MarkdownView, Notice, Plugin } from 'obsidian';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SharedAppStorage } from './core/bootstrap/storage';
+import { getEnvironmentScopeUpdates } from './core/providers/providerEnvironment';
 import {
   normalizeProviderModelSelection,
   resolveConversationModel,
@@ -29,7 +30,10 @@ import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
+  EnvSnippet,
 } from './core/types';
+import { parseEnvironmentVariables } from './utils/env';
+import { getCurrentModelFromEnvironment } from './providers/claude/env/claudeModelEnv';
 import {
   VIEW_TYPE_CLAUDIAN,
 } from './core/types';
@@ -784,6 +788,74 @@ export default class ClaudianPlugin extends Plugin {
   async persistTabManagerState(state: AppTabManagerState): Promise<void> {
     this.lastKnownTabManagerState = state;
     await this.storage.setTabManagerState(state);
+  }
+
+  async applyEnvSnippet(snippet: EnvSnippet, fallbackScope: EnvironmentScope): Promise<void> {
+    const snippetContent = snippet.envVars.trim();
+    const updates = getEnvironmentScopeUpdates(
+      snippetContent,
+      snippet.scope ?? fallbackScope,
+    );
+
+    if (updates.length === 1) {
+      const [update] = updates;
+      await this.applyEnvironmentVariables(update.scope, update.envText);
+    } else if (updates.length > 1) {
+      await this.applyEnvironmentVariablesBatch(updates);
+    }
+
+    if (snippet.contextLimits) {
+      this.settings.customContextLimits = {
+        ...this.settings.customContextLimits,
+        ...snippet.contextLimits,
+      };
+    }
+
+    if (snippet.modelAliases) {
+      const modelIds = ProviderRegistry.getCustomModelIds(parseEnvironmentVariables(snippet.envVars));
+      const nextAliases = { ...(this.settings.customModelAliases ?? {}) };
+      for (const modelId of modelIds) {
+        const alias = snippet.modelAliases[modelId]?.trim();
+        if (alias) {
+          nextAliases[modelId] = alias;
+        } else {
+          delete nextAliases[modelId];
+        }
+      }
+      this.settings.customModelAliases = nextAliases;
+    }
+
+    // Try to auto-select the model defined in the environment variables
+    const envVars = parseEnvironmentVariables(snippet.envVars);
+    const resolvedModel = getCurrentModelFromEnvironment(envVars) || envVars.OPENAI_MODEL;
+    if (resolvedModel) {
+      const settingsBag = this.settings as unknown as Record<string, unknown>;
+      const providerId = ProviderRegistry.resolveProviderForModel(resolvedModel, settingsBag);
+      const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+
+      const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+        settingsBag,
+        providerId,
+      );
+      snapshot.model = resolvedModel;
+      uiConfig.applyModelDefaults(resolvedModel, snapshot);
+
+      ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
+        settingsBag,
+        providerId,
+        snapshot,
+      );
+
+      // If this is the active settings provider, also update the top-level projected model
+      if (this.settings.settingsProvider === providerId) {
+        this.settings.model = resolvedModel;
+      }
+    }
+
+    await this.saveSettings();
+
+    const view = this.getView();
+    view?.refreshModelSelector();
   }
 
   getView(): ClaudianView | null {
