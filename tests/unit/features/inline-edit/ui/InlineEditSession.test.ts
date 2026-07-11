@@ -1,7 +1,6 @@
 import { Text } from '@codemirror/state';
-import { Notice } from 'obsidian';
-
 import { createMockEl } from '@test/helpers/mockElement';
+import { Notice } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { InlineEditSession } from '@/features/inline-edit/ui/InlineEditModal';
