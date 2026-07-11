@@ -74,7 +74,7 @@ jest.mock('obsidian', () => {
   };
 });
 
-jest.mock('@/features/settings/ui/EnvironmentSettingsSection', () => ({
+jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
@@ -372,7 +372,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
     refreshModelSelector: mockRefreshModelSelector,
   };
 
-  return {
+  const plugin: any = {
     settings: {
       providerConfigs: {
         opencode: {
@@ -394,6 +394,21 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
     getView: jest.fn(() => viewA),
     getAllViews: jest.fn(() => [viewA, viewB]),
   };
+  plugin.recycleProviderRuntimes = jest.fn(async (providerId: string) => {
+    for (const view of plugin.getAllViews()) {
+      await view.getTabManager()?.broadcastToProviderTabs(
+        providerId,
+        (runtime: { cleanup(): void }) => Promise.resolve(runtime.cleanup()),
+      );
+      view.invalidateProviderCommandCaches([providerId]);
+      view.refreshModelSelector();
+    }
+  });
+  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+    await mutation(plugin.settings);
+    await plugin.saveSettings();
+  });
+  return plugin;
 }
 
 function createContext(plugin: any) {

@@ -7,13 +7,13 @@ import './providers';
 import type { Editor, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView, Notice, Plugin } from 'obsidian';
 
+import { ConversationRepository } from './app/conversations/ConversationRepository';
+import { ClaudianProviderHost } from './app/providers/ClaudianProviderHost';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
+import type { ConditionalSettingsMutation } from './app/settings/SettingsCoordinator';
+import { SettingsCoordinator, type SettingsMutation } from './app/settings/SettingsCoordinator';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SharedAppStorage } from './core/bootstrap/storage';
-import {
-  normalizeProviderModelSelection,
-  resolveConversationModel,
-} from './core/providers/conversationModel';
 import {
   getEnvironmentVariablesForScope as getScopedEnvironmentVariables,
   getRuntimeEnvironmentText,
@@ -24,7 +24,6 @@ import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCo
 import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
 import type {
   ProviderCliResolutionContext,
-  ProviderConversationSessionAvailability,
   ProviderId,
 } from './core/providers/types';
 import type { AppTabManagerState } from './core/providers/types';
@@ -44,7 +43,6 @@ import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n/i18n';
 import type { Locale } from './i18n/types';
 import { OPENCODE_PLAN_MODE_ID, OPENCODE_SAFE_MODE_ID } from './providers/opencode/modes';
-import { extractUserDisplayContent } from './utils/context';
 import { buildCursorContext } from './utils/editor';
 import { revealWorkspaceLeaf } from './utils/obsidianCompat';
 import { getVaultPath } from './utils/path';
@@ -58,12 +56,14 @@ function isClaudianView(value: unknown): value is ClaudianView {
 export default class ClaudianPlugin extends Plugin {
   settings!: ClaudianSettings;
   storage!: SharedAppStorage;
-  private conversations: Conversation[] = [];
+  readonly providerHost = new ClaudianProviderHost(this);
+  private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
+  private conversationRepository!: ConversationRepository;
   private lastKnownTabManagerState: AppTabManagerState | null = null;
 
   async onload() {
     await this.loadSettings();
-    await ProviderWorkspaceRegistry.initializeAll(this);
+    await ProviderWorkspaceRegistry.initializeAll(this.providerHost);
 
     this.registerView(
       VIEW_TYPE_CLAUDIAN,
@@ -290,6 +290,20 @@ export default class ClaudianPlugin extends Plugin {
       ...DEFAULT_CLAUDIAN_SETTINGS,
       ...claudian,
     };
+    this.settingsCoordinator = new SettingsCoordinator(
+      this.settings,
+      async (settings) => {
+        ProviderSettingsCoordinator.normalizeProviderSelection(settings);
+        ProviderSettingsCoordinator.persistProjectedProviderState(settings);
+        await this.storage.saveClaudianSettings(settings);
+      },
+    );
+    this.conversationRepository = new ConversationRepository({
+      getSettings: () => this.settings,
+      getVaultPath: () => getVaultPath(this.app),
+      sessions: this.storage.sessions,
+      onConversationDeleted: (conversationId) => this.resetDeletedConversationTabs(conversationId),
+    });
 
     // Plan mode is ephemeral — normalize back to normal on load so the app
     // doesn't start stuck in plan mode after a restart (prePlanPermissionMode is lost)
@@ -323,7 +337,7 @@ export default class ClaudianPlugin extends Plugin {
     const didNormalizeModelVariants = this.normalizeModelVariantSettings();
 
     const allMetadata = await this.storage.sessions.listMetadata();
-    this.conversations = allMetadata.map(meta => {
+    this.conversationRepository.replaceAll(allMetadata.map(meta => {
       const resumeSessionId = meta.sessionId !== undefined ? meta.sessionId : meta.id;
 
       return {
@@ -346,10 +360,10 @@ export default class ClaudianPlugin extends Plugin {
       };
     }).sort(
       (a, b) => (b.lastResponseAt ?? b.updatedAt) - (a.lastResponseAt ?? a.updatedAt)
-    );
+    ));
     setLocale(this.settings.locale as Locale);
 
-    const backfilledConversations = this.backfillConversationResponseTimestamps();
+    const backfilledConversations = this.conversationRepository.backfillResponseTimestamps();
 
     const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment();
 
@@ -369,72 +383,6 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  private async reconcileConversationProviderSession(
-    conversation: Conversation,
-  ): Promise<void> {
-    const historyService = ProviderRegistry.getConversationHistoryService(
-      conversation.providerId,
-    );
-    if (!historyService.getConversationSessionAvailability) {
-      return;
-    }
-
-    const vaultPath = getVaultPath(this.app);
-    let availability: ProviderConversationSessionAvailability;
-    try {
-      availability = await historyService.getConversationSessionAvailability(
-        conversation,
-        vaultPath,
-      );
-    } catch {
-      return;
-    }
-
-    if (
-      availability !== 'relocated'
-      || !historyService.prepareRelocatedConversationSession
-    ) {
-      return;
-    }
-
-    const previousSessionId = conversation.sessionId;
-    const previousProviderState = conversation.providerState;
-    const previousResumeAtMessageId = conversation.resumeAtMessageId;
-    try {
-      const changed = await historyService.prepareRelocatedConversationSession(
-        conversation,
-        vaultPath,
-      );
-      if (changed) {
-        await this.storage.sessions.saveMetadata(
-          this.storage.sessions.toSessionMetadata(conversation),
-        );
-      }
-    } catch {
-      conversation.sessionId = previousSessionId;
-      conversation.providerState = previousProviderState;
-      conversation.resumeAtMessageId = previousResumeAtMessageId;
-    }
-  }
-
-  private backfillConversationResponseTimestamps(): Conversation[] {
-    const updated: Conversation[] = [];
-    for (const conv of this.conversations) {
-      if (conv.lastResponseAt != null) continue;
-      if (!conv.messages || conv.messages.length === 0) continue;
-
-      for (let i = conv.messages.length - 1; i >= 0; i--) {
-        const msg = conv.messages[i];
-        if (msg.role === 'assistant') {
-          conv.lastResponseAt = msg.timestamp;
-          updated.push(conv);
-          break;
-        }
-      }
-    }
-    return updated;
-  }
-
   normalizeModelVariantSettings(): boolean {
     return ProviderSettingsCoordinator.normalizeAllModelVariants(
       this.settings,
@@ -442,14 +390,17 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   async saveSettings() {
-    ProviderSettingsCoordinator.normalizeProviderSelection(
-      this.settings,
-    );
-    ProviderSettingsCoordinator.persistProjectedProviderState(
-      this.settings,
-    );
+    await this.settingsCoordinator.persistCurrent();
+  }
 
-    await this.storage.saveClaudianSettings(this.settings);
+  async mutateSettings(mutation: SettingsMutation<ClaudianSettings>): Promise<void> {
+    await this.settingsCoordinator.mutate(mutation);
+  }
+
+  async mutateSettingsConditionally(
+    mutation: ConditionalSettingsMutation<ClaudianSettings>,
+  ): Promise<void> {
+    await this.settingsCoordinator.mutateConditionally(mutation);
   }
 
   /** Updates and persists environment variables, restarting processes to apply changes. */
@@ -460,32 +411,38 @@ export default class ClaudianPlugin extends Plugin {
   async applyEnvironmentVariablesBatch(
     updates: Array<{ scope: EnvironmentScope; envText: string }>,
   ): Promise<void> {
-    const settingsBag = this.settings as unknown as Record<string, unknown>;
     const nextEnvironmentByScope = new Map<EnvironmentScope, string>();
     for (const update of updates) {
       nextEnvironmentByScope.set(update.scope, update.envText);
     }
 
-    const changedScopes: EnvironmentScope[] = [];
-    for (const [scope, envText] of nextEnvironmentByScope) {
-      const currentValue = getScopedEnvironmentVariables(settingsBag, scope);
-      if (currentValue !== envText) {
-        changedScopes.push(scope);
+    let affectedProviderIds: ProviderId[] = [];
+    let changed = false;
+    let invalidatedConversations: Conversation[] = [];
+    await this.mutateSettings((settings) => {
+      const settingsBag = settings as unknown as Record<string, unknown>;
+      const changedScopes: EnvironmentScope[] = [];
+      for (const [scope, envText] of nextEnvironmentByScope) {
+        const currentValue = getScopedEnvironmentVariables(settingsBag, scope);
+        if (currentValue !== envText) {
+          changedScopes.push(scope);
+        }
+        setEnvironmentVariablesForScope(settingsBag, scope, envText);
       }
-      setEnvironmentVariablesForScope(settingsBag, scope, envText);
-    }
+      affectedProviderIds = this.getAffectedEnvironmentProviders(changedScopes);
+      ProviderSettingsCoordinator.handleEnvironmentChange(settingsBag, affectedProviderIds);
+      const reconciliation = this.reconcileModelWithEnvironment(affectedProviderIds);
+      changed = reconciliation.changed;
+      invalidatedConversations = reconciliation.invalidatedConversations;
+    });
 
-    if (changedScopes.length === 0) {
-      await this.saveSettings();
+    if (affectedProviderIds.length === 0) {
       return;
     }
 
-    const affectedProviderIds = this.getAffectedEnvironmentProviders(changedScopes);
-    ProviderSettingsCoordinator.handleEnvironmentChange(settingsBag, affectedProviderIds);
-    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment(affectedProviderIds);
     const modelCatalogDiagnostics: string[] = [];
     for (const providerId of affectedProviderIds) {
-      if (ProviderRegistry.isEnabled(providerId, settingsBag)) {
+      if (ProviderRegistry.isEnabled(providerId, this.settings)) {
         const result = await ProviderWorkspaceRegistry.refreshModelCatalog(providerId);
         if (result.diagnostics) {
           modelCatalogDiagnostics.push(
@@ -494,8 +451,6 @@ export default class ClaudianPlugin extends Plugin {
         }
       }
     }
-    await this.saveSettings();
-
     if (invalidatedConversations.length > 0) {
       for (const conv of invalidatedConversations) {
         await this.storage.sessions.saveMetadata(
@@ -617,7 +572,7 @@ export default class ClaudianPlugin extends Plugin {
   } {
     return ProviderSettingsCoordinator.reconcileProviders(
       this.settings,
-      this.conversations,
+      this.conversationRepository.getAll(),
       providerIds,
     );
   }
@@ -643,118 +598,26 @@ export default class ClaudianPlugin extends Plugin {
     return Array.from(affectedProviderIds);
   }
 
-  private generateConversationId(): string {
-    return `conv-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-  }
-
-  private generateDefaultTitle(): string {
-    const now = new Date();
-    return now.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-
-  private getConversationPreview(conv: Conversation): string {
-    const firstUserMsg = conv.messages.find(m => m.role === 'user');
-    if (!firstUserMsg) {
-      return 'New conversation';
-    }
-    const previewText = firstUserMsg.displayContent
-      ?? extractUserDisplayContent(firstUserMsg.content)
-      ?? firstUserMsg.content;
-    return previewText.substring(0, 50) + (previewText.length > 50 ? '...' : '');
-  }
-
-  private async ensureConversationSelectedModel(conversation: Conversation): Promise<void> {
-    const resolved = resolveConversationModel(
-      this.settings,
-      conversation.providerId,
-      conversation,
-    );
-    if (!resolved.shouldPersist || !resolved.model || conversation.selectedModel === resolved.model) {
-      return;
-    }
-
-    conversation.selectedModel = resolved.model;
-    await this.storage.sessions.saveMetadata(
-      this.storage.sessions.toSessionMetadata(conversation)
-    );
-  }
-
-  private async loadSdkMessagesForConversation(conversation: Conversation): Promise<void> {
-    await ProviderRegistry
-      .getConversationHistoryService(conversation.providerId)
-      .hydrateConversationHistory(conversation, getVaultPath(this.app));
-  }
-
   async createConversation(options?: {
     providerId?: ProviderId;
     sessionId?: string;
     selectedModel?: string;
   }): Promise<Conversation> {
-    const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
-    const sessionId = options?.sessionId;
-    const providerSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.settings,
-      providerId,
-    );
-    const selectedModel = normalizeProviderModelSelection(
-      providerId,
-      this.settings,
-      options?.selectedModel ?? providerSettings.model,
-    ) ?? undefined;
-    const conversationId = sessionId ?? this.generateConversationId();
-    const conversation: Conversation = {
-      id: conversationId,
-      providerId,
-      title: this.generateDefaultTitle(),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      sessionId: sessionId ?? null,
-      selectedModel,
-      messages: [],
-    };
-
-    this.conversations.unshift(conversation);
-    await this.storage.sessions.saveMetadata(
-      this.storage.sessions.toSessionMetadata(conversation)
-    );
-
-    return conversation;
+    return this.conversationRepository.create(options);
   }
 
   async switchConversation(id: string): Promise<Conversation | null> {
-    const conversation = this.conversations.find(c => c.id === id);
-    if (!conversation) return null;
-    await this.reconcileConversationProviderSession(conversation);
-
-    await this.ensureConversationSelectedModel(conversation);
-    await this.loadSdkMessagesForConversation(conversation);
-
-    return conversation;
+    return this.conversationRepository.switchTo(id);
   }
 
   async deleteConversation(
     id: string,
     options: { deleteProviderSession?: boolean } = {},
   ): Promise<void> {
-    const index = this.conversations.findIndex(c => c.id === id);
-    if (index === -1) return;
+    await this.conversationRepository.delete(id, options);
+  }
 
-    const conversation = this.conversations[index];
-    this.conversations.splice(index, 1);
-
-    if (options.deleteProviderSession !== false) {
-      await ProviderRegistry
-        .getConversationHistoryService(conversation.providerId)
-        .deleteConversationSession(conversation, getVaultPath(this.app));
-    }
-
-    await this.storage.sessions.deleteMetadata(id);
-
+  private async resetDeletedConversationTabs(id: string): Promise<void> {
     for (const view of this.getAllViews()) {
       const tabManager = view.getTabManager();
       if (!tabManager) continue;
@@ -772,116 +635,31 @@ export default class ClaudianPlugin extends Plugin {
     id: string,
     missingProviderSessionId?: string,
   ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'> {
-    const conversation = this.conversations.find(item => item.id === id);
-    if (!conversation) {
-      return 'not_found';
-    }
-
-    const historyService = ProviderRegistry.getConversationHistoryService(
-      conversation.providerId,
-    );
-    if (!historyService.resolveMissingConversationSession) {
-      return 'preserved';
-    }
-
-    const previousSessionId = conversation.sessionId;
-    const previousProviderState = conversation.providerState;
-    const previousResumeAtMessageId = conversation.resumeAtMessageId;
-    try {
-      const resolution = await historyService.resolveMissingConversationSession(
-        conversation,
-        getVaultPath(this.app),
-        missingProviderSessionId,
-      );
-      if (resolution === 'delete') {
-        await this.deleteConversation(id, { deleteProviderSession: false });
-        return 'deleted';
-      }
-      if (resolution === 'reset') {
-        await this.storage.sessions.saveMetadata(
-          this.storage.sessions.toSessionMetadata(conversation),
-        );
-        return 'reset';
-      }
-      return 'preserved';
-    } catch {
-      conversation.sessionId = previousSessionId;
-      conversation.providerState = previousProviderState;
-      conversation.resumeAtMessageId = previousResumeAtMessageId;
-      return 'preserved';
-    }
+    return this.conversationRepository.handleMissingProviderSession(id, missingProviderSessionId);
   }
 
   async renameConversation(id: string, title: string): Promise<void> {
-    const conversation = this.conversations.find(c => c.id === id);
-    if (!conversation) return;
-
-    conversation.title = title.trim() || this.generateDefaultTitle();
-    conversation.updatedAt = Date.now();
-
-    await this.storage.sessions.saveMetadata(
-      this.storage.sessions.toSessionMetadata(conversation)
-    );
+    await this.conversationRepository.rename(id, title);
   }
 
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
-    const conversation = this.conversations.find(c => c.id === id);
-    if (!conversation) return;
-
-    // providerId is immutable — strip it from updates to prevent accidental mutation
-    const safeUpdates = { ...updates };
-    delete safeUpdates.providerId;
-    if ('selectedModel' in safeUpdates) {
-      const selectedModel = normalizeProviderModelSelection(
-        conversation.providerId,
-        this.settings,
-        safeUpdates.selectedModel,
-      );
-      if (selectedModel) {
-        safeUpdates.selectedModel = selectedModel;
-      } else {
-        delete safeUpdates.selectedModel;
-      }
-    }
-    Object.assign(conversation, safeUpdates, { updatedAt: Date.now() });
-
-    await this.storage.sessions.saveMetadata(
-      this.storage.sessions.toSessionMetadata(conversation)
-    );
+    await this.conversationRepository.update(id, updates);
   }
 
   async getConversationById(id: string): Promise<Conversation | null> {
-    const conversation = this.conversations.find(c => c.id === id) || null;
-
-    if (conversation) {
-      await this.reconcileConversationProviderSession(conversation);
-      await this.ensureConversationSelectedModel(conversation);
-      await this.loadSdkMessagesForConversation(conversation);
-    }
-
-    return conversation;
+    return this.conversationRepository.getById(id);
   }
 
   getConversationSync(id: string): Conversation | null {
-    return this.conversations.find(c => c.id === id) || null;
+    return this.conversationRepository.getSync(id);
   }
 
   findEmptyConversation(): Conversation | null {
-    return this.conversations.find(c => c.messages.length === 0) || null;
+    return this.conversationRepository.findEmpty();
   }
 
   getConversationList(): ConversationMeta[] {
-    return this.conversations.map(c => ({
-      id: c.id,
-      providerId: c.providerId,
-      title: c.title,
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-      lastResponseAt: c.lastResponseAt,
-      messageCount: c.messages.length,
-      preview: this.getConversationPreview(c),
-      titleGenerationStatus: c.titleGenerationStatus,
-    }));
+    return this.conversationRepository.list();
   }
 
   async persistTabManagerState(state: AppTabManagerState): Promise<void> {

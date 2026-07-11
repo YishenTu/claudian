@@ -86,11 +86,11 @@ jest.mock('obsidian', () => {
   };
 });
 
-jest.mock('@/features/settings/ui/EnvironmentSettingsSection', () => ({
+jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
-jest.mock('@/features/settings/ui/McpSettingsManager', () => ({
+jest.mock('@/shared/settings/McpSettingsManager', () => ({
   McpSettingsManager: jest.fn(),
 }));
 
@@ -333,7 +333,7 @@ function createContainer(): any {
 }
 
 function createPlugin(overrides: Record<string, unknown> = {}): any {
-  return {
+  const plugin: any = {
     settings: {
       settingsProvider: 'claude',
       model: 'claude-opus-4-6',
@@ -362,6 +362,11 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       },
     },
   };
+  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+    await mutation(plugin.settings);
+    await plugin.saveSettings();
+  });
+  return plugin;
 }
 
 function createContext(plugin: any) {

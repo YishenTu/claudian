@@ -95,7 +95,7 @@ jest.mock('obsidian', () => {
   };
 });
 
-jest.mock('@/features/settings/ui/EnvironmentSettingsSection', () => ({
+jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
@@ -324,7 +324,7 @@ function createContainer(): any {
 }
 
 function createPlugin(overrides: Record<string, unknown> = {}): any {
-  return {
+  const plugin: any = {
     settings: {
       settingsProvider: 'codex',
       model: 'my-custom-model',
@@ -363,6 +363,16 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       },
     },
   };
+  plugin.broadcastToActiveViewRuntimes = jest.fn(async (
+    action: (runtime: { cleanup(): void }) => Promise<void>,
+  ) => {
+    await plugin.getView()?.getTabManager()?.broadcastToAllTabs(action);
+  });
+  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+    await mutation(plugin.settings);
+    await plugin.saveSettings();
+  });
+  return plugin;
 }
 
 function createContext(plugin: any) {

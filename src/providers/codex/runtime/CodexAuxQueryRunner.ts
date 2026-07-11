@@ -1,5 +1,5 @@
+import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
-import type ClaudianPlugin from '../../../main';
 import { getDefaultCodexModel } from '../models';
 import { toCodexRuntimeModelId } from '../modelSelection';
 import { getCodexProviderSettings } from '../settings';
@@ -36,7 +36,7 @@ export class CodexAuxQueryRunner {
   private threadId: string | null = null;
   private launchSpec: CodexLaunchSpec | null = null;
 
-  constructor(private readonly plugin: ClaudianPlugin) {}
+  constructor(private readonly plugin: ProviderHost) {}
 
   async query(config: CodexAuxQueryConfig, prompt: string): Promise<string> {
     if (!this.process || !this.transport) {

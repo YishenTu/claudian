@@ -1,4 +1,4 @@
-import type ClaudianPlugin from '../../../main';
+import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import {
   type CodexDiscoveredModel,
   normalizeCodexDiscoveredModels,
@@ -19,7 +19,7 @@ export interface CodexModelDiscoveryResult {
 const MODEL_LIST_PAGE_SIZE = 100;
 
 export class CodexModelDiscoveryService {
-  constructor(private readonly plugin: ClaudianPlugin) {}
+  constructor(private readonly plugin: ProviderHost) {}
 
   async discoverModels(): Promise<CodexModelDiscoveryResult> {
     let process: CodexAppServerProcess | null = null;

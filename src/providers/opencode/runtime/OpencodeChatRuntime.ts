@@ -6,6 +6,7 @@ import {
   type SystemPromptSettings,
 } from '../../../core/prompt/mainAgent';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
+import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
@@ -37,7 +38,6 @@ import type {
   StreamChunk,
   ToolCallInfo,
 } from '../../../core/types';
-import type ClaudianPlugin from '../../../main';
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import {
@@ -96,6 +96,7 @@ import { prepareOpencodeLaunchArtifacts } from './OpencodeLaunchArtifacts';
 import { buildOpencodeRuntimeEnv } from './OpencodeRuntimeEnvironment';
 
 interface ActiveTurn {
+  cancelled: boolean;
   queue: StreamChunkQueue;
   sessionId: string;
 }
@@ -106,6 +107,9 @@ class StreamChunkQueue {
   private readonly waiters: Array<(chunk: StreamChunk | null) => void> = [];
 
   push(chunk: StreamChunk): void {
+    if (this.closed) {
+      return;
+    }
     const waiter = this.waiters.shift();
     if (waiter) {
       waiter(chunk);
@@ -162,6 +166,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private promptUsage: AcpUsage | null = null;
   private readonly readyListeners: Array<(ready: boolean) => void> = [];
   private ready = false;
+  private readinessFlight: { key: string; promise: Promise<boolean> } | null = null;
   private sessionInvalidated = false;
   private readonly supportedCommandWaiters: Array<(commands: SlashCommand[]) => void> = [];
   private supportedCommands: SlashCommand[] = [];
@@ -173,7 +178,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private unregisterTransportClose: (() => void) | null = null;
 
   constructor(
-    private readonly plugin: ClaudianPlugin,
+    private readonly plugin: ProviderHost,
   ) {}
 
   getCapabilities(): Readonly<ProviderCapabilities> {
@@ -269,6 +274,25 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
+    const key = JSON.stringify(options ?? {});
+    if (this.readinessFlight) {
+      if (this.readinessFlight.key === key) {
+        return this.readinessFlight.promise;
+      }
+      await this.readinessFlight.promise.catch(() => undefined);
+      return this.ensureReady(options);
+    }
+
+    const promise = this.ensureReadyInternal(options);
+    this.readinessFlight = { key, promise };
+    return promise.finally(() => {
+      if (this.readinessFlight?.promise === promise) {
+        this.readinessFlight = null;
+      }
+    });
+  }
+
+  private async ensureReadyInternal(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
     const settings = getOpencodeProviderSettings(this.plugin.settings);
     if (!settings.enabled) {
       this.setReady(false);
@@ -344,6 +368,11 @@ export class OpencodeChatRuntime implements ChatRuntime {
     conversationHistory?: ChatMessage[],
     queryOptions?: ChatRuntimeQueryOptions,
   ): AsyncGenerator<StreamChunk> {
+    if (this.activeTurn) {
+      yield { type: 'error', content: 'OpenCode does not support overlapping turns.' };
+      yield { type: 'done' };
+      return;
+    }
     if (queryOptions?.model) {
       this.setCurrentConversationModel(queryOptions.model);
     }
@@ -379,8 +408,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     const sessionId = this.sessionId!;
-    this.activeTurn?.queue.close();
     this.activeTurn = {
+      cancelled: false,
       queue: new StreamChunkQueue(),
       sessionId,
     };
@@ -450,7 +479,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
         }
         yield chunk;
       }
-      await promptPromise;
+      if (!activeTurn.cancelled) {
+        await promptPromise;
+      }
     } finally {
       if (this.activeTurn === activeTurn) {
         this.activeTurn = null;
@@ -462,6 +493,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     if (this.connection && this.sessionId) {
       this.connection.cancel({ sessionId: this.sessionId });
     }
+    this.settleActiveTurn();
   }
 
   resetSession(): void {
@@ -618,9 +650,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
       output: this.process.stdin,
     });
     const transport = this.transport;
-    this.unregisterTransportClose = transport.onClose(() => {
+    this.unregisterTransportClose = transport.onClose((error) => {
       if (this.transport === transport) {
         this.setReady(false);
+        this.settleActiveTurn(error ?? new Error('OpenCode runtime closed'));
       }
     });
 
@@ -647,8 +680,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
   private async shutdownProcess(): Promise<void> {
     this.setReady(false);
-    this.activeTurn?.queue.close();
-    this.activeTurn = null;
+    this.settleActiveTurn();
     this.currentSessionModelId = null;
     this.currentSessionModeId = null;
     this.setSupportedCommands([]);
@@ -972,20 +1004,21 @@ export class OpencodeChatRuntime implements ChatRuntime {
     let changed = shouldSeedVisibleModels || shouldSeedPreferredThinking;
 
     if (currentBaseRawModelId) {
+      const probeSettings = {
+        ...settingsBag,
+        savedProviderEffort: {
+          ...(settingsBag.savedProviderEffort as Record<string, unknown> | undefined),
+        },
+        savedProviderModel: {
+          ...(settingsBag.savedProviderModel as Record<string, unknown> | undefined),
+        },
+      };
       const seeded = this.seedActiveModelSelection(
-        settingsBag,
+        probeSettings,
         encodeOpencodeModelId(currentBaseRawModelId),
         defaultThinkingLevel,
       );
       changed = changed || seeded;
-    }
-
-    if (shouldUpdateThinkingOptions || shouldSeedPreferredThinking || shouldSeedVisibleModels) {
-      updateOpencodeProviderSettings(settingsBag, {
-        ...(shouldSeedPreferredThinking ? { preferredThinkingByModel: nextPreferredThinkingByModel } : {}),
-        ...(shouldUpdateThinkingOptions ? { thinkingOptionsByModel: nextThinkingOptionsByModel } : {}),
-        ...(shouldSeedVisibleModels ? { visibleModels: nextVisibleModels } : {}),
-      });
     }
 
     if (!changed && !discoveryChanged && !shouldUpdateThinkingOptions) {
@@ -993,7 +1026,22 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     if (changed || shouldUpdateThinkingOptions) {
-      await this.plugin.saveSettings();
+      await this.plugin.mutateSettings((settings) => {
+        if (currentBaseRawModelId) {
+          this.seedActiveModelSelection(
+            settings,
+            encodeOpencodeModelId(currentBaseRawModelId),
+            defaultThinkingLevel,
+          );
+        }
+        if (shouldUpdateThinkingOptions || shouldSeedPreferredThinking || shouldSeedVisibleModels) {
+          updateOpencodeProviderSettings(settings, {
+            ...(shouldSeedPreferredThinking ? { preferredThinkingByModel: nextPreferredThinkingByModel } : {}),
+            ...(shouldUpdateThinkingOptions ? { thinkingOptionsByModel: nextThinkingOptionsByModel } : {}),
+            ...(shouldSeedVisibleModels ? { visibleModels: nextVisibleModels } : {}),
+          });
+        }
+      });
     }
     this.refreshModelSelectors();
   }
@@ -1078,16 +1126,15 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     if (shouldSeedSelectedMode && currentModeId) {
-      updateOpencodeProviderSettings(settingsBag, { selectedMode: currentModeId });
-      await this.plugin.saveSettings();
+      await this.plugin.mutateSettings((settings) => {
+        updateOpencodeProviderSettings(settings, { selectedMode: currentModeId });
+      });
     }
     this.refreshModelSelectors();
   }
 
   private refreshModelSelectors(): void {
-    for (const view of this.plugin.getAllViews()) {
-      view.refreshModelSelector();
-    }
+    this.plugin.refreshModelSelectors?.();
   }
 
   private emitPermissionModeSync(modeId: string): void {
@@ -1100,6 +1147,23 @@ export class OpencodeChatRuntime implements ChatRuntime {
       this.permissionModeSyncCallback(permissionMode);
     } catch {
       // Non-critical UI sync callback.
+    }
+  }
+
+  private settleActiveTurn(error?: Error): void {
+    const activeTurn = this.activeTurn;
+    if (!activeTurn || activeTurn.cancelled) {
+      return;
+    }
+
+    activeTurn.cancelled = true;
+    if (error) {
+      activeTurn.queue.push({ type: 'error', content: this.formatRuntimeError(error) });
+    }
+    activeTurn.queue.push({ type: 'done' });
+    activeTurn.queue.close();
+    if (this.activeTurn === activeTurn) {
+      this.activeTurn = null;
     }
   }
 

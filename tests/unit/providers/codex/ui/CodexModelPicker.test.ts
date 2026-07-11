@@ -134,7 +134,7 @@ function appendChild(
 }
 
 function createPlugin() {
-  return {
+  const plugin: any = {
     settings: {
       providerConfigs: {
         codex: {
@@ -145,7 +145,12 @@ function createPlugin() {
       },
     },
     saveSettings: jest.fn().mockResolvedValue(undefined),
-  } as any;
+  };
+  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+    await mutation(plugin.settings);
+    await plugin.saveSettings();
+  });
+  return plugin;
 }
 
 function createContext(plugin: ReturnType<typeof createPlugin>) {
@@ -235,7 +240,7 @@ describe('CodexModelPicker', () => {
     expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
   });
 
-  it('refreshes the app-server catalog and saves changed results', async () => {
+  it('refreshes the app-server catalog through the provider-owned persistence boundary', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
     const refreshModelCatalog = jest.fn().mockResolvedValue({
@@ -249,7 +254,7 @@ describe('CodexModelPicker', () => {
     await flushPromises();
 
     expect(refreshModelCatalog).toHaveBeenCalledTimes(1);
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
     expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
   });
 

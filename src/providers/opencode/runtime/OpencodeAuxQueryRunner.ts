@@ -3,8 +3,8 @@ import * as path from 'node:path';
 
 import type { AuxQueryConfig, AuxQueryRunner } from '../../../core/auxiliary/AuxQueryRunner';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
+import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
-import type ClaudianPlugin from '../../../main';
 import { getVaultPath } from '../../../utils/path';
 import {
   AcpClientConnection,
@@ -57,7 +57,7 @@ export class OpencodeAuxQueryRunner implements AuxQueryRunner {
   private transport: AcpJsonRpcTransport | null = null;
 
   constructor(
-    private readonly plugin: ClaudianPlugin,
+    private readonly plugin: ProviderHost,
     private readonly options: OpencodeAuxQueryRunnerOptions,
   ) {}
 

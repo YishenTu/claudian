@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import { Notice, Setting } from 'obsidian';
 
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
-import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
 import { t } from '../../../i18n/i18n';
+import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
@@ -43,11 +43,12 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         toggle
           .setValue(codexSettings.enabled)
           .onChange(async (value) => {
-            updateCodexProviderSettings(settingsBag, { enabled: value });
+            await context.plugin.mutateSettings((settings) => {
+              updateCodexProviderSettings(settings, { enabled: value });
+            });
             if (value) {
               await refreshCodexModelCatalog();
             }
-            await context.plugin.saveSettings();
             context.refreshModelSelectors();
           })
       );
@@ -63,10 +64,11 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
             .setValue(installationMethod)
             .onChange(async (value) => {
               installationMethod = value === 'wsl' ? 'wsl' : 'native-windows';
-              updateCodexProviderSettings(settingsBag, { installationMethod });
+              await context.plugin.mutateSettings((settings) => {
+                updateCodexProviderSettings(settings, { installationMethod });
+              });
               refreshInstallationMethodUI();
               await refreshCodexModelCatalog();
-              await context.plugin.saveSettings();
             });
         });
     }
@@ -176,11 +178,11 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         delete cliPathsByHost[hostnameKey];
       }
 
-      updateCodexProviderSettings(settingsBag, { cliPathsByHost: { ...cliPathsByHost } });
-      await context.plugin.saveSettings();
-      const view = context.plugin.getView();
-      await view?.getTabManager()?.broadcastToAllTabs(
-        (service) => Promise.resolve(service.cleanup())
+      await context.plugin.mutateSettings((settings) => {
+        updateCodexProviderSettings(settings, { cliPathsByHost: { ...cliPathsByHost } });
+      });
+      await context.plugin.broadcastToActiveViewRuntimes?.(
+        (service) => Promise.resolve(service.cleanup()),
       );
       return true;
     };
@@ -211,8 +213,9 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
           .setPlaceholder('Ubuntu')
           .setValue(codexSettings.wslDistroOverride)
           .onChange(async (value) => {
-            updateCodexProviderSettings(settingsBag, { wslDistroOverride: value });
-            await context.plugin.saveSettings();
+            await context.plugin.mutateSettings((settings) => {
+              updateCodexProviderSettings(settings, { wslDistroOverride: value });
+            });
           });
 
         text.inputEl.addClass('claudian-settings-cli-path-input');
@@ -236,11 +239,12 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
           .addOption('read-only', t('settings.codex.safeMode.readOnly'))
           .setValue(codexSettings.safeMode)
           .onChange(async (value) => {
-            updateCodexProviderSettings(
-              settingsBag,
-              { safeMode: value as 'workspace-write' | 'read-only' },
-            );
-            await context.plugin.saveSettings();
+            await context.plugin.mutateSettings((settings) => {
+              updateCodexProviderSettings(
+                settings,
+                { safeMode: value as 'workspace-write' | 'read-only' },
+              );
+            });
           });
       });
 
@@ -266,11 +270,12 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         }
         dropdown.setValue(codexSettings.reasoningSummary);
         dropdown.onChange(async (value) => {
-          updateCodexProviderSettings(
-            settingsBag,
-            { reasoningSummary: value as 'auto' | 'concise' | 'detailed' | 'none' },
-          );
-          await context.plugin.saveSettings();
+          await context.plugin.mutateSettings((settings) => {
+            updateCodexProviderSettings(
+              settings,
+              { reasoningSummary: value as 'auto' | 'concise' | 'detailed' | 'none' },
+            );
+          });
         });
       });
 

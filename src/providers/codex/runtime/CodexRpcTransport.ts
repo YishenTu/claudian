@@ -33,6 +33,9 @@ export class CodexRpcTransport {
   }
 
   request<T = unknown>(method: string, params: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
+    if (this.disposed) {
+      return Promise.reject(new Error('Transport disposed'));
+    }
     const id = this.nextId++;
     const msg = { jsonrpc: '2.0' as const, id, method, params };
 
@@ -87,12 +90,16 @@ export class CodexRpcTransport {
   }
 
   private handleLine(line: string): void {
-    let msg: Record<string, unknown>;
+    let parsed: unknown;
     try {
-      msg = JSON.parse(line) as Record<string, unknown>;
+      parsed = JSON.parse(line) as unknown;
     } catch {
       return; // malformed line
     }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return;
+    }
+    const msg = parsed as Record<string, unknown>;
 
     const id = msg.id as string | number | undefined;
     const method = msg.method as string | undefined;
@@ -133,7 +140,12 @@ export class CodexRpcTransport {
 
   private handleNotification(method: string, params: unknown): void {
     const handler = this.notificationHandlers.get(method);
-    if (handler) handler(params);
+    if (!handler) return;
+    try {
+      handler(params);
+    } catch {
+      // Notification failures are non-fatal to the transport.
+    }
   }
 
   private handleServerRequest(id: string | number, method: string, params: unknown): void {
@@ -147,7 +159,7 @@ export class CodexRpcTransport {
       return;
     }
 
-    handler(id, params).then(
+    Promise.resolve().then(() => handler(id, params)).then(
       (result) => {
         this.sendRaw({ jsonrpc: '2.0', id, result });
       },

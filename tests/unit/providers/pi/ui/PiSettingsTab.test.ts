@@ -110,7 +110,7 @@ jest.mock('obsidian', () => ({
   },
   Setting: MockSetting,
 }));
-jest.mock('@/features/settings/ui/EnvironmentSettingsSection', () => ({
+jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 jest.mock('@/providers/pi/app/PiWorkspaceServices', () => ({
@@ -322,10 +322,15 @@ function applyElementAttrs(element: any, attrs?: Record<string, unknown>): void 
 }
 
 function createContext(settings: Record<string, unknown>) {
+  const saveSettings = jest.fn().mockResolvedValue(undefined);
   return {
     plugin: {
-      saveSettings: jest.fn().mockResolvedValue(undefined),
+      saveSettings,
       settings,
+      mutateSettings: jest.fn(async (mutation: (current: any) => void | Promise<void>) => {
+        await mutation(settings);
+        await saveSettings();
+      }),
     },
     refreshModelSelectors: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),

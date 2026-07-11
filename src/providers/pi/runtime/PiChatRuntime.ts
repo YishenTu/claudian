@@ -7,6 +7,7 @@ import {
   type SystemPromptSettings,
 } from '../../../core/prompt/mainAgent';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
+import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderCapabilities } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
@@ -34,7 +35,6 @@ import type {
   ToolCallInfo,
   UsageInfo,
 } from '../../../core/types';
-import type ClaudianPlugin from '../../../main';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { PI_PROVIDER_CAPABILITIES } from '../capabilities';
@@ -145,17 +145,19 @@ export class PiChatRuntime implements ChatRuntime {
   private pendingForkSourceSessionFile: string | null = null;
   private process: PiSubprocess | null = null;
   private ready = false;
+  private readinessFlight: { key: string; promise: Promise<boolean> } | null = null;
   private readonly readyListeners = new Set<(ready: boolean) => void>();
   private sessionFile: string | null = null;
   private sessionId: string | null = null;
   private sessionInvalidated = false;
+  private sessionResetPromise: Promise<void> | null = null;
   private supportedCommands: SlashCommand[] = [];
   private shutdownPromise: Promise<void> | null = null;
   private transport: PiRpcTransport | null = null;
   private unregisterTransportClose: (() => void) | null = null;
 
   constructor(
-    private readonly plugin: ClaudianPlugin,
+    private readonly plugin: ProviderHost,
     private readonly options: PiChatRuntimeOptions = {},
   ) {}
 
@@ -221,11 +223,32 @@ export class PiChatRuntime implements ChatRuntime {
   async reloadMcpServers(): Promise<void> {}
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
+    const key = JSON.stringify(options ?? {});
+    if (this.readinessFlight) {
+      if (this.readinessFlight.key === key) {
+        return this.readinessFlight.promise;
+      }
+      await this.readinessFlight.promise.catch(() => undefined);
+      return this.ensureReady(options);
+    }
+
+    const promise = this.ensureReadyInternal(options);
+    this.readinessFlight = { key, promise };
+    return promise.finally(() => {
+      if (this.readinessFlight?.promise === promise) {
+        this.readinessFlight = null;
+      }
+    });
+  }
+
+  private async ensureReadyInternal(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
     const settings = getPiProviderSettings(this.plugin.settings);
     if (!settings.enabled) {
       this.setReady(false);
       return false;
     }
+
+    await this.sessionResetPromise;
 
     const allowSessionCreation = options?.allowSessionCreation !== false;
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
@@ -392,12 +415,19 @@ export class PiChatRuntime implements ChatRuntime {
     this.pendingForkSourceSessionFile = null;
     this.currentSessionTarget = null;
     if (this.transport && !this.transport.isClosed) {
-      void this.transport.request('new_session')
+      const resetPromise = this.transport.request('new_session')
         .then((response) => {
           this.applyStateResponse(response);
           this.currentSessionTarget = this.sessionFile ?? this.sessionId ?? null;
         })
-        .catch(() => {});
+        .catch(() => {})
+        .then(() => undefined);
+      const trackedResetPromise = resetPromise.finally(() => {
+        if (this.sessionResetPromise === trackedResetPromise) {
+          this.sessionResetPromise = null;
+        }
+      });
+      this.sessionResetPromise = trackedResetPromise;
     }
   }
 

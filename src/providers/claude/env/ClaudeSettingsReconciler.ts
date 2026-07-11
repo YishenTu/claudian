@@ -4,6 +4,7 @@ import type { Conversation } from '../../../core/types';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { resolveClaudeModelSelection } from '../modelOptions';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
+import { clearClaudeResumeState } from '../types/providerState';
 import { claudeChatUIConfig } from '../ui/ClaudeChatUIConfig';
 
 const ENV_HASH_MODEL_KEYS = [
@@ -39,8 +40,7 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
 
     const invalidatedConversations: Conversation[] = [];
     for (const conv of conversations) {
-      if (conv.sessionId) {
-        conv.sessionId = null;
+      if (conv.providerId === 'claude' && clearClaudeResumeState(conv)) {
         invalidatedConversations.push(conv);
       }
     }

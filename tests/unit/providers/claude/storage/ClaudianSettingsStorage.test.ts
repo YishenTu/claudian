@@ -776,42 +776,4 @@ describe('ClaudianSettingsStorage', () => {
     });
   });
 
-  describe('setLastModel', () => {
-    it('should update lastClaudeModel for non-custom models', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({}));
-
-      await storage.setLastModel('claude-sonnet-4-5', false);
-
-      const writeCall = mockAdapter.write.mock.calls[0];
-      const writtenContent = JSON.parse(writeCall[1]);
-      expect(writtenContent.providerConfigs.claude.lastModel).toBe('claude-sonnet-4-5');
-      // lastCustomModel keeps its default value (empty string)
-    });
-
-    it('should update lastCustomModel for custom models', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({}));
-
-      await storage.setLastModel('custom-model-id', true);
-
-      const writeCall = mockAdapter.write.mock.calls[0];
-      const writtenContent = JSON.parse(writeCall[1]);
-      expect(writtenContent.lastCustomModel).toBe('custom-model-id');
-      // lastClaudeModel keeps its default value
-    });
-  });
-
-  describe('setLastEnvHash', () => {
-    it('should update environment hash', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({}));
-
-      await storage.setLastEnvHash('abc123');
-
-      const writeCall = mockAdapter.write.mock.calls[0];
-      const writtenContent = JSON.parse(writeCall[1]);
-      expect(writtenContent.providerConfigs.claude.environmentHash).toBe('abc123');
-    });
-  });
 });

@@ -9,6 +9,7 @@ import {
 import type { CodexLaunchSpec } from './codexLaunchTypes';
 
 const SIGKILL_TIMEOUT_MS = 3_000;
+const FINAL_SHUTDOWN_TIMEOUT_MS = 3_000;
 const STDERR_BUFFER_LIMIT = 8_192;
 
 type ExitCallback = (code: number | null, signal: string | null) => void;
@@ -95,18 +96,29 @@ export class CodexAppServerProcess {
     if (!this.proc || !this.alive) return;
 
     return new Promise<void>((resolve) => {
-      const onExit = () => {
-        window.clearTimeout(killTimer);
+      let killTimer: number | null = null;
+      let finalTimer: number | null = null;
+      const cleanup = () => {
+        if (killTimer !== null) window.clearTimeout(killTimer);
+        if (finalTimer !== null) window.clearTimeout(finalTimer);
+        this.proc?.off('exit', onExit);
+      };
+      const finish = () => {
+        cleanup();
         resolve();
+      };
+      const onExit = () => {
+        finish();
       };
 
       this.proc!.once('exit', onExit);
       this.killProc('SIGTERM');
 
-      const killTimer = window.setTimeout(() => {
+      killTimer = window.setTimeout(() => {
         if (this.alive) {
           this.killProc('SIGKILL');
         }
+        finalTimer = window.setTimeout(finish, FINAL_SHUTDOWN_TIMEOUT_MS);
       }, SIGKILL_TIMEOUT_MS);
     });
   }

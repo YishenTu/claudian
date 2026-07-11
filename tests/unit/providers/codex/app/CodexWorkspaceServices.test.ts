@@ -58,7 +58,7 @@ function createPlugin(
   discoveredModels: unknown[] = [],
   visibleModels: string[] | null = null,
 ) {
-  return {
+  const plugin: any = {
     settings: {
       providerConfigs: {
         codex: {
@@ -76,7 +76,15 @@ function createPlugin(
         adapter: { basePath: '/workspace' },
       },
     },
-  } as any;
+  };
+  plugin.mutateSettingsConditionally = jest.fn(async (
+    mutation: (settings: any) => boolean | Promise<boolean>,
+  ) => {
+    if (await mutation(plugin.settings)) {
+      await plugin.saveSettings();
+    }
+  });
+  return plugin;
 }
 
 describe('CodexWorkspaceServices', () => {

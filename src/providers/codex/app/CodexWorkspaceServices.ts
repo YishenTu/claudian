@@ -1,4 +1,5 @@
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
+import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
@@ -8,7 +9,6 @@ import type {
 } from '../../../core/providers/types';
 import type { HomeFileAdapter } from '../../../core/storage/HomeFileAdapter';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
-import type ClaudianPlugin from '../../../main';
 import { getVaultPath } from '../../../utils/path';
 import { CodexAgentMentionProvider } from '../agents/CodexAgentMentionProvider';
 import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
@@ -40,7 +40,7 @@ function createCodexCliResolver(): ProviderCliResolver {
 }
 
 export async function createCodexWorkspaceServices(
-  plugin: ClaudianPlugin,
+  plugin: ProviderHost,
   vaultAdapter: VaultFileAdapter,
   homeAdapter: HomeFileAdapter,
 ): Promise<CodexWorkspaceServices> {
@@ -77,34 +77,36 @@ export async function createCodexWorkspaceServices(
         return { changed: false, diagnostics: 'Codex app-server returned no visible models' };
       }
 
-      const currentSettings = getCodexProviderSettings(plugin.settings);
-      const currentModels = currentSettings.discoveredModels;
-      const visibleModels = normalizeCodexVisibleModels(
-        currentSettings.visibleModels,
-        result.models,
-      );
-      const catalogChanged = !sameCatalog(currentModels, result.models);
-      const visibilityChanged = !sameCatalog(currentSettings.visibleModels, visibleModels);
-      if (catalogChanged || visibilityChanged) {
-        updateCodexProviderSettings(plugin.settings, {
-          discoveredModels: result.models,
-          visibleModels,
-        });
-      }
-      const selectionChanged = ProviderSettingsCoordinator.normalizeAllModelVariants(plugin.settings);
-      const persistedSettingsChanged = visibilityChanged || selectionChanged;
-      return {
-        changed: catalogChanged || persistedSettingsChanged,
-        persistedSettingsChanged,
-      };
+      let refreshResult = { changed: false, persistedSettingsChanged: false };
+      await plugin.mutateSettingsConditionally((settings) => {
+        const currentSettings = getCodexProviderSettings(settings);
+        const currentModels = currentSettings.discoveredModels;
+        const visibleModels = normalizeCodexVisibleModels(
+          currentSettings.visibleModels,
+          result.models,
+        );
+        const catalogChanged = !sameCatalog(currentModels, result.models);
+        const visibilityChanged = !sameCatalog(currentSettings.visibleModels, visibleModels);
+        if (catalogChanged || visibilityChanged) {
+          updateCodexProviderSettings(settings, {
+            discoveredModels: result.models,
+            visibleModels,
+          });
+        }
+        const selectionChanged = ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
+        const persistedSettingsChanged = visibilityChanged || selectionChanged;
+        refreshResult = {
+          changed: catalogChanged || persistedSettingsChanged,
+          persistedSettingsChanged,
+        };
+        return persistedSettingsChanged;
+      });
+      return refreshResult;
     },
   };
 
   if (getCodexProviderSettings(plugin.settings).enabled) {
-    const result = await services.refreshModelCatalog!();
-    if (result.persistedSettingsChanged) {
-      await plugin.saveSettings();
-    }
+    await services.refreshModelCatalog!();
   }
 
   return services;

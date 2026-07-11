@@ -1,6 +1,6 @@
-import type ClaudianPlugin from '../../main';
 import { HomeFileAdapter } from '../storage/HomeFileAdapter';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
+import type { ProviderHost } from './ProviderHost';
 import type {
   AgentMentionProvider,
   ProviderCliResolver,
@@ -39,7 +39,7 @@ export class ProviderWorkspaceRegistry {
     return registration;
   }
 
-  static async initializeAll(plugin: ClaudianPlugin): Promise<void> {
+  static async initializeAll(plugin: ProviderHost): Promise<void> {
     const providerIds = Object.keys(this.registrations);
     const storage = plugin.storage;
     const vaultAdapter = storage.getAdapter();

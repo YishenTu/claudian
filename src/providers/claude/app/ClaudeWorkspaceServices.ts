@@ -1,5 +1,6 @@
 import { McpServerManager } from '../../../core/mcp/McpServerManager';
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
+import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
   AppAgentManager,
@@ -11,7 +12,6 @@ import type {
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
-import type ClaudianPlugin from '../../../main';
 import { getVaultPath } from '../../../utils/path';
 import { AgentManager } from '../agents/AgentManager';
 import { ClaudeCommandCatalog } from '../commands/ClaudeCommandCatalog';
@@ -34,7 +34,7 @@ export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
 }
 
 export async function createClaudeWorkspaceServices(
-  plugin: ClaudianPlugin,
+  plugin: ProviderHost,
   adapter: VaultFileAdapter,
 ): Promise<ClaudeWorkspaceServices> {
   const claudeStorage = new StorageService(plugin, adapter);

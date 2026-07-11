@@ -1,4 +1,4 @@
-import type { App, Plugin } from 'obsidian';
+import type { App } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../../../app/settings/ClaudianSettingsStorage';
@@ -32,6 +32,12 @@ export interface CombinedSettings {
   claudian: StoredClaudianSettings;
 }
 
+interface StorageServicePlugin {
+  readonly app: App;
+  loadData(): Promise<unknown>;
+  saveData(data: unknown): Promise<void>;
+}
+
 export class StorageService {
   readonly ccSettings: CCSettingsStorage;
   readonly claudianSettings: ClaudianSettingsStorage;
@@ -42,10 +48,10 @@ export class StorageService {
   readonly agents: AgentVaultStorage;
 
   private adapter: VaultFileAdapter;
-  private plugin: Plugin;
+  private plugin: StorageServicePlugin;
   private app: App;
 
-  constructor(plugin: Plugin, adapter?: VaultFileAdapter) {
+  constructor(plugin: StorageServicePlugin, adapter?: VaultFileAdapter) {
     this.plugin = plugin;
     this.app = plugin.app;
     this.adapter = adapter ?? new VaultFileAdapter(this.app);
