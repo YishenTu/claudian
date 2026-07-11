@@ -83,6 +83,21 @@
     "setup": "Einrichtung",
     "models": "Modelle",
     "experimental": "Experimentell",
+    "hitlAlerts": "Human-in-the-Loop-Benachrichtigungen",
+    "hitlSound": {
+      "name": "Freigabe-Ton abspielen",
+      "desc": "Spielt eine lokale WAV-Datei ab, wenn ein Provider um Erlaubnis fragt."
+    },
+    "hitlSoundVolume": {
+      "name": "Lautstärke des Freigabe-Tons",
+      "desc": "Lautstärke für Human-in-the-Loop-Berechtigungshinweise."
+    },
+    "hitlSoundPath": {
+      "name": "Sounddatei für Freigaben",
+      "desc": "Vault-relative WAV-Datei. Aus Sicherheitsgründen muss die Datei in .claudian/sounds/ liegen."
+    },
+    "hitlSoundTest": "Ton testen",
+    "hitlSoundTestFailed": "Der Freigabe-Ton konnte nicht abgespielt werden. Prüfe, ob die Datei eine gültige WAV in .claudian/sounds/ ist.",
     "userName": {
       "name": "Wie soll Claudian dich nennen?",
       "desc": "Dein Name für personalisierte Begrüßungen (leer lassen für allgemeine Begrüßungen)"

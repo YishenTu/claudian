@@ -83,6 +83,21 @@
     "setup": "Setup",
     "models": "Models",
     "experimental": "Experimental",
+    "hitlAlerts": "Human-in-the-loop alerts",
+    "hitlSound": {
+      "name": "Play approval sound",
+      "desc": "Play a local WAV sound whenever a provider requests permission."
+    },
+    "hitlSoundVolume": {
+      "name": "Approval sound volume",
+      "desc": "Volume used for human-in-the-loop permission alerts."
+    },
+    "hitlSoundPath": {
+      "name": "Approval sound file",
+      "desc": "Vault-relative WAV file. For safety, the file must remain inside .claudian/sounds/."
+    },
+    "hitlSoundTest": "Test sound",
+    "hitlSoundTestFailed": "Could not play the approval sound. Check that the file is a valid WAV inside .claudian/sounds/.",
     "userName": {
       "name": "What should Claudian call you?",
       "desc": "Your name for personalized greetings (leave empty for generic greetings)"

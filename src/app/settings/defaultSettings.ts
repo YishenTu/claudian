@@ -2,6 +2,7 @@ import { getDefaultHiddenProviderCommands } from '../../core/providers/commands/
 import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
 import { type ClaudianSettings } from '../../core/types/settings';
 import { getBuiltInProviderDefaultConfigs } from '../../providers/defaultProviderConfigs';
+import { DEFAULT_HITL_NOTIFICATION_SOUND_PATH } from '../../utils/hitlNotificationSound';
 
 export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   userName: '',
@@ -50,6 +51,10 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   deferMathRenderingDuringStreaming: true,
   expandFileEditsByDefault: false,
   chatViewPlacement: 'right-sidebar',
+
+  hitlNotificationSoundEnabled: false,
+  hitlNotificationSoundVolume: 0.5,
+  hitlNotificationSoundPath: DEFAULT_HITL_NOTIFICATION_SOUND_PATH,
 
   hiddenProviderCommands: getDefaultHiddenProviderCommands(),
 };

@@ -83,6 +83,21 @@
     "setup": "Configuração",
     "models": "Modelos",
     "experimental": "Experimental",
+    "hitlAlerts": "Alertas de aprovação",
+    "hitlSound": {
+      "name": "Tocar som de aprovação",
+      "desc": "Toca um som WAV local quando um provedor solicita permissão."
+    },
+    "hitlSoundVolume": {
+      "name": "Volume do som de aprovação",
+      "desc": "Volume usado para alertas de permissão."
+    },
+    "hitlSoundPath": {
+      "name": "Arquivo do som de aprovação",
+      "desc": "Arquivo WAV relativo ao cofre. Por segurança, o arquivo deve permanecer dentro de .claudian/sounds/."
+    },
+    "hitlSoundTest": "Testar som",
+    "hitlSoundTestFailed": "Não foi possível reproduzir o som de aprovação. Verifique se o arquivo é um WAV válido dentro de .claudian/sounds/.",
     "userName": {
       "name": "Como o Claudian deve chamá-lo?",
       "desc": "Seu nome para saudações personalizadas (deixe vazio para saudações genéricas)"

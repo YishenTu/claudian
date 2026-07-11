@@ -83,6 +83,21 @@
     "setup": "Configuración",
     "models": "Modelos",
     "experimental": "Experimental",
+    "hitlAlerts": "Alertas de aprobación",
+    "hitlSound": {
+      "name": "Reproducir sonido de aprobación",
+      "desc": "Reproduce un sonido WAV local cuando un proveedor solicita permiso."
+    },
+    "hitlSoundVolume": {
+      "name": "Volumen del sonido de aprobación",
+      "desc": "Volumen utilizado para las alertas de permisos."
+    },
+    "hitlSoundPath": {
+      "name": "Archivo de sonido de aprobación",
+      "desc": "Archivo WAV relativo a la bóveda. Por seguridad, el archivo debe permanecer dentro de .claudian/sounds/."
+    },
+    "hitlSoundTest": "Probar sonido",
+    "hitlSoundTestFailed": "No se pudo reproducir el sonido de aprobación. Comprueba que el archivo sea un WAV válido dentro de .claudian/sounds/.",
     "userName": {
       "name": "¿Cómo debería Claudian llamarte?",
       "desc": "Tu nombre para saludos personalizados (dejar vacío para saludos genéricos)"
