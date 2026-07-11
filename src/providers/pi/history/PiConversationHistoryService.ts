@@ -19,16 +19,21 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   ): Promise<void> {
     const state = getPiState(conversation.providerState);
     if (this.isPendingForkConversation(conversation)) {
-      if (conversation.messages.length > 0) {
-        return;
-      }
-
       const sourceSessionFile = resolvePiSessionFileHint(
         state.forkSourceSessionFile,
         state.forkSource!.sessionId,
         vaultPath,
         pathContext,
       );
+      this.replaceResolvedPath(
+        conversation,
+        'forkSourceSessionFile',
+        state.forkSourceSessionFile,
+        sourceSessionFile,
+      );
+      if (conversation.messages.length > 0) {
+        return;
+      }
       if (!sourceSessionFile) {
         this.hydratedKeys.delete(conversation.id);
         return;
@@ -54,7 +59,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     }
 
     const sessionTarget = state.sessionId ?? conversation.sessionId;
-    if (!sessionTarget) {
+    if (!state.sessionFile && !sessionTarget) {
       this.hydratedKeys.delete(conversation.id);
       return;
     }
@@ -64,6 +69,12 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       sessionTarget,
       vaultPath,
       pathContext,
+    );
+    this.replaceResolvedPath(
+      conversation,
+      'sessionFile',
+      state.sessionFile,
+      sessionFile,
     );
     if (!sessionFile) {
       this.hydratedKeys.delete(conversation.id);
@@ -133,5 +144,24 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     conversation: Conversation,
   ): Record<string, unknown> | undefined {
     return buildPersistedPiState(getPiState(conversation.providerState)) as Record<string, unknown> | undefined;
+  }
+
+  private replaceResolvedPath(
+    conversation: Conversation,
+    field: 'forkSourceSessionFile' | 'sessionFile',
+    persistedPath: string | undefined,
+    resolvedPath: string | null,
+  ): void {
+    if (!persistedPath || persistedPath === resolvedPath) {
+      return;
+    }
+
+    const nextState = { ...getPiState(conversation.providerState) };
+    if (resolvedPath) {
+      nextState[field] = resolvedPath;
+    } else {
+      delete nextState[field];
+    }
+    conversation.providerState = buildPersistedPiState(nextState) as Record<string, unknown> | undefined;
   }
 }

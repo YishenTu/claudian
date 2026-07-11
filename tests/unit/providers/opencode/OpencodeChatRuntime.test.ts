@@ -265,6 +265,60 @@ describe('OpencodeChatRuntime', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
   });
 
+  it('does not coalesce readiness across conversation targets', async () => {
+    const plugin = createMockPlugin({
+      settings: { providerConfigs: { opencode: { enabled: true } } },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts').mockResolvedValue({
+      configPath: '/tmp/claudian-opencode-config.json',
+      configContent: '{}\n',
+      databasePath: '/default/opencode.db',
+      launchKey: 'launch-key',
+      systemPromptPath: '/tmp/claudian-opencode-system.md',
+    });
+    jest.spyOn(runtime as any, 'startProcess').mockImplementation(async () => {
+      (runtime as any).process = {
+        isAlive: () => true,
+        shutdown: jest.fn().mockResolvedValue(undefined),
+      };
+      (runtime as any).transport = { dispose: jest.fn(), isClosed: false };
+      (runtime as any).connection = { dispose: jest.fn() };
+    });
+    let releaseFirstLoad!: () => void;
+    const firstLoadGate = new Promise<void>(resolve => { releaseFirstLoad = resolve; });
+    const loadSession = jest.spyOn(runtime as any, 'loadSession').mockImplementation(
+      async (sessionId) => {
+        if (sessionId === 'session-a') {
+          await firstLoadGate;
+        }
+        return true;
+      },
+    );
+
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-a' });
+    const first = runtime.ensureReady({ allowSessionCreation: false });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(loadSession).toHaveBeenCalledWith(
+      'session-a',
+      '/tmp/claudian-test-vault',
+      expect.any(Number),
+    );
+
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-b' });
+    const second = runtime.ensureReady({ allowSessionCreation: false });
+    releaseFirstLoad();
+
+    await expect(first).resolves.toBe(false);
+    await expect(second).resolves.toBe(true);
+    expect(loadSession).toHaveBeenLastCalledWith(
+      'session-b',
+      '/tmp/claudian-test-vault',
+      expect.any(Number),
+    );
+    expect(runtime.getSessionId()).toBe('session-b');
+  });
+
   it('does not start OpenCode after cleanup invalidates readiness', async () => {
     const plugin = createMockPlugin({
       settings: { providerConfigs: { opencode: { enabled: true } } },

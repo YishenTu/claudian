@@ -104,7 +104,7 @@ describe('OpencodeConversationHistoryService', () => {
     );
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted prompt']);
-    expect(conversation.providerState).toEqual({ databasePath: outsidePath });
+    expect(conversation.providerState).toEqual({ databasePath: trustedPath });
   });
 
   it('accepts an explicitly configured local database path', async () => {
@@ -120,6 +120,24 @@ describe('OpencodeConversationHistoryService', () => {
     );
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Configured prompt']);
+  });
+
+  it('sanitizes an untrusted database path before a session is assigned', async () => {
+    const xdgDataHome = path.join(tmpRoot, 'xdg');
+    const trustedPath = path.join(xdgDataHome, 'opencode', 'opencode.db');
+    const outsidePath = path.join(tmpRoot, 'synced-device', 'opencode.db');
+    seedDatabase(trustedPath, 'local-session', 'Trusted prompt');
+    seedDatabase(outsidePath, 'remote-session', 'Outside prompt');
+    const conversation = createConversation('remote-session', outsidePath);
+    conversation.sessionId = null;
+
+    await new OpencodeConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { HOME: tmpRoot, XDG_DATA_HOME: xdgDataHome } },
+    );
+
+    expect(conversation.providerState).toEqual({ databasePath: trustedPath });
   });
 });
 

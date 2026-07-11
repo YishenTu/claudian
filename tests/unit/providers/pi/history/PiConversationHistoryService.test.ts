@@ -65,7 +65,31 @@ describe('PiConversationHistoryService', () => {
     );
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted']);
-    expect(conversation.providerState).toEqual({ sessionFile: outsideFile, sessionId: 's1' });
+    expect(conversation.providerState).toEqual({ sessionFile: trustedFile, sessionId: 's1' });
+  });
+
+  it('hydrates trusted file-only Pi sessions without a logical session id', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-file-only-'));
+    const trustedDir = path.join(home, '.pi', 'agent', 'sessions');
+    await fs.mkdir(trustedDir, { recursive: true });
+    const sessionFile = path.join(trustedDir, 'file-only.jsonl');
+    await fs.writeFile(sessionFile, JSON.stringify({
+      id: 'file-only',
+      message: { content: 'File only', role: 'user' },
+      type: 'entry',
+    }));
+    const conversation = createConversation(sessionFile);
+    conversation.providerState = { sessionFile };
+    conversation.sessionId = null;
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { HOME: home } },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['File only']);
+    expect(conversation.providerState).toEqual({ sessionFile });
   });
 
   it('accepts a metadata path under the explicitly configured session directory', async () => {
@@ -175,6 +199,75 @@ describe('PiConversationHistoryService', () => {
     await service.hydrateConversationHistory(conversation, null);
 
     expect(conversation.messages.map(message => message.content)).toEqual(['First', 'Done']);
+  });
+
+  it('replaces an untrusted pending-fork path with the resolved local source', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-home-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-outside-'));
+    const trustedDir = path.join(home, '.pi', 'agent', 'sessions');
+    await fs.mkdir(trustedDir, { recursive: true });
+    const trustedFile = path.join(trustedDir, 'source-session.jsonl');
+    const outsideFile = path.join(outside, 'source-session.jsonl');
+    const trustedContent = [
+      JSON.stringify({ type: 'session', id: 'source-session' }),
+      JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'Trusted' } }),
+      JSON.stringify({ id: 'a1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+    ].join('\n');
+    await fs.writeFile(trustedFile, trustedContent);
+    await fs.writeFile(outsideFile, trustedContent.replace('Trusted', 'Outside'));
+    const conversation = createConversation(outsideFile);
+    conversation.providerState = {
+      forkSource: { sessionId: 'source-session', resumeAt: 'a1' },
+      forkSourceSessionFile: outsideFile,
+    };
+    conversation.sessionId = null;
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { HOME: home } },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['Trusted', 'Done']);
+    expect(conversation.providerState).toEqual({
+      forkSource: { sessionId: 'source-session', resumeAt: 'a1' },
+      forkSourceSessionFile: trustedFile,
+    });
+  });
+
+  it('sanitizes a pending-fork path even when messages are already hydrated', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-loaded-home-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-loaded-outside-'));
+    const trustedDir = path.join(home, '.pi', 'agent', 'sessions');
+    await fs.mkdir(trustedDir, { recursive: true });
+    const trustedFile = path.join(trustedDir, 'source-session.jsonl');
+    const outsideFile = path.join(outside, 'source-session.jsonl');
+    await fs.writeFile(trustedFile, JSON.stringify({ type: 'session', id: 'source-session' }));
+    await fs.writeFile(outsideFile, JSON.stringify({ type: 'session', id: 'source-session' }));
+    const conversation = createConversation(outsideFile);
+    conversation.messages = [{
+      content: 'Already loaded',
+      id: 'loaded',
+      role: 'user',
+      timestamp: 1,
+    }];
+    conversation.providerState = {
+      forkSource: { sessionId: 'source-session', resumeAt: 'a1' },
+      forkSourceSessionFile: outsideFile,
+    };
+    conversation.sessionId = null;
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { HOME: home } },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['Already loaded']);
+    expect(conversation.providerState).toEqual({
+      forkSource: { sessionId: 'source-session', resumeAt: 'a1' },
+      forkSourceSessionFile: trustedFile,
+    });
   });
 
   it('does not hydrate pending forks when the checkpoint is missing', async () => {

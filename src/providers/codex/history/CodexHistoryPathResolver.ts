@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import { isPathWithinRoot } from '../../../core/storage/pathContainment';
 import { inferWslDistroFromWindowsPath } from '../runtime/CodexExecutionTargetResolver';
+import { createCodexPathMapper } from '../runtime/CodexPathMapper';
 import { getCodexProviderSettings } from '../settings';
 import { findCodexSessionFileAsync } from './CodexHistoryStore';
 
@@ -79,6 +80,24 @@ function getTrustedSessionRoots(
   const configuredHome = context.environment.CODEX_HOME?.trim();
   if (configuredHome && isAbsolutePath(configuredHome)) {
     roots.push(joinSessionsRoot(configuredHome));
+    const distroConstraint = getWslDistroConstraint(context);
+    if (distroConstraint !== undefined && path.posix.isAbsolute(configuredHome)) {
+      const hintedDistro = hints
+        .map(hint => inferWslDistroFromWindowsPath(hint))
+        .find((distro): distro is string => !!distro);
+      const pathMapper = createCodexPathMapper({
+        distroName: distroConstraint || hintedDistro,
+        method: 'wsl',
+        platformFamily: 'unix',
+        platformOs: 'linux',
+      });
+      const hostSessionsRoot = pathMapper.toHostPath(
+        path.posix.join(configuredHome, 'sessions'),
+      );
+      if (hostSessionsRoot) {
+        roots.push(hostSessionsRoot);
+      }
+    }
   }
 
   const home = context.environment.HOME?.trim()

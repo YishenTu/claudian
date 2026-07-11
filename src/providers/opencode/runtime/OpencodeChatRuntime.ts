@@ -151,6 +151,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private approvalCallback: ApprovalCallback | null = null;
   private connection: AcpClientConnection | null = null;
   private connectionGeneration = 0;
+  private conversationId: string | null = null;
+  private conversationGeneration = 0;
   private contextUsage: AcpUsageUpdate | null = null;
   private currentDatabasePath: string | null = null;
   private currentLaunchKey: string | null = null;
@@ -216,7 +218,14 @@ export class OpencodeChatRuntime implements ChatRuntime {
   ): void {
     this.setCurrentConversationModel(conversation?.selectedModel);
     const previousSessionId = this.sessionId;
+    const nextConversationId = conversation?.id ?? null;
     const nextSessionId = conversation?.sessionId ?? null;
+    const state = getOpencodeState(conversation?.providerState);
+    const nextDatabasePath = state.databasePath
+      ?? ((!nextSessionId || nextSessionId !== previousSessionId) ? null : this.currentDatabasePath);
+    const targetChanged = nextConversationId !== this.conversationId
+      || nextSessionId !== this.sessionId
+      || nextDatabasePath !== this.currentDatabasePath;
     if (this.sessionId !== nextSessionId) {
       this.currentSessionEffortConfigId = null;
       this.currentSessionEffortValue = null;
@@ -226,21 +235,21 @@ export class OpencodeChatRuntime implements ChatRuntime {
       this.sessionInvalidated = false;
       this.setSupportedCommands([]);
     }
+    this.conversationId = nextConversationId;
     this.sessionId = nextSessionId;
-    const state = getOpencodeState(conversation?.providerState);
-    if (state.databasePath) {
-      this.currentDatabasePath = state.databasePath;
-      return;
-    }
-
-    if (!nextSessionId || nextSessionId !== previousSessionId) {
-      this.currentDatabasePath = null;
+    this.currentDatabasePath = nextDatabasePath;
+    if (targetChanged) {
+      this.conversationGeneration += 1;
+      if (this.readinessFlight) {
+        void this.shutdownProcess();
+      }
     }
   }
 
   async reloadMcpServers(): Promise<void> {}
 
   async warmModelMetadata(model: string): Promise<boolean> {
+    const conversationGeneration = this.conversationGeneration;
     const selectedRawModelId = decodeOpencodeModelId(model);
     if (!selectedRawModelId) {
       return false;
@@ -249,7 +258,11 @@ export class OpencodeChatRuntime implements ChatRuntime {
     if (!(await this.ensureReady({ allowSessionCreation: true }))) {
       return false;
     }
-    if (!this.connection || !this.sessionId) {
+    if (
+      !this.connection
+      || !this.sessionId
+      || !this.isConversationCurrent(conversationGeneration)
+    ) {
       return false;
     }
 
@@ -270,18 +283,22 @@ export class OpencodeChatRuntime implements ChatRuntime {
       type: 'select',
       value: selectedBaseRawModelId,
     });
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      return false;
+    }
     this.currentSessionModelId = selectedBaseRawModelId;
     await this.syncSessionModelState({
       configOptions: response.configOptions,
-    });
-    return true;
+    }, conversationGeneration);
+    return this.isConversationCurrent(conversationGeneration);
   }
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
     if (this.disposed) {
       return false;
     }
-    const key = JSON.stringify(options ?? {});
+    const conversationGeneration = this.conversationGeneration;
+    const key = JSON.stringify({ conversationGeneration, options: options ?? {} });
     if (this.readinessFlight) {
       if (this.readinessFlight.key === key) {
         return this.readinessFlight.promise;
@@ -290,8 +307,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
       return this.ensureReady(options);
     }
 
-    const generation = this.lifecycleGeneration;
-    const promise = this.ensureReadyInternal(options, generation);
+    const lifecycleGeneration = this.lifecycleGeneration;
+    const promise = this.ensureReadyInternal(
+      options,
+      lifecycleGeneration,
+      conversationGeneration,
+    );
     this.readinessFlight = { key, promise };
     return promise.finally(() => {
       if (this.readinessFlight?.promise === promise) {
@@ -302,7 +323,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
   private async ensureReadyInternal(
     options: ChatRuntimeEnsureReadyOptions | undefined,
-    generation: number,
+    lifecycleGeneration: number,
+    conversationGeneration: number,
   ): Promise<boolean> {
     const settings = getOpencodeProviderSettings(this.plugin.settings);
     if (!settings.enabled) {
@@ -323,7 +345,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       settings: promptSettings,
       workspaceRoot: cwd,
     });
-    if (!this.isLifecycleCurrent(generation)) {
+    if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
       return false;
     }
     this.currentDatabasePath = artifacts.databasePath;
@@ -347,7 +369,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     if (shouldRestart) {
       await this.shutdownProcess();
-      if (!this.isLifecycleCurrent(generation)) {
+      if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
         return false;
       }
       await this.startProcess({
@@ -356,7 +378,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
         cwd,
         runtimeEnv,
       });
-      if (!this.isLifecycleCurrent(generation)) {
+      if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
         await this.shutdownProcess();
         return false;
       }
@@ -368,8 +390,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     if (targetSessionId) {
       if (this.loadedSessionId !== targetSessionId) {
-        const loaded = await this.loadSession(targetSessionId, cwd);
-        if (!this.isLifecycleCurrent(generation)) {
+        const loaded = await this.loadSession(targetSessionId, cwd, conversationGeneration);
+        if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
           await this.shutdownProcess();
           return false;
         }
@@ -385,8 +407,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
       if (options?.allowSessionCreation === false) {
         return true;
       }
-      const sessionId = await this.createSession(cwd);
-      if (!this.isLifecycleCurrent(generation)) {
+      const sessionId = await this.createSession(cwd, conversationGeneration);
+      if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
         await this.shutdownProcess();
         return false;
       }
@@ -409,6 +431,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     if (queryOptions?.model) {
       this.setCurrentConversationModel(queryOptions.model);
     }
+    const conversationGeneration = this.conversationGeneration;
     const previousMessages = conversationHistory ?? [];
     const expectedSessionId = this.sessionId;
     let shouldBootstrapHistory = previousMessages.length > 0
@@ -416,6 +439,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     if (!(await this.ensureReady())) {
       yield { type: 'error', content: 'Failed to start OpenCode. Check the CLI path and login state.' };
+      yield { type: 'done' };
+      return;
+    }
+
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      yield { type: 'error', content: 'OpenCode conversation changed before the turn started.' };
       yield { type: 'done' };
       return;
     }
@@ -432,7 +461,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     if (!this.sessionId) {
-      const sessionId = await this.createSession(cwd);
+      const sessionId = await this.createSession(cwd, conversationGeneration);
       if (!sessionId) {
         yield { type: 'error', content: 'Failed to create an OpenCode session.' };
         yield { type: 'done' };
@@ -454,9 +483,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     const activeTurn = this.activeTurn;
     try {
-      await this.applySelectedMode(sessionId);
-      await this.applySelectedModel(sessionId, queryOptions);
-      await this.applySelectedEffort(sessionId);
+      await this.applySelectedMode(sessionId, conversationGeneration);
+      await this.applySelectedModel(sessionId, queryOptions, conversationGeneration);
+      await this.applySelectedEffort(sessionId, conversationGeneration);
+      if (!this.isConversationCurrent(conversationGeneration)) {
+        throw new Error('OpenCode conversation changed before the turn started.');
+      }
     } catch (error) {
       yield {
         type: 'error',
@@ -762,6 +794,18 @@ export class OpencodeChatRuntime implements ChatRuntime {
     return !this.disposed && generation === this.lifecycleGeneration;
   }
 
+  private isConversationCurrent(generation: number): boolean {
+    return generation === this.conversationGeneration;
+  }
+
+  private isReadinessCurrent(
+    lifecycleGeneration: number,
+    conversationGeneration: number,
+  ): boolean {
+    return this.isLifecycleCurrent(lifecycleGeneration)
+      && this.isConversationCurrent(conversationGeneration);
+  }
+
   private getSystemPromptSettings(vaultPath: string): SystemPromptSettings {
     return {
       customPrompt: this.plugin.settings.systemPrompt,
@@ -880,7 +924,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     return availableModes[0]?.id || null;
   }
 
-  private async applySelectedMode(sessionId: string): Promise<void> {
+  private async applySelectedMode(
+    sessionId: string,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<void> {
     if (!this.connection) {
       return;
     }
@@ -896,15 +943,19 @@ export class OpencodeChatRuntime implements ChatRuntime {
       type: 'select',
       value: selectedModeId,
     });
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      return;
+    }
     this.currentSessionModeId = selectedModeId;
     await this.syncSessionModeState({
       configOptions: response.configOptions,
-    });
+    }, conversationGeneration);
   }
 
   private async applySelectedModel(
     sessionId: string,
     queryOptions?: ChatRuntimeQueryOptions,
+    conversationGeneration = this.conversationGeneration,
   ): Promise<void> {
     if (!this.connection) {
       return;
@@ -921,10 +972,13 @@ export class OpencodeChatRuntime implements ChatRuntime {
       type: 'select',
       value: selectedRawModelId,
     });
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      return;
+    }
     this.currentSessionModelId = selectedRawModelId;
     await this.syncSessionModelState({
       configOptions: response.configOptions,
-    });
+    }, conversationGeneration);
   }
 
   private resolveSelectedEffortValue(): string | null {
@@ -941,7 +995,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
       : null;
   }
 
-  private async applySelectedEffort(sessionId: string): Promise<void> {
+  private async applySelectedEffort(
+    sessionId: string,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<void> {
     if (!this.connection || !this.currentSessionEffortConfigId) {
       return;
     }
@@ -957,16 +1014,25 @@ export class OpencodeChatRuntime implements ChatRuntime {
       type: 'select',
       value: selectedEffort,
     });
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      return;
+    }
     this.currentSessionEffortValue = selectedEffort;
     await this.syncSessionModelState({
       configOptions: response.configOptions,
-    });
+    }, conversationGeneration);
   }
 
   private async syncSessionModelState(params: {
     configOptions?: AcpSessionConfigOption[] | null;
     models?: AcpSessionModelState | null;
-  }): Promise<void> {
+  }, conversationGeneration?: number): Promise<void> {
+    if (
+      conversationGeneration !== undefined
+      && !this.isConversationCurrent(conversationGeneration)
+    ) {
+      return;
+    }
     const acpState = extractAcpSessionModelState(params);
     const currentRawModelId = acpState.currentModelId ?? this.currentSessionModelId;
     const discoveredModels = normalizeOpencodeDiscoveredModels(
@@ -1078,6 +1144,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     if (changed || shouldUpdateThinkingOptions) {
       await this.plugin.mutateSettings((settings) => {
+        if (
+          conversationGeneration !== undefined
+          && !this.isConversationCurrent(conversationGeneration)
+        ) {
+          return;
+        }
         if (currentBaseRawModelId) {
           this.seedActiveModelSelection(
             settings,
@@ -1093,6 +1165,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
           });
         }
       });
+    }
+    if (
+      conversationGeneration !== undefined
+      && !this.isConversationCurrent(conversationGeneration)
+    ) {
+      return;
     }
     this.refreshModelSelectors();
   }
@@ -1154,7 +1232,13 @@ export class OpencodeChatRuntime implements ChatRuntime {
     configOptions?: AcpSessionConfigOption[] | null;
     currentModeId?: string | null;
     modes?: AcpSessionModeState | null;
-  }): Promise<void> {
+  }, conversationGeneration?: number): Promise<void> {
+    if (
+      conversationGeneration !== undefined
+      && !this.isConversationCurrent(conversationGeneration)
+    ) {
+      return;
+    }
     const acpState = extractAcpSessionModeState(params);
     const availableModes = normalizeOpencodeAvailableModes(acpState.availableModes);
     const currentModeId = params.currentModeId ?? acpState.currentModeId;
@@ -1178,8 +1262,20 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     if (shouldSeedSelectedMode && currentModeId) {
       await this.plugin.mutateSettings((settings) => {
+        if (
+          conversationGeneration !== undefined
+          && !this.isConversationCurrent(conversationGeneration)
+        ) {
+          return;
+        }
         updateOpencodeProviderSettings(settings, { selectedMode: currentModeId });
       });
+    }
+    if (
+      conversationGeneration !== undefined
+      && !this.isConversationCurrent(conversationGeneration)
+    ) {
+      return;
     }
     this.refreshModelSelectors();
   }
@@ -1218,7 +1314,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
   }
 
-  private async createSession(cwd: string): Promise<string | null> {
+  private async createSession(
+    cwd: string,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<string | null> {
     if (!this.connection) {
       return null;
     }
@@ -1229,24 +1328,37 @@ export class OpencodeChatRuntime implements ChatRuntime {
         cwd,
         mcpServers: [],
       });
+      if (!this.isConversationCurrent(conversationGeneration)) {
+        return null;
+      }
       this.loadedSessionId = response.sessionId;
       this.sessionId = response.sessionId;
       this.sessionCwds.set(response.sessionId, cwd);
       await this.syncSessionModelState({
         configOptions: response.configOptions ?? null,
         models: response.models ?? null,
-      });
+      }, conversationGeneration);
+      if (!this.isConversationCurrent(conversationGeneration)) {
+        return null;
+      }
       await this.syncSessionModeState({
         configOptions: response.configOptions ?? null,
         modes: response.modes ?? null,
-      });
+      }, conversationGeneration);
+      if (!this.isConversationCurrent(conversationGeneration)) {
+        return null;
+      }
       return response.sessionId;
     } catch {
       return null;
     }
   }
 
-  private async loadSession(sessionId: string, cwd: string): Promise<boolean> {
+  private async loadSession(
+    sessionId: string,
+    cwd: string,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<boolean> {
     if (!this.connection) {
       return false;
     }
@@ -1258,6 +1370,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
         mcpServers: [],
         sessionId,
       });
+      if (!this.isConversationCurrent(conversationGeneration)) {
+        return false;
+      }
       this.sessionInvalidated = false;
       this.loadedSessionId = response.sessionId;
       this.sessionId = response.sessionId;
@@ -1265,11 +1380,17 @@ export class OpencodeChatRuntime implements ChatRuntime {
       await this.syncSessionModelState({
         configOptions: response.configOptions ?? null,
         models: response.models ?? null,
-      });
+      }, conversationGeneration);
+      if (!this.isConversationCurrent(conversationGeneration)) {
+        return false;
+      }
       await this.syncSessionModeState({
         configOptions: response.configOptions ?? null,
         modes: response.modes ?? null,
-      });
+      }, conversationGeneration);
+      if (!this.isConversationCurrent(conversationGeneration)) {
+        return false;
+      }
       return true;
     } catch {
       return false;

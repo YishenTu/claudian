@@ -18,14 +18,25 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     _vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<void> {
+    const state = getOpencodeState(conversation.providerState);
+    const databasePath = resolveOpencodeDatabasePathHint(state.databasePath, pathContext);
+    if (state.databasePath && state.databasePath !== databasePath) {
+      const providerState = { ...conversation.providerState };
+      if (databasePath) {
+        providerState.databasePath = databasePath;
+      } else {
+        delete providerState.databasePath;
+      }
+      conversation.providerState = Object.keys(providerState).length > 0
+        ? providerState
+        : undefined;
+    }
     const sessionId = conversation.sessionId;
     if (!sessionId) {
       this.hydratedKeys.delete(conversation.id);
       return;
     }
 
-    const state = getOpencodeState(conversation.providerState);
-    const databasePath = resolveOpencodeDatabasePathHint(state.databasePath, pathContext);
     const hydrationKey = `${sessionId}::${databasePath ?? ''}`;
     if (
       conversation.messages.length > 0

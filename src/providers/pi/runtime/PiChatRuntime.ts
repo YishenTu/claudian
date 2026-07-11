@@ -132,6 +132,8 @@ export class PiChatRuntime implements ChatRuntime {
   readonly providerId = 'pi' as const;
 
   private activeTurn: ActiveTurn | null = null;
+  private conversationId: string | null = null;
+  private conversationGeneration = 0;
   private currentLaunchKey: string | null = null;
   private currentConversationModel: string | null = null;
   private currentModel: string | null = null;
@@ -189,37 +191,53 @@ export class PiChatRuntime implements ChatRuntime {
 
   syncConversationState(conversation: ChatRuntimeConversationState | null): void {
     this.setCurrentConversationModel(conversation?.selectedModel);
+    const nextConversationId = conversation?.id ?? null;
+    const state = getPiState(conversation?.providerState);
+    const isPendingFork = !!conversation
+      && !!state.forkSource
+      && !state.sessionId
+      && !state.sessionFile
+      && !conversation.sessionId;
+    const nextSessionId = isPendingFork
+      ? null
+      : state.sessionId ?? conversation?.sessionId ?? null;
+    const nextSessionFile = isPendingFork ? null : state.sessionFile ?? null;
+    const nextPendingFork = isPendingFork ? state.forkSource ?? null : null;
+    const nextPendingForkSourceSessionFile = isPendingFork
+      ? state.forkSourceSessionFile ?? null
+      : null;
+    const currentTargetKey = JSON.stringify({
+      conversationId: this.conversationId,
+      pendingFork: this.pendingFork,
+      pendingForkSourceSessionFile: this.pendingForkSourceSessionFile,
+      sessionFile: this.sessionFile,
+      sessionId: this.sessionId,
+    });
+    const nextTargetKey = JSON.stringify({
+      conversationId: nextConversationId,
+      pendingFork: nextPendingFork,
+      pendingForkSourceSessionFile: nextPendingForkSourceSessionFile,
+      sessionFile: nextSessionFile,
+      sessionId: nextSessionId,
+    });
+
     if (!conversation) {
       this.currentConversationModel = null;
-      this.sessionId = null;
-      this.sessionFile = null;
-      this.leafEntryId = null;
-      this.parentSession = null;
-      this.pendingFork = null;
-      this.pendingForkSourceSessionFile = null;
-      this.sessionInvalidated = false;
-      return;
     }
-
-    const state = getPiState(conversation.providerState);
-    if (state.forkSource && !state.sessionId && !state.sessionFile && !conversation.sessionId) {
-      this.sessionId = null;
-      this.sessionFile = null;
-      this.leafEntryId = null;
-      this.parentSession = null;
-      this.pendingFork = state.forkSource;
-      this.pendingForkSourceSessionFile = state.forkSourceSessionFile ?? null;
-      this.sessionInvalidated = false;
-      return;
-    }
-
-    this.sessionId = state.sessionId ?? conversation.sessionId ?? null;
-    this.sessionFile = state.sessionFile ?? null;
-    this.leafEntryId = state.leafEntryId ?? null;
-    this.parentSession = state.parentSession ?? null;
-    this.pendingFork = null;
-    this.pendingForkSourceSessionFile = null;
+    this.conversationId = nextConversationId;
+    this.sessionId = nextSessionId;
+    this.sessionFile = nextSessionFile;
+    this.leafEntryId = isPendingFork ? null : state.leafEntryId ?? null;
+    this.parentSession = isPendingFork ? null : state.parentSession ?? null;
+    this.pendingFork = nextPendingFork;
+    this.pendingForkSourceSessionFile = nextPendingForkSourceSessionFile;
     this.sessionInvalidated = false;
+    if (currentTargetKey !== nextTargetKey) {
+      this.conversationGeneration += 1;
+      if (this.readinessFlight) {
+        void this.shutdownProcess();
+      }
+    }
   }
 
   async reloadMcpServers(): Promise<void> {}
@@ -228,7 +246,8 @@ export class PiChatRuntime implements ChatRuntime {
     if (this.disposed) {
       return false;
     }
-    const key = JSON.stringify(options ?? {});
+    const conversationGeneration = this.conversationGeneration;
+    const key = JSON.stringify({ conversationGeneration, options: options ?? {} });
     if (this.readinessFlight) {
       if (this.readinessFlight.key === key) {
         return this.readinessFlight.promise;
@@ -237,8 +256,12 @@ export class PiChatRuntime implements ChatRuntime {
       return this.ensureReady(options);
     }
 
-    const generation = this.lifecycleGeneration;
-    const promise = this.ensureReadyInternal(options, generation);
+    const lifecycleGeneration = this.lifecycleGeneration;
+    const promise = this.ensureReadyInternal(
+      options,
+      lifecycleGeneration,
+      conversationGeneration,
+    );
     this.readinessFlight = { key, promise };
     return promise.finally(() => {
       if (this.readinessFlight?.promise === promise) {
@@ -249,7 +272,8 @@ export class PiChatRuntime implements ChatRuntime {
 
   private async ensureReadyInternal(
     options: ChatRuntimeEnsureReadyOptions | undefined,
-    generation: number,
+    lifecycleGeneration: number,
+    conversationGeneration: number,
   ): Promise<boolean> {
     const settings = getPiProviderSettings(this.plugin.settings);
     if (!settings.enabled) {
@@ -258,7 +282,7 @@ export class PiChatRuntime implements ChatRuntime {
     }
 
     await this.sessionResetPromise;
-    if (!this.isLifecycleCurrent(generation)) {
+    if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
       return false;
     }
 
@@ -267,8 +291,15 @@ export class PiChatRuntime implements ChatRuntime {
     const resolvedCliPath = this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
     const runtimeEnvText = getRuntimeEnvironmentText(this.plugin.settings, 'pi');
     if (allowSessionCreation) {
-      await this.materializePendingFork(cwd, runtimeEnvText);
-      if (!this.isLifecycleCurrent(generation)) {
+      const materialized = await this.materializePendingFork(
+        cwd,
+        runtimeEnvText,
+        conversationGeneration,
+      );
+      if (
+        !materialized
+        || !this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)
+      ) {
         return false;
       }
     }
@@ -311,27 +342,36 @@ export class PiChatRuntime implements ChatRuntime {
 
     if (shouldRestart) {
       await this.shutdownProcess();
-      if (!this.isLifecycleCurrent(generation)) {
+      if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
         return false;
       }
       await this.startProcess(launchSpec);
-      if (!this.isLifecycleCurrent(generation)) {
+      if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
         await this.shutdownProcess();
         return false;
       }
       this.currentLaunchKey = nextLaunchKey;
       this.currentSessionTarget = sessionTarget;
     } else if (canSwitchSessionTarget && this.sessionFile) {
-      await this.switchSession(this.sessionFile, launchSpec, nextLaunchKey);
-      if (!this.isLifecycleCurrent(generation)) {
+      const switched = await this.switchSession(
+        this.sessionFile,
+        launchSpec,
+        nextLaunchKey,
+        lifecycleGeneration,
+        conversationGeneration,
+      );
+      if (
+        !switched
+        || !this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)
+      ) {
         await this.shutdownProcess();
         return false;
       }
     }
 
     if (allowSessionCreation || hasSessionTarget) {
-      await this.refreshStateAndSessionTarget();
-      if (!this.isLifecycleCurrent(generation)) {
+      await this.refreshStateAndSessionTarget(conversationGeneration);
+      if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
         await this.shutdownProcess();
         return false;
       }
@@ -348,6 +388,7 @@ export class PiChatRuntime implements ChatRuntime {
     if (queryOptions?.model) {
       this.setCurrentConversationModel(queryOptions.model);
     }
+    const conversationGeneration = this.conversationGeneration;
     this.currentTurnMetadata = {};
     let isReady: boolean;
     try {
@@ -360,6 +401,12 @@ export class PiChatRuntime implements ChatRuntime {
 
     if (!isReady) {
       yield { type: 'error', content: 'Failed to start Pi. Check the CLI path and login state.' };
+      yield { type: 'done' };
+      return;
+    }
+
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      yield { type: 'error', content: 'Pi conversation changed before the turn started.' };
       yield { type: 'done' };
       return;
     }
@@ -388,6 +435,7 @@ export class PiChatRuntime implements ChatRuntime {
       promptText,
       images,
       queryOptions,
+      conversationGeneration,
     );
 
     try {
@@ -432,10 +480,24 @@ export class PiChatRuntime implements ChatRuntime {
   }
 
   cancel(): void {
+    const activeTurn = this.activeTurn;
     this.transport?.send({ type: 'abort' });
+    if (!activeTurn || activeTurn.cancelled) {
+      return;
+    }
+
+    activeTurn.cancel(new Error('Pi turn cancelled'));
+    activeTurn.queue.push({ type: 'done' });
+    activeTurn.queue.close();
+    void this.shutdownProcess();
   }
 
   resetSession(): void {
+    this.conversationGeneration += 1;
+    const conversationGeneration = this.conversationGeneration;
+    if (this.readinessFlight) {
+      void this.shutdownProcess();
+    }
     this.sessionInvalidated = true;
     this.sessionId = null;
     this.sessionFile = null;
@@ -447,6 +509,9 @@ export class PiChatRuntime implements ChatRuntime {
     if (this.transport && !this.transport.isClosed) {
       const resetPromise = this.transport.request('new_session')
         .then((response) => {
+          if (!this.isConversationCurrent(conversationGeneration)) {
+            return;
+          }
           this.applyStateResponse(response);
           this.currentSessionTarget = this.sessionFile ?? this.sessionId ?? null;
         })
@@ -608,11 +673,15 @@ export class PiChatRuntime implements ChatRuntime {
     promptText: string,
     images: ReturnType<typeof buildPiPromptImages>,
     queryOptions?: ChatRuntimeQueryOptions,
+    conversationGeneration = this.conversationGeneration,
   ): Promise<void> {
     try {
-      const turnStartLeafId = await this.resolveCurrentLeafEntryId();
-      await this.applySelectedModel(queryOptions);
-      await this.applySelectedThinkingLevel(queryOptions);
+      const turnStartLeafId = await this.resolveCurrentLeafEntryId(conversationGeneration);
+      await this.applySelectedModel(queryOptions, conversationGeneration);
+      await this.applySelectedThinkingLevel(queryOptions, conversationGeneration);
+      if (!this.isConversationCurrent(conversationGeneration)) {
+        throw new Error('Pi conversation changed before the turn started.');
+      }
       if (activeTurn.cancelled) {
         throw new Error('Pi turn cancelled');
       }
@@ -636,8 +705,11 @@ export class PiChatRuntime implements ChatRuntime {
         await activeTurn.terminalPromise;
       }
 
-      await this.refreshStateAndSessionTarget();
-      await this.updateTurnMetadataFromSessionFile(turnStartLeafId);
+      await this.refreshStateAndSessionTarget(conversationGeneration);
+      if (!this.isConversationCurrent(conversationGeneration)) {
+        throw new Error('Pi conversation changed before the turn completed.');
+      }
+      await this.updateTurnMetadataFromSessionFile(turnStartLeafId, conversationGeneration);
       const usage = await this.fetchUsage(queryOptions).catch(() => null);
       if (usage) {
         activeTurn.queue.push({ sessionId: this.sessionId, type: 'usage', usage });
@@ -752,7 +824,10 @@ export class PiChatRuntime implements ChatRuntime {
     return this.normalizationState;
   }
 
-  private async applySelectedModel(queryOptions?: ChatRuntimeQueryOptions): Promise<void> {
+  private async applySelectedModel(
+    queryOptions?: ChatRuntimeQueryOptions,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<void> {
     if (!this.transport) {
       return;
     }
@@ -764,11 +839,17 @@ export class PiChatRuntime implements ChatRuntime {
     }
 
     await this.transport.request('set_model', payload);
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      return;
+    }
     this.currentModel = selectedModel;
     this.currentThinkingLevel = null;
   }
 
-  private async applySelectedThinkingLevel(queryOptions?: ChatRuntimeQueryOptions): Promise<void> {
+  private async applySelectedThinkingLevel(
+    queryOptions?: ChatRuntimeQueryOptions,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<void> {
     if (!this.transport) {
       return;
     }
@@ -782,24 +863,40 @@ export class PiChatRuntime implements ChatRuntime {
     await this.transport.request('set_thinking_level', {
       level: selectedThinkingLevel,
     });
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      return;
+    }
     this.currentThinkingLevel = selectedThinkingLevel;
   }
 
-  private async refreshState(): Promise<void> {
+  private async refreshState(
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<boolean> {
     if (!this.transport || this.transport.isClosed) {
-      return;
+      return this.isConversationCurrent(conversationGeneration);
     }
 
     const response = await this.transport.request('get_state', {}, 10_000);
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      return false;
+    }
     this.applyStateResponse(response);
+    return true;
   }
 
-  private async refreshStateAndSessionTarget(): Promise<void> {
+  private async refreshStateAndSessionTarget(
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<boolean> {
     try {
-      await this.refreshState();
+      const refreshed = await this.refreshState(conversationGeneration);
+      if (refreshed === false || !this.isConversationCurrent(conversationGeneration)) {
+        return false;
+      }
       this.currentSessionTarget = this.sessionFile ?? this.sessionId ?? null;
+      return true;
     } catch {
       // State refresh is opportunistic; the next turn can still proceed.
+      return this.isConversationCurrent(conversationGeneration);
     }
   }
 
@@ -837,27 +934,35 @@ export class PiChatRuntime implements ChatRuntime {
     return buildPiUsageInfo(response, selectedModel, fallbackContextWindow);
   }
 
-  private async materializePendingFork(cwd: string, runtimeEnvText: string): Promise<void> {
-    if (!this.pendingFork) {
-      return;
+  private async materializePendingFork(
+    cwd: string,
+    runtimeEnvText: string,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<boolean> {
+    const pendingFork = this.pendingFork;
+    if (!pendingFork) {
+      return true;
     }
 
     const env = parseEnvironmentVariables(runtimeEnvText);
     const sourceSessionFile = this.pendingForkSourceSessionFile
       ?? findPiSessionFile(
-        this.pendingFork.sessionId,
+        pendingFork.sessionId,
         cwd,
         typeof env.PI_CODING_AGENT_SESSION_DIR === 'string' ? env.PI_CODING_AGENT_SESSION_DIR : null,
       );
     if (!sourceSessionFile) {
-      throw new Error(`Pi fork source session not found: ${this.pendingFork.sessionId}`);
+      throw new Error(`Pi fork source session not found: ${pendingFork.sessionId}`);
     }
 
     const forkedSession = await createPiForkSessionFile(
       sourceSessionFile,
-      this.pendingFork.resumeAt,
+      pendingFork.resumeAt,
       { targetCwd: cwd },
     );
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      return false;
+    }
     this.sessionId = forkedSession.sessionId;
     this.sessionFile = forkedSession.sessionFile;
     this.leafEntryId = forkedSession.leafEntryId;
@@ -866,9 +971,12 @@ export class PiChatRuntime implements ChatRuntime {
     this.pendingForkSourceSessionFile = null;
     this.sessionInvalidated = false;
     this.currentSessionTarget = null;
+    return true;
   }
 
-  private async resolveCurrentLeafEntryId(): Promise<string | null> {
+  private async resolveCurrentLeafEntryId(
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<string | null> {
     if (this.leafEntryId) {
       return this.leafEntryId;
     }
@@ -881,6 +989,9 @@ export class PiChatRuntime implements ChatRuntime {
       const entries = parsePiSessionEntries(content).entries;
       const activePath = resolvePiActivePath(entries);
       const leafEntryId = getLastPiEntryId(activePath);
+      if (!this.isConversationCurrent(conversationGeneration)) {
+        return null;
+      }
       this.leafEntryId = leafEntryId;
       return leafEntryId;
     } catch {
@@ -888,7 +999,10 @@ export class PiChatRuntime implements ChatRuntime {
     }
   }
 
-  private async updateTurnMetadataFromSessionFile(previousLeafEntryId: string | null): Promise<void> {
+  private async updateTurnMetadataFromSessionFile(
+    previousLeafEntryId: string | null,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<void> {
     if (!this.sessionFile) {
       return;
     }
@@ -897,7 +1011,10 @@ export class PiChatRuntime implements ChatRuntime {
       const content = await fsp.readFile(this.sessionFile, 'utf-8');
       const entries = parsePiSessionEntries(content).entries;
       const activePath = resolvePiActivePath(entries);
-      if (activePath.length === 0) {
+      if (
+        activePath.length === 0
+        || !this.isConversationCurrent(conversationGeneration)
+      ) {
         return;
       }
 
@@ -1027,6 +1144,18 @@ export class PiChatRuntime implements ChatRuntime {
     return !this.disposed && generation === this.lifecycleGeneration;
   }
 
+  private isConversationCurrent(generation: number): boolean {
+    return generation === this.conversationGeneration;
+  }
+
+  private isReadinessCurrent(
+    lifecycleGeneration: number,
+    conversationGeneration: number,
+  ): boolean {
+    return this.isLifecycleCurrent(lifecycleGeneration)
+      && this.isConversationCurrent(conversationGeneration);
+  }
+
   private formatRuntimeError(error: unknown): string {
     const message = error instanceof Error ? error.message : 'Pi request failed';
     const stderr = this.process?.getStderrSnapshot();
@@ -1043,18 +1172,34 @@ export class PiChatRuntime implements ChatRuntime {
     sessionFile: string,
     launchSpec: PiLaunchSpec,
     nextLaunchKey: string,
-  ): Promise<void> {
+    lifecycleGeneration = this.lifecycleGeneration,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<boolean> {
     try {
       await this.transport!.request('switch_session', { sessionPath: sessionFile });
+      if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
+        return false;
+      }
       this.currentLaunchKey = nextLaunchKey;
       this.currentSessionTarget = sessionFile;
       this.sessionInvalidated = false;
     } catch {
+      if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
+        return false;
+      }
       await this.shutdownProcess();
+      if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
+        return false;
+      }
       await this.startProcess(launchSpec);
+      if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
+        await this.shutdownProcess();
+        return false;
+      }
       this.currentLaunchKey = nextLaunchKey;
       this.currentSessionTarget = this.sessionFile ?? this.sessionId ?? null;
     }
+    return true;
   }
 }
 
