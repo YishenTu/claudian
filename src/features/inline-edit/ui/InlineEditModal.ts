@@ -311,7 +311,7 @@ export class InlineEditModal {
   }
 }
 
-class InlineEditSession {
+export class InlineEditSession {
   private inputEl: HTMLInputElement | null = null;
   private spinnerEl: HTMLElement | null = null;
   private agentReplyEl: HTMLElement | null = null;
