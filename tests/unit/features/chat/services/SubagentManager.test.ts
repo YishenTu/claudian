@@ -265,6 +265,55 @@ describe('SubagentManager', () => {
       expect(manager.getByTaskId('running-task')).toBeUndefined();
     });
 
+    it('uses custom orphan reason when provided', () => {
+      const { manager } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('reason-task', { description: 'Task', run_in_background: true }, parentEl);
+      manager.handleTaskToolResult('reason-task', JSON.stringify({ agent_id: 'agent-reason' }));
+
+      const orphaned = manager.orphanAllActive('Interrupted before the background task completed');
+
+      expect(orphaned).toHaveLength(1);
+      expect(orphaned[0].result).toBe('Interrupted before the background task completed');
+      expect(manager.hasRunningSubagents()).toBe(false);
+    });
+
+    it('orphans a single subagent by agent id and clears its tracking state', () => {
+      const { manager } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('task-a', { description: 'Task A', run_in_background: true }, parentEl);
+      manager.handleTaskToolResult('task-a', JSON.stringify({ agent_id: 'agent-a' }));
+      manager.handleTaskToolUse('task-b', { description: 'Task B', run_in_background: true }, parentEl);
+      manager.handleTaskToolResult('task-b', JSON.stringify({ agent_id: 'agent-b' }));
+
+      manager.handleAgentOutputToolUse({
+        id: 'output-a',
+        name: 'AgentOutputTool',
+        input: { agent_id: 'agent-a' },
+        status: 'running',
+        isExpanded: false,
+      });
+
+      const orphaned = manager.orphanByAgentId('agent-a', 'Background task was killed');
+
+      expect(orphaned?.asyncStatus).toBe('orphaned');
+      expect(orphaned?.result).toBe('Background task was killed');
+      expect(manager.getByTaskId('task-a')).toBeUndefined();
+      expect(manager.isLinkedAgentOutputTool('output-a')).toBe(false);
+
+      // Other subagent untouched
+      expect(manager.getByTaskId('task-b')?.asyncStatus).toBe('running');
+      expect(manager.hasRunningSubagents()).toBe(true);
+    });
+
+    it('returns undefined when orphaning an unknown agent id', () => {
+      const { manager } = createManager();
+
+      expect(manager.orphanByAgentId('agent-missing')).toBeUndefined();
+    });
+
     it('ignores Task results for unknown tasks', () => {
       const { manager } = createManager();
 

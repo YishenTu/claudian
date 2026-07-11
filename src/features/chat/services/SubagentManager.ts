@@ -508,17 +508,17 @@ export class SubagentManager {
     this.pendingTasks.clear();
   }
 
-  public orphanAllActive(): SubagentInfo[] {
+  public orphanAllActive(reason?: string): SubagentInfo[] {
     const orphaned: SubagentInfo[] = [];
 
     for (const subagent of this.pendingAsyncSubagents.values()) {
-      this.markOrphaned(subagent);
+      this.markOrphaned(subagent, reason);
       orphaned.push(subagent);
     }
 
     for (const subagent of this.activeAsyncSubagents.values()) {
       if (subagent.asyncStatus === 'running') {
-        this.markOrphaned(subagent);
+        this.markOrphaned(subagent, reason);
         orphaned.push(subagent);
       }
     }
@@ -529,6 +529,35 @@ export class SubagentManager {
     this.outputToolIdToAgentId.clear();
 
     return orphaned;
+  }
+
+  /**
+   * Orphans a single async subagent by its agent id (per-agent termination
+   * path, e.g. a specific background task was killed or stalled). Removes it
+   * from all tracking maps so `hasRunningSubagents()` no longer counts it.
+   */
+  public orphanByAgentId(agentId: string, reason?: string): SubagentInfo | undefined {
+    const subagent = this.activeAsyncSubagents.get(agentId);
+    if (!subagent) return undefined;
+
+    this.activeAsyncSubagents.delete(agentId);
+
+    for (const [taskId, mappedAgentId] of this.taskIdToAgentId.entries()) {
+      if (mappedAgentId === agentId) {
+        this.taskIdToAgentId.delete(taskId);
+      }
+    }
+    for (const [toolId, mappedAgentId] of this.outputToolIdToAgentId.entries()) {
+      if (mappedAgentId === agentId) {
+        this.outputToolIdToAgentId.delete(toolId);
+      }
+    }
+
+    if (subagent.asyncStatus === 'running') {
+      this.markOrphaned(subagent, reason);
+    }
+
+    return subagent;
   }
 
   public clear(): void {
@@ -545,10 +574,10 @@ export class SubagentManager {
   // Private: State Transitions
   // ============================================
 
-  private markOrphaned(subagent: SubagentInfo): void {
+  private markOrphaned(subagent: SubagentInfo, reason?: string): void {
     subagent.asyncStatus = 'orphaned';
     subagent.status = 'error';
-    subagent.result = 'Conversation ended before task completed';
+    subagent.result = reason ?? 'Conversation ended before task completed';
     subagent.completedAt = Date.now();
     this.updateAsyncDomState(subagent);
     this.onStateChange(subagent);

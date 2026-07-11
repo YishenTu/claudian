@@ -357,6 +357,7 @@ export class InputController {
     let wasInvalidated = false;
     let didEnqueueToSdk = false;
     let planCompleted = false;
+    let streamErrored = false;
 
     // Lazy initialization: ensure service is ready before first query
     if (this.deps.ensureServiceInitialized) {
@@ -468,6 +469,7 @@ export class InputController {
         );
       }
     } catch (error) {
+      streamErrored = true;
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
     } finally {
@@ -486,6 +488,21 @@ export class InputController {
         const didCancelThisTurn = wasInterrupted || state.cancelRequested;
         if (didCancelThisTurn && !state.pendingNewSessionPlan) {
           await streamController.appendText('\n\n<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>');
+        }
+
+        // Termination path for async subagents on interrupt/stream error.
+        // Interrupting the turn (or a query error) kills in-flight background
+        // tasks — without orphaning them here the leaked map entries keep
+        // hasRunningSubagents() true forever and the Stop hook blocks every
+        // subsequent turn-end.
+        // (approve-new-session sets cancelRequested as a control-flow signal;
+        // that path orphans via conversationController.createNew() instead.)
+        if ((didCancelThisTurn && !state.pendingNewSessionPlan) || streamErrored) {
+          this.deps.getSubagentManager().orphanAllActive(
+            streamErrored && !didCancelThisTurn
+              ? 'Stream error ended the turn before the background task completed'
+              : 'Interrupted before the background task completed'
+          );
         }
         streamController.hideThinkingIndicator();
         state.isStreaming = false;
