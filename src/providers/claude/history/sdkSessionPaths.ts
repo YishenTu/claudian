@@ -59,6 +59,25 @@ export function sdkSessionExists(vaultPath: string, sessionId: string): boolean 
   }
 }
 
+/**
+ * `size:mtimeMs` signature of a session transcript file, or null when it
+ * cannot be read. Cheap change detection for transcripts that another
+ * process may append to.
+ */
+export async function getSDKSessionSignature(
+  vaultPath: string,
+  sessionId: string,
+  sessionPathOverride?: string,
+): Promise<string | null> {
+  try {
+    const sessionPath = sessionPathOverride ?? getSDKSessionPath(vaultPath, sessionId);
+    const stats = await fs.stat(sessionPath);
+    return `${stats.size}:${stats.mtimeMs}`;
+  } catch {
+    return null;
+  }
+}
+
 function hasFileSystemErrorCode(error: unknown, code: string): boolean {
   return !!error
     && typeof error === 'object'

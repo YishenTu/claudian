@@ -15,6 +15,7 @@ import type {
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
 import {
   deleteSDKSession,
+  getSDKSessionSignature,
   loadSDKSessionMessages,
   loadSubagentToolCalls,
   locateSDKSession,
@@ -199,18 +200,36 @@ function mergeDuplicateMessage(target: ChatMessage, incoming: ChatMessage): void
   target.images = mergeImageAttachments(target.images, incoming.images);
 }
 
+function collectProviderMessageIds(message: ChatMessage): string[] {
+  const ids: string[] = [];
+  if (message.userMessageId) ids.push(message.userMessageId);
+  if (message.assistantMessageId) ids.push(message.assistantMessageId);
+  return ids;
+}
+
 function dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
   const byId = new Map<string, ChatMessage>();
   const result: ChatMessage[] = [];
 
   for (const message of messages) {
-    const existing = byId.get(message.id);
+    // A message created live in the app and its transcript twin carry
+    // different `id`s: live messages use generated ids and record the
+    // provider uuids in userMessageId/assistantMessageId, while hydrated
+    // messages use the provider uuid as `id`. Match through both so
+    // re-running hydration cannot duplicate locally-created turns.
+    const existing = byId.get(message.id)
+      ?? collectProviderMessageIds(message)
+        .map(providerMessageId => byId.get(providerMessageId))
+        .find(Boolean);
     if (existing) {
       mergeDuplicateMessage(existing, message);
       continue;
     }
 
     byId.set(message.id, message);
+    for (const providerMessageId of collectProviderMessageIds(message)) {
+      byId.set(providerMessageId, message);
+    }
     result.push(message);
   }
 
@@ -369,6 +388,7 @@ function sanitizeProviderState(
 
 export class ClaudeConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedConversationIds = new Set<string>();
+  private hydratedTranscriptSignatures = new Map<string, string>();
   private pendingSessionLocationsByConversation = new Map<
     string,
     Map<string, SDKSessionLocation>
@@ -481,6 +501,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       this.pendingSessionLocationsByConversation.delete(conversation.id);
       this.relocatedSessionPathsByConversation.delete(conversation.id);
       this.hydratedConversationIds.delete(conversation.id);
+      this.hydratedTranscriptSignatures.delete(conversation.id);
       return 'delete';
     }
 
@@ -496,6 +517,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation.providerState = sanitizeProviderState(state);
     this.pendingSessionLocationsByConversation.delete(conversation.id);
     this.hydratedConversationIds.delete(conversation.id);
+    this.hydratedTranscriptSignatures.delete(conversation.id);
     return 'reset';
   }
 
@@ -544,8 +566,21 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation: Conversation,
     vaultPath: string | null,
   ): Promise<void> {
-    if (!vaultPath || this.hydratedConversationIds.has(conversation.id)) {
+    if (!vaultPath) {
       return;
+    }
+
+    const liveTranscriptSignature = await this.getLiveTranscriptSignature(conversation, vaultPath);
+    if (this.hydratedConversationIds.has(conversation.id)) {
+      // Hydrate again only when the live session transcript changed on disk
+      // since the last rebuild: an external process (e.g. a terminal
+      // `claude --resume` of the same session) appended turns the in-memory
+      // conversation has never seen. The merge below dedupes, so re-running
+      // hydration converges on the same view an app restart would produce.
+      const knownSignature = this.hydratedTranscriptSignatures.get(conversation.id);
+      if (liveTranscriptSignature === null || liveTranscriptSignature === knownSignature) {
+        return;
+      }
     }
 
     const state = getClaudeState(conversation.providerState);
@@ -645,7 +680,37 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation.messages = merged;
     if (errorCount === 0 && unknownSessionCount === 0) {
       this.hydratedConversationIds.add(conversation.id);
+      if (liveTranscriptSignature !== null) {
+        this.hydratedTranscriptSignatures.set(conversation.id, liveTranscriptSignature);
+      } else {
+        this.hydratedTranscriptSignatures.delete(conversation.id);
+      }
     }
+  }
+
+  /**
+   * `size:mtimeMs` signature of the conversation's live (resumable) session
+   * transcript, or null when there is none to watch. The signature is taken
+   * before the transcript is read, so a concurrent append is detected on the
+   * next call rather than missed.
+   */
+  private async getLiveTranscriptSignature(
+    conversation: Conversation,
+    vaultPath: string,
+  ): Promise<string | null> {
+    if (this.isPendingForkConversation(conversation)) {
+      return null;
+    }
+
+    const state = getClaudeState(conversation.providerState);
+    const sessionId = state.providerSessionId ?? conversation.sessionId;
+    if (!sessionId) {
+      return null;
+    }
+
+    const relocatedSessionPath =
+      this.relocatedSessionPathsByConversation.get(conversation.id)?.get(sessionId);
+    return getSDKSessionSignature(vaultPath, sessionId, relocatedSessionPath);
   }
 
   async deleteConversationSession(
@@ -655,6 +720,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     this.pendingSessionLocationsByConversation.delete(conversation.id);
     this.relocatedSessionPathsByConversation.delete(conversation.id);
     this.hydratedConversationIds.delete(conversation.id);
+    this.hydratedTranscriptSignatures.delete(conversation.id);
     const state = getClaudeState(conversation.providerState);
     const sessionId = state.providerSessionId ?? conversation.sessionId;
     if (!vaultPath || !sessionId) {

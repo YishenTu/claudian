@@ -345,6 +345,147 @@ describe('ClaudeConversationHistoryService', () => {
       loadSpy.mockRestore();
     });
 
+    it('re-hydrates when the live transcript changed on disk since the last hydration', async () => {
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation();
+      const signatureSpy = jest.spyOn(historyStore, 'getSDKSessionSignature')
+        .mockResolvedValueOnce('100:1')
+        .mockResolvedValueOnce('220:2');
+      const locationsSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockResolvedValue(new Map([['session-1', {
+          availability: 'available' as const,
+          sessionPath: '/vault/session-1.jsonl',
+        }]]));
+      const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
+        .mockResolvedValueOnce({
+          messages: [{ id: 'message-1', role: 'user', content: 'First', timestamp: 1 }],
+          skippedLines: 0,
+        })
+        .mockResolvedValueOnce({
+          messages: [
+            { id: 'message-1', role: 'user', content: 'First', timestamp: 1 },
+            { id: 'message-2', role: 'assistant', content: 'Appended externally', timestamp: 2 },
+          ],
+          skippedLines: 0,
+        });
+
+      await service.hydrateConversationHistory(conversation, '/vault');
+      expect(conversation.messages.map(message => message.id)).toEqual(['message-1']);
+
+      // e.g. a terminal `claude --resume session-1` appended a turn
+      await service.hydrateConversationHistory(conversation, '/vault');
+
+      expect(loadSpy).toHaveBeenCalledTimes(2);
+      expect(conversation.messages.map(message => message.id)).toEqual(['message-1', 'message-2']);
+
+      signatureSpy.mockRestore();
+      locationsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('does not duplicate locally-created turns when re-hydrating', async () => {
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation();
+      const signatureSpy = jest.spyOn(historyStore, 'getSDKSessionSignature')
+        .mockResolvedValueOnce('100:1')
+        .mockResolvedValueOnce('300:2');
+      const locationsSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockResolvedValue(new Map([['session-1', {
+          availability: 'available' as const,
+          sessionPath: '/vault/session-1.jsonl',
+        }]]));
+      const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
+        .mockResolvedValueOnce({
+          messages: [{ id: 'uuid-0', role: 'user', content: 'Old turn', timestamp: 1 }],
+          skippedLines: 0,
+        })
+        .mockResolvedValueOnce({
+          messages: [
+            { id: 'uuid-0', role: 'user', content: 'Old turn', timestamp: 1 },
+            // Transcript twins of the locally-created turn below.
+            { id: 'uuid-1', role: 'user', content: 'Local question', timestamp: 2 },
+            { id: 'uuid-2', role: 'assistant', content: 'Local answer', timestamp: 3 },
+            // Genuinely external turn (e.g. terminal `claude --resume`).
+            { id: 'uuid-3', role: 'assistant', content: 'External turn', timestamp: 4 },
+          ],
+          skippedLines: 0,
+        });
+
+      await service.hydrateConversationHistory(conversation, '/vault');
+
+      // A turn sent in the app afterwards: generated ids, provider uuids in metadata.
+      conversation.messages = [
+        ...conversation.messages,
+        { id: 'msg-local-1', role: 'user', content: 'Local question', timestamp: 2, userMessageId: 'uuid-1' },
+        { id: 'msg-local-2', role: 'assistant', content: 'Local answer', timestamp: 3, assistantMessageId: 'uuid-2' },
+      ];
+
+      await service.hydrateConversationHistory(conversation, '/vault');
+
+      expect(conversation.messages.map(message => message.id)).toEqual([
+        'uuid-0',
+        'msg-local-1',
+        'msg-local-2',
+        'uuid-3',
+      ]);
+
+      signatureSpy.mockRestore();
+      locationsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('hydrates only once while the live transcript is unchanged', async () => {
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation();
+      const signatureSpy = jest.spyOn(historyStore, 'getSDKSessionSignature')
+        .mockResolvedValue('100:1');
+      const locationsSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockResolvedValue(new Map([['session-1', {
+          availability: 'available' as const,
+          sessionPath: '/vault/session-1.jsonl',
+        }]]));
+      const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
+        .mockResolvedValue({
+          messages: [{ id: 'message-1', role: 'user', content: 'First', timestamp: 1 }],
+          skippedLines: 0,
+        });
+
+      await service.hydrateConversationHistory(conversation, '/vault');
+      await service.hydrateConversationHistory(conversation, '/vault');
+
+      expect(loadSpy).toHaveBeenCalledTimes(1);
+
+      signatureSpy.mockRestore();
+      locationsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
+    it('does not re-hydrate when no live transcript signature is readable', async () => {
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation();
+      const signatureSpy = jest.spyOn(historyStore, 'getSDKSessionSignature')
+        .mockResolvedValue(null);
+      const locationsSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockResolvedValue(new Map([['session-1', {
+          availability: 'available' as const,
+          sessionPath: '/vault/session-1.jsonl',
+        }]]));
+      const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
+        .mockResolvedValue({
+          messages: [{ id: 'message-1', role: 'user', content: 'First', timestamp: 1 }],
+          skippedLines: 0,
+        });
+
+      await service.hydrateConversationHistory(conversation, '/vault');
+      await service.hydrateConversationHistory(conversation, '/vault');
+
+      expect(loadSpy).toHaveBeenCalledTimes(1);
+
+      signatureSpy.mockRestore();
+      locationsSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
     it('retries hydration when one session segment has a transient read error', async () => {
       const service = new ClaudeConversationHistoryService();
       const conversation = createConversation({
