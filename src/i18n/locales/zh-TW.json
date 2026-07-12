@@ -256,18 +256,10 @@
       "desc": "為您的自訂模型設定上下文視窗大小。留空使用預設值（200k 權杖）。",
       "invalid": "格式無效。使用：256k、1m 或精確數量（1000-10000000）。"
     },
-    "enableOpus1M": {
-      "name": "Opus 1M 上下文視窗",
-      "desc": "在模型選擇器中顯示 Opus 1M。Max、Team 和 Enterprise 方案已包含。API 和 Pro 使用者需要額外用量。"
-    },
-    "enableSonnet1M": {
-      "name": "Sonnet 1M 上下文視窗",
-      "desc": "在模型選擇器中顯示 Sonnet 1M。Max、Team 和 Enterprise 方案需要額外用量。API 和 Pro 使用者需要額外用量。"
-    },
     "customModels": {
       "name": "自訂模型",
       "desc": "向選擇器追加額外的 Claude 模型 ID，每行一個。環境中的模型覆寫仍會取代選擇器。",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
     },
     "enableChrome": {
       "name": "啟用 Chrome 擴充功能",

@@ -217,6 +217,79 @@ describe('ClaudianService', () => {
       expect(service.isPersistentQueryActive()).toBe(false);
     });
 
+    it('should cache the raw model context window reported by the Agent SDK', async () => {
+      const mockQuery = {
+        getContextUsage: jest.fn().mockResolvedValue({
+          model: 'claude-sonnet-5',
+          rawMaxTokens: 1_000_000,
+          maxTokens: 950_000,
+        }),
+      };
+      (service as any).persistentQuery = mockQuery;
+      (service as any).currentConfig = { model: 'sonnet' };
+
+      await (service as any).refreshAuthoritativeContextWindow();
+
+      expect(mockQuery.getContextUsage).toHaveBeenCalledTimes(1);
+      expect((service as any).getTransformOptions('sonnet').authoritativeContextWindow).toBe(1_000_000);
+    });
+
+    it('should coalesce concurrent context-window discovery for the same query and model', async () => {
+      let resolveContextUsage!: (value: { rawMaxTokens: number }) => void;
+      const mockQuery = {
+        getContextUsage: jest.fn().mockReturnValue(new Promise((resolve) => {
+          resolveContextUsage = resolve;
+        })),
+      };
+      (service as any).persistentQuery = mockQuery;
+      (service as any).currentConfig = { model: 'sonnet' };
+
+      const first = (service as any).refreshAuthoritativeContextWindow();
+      const second = (service as any).refreshAuthoritativeContextWindow();
+      await Promise.resolve();
+
+      expect(mockQuery.getContextUsage).toHaveBeenCalledTimes(1);
+
+      resolveContextUsage({ rawMaxTokens: 1_000_000 });
+      await Promise.all([first, second]);
+    });
+
+    it('should ignore context-window discovery completed after the active query changes', async () => {
+      let resolveContextUsage!: (value: { rawMaxTokens: number }) => void;
+      const mockQuery = {
+        getContextUsage: jest.fn().mockReturnValue(new Promise((resolve) => {
+          resolveContextUsage = resolve;
+        })),
+      };
+      (service as any).persistentQuery = mockQuery;
+      (service as any).currentConfig = { model: 'sonnet' };
+
+      const discovery = (service as any).refreshAuthoritativeContextWindow();
+      await Promise.resolve();
+      (service as any).persistentQuery = { getContextUsage: jest.fn() };
+
+      resolveContextUsage({ rawMaxTokens: 1_000_000 });
+      await discovery;
+
+      expect((service as any).getTransformOptions('sonnet').authoritativeContextWindow).toBeUndefined();
+    });
+
+    it('should ignore an invalid context window reported by the Agent SDK', async () => {
+      const mockQuery = {
+        getContextUsage: jest.fn().mockResolvedValue({
+          model: 'claude-sonnet-5',
+          rawMaxTokens: 0,
+          maxTokens: 0,
+        }),
+      };
+      (service as any).persistentQuery = mockQuery;
+      (service as any).currentConfig = { model: 'sonnet' };
+
+      await (service as any).refreshAuthoritativeContextWindow();
+
+      expect((service as any).getTransformOptions('sonnet').authoritativeContextWindow).toBeUndefined();
+    });
+
     it('should close persistent query', () => {
       service.setSessionId('test-session');
       service.closePersistentQuery('test reason');
@@ -2544,6 +2617,9 @@ describe('ClaudianService', () => {
         enableChrome: false,
         enableAutoMode: false,
       };
+      const refreshContextWindowSpy = jest
+        .spyOn(service as any, 'refreshAuthoritativeContextWindow')
+        .mockResolvedValue(undefined);
 
       // Set up handler to resolve immediately
       const gen = (service as any).queryViaPersistent(
@@ -2569,8 +2645,66 @@ describe('ClaudianService', () => {
 
       // allowedTools should include the specified tools + Skill
       expect((service as any).currentAllowedTools).toEqual(['Read', 'Glob', 'Skill']);
+      expect(refreshContextWindowSpy).toHaveBeenCalledTimes(1);
 
       // Drain the generator
+      let next = await gen.next();
+      while (!next.done) {
+        next = await gen.next();
+      }
+    });
+
+    it('should not block the turn while context-window discovery is pending', async () => {
+      const mockPQ = {
+        interrupt: jest.fn().mockResolvedValue(undefined),
+        setModel: jest.fn().mockResolvedValue(undefined),
+        setPermissionMode: jest.fn().mockResolvedValue(undefined),
+        setMcpServers: jest.fn().mockResolvedValue({ added: [], removed: [], errors: {} }),
+      };
+      (service as any).persistentQuery = mockPQ;
+      (service as any).messageChannel = new MessageChannel();
+      (service as any).responseConsumerRunning = true;
+      (service as any).vaultPath = '/mock/vault/path';
+      (service as any).currentConfig = {
+        model: 'sonnet',
+        effortLevel: 'high',
+        permissionMode: 'ask',
+        systemPromptKey: '',
+        disallowedToolsKey: '',
+        mcpServersKey: '{}',
+        pluginsKey: '',
+        externalContextPaths: [],
+        settingSources: '',
+        claudeCliPath: '/usr/local/bin/claude',
+        enableChrome: false,
+        enableAutoMode: false,
+      };
+
+      let resolveDiscovery!: () => void;
+      jest.spyOn(service as any, 'refreshAuthoritativeContextWindow').mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveDiscovery = resolve;
+        }),
+      );
+
+      const gen = (service as any).queryViaPersistent(
+        'test', undefined, '/mock/vault/path', '/usr/local/bin/claude',
+      );
+      const firstChunkPromise = gen.next();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const registeredBeforeDiscovery = (service as any).responseHandlers.length > 0;
+      resolveDiscovery();
+      if (!registeredBeforeDiscovery) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+
+      const handler = (service as any).responseHandlers[0];
+      handler.onDone();
+      await firstChunkPromise;
+
+      expect(registeredBeforeDiscovery).toBe(true);
+
       let next = await gen.next();
       while (!next.done) {
         next = await gen.next();

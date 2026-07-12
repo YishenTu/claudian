@@ -129,4 +129,23 @@ describe('claudeSettingsReconciler', () => {
       expect(conversation.providerState).toBeUndefined();
     });
   });
+
+  describe('normalizeModelVariantSettings', () => {
+    it('migrates legacy built-in 1M aliases across Claude model settings', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-code/opus[1m]',
+        titleGenerationModel: 'sonnet[1M]',
+        providerConfigs: {
+          claude: {
+            lastModel: 'opus[1M]',
+          },
+        },
+      };
+
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
+      expect(settings.model).toBe('opus');
+      expect(settings.titleGenerationModel).toBe('sonnet');
+      expect(getClaudeProviderSettings(settings).lastModel).toBe('opus');
+    });
+  });
 });

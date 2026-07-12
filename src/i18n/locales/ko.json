@@ -256,18 +256,10 @@
       "desc": "사용자 정의 모델의 컨텍스트 창 크기를 설정합니다. 기본값(200k 토큰)을 사용하려면 비워두세요.",
       "invalid": "잘못된 형식입니다. 사용: 256k, 1m 또는 정확한 숫자(1000-10000000)."
     },
-    "enableOpus1M": {
-      "name": "Opus 1M 컨텍스트 윈도우",
-      "desc": "모델 선택기에서 Opus 1M을 표시합니다. Max, Team, Enterprise 플랜에 포함됩니다. API 및 Pro 사용자는 추가 사용량이 필요합니다."
-    },
-    "enableSonnet1M": {
-      "name": "Sonnet 1M 컨텍스트 윈도우",
-      "desc": "모델 선택기에서 Sonnet 1M을 표시합니다. Max, Team, Enterprise 플랜에서 추가 사용량이 필요합니다. API 및 Pro 사용자는 추가 사용량이 필요합니다."
-    },
     "customModels": {
       "name": "사용자 지정 모델",
       "desc": "추가 Claude 모델 ID를 한 줄에 하나씩 선택기에 추가합니다. 환경 모델 재정의는 계속 선택기를 대체합니다.",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
     },
     "enableChrome": {
       "name": "Chrome 확장 프로그램 활성화",

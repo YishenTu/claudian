@@ -411,6 +411,16 @@ describe('ClaudeSettingsTab', () => {
     expect(cliPathInput.placeholder).not.toContain('cli.js');
   });
 
+  it('does not render obsolete Opus and Sonnet 1M toggles', () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+
+    expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableOpus1M.name');
+    expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableSonnet1M.name');
+  });
+
   it('does not switch the active model while the custom models textarea is mid-edit', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);

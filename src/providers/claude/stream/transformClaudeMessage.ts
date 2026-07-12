@@ -70,6 +70,8 @@ export interface TransformOptions {
   intendedModel?: string;
   /** Custom context limits from settings (model ID → tokens). */
   customContextLimits?: Record<string, number>;
+  /** Context window reported by the active provider runtime. */
+  authoritativeContextWindow?: number;
   /** Tracks active streamed tool blocks so input_json_delta can be normalized. */
   streamState?: TransformStreamState;
   /** Tracks prompt-token usage across Anthropic-compatible stream events. */
@@ -303,7 +305,12 @@ function samePromptUsage(a: PromptUsageSnapshot, b: PromptUsageSnapshot): boolea
 
 function buildUsageInfo(promptUsage: PromptUsageSnapshot, options?: TransformOptions): UsageInfo {
   const model = options?.intendedModel ?? 'sonnet';
-  const contextWindow = getContextWindowSize(model, options?.customContextLimits);
+  const hasAuthoritativeContextWindow = typeof options?.authoritativeContextWindow === 'number'
+    && options.authoritativeContextWindow > 0
+    && Number.isFinite(options.authoritativeContextWindow);
+  const contextWindow = hasAuthoritativeContextWindow
+    ? options.authoritativeContextWindow!
+    : getContextWindowSize(model, options?.customContextLimits);
   const percentage = Math.min(100, Math.max(0, Math.round((promptUsage.contextTokens / contextWindow) * 100)));
 
   return {
@@ -312,6 +319,7 @@ function buildUsageInfo(promptUsage: PromptUsageSnapshot, options?: TransformOpt
     cacheCreationInputTokens: promptUsage.cacheCreationInputTokens,
     cacheReadInputTokens: promptUsage.cacheReadInputTokens,
     contextWindow,
+    ...(hasAuthoritativeContextWindow ? { contextWindowIsAuthoritative: true } : {}),
     contextTokens: promptUsage.contextTokens,
     percentage,
   };

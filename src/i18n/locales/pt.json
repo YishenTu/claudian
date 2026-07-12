@@ -256,18 +256,10 @@
       "desc": "Defina tamanhos de janela de contexto para seus modelos personalizados. Deixe vazio para usar o padrão (200k tokens).",
       "invalid": "Formato inválido. Use: 256k, 1m ou número exato (1000-10000000)."
     },
-    "enableOpus1M": {
-      "name": "Janela de contexto Opus 1M",
-      "desc": "Mostrar Opus 1M no seletor de modelos. Incluído nos planos Max, Team e Enterprise. Usuários de API e Pro precisam de uso adicional."
-    },
-    "enableSonnet1M": {
-      "name": "Janela de contexto Sonnet 1M",
-      "desc": "Mostrar Sonnet 1M no seletor de modelos. Requer uso adicional nos planos Max, Team e Enterprise. Usuários de API e Pro precisam de uso adicional."
-    },
     "customModels": {
       "name": "Modelos personalizados",
       "desc": "Adicione IDs de modelos Claude ao seletor, um por linha. Substituições de modelo por ambiente continuam substituindo o seletor.",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
     },
     "enableChrome": {
       "name": "Habilitar extensão do Chrome",

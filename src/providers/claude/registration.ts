@@ -1,3 +1,4 @@
+import { getProviderConfig } from '../../core/providers/providerConfig';
 import type { ProviderModule } from '../../core/providers/types';
 import {
   claudeWorkspaceRegistration,
@@ -13,6 +14,8 @@ import { ClaudianService as ClaudeChatRuntime } from './runtime/ClaudeChatRuntim
 import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpreter';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
 import { claudeChatUIConfig } from './ui/ClaudeChatUIConfig';
+
+const LEGACY_CLAUDE_1M_SETTINGS = ['enableOpus1M', 'enableSonnet1M'] as const;
 
 export const claudeProviderRegistration: ProviderModule = {
   id: 'claude',
@@ -33,14 +36,15 @@ export const claudeProviderRegistration: ProviderModule = {
       'lastClaudeModel',
       'enableChrome',
       'enableBangBash',
-      'enableOpus1M',
-      'enableSonnet1M',
+      ...LEGACY_CLAUDE_1M_SETTINGS,
       'environmentVariables',
       'lastEnvHash',
     ],
     normalizeStored(target, stored) {
+      const storedConfig = getProviderConfig(stored, 'claude');
+      const removedLegacy1MSettings = LEGACY_CLAUDE_1M_SETTINGS.some(key => key in storedConfig);
       updateClaudeProviderSettings(target, getClaudeProviderSettings(stored));
-      return false;
+      return removedLegacy1MSettings;
     },
   },
   createRuntime: ({ plugin }) => {
