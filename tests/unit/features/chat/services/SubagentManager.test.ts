@@ -455,6 +455,113 @@ describe('SubagentManager', () => {
   });
 
   // ============================================
+  // Completion Notification Robustness
+  // ============================================
+
+  describe('handleAsyncSubagentResult robustness', () => {
+    it('resolves a notification carrying the Task tool id instead of the agent id', () => {
+      const { manager, updates } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('task-1', { description: 'Background', run_in_background: true }, parentEl);
+      manager.handleTaskToolResult('task-1', JSON.stringify({ agent_id: 'agent-1' }));
+
+      const handled = manager.handleAsyncSubagentResult('task-1', 'completed', 'All done');
+
+      expect(handled?.asyncStatus).toBe('completed');
+      expect(handled?.result).toBe('All done');
+      expect(manager.hasRunningSubagents()).toBe(false);
+      expect(updates[updates.length - 1].asyncStatus).toBe('completed');
+    });
+
+    it('clears every tracking map on completion', () => {
+      const { manager } = createManager();
+      const parentEl = createMockEl();
+      const internal = manager as any;
+
+      manager.handleTaskToolUse('task-2', { description: 'Background', run_in_background: true }, parentEl);
+      manager.handleTaskToolResult('task-2', JSON.stringify({ agent_id: 'agent-2' }));
+      manager.handleAgentOutputToolUse({
+        id: 'output-2',
+        name: 'AgentOutputTool',
+        input: { agent_id: 'agent-2' },
+        status: 'running',
+        isExpanded: false,
+      });
+
+      manager.handleAsyncSubagentResult('agent-2', 'completed');
+
+      expect(internal.activeAsyncSubagents.size).toBe(0);
+      expect(internal.taskIdToAgentId.size).toBe(0);
+      expect(internal.outputToolIdToAgentId.size).toBe(0);
+    });
+
+    it('completes a pending entry whose task was never promoted to active', () => {
+      const { manager, updates } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('task-3', { description: 'Background', run_in_background: true }, parentEl);
+      // No handleTaskToolResult: the entry stays pending, awaiting an agent id.
+
+      const handled = manager.handleAsyncSubagentResult('task-3', 'error', 'crashed');
+
+      expect(handled?.asyncStatus).toBe('error');
+      expect(handled?.result).toBe('crashed');
+      expect(manager.getByTaskId('task-3')).toBeUndefined();
+      expect(manager.hasRunningSubagents()).toBe(false);
+      expect(updates[updates.length - 1].asyncStatus).toBe('error');
+    });
+
+    it('reconciles an already-terminal entry out of the maps instead of leaking it', () => {
+      const { manager } = createManager();
+      const internal = manager as any;
+      internal.activeAsyncSubagents.set('agent-stale', {
+        id: 'task-stale',
+        mode: 'async',
+        status: 'completed',
+        asyncStatus: 'completed',
+      });
+
+      expect(manager.handleAsyncSubagentResult('agent-stale', 'completed')).toBeUndefined();
+
+      expect(internal.activeAsyncSubagents.size).toBe(0);
+      expect(manager.hasRunningSubagents()).toBe(false);
+    });
+
+    it('resolves a notification via the SDK tool_use_id when the task id matches nothing', () => {
+      const { manager } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('task-4', { description: 'Background', run_in_background: true }, parentEl);
+      manager.handleTaskToolResult('task-4', JSON.stringify({ agent_id: 'agent-4' }));
+
+      const handled = manager.handleAsyncSubagentResult('skewed-task-id', 'completed', 'done', 'task-4');
+
+      expect(handled?.asyncStatus).toBe('completed');
+      expect(manager.hasRunningSubagents()).toBe(false);
+    });
+
+    it('completes a never-promoted pending entry via the SDK tool_use_id', () => {
+      const { manager } = createManager();
+      const parentEl = createMockEl();
+
+      manager.handleTaskToolUse('task-5', { description: 'Background', run_in_background: true }, parentEl);
+
+      const handled = manager.handleAsyncSubagentResult('skewed-task-id', 'error', 'crashed', 'task-5');
+
+      expect(handled?.asyncStatus).toBe('error');
+      expect(manager.hasRunningSubagents()).toBe(false);
+    });
+
+    it('still ignores notifications for entirely unknown agents', () => {
+      const { manager, updates } = createManager();
+
+      expect(manager.handleAsyncSubagentResult('agent-unknown', 'completed')).toBeUndefined();
+      expect(updates).toHaveLength(0);
+    });
+  });
+
+  // ============================================
   // Async Parsing Edge Cases (via public API)
   // ============================================
 

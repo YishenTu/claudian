@@ -1940,8 +1940,33 @@ function hasVisibleAutoTurnMessageContent(msg: ChatMessage): boolean {
   ) ?? false;
 }
 
+/**
+ * Applies the subagent state transitions carried by `async_subagent_result`
+ * chunks directly, bypassing rendering. The completion notification arrives
+ * exactly once — if it is dropped (detached tab DOM, render failure), the
+ * subagent stays tracked as running forever and the Stop hook blocks every
+ * subsequent turn-end.
+ */
+export function applyAsyncSubagentResultChunks(
+  subagentManager: SubagentManager,
+  chunks: StreamChunk[],
+): void {
+  for (const chunk of chunks) {
+    if (chunk.type !== 'async_subagent_result') {
+      continue;
+    }
+    try {
+      subagentManager.handleAsyncSubagentResult(chunk.agentId, chunk.status, chunk.result, chunk.toolUseId);
+    } catch {
+      // One failed transition must not drop the remaining completions.
+    }
+  }
+}
+
 async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Promise<void> {
   if (!tab.dom.contentEl.isConnected) {
+    // The turn cannot render, but completion state must still be applied.
+    applyAsyncSubagentResultChunks(tab.services.subagentManager, result.chunks);
     return;
   }
 
@@ -1987,9 +2012,11 @@ async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Pr
     }
   }
 
+  let processedChunkCount = 0;
   try {
     for (const chunk of chunks) {
       await tab.controllers.streamController?.handleStreamChunk(chunk, assistantMsg);
+      processedChunkCount++;
     }
 
     if (hasVisibleContent && !hasVisibleAutoTurnMessageContent(assistantMsg)) {
@@ -2002,6 +2029,15 @@ async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Pr
       await tab.controllers.streamController?.finalizeCurrentThinkingBlock(assistantMsg);
       await tab.controllers.streamController?.finalizeCurrentTextBlock(assistantMsg);
     }
+  } catch (error) {
+    // A render failure must not drop the completion state of the remaining
+    // chunks. Re-driving the failed chunk itself is safe: the state update
+    // runs before rendering and re-applying a terminal transition is a no-op.
+    applyAsyncSubagentResultChunks(
+      tab.services.subagentManager,
+      chunks.slice(processedChunkCount),
+    );
+    throw error;
   } finally {
     if (hasVisibleContent) {
       tab.controllers.streamController?.hideThinkingIndicator();

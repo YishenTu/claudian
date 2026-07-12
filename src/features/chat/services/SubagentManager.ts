@@ -59,6 +59,10 @@ function parseJsonValue(value: string): unknown {
   }
 }
 
+function resolveAsyncResultText(status: 'completed' | 'error', result?: string): string {
+  return result?.trim() || (status === 'error' ? 'Background task failed.' : 'Background task completed.');
+}
+
 export class SubagentManager {
   private static readonly TRUSTED_OUTPUT_EXT = '.output';
   private static readonly TRUSTED_TMP_ROOTS = SubagentManager.resolveTrustedTmpRoots();
@@ -428,25 +432,44 @@ export class SubagentManager {
   public handleAsyncSubagentResult(
     agentId: string,
     status: 'completed' | 'error',
-    result?: string
+    result?: string,
+    toolUseId?: string
   ): SubagentInfo | undefined {
-    const subagent = this.activeAsyncSubagents.get(agentId);
-    if (!subagent || subagent.asyncStatus !== 'running') {
+    let resolvedId = agentId;
+    let subagent = this.activeAsyncSubagents.get(resolvedId);
+
+    // The completion notification arrives exactly once, so a missed lookup
+    // leaks a "running" entry forever and the Stop hook then blocks every
+    // turn-end. The notification id may be the Task tool id rather than the
+    // agent id the entry was registered under — resolve it (and the SDK's
+    // tool_use_id, when carried) before giving up.
+    if (!subagent) {
+      const mappedAgentId = this.taskIdToAgentId.get(agentId)
+        ?? (toolUseId ? this.taskIdToAgentId.get(toolUseId) : undefined);
+      if (mappedAgentId) {
+        resolvedId = mappedAgentId;
+        subagent = this.activeAsyncSubagents.get(mappedAgentId);
+      }
+    }
+
+    if (!subagent) {
+      return this.completePendingAsyncSubagent(agentId, status, result, toolUseId);
+    }
+
+    if (subagent.asyncStatus !== 'running') {
+      // Already terminal but never removed from the maps — reconcile it out
+      // instead of leaving it to keep hasRunningSubagents() true forever.
+      this.clearAsyncTracking(resolvedId);
       return undefined;
     }
 
-    subagent.agentId = subagent.agentId || agentId;
+    subagent.agentId = subagent.agentId || resolvedId;
     subagent.asyncStatus = status;
     subagent.status = status;
-    subagent.result = result?.trim() || (status === 'error' ? 'Background task failed.' : 'Background task completed.');
+    subagent.result = resolveAsyncResultText(status, result);
     subagent.completedAt = Date.now();
 
-    this.activeAsyncSubagents.delete(agentId);
-    for (const [toolId, mappedAgentId] of this.outputToolIdToAgentId.entries()) {
-      if (mappedAgentId === agentId) {
-        this.outputToolIdToAgentId.delete(toolId);
-      }
-    }
+    this.clearAsyncTracking(resolvedId);
 
     this.updateAsyncDomState(subagent);
     this.onStateChange(subagent);
@@ -562,6 +585,54 @@ export class SubagentManager {
     this.pendingAsyncSubagents.delete(taskToolId);
     this.updateAsyncDomState(subagent);
     this.onStateChange(subagent);
+  }
+
+  /**
+   * Terminal transition for a completion notification whose task was never
+   * promoted to active (its Task tool result never yielded an agent id).
+   * Without this, the pending entry lingers and hasRunningSubagents() stays
+   * true forever.
+   */
+  private completePendingAsyncSubagent(
+    notificationId: string,
+    status: 'completed' | 'error',
+    result?: string,
+    toolUseId?: string
+  ): SubagentInfo | undefined {
+    let pendingKey = notificationId;
+    let pending = this.pendingAsyncSubagents.get(pendingKey);
+    if (!pending && toolUseId) {
+      pendingKey = toolUseId;
+      pending = this.pendingAsyncSubagents.get(toolUseId);
+    }
+    if (!pending) {
+      return undefined;
+    }
+
+    pending.asyncStatus = status;
+    pending.status = status;
+    pending.result = resolveAsyncResultText(status, result);
+    pending.completedAt = Date.now();
+
+    this.pendingAsyncSubagents.delete(pendingKey);
+    this.updateAsyncDomState(pending);
+    this.onStateChange(pending);
+    return pending;
+  }
+
+  /** Removes an async subagent from every tracking map. */
+  private clearAsyncTracking(agentId: string): void {
+    this.activeAsyncSubagents.delete(agentId);
+    for (const [taskId, mappedAgentId] of this.taskIdToAgentId.entries()) {
+      if (mappedAgentId === agentId) {
+        this.taskIdToAgentId.delete(taskId);
+      }
+    }
+    for (const [toolId, mappedAgentId] of this.outputToolIdToAgentId.entries()) {
+      if (mappedAgentId === agentId) {
+        this.outputToolIdToAgentId.delete(toolId);
+      }
+    }
   }
 
   // ============================================

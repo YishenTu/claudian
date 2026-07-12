@@ -10,10 +10,12 @@ import { Notice, Platform } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import type { StreamChunk } from '@/core/types';
 import { SelectionController } from '@/features/chat/controllers/SelectionController';
 import { ChatState } from '@/features/chat/state/ChatState';
 import {
   activateTab,
+  applyAsyncSubagentResultChunks,
   createTab,
   deactivateTab,
   destroyTab,
@@ -4410,5 +4412,48 @@ describe('Tab - InputController getTabProviderId wiring', () => {
     // For a blank tab with default model, should resolve to claude
     const result = config.getTabProviderId();
     expect(result).toBe('claude');
+  });
+});
+
+describe('applyAsyncSubagentResultChunks', () => {
+  it('forwards only async_subagent_result chunks to the subagent manager', () => {
+    const subagentManager = { handleAsyncSubagentResult: jest.fn() };
+    const chunks: StreamChunk[] = [
+      { type: 'text', content: 'hello' },
+      { type: 'async_subagent_result', agentId: 'agent-1', status: 'completed', result: 'done', toolUseId: 'task-1' },
+      { type: 'done' },
+      { type: 'async_subagent_result', agentId: 'agent-2', status: 'error' },
+    ];
+
+    applyAsyncSubagentResultChunks(subagentManager as any, chunks);
+
+    expect(subagentManager.handleAsyncSubagentResult).toHaveBeenCalledTimes(2);
+    expect(subagentManager.handleAsyncSubagentResult).toHaveBeenNthCalledWith(1, 'agent-1', 'completed', 'done', 'task-1');
+    expect(subagentManager.handleAsyncSubagentResult).toHaveBeenNthCalledWith(2, 'agent-2', 'error', undefined, undefined);
+  });
+
+  it('applies the remaining completions when one transition throws', () => {
+    const subagentManager = {
+      handleAsyncSubagentResult: jest.fn().mockImplementationOnce(() => {
+        throw new Error('DOM finalize failed');
+      }),
+    };
+    const chunks: StreamChunk[] = [
+      { type: 'async_subagent_result', agentId: 'agent-1', status: 'completed' },
+      { type: 'async_subagent_result', agentId: 'agent-2', status: 'completed' },
+    ];
+
+    expect(() => applyAsyncSubagentResultChunks(subagentManager as any, chunks)).not.toThrow();
+
+    expect(subagentManager.handleAsyncSubagentResult).toHaveBeenCalledTimes(2);
+    expect(subagentManager.handleAsyncSubagentResult).toHaveBeenLastCalledWith('agent-2', 'completed', undefined, undefined);
+  });
+
+  it('is a no-op for chunk lists without async results', () => {
+    const subagentManager = { handleAsyncSubagentResult: jest.fn() };
+
+    applyAsyncSubagentResultChunks(subagentManager as any, [{ type: 'text', content: 'hi' }]);
+
+    expect(subagentManager.handleAsyncSubagentResult).not.toHaveBeenCalled();
   });
 });

@@ -57,11 +57,15 @@ function transformTaskNotification(message: SDKMessage): StreamChunk | null {
   }
 
   const status = normalizeTaskNotificationStatus(record.status);
+  const toolUseId = record.tool_use_id;
   return {
     type: 'async_subagent_result',
     agentId: taskId,
     status,
     result: normalizeTaskNotificationResult(status, record.summary),
+    // The launching Task tool_use id, when the SDK provides it — the exact
+    // key subagent tracking may have registered the task under.
+    ...(typeof toolUseId === 'string' && toolUseId.length > 0 ? { toolUseId } : {}),
   };
 }
 

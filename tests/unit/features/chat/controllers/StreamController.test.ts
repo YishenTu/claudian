@@ -1839,7 +1839,8 @@ describe('StreamController - Text Content', () => {
       expect(deps.subagentManager.handleAsyncSubagentResult).toHaveBeenCalledWith(
         'agent-1',
         'completed',
-        'Notification summary'
+        'Notification summary',
+        undefined
       );
       expect(runtime.loadSubagentToolCalls).toHaveBeenCalledWith('agent-1');
       expect(runtime.loadSubagentFinalResult).toHaveBeenCalledWith('agent-1');

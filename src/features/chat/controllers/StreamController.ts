@@ -1175,7 +1175,8 @@ export class StreamController {
     const handled = this.deps.subagentManager.handleAsyncSubagentResult(
       chunk.agentId,
       chunk.status,
-      chunk.result
+      chunk.result,
+      chunk.toolUseId
     );
 
     await this.hydrateAsyncSubagentToolCalls(handled);
