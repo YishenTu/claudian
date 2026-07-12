@@ -343,6 +343,10 @@ function render(settings: Record<string, unknown>) {
   return context;
 }
 
+async function flushPromises(): Promise<void> {
+  await new Promise<void>(resolve => setImmediate(resolve));
+}
+
 function findSetting(name: string): MockSetting {
   const setting = [...createdSettings].reverse().find(entry => entry.name === name);
   if (!setting) {
@@ -450,6 +454,7 @@ describe('PiSettingsTab', () => {
     const context = render(settings);
 
     await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
+    await flushPromises();
 
     expect(mockDiscoverModels).toHaveBeenCalledTimes(1);
     expect(getPiProviderSettings(settings).discoveredModels).toHaveLength(1);
@@ -458,6 +463,7 @@ describe('PiSettingsTab', () => {
 
     mockDiscoverModels.mockResolvedValueOnce({ diagnostics: 'not logged in', models: [] });
     await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
+    await flushPromises();
     expect(mockNotices[0]).toContain('not logged in');
   });
 
@@ -483,11 +489,13 @@ describe('PiSettingsTab', () => {
 
     checkboxEl.checked = true;
     await checkboxEl.dispatchMockEvent('change');
+    await flushPromises();
     expect(getPiProviderSettings(settings).visibleModels).toEqual(['pi:anthropic/claude-sonnet-4']);
 
     const aliasInput = findElement('input', 'claudian-provider-model-picker-selected-alias');
     aliasInput.value = 'Sonnet';
     await aliasInput.dispatchMockEvent('blur');
+    await flushPromises();
 
     expect(getPiProviderSettings(settings).modelAliases).toEqual({
       'pi:anthropic/claude-sonnet-4': 'Sonnet',

@@ -97,8 +97,8 @@ export function renderProviderModelPicker(options: ProviderModelPickerOptions): 
     text: 'Discover',
   });
   catalogActionEl.setAttribute('type', 'button');
-  catalogActionEl.addEventListener('click', async () => {
-    await loadCatalog(true);
+  catalogActionEl.addEventListener('click', () => {
+    void loadCatalog(true);
   });
 
   const listEl = catalogEl.createDiv({ cls: 'claudian-provider-model-picker-list' });
@@ -177,8 +177,8 @@ export function renderProviderModelPicker(options: ProviderModelPickerOptions): 
     });
     clearAllButton.setAttribute('type', 'button');
     clearAllButton.setAttribute('aria-label', `Clear all selected ${options.providerName} models`);
-    clearAllButton.addEventListener('click', async () => {
-      await persistSelectedIds([]);
+    clearAllButton.addEventListener('click', () => {
+      void persistSelectedIds([]);
     });
 
     const rowsEl = selectedEl.createDiv({ cls: 'claudian-provider-model-picker-selected-rows' });
@@ -227,8 +227,8 @@ export function renderProviderModelPicker(options: ProviderModelPickerOptions): 
       aliasInput.value = state.aliases[model.id] ?? '';
       aliasInput.setAttribute('aria-label', `Alias for ${defaultLabel}`);
       aliasInput.title = 'Custom label shown in the model selector. Leave empty to use the default.';
-      aliasInput.addEventListener('blur', async () => {
-        await persistAlias(model.id, aliasInput.value);
+      aliasInput.addEventListener('blur', () => {
+        void persistAlias(model.id, aliasInput.value);
       });
       aliasInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
@@ -247,8 +247,8 @@ export function renderProviderModelPicker(options: ProviderModelPickerOptions): 
       });
       removeButton.setAttribute('type', 'button');
       removeButton.setAttribute('aria-label', `Remove ${defaultLabel}`);
-      removeButton.addEventListener('click', async () => {
-        await persistSelectedIds(options.getState().selectedIds.filter(id => id !== model.id));
+      removeButton.addEventListener('click', () => {
+        void persistSelectedIds(options.getState().selectedIds.filter(id => id !== model.id));
       });
     }
   };
@@ -335,7 +335,7 @@ export function renderProviderModelPicker(options: ProviderModelPickerOptions): 
 
       const checkboxEl = rowEl.createEl('input', { type: 'checkbox' });
       checkboxEl.checked = isSelected;
-      checkboxEl.addEventListener('change', async () => {
+      const persistSelection = async (): Promise<void> => {
         const selecting = checkboxEl.checked;
         const currentIds = options.getState().selectedIds;
         const nextIds = selecting
@@ -345,6 +345,9 @@ export function renderProviderModelPicker(options: ProviderModelPickerOptions): 
         if (selecting) {
           await options.onModelSelected?.(model);
         }
+      };
+      checkboxEl.addEventListener('change', () => {
+        void persistSelection();
       });
 
       const textEl = rowEl.createDiv({ cls: 'claudian-provider-model-picker-row-text' });
@@ -405,9 +408,9 @@ export function renderProviderModelPicker(options: ProviderModelPickerOptions): 
   };
 
   renderAll();
-  catalogEl.addEventListener('toggle', async () => {
+  catalogEl.addEventListener('toggle', () => {
     if (catalogEl.open) {
-      await loadCatalog(false);
+      void loadCatalog(false);
     }
   });
   if (options.loadCatalogOnRender) {

@@ -420,6 +420,10 @@ function createContext(plugin: any) {
   };
 }
 
+async function flushPromises(): Promise<void> {
+  await new Promise<void>(resolve => setImmediate(resolve));
+}
+
 function findSetting(name: string): MockSettingRecord {
   const setting = createdSettings.find((candidate) => candidate.name === name);
   if (!setting) {
@@ -567,6 +571,7 @@ describe('OpencodeSettingsTab', () => {
     const catalogEl = findElement('details', 'claudian-provider-model-picker-catalog');
     catalogEl.open = true;
     await catalogEl.dispatchMockEvent('toggle');
+    await flushPromises();
 
     expect(mockRuntimeSyncConversationState).toHaveBeenCalledWith({
       providerState: { databasePath: ':memory:' },
@@ -688,8 +693,7 @@ describe('OpencodeSettingsTab', () => {
 
     checkboxEl.checked = true;
     await checkboxEl.dispatchMockEvent('change');
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushPromises();
 
     expect(plugin.settings.providerConfigs.opencode.visibleModels).toEqual([
       'deepseek/deepseek-v4-pro',
@@ -720,6 +724,7 @@ describe('OpencodeSettingsTab', () => {
     const aliasInput = findElement('input', 'claudian-provider-model-picker-selected-alias');
     aliasInput.value = 'V4 Pro';
     await aliasInput.dispatchMockEvent('blur');
+    await flushPromises();
 
     expect(getOpencodeProviderSettings(plugin.settings).modelAliases).toEqual({
       'deepseek/deepseek-v4-pro': 'V4 Pro',

@@ -1394,7 +1394,7 @@ async function runBeforeDeadline<T>(
       },
       (error) => {
         window.clearTimeout(timer);
-        reject(error);
+        reject(error instanceof Error ? error : new Error(String(error)));
       },
     );
   });
