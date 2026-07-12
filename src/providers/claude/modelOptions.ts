@@ -4,7 +4,7 @@ import { getModelsFromEnvironment } from './env/claudeModelEnv';
 import { formatCustomModelLabel } from './modelLabels';
 import { encodeClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
 import { getClaudeProviderSettings } from './settings';
-import { DEFAULT_CLAUDE_MODELS, filterVisibleModelOptions } from './types/models';
+import { DEFAULT_CLAUDE_MODELS, normalizeLegacy1MModelAlias } from './types/models';
 
 function parseConfiguredCustomModelIds(value: string): string[] {
   const modelIds: string[] = [];
@@ -57,11 +57,7 @@ export function getClaudeModelOptions(settings: Record<string, unknown>): Provid
   }
 
   const claudeSettings = getClaudeProviderSettings(settings);
-  const models = filterVisibleModelOptions(
-    [...DEFAULT_CLAUDE_MODELS],
-    claudeSettings.enableOpus1M,
-    claudeSettings.enableSonnet1M,
-  );
+  const models = [...DEFAULT_CLAUDE_MODELS];
 
   const seenModelIds = new Set(models.map(model => toClaudeRuntimeModelId(model.value)));
   for (const configuredModelId of parseConfiguredCustomModelIds(claudeSettings.customModels)) {
@@ -87,7 +83,7 @@ export function resolveClaudeModelSelection(
 ): string | null {
   const modelOptions = getClaudeModelOptions(settings);
   if (currentModel) {
-    const currentRuntimeModel = toClaudeRuntimeModelId(currentModel);
+    const currentRuntimeModel = normalizeLegacy1MModelAlias(toClaudeRuntimeModelId(currentModel));
     const currentOption = modelOptions.find(option =>
       option.value === currentModel
       || toClaudeRuntimeModelId(option.value) === currentRuntimeModel
@@ -99,7 +95,7 @@ export function resolveClaudeModelSelection(
 
   const lastModel = getClaudeProviderSettings(settings).lastModel;
   if (lastModel) {
-    const lastRuntimeModel = toClaudeRuntimeModelId(lastModel);
+    const lastRuntimeModel = normalizeLegacy1MModelAlias(toClaudeRuntimeModelId(lastModel));
     const lastOption = modelOptions.find(option =>
       option.value === lastModel
       || toClaudeRuntimeModelId(option.value) === lastRuntimeModel

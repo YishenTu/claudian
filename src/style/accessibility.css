@@ -32,6 +32,17 @@
   outline-offset: 2px;
 }
 
+.claudian-inline-preview-action:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudian-inline-spinner {
+    animation: none;
+  }
+}
+
 /* outline + negative offset + border-radius */
 .claudian-history-item-content:focus-visible {
   outline: 2px solid var(--interactive-accent);

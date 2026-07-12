@@ -297,12 +297,16 @@ export class AcpJsonRpcTransport {
       return;
     }
 
-    let message: JsonRpcMessage;
+    let parsed: unknown;
     try {
-      message = JSON.parse(line) as JsonRpcMessage;
+      parsed = JSON.parse(line) as unknown;
     } catch {
       return;
     }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return;
+    }
+    const message = parsed as JsonRpcMessage;
 
     if ('id' in message && !('method' in message)) {
       this.handleResponse(message);
@@ -350,7 +354,7 @@ export class AcpJsonRpcTransport {
     }
 
     for (const handler of handlers) {
-      void Promise.resolve(handler(message.params)).catch(() => {
+      void Promise.resolve().then(() => handler(message.params)).catch(() => {
         // Notification failures are non-fatal to the transport.
       });
     }
@@ -370,7 +374,7 @@ export class AcpJsonRpcTransport {
       return;
     }
 
-    void Promise.resolve(handler(message.params)).then(
+    void Promise.resolve().then(() => handler(message.params)).then(
       (result) => {
         this.trySendRaw({ id: message.id, jsonrpc: '2.0', result });
       },

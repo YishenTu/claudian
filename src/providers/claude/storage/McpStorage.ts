@@ -1,3 +1,6 @@
+import { Notice } from 'obsidian';
+
+import { NotifiedMutationError } from '../../../core/storage/NotifiedMutationError';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type {
   ManagedMcpConfigFile,
@@ -7,6 +10,8 @@ import type {
 import { DEFAULT_MCP_SERVER, isValidMcpServerConfig } from '../../../core/types';
 
 export const MCP_CONFIG_PATH = '.claude/mcp.json';
+const INVALID_MCP_CONFIG_MESSAGE =
+  'Failed to update .claude/mcp.json because it contains invalid JSON.';
 
 export class McpStorage {
   constructor(private adapter: VaultFileAdapter) {}
@@ -96,14 +101,15 @@ export class McpStorage {
 
     let existing: Record<string, unknown> | null = null;
     if (await this.adapter.exists(MCP_CONFIG_PATH)) {
+      const raw = await this.adapter.read(MCP_CONFIG_PATH);
       try {
-        const raw = await this.adapter.read(MCP_CONFIG_PATH);
         const parsed: unknown = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
           existing = parsed as Record<string, unknown>;
         }
       } catch {
-        existing = null;
+        new Notice(INVALID_MCP_CONFIG_MESSAGE);
+        throw new NotifiedMutationError(INVALID_MCP_CONFIG_MESSAGE);
       }
     }
 

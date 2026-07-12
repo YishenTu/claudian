@@ -1,4 +1,6 @@
 
+import { Notice } from 'obsidian';
+
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { CC_SETTINGS_PATH, CCSettingsStorage } from '@/providers/claude/storage/CCSettingsStorage';
 import { createPermissionRule } from '@/providers/claude/types/settings';
@@ -70,6 +72,20 @@ describe('CCSettingsStorage', () => {
             await storage.addAllowRule(createPermissionRule('existing'));
 
             expect(mockAdapter.write).not.toHaveBeenCalled();
+        });
+
+        it('rejects a mutation when the existing settings contain malformed JSON', async () => {
+            mockAdapter.exists.mockResolvedValue(true);
+            mockAdapter.read.mockResolvedValue('invalid json{{{');
+
+            await expect(storage.addAllowRule(createPermissionRule('new-rule')))
+                .rejects.toThrow('invalid JSON');
+
+            expect(mockAdapter.write).not.toHaveBeenCalled();
+            expect(Notice).toHaveBeenCalledTimes(1);
+            expect(Notice).toHaveBeenCalledWith(
+                'Failed to update .claude/settings.json because it contains invalid JSON.',
+            );
         });
     });
 
@@ -146,19 +162,28 @@ describe('CCSettingsStorage', () => {
     });
 
     describe('save', () => {
-        it('should handle parse error on existing file', async () => {
+        it('aborts on malformed JSON without replacing the original bytes', async () => {
             mockAdapter.exists.mockResolvedValue(true);
             mockAdapter.read.mockResolvedValue('invalid json{{{');
 
-            await storage.save({
+            await expect(storage.save({
                 permissions: { allow: [], deny: [], ask: [] }
-            });
+            })).rejects.toThrow('invalid JSON');
 
-            // Should still write successfully after parse error
-            expect(mockAdapter.write).toHaveBeenCalled();
-            const writeCall = mockAdapter.write.mock.calls[0];
-            const writtenContent = JSON.parse(writeCall[1]);
-            expect(writtenContent.permissions).toEqual({ allow: [], deny: [], ask: [] });
+            expect(mockAdapter.write).not.toHaveBeenCalled();
+            expect(Notice).toHaveBeenCalledTimes(1);
+            expect(Notice).toHaveBeenCalledWith(
+                'Failed to update .claude/settings.json because it contains invalid JSON.',
+            );
+        });
+
+        it('preserves unknown fields from valid existing JSON', async () => {
+            mockAdapter.exists.mockResolvedValue(true);
+            mockAdapter.read.mockResolvedValue(JSON.stringify({ unknownField: { keep: true } }));
+
+            await storage.save({ permissions: { allow: [], deny: [], ask: [] } });
+
+            expect(JSON.parse(mockAdapter.write.mock.calls[0][1]).unknownField).toEqual({ keep: true });
         });
 
         it('should preserve enabledPlugins from settings argument', async () => {

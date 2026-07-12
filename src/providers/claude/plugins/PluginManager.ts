@@ -166,10 +166,7 @@ export class PluginManager {
       return;
     }
 
-    const newEnabled = !plugin.enabled;
-    plugin.enabled = newEnabled;
-
-    await this.ccSettingsStorage.setPluginEnabled(pluginId, newEnabled);
+    await this.persistEnabledState(plugin, !plugin.enabled);
   }
 
   async enablePlugin(pluginId: string): Promise<void> {
@@ -178,8 +175,7 @@ export class PluginManager {
       return;
     }
 
-    plugin.enabled = true;
-    await this.ccSettingsStorage.setPluginEnabled(pluginId, true);
+    await this.persistEnabledState(plugin, true);
   }
 
   async disablePlugin(pluginId: string): Promise<void> {
@@ -188,7 +184,17 @@ export class PluginManager {
       return;
     }
 
-    plugin.enabled = false;
-    await this.ccSettingsStorage.setPluginEnabled(pluginId, false);
+    await this.persistEnabledState(plugin, false);
+  }
+
+  private async persistEnabledState(plugin: PluginInfo, enabled: boolean): Promise<void> {
+    const previous = plugin.enabled;
+    plugin.enabled = enabled;
+    try {
+      await this.ccSettingsStorage.setPluginEnabled(plugin.id, enabled);
+    } catch (error) {
+      plugin.enabled = previous;
+      throw error;
+    }
   }
 }

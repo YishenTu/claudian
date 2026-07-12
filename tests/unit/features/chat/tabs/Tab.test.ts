@@ -25,6 +25,7 @@ import {
   onProviderAvailabilityChanged,
   setupServiceCallbacks,
   type TabCreateOptions,
+  updatePlanModeUI,
   wireTabInputEvents,
 } from '@/features/chat/tabs/Tab';
 import * as envUtils from '@/utils/env';
@@ -405,7 +406,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
       discoveredModels: TEST_CODEX_CATALOG,
     },
   };
-  return {
+  const plugin: any = {
     app: {
       vault: {
         adapter: { basePath: '/test/vault' },
@@ -454,6 +455,12 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
     ...pluginOverrides,
   };
+  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+    await mutation(plugin.settings);
+    await plugin.saveSettings();
+  });
+  plugin.providerHost = plugin;
+  return plugin;
 }
 
 // Helper to create mock MCP manager
@@ -770,6 +777,7 @@ describe('Tab - Service Initialization', () => {
         plugin,
         providerId: 'codex',
       }));
+      expect(tab.runtimeSupervisor.current).toBe(newService);
       expect(tab.service).toBe(newService);
     });
 
@@ -1122,6 +1130,50 @@ describe('Tab - Service Initialization', () => {
       expect(mockPermissionToggle.updateDisplay).toHaveBeenCalled();
     });
 
+    it('does not update plan-mode UI before the serialized settings mutation completes', async () => {
+      const plugin = createMockPlugin();
+      let releaseMutation!: () => void;
+      const mutationGate = new Promise<void>((resolve) => {
+        releaseMutation = resolve;
+      });
+      plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void) => {
+        await mutationGate;
+        mutation(plugin.settings);
+      });
+
+      const tab = createTab(createMockOptions({ plugin }));
+      tab.ui.permissionToggle = createMockPermissionToggle() as any;
+
+      const updatePromise = updatePlanModeUI(tab, plugin, 'plan');
+      await Promise.resolve();
+
+      expect(plugin.settings.permissionMode).toBe('yolo');
+      expect(tab.ui.permissionToggle!.updateDisplay).not.toHaveBeenCalled();
+
+      releaseMutation();
+      await updatePromise;
+
+      expect(plugin.settings.permissionMode).toBe('plan');
+      expect(tab.ui.permissionToggle!.updateDisplay).toHaveBeenCalledTimes(1);
+      expect(tab.dom.inputWrapper.hasClass('claudian-input-plan-mode')).toBe(true);
+    });
+
+    it('renders the in-memory permission mode when persistence fails after mutation', async () => {
+      const plugin = createMockPlugin();
+      plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void) => {
+        mutation(plugin.settings);
+        throw new Error('persist failed');
+      });
+      const tab = createTab(createMockOptions({ plugin }));
+      tab.ui.permissionToggle = createMockPermissionToggle() as any;
+
+      await expect(updatePlanModeUI(tab, plugin, 'plan')).rejects.toThrow('persist failed');
+
+      expect(plugin.settings.permissionMode).toBe('plan');
+      expect(tab.ui.permissionToggle!.updateDisplay).toHaveBeenCalledTimes(1);
+      expect(tab.dom.inputWrapper.hasClass('claudian-input-plan-mode')).toBe(true);
+    });
+
     it('resets to blank state when the new-conversation callback fires', () => {
       jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
       jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
@@ -1348,6 +1400,33 @@ describe('Tab - Destruction', () => {
       await destroyTab(tab);
 
       expect(mockCleanup).toHaveBeenCalled();
+      expect(tab.service).toBeNull();
+    });
+
+    it('should cancel and await the active turn before removing the tab DOM', async () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const cancel = jest.fn();
+      const cleanup = jest.fn();
+      const removeSpy = jest.spyOn(tab.dom.contentEl, 'remove');
+      let resolveTurn!: () => void;
+      tab.session.activeTurn = new Promise<void>((resolve) => {
+        resolveTurn = resolve;
+      });
+      tab.state.isStreaming = true;
+      tab.service = { cancel, cleanup } as any;
+
+      const destruction = destroyTab(tab);
+      await Promise.resolve();
+
+      expect(cancel).toHaveBeenCalled();
+      expect(cleanup).toHaveBeenCalled();
+      expect(removeSpy).not.toHaveBeenCalled();
+
+      resolveTurn();
+      await destruction;
+
+      expect(removeSpy).toHaveBeenCalled();
       expect(tab.service).toBeNull();
     });
 
@@ -2702,6 +2781,7 @@ describe('Tab - Service Initialization Error Handling', () => {
     await initializeTabService(tab, options.plugin, options.mcpManager);
 
     // Should not change existing service
+    expect(tab.runtimeSupervisor.current).toBe(originalService);
     expect(tab.service).toBe(originalService);
     expect(tab.serviceInitialized).toBe(true);
   });

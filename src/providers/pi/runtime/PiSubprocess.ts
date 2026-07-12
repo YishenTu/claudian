@@ -10,6 +10,7 @@ import {
 } from '../../../utils/windowsCmdShim';
 
 const SIGKILL_TIMEOUT_MS = 3_000;
+const FINAL_SHUTDOWN_TIMEOUT_MS = 3_000;
 const STDERR_BUFFER_LIMIT = 8_000;
 
 export interface PiSubprocessLaunchSpec {
@@ -111,15 +112,19 @@ export class PiSubprocess {
 
     await new Promise<void>((resolve) => {
       const proc = this.proc!;
+      let killTimer: number | null = null;
+      let finalTimer: number | null = null;
       const onClose = () => {
         cleanup();
         resolve();
       };
-      const killTimer = window.setTimeout(() => {
+      killTimer = window.setTimeout(() => {
         this.killProc(proc, 'SIGKILL');
+        finalTimer = window.setTimeout(onClose, FINAL_SHUTDOWN_TIMEOUT_MS);
       }, SIGKILL_TIMEOUT_MS);
       const cleanup = () => {
-        window.clearTimeout(killTimer);
+        if (killTimer !== null) window.clearTimeout(killTimer);
+        if (finalTimer !== null) window.clearTimeout(finalTimer);
         proc.off('exit', onClose);
       };
 

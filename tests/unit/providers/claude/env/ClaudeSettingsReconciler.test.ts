@@ -53,5 +53,99 @@ describe('claudeSettingsReconciler', () => {
       expect(result.changed).toBe(true);
       expect(settings.model).toBe('sonnet');
     });
+
+    it('invalidates only Claude conversations and clears every Claude-owned resume field', () => {
+      const claudeConversation = {
+        id: 'claude-conversation',
+        providerId: 'claude',
+        sessionId: 'legacy-session',
+        resumeAtMessageId: 'assistant-1',
+        providerState: {
+          providerSessionId: 'provider-session',
+          previousProviderSessionIds: ['previous-session'],
+          forkSource: { sessionId: 'source-session', resumeAt: 'assistant-0' },
+          subagentData: { task: { id: 'task' } },
+          uiMetadata: { keep: true },
+        },
+        messages: [{ id: 'message', role: 'user', content: 'Keep me', timestamp: 1 }],
+      } as unknown as Conversation;
+      const codexConversation = {
+        id: 'codex-conversation',
+        providerId: 'codex',
+        sessionId: 'codex-session',
+        providerState: { threadId: 'codex-thread' },
+        messages: [],
+      } as unknown as Conversation;
+      const settings: Record<string, unknown> = {
+        model: 'sonnet',
+        providerConfigs: {
+          claude: {
+            environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
+            environmentHash: '',
+          },
+        },
+      };
+
+      const result = claudeSettingsReconciler.reconcileModelWithEnvironment(
+        settings,
+        [claudeConversation, codexConversation],
+      );
+
+      expect(result.invalidatedConversations).toEqual([claudeConversation]);
+      expect(claudeConversation.sessionId).toBeNull();
+      expect(claudeConversation.resumeAtMessageId).toBeUndefined();
+      expect(claudeConversation.providerState).toEqual({
+        subagentData: { task: { id: 'task' } },
+        uiMetadata: { keep: true },
+      });
+      expect(claudeConversation.messages).toHaveLength(1);
+      expect(codexConversation).toMatchObject({
+        sessionId: 'codex-session',
+        providerState: { threadId: 'codex-thread' },
+      });
+    });
+
+    it('invalidates Claude provider resume state even when the generic session id is absent', () => {
+      const conversation = {
+        id: 'claude-provider-state-only',
+        providerId: 'claude',
+        sessionId: null,
+        providerState: { providerSessionId: 'provider-session' },
+        messages: [],
+      } as unknown as Conversation;
+      const settings: Record<string, unknown> = {
+        model: 'sonnet',
+        providerConfigs: {
+          claude: {
+            environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
+            environmentHash: '',
+          },
+        },
+      };
+
+      const result = claudeSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
+
+      expect(result.invalidatedConversations).toEqual([conversation]);
+      expect(conversation.providerState).toBeUndefined();
+    });
+  });
+
+  describe('normalizeModelVariantSettings', () => {
+    it('migrates legacy built-in 1M aliases across Claude model settings', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-code/opus[1m]',
+        titleGenerationModel: 'sonnet[1M]',
+        providerConfigs: {
+          claude: {
+            lastModel: 'opus[1M]',
+          },
+        },
+      };
+
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
+      expect(settings.model).toBe('opus');
+      expect(settings.titleGenerationModel).toBe('sonnet');
+      expect(getClaudeProviderSettings(settings).lastModel).toBe('opus');
+    });
   });
 });

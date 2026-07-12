@@ -1,4 +1,5 @@
-import type { ProviderRegistration } from '../../core/providers/types';
+import type { ProviderModule } from '../../core/providers/types';
+import { opencodeWorkspaceRegistration } from './app/OpencodeWorkspaceServices';
 import { OpencodeInlineEditService } from './auxiliary/OpencodeInlineEditService';
 import { OpencodeInstructionRefineService } from './auxiliary/OpencodeInstructionRefineService';
 import { OpencodeTaskResultInterpreter } from './auxiliary/OpencodeTaskResultInterpreter';
@@ -7,10 +8,11 @@ import { OPENCODE_PROVIDER_CAPABILITIES } from './capabilities';
 import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
 import { OpencodeChatRuntime } from './runtime/OpencodeChatRuntime';
-import { getOpencodeProviderSettings } from './settings';
+import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from './settings';
 import { opencodeChatUIConfig } from './ui/OpencodeChatUIConfig';
 
-export const opencodeProviderRegistration: ProviderRegistration = {
+export const opencodeProviderRegistration: ProviderModule = {
+  id: 'opencode',
   blankTabOrder: 10,
   capabilities: OPENCODE_PROVIDER_CAPABILITIES,
   chatUIConfig: opencodeChatUIConfig,
@@ -23,5 +25,13 @@ export const opencodeProviderRegistration: ProviderRegistration = {
   historyService: new OpencodeConversationHistoryService(),
   isEnabled: (settings) => getOpencodeProviderSettings(settings).enabled,
   settingsReconciler: opencodeSettingsReconciler,
+  settingsStorage: {
+    hostScopedFields: ['cliPathsByHost'],
+    normalizeStored(target, stored) {
+      updateOpencodeProviderSettings(target, getOpencodeProviderSettings(stored));
+      return false;
+    },
+  },
   taskResultInterpreter: new OpencodeTaskResultInterpreter(),
+  workspace: opencodeWorkspaceRegistration,
 };

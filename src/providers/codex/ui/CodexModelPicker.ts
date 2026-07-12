@@ -6,7 +6,7 @@ import {
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
   renderProviderModelPicker,
-} from '../../../features/settings/ui/ProviderModelPicker';
+} from '../../../shared/settings/ProviderModelPicker';
 import type { CodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import { getCodexModelsInPickerOrder } from '../models';
 import {
@@ -82,9 +82,10 @@ export function renderCodexModelPicker(
       return;
     }
 
-    updateCodexProviderSettings(settingsBag, { visibleModels: nextVisibleModels });
-    ProviderSettingsCoordinator.normalizeAllModelVariants(settingsBag);
-    await context.plugin.saveSettings();
+    await context.plugin.mutateSettings((settings) => {
+      updateCodexProviderSettings(settings, { visibleModels: nextVisibleModels });
+      ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
+    });
     context.refreshModelSelectors();
   };
 
@@ -104,17 +105,15 @@ export function renderCodexModelPicker(
         new Notice(`Codex model discovery failed: ${result.diagnostics}`);
         return 'failed';
       }
-      if (result.persistedSettingsChanged) {
-        await context.plugin.saveSettings();
-      }
       context.refreshModelSelectors();
       return getCodexProviderSettings(settingsBag).discoveredModels.length > 0 ? 'loaded' : 'empty';
     },
     loadingCatalogText: 'Loading the Codex model catalog...',
     modifier: 'codex',
     async onAliasesChange(modelAliases) {
-      updateCodexProviderSettings(settingsBag, { modelAliases });
-      await context.plugin.saveSettings();
+      await context.plugin.mutateSettings((settings) => {
+        updateCodexProviderSettings(settings, { modelAliases });
+      });
       context.refreshModelSelectors();
     },
     onSelectedIdsChange: persistVisibleModels,

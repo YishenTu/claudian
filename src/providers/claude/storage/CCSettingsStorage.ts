@@ -1,3 +1,6 @@
+import { Notice } from 'obsidian';
+
+import { NotifiedMutationError } from '../../../core/storage/NotifiedMutationError';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import type {
   CCPermissions,
@@ -9,6 +12,13 @@ import { DEFAULT_CC_PERMISSIONS, DEFAULT_CC_SETTINGS } from '../types/settings';
 export const CC_SETTINGS_PATH = '.claude/settings.json';
 
 const CC_SETTINGS_SCHEMA = 'https://json.schemastore.org/claude-code-settings.json';
+const INVALID_SETTINGS_MESSAGE =
+  'Failed to update .claude/settings.json because it contains invalid JSON.';
+
+function rejectInvalidSettingsMutation(): never {
+  new Notice(INVALID_SETTINGS_MESSAGE);
+  throw new NotifiedMutationError(INVALID_SETTINGS_MESSAGE);
+}
 
 function normalizeRuleList(value: unknown): PermissionRule[] {
   if (!Array.isArray(value)) return [];
@@ -54,11 +64,11 @@ export class CCSettingsStorage {
     // Preserve CC-specific fields we don't manage
     let existing: Record<string, unknown> = {};
     if (await this.adapter.exists(CC_SETTINGS_PATH)) {
+      const content = await this.adapter.read(CC_SETTINGS_PATH);
       try {
-        const content = await this.adapter.read(CC_SETTINGS_PATH);
         existing = JSON.parse(content) as Record<string, unknown>;
       } catch {
-        // Parse error - start fresh with default settings
+        rejectInvalidSettingsMutation();
       }
     }
 
@@ -87,41 +97,49 @@ export class CCSettingsStorage {
   }
 
   async updatePermissions(permissions: CCPermissions): Promise<void> {
-    const settings = await this.load();
+    const settings = await this.loadForMutation();
     settings.permissions = permissions;
     await this.save(settings);
   }
 
   async addAllowRule(rule: PermissionRule): Promise<void> {
-    const permissions = await this.getPermissions();
+    const settings = await this.loadForMutation();
+    const permissions = settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS };
     if (!permissions.allow?.includes(rule)) {
       permissions.allow = [...(permissions.allow ?? []), rule];
-      await this.updatePermissions(permissions);
+      settings.permissions = permissions;
+      await this.save(settings);
     }
   }
 
   async addDenyRule(rule: PermissionRule): Promise<void> {
-    const permissions = await this.getPermissions();
+    const settings = await this.loadForMutation();
+    const permissions = settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS };
     if (!permissions.deny?.includes(rule)) {
       permissions.deny = [...(permissions.deny ?? []), rule];
-      await this.updatePermissions(permissions);
+      settings.permissions = permissions;
+      await this.save(settings);
     }
   }
 
   async addAskRule(rule: PermissionRule): Promise<void> {
-    const permissions = await this.getPermissions();
+    const settings = await this.loadForMutation();
+    const permissions = settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS };
     if (!permissions.ask?.includes(rule)) {
       permissions.ask = [...(permissions.ask ?? []), rule];
-      await this.updatePermissions(permissions);
+      settings.permissions = permissions;
+      await this.save(settings);
     }
   }
 
   async removeRule(rule: PermissionRule): Promise<void> {
-    const permissions = await this.getPermissions();
+    const settings = await this.loadForMutation();
+    const permissions = settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS };
     permissions.allow = permissions.allow?.filter(r => r !== rule);
     permissions.deny = permissions.deny?.filter(r => r !== rule);
     permissions.ask = permissions.ask?.filter(r => r !== rule);
-    await this.updatePermissions(permissions);
+    settings.permissions = permissions;
+    await this.save(settings);
   }
 
   async getEnabledPlugins(): Promise<Record<string, boolean>> {
@@ -130,7 +148,7 @@ export class CCSettingsStorage {
   }
 
   async setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
-    const settings = await this.load();
+    const settings = await this.loadForMutation();
     const enabledPlugins = settings.enabledPlugins ?? {};
 
     enabledPlugins[pluginId] = enabled;
@@ -149,5 +167,16 @@ export class CCSettingsStorage {
   async isPluginDisabled(pluginId: string): Promise<boolean> {
     const enabledPlugins = await this.getEnabledPlugins();
     return enabledPlugins[pluginId] === false;
+  }
+
+  private async loadForMutation(): Promise<CCSettings> {
+    try {
+      return await this.load();
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        rejectInvalidSettingsMutation();
+      }
+      throw error;
+    }
   }
 }

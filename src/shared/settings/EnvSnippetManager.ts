@@ -4,24 +4,23 @@ import { Modal, Notice, setIcon, Setting } from 'obsidian';
 import {
   getEnvironmentScopeUpdates,
   resolveEnvironmentSnippetScope,
-} from '../../../core/providers/providerEnvironment';
-import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
-import type { EnvironmentScope, EnvSnippet } from '../../../core/types';
-import { t } from '../../../i18n/i18n';
-import type ClaudianPlugin from '../../../main';
-import { confirmDelete } from '../../../shared/modals/ConfirmModal';
-import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../../utils/env';
-import type { ClaudianView } from '../../chat/ClaudianView';
+} from '../../core/providers/providerEnvironment';
+import type { ProviderHost } from '../../core/providers/ProviderHost';
+import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
+import type { EnvironmentScope, EnvSnippet } from '../../core/types';
+import { t } from '../../i18n/i18n';
+import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
+import { confirmDelete } from '../modals/ConfirmModal';
 
 export class EnvSnippetModal extends Modal {
-  plugin: ClaudianPlugin;
+  plugin: ProviderHost;
   snippet: EnvSnippet | null;
   snippetScope: EnvironmentScope;
   onSave: (snippet: EnvSnippet) => void;
 
   constructor(
     app: App,
-    plugin: ClaudianPlugin,
+    plugin: ProviderHost,
     snippet: EnvSnippet | null,
     scope: EnvironmentScope,
     onSave: (snippet: EnvSnippet) => void,
@@ -214,13 +213,13 @@ export class EnvSnippetModal extends Modal {
 
 export class EnvSnippetManager {
   private containerEl: HTMLElement;
-  private plugin: ClaudianPlugin;
+  private plugin: ProviderHost;
   private scope: EnvironmentScope;
   private onContextLimitsChange?: () => void;
 
   constructor(
     containerEl: HTMLElement,
-    plugin: ClaudianPlugin,
+    plugin: ProviderHost,
     scope: EnvironmentScope,
     onContextLimitsChange?: () => void,
   ) {
@@ -322,8 +321,9 @@ export class EnvSnippetManager {
       this.scope,
       (snippet) => {
         void (async (): Promise<void> => {
-          this.plugin.settings.envSnippets.push(snippet);
-          await this.plugin.saveSettings();
+          await this.plugin.mutateSettings((settings) => {
+            settings.envSnippets.push(snippet);
+          });
           this.render();
           new Notice(`Environment snippet "${snippet.name}" saved`);
         })();
@@ -351,33 +351,36 @@ export class EnvSnippetManager {
     }
 
     // Legacy snippets without contextLimits don't modify limits
-    if (snippet.contextLimits) {
-      this.plugin.settings.customContextLimits = {
-        ...this.plugin.settings.customContextLimits,
-        ...snippet.contextLimits,
-      };
-    }
-
-    // Legacy snippets without modelAliases don't modify aliases. Snippets saved
-    // with alias fields clear aliases for their own model IDs when left empty.
-    if (snippet.modelAliases) {
-      const modelIds = ProviderRegistry.getCustomModelIds(parseEnvironmentVariables(snippet.envVars));
-      const nextAliases = { ...(this.plugin.settings.customModelAliases ?? {}) };
-      for (const modelId of modelIds) {
-        const alias = snippet.modelAliases[modelId]?.trim();
-        if (alias) {
-          nextAliases[modelId] = alias;
-        } else {
-          delete nextAliases[modelId];
-        }
+    await this.plugin.mutateSettings((settings) => {
+      if (snippet.contextLimits) {
+        settings.customContextLimits = {
+          ...settings.customContextLimits,
+          ...snippet.contextLimits,
+        };
       }
-      this.plugin.settings.customModelAliases = nextAliases;
-    }
-    await this.plugin.saveSettings();
+
+      // Legacy snippets without modelAliases don't modify aliases. Snippets saved
+      // with alias fields clear aliases for their own model IDs when left empty.
+      if (snippet.modelAliases) {
+        const modelIds = ProviderRegistry.getCustomModelIds(parseEnvironmentVariables(snippet.envVars));
+        const nextAliases = { ...(settings.customModelAliases ?? {}) };
+        for (const modelId of modelIds) {
+          const alias = snippet.modelAliases[modelId]?.trim();
+          if (alias) {
+            nextAliases[modelId] = alias;
+          } else {
+            delete nextAliases[modelId];
+          }
+        }
+        settings.customModelAliases = nextAliases;
+      }
+    });
 
     this.onContextLimitsChange?.();
-    const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as ClaudianView | undefined;
-    view?.refreshModelSelector();
+    const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as {
+      refreshModelSelector?(): void;
+    } | undefined;
+    view?.refreshModelSelector?.();
   }
 
   private editSnippet(snippet: EnvSnippet) {
@@ -388,10 +391,14 @@ export class EnvSnippetManager {
       this.scope,
       (updatedSnippet) => {
         void (async (): Promise<void> => {
-          const index = this.plugin.settings.envSnippets.findIndex(s => s.id === snippet.id);
-          if (index !== -1) {
-            this.plugin.settings.envSnippets[index] = updatedSnippet;
-            await this.plugin.saveSettings();
+          const exists = this.plugin.settings.envSnippets.some(s => s.id === snippet.id);
+          if (exists) {
+            await this.plugin.mutateSettings((settings) => {
+              const index = settings.envSnippets.findIndex(s => s.id === snippet.id);
+              if (index !== -1) {
+                settings.envSnippets[index] = updatedSnippet;
+              }
+            });
             this.render();
             new Notice(`Environment snippet "${updatedSnippet.name}" updated`);
           }
@@ -402,8 +409,9 @@ export class EnvSnippetManager {
   }
 
   private async deleteSnippet(snippet: EnvSnippet) {
-    this.plugin.settings.envSnippets = this.plugin.settings.envSnippets.filter(s => s.id !== snippet.id);
-    await this.plugin.saveSettings();
+    await this.plugin.mutateSettings((settings) => {
+      settings.envSnippets = settings.envSnippets.filter(s => s.id !== snippet.id);
+    });
     this.render();
     new Notice(`Environment snippet "${snippet.name}" deleted`);
   }

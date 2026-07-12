@@ -16,7 +16,7 @@ import {
   EFFORT_LEVELS,
   getContextWindowSize,
   normalizeEffortLevel,
-  normalizeVisibleModelVariant,
+  normalizeLegacy1MModelAlias,
   supportsXHighEffort,
 } from '../types/models';
 
@@ -62,14 +62,14 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
   },
 
   isDefaultModel(model: string): boolean {
-    const runtimeModel = toClaudeRuntimeModelId(model);
+    const runtimeModel = normalizeLegacy1MModelAlias(toClaudeRuntimeModelId(model));
     return DEFAULT_CLAUDE_MODELS.some(m => m.value === runtimeModel);
   },
 
   applyModelDefaults(model: string, settings: unknown): void {
     const target = settings as Record<string, unknown>;
 
-    const runtimeModel = toClaudeRuntimeModelId(model);
+    const runtimeModel = normalizeLegacy1MModelAlias(toClaudeRuntimeModelId(model));
     if (DEFAULT_CLAUDE_MODELS.some(m => m.value === runtimeModel)) {
       target.effortLevel = DEFAULT_EFFORT_LEVEL[runtimeModel] ?? DEFAULT_REASONING_VALUE;
       updateClaudeProviderSettings(target, { lastModel: runtimeModel });
@@ -80,12 +80,7 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
   },
 
   normalizeModelVariant(model: string, settings) {
-    const claudeSettings = getClaudeProviderSettings(settings);
-    const normalizedRuntimeModel = normalizeVisibleModelVariant(
-      toClaudeRuntimeModelId(model),
-      claudeSettings.enableOpus1M,
-      claudeSettings.enableSonnet1M,
-    );
+    const normalizedRuntimeModel = normalizeLegacy1MModelAlias(toClaudeRuntimeModelId(model));
     const option = getClaudeModelOptions(settings).find(candidate =>
       candidate.value === normalizedRuntimeModel
       || toClaudeRuntimeModelId(candidate.value) === normalizedRuntimeModel

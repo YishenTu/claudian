@@ -10,14 +10,15 @@ import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { type AppTabManagerState, DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
-import type ClaudianPlugin from '../../main';
 import { createProviderIconSvg } from '../../shared/icons';
 import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
 } from '../../utils/animationFrame';
+import type { FeatureHost } from '../FeatureHost';
 import type { HistoryConversationStatus } from './controllers/ConversationController';
+import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
 import {
   getTabProviderId,
   onProviderAvailabilityChanged,
@@ -35,10 +36,11 @@ type LoadableView = {
 };
 
 export class ClaudianView extends ItemView {
-  private plugin: ClaudianPlugin;
+  private plugin: FeatureHost;
 
   // Tab management
   private tabManager: TabManager | null = null;
+  private mentionCacheCoordinator: MentionCacheCoordinator | null = null;
   private tabBar: TabBar | null = null;
   private tabBarContainerEl: HTMLElement | null = null;
   private tabContentEl: HTMLElement | null = null;
@@ -65,7 +67,7 @@ export class ClaudianView extends ItemView {
   // Debouncing for tab state persistence
   private pendingPersist: number | null = null;
 
-  constructor(leaf: WorkspaceLeaf, plugin: ClaudianPlugin) {
+  constructor(leaf: WorkspaceLeaf, plugin: FeatureHost) {
     super(leaf);
     this.plugin = plugin;
 
@@ -242,6 +244,11 @@ export class ClaudianView extends ItemView {
         },
       }
     );
+    this.mentionCacheCoordinator = new MentionCacheCoordinator(
+      () => (this.tabManager?.getAllTabs() ?? []).map(tab => ({
+        fileContextManager: tab.ui.fileContextManager,
+      })),
+    );
 
     this.wireEventHandlers();
     await this.restoreOrCreateTabs();
@@ -268,6 +275,7 @@ export class ClaudianView extends ItemView {
     this.restoreActiveInputToTabContent();
     await this.tabManager?.destroy();
     this.tabManager = null;
+    this.mentionCacheCoordinator = null;
 
     this.tabBar?.destroy();
     this.tabBar = null;
@@ -641,11 +649,31 @@ export class ClaudianView extends ItemView {
         ).permissionMode as string;
         if (current === 'plan') {
           const restoreMode = activeTab.state.prePlanPermissionMode ?? 'normal';
-          activeTab.state.prePlanPermissionMode = null;
-          updatePlanModeUI(activeTab, this.plugin, restoreMode);
+          void updatePlanModeUI(activeTab, this.plugin, restoreMode)
+            .finally(() => {
+              const activeMode = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+                this.plugin.settings,
+                providerId,
+              ).permissionMode;
+              if (activeMode !== 'plan') {
+                activeTab.state.prePlanPermissionMode = null;
+              }
+            })
+            .catch((error: unknown) => {
+              new Notice(error instanceof Error ? error.message : 'Failed to change permission mode.');
+            });
         } else {
           activeTab.state.prePlanPermissionMode = current;
-          updatePlanModeUI(activeTab, this.plugin, 'plan');
+          void updatePlanModeUI(activeTab, this.plugin, 'plan').catch((error: unknown) => {
+            const activeMode = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+              this.plugin.settings,
+              providerId,
+            ).permissionMode;
+            if (activeMode !== 'plan') {
+              activeTab.state.prePlanPermissionMode = null;
+            }
+            new Notice(error instanceof Error ? error.message : 'Failed to change permission mode.');
+          });
         }
       }
     });
@@ -672,18 +700,11 @@ export class ClaudianView extends ItemView {
       }
     });
 
-    // Vault events - forward to active tab's file context manager
-    const markCacheDirty = (includesFolders: boolean): void => {
-      const mgr = this.tabManager?.getActiveTab()?.ui.fileContextManager;
-      if (!mgr) return;
-      mgr.markFileCacheDirty();
-      if (includesFolders) mgr.markFolderCacheDirty();
-    };
     this.eventRefs.push(
-      this.plugin.app.vault.on('create', () => markCacheDirty(true)),
-      this.plugin.app.vault.on('delete', () => markCacheDirty(true)),
-      this.plugin.app.vault.on('rename', () => markCacheDirty(true)),
-      this.plugin.app.vault.on('modify', () => markCacheDirty(false))
+      this.plugin.app.vault.on('create', () => this.mentionCacheCoordinator?.markStructureDirty()),
+      this.plugin.app.vault.on('delete', () => this.mentionCacheCoordinator?.markStructureDirty()),
+      this.plugin.app.vault.on('rename', () => this.mentionCacheCoordinator?.markStructureDirty()),
+      this.plugin.app.vault.on('modify', () => this.mentionCacheCoordinator?.markFilesDirty())
     );
 
     // File open event

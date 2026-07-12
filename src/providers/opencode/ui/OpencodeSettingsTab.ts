@@ -5,12 +5,12 @@ import type {
   ProviderSettingsTabRenderer,
   ProviderSettingsTabRendererContext,
 } from '../../../core/providers/types';
-import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
+import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import {
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
   renderProviderModelPicker,
-} from '../../../features/settings/ui/ProviderModelPicker';
+} from '../../../shared/settings/ProviderModelPicker';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { maybeGetOpencodeWorkspaceServices } from '../app/OpencodeWorkspaceServices';
@@ -49,8 +49,9 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         toggle
           .setValue(opencodeSettings.enabled)
           .onChange(async (value) => {
-            updateOpencodeProviderSettings(settingsBag, { enabled: value });
-            await context.plugin.saveSettings();
+            await context.plugin.mutateSettings((settings) => {
+              updateOpencodeProviderSettings(settings, { enabled: value });
+            });
             context.refreshModelSelectors();
           })
       );
@@ -81,21 +82,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     };
 
     const recycleOpencodeRuntime = async (): Promise<void> => {
-      for (const view of context.plugin.getAllViews()) {
-        const tabManager = view.getTabManager();
-        if (tabManager?.broadcastToProviderTabs) {
-          await tabManager.broadcastToProviderTabs(
-            'opencode',
-            (service) => Promise.resolve(service.cleanup()),
-          );
-        } else {
-          await tabManager?.broadcastToAllTabs(
-            (service) => Promise.resolve(service.cleanup()),
-          );
-        }
-        view.invalidateProviderCommandCaches?.(['opencode']);
-        view.refreshModelSelector?.();
-      }
+      await context.plugin.recycleProviderRuntimes?.('opencode');
     };
 
     const persistCliPath = async (value: string): Promise<boolean> => {
@@ -110,9 +97,10 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         delete cliPathsByHost[hostnameKey];
       }
 
-      updateOpencodeProviderSettings(settingsBag, { cliPathsByHost: { ...cliPathsByHost } });
-      clearOpencodeDiscoveryState(settingsBag);
-      await context.plugin.saveSettings();
+      await context.plugin.mutateSettings((settings) => {
+        updateOpencodeProviderSettings(settings, { cliPathsByHost: { ...cliPathsByHost } });
+        clearOpencodeDiscoveryState(settings);
+      });
       opencodeWorkspace?.cliResolver?.reset();
       await recycleOpencodeRuntime();
       return true;
@@ -247,8 +235,9 @@ function renderOpencodeModelPicker(
     loadingCatalogText: 'Loading OpenCode model catalog...',
     modifier: 'opencode',
     async onAliasesChange(modelAliases) {
-      updateOpencodeProviderSettings(settingsBag, { modelAliases });
-      await context.plugin.saveSettings();
+      await context.plugin.mutateSettings((settings) => {
+        updateOpencodeProviderSettings(settings, { modelAliases });
+      });
       context.refreshModelSelectors();
     },
     onModelSelected: async (model) => warmModelMetadata(model.id),
@@ -259,8 +248,9 @@ function renderOpencodeModelPicker(
         return;
       }
 
-      updateOpencodeProviderSettings(settingsBag, { visibleModels: normalized });
-      await context.plugin.saveSettings();
+      await context.plugin.mutateSettings((settings) => {
+        updateOpencodeProviderSettings(settings, { visibleModels: normalized });
+      });
       context.refreshModelSelectors();
     },
     providerName: 'OpenCode',

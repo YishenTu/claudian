@@ -10,7 +10,7 @@ import * as launchArtifacts from '@/providers/opencode/runtime/OpencodeLaunchArt
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 function createMockPlugin(overrides: Record<string, unknown> = {}): any {
-  return {
+  const plugin: any = {
     settings: {},
     manifest: { version: '0.0.0-test' },
     getAllViews: jest.fn().mockReturnValue([]),
@@ -25,6 +25,16 @@ function createMockPlugin(overrides: Record<string, unknown> = {}): any {
     },
     ...overrides,
   };
+  plugin.refreshModelSelectors ??= jest.fn(() => {
+    for (const view of plugin.getAllViews()) {
+      view.refreshModelSelector();
+    }
+  });
+  plugin.mutateSettings ??= jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+    await mutation(plugin.settings);
+    await plugin.saveSettings();
+  });
+  return plugin;
 }
 
 describe('OpencodeChatRuntime', () => {
@@ -225,6 +235,218 @@ describe('OpencodeChatRuntime', () => {
 
     expect(shutdownProcess).toHaveBeenCalledTimes(2);
     expect(startProcess).toHaveBeenCalledTimes(2);
+  });
+
+  it('coalesces concurrent readiness for the same OpenCode target', async () => {
+    const plugin = createMockPlugin({
+      settings: { providerConfigs: { opencode: { enabled: true } } },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts').mockResolvedValue({
+      configPath: '/tmp/claudian-opencode-config.json',
+      configContent: '{}\n',
+      databasePath: '/default/opencode.db',
+      launchKey: 'launch-key',
+      systemPromptPath: '/tmp/claudian-opencode-system.md',
+    });
+    let releaseStart!: () => void;
+    const startGate = new Promise<void>(resolve => { releaseStart = resolve; });
+    const startProcess = jest.spyOn(runtime as any, 'startProcess').mockImplementation(async () => {
+      await startGate;
+      (runtime as any).ready = true;
+    });
+
+    const first = runtime.ensureReady({ allowSessionCreation: false });
+    const second = runtime.ensureReady({ allowSessionCreation: false });
+    await new Promise(resolve => setImmediate(resolve));
+
+    expect(startProcess).toHaveBeenCalledTimes(1);
+    releaseStart();
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+  });
+
+  it('does not coalesce readiness across conversation targets', async () => {
+    const plugin = createMockPlugin({
+      settings: { providerConfigs: { opencode: { enabled: true } } },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts').mockResolvedValue({
+      configPath: '/tmp/claudian-opencode-config.json',
+      configContent: '{}\n',
+      databasePath: '/default/opencode.db',
+      launchKey: 'launch-key',
+      systemPromptPath: '/tmp/claudian-opencode-system.md',
+    });
+    jest.spyOn(runtime as any, 'startProcess').mockImplementation(async () => {
+      (runtime as any).process = {
+        isAlive: () => true,
+        shutdown: jest.fn().mockResolvedValue(undefined),
+      };
+      (runtime as any).transport = { dispose: jest.fn(), isClosed: false };
+      (runtime as any).connection = { dispose: jest.fn() };
+    });
+    let releaseFirstLoad!: () => void;
+    const firstLoadGate = new Promise<void>(resolve => { releaseFirstLoad = resolve; });
+    const loadSession = jest.spyOn(runtime as any, 'loadSession').mockImplementation(
+      async (sessionId) => {
+        if (sessionId === 'session-a') {
+          await firstLoadGate;
+        }
+        return true;
+      },
+    );
+
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-a' });
+    const first = runtime.ensureReady({ allowSessionCreation: false });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(loadSession).toHaveBeenCalledWith(
+      'session-a',
+      '/tmp/claudian-test-vault',
+      expect.any(Number),
+    );
+
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-b' });
+    const second = runtime.ensureReady({ allowSessionCreation: false });
+    releaseFirstLoad();
+
+    await expect(first).resolves.toBe(false);
+    await expect(second).resolves.toBe(true);
+    expect(loadSession).toHaveBeenLastCalledWith(
+      'session-b',
+      '/tmp/claudian-test-vault',
+      expect.any(Number),
+    );
+    expect(runtime.getSessionId()).toBe('session-b');
+  });
+
+  it('does not start OpenCode after cleanup invalidates readiness', async () => {
+    const plugin = createMockPlugin({
+      settings: { providerConfigs: { opencode: { enabled: true } } },
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    let releaseArtifacts!: () => void;
+    const artifactsGate = new Promise<void>(resolve => {
+      releaseArtifacts = resolve;
+    });
+    jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts').mockImplementation(async () => {
+      await artifactsGate;
+      return {
+        configPath: '/tmp/claudian-opencode-config.json',
+        configContent: '{}\n',
+        databasePath: '/default/opencode.db',
+        launchKey: 'launch-key',
+        systemPromptPath: '/tmp/claudian-opencode-system.md',
+      };
+    });
+    const startProcess = jest.spyOn(runtime as any, 'startProcess').mockResolvedValue(undefined);
+
+    const readiness = runtime.ensureReady({ allowSessionCreation: false });
+    await new Promise(resolve => setImmediate(resolve));
+    runtime.cleanup();
+    releaseArtifacts();
+
+    await expect(readiness).resolves.toBe(false);
+    expect(startProcess).not.toHaveBeenCalled();
+    expect(runtime.isReady()).toBe(false);
+  });
+
+  it('settles the owned query when local cancel receives no provider acknowledgement', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-1' });
+    const cancel = jest.fn().mockResolvedValue(undefined);
+    (runtime as any).connection = {
+      cancel,
+      prompt: jest.fn(() => new Promise(() => {})),
+    };
+    (runtime as any).ensureReady = jest.fn().mockResolvedValue(true);
+    (runtime as any).applySelectedMode = jest.fn().mockResolvedValue(undefined);
+    (runtime as any).applySelectedModel = jest.fn().mockResolvedValue(undefined);
+    (runtime as any).applySelectedEffort = jest.fn().mockResolvedValue(undefined);
+
+    const iterator = runtime.query(runtime.prepareTurn({ text: 'Hello' }));
+    const firstChunk = iterator.next();
+    await new Promise(resolve => setImmediate(resolve));
+    runtime.cancel();
+
+    await expect(firstChunk).resolves.toEqual({ done: false, value: { type: 'done' } });
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
+    expect(cancel).toHaveBeenCalledWith({ sessionId: 'session-1' });
+  });
+
+  it('restarts the ACP connection before reusing a session after cancellation', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin({
+      settings: { providerConfigs: { opencode: { enabled: true } } },
+    }));
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-1' });
+    jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts').mockResolvedValue({
+      configPath: '/tmp/claudian-opencode-config.json',
+      configContent: '{}\n',
+      databasePath: '/default/opencode.db',
+      launchKey: 'launch-key',
+      systemPromptPath: '/tmp/claudian-opencode-system.md',
+    });
+    const cancel = jest.fn();
+    const startProcess = jest.spyOn(runtime as any, 'startProcess').mockImplementation(async () => {
+      (runtime as any).process = { isAlive: () => true, shutdown: jest.fn().mockResolvedValue(undefined) };
+      (runtime as any).transport = { dispose: jest.fn(), isClosed: false };
+      (runtime as any).connection = { cancel, dispose: jest.fn() };
+    });
+    jest.spyOn(runtime as any, 'loadSession').mockResolvedValue(true);
+
+    await runtime.ensureReady({ allowSessionCreation: false });
+    (runtime as any).activeTurn = {
+      cancelled: false,
+      queue: { close: jest.fn(), push: jest.fn() },
+      sessionId: 'session-1',
+    };
+    runtime.cancel();
+    await runtime.ensureReady({ allowSessionCreation: false });
+
+    expect(cancel).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    expect(startProcess).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores notifications from a superseded ACP connection generation', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    const push = jest.fn();
+    (runtime as any).sessionId = 'session-1';
+    (runtime as any).connectionGeneration = 2;
+    (runtime as any).activeTurn = {
+      cancelled: false,
+      queue: { close: jest.fn(), push },
+      sessionId: 'session-1',
+    };
+
+    await (runtime as any).handleSessionNotification({
+      sessionId: 'session-1',
+      update: {
+        content: { text: 'stale', type: 'text' },
+        messageId: 'assistant-old',
+        sessionUpdate: 'agent_message_chunk',
+      },
+    }, 1);
+
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('rejects a second overlapping query without replacing the active route', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    (runtime as any).activeTurn = {
+      cancelled: false,
+      queue: { close: jest.fn(), next: jest.fn(), push: jest.fn() },
+      sessionId: 'session-1',
+    };
+
+    const chunks: unknown[] = [];
+    for await (const chunk of runtime.query(runtime.prepareTurn({ text: 'Second' }))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      { type: 'error', content: 'OpenCode does not support overlapping turns.' },
+      { type: 'done' },
+    ]);
+    expect((runtime as any).activeTurn.sessionId).toBe('session-1');
   });
 
   it('maps ACP permission options through the shared approval UI', async () => {

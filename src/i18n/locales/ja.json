@@ -256,18 +256,10 @@
       "desc": "カスタムモデルのコンテキストウィンドウサイズを設定します。デフォルト（200kトークン）を使用する場合は空欄のままにしてください。",
       "invalid": "無効な形式です。使用：256k、1m、または正確な数値（1000-10000000）。"
     },
-    "enableOpus1M": {
-      "name": "Opus 1Mコンテキストウィンドウ",
-      "desc": "モデルセレクターにOpus 1Mを表示します。Max、Team、Enterpriseプランに含まれます。APIおよびProユーザーは追加使用量が必要です。"
-    },
-    "enableSonnet1M": {
-      "name": "Sonnet 1Mコンテキストウィンドウ",
-      "desc": "モデルセレクターにSonnet 1Mを表示します。Max、Team、Enterpriseプランでは追加使用量が必要です。APIおよびProユーザーは追加使用量が必要です。"
-    },
     "customModels": {
       "name": "カスタムモデル",
       "desc": "追加の Claude モデル ID を1行に1つずつピッカーに追加します。環境変数によるモデル上書きは引き続きピッカーを置き換えます。",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-6[1m]\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
     },
     "enableChrome": {
       "name": "Chrome拡張機能を有効化",

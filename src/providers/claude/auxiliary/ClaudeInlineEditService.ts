@@ -6,6 +6,7 @@ import {
   parseInlineEditResponse,
 } from '../../../core/prompt/inlineEdit';
 import { getProviderSettingsSnapshotWithModel } from '../../../core/providers/conversationModel';
+import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type {
   InlineEditRequest,
   InlineEditResult,
@@ -14,7 +15,6 @@ import {
   isReadOnlyTool,
   READ_ONLY_TOOLS,
 } from '../../../core/tools/toolNames';
-import type ClaudianPlugin from '../../../main';
 import { appendContextFiles } from '../../../utils/context';
 import { runColdStartQuery } from '../runtime/claudeColdStartQuery';
 
@@ -48,12 +48,12 @@ export function createReadOnlyHook(): HookCallbackMatcher {
 }
 
 export class InlineEditService {
-  private plugin: ClaudianPlugin;
+  private plugin: ProviderHost;
   private abortController: AbortController | null = null;
   private modelOverride: string | undefined;
   private sessionId: string | null = null;
 
-  constructor(plugin: ClaudianPlugin) {
+  constructor(plugin: ProviderHost) {
     this.plugin = plugin;
   }
 

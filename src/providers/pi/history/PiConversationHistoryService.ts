@@ -1,9 +1,13 @@
 import * as fs from 'node:fs/promises';
 
-import type { ProviderConversationHistoryService } from '../../../core/providers/types';
+import type {
+  ProviderConversationHistoryService,
+  ProviderHistoryPathContext,
+} from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { buildPersistedPiState, getPiState } from '../types';
-import { findPiSessionFile, parsePiSessionContent } from './PiHistoryStore';
+import { resolvePiSessionFileHint } from './PiHistoryPathResolver';
+import { parsePiSessionContent } from './PiHistoryStore';
 
 export class PiConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedKeys = new Map<string, string>();
@@ -11,15 +15,25 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   async hydrateConversationHistory(
     conversation: Conversation,
     vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<void> {
     const state = getPiState(conversation.providerState);
     if (this.isPendingForkConversation(conversation)) {
+      const sourceSessionFile = resolvePiSessionFileHint(
+        state.forkSourceSessionFile,
+        state.forkSource!.sessionId,
+        vaultPath,
+        pathContext,
+      );
+      this.replaceResolvedPath(
+        conversation,
+        'forkSourceSessionFile',
+        state.forkSourceSessionFile,
+        sourceSessionFile,
+      );
       if (conversation.messages.length > 0) {
         return;
       }
-
-      const sourceSessionFile = state.forkSourceSessionFile
-        ?? findPiSessionFile(state.forkSource!.sessionId, vaultPath);
       if (!sourceSessionFile) {
         this.hydratedKeys.delete(conversation.id);
         return;
@@ -44,13 +58,24 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       return;
     }
 
-    const sessionTarget = state.sessionFile ?? state.sessionId ?? conversation.sessionId;
-    if (!sessionTarget) {
+    const sessionTarget = state.sessionId ?? conversation.sessionId;
+    if (!state.sessionFile && !sessionTarget) {
       this.hydratedKeys.delete(conversation.id);
       return;
     }
 
-    const sessionFile = state.sessionFile ?? findPiSessionFile(sessionTarget, vaultPath);
+    const sessionFile = resolvePiSessionFileHint(
+      state.sessionFile,
+      sessionTarget,
+      vaultPath,
+      pathContext,
+    );
+    this.replaceResolvedPath(
+      conversation,
+      'sessionFile',
+      state.sessionFile,
+      sessionFile,
+    );
     if (!sessionFile) {
       this.hydratedKeys.delete(conversation.id);
       return;
@@ -119,5 +144,24 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     conversation: Conversation,
   ): Record<string, unknown> | undefined {
     return buildPersistedPiState(getPiState(conversation.providerState)) as Record<string, unknown> | undefined;
+  }
+
+  private replaceResolvedPath(
+    conversation: Conversation,
+    field: 'forkSourceSessionFile' | 'sessionFile',
+    persistedPath: string | undefined,
+    resolvedPath: string | null,
+  ): void {
+    if (!persistedPath || persistedPath === resolvedPath) {
+      return;
+    }
+
+    const nextState = { ...getPiState(conversation.providerState) };
+    if (resolvedPath) {
+      nextState[field] = resolvedPath;
+    } else {
+      delete nextState[field];
+    }
+    conversation.providerState = buildPersistedPiState(nextState) as Record<string, unknown> | undefined;
   }
 }

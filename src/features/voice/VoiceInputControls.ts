@@ -9,8 +9,8 @@
 
 import { setIcon } from 'obsidian';
 
-import type ClaudianPlugin from '../../main';
 import type { TabData } from '../chat/tabs/types';
+import type { FeatureHost } from '../FeatureHost';
 import { createPendingCommandBadge } from './PendingCommandBadge';
 import { createQueuedInputBadge } from './QueuedInputBadge';
 import type { VoiceState } from './VoiceController';
@@ -36,12 +36,12 @@ export interface VoiceInputControlsHandle {
  * handle whose destroy() unsubscribes from voice state and removes the DOM.
  */
 export function createVoiceInputControls(
-  plugin: ClaudianPlugin,
+  plugin: FeatureHost,
   toolbarEl: HTMLElement,
   inputWrapperEl: HTMLElement,
   tab: TabData,
 ): VoiceInputControlsHandle {
-  const voice = plugin.voiceFeature;
+  const voice = plugin.voiceFeature ?? null;
 
   const container = toolbarEl.createDiv({ cls: 'claudian-voice-controls' });
 

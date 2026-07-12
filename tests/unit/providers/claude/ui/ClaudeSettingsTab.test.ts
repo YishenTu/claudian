@@ -86,11 +86,11 @@ jest.mock('obsidian', () => {
   };
 });
 
-jest.mock('@/features/settings/ui/EnvironmentSettingsSection', () => ({
+jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
-jest.mock('@/features/settings/ui/McpSettingsManager', () => ({
+jest.mock('@/shared/settings/McpSettingsManager', () => ({
   McpSettingsManager: jest.fn(),
 }));
 
@@ -333,7 +333,7 @@ function createContainer(): any {
 }
 
 function createPlugin(overrides: Record<string, unknown> = {}): any {
-  return {
+  const plugin: any = {
     settings: {
       settingsProvider: 'claude',
       model: 'claude-opus-4-6',
@@ -349,6 +349,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
     },
     saveSettings: mockSaveSettings,
     normalizeModelVariantSettings: jest.fn(() => false),
+    recycleProviderRuntimes: jest.fn().mockResolvedValue(undefined),
     getView: jest.fn(() => ({
       getTabManager: jest.fn(() => ({
         broadcastToAllTabs: jest.fn().mockResolvedValue(undefined),
@@ -362,6 +363,11 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       },
     },
   };
+  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+    await mutation(plugin.settings);
+    await plugin.saveSettings();
+  });
+  return plugin;
 }
 
 function createContext(plugin: any) {
@@ -403,6 +409,16 @@ describe('ClaudeSettingsTab', () => {
 
     expect(cliPathInput.placeholder).toContain('cli-wrapper.cjs');
     expect(cliPathInput.placeholder).not.toContain('cli.js');
+  });
+
+  it('does not render obsolete Opus and Sonnet 1M toggles', () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+
+    expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableOpus1M.name');
+    expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableSonnet1M.name');
   });
 
   it('does not switch the active model while the custom models textarea is mid-edit', async () => {

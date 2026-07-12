@@ -11,9 +11,7 @@ export type ClaudeModel = string;
 export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
   { value: 'haiku', label: 'Haiku', description: 'Fast and efficient' },
   { value: 'sonnet', label: 'Sonnet', description: 'Balanced performance' },
-  { value: 'sonnet[1m]', label: 'Sonnet 1M', description: 'Balanced performance (1M context window)' },
   { value: 'opus', label: 'Opus', description: 'Most capable' },
-  { value: 'opus[1m]', label: 'Opus 1M', description: 'Most capable (1M context window)' },
   { value: 'claude-fable-5', label: 'Fable 5 ($$$)', description: "Anthropic's most capable model — premium pricing above Opus" },
 ];
 
@@ -32,9 +30,7 @@ export const EFFORT_LEVELS: { value: EffortLevel; label: string }[] = [
 export const DEFAULT_EFFORT_LEVEL: Record<string, EffortLevel> = {
   'haiku': DEFAULT_REASONING_VALUE,
   'sonnet': DEFAULT_REASONING_VALUE,
-  'sonnet[1m]': DEFAULT_REASONING_VALUE,
   'opus': DEFAULT_REASONING_VALUE,
-  'opus[1m]': DEFAULT_REASONING_VALUE,
   'claude-fable-5': DEFAULT_REASONING_VALUE,
 };
 
@@ -45,13 +41,19 @@ function normalizeModelId(model: string): string {
   return toClaudeRuntimeModelId(model).trim().toLowerCase();
 }
 
-function has1MContextSuffix(model: string): boolean {
-  return normalizeModelId(model).endsWith(ONE_M_SUFFIX);
-}
-
 function isBuiltInFamilyVariant(model: string, family: 'sonnet' | 'opus'): boolean {
   const normalized = normalizeModelId(model);
   return normalized === family || normalized === `${family}${ONE_M_SUFFIX}`;
+}
+
+export function normalizeLegacy1MModelAlias(model: string): string {
+  if (isBuiltInFamilyVariant(model, 'sonnet')) {
+    return 'sonnet';
+  }
+  if (isBuiltInFamilyVariant(model, 'opus')) {
+    return 'opus';
+  }
+  return model;
 }
 
 /** Fable is a standalone tier (not a haiku/sonnet/opus version bump) — always 1M context, no [1m] toggle. */
@@ -85,7 +87,7 @@ function resolveCustomContextLimit(
 }
 
 export function isDefaultClaudeModel(model: string): boolean {
-  return DEFAULT_MODEL_VALUES.has(normalizeModelId(model));
+  return DEFAULT_MODEL_VALUES.has(normalizeModelId(normalizeLegacy1MModelAlias(model)));
 }
 
 /**
@@ -130,38 +132,22 @@ export function resolveEffortLevel(
 export const CONTEXT_WINDOW_STANDARD = 200_000;
 export const CONTEXT_WINDOW_1M = 1_000_000;
 
-export function filterVisibleModelOptions<T extends { value: string }>(
-  models: T[],
-  enableOpus1M: boolean,
-  enableSonnet1M: boolean
-): T[] {
-  return models.filter((model) => {
-    if (isBuiltInFamilyVariant(model.value, 'opus')) {
-      return enableOpus1M ? has1MContextSuffix(model.value) : normalizeModelId(model.value) === 'opus';
-    }
-
-    if (isBuiltInFamilyVariant(model.value, 'sonnet')) {
-      return enableSonnet1M ? has1MContextSuffix(model.value) : normalizeModelId(model.value) === 'sonnet';
-    }
-
+function isCurrentOneMillionContextModel(model: string): boolean {
+  const normalized = normalizeModelId(normalizeLegacy1MModelAlias(model));
+  if (normalized === 'opus' || normalized === 'sonnet' || isFableModel(normalized)) {
     return true;
-  });
-}
-
-export function normalizeVisibleModelVariant(
-  model: string,
-  enableOpus1M: boolean,
-  enableSonnet1M: boolean
-): string {
-  if (isBuiltInFamilyVariant(model, 'opus')) {
-    return enableOpus1M ? 'opus[1m]' : 'opus';
   }
 
-  if (isBuiltInFamilyVariant(model, 'sonnet')) {
-    return enableSonnet1M ? 'sonnet[1m]' : 'sonnet';
+  const canonicalStart = normalized.indexOf('claude-');
+  const canonical = canonicalStart >= 0 ? normalized.slice(canonicalStart) : normalized;
+  const versionMatch = canonical.match(/^claude-(opus|sonnet)-(\d+)(?:-(\d+))?/);
+  if (!versionMatch) {
+    return false;
   }
 
-  return model;
+  const major = Number(versionMatch[2]);
+  const minor = versionMatch[3] === undefined ? 0 : Number(versionMatch[3]);
+  return major > 4 || (major === 4 && minor >= 6);
 }
 
 export function getContextWindowSize(
@@ -173,7 +159,7 @@ export function getContextWindowSize(
     return customLimit;
   }
 
-  if (has1MContextSuffix(model) || isFableModel(model)) {
+  if (isCurrentOneMillionContextModel(model)) {
     return CONTEXT_WINDOW_1M;
   }
 

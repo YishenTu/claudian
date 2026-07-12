@@ -27,7 +27,6 @@ import type {
 } from '../../../core/runtime/types';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision, StreamChunk } from '../../../core/types';
-import type ClaudianPlugin from '../../../main';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import type { BrowserSelectionContext } from '../../../utils/browser';
@@ -36,6 +35,7 @@ import { extractUserDisplayContent } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
+import type { FeatureHost } from '../../FeatureHost';
 import { COMPLETION_FLAVOR_WORDS } from '../constants';
 import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
 import { InlineExitPlanMode } from '../rendering/InlineExitPlanMode';
@@ -55,6 +55,8 @@ import type { CanvasSelectionController } from './CanvasSelectionController';
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';
+import type { ActiveTurnOwner } from './TurnCoordinator';
+import { TurnCoordinator } from './TurnCoordinator';
 
 const APPROVAL_OPTION_MAP: Record<string, ApprovalDecision> = {
   'Deny': 'deny',
@@ -74,7 +76,7 @@ function toError(error: unknown): Error {
 }
 
 export interface InputControllerDeps {
-  plugin: ClaudianPlugin;
+  plugin: FeatureHost;
   state: ChatState;
   renderer: MessageRenderer;
   streamController: StreamController;
@@ -108,7 +110,7 @@ export interface InputControllerDeps {
   ensureServiceInitialized?: () => Promise<boolean>;
   openConversation?: (conversationId: string) => Promise<void>;
   onForkAll?: () => Promise<void>;
-  restorePrePlanPermissionModeIfNeeded?: () => void;
+  restorePrePlanPermissionModeIfNeeded?: () => void | Promise<void>;
   /**
    * Fired at the end of every updateQueueIndicator() pass — i.e. on every queue
    * mutation (enqueue, discard, withdraw, process). Lets out-of-band UI (the
@@ -116,6 +118,16 @@ export interface InputControllerDeps {
    * DOM. Additive and optional so nothing else needs to wire it.
    */
   onQueueChanged?: () => void;
+  turnOwner?: ActiveTurnOwner;
+}
+
+export interface SendMessageOptions {
+  editorContextOverride?: EditorSelectionContext | null;
+  browserContextOverride?: BrowserSelectionContext | null;
+  canvasContextOverride?: CanvasSelectionContext | null;
+  content?: string;
+  images?: ChatMessage['images'];
+  turnRequestOverride?: ChatTurnRequest;
 }
 
 export class InputController {
@@ -138,9 +150,14 @@ export class InputController {
   }> = [];
   private sawInitialProviderUserMessage = false;
   private awaitingProviderAssistantStart = false;
+  private readonly turnCoordinator: TurnCoordinator<SendMessageOptions>;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
+    this.turnCoordinator = new TurnCoordinator(
+      (options) => this.executeSendMessage(options),
+      deps.turnOwner,
+    );
   }
 
   private getAgentService(): ChatRuntime | null {
@@ -197,14 +214,11 @@ export class InputController {
   // Message Sending
   // ============================================
 
-  async sendMessage(options?: {
-    editorContextOverride?: EditorSelectionContext | null;
-    browserContextOverride?: BrowserSelectionContext | null;
-    canvasContextOverride?: CanvasSelectionContext | null;
-    content?: string;
-    images?: ChatMessage['images'];
-    turnRequestOverride?: ChatTurnRequest;
-  }): Promise<void> {
+  async sendMessage(options?: SendMessageOptions): Promise<void> {
+    await this.turnCoordinator.run(options);
+  }
+
+  private async executeSendMessage(options?: SendMessageOptions): Promise<void> {
     const {
       plugin,
       state,
@@ -334,7 +348,13 @@ export class InputController {
     state.hasPendingConversationSave = true;
     renderer.addMessage(userMsg);
 
-    await this.triggerTitleGeneration();
+    try {
+      await this.triggerTitleGeneration();
+    } catch (error) {
+      this.restoreMessageToInput(this.createQueuedMessage(displayContent, turnRequest));
+      this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
+      throw error;
+    }
 
     const assistantMsg: ChatMessage = {
       id: this.deps.generateId(),
@@ -370,8 +390,8 @@ export class InputController {
       const ready = await this.deps.ensureServiceInitialized();
       if (!ready) {
         new Notice('Failed to initialize agent service. Please try again.');
-        streamController.hideThinkingIndicator();
-        state.isStreaming = false;
+        this.restoreMessageToInput(this.createQueuedMessage(displayContent, turnRequest));
+        this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
         this.activeStreamingAssistantMessage = null;
         this.resetProviderMessageBoundaryState();
         return;
@@ -381,6 +401,8 @@ export class InputController {
     const agentService = this.getAgentService();
     if (!agentService) {
       new Notice('Agent service not available. Please reload the plugin.');
+      this.restoreMessageToInput(this.createQueuedMessage(displayContent, turnRequest));
+      this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
       this.activeStreamingAssistantMessage = null;
       this.resetProviderMessageBoundaryState();
       return;
@@ -558,7 +580,7 @@ export class InputController {
           if (state.streamGeneration !== streamGeneration || invalidated) {
             planApprovalInvalidated = true;
           } else if (decision?.type === 'implement') {
-            this.deps.restorePrePlanPermissionModeIfNeeded?.();
+            await this.deps.restorePrePlanPermissionModeIfNeeded?.();
             planAutoSendContent = 'Implement the plan.';
           } else if (decision?.type === 'revise') {
             // Keep plan mode active, populate input with feedback text
@@ -566,7 +588,7 @@ export class InputController {
             shouldProcessQueuedMessage = false;
           } else {
             // cancel or null (dismissed)
-            this.deps.restorePrePlanPermissionModeIfNeeded?.();
+            await this.deps.restorePrePlanPermissionModeIfNeeded?.();
           }
         }
 
@@ -1344,9 +1366,12 @@ export class InputController {
         {
           onAccept: (finalInstruction) => {
             void (async (): Promise<void> => {
-              const currentPrompt = plugin.settings.systemPrompt;
-              plugin.settings.systemPrompt = appendMarkdownSnippet(currentPrompt, finalInstruction);
-              await plugin.saveSettings();
+              await plugin.mutateSettings((settings) => {
+                settings.systemPrompt = appendMarkdownSnippet(
+                  settings.systemPrompt,
+                  finalInstruction,
+                );
+              });
 
               new Notice('Instruction added to custom system prompt');
               instructionModeManager?.clear();

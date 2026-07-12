@@ -8,9 +8,9 @@ import type {
   McpServerType,
   McpSSEServerConfig,
   McpStdioServerConfig,
-} from '../../../core/types';
-import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../../core/types';
-import { parseCommand } from '../../../utils/mcp';
+} from '../../core/types';
+import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../core/types';
+import { parseCommand } from '../../utils/mcp';
 
 export class McpServerModal extends Modal {
   private existingServer: ManagedMcpServer | null;

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 const mockTransportInstances: MockPiRpcTransport[] = [];
 const mockSubprocessInstances: MockPiSubprocess[] = [];
+let mockRequestImplementation: ((type: string, payload?: unknown) => Promise<unknown>) | null = null;
 
 class MockPiSubprocess {
   readonly stdin = {};
@@ -27,7 +28,10 @@ class MockPiRpcTransport {
   isClosed = false;
   readonly eventHandlers: Array<(event: Record<string, unknown>) => void> = [];
   readonly closeHandlers: Array<(error?: Error) => void> = [];
-  readonly request = jest.fn(async (type: string) => {
+  readonly request = jest.fn(async (type: string, payload?: unknown) => {
+    if (mockRequestImplementation) {
+      return mockRequestImplementation(type, payload);
+    }
     if (type === 'prompt') {
       return { accepted: true };
     }
@@ -120,6 +124,7 @@ describe('PiChatRuntime', () => {
     jest.clearAllMocks();
     mockTransportInstances.length = 0;
     mockSubprocessInstances.length = 0;
+    mockRequestImplementation = null;
   });
 
   it('uses command-boundary, case-insensitive compact detection', () => {
@@ -230,6 +235,36 @@ describe('PiChatRuntime', () => {
     expect(mockSubprocessInstances[0].shutdown).toHaveBeenCalled();
   });
 
+  it('settles cancellation without provider acknowledgement and restarts before reuse', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    const iterator = runtime.query(createTurn(runtime));
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: 'user_message_start', content: 'Hello Pi' },
+    });
+
+    runtime.cancel();
+    const cancelledChunkPromise = iterator.next();
+    const cancelledChunk = await Promise.race([
+      cancelledChunkPromise,
+      new Promise<'pending'>(resolve => setImmediate(() => resolve('pending'))),
+    ]);
+    if (cancelledChunk === 'pending') {
+      mockTransportInstances[0].eventHandlers[0]({ type: 'agent_end' });
+      await cancelledChunkPromise;
+    }
+
+    expect(cancelledChunk).toEqual({ done: false, value: { type: 'done' } });
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
+    await flushPromises();
+    expect(mockTransportInstances[0].send).toHaveBeenCalledWith({ type: 'abort' });
+    expect(mockTransportInstances[0].dispose).toHaveBeenCalled();
+
+    await runtime.ensureReady();
+    expect(mockSubprocessInstances).toHaveLength(2);
+  });
+
   it('cancels pending extension UI dialogs when the Pi process closes', async () => {
     const dialogState: { signal?: AbortSignal } = {};
     const renderer = {
@@ -274,6 +309,94 @@ describe('PiChatRuntime', () => {
     await expect(iterator.next()).resolves.toEqual({
       done: false,
       value: { type: 'done' },
+    });
+  });
+
+  it('awaits new_session before readiness performs dependent state requests', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    await runtime.ensureReady();
+    const transport = mockTransportInstances[0];
+    let resolveReset!: (value: unknown) => void;
+    const resetResponse = new Promise<any>(resolve => { resolveReset = resolve; });
+    const order: string[] = [];
+    transport.request.mockImplementation(async (type: string) => {
+      order.push(type);
+      if (type === 'new_session') {
+        return resetResponse;
+      }
+      return {};
+    });
+
+    runtime.resetSession();
+    const readyPromise = runtime.ensureReady();
+    await flushPromises();
+
+    expect(order).toEqual(['new_session']);
+    resolveReset({ sessionId: 'replacement-session' });
+    await readyPromise;
+    expect(order.slice(0, 2)).toEqual(['new_session', 'get_state']);
+  });
+
+  it('does not become ready after cleanup interrupts startup', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    let releaseStart!: () => void;
+    const startGate = new Promise<void>(resolve => {
+      releaseStart = resolve;
+    });
+    jest.spyOn(runtime as any, 'startProcess').mockImplementation(async () => {
+      await startGate;
+    });
+
+    const readiness = runtime.ensureReady();
+    await flushPromises();
+    runtime.cleanup();
+    releaseStart();
+
+    await expect(readiness).resolves.toBe(false);
+    expect(runtime.isReady()).toBe(false);
+  });
+
+  it('does not coalesce readiness across conversation targets', async () => {
+    const runtime = new PiChatRuntime(createPlugin());
+    let resolveFirstState!: (value: unknown) => void;
+    const firstState = new Promise<unknown>(resolve => { resolveFirstState = resolve; });
+    let stateRequestCount = 0;
+    mockRequestImplementation = async (type: string) => {
+      if (type === 'get_state') {
+        stateRequestCount += 1;
+        return stateRequestCount === 1 ? firstState : {};
+      }
+      return {};
+    };
+
+    runtime.syncConversationState({
+      providerState: { sessionFile: '/tmp/pi-session-a.jsonl', sessionId: 'session-a' },
+      sessionId: 'session-a',
+    });
+    const first = runtime.ensureReady();
+    await flushPromises();
+
+    runtime.syncConversationState({
+      providerState: { sessionFile: '/tmp/pi-session-b.jsonl', sessionId: 'session-b' },
+      sessionId: 'session-b',
+    });
+    const second = runtime.ensureReady();
+    resolveFirstState({
+      sessionFile: '/tmp/pi-session-a.jsonl',
+      sessionId: 'session-a',
+    });
+
+    await expect(first).resolves.toBe(false);
+    await expect(second).resolves.toBe(true);
+    expect(runtime.buildSessionUpdates({
+      conversation: null,
+      sessionInvalidated: false,
+    }).updates).toMatchObject({
+      providerState: {
+        sessionFile: '/tmp/pi-session-b.jsonl',
+        sessionId: 'session-b',
+      },
+      sessionId: 'session-b',
     });
   });
 

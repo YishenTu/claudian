@@ -74,7 +74,7 @@ jest.mock('obsidian', () => {
   };
 });
 
-jest.mock('@/features/settings/ui/EnvironmentSettingsSection', () => ({
+jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
@@ -372,7 +372,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
     refreshModelSelector: mockRefreshModelSelector,
   };
 
-  return {
+  const plugin: any = {
     settings: {
       providerConfigs: {
         opencode: {
@@ -394,6 +394,21 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
     getView: jest.fn(() => viewA),
     getAllViews: jest.fn(() => [viewA, viewB]),
   };
+  plugin.recycleProviderRuntimes = jest.fn(async (providerId: string) => {
+    for (const view of plugin.getAllViews()) {
+      await view.getTabManager()?.broadcastToProviderTabs(
+        providerId,
+        (runtime: { cleanup(): void }) => Promise.resolve(runtime.cleanup()),
+      );
+      view.invalidateProviderCommandCaches([providerId]);
+      view.refreshModelSelector();
+    }
+  });
+  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+    await mutation(plugin.settings);
+    await plugin.saveSettings();
+  });
+  return plugin;
 }
 
 function createContext(plugin: any) {
@@ -403,6 +418,10 @@ function createContext(plugin: any) {
     refreshModelSelectors: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
+}
+
+async function flushPromises(): Promise<void> {
+  await new Promise<void>(resolve => setImmediate(resolve));
 }
 
 function findSetting(name: string): MockSettingRecord {
@@ -552,6 +571,7 @@ describe('OpencodeSettingsTab', () => {
     const catalogEl = findElement('details', 'claudian-provider-model-picker-catalog');
     catalogEl.open = true;
     await catalogEl.dispatchMockEvent('toggle');
+    await flushPromises();
 
     expect(mockRuntimeSyncConversationState).toHaveBeenCalledWith({
       providerState: { databasePath: ':memory:' },
@@ -673,8 +693,7 @@ describe('OpencodeSettingsTab', () => {
 
     checkboxEl.checked = true;
     await checkboxEl.dispatchMockEvent('change');
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushPromises();
 
     expect(plugin.settings.providerConfigs.opencode.visibleModels).toEqual([
       'deepseek/deepseek-v4-pro',
@@ -705,6 +724,7 @@ describe('OpencodeSettingsTab', () => {
     const aliasInput = findElement('input', 'claudian-provider-model-picker-selected-alias');
     aliasInput.value = 'V4 Pro';
     await aliasInput.dispatchMockEvent('blur');
+    await flushPromises();
 
     expect(getOpencodeProviderSettings(plugin.settings).modelAliases).toEqual({
       'deepseek/deepseek-v4-pro': 'V4 Pro',

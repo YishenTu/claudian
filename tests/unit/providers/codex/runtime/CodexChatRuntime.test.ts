@@ -490,6 +490,32 @@ describe('CodexChatRuntime', () => {
       expect(mockTransportDispose).toHaveBeenCalled();
       expect(mockProcessShutdown).toHaveBeenCalled();
     });
+
+    it('does not become ready after cleanup interrupts startup', async () => {
+      let resolveInitialize!: (value: unknown) => void;
+      const initialize = new Promise(resolve => {
+        resolveInitialize = resolve;
+      });
+      mockTransportRequest.mockImplementation((method: string) => {
+        if (method === 'initialize') {
+          return initialize;
+        }
+        return Promise.resolve({});
+      });
+
+      const readiness = runtime.ensureReady();
+      await new Promise(resolve => setImmediate(resolve));
+      runtime.cleanup();
+      resolveInitialize({
+        userAgent: 'test/0.1',
+        codexHome: '/tmp',
+        platformFamily: 'unix',
+        platformOs: 'macos',
+      });
+
+      await expect(readiness).rejects.toThrow('disposed');
+      expect(runtime.isReady()).toBe(false);
+    });
   });
 
   describe('query - new thread', () => {

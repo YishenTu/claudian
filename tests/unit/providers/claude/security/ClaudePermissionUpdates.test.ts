@@ -195,4 +195,37 @@ describe('buildPermissionUpdates', () => {
     expect(removeEntry!.behavior).toBe('deny');
     expect(removeEntry!.destination).toBe('session');
   });
+
+  it('returns no persistent update when neither suggestions nor fallback have a non-empty scope', () => {
+    expect(buildPermissionUpdates('Read', {}, 'allow-always')).toEqual([]);
+    expect(buildPermissionUpdates('Bash', { command: '   ' }, 'allow-always')).toEqual([]);
+    expect(buildPermissionUpdates('UnknownTool', {}, 'allow-always')).toEqual([]);
+  });
+
+  it('ignores whitespace-only suggested scopes for persistent approval', () => {
+    const suggestions = [{
+      type: 'addRules' as const,
+      behavior: 'allow' as const,
+      rules: [{ toolName: 'Read', ruleContent: '   ' }],
+      destination: 'session' as const,
+    }];
+
+    expect(buildPermissionUpdates('Read', {}, 'allow-always', suggestions)).toEqual([]);
+  });
+
+  it('preserves the exact non-empty provider suggestion for persistent approval', () => {
+    const suggestions = [{
+      type: 'addRules' as const,
+      behavior: 'deny' as const,
+      rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+      destination: 'session' as const,
+    }];
+
+    expect(buildPermissionUpdates('Bash', {}, 'allow-always', suggestions)).toEqual([{
+      type: 'addRules',
+      behavior: 'allow',
+      rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
+      destination: 'projectSettings',
+    }]);
+  });
 });

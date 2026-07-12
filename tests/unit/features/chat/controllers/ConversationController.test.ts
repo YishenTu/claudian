@@ -161,7 +161,8 @@ describe('ConversationController', () => {
         // Conversation is created lazily on first message send
         await controller.createNew();
 
-        expect(deps.plugin.findEmptyConversation).not.toHaveBeenCalled();
+        expect((deps.plugin as unknown as { findEmptyConversation: jest.Mock }).findEmptyConversation)
+          .not.toHaveBeenCalled();
         expect(deps.plugin.createConversation).not.toHaveBeenCalled();
         expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
         expect(deps.state.currentConversationId).toBeNull();

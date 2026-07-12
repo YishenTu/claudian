@@ -12,7 +12,7 @@ import { dirname } from 'node:path';
 import { Notice } from 'obsidian';
 
 import type { StreamChunk } from '../../core/types';
-import type ClaudianPlugin from '../../main';
+import type { FeatureHost } from '../FeatureHost';
 import { DictationController, type DictationState } from './DictationController';
 import { ResidentBridge } from './ResidentBridge';
 import { StateStream } from './StateStream';
@@ -49,8 +49,10 @@ export class VoiceStreamBusImpl implements VoiceStreamBus {
 }
 
 export class VoiceFeature {
-  private readonly plugin: ClaudianPlugin;
-  private readonly bus: VoiceStreamBusImpl;
+  private readonly plugin: FeatureHost;
+  /** Stream chunk bus. The composition root reads this to expose it as
+   *  `plugin.voiceBus` so StreamController's guarded tap can reach it. */
+  readonly bus: VoiceStreamBusImpl;
   private readonly residentBridge: ResidentBridge;
   private readonly dictation: DictationController;
 
@@ -66,11 +68,9 @@ export class VoiceFeature {
   private readonly muted$ = new StateStream(false);
   private controllerUnsubs: Array<() => void> = [];
 
-  constructor(plugin: ClaudianPlugin) {
+  constructor(plugin: FeatureHost) {
     this.plugin = plugin;
     this.bus = new VoiceStreamBusImpl();
-    // Expose the bus so StreamController's guarded tap can reach it.
-    this.plugin.voiceBus = this.bus;
 
     this.residentBridge = new ResidentBridge(() => this.resolveConfig());
     this.dictation = new DictationController(plugin, () => this.residentBridge.acquire());

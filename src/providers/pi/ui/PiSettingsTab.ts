@@ -6,12 +6,12 @@ import type {
   ProviderSettingsTabRenderer,
   ProviderSettingsTabRendererContext,
 } from '../../../core/providers/types';
-import { renderEnvironmentSettingsSection } from '../../../features/settings/ui/EnvironmentSettingsSection';
+import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import {
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
   renderProviderModelPicker,
-} from '../../../features/settings/ui/ProviderModelPicker';
+} from '../../../shared/settings/ProviderModelPicker';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { maybeGetPiWorkspaceServices } from '../app/PiWorkspaceServices';
@@ -40,8 +40,9 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
         toggle
           .setValue(piSettings.enabled)
           .onChange(async (value) => {
-            updatePiProviderSettings(settingsBag, { enabled: value });
-            await context.plugin.saveSettings();
+            await context.plugin.mutateSettings((settings) => {
+              updatePiProviderSettings(settings, { enabled: value });
+            });
             context.refreshModelSelectors();
           })
       );
@@ -78,12 +79,13 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
         delete cliPathsByHost[hostnameKey];
       }
 
-      updatePiProviderSettings(settingsBag, {
-        cliPathsByHost: { ...cliPathsByHost },
-        discoveredModels: [],
+      await context.plugin.mutateSettings((settings) => {
+        updatePiProviderSettings(settings, {
+          cliPathsByHost: { ...cliPathsByHost },
+          discoveredModels: [],
+        });
+        workspace?.cliResolver?.reset();
       });
-      workspace?.cliResolver?.reset();
-      await context.plugin.saveSettings();
       context.refreshModelSelectors();
     };
 
@@ -152,11 +154,12 @@ function renderPiModelPicker(
         || current.discoveredModels.length > 0
         || !sameStringList(current.visibleModels, normalizedVisibleModels);
       if (shouldPersist) {
-        updatePiProviderSettings(settingsBag, {
-          discoveredModels: result.models,
-          visibleModels: normalizedVisibleModels,
+        await context.plugin.mutateSettings((settings) => {
+          updatePiProviderSettings(settings, {
+            discoveredModels: result.models,
+            visibleModels: normalizedVisibleModels,
+          });
         });
-        await context.plugin.saveSettings();
         context.refreshModelSelectors();
       }
       return result.models.length > 0 ? 'loaded' : 'empty';
@@ -164,8 +167,9 @@ function renderPiModelPicker(
     loadingCatalogText: 'Loading Pi model catalog...',
     modifier: 'pi',
     async onAliasesChange(modelAliases) {
-      updatePiProviderSettings(settingsBag, { modelAliases });
-      await context.plugin.saveSettings();
+      await context.plugin.mutateSettings((settings) => {
+        updatePiProviderSettings(settings, { modelAliases });
+      });
       context.refreshModelSelectors();
     },
     async onSelectedIdsChange(visibleModels) {
@@ -175,8 +179,9 @@ function renderPiModelPicker(
         return;
       }
 
-      updatePiProviderSettings(settingsBag, { visibleModels: normalized });
-      await context.plugin.saveSettings();
+      await context.plugin.mutateSettings((settings) => {
+        updatePiProviderSettings(settings, { visibleModels: normalized });
+      });
       context.refreshModelSelectors();
     },
     providerName: 'Pi',

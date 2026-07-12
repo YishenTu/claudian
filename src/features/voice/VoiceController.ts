@@ -9,7 +9,7 @@
 import { Notice } from 'obsidian';
 
 import type { StreamChunk } from '../../core/types';
-import type ClaudianPlugin from '../../main';
+import type { FeatureHost } from '../FeatureHost';
 import type { TabData } from '../chat/tabs/types';
 import type { BridgeLease } from './ResidentBridge';
 import { chunkForSpeech, splitSentences } from './sentences';
@@ -48,7 +48,7 @@ export interface VoiceRuntimeConfig {
 const TRANSCRIPT_DUP_WINDOW_MS = 1500;
 
 export class VoiceController {
-  private readonly plugin: ClaudianPlugin;
+  private readonly plugin: FeatureHost;
   private readonly bus: VoiceStreamBus;
   // Acquires the shared resident bridge on start; released on stop. The
   // controller never closes the bridge itself — the ResidentBridge owns that.
@@ -92,7 +92,7 @@ export class VoiceController {
   private targetTabId: string | null = null;
 
   constructor(
-    plugin: ClaudianPlugin,
+    plugin: FeatureHost,
     bus: VoiceStreamBus,
     acquireBridge: () => Promise<BridgeLease>,
   ) {

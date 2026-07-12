@@ -9,7 +9,7 @@
 
 import { Notice } from 'obsidian';
 
-import type ClaudianPlugin from '../../main';
+import type { FeatureHost } from '../FeatureHost';
 import type { TabData } from '../chat/tabs/types';
 import { autoResizeTextarea } from '../chat/ui/textareaResize';
 import { mergeDictation } from './dictationInsert';
@@ -21,7 +21,7 @@ import type { VoiceBridge, VoiceEvent } from './VoiceBridge';
 export type DictationState = 'idle' | 'listening';
 
 export class DictationController {
-  private readonly plugin: ClaudianPlugin;
+  private readonly plugin: FeatureHost;
   private readonly acquireBridge: () => Promise<BridgeLease>;
 
   private lease: BridgeLease | null = null;
@@ -33,7 +33,7 @@ export class DictationController {
 
   private readonly state$ = new StateStream<DictationState>('idle');
 
-  constructor(plugin: ClaudianPlugin, acquireBridge: () => Promise<BridgeLease>) {
+  constructor(plugin: FeatureHost, acquireBridge: () => Promise<BridgeLease>) {
     this.plugin = plugin;
     this.acquireBridge = acquireBridge;
   }

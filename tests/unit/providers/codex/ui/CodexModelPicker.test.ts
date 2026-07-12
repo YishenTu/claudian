@@ -42,7 +42,7 @@ interface FakeElement {
   text: string;
   title: string;
   value: string;
-  addEventListener(event: string, handler: () => void): void;
+  addEventListener(event: string, handler: () => unknown): void;
   appendText(value: string): void;
   classList: { add(value: string): void };
   createDiv(options?: { cls?: string; text?: string }): FakeElement;
@@ -52,7 +52,7 @@ interface FakeElement {
   setAttribute(name: string, value: string): void;
   setText(value: string): void;
   toggleClass(value: string, force: boolean): void;
-  trigger(event: string): void;
+  trigger(event: string): unknown[];
 }
 
 function createElement(
@@ -60,7 +60,7 @@ function createElement(
   options: { cls?: string; text?: string; type?: string } = {},
   parent: FakeElement | null = null,
 ): FakeElement {
-  const listeners = new Map<string, Array<() => void>>();
+  const listeners = new Map<string, Array<() => unknown>>();
   const classes = new Set(options.cls?.split(/\s+/).filter(Boolean) ?? []);
   const element: FakeElement = {
     attrs: options.type ? { type: options.type } : {},
@@ -114,9 +114,7 @@ function createElement(
       }
     },
     trigger(event) {
-      for (const handler of listeners.get(event) ?? []) {
-        handler();
-      }
+      return (listeners.get(event) ?? []).map(handler => handler());
     },
   };
   elements.push(element);
@@ -134,7 +132,7 @@ function appendChild(
 }
 
 function createPlugin() {
-  return {
+  const plugin: any = {
     settings: {
       providerConfigs: {
         codex: {
@@ -145,7 +143,12 @@ function createPlugin() {
       },
     },
     saveSettings: jest.fn().mockResolvedValue(undefined),
-  } as any;
+  };
+  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+    await mutation(plugin.settings);
+    await plugin.saveSettings();
+  });
+  return plugin;
 }
 
 function createContext(plugin: ReturnType<typeof createPlugin>) {
@@ -197,6 +200,49 @@ describe('CodexModelPicker', () => {
     expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
   });
 
+  it('registers void-returning DOM event callbacks for asynchronous actions', async () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+    const refreshModelCatalog = jest.fn().mockResolvedValue({
+      changed: false,
+      persistedSettingsChanged: false,
+    });
+
+    renderCodexModelPicker(createElement() as any, context, { refreshModelCatalog } as any);
+
+    const actionButton = findElement(element =>
+      element.classes.has('claudian-provider-model-picker-action')
+    );
+    expect(actionButton.trigger('click')).toEqual([undefined]);
+
+    const catalog = findElement(element =>
+      element.classes.has('claudian-provider-model-picker-catalog')
+    );
+    catalog.open = true;
+    expect(catalog.trigger('toggle')).toEqual([undefined]);
+
+    const aliasInput = findElement(element =>
+      element.classes.has('claudian-provider-model-picker-selected-alias')
+    );
+    expect(aliasInput.trigger('blur')).toEqual([undefined]);
+
+    const checkbox = findElement(element => element.attrs.type === 'checkbox');
+    checkbox.checked = false;
+    expect(checkbox.trigger('change')).toEqual([undefined]);
+
+    const removeButton = findElement(element =>
+      element.classes.has('claudian-provider-model-picker-selected-remove')
+    );
+    expect(removeButton.trigger('click')).toEqual([undefined]);
+
+    const clearAllButton = findElement(element =>
+      element.attrs['aria-label'] === 'Clear all selected Codex models'
+    );
+    expect(clearAllButton.trigger('click')).toEqual([undefined]);
+
+    await flushPromises();
+  });
+
   it('persists a catalog-ordered subset when a model is unchecked', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
@@ -235,7 +281,7 @@ describe('CodexModelPicker', () => {
     expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
   });
 
-  it('refreshes the app-server catalog and saves changed results', async () => {
+  it('refreshes the app-server catalog through the provider-owned persistence boundary', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
     const refreshModelCatalog = jest.fn().mockResolvedValue({
@@ -249,7 +295,7 @@ describe('CodexModelPicker', () => {
     await flushPromises();
 
     expect(refreshModelCatalog).toHaveBeenCalledTimes(1);
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
     expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
   });
 
