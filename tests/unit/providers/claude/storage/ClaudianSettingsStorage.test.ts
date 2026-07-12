@@ -469,15 +469,45 @@ describe('ClaudianSettingsStorage', () => {
         show1MModel: true,
       }));
 
-      const result = await storage.load();
+      await storage.load();
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
-      expect(getClaudeProviderSettings(result).enableSonnet1M).toBe(
-        getClaudeProviderSettings(DEFAULT_SETTINGS).enableSonnet1M,
-      );
       expect(writtenContent.model).toBe('sonnet');
       expect(writtenContent.hiddenProviderCommands).toEqual({});
       expect(writtenContent).not.toHaveProperty('show1MModel');
+    });
+
+    it('should remove legacy Claude 1M toggles from top-level settings', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        model: 'sonnet',
+        enableOpus1M: true,
+        enableSonnet1M: true,
+      }));
+
+      await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(writtenContent).not.toHaveProperty('enableOpus1M');
+      expect(writtenContent).not.toHaveProperty('enableSonnet1M');
+    });
+
+    it('should remove legacy Claude 1M toggles from provider settings', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        providerConfigs: {
+          claude: {
+            enableOpus1M: true,
+            enableSonnet1M: true,
+          },
+        },
+      }));
+
+      await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(writtenContent.providerConfigs.claude).not.toHaveProperty('enableOpus1M');
+      expect(writtenContent.providerConfigs.claude).not.toHaveProperty('enableSonnet1M');
     });
 
     it('should remove legacy slashCommands from the stored file', async () => {
