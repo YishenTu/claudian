@@ -120,6 +120,105 @@ describe('CodexHistoryStore', () => {
       ]);
     });
 
+    it('preserves interleaved reasoning, tools, and assistant text in transcript order', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:01.000Z',
+          type: 'event_msg',
+          payload: { type: 'agent_reasoning', text: 'Inspecting the note.' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:01.001Z',
+          type: 'response_item',
+          payload: {
+            type: 'reasoning',
+            summary: [{ type: 'summary_text', text: 'Inspecting the note.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call',
+            name: 'exec',
+            call_id: 'call_read',
+            input: 'const r = await tools.exec_command({cmd:"sed -n \'1,20p\' DEMO.md"}); text(r.output);',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:03.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call_output',
+            call_id: 'call_read',
+            output: 'Script completed\nOutput:\nDemo content',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:04.000Z',
+          type: 'event_msg',
+          payload: { type: 'agent_reasoning', text: 'Verifying the edit.' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:04.001Z',
+          type: 'response_item',
+          payload: {
+            type: 'reasoning',
+            summary: [{ type: 'summary_text', text: 'Verifying the edit.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:05.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call',
+            name: 'exec',
+            call_id: 'call_verify',
+            input: 'const r = await tools.exec_command({cmd:"tail -n 2 DEMO.md"}); text(r.output);',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:06.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call_output',
+            call_id: 'call_verify',
+            output: 'Script completed\nOutput:\nEdited',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:07.000Z',
+          type: 'event_msg',
+          payload: { type: 'agent_message', message: 'Done.' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:07.001Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Done.' }],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+      const assistantMessage = messages.find(message => message.role === 'assistant');
+
+      expect(assistantMessage?.contentBlocks).toEqual([
+        { type: 'thinking', content: 'Inspecting the note.' },
+        { type: 'tool_use', toolId: 'call_read' },
+        { type: 'thinking', content: 'Verifying the edit.' },
+        { type: 'tool_use', toolId: 'call_verify' },
+        { type: 'text', content: 'Done.' },
+      ]);
+    });
+
     it('rehydrates user images from persisted input_image parts', () => {
       const content = [
         JSON.stringify({
@@ -491,6 +590,79 @@ describe('CodexHistoryStore', () => {
           status: 'completed',
         }),
       ]));
+    });
+
+    it('restores every command from a multi-command exec envelope', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call',
+            name: 'exec',
+            call_id: 'call_exec_group',
+            input: [
+              'const first = await tools.exec_command({cmd:"pwd",workdir:"/vault"});',
+              'text(first.output);',
+              'const second = await tools.exec_command({cmd:"printf edit",workdir:"/vault"});',
+              'text(second.output);',
+              'const third = await tools.exec_command({cmd:"wc -l note.md",workdir:"/vault"});',
+              'text(third.output);',
+            ].join('\n'),
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call_output',
+            call_id: 'call_exec_group',
+            output: [
+              { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
+              { type: 'input_text', text: '/vault\n' },
+              { type: 'input_text', text: '' },
+              { type: 'input_text', text: '80 note.md\n' },
+            ],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+      const assistantMessage = messages.find(message => message.role === 'assistant');
+
+      expect(assistantMessage?.toolCalls).toEqual([
+        expect.objectContaining({
+          id: 'call_exec_group:1',
+          name: 'Bash',
+          input: { command: 'pwd' },
+          result: '/vault\n',
+          status: 'completed',
+        }),
+        expect.objectContaining({
+          id: 'call_exec_group:2',
+          name: 'Bash',
+          input: { command: 'printf edit' },
+          result: '',
+          status: 'completed',
+        }),
+        expect.objectContaining({
+          id: 'call_exec_group:3',
+          name: 'Bash',
+          input: { command: 'wc -l note.md' },
+          result: '80 note.md\n',
+          status: 'completed',
+        }),
+      ]);
+      expect(assistantMessage?.contentBlocks).toEqual([
+        { type: 'tool_use', toolId: 'call_exec_group:1' },
+        { type: 'tool_use', toolId: 'call_exec_group:2' },
+        { type: 'tool_use', toolId: 'call_exec_group:3' },
+      ]);
     });
 
     it('restores yielded exec envelopes as one completed Bash tool', () => {
@@ -2474,7 +2646,7 @@ describe('CodexHistoryStore', () => {
         {
           role: 'assistant',
           content: 'I will update the template.',
-          blockTypes: ['tool_use', 'text'],
+          blockTypes: ['text', 'tool_use'],
           tools: ['call-before-compact'],
         },
         {

@@ -49,20 +49,20 @@ export function normalizeCodexToolCall(
   rawName: string | undefined,
   rawInput: Record<string, unknown>,
 ): NormalizedCodexToolCall {
-  const nestedCall = rawName === 'exec' ? decodeExecEnvelope(rawInput) : null;
-  const effectiveName = nestedCall?.name ?? rawName;
-  const effectiveInput = nestedCall?.input ?? rawInput;
+  const nestedCalls = rawName === 'exec' ? decodeCodexExecEnvelope(rawInput) : null;
+  if (nestedCalls?.length === 1) {
+    return nestedCalls[0];
+  }
 
   return {
-    name: normalizeCodexToolName(effectiveName),
-    input: normalizeCodexToolInput(effectiveName, effectiveInput),
+    name: normalizeCodexToolName(rawName),
+    input: normalizeCodexToolInput(rawName, rawInput),
   };
 }
 
-function decodeExecEnvelope(input: Record<string, unknown>): {
-  name: string;
-  input: Record<string, unknown>;
-} | null {
+export function decodeCodexExecEnvelope(
+  input: Record<string, unknown>,
+): NormalizedCodexToolCall[] | null {
   const source = firstNonEmptyString(input.raw, input.value);
   if (!source) return null;
 
@@ -70,22 +70,28 @@ function decodeExecEnvelope(input: Record<string, unknown>): {
   if (!tokens) return null;
 
   const calls = findExecEnvelopeToolCalls(tokens);
-  if (!calls || calls.length !== 1) return null;
+  if (!calls || calls.length === 0) return null;
 
-  const call = calls[0];
-  if (!call) return null;
+  const decodedCalls: NormalizedCodexToolCall[] = [];
+  for (const call of calls) {
+    if (call.name === 'exec_command') {
+      const command = extractExecCommand(tokens, call);
+      if (!command) return null;
+      decodedCalls.push({ name: 'Bash', input: { command } });
+      continue;
+    }
 
-  if (call.name === 'exec_command') {
-    const command = extractExecCommand(tokens, call);
-    return command ? { name: call.name, input: { cmd: command } } : null;
+    if (call.name === 'apply_patch') {
+      const patch = extractApplyPatch(tokens, call);
+      if (!patch) return null;
+      decodedCalls.push({ name: 'apply_patch', input: { patch } });
+      continue;
+    }
+
+    return null;
   }
 
-  if (call.name === 'apply_patch') {
-    const patch = extractApplyPatch(tokens, call);
-    return patch ? { name: call.name, input: { patch } } : null;
-  }
-
-  return null;
+  return decodedCalls;
 }
 
 type JavaScriptTokenKind = 'identifier' | 'string' | 'punctuation';

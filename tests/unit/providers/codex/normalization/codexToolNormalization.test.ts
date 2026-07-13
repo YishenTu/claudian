@@ -1,4 +1,5 @@
 import {
+  decodeCodexExecEnvelope,
   isCodexToolOutputError,
   normalizeCodexMcpToolInput,
   normalizeCodexMcpToolName,
@@ -230,6 +231,20 @@ describe('normalizeCodexToolCall', () => {
       name: 'exec',
       input: { raw: source },
     });
+  });
+
+  it('decodes every supported tool from a multi-call exec envelope', () => {
+    const source = [
+      'const first = await tools.exec_command({cmd:"pwd"});',
+      'const second = await tools.exec_command({cmd:"ls"});',
+      'text(first.output);',
+      'text(second.output);',
+    ].join('\n');
+
+    expect(decodeCodexExecEnvelope({ raw: source })).toEqual([
+      { name: 'Bash', input: { command: 'pwd' } },
+      { name: 'Bash', input: { command: 'ls' } },
+    ]);
   });
 
   it('preserves exec when another nested tool accompanies exec_command', () => {
