@@ -37,12 +37,13 @@ function renderWidget(
 function fireKeyDown(
   root: any,
   key: string,
-  opts: { shiftKey?: boolean } = {},
+  opts: { shiftKey?: boolean; isComposing?: boolean } = {},
 ): void {
   const event = {
     type: 'keydown',
     key,
     shiftKey: opts.shiftKey ?? false,
+    isComposing: opts.isComposing ?? false,
     preventDefault: jest.fn(),
     stopPropagation: jest.fn(),
   };
@@ -851,6 +852,25 @@ describe('InlineAskUserQuestion', () => {
       // Should be on Q2 tab
       const tabs = container.querySelectorAll('claudian-ask-tab');
       expect(tabs[1]?.hasClass('is-active')).toBe(true);
+    });
+
+    it('does not advance from custom input on Enter during IME composition', () => {
+      const input = makeInput([
+        { question: 'Q1', options: ['A'], isOther: true },
+        { question: 'Q2', options: ['B'] },
+      ]);
+      const { container, widget } = renderWidget(input);
+      const root = findRoot(container);
+      const customItem = findItems(container).find((item: any) =>
+        item.hasClass('claudian-ask-custom-item'),
+      );
+
+      customItem?.click();
+      fireKeyDown(root, 'Enter', { isComposing: true });
+
+      const tabs = container.querySelectorAll('claudian-ask-tab');
+      expect(tabs[0]?.hasClass('is-active')).toBe(true);
+      expect((widget as any).isInputFocused).toBe(true);
     });
   });
 });

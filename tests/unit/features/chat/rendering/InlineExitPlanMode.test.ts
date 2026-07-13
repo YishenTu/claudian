@@ -13,10 +13,11 @@ beforeAll(() => {
   (globalThis as any).document = { activeElement: null };
 });
 
-function fireKeyDown(root: any, key: string): void {
+function fireKeyDown(root: any, key: string, isComposing = false): void {
   root.dispatchEvent({
     type: 'keydown',
     key,
+    isComposing,
     preventDefault: jest.fn(),
     stopPropagation: jest.fn(),
   });
@@ -170,6 +171,23 @@ describe('InlineExitPlanMode', () => {
 
     fireKeyDown(root, 'Enter');
     expect(resolve).toHaveBeenCalledWith({ type: 'feedback', text: 'Please revise the plan' });
+  });
+
+  it('does not submit feedback on Enter during IME composition', () => {
+    const container = createMockEl();
+    const resolve = jest.fn();
+    const widget = new InlineExitPlanMode(container, {}, resolve);
+    widget.render();
+
+    const root = findRoot(container);
+    const feedbackInput = findItems(root)[2].querySelector('claudian-ask-custom-text');
+    feedbackInput.value = 'composing text';
+    feedbackInput.dispatchEvent('focus');
+
+    fireKeyDown(root, 'Enter', true);
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect((widget as any).isInputFocused).toBe(true);
   });
 
   it('resolves null on abort and does not resolve twice', () => {
