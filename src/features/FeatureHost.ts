@@ -6,6 +6,7 @@ import type { AppTabManagerState, ProviderId } from '../core/providers/types';
 import type { ChatRuntime } from '../core/runtime/ChatRuntime';
 import type { ClaudianSettings, Conversation, ConversationMeta } from '../core/types';
 import type { TabData, TabId, TabManagerViewHost } from './chat/tabs/types';
+import type { VoiceFeature, VoiceStreamBusImpl } from './voice/VoiceFeature';
 
 export interface FeatureTabManagerHost {
   getAllTabs(): TabData[];
@@ -29,6 +30,13 @@ export interface FeatureHost {
   readonly providerHost: ProviderHost;
   readonly settings: ClaudianSettings;
   readonly storage: SharedAppStorage;
+
+  /** Stream chunk bus for the hands-free voice feature; StreamController taps
+   *  this to forward chunks. Absent until the voice feature is wired. */
+  readonly voiceBus?: VoiceStreamBusImpl;
+  /** Voice facade (conversation + dictation); null until onload wires it,
+   *  absent on hosts that do not carry the voice feature. */
+  readonly voiceFeature?: VoiceFeature | null;
 
   mutateSettings(
     mutation: (settings: ClaudianSettings) => void | Promise<void>,

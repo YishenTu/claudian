@@ -40,6 +40,7 @@ import type { ChatViewPlacement, EnvironmentScope } from './core/types/settings'
 import { ClaudianView } from './features/chat/ClaudianView';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
+import { VoiceFeature, type VoiceStreamBusImpl } from './features/voice/VoiceFeature';
 import { setLocale } from './i18n/i18n';
 import type { Locale } from './i18n/types';
 import { OPENCODE_PLAN_MODE_ID, OPENCODE_SAFE_MODE_ID } from './providers/opencode/modes';
@@ -56,6 +57,11 @@ function isClaudianView(value: unknown): value is ClaudianView {
 export default class ClaudianPlugin extends Plugin {
   settings!: ClaudianSettings;
   storage!: SharedAppStorage;
+  /** Stream chunk bus for the voice feature; StreamController taps this. */
+  voiceBus?: VoiceStreamBusImpl;
+  /** Voice facade (conversation + dictation). Per-tab input controls call into
+   *  this; null until onload wires it. */
+  voiceFeature: VoiceFeature | null = null;
   readonly providerHost = new ClaudianProviderHost(this);
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
   private conversationRepository!: ConversationRepository;
@@ -184,9 +190,23 @@ export default class ClaudianPlugin extends Plugin {
     });
 
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
+
+    // Voice mode: spawns the voicecode Python bridge on demand. The feature owns
+    // the stream bus; the composition root exposes it as this.voiceBus so the
+    // guarded tap in StreamController is a no-op until voice is enabled.
+    this.voiceFeature = new VoiceFeature(this);
+    this.voiceBus = this.voiceFeature.bus;
+    this.addCommand({
+      id: 'toggle-voice-mode',
+      name: 'Toggle voice mode',
+      callback: () => {
+        void this.voiceFeature?.toggleConversation();
+      },
+    });
   }
 
   onunload(): void {
+    void this.voiceFeature?.dispose();
     void this.persistOpenTabStates();
   }
 

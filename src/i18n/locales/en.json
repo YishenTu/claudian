@@ -441,6 +441,23 @@
       },
       "header": "Codex Subagents",
       "noAgents": "No Codex subagents in vault. Click + to create one."
+    },
+    "voice": "Voice",
+    "voicePythonPath": {
+      "name": "Python path",
+      "desc": "Python interpreter used to run the voice bridge (e.g. python3, or an absolute venv path)."
+    },
+    "voiceBridgeScriptPath": {
+      "name": "Bridge script path",
+      "desc": "Absolute path to voice_bridge.py in the voicecode repo. Its directory is used as the working directory."
+    },
+    "voiceDictationAutoSend": {
+      "name": "Auto-send dictation",
+      "desc": "When on, dictation sends immediately instead of inserting into the input for review."
+    },
+    "voiceConfirmWindowMs": {
+      "name": "Command confirm window",
+      "desc": "Milliseconds a spoken command waits before submitting, so you can cancel it by voice (\"cancel\", \"scratch that\") or the ✕ badge. Speaking again refines the pending command and restarts the hold. Set 0 to submit immediately."
     }
   }
 }

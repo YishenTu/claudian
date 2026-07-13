@@ -1,0 +1,335 @@
+/* Voice input controls: dictation mic button, conversation waveform toggle,
+   and the state-animated waveform indicator. Motion is derived from turn state
+   only (no real audio levels). Respects prefers-reduced-motion. */
+
+.claudian-voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 2px;
+}
+
+/* --- Shared button chrome (mirrors the service-tier toggle button) --- */
+.claudian-voice-mic-btn,
+.claudian-voice-convo-btn,
+.claudian-voice-mute-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.claudian-voice-mic-btn:hover,
+.claudian-voice-convo-btn:hover,
+.claudian-voice-mute-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-voice-mic-icon,
+.claudian-voice-convo-icon,
+.claudian-voice-mute-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.claudian-voice-mic-icon svg,
+.claudian-voice-convo-icon svg,
+.claudian-voice-mute-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Active mute: red-tinted so a paused mic reads as intentionally off. */
+.claudian-voice-mute-btn.active {
+  color: var(--text-error, #e05252);
+  background: rgba(224, 82, 82, 0.14);
+}
+
+/* Active dictation: warm accent + a gentle pulse so it reads as "listening". */
+.claudian-voice-mic-btn.active {
+  color: var(--claudian-brand);
+  background: rgba(var(--claudian-brand-rgb), 0.12);
+  animation: claudian-voice-mic-pulse 1.2s ease-in-out infinite;
+}
+
+.claudian-voice-convo-btn.active {
+  color: var(--claudian-brand);
+  background: rgba(var(--claudian-brand-rgb), 0.12);
+}
+
+@keyframes claudian-voice-mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--claudian-brand-rgb), 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(var(--claudian-brand-rgb), 0);
+  }
+}
+
+/* --- Queued-input badge (hands-free "something is waiting") --- */
+/* Appears in the voice controls only when this tab has a queued message, so the
+   user can see and kill it while watching the waveform (no need to reach the
+   composer-side indicator). */
+.claudian-voice-queued-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  height: 20px;
+  padding: 0 4px 0 6px;
+  border-radius: 10px;
+  color: var(--claudian-brand);
+  background: rgba(var(--claudian-brand-rgb), 0.12);
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.claudian-voice-queued-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--claudian-brand);
+  flex-shrink: 0;
+  /* Gentle pulse cues an active/waiting item without demanding attention. */
+  animation: claudian-voice-queued-pulse 1.6s ease-in-out infinite;
+}
+
+.claudian-voice-queued-label {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.claudian-voice-queued-snippet {
+  /* Truncate long queued text so the badge stays compact. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+  min-width: 0;
+}
+
+.claudian-voice-queued-kill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--claudian-brand);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.claudian-voice-queued-kill:hover {
+  background: rgba(var(--claudian-brand-rgb), 0.2);
+}
+
+.claudian-voice-queued-kill svg {
+  width: 12px;
+  height: 12px;
+}
+
+@keyframes claudian-voice-queued-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudian-voice-queued-dot {
+    animation: none;
+    opacity: 0.9;
+  }
+}
+
+/* --- Pending-command badge (confirm window "about to send unless cancelled") --- */
+/* Appears while a spoken command is held in the confirm window, so it can be
+   cancelled by voice or the ✕ before it submits. Amber-tinted to distinguish it
+   from the brand-colored queued-input badge. */
+.claudian-voice-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  height: 20px;
+  padding: 0 4px 0 6px;
+  border-radius: 10px;
+  color: var(--text-warning, #c08a2d);
+  background: rgba(192, 138, 45, 0.14);
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.claudian-voice-pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-warning, #c08a2d);
+  flex-shrink: 0;
+  /* Faster pulse than the queued badge to signal an imminent, timed send. */
+  animation: claudian-voice-pending-pulse 0.9s ease-in-out infinite;
+}
+
+.claudian-voice-pending-label {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.claudian-voice-pending-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+  min-width: 0;
+}
+
+.claudian-voice-pending-kill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-warning, #c08a2d);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.claudian-voice-pending-kill:hover {
+  background: rgba(192, 138, 45, 0.24);
+}
+
+.claudian-voice-pending-kill svg {
+  width: 12px;
+  height: 12px;
+}
+
+@keyframes claudian-voice-pending-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudian-voice-pending-dot {
+    animation: none;
+    opacity: 0.9;
+  }
+}
+
+/* --- Waveform indicator (inline, above the textarea) --- */
+.claudian-voice-waveform {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 20px;
+  margin: 4px 0 2px;
+  /* Wrapper is a column flex; float this to the top, above the textarea. */
+  order: -1;
+  flex-shrink: 0;
+}
+
+.claudian-voice-waveform-bar {
+  width: 3px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--claudian-brand);
+  /* Per-bar stagger so the row reads as a wave, not a single blink. */
+  animation-delay: calc(var(--claudian-voice-bar-index, 0) * 0.12s);
+  transform-origin: center;
+}
+
+/* calm (idle): low, slow breathing */
+.claudian-voice-waveform-calm .claudian-voice-waveform-bar {
+  animation: claudian-voice-wave-calm 2.4s ease-in-out infinite;
+  opacity: 0.5;
+}
+
+/* listening (also thinking): reactive, higher-amplitude pulse */
+.claudian-voice-waveform-listening .claudian-voice-waveform-bar {
+  animation: claudian-voice-wave-listening 0.7s ease-in-out infinite;
+  opacity: 0.9;
+}
+
+/* speaking: steady rolling motion */
+.claudian-voice-waveform-speaking .claudian-voice-waveform-bar {
+  animation: claudian-voice-wave-speaking 1.1s ease-in-out infinite;
+  opacity: 0.85;
+}
+
+@keyframes claudian-voice-wave-calm {
+  0%,
+  100% {
+    transform: scaleY(0.6);
+  }
+  50% {
+    transform: scaleY(1.1);
+  }
+}
+
+@keyframes claudian-voice-wave-listening {
+  0%,
+  100% {
+    transform: scaleY(0.5);
+  }
+  50% {
+    transform: scaleY(2.6);
+  }
+}
+
+@keyframes claudian-voice-wave-speaking {
+  0%,
+  100% {
+    transform: scaleY(0.8);
+  }
+  50% {
+    transform: scaleY(1.9);
+  }
+}
+
+/* Reduced motion: drop all animation; convey state via a static opacity level
+   so the indicator is still meaningful without movement. */
+@media (prefers-reduced-motion: reduce) {
+  .claudian-voice-mic-btn.active {
+    animation: none;
+  }
+
+  .claudian-voice-waveform-bar {
+    animation: none !important;
+    transform: scaleY(1);
+  }
+
+  .claudian-voice-waveform-calm .claudian-voice-waveform-bar {
+    opacity: 0.4;
+  }
+
+  .claudian-voice-waveform-listening .claudian-voice-waveform-bar {
+    opacity: 0.95;
+  }
+
+  .claudian-voice-waveform-speaking .claudian-voice-waveform-bar {
+    opacity: 0.75;
+  }
+}

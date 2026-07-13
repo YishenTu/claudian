@@ -441,6 +441,23 @@
       },
       "header": "Sous-agents Codex",
       "noAgents": "Aucun sous-agent Codex dans le vault. Cliquez sur + pour en créer un."
+    },
+    "voice": "Mode vocal",
+    "voicePythonPath": {
+      "name": "Chemin de Python",
+      "desc": "Interpréteur Python utilisé pour exécuter le pont vocal (p. ex. python3 ou un chemin absolu vers un venv)."
+    },
+    "voiceBridgeScriptPath": {
+      "name": "Chemin du script du pont",
+      "desc": "Chemin absolu vers voice_bridge.py dans le dépôt voicecode. Son répertoire sert de répertoire de travail."
+    },
+    "voiceDictationAutoSend": {
+      "name": "Envoi automatique de la dictée",
+      "desc": "Si activé, la dictée est envoyée immédiatement au lieu d'être insérée dans la zone de saisie pour relecture."
+    },
+    "voiceConfirmWindowMs": {
+      "name": "Fenêtre de confirmation des commandes",
+      "desc": "Millisecondes pendant lesquelles une commande vocale attend avant l'envoi, afin de pouvoir l'annuler à la voix (« cancel », « scratch that ») ou via le badge ✕. Parler à nouveau affine la commande en attente et relance l'attente. 0 envoie immédiatement."
     }
   }
 }

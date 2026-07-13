@@ -31,6 +31,7 @@ import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDro
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
+import { createVoiceInputControls } from '../../voice/VoiceInputControls';
 import { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import { CanvasSelectionController } from '../controllers/CanvasSelectionController';
 import { ConversationController } from '../controllers/ConversationController';
@@ -608,6 +609,7 @@ export function createTab(options: TabCreateOptions): TabData {
       contextUsageMeter: null,
       statusPanel: null,
       navigationSidebar: null,
+      voiceControls: null,
     },
     dom,
     renderer: null,
@@ -1072,6 +1074,15 @@ function initializeInputToolbar(
   tab.ui.permissionToggle = toolbarComponents.permissionToggle;
   tab.ui.serviceTierToggle = toolbarComponents.serviceTierToggle;
 
+  // Voice input controls (dictation mic + conversation waveform). Appended to
+  // the toolbar; the waveform indicator renders inline in the input wrapper.
+  // Cleanup is registered on the tab's eventCleanups like other per-tab UI.
+  const voiceControls = createVoiceInputControls(plugin, inputToolbar, dom.inputWrapper, tab);
+  dom.eventCleanups.push(() => voiceControls.destroy());
+  // Expose the handle so the InputController (constructed later) can drive the
+  // queued-input badge via its onQueueChanged hook.
+  tab.ui.voiceControls = voiceControls;
+
   tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 
   // Sync @-mentions to UI selector
@@ -1426,6 +1437,7 @@ export function initializeTabControllers(
     getFileContextManager: () => ui.fileContextManager,
     updateQueueIndicator: () => tab.controllers.inputController?.updateQueueIndicator(),
     getAgentService: () => tab.service,
+    getTabId: () => tab.id,
   });
 
   // Wire subagent callback now that StreamController exists
@@ -1544,6 +1556,8 @@ export function initializeTabControllers(
     getAgentService: () => tab.service,
     getSubagentManager: () => services.subagentManager,
     getTabProviderId: () => getTabProviderId(tab, plugin),
+    // Keep the hands-free voice queued-input badge in sync with the queue.
+    onQueueChanged: () => tab.ui.voiceControls?.notifyQueueChanged(),
     turnOwner: tab.session,
     ensureServiceInitialized: async () => {
       if (tab.serviceInitialized && tab.lifecycleState === 'bound_active') {

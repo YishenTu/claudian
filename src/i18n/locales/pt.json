@@ -441,6 +441,23 @@
       },
       "header": "Subagentes Codex",
       "noAgents": "Não há subagentes Codex no vault. Clique em + para criar um."
+    },
+    "voice": "Modo de voz",
+    "voicePythonPath": {
+      "name": "Caminho do Python",
+      "desc": "Interpretador Python usado para executar a ponte de voz (ex.: python3 ou um caminho absoluto de venv)."
+    },
+    "voiceBridgeScriptPath": {
+      "name": "Caminho do script da ponte",
+      "desc": "Caminho absoluto para voice_bridge.py no repositório voicecode. Seu diretório é usado como diretório de trabalho."
+    },
+    "voiceDictationAutoSend": {
+      "name": "Envio automático do ditado",
+      "desc": "Quando ativado, o ditado é enviado imediatamente em vez de ser inserido na entrada para revisão."
+    },
+    "voiceConfirmWindowMs": {
+      "name": "Janela de confirmação de comandos",
+      "desc": "Milissegundos que um comando falado aguarda antes de ser enviado, para que possa ser cancelado por voz (\"cancel\", \"scratch that\") ou pelo emblema ✕. Falar novamente refina o comando pendente e reinicia a espera. 0 envia imediatamente."
     }
   }
 }

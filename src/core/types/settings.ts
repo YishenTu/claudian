@@ -147,6 +147,18 @@ export interface ClaudianSettings {
   // Provider command visibility
   hiddenProviderCommands: HiddenProviderCommands;
 
+  // Voice mode (spawns the voicecode Python bridge as a subprocess)
+  voicePythonPath?: string;
+  voiceBridgeScriptPath?: string;
+  // When true, a dictated transcript sends immediately instead of being
+  // inserted into the input for the user to review/edit before sending.
+  voiceDictationAutoSend?: boolean;
+  // Hold window (ms) a spoken conversation command waits before submitting, so
+  // it can be cancelled by voice ("cancel"/"scratch that") or the ✕ badge. More
+  // speech during the window refines the pending command and restarts the hold.
+  // 0 disables the window — commands submit immediately (legacy behavior).
+  voiceConfirmWindowMs?: number;
+
   // Allow provider-specific extension fields
   [key: string]: unknown;
 }

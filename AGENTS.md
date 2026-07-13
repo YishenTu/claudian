@@ -13,6 +13,7 @@ Do not assume provider parity. Check each provider's `capabilities.ts`, `registr
 - Before editing a scoped area, read its nearest scoped guide:
   - `src/core/AGENTS.md`
   - `src/features/chat/AGENTS.md`
+  - `src/features/voice/AGENTS.md`
   - `src/providers/claude/AGENTS.md`
   - `src/providers/codex/AGENTS.md`
   - `src/providers/opencode/AGENTS.md`
@@ -49,6 +50,7 @@ Tests mirror `src/` under `tests/unit/` and `tests/integration/`.
 | `src/providers/*/` | Provider adaptors, provider-owned runtime protocol, history, storage, settings, and UI |
 | `src/features/chat/` | Sidebar chat orchestration against provider-neutral contracts |
 | `src/features/inline-edit/` | Inline edit modal and provider-backed edit services |
+| `src/features/voice/` | Hands-free voice mode: dictation and conversation via an external STT/TTS bridge subprocess |
 | `src/features/settings/` | Shared settings shell and provider tab assembly |
 | `src/shared/` | Reusable UI components |
 | `src/style/` | Modular CSS built into `styles.css` |

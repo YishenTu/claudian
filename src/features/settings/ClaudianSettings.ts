@@ -489,6 +489,68 @@ export class ClaudianSettingTab extends PluginSettingTab {
         });
       });
 
+    // --- Voice ---
+
+    new Setting(container).setName(t('settings.voice')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.voicePythonPath.name'))
+      .setDesc(t('settings.voicePythonPath.desc'))
+      .addText((text) =>
+        text
+          .setPlaceholder('python3')
+          .setValue(this.plugin.settings.voicePythonPath ?? '')
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.voicePythonPath = value.trim();
+            });
+          }),
+      );
+
+    new Setting(container)
+      .setName(t('settings.voiceBridgeScriptPath.name'))
+      .setDesc(t('settings.voiceBridgeScriptPath.desc'))
+      .addText((text) =>
+        text
+          .setPlaceholder('/path/to/voicecode/voice_bridge.py')
+          .setValue(this.plugin.settings.voiceBridgeScriptPath ?? '')
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.voiceBridgeScriptPath = value.trim();
+            });
+          }),
+      );
+
+    new Setting(container)
+      .setName(t('settings.voiceDictationAutoSend.name'))
+      .setDesc(t('settings.voiceDictationAutoSend.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.voiceDictationAutoSend ?? false)
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.voiceDictationAutoSend = value;
+            });
+          }),
+      );
+
+    new Setting(container)
+      .setName(t('settings.voiceConfirmWindowMs.name'))
+      .setDesc(t('settings.voiceConfirmWindowMs.desc'))
+      .addText((text) =>
+        text
+          .setPlaceholder('2000')
+          .setValue(String(this.plugin.settings.voiceConfirmWindowMs ?? 2000))
+          .onChange(async (value) => {
+            const parsed = Number.parseInt(value.trim(), 10);
+            // Ignore non-numeric/negative input; clamp keeps the window sane.
+            const next = Number.isFinite(parsed) && parsed >= 0 ? parsed : 2000;
+            await this.plugin.mutateSettings((settings) => {
+              settings.voiceConfirmWindowMs = next;
+            });
+          }),
+      );
+
     // --- Hotkeys ---
 
     new Setting(container).setName(t('settings.hotkeys')).setHeading();

@@ -441,6 +441,23 @@
       },
       "header": "Codex 子代理",
       "noAgents": "Vault 中沒有 Codex 子代理。點擊 + 建立一個。"
+    },
+    "voice": "語音模式",
+    "voicePythonPath": {
+      "name": "Python 路徑",
+      "desc": "用於執行語音橋接的 Python 直譯器(例如 python3,或 venv 的絕對路徑)。"
+    },
+    "voiceBridgeScriptPath": {
+      "name": "橋接指令碼路徑",
+      "desc": "voicecode 儲存庫中 voice_bridge.py 的絕對路徑,其所在目錄將用作工作目錄。"
+    },
+    "voiceDictationAutoSend": {
+      "name": "自動傳送聽寫",
+      "desc": "開啟後,聽寫結果會立即傳送,而不是插入輸入框供確認。"
+    },
+    "voiceConfirmWindowMs": {
+      "name": "命令確認視窗",
+      "desc": "語音命令在傳送前等待的毫秒數,期間可透過語音(\"cancel\"、\"scratch that\")或 ✕ 徽章取消。繼續說話會更新待傳送命令並重新計時。設為 0 立即傳送。"
     }
   }
 }
