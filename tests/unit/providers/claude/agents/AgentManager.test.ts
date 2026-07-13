@@ -75,6 +75,7 @@ describe('AgentManager', () => {
   const VAULT_PATH = '/test/vault';
   const HOME_DIR = '/home/user';
   const GLOBAL_AGENTS_DIR = path.join(HOME_DIR, '.claude', 'agents');
+  const CUSTOM_GLOBAL_AGENTS_DIR = '/custom/claude/agents';
   const VAULT_AGENTS_DIR = path.join(VAULT_PATH, '.claude/agents');
 
   beforeEach(() => {
@@ -160,6 +161,29 @@ describe('AgentManager', () => {
       const globalAgent = agents.find(a => a.id === 'MinimalAgent' && a.source === 'global');
       expect(globalAgent).toBeDefined();
       expect(globalAgent?.source).toBe('global');
+    });
+
+    it('loads global agents from the effective Claude config directory', async () => {
+      const manager = new AgentManager(
+        VAULT_PATH,
+        createMockPluginManager(),
+        '/custom/claude',
+      );
+
+      mockFs.existsSync.mockImplementation((p) => p === CUSTOM_GLOBAL_AGENTS_DIR);
+      (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
+        if (dir === CUSTOM_GLOBAL_AGENTS_DIR) {
+          return [createMockDirent('global-agent.md', true)];
+        }
+        return [];
+      });
+      mockFs.readFileSync.mockReturnValue(MINIMAL_AGENT_FILE);
+
+      await manager.loadAgents();
+
+      expect(manager.getAvailableAgents()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'MinimalAgent', source: 'global' }),
+      ]));
     });
 
     it('skips invalid agent files', async () => {

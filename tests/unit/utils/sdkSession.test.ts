@@ -102,6 +102,72 @@ describe('sdkSession', () => {
       const projectsPath = getSDKProjectsPath();
       expect(projectsPath).toBe('/Users/test/.claude/projects');
     });
+
+    it('uses CLAUDE_CONFIG_DIR from the effective SDK environment', () => {
+      const projectsPath = getSDKProjectsPath({
+        environment: { CLAUDE_CONFIG_DIR: '/custom/claude' },
+        vaultPath: '/Users/test/vault',
+      });
+
+      expect(projectsPath).toBe('/custom/claude/projects');
+    });
+
+    it('resolves a relative CLAUDE_CONFIG_DIR from the SDK working directory', () => {
+      const projectsPath = getSDKProjectsPath({
+        environment: { CLAUDE_CONFIG_DIR: '.claude-custom' },
+        vaultPath: '/Users/test/vault',
+      });
+
+      expect(projectsPath).toBe('/Users/test/vault/.claude-custom/projects');
+    });
+
+    it('falls back to the default directory when CLAUDE_CONFIG_DIR is unset', () => {
+      const projectsPath = getSDKProjectsPath({
+        environment: {},
+        vaultPath: '/Users/test/vault',
+      });
+
+      expect(projectsPath).toBe('/Users/test/.claude/projects');
+    });
+
+    it('uses the effective SDK HOME when CLAUDE_CONFIG_DIR is unset', () => {
+      const projectsPath = getSDKProjectsPath({
+        environment: { HOME: '/custom/home' },
+        hostPlatform: 'linux',
+        vaultPath: '/Users/test/vault',
+      });
+
+      expect(projectsPath).toBe('/custom/home/.claude/projects');
+    });
+
+    it('uses the effective SDK USERPROFILE on Windows', () => {
+      const projectsPath = getSDKProjectsPath({
+        environment: { USERPROFILE: '/custom/windows-home' },
+        hostPlatform: 'win32',
+        vaultPath: '/Users/test/vault',
+      });
+
+      expect(projectsPath).toBe('/custom/windows-home/.claude/projects');
+    });
+
+    it('resolves an empty SDK HOME from the SDK working directory', () => {
+      const projectsPath = getSDKProjectsPath({
+        environment: { HOME: '' },
+        hostPlatform: 'linux',
+        vaultPath: '/Users/test/vault',
+      });
+
+      expect(projectsPath).toBe('/Users/test/vault/.claude/projects');
+    });
+
+    it('preserves an explicitly empty CLAUDE_CONFIG_DIR like the SDK', () => {
+      const projectsPath = getSDKProjectsPath({
+        environment: { CLAUDE_CONFIG_DIR: '' },
+        vaultPath: '/Users/test/vault',
+      });
+
+      expect(projectsPath).toBe('/Users/test/vault/projects');
+    });
   });
 
   describe('isValidSessionId', () => {
@@ -147,6 +213,15 @@ describe('sdkSession', () => {
 
     it('throws error for empty session ID', () => {
       expect(() => getSDKSessionPath('/Users/test/vault', '')).toThrow('Invalid session ID');
+    });
+
+    it('builds session paths under the effective Claude config directory', () => {
+      const sessionPath = getSDKSessionPath('/Users/test/vault', 'session-123', {
+        environment: { CLAUDE_CONFIG_DIR: '/custom/claude' },
+        vaultPath: '/Users/test/vault',
+      });
+
+      expect(sessionPath).toBe('/custom/claude/projects/-Users-test-vault/session-123.jsonl');
     });
   });
 
@@ -336,6 +411,20 @@ describe('sdkSession', () => {
 
       expect(mockFsPromises.unlink).not.toHaveBeenCalled();
     });
+
+    it('deletes from the effective Claude config directory', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.unlink.mockResolvedValue(undefined);
+
+      await deleteSDKSession('/Users/test/vault', 'session-custom', {
+        environment: { CLAUDE_CONFIG_DIR: '/custom/claude' },
+        vaultPath: '/Users/test/vault',
+      });
+
+      expect(mockFsPromises.unlink).toHaveBeenCalledWith(
+        '/custom/claude/projects/-Users-test-vault/session-custom.jsonl',
+      );
+    });
   });
 
   describe('readSDKSession', () => {
@@ -362,6 +451,24 @@ describe('sdkSession', () => {
       expect(result.messages[0].type).toBe('user');
       expect(result.messages[1].type).toBe('assistant');
       expect(result.skippedLines).toBe(0);
+    });
+
+    it('reads from the effective Claude config directory', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue(
+        '{"type":"user","uuid":"u1","message":{"content":"Hello"}}',
+      );
+
+      const result = await readSDKSession('/Users/test/vault', 'session-custom', {
+        environment: { CLAUDE_CONFIG_DIR: '/custom/claude' },
+        vaultPath: '/Users/test/vault',
+      });
+
+      expect(result.messages).toHaveLength(1);
+      expect(mockFsPromises.readFile).toHaveBeenCalledWith(
+        '/custom/claude/projects/-Users-test-vault/session-custom.jsonl',
+        'utf-8',
+      );
     });
 
     it('skips invalid JSON lines and reports count', async () => {

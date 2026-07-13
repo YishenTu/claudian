@@ -5,6 +5,7 @@ import { Notice } from 'obsidian';
 
 import type { McpServerManager } from '@/core/mcp/McpServerManager';
 import type ClaudianPlugin from '@/main';
+import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { ClaudianService } from '@/providers/claude/runtime/ClaudeChatRuntime';
 import { MessageChannel } from '@/providers/claude/runtime/ClaudeMessageChannel';
 import { createResponseHandler } from '@/providers/claude/runtime/types';
@@ -178,6 +179,38 @@ describe('ClaudianService', () => {
       service.setSessionId('test-session-123');
       service.setSessionId(null);
       expect(service.getSessionId()).toBeNull();
+    });
+
+    it('uses the effective SDK environment for live subagent sidecar recovery', async () => {
+      jest.mocked(mockPlugin.getActiveEnvironmentVariables!)
+        .mockReturnValue('CLAUDE_CONFIG_DIR=/custom/claude');
+      const toolCallsSpy = jest.spyOn(historyStore, 'loadSubagentToolCalls')
+        .mockResolvedValue([]);
+      const finalResultSpy = jest.spyOn(historyStore, 'loadSubagentFinalResult')
+        .mockResolvedValue(null);
+      service.setSessionId('session-custom');
+
+      await service.loadSubagentToolCalls('agent-1');
+      await service.loadSubagentFinalResult('agent-1');
+
+      const expectedContext = expect.objectContaining({
+        environment: expect.objectContaining({ CLAUDE_CONFIG_DIR: '/custom/claude' }),
+        vaultPath: '/mock/vault/path',
+      });
+      expect(toolCallsSpy).toHaveBeenCalledWith(
+        '/mock/vault/path',
+        'session-custom',
+        'agent-1',
+        undefined,
+        expectedContext,
+      );
+      expect(finalResultSpy).toHaveBeenCalledWith(
+        '/mock/vault/path',
+        'session-custom',
+        'agent-1',
+        undefined,
+        expectedContext,
+      );
     });
 
     it('should NOT call ensureReady when setting session ID (passive sync)', async () => {

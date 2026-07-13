@@ -402,7 +402,7 @@ describe('ClaudianPlugin', () => {
     it('broadcasts ensureReady with force when env changes without model change', async () => {
       await plugin.onload();
 
-      // Mock getView to return a view with tabManager
+      // Mock one open view with an initialized Claude runtime.
       const mockSyncConversationState = jest.fn();
       const mockEnsureReady = jest.fn().mockResolvedValue(true);
       const mockTabManager = {
@@ -423,13 +423,53 @@ describe('ClaudianPlugin', () => {
         invalidateProviderCommandCaches: jest.fn(),
         refreshModelSelector: jest.fn(),
       };
-      jest.spyOn(plugin, 'getView').mockReturnValue(mockView as any);
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([mockView as any]);
 
       // Change env but not in a way that affects model
       await plugin.applyEnvironmentVariables('shared', 'SOME_VAR=value');
 
       expect(mockSyncConversationState).toHaveBeenCalledWith(null, []);
       expect(mockEnsureReady).toHaveBeenCalledWith({ force: true });
+    });
+
+    it('restarts affected runtimes in every open Claudian view', async () => {
+      await plugin.onload();
+
+      const createView = () => {
+        const ensureReady = jest.fn().mockResolvedValue(true);
+        const tabManager = {
+          getAllTabs: jest.fn().mockReturnValue([{
+            providerId: 'claude',
+            conversationId: null,
+            state: { isStreaming: false },
+            serviceInitialized: true,
+            service: {
+              ensureReady,
+              syncConversationState: jest.fn(),
+            },
+            ui: { externalContextSelector: { getExternalContexts: jest.fn().mockReturnValue([]) } },
+          }]),
+        };
+        return {
+          ensureReady,
+          view: {
+            getTabManager: jest.fn().mockReturnValue(tabManager),
+            invalidateProviderCommandCaches: jest.fn(),
+            refreshModelSelector: jest.fn(),
+          },
+        };
+      };
+      const first = createView();
+      const second = createView();
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([
+        first.view as any,
+        second.view as any,
+      ]);
+
+      await plugin.applyEnvironmentVariables('shared', 'SOME_VAR=value');
+
+      expect(first.ensureReady).toHaveBeenCalledWith({ force: true });
+      expect(second.ensureReady).toHaveBeenCalledWith({ force: true });
     });
 
     it('syncs live external contexts before restarting invalidated Claude runtimes', async () => {
@@ -472,7 +512,7 @@ describe('ClaudianPlugin', () => {
         invalidateProviderCommandCaches: jest.fn(),
         refreshModelSelector: jest.fn(),
       };
-      jest.spyOn(plugin, 'getView').mockReturnValue(mockView as any);
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([mockView as any]);
 
       await plugin.applyEnvironmentVariables('provider:claude', 'ANTHROPIC_MODEL=claude-sonnet-4-5');
 
@@ -1372,7 +1412,9 @@ describe('ClaudianPlugin', () => {
       expect(loadSpy).toHaveBeenCalledWith(
         expect.any(String),
         'session-with-image',
-        undefined
+        undefined,
+        undefined,
+        expect.any(Object),
       );
       expect(loaded?.messages[0].images?.[0]).toMatchObject({
         id: 'img-blank',
@@ -1413,14 +1455,17 @@ describe('ClaudianPlugin', () => {
       // Should check existence of source session, not the conversation's own session
       expect(sdkSession.locateSDKSession).toHaveBeenCalledWith(
         expect.any(String),
-        'source-session-abc'
+        'source-session-abc',
+        expect.any(Object),
       );
 
       // Should load from forkSource.sessionId with forkSource.resumeAt as truncation point
       expect(loadSpy).toHaveBeenCalledWith(
         expect.any(String),
         'source-session-abc',
-        'asst-uuid-cutoff'
+        'asst-uuid-cutoff',
+        undefined,
+        expect.any(Object),
       );
 
       // Messages should be loaded
@@ -1452,7 +1497,8 @@ describe('ClaudianPlugin', () => {
       // Should load from own session, not forkSource session
       expect(sdkSession.locateSDKSession).toHaveBeenCalledWith(
         expect.any(String),
-        'own-session-id'
+        'own-session-id',
+        expect.any(Object),
       );
 
       existsSpy.mockRestore();
@@ -1518,7 +1564,9 @@ describe('ClaudianPlugin', () => {
       expect(loadSpy).toHaveBeenCalledWith(
         expect.any(String),
         'session-subagent-recovery',
-        undefined
+        undefined,
+        undefined,
+        expect.any(Object),
       );
       expect(loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-1')).toEqual(
         expect.objectContaining({
@@ -1591,7 +1639,9 @@ describe('ClaudianPlugin', () => {
       expect(loadSpy).toHaveBeenCalledWith(
         expect.any(String),
         'session-subagent-merge',
-        undefined
+        undefined,
+        undefined,
+        expect.any(Object),
       );
       expect(taskTool?.result).toBe('Full SDK result from queue-operation');
       expect(taskTool?.subagent?.result).toBe('Full SDK result from queue-operation');
@@ -1998,7 +2048,9 @@ describe('ClaudianPlugin', () => {
       expect(loadSubagentToolsSpy).toHaveBeenCalledWith(
         expect.any(String),
         'session-async-subagent-tools',
-        'agent-a123'
+        'agent-a123',
+        undefined,
+        expect.any(Object),
       );
       expect(taskTool?.subagent?.toolCalls).toEqual(
         expect.arrayContaining([

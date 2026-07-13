@@ -1,3 +1,4 @@
+import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import { isSubagentToolName } from '../../../core/tools/toolNames';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
@@ -70,10 +71,13 @@ export async function loadSDKSessionMessages(
   sessionId: string,
   resumeAtMessageId?: string,
   sessionPath?: string,
+  pathContext?: ProviderHistoryPathContext,
 ): Promise<SDKSessionLoadResult> {
   const result = sessionPath
     ? await readSDKSessionFile(sessionPath)
-    : await readSDKSession(vaultPath, sessionId);
+    : await (pathContext
+      ? readSDKSession(vaultPath, sessionId, pathContext)
+      : readSDKSession(vaultPath, sessionId));
 
   if (result.error) {
     return { messages: [], skippedLines: result.skippedLines, error: result.error };
@@ -154,15 +158,16 @@ export async function loadSDKSessionMessages(
 
           // Load tool calls from subagent sidecar JSONL in parallel
           if (subagent.agentId && isValidAgentId(subagent.agentId)) {
-            sidecarLoads.push({
-              subagent,
-              promise: loadSubagentToolCalls(
+            const promise = pathContext
+              ? loadSubagentToolCalls(
                 vaultPath,
                 sessionId,
                 subagent.agentId,
                 sessionPath,
-              ),
-            });
+                pathContext,
+              )
+              : loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId, sessionPath);
+            sidecarLoads.push({ subagent, promise });
           }
         }
       }
