@@ -2356,6 +2356,142 @@ describe('CodexHistoryStore', () => {
   });
 
   describe('parseCodexSessionContent - context_compacted boundary', () => {
+    it('keeps post-compaction records in the active turn when auto-compaction happens mid-turn', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-07-05T07:19:07.987Z',
+          type: 'event_msg',
+          payload: { type: 'task_started', turn_id: 'uuid-auto-compact' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:19:10.303Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Update the template.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:19:54.927Z',
+          type: 'event_msg',
+          payload: { type: 'agent_message', message: 'I will update the template.' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:19:54.927Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'I will update the template.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:20:02.971Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'exec_command',
+            call_id: 'call-before-compact',
+            arguments: '{"cmd":"rg breadcrumb template"}',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:20:03.061Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call-before-compact',
+            output: 'Process exited with code 0\nOutput:\nmatch',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:23:48.653Z',
+          type: 'compacted',
+          payload: { message: '', replacement_history: [] },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:23:48.660Z',
+          type: 'event_msg',
+          payload: { type: 'context_compacted' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:23:52.499Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'exec_command',
+            call_id: 'call-after-compact',
+            arguments: '{"cmd":"npm test"}',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:23:52.934Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call-after-compact',
+            output: 'Process exited with code 0\nOutput:\npassed',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:25:41.421Z',
+          type: 'event_msg',
+          payload: { type: 'agent_message', message: 'Template updated.' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:25:41.424Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Template updated.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-05T07:25:41.432Z',
+          type: 'event_msg',
+          payload: { type: 'task_complete', turn_id: 'uuid-auto-compact' },
+        }),
+      ].join('\n');
+
+      const turns = parseCodexSessionTurns(content);
+
+      expect(turns).toHaveLength(1);
+      expect(turns[0].turnId).toBe('uuid-auto-compact');
+      expect(turns[0].messages.map(message => ({
+        role: message.role,
+        content: message.content,
+        blockTypes: message.contentBlocks?.map(block => block.type),
+        tools: message.toolCalls?.map(tool => tool.id),
+      }))).toEqual([
+        {
+          role: 'user',
+          content: 'Update the template.',
+          blockTypes: undefined,
+          tools: undefined,
+        },
+        {
+          role: 'assistant',
+          content: 'I will update the template.',
+          blockTypes: ['tool_use', 'text'],
+          tools: ['call-before-compact'],
+        },
+        {
+          role: 'assistant',
+          content: '',
+          blockTypes: ['context_compacted'],
+          tools: undefined,
+        },
+        {
+          role: 'assistant',
+          content: 'Template updated.',
+          blockTypes: ['tool_use', 'text'],
+          tools: ['call-after-compact'],
+        },
+      ]);
+    });
+
     it('preserves visible transcript records instead of replaying compacted replacement_history', () => {
       const content = [
         JSON.stringify({ timestamp: '2026-03-03T16:00:00.000Z', type: 'event_msg', payload: { type: 'task_started' } }),

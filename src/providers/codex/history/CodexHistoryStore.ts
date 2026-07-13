@@ -1110,19 +1110,24 @@ function processEventMsg(
     }
 
     case 'context_compacted': {
-      // Close any active bubble so the boundary stays standalone
-      if (ctx.currentTurnId) {
-        const prevTurn = ctx.turns.get(ctx.currentTurnId);
-        if (prevTurn) closeAssistantBubble(prevTurn);
+      const activeTurnId = ctx.currentTurnId;
+      if (activeTurnId) {
+        const activeTurn = ctx.turns.get(activeTurnId);
+        if (activeTurn) closeAssistantBubble(activeTurn);
       }
 
-      // Create a dedicated turn for the compact boundary
-      const id = nextTurnId(ctx);
-      const turn = ensureTurn(ctx.turns, ctx.turnOrder, id, null, timestamp);
+      // Auto-compaction can occur in the middle of a running turn. Keep the
+      // boundary in that turn so later records retain their turn ownership.
+      const turn = ensureTurn(
+        ctx.turns,
+        ctx.turnOrder,
+        nextTurnId(ctx),
+        activeTurnId,
+        timestamp,
+      );
       const bubble = ensureAssistantBubble(turn, timestamp);
       bubble.contentBlocks.push({ type: 'context_compacted' });
       closeAssistantBubble(turn);
-      ctx.currentTurnId = null;
       break;
     }
 
