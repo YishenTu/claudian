@@ -129,20 +129,9 @@ export const piChatUIConfig: ProviderChatUIConfig = {
     return isPiModelSelectionId(model);
   },
 
-  applyModelDefaults(model: string, settings: unknown): void {
-    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-      return;
-    }
+  applyModelDefaults: applyPiModelDefaults,
 
-    const settingsBag = settings as Record<string, unknown>;
-    if (!decodePiModelId(model)) {
-      settingsBag.effortLevel = 'off';
-      return;
-    }
-
-    settingsBag.model = model;
-    settingsBag.effortLevel = getPiDefaultReasoningValue(model, settingsBag);
-  },
+  applyModelProjectionDefaults: applyPiModelProjectionDefaults,
 
   applyReasoningSelection(model: string, value: string, settings: unknown): void {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
@@ -215,6 +204,33 @@ function getCachedModel(model: string, settings: Record<string, unknown>): PiDis
   }
 
   return getPiProviderSettings(settings).discoveredModels.find(entry => entry.encodedId === model) ?? null;
+}
+
+function applyPiModelDefaults(model: string, settings: unknown): void {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return;
+  }
+
+  const settingsBag = settings as Record<string, unknown>;
+  if (!decodePiModelId(model)) {
+    settingsBag.effortLevel = 'off';
+    return;
+  }
+
+  settingsBag.model = model;
+  settingsBag.effortLevel = getPiDefaultReasoningValue(model, settingsBag);
+}
+
+function applyPiModelProjectionDefaults(model: string, settings: unknown): void {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return;
+  }
+
+  const settingsBag = settings as Record<string, unknown>;
+  const preferredThinkingLevel = getPiProviderSettings(settingsBag).preferredThinkingByModel[model];
+  if (preferredThinkingLevel) {
+    settingsBag.effortLevel = preferredThinkingLevel;
+  }
 }
 
 function getPiDefaultReasoningValue(model: string, settings: Record<string, unknown>): string {

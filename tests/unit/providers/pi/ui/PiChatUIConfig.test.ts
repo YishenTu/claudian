@@ -96,6 +96,25 @@ describe('PiChatUIConfig', () => {
     )).toBe('high');
   });
 
+  it('applies only an existing per-model preference to conversation projections', () => {
+    const withPreference = structuredClone(settings);
+    withPreference.effortLevel = 'medium';
+    piChatUIConfig.applyModelProjectionDefaults?.(
+      'pi:anthropic/claude-sonnet-4',
+      withPreference,
+    );
+    expect(withPreference.effortLevel).toBe('high');
+
+    const withoutPreference = structuredClone(settings);
+    (withoutPreference.providerConfigs as any).pi.preferredThinkingByModel = {};
+    withoutPreference.effortLevel = 'medium';
+    piChatUIConfig.applyModelProjectionDefaults?.(
+      'pi:anthropic/claude-sonnet-4',
+      withoutPreference,
+    );
+    expect(withoutPreference.effortLevel).toBe('medium');
+  });
+
   it('resolves context windows from cached Pi model metadata before falling back', () => {
     const contextSettings: Record<string, unknown> = {
       providerConfigs: {

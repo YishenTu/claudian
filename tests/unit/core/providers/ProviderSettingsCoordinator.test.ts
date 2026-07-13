@@ -35,6 +35,54 @@ describe('ProviderSettingsCoordinator', () => {
       expect(snapshot.effortLevel).toBe('low');
       expect(settings.effortLevel).toBe('low');
     });
+
+    it('uses a Pi conversation model preference before normalizing against the saved provider model', () => {
+      const deepSeekModel = 'pi:deepseek/deepseek-reasoner';
+      const gptModel = 'pi:openai/gpt-5';
+      const settings: Record<string, unknown> = {
+        effortLevel: 'minimal',
+        model: deepSeekModel,
+        providerConfigs: {
+          pi: {
+            discoveredModels: [
+              {
+                encodedId: deepSeekModel,
+                id: 'deepseek-reasoner',
+                input: ['text'],
+                label: 'DeepSeek Reasoner',
+                provider: 'deepseek',
+                reasoning: true,
+                thinkingLevels: ['off', 'high'],
+              },
+              {
+                encodedId: gptModel,
+                id: 'gpt-5',
+                input: ['text'],
+                label: 'GPT-5',
+                provider: 'openai',
+                reasoning: true,
+                thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+              },
+            ],
+            enabled: true,
+            preferredThinkingByModel: {
+              [deepSeekModel]: 'high',
+              [gptModel]: 'minimal',
+            },
+            visibleModels: [deepSeekModel, gptModel],
+          },
+        },
+        savedProviderEffort: { pi: 'minimal' },
+        savedProviderModel: { pi: deepSeekModel },
+        serviceTier: 'default',
+        settingsProvider: 'pi',
+      };
+
+      const snapshot = getProviderSettingsSnapshotWithModel(settings, 'pi', gptModel);
+
+      expect(snapshot.model).toBe(gptModel);
+      expect(snapshot.effortLevel).toBe('minimal');
+    });
   });
 
   describe('applyModelSelection', () => {

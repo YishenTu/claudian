@@ -6,9 +6,9 @@ import {
   computeSystemPromptKey,
   type SystemPromptSettings,
 } from '../../../core/prompt/mainAgent';
+import { getProviderSettingsSnapshotWithModel } from '../../../core/providers/conversationModel';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderCapabilities } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
@@ -1051,14 +1051,11 @@ export class PiChatRuntime implements ChatRuntime {
   }
 
   private getProviderSettings(): Record<string, unknown> {
-    const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+    return getProviderSettingsSnapshotWithModel(
       this.plugin.settings,
       this.providerId,
+      this.currentConversationModel,
     );
-    if (this.currentConversationModel) {
-      settings.model = this.currentConversationModel;
-    }
-    return settings;
   }
 
   private setCurrentConversationModel(model: unknown): void {

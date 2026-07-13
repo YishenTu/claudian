@@ -623,6 +623,62 @@ describe('PiChatRuntime', () => {
     });
   });
 
+  it('applies the conversation model thinking preference instead of the saved Pi model restriction', async () => {
+    const deepSeekModel = 'pi:deepseek/deepseek-reasoner';
+    const gptModel = 'pi:openai/gpt-5';
+    const plugin = createPlugin();
+    plugin.settings.effortLevel = 'minimal';
+    plugin.settings.model = deepSeekModel;
+    plugin.settings.providerConfigs.pi = {
+      discoveredModels: [
+        {
+          encodedId: deepSeekModel,
+          id: 'deepseek-reasoner',
+          input: ['text'],
+          label: 'DeepSeek Reasoner',
+          provider: 'deepseek',
+          reasoning: true,
+          thinkingLevels: ['off', 'high'],
+        },
+        {
+          encodedId: gptModel,
+          id: 'gpt-5',
+          input: ['text'],
+          label: 'GPT-5',
+          provider: 'openai',
+          reasoning: true,
+          thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+        },
+      ],
+      enabled: true,
+      preferredThinkingByModel: {
+        [deepSeekModel]: 'high',
+        [gptModel]: 'minimal',
+      },
+      visibleModels: [deepSeekModel, gptModel],
+    };
+    plugin.settings.savedProviderEffort = { pi: 'minimal' };
+    plugin.settings.savedProviderModel = { pi: deepSeekModel };
+    plugin.settings.settingsProvider = 'pi';
+    const runtime = new PiChatRuntime(plugin);
+    runtime.syncConversationState({ selectedModel: gptModel, sessionId: null });
+    const chunks: unknown[] = [];
+    const promise = (async () => {
+      for await (const chunk of runtime.query(createTurn(runtime))) {
+        chunks.push(chunk);
+      }
+    })();
+
+    await flushPromises();
+    mockTransportInstances[0].eventHandlers[0]({ type: 'agent_end' });
+    await promise;
+
+    expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
+    expect(mockTransportInstances[0].request).toHaveBeenCalledWith('set_thinking_level', {
+      level: 'minimal',
+    });
+  });
+
   it('applies changed models over RPC without restarting the Pi process', async () => {
     const plugin = createPlugin();
     plugin.settings.providerConfigs.pi = {

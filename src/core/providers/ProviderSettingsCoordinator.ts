@@ -160,6 +160,7 @@ export class ProviderSettingsCoordinator {
   ): void {
     const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
     settings.model = model;
+    uiConfig.applyModelProjectionDefaults?.(model, settings);
     normalizeModelDependentSettings(uiConfig, settings, model);
   }
 

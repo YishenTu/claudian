@@ -286,6 +286,9 @@ export interface ProviderChatUIConfig {
   /** Apply model change side effects to settings (defaults, tracking). */
   applyModelDefaults(model: string, settings: unknown): void;
 
+  /** Apply model-scoped defaults to an ephemeral conversation settings projection. */
+  applyModelProjectionDefaults?(model: string, settings: unknown): void;
+
   /** Optional provider hook to discover model-scoped metadata after a model is selected. */
   prepareModelMetadata?(
     model: string,
