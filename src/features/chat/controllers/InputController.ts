@@ -55,6 +55,10 @@ import type { CanvasSelectionController } from './CanvasSelectionController';
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import type { StreamController } from './StreamController';
+import {
+  hasSuspiciousCommandText,
+  SUSPICIOUS_COMMAND_WARNING,
+} from './suspiciousCommandText';
 import type { ActiveTurnOwner } from './TurnCoordinator';
 import { TurnCoordinator } from './TurnCoordinator';
 
@@ -1468,6 +1472,13 @@ export class InputController {
     }
     if (approvalOptions?.agentID) {
       headerEl.createDiv({ text: `Agent: ${approvalOptions.agentID}`, cls: 'claudian-ask-approval-agent' });
+    }
+
+    if (hasSuspiciousCommandText(description)) {
+      headerEl.createDiv({
+        text: SUSPICIOUS_COMMAND_WARNING,
+        cls: 'claudian-ask-approval-warning',
+      });
     }
 
     headerEl.createDiv({ text: description, cls: 'claudian-ask-approval-desc' });
