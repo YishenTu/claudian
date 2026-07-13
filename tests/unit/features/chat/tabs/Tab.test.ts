@@ -28,6 +28,7 @@ import {
   updatePlanModeUI,
   wireTabInputEvents,
 } from '@/features/chat/tabs/Tab';
+import { TEXTAREA_BASE_MIN_HEIGHT } from '@/features/chat/ui/textareaResize';
 import * as envUtils from '@/utils/env';
 
 // Mock ResizeObserver (not available in jsdom)
@@ -2862,6 +2863,26 @@ describe('Tab - Controller Configuration', () => {
       expect(config.getInstructionModeManager()).toBe(tab.ui.instructionModeManager);
       expect(config.getInstructionRefineService()).toBe(tab.services.instructionRefineService);
       expect(config.getTitleGenerationService()).toBe(tab.services.titleGenerationService);
+    });
+
+    it('should reset a grown composer to its default height after the input is cleared', () => {
+      const { InputController } = jest.requireMock('@/features/chat/controllers/InputController');
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, {} as any, options.mcpManager);
+
+      const constructorCall = InputController.mock.calls[0];
+      const config = constructorCall[0];
+      const inputStyle = tab.dom.inputEl.style as unknown as Record<string, string>;
+      tab.dom.inputEl.value = '';
+      inputStyle['--claudian-textarea-min-height'] = '240px';
+
+      config.resetInputHeight();
+
+      expect(inputStyle['--claudian-textarea-min-height'])
+        .toBe(`${TEXTAREA_BASE_MIN_HEIGHT}px`);
     });
 
   });

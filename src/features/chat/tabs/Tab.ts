@@ -1519,7 +1519,7 @@ export function initializeTabControllers(
     getStatusPanel: () => ui.statusPanel,
     generateId: generateMessageId,
     resetInputHeight: () => {
-      // Per-tab input height is managed by CSS, no dynamic adjustment needed
+      autoResizeTextarea(dom.inputEl);
     },
     getAuxiliaryModel: () => getTabSelectedModel(tab, plugin),
     getAgentService: () => tab.service,
