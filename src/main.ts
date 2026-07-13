@@ -449,6 +449,7 @@ export default class ClaudianPlugin extends Plugin {
             `${ProviderRegistry.getProviderDisplayName(providerId)}: ${result.diagnostics}`,
           );
         }
+        await ProviderWorkspaceRegistry.refreshAgentMentions(providerId);
       }
     }
     if (invalidatedConversations.length > 0) {
@@ -459,71 +460,19 @@ export default class ClaudianPlugin extends Plugin {
       }
     }
 
-    const view = this.getView();
-    const tabManager = view?.getTabManager();
-
-    if (tabManager) {
-      const affectedTabs = tabManager.getAllTabs().filter((tab) => (
-        affectedProviderIds.includes(tab.providerId ?? DEFAULT_CHAT_PROVIDER_ID)
-      ));
-      const syncTabRuntimeState = (tab: (typeof affectedTabs)[number]): void => {
-        if (!tab.service || !tab.serviceInitialized) {
-          return;
-        }
-
-        const conversation = tab.conversationId
-          ? this.getConversationSync(tab.conversationId)
-          : null;
-        const hasConversationContext = (conversation?.messages.length ?? 0) > 0;
-        const externalContextPaths = tab.ui.externalContextSelector?.getExternalContexts()
-          ?? (hasConversationContext
-            ? conversation?.externalContextPaths ?? []
-            : this.settings.persistentExternalContextPaths ?? []);
-
-        tab.service.syncConversationState(conversation, externalContextPaths);
-      };
-
-      for (const tab of affectedTabs) {
-        if (tab.state.isStreaming) {
-          tab.controllers.inputController?.cancelStreaming();
-        }
-      }
-
-      let failedTabs = 0;
-      if (changed) {
-        for (const tab of affectedTabs) {
-          if (!tab.service || !tab.serviceInitialized) {
-            continue;
-          }
-          try {
-            syncTabRuntimeState(tab);
-            tab.service.resetSession();
-            await tab.service.ensureReady();
-          } catch {
-            failedTabs++;
-          }
-        }
-      } else {
-        for (const tab of affectedTabs) {
-          if (!tab.service || !tab.serviceInitialized) {
-            continue;
-          }
-          try {
-            syncTabRuntimeState(tab);
-            await tab.service.ensureReady({ force: true });
-          } catch {
-            failedTabs++;
-          }
-        }
-      }
-      if (failedTabs > 0) {
-        new Notice(`Environment changes applied, but ${failedTabs} affected tab(s) failed to restart.`);
-      }
-    }
-
-    for (const openView of this.getAllViews()) {
+    const openViews = this.getAllViews();
+    let failedTabs = 0;
+    for (const openView of openViews) {
+      failedTabs += await this.restartEnvironmentAffectedRuntimes(
+        openView,
+        affectedProviderIds,
+        changed,
+      );
       openView.invalidateProviderCommandCaches(affectedProviderIds);
       openView.refreshModelSelector();
+    }
+    if (failedTabs > 0) {
+      new Notice(`Environment changes applied, but ${failedTabs} affected tab(s) failed to restart.`);
     }
 
     const noticeText = changed
@@ -533,6 +482,56 @@ export default class ClaudianPlugin extends Plugin {
     if (modelCatalogDiagnostics.length > 0) {
       new Notice(`Model catalog refresh failed:\n${modelCatalogDiagnostics.join('\n')}`);
     }
+  }
+
+  private async restartEnvironmentAffectedRuntimes(
+    view: ClaudianView,
+    affectedProviderIds: ProviderId[],
+    resetSessions: boolean,
+  ): Promise<number> {
+    const tabManager = view.getTabManager();
+    if (!tabManager) return 0;
+
+    const affectedTabs = tabManager.getAllTabs().filter((tab) => (
+      affectedProviderIds.includes(tab.providerId ?? DEFAULT_CHAT_PROVIDER_ID)
+    ));
+    const syncTabRuntimeState = (tab: (typeof affectedTabs)[number]): void => {
+      if (!tab.service || !tab.serviceInitialized) return;
+
+      const conversation = tab.conversationId
+        ? this.getConversationSync(tab.conversationId)
+        : null;
+      const hasConversationContext = (conversation?.messages.length ?? 0) > 0;
+      const externalContextPaths = tab.ui.externalContextSelector?.getExternalContexts()
+        ?? (hasConversationContext
+          ? conversation?.externalContextPaths ?? []
+          : this.settings.persistentExternalContextPaths ?? []);
+
+      tab.service.syncConversationState(conversation, externalContextPaths);
+    };
+
+    for (const tab of affectedTabs) {
+      if (tab.state.isStreaming) {
+        tab.controllers.inputController?.cancelStreaming();
+      }
+    }
+
+    let failedTabs = 0;
+    for (const tab of affectedTabs) {
+      if (!tab.service || !tab.serviceInitialized) continue;
+      try {
+        syncTabRuntimeState(tab);
+        if (resetSessions) {
+          tab.service.resetSession();
+          await tab.service.ensureReady();
+        } else {
+          await tab.service.ensureReady({ force: true });
+        }
+      } catch {
+        failedTabs++;
+      }
+    }
+    return failedTabs;
   }
 
   /** Returns the runtime environment variables (fixed at plugin load). */

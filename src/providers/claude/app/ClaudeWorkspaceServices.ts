@@ -12,10 +12,12 @@ import type {
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
+import { parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { AgentManager } from '../agents/AgentManager';
 import { ClaudeCommandCatalog } from '../commands/ClaudeCommandCatalog';
 import { probeRuntimeCommands } from '../commands/probeRuntimeCommands';
+import { resolveClaudeConfigDir } from '../config/ClaudeConfigDir';
 import { PluginManager } from '../plugins/PluginManager';
 import { ClaudeCliResolver } from '../runtime/ClaudeCliResolver';
 import { StorageService } from '../storage/StorageService';
@@ -46,11 +48,23 @@ export async function createClaudeWorkspaceServices(
   await mcpManager.loadServers();
 
   const vaultPath = getVaultPath(plugin.app) ?? '';
-  const pluginManager = new PluginManager(vaultPath, claudeStorage.ccSettings);
+  const getClaudeConfigDir = () => resolveClaudeConfigDir({
+    environment: {
+      ...process.env,
+      ...parseEnvironmentVariables(plugin.getActiveEnvironmentVariables('claude')),
+    },
+    hostPlatform: process.platform,
+    vaultPath,
+  });
+  const pluginManager = new PluginManager(
+    vaultPath,
+    claudeStorage.ccSettings,
+    getClaudeConfigDir,
+  );
   await pluginManager.loadPlugins();
 
   const agentStorage = claudeStorage.agents;
-  const agentManager = new AgentManager(vaultPath, pluginManager);
+  const agentManager = new AgentManager(vaultPath, pluginManager, getClaudeConfigDir);
   await agentManager.loadAgents();
 
   const commandCatalog = new ClaudeCommandCatalog(
@@ -72,6 +86,7 @@ export async function createClaudeWorkspaceServices(
     agentMentionProvider: agentManager,
     settingsTabRenderer: claudeSettingsTabRenderer,
     refreshAgentMentions: async () => {
+      await pluginManager.loadPlugins();
       await agentManager.loadAgents();
     },
   };

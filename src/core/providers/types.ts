@@ -438,17 +438,20 @@ export interface ProviderConversationHistoryService {
   getConversationSessionAvailability?(
     conversation: Conversation,
     vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<ProviderConversationSessionAvailability>;
   /** Clears stale resume state so relocated provider history can rebuild natively. */
   prepareRelocatedConversationSession?(
     conversation: Conversation,
     vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<boolean>;
   /** Decides whether a confirmed missing resume session makes the whole record disposable. */
   resolveMissingConversationSession?(
     conversation: Conversation,
     vaultPath: string | null,
     missingProviderSessionId?: string,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<'delete' | 'reset' | 'preserve'>;
   hydrateConversationHistory(
     conversation: Conversation,
@@ -458,6 +461,7 @@ export interface ProviderConversationHistoryService {
   deleteConversationSession(
     conversation: Conversation,
     vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<void>;
   resolveSessionIdForConversation(conversation: Conversation | null): string | null;
   isPendingForkConversation(conversation: Conversation): boolean;

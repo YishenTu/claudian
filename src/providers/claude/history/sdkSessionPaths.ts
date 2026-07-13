@@ -1,9 +1,10 @@
 import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 
 import type { ProviderConversationSessionAvailability } from '../../../core/providers/types';
+import type { ClaudeConfigDirContext } from '../config/ClaudeConfigDir';
+import { resolveClaudeConfigDir } from '../config/ClaudeConfigDir';
 import type { SDKNativeMessage, SDKSessionReadResult } from './sdkHistoryTypes';
 
 export interface SDKSessionLocation {
@@ -21,8 +22,8 @@ export function encodeVaultPathForSDK(vaultPath: string): string {
   return absolutePath.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
-export function getSDKProjectsPath(): string {
-  return path.join(os.homedir(), '.claude', 'projects');
+export function getSDKProjectsPath(context?: ClaudeConfigDirContext): string {
+  return path.join(resolveClaudeConfigDir(context), 'projects');
 }
 
 /** Validates an identifier for safe use in filesystem paths (no traversal, bounded length). */
@@ -40,19 +41,27 @@ export function isValidSessionId(sessionId: string): boolean {
   return isPathSafeId(sessionId);
 }
 
-export function getSDKSessionPath(vaultPath: string, sessionId: string): string {
+export function getSDKSessionPath(
+  vaultPath: string,
+  sessionId: string,
+  context?: ClaudeConfigDirContext,
+): string {
   if (!isValidSessionId(sessionId)) {
     throw new Error(`Invalid session ID: ${sessionId}`);
   }
 
-  const projectsPath = getSDKProjectsPath();
+  const projectsPath = getSDKProjectsPath(context);
   const encodedVault = encodeVaultPathForSDK(vaultPath);
   return path.join(projectsPath, encodedVault, `${sessionId}.jsonl`);
 }
 
-export function sdkSessionExists(vaultPath: string, sessionId: string): boolean {
+export function sdkSessionExists(
+  vaultPath: string,
+  sessionId: string,
+  context?: ClaudeConfigDirContext,
+): boolean {
   try {
-    const sessionPath = getSDKSessionPath(vaultPath, sessionId);
+    const sessionPath = getSDKSessionPath(vaultPath, sessionId, context);
     return existsSync(sessionPath);
   } catch {
     return false;
@@ -69,6 +78,7 @@ function hasFileSystemErrorCode(error: unknown, code: string): boolean {
 export async function locateSDKSessions(
   vaultPath: string,
   sessionIds: string[],
+  context?: ClaudeConfigDirContext,
 ): Promise<Map<string, SDKSessionLocation>> {
   const locations = new Map<string, SDKSessionLocation>();
   const currentPaths = new Map<string, string>();
@@ -77,7 +87,7 @@ export async function locateSDKSessions(
   await Promise.all([...new Set(sessionIds)].map(async (sessionId) => {
     let sessionPath: string;
     try {
-      sessionPath = getSDKSessionPath(vaultPath, sessionId);
+      sessionPath = getSDKSessionPath(vaultPath, sessionId, context);
     } catch {
       locations.set(sessionId, { availability: 'unknown' });
       return;
@@ -103,7 +113,8 @@ export async function locateSDKSessions(
   const targetIdsByFileName = new Map(
     [...unresolvedIds].map(sessionId => [`${sessionId}.jsonl`, sessionId]),
   );
-  const pendingDirectories = [getSDKProjectsPath()];
+  const projectsPath = getSDKProjectsPath(context);
+  const pendingDirectories = [projectsPath];
   let rootExists = true;
   let scanComplete = true;
 
@@ -113,7 +124,7 @@ export async function locateSDKSessions(
     try {
       entries = await fs.readdir(directory, { withFileTypes: true });
     } catch (error) {
-      if (directory === getSDKProjectsPath() && hasFileSystemErrorCode(error, 'ENOENT')) {
+      if (directory === projectsPath && hasFileSystemErrorCode(error, 'ENOENT')) {
         rootExists = false;
       } else if (!hasFileSystemErrorCode(error, 'ENOENT')) {
         scanComplete = false;
@@ -154,21 +165,27 @@ export async function locateSDKSessions(
 export async function locateSDKSession(
   vaultPath: string,
   sessionId: string,
+  context?: ClaudeConfigDirContext,
 ): Promise<SDKSessionLocation> {
-  return (await locateSDKSessions(vaultPath, [sessionId])).get(sessionId)
+  return (await locateSDKSessions(vaultPath, [sessionId], context)).get(sessionId)
     ?? { availability: 'unknown' };
 }
 
 export async function getSDKSessionAvailability(
   vaultPath: string,
   sessionId: string,
+  context?: ClaudeConfigDirContext,
 ): Promise<ProviderConversationSessionAvailability> {
-  return (await locateSDKSession(vaultPath, sessionId)).availability;
+  return (await locateSDKSession(vaultPath, sessionId, context)).availability;
 }
 
-export async function deleteSDKSession(vaultPath: string, sessionId: string): Promise<void> {
+export async function deleteSDKSession(
+  vaultPath: string,
+  sessionId: string,
+  context?: ClaudeConfigDirContext,
+): Promise<void> {
   try {
-    const sessionPath = getSDKSessionPath(vaultPath, sessionId);
+    const sessionPath = getSDKSessionPath(vaultPath, sessionId, context);
     if (!existsSync(sessionPath)) {
       return;
     }
@@ -182,9 +199,10 @@ export async function deleteSDKSession(vaultPath: string, sessionId: string): Pr
 export async function readSDKSession(
   vaultPath: string,
   sessionId: string,
+  context?: ClaudeConfigDirContext,
 ): Promise<SDKSessionReadResult> {
   try {
-    const sessionPath = getSDKSessionPath(vaultPath, sessionId);
+    const sessionPath = getSDKSessionPath(vaultPath, sessionId, context);
     if (!existsSync(sessionPath)) {
       return { messages: [], skippedLines: 0 };
     }

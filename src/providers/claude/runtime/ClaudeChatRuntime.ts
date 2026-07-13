@@ -30,6 +30,7 @@ import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSet
 import type {
   AppAgentManager,
   AppPluginManager,
+  ProviderHistoryPathContext,
 } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
@@ -486,14 +487,26 @@ export class ClaudianService implements ChatRuntime {
     const sessionId = this.getSessionId();
     const vaultPath = getVaultPath(this.plugin.app);
     if (!sessionId || !vaultPath) return [];
-    return loadSubagentToolCalls(vaultPath, sessionId, agentId);
+    return loadSubagentToolCalls(
+      vaultPath,
+      sessionId,
+      agentId,
+      undefined,
+      this.buildHistoryPathContext(vaultPath),
+    );
   }
 
   async loadSubagentFinalResult(agentId: string): Promise<string | null> {
     const sessionId = this.getSessionId();
     const vaultPath = getVaultPath(this.plugin.app);
     if (!sessionId || !vaultPath) return null;
-    return loadSubagentFinalResult(vaultPath, sessionId, agentId);
+    return loadSubagentFinalResult(
+      vaultPath,
+      sessionId,
+      agentId,
+      undefined,
+      this.buildHistoryPathContext(vaultPath),
+    );
   }
 
   async reloadMcpServers(): Promise<void> {
@@ -758,6 +771,18 @@ export class ClaudianService implements ChatRuntime {
       enhancedPath,
       mcpManager: this.mcpManager,
       pluginManager: this.requirePluginManager(),
+    };
+  }
+
+  private buildHistoryPathContext(vaultPath: string): ProviderHistoryPathContext {
+    const customEnv = parseEnvironmentVariables(
+      this.plugin.getActiveEnvironmentVariables(this.providerId),
+    );
+    return {
+      environment: { ...process.env, ...customEnv },
+      hostPlatform: process.platform,
+      settings: this.getScopedSettings(),
+      vaultPath,
     };
   }
 

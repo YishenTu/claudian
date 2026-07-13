@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ToolCallInfo } from '../../../core/types';
 import { extractFinalResultFromSubagentJsonl } from '../../../utils/subagentJsonl';
 import { extractToolResultContent } from '../sdk/toolResultContent';
@@ -176,6 +177,7 @@ function getSubagentSidecarPath(
   sessionId: string,
   agentId: string,
   sessionPath?: string,
+  pathContext?: ProviderHistoryPathContext,
 ): string | null {
   if (!isValidSessionId(sessionId) || !isValidAgentId(agentId)) {
     return null;
@@ -183,7 +185,7 @@ function getSubagentSidecarPath(
 
   const projectPath = sessionPath
     ? path.dirname(sessionPath)
-    : path.join(getSDKProjectsPath(), encodeVaultPathForSDK(vaultPath));
+    : path.join(getSDKProjectsPath(pathContext), encodeVaultPathForSDK(vaultPath));
   return path.join(
     projectPath,
     sessionId,
@@ -197,8 +199,15 @@ export async function loadSubagentToolCalls(
   sessionId: string,
   agentId: string,
   sessionPath?: string,
+  pathContext?: ProviderHistoryPathContext,
 ): Promise<ToolCallInfo[]> {
-  const subagentFilePath = getSubagentSidecarPath(vaultPath, sessionId, agentId, sessionPath);
+  const subagentFilePath = getSubagentSidecarPath(
+    vaultPath,
+    sessionId,
+    agentId,
+    sessionPath,
+    pathContext,
+  );
   if (!subagentFilePath) {
     return [];
   }
@@ -246,8 +255,15 @@ export async function loadSubagentFinalResult(
   sessionId: string,
   agentId: string,
   sessionPath?: string,
+  pathContext?: ProviderHistoryPathContext,
 ): Promise<string | null> {
-  const subagentFilePath = getSubagentSidecarPath(vaultPath, sessionId, agentId, sessionPath);
+  const subagentFilePath = getSubagentSidecarPath(
+    vaultPath,
+    sessionId,
+    agentId,
+    sessionPath,
+    pathContext,
+  );
   if (!subagentFilePath) {
     return null;
   }

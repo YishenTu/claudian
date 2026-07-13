@@ -1,6 +1,7 @@
 import type {
   ProviderConversationHistoryService,
   ProviderConversationSessionAvailability,
+  ProviderHistoryPathContext,
 } from '../../../core/providers/types';
 import { isSubagentToolName, TOOL_TASK } from '../../../core/tools/toolNames';
 import type {
@@ -15,6 +16,8 @@ import type {
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
 import {
   deleteSDKSession,
+  encodeVaultPathForSDK,
+  getSDKProjectsPath,
   loadSDKSessionMessages,
   loadSubagentToolCalls,
   locateSDKSession,
@@ -222,6 +225,7 @@ async function enrichAsyncSubagentToolCalls(
   vaultPath: string,
   sessionIds: string[],
   relocatedSessionPaths: Map<string, string>,
+  pathContext?: ProviderHistoryPathContext,
 ): Promise<void> {
   const uniqueSessionIds = [...new Set(sessionIds)];
   if (uniqueSessionIds.length === 0) return;
@@ -239,9 +243,22 @@ async function enrichAsyncSubagentToolCalls(
       let loader = loaderCache.get(cacheKey);
       if (!loader) {
         const relocatedSessionPath = relocatedSessionPaths.get(sessionId);
-        loader = relocatedSessionPath
-          ? loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId, relocatedSessionPath)
-          : loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId);
+        if (pathContext) {
+          loader = loadSubagentToolCalls(
+            vaultPath,
+            sessionId,
+            subagent.agentId,
+            relocatedSessionPath,
+            pathContext,
+          );
+        } else {
+          loader = loadSubagentToolCalls(
+            vaultPath,
+            sessionId,
+            subagent.agentId,
+            relocatedSessionPath,
+          );
+        }
         loaderCache.set(cacheKey, loader);
       }
 
@@ -369,6 +386,7 @@ function sanitizeProviderState(
 
 export class ClaudeConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedConversationIds = new Set<string>();
+  private historyCacheKeysByConversation = new Map<string, string>();
   private pendingSessionLocationsByConversation = new Map<
     string,
     Map<string, SDKSessionLocation>
@@ -387,16 +405,43 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     ].filter((id): id is string => !!id))];
   }
 
+  private synchronizeHistoryCache(
+    conversation: Conversation,
+    vaultPath: string,
+    pathContext?: ProviderHistoryPathContext,
+  ): void {
+    const state = getClaudeState(conversation.providerState);
+    const cacheKey = JSON.stringify([
+      getSDKProjectsPath(pathContext),
+      encodeVaultPathForSDK(vaultPath),
+      this.getConversationSessionIds(conversation),
+      conversation.resumeAtMessageId ?? null,
+      state.forkSource?.resumeAt ?? null,
+    ]);
+    const previousKey = this.historyCacheKeysByConversation.get(conversation.id);
+    if (previousKey !== undefined && previousKey !== cacheKey) {
+      this.hydratedConversationIds.delete(conversation.id);
+      this.pendingSessionLocationsByConversation.delete(conversation.id);
+      this.relocatedSessionPathsByConversation.delete(conversation.id);
+    }
+    this.historyCacheKeysByConversation.set(conversation.id, cacheKey);
+  }
+
   async getConversationSessionAvailability(
     conversation: Conversation,
     vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<ProviderConversationSessionAvailability> {
     const sessionId = this.resolveSessionIdForConversation(conversation);
-    if (!vaultPath || !sessionId) {
+    if (!vaultPath) {
       return 'unknown';
     }
+    this.synchronizeHistoryCache(conversation, vaultPath, pathContext);
+    if (!sessionId) return 'unknown';
 
-    const location = await locateSDKSession(vaultPath, sessionId);
+    const location = await (pathContext
+      ? locateSDKSession(vaultPath, sessionId, pathContext)
+      : locateSDKSession(vaultPath, sessionId));
     this.pendingSessionLocationsByConversation.set(
       conversation.id,
       new Map([[sessionId, location]]),
@@ -430,13 +475,14 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async prepareRelocatedConversationSession(
     conversation: Conversation,
     vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<boolean> {
     const sessionId = this.resolveSessionIdForConversation(conversation);
     if (!vaultPath || !sessionId) {
       return false;
     }
 
-    await this.hydrateConversationHistory(conversation, vaultPath);
+    await this.hydrateConversationHistory(conversation, vaultPath, pathContext);
     if (!this.hydratedConversationIds.has(conversation.id)) {
       return false;
     }
@@ -461,6 +507,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation: Conversation,
     vaultPath: string | null,
     missingProviderSessionId?: string,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<'delete' | 'reset' | 'preserve'> {
     const currentSessionId = this.resolveSessionIdForConversation(conversation);
     if (
@@ -472,8 +519,12 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       return 'preserve';
     }
 
+    this.synchronizeHistoryCache(conversation, vaultPath, pathContext);
+
     const sessionIds = this.getConversationSessionIds(conversation);
-    const locations = await locateSDKSessions(vaultPath, sessionIds);
+    const locations = await (pathContext
+      ? locateSDKSessions(vaultPath, sessionIds, pathContext)
+      : locateSDKSessions(vaultPath, sessionIds));
     const preservedSessionIds = sessionIds.filter(
       sessionId => locations.get(sessionId)?.availability !== 'missing',
     );
@@ -543,10 +594,13 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async hydrateConversationHistory(
     conversation: Conversation,
     vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<void> {
-    if (!vaultPath || this.hydratedConversationIds.has(conversation.id)) {
+    if (!vaultPath) {
       return;
     }
+    this.synchronizeHistoryCache(conversation, vaultPath, pathContext);
+    if (this.hydratedConversationIds.has(conversation.id)) return;
 
     const state = getClaudeState(conversation.providerState);
     const isPendingFork = this.isPendingForkConversation(conversation);
@@ -571,7 +625,9 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     const unresolvedSessionIds = allSessionIds.filter(
       id => !relocatedSessionPaths.has(id) && !cachedLocations.has(id),
     );
-    const locatedSessions = await locateSDKSessions(vaultPath, unresolvedSessionIds);
+    const locatedSessions = await (pathContext
+      ? locateSDKSessions(vaultPath, unresolvedSessionIds, pathContext)
+      : locateSDKSessions(vaultPath, unresolvedSessionIds));
     const resolvedLocations = new Map([...cachedLocations, ...locatedSessions]);
     for (const [sessionId, location] of locatedSessions) {
       if (location.availability === 'relocated' && location.sessionPath) {
@@ -607,9 +663,17 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
         ? (isPendingFork ? state.forkSource!.resumeAt : conversation.resumeAtMessageId)
         : undefined;
       const sessionPathOverride = relocatedSessionPaths.get(sessionId);
-      const result = sessionPathOverride
-        ? await loadSDKSessionMessages(vaultPath, sessionId, truncateAt, sessionPathOverride)
-        : await loadSDKSessionMessages(vaultPath, sessionId, truncateAt);
+      const result = pathContext
+        ? await loadSDKSessionMessages(
+          vaultPath,
+          sessionId,
+          truncateAt,
+          sessionPathOverride,
+          pathContext,
+        )
+        : sessionPathOverride
+          ? await loadSDKSessionMessages(vaultPath, sessionId, truncateAt, sessionPathOverride)
+          : await loadSDKSessionMessages(vaultPath, sessionId, truncateAt);
 
       if (result.error) {
         errorCount++;
@@ -638,6 +702,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
         vaultPath,
         allSessionIds,
         relocatedSessionPaths,
+        pathContext,
       );
       applySubagentData(merged, state.subagentData);
     }
@@ -651,16 +716,22 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async deleteConversationSession(
     conversation: Conversation,
     vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
   ): Promise<void> {
     this.pendingSessionLocationsByConversation.delete(conversation.id);
     this.relocatedSessionPathsByConversation.delete(conversation.id);
     this.hydratedConversationIds.delete(conversation.id);
+    this.historyCacheKeysByConversation.delete(conversation.id);
     const state = getClaudeState(conversation.providerState);
     const sessionId = state.providerSessionId ?? conversation.sessionId;
     if (!vaultPath || !sessionId) {
       return;
     }
 
-    await deleteSDKSession(vaultPath, sessionId);
+    if (pathContext) {
+      await deleteSDKSession(vaultPath, sessionId, pathContext);
+    } else {
+      await deleteSDKSession(vaultPath, sessionId);
+    }
   }
 }

@@ -45,6 +45,25 @@ describe('ClaudeConversationHistoryService', () => {
       availabilitySpy.mockRestore();
     });
 
+    it('uses the effective SDK environment when locating a native session', async () => {
+      const availabilitySpy = jest.spyOn(historyStore, 'locateSDKSession')
+        .mockResolvedValue({ availability: 'available', sessionPath: '/custom/session-1.jsonl' });
+      const service = new ClaudeConversationHistoryService();
+      const pathContext = {
+        environment: { CLAUDE_CONFIG_DIR: '/custom/claude' },
+        vaultPath: '/vault',
+      };
+
+      await service.getConversationSessionAvailability(
+        createConversation(),
+        '/vault',
+        pathContext,
+      );
+
+      expect(availabilitySpy).toHaveBeenCalledWith('/vault', 'session-1', pathContext);
+      availabilitySpy.mockRestore();
+    });
+
     it('reports a native session from a previous vault path as relocated', async () => {
       const availabilitySpy = jest.spyOn(historyStore, 'locateSDKSession')
         .mockResolvedValue({
@@ -208,6 +227,52 @@ describe('ClaudeConversationHistoryService', () => {
   });
 
   describe('hydrateConversationHistory', () => {
+    it('re-resolves history when the effective Claude config directory changes', async () => {
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation();
+      const contextA = {
+        environment: { CLAUDE_CONFIG_DIR: '/config-a' },
+        vaultPath: '/vault',
+      };
+      const contextB = {
+        environment: { CLAUDE_CONFIG_DIR: '/config-b' },
+        vaultPath: '/vault',
+      };
+      const locationSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockImplementation(async (_vaultPath, sessionIds, pathContext) => new Map(
+          sessionIds.map(sessionId => [sessionId, {
+            availability: 'available' as const,
+            sessionPath: `${pathContext?.environment?.CLAUDE_CONFIG_DIR}/${sessionId}.jsonl`,
+          }]),
+        ));
+      const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
+        .mockImplementation(async (_vaultPath, _sessionId, _resumeAt, _sessionPath, pathContext) => {
+          const configDir = pathContext?.environment?.CLAUDE_CONFIG_DIR;
+          return {
+            messages: [{
+              id: `message-${configDir}`,
+              role: 'user',
+              content: configDir ?? '',
+              timestamp: configDir === '/config-a' ? 1 : 2,
+            }],
+            skippedLines: 0,
+          };
+        });
+
+      await service.hydrateConversationHistory(conversation, '/vault', contextA);
+      await service.hydrateConversationHistory(conversation, '/vault', contextB);
+
+      expect(conversation.messages.map(message => message.content)).toEqual([
+        '/config-a',
+        '/config-b',
+      ]);
+      expect(locationSpy).toHaveBeenCalledTimes(2);
+      expect(loadSpy).toHaveBeenCalledTimes(2);
+
+      locationSpy.mockRestore();
+      loadSpy.mockRestore();
+    });
+
     it('drops a stale relocated path after the session appears in the current project', async () => {
       const service = new ClaudeConversationHistoryService();
       const conversation = createConversation();

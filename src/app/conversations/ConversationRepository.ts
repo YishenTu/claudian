@@ -2,7 +2,7 @@ import { normalizeProviderModelSelection, resolveConversationModel } from '../..
 import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
-import type { AppSessionStorage } from '../../core/providers/types';
+import type { AppSessionStorage, ProviderHistoryPathContext } from '../../core/providers/types';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import type { Conversation, ConversationMeta } from '../../core/types';
 import { extractUserDisplayContent } from '../../utils/context';
@@ -97,9 +97,14 @@ export class ConversationRepository {
     this.conversations.splice(index, 1);
 
     if (options.deleteProviderSession !== false) {
+      const vaultPath = this.deps.getVaultPath();
       await ProviderRegistry
         .getConversationHistoryService(conversation.providerId)
-        .deleteConversationSession(conversation, this.deps.getVaultPath());
+        .deleteConversationSession(
+          conversation,
+          vaultPath,
+          this.getHistoryPathContext(conversation.providerId, vaultPath),
+        );
     }
 
     await this.deps.sessions.deleteMetadata(id);
@@ -119,11 +124,13 @@ export class ConversationRepository {
     const previousSessionId = conversation.sessionId;
     const previousProviderState = conversation.providerState;
     const previousResumeAtMessageId = conversation.resumeAtMessageId;
+    const vaultPath = this.deps.getVaultPath();
     try {
       const resolution = await historyService.resolveMissingConversationSession(
         conversation,
-        this.deps.getVaultPath(),
+        vaultPath,
         missingProviderSessionId,
+        this.getHistoryPathContext(conversation.providerId, vaultPath),
       );
       if (resolution === 'delete') {
         await this.delete(id, { deleteProviderSession: false });
@@ -209,11 +216,14 @@ export class ConversationRepository {
     const historyService = ProviderRegistry.getConversationHistoryService(conversation.providerId);
     if (!historyService.getConversationSessionAvailability) return;
 
+    const vaultPath = this.deps.getVaultPath();
+    const pathContext = this.getHistoryPathContext(conversation.providerId, vaultPath);
     let availability;
     try {
       availability = await historyService.getConversationSessionAvailability(
         conversation,
-        this.deps.getVaultPath(),
+        vaultPath,
+        pathContext,
       );
     } catch {
       return;
@@ -224,7 +234,11 @@ export class ConversationRepository {
     const previousProviderState = conversation.providerState;
     const previousResumeAtMessageId = conversation.resumeAtMessageId;
     try {
-      if (await historyService.prepareRelocatedConversationSession(conversation, this.deps.getVaultPath())) {
+      if (await historyService.prepareRelocatedConversationSession(
+        conversation,
+        vaultPath,
+        pathContext,
+      )) {
         await this.save(conversation);
       }
     } catch {
@@ -247,19 +261,30 @@ export class ConversationRepository {
   }
 
   private async hydrate(conversation: Conversation): Promise<void> {
-    const settings = this.deps.getSettings();
     const vaultPath = this.deps.getVaultPath();
     await ProviderRegistry
       .getConversationHistoryService(conversation.providerId)
-      .hydrateConversationHistory(conversation, vaultPath, {
-        environment: {
-          ...process.env,
-          ...getRuntimeEnvironmentVariables(settings, conversation.providerId),
-        },
-        hostPlatform: process.platform,
-        settings,
+      .hydrateConversationHistory(
+        conversation,
         vaultPath,
-      });
+        this.getHistoryPathContext(conversation.providerId, vaultPath),
+      );
+  }
+
+  private getHistoryPathContext(
+    providerId: ProviderId,
+    vaultPath: string | null = this.deps.getVaultPath(),
+  ): ProviderHistoryPathContext {
+    const settings = this.deps.getSettings();
+    return {
+      environment: {
+        ...process.env,
+        ...getRuntimeEnvironmentVariables(settings, providerId),
+      },
+      hostPlatform: process.platform,
+      settings,
+      vaultPath,
+    };
   }
 
   private save(conversation: Conversation): Promise<void> {
