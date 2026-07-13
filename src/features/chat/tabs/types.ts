@@ -14,6 +14,7 @@ import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { BangBashModeManager } from '../ui/BangBashModeManager';
+import type { ComposerContextTray } from '../ui/ComposerContextTray';
 import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type {
@@ -116,6 +117,7 @@ export interface TabServices {
  * UI components managed per-tab.
  */
 export interface TabUIComponents {
+  contextTray: ComposerContextTray | null;
   fileContextManager: FileContextManager | null;
   imageContextManager: ImageContextManager | null;
   modelSelector: ModelSelector | null;
@@ -154,12 +156,8 @@ export interface TabDOMElements {
   /** Nav row for tab badges and header icons (above input wrapper). */
   navRowEl: HTMLElement;
 
-  /** Context row for file chips and selection indicator (inside input wrapper). */
+  /** Composer-owned context tray container inside the input wrapper. */
   contextRowEl: HTMLElement;
-
-  selectionIndicatorEl: HTMLElement | null;
-  browserIndicatorEl: HTMLElement | null;
-  canvasIndicatorEl: HTMLElement | null;
 
   /** Cleanup functions for event listeners (prevents memory leaks). */
   eventCleanups: Array<() => void>;

@@ -183,25 +183,21 @@ describe('ImageContextManager', () => {
 
       const mgr = new ImageContextManager(c, input, cb, previewContainer);
       expect(mgr).toBeDefined();
-      const previewEl = previewContainer.querySelector('.claudian-image-preview');
-      expect(previewEl).not.toBeNull();
+      const trayEl = previewContainer.querySelector('.claudian-context-row');
+      expect(trayEl).not.toBeNull();
     });
 
-    it('should insert image preview before file indicator if present', () => {
+    it('should preserve existing preview container content', () => {
       const previewContainer = createMockEl();
-      const fileIndicator = previewContainer.createDiv({ cls: 'claudian-file-indicator' });
-      // Patch parentElement to match check in constructor
-      Object.defineProperty(fileIndicator, 'parentElement', { get: () => previewContainer });
+      const existingContent = previewContainer.createDiv({ cls: 'existing-preview-content' });
 
       const { container: c } = createContainerWithInputWrapper();
       const input = createMockTextArea();
       const cb = createMockCallbacks();
 
       new ImageContextManager(c, input, cb, previewContainer);
-      const children = previewContainer.children;
-      const fileIndicatorIdx = children.indexOf(fileIndicator);
-      const previewIdx = children.findIndex((el: any) => el.hasClass?.('claudian-image-preview'));
-      expect(previewIdx).toBeLessThan(fileIndicatorIdx);
+      expect(previewContainer.children).toContain(existingContent);
+      expect(previewContainer.querySelector('.claudian-context-row')).not.toBeNull();
     });
   });
 });
@@ -217,25 +213,6 @@ describe('ImageContextManager - Private Helpers', () => {
     const inputEl = createMockTextArea();
     const callbacks = createMockCallbacks();
     manager = new ImageContextManager(container, inputEl, callbacks);
-  });
-
-  describe('truncateName', () => {
-    it('should return name unchanged when short enough', () => {
-      expect(manager['truncateName']('test.png', 20)).toBe('test.png');
-    });
-
-    it('should truncate long names preserving extension', () => {
-      const longName = 'this-is-a-very-long-filename.png';
-      const result = manager['truncateName'](longName, 20);
-      expect(result.endsWith('.png')).toBe(true);
-      expect(result).toContain('...');
-      expect(result.length).toBeLessThanOrEqual(20);
-    });
-
-    it('should handle name exactly at max length', () => {
-      const name = '12345678901234567890'; // 20 chars, no extension
-      expect(manager['truncateName'](name, 20)).toBe(name);
-    });
   });
 
   describe('formatSize', () => {
@@ -646,34 +623,44 @@ describe('ImageContextManager - Private Helpers', () => {
     });
   });
 
-  describe('Image preview rendering', () => {
+  describe('Image context rendering', () => {
     it('updateImagePreview should hide preview when no images', () => {
       manager['updateImagePreview']();
-      expect(manager['imagePreviewEl'].style.display).toBe('none');
+      expect(manager['contextTray']['containerEl'].hasClass('has-content')).toBe(false);
     });
 
     it('updateImagePreview should show preview when images exist', () => {
       manager.setImages([createImageAttachment()]);
-      expect(manager['imagePreviewEl'].style.display).toBe('flex');
+      expect(manager['contextTray']['containerEl'].hasClass('has-content')).toBe(true);
     });
 
-    it('renderImagePreview should create chip with thumbnail, info, and remove button', () => {
+    it('renders a compact image pill without a thumbnail preview', () => {
       manager.setImages([createImageAttachment({ id: 'img-1', name: 'photo.png', size: 2048 })]);
 
-      const previewEl = manager['imagePreviewEl'];
-      expect(previewEl.children.length).toBe(1);
+      const trayEl = manager['contextTray']['containerEl'];
+      const chipEl = trayEl.querySelector('.claudian-context-chip--image');
+      expect(chipEl).not.toBeNull();
 
-      const chipEl = previewEl.children[0];
-      expect(chipEl.hasClass('claudian-image-chip')).toBe(true);
+      const thumbEl = chipEl.querySelector('.claudian-context-chip-thumbnail');
+      expect(thumbEl).toBeNull();
 
-      const thumbEl = chipEl.querySelector('.claudian-image-thumb');
-      expect(thumbEl).not.toBeNull();
+      const labelEl = chipEl.querySelector('.claudian-context-chip-label');
+      expect(labelEl?.textContent).toBe('Image');
 
-      const infoEl = chipEl.querySelector('.claudian-image-info');
-      expect(infoEl).not.toBeNull();
-
-      const removeEl = chipEl.querySelector('.claudian-image-remove');
+      const removeEl = chipEl.querySelector('.claudian-context-chip-remove');
       expect(removeEl).not.toBeNull();
+    });
+
+    it('numbers image pills in attachment order when more than one image is attached', () => {
+      manager.setImages([
+        createImageAttachment({ id: 'img-1', name: 'first.png' }),
+        createImageAttachment({ id: 'img-2', name: 'second.png' }),
+      ]);
+
+      const trayEl = manager['contextTray']['containerEl'];
+      const labels = trayEl.querySelectorAll('.claudian-context-chip-label');
+
+      expect(labels.map((label: any) => label.textContent)).toEqual(['Image 1', 'Image 2']);
     });
 
     it('remove button should delete the image and update preview', () => {
@@ -690,8 +677,9 @@ describe('ImageContextManager - Private Helpers', () => {
 
       cb.onImagesChanged.mockClear();
 
-      const firstChip = mgr['imagePreviewEl'].children[0];
-      const removeEl = firstChip.querySelector('.claudian-image-remove');
+      const trayEl = mgr['contextTray']['containerEl'];
+      const firstChip = trayEl.querySelector('.claudian-context-chip--image');
+      const removeEl = firstChip.querySelector('.claudian-context-chip-remove');
       removeEl.dispatchEvent({ type: 'click', stopPropagation: jest.fn() });
 
       expect(mgr.getAttachedImages()).toHaveLength(1);

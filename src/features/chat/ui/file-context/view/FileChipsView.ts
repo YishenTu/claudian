@@ -1,4 +1,4 @@
-import { setIcon } from 'obsidian';
+import type { ComposerContextTray } from '../../ComposerContextTray';
 
 export interface FileChipsViewCallbacks {
   onRemoveAttachment: (path: string) => void;
@@ -6,65 +6,35 @@ export interface FileChipsViewCallbacks {
 }
 
 export class FileChipsView {
-  private containerEl: HTMLElement;
+  private contextTray: ComposerContextTray;
   private callbacks: FileChipsViewCallbacks;
-  private fileIndicatorEl: HTMLElement;
 
-  constructor(containerEl: HTMLElement, callbacks: FileChipsViewCallbacks) {
-    this.containerEl = containerEl;
+  constructor(contextTray: ComposerContextTray, callbacks: FileChipsViewCallbacks) {
+    this.contextTray = contextTray;
     this.callbacks = callbacks;
-
-    const firstChild = this.containerEl.firstChild;
-    this.fileIndicatorEl = this.containerEl.createDiv({ cls: 'claudian-file-indicator' });
-    if (firstChild) {
-      this.containerEl.insertBefore(this.fileIndicatorEl, firstChild);
-    }
   }
 
   destroy(): void {
-    this.fileIndicatorEl.remove();
+    this.contextTray.clearItems('current-note');
   }
 
   renderCurrentNote(filePath: string | null): void {
-    this.fileIndicatorEl.empty();
-
     if (!filePath) {
-      this.fileIndicatorEl.removeClass('claudian-visible-flex');
-      this.fileIndicatorEl.addClass('claudian-hidden');
+      this.contextTray.clearItems('current-note');
       return;
     }
 
-    this.fileIndicatorEl.addClass('claudian-visible-flex');
-    this.fileIndicatorEl.removeClass('claudian-hidden');
-    this.renderFileChip(filePath, () => {
-      this.callbacks.onRemoveAttachment(filePath);
-    });
-  }
-
-  private renderFileChip(filePath: string, onRemove: () => void): void {
-    const chipEl = this.fileIndicatorEl.createDiv({ cls: 'claudian-file-chip' });
-
-    const iconEl = chipEl.createSpan({ cls: 'claudian-file-chip-icon' });
-    setIcon(iconEl, 'file-text');
-
     const normalizedPath = filePath.replace(/\\/g, '/');
     const filename = normalizedPath.split('/').pop() || filePath;
-    const nameEl = chipEl.createSpan({ cls: 'claudian-file-chip-name' });
-    nameEl.setText(filename);
-    nameEl.setAttribute('title', filePath);
-
-    const removeEl = chipEl.createSpan({ cls: 'claudian-file-chip-remove' });
-    removeEl.setText('\u00D7');
-    removeEl.setAttribute('aria-label', 'Remove');
-
-    chipEl.addEventListener('click', (e) => {
-      if (!(e.target as HTMLElement).closest('.claudian-file-chip-remove')) {
-        this.callbacks.onOpenFile(filePath);
-      }
-    });
-
-    removeEl.addEventListener('click', () => {
-      onRemove();
-    });
+    this.contextTray.setItems('current-note', [{
+      id: filePath,
+      kind: 'note',
+      label: filename,
+      icon: 'file-text',
+      title: filePath,
+      ariaLabel: `Linked note: ${filePath}`,
+      onActivate: () => this.callbacks.onOpenFile(filePath),
+      onRemove: () => this.callbacks.onRemoveAttachment(filePath),
+    }]);
   }
 }

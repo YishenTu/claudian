@@ -45,6 +45,7 @@ import { BangBashService } from '../services/BangBashService';
 import { SubagentManager } from '../services/SubagentManager';
 import { ChatState } from '../state/ChatState';
 import { BangBashModeManager as BangBashModeManagerClass } from '../ui/BangBashModeManager';
+import { ComposerContextTray } from '../ui/ComposerContextTray';
 import { FileContextManager } from '../ui/FileContext';
 import { ImageContextManager } from '../ui/ImageContext';
 import { createInputToolbar } from '../ui/InputToolbar';
@@ -593,6 +594,7 @@ export function createTab(options: TabCreateOptions): TabData {
       titleGenerationService: null,
     },
     ui: {
+      contextTray: null,
       fileContextManager: null,
       imageContextManager: null,
       modelSelector: null,
@@ -651,9 +653,6 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     inputEl,
     navRowEl,
     contextRowEl,
-    selectionIndicatorEl: null,
-    browserIndicatorEl: null,
-    canvasIndicatorEl: null,
     eventCleanups: [],
   };
 }
@@ -775,41 +774,30 @@ function isConversationLike(value: unknown): value is Conversation {
 function initializeContextManagers(tab: TabData, plugin: FeatureHost): void {
   const { dom } = tab;
   const app = plugin.app;
+  const contextTray = tab.ui.contextTray;
+  if (!contextTray) {
+    throw new Error('Composer context tray must be initialized before context managers');
+  }
 
-  // File context manager - chips in contextRowEl, dropdown in inputContainerEl
   tab.ui.fileContextManager = new FileContextManager(
     app,
     dom.contextRowEl,
     dom.inputEl,
     {
       getExcludedTags: () => plugin.settings.excludedTags,
-      onChipsChanged: () => {
-        tab.controllers.selectionController?.updateContextRowVisibility();
-        tab.controllers.browserSelectionController?.updateContextRowVisibility();
-        tab.controllers.canvasSelectionController?.updateContextRowVisibility();
-        autoResizeTextarea(dom.inputEl);
-        tab.renderer?.scrollToBottomIfNeeded();
-      },
       getExternalContexts: () => tab.ui.externalContextSelector?.getExternalContexts() || [],
     },
-    dom.inputContainerEl
+    dom.inputContainerEl,
+    contextTray,
   );
   tab.ui.fileContextManager.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 
-  // Image context manager - drag/drop uses inputContainerEl, preview in contextRowEl
   tab.ui.imageContextManager = new ImageContextManager(
     dom.inputContainerEl,
     dom.inputEl,
-    {
-      onImagesChanged: () => {
-        tab.controllers.selectionController?.updateContextRowVisibility();
-        tab.controllers.browserSelectionController?.updateContextRowVisibility();
-        tab.controllers.canvasSelectionController?.updateContextRowVisibility();
-        autoResizeTextarea(dom.inputEl);
-        tab.renderer?.scrollToBottomIfNeeded();
-      },
-    },
-    dom.contextRowEl
+    {},
+    dom.contextRowEl,
+    contextTray,
   );
 }
 
@@ -1118,15 +1106,13 @@ export function initializeTabUI(
 ): void {
   const { dom, state } = tab;
 
-  // Initialize context managers (file/image)
+  tab.ui.contextTray = new ComposerContextTray(dom.contextRowEl, {
+    onDidChange: () => {
+      autoResizeTextarea(dom.inputEl);
+      tab.renderer?.scrollToBottomIfNeeded();
+    },
+  });
   initializeContextManagers(tab, plugin);
-
-  // Selection indicator - add to contextRowEl
-  dom.selectionIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-selection-indicator claudian-hidden' });
-
-  dom.browserIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-browser-selection-indicator claudian-hidden' });
-
-  dom.canvasIndicatorEl = dom.contextRowEl.createDiv({ cls: 'claudian-canvas-indicator claudian-hidden' });
 
   const catalogInfo = options.getProviderCatalogConfig?.() ?? null;
   initializeSlashCommands(
@@ -1394,27 +1380,22 @@ export function initializeTabControllers(
   // Selection controller
   tab.controllers.selectionController = new SelectionController(
     plugin.app,
-    dom.selectionIndicatorEl!,
+    ui.contextTray!,
     dom.inputEl,
-    dom.contextRowEl,
-    () => autoResizeTextarea(dom.inputEl),
+    undefined,
     [dom.contentEl, dom.inputComposerEl, ...getSharedSelectionFocusScopeEls(component)],
   );
 
   tab.controllers.browserSelectionController = new BrowserSelectionController(
     plugin.app,
-    dom.browserIndicatorEl!,
+    ui.contextTray!,
     dom.inputEl,
-    dom.contextRowEl,
-    () => autoResizeTextarea(dom.inputEl)
   );
 
   tab.controllers.canvasSelectionController = new CanvasSelectionController(
     plugin.app,
-    dom.canvasIndicatorEl!,
+    ui.contextTray!,
     dom.inputEl,
-    dom.contextRowEl,
-    () => autoResizeTextarea(dom.inputEl)
   );
 
   tab.controllers.streamController = new StreamController({
@@ -1790,6 +1771,9 @@ export async function destroyTab(tab: TabData): Promise<void> {
 
   tab.controllers.inputController?.destroyResumeDropdown();
   tab.ui.fileContextManager?.destroy();
+  tab.ui.imageContextManager?.destroy();
+  tab.ui.contextTray?.destroy();
+  tab.ui.contextTray = null;
   tab.ui.slashCommandDropdown?.destroy();
   tab.ui.slashCommandDropdown = null;
   tab.ui.instructionModeManager?.destroy();

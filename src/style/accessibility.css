@@ -15,10 +15,9 @@
 /* outline + offset only */
 .claudian-action-btn:focus-visible,
 .claudian-toggle-switch:focus-visible,
-.claudian-file-chip:focus-visible,
-.claudian-image-chip:focus-visible,
-.claudian-file-chip-remove:focus-visible,
-.claudian-image-remove:focus-visible,
+.claudian-context-chip-main:focus-visible,
+.claudian-context-chip-remove:focus-visible,
+.claudian-context-more:focus-visible,
 .claudian-image-modal-close:focus-visible,
 .claudian-approved-remove-btn:focus-visible,
 .claudian-save-env-btn:focus-visible,

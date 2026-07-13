@@ -1700,14 +1700,14 @@ describe('Tab - UI Initialization', () => {
       expect(tab.ui.imageContextManager).toBeDefined();
     });
 
-    it('should create selection indicator element', () => {
+    it('should create a composer-owned context tray', () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
       initializeTabUI(tab, options.plugin);
 
-      expect(tab.dom.selectionIndicatorEl).toBeDefined();
-      expect(tab.dom.selectionIndicatorEl!.style.display).toBe('none');
+      expect(tab.ui.contextTray).toBeDefined();
+      expect(tab.dom.contextRowEl.hasClass('has-content')).toBe(false);
     });
 
     it('should create SlashCommandDropdown', () => {
@@ -1880,10 +1880,9 @@ describe('Tab - Controller Initialization', () => {
 
       expect(SelectionController).toHaveBeenCalledWith(
         options.plugin.app,
-        tab.dom.selectionIndicatorEl,
+        tab.ui.contextTray,
         tab.dom.inputEl,
-        tab.dom.contextRowEl,
-        expect.any(Function),
+        undefined,
         [tab.dom.contentEl, tab.dom.inputComposerEl, sharedFocusScopeEl],
       );
     });
@@ -2449,7 +2448,7 @@ describe('Tab - UI Callback Wiring', () => {
   });
 
   describe('initializeTabUI callbacks', () => {
-    it('should wire onChipsChanged to scroll to bottom', () => {
+    it('should scroll to bottom when note context changes', () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
@@ -2459,18 +2458,16 @@ describe('Tab - UI Callback Wiring', () => {
       // Set up renderer
       tab.renderer = mockMessageRenderer as any;
 
-      // Get the FileContextManager constructor call arguments
-      const { FileContextManager } = jest.requireMock('@/features/chat/ui/FileContext');
-      const constructorCall = FileContextManager.mock.calls[0];
-      const callbacks = constructorCall[3]; // 4th argument is callbacks
-
-      // Trigger onChipsChanged callback
-      callbacks.onChipsChanged();
+      tab.ui.contextTray?.setItems('current-note', [{
+        id: 'note',
+        kind: 'note',
+        label: 'Note.md',
+      }]);
 
       expect(mockMessageRenderer.scrollToBottomIfNeeded).toHaveBeenCalled();
     });
 
-    it('should wire onImagesChanged to scroll to bottom', () => {
+    it('should scroll to bottom when image context changes', () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
@@ -2478,12 +2475,11 @@ describe('Tab - UI Callback Wiring', () => {
 
       tab.renderer = mockMessageRenderer as any;
 
-      // Get the ImageContextManager constructor call
-      const { ImageContextManager } = jest.requireMock('@/features/chat/ui/ImageContext');
-      const constructorCall = ImageContextManager.mock.calls[0];
-      const callbacks = constructorCall[2]; // 3rd argument is callbacks (app parameter was removed)
-
-      callbacks.onImagesChanged();
+      tab.ui.contextTray?.setItems('images', [{
+        id: 'image',
+        kind: 'image',
+        label: 'image.png',
+      }]);
 
       expect(mockMessageRenderer.scrollToBottomIfNeeded).toHaveBeenCalled();
     });

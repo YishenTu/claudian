@@ -1,7 +1,7 @@
 import type { App, ItemView } from 'obsidian';
 
 import type { CanvasSelectionContext } from '../../../utils/canvas';
-import { updateContextRowHasContent } from './contextRowVisibility';
+import type { ComposerContextTray } from '../ui/ComposerContextTray';
 
 const CANVAS_POLL_INTERVAL = 250;
 
@@ -18,24 +18,21 @@ type CanvasViewLike = ItemView & {
 
 export class CanvasSelectionController {
   private app: App;
-  private indicatorEl: HTMLElement;
+  private contextTray: ComposerContextTray;
   private inputEl: HTMLElement;
-  private contextRowEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
   private storedSelection: CanvasSelectionContext | null = null;
   private pollInterval: number | null = null;
 
   constructor(
     app: App,
-    indicatorEl: HTMLElement,
+    contextTray: ComposerContextTray,
     inputEl: HTMLElement,
-    contextRowEl: HTMLElement,
     onVisibilityChange?: () => void
   ) {
     this.app = app;
-    this.indicatorEl = indicatorEl;
+    this.contextTray = contextTray;
     this.inputEl = inputEl;
-    this.contextRowEl = contextRowEl;
     this.onVisibilityChange = onVisibilityChange ?? null;
   }
 
@@ -103,23 +100,25 @@ export class CanvasSelectionController {
   }
 
   private updateIndicator(): void {
-    if (!this.indicatorEl) return;
-
     if (this.storedSelection) {
       const { nodeIds } = this.storedSelection;
-      this.indicatorEl.textContent = nodeIds.length === 1
-        ? `node "${nodeIds[0]}" selected`
-        : `${nodeIds.length} nodes selected`;
-      this.indicatorEl.removeClass('claudian-hidden');
+      const nodeLabel = nodeIds.length === 1 ? '1 node' : `${nodeIds.length} nodes`;
+      const label = `${nodeLabel} selected`;
+      this.contextTray.setItems('canvas-selection', [{
+        id: 'canvas-selection',
+        kind: 'selection',
+        label,
+        icon: 'network',
+        ariaLabel: label,
+        onRemove: () => this.clear(),
+      }]);
     } else {
-      this.indicatorEl.addClass('claudian-hidden');
+      this.contextTray.clearItems('canvas-selection');
     }
     this.updateContextRowVisibility();
   }
 
   updateContextRowVisibility(): void {
-    if (!this.contextRowEl) return;
-    updateContextRowHasContent(this.contextRowEl);
     this.onVisibilityChange?.();
   }
 

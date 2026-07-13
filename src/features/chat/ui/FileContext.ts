@@ -13,6 +13,7 @@ import {
 import { buildExternalContextDisplayEntries } from '../../../utils/externalContext';
 import { externalContextScanner } from '../../../utils/externalContextScanner';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
+import { ComposerContextTray } from './ComposerContextTray';
 import { FileContextState } from './file-context/state/FileContextState';
 import { FileChipsView } from './file-context/view/FileChipsView';
 
@@ -27,13 +28,13 @@ export interface FileContextCallbacks {
 export class FileContextManager {
   private app: App;
   private callbacks: FileContextCallbacks;
-  private chipsContainerEl: HTMLElement;
   private dropdownContainerEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
   private state: FileContextState;
   private mentionDataProvider: VaultMentionDataProvider;
   private chipsView: FileChipsView;
   private mentionDropdown: MentionDropdownController;
+  private ownedContextTray: ComposerContextTray | null = null;
   private deleteEventRef: EventRef | null = null;
   private renameEventRef: EventRef | null = null;
 
@@ -48,10 +49,10 @@ export class FileContextManager {
     chipsContainerEl: HTMLElement,
     inputEl: HTMLTextAreaElement,
     callbacks: FileContextCallbacks,
-    dropdownContainerEl?: HTMLElement
+    dropdownContainerEl?: HTMLElement,
+    contextTray?: ComposerContextTray,
   ) {
     this.app = app;
-    this.chipsContainerEl = chipsContainerEl;
     this.dropdownContainerEl = dropdownContainerEl ?? chipsContainerEl;
     this.inputEl = inputEl;
     this.callbacks = callbacks;
@@ -60,7 +61,11 @@ export class FileContextManager {
     this.mentionDataProvider = new VaultMentionDataProvider(this.app);
     this.mentionDataProvider.initializeInBackground();
 
-    this.chipsView = new FileChipsView(this.chipsContainerEl, {
+    const resolvedContextTray = contextTray ?? new ComposerContextTray(chipsContainerEl);
+    if (!contextTray) {
+      this.ownedContextTray = resolvedContextTray;
+    }
+    this.chipsView = new FileChipsView(resolvedContextTray, {
       onRemoveAttachment: (filePath) => {
         if (filePath === this.currentNotePath) {
           this.currentNotePath = null;
@@ -259,6 +264,8 @@ export class FileContextManager {
     if (this.renameEventRef) this.app.vault.offref(this.renameEventRef);
     this.mentionDropdown.destroy();
     this.chipsView.destroy();
+    this.ownedContextTray?.destroy();
+    this.ownedContextTray = null;
   }
 
   /** Normalizes a file path to be vault-relative with forward slashes. */

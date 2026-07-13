@@ -18,6 +18,7 @@
 @import "./components/status-panel.css";
 @import "./components/subagent.css";
 @import "./components/input.css";
+@import "./components/context-tray.css";
 @import "./components/context-footer.css";
 
 /* Toolbar */

@@ -68,15 +68,10 @@ export interface MockElement {
 }
 
 const CLASS_DISPLAY: Record<string, string> = {
-  'claudian-browser-selection-indicator': 'block',
-  'claudian-canvas-indicator': 'block',
   'claudian-context-meter': 'flex',
-  'claudian-file-indicator': 'none',
-  'claudian-image-preview': 'none',
   'claudian-mcp-selector': 'flex',
   'claudian-mode-selector': 'flex',
   'claudian-permission-toggle': 'flex',
-  'claudian-selection-indicator': 'block',
   'claudian-service-tier-toggle': 'flex',
   'claudian-status-panel-bash': 'block',
   'claudian-status-panel-bash-content': 'block',

@@ -1,7 +1,7 @@
 import type { App, ItemView } from 'obsidian';
 
 import type { BrowserSelectionContext } from '../../../utils/browser';
-import { updateContextRowHasContent } from './contextRowVisibility';
+import type { ComposerContextTray } from '../ui/ComposerContextTray';
 
 const BROWSER_SELECTION_POLL_INTERVAL = 250;
 
@@ -11,9 +11,8 @@ type BrowserLikeWebview = HTMLElement & {
 
 export class BrowserSelectionController {
   private app: App;
-  private indicatorEl: HTMLElement;
+  private contextTray: ComposerContextTray;
   private inputEl: HTMLElement;
-  private contextRowEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
   private storedSelection: BrowserSelectionContext | null = null;
   private pollInterval: number | null = null;
@@ -21,15 +20,13 @@ export class BrowserSelectionController {
 
   constructor(
     app: App,
-    indicatorEl: HTMLElement,
+    contextTray: ComposerContextTray,
     inputEl: HTMLElement,
-    contextRowEl: HTMLElement,
     onVisibilityChange?: () => void
   ) {
     this.app = app;
-    this.indicatorEl = indicatorEl;
+    this.contextTray = contextTray;
     this.inputEl = inputEl;
-    this.contextRowEl = contextRowEl;
     this.onVisibilityChange = onVisibilityChange ?? null;
   }
 
@@ -243,40 +240,25 @@ export class BrowserSelectionController {
   }
 
   private updateIndicator(): void {
-    if (!this.indicatorEl) return;
-
     if (this.storedSelection) {
       const lineCount = this.storedSelection.selectedText.split(/\r?\n/).length;
       const lineLabel = lineCount === 1 ? 'line' : 'lines';
-      this.indicatorEl.textContent = `${lineCount} ${lineLabel} selected`;
-      this.indicatorEl.setAttribute('title', this.buildIndicatorTitle());
-      this.indicatorEl.removeClass('claudian-hidden');
+      const label = `${lineCount} ${lineLabel} selected`;
+      this.contextTray.setItems('browser-selection', [{
+        id: 'browser-selection',
+        kind: 'selection',
+        label,
+        icon: 'globe',
+        ariaLabel: label,
+        onRemove: () => this.clear(),
+      }]);
     } else {
-      this.indicatorEl.addClass('claudian-hidden');
-      this.indicatorEl.textContent = '';
-      this.indicatorEl.removeAttribute('title');
+      this.contextTray.clearItems('browser-selection');
     }
     this.updateContextRowVisibility();
   }
 
-  private buildIndicatorTitle(): string {
-    if (!this.storedSelection) return '';
-
-    const charCount = this.storedSelection.selectedText.length;
-    const charLabel = charCount === 1 ? 'char' : 'chars';
-    const lines = [`${charCount} ${charLabel} selected`, `source=${this.storedSelection.source}`];
-    if (this.storedSelection.title) {
-      lines.push(`title=${this.storedSelection.title}`);
-    }
-    if (this.storedSelection.url) {
-      lines.push(this.storedSelection.url);
-    }
-    return lines.join('\n');
-  }
-
   updateContextRowVisibility(): void {
-    if (!this.contextRowEl) return;
-    updateContextRowHasContent(this.contextRowEl);
     this.onVisibilityChange?.();
   }
 

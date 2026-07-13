@@ -2,29 +2,11 @@ import { createMockEl } from '@test/helpers/mockElement';
 
 import { CanvasSelectionController } from '@/features/chat/controllers/CanvasSelectionController';
 
-function createMockIndicator() {
-  const indicator = createMockEl();
-  indicator.addClass('claudian-canvas-indicator');
-  indicator.addClass('claudian-hidden');
-  return indicator;
-}
-
-function createMockContextRow() {
-  const elements: Record<string, any> = {
-    '.claudian-selection-indicator': createMockEl(),
-    '.claudian-canvas-indicator': createMockIndicator(),
-    '.claudian-file-indicator': null,
-    '.claudian-image-preview': null,
+function createMockContextTray() {
+  return {
+    setItems: jest.fn(),
+    clearItems: jest.fn(),
   };
-  elements['.claudian-selection-indicator'].addClass('claudian-selection-indicator');
-  elements['.claudian-selection-indicator'].addClass('claudian-hidden');
-
-  const contextRow = createMockEl();
-  const toggle = contextRow.classList.toggle;
-  contextRow.classList.toggle = jest.fn((cls: string, force?: boolean) => toggle(cls, force));
-
-  contextRow.querySelector = jest.fn((selector: string) => elements[selector] ?? null);
-  return contextRow as any;
 }
 
 function createMockCanvasNode(id: string) {
@@ -34,18 +16,16 @@ function createMockCanvasNode(id: string) {
 describe('CanvasSelectionController', () => {
   let controller: CanvasSelectionController;
   let app: any;
-  let indicatorEl: any;
+  let contextTray: ReturnType<typeof createMockContextTray>;
   let inputEl: any;
-  let contextRowEl: any;
   let canvasView: any;
   let originalDocument: any;
 
   beforeEach(() => {
     jest.useFakeTimers();
 
-    indicatorEl = createMockIndicator();
+    contextTray = createMockContextTray();
     inputEl = createMockEl();
-    contextRowEl = createMockContextRow();
 
     const node1 = createMockCanvasNode('abc123');
     const node2 = createMockCanvasNode('def456');
@@ -66,7 +46,7 @@ describe('CanvasSelectionController', () => {
       },
     };
 
-    controller = new CanvasSelectionController(app, indicatorEl, inputEl, contextRowEl);
+    controller = new CanvasSelectionController(app, contextTray as any, inputEl);
 
     originalDocument = (global as any).document;
     (global as any).document = { activeElement: null };
@@ -87,8 +67,10 @@ describe('CanvasSelectionController', () => {
       canvasPath: 'my-canvas.canvas',
       nodeIds: expect.arrayContaining(['abc123', 'def456']),
     });
-    expect(indicatorEl.textContent).toBe('2 nodes selected');
-    expect(indicatorEl.style.display).toBe('block');
+    expect(contextTray.setItems).toHaveBeenLastCalledWith('canvas-selection', [
+      expect.objectContaining({ label: '2 nodes selected' }),
+    ]);
+    expect(contextTray.setItems.mock.calls[0][1][0]).not.toHaveProperty('title');
   });
 
   it('shows node ID for single selection', () => {
@@ -99,7 +81,9 @@ describe('CanvasSelectionController', () => {
     jest.advanceTimersByTime(250);
 
     expect(controller.getContext()?.nodeIds).toEqual(['single1']);
-    expect(indicatorEl.textContent).toBe('node "single1" selected');
+    expect(contextTray.setItems).toHaveBeenLastCalledWith('canvas-selection', [
+      expect.objectContaining({ label: '1 node selected' }),
+    ]);
   });
 
   it('clears selection when no nodes selected and input not focused', () => {
@@ -113,7 +97,7 @@ describe('CanvasSelectionController', () => {
     jest.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(false);
-    expect(indicatorEl.style.display).toBe('none');
+    expect(contextTray.clearItems).toHaveBeenCalledWith('canvas-selection');
   });
 
   it('preserves selection when input is focused (sticky)', () => {
@@ -127,7 +111,7 @@ describe('CanvasSelectionController', () => {
     jest.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(true);
-    expect(indicatorEl.textContent).toBe('2 nodes selected');
+    expect(contextTray.clearItems).not.toHaveBeenCalledWith('canvas-selection');
   });
 
   it('returns null context when no selection', () => {
@@ -142,25 +126,11 @@ describe('CanvasSelectionController', () => {
     controller.start();
     jest.advanceTimersByTime(250);
 
-    contextRowEl.classList.toggle.mockClear();
+    contextTray.setItems.mockClear();
 
     jest.advanceTimersByTime(250);
 
-    // toggle should not be called again (no change)
-    expect(contextRowEl.classList.toggle).not.toHaveBeenCalled();
-  });
-
-  it('keeps context row visible when editor selection indicator is visible', () => {
-    const editorIndicator = createMockEl();
-    editorIndicator.addClass('claudian-selection-indicator');
-    contextRowEl.querySelector.mockImplementation((selector: string) => {
-      if (selector === '.claudian-selection-indicator') return editorIndicator;
-      return null;
-    });
-
-    controller.updateContextRowVisibility();
-
-    expect(contextRowEl.classList.toggle).toHaveBeenCalledWith('has-content', true);
+    expect(contextTray.setItems).not.toHaveBeenCalled();
   });
 
   it('prefers active canvas leaf when multiple canvases are open', () => {
@@ -211,6 +181,17 @@ describe('CanvasSelectionController', () => {
     controller.clear();
 
     expect(controller.hasSelection()).toBe(false);
-    expect(indicatorEl.style.display).toBe('none');
+    expect(contextTray.clearItems).toHaveBeenCalledWith('canvas-selection');
+  });
+
+  it('clears selection from the tray remove action', () => {
+    controller.start();
+    jest.advanceTimersByTime(250);
+
+    const items = contextTray.setItems.mock.calls[0][1];
+    items[0].onRemove();
+
+    expect(controller.hasSelection()).toBe(false);
+    expect(contextTray.clearItems).toHaveBeenCalledWith('canvas-selection');
   });
 });

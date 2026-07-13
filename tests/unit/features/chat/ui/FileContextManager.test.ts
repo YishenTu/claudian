@@ -203,17 +203,17 @@ describe('FileContextManager', () => {
 
     manager.setCurrentNote('notes/chip.md');
 
-    const indicator = findByClass(containerEl, 'claudian-file-indicator');
-    expect(indicator).toBeDefined();
-    expect(indicator?.style.display).toBe('flex');
+    const chip = findByClass(containerEl, 'claudian-context-chip--note');
+    expect(chip).toBeDefined();
+    expect(containerEl.hasClass('has-content')).toBe(true);
 
-    const removeEl = findByClass(containerEl, 'claudian-file-chip-remove');
+    const removeEl = findByClass(containerEl, 'claudian-context-chip-remove');
     expect(removeEl).toBeDefined();
 
     removeEl!.click();
 
     expect(manager.getCurrentNotePath()).toBeNull();
-    expect(indicator?.style.display).toBe('none');
+    expect(containerEl.hasClass('has-content')).toBe(false);
 
     manager.destroy();
   });

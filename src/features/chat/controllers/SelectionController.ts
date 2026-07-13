@@ -4,7 +4,7 @@ import { MarkdownView } from 'obsidian';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import { type EditorSelectionContext, getEditorView } from '../../../utils/editor';
 import type { StoredSelection } from '../state/types';
-import { updateContextRowHasContent } from './contextRowVisibility';
+import type { ComposerContextTray } from '../ui/ComposerContextTray';
 
 const SELECTION_POLL_INTERVAL = 250;
 const INPUT_HANDOFF_GRACE_MS = 1500;
@@ -19,10 +19,9 @@ type FocusScopeInput = HTMLElement | HTMLElement[];
 
 export class SelectionController {
   private app: App;
-  private indicatorEl: HTMLElement;
+  private contextTray: ComposerContextTray;
   private inputEl: HTMLElement;
   private focusScopeEls: HTMLElement[];
-  private contextRowEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
   private storedSelection: StoredSelection | null = null;
   private inputHandoffGraceUntil: number | null = null;
@@ -39,17 +38,15 @@ export class SelectionController {
 
   constructor(
     app: App,
-    indicatorEl: HTMLElement,
+    contextTray: ComposerContextTray,
     inputEl: HTMLElement,
-    contextRowEl: HTMLElement,
     onVisibilityChange?: () => void,
     focusScopeEl?: FocusScopeInput
   ) {
     this.app = app;
-    this.indicatorEl = indicatorEl;
+    this.contextTray = contextTray;
     this.inputEl = inputEl;
     this.focusScopeEls = this.normalizeFocusScopes(focusScopeEl);
-    this.contextRowEl = contextRowEl;
     this.onVisibilityChange = onVisibilityChange ?? null;
   }
 
@@ -380,21 +377,24 @@ export class SelectionController {
   // ============================================
 
   private updateIndicator(): void {
-    if (!this.indicatorEl) return;
-
     if (this.storedSelection) {
       const lineText = this.storedSelection.lineCount === 1 ? 'line' : 'lines';
-      this.indicatorEl.textContent = `${this.storedSelection.lineCount} ${lineText} selected`;
-      this.indicatorEl.removeClass('claudian-hidden');
+      const label = `${this.storedSelection.lineCount} ${lineText} selected`;
+      this.contextTray.setItems('editor-selection', [{
+        id: 'editor-selection',
+        kind: 'selection',
+        label,
+        icon: 'text-select',
+        ariaLabel: label,
+        onRemove: () => this.clear(),
+      }]);
     } else {
-      this.indicatorEl.addClass('claudian-hidden');
+      this.contextTray.clearItems('editor-selection');
     }
     this.updateContextRowVisibility();
   }
 
   updateContextRowVisibility(): void {
-    if (!this.contextRowEl) return;
-    updateContextRowHasContent(this.contextRowEl);
     this.onVisibilityChange?.();
   }
 

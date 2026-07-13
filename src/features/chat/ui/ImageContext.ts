@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 import * as path from 'path';
 
 import type { ImageAttachment, ImageMediaType } from '../../../core/types';
+import { ComposerContextTray } from './ComposerContextTray';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
@@ -14,14 +15,14 @@ const IMAGE_EXTENSIONS: Record<string, ImageMediaType> = {
 };
 
 export interface ImageContextCallbacks {
-  onImagesChanged: () => void;
+  onImagesChanged?: () => void;
 }
 
 export class ImageContextManager {
   private callbacks: ImageContextCallbacks;
   private containerEl: HTMLElement;
-  private previewContainerEl: HTMLElement;
-  private imagePreviewEl: HTMLElement;
+  private contextTray: ComposerContextTray;
+  private ownedContextTray: ComposerContextTray | null = null;
   private inputEl: HTMLTextAreaElement;
   private dropOverlay: HTMLElement | null = null;
   private attachedImages: Map<string, ImageAttachment> = new Map();
@@ -31,18 +32,18 @@ export class ImageContextManager {
     containerEl: HTMLElement,
     inputEl: HTMLTextAreaElement,
     callbacks: ImageContextCallbacks,
-    previewContainerEl?: HTMLElement
+    previewContainerEl?: HTMLElement,
+    contextTray?: ComposerContextTray,
   ) {
     this.containerEl = containerEl;
-    this.previewContainerEl = previewContainerEl ?? containerEl;
     this.inputEl = inputEl;
     this.callbacks = callbacks;
-
-    // Create image preview in previewContainerEl, before file indicator if present
-    const fileIndicator = this.previewContainerEl.querySelector('.claudian-file-indicator');
-    this.imagePreviewEl = this.previewContainerEl.createDiv({ cls: 'claudian-image-preview' });
-    if (fileIndicator && fileIndicator.parentElement === this.previewContainerEl) {
-      this.previewContainerEl.insertBefore(this.imagePreviewEl, fileIndicator);
+    const ownedTrayContainer = contextTray
+      ? null
+      : (previewContainerEl ?? containerEl).createDiv({ cls: 'claudian-context-row' });
+    this.contextTray = contextTray ?? new ComposerContextTray(ownedTrayContainer!);
+    if (!contextTray) {
+      this.ownedContextTray = this.contextTray;
     }
 
     this.setupDragAndDrop();
@@ -67,7 +68,7 @@ export class ImageContextManager {
   clearImages() {
     this.attachedImages.clear();
     this.updateImagePreview();
-    this.callbacks.onImagesChanged();
+    this.callbacks.onImagesChanged?.();
   }
 
   /** Sets images directly (used for queued messages). */
@@ -77,7 +78,13 @@ export class ImageContextManager {
       this.attachedImages.set(image.id, image);
     }
     this.updateImagePreview();
-    this.callbacks.onImagesChanged();
+    this.callbacks.onImagesChanged?.();
+  }
+
+  destroy(): void {
+    this.contextTray.clearItems('images');
+    this.ownedContextTray?.destroy();
+    this.ownedContextTray = null;
   }
 
   private setupDragAndDrop() {
@@ -231,7 +238,7 @@ export class ImageContextManager {
 
       this.attachedImages.set(attachment.id, attachment);
       this.updateImagePreview();
-      this.callbacks.onImagesChanged();
+      this.callbacks.onImagesChanged?.();
       return true;
     } catch (error) {
       this.notifyImageError('Failed to attach image.', error);
@@ -250,55 +257,25 @@ export class ImageContextManager {
   // ============================================
 
   private updateImagePreview() {
-    this.imagePreviewEl.empty();
-
     if (this.attachedImages.size === 0) {
-      this.imagePreviewEl.removeClass('claudian-visible-flex');
-      this.imagePreviewEl.addClass('claudian-hidden');
+      this.contextTray.clearItems('images');
       return;
     }
 
-    this.imagePreviewEl.addClass('claudian-visible-flex');
-    this.imagePreviewEl.removeClass('claudian-hidden');
-
-    for (const [id, image] of this.attachedImages) {
-      this.renderImagePreview(id, image);
-    }
-  }
-
-  private renderImagePreview(id: string, image: ImageAttachment) {
-    const previewEl = this.imagePreviewEl.createDiv({ cls: 'claudian-image-chip' });
-
-    const thumbEl = previewEl.createDiv({ cls: 'claudian-image-thumb' });
-    thumbEl.createEl('img', {
-      attr: {
-        src: `data:${image.mediaType};base64,${image.data}`,
-        alt: image.name,
+    const images = Array.from(this.attachedImages);
+    this.contextTray.setItems('images', images.map(([id, image], index) => ({
+      id,
+      kind: 'image' as const,
+      label: images.length === 1 ? 'Image' : `Image ${index + 1}`,
+      title: `${image.name} · ${this.formatSize(image.size)}`,
+      ariaLabel: `Image attachment: ${image.name}`,
+      onActivate: () => this.showFullImage(image),
+      onRemove: () => {
+        this.attachedImages.delete(id);
+        this.updateImagePreview();
+        this.callbacks.onImagesChanged?.();
       },
-    });
-
-    const infoEl = previewEl.createDiv({ cls: 'claudian-image-info' });
-    const nameEl = infoEl.createSpan({ cls: 'claudian-image-name' });
-    nameEl.setText(this.truncateName(image.name, 20));
-    nameEl.setAttribute('title', image.name);
-
-    const sizeEl = infoEl.createSpan({ cls: 'claudian-image-size' });
-    sizeEl.setText(this.formatSize(image.size));
-
-    const removeEl = previewEl.createSpan({ cls: 'claudian-image-remove' });
-    removeEl.setText('\u00D7');
-    removeEl.setAttribute('aria-label', 'Remove image');
-
-    removeEl.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.attachedImages.delete(id);
-      this.updateImagePreview();
-      this.callbacks.onImagesChanged();
-    });
-
-    thumbEl.addEventListener('click', () => {
-      this.showFullImage(image);
-    });
+    })));
   }
 
   private showFullImage(image: ImageAttachment) {
@@ -336,14 +313,6 @@ export class ImageContextManager {
 
   private generateId(): string {
     return `img-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-  }
-
-  private truncateName(name: string, maxLen: number): string {
-    if (name.length <= maxLen) return name;
-    const ext = path.extname(name);
-    const base = name.slice(0, name.length - ext.length);
-    const truncatedBase = base.slice(0, maxLen - ext.length - 3);
-    return `${truncatedBase}...${ext}`;
   }
 
   private formatSize(bytes: number): string {
