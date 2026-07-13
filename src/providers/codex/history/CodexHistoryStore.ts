@@ -881,7 +881,12 @@ function applyPersistedExecEnvelopeOutput(
   if (outputParts) {
     for (const [index, toolCall] of toolCalls.entries()) {
       const outputPart = outputParts[index] ?? '';
-      applyPersistedToolOutput(toolCall, outputPart, outputPart, ctx);
+      applyPersistedToolOutput(
+        toolCall,
+        outputPart,
+        stringifyCodexToolOutput(outputPart),
+        ctx,
+      );
     }
     return;
   }
@@ -902,22 +907,22 @@ function applyPersistedExecEnvelopeOutput(
 function splitPersistedExecEnvelopeOutput(
   rawOutputValue: string | unknown[] | undefined,
   toolCallCount: number,
-): string[] | null {
+): Array<string | unknown[]> | null {
   if (!Array.isArray(rawOutputValue)) return null;
 
-  const outputParts: string[] = [];
+  const outputParts: Array<string | unknown[]> = [];
   for (const part of rawOutputValue) {
     if (!part || typeof part !== 'object' || Array.isArray(part)) return null;
     const text = (part as Record<string, unknown>).text;
-    if (typeof text !== 'string') return null;
-    outputParts.push(text);
+    outputParts.push(typeof text === 'string' ? text : [part]);
   }
 
   // The outer exec transport prepends its own completion header before values
   // emitted by each text(...) call in the envelope.
   if (
     outputParts.length === toolCallCount + 1
-    && isPersistedExecEnvelopeHeader(outputParts[0] ?? '')
+    && typeof outputParts[0] === 'string'
+    && isPersistedExecEnvelopeHeader(outputParts[0])
   ) {
     return outputParts.slice(1);
   }

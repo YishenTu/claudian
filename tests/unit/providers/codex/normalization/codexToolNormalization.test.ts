@@ -247,6 +247,48 @@ describe('normalizeCodexToolCall', () => {
     ]);
   });
 
+  it('decodes static view_image calls from an exec envelope', () => {
+    const source = [
+      'const first = await tools.view_image({path:"/tmp/first.png",detail:"original"});',
+      'image(first.image_url);',
+      'const second = await tools.view_image({path:"/tmp/second.png",detail:"high"});',
+      'image(second.image_url);',
+    ].join('\n');
+
+    expect(decodeCodexExecEnvelope({ raw: source })).toEqual([
+      {
+        name: 'Read',
+        input: { path: '/tmp/first.png', detail: 'original', file_path: '/tmp/first.png' },
+      },
+      {
+        name: 'Read',
+        input: { path: '/tmp/second.png', detail: 'high', file_path: '/tmp/second.png' },
+      },
+    ]);
+  });
+
+  it('decodes static update_plan calls from an exec envelope', () => {
+    const source = [
+      'const result = await tools.update_plan({',
+      '  explanation:"Starting work",',
+      '  plan:[{step:"Inspect files",status:"in_progress"}]',
+      '});',
+      'text(result);',
+    ].join('\n');
+
+    expect(decodeCodexExecEnvelope({ raw: source })).toEqual([{
+      name: 'TodoWrite',
+      input: {
+        todos: [{
+          id: '',
+          content: 'Inspect files',
+          activeForm: 'Inspect files',
+          status: 'in_progress',
+        }],
+      },
+    }]);
+  });
+
   it('preserves exec when another nested tool accompanies exec_command', () => {
     const source = [
       'await tools.update_plan({plan:[]});',

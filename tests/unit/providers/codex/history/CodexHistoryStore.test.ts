@@ -665,6 +665,64 @@ describe('CodexHistoryStore', () => {
       ]);
     });
 
+    it('restores every image view from a multi-call exec envelope', () => {
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call',
+            name: 'exec',
+            call_id: 'call_image_group',
+            input: [
+              'const first = await tools.view_image({path:"/tmp/first.png",detail:"original"});',
+              'image(first.image_url);',
+              'const second = await tools.view_image({path:"/tmp/second.png",detail:"original"});',
+              'image(second.image_url);',
+            ].join('\n'),
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-13T00:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call_output',
+            call_id: 'call_image_group',
+            output: [
+              { type: 'input_text', text: 'Script completed\nWall time 0.0 seconds\nOutput:\n' },
+              { type: 'input_image', image_url: 'data:image/png;base64,Zmlyc3Q=' },
+              { type: 'input_image', image_url: 'data:image/png;base64,c2Vjb25k' },
+            ],
+          },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+      const assistantMessage = messages.find(message => message.role === 'assistant');
+
+      expect(assistantMessage?.toolCalls).toEqual([
+        expect.objectContaining({
+          id: 'call_image_group:1',
+          name: 'Read',
+          input: expect.objectContaining({ file_path: '/tmp/first.png' }),
+          result: '/tmp/first.png',
+          status: 'completed',
+        }),
+        expect.objectContaining({
+          id: 'call_image_group:2',
+          name: 'Read',
+          input: expect.objectContaining({ file_path: '/tmp/second.png' }),
+          result: '/tmp/second.png',
+          status: 'completed',
+        }),
+      ]);
+    });
+
     it('restores yielded exec envelopes as one completed Bash tool', () => {
       const content = [
         JSON.stringify({

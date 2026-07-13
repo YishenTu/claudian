@@ -74,27 +74,18 @@ export function decodeCodexExecEnvelope(
 
   const decodedCalls: NormalizedCodexToolCall[] = [];
   for (const call of calls) {
-    if (call.name === 'exec_command') {
-      const command = extractExecCommand(tokens, call);
-      if (!command) return null;
-      decodedCalls.push({ name: 'Bash', input: { command } });
-      continue;
-    }
-
-    if (call.name === 'apply_patch') {
-      const patch = extractApplyPatch(tokens, call);
-      if (!patch) return null;
-      decodedCalls.push({ name: 'apply_patch', input: { patch } });
-      continue;
-    }
-
-    return null;
+    const rawInput = decodeExecEnvelopeToolInput(tokens, call);
+    if (!rawInput) return null;
+    decodedCalls.push({
+      name: normalizeCodexToolName(call.name),
+      input: normalizeCodexToolInput(call.name, rawInput),
+    });
   }
 
   return decodedCalls;
 }
 
-type JavaScriptTokenKind = 'identifier' | 'string' | 'punctuation';
+type JavaScriptTokenKind = 'identifier' | 'number' | 'string' | 'punctuation';
 
 interface JavaScriptToken {
   kind: JavaScriptTokenKind;
@@ -153,6 +144,14 @@ function tokenizeExecEnvelope(source: string): JavaScriptToken[] | null {
       }
       tokens.push({ kind: 'identifier', value: source.slice(index, end) });
       index = end;
+      continue;
+    }
+
+    if (/\d/.test(char)) {
+      const numberMatch = source.slice(index).match(/^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+      if (!numberMatch) return null;
+      tokens.push({ kind: 'number', value: numberMatch[0] });
+      index += numberMatch[0].length;
       continue;
     }
 
@@ -233,33 +232,137 @@ function findExecEnvelopeToolCalls(
   return calls;
 }
 
-function extractExecCommand(
+function decodeExecEnvelopeToolInput(
   tokens: readonly JavaScriptToken[],
   call: ExecEnvelopeToolCall,
-): string | null {
+): Record<string, unknown> | null {
+  if (call.name === 'apply_patch') {
+    const patch = extractApplyPatch(tokens, call);
+    return patch ? { patch } : null;
+  }
+
   const closeParenTokenIndex = findMatchingToken(tokens, call.openParenTokenIndex, '(', ')');
   if (closeParenTokenIndex === null) return null;
-  if (tokens[call.openParenTokenIndex + 1]?.value !== '{') return null;
+  if (call.openParenTokenIndex + 1 === closeParenTokenIndex) return {};
 
-  let objectDepth = 0;
-  for (let index = call.openParenTokenIndex + 1; index < closeParenTokenIndex; index += 1) {
-    const token = tokens[index];
-    if (token?.value === '{') {
-      objectDepth += 1;
-      continue;
-    }
+  const parsedArgument = parseStaticJavaScriptValue(tokens, call.openParenTokenIndex + 1);
+  if (!parsedArgument || parsedArgument.nextTokenIndex !== closeParenTokenIndex) return null;
+
+  if (
+    parsedArgument.value
+    && typeof parsedArgument.value === 'object'
+    && !Array.isArray(parsedArgument.value)
+  ) {
+    return parsedArgument.value as Record<string, unknown>;
+  }
+
+  return { value: parsedArgument.value };
+}
+
+interface ParsedStaticJavaScriptValue {
+  value: unknown;
+  nextTokenIndex: number;
+}
+
+function parseStaticJavaScriptValue(
+  tokens: readonly JavaScriptToken[],
+  tokenIndex: number,
+): ParsedStaticJavaScriptValue | null {
+  const token = tokens[tokenIndex];
+  if (!token) return null;
+
+  if (token.kind === 'string') {
+    return { value: token.value, nextTokenIndex: tokenIndex + 1 };
+  }
+
+  if (token.kind === 'number') {
+    const value = Number(token.value);
+    return Number.isFinite(value)
+      ? { value, nextTokenIndex: tokenIndex + 1 }
+      : null;
+  }
+
+  if (token.kind === 'identifier') {
+    if (token.value === 'true') return { value: true, nextTokenIndex: tokenIndex + 1 };
+    if (token.value === 'false') return { value: false, nextTokenIndex: tokenIndex + 1 };
+    if (token.value === 'null') return { value: null, nextTokenIndex: tokenIndex + 1 };
+    return null;
+  }
+
+  if (token.value === '-') {
+    const numberToken = tokens[tokenIndex + 1];
+    if (numberToken?.kind !== 'number') return null;
+    const value = -Number(numberToken.value);
+    return Number.isFinite(value)
+      ? { value, nextTokenIndex: tokenIndex + 2 }
+      : null;
+  }
+
+  if (token.value === '{') {
+    return parseStaticJavaScriptObject(tokens, tokenIndex);
+  }
+
+  if (token.value === '[') {
+    return parseStaticJavaScriptArray(tokens, tokenIndex);
+  }
+
+  return null;
+}
+
+function parseStaticJavaScriptObject(
+  tokens: readonly JavaScriptToken[],
+  openTokenIndex: number,
+): ParsedStaticJavaScriptValue | null {
+  const value: Record<string, unknown> = {};
+  let tokenIndex = openTokenIndex + 1;
+
+  while (tokenIndex < tokens.length) {
+    const token = tokens[tokenIndex];
     if (token?.value === '}') {
-      objectDepth -= 1;
+      return { value, nextTokenIndex: tokenIndex + 1 };
+    }
+    if (token?.kind !== 'identifier' && token?.kind !== 'string') return null;
+    if (tokens[tokenIndex + 1]?.value !== ':') return null;
+
+    const parsedValue = parseStaticJavaScriptValue(tokens, tokenIndex + 2);
+    if (!parsedValue) return null;
+    value[token.value] = parsedValue.value;
+    tokenIndex = parsedValue.nextTokenIndex;
+
+    const separator = tokens[tokenIndex]?.value;
+    if (separator === ',') {
+      tokenIndex += 1;
       continue;
     }
-    if (
-      objectDepth === 1
-      && token?.value === 'cmd'
-      && tokens[index + 1]?.value === ':'
-      && tokens[index + 2]?.kind === 'string'
-    ) {
-      return tokens[index + 2]?.value ?? null;
+    if (separator !== '}') return null;
+  }
+
+  return null;
+}
+
+function parseStaticJavaScriptArray(
+  tokens: readonly JavaScriptToken[],
+  openTokenIndex: number,
+): ParsedStaticJavaScriptValue | null {
+  const value: unknown[] = [];
+  let tokenIndex = openTokenIndex + 1;
+
+  while (tokenIndex < tokens.length) {
+    if (tokens[tokenIndex]?.value === ']') {
+      return { value, nextTokenIndex: tokenIndex + 1 };
     }
+
+    const parsedValue = parseStaticJavaScriptValue(tokens, tokenIndex);
+    if (!parsedValue) return null;
+    value.push(parsedValue.value);
+    tokenIndex = parsedValue.nextTokenIndex;
+
+    const separator = tokens[tokenIndex]?.value;
+    if (separator === ',') {
+      tokenIndex += 1;
+      continue;
+    }
+    if (separator !== ']') return null;
   }
 
   return null;
