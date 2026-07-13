@@ -57,16 +57,16 @@
 }
 
 /* Obsidian applies a button surface to clickable note and image labels. */
-button.claudian-context-chip-main,
-button.claudian-context-chip-main:hover,
-button.claudian-context-chip-main:focus,
-button.claudian-context-chip-main:active {
+.claudian-context-chip > button.claudian-context-chip-main,
+.claudian-context-chip > button.claudian-context-chip-main:hover,
+.claudian-context-chip > button.claudian-context-chip-main:focus,
+.claudian-context-chip > button.claudian-context-chip-main:active {
   appearance: none;
   margin: 0;
-  border: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
+  border: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
   cursor: pointer;
 }
 
@@ -113,20 +113,20 @@ button.claudian-context-chip-main:active {
   transition: color 0.15s ease, background 0.15s ease;
 }
 
-button.claudian-context-chip-remove,
-button.claudian-context-chip-remove:focus,
-button.claudian-context-chip-remove:active {
+.claudian-context-chip > button.claudian-context-chip-remove,
+.claudian-context-chip > button.claudian-context-chip-remove:focus,
+.claudian-context-chip > button.claudian-context-chip-remove:active {
   appearance: none;
   margin: 0;
-  border: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
+  border: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
 }
 
-button.claudian-context-chip-remove:hover {
+.claudian-context-chip > button.claudian-context-chip-remove:hover {
   border: 0;
-  background: var(--background-modifier-hover) !important;
+  background: var(--background-modifier-hover);
   color: var(--text-normal);
   box-shadow: none;
 }
