@@ -66,6 +66,19 @@ describe('PiModelDiscoveryService', () => {
     });
   });
 
+  it('does not launch Pi when the provider is disabled', async () => {
+    const plugin = createPlugin();
+    plugin.settings.providerConfigs.pi.enabled = false;
+
+    const result = await new PiModelDiscoveryService(plugin).discoverModels();
+
+    expect(result).toEqual({ kind: 'skipped', reason: 'provider-disabled' });
+    expect(plugin.getResolvedProviderCliPath).not.toHaveBeenCalled();
+    expect(mockProcessStart).not.toHaveBeenCalled();
+    expect(mockTransportStart).not.toHaveBeenCalled();
+    expect(mockTransportRequest).not.toHaveBeenCalled();
+  });
+
   it('discovers and normalizes Pi models through a short-lived no-session runtime', async () => {
     mockTransportRequest.mockResolvedValue({
       models: [{
@@ -81,6 +94,10 @@ describe('PiModelDiscoveryService', () => {
 
     const result = await new PiModelDiscoveryService(createPlugin()).discoverModels();
 
+    expect(result.kind).toBe('completed');
+    if (result.kind !== 'completed') {
+      throw new Error('Expected completed Pi model discovery');
+    }
     expect(result.diagnostics).toBeUndefined();
     expect(result.models).toEqual([{
       contextWindow: 200000,
@@ -127,6 +144,7 @@ describe('PiModelDiscoveryService', () => {
 
     expect(result).toEqual({
       diagnostics: 'not logged in\n\nPi stderr',
+      kind: 'completed',
       models: [],
     });
     expect(mockTransportDispose).toHaveBeenCalled();

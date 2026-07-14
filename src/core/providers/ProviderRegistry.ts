@@ -15,6 +15,7 @@ import {
   type ProviderSettingsStorageAdapter,
   type ProviderSubagentLifecycleAdapter,
   type ProviderTaskResultInterpreter,
+  type ProviderUIOption,
   type TitleGenerationCallback,
   type TitleGenerationService,
 } from './types';
@@ -67,6 +68,7 @@ export class ProviderRegistry {
 
     return this.resolveProviderForModel(titleModel, settings, {
       fallbackProviderId: DEFAULT_CHAT_PROVIDER_ID,
+      onlyEnabledProviders: true,
     });
   }
 
@@ -108,6 +110,29 @@ export class ProviderRegistry {
     return this.getProviderRegistration(providerId).chatUIConfig;
   }
 
+  static getTitleGenerationModelOptions(
+    settings: Record<string, unknown>,
+  ): ProviderUIOption[] {
+    const options: ProviderUIOption[] = [];
+    const seenValues = new Set<string>();
+
+    for (const providerId of this.getRegisteredProviderIds()) {
+      if (!this.isEnabled(providerId, settings)) {
+        continue;
+      }
+
+      for (const option of this.getChatUIConfig(providerId).getModelOptions(settings)) {
+        if (seenValues.has(option.value)) {
+          continue;
+        }
+        seenValues.add(option.value);
+        options.push(option);
+      }
+    }
+
+    return options;
+  }
+
   static getSettingsReconciler(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderSettingsReconciler {
     return this.getProviderRegistration(providerId).settingsReconciler;
   }
@@ -138,6 +163,22 @@ export class ProviderRegistry {
 
   static isEnabled(providerId: ProviderId, settings: Record<string, unknown>): boolean {
     return this.getProviderRegistration(providerId).isEnabled(settings);
+  }
+
+  static setEnabled(
+    providerId: ProviderId,
+    settings: Record<string, unknown>,
+    enabled: boolean,
+  ): void {
+    const registration = this.getProviderRegistration(providerId);
+    if (registration.setEnabled) {
+      registration.setEnabled(settings, enabled);
+      return;
+    }
+
+    if (registration.isEnabled(settings) !== enabled) {
+      throw new Error(`Provider "${providerId}" enablement is not configurable.`);
+    }
   }
 
   static resolveSettingsProviderId(settings: Record<string, unknown>): ProviderId {

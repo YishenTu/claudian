@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
   ProviderSettingsTabRenderer,
   ProviderSettingsTabRendererContext,
@@ -50,9 +51,10 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           .setValue(opencodeSettings.enabled)
           .onChange(async (value) => {
             await context.plugin.mutateSettings((settings) => {
-              updateOpencodeProviderSettings(settings, { enabled: value });
+              ProviderSettingsCoordinator.applyProviderEnablement(settings, 'opencode', value);
             });
             context.refreshModelSelectors();
+            context.refreshTitleGenerationModelOptions();
           })
       );
 

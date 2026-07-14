@@ -54,6 +54,16 @@ function makeWireModel(model: string, isDefault = false) {
   };
 }
 
+function createPlugin(enabled = true) {
+  return {
+    settings: {
+      providerConfigs: {
+        codex: { enabled },
+      },
+    },
+  } as any;
+}
+
 describe('CodexModelDiscoveryService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -64,6 +74,16 @@ describe('CodexModelDiscoveryService', () => {
       spawnCwd: '/workspace',
       env: {},
     });
+  });
+
+  it('does not launch Codex when the provider is disabled', async () => {
+    const result = await new CodexModelDiscoveryService(createPlugin(false)).discoverModels();
+
+    expect(result).toEqual({ kind: 'skipped', reason: 'provider-disabled' });
+    expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
+    expect(mockProcessStart).not.toHaveBeenCalled();
+    expect(mockTransportStart).not.toHaveBeenCalled();
+    expect(mockTransportRequest).not.toHaveBeenCalled();
   });
 
   it('loads all visible model/list pages through a short-lived app-server', async () => {
@@ -77,8 +97,12 @@ describe('CodexModelDiscoveryService', () => {
         nextCursor: null,
       });
 
-    const result = await new CodexModelDiscoveryService({} as any).discoverModels();
+    const result = await new CodexModelDiscoveryService(createPlugin()).discoverModels();
 
+    expect(result.kind).toBe('completed');
+    if (result.kind !== 'completed') {
+      throw new Error('Expected completed Codex model discovery');
+    }
     expect(result.diagnostics).toBeUndefined();
     expect(result.models.map(model => model.model)).toEqual([
       'gpt-5.6-sol',
@@ -101,10 +125,11 @@ describe('CodexModelDiscoveryService', () => {
     mockTransportRequest.mockRejectedValueOnce(new Error('Method not found'));
     mockProcessStderr.mockReturnValueOnce('codex app-server stderr');
 
-    const result = await new CodexModelDiscoveryService({} as any).discoverModels();
+    const result = await new CodexModelDiscoveryService(createPlugin()).discoverModels();
 
     expect(result).toEqual({
       diagnostics: 'Method not found\n\ncodex app-server stderr',
+      kind: 'completed',
       models: [],
     });
     expect(mockTransportDispose).toHaveBeenCalledTimes(1);
@@ -117,9 +142,10 @@ describe('CodexModelDiscoveryService', () => {
     });
 
     await expect(
-      new CodexModelDiscoveryService({} as any).discoverModels(),
+      new CodexModelDiscoveryService(createPlugin()).discoverModels(),
     ).resolves.toEqual({
       diagnostics: 'Unable to determine the WSL distro',
+      kind: 'completed',
       models: [],
     });
     expect(mockProcessStart).not.toHaveBeenCalled();

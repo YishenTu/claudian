@@ -27,6 +27,7 @@ export const piProviderRegistration: ProviderModule = {
   environmentKeyPatterns: [/^PI_/i],
   historyService: new PiConversationHistoryService(),
   isEnabled: (settings) => getPiProviderSettings(settings).enabled,
+  setEnabled: (settings, enabled) => updatePiProviderSettings(settings, { enabled }),
   settingsReconciler: piSettingsReconciler,
   settingsStorage: {
     hostScopedFields: ['cliPathsByHost'],

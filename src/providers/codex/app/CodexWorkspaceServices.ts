@@ -70,6 +70,9 @@ export async function createCodexWorkspaceServices(
     },
     refreshModelCatalog: async () => {
       const result = await modelDiscovery.discoverModels();
+      if (result.kind === 'skipped') {
+        return { changed: false };
+      }
       if (result.diagnostics) {
         return { changed: false, diagnostics: result.diagnostics };
       }

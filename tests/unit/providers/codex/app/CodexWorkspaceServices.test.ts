@@ -95,7 +95,7 @@ describe('CodexWorkspaceServices', () => {
   it('loads the app-server catalog in memory without rewriting settings during startup', async () => {
     const plugin = createPlugin(true);
     const sol = makeDiscoveredModel('gpt-5.6-sol');
-    mockDiscoverModels.mockResolvedValue({ models: [sol] });
+    mockDiscoverModels.mockResolvedValue({ kind: 'completed', models: [sol] });
 
     await createCodexWorkspaceServices(plugin, {} as any, {} as any);
 
@@ -107,7 +107,10 @@ describe('CodexWorkspaceServices', () => {
 
   it('persists a selection normalization caused by startup discovery', async () => {
     const plugin = createPlugin(true);
-    mockDiscoverModels.mockResolvedValue({ models: [makeDiscoveredModel('gpt-5.6-sol')] });
+    mockDiscoverModels.mockResolvedValue({
+      kind: 'completed',
+      models: [makeDiscoveredModel('gpt-5.6-sol')],
+    });
     mockNormalizeAllModelVariants.mockReturnValueOnce(true);
 
     await createCodexWorkspaceServices(plugin, {} as any, {} as any);
@@ -124,11 +127,26 @@ describe('CodexWorkspaceServices', () => {
     expect(plugin.saveSettings).not.toHaveBeenCalled();
   });
 
+  it('treats a disabled catalog refresh as skipped without diagnostics', async () => {
+    const cached = makeDiscoveredModel('gpt-5.5');
+    const plugin = createPlugin(false, [cached]);
+    mockDiscoverModels.mockResolvedValue({
+      kind: 'skipped',
+      reason: 'provider-disabled',
+    });
+    const services = await createCodexWorkspaceServices(plugin, {} as any, {} as any);
+
+    await expect(services.refreshModelCatalog!()).resolves.toEqual({ changed: false });
+    expect(getCodexProviderSettings(plugin.settings).discoveredModels).toEqual([cached]);
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
   it('keeps the last successful catalog when a refresh fails', async () => {
     const cached = makeDiscoveredModel('gpt-5.5');
     const plugin = createPlugin(false, [cached]);
     mockDiscoverModels.mockResolvedValue({
       diagnostics: 'Method not found',
+      kind: 'completed',
       models: [],
     });
     const services = await createCodexWorkspaceServices(plugin, {} as any, {} as any);
@@ -144,7 +162,7 @@ describe('CodexWorkspaceServices', () => {
     const oldModel = makeDiscoveredModel('gpt-5.4');
     const currentModel = makeDiscoveredModel('gpt-5.5');
     const plugin = createPlugin(false, [oldModel, currentModel], ['gpt-5.4', 'gpt-5.5']);
-    mockDiscoverModels.mockResolvedValue({ models: [currentModel] });
+    mockDiscoverModels.mockResolvedValue({ kind: 'completed', models: [currentModel] });
     const services = await createCodexWorkspaceServices(plugin, {} as any, {} as any);
 
     await services.refreshModelCatalog!();

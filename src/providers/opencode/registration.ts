@@ -24,6 +24,7 @@ export const opencodeProviderRegistration: ProviderModule = {
   environmentKeyPatterns: [/^OPENCODE_/i],
   historyService: new OpencodeConversationHistoryService(),
   isEnabled: (settings) => getOpencodeProviderSettings(settings).enabled,
+  setEnabled: (settings, enabled) => updateOpencodeProviderSettings(settings, { enabled }),
   settingsReconciler: opencodeSettingsReconciler,
   settingsStorage: {
     hostScopedFields: ['cliPathsByHost'],

@@ -56,6 +56,7 @@ export interface ProviderRegistration {
   displayName: string;
   blankTabOrder: number;
   isEnabled: (settings: Record<string, unknown>) => boolean;
+  setEnabled?: (settings: Record<string, unknown>, enabled: boolean) => void;
   capabilities: ProviderCapabilities;
   environmentKeyPatterns?: RegExp[];
   chatUIConfig: ProviderChatUIConfig;
@@ -412,6 +413,7 @@ export interface ProviderSettingsTabRendererContext {
     copy: { name: string; desc: string; placeholder: string },
   ): void;
   refreshModelSelectors(): void;
+  refreshTitleGenerationModelOptions(): void;
   renderCustomContextLimits(container: HTMLElement, providerId?: ProviderId): void;
 }
 

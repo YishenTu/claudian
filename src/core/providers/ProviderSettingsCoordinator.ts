@@ -187,6 +187,10 @@ export class ProviderSettingsCoordinator {
     }
 
     for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
+      if (!ProviderRegistry.isEnabled(providerId, settings)) {
+        continue;
+      }
+
       const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
       if (!uiConfig.ownsModel(currentModel, settings)) {
         continue;
@@ -223,6 +227,16 @@ export class ProviderSettingsCoordinator {
 
     settings.settingsProvider = next;
     return true;
+  }
+
+  static applyProviderEnablement(
+    settings: Record<string, unknown>,
+    providerId: ProviderId,
+    enabled: boolean,
+  ): void {
+    ProviderRegistry.setEnabled(providerId, settings, enabled);
+    this.normalizeProviderSelection(settings);
+    this.reconcileTitleGenerationModelSelection(settings);
   }
 
   static getProviderSettingsSnapshot<T extends Record<string, unknown>>(
