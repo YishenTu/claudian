@@ -20,7 +20,7 @@ describe('claudeChatUIConfig', () => {
         'haiku',
         'sonnet',
         'opus',
-        'claude-fable-5',
+        'fable',
         'claude-code/claude-opus-4-6',
         'claude-code/claude-opus-4-6[1m]',
       ]);
@@ -42,7 +42,7 @@ describe('claudeChatUIConfig', () => {
       const options = claudeChatUIConfig.getModelOptions({
         providerConfigs: {
           claude: {
-            customModels: 'haiku\nclaude-opus-4-6\nclaude-opus-4-6\n',
+            customModels: 'haiku\nclaude-fable-5\nclaude-opus-4-6\nclaude-opus-4-6\n',
           },
         },
       });
@@ -51,7 +51,7 @@ describe('claudeChatUIConfig', () => {
         'haiku',
         'sonnet',
         'opus',
-        'claude-fable-5',
+        'fable',
         'claude-code/claude-opus-4-6',
       ]);
     });
@@ -122,6 +122,7 @@ describe('claudeChatUIConfig', () => {
           value: 'claude-code/claude-sonnet-4-5',
           label: 'Sonnet 4.5',
           description: 'Custom model (model)',
+          environmentTypes: ['model'],
         },
       ]);
     });
@@ -143,6 +144,7 @@ describe('claudeChatUIConfig', () => {
           value: 'claude-code/claude-sonnet-4-5',
           label: 'Gateway Sonnet',
           description: 'Custom model (model)',
+          environmentTypes: ['model'],
         },
       ]);
     });
@@ -162,7 +164,7 @@ describe('claudeChatUIConfig', () => {
     });
 
     it('keeps xhigh on fable models', () => {
-      const options = claudeChatUIConfig.getReasoningOptions('claude-fable-5', {});
+      const options = claudeChatUIConfig.getReasoningOptions('fable', {});
 
       expect(options.map(option => option.value)).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
     });
@@ -176,6 +178,53 @@ describe('claudeChatUIConfig', () => {
   });
 
   describe('applyModelDefaults', () => {
+    it('persists the tier identity of an environment-mapped model', () => {
+      const settings: Record<string, unknown> = {
+        effortLevel: 'high',
+        providerConfigs: {
+          claude: {
+            lastModel: 'haiku',
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+            ].join('\n'),
+          },
+        },
+      };
+
+      claudeChatUIConfig.applyModelDefaults('claude-code/gpt-4.1', settings);
+
+      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude.lastModel)
+        .toBe('fable');
+      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude.modelEnvironmentType)
+        .toBe('fable');
+      expect(settings.lastCustomModel).toBeUndefined();
+    });
+
+    it('preserves the environment tier of a concrete legacy Fable ID', () => {
+      const settings: Record<string, unknown> = {
+        effortLevel: 'high',
+        providerConfigs: {
+          claude: {
+            lastModel: 'fable',
+            modelEnvironmentType: 'fable',
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-fable-5',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+            ].join('\n'),
+          },
+        },
+      };
+
+      claudeChatUIConfig.applyModelDefaults('claude-code/claude-fable-5', settings);
+
+      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude)
+        .toMatchObject({
+          lastModel: 'haiku',
+          modelEnvironmentType: 'haiku',
+        });
+    });
+
     it('clamps stale xhigh effort when switching to a custom sonnet model', () => {
       const settings: Record<string, unknown> = {
         effortLevel: 'xhigh',

@@ -7,8 +7,13 @@ import type {
 } from '../../../core/providers/types';
 import { CLAUDE_PROVIDER_ICON } from '../../../shared/icons';
 import { getCustomModelIds } from '../env/claudeModelEnv';
-import { getClaudeModelOptions } from '../modelOptions';
+import {
+  findClaudeModelOption,
+  getClaudeModelOptions,
+  resolveClaudeModelEnvironmentTypePreference,
+} from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
+import { isClaudeModelTier } from '../modelTiers';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import {
   DEFAULT_CLAUDE_MODELS,
@@ -16,7 +21,7 @@ import {
   EFFORT_LEVELS,
   getContextWindowSize,
   normalizeEffortLevel,
-  normalizeLegacy1MModelAlias,
+  normalizeLegacyClaudeModelAlias,
   supportsXHighEffort,
 } from '../types/models';
 
@@ -62,29 +67,63 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
   },
 
   isDefaultModel(model: string): boolean {
-    const runtimeModel = normalizeLegacy1MModelAlias(toClaudeRuntimeModelId(model));
+    const runtimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
     return DEFAULT_CLAUDE_MODELS.some(m => m.value === runtimeModel);
   },
 
   applyModelDefaults(model: string, settings: unknown): void {
     const target = settings as Record<string, unknown>;
 
-    const runtimeModel = normalizeLegacy1MModelAlias(toClaudeRuntimeModelId(model));
-    if (DEFAULT_CLAUDE_MODELS.some(m => m.value === runtimeModel)) {
-      target.effortLevel = DEFAULT_EFFORT_LEVEL[runtimeModel] ?? DEFAULT_REASONING_VALUE;
-      updateClaudeProviderSettings(target, { lastModel: runtimeModel });
+    const runtimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
+    const claudeSettings = getClaudeProviderSettings(target);
+    const modelEnvironmentType = resolveClaudeModelEnvironmentTypePreference(
+      getClaudeModelOptions(target),
+      model,
+      claudeSettings.modelEnvironmentType,
+    );
+    if (modelEnvironmentType && isClaudeModelTier(modelEnvironmentType)) {
+      target.effortLevel = runtimeModel === modelEnvironmentType
+        ? DEFAULT_EFFORT_LEVEL[modelEnvironmentType] ?? DEFAULT_REASONING_VALUE
+        : normalizeEffortLevel(runtimeModel, target.effortLevel);
+      updateClaudeProviderSettings(target, {
+        lastModel: modelEnvironmentType,
+        modelEnvironmentType,
+      });
     } else {
       target.lastCustomModel = model;
       target.effortLevel = normalizeEffortLevel(runtimeModel, target.effortLevel);
+      updateClaudeProviderSettings(target, {
+        modelEnvironmentType: modelEnvironmentType ?? '',
+      });
     }
   },
 
+  applyModelProjectionDefaults(model: string, settings: unknown): void {
+    const target = settings as Record<string, unknown>;
+    const runtimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
+    target.effortLevel = DEFAULT_CLAUDE_MODELS.some(candidate => candidate.value === runtimeModel)
+      ? DEFAULT_EFFORT_LEVEL[runtimeModel] ?? DEFAULT_REASONING_VALUE
+      : normalizeEffortLevel(runtimeModel, target.effortLevel);
+  },
+
+  applyTitleGenerationModelSelection(model: string, settings: unknown): void {
+    const target = settings as Record<string, unknown>;
+    const claudeSettings = getClaudeProviderSettings(target);
+    const environmentType = model
+      ? resolveClaudeModelEnvironmentTypePreference(
+        getClaudeModelOptions(target),
+        model,
+        claudeSettings.titleModelEnvironmentType,
+      )
+      : null;
+    updateClaudeProviderSettings(target, {
+      titleModelEnvironmentType: environmentType ?? '',
+    });
+  },
+
   normalizeModelVariant(model: string, settings) {
-    const normalizedRuntimeModel = normalizeLegacy1MModelAlias(toClaudeRuntimeModelId(model));
-    const option = getClaudeModelOptions(settings).find(candidate =>
-      candidate.value === normalizedRuntimeModel
-      || toClaudeRuntimeModelId(candidate.value) === normalizedRuntimeModel
-    );
+    const normalizedRuntimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
+    const option = findClaudeModelOption(getClaudeModelOptions(settings), model);
     return option?.value ?? normalizedRuntimeModel;
   },
 

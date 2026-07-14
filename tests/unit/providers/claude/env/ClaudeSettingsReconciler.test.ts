@@ -128,9 +128,393 @@ describe('claudeSettingsReconciler', () => {
       expect(result.invalidatedConversations).toEqual([conversation]);
       expect(conversation.providerState).toBeUndefined();
     });
+
+    it('reconciles the Fable alias to its tier mapping when all tier mappings change', () => {
+      const conversation = {
+        providerId: 'claude',
+        sessionId: 'fable-session',
+        messages: [],
+      } as unknown as Conversation;
+      const settings: Record<string, unknown> = {
+        model: 'claude-fable-5',
+        providerConfigs: {
+          claude: {
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2[1M]',
+              'ANTHROPIC_DEFAULT_SONNET_MODEL=MiniMax-M3',
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=DeepSeek-V4-Pro',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+            ].join('\n'),
+            environmentHash: '',
+          },
+        },
+      };
+
+      const result = claudeSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
+
+      expect(result.changed).toBe(true);
+      expect(result.invalidatedConversations).toEqual([conversation]);
+      expect(conversation.sessionId).toBeNull();
+      expect(settings.model).toBe('claude-code/gpt-4.1');
+      expect(getClaudeProviderSettings(settings).lastModel).toBe('fable');
+      expect(getClaudeProviderSettings(settings).environmentHash).toBe(
+        [
+          'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+          'ANTHROPIC_DEFAULT_HAIKU_MODEL=DeepSeek-V4-Pro',
+          'ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2[1M]',
+          'ANTHROPIC_DEFAULT_SONNET_MODEL=MiniMax-M3',
+        ].join('|'),
+      );
+    });
+
+    it('preserves the Fable tier when its environment mapping changes value', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-fable-5',
+        providerConfigs: {
+          claude: {
+            lastModel: 'claude-fable-5',
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2[1M]',
+              'ANTHROPIC_DEFAULT_SONNET_MODEL=MiniMax-M3',
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=DeepSeek-V4-Pro',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+            ].join('\n'),
+            environmentHash: '',
+          },
+        },
+      };
+
+      claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+      claudeSettingsReconciler.normalizeModelVariantSettings(settings);
+
+      expect(settings.model).toBe('claude-code/gpt-4.1');
+      expect(getClaudeProviderSettings(settings).lastModel).toBe('fable');
+
+      (settings.providerConfigs as Record<string, Record<string, unknown>>).claude.environmentVariables = [
+        'ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2[1M]',
+        'ANTHROPIC_DEFAULT_SONNET_MODEL=MiniMax-M3',
+        'ANTHROPIC_DEFAULT_HAIKU_MODEL=DeepSeek-V4-Pro',
+        'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.2',
+      ].join('\n');
+
+      claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+
+      expect(settings.model).toBe('claude-code/gpt-4.2');
+      expect(getClaudeProviderSettings(settings).lastModel).toBe('fable');
+    });
+
+    it('preserves the Fable tier when its previous target becomes another tier mapping', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-code/gpt-4.1',
+        providerConfigs: {
+          claude: {
+            lastModel: 'fable',
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-4.1',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.2',
+            ].join('\n'),
+            environmentHash: [
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=DeepSeek-V4-Pro',
+            ].join('|'),
+          },
+        },
+      };
+
+      claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+
+      expect(settings.model).toBe('claude-code/gpt-4.2');
+      expect(getClaudeProviderSettings(settings).lastModel).toBe('fable');
+    });
+
+    it('preserves an ANTHROPIC_MODEL selection when tier mappings also exist', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-code/gpt-4.1',
+        providerConfigs: {
+          claude: {
+            lastModel: 'fable',
+            modelEnvironmentType: 'model',
+            environmentVariables: [
+              'ANTHROPIC_MODEL=gpt-4.2',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=fable-target-2',
+            ].join('\n'),
+            environmentHash: [
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+              'ANTHROPIC_MODEL=gpt-4.1',
+            ].join('|'),
+          },
+        },
+      };
+
+      claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+
+      expect(settings.model).toBe('claude-code/gpt-4.2');
+    });
+
+    it('preserves Fable when it previously shared a target with ANTHROPIC_MODEL', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-code/gpt-4.1',
+        providerConfigs: {
+          claude: {
+            lastModel: 'fable',
+            modelEnvironmentType: 'fable',
+            environmentVariables: [
+              'ANTHROPIC_MODEL=gpt-4.2',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=fable-target-2',
+            ].join('\n'),
+            environmentHash: [
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+              'ANTHROPIC_MODEL=gpt-4.1',
+            ].join('|'),
+          },
+        },
+      };
+
+      claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+
+      expect(settings.model).toBe('claude-code/fable-target-2');
+      expect(getClaudeProviderSettings(settings).modelEnvironmentType).toBe('fable');
+    });
+
+    it('retains explicit Fable provenance while its environment source is unavailable', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-code/shared-target',
+        providerConfigs: {
+          claude: {
+            lastModel: 'fable',
+            modelEnvironmentType: 'fable',
+            environmentVariables: 'ANTHROPIC_DEFAULT_HAIKU_MODEL=shared-target',
+            environmentHash: 'ANTHROPIC_DEFAULT_FABLE_MODEL=shared-target',
+          },
+        },
+      };
+
+      claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+
+      expect(settings.model).toBe('claude-code/shared-target');
+      expect(getClaudeProviderSettings(settings)).toMatchObject({
+        lastModel: 'fable',
+        modelEnvironmentType: 'fable',
+      });
+
+      (settings.providerConfigs as Record<string, Record<string, unknown>>).claude.environmentVariables = [
+        'ANTHROPIC_DEFAULT_HAIKU_MODEL=haiku-target-2',
+        'ANTHROPIC_DEFAULT_FABLE_MODEL=fable-target-2',
+      ].join('\n');
+
+      claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+
+      expect(settings.model).toBe('claude-code/fable-target-2');
+      expect(getClaudeProviderSettings(settings).modelEnvironmentType).toBe('fable');
+    });
+
+    it('remaps an environment-derived Fable title model independently', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-code/custom-haiku',
+        titleGenerationModel: 'claude-code/gpt-4.1',
+        providerConfigs: {
+          claude: {
+            lastModel: 'haiku',
+            modelEnvironmentType: 'haiku',
+            titleModelEnvironmentType: 'fable',
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.2',
+            ].join('\n'),
+            environmentHash: [
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku',
+            ].join('|'),
+          },
+        },
+      };
+
+      claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+
+      expect(settings.model).toBe('claude-code/custom-haiku');
+      expect(settings.titleGenerationModel).toBe('claude-code/gpt-4.2');
+      expect(getClaudeProviderSettings(settings).titleModelEnvironmentType).toBe('fable');
+    });
+
+    it('infers legacy Fable provenance from the old hash after startup normalization', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-code/shared-target',
+        titleGenerationModel: 'claude-code/shared-target',
+        providerConfigs: {
+          claude: {
+            lastModel: 'fable',
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=shared-target',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=fable-new',
+            ].join('\n'),
+            environmentHash: 'ANTHROPIC_DEFAULT_FABLE_MODEL=shared-target',
+          },
+        },
+      };
+
+      claudeSettingsReconciler.normalizeModelVariantSettings(settings);
+
+      expect(settings.model).toBe('claude-code/fable-new');
+      expect(settings.titleGenerationModel).toBe('claude-code/fable-new');
+      expect(getClaudeProviderSettings(settings)).toMatchObject({
+        modelEnvironmentType: 'fable',
+        titleModelEnvironmentType: 'fable',
+      });
+
+      claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+
+      expect(settings.model).toBe('claude-code/fable-new');
+      expect(settings.titleGenerationModel).toBe('claude-code/fable-new');
+      expect(getClaudeProviderSettings(settings)).toMatchObject({
+        lastModel: 'fable',
+        modelEnvironmentType: 'fable',
+        titleModelEnvironmentType: 'fable',
+      });
+    });
+
+    it('preserves an environment-derived concrete Fable selection during reconciliation', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-fable-5',
+        providerConfigs: {
+          claude: {
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=claude-fable-5',
+            ].join('\n'),
+            environmentHash: '',
+          },
+        },
+      };
+
+      const result = claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+
+      expect(result.changed).toBe(true);
+      expect(settings.model).toBe('claude-code/claude-fable-5');
+    });
   });
 
   describe('normalizeModelVariantSettings', () => {
+    it('does not infer environment provenance for pristine built-in defaults', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'claude',
+        model: 'haiku',
+        titleGenerationModel: '',
+        providerConfigs: {
+          claude: {
+            lastModel: 'haiku',
+            modelEnvironmentType: '',
+            titleModelEnvironmentType: '',
+            environmentVariables: '',
+            environmentHash: '',
+          },
+        },
+      };
+
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(false);
+      expect(getClaudeProviderSettings(settings)).toMatchObject({
+        modelEnvironmentType: '',
+        titleModelEnvironmentType: '',
+      });
+    });
+
+    it('uses source ownership when a different tier target is a Fable alias', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'claude',
+        model: 'claude-code/gpt-4.1',
+        titleGenerationModel: 'claude-code/gpt-4.1',
+        providerConfigs: {
+          claude: {
+            lastModel: 'fable',
+            modelEnvironmentType: 'fable',
+            titleModelEnvironmentType: 'fable',
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=fable',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+            ].join('\n'),
+            environmentHash: [
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=fable',
+            ].join('|'),
+          },
+        },
+      };
+
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(false);
+      expect(settings.model).toBe('claude-code/gpt-4.1');
+      expect(settings.titleGenerationModel).toBe('claude-code/gpt-4.1');
+    });
+
+    it('prefers exact environment ownership over an unqualified legacy Fable alias', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'claude',
+        model: 'claude-fable-5',
+        titleGenerationModel: 'claude-fable-5',
+        providerConfigs: {
+          claude: {
+            lastModel: 'fable',
+            environmentVariables: 'ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-fable-5',
+            environmentHash: 'ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-fable-5',
+          },
+        },
+      };
+
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
+      expect(settings.model).toBe('claude-code/claude-fable-5');
+      expect(settings.titleGenerationModel).toBe('claude-code/claude-fable-5');
+      expect(getClaudeProviderSettings(settings)).toMatchObject({
+        modelEnvironmentType: 'haiku',
+        titleModelEnvironmentType: 'haiku',
+      });
+    });
+
+    it('uses the historical hash before an old Fable target disappears', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'claude',
+        model: 'claude-code/gpt-4.1',
+        titleGenerationModel: 'claude-code/gpt-4.1',
+        providerConfigs: {
+          claude: {
+            lastModel: 'fable',
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.2',
+            ].join('\n'),
+            environmentHash: 'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
+          },
+        },
+      };
+
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
+      expect(settings.model).toBe('claude-code/gpt-4.2');
+      expect(settings.titleGenerationModel).toBe('claude-code/gpt-4.2');
+      expect(getClaudeProviderSettings(settings)).toMatchObject({
+        modelEnvironmentType: 'fable',
+        titleModelEnvironmentType: 'fable',
+      });
+    });
+
+    it('remaps a persisted Fable title before global title validation runs', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-code/custom-haiku',
+        titleGenerationModel: 'claude-code/gpt-4.1',
+        providerConfigs: {
+          claude: {
+            lastModel: 'haiku',
+            modelEnvironmentType: 'haiku',
+            titleModelEnvironmentType: 'fable',
+            environmentVariables: [
+              'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku',
+              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.2',
+            ].join('\n'),
+          },
+        },
+      };
+
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
+      expect(settings.titleGenerationModel).toBe('claude-code/gpt-4.2');
+      expect(getClaudeProviderSettings(settings).titleModelEnvironmentType).toBe('fable');
+    });
+
     it('migrates legacy built-in 1M aliases across Claude model settings', () => {
       const settings: Record<string, unknown> = {
         model: 'claude-code/opus[1m]',
@@ -146,6 +530,42 @@ describe('claudeSettingsReconciler', () => {
       expect(settings.model).toBe('opus');
       expect(settings.titleGenerationModel).toBe('sonnet');
       expect(getClaudeProviderSettings(settings).lastModel).toBe('opus');
+    });
+
+    it('migrates the legacy concrete Fable model to the SDK alias', () => {
+      const settings: Record<string, unknown> = {
+        model: 'claude-fable-5',
+        titleGenerationModel: 'claude-fable-5',
+        providerConfigs: {
+          claude: {
+            lastModel: 'claude-fable-5',
+          },
+        },
+      };
+
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
+      expect(settings.model).toBe('fable');
+      expect(settings.titleGenerationModel).toBe('fable');
+      expect(getClaudeProviderSettings(settings).lastModel).toBe('fable');
+    });
+
+    it('preserves concrete Fable selections while retaining the tier preference', () => {
+      const concreteSelection = 'claude-code/claude-fable-5';
+      const settings: Record<string, unknown> = {
+        model: concreteSelection,
+        titleGenerationModel: concreteSelection,
+        providerConfigs: {
+          claude: {
+            lastModel: concreteSelection,
+            environmentVariables: 'ANTHROPIC_DEFAULT_FABLE_MODEL=claude-fable-5',
+          },
+        },
+      };
+
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
+      expect(settings.model).toBe(concreteSelection);
+      expect(settings.titleGenerationModel).toBe(concreteSelection);
+      expect(getClaudeProviderSettings(settings).lastModel).toBe('fable');
     });
   });
 });

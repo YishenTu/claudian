@@ -300,6 +300,10 @@ describe('parseModel', () => {
     expect(parseModel('haiku')).toBe('haiku');
   });
 
+  it('returns fable for valid fable input', () => {
+    expect(parseModel('fable')).toBe('fable');
+  });
+
   it('returns inherit for valid inherit input', () => {
     expect(parseModel('inherit')).toBe('inherit');
   });
@@ -308,6 +312,7 @@ describe('parseModel', () => {
     expect(parseModel('SONNET')).toBe('sonnet');
     expect(parseModel('Opus')).toBe('opus');
     expect(parseModel('HAIKU')).toBe('haiku');
+    expect(parseModel('FABLE')).toBe('fable');
     expect(parseModel('INHERIT')).toBe('inherit');
   });
 

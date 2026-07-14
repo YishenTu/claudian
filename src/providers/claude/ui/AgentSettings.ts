@@ -9,13 +9,14 @@ import type { AgentDefinition } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import { validateAgentName } from '../../../utils/agent';
+import { CLAUDE_MODEL_TIER_DEFINITIONS } from '../modelTiers';
 
 const MODEL_OPTIONS = [
   { value: 'inherit', label: 'Inherit' },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'haiku', label: 'Haiku' },
-] as const;
+  ...[...CLAUDE_MODEL_TIER_DEFINITIONS]
+    .sort((a, b) => a.agentOrder - b.agentOrder)
+    .map(definition => ({ value: definition.id, label: definition.agentLabel })),
+];
 
 class AgentModal extends Modal {
   private existingAgent: AgentDefinition | null;

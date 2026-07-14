@@ -16,7 +16,8 @@ import {
   CONTEXT_WINDOW_STANDARD,
   getContextWindowSize,
   normalizeEffortLevel,
-  normalizeLegacy1MModelAlias,
+  normalizeLegacyClaudeModelAlias,
+  resolveContextWindowSize,
   supportsXHighEffort,
 } from '@/providers/claude/types/models';
 import {
@@ -51,6 +52,11 @@ describe('types.ts', () => {
 
     it('should have lastClaudeModel set to haiku by default', () => {
       expect(getClaudeProviderSettings(DEFAULT_SETTINGS).lastModel).toBe('haiku');
+    });
+
+    it('should have no Claude model environment source by default', () => {
+      expect(getClaudeProviderSettings(DEFAULT_SETTINGS).modelEnvironmentType).toBe('');
+      expect(getClaudeProviderSettings(DEFAULT_SETTINGS).titleModelEnvironmentType).toBe('');
     });
 
     it('should have empty custom Claude models by default', () => {
@@ -651,6 +657,7 @@ describe('types.ts', () => {
 
     describe('fable models', () => {
       it('should default to 1M context window with no [1m] suffix needed', () => {
+        expect(getContextWindowSize('fable')).toBe(CONTEXT_WINDOW_1M);
         expect(getContextWindowSize('claude-fable-5')).toBe(CONTEXT_WINDOW_1M);
         expect(getContextWindowSize('claude-fable-6')).toBe(CONTEXT_WINDOW_1M);
       });
@@ -659,21 +666,33 @@ describe('types.ts', () => {
         const customLimits = { 'claude-fable-5': 500000 };
         expect(getContextWindowSize('claude-fable-5', customLimits)).toBe(500000);
       });
+
+      it('should preserve legacy Fable custom limits after alias migration', () => {
+        const customLimits = { 'claude-fable-5': 500000 };
+
+        expect(getContextWindowSize('fable', customLimits)).toBe(500000);
+        expect(resolveContextWindowSize('fable', customLimits, 1000000)).toEqual({
+          contextWindow: 500000,
+          source: 'custom',
+        });
+      });
     });
 
-    describe('normalizeLegacy1MModelAlias', () => {
+    describe('normalizeLegacyClaudeModelAlias', () => {
       it('should migrate legacy built-in variants to the current aliases', () => {
-        expect(normalizeLegacy1MModelAlias('sonnet[1m]')).toBe('sonnet');
-        expect(normalizeLegacy1MModelAlias('sonnet[1M]')).toBe('sonnet');
-        expect(normalizeLegacy1MModelAlias('opus[1m]')).toBe('opus');
-        expect(normalizeLegacy1MModelAlias('opus[1M]')).toBe('opus');
+        expect(normalizeLegacyClaudeModelAlias('sonnet[1m]')).toBe('sonnet');
+        expect(normalizeLegacyClaudeModelAlias('sonnet[1M]')).toBe('sonnet');
+        expect(normalizeLegacyClaudeModelAlias('opus[1m]')).toBe('opus');
+        expect(normalizeLegacyClaudeModelAlias('opus[1M]')).toBe('opus');
+        expect(normalizeLegacyClaudeModelAlias('claude-fable-5')).toBe('fable');
       });
 
       it('should leave explicit and custom model ids unchanged', () => {
-        expect(normalizeLegacy1MModelAlias('')).toBe('');
-        expect(normalizeLegacy1MModelAlias('haiku')).toBe('haiku');
-        expect(normalizeLegacy1MModelAlias('claude-opus-4-6[1m]')).toBe('claude-opus-4-6[1m]');
-        expect(normalizeLegacy1MModelAlias('custom-model')).toBe('custom-model');
+        expect(normalizeLegacyClaudeModelAlias('')).toBe('');
+        expect(normalizeLegacyClaudeModelAlias('haiku')).toBe('haiku');
+        expect(normalizeLegacyClaudeModelAlias('claude-opus-4-6[1m]')).toBe('claude-opus-4-6[1m]');
+        expect(normalizeLegacyClaudeModelAlias('claude-fable-6')).toBe('claude-fable-6');
+        expect(normalizeLegacyClaudeModelAlias('custom-model')).toBe('custom-model');
       });
     });
   });
@@ -703,6 +722,7 @@ describe('types.ts', () => {
     });
 
     it('returns true for fable models', () => {
+      expect(supportsXHighEffort('fable')).toBe(true);
       expect(supportsXHighEffort('claude-fable-5')).toBe(true);
       expect(supportsXHighEffort('claude-fable-6')).toBe(true);
     });

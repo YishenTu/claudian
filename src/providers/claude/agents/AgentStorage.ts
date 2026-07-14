@@ -1,5 +1,6 @@
 import type { AgentDefinition, AgentFrontmatter } from '../../../core/types';
 import { extractStringArray, isRecord, normalizeStringArray, parseFrontmatter } from '../../../utils/frontmatter';
+import { type ClaudeModelTier, isClaudeModelTier } from '../modelTiers';
 import { AGENT_PERMISSION_MODES, type AgentPermissionMode } from '../types/agent';
 
 const KNOWN_AGENT_KEYS = new Set([
@@ -66,13 +67,13 @@ export function parsePermissionMode(mode?: string): AgentPermissionMode | undefi
   return undefined;
 }
 
-const VALID_MODELS = ['sonnet', 'opus', 'haiku', 'inherit'] as const;
+export type ClaudeAgentModel = ClaudeModelTier | 'inherit';
 
-export function parseModel(model?: string): 'sonnet' | 'opus' | 'haiku' | 'inherit' {
+export function parseModel(model?: string): ClaudeAgentModel {
   if (!model) return 'inherit';
   const normalized = model.toLowerCase().trim();
-  if (VALID_MODELS.includes(normalized as typeof VALID_MODELS[number])) {
-    return normalized as 'sonnet' | 'opus' | 'haiku' | 'inherit';
+  if (normalized === 'inherit' || isClaudeModelTier(normalized)) {
+    return normalized;
   }
   return 'inherit';
 }

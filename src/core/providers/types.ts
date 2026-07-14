@@ -287,6 +287,9 @@ export interface ProviderChatUIConfig {
   /** Apply model change side effects to settings (defaults, tracking). */
   applyModelDefaults(model: string, settings: unknown): void;
 
+  /** Track provider-owned metadata when the global title-generation model changes. */
+  applyTitleGenerationModelSelection?(model: string, settings: unknown): void;
+
   /** Apply model-scoped defaults to an ephemeral conversation settings projection. */
   applyModelProjectionDefaults?(model: string, settings: unknown): void;
 

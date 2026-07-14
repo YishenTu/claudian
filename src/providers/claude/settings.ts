@@ -6,6 +6,10 @@ import {
   getLegacyHostnameKey,
   migrateLegacyHostnameKeyedMap,
 } from '../../utils/env';
+import {
+  type ClaudeModelEnvironmentType,
+  isClaudeModelEnvironmentType,
+} from './modelTiers';
 
 export const CLAUDE_SAFE_MODES = ['acceptEdits', 'auto', 'default'] as const;
 export type ClaudeSafeMode = typeof CLAUDE_SAFE_MODES[number];
@@ -20,6 +24,8 @@ export interface ClaudeProviderSettings {
   enableBangBash: boolean;
   customModels: string;
   lastModel: string;
+  modelEnvironmentType: ClaudeModelEnvironmentType | '';
+  titleModelEnvironmentType: ClaudeModelEnvironmentType | '';
   environmentVariables: string;
   environmentHash: string;
 }
@@ -33,6 +39,8 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   enableBangBash: false,
   customModels: '',
   lastModel: 'haiku',
+  modelEnvironmentType: '',
+  titleModelEnvironmentType: '',
   environmentVariables: '',
   environmentHash: '',
 });
@@ -55,6 +63,14 @@ function normalizeClaudeSafeMode(value: unknown): ClaudeSafeMode | undefined {
   return (CLAUDE_SAFE_MODES as readonly unknown[]).includes(value)
     ? value as ClaudeSafeMode
     : undefined;
+}
+
+function normalizeClaudeModelEnvironmentType(
+  value: unknown,
+): ClaudeModelEnvironmentType | '' {
+  return typeof value === 'string' && isClaudeModelEnvironmentType(value)
+    ? value
+    : '';
 }
 
 export function getClaudeProviderSettings(
@@ -94,6 +110,10 @@ export function getClaudeProviderSettings(
     lastModel: (config.lastModel as string | undefined)
       ?? (settings.lastClaudeModel as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.lastModel,
+    modelEnvironmentType: normalizeClaudeModelEnvironmentType(config.modelEnvironmentType),
+    titleModelEnvironmentType: normalizeClaudeModelEnvironmentType(
+      config.titleModelEnvironmentType,
+    ),
     environmentVariables: (config.environmentVariables as string | undefined)
       ?? getProviderEnvironmentVariables(settings, 'claude')
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentVariables,

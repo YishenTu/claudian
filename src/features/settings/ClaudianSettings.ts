@@ -6,6 +6,7 @@ import {
   normalizeHiddenCommandList,
 } from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '../../core/providers/types';
 import type { ChatViewPlacement } from '../../core/types/settings';
@@ -334,7 +335,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           refreshOptions();
           dropdown.onChange(async (value) => {
             await this.plugin.mutateSettings((settings) => {
-              settings.titleGenerationModel = value;
+              ProviderSettingsCoordinator.applyTitleGenerationModelSelection(settings, value);
             });
           });
         });

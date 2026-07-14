@@ -4,16 +4,24 @@
 
 import { DEFAULT_REASONING_VALUE } from '../../../core/providers/reasoning';
 import { toClaudeRuntimeModelId } from '../modelSelection';
+import {
+  CLAUDE_MODEL_TIER_DEFINITIONS,
+  CLAUDE_MODEL_TIER_PATTERN,
+  type ClaudeModelTier,
+  getClaudeModelTierDefinition,
+  isVersionAtLeast,
+  resolveClaudeModelTierAlias,
+} from '../modelTiers';
 
 /** Model identifier (string to support custom models via environment variables). */
 export type ClaudeModel = string;
 
-export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
-  { value: 'haiku', label: 'Haiku', description: 'Fast and efficient' },
-  { value: 'sonnet', label: 'Sonnet', description: 'Balanced performance' },
-  { value: 'opus', label: 'Opus', description: 'Most capable' },
-  { value: 'claude-fable-5', label: 'Fable 5 ($$$)', description: "Anthropic's most capable model — premium pricing above Opus" },
-];
+export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] =
+  CLAUDE_MODEL_TIER_DEFINITIONS.map(({ id, label, description }) => ({
+    value: id,
+    label,
+    description,
+  }));
 
 /** Effort levels for adaptive thinking models. */
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -27,38 +35,40 @@ export const EFFORT_LEVELS: { value: EffortLevel; label: string }[] = [
 ];
 
 /** Default effort level per model tier. */
-export const DEFAULT_EFFORT_LEVEL: Record<string, EffortLevel> = {
-  'haiku': DEFAULT_REASONING_VALUE,
-  'sonnet': DEFAULT_REASONING_VALUE,
-  'opus': DEFAULT_REASONING_VALUE,
-  'claude-fable-5': DEFAULT_REASONING_VALUE,
-};
-
-const ONE_M_SUFFIX = '[1m]';
-const DEFAULT_MODEL_VALUES = new Set(DEFAULT_CLAUDE_MODELS.map(m => m.value.toLowerCase()));
+export const DEFAULT_EFFORT_LEVEL: Record<string, EffortLevel> = Object.fromEntries(
+  CLAUDE_MODEL_TIER_DEFINITIONS.map(definition => [definition.id, DEFAULT_REASONING_VALUE]),
+);
 
 function normalizeModelId(model: string): string {
   return toClaudeRuntimeModelId(model).trim().toLowerCase();
 }
 
-function isBuiltInFamilyVariant(model: string, family: 'sonnet' | 'opus'): boolean {
+export function normalizeLegacyClaudeModelAlias(model: string): string {
+  return resolveClaudeModelTierAlias(normalizeModelId(model)) ?? model;
+}
+
+interface VersionedClaudeModel {
+  tier: ClaudeModelTier;
+  major: number;
+  minor: number;
+}
+
+function parseVersionedClaudeModel(model: string): VersionedClaudeModel | null {
   const normalized = normalizeModelId(model);
-  return normalized === family || normalized === `${family}${ONE_M_SUFFIX}`;
-}
-
-export function normalizeLegacy1MModelAlias(model: string): string {
-  if (isBuiltInFamilyVariant(model, 'sonnet')) {
-    return 'sonnet';
+  const canonicalStart = normalized.indexOf('claude-');
+  const canonical = canonicalStart >= 0 ? normalized.slice(canonicalStart) : normalized;
+  const match = canonical.match(
+    new RegExp(`^claude-(${CLAUDE_MODEL_TIER_PATTERN})-(\\d+)(?:-(\\d+))?`),
+  );
+  if (!match) {
+    return null;
   }
-  if (isBuiltInFamilyVariant(model, 'opus')) {
-    return 'opus';
-  }
-  return model;
-}
 
-/** Fable is a standalone tier (not a haiku/sonnet/opus version bump) — always 1M context, no [1m] toggle. */
-function isFableModel(model: string): boolean {
-  return /claude-fable-\d+/.test(normalizeModelId(model));
+  return {
+    tier: match[1] as ClaudeModelTier,
+    major: Number(match[2]),
+    minor: match[3] === undefined ? 0 : Number(match[3]),
+  };
 }
 
 function isValidContextLimit(limit: unknown): limit is number {
@@ -78,16 +88,20 @@ function resolveCustomContextLimit(
     return exactLimit;
   }
 
-  const normalizedModel = normalizeModelId(model);
+  const normalizedModel = normalizeLegacyClaudeModelAlias(normalizeModelId(model));
   const matchingLimits = Object.entries(customLimits)
-    .filter(([key, limit]) => key !== model && normalizeModelId(key) === normalizedModel && isValidContextLimit(limit))
+    .filter(([key, limit]) =>
+      key !== model
+      && normalizeLegacyClaudeModelAlias(normalizeModelId(key)) === normalizedModel
+      && isValidContextLimit(limit)
+    )
     .map(([, limit]) => limit);
 
   return matchingLimits.length === 1 ? matchingLimits[0] : null;
 }
 
 export function isDefaultClaudeModel(model: string): boolean {
-  return DEFAULT_MODEL_VALUES.has(normalizeModelId(normalizeLegacy1MModelAlias(model)));
+  return resolveClaudeModelTierAlias(normalizeModelId(model)) !== null;
 }
 
 /**
@@ -96,12 +110,20 @@ export function isDefaultClaudeModel(model: string): boolean {
  */
 export function supportsXHighEffort(model: string): boolean {
   const normalized = normalizeModelId(model);
-  if (isBuiltInFamilyVariant(normalized, 'opus')) return true;
-  if (isBuiltInFamilyVariant(normalized, 'sonnet')) return true;
-  if (isFableModel(normalized)) return true;
-  return (
-    /claude-opus-(4-[7-9]|[5-9])/.test(normalized) ||
-    /claude-sonnet-(?:[5-9]|\d{2,})(?:-\d{8})?(?:-|$)/.test(normalized)
+  const aliasTier = resolveClaudeModelTierAlias(normalized);
+  if (aliasTier) {
+    return getClaudeModelTierDefinition(aliasTier).aliasSupportsXHigh;
+  }
+
+  const versionedModel = parseVersionedClaudeModel(normalized);
+  if (!versionedModel) {
+    return false;
+  }
+  const definition = getClaudeModelTierDefinition(versionedModel.tier);
+  return isVersionAtLeast(
+    versionedModel.major,
+    versionedModel.minor,
+    definition.versionedXHighFrom,
   );
 }
 
@@ -119,7 +141,8 @@ export function normalizeEffortLevel(
     return effortLevel as EffortLevel;
   }
 
-  return DEFAULT_EFFORT_LEVEL[normalizeModelId(model)] ?? DEFAULT_REASONING_VALUE;
+  const modelTier = resolveClaudeModelTierAlias(normalizeModelId(model));
+  return (modelTier && DEFAULT_EFFORT_LEVEL[modelTier]) ?? DEFAULT_REASONING_VALUE;
 }
 
 export function resolveEffortLevel(
@@ -140,21 +163,22 @@ export interface ContextWindowResolution {
 }
 
 function isCurrentOneMillionContextModel(model: string): boolean {
-  const normalized = normalizeModelId(normalizeLegacy1MModelAlias(model));
-  if (normalized === 'opus' || normalized === 'sonnet' || isFableModel(normalized)) {
-    return true;
+  const normalized = normalizeModelId(model);
+  const aliasTier = resolveClaudeModelTierAlias(normalized);
+  if (aliasTier) {
+    return getClaudeModelTierDefinition(aliasTier).aliasHasOneMillionContext;
   }
 
-  const canonicalStart = normalized.indexOf('claude-');
-  const canonical = canonicalStart >= 0 ? normalized.slice(canonicalStart) : normalized;
-  const versionMatch = canonical.match(/^claude-(opus|sonnet)-(\d+)(?:-(\d+))?/);
-  if (!versionMatch) {
+  const versionedModel = parseVersionedClaudeModel(normalized);
+  if (!versionedModel) {
     return false;
   }
-
-  const major = Number(versionMatch[2]);
-  const minor = versionMatch[3] === undefined ? 0 : Number(versionMatch[3]);
-  return major > 4 || (major === 4 && minor >= 6);
+  const definition = getClaudeModelTierDefinition(versionedModel.tier);
+  return isVersionAtLeast(
+    versionedModel.major,
+    versionedModel.minor,
+    definition.versionedOneMillionContextFrom,
+  );
 }
 
 export function getContextWindowSize(

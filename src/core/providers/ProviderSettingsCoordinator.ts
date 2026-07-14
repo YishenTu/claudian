@@ -153,6 +153,17 @@ export class ProviderSettingsCoordinator {
     normalizeModelDependentSettings(uiConfig, settings, model);
   }
 
+  static applyTitleGenerationModelSelection(
+    settings: Record<string, unknown>,
+    model: string,
+  ): void {
+    settings.titleGenerationModel = model;
+    for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
+      ProviderRegistry.getChatUIConfig(providerId)
+        .applyTitleGenerationModelSelection?.(model, settings);
+    }
+  }
+
   static projectModelSelection(
     settings: Record<string, unknown>,
     providerId: ProviderId,
@@ -350,7 +361,11 @@ export class ProviderSettingsCoordinator {
 
     if (model) {
       settings.model = model;
-      uiConfig.applyModelDefaults(model, settings);
+      if (uiConfig.applyModelProjectionDefaults) {
+        uiConfig.applyModelProjectionDefaults(model, settings);
+      } else {
+        uiConfig.applyModelDefaults(model, settings);
+      }
     }
 
     const serviceTierToggle = uiConfig.getServiceTierToggle?.({

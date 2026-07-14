@@ -21,11 +21,13 @@ describe('getCustomModelIds', () => {
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'my-opus',
       ANTHROPIC_DEFAULT_SONNET_MODEL: 'my-sonnet',
       ANTHROPIC_DEFAULT_HAIKU_MODEL: 'my-haiku',
+      ANTHROPIC_DEFAULT_FABLE_MODEL: 'my-fable',
     });
-    expect(result.size).toBe(3);
+    expect(result.size).toBe(4);
     expect(result.has('my-opus')).toBe(true);
     expect(result.has('my-sonnet')).toBe(true);
     expect(result.has('my-haiku')).toBe(true);
+    expect(result.has('my-fable')).toBe(true);
   });
 
   it('should deduplicate when multiple env vars point to same model', () => {
@@ -132,11 +134,14 @@ describe('getModelsFromEnvironment', () => {
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'my-opus',
       ANTHROPIC_DEFAULT_SONNET_MODEL: 'my-sonnet',
       ANTHROPIC_DEFAULT_HAIKU_MODEL: 'my-haiku',
+      ANTHROPIC_DEFAULT_FABLE_MODEL: 'my-fable',
     });
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(4);
     expect(result.map(m => m.value)).toContain('my-opus');
     expect(result.map(m => m.value)).toContain('my-sonnet');
     expect(result.map(m => m.value)).toContain('my-haiku');
+    expect(result.map(m => m.value)).toContain('my-fable');
+    expect(result.find(m => m.value === 'my-fable')?.environmentTypes).toEqual(['fable']);
   });
 
   it('deduplicates when multiple env vars point to same model', () => {
@@ -148,17 +153,20 @@ describe('getModelsFromEnvironment', () => {
     expect(result[0].value).toBe('shared-model');
     expect(result[0].description).toContain('model');
     expect(result[0].description).toContain('sonnet');
+    expect(result[0].environmentTypes).toEqual(['model', 'sonnet']);
   });
 
-  it('sorts by type priority (model > haiku > sonnet > opus)', () => {
+  it('sorts by type priority (model > haiku > sonnet > opus > fable)', () => {
     const result = getModelsFromEnvironment({
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-v1',
       ANTHROPIC_MODEL: 'main-model',
       ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku-v1',
+      ANTHROPIC_DEFAULT_FABLE_MODEL: 'fable-v1',
     });
     expect(result[0].value).toBe('main-model');
     expect(result[1].value).toBe('haiku-v1');
     expect(result[2].value).toBe('opus-v1');
+    expect(result[3].value).toBe('fable-v1');
   });
 
   it('ignores unrelated env vars', () => {
@@ -217,6 +225,12 @@ describe('getCurrentModelFromEnvironment', () => {
     expect(getCurrentModelFromEnvironment({
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-model',
     })).toBe('opus-model');
+  });
+
+  it('falls back to ANTHROPIC_DEFAULT_FABLE_MODEL', () => {
+    expect(getCurrentModelFromEnvironment({
+      ANTHROPIC_DEFAULT_FABLE_MODEL: 'fable-model',
+    })).toBe('fable-model');
   });
 
   it('returns null when only unrelated vars set', () => {

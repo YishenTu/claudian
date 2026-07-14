@@ -1355,7 +1355,7 @@ describe('transformSDKMessage', () => {
         },
       });
 
-      const results = [...transformSDKMessage(message, { intendedModel: 'claude-fable-5' })];
+      const results = [...transformSDKMessage(message, { intendedModel: 'fable' })];
 
       expect(results).toEqual([
         { type: 'context_window', contextWindow: 1000000 },

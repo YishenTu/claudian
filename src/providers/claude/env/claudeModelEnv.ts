@@ -1,25 +1,46 @@
 import { formatCustomModelLabel } from '../modelLabels';
+import {
+  CLAUDE_MODEL_TIER_DEFINITIONS,
+  type ClaudeModelEnvironmentType,
+  type ClaudeModelTierEnvironmentKey,
+  getClaudeModelTierDefinition,
+} from '../modelTiers';
 
-const CUSTOM_MODEL_ENV_KEYS = [
+export type ClaudeModelEnvKey = 'ANTHROPIC_MODEL' | ClaudeModelTierEnvironmentKey;
+export type ClaudeModelEnvType = ClaudeModelEnvironmentType;
+
+export const CLAUDE_MODEL_ENV_KEYS: readonly ClaudeModelEnvKey[] = [
   'ANTHROPIC_MODEL',
-  'ANTHROPIC_DEFAULT_OPUS_MODEL',
-  'ANTHROPIC_DEFAULT_SONNET_MODEL',
-  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-] as const;
+  ...CLAUDE_MODEL_TIER_DEFINITIONS.map(definition => definition.environmentKey),
+];
 
-function getModelTypeFromEnvKey(envKey: string): string {
-  if (envKey === 'ANTHROPIC_MODEL') return 'model';
-  const match = envKey.match(/ANTHROPIC_DEFAULT_(\w+)_MODEL/);
-  return match ? match[1].toLowerCase() : envKey;
+export interface ClaudeEnvironmentModel {
+  value: string;
+  label: string;
+  description: string;
+  environmentTypes: ClaudeModelEnvType[];
+}
+
+function getModelTypeFromEnvKey(envKey: ClaudeModelEnvKey): ClaudeModelEnvType {
+  if (envKey === 'ANTHROPIC_MODEL') {
+    return 'model';
+  }
+  return CLAUDE_MODEL_TIER_DEFINITIONS.find(definition => definition.environmentKey === envKey)!.id;
+}
+
+function getModelTypePriority(type: ClaudeModelEnvType): number {
+  return type === 'model'
+    ? CLAUDE_MODEL_TIER_DEFINITIONS.length + 1
+    : getClaudeModelTierDefinition(type).environmentPriority;
 }
 
 export function getModelsFromEnvironment(
   envVars: Record<string, string>,
   modelAliases: Record<string, string> = {},
-): { value: string; label: string; description: string }[] {
-  const modelMap = new Map<string, { types: string[]; label: string }>();
+): ClaudeEnvironmentModel[] {
+  const modelMap = new Map<string, { types: ClaudeModelEnvType[]; label: string }>();
 
-  for (const envKey of CUSTOM_MODEL_ENV_KEYS) {
+  for (const envKey of CLAUDE_MODEL_ENV_KEYS) {
     const type = getModelTypeFromEnvKey(envKey);
     const modelValue = envVars[envKey];
     if (modelValue) {
@@ -33,25 +54,24 @@ export function getModelsFromEnvironment(
     }
   }
 
-  const models: { value: string; label: string; description: string }[] = [];
-  const typePriority = { 'model': 4, 'haiku': 3, 'sonnet': 2, 'opus': 1 };
+  const models: ClaudeEnvironmentModel[] = [];
 
   const sortedEntries = Array.from(modelMap.entries()).sort(([, aInfo], [, bInfo]) => {
-    const aPriority = Math.max(...aInfo.types.map(t => typePriority[t as keyof typeof typePriority] || 0));
-    const bPriority = Math.max(...bInfo.types.map(t => typePriority[t as keyof typeof typePriority] || 0));
+    const aPriority = Math.max(...aInfo.types.map(getModelTypePriority));
+    const bPriority = Math.max(...bInfo.types.map(getModelTypePriority));
     return bPriority - aPriority;
   });
 
   for (const [modelValue, info] of sortedEntries) {
     const sortedTypes = info.types.sort((a, b) =>
-      (typePriority[b as keyof typeof typePriority] || 0) -
-      (typePriority[a as keyof typeof typePriority] || 0)
+      getModelTypePriority(b) - getModelTypePriority(a)
     );
 
     models.push({
       value: modelValue,
       label: info.label,
-      description: `Custom model (${sortedTypes.join(', ')})`
+      description: `Custom model (${sortedTypes.join(', ')})`,
+      environmentTypes: [...sortedTypes],
     });
   }
 
@@ -59,24 +79,18 @@ export function getModelsFromEnvironment(
 }
 
 export function getCurrentModelFromEnvironment(envVars: Record<string, string>): string | null {
-  if (envVars.ANTHROPIC_MODEL) {
-    return envVars.ANTHROPIC_MODEL;
-  }
-  if (envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL) {
-    return envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL;
-  }
-  if (envVars.ANTHROPIC_DEFAULT_SONNET_MODEL) {
-    return envVars.ANTHROPIC_DEFAULT_SONNET_MODEL;
-  }
-  if (envVars.ANTHROPIC_DEFAULT_OPUS_MODEL) {
-    return envVars.ANTHROPIC_DEFAULT_OPUS_MODEL;
+  for (const envKey of CLAUDE_MODEL_ENV_KEYS) {
+    const modelId = envVars[envKey];
+    if (modelId) {
+      return modelId;
+    }
   }
   return null;
 }
 
 export function getCustomModelIds(envVars: Record<string, string>): Set<string> {
   const modelIds = new Set<string>();
-  for (const envKey of CUSTOM_MODEL_ENV_KEYS) {
+  for (const envKey of CLAUDE_MODEL_ENV_KEYS) {
     const modelId = envVars[envKey];
     if (modelId) {
       modelIds.add(modelId);
