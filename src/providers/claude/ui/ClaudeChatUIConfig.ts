@@ -101,9 +101,11 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
   applyModelProjectionDefaults(model: string, settings: unknown): void {
     const target = settings as Record<string, unknown>;
     const runtimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
-    target.effortLevel = DEFAULT_CLAUDE_MODELS.some(candidate => candidate.value === runtimeModel)
-      ? DEFAULT_EFFORT_LEVEL[runtimeModel] ?? DEFAULT_REASONING_VALUE
-      : normalizeEffortLevel(runtimeModel, target.effortLevel);
+    // Projection is read-only display of the live effort. Preserve the user's
+    // selection (clamped to what the model supports) instead of resetting it to
+    // the tier default, which previously discarded effort changes for every
+    // default tier model except environment-mapped ones like Fable.
+    target.effortLevel = normalizeEffortLevel(runtimeModel, target.effortLevel);
   },
 
   applyTitleGenerationModelSelection(model: string, settings: unknown): void {

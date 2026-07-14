@@ -248,4 +248,31 @@ describe('claudeChatUIConfig', () => {
       expect(settings.effortLevel).toBe('xhigh');
     });
   });
+
+  describe('applyModelProjectionDefaults', () => {
+    it('preserves a user-selected effort for default tier models', () => {
+      const settings: Record<string, unknown> = { effortLevel: 'low' };
+
+      claudeChatUIConfig.applyModelProjectionDefaults?.('opus', settings);
+
+      expect(settings.effortLevel).toBe('low');
+    });
+
+    it('preserves xhigh on the opus alias that supports it', () => {
+      const settings: Record<string, unknown> = { effortLevel: 'xhigh' };
+
+      claudeChatUIConfig.applyModelProjectionDefaults?.('opus', settings);
+
+      expect(settings.effortLevel).toBe('xhigh');
+    });
+
+    it('clamps an effort the projected model cannot use', () => {
+      const settings: Record<string, unknown> = { effortLevel: 'xhigh' };
+
+      // The haiku alias does not support xhigh -> fall back to the default.
+      claudeChatUIConfig.applyModelProjectionDefaults?.('haiku', settings);
+
+      expect(settings.effortLevel).toBe('high');
+    });
+  });
 });
