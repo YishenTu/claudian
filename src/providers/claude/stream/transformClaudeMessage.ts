@@ -4,7 +4,7 @@ import type { SDKToolUseResult, StreamChunk, UsageInfo } from '../../../core/typ
 import { isBlockedMessage } from '../sdk/messages';
 import { extractToolResultContent } from '../sdk/toolResultContent';
 import type { TransformEvent } from '../sdk/types';
-import { getContextWindowSize, isDefaultClaudeModel } from '../types/models';
+import { isDefaultClaudeModel, resolveContextWindowSize } from '../types/models';
 import { createTransformStreamState, type TransformStreamState } from './toolInputStreamState';
 
 type ToolUseFields = { id: string; name: string; input: Record<string, unknown> };
@@ -305,12 +305,12 @@ function samePromptUsage(a: PromptUsageSnapshot, b: PromptUsageSnapshot): boolea
 
 function buildUsageInfo(promptUsage: PromptUsageSnapshot, options?: TransformOptions): UsageInfo {
   const model = options?.intendedModel ?? 'sonnet';
-  const hasAuthoritativeContextWindow = typeof options?.authoritativeContextWindow === 'number'
-    && options.authoritativeContextWindow > 0
-    && Number.isFinite(options.authoritativeContextWindow);
-  const contextWindow = hasAuthoritativeContextWindow
-    ? options.authoritativeContextWindow!
-    : getContextWindowSize(model, options?.customContextLimits);
+  const contextWindowResolution = resolveContextWindowSize(
+    model,
+    options?.customContextLimits,
+    options?.authoritativeContextWindow,
+  );
+  const { contextWindow } = contextWindowResolution;
   const percentage = Math.min(100, Math.max(0, Math.round((promptUsage.contextTokens / contextWindow) * 100)));
 
   return {
@@ -319,7 +319,7 @@ function buildUsageInfo(promptUsage: PromptUsageSnapshot, options?: TransformOpt
     cacheCreationInputTokens: promptUsage.cacheCreationInputTokens,
     cacheReadInputTokens: promptUsage.cacheReadInputTokens,
     contextWindow,
-    ...(hasAuthoritativeContextWindow ? { contextWindowIsAuthoritative: true } : {}),
+    ...(contextWindowResolution.source === 'runtime' ? { contextWindowIsAuthoritative: true } : {}),
     contextTokens: promptUsage.contextTokens,
     percentage,
   };

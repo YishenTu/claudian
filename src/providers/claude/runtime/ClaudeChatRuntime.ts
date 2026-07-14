@@ -82,6 +82,7 @@ import {
   createTransformUsageState,
   transformSDKMessage,
 } from '../stream/transformClaudeMessage';
+import { resolveContextWindowSize } from '../types/models';
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
 import { createClaudeApprovalCallback } from './ClaudeApprovalHandler';
 import { applyClaudeDynamicUpdates } from './ClaudeDynamicUpdates';
@@ -308,18 +309,30 @@ export class ClaudianService implements ChatRuntime {
     }
 
     const usage = this.bufferedUsageChunk.usage;
+    const settings = this.getScopedSettings();
+    const contextWindowResolution = resolveContextWindowSize(
+      usage.model ?? settings.model,
+      settings.customContextLimits,
+      contextWindow,
+    );
+    const effectiveContextWindow = contextWindowResolution.contextWindow;
     const percentage = Math.min(
       100,
-      Math.max(0, Math.round((usage.contextTokens / contextWindow) * 100)),
+      Math.max(0, Math.round((usage.contextTokens / effectiveContextWindow) * 100)),
     );
+    const nextUsage = {
+      ...usage,
+      contextWindow: effectiveContextWindow,
+      percentage,
+    };
+    if (contextWindowResolution.source === 'runtime') {
+      nextUsage.contextWindowIsAuthoritative = true;
+    } else {
+      delete nextUsage.contextWindowIsAuthoritative;
+    }
     const nextChunk: Extract<StreamChunk, { type: 'usage' }> = {
       ...this.bufferedUsageChunk,
-      usage: {
-        ...usage,
-        contextWindow,
-        contextWindowIsAuthoritative: true,
-        percentage,
-      },
+      usage: nextUsage,
     };
     this.bufferedUsageChunk = nextChunk;
     return nextChunk;

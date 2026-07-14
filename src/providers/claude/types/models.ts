@@ -132,6 +132,13 @@ export function resolveEffortLevel(
 export const CONTEXT_WINDOW_STANDARD = 200_000;
 export const CONTEXT_WINDOW_1M = 1_000_000;
 
+export type ContextWindowSource = 'custom' | 'runtime' | 'model-default';
+
+export interface ContextWindowResolution {
+  contextWindow: number;
+  source: ContextWindowSource;
+}
+
 function isCurrentOneMillionContextModel(model: string): boolean {
   const normalized = normalizeModelId(normalizeLegacy1MModelAlias(model));
   if (normalized === 'opus' || normalized === 'sonnet' || isFableModel(normalized)) {
@@ -164,4 +171,25 @@ export function getContextWindowSize(
   }
 
   return CONTEXT_WINDOW_STANDARD;
+}
+
+export function resolveContextWindowSize(
+  model: string,
+  customLimits?: Record<string, number>,
+  runtimeContextWindow?: number,
+): ContextWindowResolution {
+  // Explicit overrides describe custom gateway capabilities that the Claude runtime may not recognize.
+  const customLimit = resolveCustomContextLimit(model, customLimits);
+  if (customLimit !== null) {
+    return { contextWindow: customLimit, source: 'custom' };
+  }
+
+  if (isValidContextLimit(runtimeContextWindow)) {
+    return { contextWindow: runtimeContextWindow, source: 'runtime' };
+  }
+
+  return {
+    contextWindow: getContextWindowSize(model),
+    source: 'model-default',
+  };
 }
