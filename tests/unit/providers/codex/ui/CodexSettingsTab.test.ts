@@ -13,6 +13,10 @@ const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
 jest.mock('fs');
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
+    applyProviderEnablement: jest.fn((settings: Record<string, unknown>, _providerId: string, enabled: boolean) => {
+      const providerConfigs = settings.providerConfigs as { codex: { enabled: boolean } };
+      providerConfigs.codex.enabled = enabled;
+    }),
     reconcileTitleGenerationModelSelection: jest.fn((settings: Record<string, unknown>) => {
       const titleGenerationModel = settings.titleGenerationModel;
       const customModels = (
@@ -371,6 +375,7 @@ function createContext(plugin: any) {
     plugin,
     renderHiddenProviderCommandSetting: jest.fn(),
     refreshModelSelectors: jest.fn(),
+    refreshTitleGenerationModelOptions: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
 }
@@ -421,6 +426,17 @@ describe('CodexSettingsTab', () => {
 
     expect(findOptionalSetting('Installation method')).toBeUndefined();
     expect(findOptionalSetting('WSL distro override')).toBeUndefined();
+  });
+
+  it('refreshes title model options after Codex enablement changes', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    codexSettingsTabRenderer.render(createContainer(), context);
+    await findSetting('Enable Codex provider').toggleComponents[0].onChangeCallback?.(false);
+
+    expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalledTimes(1);
   });
 
   it('renders the app-server model visibility picker', () => {

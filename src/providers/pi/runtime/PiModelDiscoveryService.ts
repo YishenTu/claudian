@@ -11,16 +11,26 @@ import { buildPiLaunchSpec } from './PiLaunchSpec';
 import { PiRpcTransport } from './PiRpcTransport';
 import { PiSubprocess } from './PiSubprocess';
 
-export interface PiModelDiscoveryResult {
-  diagnostics?: string;
-  models: PiDiscoveredModel[];
-}
+export type PiModelDiscoveryResult =
+  | {
+    kind: 'completed';
+    diagnostics?: string;
+    models: PiDiscoveredModel[];
+  }
+  | {
+    kind: 'skipped';
+    reason: 'provider-disabled';
+  };
 
 export class PiModelDiscoveryService {
   constructor(private readonly plugin: ProviderHost) {}
 
   async discoverModels(): Promise<PiModelDiscoveryResult> {
     const settings = getPiProviderSettings(this.plugin.settings);
+    if (!settings.enabled) {
+      return { kind: 'skipped', reason: 'provider-disabled' };
+    }
+
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
     const command = this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
     const envText = getRuntimeEnvironmentText(this.plugin.settings, 'pi');
@@ -64,12 +74,13 @@ export class PiModelDiscoveryService {
       });
       const response = await transport.request('get_available_models', {}, 20_000);
       const models = normalizePiDiscoveredModels(extractModels(response));
-      return { models };
+      return { kind: 'completed', models };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Pi model discovery failed';
       const stderr = subprocess.getStderrSnapshot();
       return {
         diagnostics: stderr ? `${message}\n\n${stderr}` : message,
+        kind: 'completed',
         models: [],
       };
     } finally {

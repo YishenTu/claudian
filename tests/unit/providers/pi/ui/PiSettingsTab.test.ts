@@ -5,6 +5,15 @@ const mockCliResolverReset = jest.fn();
 const mockDiscoverModels = jest.fn();
 const mockNotices: string[] = [];
 
+jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
+  ProviderSettingsCoordinator: {
+    applyProviderEnablement: jest.fn((settings: Record<string, unknown>, providerId: string, enabled: boolean) => {
+      const providerConfigs = settings.providerConfigs as Record<string, { enabled: boolean }>;
+      providerConfigs[providerId].enabled = enabled;
+    }),
+  },
+}));
+
 interface MockToggleComponent {
   onChangeCallback: ((value: boolean) => Promise<void> | void) | null;
   setValue: jest.Mock;
@@ -333,6 +342,7 @@ function createContext(settings: Record<string, unknown>) {
       }),
     },
     refreshModelSelectors: jest.fn(),
+    refreshTitleGenerationModelOptions: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),
   };
 }
@@ -384,6 +394,7 @@ describe('PiSettingsTab', () => {
     mockedExists.mockReturnValue(true);
     mockedStat.mockReturnValue({ isFile: () => true });
     mockDiscoverModels.mockResolvedValue({
+      kind: 'completed',
       models: [],
     });
   });
@@ -397,6 +408,7 @@ describe('PiSettingsTab', () => {
     expect(getPiProviderSettings(settings).enabled).toBe(true);
     expect(context.plugin.saveSettings).toHaveBeenCalled();
     expect(context.refreshModelSelectors).toHaveBeenCalled();
+    expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalled();
   });
 
   it('does not render hidden command settings for Pi', () => {
@@ -434,6 +446,7 @@ describe('PiSettingsTab', () => {
 
   it('discovers models through PiModelDiscoveryService and reports failures', async () => {
     mockDiscoverModels.mockResolvedValueOnce({
+      kind: 'completed',
       models: [{
         encodedId: 'pi:anthropic/claude-sonnet-4',
         id: 'claude-sonnet-4',
@@ -461,10 +474,46 @@ describe('PiSettingsTab', () => {
     expect(getPiProviderSettings(settings).visibleModels).toEqual(['pi:anthropic/claude-sonnet-4']);
     expect(context.refreshModelSelectors).toHaveBeenCalled();
 
-    mockDiscoverModels.mockResolvedValueOnce({ diagnostics: 'not logged in', models: [] });
+    mockDiscoverModels.mockResolvedValueOnce({
+      diagnostics: 'not logged in',
+      kind: 'completed',
+      models: [],
+    });
     await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
     await flushPromises();
     expect(mockNotices[0]).toContain('not logged in');
+  });
+
+  it('preserves cached models when discovery is skipped for a disabled provider', async () => {
+    const cachedModel = {
+      encodedId: 'pi:anthropic/claude-sonnet-4',
+      id: 'claude-sonnet-4',
+      input: ['text'],
+      label: 'Claude Sonnet 4',
+      provider: 'anthropic',
+      reasoning: true,
+      thinkingLevels: ['off', 'medium'],
+    };
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        pi: {
+          discoveredModels: [cachedModel],
+          enabled: false,
+          visibleModels: [cachedModel.encodedId],
+        },
+      },
+    };
+    const context = render(settings);
+    mockDiscoverModels.mockResolvedValueOnce({
+      kind: 'skipped',
+      reason: 'provider-disabled',
+    });
+
+    await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
+    await flushPromises();
+
+    expect(getPiProviderSettings(settings).discoveredModels).toEqual([cachedModel]);
+    expect(context.plugin.saveSettings).not.toHaveBeenCalled();
   });
 
   it('persists visible model choices and aliases', async () => {

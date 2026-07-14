@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { Notice, Setting } from 'obsidian';
 
+import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
@@ -44,12 +45,13 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
           .setValue(codexSettings.enabled)
           .onChange(async (value) => {
             await context.plugin.mutateSettings((settings) => {
-              updateCodexProviderSettings(settings, { enabled: value });
+              ProviderSettingsCoordinator.applyProviderEnablement(settings, 'codex', value);
             });
             if (value) {
               await refreshCodexModelCatalog();
             }
             context.refreshModelSelectors();
+            context.refreshTitleGenerationModelOptions();
           })
       );
 

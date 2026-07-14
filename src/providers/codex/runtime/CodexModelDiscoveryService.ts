@@ -3,6 +3,7 @@ import {
   type CodexDiscoveredModel,
   normalizeCodexDiscoveredModels,
 } from '../models';
+import { getCodexProviderSettings } from '../settings';
 import { CodexAppServerProcess } from './CodexAppServerProcess';
 import {
   initializeCodexAppServerTransport,
@@ -11,10 +12,16 @@ import {
 import type { ModelListResult } from './codexAppServerTypes';
 import { CodexRpcTransport } from './CodexRpcTransport';
 
-export interface CodexModelDiscoveryResult {
-  diagnostics?: string;
-  models: CodexDiscoveredModel[];
-}
+export type CodexModelDiscoveryResult =
+  | {
+    kind: 'completed';
+    diagnostics?: string;
+    models: CodexDiscoveredModel[];
+  }
+  | {
+    kind: 'skipped';
+    reason: 'provider-disabled';
+  };
 
 const MODEL_LIST_PAGE_SIZE = 100;
 
@@ -22,6 +29,10 @@ export class CodexModelDiscoveryService {
   constructor(private readonly plugin: ProviderHost) {}
 
   async discoverModels(): Promise<CodexModelDiscoveryResult> {
+    if (!getCodexProviderSettings(this.plugin.settings).enabled) {
+      return { kind: 'skipped', reason: 'provider-disabled' };
+    }
+
     let process: CodexAppServerProcess | null = null;
     let transport: CodexRpcTransport | null = null;
 
@@ -56,12 +67,16 @@ export class CodexModelDiscoveryService {
         cursor = nextCursor;
       } while (cursor);
 
-      return { models: normalizeCodexDiscoveredModels(entries) };
+      return {
+        kind: 'completed',
+        models: normalizeCodexDiscoveredModels(entries),
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Codex model discovery failed';
       const stderr = process?.getStderrSnapshot() ?? '';
       return {
         diagnostics: stderr ? `${message}\n\n${stderr}` : message,
+        kind: 'completed',
         models: [],
       };
     } finally {

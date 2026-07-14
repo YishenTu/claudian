@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 
 import { Notice, Setting } from 'obsidian';
 
+import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
   ProviderSettingsTabRenderer,
   ProviderSettingsTabRendererContext,
@@ -41,9 +42,10 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
           .setValue(piSettings.enabled)
           .onChange(async (value) => {
             await context.plugin.mutateSettings((settings) => {
-              updatePiProviderSettings(settings, { enabled: value });
+              ProviderSettingsCoordinator.applyProviderEnablement(settings, 'pi', value);
             });
             context.refreshModelSelectors();
+            context.refreshTitleGenerationModelOptions();
           })
       );
 
@@ -143,6 +145,9 @@ function renderPiModelPicker(
     getState,
     async loadCatalog() {
       const result = await new PiModelDiscoveryService(context.plugin).discoverModels();
+      if (result.kind === 'skipped') {
+        return getPiProviderSettings(settingsBag).discoveredModels.length > 0 ? 'loaded' : 'empty';
+      }
       if (result.diagnostics) {
         new Notice(`Pi discovery failed: ${result.diagnostics}`);
         return 'failed';

@@ -165,6 +165,27 @@ describe('ProviderSettingsCoordinator', () => {
     });
   });
 
+  describe('applyProviderEnablement', () => {
+    it('atomically disables a provider and clears dependent shared selections', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'codex',
+        titleGenerationModel: TEST_CODEX_MODEL,
+        providerConfigs: {
+          codex: {
+            discoveredModels: TEST_CODEX_CATALOG,
+            enabled: true,
+          },
+        },
+      };
+
+      ProviderSettingsCoordinator.applyProviderEnablement(settings, 'codex', false);
+
+      expect(ProviderRegistry.isEnabled('codex', settings)).toBe(false);
+      expect(settings.settingsProvider).toBe('claude');
+      expect(settings.titleGenerationModel).toBe('');
+    });
+  });
+
   describe('reconcileAllProviders', () => {
     it('delegates to each registered provider reconciler with its own conversations', () => {
       const settings: Record<string, unknown> = { model: 'haiku' };
@@ -265,6 +286,23 @@ describe('ProviderSettingsCoordinator', () => {
           codex: {
             enabled: true,
             customModels: '',
+          },
+        },
+      };
+
+      expect(
+        ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
+      ).toBe(true);
+      expect(settings.titleGenerationModel).toBe('');
+    });
+
+    it('clears title models owned by a disabled provider', () => {
+      const settings: Record<string, unknown> = {
+        titleGenerationModel: TEST_CODEX_MODEL,
+        providerConfigs: {
+          codex: {
+            discoveredModels: TEST_CODEX_CATALOG,
+            enabled: false,
           },
         },
       };

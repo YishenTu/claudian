@@ -27,6 +27,14 @@ const mockCreatedAgentSettings: Array<{
 }> = [];
 
 jest.mock('fs');
+jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
+  ProviderSettingsCoordinator: {
+    applyProviderEnablement: jest.fn((settings: Record<string, unknown>, providerId: string, enabled: boolean) => {
+      const providerConfigs = settings.providerConfigs as Record<string, { enabled: boolean }>;
+      providerConfigs[providerId].enabled = enabled;
+    }),
+  },
+}));
 jest.mock('obsidian', () => {
   class MockSetting {
     public name = '';
@@ -416,6 +424,7 @@ function createContext(plugin: any) {
     plugin,
     renderHiddenProviderCommandSetting: jest.fn(),
     refreshModelSelectors: jest.fn(),
+    refreshTitleGenerationModelOptions: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
 }
@@ -454,6 +463,16 @@ describe('OpencodeSettingsTab', () => {
     mockRuntimeWarmModelMetadata.mockResolvedValue(false);
     mockedExistsSync.mockReturnValue(false);
     mockedStatSync.mockReturnValue({ isFile: () => true } as fs.Stats);
+  });
+
+  it('refreshes title model options after OpenCode enablement changes', async () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    opencodeSettingsTabRenderer.render(createContainer(), context);
+    await findSetting('Enable OpenCode').toggleComponents[0].onChangeCallback?.(false);
+
+    expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalledTimes(1);
   });
 
   it('stores the CLI path per host and resets active runtime state across all views', async () => {

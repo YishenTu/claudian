@@ -1,6 +1,6 @@
 import '@/providers';
 
-import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -133,6 +133,34 @@ describe('ProviderRegistry', () => {
     })).toEqual(['opencode', 'pi', 'codex', 'claude']);
   });
 
+  it('exposes title generation models only from enabled providers', () => {
+    const disabledSettings = {
+      providerConfigs: {
+        codex: {
+          discoveredModels: TEST_CODEX_CATALOG,
+          enabled: false,
+        },
+      },
+    };
+    const enabledSettings = {
+      providerConfigs: {
+        codex: {
+          discoveredModels: TEST_CODEX_CATALOG,
+          enabled: true,
+        },
+      },
+    };
+
+    expect(
+      ProviderRegistry.getTitleGenerationModelOptions(disabledSettings)
+        .some(option => option.value === TEST_CODEX_MODEL),
+    ).toBe(false);
+    expect(
+      ProviderRegistry.getTitleGenerationModelOptions(enabledSettings)
+        .some(option => option.value === TEST_CODEX_MODEL),
+    ).toBe(true);
+  });
+
   it('returns the display name from provider registration metadata', () => {
     expect(ProviderRegistry.getProviderDisplayName('claude')).toBe('Claude');
     expect(ProviderRegistry.getProviderDisplayName('codex')).toBe('Codex');
@@ -198,6 +226,35 @@ describe('ProviderRegistry', () => {
       success: true,
       title: 'codex title',
     });
+  });
+
+  it('does not route title generation through a disabled model provider', async () => {
+    const providerCalls: ProviderId[] = [];
+    const originalCreate = ProviderRegistry.createTitleGenerationService.bind(ProviderRegistry);
+    jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
+      .mockImplementation((plugin: any, providerId?: ProviderId) => {
+        if (!providerId) {
+          return originalCreate(plugin);
+        }
+        providerCalls.push(providerId);
+        return createMockTitleService(providerId);
+      });
+
+    const service = ProviderRegistry.createTitleGenerationService({
+      settings: {
+        titleGenerationModel: TEST_CODEX_MODEL,
+        providerConfigs: {
+          codex: {
+            discoveredModels: TEST_CODEX_CATALOG,
+            enabled: false,
+          },
+        },
+      },
+    } as any);
+
+    await service.generateTitle('conv-1', 'hello', jest.fn());
+
+    expect(providerCalls).toEqual(['claude']);
   });
 
   it('suppresses stale callbacks when a newer title generation replaces the old one', async () => {
