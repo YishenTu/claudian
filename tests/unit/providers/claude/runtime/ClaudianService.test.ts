@@ -267,6 +267,66 @@ describe('ClaudianService', () => {
       expect((service as any).getTransformOptions('sonnet').authoritativeContextWindow).toBe(1_000_000);
     });
 
+    it('should preserve an explicit custom-model limit when result metadata reports another window', () => {
+      Object.assign(mockPlugin.settings!, {
+        model: 'custom-model',
+        customContextLimits: { 'custom-model': 1_000_000 },
+      });
+      (service as any).bufferedUsageChunk = {
+        type: 'usage',
+        usage: {
+          model: 'custom-model',
+          inputTokens: 250_000,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          contextWindow: 1_000_000,
+          contextTokens: 250_000,
+          percentage: 25,
+        },
+      };
+
+      const updated = (service as any).updateBufferedUsageContextWindow(200_000);
+
+      expect(updated.usage).toEqual({
+        model: 'custom-model',
+        inputTokens: 250_000,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        contextWindow: 1_000_000,
+        contextTokens: 250_000,
+        percentage: 25,
+      });
+    });
+
+    it('should apply result metadata when no explicit custom-model limit exists', () => {
+      Object.assign(mockPlugin.settings!, { model: 'custom-model', customContextLimits: {} });
+      (service as any).bufferedUsageChunk = {
+        type: 'usage',
+        usage: {
+          model: 'custom-model',
+          inputTokens: 100_000,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          contextWindow: 1_000_000,
+          contextTokens: 100_000,
+          percentage: 10,
+        },
+      };
+
+      const updated = (service as any).updateBufferedUsageContextWindow(200_000);
+
+      expect(updated.usage).toEqual({
+        model: 'custom-model',
+        inputTokens: 100_000,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        contextWindow: 200_000,
+        contextWindowIsAuthoritative: true,
+        contextTokens: 100_000,
+        percentage: 50,
+      });
+    });
+
     it('should coalesce concurrent context-window discovery for the same query and model', async () => {
       let resolveContextUsage!: (value: { rawMaxTokens: number }) => void;
       const mockQuery = {
