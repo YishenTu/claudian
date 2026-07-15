@@ -27,7 +27,6 @@ import type {
   ChatTurnRequest,
   PreparedChatTurn,
   SessionUpdateResult,
-  SubagentRuntimeState,
 } from '../../../core/runtime/types';
 import type {
   ApprovalDecision,
@@ -643,8 +642,6 @@ export class OpencodeChatRuntime implements ChatRuntime {
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void {
     this.permissionModeSyncCallback = callback;
   }
-
-  setSubagentHookProvider(_getState: () => SubagentRuntimeState): void {}
 
   setAutoTurnCallback(_callback: AutoTurnCallback | null): void {}
 

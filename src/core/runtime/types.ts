@@ -94,9 +94,18 @@ export interface ChatRewindResult {
 
 export type ChatRewindMode = 'conversation' | 'code-and-conversation';
 
-export interface SubagentRuntimeState {
-  hasRunning: boolean;
+export interface AsyncSubagentCompletion {
+  type: 'async_subagent_completion';
+  providerSessionId: string;
+  taskId: string;
+  toolUseId?: string;
+  status: 'completed' | 'error';
+  result?: string;
 }
+
+export type AsyncSubagentCompletionCallback = (
+  completion: AsyncSubagentCompletion,
+) => void | Promise<void>;
 
 export interface ChatTurnMetadata {
   userMessageId?: string;

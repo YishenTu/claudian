@@ -26,7 +26,6 @@ import type {
   ExitPlanModeCallback,
   PreparedChatTurn,
   SessionUpdateResult,
-  SubagentRuntimeState,
 } from '../../../core/runtime/types';
 import type { ChatMessage, Conversation, ForkSource, SlashCommand, StreamChunk } from '../../../core/types';
 import { getVaultPath } from '../../../utils/path';
@@ -145,7 +144,6 @@ export class CodexChatRuntime implements ChatRuntime {
   private askUserCallback: AskUserQuestionCallback | null = null;
   private exitPlanModeCallback: ExitPlanModeCallback | null = null;
   private permissionModeSyncCallback: ((sdkMode: string) => void) | null = null;
-  private subagentHookProvider: (() => SubagentRuntimeState) | null = null;
   private autoTurnCallback: AutoTurnCallback | null = null;
   private resumeCheckpoint: string | undefined;
   private activeInputBundles = new Set<CodexInputBundle>();
@@ -711,10 +709,6 @@ export class CodexChatRuntime implements ChatRuntime {
 
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void {
     this.permissionModeSyncCallback = callback;
-  }
-
-  setSubagentHookProvider(getState: () => SubagentRuntimeState): void {
-    this.subagentHookProvider = getState;
   }
 
   setAutoTurnCallback(callback: AutoTurnCallback | null): void {

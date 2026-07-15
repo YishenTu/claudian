@@ -2,7 +2,7 @@
  * Claudian - Claude Agent SDK wrapper
  *
  * Handles communication with Claude via the Agent SDK. Manages streaming,
- * session persistence, permission modes, and security hooks.
+ * session persistence and permission modes.
  *
  * Architecture:
  * - Persistent query for active chat conversation (eliminates cold-start latency)
@@ -36,6 +36,8 @@ import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
   ApprovalCallback,
   AskUserQuestionCallback,
+  AsyncSubagentCompletion,
+  AsyncSubagentCompletionCallback,
   AutoTurnCallback,
   ChatRewindMode,
   ChatRewindResult,
@@ -71,10 +73,14 @@ import {
 } from '../../../utils/session';
 import { CLAUDE_PROVIDER_CAPABILITIES } from '../capabilities';
 import { loadSubagentFinalResult, loadSubagentToolCalls } from '../history/ClaudeHistoryStore';
-import { createStopSubagentHook, type SubagentHookState } from '../hooks/SubagentHooks';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { encodeClaudeTurn } from '../prompt/ClaudeTurnEncoder';
-import { isContextWindowEvent, isSessionInitEvent, isStreamChunk } from '../sdk/typeGuards';
+import {
+  isAsyncSubagentCompletion,
+  isContextWindowEvent,
+  isSessionInitEvent,
+  isStreamChunk,
+} from '../sdk/typeGuards';
 import type { TransformEvent } from '../sdk/types';
 import { getClaudeProviderSettings } from '../settings';
 import {
@@ -147,6 +153,7 @@ export class ClaudianService implements ChatRuntime {
   private vaultPath: string | null = null;
   private currentExternalContextPaths: string[] = [];
   private currentConversationModel: string | null = null;
+  private currentConversationId: string | null = null;
   private readyStateListeners = new Set<(ready: boolean) => void>();
 
   // Modular components
@@ -189,8 +196,7 @@ export class ClaudianService implements ChatRuntime {
   // SDK command cache — populated on system/init, cleared on persistent query close
   private cachedSdkCommands: SlashCommand[] = [];
 
-  // Subagent hook state provider (set from feature layer to avoid core→feature dependency)
-  private _subagentStateProvider: (() => SubagentHookState) | null = null;
+  private _asyncSubagentCompletionCallback: AsyncSubagentCompletionCallback | null = null;
 
   // Auto-triggered turn handling (e.g., task-notification delivery by the SDK)
   private _autoTurnBuffer: StreamChunk[] = [];
@@ -431,6 +437,12 @@ export class ClaudianService implements ChatRuntime {
     conversation: ChatRuntimeConversationState | null,
     externalContextPaths?: string[],
   ): void {
+    const nextConversationId = conversation?.id ?? null;
+    if (this.currentConversationId !== nextConversationId) {
+      this.currentConversationId = nextConversationId;
+      this.closePersistentQuery('conversation switch');
+    }
+
     if (!conversation) {
       this.currentConversationModel = null;
       this.pendingForkSession = false;
@@ -822,7 +834,6 @@ export class ClaudianService implements ChatRuntime {
     externalContextPaths?: string[]
   ): Options {
     const baseContext = this.buildQueryOptionsContext(vaultPath, cliPath);
-    const hooks = this.buildHooks();
 
     const ctx: PersistentQueryContext = {
       ...baseContext,
@@ -831,27 +842,10 @@ export class ClaudianService implements ChatRuntime {
         ? { sessionId: resumeSessionId, sessionAt: resumeAtMessageId, fork: this.pendingForkSession || undefined }
         : undefined,
       canUseTool: this.createApprovalCallback(),
-      hooks,
       externalContextPaths,
     };
 
     return QueryOptionsBuilder.buildPersistentQueryOptions(ctx);
-  }
-
-  /**
-   * Builds the hooks for SDK options.
-   * Hooks need access to `this` for dynamic settings, so they're built here.
-   */
-  private buildHooks() {
-    const hooks: Options['hooks'] = {};
-
-    // Always register subagent hooks — closures resolve provider at execution time
-    // so hooks work even when provider is set after the persistent query starts.
-    hooks.Stop = [createStopSubagentHook(
-      () => this._subagentStateProvider?.() ?? { hasRunning: false }
-    )];
-
-    return hooks;
   }
 
   /**
@@ -868,13 +862,13 @@ export class ClaudianService implements ChatRuntime {
     const queryForThisConsumer = this.persistentQuery;
 
     this.responseConsumerPromise = (async () => {
-      if (!this.persistentQuery) return;
+      if (!queryForThisConsumer) return;
 
       try {
-        for await (const message of this.persistentQuery) {
-          if (this.shuttingDown) break;
+        for await (const message of queryForThisConsumer) {
+          if (this.shuttingDown || this.persistentQuery !== queryForThisConsumer) break;
 
-          await this.routeMessage(message);
+          await this.routeMessage(message, queryForThisConsumer);
         }
       } catch (error) {
         // Skip error handling if this consumer was replaced by a new one.
@@ -980,16 +974,16 @@ export class ClaudianService implements ChatRuntime {
    * The next message only dequeues after onTurnComplete(), which calls onDone()
    * on the current handler. A new handler is registered only when the next query starts.
    */
-  private async routeMessage(message: SDKMessage): Promise<void> {
+  private async routeMessage(message: SDKMessage, sourceQuery?: Query): Promise<void> {
     // Note: Session expiration errors are handled in catch blocks (queryViaSDK, handleAbort)
     // The SDK throws errors as exceptions, not as message types
 
     // Safe to use last handler - design guarantees single handler at a time
     const handler = this.responseHandlers[this.responseHandlers.length - 1];
-    const autoTurnBufferStartLength = this._autoTurnBuffer.length;
-
     // Transform SDK message to StreamChunks
     for (const event of transformSDKMessage(message, this.getTransformOptions())) {
+      if (sourceQuery && this.persistentQuery !== sourceQuery) return;
+
       this.noteVisibleStreamContent(message, event, {
         onText: () => {
           if (handler) {
@@ -1026,6 +1020,8 @@ export class ClaudianService implements ChatRuntime {
         // Pass the current query instance so late completions from a dead query
         // cannot overwrite the active cache after a restart or shutdown.
         void this.fetchAndCacheCommands(this.persistentQuery);
+      } else if (isAsyncSubagentCompletion(event)) {
+        await this.deliverAsyncSubagentCompletion(event);
       } else if (isContextWindowEvent(event)) {
         this.rememberResultContextWindow(event.contextWindow);
         const usageChunk = this.updateBufferedUsageContextWindow(event.contextWindow);
@@ -1071,20 +1067,13 @@ export class ClaudianService implements ChatRuntime {
         if (handler) {
           handler.onChunk(normalizedChunk);
         } else {
-          // No handler — buffer for auto-triggered turn (e.g., task-notification delivery)
+          // No handler — buffer for a provider-triggered follow-up turn.
           this._autoTurnBuffer.push(normalizedChunk);
         }
       }
     }
 
-    if (
-      !handler
-      && message.type === 'system'
-      && message.subtype === 'task_notification'
-      && this._autoTurnBuffer.length > autoTurnBufferStartLength
-    ) {
-      await this.flushAutoTurnBuffer();
-    }
+    if (sourceQuery && this.persistentQuery !== sourceQuery) return;
 
     if (message.type === 'assistant' && message.uuid) {
       this.recordTurnMetadata({ assistantMessageId: message.uuid });
@@ -1121,6 +1110,17 @@ export class ClaudianService implements ChatRuntime {
       await this._autoTurnCallback?.({ chunks, metadata });
     } catch {
       new Notice('Background task completed, but the result could not be rendered.');
+    }
+  }
+
+  private async deliverAsyncSubagentCompletion(
+    completion: AsyncSubagentCompletion,
+  ): Promise<void> {
+    if (!this._asyncSubagentCompletionCallback) return;
+    try {
+      await this._asyncSubagentCompletionCallback(completion);
+    } catch {
+      new Notice('Background task completed, but its state could not be saved.');
     }
   }
 
@@ -1690,7 +1690,6 @@ export class ClaudianService implements ChatRuntime {
     const queryPrompt = this.buildPromptWithImages(prompt, images);
     const baseContext = this.buildQueryOptionsContext(cwd, cliPath);
     const externalContextPaths = queryOptions?.externalContextPaths || [];
-    const hooks = this.buildHooks();
     const hasEditorContext = prompt.includes('<editor_selection');
 
     let allowedTools: string[] | undefined;
@@ -1705,7 +1704,6 @@ export class ClaudianService implements ChatRuntime {
       sessionId: this.sessionManager.getSessionId() ?? undefined,
       modelOverride: queryOptions?.model,
       canUseTool: this.createApprovalCallback(),
-      hooks,
       mcpMentions: queryOptions?.mcpMentions,
       enabledMcpServers: queryOptions?.enabledMcpServers,
       allowedTools,
@@ -1743,6 +1741,8 @@ export class ClaudianService implements ChatRuntime {
           if (isSessionInitEvent(event)) {
             this.sessionManager.captureSession(event.sessionId);
             streamSessionId = event.sessionId;
+          } else if (isAsyncSubagentCompletion(event)) {
+            await this.deliverAsyncSubagentCompletion(event);
           } else if (isContextWindowEvent(event)) {
             const usageChunk = this.updateBufferedUsageContextWindow(event.contextWindow);
             if (usageChunk) {
@@ -1961,8 +1961,8 @@ export class ClaudianService implements ChatRuntime {
     this.permissionModeSyncCallback = callback;
   }
 
-  setSubagentHookProvider(getState: () => SubagentHookState): void {
-    this._subagentStateProvider = getState;
+  setAsyncSubagentCompletionCallback(callback: AsyncSubagentCompletionCallback | null): void {
+    this._asyncSubagentCompletionCallback = callback;
   }
 
   setAutoTurnCallback(callback: AutoTurnCallback | null): void {

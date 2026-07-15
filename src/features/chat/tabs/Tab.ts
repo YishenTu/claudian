@@ -1407,6 +1407,12 @@ export function initializeTabControllers(
     getFileContextManager: () => ui.fileContextManager,
     updateQueueIndicator: () => tab.controllers.inputController?.updateQueueIndicator(),
     getAgentService: () => tab.service,
+    enqueueBackgroundWork: (work) => enqueueTabBackgroundWork(tab, work),
+    persistConversation: async () => {
+      if (tab.state.currentConversationId) {
+        await tab.controllers.conversationController?.save(false);
+      }
+    },
   });
 
   // Wire subagent callback now that StreamController exists
@@ -1415,13 +1421,6 @@ export function initializeTabControllers(
   services.subagentManager.setCallback(
     (subagent) => {
       tab.controllers.streamController?.onAsyncSubagentStateChange(subagent);
-
-      // During active stream, regular end-of-turn save captures latest state.
-      if (!tab.state.isStreaming && tab.state.currentConversationId) {
-        void tab.controllers.conversationController?.save(false).catch(() => {
-          // Best-effort persistence; avoid surfacing background-save failures here.
-        });
-      }
     }
   );
 
@@ -1446,6 +1445,7 @@ export function initializeTabControllers(
       getAgentService: () => tab.service, // Use tab's service instead of plugin's
       getSelectedModel: () => getTabSelectedModel(tab, plugin),
       dismissPendingInlinePrompts: () => tab.controllers.inputController?.dismissPendingApproval(),
+      awaitBackgroundWork: () => tab.session.awaitBackgroundWork(),
       ensureServiceForConversation: async (conversation) => {
         const nextProviderId = getTabProviderId(tab, plugin, conversation);
         const providerChanged = tab.providerId !== nextProviderId;
@@ -1740,23 +1740,72 @@ export function deactivateTab(tab: TabData): void {
   tab.controllers.canvasSelectionController?.stop();
 }
 
+async function cancelAndAwaitActiveTurn(tab: TabData): Promise<boolean> {
+  const activeTurn = tab.session.activeTurn;
+  if (!activeTurn) return false;
+
+  tab.state.cancelRequested = true;
+  tab.state.bumpStreamGeneration();
+  tab.service?.cancel();
+  await activeTurn.catch(() => undefined);
+  return true;
+}
+
+export async function recycleTabRuntime(tab: TabData): Promise<void> {
+  const wasSwitchingConversation = tab.state.isSwitchingConversation;
+  tab.state.isSwitchingConversation = true;
+  tab.session.pauseBackgroundWork();
+  try {
+    const invalidatedActiveTurn = await cancelAndAwaitActiveTurn(tab);
+    await tab.session.awaitBackgroundWork();
+
+    if (invalidatedActiveTurn) {
+      cleanupThinkingBlock(tab.state.currentThinkingState);
+      tab.controllers.streamController?.resetStreamingState();
+      tab.state.resetStreamingState();
+    }
+
+    tab.services.subagentManager.orphanAllActive();
+    if (tab.state.currentConversationId) {
+      await tab.controllers.conversationController?.save(false);
+    }
+    tab.services.subagentManager.clear();
+
+    tab.runtimeSupervisor.cleanup();
+    tab.service = null;
+    tab.serviceInitialized = false;
+    if (tab.lifecycleState === 'bound_active') {
+      tab.lifecycleState = tab.conversationId ? 'bound_cold' : 'blank';
+    }
+  } finally {
+    tab.session.resumeBackgroundWork();
+    tab.state.isSwitchingConversation = wasSwitchingConversation;
+  }
+}
+
 /**
  * Cleans up a tab and releases all resources.
  * Made async to ensure proper cleanup ordering.
  */
 export async function destroyTab(tab: TabData): Promise<void> {
   tab.lifecycleState = 'closing';
+  tab.session.pauseBackgroundWork();
 
   tab.controllers.inputController?.dismissPendingApproval();
-  const activeTurn = tab.session.activeTurn;
-  if (activeTurn) {
-    tab.state.cancelRequested = true;
-    tab.state.bumpStreamGeneration();
-    tab.service?.cancel();
+  await cancelAndAwaitActiveTurn(tab);
+  await tab.session.awaitBackgroundWork();
+
+  tab.services.subagentManager.orphanAllActive();
+  if (tab.state.currentConversationId) {
+    try {
+      await tab.controllers.conversationController?.save(false);
+    } catch {
+      new Notice('Background task state could not be saved before closing the tab.');
+    }
   }
+  tab.services.subagentManager.clear();
   tab.runtimeSupervisor.cleanup();
   tab.service = null;
-  await activeTurn?.catch(() => undefined);
 
   tab.controllers.selectionController?.stop();
   tab.controllers.selectionController?.clear();
@@ -1790,9 +1839,6 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.ui.navigationSidebar?.destroy();
   tab.ui.navigationSidebar = null;
 
-  tab.services.subagentManager.orphanAllActive();
-  tab.services.subagentManager.clear();
-
   for (const cleanup of tab.dom.eventCleanups) {
     cleanup();
   }
@@ -1813,6 +1859,63 @@ export function getTabTitle(tab: TabData, plugin: FeatureHost): string {
     }
   }
   return 'New Chat';
+}
+
+interface TabBackgroundWorkOwner {
+  service: ChatRuntime;
+  conversationId: string;
+  providerSessionId: string | null;
+}
+
+function canAcceptTabBackgroundWork(tab: TabData): boolean {
+  return tab.lifecycleState !== 'closing'
+    && !tab.state.isCreatingConversation
+    && !tab.state.isSwitchingConversation;
+}
+
+function enqueueTabBackgroundWork(
+  tab: TabData,
+  work: () => Promise<void>,
+): Promise<void> | null {
+  if (!canAcceptTabBackgroundWork(tab)) return null;
+  return tab.session.enqueueBackgroundWork(work);
+}
+
+function ownsTabBackgroundWork(
+  tab: TabData,
+  owner: TabBackgroundWorkOwner,
+): boolean {
+  return tab.service === owner.service
+    && owner.service.getSessionId() === owner.providerSessionId
+    && tab.state.currentConversationId === owner.conversationId
+    && tab.conversationId === owner.conversationId;
+}
+
+function enqueueOwnedTabBackgroundWork(
+  tab: TabData,
+  service: ChatRuntime,
+  work: (owner: TabBackgroundWorkOwner) => Promise<void>,
+): Promise<void> | undefined {
+  const conversationId = tab.state.currentConversationId;
+  if (
+    !canAcceptTabBackgroundWork(tab)
+    || tab.service !== service
+    || !conversationId
+    || tab.conversationId !== conversationId
+  ) {
+    return undefined;
+  }
+
+  const owner: TabBackgroundWorkOwner = {
+    service,
+    conversationId,
+    providerSessionId: service.getSessionId(),
+  };
+  const pending = tab.session.enqueueBackgroundWork(async () => {
+    if (!ownsTabBackgroundWork(tab, owner)) return;
+    await work(owner);
+  });
+  return pending ?? undefined;
 }
 
 /** Shared between Tab.ts and TabManager.ts to avoid duplication. */
@@ -1855,12 +1958,28 @@ export function setupServiceCallbacks(tab: TabData, plugin: FeatureHost): void {
         return decision;
       }
     );
-    tab.service.setSubagentHookProvider(
-      () => ({
-        hasRunning: tab.services.subagentManager.hasRunningSubagents(),
+    const callbackService = tab.service;
+    callbackService.setAsyncSubagentCompletionCallback?.((completion) => {
+      if (callbackService.getSessionId() !== completion.providerSessionId) return;
+      return enqueueOwnedTabBackgroundWork(tab, callbackService, async (owner) => {
+        const streamController = tab.controllers.streamController;
+        const conversationController = tab.controllers.conversationController;
+        if (!streamController || !conversationController) return;
+
+        const applied = await streamController.handleAsyncSubagentCompletion(completion);
+        if (applied && ownsTabBackgroundWork(tab, owner)) {
+          await conversationController.save(false);
+        }
+      });
+    });
+    callbackService.setAutoTurnCallback((result: AutoTurnResult) =>
+      enqueueOwnedTabBackgroundWork(tab, callbackService, async (owner) => {
+        const rendered = await renderAutoTriggeredTurn(tab, result);
+        if (rendered && ownsTabBackgroundWork(tab, owner)) {
+          await tab.controllers.conversationController?.save(false);
+        }
       })
     );
-    tab.service.setAutoTurnCallback((result: AutoTurnResult) => renderAutoTriggeredTurn(tab, result));
     tab.service.setPermissionModeSyncCallback((sdkMode) => {
       const mode = sdkMode === 'bypassPermissions' || sdkMode === 'yolo'
         ? 'yolo'
@@ -1924,13 +2043,13 @@ function hasVisibleAutoTurnMessageContent(msg: ChatMessage): boolean {
   ) ?? false;
 }
 
-async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Promise<void> {
+async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Promise<boolean> {
   if (!tab.dom.contentEl.isConnected) {
-    return;
+    return false;
   }
 
   const { chunks, metadata } = result;
-  if (chunks.length === 0) return;
+  if (chunks.length === 0) return false;
 
   const hiddenToolIds = new Set(
     chunks
@@ -1997,6 +2116,7 @@ async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Pr
       tab.renderer?.scrollToBottom();
     }
   }
+  return true;
 }
 
 export async function updatePlanModeUI(

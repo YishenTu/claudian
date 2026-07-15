@@ -1,3 +1,4 @@
+import type { AsyncSubagentCompletion } from '../../../core/runtime/types';
 import type { StreamChunk } from '../../../core/types';
 
 export interface SessionInitEvent {
@@ -12,4 +13,10 @@ export interface ContextWindowEvent {
   contextWindow: number;
 }
 
-export type TransformEvent = StreamChunk | SessionInitEvent | ContextWindowEvent;
+export type ClaudeAsyncSubagentCompletionEvent = AsyncSubagentCompletion;
+
+export type TransformEvent =
+  | StreamChunk
+  | SessionInitEvent
+  | ContextWindowEvent
+  | ClaudeAsyncSubagentCompletionEvent;

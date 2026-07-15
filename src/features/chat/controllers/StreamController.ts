@@ -8,6 +8,7 @@ import {
   type ProviderSubagentLifecycleAdapter,
 } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
+import type { AsyncSubagentCompletion } from '../../../core/runtime/types';
 import { parseTodoInput } from '../../../core/tools/todo';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import {
@@ -73,6 +74,8 @@ export interface StreamControllerDeps {
   updateQueueIndicator: () => void;
   /** Get the agent service from the tab. */
   getAgentService?: () => ChatRuntime | null;
+  enqueueBackgroundWork?: (work: () => Promise<void>) => Promise<void> | null;
+  persistConversation?: () => Promise<void>;
 }
 
 export class StreamController {
@@ -177,10 +180,6 @@ export class StreamController {
       case 'subagent_tool_use':
       case 'subagent_tool_result':
         await this.handleSubagentChunk(chunk, msg);
-        break;
-
-      case 'async_subagent_result':
-        await this.handleAsyncSubagentResult(chunk);
         break;
 
       case 'tool_output':
@@ -605,7 +604,7 @@ export class StreamController {
     }
 
     // Check if it's an async task result
-    if (this.handleAsyncTaskToolResult(chunk)) {
+    if (await this.handleAsyncTaskToolResult(chunk)) {
       this.showThinkingIndicator();
       return;
     }
@@ -1138,15 +1137,19 @@ export class StreamController {
     this.showThinkingIndicator();
   }
 
-  private handleAsyncTaskToolResult(
+  private async handleAsyncTaskToolResult(
     chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: unknown }
-  ): boolean {
+  ): Promise<boolean> {
     const { subagentManager } = this.deps;
-    if (!subagentManager.isPendingAsyncTask(chunk.id)) {
+    if (
+      !subagentManager.isPendingAsyncTask(chunk.id)
+      && !subagentManager.getByTaskId(chunk.id)
+    ) {
       return false;
     }
 
     subagentManager.handleTaskToolResult(chunk.id, chunk.content, chunk.isError, chunk.toolUseResult);
+    await this.hydrateAsyncSubagentToolCalls(subagentManager.getByTaskId(chunk.id));
     return true;
   }
 
@@ -1169,22 +1172,22 @@ export class StreamController {
     return isLinked || handled !== undefined;
   }
 
-  private async handleAsyncSubagentResult(
-    chunk: Extract<StreamChunk, { type: 'async_subagent_result' }>
-  ): Promise<void> {
-    const handled = this.deps.subagentManager.handleAsyncSubagentResult(
-      chunk.agentId,
-      chunk.status,
-      chunk.result
-    );
+  public async handleAsyncSubagentCompletion(
+    completion: AsyncSubagentCompletion,
+  ): Promise<boolean> {
+    const handled = this.deps.subagentManager.handleAsyncSubagentCompletion(completion);
 
-    await this.hydrateAsyncSubagentToolCalls(handled);
+    await this.hydrateAsyncSubagentToolCalls(handled, completion.providerSessionId);
     if (handled) {
       this.showThinkingIndicator();
     }
+    return handled !== undefined;
   }
 
-  private async hydrateAsyncSubagentToolCalls(subagent: SubagentInfo | undefined): Promise<void> {
+  private async hydrateAsyncSubagentToolCalls(
+    subagent: SubagentInfo | undefined,
+    providerSessionId?: string,
+  ): Promise<void> {
     if (!subagent) return;
     if (subagent.mode !== 'async') return;
     if (!subagent.agentId) return;
@@ -1194,27 +1197,32 @@ export class StreamController {
 
     const runtime = this.deps.getAgentService?.();
     if (!runtime) return;
+    const ownerSessionId = providerSessionId ?? runtime.getSessionId();
+    if (!ownerSessionId || !this.ownsAsyncSubagent(subagent, runtime, ownerSessionId)) return;
 
-    const { hasHydrated, finalResultHydrated } = await this.tryHydrateAsyncSubagent(
+    const { hasHydrated, finalResultHydrated, isCurrent } = await this.tryHydrateAsyncSubagent(
       subagent,
       runtime,
+      ownerSessionId,
       true
     );
+    if (!isCurrent) return;
 
     if (hasHydrated) {
       this.deps.subagentManager.refreshAsyncSubagent(subagent);
     }
 
     if (!finalResultHydrated) {
-      this.scheduleAsyncSubagentResultRetry(subagent, runtime, 0);
+      this.scheduleAsyncSubagentResultRetry(subagent, runtime, ownerSessionId, 0);
     }
   }
 
   private async tryHydrateAsyncSubagent(
     subagent: SubagentInfo,
     runtime: ChatRuntime,
+    providerSessionId: string,
     hydrateToolCalls: boolean
-  ): Promise<{ hasHydrated: boolean; finalResultHydrated: boolean }> {
+  ): Promise<{ hasHydrated: boolean; finalResultHydrated: boolean; isCurrent: boolean }> {
     let hasHydrated = false;
     let finalResultHydrated = false;
 
@@ -1222,6 +1230,9 @@ export class StreamController {
       const recoveredToolCalls = await runtime.loadSubagentToolCalls?.(
         subagent.agentId || ''
       ) ?? [];
+      if (!this.ownsAsyncSubagent(subagent, runtime, providerSessionId)) {
+        return { hasHydrated: false, finalResultHydrated: false, isCurrent: false };
+      }
       if (recoveredToolCalls.length > 0) {
         subagent.toolCalls = recoveredToolCalls.map((toolCall) => ({
           ...toolCall,
@@ -1234,6 +1245,9 @@ export class StreamController {
     const recoveredFinalResult = await runtime.loadSubagentFinalResult?.(
       subagent.agentId || ''
     ) ?? null;
+    if (!this.ownsAsyncSubagent(subagent, runtime, providerSessionId)) {
+      return { hasHydrated: false, finalResultHydrated: false, isCurrent: false };
+    }
     if (recoveredFinalResult && recoveredFinalResult.trim().length > 0) {
       finalResultHydrated = true;
       if (recoveredFinalResult !== subagent.result) {
@@ -1242,12 +1256,23 @@ export class StreamController {
       }
     }
 
-    return { hasHydrated, finalResultHydrated };
+    return { hasHydrated, finalResultHydrated, isCurrent: true };
+  }
+
+  private ownsAsyncSubagent(
+    subagent: SubagentInfo,
+    runtime: ChatRuntime,
+    providerSessionId: string,
+  ): boolean {
+    return this.deps.getAgentService?.() === runtime
+      && runtime.getSessionId() === providerSessionId
+      && this.deps.subagentManager.getByTaskId(subagent.id) === subagent;
   }
 
   private scheduleAsyncSubagentResultRetry(
     subagent: SubagentInfo,
     runtime: ChatRuntime,
+    providerSessionId: string,
     attempt: number
   ): void {
     if (!subagent.agentId) return;
@@ -1255,30 +1280,49 @@ export class StreamController {
 
     const delay = StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS[attempt];
     window.setTimeout(() => {
-      void this.retryAsyncSubagentResult(subagent, runtime, attempt);
+      const work = () => this.retryAsyncSubagentResult(
+        subagent,
+        runtime,
+        providerSessionId,
+        attempt,
+      );
+      const pending = this.deps.enqueueBackgroundWork
+        ? this.deps.enqueueBackgroundWork(work)
+        : work();
+      void pending?.catch(() => undefined);
     }, delay);
   }
 
   private async retryAsyncSubagentResult(
     subagent: SubagentInfo,
     runtime: ChatRuntime,
+    providerSessionId: string,
     attempt: number
   ): Promise<void> {
     if (!subagent.agentId) return;
+    if (!this.ownsAsyncSubagent(subagent, runtime, providerSessionId)) return;
     const asyncStatus = subagent.asyncStatus ?? subagent.status;
     if (asyncStatus !== 'completed' && asyncStatus !== 'error') return;
 
-    const { hasHydrated, finalResultHydrated } = await this.tryHydrateAsyncSubagent(
+    const { hasHydrated, finalResultHydrated, isCurrent } = await this.tryHydrateAsyncSubagent(
       subagent,
       runtime,
+      providerSessionId,
       false
     );
+    if (!isCurrent) return;
     if (hasHydrated) {
       this.deps.subagentManager.refreshAsyncSubagent(subagent);
+      await this.deps.persistConversation?.();
     }
 
     if (!finalResultHydrated) {
-      this.scheduleAsyncSubagentResultRetry(subagent, runtime, attempt + 1);
+      this.scheduleAsyncSubagentResultRetry(
+        subagent,
+        runtime,
+        providerSessionId,
+        attempt + 1,
+      );
     }
   }
 

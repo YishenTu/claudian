@@ -25,7 +25,6 @@ import type {
   ExitPlanModeCallback,
   PreparedChatTurn,
   SessionUpdateResult,
-  SubagentRuntimeState,
 } from '../../../core/runtime/types';
 import type {
   ChatMessage,
@@ -585,7 +584,6 @@ export class PiChatRuntime implements ChatRuntime {
   setAskUserQuestionCallback(_callback: AskUserQuestionCallback | null): void {}
   setExitPlanModeCallback(_callback: ExitPlanModeCallback | null): void {}
   setPermissionModeSyncCallback(_callback: ((sdkMode: string) => void) | null): void {}
-  setSubagentHookProvider(_getState: () => SubagentRuntimeState): void {}
   setAutoTurnCallback(_callback: AutoTurnCallback | null): void {}
 
   consumeTurnMetadata(): ChatTurnMetadata {
