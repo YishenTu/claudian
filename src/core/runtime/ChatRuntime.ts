@@ -3,6 +3,7 @@ import type { ChatMessage, Conversation, SlashCommand, StreamChunk, ToolCallInfo
 import type {
   ApprovalCallback,
   AskUserQuestionCallback,
+  AsyncSubagentCompletionCallback,
   AutoTurnCallback,
   ChatRewindMode,
   ChatRewindResult,
@@ -14,7 +15,6 @@ import type {
   ExitPlanModeCallback,
   PreparedChatTurn,
   SessionUpdateResult,
-  SubagentRuntimeState,
 } from './types';
 
 export interface ChatRuntime {
@@ -50,7 +50,7 @@ export interface ChatRuntime {
   setAskUserQuestionCallback(callback: AskUserQuestionCallback | null): void;
   setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void;
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void;
-  setSubagentHookProvider(getState: () => SubagentRuntimeState): void;
+  setAsyncSubagentCompletionCallback?(callback: AsyncSubagentCompletionCallback | null): void;
   setAutoTurnCallback(callback: AutoTurnCallback | null): void;
   consumeTurnMetadata(): ChatTurnMetadata;
 

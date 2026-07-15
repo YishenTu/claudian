@@ -25,6 +25,7 @@ import {
   initializeTabControllers,
   initializeTabService,
   initializeTabUI,
+  recycleTabRuntime,
   setupServiceCallbacks,
   wireTabInputEvents,
 } from './Tab';
@@ -285,6 +286,7 @@ export class TabManager implements TabManagerInterface {
         && tab.state.messages.length > 0
         && tab.service
         && !tab.state.isStreaming
+        && !tab.state.isSwitchingConversation
         && !tab.state.hasPendingConversationSave
       ) {
         // Passive sync is only safe once local tab state has been persisted.
@@ -812,6 +814,7 @@ export class TabManager implements TabManagerInterface {
   }
 
   private maybePrimeProviderRuntime(tab: TabData): void {
+    if (tab.state.isSwitchingConversation) return;
     void this.prewarmProviderTab(tab).catch(() => {});
   }
 
@@ -1015,12 +1018,7 @@ export class TabManager implements TabManagerInterface {
       (tab) => tab.service?.providerId ?? tab.providerId,
     );
     for (const tab of tabs) {
-      tab.runtimeSupervisor.cleanup();
-      tab.service = null;
-      tab.serviceInitialized = false;
-      if (tab.lifecycleState === 'bound_active') {
-        tab.lifecycleState = tab.conversationId ? 'bound_cold' : 'blank';
-      }
+      await recycleTabRuntime(tab);
     }
   }
 
@@ -1049,14 +1047,7 @@ export class TabManager implements TabManagerInterface {
 
   /** Destroys all tabs and cleans up resources. */
   async destroy(): Promise<void> {
-    // Save all conversations in parallel (independent per-tab)
-    await Promise.all(
-      Array.from(this.tabs.values()).map(
-        tab => tab.controllers.conversationController?.save() ?? Promise.resolve()
-      )
-    );
-
-    // Destroy all tabs in parallel (independent per-tab, must run after saves complete)
+    // Each tab drains background work and persists its final state during teardown.
     await Promise.all(Array.from(this.tabs.values()).map(tab => destroyTab(tab)));
 
     this.tabs.clear();

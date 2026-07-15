@@ -93,11 +93,12 @@ describe('transformSDKMessage', () => {
       });
     });
 
-    it('normalizes task_notification completion into async subagent result', () => {
+    it('normalizes task_notification into a scoped completion event', () => {
       const message = msg({
         type: 'system',
         subtype: 'task_notification',
         task_id: 'agent-123',
+        tool_use_id: 'task-123',
         status: 'completed',
         output_file: '/tmp/agent-123.output',
         summary: 'Agent completed successfully.',
@@ -107,8 +108,10 @@ describe('transformSDKMessage', () => {
 
       expect(results).toEqual([
         {
-          type: 'async_subagent_result',
-          agentId: 'agent-123',
+          type: 'async_subagent_completion',
+          providerSessionId: 'test-session',
+          taskId: 'agent-123',
+          toolUseId: 'task-123',
           status: 'completed',
           result: 'Agent completed successfully.',
         },
@@ -129,8 +132,9 @@ describe('transformSDKMessage', () => {
 
       expect(results).toEqual([
         {
-          type: 'async_subagent_result',
-          agentId: 'agent-failed',
+          type: 'async_subagent_completion',
+          providerSessionId: 'test-session',
+          taskId: 'agent-failed',
           status: 'error',
           result: 'Agent failed.',
         },

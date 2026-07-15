@@ -1348,30 +1348,52 @@ describe('ClaudianService', () => {
       expect(onChunk).toHaveBeenCalled();
     });
 
-    it('should route task_notification completion to the active handler', async () => {
-      await (service as any).routeMessage({
+    it('delivers task_notification through the native callback and awaits persistence', async () => {
+      let release!: () => void;
+      const callback = jest.fn(() => new Promise<void>((resolve) => {
+        release = resolve;
+      }));
+      service.setAsyncSubagentCompletionCallback(callback);
+
+      const delivery = (service as any).routeMessage({
         type: 'system',
         subtype: 'task_notification',
         task_id: 'agent-123',
+        tool_use_id: 'task-123',
         status: 'completed',
         output_file: '/tmp/agent-123.output',
         summary: 'Agent completed successfully.',
         uuid: 'notification-1',
         session_id: 'session-1',
       });
+      await Promise.resolve();
 
-      expect(onChunk).toHaveBeenCalledWith({
-        type: 'async_subagent_result',
-        agentId: 'agent-123',
+      expect(callback).toHaveBeenCalledWith({
+        type: 'async_subagent_completion',
+        providerSessionId: 'session-1',
+        taskId: 'agent-123',
+        toolUseId: 'task-123',
         status: 'completed',
         result: 'Agent completed successfully.',
       });
+      expect(onChunk).not.toHaveBeenCalled();
+
+      let settled = false;
+      void delivery.then(() => { settled = true; });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      release();
+      await delivery;
+      expect(settled).toBe(true);
     });
 
-    it('should flush task_notification completion through auto-turn callback without waiting for a result message', async () => {
+    it('delivers task_notification without an active turn or synthetic auto-turn', async () => {
       (service as any).responseHandlers = [];
       const autoTurnCallback = jest.fn();
+      const completionCallback = jest.fn();
       service.setAutoTurnCallback(autoTurnCallback);
+      service.setAsyncSubagentCompletionCallback(completionCallback);
 
       await (service as any).routeMessage({
         type: 'system',
@@ -1384,17 +1406,14 @@ describe('ClaudianService', () => {
         session_id: 'session-1',
       });
 
-      expect(autoTurnCallback).toHaveBeenCalledWith({
-        chunks: [
-          {
-            type: 'async_subagent_result',
-            agentId: 'agent-456',
-            status: 'completed',
-            result: 'Background agent finished.',
-          },
-        ],
-        metadata: {},
+      expect(completionCallback).toHaveBeenCalledWith({
+        type: 'async_subagent_completion',
+        providerSessionId: 'session-1',
+        taskId: 'agent-456',
+        status: 'completed',
+        result: 'Background agent finished.',
       });
+      expect(autoTurnCallback).not.toHaveBeenCalled();
     });
 
     it('should route tool input deltas as tool_use updates', async () => {
@@ -3599,6 +3618,53 @@ describe('ClaudianService', () => {
       expect(onError).toHaveBeenCalledWith(crashError);
     });
 
+    it('drops messages yielded by a replaced persistent query', async () => {
+      let releaseMessage!: () => void;
+      let markStarted!: () => void;
+      const messageReady = new Promise<void>((resolve) => { releaseMessage = resolve; });
+      const iterationStarted = new Promise<void>((resolve) => { markStarted = resolve; });
+      let iteration = 0;
+      const oldQuery = {
+        [Symbol.asyncIterator]() { return this; },
+        async next() {
+          iteration++;
+          if (iteration > 1) return { done: true, value: undefined };
+          markStarted();
+          await messageReady;
+          return {
+            done: false,
+            value: {
+              type: 'system',
+              subtype: 'task_notification',
+              task_id: 'stale-task',
+              tool_use_id: 'stale-tool',
+              status: 'completed',
+              output_file: '/tmp/stale.output',
+              summary: 'Stale completion',
+              uuid: 'stale-notification',
+              session_id: 'shared-session',
+            },
+          };
+        },
+        async return() { return { done: true, value: undefined }; },
+        interrupt: jest.fn().mockResolvedValue(undefined),
+      };
+      const completionCallback = jest.fn();
+      service.setAsyncSubagentCompletionCallback(completionCallback);
+      (service as any).persistentQuery = oldQuery;
+      (service as any).responseHandlers = [];
+      (service as any).responseConsumerRunning = false;
+
+      (service as any).startResponseConsumer();
+      const consumerPromise = (service as any).responseConsumerPromise;
+      await iterationStarted;
+      (service as any).persistentQuery = { interrupt: jest.fn().mockResolvedValue(undefined) };
+      releaseMessage();
+      await consumerPromise;
+
+      expect(completionCallback).not.toHaveBeenCalled();
+    });
+
     it('should skip error handling when consumer is orphaned (replaced)', async () => {
       const crashError = new Error('old consumer error');
       let resolveDelay: () => void;
@@ -4161,6 +4227,23 @@ describe('ClaudianService', () => {
   });
 
   describe('syncConversationState', () => {
+    it('closes the persistent query when conversation ownership changes', () => {
+      const closeSpy = jest.spyOn(service, 'closePersistentQuery');
+
+      service.syncConversationState({
+        id: 'conversation-1',
+        sessionId: 'shared-session',
+      });
+      closeSpy.mockClear();
+
+      service.syncConversationState({
+        id: 'conversation-2',
+        sessionId: 'shared-session',
+      });
+
+      expect(closeSpy).toHaveBeenCalledWith('conversation switch');
+    });
+
     it('resolves fork state before updating the session', () => {
       const setSessionIdSpy = jest.spyOn(service, 'setSessionId').mockImplementation(() => {});
 

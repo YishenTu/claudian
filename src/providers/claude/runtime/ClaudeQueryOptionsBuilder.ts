@@ -46,7 +46,7 @@ export interface PersistentQueryContext extends QueryOptionsContext {
     fork?: boolean;
   };
   canUseTool?: CanUseTool;
-  hooks: Options['hooks'];
+  hooks?: Options['hooks'];
   externalContextPaths?: string[];
 }
 
@@ -55,7 +55,7 @@ export interface ColdStartQueryContext extends QueryOptionsContext {
   sessionId?: string;
   modelOverride?: string;
   canUseTool?: CanUseTool;
-  hooks: Options['hooks'];
+  hooks?: Options['hooks'];
   mcpMentions?: Set<string>;
   enabledMcpServers?: Set<string>;
   allowedTools?: string[];
@@ -152,8 +152,7 @@ export class QueryOptionsBuilder {
       ctx.canUseTool,
     );
     QueryOptionsBuilder.applyThinking(options, ctx.settings, runtimeModel);
-    options.hooks = ctx.hooks;
-
+    if (ctx.hooks) options.hooks = ctx.hooks;
     options.enableFileCheckpointing = true;
 
     if (ctx.resume) {
@@ -203,7 +202,7 @@ export class QueryOptionsBuilder {
       claudeSettings.safeMode,
       ctx.canUseTool,
     );
-    options.hooks = ctx.hooks;
+    if (ctx.hooks) options.hooks = ctx.hooks;
     QueryOptionsBuilder.applyThinking(options, ctx.settings, selectedModel);
 
     if (ctx.allowedTools !== undefined && ctx.allowedTools.length > 0) {

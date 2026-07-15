@@ -136,6 +136,21 @@ describe('ConversationController', () => {
         expect(deps.plugin.updateConversation).toHaveBeenCalledWith('old-conv', expect.any(Object));
       });
 
+      it('drains async completions and terminalizes tasks before saving', async () => {
+        const awaitCompletion = jest.fn().mockResolvedValue(undefined);
+        deps = createMockDeps({ awaitBackgroundWork: awaitCompletion });
+        deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
+        deps.state.currentConversationId = 'old-conv';
+        controller = new ConversationController(deps);
+
+        await controller.createNew();
+
+        expect(awaitCompletion.mock.invocationCallOrder[0])
+          .toBeLessThan((deps.subagentManager.orphanAllActive as jest.Mock).mock.invocationCallOrder[0]);
+        expect((deps.subagentManager.orphanAllActive as jest.Mock).mock.invocationCallOrder[0])
+          .toBeLessThan((deps.plugin.updateConversation as jest.Mock).mock.invocationCallOrder[0]);
+      });
+
       it('should reset file context for new conversation', async () => {
         const fileContextManager = deps.getFileContextManager()!;
 

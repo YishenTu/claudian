@@ -51,6 +51,7 @@ export interface ConversationControllerDeps {
   getSelectedModel?: () => string | null;
   ensureServiceForConversation?: (conversation: Conversation | null) => Promise<void>;
   dismissPendingInlinePrompts?: () => void;
+  awaitBackgroundWork?: () => Promise<void>;
 }
 
 type SaveOptions = {
@@ -117,12 +118,17 @@ export class ConversationController {
         this.getAgentService()?.cancel();
       }
 
-      // Save current conversation if it has messages
+      if (this.deps.awaitBackgroundWork) {
+        await this.deps.awaitBackgroundWork();
+      }
+
+      subagentManager.orphanAllActive();
+
+      // Persist terminalized background tasks before clearing their runtime state.
       if (state.currentConversationId && state.messages.length > 0) {
         await this.save();
       }
 
-      subagentManager.orphanAllActive();
       subagentManager.clear();
 
       // Clear streaming state and related DOM references
@@ -256,9 +262,12 @@ export class ConversationController {
 
     try {
       this.deps.dismissPendingInlinePrompts?.();
+      if (this.deps.awaitBackgroundWork) {
+        await this.deps.awaitBackgroundWork();
+      }
+      subagentManager.orphanAllActive();
       await this.save();
 
-      subagentManager.orphanAllActive();
       subagentManager.clear();
 
       const conversation = await plugin.switchConversation(id);

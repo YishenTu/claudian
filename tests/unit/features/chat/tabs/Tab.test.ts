@@ -23,6 +23,7 @@ import {
   initializeTabService,
   initializeTabUI,
   onProviderAvailabilityChanged,
+  recycleTabRuntime,
   setupServiceCallbacks,
   type TabCreateOptions,
   updatePlanModeUI,
@@ -371,7 +372,7 @@ jest.mock('@/features/chat/controllers/NavigationController', () => ({
 // Mock services
 jest.mock('@/features/chat/services/SubagentManager', () => ({
   SubagentManager: jest.fn().mockImplementation(() => ({
-    orphanAllActive: jest.fn(),
+    orphanAllActive: jest.fn().mockReturnValue([]),
     setCallback: jest.fn(),
     clear: jest.fn(),
   })),
@@ -1404,6 +1405,78 @@ describe('Tab - Destruction', () => {
       expect(tab.service).toBeNull();
     });
 
+    it('drains background work and persists orphaned tasks before recycling the runtime', async () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const cleanup = jest.fn();
+      const orphanAllActive = jest.fn().mockReturnValue([{}]);
+      const clear = jest.fn();
+      const save = jest.fn().mockResolvedValue(undefined);
+      let releaseWork!: () => void;
+
+      tab.conversationId = 'conversation-1';
+      tab.state.currentConversationId = 'conversation-1';
+      tab.lifecycleState = 'bound_active';
+      tab.serviceInitialized = true;
+      tab.service = { cleanup } as any;
+      tab.services.subagentManager = { orphanAllActive, clear } as any;
+      tab.controllers.conversationController = { save } as any;
+      tab.session.enqueueBackgroundWork(() => new Promise<void>((resolve) => {
+        releaseWork = resolve;
+      }));
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const recycling = recycleTabRuntime(tab);
+      await Promise.resolve();
+      expect(cleanup).not.toHaveBeenCalled();
+
+      releaseWork();
+      await recycling;
+
+      expect(orphanAllActive).toHaveBeenCalled();
+      expect(save).toHaveBeenCalledWith(false);
+      expect(clear).toHaveBeenCalled();
+      expect(cleanup).toHaveBeenCalled();
+      expect(tab.service).toBeNull();
+      expect(tab.lifecycleState).toBe('bound_cold');
+      expect(save.mock.invocationCallOrder[0]).toBeLessThan(cleanup.mock.invocationCallOrder[0]);
+    });
+
+    it('resets invalidated streaming state after recycling an active runtime', async () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const cancel = jest.fn();
+      const cleanup = jest.fn();
+      const resetStreamingState = jest.fn();
+      let resolveTurn!: () => void;
+
+      tab.lifecycleState = 'bound_active';
+      tab.serviceInitialized = true;
+      tab.state.isStreaming = true;
+      tab.state.cancelRequested = false;
+      tab.service = { cancel, cleanup } as any;
+      tab.controllers.streamController = { resetStreamingState } as any;
+      tab.session.activeTurn = new Promise<void>((resolve) => {
+        resolveTurn = resolve;
+      });
+
+      const recycling = recycleTabRuntime(tab);
+      await Promise.resolve();
+
+      expect(cancel).toHaveBeenCalled();
+      expect(tab.state.isStreaming).toBe(true);
+      expect(tab.state.isSwitchingConversation).toBe(true);
+
+      resolveTurn();
+      await recycling;
+
+      expect(resetStreamingState).toHaveBeenCalled();
+      expect(tab.state.isStreaming).toBe(false);
+      expect(tab.state.cancelRequested).toBe(false);
+      expect(tab.state.isSwitchingConversation).toBe(false);
+    });
+
     it('should cancel and await the active turn before removing the tab DOM', async () => {
       const options = createMockOptions();
       const tab = createTab(options);
@@ -1421,12 +1494,13 @@ describe('Tab - Destruction', () => {
       await Promise.resolve();
 
       expect(cancel).toHaveBeenCalled();
-      expect(cleanup).toHaveBeenCalled();
+      expect(cleanup).not.toHaveBeenCalled();
       expect(removeSpy).not.toHaveBeenCalled();
 
       resolveTurn();
       await destruction;
 
+      expect(cleanup).toHaveBeenCalled();
       expect(removeSpy).toHaveBeenCalled();
       expect(tab.service).toBeNull();
     });
@@ -1445,7 +1519,7 @@ describe('Tab - Destruction', () => {
       const options = createMockOptions();
       const tab = createTab(options);
 
-      const orphanAllActive = jest.fn();
+      const orphanAllActive = jest.fn().mockReturnValue([]);
       const clear = jest.fn();
       tab.services.subagentManager = { orphanAllActive, clear } as any;
 
@@ -1453,6 +1527,41 @@ describe('Tab - Destruction', () => {
 
       expect(orphanAllActive).toHaveBeenCalled();
       expect(clear).toHaveBeenCalled();
+    });
+
+    it('persists orphaned subagents before clearing tab state', async () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const orphanAllActive = jest.fn().mockReturnValue([{}]);
+      const clear = jest.fn();
+      const save = jest.fn().mockResolvedValue(undefined);
+      tab.state.currentConversationId = 'conversation-1';
+      tab.services.subagentManager = { orphanAllActive, clear } as any;
+      tab.controllers.conversationController = { save } as any;
+
+      await destroyTab(tab);
+
+      expect(save).toHaveBeenCalledWith(false);
+      expect(orphanAllActive.mock.invocationCallOrder[0]).toBeLessThan(save.mock.invocationCallOrder[0]);
+      expect(save.mock.invocationCallOrder[0]).toBeLessThan(clear.mock.invocationCallOrder[0]);
+    });
+
+    it('retries conversation persistence before clearing terminal subagent state', async () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const clear = jest.fn();
+      const save = jest.fn().mockResolvedValue(undefined);
+      tab.state.currentConversationId = 'conversation-1';
+      tab.services.subagentManager = {
+        orphanAllActive: jest.fn().mockReturnValue([]),
+        clear,
+      } as any;
+      tab.controllers.conversationController = { save } as any;
+
+      await destroyTab(tab);
+
+      expect(save).toHaveBeenCalledWith(false);
+      expect(save.mock.invocationCallOrder[0]).toBeLessThan(clear.mock.invocationCallOrder[0]);
     });
 
     it('should cleanup UI components', async () => {
@@ -1501,6 +1610,11 @@ describe('Tab - Service Callbacks', () => {
       });
       const scrollToBottom = jest.fn();
       const handleStreamChunk = jest.fn().mockResolvedValue(undefined);
+      const save = jest.fn().mockResolvedValue(undefined);
+
+      tab.conversationId = 'conversation-1';
+      tab.state.currentConversationId = 'conversation-1';
+      tab.lifecycleState = 'bound_active';
 
       Object.defineProperty(tab.dom.contentEl, 'isConnected', {
         value: true,
@@ -1521,6 +1635,7 @@ describe('Tab - Service Callbacks', () => {
         finalizeCurrentTextBlock: jest.fn().mockResolvedValue(undefined),
         hideThinkingIndicator: jest.fn(),
       } as any;
+      tab.controllers.conversationController = { save } as any;
       tab.controllers.inputController = {
         handleApprovalRequest: jest.fn(),
         dismissPendingApproval: jest.fn(),
@@ -1528,7 +1643,6 @@ describe('Tab - Service Callbacks', () => {
         handleExitPlanMode: jest.fn(),
       } as any;
       tab.services.subagentManager = {
-        hasRunningSubagents: jest.fn().mockReturnValue(false),
         resetStreamingState: jest.fn(),
       } as any;
 
@@ -1537,20 +1651,120 @@ describe('Tab - Service Callbacks', () => {
         setApprovalDismisser: jest.fn(),
         setAskUserQuestionCallback: jest.fn(),
         setExitPlanModeCallback: jest.fn(),
-        setSubagentHookProvider: jest.fn(),
+        setAsyncSubagentCompletionCallback: jest.fn(),
         setAutoTurnCallback: jest.fn(),
         setPermissionModeSyncCallback: jest.fn(),
+        getSessionId: jest.fn().mockReturnValue('session-1'),
       };
       tab.service = service as any;
 
       setupServiceCallbacks(tab, plugin);
 
       const autoTurnCallback = service.setAutoTurnCallback.mock.calls[0][0];
-      return { tab, addMessageSpy, addMessage, handleStreamChunk, scrollToBottom, autoTurnCallback };
+      return {
+        tab,
+        service,
+        save,
+        addMessageSpy,
+        addMessage,
+        handleStreamChunk,
+        scrollToBottom,
+        autoTurnCallback,
+      };
     }
 
+    function setupCompletionTest() {
+      const plugin = createMockPlugin();
+      const tab = createTab(createMockOptions({ plugin }));
+      const handleAsyncSubagentCompletion = jest.fn().mockResolvedValue(true);
+      const save = jest.fn().mockResolvedValue(undefined);
+
+      tab.conversationId = 'conversation-1';
+      tab.state.currentConversationId = 'conversation-1';
+      tab.lifecycleState = 'bound_active';
+      tab.controllers.streamController = { handleAsyncSubagentCompletion } as any;
+      tab.controllers.conversationController = { save } as any;
+      tab.controllers.inputController = {
+        handleApprovalRequest: jest.fn(),
+        dismissPendingApproval: jest.fn(),
+        handleAskUserQuestion: jest.fn(),
+        handleExitPlanMode: jest.fn(),
+      } as any;
+
+      const service = {
+        setApprovalCallback: jest.fn(),
+        setApprovalDismisser: jest.fn(),
+        setAskUserQuestionCallback: jest.fn(),
+        setExitPlanModeCallback: jest.fn(),
+        setAsyncSubagentCompletionCallback: jest.fn(),
+        setAutoTurnCallback: jest.fn(),
+        setPermissionModeSyncCallback: jest.fn(),
+        getSessionId: jest.fn().mockReturnValue('session-1'),
+      };
+      tab.service = service as any;
+      setupServiceCallbacks(tab, plugin);
+
+      return {
+        tab,
+        service,
+        save,
+        handleAsyncSubagentCompletion,
+        completionCallback: service.setAsyncSubagentCompletionCallback.mock.calls[0][0],
+      };
+    }
+
+    it('serializes native subagent completion before saving the conversation', async () => {
+      const { completionCallback, handleAsyncSubagentCompletion, save } = setupCompletionTest();
+      const completion = {
+        type: 'async_subagent_completion',
+        providerSessionId: 'session-1',
+        taskId: 'agent-1',
+        toolUseId: 'task-1',
+        status: 'completed',
+        result: 'Done',
+      };
+
+      await completionCallback(completion);
+
+      expect(handleAsyncSubagentCompletion).toHaveBeenCalledWith(completion);
+      expect(save).toHaveBeenCalledWith(false);
+      expect(handleAsyncSubagentCompletion.mock.invocationCallOrder[0])
+        .toBeLessThan(save.mock.invocationCallOrder[0]);
+    });
+
+    it('ignores native completion from a different provider session', async () => {
+      const { completionCallback, handleAsyncSubagentCompletion, save } = setupCompletionTest();
+
+      await completionCallback({
+        type: 'async_subagent_completion',
+        providerSessionId: 'other-session',
+        taskId: 'agent-1',
+        status: 'completed',
+      });
+
+      expect(handleAsyncSubagentCompletion).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('drains an accepted completion before a conversation transition', async () => {
+      const { tab, completionCallback, handleAsyncSubagentCompletion, save } = setupCompletionTest();
+      const completion = {
+        type: 'async_subagent_completion',
+        providerSessionId: 'session-1',
+        taskId: 'agent-1',
+        status: 'completed',
+      };
+
+      const pending = completionCallback(completion);
+      tab.state.isSwitchingConversation = true;
+      await pending;
+
+      expect(handleAsyncSubagentCompletion).toHaveBeenCalledWith(completion);
+      expect(save).toHaveBeenCalledWith(false);
+    });
+
     it('renders tool-only auto-triggered turns with a placeholder assistant message', async () => {
-      const { addMessageSpy, addMessage, handleStreamChunk, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
+      const { addMessageSpy, addMessage, handleStreamChunk, scrollToBottom, save, autoTurnCallback } = setupAutoTurnTest();
 
       await autoTurnCallback({
         chunks: [
@@ -1571,35 +1785,20 @@ describe('Tab - Service Callbacks', () => {
         expect.objectContaining({ role: 'assistant' })
       );
       expect(scrollToBottom).toHaveBeenCalled();
+      expect(save).toHaveBeenCalledWith(false);
     });
 
-    it('routes hidden async subagent auto-turn chunks without adding a placeholder message', async () => {
-      const { addMessageSpy, addMessage, handleStreamChunk, scrollToBottom, autoTurnCallback } = setupAutoTurnTest();
+    it('rejects an auto-triggered turn from a replaced runtime', async () => {
+      const { tab, addMessageSpy, save, autoTurnCallback } = setupAutoTurnTest();
+      tab.service = { getSessionId: jest.fn().mockReturnValue('session-1') } as any;
 
       await autoTurnCallback({
-        chunks: [
-          {
-            type: 'async_subagent_result',
-            agentId: 'agent-1',
-            status: 'completed',
-            result: 'Done',
-          },
-        ],
+        chunks: [{ type: 'text', content: 'Stale background result' }],
         metadata: {},
       });
 
-      expect(handleStreamChunk).toHaveBeenCalledWith(
-        {
-          type: 'async_subagent_result',
-          agentId: 'agent-1',
-          status: 'completed',
-          result: 'Done',
-        },
-        expect.objectContaining({ role: 'assistant' })
-      );
       expect(addMessageSpy).not.toHaveBeenCalled();
-      expect(addMessage).not.toHaveBeenCalled();
-      expect(scrollToBottom).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
     });
 
     it('skips auto-triggered rendering after the tab DOM is detached', async () => {
@@ -1962,7 +2161,7 @@ describe('Tab - Controller Initialization', () => {
       expect(tab.services.subagentManager).toBeDefined();
     });
 
-    it('persists async subagent state changes when not streaming', async () => {
+    it('updates async subagent state without starting an unowned save', async () => {
       const options = createMockOptions();
       const tab = createTab(options);
       const mockComponent = {} as any;
@@ -1992,7 +2191,7 @@ describe('Tab - Controller Initialization', () => {
       await Promise.resolve();
 
       expect(mockStreamController.onAsyncSubagentStateChange).toHaveBeenCalled();
-      expect(mockConversationController.save).toHaveBeenCalledWith(false);
+      expect(mockConversationController.save).not.toHaveBeenCalled();
     });
 
     it('does not persist async subagent state while main stream is active', async () => {

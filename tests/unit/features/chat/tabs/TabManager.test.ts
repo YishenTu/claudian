@@ -18,6 +18,14 @@ const mockInitializeTabUI = jest.fn();
 const mockInitializeTabControllers = jest.fn();
 const mockInitializeTabService = jest.fn().mockResolvedValue(undefined);
 const mockSetupServiceCallbacks = jest.fn();
+const mockRecycleTabRuntime = jest.fn(async (tab: any) => {
+  tab.runtimeSupervisor.cleanup();
+  tab.service = null;
+  tab.serviceInitialized = false;
+  if (tab.lifecycleState === 'bound_active') {
+    tab.lifecycleState = tab.conversationId ? 'bound_cold' : 'blank';
+  }
+});
 const mockWireTabInputEvents = jest.fn();
 const mockGetTabTitle = jest.fn().mockReturnValue('Test Tab');
 const mockCreateChatRuntime = jest.fn();
@@ -33,6 +41,7 @@ jest.mock('@/features/chat/tabs/Tab', () => ({
   initializeTabControllers: (...args: any[]) => mockInitializeTabControllers(...args),
   initializeTabService: (...args: any[]) => mockInitializeTabService(...args),
   setupServiceCallbacks: (...args: any[]) => mockSetupServiceCallbacks(...args),
+  recycleTabRuntime: (tab: any) => mockRecycleTabRuntime(tab),
   wireTabInputEvents: (...args: any[]) => mockWireTabInputEvents(...args),
   getTabTitle: (...args: any[]) => mockGetTabTitle(...args),
 }));
@@ -1106,6 +1115,7 @@ describe('TabManager - Broadcast', () => {
 
       await manager.recycleProviderRuntimes('opencode');
 
+      expect(mockRecycleTabRuntime).toHaveBeenCalledWith(opencodeTab);
       expect(opencodeCleanup).toHaveBeenCalledTimes(1);
       expect(opencodeTab.service).toBeNull();
       expect(opencodeTab.serviceInitialized).toBe(false);
@@ -1976,15 +1986,16 @@ describe('TabManager - Cleanup', () => {
       expect(manager.getTabCount()).toBe(0);
     });
 
-    it('should save all conversations before destroying', async () => {
+    it('delegates final persistence to tab teardown', async () => {
       const tabs = manager.getAllTabs();
       const saveFns = tabs.map(tab => tab.controllers.conversationController?.save);
 
       await manager.destroy();
 
       saveFns.forEach(save => {
-        expect(save).toHaveBeenCalled();
+        expect(save).not.toHaveBeenCalled();
       });
+      expect(mockDestroyTab).toHaveBeenCalledTimes(2);
     });
 
     it('should clear active tab ID', async () => {

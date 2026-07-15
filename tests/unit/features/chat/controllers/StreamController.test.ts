@@ -12,7 +12,7 @@ import {
   TOOL_TODO_WRITE,
   TOOL_WAIT_AGENT,
 } from '@/core/tools/toolNames';
-import type { ChatMessage } from '@/core/types';
+import type { ChatMessage, ToolCallInfo } from '@/core/types';
 import { StreamController, type StreamControllerDeps } from '@/features/chat/controllers/StreamController';
 import { ChatState } from '@/features/chat/state/ChatState';
 
@@ -145,9 +145,10 @@ function createMockDeps(): StreamControllerDeps {
       isLinkedAgentOutputTool: jest.fn().mockReturnValue(false),
       handleAgentOutputToolResult: jest.fn().mockReturnValue(undefined),
       handleAgentOutputToolUse: jest.fn(),
-      handleAsyncSubagentResult: jest.fn().mockReturnValue(undefined),
+      handleAsyncSubagentCompletion: jest.fn().mockReturnValue(undefined),
       handleTaskToolUse: jest.fn().mockReturnValue({ action: 'buffered' }),
       handleTaskToolResult: jest.fn(),
+      getByTaskId: jest.fn().mockReturnValue(undefined),
       refreshAsyncSubagent: jest.fn(),
       hasPendingTask: jest.fn().mockReturnValue(false),
       renderPendingTask: jest.fn().mockReturnValue(null),
@@ -1806,9 +1807,8 @@ describe('StreamController - Text Content', () => {
       expect(updateToolCallResult).not.toHaveBeenCalled();
     });
 
-    it('async_subagent_result finalizes and hydrates the matching background subagent', async () => {
+    it('native async completion finalizes and hydrates the matching background subagent', async () => {
       const runtime = deps.getAgentService!() as any;
-      const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
       const completedSubagent = {
         id: 'task-1',
@@ -1823,28 +1823,121 @@ describe('StreamController - Text Content', () => {
         result: 'Notification summary',
       };
 
-      (deps.subagentManager.handleAsyncSubagentResult as jest.Mock).mockReturnValueOnce(completedSubagent);
+      (deps.subagentManager.handleAsyncSubagentCompletion as jest.Mock).mockReturnValueOnce(completedSubagent);
+      (deps.subagentManager.getByTaskId as jest.Mock).mockImplementation(
+        (taskId: string) => taskId === completedSubagent.id ? completedSubagent : undefined,
+      );
       runtime.loadSubagentFinalResult.mockResolvedValueOnce('Recovered final result');
 
-      await controller.handleStreamChunk(
-        {
-          type: 'async_subagent_result',
-          agentId: 'agent-1',
-          status: 'completed',
-          result: 'Notification summary',
-        } as any,
-        msg
-      );
+      const completion = {
+        type: 'async_subagent_completion' as const,
+        providerSessionId: 'session-1',
+        taskId: 'agent-1',
+        toolUseId: 'task-1',
+        status: 'completed' as const,
+        result: 'Notification summary',
+      };
+      await controller.handleAsyncSubagentCompletion(completion);
 
-      expect(deps.subagentManager.handleAsyncSubagentResult).toHaveBeenCalledWith(
-        'agent-1',
-        'completed',
-        'Notification summary'
-      );
+      expect(deps.subagentManager.handleAsyncSubagentCompletion).toHaveBeenCalledWith(completion);
       expect(runtime.loadSubagentToolCalls).toHaveBeenCalledWith('agent-1');
       expect(runtime.loadSubagentFinalResult).toHaveBeenCalledWith('agent-1');
       expect(completedSubagent.result).toBe('Recovered final result');
       expect(deps.subagentManager.refreshAsyncSubagent).toHaveBeenCalledWith(completedSubagent);
+    });
+
+    it('discards hydration that resolves after the canonical task is cleared', async () => {
+      const runtime = deps.getAgentService!() as any;
+      const completedSubagent = {
+        id: 'task-stale',
+        description: 'Background task',
+        prompt: 'Do work',
+        mode: 'async',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        asyncStatus: 'completed',
+        agentId: 'agent-stale',
+        result: 'Notification summary',
+      };
+      let resolveToolCalls!: (toolCalls: ToolCallInfo[]) => void;
+      runtime.loadSubagentToolCalls.mockReturnValueOnce(new Promise((resolve) => {
+        resolveToolCalls = resolve;
+      }));
+      (deps.subagentManager.handleAsyncSubagentCompletion as jest.Mock).mockReturnValueOnce(completedSubagent);
+      (deps.subagentManager.getByTaskId as jest.Mock).mockImplementation(
+        (taskId: string) => taskId === completedSubagent.id ? completedSubagent : undefined,
+      );
+
+      const pending = controller.handleAsyncSubagentCompletion({
+        type: 'async_subagent_completion',
+        providerSessionId: 'session-1',
+        taskId: 'agent-stale',
+        toolUseId: 'task-stale',
+        status: 'completed',
+      });
+      await Promise.resolve();
+
+      (deps.subagentManager.getByTaskId as jest.Mock).mockReturnValue(undefined);
+      resolveToolCalls([{
+        id: 'read-stale',
+        name: 'Read',
+        input: {},
+        status: 'completed',
+        isExpanded: false,
+      }]);
+      await pending;
+
+      expect(completedSubagent.toolCalls).toEqual([]);
+      expect(runtime.loadSubagentFinalResult).not.toHaveBeenCalled();
+      expect(deps.subagentManager.refreshAsyncSubagent).not.toHaveBeenCalled();
+    });
+
+    it('discards hydration that resolves after the provider session changes', async () => {
+      const runtime = deps.getAgentService!() as any;
+      const completedSubagent = {
+        id: 'task-stale-session',
+        description: 'Background task',
+        prompt: 'Do work',
+        mode: 'async',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        asyncStatus: 'completed',
+        agentId: 'agent-stale-session',
+        result: 'Notification summary',
+      };
+      let resolveToolCalls!: (toolCalls: ToolCallInfo[]) => void;
+      runtime.loadSubagentToolCalls.mockReturnValueOnce(new Promise((resolve) => {
+        resolveToolCalls = resolve;
+      }));
+      (deps.subagentManager.handleAsyncSubagentCompletion as jest.Mock).mockReturnValueOnce(completedSubagent);
+      (deps.subagentManager.getByTaskId as jest.Mock).mockImplementation(
+        (taskId: string) => taskId === completedSubagent.id ? completedSubagent : undefined,
+      );
+
+      const pending = controller.handleAsyncSubagentCompletion({
+        type: 'async_subagent_completion',
+        providerSessionId: 'session-1',
+        taskId: 'agent-stale-session',
+        toolUseId: 'task-stale-session',
+        status: 'completed',
+      });
+      await Promise.resolve();
+
+      runtime.getSessionId.mockReturnValue('session-2');
+      resolveToolCalls([{
+        id: 'read-stale-session',
+        name: 'Read',
+        input: {},
+        status: 'completed',
+        isExpanded: false,
+      }]);
+      await pending;
+
+      expect(completedSubagent.toolCalls).toEqual([]);
+      expect(runtime.loadSubagentFinalResult).not.toHaveBeenCalled();
+      expect(deps.subagentManager.refreshAsyncSubagent).not.toHaveBeenCalled();
     });
 
     it('hydrates async subagent tool calls from sidecar during streaming completion', async () => {
@@ -1867,6 +1960,9 @@ describe('StreamController - Text Content', () => {
 
       (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce(completedSubagent);
+      (deps.subagentManager.getByTaskId as jest.Mock).mockImplementation(
+        (taskId: string) => taskId === completedSubagent.id ? completedSubagent : undefined,
+      );
       runtime.loadSubagentToolCalls.mockResolvedValueOnce([
         {
           id: 'read-1',
@@ -1918,6 +2014,9 @@ describe('StreamController - Text Content', () => {
 
       (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce(completedSubagent);
+      (deps.subagentManager.getByTaskId as jest.Mock).mockImplementation(
+        (taskId: string) => taskId === completedSubagent.id ? completedSubagent : undefined,
+      );
       runtime.loadSubagentFinalResult.mockResolvedValueOnce('Recovered final result from sidecar');
 
       await controller.handleStreamChunk(
@@ -1960,6 +2059,9 @@ describe('StreamController - Text Content', () => {
 
       (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce(completedSubagent);
+      (deps.subagentManager.getByTaskId as jest.Mock).mockImplementation(
+        (taskId: string) => taskId === completedSubagent.id ? completedSubagent : undefined,
+      );
       runtime.loadSubagentFinalResult.mockResolvedValueOnce('Already final');
 
       await controller.handleStreamChunk(
@@ -1982,6 +2084,9 @@ describe('StreamController - Text Content', () => {
       const runtime = deps.getAgentService!() as any;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
+      const enqueueBackgroundWork = jest.fn((work: () => Promise<void>) => work());
+      const persistConversation = jest.fn().mockResolvedValue(undefined);
+      Object.assign(deps, { enqueueBackgroundWork, persistConversation });
 
       const completedSubagent = {
         id: 'task-3',
@@ -2007,6 +2112,9 @@ describe('StreamController - Text Content', () => {
 
       (deps.subagentManager.isLinkedAgentOutputTool as jest.Mock).mockReturnValueOnce(true);
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce(completedSubagent);
+      (deps.subagentManager.getByTaskId as jest.Mock).mockImplementation(
+        (taskId: string) => taskId === completedSubagent.id ? completedSubagent : undefined,
+      );
       runtime.loadSubagentFinalResult
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce('Recovered final result after delayed flush');
@@ -2023,10 +2131,13 @@ describe('StreamController - Text Content', () => {
       jest.advanceTimersByTime(200);
       await Promise.resolve();
       await Promise.resolve();
+      await Promise.resolve();
 
+      expect(enqueueBackgroundWork).toHaveBeenCalledTimes(1);
       expect(runtime.loadSubagentFinalResult).toHaveBeenCalledTimes(2);
       expect(completedSubagent.result).toBe('Recovered final result after delayed flush');
       expect(deps.subagentManager.refreshAsyncSubagent).toHaveBeenCalledWith(completedSubagent);
+      expect(persistConversation).toHaveBeenCalledTimes(1);
     });
   });
 
