@@ -1346,6 +1346,59 @@ Only this is the final result.
   });
 
   // ============================================
+  // hasRunningSubagents reconciliation
+  // ============================================
+
+  describe('hasRunningSubagents reconciliation', () => {
+    it('does not report running for terminal entries lingering in the maps and reconciles them out', () => {
+      const { manager } = createManager();
+      const internal = manager as any;
+      // Simulate the completion-notice / agent_id registration race that can
+      // leave terminal entries in the maps: TaskList is empty and TaskOutput
+      // reports the tasks as not found, yet the Stop hook used to block every
+      // turn-end because it counted raw Map size.
+      internal.activeAsyncSubagents.set('agent-done', {
+        id: 'task-done', mode: 'async', status: 'completed', asyncStatus: 'completed',
+      });
+      internal.pendingAsyncSubagents.set('task-orphaned', {
+        id: 'task-orphaned', mode: 'async', status: 'error', asyncStatus: 'orphaned',
+      });
+
+      expect(manager.hasRunningSubagents()).toBe(false);
+      // Terminal entries are reconciled out so the maps do not leak.
+      expect(internal.activeAsyncSubagents.size).toBe(0);
+      expect(internal.pendingAsyncSubagents.size).toBe(0);
+    });
+
+    it('still reports running while a genuinely running subagent is present', () => {
+      const { manager } = createManager();
+      const internal = manager as any;
+      internal.activeAsyncSubagents.set('agent-live', {
+        id: 'task-live', mode: 'async', status: 'running', asyncStatus: 'running',
+      });
+      internal.activeAsyncSubagents.set('agent-done', {
+        id: 'task-done', mode: 'async', status: 'completed', asyncStatus: 'completed',
+      });
+
+      expect(manager.hasRunningSubagents()).toBe(true);
+      // The completed entry is reconciled out; the live one keeps blocking.
+      expect(internal.activeAsyncSubagents.has('agent-live')).toBe(true);
+      expect(internal.activeAsyncSubagents.has('agent-done')).toBe(false);
+    });
+
+    it('reports running for a still-pending subagent awaiting its agent_id', () => {
+      const { manager } = createManager();
+      const internal = manager as any;
+      internal.pendingAsyncSubagents.set('task-pending', {
+        id: 'task-pending', mode: 'async', status: 'running', asyncStatus: 'pending',
+      });
+
+      expect(manager.hasRunningSubagents()).toBe(true);
+      expect(internal.pendingAsyncSubagents.has('task-pending')).toBe(true);
+    });
+  });
+
+  // ============================================
   // Sync Subagent Operations
   // ============================================
 

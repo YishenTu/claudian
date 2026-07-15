@@ -487,8 +487,35 @@ export class SubagentManager {
   // ============================================
 
   public hasRunningSubagents(): boolean {
-    // pendingAsyncSubagents: awaiting agent_id; activeAsyncSubagents: only holds running entries
-    return this.pendingAsyncSubagents.size > 0 || this.activeAsyncSubagents.size > 0;
+    // Count by actual asyncStatus instead of raw Map size. Completed/errored/
+    // orphaned async subagents can linger in these maps when a completion notice
+    // arrives before the agent_id is registered, or when a terminal TaskOutput
+    // result is dropped. Counting size alone then makes the Stop hook block every
+    // turn-end with no satisfiable remedy (TaskList is empty and TaskOutput
+    // reports the task as not found), forcing the model to re-invoke indefinitely.
+    // Reconcile terminal entries out here and only report "running" for genuinely
+    // pending/running subagents, so the gate is never weakened for live ones.
+    const isTerminal = (subagent: SubagentInfo | undefined): boolean =>
+      subagent?.asyncStatus === 'completed' ||
+      subagent?.asyncStatus === 'error' ||
+      subagent?.asyncStatus === 'orphaned';
+
+    let running = false;
+    for (const [taskToolId, subagent] of this.pendingAsyncSubagents) {
+      if (isTerminal(subagent)) {
+        this.pendingAsyncSubagents.delete(taskToolId);
+      } else {
+        running = true;
+      }
+    }
+    for (const [agentId, subagent] of this.activeAsyncSubagents) {
+      if (isTerminal(subagent)) {
+        this.activeAsyncSubagents.delete(agentId);
+      } else {
+        running = true;
+      }
+    }
+    return running;
   }
 
   // ============================================
