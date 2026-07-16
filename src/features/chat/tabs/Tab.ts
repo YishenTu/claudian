@@ -173,6 +173,7 @@ function getWritableTabSettingsSnapshot(
     getTabProviderId(tab, plugin),
     getTabSelectedModel(tab, plugin),
   );
+}
 
 function getTabConversation(
   tab: TabProviderContext,
