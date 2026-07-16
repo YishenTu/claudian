@@ -1,4 +1,5 @@
 import type { ApprovalCallback, AskUserQuestionCallback } from '@/core/runtime/types';
+import { CodexDynamicToolRegistry } from '@/providers/codex/runtime/CodexDynamicToolRegistry';
 import { CodexServerRequestRouter } from '@/providers/codex/runtime/CodexServerRequestRouter';
 
 describe('CodexServerRequestRouter', () => {
@@ -520,6 +521,64 @@ describe('CodexServerRequestRouter', () => {
       deferred.resolve!(null);
       const result = await resultPromise;
       expect(result).toEqual({ answers: {} });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Dynamic tools
+  // -----------------------------------------------------------------------
+
+  describe('dynamic tools', () => {
+    it('routes registered dynamic tool calls and returns app-server content items', async () => {
+      const registry = new CodexDynamicToolRegistry();
+      const handler = jest.fn().mockResolvedValue({
+        success: true,
+        contentItems: [{ type: 'inputText', text: 'workspace paths' }],
+      });
+      registry.register({
+        includeInThreadStart: true,
+        namespace: {
+          name: 'codex_app',
+          description: 'Codex host tools',
+        },
+        tool: {
+          type: 'function',
+          name: 'load_workspace_dependencies',
+          description: 'Load workspace dependencies',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        handler,
+      });
+      router.setDynamicToolRegistry(registry);
+
+      const params = {
+        threadId: 't1',
+        turnId: 'turn1',
+        callId: 'call1',
+        namespace: 'codex_app',
+        tool: 'load_workspace_dependencies',
+        arguments: {},
+      };
+      const result = await router.handleServerRequest('item/tool/call', params);
+
+      expect(handler).toHaveBeenCalledWith(params);
+      expect(result).toEqual({
+        success: true,
+        contentItems: [{ type: 'inputText', text: 'workspace paths' }],
+      });
+    });
+
+    it('rejects dynamic tool calls that were not registered', async () => {
+      router.setDynamicToolRegistry(new CodexDynamicToolRegistry());
+
+      await expect(router.handleServerRequest('item/tool/call', {
+        threadId: 't1',
+        turnId: 'turn1',
+        callId: 'call1',
+        namespace: 'codex_app',
+        tool: 'unknown',
+        arguments: {},
+      })).rejects.toThrow('Unsupported dynamic tool');
     });
   });
 

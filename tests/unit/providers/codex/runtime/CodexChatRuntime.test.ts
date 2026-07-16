@@ -249,6 +249,81 @@ function createWslLaunchSpec(overrides: Record<string, unknown> = {}) {
   };
 }
 
+interface TestWorkspaceRuntime {
+  home: string;
+  runtimeRoot: string;
+  dependenciesRoot: string;
+}
+
+function createTestWorkspaceRuntime(): TestWorkspaceRuntime {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-chat-runtime-'));
+  const runtimeRoot = path.join(
+    home,
+    '.cache',
+    'codex-runtimes',
+    'codex-primary-runtime',
+  );
+  const dependenciesRoot = path.join(runtimeRoot, 'dependencies');
+  fs.mkdirSync(path.join(dependenciesRoot, 'node', 'bin'), { recursive: true });
+  fs.mkdirSync(
+    path.join(dependenciesRoot, 'node', 'node_modules', '@oai', 'artifact-tool'),
+    { recursive: true },
+  );
+  fs.mkdirSync(path.join(dependenciesRoot, 'python', 'bin'), { recursive: true });
+  fs.mkdirSync(path.join(dependenciesRoot, 'bin', 'override'), { recursive: true });
+  fs.mkdirSync(path.join(dependenciesRoot, 'bin', 'fallback'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'runtime.json'), JSON.stringify({
+    bundleFormatVersion: 2,
+    bundleVersion: 'test-bundle',
+    targetPlatform: 'darwin',
+  }));
+  fs.writeFileSync(path.join(dependenciesRoot, 'node', 'bin', 'node'), '');
+  fs.writeFileSync(path.join(dependenciesRoot, 'python', 'bin', 'python3'), '');
+  fs.writeFileSync(path.join(dependenciesRoot, 'bin', 'fallback', 'git'), '');
+  fs.writeFileSync(path.join(dependenciesRoot, 'bin', 'fallback', 'pnpm'), '');
+  fs.writeFileSync(
+    path.join(dependenciesRoot, 'node', 'node_modules', '@oai', 'artifact-tool', 'package.json'),
+    JSON.stringify({ version: 'test-artifact' }),
+  );
+
+  return { home, runtimeRoot, dependenciesRoot };
+}
+
+function useTestWorkspaceRuntime(workspaceRuntime: TestWorkspaceRuntime): void {
+  mockResolveLaunchSpec.mockImplementation((plugin: any) => ({
+    target: {
+      method: 'host-native',
+      platformFamily: 'unix',
+      platformOs: 'macos',
+    },
+    command: plugin.getResolvedProviderCliPath('codex') ?? 'codex',
+    args: ['app-server', '--listen', 'stdio://'],
+    spawnCwd: '/test/vault',
+    targetCwd: '/test/vault',
+    env: { HOME: workspaceRuntime.home },
+    pathMapper: {
+      target: {
+        method: 'host-native',
+        platformFamily: 'unix',
+        platformOs: 'macos',
+      },
+      toTargetPath: (value: string) => value,
+      toHostPath: (value: string) => value,
+      mapTargetPathList: (values: string[]) => values,
+      canRepresentHostPath: () => true,
+    },
+  }));
+}
+
+function workspaceRuntimeInitializeResponse(workspaceRuntime: TestWorkspaceRuntime) {
+  return {
+    userAgent: 'test/0.1',
+    codexHome: path.join(workspaceRuntime.home, '.codex'),
+    platformFamily: 'unix',
+    platformOs: 'macos',
+  };
+}
+
 async function collectChunks(gen: AsyncGenerator<StreamChunk>): Promise<StreamChunk[]> {
   const chunks: StreamChunk[] = [];
   for await (const chunk of gen) {
@@ -539,6 +614,86 @@ describe('CodexChatRuntime', () => {
       expect(chunks).toContainEqual({ type: 'done' });
     });
 
+    it('registers the workspace dependency tool when the bundled runtime is available', async () => {
+      const workspaceRuntime = createTestWorkspaceRuntime();
+      useTestWorkspaceRuntime(workspaceRuntime);
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') {
+          return workspaceRuntimeInitializeResponse(workspaceRuntime);
+        }
+        if (method === 'thread/start') return threadStartResponse('thread-dynamic-tool');
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'thread-dynamic-tool',
+              turn: { id: 'turn-dynamic-tool', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-dynamic-tool');
+        }
+        return {};
+      });
+
+      try {
+        await collectChunks(runtime.query(createTurn('create a workbook')));
+
+        expect(findCall('thread/start')[1].dynamicTools).toEqual([{
+          type: 'namespace',
+          name: 'codex_app',
+          description: expect.any(String),
+          tools: [expect.objectContaining({
+            type: 'function',
+            name: 'load_workspace_dependencies',
+          })],
+        }]);
+
+        const response = await emitServerRequest('item/tool/call', 'request-1', {
+          threadId: 'thread-dynamic-tool',
+          turnId: 'turn-dynamic-tool',
+          callId: 'call-1',
+          namespace: 'codex_app',
+          tool: 'load_workspace_dependencies',
+          arguments: {},
+        });
+        expect(response).toEqual(expect.objectContaining({
+          success: true,
+          contentItems: [expect.objectContaining({
+            type: 'inputText',
+            text: expect.stringContaining(path.join(workspaceRuntime.dependenciesRoot, 'node', 'node_modules')),
+          })],
+        }));
+
+        const updates = runtime.buildSessionUpdates({ conversation: null, sessionInvalidated: false });
+        expect(updates.updates.providerState).toEqual(expect.objectContaining({
+          workspaceDependencyToolVersion: 1,
+        }));
+      } finally {
+        fs.rmSync(workspaceRuntime.home, { recursive: true, force: true });
+      }
+    });
+
+    it('does not advertise the workspace dependency tool for an incomplete runtime', async () => {
+      await collectChunks(runtime.query(createTurn('hi')));
+
+      expect(findCall('thread/start')[1].dynamicTools).toBeUndefined();
+      expect(serverRequestHandlers.has('item/tool/call')).toBe(true);
+
+      const response = await emitServerRequest('item/tool/call', 'request-missing-runtime', {
+        threadId: 'thread-001',
+        turnId: 'turn-001',
+        callId: 'call-missing-runtime',
+        namespace: 'codex_app',
+        tool: 'load_workspace_dependencies',
+        arguments: {},
+      });
+      expect(response).toEqual(expect.objectContaining({
+        success: false,
+        contentItems: [expect.objectContaining({
+          text: expect.stringContaining('no longer available'),
+        })],
+      }));
+    });
+
     it('handles host-native initialize responses that omit codexHome', async () => {
       mockTransportRequest.mockImplementation(async (method: string) => {
         switch (method) {
@@ -819,6 +974,96 @@ describe('CodexChatRuntime', () => {
       const resumeCall = findCall('thread/resume');
       expect(startCall).toBeUndefined();
       expect(resumeCall).toBeUndefined();
+    });
+
+    it('migrates a legacy thread to a tool-capable thread and replays its history', async () => {
+      const workspaceRuntime = createTestWorkspaceRuntime();
+      useTestWorkspaceRuntime(workspaceRuntime);
+      runtime.syncConversationState({
+        sessionId: 'thread-legacy',
+        providerState: { threadId: 'thread-legacy', sessionFilePath: '/tmp/legacy.jsonl' },
+      });
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return workspaceRuntimeInitializeResponse(workspaceRuntime);
+        if (method === 'thread/start') return threadStartResponse('thread-migrated');
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'thread-migrated',
+              turn: { id: 'turn-migrated', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-migrated');
+        }
+        return {};
+      });
+      const history = [
+        { id: 'u1', role: 'user' as const, content: 'Earlier question', timestamp: 1 },
+        { id: 'a1', role: 'assistant' as const, content: 'Earlier answer', timestamp: 2 },
+      ];
+
+      try {
+        await collectChunks(runtime.query(createTurn('create a workbook'), history));
+
+        expect(findCall('thread/resume')).toBeUndefined();
+        expect(findCall('thread/start')[1].dynamicTools).toBeDefined();
+        expect(JSON.stringify(findCall('turn/start')[1].input)).toContain('Earlier question');
+        expect(runtime.getSessionId()).toBe('thread-migrated');
+        expect(runtime.buildSessionUpdates({ conversation: null, sessionInvalidated: false }).updates.providerState)
+          .toEqual(expect.objectContaining({ workspaceDependencyToolVersion: 1 }));
+      } finally {
+        fs.rmSync(workspaceRuntime.home, { recursive: true, force: true });
+      }
+    });
+
+    it('keeps a persisted dynamic-tool handler on resume when the runtime is missing', async () => {
+      runtime.syncConversationState({
+        sessionId: 'thread-tool-capable',
+        providerState: {
+          threadId: 'thread-tool-capable',
+          workspaceDependencyToolVersion: 1,
+        },
+      });
+      let toolResponse: unknown;
+      let toolError: unknown;
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') {
+          return { userAgent: 'test/0.1', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'macos' };
+        }
+        if (method === 'thread/resume') return threadStartResponse('thread-tool-capable');
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            void emitServerRequest('item/tool/call', 'request-resumed-tool', {
+              threadId: 'thread-tool-capable',
+              turnId: 'turn-resumed-tool',
+              callId: 'call-resumed-tool',
+              namespace: 'codex_app',
+              tool: 'load_workspace_dependencies',
+              arguments: {},
+            }).then(
+              response => { toolResponse = response; },
+              error => { toolError = error; },
+            ).finally(() => {
+              emitNotification('turn/completed', {
+                threadId: 'thread-tool-capable',
+                turn: { id: 'turn-resumed-tool', items: [], status: 'completed', error: null },
+              });
+            });
+          }, 0);
+          return turnStartResponse('turn-resumed-tool');
+        }
+        return {};
+      });
+
+      await collectChunks(runtime.query(createTurn('create a workbook')));
+
+      expect(toolError).toBeUndefined();
+      expect(toolResponse).toEqual(expect.objectContaining({
+        success: false,
+        contentItems: [expect.objectContaining({
+          text: expect.stringContaining('no longer available'),
+        })],
+      }));
     });
   });
 
@@ -2045,6 +2290,45 @@ describe('CodexChatRuntime', () => {
 
       // After fork, session should be the fork thread
       expect(runtime.getSessionId()).toBe('fork-thread-1');
+    });
+
+    it('migrates a fork from a legacy source to a tool-capable thread', async () => {
+      const workspaceRuntime = createTestWorkspaceRuntime();
+      useTestWorkspaceRuntime(workspaceRuntime);
+      runtime.syncConversationState({
+        sessionId: null,
+        providerState: { forkSource: { sessionId: 'legacy-source', resumeAt: 'turn-legacy' } },
+      });
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return workspaceRuntimeInitializeResponse(workspaceRuntime);
+        if (method === 'thread/start') return threadStartResponse('fork-migrated');
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'fork-migrated',
+              turn: { id: 'turn-fork-migrated', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-fork-migrated');
+        }
+        return {};
+      });
+      const history = [
+        { id: 'u1', role: 'user' as const, content: 'Source question', timestamp: 1 },
+        { id: 'a1', role: 'assistant' as const, content: 'Source answer', timestamp: 2 },
+      ];
+
+      try {
+        await collectChunks(runtime.query(createTurn('forked workbook request'), history));
+
+        expect(findCall('thread/fork')).toBeUndefined();
+        expect(findCall('thread/resume')).toBeUndefined();
+        expect(findCall('thread/start')[1].dynamicTools).toBeDefined();
+        expect(JSON.stringify(findCall('turn/start')[1].input)).toContain('Source question');
+        expect(runtime.getSessionId()).toBe('fork-migrated');
+      } finally {
+        fs.rmSync(workspaceRuntime.home, { recursive: true, force: true });
+      }
     });
 
     it('skips rollback when resumeAt is the last turn', async () => {

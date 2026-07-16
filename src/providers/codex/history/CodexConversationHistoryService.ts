@@ -208,6 +208,11 @@ export class CodexConversationHistoryService implements ProviderConversationHist
       ?? deriveCodexSessionsRootFromSessionPath(sourceState.sessionFilePath);
     const providerState: CodexProviderState = {
       forkSource: { sessionId: sourceSessionId, resumeAt },
+      ...(
+        sourceState.workspaceDependencyToolVersion !== undefined
+          ? { workspaceDependencyToolVersion: sourceState.workspaceDependencyToolVersion }
+          : {}
+      ),
       ...(sourceState.sessionFilePath ? { forkSourceSessionFilePath: sourceState.sessionFilePath } : {}),
       ...(
         sourceTranscriptRootPath

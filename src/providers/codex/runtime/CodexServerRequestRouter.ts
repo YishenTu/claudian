@@ -9,6 +9,8 @@ import type {
   CommandApprovalRequest,
   CommandExecutionApprovalDecision,
   CommandExecutionApprovalResponse,
+  DynamicToolCallParams,
+  DynamicToolCallResponse,
   FileChangeApprovalDecision,
   FileChangeApprovalRequest,
   FileChangeApprovalResponse,
@@ -18,6 +20,7 @@ import type {
   UserInputRequest,
   UserInputResponse,
 } from './codexAppServerTypes';
+import type { CodexDynamicToolRegistry } from './CodexDynamicToolRegistry';
 
 export class CodexServerRequestRouter {
   private approvalCallback: ApprovalCallback | null = null;
@@ -26,6 +29,7 @@ export class CodexServerRequestRouter {
   private askUserAbortController: AbortController | null = null;
   private pendingAskUserRequestId: RequestId | null = null;
   private pendingAskUserThreadId: string | null = null;
+  private dynamicToolRegistry: CodexDynamicToolRegistry | null = null;
 
   setApprovalCallback(callback: ApprovalCallback | null): void {
     this.approvalCallback = callback;
@@ -33,6 +37,10 @@ export class CodexServerRequestRouter {
 
   setAskUserCallback(callback: AskUserQuestionCallback | null): void {
     this.askUserCallback = callback;
+  }
+
+  setDynamicToolRegistry(registry: CodexDynamicToolRegistry | null): void {
+    this.dynamicToolRegistry = registry;
   }
 
   async handleServerRequest(
@@ -58,9 +66,21 @@ export class CodexServerRequestRouter {
       case 'item/tool/requestUserInput':
         return this.handleUserInputRequest(requestId, params as UserInputRequest);
 
+      case 'item/tool/call':
+        return this.handleDynamicToolCall(params as DynamicToolCallParams);
+
       default:
         throw new Error(`Unsupported server request: ${method}`);
     }
+  }
+
+  private async handleDynamicToolCall(
+    params: DynamicToolCallParams,
+  ): Promise<DynamicToolCallResponse> {
+    if (!this.dynamicToolRegistry) {
+      throw new Error(`Unsupported dynamic tool: ${params.tool}`);
+    }
+    return this.dynamicToolRegistry.execute(params);
   }
 
   hasPendingApprovalRequest(requestId: RequestId, threadId: string): boolean {

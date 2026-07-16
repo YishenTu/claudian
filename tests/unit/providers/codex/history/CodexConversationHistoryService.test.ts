@@ -352,6 +352,20 @@ describe('CodexConversationHistoryService', () => {
       });
     });
 
+    it('preserves workspace dependency tool provenance from the source thread', () => {
+      const service = new CodexConversationHistoryService();
+      const result = service.buildForkProviderState(
+        'source-thread-id',
+        'turn-uuid-2',
+        { workspaceDependencyToolVersion: 1 },
+      );
+
+      expect(result).toEqual({
+        forkSource: { sessionId: 'source-thread-id', resumeAt: 'turn-uuid-2' },
+        workspaceDependencyToolVersion: 1,
+      });
+    });
+
     it('derives the source transcript root from sessionFilePath when only the session path is stored', () => {
       const service = new CodexConversationHistoryService();
       const result = service.buildForkProviderState(
