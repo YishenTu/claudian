@@ -152,6 +152,7 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
       refreshActionButtons: jest.fn(),
       removeMessage: jest.fn(),
       updateLiveUserMessage: jest.fn(),
+      appendInterruptIndicator: jest.fn(),
     } as any,
     streamController: {
       showThinkingIndicator: jest.fn(),
@@ -2142,7 +2143,7 @@ describe('InputController - Message Queue', () => {
   });
 
   describe('Stream interruption', () => {
-    it('should append interrupted text when cancelRequested is true', async () => {
+    it('should render an interruption indicator when cancelRequested is true', async () => {
       deps = createSendableDeps();
 
       ((deps as any).mockAgentService.query as jest.Mock).mockImplementation(() => {
@@ -2159,14 +2160,18 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      expect(deps.streamController.appendText).toHaveBeenCalledWith(
+      expect(deps.streamController.appendText).not.toHaveBeenCalledWith(
         expect.stringContaining('Interrupted')
       );
+      expect(deps.renderer.appendInterruptIndicator).toHaveBeenCalledWith(expect.anything());
+      expect(deps.state.messages.find(message => message.role === 'assistant')).toMatchObject({
+        isInterrupt: true,
+      });
       expect(deps.state.isStreaming).toBe(false);
       expect(deps.state.cancelRequested).toBe(false);
     });
 
-    it('should append interrupted text when cancelRequested is set after last stream chunk', async () => {
+    it('should render an interruption indicator when cancellation follows the last chunk', async () => {
       deps = createSendableDeps();
 
       ((deps as any).mockAgentService.query as jest.Mock).mockImplementation(() => {
@@ -2184,9 +2189,13 @@ describe('InputController - Message Queue', () => {
 
       await controller.sendMessage();
 
-      expect(deps.streamController.appendText).toHaveBeenCalledWith(
+      expect(deps.streamController.appendText).not.toHaveBeenCalledWith(
         expect.stringContaining('Interrupted')
       );
+      expect(deps.renderer.appendInterruptIndicator).toHaveBeenCalledWith(expect.anything());
+      expect(deps.state.messages.find(message => message.role === 'assistant')).toMatchObject({
+        isInterrupt: true,
+      });
       expect(deps.state.isStreaming).toBe(false);
       expect(deps.state.cancelRequested).toBe(false);
     });

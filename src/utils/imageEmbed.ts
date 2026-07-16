@@ -9,7 +9,7 @@
 
 import type { App, TFile } from 'obsidian';
 
-import { escapeHtml } from './inlineEdit';
+import { escapeHtml } from './html';
 import { getVaultFileByPath } from './obsidianCompat';
 
 const IMAGE_EXTENSIONS = new Set([

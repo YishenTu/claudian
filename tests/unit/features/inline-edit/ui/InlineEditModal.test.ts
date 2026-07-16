@@ -4,7 +4,7 @@ import { Text } from '@codemirror/state';
 import { WidgetType } from '@codemirror/view';
 
 import { buildInlineEditInputDecorations } from '@/features/inline-edit/ui/InlineEditModal';
-import { escapeHtml, normalizeInsertionText } from '@/utils/inlineEdit';
+import { normalizeInsertionText } from '@/utils/inlineEdit';
 import { normalizePathForVault } from '@/utils/path';
 
 class TestWidget extends WidgetType {
@@ -159,20 +159,6 @@ describe('InlineEditModal - Insertion Newline Trimming', () => {
       const result = normalizeInsertionText(input);
       expect(result).toBe('Content');
     });
-  });
-});
-
-describe('inlineEditUtils - escapeHtml', () => {
-  it('should escape angle brackets and ampersands', () => {
-    expect(escapeHtml('a < b && c > d')).toBe('a &lt; b &amp;&amp; c &gt; d');
-  });
-
-  it('should escape ampersands', () => {
-    expect(escapeHtml('a & b')).toBe('a &amp; b');
-  });
-
-  it('should handle empty string', () => {
-    expect(escapeHtml('')).toBe('');
   });
 });
 

@@ -507,7 +507,10 @@ export class InputController {
       if (!wasInvalidated && state.streamGeneration === streamGeneration) {
         const didCancelThisTurn = wasInterrupted || state.cancelRequested;
         if (didCancelThisTurn && !state.pendingNewSessionPlan) {
-          await streamController.appendText('\n\n<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>');
+          finalAssistantMsg.isInterrupt = true;
+          if (state.currentContentEl) {
+            renderer.appendInterruptIndicator(state.currentContentEl);
+          }
         }
         streamController.hideThinkingIndicator();
         state.isStreaming = false;

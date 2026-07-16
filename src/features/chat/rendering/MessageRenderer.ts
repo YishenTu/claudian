@@ -17,8 +17,10 @@ import { extractUserDisplayContent } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
+import { stripLegacyInterruptIndicator } from '../../../utils/interrupt';
 import {
   escapeMathDelimitersForStreaming,
+  escapeRawHtmlTags,
   normalizeLatexMathDelimiters,
 } from '../../../utils/markdownMath';
 import type { FeatureHost } from '../../FeatureHost';
@@ -304,8 +306,8 @@ export class MessageRenderer {
         }
       }
     } else if (msg.role === 'assistant') {
-      this.renderAssistantContent(msg, contentEl);
-      if (msg.isInterrupt) {
+      const hadLegacyInterruptIndicator = this.renderAssistantContent(msg, contentEl);
+      if (msg.isInterrupt || hadLegacyInterruptIndicator) {
         this.appendInterruptIndicator(contentEl);
       }
     }
@@ -347,7 +349,7 @@ export class MessageRenderer {
     this.appendInterruptIndicator(contentEl);
   }
 
-  private appendInterruptIndicator(contentEl: HTMLElement): void {
+  appendInterruptIndicator(contentEl: HTMLElement): void {
     const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
     textEl.createSpan({ cls: 'claudian-interrupted', text: 'Interrupted' });
     textEl.appendText(' ');
@@ -360,7 +362,9 @@ export class MessageRenderer {
   /**
    * Renders assistant message content (content blocks or fallback).
    */
-  private renderAssistantContent(msg: ChatMessage, contentEl: HTMLElement): void {
+  private renderAssistantContent(msg: ChatMessage, contentEl: HTMLElement): boolean {
+    let hadLegacyInterruptIndicator = false;
+
     if (msg.contentBlocks && msg.contentBlocks.length > 0) {
       const renderedToolIds = new Set<string>();
       for (const block of msg.contentBlocks) {
@@ -372,13 +376,15 @@ export class MessageRenderer {
             (el, md) => this.renderContent(el, md)
           );
         } else if (block.type === 'text') {
+          const normalized = stripLegacyInterruptIndicator(block.content);
+          hadLegacyInterruptIndicator ||= normalized.interrupted;
           // Skip empty or whitespace-only text blocks to avoid extra gaps
-          if (!block.content || !block.content.trim()) {
+          if (!normalized.content.trim()) {
             continue;
           }
           const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
-          void this.renderContent(textEl, block.content);
-          this.addTextCopyButton(textEl, block.content);
+          void this.renderContent(textEl, normalized.content);
+          this.addTextCopyButton(textEl, normalized.content);
         } else if (block.type === 'tool_use') {
           const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
           if (toolCall) {
@@ -410,9 +416,13 @@ export class MessageRenderer {
     } else {
       // Fallback for old conversations without contentBlocks
       if (msg.content) {
-        const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
-        void this.renderContent(textEl, msg.content);
-        this.addTextCopyButton(textEl, msg.content);
+        const normalized = stripLegacyInterruptIndicator(msg.content);
+        hadLegacyInterruptIndicator ||= normalized.interrupted;
+        if (normalized.content.trim()) {
+          const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
+          void this.renderContent(textEl, normalized.content);
+          this.addTextCopyButton(textEl, normalized.content);
+        }
       }
       if (msg.toolCalls) {
         for (const toolCall of msg.toolCalls) {
@@ -431,6 +441,8 @@ export class MessageRenderer {
         cls: 'claudian-baked-duration',
       });
     }
+
+    return hadLegacyInterruptIndicator;
   }
 
   /**
@@ -672,9 +684,10 @@ export class MessageRenderer {
       const renderMarkdown = options?.deferMath
         ? escapeMathDelimitersForStreaming(normalizedMarkdown)
         : normalizedMarkdown;
-      // Normalize embeds before MarkdownRenderer consumes them.
+      const safeMarkdown = escapeRawHtmlTags(renderMarkdown);
+      // Inject trusted embed HTML only after user-authored HTML has been escaped.
       const processedMarkdown = replaceImageEmbedsWithHtml(
-        renderMarkdown,
+        safeMarkdown,
         this.app,
         { mediaFolder: this.plugin.settings.mediaFolder }
       );

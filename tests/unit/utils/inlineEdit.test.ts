@@ -1,4 +1,4 @@
-import { escapeHtml, normalizeInsertionText } from '@/utils/inlineEdit';
+import { normalizeInsertionText } from '@/utils/inlineEdit';
 
 describe('normalizeInsertionText', () => {
   it('removes leading blank lines', () => {
@@ -27,37 +27,5 @@ describe('normalizeInsertionText', () => {
 
   it('returns text unchanged when no leading/trailing newlines', () => {
     expect(normalizeInsertionText('Hello World')).toBe('Hello World');
-  });
-});
-
-describe('escapeHtml', () => {
-  it('escapes < to &lt;', () => {
-    expect(escapeHtml('<div>')).toBe('&lt;div&gt;');
-  });
-
-  it('escapes > to &gt;', () => {
-    expect(escapeHtml('a > b')).toBe('a &gt; b');
-  });
-
-  it('escapes & to &amp;', () => {
-    expect(escapeHtml('a & b')).toBe('a &amp; b');
-  });
-
-  it('escapes " to &quot;', () => {
-    expect(escapeHtml('a "b" c')).toBe('a &quot;b&quot; c');
-  });
-
-  it('escapes all special characters together', () => {
-    expect(escapeHtml('<script>alert("x&y")</script>')).toBe(
-      '&lt;script&gt;alert(&quot;x&amp;y&quot;)&lt;/script&gt;'
-    );
-  });
-
-  it('returns text unchanged when no special characters', () => {
-    expect(escapeHtml('Hello World')).toBe('Hello World');
-  });
-
-  it('handles empty string', () => {
-    expect(escapeHtml('')).toBe('');
   });
 });
