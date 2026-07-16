@@ -3,6 +3,7 @@ import { MarkdownRenderer } from 'obsidian';
 
 import { processFileLinks } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
+import { normalizeLatexMathDelimiters } from '../../../utils/markdownMath';
 
 interface RenderInlineEditMarkdownPreviewOptions {
   app: App;
@@ -39,7 +40,8 @@ export async function renderInlineEditMarkdownPreview({
   emptyElement(container);
 
   try {
-    const processedMarkdown = replaceImageEmbedsWithHtml(markdown, app, {
+    const normalizedMarkdown = normalizeLatexMathDelimiters(markdown);
+    const processedMarkdown = replaceImageEmbedsWithHtml(normalizedMarkdown, app, {
       mediaFolder,
       sourcePath,
     });

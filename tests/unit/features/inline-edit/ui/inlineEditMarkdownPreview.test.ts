@@ -29,6 +29,27 @@ describe('renderInlineEditMarkdownPreview', () => {
     );
   });
 
+  it('normalizes LaTeX math delimiters before rendering', async () => {
+    const app = { vault: {}, metadataCache: {} } as any;
+    const component = {} as any;
+    const container = createMockEl();
+
+    await renderInlineEditMarkdownPreview({
+      app,
+      component,
+      container,
+      markdown: 'Inline \\(x<y\\).\n\\[y^2\\]',
+      sourcePath: 'math/note.md',
+    });
+
+    expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalledWith(
+      'Inline $x<y$.\n$$y^2$$',
+      container,
+      'math/note.md',
+      component
+    );
+  });
+
   it('resolves image embeds using the note source path before rendering', async () => {
     const imageFile = {
       path: 'math/assets/image.png',

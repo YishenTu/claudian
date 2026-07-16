@@ -17,7 +17,10 @@ import { extractUserDisplayContent } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
-import { escapeMathDelimitersForStreaming } from '../../../utils/markdownMath';
+import {
+  escapeMathDelimitersForStreaming,
+  normalizeLatexMathDelimiters,
+} from '../../../utils/markdownMath';
 import type { FeatureHost } from '../../FeatureHost';
 import { findRewindContext } from '../rewind';
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
@@ -665,9 +668,10 @@ export class MessageRenderer {
     el.empty();
 
     try {
+      const normalizedMarkdown = normalizeLatexMathDelimiters(markdown);
       const renderMarkdown = options?.deferMath
-        ? escapeMathDelimitersForStreaming(markdown)
-        : markdown;
+        ? escapeMathDelimitersForStreaming(normalizedMarkdown)
+        : normalizedMarkdown;
       // Normalize embeds before MarkdownRenderer consumes them.
       const processedMarkdown = replaceImageEmbedsWithHtml(
         renderMarkdown,

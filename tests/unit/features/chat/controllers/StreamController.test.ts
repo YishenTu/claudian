@@ -269,6 +269,21 @@ describe('StreamController - Text Content', () => {
       );
     });
 
+    it('should defer LaTeX-delimited math during live text renders', async () => {
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.appendText('Euler: \\(e^{i\\pi} + 1 = 0\\)');
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        deps.state.currentTextEl,
+        'Euler: \\(e^{i\\pi} + 1 = 0\\)',
+        { deferMath: true }
+      );
+    });
+
     it('should honor disabled deferred math rendering setting during live text renders', async () => {
       (deps.plugin.settings as any).deferMathRenderingDuringStreaming = false;
       deps.state.currentTextEl = createMockEl();

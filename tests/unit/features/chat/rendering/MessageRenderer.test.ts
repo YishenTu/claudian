@@ -1357,6 +1357,21 @@ describe('MessageRenderer', () => {
     );
   });
 
+  it('renderContent normalizes LaTeX math delimiters before rendering', async () => {
+    const { MarkdownRenderer } = await import('obsidian');
+    const { renderer } = createRenderer();
+    const el = createMockEl();
+
+    await renderer.renderContent(el, 'Inline \\(x<y\\).\n\\[y^2\\]');
+
+    expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalledWith(
+      'Inline $x<y$.\n$$y^2$$',
+      el,
+      '',
+      expect.anything()
+    );
+  });
+
   // ============================================
   // addTextCopyButton - click behavior
   // ============================================
