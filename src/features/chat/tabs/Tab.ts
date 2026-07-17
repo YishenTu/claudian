@@ -48,7 +48,7 @@ import { BangBashModeManager as BangBashModeManagerClass } from '../ui/BangBashM
 import { ComposerContextTray } from '../ui/ComposerContextTray';
 import { FileContextManager } from '../ui/FileContext';
 import { ImageContextManager } from '../ui/ImageContext';
-import { createInputToolbar } from '../ui/InputToolbar';
+import { createInputToolbar, SendStopButton } from '../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../ui/InstructionModeManager';
 import { NavigationSidebar } from '../ui/NavigationSidebar';
 import { StatusPanel } from '../ui/StatusPanel';
@@ -605,6 +605,7 @@ export function createTab(options: TabCreateOptions): TabData {
       mcpServerSelector: null,
       permissionToggle: null,
       serviceTierToggle: null,
+      sendStopButton: null,
       slashCommandDropdown: null,
       instructionModeManager: null,
       bangBashModeManager: null,
@@ -1060,6 +1061,11 @@ function initializeInputToolbar(
   tab.ui.mcpServerSelector = toolbarComponents.mcpServerSelector;
   tab.ui.permissionToggle = toolbarComponents.permissionToggle;
   tab.ui.serviceTierToggle = toolbarComponents.serviceTierToggle;
+
+  tab.ui.sendStopButton = new SendStopButton(inputToolbar, {
+    onSend: () => { void tab.controllers.inputController?.sendMessage(); },
+    onStop: () => { tab.controllers.inputController?.cancelStreaming(); },
+  });
 
   tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 
