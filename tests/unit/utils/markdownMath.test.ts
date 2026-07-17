@@ -240,9 +240,64 @@ describe('markdownMath', () => {
       ].join('\n'));
     });
 
+    it('does not match multiline inline spans across container boundaries', () => {
+      const markdown = [
+        'unmatched `',
+        '- <list-placeholder>`',
+        'unmatched `',
+        '> <quote-placeholder>`',
+        'unmatched $x',
+        '- <math-list-placeholder>$',
+        'unmatched $x',
+        '> <math-quote-placeholder>$',
+      ].join('\n');
+
+      expect(escapeRawHtmlTags(markdown)).toBe([
+        'unmatched `',
+        '- &lt;list-placeholder&gt;`',
+        'unmatched `',
+        '> &lt;quote-placeholder&gt;`',
+        'unmatched $x',
+        '- &lt;math-list-placeholder&gt;$',
+        'unmatched $x',
+        '> &lt;math-quote-placeholder&gt;$',
+      ].join('\n'));
+    });
+
+    it('preserves multiline code spans within the same container paragraph', () => {
+      const markdown = [
+        '- `list code',
+        '  <inside-list>` and <after-list>',
+        '> `quote code',
+        '> <inside-quote>` and <after-quote>',
+        '- > `nested code',
+        '  > <inside-nested>` and <after-nested>',
+      ].join('\n');
+
+      expect(escapeRawHtmlTags(markdown)).toBe([
+        '- `list code',
+        '  <inside-list>` and &lt;after-list&gt;',
+        '> `quote code',
+        '> <inside-quote>` and &lt;after-quote&gt;',
+        '- > `nested code',
+        '  > <inside-nested>` and &lt;after-nested&gt;',
+      ].join('\n'));
+    });
+
     it('preserves angle comparisons inside inline and display math', () => {
       const markdown = '$x<y$ and $a>b$.\n$$c<d \\land d>e$$';
       expect(escapeRawHtmlTags(markdown)).toBe(markdown);
+    });
+
+    it('escapes HTML inside invalid inline math delimiters', () => {
+      expect(
+        escapeRawHtmlTags('Prices are $5 <meta-name> and $10.')
+      ).toBe(
+        'Prices are $5 &lt;meta-name&gt; and $10.'
+      );
+      expect(escapeRawHtmlTags('$ x<meta-name>$')).toBe('$ x&lt;meta-name&gt;$');
+      expect(escapeRawHtmlTags('$x<meta-name> $')).toBe('$x&lt;meta-name&gt; $');
+      expect(escapeRawHtmlTags('$x<meta-name>$10')).toBe('$x&lt;meta-name&gt;$10');
     });
 
     it('preserves backslash-escaped HTML-like text', () => {

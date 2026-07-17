@@ -168,7 +168,7 @@ export function buildContextFromHistory(messages: ChatMessage[]): string {
       continue;
     }
 
-    if (message.isInterrupt) {
+    if (message.isInterrupt && message.role === 'user') {
       continue;
     }
 

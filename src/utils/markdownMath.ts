@@ -18,9 +18,10 @@ type ContainerToken =
 interface ParagraphContext {
   blockquoteDepth: number;
   listIndents: number[];
+  containers: ContainerToken[];
 }
 
-type ActiveListContext = ParagraphContext;
+type ActiveListContext = Pick<ParagraphContext, 'blockquoteDepth' | 'listIndents'>;
 
 interface MarkdownSegment {
   text: string;
@@ -195,6 +196,16 @@ function readDollarRun(text: string, index: number): number {
   return length;
 }
 
+function canOpenInlineMath(text: string, index: number): boolean {
+  return !!text[index + 1] && !/\s/.test(text[index + 1]);
+}
+
+function canCloseInlineMath(text: string, index: number): boolean {
+  return !!text[index - 1]
+    && !/\s/.test(text[index - 1])
+    && (!text[index + 1] || !/\d/.test(text[index + 1]));
+}
+
 function isBackslashEscaped(text: string, index: number): boolean {
   let backslashes = 0;
   for (let cursor = index - 1; cursor >= 0 && text[cursor] === '\\'; cursor -= 1) {
@@ -258,13 +269,22 @@ function findMatchingDollarRun(
   runLength: number,
   end = text.length,
 ): number | null {
+  if (
+    runLength === 1
+    && start >= 0
+    && !canOpenInlineMath(text, start)
+  ) {
+    return null;
+  }
+
   for (let index = start + runLength; index < end; index += 1) {
     if (text[index] !== '$' || isBackslashEscaped(text, index)) {
       continue;
     }
 
     const candidateLength = readDollarRun(text, index);
-    if (candidateLength === runLength) {
+    const hasValidInlineBoundary = runLength !== 1 || canCloseInlineMath(text, index);
+    if (candidateLength === runLength && hasValidInlineBoundary) {
       return index + runLength - 1;
     }
     index += candidateLength - 1;
@@ -272,7 +292,36 @@ function findMatchingDollarRun(
   return null;
 }
 
-function findInlineBlockEnd(markdown: string, start: number): number {
+function getParagraphContinuationContent(
+  line: string,
+  context: ParagraphContext,
+): string | null {
+  let content = line;
+  for (const container of context.containers) {
+    if (container.type === 'blockquote') {
+      const quoteMatch = content.match(/^ {0,3}>[ \t]?/);
+      if (!quoteMatch) {
+        return null;
+      }
+      content = content.slice(quoteMatch[0].length);
+      continue;
+    }
+
+    const indentation = content.match(/^ */)?.[0].length ?? 0;
+    if (indentation < container.indent) {
+      return null;
+    }
+    content = content.slice(container.indent);
+  }
+
+  return parseContainerPrefix(content).containers.length > 0 ? null : content;
+}
+
+function findInlineBlockEnd(
+  markdown: string,
+  start: number,
+  context: ParagraphContext,
+): number {
   let lineEnd = markdown.indexOf('\n', start);
   while (lineEnd !== -1) {
     const nextLineStart = lineEnd + 1;
@@ -281,9 +330,10 @@ function findInlineBlockEnd(markdown: string, start: number): number {
       nextLineStart,
       nextLineEnd === -1 ? markdown.length : nextLineEnd,
     );
-    const blockContent = parseContainerPrefix(nextLine).content;
+    const blockContent = getParagraphContinuationContent(nextLine, context);
     if (
-      /^[ \t\r]*$/.test(blockContent)
+      blockContent === null
+      || /^[ \t\r]*$/.test(blockContent)
       || getFenceRun(nextLine) !== null
       || startsNonParagraphBlock(blockContent)
       || startsInterruptingHtmlBlock(blockContent)
@@ -408,6 +458,7 @@ function splitInlineMarkdown(
   markdown: string,
   line: string,
   lineStart: number,
+  context: ParagraphContext,
   segments: MarkdownSegment[],
 ): InlineContinuation {
   let segmentStart = 0;
@@ -425,7 +476,7 @@ function splitInlineMarkdown(
         segmentStart = end + 1;
         index = end;
       } else {
-        const inlineBlockEnd = findInlineBlockEnd(markdown, lineStart + index);
+        const inlineBlockEnd = findInlineBlockEnd(markdown, lineStart + index, context);
         const sourceEnd = findMatchingBacktickRun(
           markdown,
           lineStart + index,
@@ -453,7 +504,7 @@ function splitInlineMarkdown(
           index = end;
         } else {
           const mathEnd = runLength === 1
-            ? findInlineBlockEnd(markdown, lineStart + index)
+            ? findInlineBlockEnd(markdown, lineStart + index, context)
             : markdown.length;
           const sourceEnd = findMatchingDollarRun(
             markdown,
@@ -558,6 +609,7 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
           markdown,
           remainder,
           lineStart + codeEnd + 1,
+          paragraphContext ?? { blockquoteDepth: 0, listIndents: [], containers: [] },
           segments,
         );
         inlineCodeRunLength = continuation.codeRunLength ?? null;
@@ -579,6 +631,7 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
           markdown,
           remainder,
           lineStart + mathEnd + 1,
+          paragraphContext ?? { blockquoteDepth: 0, listIndents: [], containers: [] },
           segments,
         );
         inlineCodeRunLength = continuation.codeRunLength ?? null;
@@ -600,6 +653,7 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
           markdown,
           remainder,
           lineStart + localEnd + 1,
+          paragraphContext ?? { blockquoteDepth: 0, listIndents: [], containers: [] },
           segments,
         );
         inlineCodeRunLength = continuation.codeRunLength ?? null;
@@ -658,6 +712,17 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
     const currentContext: ParagraphContext = {
       blockquoteDepth: blockQuote.depth,
       listIndents,
+      containers: listIndents.length > 0 && listPrefix.indents.length === 0
+        ? [
+          ...Array.from(
+            { length: blockQuote.depth },
+            (): ContainerToken => ({ type: 'blockquote' }),
+          ),
+          ...listIndents.map(
+            (indent): ContainerToken => ({ type: 'list', indent }),
+          ),
+        ]
+        : parseContainerPrefix(lineWithoutNewline).containers,
     };
 
     if (/^[ \t]*$/.test(blockContent)) {
@@ -686,7 +751,13 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
 
     if (/^(?: {4}|\t)/.test(blockContent)) {
       if (hasSameParagraphContext(paragraphContext, currentContext)) {
-        const continuation = splitInlineMarkdown(markdown, line, lineStart, segments);
+        const continuation = splitInlineMarkdown(
+          markdown,
+          line,
+          lineStart,
+          currentContext,
+          segments,
+        );
         inlineCodeRunLength = continuation.codeRunLength ?? null;
         inlineHtmlEnd = continuation.htmlEnd ?? null;
         inlineMathRunLength = continuation.mathRunLength ?? null;
@@ -712,7 +783,13 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
       continue;
     }
 
-    const continuation = splitInlineMarkdown(markdown, line, lineStart, segments);
+    const continuation = splitInlineMarkdown(
+      markdown,
+      line,
+      lineStart,
+      currentContext,
+      segments,
+    );
     inlineCodeRunLength = continuation.codeRunLength ?? null;
     inlineHtmlEnd = continuation.htmlEnd ?? null;
     inlineMathRunLength = continuation.mathRunLength ?? null;

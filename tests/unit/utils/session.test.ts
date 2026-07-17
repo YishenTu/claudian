@@ -933,6 +933,42 @@ describe('session utilities', () => {
       expect(result.match(/User:/g)?.length).toBe(1);
     });
 
+    it('includes contentful interrupted assistant messages', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'Compare options', timestamp: 1000 },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'Option A is safer, while option B is faster.',
+          timestamp: 2000,
+          isInterrupt: true,
+        },
+        { id: 'msg-3', role: 'user', content: 'Use option B instead', timestamp: 3000 },
+      ];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toContain('Assistant: Option A is safer, while option B is faster.');
+      expect(result).toContain('User: Use option B instead');
+    });
+
+    it('skips empty interrupted assistant signals', () => {
+      const messages: ChatMessage[] = [
+        { id: 'msg-1', role: 'user', content: 'Start task', timestamp: 1000 },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: '',
+          timestamp: 2000,
+          isInterrupt: true,
+        },
+      ];
+
+      const result = buildContextFromHistory(messages);
+
+      expect(result).toBe('User: Start task');
+    });
+
     it('includes assistant message with only thinking blocks and no text', () => {
       const messages: ChatMessage[] = [
         { id: 'msg-1', role: 'user', content: 'Think hard', timestamp: 1000 },
