@@ -914,6 +914,7 @@ export class McpServerSelector {
     this.pruneEnabledServers();
     this.updateDisplay();
     this.renderDropdown();
+    this.ensureManagerLoaded(manager);
   }
 
   setOnChange(callback: (enabled: Set<string>) => void): void {
@@ -965,6 +966,21 @@ export class McpServerSelector {
     if (changed) {
       this.onChangeCallback?.(this.enabledServers);
     }
+  }
+
+  private ensureManagerLoaded(manager: McpServerManager | null): void {
+    if (!manager || manager.isLoaded?.() !== false) return;
+
+    const load = manager.ensureLoaded?.();
+    if (!load) return;
+
+    void load.then(() => {
+      if (this.mcpManager !== manager) return;
+      this.updateDisplay();
+      this.renderDropdown();
+    }).catch(() => {
+      // Keep the selector hidden when its configuration cannot be loaded.
+    });
   }
 
   private render() {
@@ -1088,8 +1104,7 @@ export class McpServerSelector {
     if (!this.iconEl || !this.badgeEl) return;
 
     const count = this.enabledServers.size;
-    const isPendingLazyLoad = this.mcpManager?.isLoaded?.() === false;
-    const hasServers = isPendingLazyLoad || (this.mcpManager?.getServers().length || 0) > 0;
+    const hasServers = (this.mcpManager?.getServers().length || 0) > 0;
 
     // Show/hide container based on whether there are servers and visibility
     if (!hasServers || !this.visible) {

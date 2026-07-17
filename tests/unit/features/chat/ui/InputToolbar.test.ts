@@ -820,7 +820,7 @@ describe('McpServerSelector', () => {
     expect(container?.hasClass('claudian-hidden')).toBe(false);
   });
 
-  it('keeps a lazy selector reachable and loads servers on first hover', async () => {
+  it('keeps a lazy selector hidden until configured servers finish loading', async () => {
     let loaded = false;
     const manager = {
       ensureLoaded: jest.fn(async () => {
@@ -835,12 +835,34 @@ describe('McpServerSelector', () => {
     selector.setMcpManager(manager);
     const container = parentEl.querySelector('.claudian-mcp-selector');
 
-    expect(container?.hasClass('claudian-hidden')).toBe(false);
-    await container?.dispatchEvent('mouseenter');
+    expect(container?.hasClass('claudian-hidden')).toBe(true);
+    await Promise.resolve();
     await Promise.resolve();
 
     expect(manager.ensureLoaded).toHaveBeenCalledTimes(1);
+    expect(container?.hasClass('claudian-hidden')).toBe(false);
     expect(parentEl.querySelector('.claudian-mcp-selector-item')).not.toBeNull();
+  });
+
+  it('stays hidden when lazy loading finds no configured servers', async () => {
+    let loaded = false;
+    const manager = {
+      ensureLoaded: jest.fn(async () => {
+        loaded = true;
+      }),
+      getServers: jest.fn().mockReturnValue([]),
+      isLoaded: jest.fn(() => loaded),
+    } as any;
+
+    selector.setMcpManager(manager);
+    const container = parentEl.querySelector('.claudian-mcp-selector');
+
+    expect(container?.hasClass('claudian-hidden')).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(manager.ensureLoaded).toHaveBeenCalledTimes(1);
+    expect(container?.hasClass('claudian-hidden')).toBe(true);
   });
 
   it('should show empty message when all servers are disabled', () => {
