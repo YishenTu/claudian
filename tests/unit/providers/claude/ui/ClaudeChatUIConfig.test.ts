@@ -172,7 +172,13 @@ describe('claudeChatUIConfig', () => {
     it('uses effort options for custom model ids', () => {
       const options = claudeChatUIConfig.getReasoningOptions('custom-model', {});
 
-      expect(options.map(option => option.value)).toEqual(['low', 'medium', 'high', 'max']);
+      expect(options.map(option => option.value)).toEqual([
+        'low',
+        'medium',
+        'high',
+        'xhigh',
+        'max',
+      ]);
       expect(options.some(option => option.tokens !== undefined)).toBe(false);
     });
   });
