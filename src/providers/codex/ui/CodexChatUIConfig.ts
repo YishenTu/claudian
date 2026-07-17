@@ -1,4 +1,7 @@
-import { DEFAULT_REASONING_VALUE } from '../../../core/providers/reasoning';
+import {
+  DEFAULT_REASONING_VALUE,
+  formatReasoningValueLabel,
+} from '../../../core/providers/reasoning';
 import type {
   ProviderChatUIConfig,
   ProviderPermissionModeToggleConfig,
@@ -26,19 +29,12 @@ import {
 } from '../settings';
 
 const EFFORT_LEVELS: ProviderReasoningOption[] = [
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'xhigh', label: 'XHigh' },
-  { value: 'max', label: 'Max' },
-];
-
-function formatEffortLabel(value: string): string {
-  if (value.toLowerCase() === 'xhigh') {
-    return 'XHigh';
-  }
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+].map(value => ({ value, label: formatReasoningValueLabel(value) }));
 
 const CODEX_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveValue: 'normal',
@@ -102,7 +98,7 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
 
     return model.supportedReasoningEfforts.map(option => ({
       value: option.value,
-      label: formatEffortLabel(option.value),
+      label: formatReasoningValueLabel(option.value),
       ...(option.description ? { description: option.description } : {}),
     }));
   },

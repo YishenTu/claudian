@@ -1,5 +1,6 @@
 import {
   DEFAULT_REASONING_VALUE,
+  formatReasoningValueLabel,
   resolvePreferredReasoningDefault,
 } from '../../core/providers/reasoning';
 
@@ -141,7 +142,7 @@ export function normalizeOpencodeModelVariants(value: unknown): OpencodeModelVar
 
     variants.push({
       ...(description ? { description } : {}),
-      label: rawLabel || formatOpencodeThinkingLevelLabel(rawValue),
+      label: rawLabel || formatReasoningValueLabel(rawValue),
       value: rawValue,
     });
   }
@@ -291,7 +292,7 @@ export function buildOpencodeBaseModels(
 
         return [{
           ...(entry.description ? { description: entry.description } : {}),
-          label: formatOpencodeThinkingLevelLabel(variant),
+          label: formatReasoningValueLabel(variant),
           value: variant,
         }];
       });
@@ -313,19 +314,6 @@ export function getOpencodeModelVariants(
   const baseRawId = resolveOpencodeBaseModelRawId(rawId, models);
   return buildOpencodeBaseModels(models)
     .find((model) => model.rawId === baseRawId)?.variants ?? [];
-}
-
-function formatOpencodeThinkingLevelLabel(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return '';
-  }
-
-  if (trimmed.toLowerCase() === 'xhigh') {
-    return 'XHigh';
-  }
-
-  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
 export function groupOpencodeDiscoveredModels(

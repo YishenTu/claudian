@@ -161,6 +161,8 @@ describe('claudeChatUIConfig', () => {
       const options = claudeChatUIConfig.getReasoningOptions('claude-opus-4-7', {});
 
       expect(options.map(option => option.value)).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+      expect(options.find(option => option.value === 'medium')?.label).toBe('Medium');
+      expect(options.find(option => option.value === 'xhigh')?.label).toBe('xHigh');
     });
 
     it('keeps xhigh on fable models', () => {
@@ -172,7 +174,13 @@ describe('claudeChatUIConfig', () => {
     it('uses effort options for custom model ids', () => {
       const options = claudeChatUIConfig.getReasoningOptions('custom-model', {});
 
-      expect(options.map(option => option.value)).toEqual(['low', 'medium', 'high', 'max']);
+      expect(options.map(option => option.value)).toEqual([
+        'low',
+        'medium',
+        'high',
+        'xhigh',
+        'max',
+      ]);
       expect(options.some(option => option.tokens !== undefined)).toBe(false);
     });
   });

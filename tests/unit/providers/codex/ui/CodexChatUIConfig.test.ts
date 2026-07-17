@@ -326,19 +326,22 @@ describe('CodexChatUIConfig', () => {
 
   describe('getReasoningOptions', () => {
     it('keeps max available before the runtime catalog loads', () => {
-      expect(codexChatUIConfig.getReasoningOptions('gpt-runtime-model', {
+      const options = codexChatUIConfig.getReasoningOptions('gpt-runtime-model', {
         providerConfigs: {
           codex: {
             discoveredModels: [],
           },
         },
-      }).map(option => option.value)).toEqual([
+      });
+
+      expect(options.map(option => option.value)).toEqual([
         'low',
         'medium',
         'high',
         'xhigh',
         'max',
       ]);
+      expect(options.find(option => option.value === 'xhigh')?.label).toBe('xHigh');
     });
 
     it('uses the selected model effort levels from app-server', () => {
