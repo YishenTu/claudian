@@ -6,7 +6,10 @@ import type {
   CodexModelDiscoveryResult,
   CodexModelDiscoveryServiceLike,
 } from '@/providers/codex/runtime/CodexModelDiscoveryService';
-import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/settings';
+import {
+  DEFAULT_CODEX_PROVIDER_SETTINGS,
+  getCodexProviderSettings,
+} from '@/providers/codex/settings';
 
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
@@ -271,6 +274,74 @@ describe('CodexModelCatalogCoordinator', () => {
     expect(first.models).toEqual(second.models);
   });
 
+  it('persists the fingerprint captured before model discovery starts', async () => {
+    const host = createFakeHost();
+    let signalDiscoveryStarted!: () => void;
+    let resolveDiscovery!: (result: CodexModelDiscoveryResult) => void;
+    const discoveryStarted = new Promise<void>((resolve) => {
+      signalDiscoveryStarted = resolve;
+    });
+    const discoveryResult = new Promise<CodexModelDiscoveryResult>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    const discovery: CodexModelDiscoveryServiceLike = {
+      discoverModels: jest.fn(async () => {
+        signalDiscoveryStarted();
+        return discoveryResult;
+      }),
+    };
+    (host.mutateSettingsConditionally as jest.Mock).mockImplementation(async (mutation) => {
+      await mutation(host.settings);
+    });
+    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
+
+    const refresh = coordinator.refresh();
+    await discoveryStarted;
+    const codexConfig = (host.settings.providerConfigs as Record<string, Record<string, unknown>>).codex;
+    codexConfig.environmentVariables = 'OPENAI_API_KEY=rotated';
+    resolveDiscovery({ kind: 'completed', models: [makeModel('gpt-4o')] });
+    await refresh;
+
+    expect(getCodexProviderSettings(host.settings).catalogFingerprint).toBe(FAKE_FINGERPRINT);
+    await expect(coordinator.getStatus()).resolves.toBe('stale');
+  });
+
+  it('retries an explicit refresh when its discovery inputs change in flight', async () => {
+    const host = createFakeHost();
+    let signalFirstDiscoveryStarted!: () => void;
+    let resolveFirstDiscovery!: (result: CodexModelDiscoveryResult) => void;
+    const firstDiscoveryStarted = new Promise<void>((resolve) => {
+      signalFirstDiscoveryStarted = resolve;
+    });
+    const firstDiscoveryResult = new Promise<CodexModelDiscoveryResult>((resolve) => {
+      resolveFirstDiscovery = resolve;
+    });
+    const refreshedModel = makeModel('gpt-4o-mini');
+    const discovery: CodexModelDiscoveryServiceLike = {
+      discoverModels: jest.fn()
+        .mockImplementationOnce(async () => {
+          signalFirstDiscoveryStarted();
+          return firstDiscoveryResult;
+        })
+        .mockResolvedValueOnce({ kind: 'completed', models: [refreshedModel] }),
+    };
+    (host.mutateSettingsConditionally as jest.Mock).mockImplementation(async (mutation) => {
+      await mutation(host.settings);
+    });
+    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
+
+    const refresh = coordinator.refreshModelCatalog();
+    await firstDiscoveryStarted;
+    const codexConfig = (host.settings.providerConfigs as Record<string, Record<string, unknown>>).codex;
+    codexConfig.environmentVariables = 'OPENAI_API_KEY=rotated';
+    resolveFirstDiscovery({ kind: 'completed', models: [makeModel('gpt-4o')] });
+
+    await expect(refresh).resolves.toEqual({ changed: true });
+    expect(discovery.discoverModels).toHaveBeenCalledTimes(2);
+    expect(getCodexProviderSettings(host.settings).discoveredModels).toEqual([refreshedModel]);
+    await expect(coordinator.getStatus()).resolves.toBe('fresh');
+  });
+
   it('invalidates cache when resolved CLI path changes', async () => {
     const host = createFakeHost({
       discoveredModels: [makeModel('gpt-4o')],
@@ -300,6 +371,22 @@ describe('CodexModelCatalogCoordinator', () => {
 
     const result = await refreshPromise;
     expect(result.diagnostics).toMatch(/cancelled/i);
+  });
+
+  it('does not refresh after disposal', async () => {
+    const host = createFakeHost();
+    const discovery = createDiscovery({
+      kind: 'completed',
+      models: [makeModel('gpt-4o')],
+    });
+    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
+
+    coordinator.dispose();
+    const result = await coordinator.ensureFresh('layout-ready');
+
+    expect(result.kind).toBe('skipped');
+    expect(discovery.discoverModels).not.toHaveBeenCalled();
+    expect(host.mutateSettingsConditionally).not.toHaveBeenCalled();
   });
 
   it('persists catalog after successful refresh', async () => {

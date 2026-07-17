@@ -58,6 +58,13 @@ const hideInlineEdit = StateEffect.define<null>();
 
 let activeController: InlineEditSession | null = null;
 
+function rejectActiveController(): boolean {
+  const controller = activeController;
+  if (!controller) return false;
+  controller.reject();
+  return true;
+}
+
 class InputWidget extends WidgetType {
   constructor(private controller: InlineEditSession) {
     super();
@@ -260,6 +267,35 @@ interface InlineEditSourceSnapshot {
   to: number;
 }
 
+interface InlineEditProviderContext {
+  modelOverride?: string;
+  providerId: ProviderId;
+}
+
+function resolveInlineEditProviderContext(plugin: InlineEditHost): InlineEditProviderContext {
+  const activeView = typeof plugin.getView === 'function' ? plugin.getView() : null;
+  const activeTab = activeView?.getActiveTab();
+  const conversation = activeTab?.conversationId
+    ? plugin.getConversationSync(activeTab.conversationId)
+    : null;
+  const providerId = conversation?.providerId
+    ?? activeTab?.service?.providerId
+    ?? activeTab?.providerId
+    ?? DEFAULT_CHAT_PROVIDER_ID;
+  const modelOverride = conversation
+    ? resolveConversationModel(plugin.settings, providerId, conversation).model
+    : activeTab?.service?.providerId === providerId
+    ? activeTab.service.getAuxiliaryModel?.()
+    : activeTab?.providerId === providerId
+    ? activeTab.draftModel
+    : null;
+
+  return {
+    modelOverride: modelOverride ?? undefined,
+    providerId,
+  };
+}
+
 export class InlineEditModal {
   private controller: InlineEditSession | null = null;
 
@@ -274,8 +310,7 @@ export class InlineEditModal {
   ) {}
 
   async openAndWait(): Promise<{ decision: InlineEditDecision; editedText?: string }> {
-    if (activeController) {
-      activeController.reject();
+    if (rejectActiveController()) {
       return { decision: 'reject' };
     }
 
@@ -295,6 +330,22 @@ export class InlineEditModal {
       return { decision: 'reject' };
     }
 
+    const providerContext = resolveInlineEditProviderContext(this.plugin);
+    try {
+      await ProviderWorkspaceRegistry.ensureInitialized(
+        this.plugin.providerHost,
+        providerContext.providerId,
+        'inline-edit',
+      );
+    } catch {
+      new Notice(`Inline edit unavailable: failed to initialize the ${providerContext.providerId} provider.`);
+      return { decision: 'reject' };
+    }
+
+    if (rejectActiveController()) {
+      return { decision: 'reject' };
+    }
+
     return new Promise((resolve) => {
       this.controller = new InlineEditSession(
         this.app,
@@ -304,7 +355,8 @@ export class InlineEditModal {
         this.editContext,
         this.notePath,
         this.getExternalContexts,
-        resolve
+        resolve,
+        providerContext,
       );
       activeController = this.controller;
       this.controller.show();
@@ -346,31 +398,16 @@ export class InlineEditSession {
     editContext: InlineEditContext,
     private notePath: string,
     private getExternalContexts: () => string[],
-    private resolve: (result: { decision: InlineEditDecision; editedText?: string }) => void
+    private resolve: (result: { decision: InlineEditDecision; editedText?: string }) => void,
+    providerContext?: InlineEditProviderContext,
   ) {
-    const activeView = typeof plugin.getView === 'function'
-      ? plugin.getView()
-      : null;
-    const activeTab = activeView?.getActiveTab();
-    const conversation = activeTab?.conversationId
-      ? plugin.getConversationSync(activeTab.conversationId)
-      : null;
-    const providerId: ProviderId = conversation?.providerId as ProviderId
-      ?? activeTab?.service?.providerId
-      ?? activeTab?.providerId
-      ?? DEFAULT_CHAT_PROVIDER_ID;
+    const resolvedProviderContext = providerContext ?? resolveInlineEditProviderContext(plugin);
+    const providerId = resolvedProviderContext.providerId;
     this.inlineEditService = ProviderRegistry.createInlineEditService(
       plugin.providerHost,
       providerId,
     );
-    const auxiliaryModel = conversation
-      ? resolveConversationModel(plugin.settings, providerId, conversation).model
-      : activeTab?.service?.providerId === providerId
-      ? activeTab.service.getAuxiliaryModel?.()
-      : activeTab?.providerId === providerId
-      ? activeTab?.draftModel
-      : null;
-    this.inlineEditService.setModelOverride?.(auxiliaryModel ?? undefined);
+    this.inlineEditService.setModelOverride?.(resolvedProviderContext.modelOverride);
     this.resolvedProviderId = providerId;
     this.mentionDataProvider = new VaultMentionDataProvider(this.app, {
       onFileLoadError: () => {

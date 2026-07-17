@@ -1,4 +1,5 @@
 
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
@@ -197,14 +198,82 @@ describe('ClaudianPlugin', () => {
       expect(afterBackgroundLoad?.title).toBe(backgroundMetadata.title);
     });
 
+    it('does not persist a background metadata shell deleted before reconciliation', async () => {
+      let finishScan!: () => void;
+      let markBatchPublished!: () => void;
+      const scanRelease = new Promise<void>((resolve) => {
+        finishScan = resolve;
+      });
+      const batchPublished = new Promise<void>((resolve) => {
+        markBatchPublished = resolve;
+      });
+      const backgroundMetadata = {
+        id: 'deleted-background-conversation',
+        providerId: 'claude' as const,
+        title: 'Deleted background conversation',
+        createdAt: 1,
+        updatedAt: 2,
+      };
+
+      await plugin.onload();
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata').mockImplementation(async (options) => {
+        options?.onBatch?.([backgroundMetadata]);
+        markBatchPublished();
+        await scanRelease;
+        return [backgroundMetadata];
+      });
+      const reconcileSpy = jest.spyOn(ProviderSettingsCoordinator, 'reconcileProviders')
+        .mockImplementation((_settings, conversations) => ({
+          changed: false,
+          invalidatedConversations: [...conversations],
+        }));
+      const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata');
+
+      const load = (plugin as any).loadRemainingSessionMetadata();
+      await batchPublished;
+      await plugin.deleteConversation(backgroundMetadata.id, { deleteProviderSession: false });
+      saveMetadataSpy.mockClear();
+      finishScan();
+      await load;
+      const reconcileCallCount = reconcileSpy.mock.calls.length;
+      const saveMetadataCallCount = saveMetadataSpy.mock.calls.length;
+      listSpy.mockRestore();
+      reconcileSpy.mockRestore();
+      saveMetadataSpy.mockRestore();
+
+      expect(reconcileCallCount).toBe(0);
+      expect(saveMetadataCallCount).toBe(0);
+      expect(plugin.getCachedConversation(backgroundMetadata.id)).toBeNull();
+    });
+
   });
 
   describe('onunload', () => {
-    // Note: With multi-tab, cleanup is handled per-tab via ClaudianView.onClose()
     it('should complete without error', async () => {
       await plugin.onload();
 
       expect(() => plugin.onunload()).not.toThrow();
+    });
+
+    it('keeps the latest open-tab snapshot when views are not closed first', async () => {
+      await plugin.onload();
+      const state = {
+        openTabs: [{ tabId: 'tab-1', conversationId: 'conversation-1' }],
+        activeTabId: 'tab-1',
+      };
+      const persistSpy = jest.spyOn(plugin, 'persistTabManagerState').mockResolvedValue(undefined);
+      mockApp.workspace.getLeavesOfType.mockReturnValue([{
+        view: {
+          getPersistedTabState: jest.fn().mockReturnValue(state),
+          getTabManager: jest.fn(),
+        },
+      }]);
+
+      plugin.onunload();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(persistSpy).toHaveBeenCalledWith(state);
     });
   });
 

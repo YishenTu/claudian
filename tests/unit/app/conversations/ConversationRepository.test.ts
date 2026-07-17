@@ -91,6 +91,91 @@ describe('ConversationRepository hydration', () => {
     expect(hydrateConversationHistory).toHaveBeenCalledTimes(2);
   });
 
+  it('does not return a conversation deleted while hydration is in flight', async () => {
+    let releaseHydration!: () => void;
+    const hydrateConversationHistory = jest.fn(async () => {
+      await new Promise<void>((resolve) => {
+        releaseHydration = resolve;
+      });
+    });
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hydrateConversationHistory,
+    } as any);
+    const conversation = createConversation();
+    const { repository, sessions } = createRepository(conversation);
+
+    const hydration = repository.ensureHydrated(conversation.id);
+    await Promise.resolve();
+    await Promise.resolve();
+    const deletion = repository.delete(conversation.id, { deleteProviderSession: false });
+
+    releaseHydration();
+
+    await expect(hydration).resolves.toBeNull();
+    await expect(deletion).resolves.toBeUndefined();
+    expect(repository.getCachedConversation(conversation.id)).toBeNull();
+    expect(sessions.deleteMetadata).toHaveBeenCalledWith(conversation.id);
+  });
+
+  it('does not return an already hydrated conversation deleted while model reconciliation is in flight', async () => {
+    let markReconciliationStarted!: () => void;
+    let releaseReconciliation!: () => void;
+    const reconciliationStarted = new Promise<void>((resolve) => {
+      markReconciliationStarted = resolve;
+    });
+    const reconciliationRelease = new Promise<void>((resolve) => {
+      releaseReconciliation = resolve;
+    });
+    const conversation = createConversation();
+    conversation.messages = [{ id: 'message-1', role: 'user', content: 'kept', timestamp: 1 }];
+    const { repository, sessions } = createRepository(conversation);
+    jest.spyOn(repository as any, 'ensureSelectedModel').mockImplementation(async () => {
+      markReconciliationStarted();
+      await reconciliationRelease;
+    });
+
+    const hydration = repository.ensureHydrated(conversation.id);
+    await reconciliationStarted;
+    const deletion = repository.delete(conversation.id, { deleteProviderSession: false });
+    releaseReconciliation();
+
+    await expect(hydration).resolves.toBeNull();
+    await expect(deletion).resolves.toBeUndefined();
+    expect(repository.getCachedConversation(conversation.id)).toBeNull();
+    expect(sessions.deleteMetadata).toHaveBeenCalledWith(conversation.id);
+  });
+
+  it('restarts hydration when provider session identity changes in flight', async () => {
+    let markFirstHydrationStarted!: () => void;
+    let releaseFirstHydration!: () => void;
+    const firstHydrationStarted = new Promise<void>((resolve) => {
+      markFirstHydrationStarted = resolve;
+    });
+    const firstHydrationRelease = new Promise<void>((resolve) => {
+      releaseFirstHydration = resolve;
+    });
+    const hydrateConversationHistory = jest.fn()
+      .mockImplementationOnce(async () => {
+        markFirstHydrationStarted();
+        await firstHydrationRelease;
+      })
+      .mockResolvedValueOnce(undefined);
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hydrateConversationHistory,
+    } as any);
+    const conversation = createConversation();
+    const { repository } = createRepository(conversation);
+
+    const staleHydration = repository.ensureHydrated(conversation.id);
+    await firstHydrationStarted;
+    await repository.update(conversation.id, { sessionId: 'session-2' });
+    releaseFirstHydration();
+
+    await expect(staleHydration).resolves.toBeNull();
+    await expect(repository.ensureHydrated(conversation.id)).resolves.toBe(conversation);
+    expect(hydrateConversationHistory).toHaveBeenCalledTimes(2);
+  });
+
   it('merges background metadata without replacing an already hydrated conversation', () => {
     const existing = createConversation('existing');
     existing.messages = [{ id: 'message-1', role: 'user', content: 'kept', timestamp: 1 }];
@@ -105,5 +190,18 @@ describe('ConversationRepository hydration', () => {
     expect(repository.getCachedConversation('existing')).toBe(existing);
     expect(repository.getCachedConversation('existing')?.messages).toHaveLength(1);
     expect(repository.getAll().map(conversation => conversation.id)).toEqual(['added', 'existing']);
+  });
+
+  it('does not resurrect a deleted conversation from a late background metadata batch', async () => {
+    const conversation = createConversation('deleted');
+    const { repository } = createRepository(conversation);
+    await repository.delete(conversation.id, { deleteProviderSession: false });
+
+    const merged = repository.mergeMetadataConversations([
+      createConversation(conversation.id),
+    ]);
+
+    expect(merged).toEqual([]);
+    expect(repository.getCachedConversation(conversation.id)).toBeNull();
   });
 });

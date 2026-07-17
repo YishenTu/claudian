@@ -1,10 +1,9 @@
+import { StartupProfiler } from './core/performance/StartupProfiler';
 // Must run before any SDK imports to patch Electron/Node.js realm incompatibility
 import { patchSetMaxListenersForElectron } from './utils/electronCompat';
 patchSetMaxListenersForElectron();
 
 import './providers';
-
-import { StartupProfiler } from './core/performance/StartupProfiler';
 
 StartupProfiler.finishModuleEvaluation();
 
@@ -220,7 +219,17 @@ export default class ClaudianPlugin extends Plugin {
       this.sessionMetadataLoadTimer = null;
     }
     StartupProfiler.freeze();
+    void this.persistOpenTabStates().catch(() => undefined);
     void ProviderWorkspaceRegistry.disposeInitialized();
+  }
+
+  private async persistOpenTabStates(): Promise<void> {
+    for (const view of this.getAllViews()) {
+      const state = view.getPersistedTabState();
+      if (state) {
+        await this.persistTabManagerState(state);
+      }
+    }
   }
 
   async activateView() {
@@ -476,20 +485,26 @@ export default class ClaudianPlugin extends Plugin {
     StartupProfiler.recordCount('session-metadata-count', allMetadata.length);
     // Custom storage implementations may not support incremental publication yet.
     publishBatch(allMetadata);
-    StartupProfiler.recordCount('background-session-metadata-count', addedConversations.length);
-    if (addedConversations.length === 0) {
+    const currentAddedConversations = addedConversations.filter((conversation) => (
+      this.conversationRepository.getCachedConversation(conversation.id) === conversation
+    ));
+    StartupProfiler.recordCount('background-session-metadata-count', currentAddedConversations.length);
+    if (currentAddedConversations.length === 0) {
       return;
     }
 
     const { changed, invalidatedConversations } = ProviderSettingsCoordinator.reconcileProviders(
       this.settings,
-      addedConversations,
+      currentAddedConversations,
       ProviderRegistry.getRegisteredProviderIds(),
     );
     if (changed) {
       await this.saveSettings();
     }
     for (const conversation of invalidatedConversations) {
+      if (this.conversationRepository.getCachedConversation(conversation.id) !== conversation) {
+        continue;
+      }
       await this.storage.sessions.saveMetadata(
         this.storage.sessions.toSessionMetadata(conversation),
       );

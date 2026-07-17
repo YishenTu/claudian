@@ -41,8 +41,9 @@ export class SharedStorageService implements SharedAppStorage {
       const data = isRecord(loaded) ? loaded : {};
       data.tabManagerState = state;
       await this.plugin.saveData(data);
-    } catch {
+    } catch (error) {
       new Notice('Failed to save tab layout');
+      throw error;
     }
   }
 

@@ -986,7 +986,10 @@ export class McpServerSelector {
     this.container.addEventListener('mouseenter', () => {
       const load = this.mcpManager?.ensureLoaded?.();
       if (load) {
-        void load.then(() => this.renderDropdown()).catch(() => {
+        void load.then(() => {
+          this.updateDisplay();
+          this.renderDropdown();
+        }).catch(() => {
           // Keep the selector usable with its last known state when config loading fails.
         });
       } else {
@@ -1085,7 +1088,8 @@ export class McpServerSelector {
     if (!this.iconEl || !this.badgeEl) return;
 
     const count = this.enabledServers.size;
-    const hasServers = (this.mcpManager?.getServers().length || 0) > 0;
+    const isPendingLazyLoad = this.mcpManager?.isLoaded?.() === false;
+    const hasServers = isPendingLazyLoad || (this.mcpManager?.getServers().length || 0) > 0;
 
     // Show/hide container based on whether there are servers and visibility
     if (!hasServers || !this.visible) {

@@ -706,8 +706,14 @@ export async function initializeTabService(
       ? await plugin.getConversationById(tab.conversationId)
       : null
   );
+  if (isClosingLifecycleState(tab.lifecycleState)) {
+    return;
+  }
   const providerId = getTabProviderId(tab, plugin, conversation);
   await ProviderWorkspaceRegistry.ensureInitialized(plugin.providerHost, providerId, 'tab-runtime');
+  if (isClosingLifecycleState(tab.lifecycleState)) {
+    return;
+  }
   refreshTabWorkspaceServices(tab, plugin);
   const selectedModel = conversation
     ? resolveConversationModel(plugin.settings, providerId, conversation).model
@@ -1554,6 +1560,9 @@ export function initializeTabControllers(
         }
 
         await initializeTabService(tab, plugin);
+        if (isClosingLifecycleState(tab.lifecycleState)) {
+          return false;
+        }
         setupServiceCallbacks(tab, plugin);
 
         // Transition: lock model selector to bound provider

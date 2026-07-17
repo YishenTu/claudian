@@ -49,6 +49,7 @@ export class CodexModelCatalogCoordinator {
   private state: CodexCatalogState = 'idle';
   private inFlightRefresh: Promise<CodexCatalogResult> | null = null;
   private abortController: AbortController | null = null;
+  private disposed = false;
 
   constructor(
     private readonly plugin: ProviderHost,
@@ -86,6 +87,9 @@ export class CodexModelCatalogCoordinator {
     _reason: string,
     options: { force?: boolean } = {},
   ): Promise<CodexCatalogEnsureResult> {
+    if (this.disposed) {
+      return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
+    }
     const settings = getCodexProviderSettings(this.plugin.settings);
     if (!settings.enabled) {
       return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
@@ -122,6 +126,9 @@ export class CodexModelCatalogCoordinator {
   }
 
   async refresh(): Promise<CodexCatalogResult> {
+    if (this.disposed) {
+      return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
+    }
     if (this.inFlightRefresh) {
       return this.inFlightRefresh;
     }
@@ -135,9 +142,27 @@ export class CodexModelCatalogCoordinator {
   }
 
   async refreshModelCatalog(): Promise<ProviderModelCatalogRefreshResult> {
-    const result = await this.refresh();
+    let result = await this.refresh();
+    let changed = result.kind === 'completed' && result.refreshed;
+    if (
+      result.kind === 'completed'
+      && !result.diagnostics
+      && result.models.length > 0
+      && !this.disposed
+    ) {
+      let status: 'missing' | 'stale' | 'fresh' = 'fresh';
+      try {
+        status = await this.getStatus();
+      } catch {
+        // Keep the completed refresh result when fingerprint verification is unavailable.
+      }
+      if (status !== 'fresh') {
+        result = await this.refresh();
+        changed = changed || (result.kind === 'completed' && result.refreshed);
+      }
+    }
     if (result.kind === 'skipped') {
-      return { changed: false };
+      return { changed };
     }
     if (result.diagnostics) {
       return { changed: false, diagnostics: result.diagnostics };
@@ -145,11 +170,16 @@ export class CodexModelCatalogCoordinator {
     if (result.models.length === 0) {
       return { changed: false, diagnostics: 'Codex app-server returned no visible models' };
     }
-    return { changed: result.refreshed };
+    return { changed };
   }
 
   cancel(): void {
     this.abortController?.abort();
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.cancel();
   }
 
   private async runRefresh(): Promise<CodexCatalogResult> {
@@ -160,7 +190,24 @@ export class CodexModelCatalogCoordinator {
 
     const span = StartupProfiler.start('codex-model-discovery');
     try {
+      let catalogFingerprint: string | null = null;
+      let catalogFingerprintError: unknown;
+      try {
+        catalogFingerprint = await computeCodexCatalogFingerprint(this.plugin);
+      } catch (error) {
+        catalogFingerprintError = error;
+      }
+      if (this.disposed) {
+        this.state = 'idle';
+        return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
+      }
+
       const discoveryResult = await this.discovery.discoverModels(abortController.signal);
+
+      if (this.disposed) {
+        this.state = 'idle';
+        return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
+      }
 
       if (discoveryResult.kind === 'skipped') {
         const cached = this.getCachedCatalog();
@@ -178,7 +225,17 @@ export class CodexModelCatalogCoordinator {
         };
       }
 
-      const persistedResult = await this.persistCatalog(discoveryResult.models);
+      if (!catalogFingerprint) {
+        throw catalogFingerprintError ?? new Error('Codex catalog fingerprint resolution failed');
+      }
+      const persistedResult = await this.persistCatalog(
+        discoveryResult.models,
+        catalogFingerprint,
+      );
+      if (this.disposed) {
+        this.state = 'idle';
+        return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
+      }
       this.state = 'ready';
       return {
         kind: 'completed',
@@ -186,6 +243,10 @@ export class CodexModelCatalogCoordinator {
         refreshed: persistedResult.changed,
       };
     } catch (error) {
+      if (this.disposed) {
+        this.state = 'idle';
+        return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
+      }
       const message = error instanceof Error ? error.message : 'Codex model discovery failed';
       this.state = 'failed';
       return {
@@ -204,12 +265,15 @@ export class CodexModelCatalogCoordinator {
 
   private async persistCatalog(
     models: CodexDiscoveredModel[],
+    fingerprint: string,
   ): Promise<{ changed: boolean; persistedSettingsChanged: boolean }> {
-    const fingerprint = await computeCodexCatalogFingerprint(this.plugin);
     const timestamp = Date.now();
 
     let refreshResult = { changed: false, persistedSettingsChanged: false };
     await this.plugin.mutateSettingsConditionally((settings) => {
+      if (this.disposed) {
+        return false;
+      }
       const currentSettings = getCodexProviderSettings(settings);
       const currentModels = currentSettings.discoveredModels;
       const visibleModels = normalizeCodexVisibleModels(

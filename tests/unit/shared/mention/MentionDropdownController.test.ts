@@ -330,6 +330,56 @@ describe('MentionDropdownController', () => {
     it('cleans up resources', () => {
       expect(() => controller.destroy()).not.toThrow();
     });
+
+    it('does not rerender after a lazy agent load completes', async () => {
+      let finishLoad!: () => void;
+      const load = new Promise<void>((resolve) => {
+        finishLoad = resolve;
+      });
+      const agentService = {
+        ensureLoaded: jest.fn().mockReturnValue(load),
+        isLoaded: jest.fn().mockReturnValue(false),
+        searchAgents: jest.fn().mockReturnValue([]),
+      } as any;
+      controller.setAgentService(agentService);
+      inputEl.value = '@agent';
+      inputEl.selectionStart = inputEl.value.length;
+      controller.handleInputChange();
+      jest.advanceTimersByTime(200);
+      const callsBeforeDestroy = agentService.searchAgents.mock.calls.length;
+
+      controller.destroy();
+      finishLoad();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(agentService.searchAgents).toHaveBeenCalledTimes(callsBeforeDestroy);
+    });
+  });
+
+  describe('lazy MCP loading', () => {
+    it('refreshes mention results after the MCP configuration loads', async () => {
+      let loaded = false;
+      const manager = {
+        ensureLoaded: jest.fn(async () => {
+          loaded = true;
+        }),
+        getContextSavingServers: jest.fn(() => loaded ? [{ name: 'lazy-server' }] : []),
+        isLoaded: jest.fn(() => loaded),
+      } as any;
+      controller.setMcpManager(manager);
+      inputEl.value = '@lazy';
+      inputEl.selectionStart = inputEl.value.length;
+      controller.handleInputChange();
+      jest.advanceTimersByTime(200);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(manager.ensureLoaded).toHaveBeenCalledTimes(1);
+      expect(getLatestDropdownRenderOptions().items).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'lazy-server', type: 'mcp-server' }),
+      ]));
+    });
   });
 
   describe('handleInputChange', () => {

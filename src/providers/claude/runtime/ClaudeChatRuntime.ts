@@ -21,7 +21,6 @@ import type {
   SDKUserMessage,
   SlashCommand as SDKSlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import { Notice } from 'obsidian';
 
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
@@ -73,6 +72,7 @@ import {
 } from '../../../utils/session';
 import { CLAUDE_PROVIDER_CAPABILITIES } from '../capabilities';
 import { loadSubagentFinalResult, loadSubagentToolCalls } from '../history/ClaudeHistoryStore';
+import { loadClaudeAgentQuery } from '../loadClaudeAgentSdk';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { encodeClaudeTurn } from '../prompt/ClaudeTurnEncoder';
 import {
@@ -167,6 +167,7 @@ export class ClaudianService implements ChatRuntime {
   private responseConsumerRunning = false;
   private responseConsumerPromise: Promise<void> | null = null;
   private shuttingDown = false;
+  private persistentQueryGeneration = 0;
 
   // Tracked configuration for detecting changes that require restart
   private currentConfig: PersistentQueryConfig | null = null;
@@ -626,6 +627,15 @@ export class ClaudianService implements ChatRuntime {
       return;
     }
 
+    const startGeneration = ++this.persistentQueryGeneration;
+    const agentQuery = await loadClaudeAgentQuery();
+    if (
+      startGeneration !== this.persistentQueryGeneration
+      || this.persistentQuery
+    ) {
+      return;
+    }
+
     this.shuttingDown = false;
     this.vaultPath = vaultPath;
 
@@ -693,6 +703,7 @@ export class ClaudianService implements ChatRuntime {
    * Closes the persistent query and cleans up resources.
    */
   closePersistentQuery(_reason?: string, options?: ClosePersistentQueryOptions): void {
+    this.persistentQueryGeneration += 1;
     if (!this.persistentQuery) {
       return;
     }
@@ -1722,6 +1733,10 @@ export class ClaudianService implements ChatRuntime {
     const streamState = createTransformStreamState();
     const usageState = createTransformUsageState();
     try {
+      const agentQuery = await loadClaudeAgentQuery();
+      if (ctx.abortController?.signal.aborted) {
+        return;
+      }
       const response = agentQuery({ prompt: queryPrompt, options });
       this.recordTurnMetadata({ wasSent: true });
       let streamSessionId: string | null = this.sessionManager.getSessionId();

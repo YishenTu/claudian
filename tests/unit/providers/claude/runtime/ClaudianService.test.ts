@@ -6,6 +6,7 @@ import { Notice } from 'obsidian';
 import type { McpServerManager } from '@/core/mcp/McpServerManager';
 import type ClaudianPlugin from '@/main';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
+import * as sdkLoader from '@/providers/claude/loadClaudeAgentSdk';
 import { ClaudianService } from '@/providers/claude/runtime/ClaudeChatRuntime';
 import { MessageChannel } from '@/providers/claude/runtime/ClaudeMessageChannel';
 import { createResponseHandler } from '@/providers/claude/runtime/types';
@@ -2182,6 +2183,45 @@ describe('ClaudianService', () => {
       await (service as any).startPersistentQuery('/vault', '/cli', 'session');
 
       expect(buildOptsSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not finish starting after cleanup while the SDK is loading', async () => {
+      let resolveQuery!: (query: typeof sdkModule.query) => void;
+      const loadingQuery = new Promise<typeof sdkModule.query>((resolve) => {
+        resolveQuery = resolve;
+      });
+      const loaderSpy = jest.spyOn(sdkLoader, 'loadClaudeAgentQuery').mockReturnValue(loadingQuery);
+
+      const startPromise = (service as any).startPersistentQuery('/vault', '/cli', 'session');
+      service.cleanup();
+      resolveQuery(sdkMock.query);
+      await startPromise;
+      loaderSpy.mockRestore();
+
+      expect((service as any).persistentQuery).toBeNull();
+      expect((service as any).messageChannel).toBeNull();
+    });
+  });
+
+  describe('cold-start query guard', () => {
+    it('does not start a query after cleanup while the SDK is loading', async () => {
+      let resolveQuery!: (query: typeof sdkModule.query) => void;
+      const loadingQuery = new Promise<typeof sdkModule.query>((resolve) => {
+        resolveQuery = resolve;
+      });
+      const loaderSpy = jest.spyOn(sdkLoader, 'loadClaudeAgentQuery').mockReturnValue(loadingQuery);
+      const agentQuery = jest.fn() as unknown as typeof sdkModule.query;
+      (service as any).abortController = new AbortController();
+
+      const generator = (service as any).queryViaSDK('prompt', '/vault', '/cli');
+      const firstChunk = generator.next();
+      await Promise.resolve();
+      service.cleanup();
+      resolveQuery(agentQuery);
+      await firstChunk;
+      loaderSpy.mockRestore();
+
+      expect(agentQuery).not.toHaveBeenCalled();
     });
   });
 

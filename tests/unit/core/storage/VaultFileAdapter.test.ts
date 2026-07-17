@@ -462,6 +462,27 @@ describe('VaultFileAdapter', () => {
       expect(mockAdapter.mkdir).toHaveBeenCalledWith('folder');
       expect(mockAdapter.mkdir).toHaveBeenCalledWith('folder/nested');
     });
+
+    it('deduplicates concurrent creation of the same missing folder', async () => {
+      const existingFolders = new Set<string>();
+      mockAdapter.exists.mockImplementation(async (path: string) => existingFolders.has(path));
+      mockAdapter.mkdir.mockImplementation(async (path: string) => {
+        await Promise.resolve();
+        if (existingFolders.has(path)) {
+          throw new Error(`EEXIST: ${path}`);
+        }
+        existingFolders.add(path);
+      });
+
+      await expect(Promise.all([
+        vaultAdapter.ensureFolder('.claudian/sessions'),
+        vaultAdapter.ensureFolder('.claudian/sessions'),
+      ])).resolves.toEqual([undefined, undefined]);
+
+      expect(mockAdapter.mkdir).toHaveBeenCalledTimes(2);
+      expect(mockAdapter.mkdir).toHaveBeenNthCalledWith(1, '.claudian');
+      expect(mockAdapter.mkdir).toHaveBeenNthCalledWith(2, '.claudian/sessions');
+    });
   });
 
   describe('rename', () => {

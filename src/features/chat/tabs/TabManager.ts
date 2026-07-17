@@ -174,71 +174,71 @@ export class TabManager implements TabManagerInterface {
     try {
       const { activate = true, draftModel } = options;
 
-    const conversation = conversationId
-      ? this.plugin.getCachedConversation(conversationId)
-      : undefined;
+      const conversation = conversationId
+        ? this.plugin.getCachedConversation(conversationId)
+        : undefined;
 
-    // Inherit the active tab's provider so the new blank tab picks up its model
-    const activeTab = this.getActiveTab();
-    const defaultProviderId = conversation
-      ? undefined
-      : (activeTab ? getTabProviderId(activeTab, this.plugin) : undefined);
+      // Inherit the active tab's provider so the new blank tab picks up its model
+      const activeTab = this.getActiveTab();
+      const defaultProviderId = conversation
+        ? undefined
+        : (activeTab ? getTabProviderId(activeTab, this.plugin) : undefined);
 
-    const tab = createTab({
-      plugin: this.plugin,
-      containerEl: this.containerEl,
-      conversation: conversation ?? undefined,
-      tabId,
-      ...(typeof draftModel === 'string' ? { draftModel } : {}),
-      defaultProviderId,
-      onStreamingChanged: (isStreaming) => {
-        this.callbacks.onTabStreamingChanged?.(tab.id, isStreaming);
-      },
-      onTitleChanged: (title) => {
-        this.callbacks.onTabTitleChanged?.(tab.id, title);
-      },
-      onAttentionChanged: (needsAttention) => {
-        this.callbacks.onTabAttentionChanged?.(tab.id, needsAttention);
-      },
-      onConversationIdChanged: (conversationId) => {
-        // Sync tab.conversationId when conversation is lazily created
-        tab.conversationId = conversationId;
-        this.callbacks.onTabConversationChanged?.(tab.id, conversationId);
-      },
-    });
+      const tab = createTab({
+        plugin: this.plugin,
+        containerEl: this.containerEl,
+        conversation: conversation ?? undefined,
+        tabId,
+        ...(typeof draftModel === 'string' ? { draftModel } : {}),
+        defaultProviderId,
+        onStreamingChanged: (isStreaming) => {
+          this.callbacks.onTabStreamingChanged?.(tab.id, isStreaming);
+        },
+        onTitleChanged: (title) => {
+          this.callbacks.onTabTitleChanged?.(tab.id, title);
+        },
+        onAttentionChanged: (needsAttention) => {
+          this.callbacks.onTabAttentionChanged?.(tab.id, needsAttention);
+        },
+        onConversationIdChanged: (conversationId) => {
+          // Sync tab.conversationId when conversation is lazily created
+          tab.conversationId = conversationId;
+          this.callbacks.onTabConversationChanged?.(tab.id, conversationId);
+        },
+      });
 
-    // Initialize UI components with provider catalog
-    initializeTabUI(tab, this.plugin, {
-      getProviderCatalogConfig: () => this.getProviderCatalogConfig(tab),
-      onProviderChanged: (providerId) => {
-        this.callbacks.onTabProviderChanged?.(tab.id, providerId);
-        void this.ensureTabWorkspaceServices(tab, providerId, 'provider-selection')
-          .catch(() => {
-            // Provider selection remains usable even when optional workspace services fail.
-          });
-      },
-    });
+      // Initialize UI components with provider catalog
+      initializeTabUI(tab, this.plugin, {
+        getProviderCatalogConfig: () => this.getProviderCatalogConfig(tab),
+        onProviderChanged: (providerId) => {
+          this.callbacks.onTabProviderChanged?.(tab.id, providerId);
+          void this.ensureTabWorkspaceServices(tab, providerId, 'provider-selection')
+            .catch(() => {
+              // Provider selection remains usable even when optional workspace services fail.
+            });
+        },
+      });
 
-    initializeTabControllers(
-      tab,
-      this.plugin,
-      this.view,
-      (forkContext) => this.handleForkRequest(forkContext),
-      (conversationId) => this.openConversation(conversationId),
-      () => this.getProviderCatalogConfig(tab),
-    );
+      initializeTabControllers(
+        tab,
+        this.plugin,
+        this.view,
+        (forkContext) => this.handleForkRequest(forkContext),
+        (conversationId) => this.openConversation(conversationId),
+        () => this.getProviderCatalogConfig(tab),
+      );
 
-    // Wire input event handlers
-    wireTabInputEvents(tab, this.plugin);
+      // Wire input event handlers
+      wireTabInputEvents(tab, this.plugin);
 
-    this.tabs.set(tab.id, tab);
-    this.pendingTabCreations -= 1;
-    reservationHeld = false;
-    this.callbacks.onTabCreated?.(tab);
+      this.tabs.set(tab.id, tab);
+      this.pendingTabCreations -= 1;
+      reservationHeld = false;
+      this.callbacks.onTabCreated?.(tab);
 
-    if (!this.isRestoringState && (activate || !this.activeTabId)) {
-      await this.switchToTab(tab.id);
-    }
+      if (!this.isRestoringState && (activate || !this.activeTabId)) {
+        await this.switchToTab(tab.id);
+      }
 
       return tab;
     } finally {
@@ -282,7 +282,7 @@ export class TabManager implements TabManagerInterface {
       this.callbacks.onActiveTabChanged?.(previousTabId, tabId);
 
       const providerId = tab.service?.providerId ?? tab.providerId;
-      const needsHydration = !!tab.conversationId && tab.state.messages.length === 0;
+      const needsHydration = !!tab.conversationId && tab.hydrationState !== 'ready';
       if (needsHydration) {
         tab.hydrationState = 'loading';
         this.renderTabHydrationState(tab);
@@ -291,7 +291,9 @@ export class TabManager implements TabManagerInterface {
       }
 
       try {
-        await this.ensureTabWorkspaceServices(tab, providerId, 'tab-activation');
+        if (!await this.ensureTabWorkspaceServices(tab, providerId, 'tab-activation')) {
+          return;
+        }
 
         // Load conversation if not already loaded
         if (needsHydration && tab.conversationId) {
@@ -331,7 +333,7 @@ export class TabManager implements TabManagerInterface {
           tab.hydrationState = 'ready';
         }
       } catch (error) {
-        if (!needsHydration || !this.isTabAlive(tab)) throw error;
+        if (!this.isTabAlive(tab)) return;
         tab.hydrationState = 'failed';
         this.renderTabHydrationState(tab, error);
         return;
@@ -898,7 +900,7 @@ export class TabManager implements TabManagerInterface {
     tab: TabData,
     providerId: ProviderId,
     reason: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!ProviderWorkspaceRegistry.getIfInitialized(providerId)) {
       await ProviderWorkspaceRegistry.ensureInitialized(
         this.plugin.providerHost,
@@ -906,7 +908,11 @@ export class TabManager implements TabManagerInterface {
         reason,
       );
     }
+    if (!this.isTabAlive(tab)) {
+      return false;
+    }
     refreshTabWorkspaceServices(tab, this.plugin);
+    return true;
   }
 
   private isProviderCommandLoaderAvailable(providerId: ProviderId): boolean {
@@ -942,6 +948,9 @@ export class TabManager implements TabManagerInterface {
   ): Promise<void> {
     if (!context.runtime || context.runtime.providerId !== providerId || !tab.serviceInitialized) {
       await initializeTabService(tab, this.plugin, context.conversation);
+      if (!this.isTabAlive(tab)) {
+        return;
+      }
       setupServiceCallbacks(tab, this.plugin);
     }
 

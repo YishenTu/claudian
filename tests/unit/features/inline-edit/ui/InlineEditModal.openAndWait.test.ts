@@ -4,6 +4,7 @@ import { createMockEl } from '@test/helpers/mockElement';
 import { MarkdownRenderer, Notice } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { type InlineEditContext, InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
 import { VaultFolderCache } from '@/shared/mention/VaultMentionCache';
 import * as editorUtils from '@/utils/editor';
@@ -44,6 +45,11 @@ function createDeferred(): { promise: Promise<void>; resolve: () => void } {
 describe('InlineEditModal - openAndWait', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('uses editorCallback references first and falls back to view.editor before rejecting', async () => {
@@ -170,6 +176,7 @@ describe('InlineEditModal - openAndWait', () => {
 
       const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       expect(mentionDropdownCtor).toHaveBeenCalled();
       const callbacks = mentionDropdownCtor.mock.calls[0]?.[2];
@@ -271,8 +278,14 @@ describe('InlineEditModal - openAndWait', () => {
 
       const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       const { SlashCommandDropdown } = jest.requireMock('@/shared/components/SlashCommandDropdown');
+      expect(ProviderWorkspaceRegistry.ensureInitialized).toHaveBeenCalledWith(
+        plugin,
+        'codex',
+        'inline-edit',
+      );
       const constructorCall = SlashCommandDropdown.mock.calls[0];
       expect(Array.from(constructorCall[3].hiddenCommands)).toEqual(['analyze']);
 
@@ -383,6 +396,7 @@ describe('InlineEditModal - openAndWait', () => {
 
       const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       expect(providerSpy).toHaveBeenCalledWith(plugin, 'opencode');
       expect(inlineEditService.setModelOverride).toHaveBeenCalledWith('opencode:openai/gpt-5.4');
@@ -498,6 +512,7 @@ describe('InlineEditModal - openAndWait', () => {
 
       const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       expect(providerSpy).toHaveBeenCalledWith(plugin, 'opencode');
       expect(inlineEditService.setModelOverride).toHaveBeenCalledWith('opencode:anthropic/claude-sonnet-4');
@@ -617,6 +632,7 @@ describe('InlineEditModal - openAndWait', () => {
         () => ['/external']
       );
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       const callbacks = mentionDropdownCtor.mock.calls[0]?.[2];
       expect(callbacks.getCachedVaultFiles()).toEqual([]);
@@ -736,6 +752,7 @@ describe('InlineEditModal - openAndWait', () => {
 
       const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       const editTextMock = jest.fn().mockResolvedValue({
         success: true,
@@ -866,6 +883,7 @@ describe('InlineEditModal - openAndWait', () => {
         () => ['/external']
       );
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       const editTextMock = jest.fn().mockResolvedValue({
         success: true,
@@ -974,6 +992,7 @@ describe('InlineEditModal - openAndWait', () => {
 
       const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       const editTextMock = jest.fn().mockResolvedValue({
         success: true,
@@ -1104,6 +1123,7 @@ describe('InlineEditModal - openAndWait', () => {
         () => ['/external']
       );
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       const editTextMock = jest.fn().mockResolvedValue({
         success: true,
@@ -1210,6 +1230,7 @@ describe('InlineEditModal - openAndWait', () => {
 
       const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       (MarkdownRenderer.renderMarkdown as jest.Mock).mockClear();
       widgetRef.showAgentReply('Should this use $Z(f)$?');
@@ -1323,6 +1344,7 @@ describe('InlineEditModal - openAndWait', () => {
 
       const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       widgetRef.showAgentReply('First clarification');
       widgetRef.showAgentReply('Second clarification');
@@ -1431,6 +1453,7 @@ describe('InlineEditModal - openAndWait', () => {
 
       const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
 
       const rejectSpy = jest.spyOn(widgetRef, 'reject').mockImplementation(() => {});
       const acceptSpy = jest.spyOn(widgetRef, 'accept').mockImplementation(() => {});
@@ -1552,6 +1575,7 @@ describe('InlineEditModal - openAndWait', () => {
 
       const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
       const resultPromise = modal.openAndWait();
+      await Promise.resolve();
       widgetRef.inlineEditService = {
         editText: jest.fn().mockResolvedValue({
           success: true,

@@ -2,7 +2,6 @@ import type { App } from 'obsidian';
 import { Notice, setIcon } from 'obsidian';
 
 import { tryParseClipboardConfig } from '../../core/mcp/McpConfigParser';
-import { testMcpServer } from '../../core/mcp/McpTester';
 import type { AppMcpStorage } from '../../core/providers/types';
 import { isNotifiedMutationError } from '../../core/storage/NotifiedMutationError';
 import type { ManagedMcpServer, McpServerConfig, McpServerType } from '../../core/types';
@@ -188,6 +187,7 @@ export class McpSettingsManager {
     modal.open();
 
     try {
+      const { testMcpServer } = await import('../../core/mcp/McpTester');
       const result = await testMcpServer(server);
       modal.setResult(result);
     } catch (error) {

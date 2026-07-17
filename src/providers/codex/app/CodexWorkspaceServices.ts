@@ -70,7 +70,7 @@ export async function createCodexWorkspaceServices(
     },
     refreshModelCatalog: async () => modelCatalogCoordinator.refreshModelCatalog(),
     prepareSettings: async () => agentMentionProvider.loadAgents(),
-    dispose: () => modelCatalogCoordinator.cancel(),
+    dispose: () => modelCatalogCoordinator.dispose(),
   };
 }
 

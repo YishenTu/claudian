@@ -140,6 +140,24 @@ describe('SessionStorage', () => {
       );
     });
 
+    it('keeps valid legacy metadata visible when migration fails', async () => {
+      const metadata = {
+        id: 'session-legacy',
+        title: 'Legacy Session',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+      };
+
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${LEGACY_SESSIONS_PATH}/session-legacy.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify(metadata));
+      mockAdapter.write.mockRejectedValue(new Error('EEXIST: .claudian/sessions'));
+
+      await expect(storage.loadMetadata('session-legacy')).resolves.toEqual(metadata);
+      expect(mockAdapter.delete).not.toHaveBeenCalled();
+    });
+
     it('skips mismatched legacy metadata without migrating or modifying it', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
         path === `${LEGACY_SESSIONS_PATH}/session-requested.meta.json`
@@ -406,6 +424,26 @@ describe('SessionStorage', () => {
 
       expect(metas).toHaveLength(1);
       expect(metas[0].id).toBe('good');
+    });
+
+    it('keeps valid legacy metadata visible when best-effort migration fails', async () => {
+      mockAdapter.listFiles.mockImplementation(async (path: string) => (
+        path === LEGACY_SESSIONS_PATH
+          ? [`${LEGACY_SESSIONS_PATH}/legacy.meta.json`]
+          : []
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'legacy',
+        title: 'Legacy session',
+        createdAt: 1,
+        updatedAt: 2,
+      }));
+      mockAdapter.write.mockRejectedValue(new Error('EEXIST: .claudian/sessions'));
+
+      await expect(storage.listMetadata()).resolves.toEqual([
+        expect.objectContaining({ id: 'legacy', title: 'Legacy session' }),
+      ]);
+      expect(mockAdapter.delete).not.toHaveBeenCalled();
     });
 
     it('skips metadata whose JSON id does not match the filename without modifying it', async () => {

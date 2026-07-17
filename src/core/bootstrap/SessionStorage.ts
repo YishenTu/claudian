@@ -55,27 +55,32 @@ export class SessionStorage {
     if (!isValidSessionMetadataId(id)) {
       return null;
     }
-    const filePath = await this.getLoadPath(id);
-
+    let filePath: string | null;
+    let metadata: SessionMetadata;
     try {
+      filePath = await this.getLoadPath(id);
       if (!filePath) {
         return null;
       }
 
       const content = await this.adapter.read(filePath);
-      const metadata = JSON.parse(content) as SessionMetadata;
+      metadata = JSON.parse(content) as SessionMetadata;
       if (metadata.id !== id || !isValidSessionMetadataId(metadata.id)) {
         return null;
       }
-
-      if (filePath !== this.getMetadataPath(id)) {
-        await this.saveMetadata(metadata);
-      }
-
-      return metadata;
     } catch {
       return null;
     }
+
+    if (filePath !== this.getMetadataPath(id)) {
+      try {
+        await this.saveMetadata(metadata);
+      } catch {
+        // Migration is best-effort; keep valid legacy metadata visible.
+      }
+    }
+
+    return metadata;
   }
 
   async deleteMetadata(id: string): Promise<void> {
@@ -99,22 +104,27 @@ export class SessionStorage {
       if (!fileId || !isValidSessionMetadataId(fileId)) {
         return null;
       }
+      let raw: SessionMetadata;
       try {
         const content = await this.adapter.read(filePath);
-        const raw = JSON.parse(content) as SessionMetadata;
+        raw = JSON.parse(content) as SessionMetadata;
         if (raw.id !== fileId || !isValidSessionMetadataId(raw.id)) {
           return null;
         }
-
-        if (filePath.startsWith(`${LEGACY_SESSIONS_PATH}/`)) {
-          await this.saveMetadata(raw);
-        }
-        publish(raw);
-        return raw;
       } catch {
         // Skip files that fail to load.
         return null;
       }
+
+      if (filePath.startsWith(`${LEGACY_SESSIONS_PATH}/`)) {
+        try {
+          await this.saveMetadata(raw);
+        } catch {
+          // Migration is best-effort; keep valid legacy metadata visible.
+        }
+      }
+      publish(raw);
+      return raw;
     }, SESSION_METADATA_READ_CONCURRENCY);
 
     if (pendingBatch.length > 0) {

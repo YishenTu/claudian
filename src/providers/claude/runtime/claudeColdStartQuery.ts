@@ -1,11 +1,11 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { getEnhancedPath, getMissingNodeError, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { extractAssistantText } from '../auxiliary/extractAssistantText';
+import { loadClaudeAgentQuery } from '../loadClaudeAgentSdk';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import {
   getClaudeProviderSettings,
@@ -123,6 +123,10 @@ export async function runColdStartQuery(
     options.effort = effortLevel;
   }
 
+  const agentQuery = await loadClaudeAgentQuery();
+  if (config.abortController?.signal.aborted) {
+    throw new Error('Cancelled');
+  }
   const response = agentQuery({ prompt, options });
   let responseText = '';
   let sessionId: string | null = null;

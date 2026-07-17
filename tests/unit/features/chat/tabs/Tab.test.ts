@@ -713,6 +713,27 @@ describe('Tab - Service Initialization', () => {
       expect(tab.serviceInitialized).toBe(true);
     });
 
+    it('does not create a runtime when the tab closes during workspace initialization', async () => {
+      let finishInitialization!: () => void;
+      const initialization = new Promise<void>((resolve) => {
+        finishInitialization = resolve;
+      });
+      jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockReturnValue(initialization);
+      const createChatRuntimeSpy = jest.spyOn(ProviderRegistry, 'createChatRuntime');
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      const serviceInitialization = initializeTabService(tab, options.plugin, options.mcpManager);
+      await Promise.resolve();
+      tab.lifecycleState = 'closing';
+      finishInitialization();
+      await serviceInitialization;
+
+      expect(createChatRuntimeSpy).not.toHaveBeenCalled();
+      expect(tab.service).toBeNull();
+      expect(tab.serviceInitialized).toBe(false);
+    });
+
     it('should create the runtime for the conversation provider', async () => {
       const createChatRuntimeSpy = jest.spyOn(ProviderRegistry, 'createChatRuntime');
       const mockRuntime = createMockClaudianService({ providerId: 'codex' });

@@ -284,17 +284,24 @@ export class ClaudianView extends ItemView {
     }
     this.eventRefs = [];
 
-    await this.persistTabStateImmediate();
-    this.tabStatePersistence.dispose();
+    try {
+      await this.persistTabStateImmediate();
+    } catch {
+      // The storage boundary already reports the failure. View teardown must still complete cleanly.
+    } finally {
+      this.tabStatePersistence.dispose();
+      try {
+        this.restoreActiveInputToTabContent();
+        await this.tabManager?.destroy();
+      } finally {
+        this.tabManager = null;
+        this.mentionCacheCoordinator = null;
 
-    this.restoreActiveInputToTabContent();
-    await this.tabManager?.destroy();
-    this.tabManager = null;
-    this.mentionCacheCoordinator = null;
-
-    this.tabBar?.destroy();
-    this.tabBar = null;
-    this.scope = null;
+        this.tabBar?.destroy();
+        this.tabBar = null;
+        this.scope = null;
+      }
+    }
   }
 
   // ============================================
@@ -817,7 +824,7 @@ export class ClaudianView extends ItemView {
     await this.tabStatePersistence.flush();
   }
 
-  private getPersistedTabState(): AppTabManagerState | null {
+  getPersistedTabState(): AppTabManagerState | null {
     if (!this.tabManager) return null;
 
     const state = this.tabManager.getPersistedState();

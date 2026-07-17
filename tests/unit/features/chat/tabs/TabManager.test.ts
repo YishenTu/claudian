@@ -394,6 +394,7 @@ describe('TabManager - Tab Lifecycle', () => {
       });
 
       tab1!.conversationId = 'conv-1';
+      tab1!.hydrationState = 'idle';
       tab1!.state.messages = [];
       tab1!.controllers.conversationController!.switchTo = jest.fn().mockReturnValue(pendingSwitch);
       jest.clearAllMocks();
@@ -414,6 +415,7 @@ describe('TabManager - Tab Lifecycle', () => {
       const tab1 = await manager.createTab();
       await manager.createTab();
       tab1!.conversationId = 'conv-1';
+      tab1!.hydrationState = 'idle';
       tab1!.state.messages = [];
 
       const switchPromise = manager.switchToTab(tab1!.id);
@@ -428,11 +430,34 @@ describe('TabManager - Tab Lifecycle', () => {
       expect(tab1!.controllers.conversationController!.switchTo).toHaveBeenCalledWith('conv-1');
     });
 
+    it('does not rehydrate an already-ready conversation with an empty transcript', async () => {
+      const manager = createManager();
+      const tab1 = await manager.createTab();
+      const tab2 = await manager.createTab();
+      tab1!.conversationId = 'conv-empty';
+      tab1!.lifecycleState = 'bound_cold';
+      tab1!.hydrationState = 'idle';
+      tab1!.state.messages = [];
+
+      await manager.switchToTab(tab1!.id);
+      await manager.switchToTab(tab2!.id);
+      tab1!.dom.messagesEl.empty();
+      const readyMarker = tab1!.dom.messagesEl.createDiv({ cls: 'empty-conversation-ready' });
+      (tab1!.controllers.conversationController!.switchTo as jest.Mock).mockClear();
+
+      await manager.switchToTab(tab1!.id);
+
+      expect(tab1!.controllers.conversationController!.switchTo).not.toHaveBeenCalled();
+      expect(tab1!.dom.messagesEl.querySelector('.claudian-tab-hydration')).toBeNull();
+      expect(tab1!.dom.messagesEl.contains(readyMarker)).toBe(true);
+    });
+
     it('keeps hydration failures local and retries from the tab error state', async () => {
       const manager = createManager();
       const tab1 = await manager.createTab();
       await manager.createTab();
       tab1!.conversationId = 'conv-1';
+      tab1!.hydrationState = 'idle';
       tab1!.state.messages = [];
       (tab1!.controllers.conversationController!.switchTo as jest.Mock)
         .mockRejectedValueOnce(new Error('Hydration failed'))
@@ -449,6 +474,51 @@ describe('TabManager - Tab Lifecycle', () => {
 
       expect(tab1!.controllers.conversationController!.switchTo).toHaveBeenCalledTimes(2);
       expect(tab1!.hydrationState).toBe('ready');
+    });
+
+    it('keeps provider initialization failures local and retryable for blank tabs', async () => {
+      const manager = createManager();
+      (ProviderWorkspaceRegistry.ensureInitialized as jest.Mock)
+        .mockRejectedValueOnce(new Error('Provider initialization failed'));
+
+      const tab = await manager.createTab();
+
+      expect(tab).not.toBeNull();
+      expect(tab!.hydrationState).toBe('failed');
+      expect(tab!.controllers.conversationController!.initializeWelcome).not.toHaveBeenCalled();
+      const retryButton = tab!.dom.messagesEl.querySelector('.claudian-tab-hydration-retry');
+      expect(retryButton).not.toBeNull();
+
+      (retryButton as HTMLElement).click();
+      await new Promise(resolve => window.setTimeout(resolve, 20));
+
+      expect(tab!.hydrationState).toBe('ready');
+      expect(tab!.controllers.conversationController!.initializeWelcome).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not refresh or hydrate a tab closed during provider initialization', async () => {
+      const manager = createManager();
+      const tab1 = await manager.createTab();
+      await manager.createTab();
+      tab1!.conversationId = 'conv-1';
+      tab1!.hydrationState = 'idle';
+      tab1!.state.messages = [];
+      let finishInitialization!: () => void;
+      const initialization = new Promise<void>((resolve) => {
+        finishInitialization = resolve;
+      });
+      (ProviderWorkspaceRegistry.ensureInitialized as jest.Mock)
+        .mockReturnValueOnce(initialization);
+      jest.clearAllMocks();
+
+      const switchPromise = manager.switchToTab(tab1!.id);
+      await flushMicrotasks();
+      await manager.closeTab(tab1!.id);
+      finishInitialization();
+      await switchPromise;
+
+      expect(mockRefreshTabWorkspaceServices).not.toHaveBeenCalledWith(tab1, expect.anything());
+      expect(tab1!.controllers.conversationController!.switchTo).not.toHaveBeenCalled();
     });
   });
 
@@ -943,6 +1013,7 @@ describe('TabManager - Persistence', () => {
         tabFactory: (index) => createMockTabData({
           id: `restored-${index}`,
           conversationId: `conversation-${index}`,
+          hydrationState: 'idle',
           lifecycleState: 'bound_cold',
           controllers: {
             conversationController: {
@@ -2291,6 +2362,7 @@ describe('TabManager - Concurrent Switch Guard', () => {
       resolveSwitchTo = resolve;
     });
     tab1!.conversationId = 'conv-1';
+    tab1!.hydrationState = 'idle';
     tab1!.state.messages = [];
     tab1!.controllers.conversationController!.switchTo = jest.fn().mockReturnValue(hangingPromise);
 

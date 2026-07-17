@@ -136,6 +136,23 @@ describe('CodexWorkspaceServices', () => {
     expect(plugin.saveSettings).not.toHaveBeenCalled();
   });
 
+  it('does not run deferred layout discovery after workspace disposal', async () => {
+    const plugin = createPlugin(true);
+    mockDiscoverModels.mockResolvedValue({
+      kind: 'completed',
+      models: [makeDiscoveredModel('gpt-5.6-sol')],
+    });
+    const services = await createCodexWorkspaceServices(plugin, {} as any, {} as any);
+    const layoutReadyCallback = plugin.app.workspace.onLayoutReady.mock.calls[0][0];
+
+    await services.dispose?.();
+    layoutReadyCallback();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(mockDiscoverModels).not.toHaveBeenCalled();
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
   it('treats a disabled catalog refresh as skipped without diagnostics', async () => {
     const cached = makeDiscoveredModel('gpt-5.5');
     const plugin = createPlugin(false, [cached]);

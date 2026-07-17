@@ -86,14 +86,18 @@ for (let index = 0; index < 7; index += 1) {
   if (result.status !== 0) {
     throw new Error(`Module evaluation harness failed: ${result.stderr || result.stdout}`);
   }
-  samples.push(Number(result.stdout));
+  const sample = Number(result.stdout.trim());
+  if (!Number.isFinite(sample)) {
+    throw new Error(`Module evaluation harness returned an invalid duration: ${JSON.stringify(result.stdout)}`);
+  }
+  samples.push(sample);
 }
 samples.sort((left, right) => left - right);
 const medianMs = samples[Math.floor(samples.length / 2)];
 
 console.log(`main.js ${(mainBytes / 1024 / 1024).toFixed(2)} MiB; median cold evaluation ${medianMs.toFixed(1)} ms`);
 if (medianMs > evaluationBudgetMs) {
-  console.warn(
-    `Performance warning: median cold module evaluation is ${medianMs.toFixed(1)} ms; indicator is ${evaluationBudgetMs} ms.`,
+  throw new Error(
+    `Median cold module evaluation is ${medianMs.toFixed(1)} ms; budget is ${evaluationBudgetMs} ms.`,
   );
 }

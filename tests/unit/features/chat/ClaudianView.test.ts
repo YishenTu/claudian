@@ -270,6 +270,39 @@ describe('ClaudianView tab controls', () => {
   });
 });
 
+describe('ClaudianView shutdown', () => {
+  it('disposes view resources when the final tab-state flush fails', async () => {
+    const error = new Error('disk full');
+    const view = Object.create(ClaudianView.prototype) as any;
+    const destroy = jest.fn().mockResolvedValue(undefined);
+    const tabBarDestroy = jest.fn();
+    const persistenceDispose = jest.fn();
+
+    Object.assign(view, {
+      cancelHistoryRendering: jest.fn(),
+      eventRefs: [],
+      mentionCacheCoordinator: {},
+      pendingTabBarUpdate: null,
+      persistTabStateImmediate: jest.fn().mockRejectedValue(error),
+      plugin: { app: { vault: { offref: jest.fn() } } },
+      restoreActiveInputToTabContent: jest.fn(),
+      scope: {},
+      tabBar: { destroy: tabBarDestroy },
+      tabManager: { destroy },
+      tabStatePersistence: { dispose: persistenceDispose },
+    });
+
+    await expect(view.onClose()).resolves.toBeUndefined();
+
+    expect(persistenceDispose).toHaveBeenCalledTimes(1);
+    expect(view.restoreActiveInputToTabContent).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(tabBarDestroy).toHaveBeenCalledTimes(1);
+    expect(view.tabManager).toBeNull();
+    expect(view.scope).toBeNull();
+  });
+});
+
 describe('ClaudianView Escape handling', () => {
   beforeEach(() => {
     MockScope.instances.length = 0;
