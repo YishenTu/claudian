@@ -69,12 +69,19 @@ import type {
   TurnSteerResult,
   UserInput,
 } from './codexAppServerTypes';
+import { CodexDynamicToolRegistry } from './CodexDynamicToolRegistry';
 import type { CodexLaunchSpec } from './codexLaunchTypes';
 import { CodexNotificationRouter } from './CodexNotificationRouter';
 import { CodexRpcTransport } from './CodexRpcTransport';
 import { type CodexRuntimeContext, createCodexRuntimeContext } from './CodexRuntimeContext';
 import { CodexServerRequestRouter } from './CodexServerRequestRouter';
 import { CodexSessionManager } from './CodexSessionManager';
+import {
+  CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME,
+  CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE,
+  CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION,
+  createCodexWorkspaceDependencyTool,
+} from './CodexWorkspaceDependencyTool';
 
 function resolveCodexSandboxConfig(
   permissionMode: string,
@@ -112,6 +119,12 @@ function resolveCodexServiceTier(
   return model.defaultServiceTier;
 }
 
+const LEGACY_WORKSPACE_DEPENDENCY_NOTICE =
+  'This conversation was created before Claudian added Codex workspace dependency tools. It can continue for other tasks, but skills that require load_workspace_dependencies are unavailable in this thread. Start a new conversation to use them.';
+
+const LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS =
+  'This thread predates Claudian client-hosted workspace dependency tools. If the user requests a skill that requires load_workspace_dependencies, explain that they must start a new conversation in Claudian. Do not emulate the tool, search for dependency paths, or install replacement dependencies.';
+
 export class CodexChatRuntime implements ChatRuntime {
   readonly providerId: ProviderId = 'codex';
 
@@ -123,6 +136,7 @@ export class CodexChatRuntime implements ChatRuntime {
   private runtimeContext: CodexRuntimeContext | null = null;
   private notificationRouter: CodexNotificationRouter | null = null;
   private serverRequestRouter = new CodexServerRequestRouter();
+  private dynamicToolRegistry = new CodexDynamicToolRegistry();
   private ready = false;
   private readinessFlight: { key: string; promise: Promise<boolean> } | null = null;
   private disposed = false;
@@ -133,6 +147,8 @@ export class CodexChatRuntime implements ChatRuntime {
   private currentQueryThreadId: string | null = null;
   private loadedThreadId: string | null = null;
   private currentThreadPath: string | null = null;
+  private workspaceDependencyToolVersion: number | null = null;
+  private legacyWorkspaceDependencyNoticeKeys = new Set<string>();
   private pendingTurnNotifications: Array<{ method: string; params: unknown }> = [];
 
   // Chunk buffer: notifications push here, query() drains
@@ -194,12 +210,14 @@ export class CodexChatRuntime implements ChatRuntime {
       this.session.reset();
       this.loadedThreadId = null;
       this.currentThreadPath = null;
+      this.workspaceDependencyToolVersion = null;
       this.pendingFork = null;
       return;
     }
 
     this.setCurrentConversationModel(conversation.selectedModel);
     const state = getCodexState(conversation.providerState);
+    this.workspaceDependencyToolVersion = state.workspaceDependencyToolVersion ?? null;
 
     // Pending fork: store fork metadata, don't set the source thread as our session
     if (state.forkSource && !state.threadId && !conversation.sessionId) {
@@ -340,6 +358,30 @@ export class CodexChatRuntime implements ChatRuntime {
       let threadPath: string | null = null;
       let threadTargetPath: string | null = null;
       let completedPendingFork = false;
+      const isLegacyWorkspaceDependencyThread = (
+        this.pendingFork !== null || existingThreadId !== null
+      ) && (
+        this.workspaceDependencyToolVersion === null
+        || this.workspaceDependencyToolVersion < CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION
+      );
+      const baseInstructions = isLegacyWorkspaceDependencyThread
+        ? `${promptText}\n\n${LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS}`
+        : promptText;
+      const legacyNoticeKey = this.pendingFork
+        ? `fork:${this.pendingFork.sessionId}:${this.pendingFork.resumeAt}`
+        : existingThreadId
+          ? `thread:${existingThreadId}`
+          : null;
+
+      if (
+        !turn.isCompact
+        && isLegacyWorkspaceDependencyThread
+        && legacyNoticeKey
+        && !this.legacyWorkspaceDependencyNoticeKeys.has(legacyNoticeKey)
+      ) {
+        this.legacyWorkspaceDependencyNoticeKeys.add(legacyNoticeKey);
+        yield { type: 'notice', level: 'warning', content: LEGACY_WORKSPACE_DEPENDENCY_NOTICE };
+      }
 
       if (this.pendingFork) {
         // Pending fork: fork the source thread, optionally roll back, then start a turn
@@ -368,7 +410,7 @@ export class CodexChatRuntime implements ChatRuntime {
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
           serviceTier: resolveCodexServiceTier(providerSettings.serviceTier, model, providerSettings),
-          baseInstructions: promptText,
+          baseInstructions,
           experimentalRawEvents: true,
           persistExtendedHistory: true,
         });
@@ -382,6 +424,9 @@ export class CodexChatRuntime implements ChatRuntime {
 
         this.loadedThreadId = threadId;
         completedPendingFork = true;
+        if (isLegacyWorkspaceDependencyThread) {
+          this.legacyWorkspaceDependencyNoticeKeys.add(`thread:${threadId}`);
+        }
 
         // Build replay suffix from conversation history after the checkpoint
         if (_conversationHistory && _conversationHistory.length > 0) {
@@ -408,7 +453,7 @@ export class CodexChatRuntime implements ChatRuntime {
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
           serviceTier: resolveCodexServiceTier(providerSettings.serviceTier, model, providerSettings),
-          baseInstructions: promptText,
+          baseInstructions,
           experimentalRawEvents: true,
           persistExtendedHistory: true,
         });
@@ -421,17 +466,7 @@ export class CodexChatRuntime implements ChatRuntime {
         threadId = existingThreadId;
       } else {
         // New thread
-        const permissionMode = this.resolveSandboxConfig();
-        const startResult = await this.transport!.request<ThreadStartResult>('thread/start', {
-          ...(model ? { model } : {}),
-          cwd: this.launchSpec?.targetCwd ?? getVaultPath(this.plugin.app) ?? undefined,
-          approvalPolicy: permissionMode.approvalPolicy,
-          sandbox: permissionMode.sandbox,
-          serviceTier: resolveCodexServiceTier(providerSettings.serviceTier, model, providerSettings),
-          baseInstructions: promptText,
-          experimentalRawEvents: true,
-          persistExtendedHistory: true,
-        });
+        const startResult = await this.startThread(model, providerSettings, promptText);
         threadId = startResult.thread.id;
         threadTargetPath = startResult.thread.path ?? null;
         threadPath = this.toHostSessionPath(threadTargetPath);
@@ -738,6 +773,11 @@ export class CodexChatRuntime implements ChatRuntime {
       ),
       ...(existingState?.forkSource ? { forkSource: existingState.forkSource } : {}),
       ...(
+        this.workspaceDependencyToolVersion !== null
+          ? { workspaceDependencyToolVersion: this.workspaceDependencyToolVersion }
+          : {}
+      ),
+      ...(
         existingState?.forkSourceSessionFilePath
           ? { forkSourceSessionFilePath: existingState.forkSourceSessionFilePath }
           : {}
@@ -782,6 +822,8 @@ export class CodexChatRuntime implements ChatRuntime {
     this.runtimeContext = null;
     this.loadedThreadId = null;
     this.currentThreadPath = null;
+    this.workspaceDependencyToolVersion = null;
+    this.legacyWorkspaceDependencyNoticeKeys.clear();
     this.currentTurnId = null;
     this.currentQueryThreadId = null;
     this.pendingTurnNotifications = [];
@@ -901,7 +943,38 @@ export class CodexChatRuntime implements ChatRuntime {
 
     const initializeResult = await initializeCodexAppServerTransport(this.transport);
     this.runtimeContext = createCodexRuntimeContext(launchSpec, initializeResult);
+    this.dynamicToolRegistry = new CodexDynamicToolRegistry();
+    const workspaceDependencyTool = createCodexWorkspaceDependencyTool(this.runtimeContext);
+    this.dynamicToolRegistry.register(workspaceDependencyTool);
+    this.serverRequestRouter.setDynamicToolRegistry(this.dynamicToolRegistry);
     this.clientConfigKey = clientConfigKey;
+  }
+
+  private async startThread(
+    model: string | undefined,
+    providerSettings: Record<string, unknown>,
+    baseInstructions: string,
+  ): Promise<ThreadStartResult> {
+    const permissionMode = this.resolveSandboxConfig();
+    const dynamicTools = this.dynamicToolRegistry.getThreadStartSpecs();
+    const startResult = await this.transport!.request<ThreadStartResult>('thread/start', {
+      ...(model ? { model } : {}),
+      cwd: this.launchSpec?.targetCwd ?? getVaultPath(this.plugin.app) ?? undefined,
+      approvalPolicy: permissionMode.approvalPolicy,
+      sandbox: permissionMode.sandbox,
+      serviceTier: resolveCodexServiceTier(providerSettings.serviceTier, model, providerSettings),
+      baseInstructions,
+      experimentalRawEvents: true,
+      persistExtendedHistory: true,
+      ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
+    });
+    this.workspaceDependencyToolVersion = this.dynamicToolRegistry.isIncludedInThreadStart(
+      CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE,
+      CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME,
+    )
+      ? CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION
+      : null;
+    return startResult;
   }
 
   private wireTransportHandlers(): void {
@@ -944,12 +1017,13 @@ export class CodexChatRuntime implements ChatRuntime {
       });
     }
 
-    // Server requests (approvals, ask-user)
+    // Server requests (approvals, ask-user, client-hosted dynamic tools)
     const requestMethods = [
       'item/commandExecution/requestApproval',
       'item/fileChange/requestApproval',
       'item/permissions/requestApproval',
       'item/tool/requestUserInput',
+      'item/tool/call',
     ];
 
     for (const method of requestMethods) {
@@ -970,6 +1044,8 @@ export class CodexChatRuntime implements ChatRuntime {
     }
     this.launchSpec = null;
     this.runtimeContext = null;
+    this.dynamicToolRegistry = new CodexDynamicToolRegistry();
+    this.serverRequestRouter.setDynamicToolRegistry(null);
     this.notificationRouter = null;
     this.currentTurnId = null;
     this.currentQueryThreadId = null;

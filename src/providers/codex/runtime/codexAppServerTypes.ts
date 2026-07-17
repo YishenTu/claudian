@@ -1,6 +1,6 @@
 // Local protocol subset for Codex app-server stdio JSON-RPC.
 // Field names match the wire format (camelCase).
-// Validated against the generated codex-cli 0.144.1 schema on 2026-07-10.
+// Validated against the generated codex-cli 0.144.5 schema on 2026-07-16.
 
 // ---------------------------------------------------------------------------
 // JSON-RPC base
@@ -110,6 +110,7 @@ export type ThreadItem =
   | WebSearchItem
   | CollabAgentToolCallItem
   | McpToolCallItem
+  | DynamicToolCallItem
   | ContextCompactionItem;
 
 export interface UserMessageItem {
@@ -220,6 +221,18 @@ export interface McpToolCallItem {
   arguments?: Record<string, unknown>;
   result?: { content?: Array<{ type?: string; text?: string }> } | null;
   error?: string | null;
+  durationMs?: number | null;
+}
+
+export interface DynamicToolCallItem {
+  type: 'dynamicToolCall';
+  id: string;
+  namespace?: string | null;
+  tool: string;
+  arguments: unknown;
+  status: 'inProgress' | 'completed' | 'failed';
+  contentItems?: DynamicToolCallOutputContentItem[] | null;
+  success?: boolean | null;
   durationMs?: number | null;
 }
 
@@ -351,6 +364,45 @@ export interface ThreadStartParams {
   experimentalRawEvents?: boolean;
   persistExtendedHistory?: boolean;
   sandboxPolicy?: SandboxPolicy;
+  dynamicTools?: LegacyDynamicToolSpec[];
+}
+
+export interface DynamicToolFunctionSpec {
+  type: 'function';
+  name: string;
+  description: string;
+  inputSchema: unknown;
+  deferLoading?: boolean;
+}
+
+/**
+ * Flat dynamic-tool request shape accepted by Codex before explicit namespace
+ * specs and retained as a backwards-compatible input by current app servers.
+ */
+export interface LegacyDynamicToolSpec {
+  namespace?: string | null;
+  name: string;
+  description: string;
+  inputSchema: unknown;
+  deferLoading?: boolean;
+}
+
+export interface DynamicToolCallParams {
+  threadId: string;
+  turnId: string;
+  callId: string;
+  namespace?: string | null;
+  tool: string;
+  arguments: unknown;
+}
+
+export type DynamicToolCallOutputContentItem =
+  | { type: 'inputText'; text: string }
+  | { type: 'inputImage'; imageUrl: string };
+
+export interface DynamicToolCallResponse {
+  success: boolean;
+  contentItems: DynamicToolCallOutputContentItem[];
 }
 
 export interface ThreadStartResult {

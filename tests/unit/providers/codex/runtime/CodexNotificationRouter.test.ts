@@ -1189,6 +1189,108 @@ describe('CodexNotificationRouter', () => {
     });
   });
 
+  describe('dynamicToolCall', () => {
+    it('maps canonical dynamic tool lifecycle events to tool chunks', () => {
+      router.handleNotification('item/started', {
+        item: {
+          type: 'dynamicToolCall',
+          id: 'call_dynamic1',
+          namespace: 'codex_app',
+          tool: 'load_workspace_dependencies',
+          arguments: {},
+          status: 'inProgress',
+          contentItems: null,
+          success: null,
+          durationMs: null,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'dynamicToolCall',
+          id: 'call_dynamic1',
+          namespace: 'codex_app',
+          tool: 'load_workspace_dependencies',
+          arguments: {},
+          status: 'completed',
+          contentItems: [{ type: 'inputText', text: 'Workspace dependencies are available.' }],
+          success: true,
+          durationMs: 12,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_dynamic1',
+          name: 'load_workspace_dependencies',
+          input: {},
+        },
+        {
+          type: 'tool_result',
+          id: 'call_dynamic1',
+          content: 'Workspace dependencies are available.',
+          isError: false,
+        },
+      ]);
+    });
+
+    it('does not duplicate dynamic tool chunks also emitted as raw items', () => {
+      router.handleNotification('item/started', {
+        item: {
+          type: 'dynamicToolCall',
+          id: 'call_dynamic2',
+          namespace: 'codex_app',
+          tool: 'load_workspace_dependencies',
+          arguments: {},
+          status: 'inProgress',
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        item: {
+          type: 'custom_tool_call',
+          name: 'load_workspace_dependencies',
+          call_id: 'call_dynamic2',
+          input: '{}',
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_dynamic2',
+          output: 'Workspace dependencies are available.',
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'dynamicToolCall',
+          id: 'call_dynamic2',
+          namespace: 'codex_app',
+          tool: 'load_workspace_dependencies',
+          arguments: {},
+          status: 'completed',
+          contentItems: [{ type: 'inputText', text: 'Workspace dependencies are available.' }],
+          success: true,
+          durationMs: 12,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+    });
+  });
+
   describe('plan_completed emission', () => {
     it('records plan completion metadata before done on successful plan turn with plan deltas', () => {
       router.beginTurn({ isPlanTurn: true });

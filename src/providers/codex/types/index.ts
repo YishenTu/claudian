@@ -7,6 +7,7 @@ export interface CodexProviderState {
   forkSourceSessionFilePath?: string;
   forkSourceTranscriptRootPath?: string;
   forkSource?: ForkSource;
+  workspaceDependencyToolVersion?: number;
 }
 
 export function getCodexState(
