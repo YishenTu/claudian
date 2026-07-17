@@ -2,7 +2,7 @@
 
 ## Project
 
-Claudian is an Obsidian plugin that embeds provider-backed coding agents in a sidebar and inline-edit flow. Claude is the default provider. Codex, OpenCode, and Pi are optional providers that plug into the same conversation model through `Conversation.providerId` and opaque provider-owned `providerState`.
+Claudian is an Obsidian plugin that embeds provider-backed coding agents in a sidebar and inline-edit flow. Claude is the default provider. Codex, Grok Build, OpenCode, and Pi are optional providers that plug into the same conversation model through `Conversation.providerId` and opaque provider-owned `providerState`.
 
 Do not assume provider parity. Check each provider's `capabilities.ts`, `registration.ts`, and UI config before wiring shared behavior.
 
@@ -15,6 +15,7 @@ Do not assume provider parity. Check each provider's `capabilities.ts`, `registr
   - `src/features/chat/AGENTS.md`
   - `src/providers/claude/AGENTS.md`
   - `src/providers/codex/AGENTS.md`
+  - `src/providers/grok/AGENTS.md`
   - `src/providers/opencode/AGENTS.md`
   - `src/providers/pi/AGENTS.md`
   - `src/style/AGENTS.md`
@@ -81,6 +82,7 @@ The feature layer depends on `core/` contracts, not provider internals. Provider
 | `.pi/agent/sessions/` | Pi vault-local sessions |
 | `~/.claude/projects/{vault}/*.jsonl` | Claude-native transcripts |
 | `~/.codex/sessions/**/*.jsonl` | Codex-native transcripts |
+| `~/.grok/sessions/**/chat_history.jsonl` | Grok Build native transcripts |
 | `~/.pi/agent/sessions/` | Pi user-level sessions |
 
 ## Development Rules

@@ -110,6 +110,12 @@ export const PI_PROVIDER_ICON: ProviderIconSvg = {
   ],
 };
 
+/** xAI / Grok brand mark used in model selectors. */
+export const XAI_PROVIDER_ICON: ProviderIconSvg = {
+  viewBox: '0 0 24 24',
+  path: 'M3.787 9.362 12.039 21h3.668L7.454 9.362H3.787Zm3.664 6.464L3.782 21h3.671l1.833-2.586-1.835-2.588ZM16.547 3l-6.343 8.944 1.835 2.588L20.217 3h-3.67Zm.664 5.534V21h3.006V4.294l-3.006 4.24Z',
+};
+
 export interface CreateProviderIconSvgOptions {
   className?: string;
   dataProvider?: string;

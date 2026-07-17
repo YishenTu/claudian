@@ -104,6 +104,7 @@ describe('ProviderRegistry', () => {
     const ids = ProviderRegistry.getRegisteredProviderIds();
     expect(ids).toContain('claude');
     expect(ids).toContain('codex');
+    expect(ids).toContain('grok');
     expect(ids).toContain('pi');
   });
 
@@ -131,6 +132,14 @@ describe('ProviderRegistry', () => {
         pi: { enabled: true },
       },
     })).toEqual(['opencode', 'pi', 'codex', 'claude']);
+    expect(ProviderRegistry.getEnabledProviderIds({
+      providerConfigs: {
+        codex: { enabled: true },
+        grok: { enabled: true },
+        opencode: { enabled: true },
+        pi: { enabled: true },
+      },
+    })).toEqual(['opencode', 'pi', 'grok', 'codex', 'claude']);
   });
 
   it('exposes title generation models only from enabled providers', () => {
