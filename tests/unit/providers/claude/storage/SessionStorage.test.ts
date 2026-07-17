@@ -426,6 +426,66 @@ describe('SessionStorage', () => {
       expect(mockAdapter.write).not.toHaveBeenCalled();
       expect(mockAdapter.delete).not.toHaveBeenCalled();
     });
+
+    it('reads metadata with bounded concurrency while preserving file order', async () => {
+      const ids = Array.from({ length: 12 }, (_, index) => `session-${index}`);
+      let activeReads = 0;
+      let maxActiveReads = 0;
+
+      mockAdapter.listFiles.mockImplementation(async (path: string) => (
+        path === SESSIONS_PATH
+          ? ids.map(id => `${SESSIONS_PATH}/${id}.meta.json`)
+          : []
+      ));
+      mockAdapter.read.mockImplementation(async (path: string) => {
+        activeReads += 1;
+        maxActiveReads = Math.max(maxActiveReads, activeReads);
+        await new Promise(resolve => setTimeout(resolve, 1));
+        activeReads -= 1;
+        const id = path.split('/').pop()!.replace('.meta.json', '');
+        return JSON.stringify({ id, title: id, createdAt: 1, updatedAt: 1 });
+      });
+
+      const metas = await storage.listMetadata();
+
+      expect(maxActiveReads).toBeGreaterThan(1);
+      expect(maxActiveReads).toBeLessThanOrEqual(8);
+      expect(metas.map(meta => meta.id)).toEqual(ids);
+    });
+
+    it('publishes completed metadata batches before the full scan settles', async () => {
+      const ids = Array.from({ length: 12 }, (_, index) => `session-${index}`);
+      const blockedIds = new Set(ids.slice(4));
+      let releaseBlockedReads!: () => void;
+      const blockedReads = new Promise<void>(resolve => {
+        releaseBlockedReads = resolve;
+      });
+      const onBatch = jest.fn();
+      mockAdapter.listFiles.mockImplementation(async (path: string) => (
+        path === SESSIONS_PATH
+          ? ids.map(id => `${SESSIONS_PATH}/${id}.meta.json`)
+          : []
+      ));
+      mockAdapter.read.mockImplementation(async (path: string) => {
+        const id = path.split('/').pop()!.replace('.meta.json', '');
+        if (blockedIds.has(id)) {
+          await blockedReads;
+        }
+        return JSON.stringify({ id, title: id, createdAt: 1, updatedAt: 1 });
+      });
+
+      const scan = storage.listMetadata({ onBatch, batchSize: 4 });
+      for (let attempt = 0; attempt < 10 && onBatch.mock.calls.length === 0; attempt += 1) {
+        await Promise.resolve();
+      }
+
+      expect(onBatch).toHaveBeenCalledWith(expect.arrayContaining([
+        expect.objectContaining({ id: 'session-0' }),
+      ]));
+
+      releaseBlockedReads();
+      await expect(scan).resolves.toHaveLength(ids.length);
+    });
   });
 
   describe('listAllConversations', () => {

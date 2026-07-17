@@ -23,26 +23,56 @@ export type CodexModelDiscoveryResult =
     reason: 'provider-disabled';
   };
 
+export interface CodexModelDiscoveryServiceLike {
+  discoverModels(signal?: AbortSignal): Promise<CodexModelDiscoveryResult>;
+}
+
 const MODEL_LIST_PAGE_SIZE = 100;
 
-export class CodexModelDiscoveryService {
+export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLike {
   constructor(private readonly plugin: ProviderHost) {}
 
-  async discoverModels(): Promise<CodexModelDiscoveryResult> {
+  async discoverModels(signal?: AbortSignal): Promise<CodexModelDiscoveryResult> {
     if (!getCodexProviderSettings(this.plugin.settings).enabled) {
       return { kind: 'skipped', reason: 'provider-disabled' };
     }
 
+    if (signal?.aborted) {
+      return {
+        kind: 'completed',
+        diagnostics: 'Codex model discovery was cancelled',
+        models: [],
+      };
+    }
+
     let process: CodexAppServerProcess | null = null;
     let transport: CodexRpcTransport | null = null;
+    let abortListener: (() => void) | null = null;
 
     try {
-      const launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
+      const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
       process = new CodexAppServerProcess(launchSpec);
       process.start();
       transport = new CodexRpcTransport(process);
       transport.start();
+
+      abortListener = () => {
+        transport?.dispose();
+        if (process) {
+          void process.shutdown().catch(() => {});
+        }
+      };
+      signal?.addEventListener('abort', abortListener, { once: true });
+
       await initializeCodexAppServerTransport(transport);
+
+      if (signal?.aborted) {
+        return {
+          kind: 'completed',
+          diagnostics: 'Codex model discovery was cancelled',
+          models: [],
+        };
+      }
 
       const entries: unknown[] = [];
       const seenCursors = new Set<string>();
@@ -65,6 +95,14 @@ export class CodexModelDiscoveryService {
           seenCursors.add(nextCursor);
         }
         cursor = nextCursor;
+
+        if (signal?.aborted) {
+          return {
+            kind: 'completed',
+            diagnostics: 'Codex model discovery was cancelled',
+            models: [],
+          };
+        }
       } while (cursor);
 
       return {
@@ -72,6 +110,13 @@ export class CodexModelDiscoveryService {
         models: normalizeCodexDiscoveredModels(entries),
       };
     } catch (error) {
+      if (signal?.aborted) {
+        return {
+          kind: 'completed',
+          diagnostics: 'Codex model discovery was cancelled',
+          models: [],
+        };
+      }
       const message = error instanceof Error ? error.message : 'Codex model discovery failed';
       const stderr = process?.getStderrSnapshot() ?? '';
       return {
@@ -80,6 +125,9 @@ export class CodexModelDiscoveryService {
         models: [],
       };
     } finally {
+      if (abortListener && signal) {
+        signal.removeEventListener('abort', abortListener);
+      }
       transport?.dispose();
       if (process) {
         await process.shutdown().catch(() => {});

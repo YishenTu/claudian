@@ -113,7 +113,6 @@ function build() {
 
   const output = parts.join('\n');
   writeFileSync(OUTPUT, output);
-  console.log(`Built styles.css (${(output.length / 1024).toFixed(1)} KB)`);
 }
 
 build();

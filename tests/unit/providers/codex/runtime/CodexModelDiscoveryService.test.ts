@@ -151,4 +151,37 @@ describe('CodexModelDiscoveryService', () => {
     expect(mockProcessStart).not.toHaveBeenCalled();
     expect(mockProcessShutdown).not.toHaveBeenCalled();
   });
+
+  it('disposes transport and shuts down process when aborted', async () => {
+    mockTransportRequest.mockImplementationOnce(() => new Promise(() => {}));
+
+    const service = new CodexModelDiscoveryService(createPlugin());
+    const controller = new AbortController();
+
+    const discoveryPromise = service.discoverModels(controller.signal);
+    controller.abort();
+
+    const result = await discoveryPromise;
+    if (result.kind !== 'completed') {
+      throw new Error('Expected completed Codex model discovery');
+    }
+    expect(result.diagnostics).toMatch(/cancelled/i);
+    expect(mockTransportDispose).toHaveBeenCalled();
+    expect(mockProcessShutdown).toHaveBeenCalled();
+  });
+
+  it('returns cancellation diagnostics when already aborted before start', async () => {
+    const service = new CodexModelDiscoveryService(createPlugin());
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await service.discoverModels(controller.signal);
+    if (result.kind !== 'completed') {
+      throw new Error('Expected completed Codex model discovery');
+    }
+
+    expect(result.diagnostics).toMatch(/cancelled/i);
+    expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
+    expect(mockProcessStart).not.toHaveBeenCalled();
+  });
 });

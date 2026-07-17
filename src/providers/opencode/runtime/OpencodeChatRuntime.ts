@@ -333,7 +333,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
     const targetSessionId = this.sessionId;
-    const resolvedCliPath = this.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
+    const resolvedCliPath = await this.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
     const runtimeEnv = this.buildRuntimeEnv(
       resolvedCliPath,
       this.currentDatabasePath,

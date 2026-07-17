@@ -1,9 +1,8 @@
 import type { Plugin } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import { SESSIONS_PATH, SessionStorage } from '../../core/bootstrap/SessionStorage';
+import { SessionStorage } from '../../core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from '../../core/bootstrap/storage';
-import { CLAUDIAN_STORAGE_PATH } from '../../core/bootstrap/StoragePaths';
 import { normalizeTabManagerState } from '../../core/bootstrap/tabManagerState';
 import type { AppTabManagerState } from '../../core/providers/types';
 import { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
@@ -28,7 +27,6 @@ export class SharedStorageService implements SharedAppStorage {
   }
 
   async initialize(): Promise<{ claudian: Record<string, unknown> }> {
-    await this.ensureDirectories();
     const claudian = await this.claudianSettings.load();
     return { claudian };
   }
@@ -64,10 +62,4 @@ export class SharedStorageService implements SharedAppStorage {
   getAdapter(): VaultFileAdapter {
     return this.adapter;
   }
-
-  private async ensureDirectories(): Promise<void> {
-    await this.adapter.ensureFolder(CLAUDIAN_STORAGE_PATH);
-    await this.adapter.ensureFolder(SESSIONS_PATH);
-  }
-
 }

@@ -953,6 +953,7 @@ export class McpServerSelector {
 
   private pruneEnabledServers(): void {
     if (!this.mcpManager) return;
+    if (this.mcpManager.isLoaded?.() === false) return;
     const activeNames = new Set(this.mcpManager.getServers().filter((s) => s.enabled).map((s) => s.name));
     let changed = false;
     for (const name of this.enabledServers) {
@@ -983,7 +984,14 @@ export class McpServerSelector {
 
     // Re-render dropdown content on hover (CSS handles visibility)
     this.container.addEventListener('mouseenter', () => {
-      this.renderDropdown();
+      const load = this.mcpManager?.ensureLoaded?.();
+      if (load) {
+        void load.then(() => this.renderDropdown()).catch(() => {
+          // Keep the selector usable with its last known state when config loading fails.
+        });
+      } else {
+        this.renderDropdown();
+      }
     });
   }
 

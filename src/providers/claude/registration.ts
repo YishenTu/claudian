@@ -49,15 +49,14 @@ export const claudeProviderRegistration: ProviderModule = {
   },
   createRuntime: ({ plugin }) => {
     const workspace = getClaudeWorkspaceServices();
-    const resolvedMcpManager = workspace?.mcpManager;
-    if (!resolvedMcpManager) {
+    if (!workspace?.mcpManager) {
       throw new Error('Claude workspace services are not initialized.');
     }
 
     return new ClaudeChatRuntime(plugin, {
-      mcpManager: resolvedMcpManager,
-      pluginManager: workspace?.pluginManager,
-      agentManager: workspace?.agentManager,
+      mcpManager: workspace.mcpManager,
+      pluginManager: workspace.pluginManager,
+      agentManager: workspace.agentManager,
     });
   },
   createTitleGenerationService: (plugin) => new ClaudeTitleGenerationService(plugin),

@@ -75,6 +75,9 @@ function createPlugin(
       vault: {
         adapter: { basePath: '/workspace' },
       },
+      workspace: {
+        onLayoutReady: jest.fn(),
+      },
     },
   };
   plugin.mutateSettingsConditionally = jest.fn(async (
@@ -92,17 +95,22 @@ describe('CodexWorkspaceServices', () => {
     jest.clearAllMocks();
   });
 
-  it('loads the app-server catalog in memory without rewriting settings during startup', async () => {
+  it('defers discovery during initialization and persists an explicitly refreshed catalog', async () => {
     const plugin = createPlugin(true);
     const sol = makeDiscoveredModel('gpt-5.6-sol');
     mockDiscoverModels.mockResolvedValue({ kind: 'completed', models: [sol] });
 
-    await createCodexWorkspaceServices(plugin, {} as any, {} as any);
+    const services = await createCodexWorkspaceServices(plugin, {} as any, {} as any);
+
+    expect(mockDiscoverModels).not.toHaveBeenCalled();
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+
+    await services.refreshModelCatalog!();
 
     expect(mockDiscoverModels).toHaveBeenCalledTimes(1);
     expect(getCodexProviderSettings(plugin.settings).discoveredModels).toEqual([sol]);
     expect(mockNormalizeAllModelVariants).toHaveBeenCalledWith(plugin.settings);
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
   });
 
   it('persists a selection normalization caused by startup discovery', async () => {
@@ -113,7 +121,8 @@ describe('CodexWorkspaceServices', () => {
     });
     mockNormalizeAllModelVariants.mockReturnValueOnce(true);
 
-    await createCodexWorkspaceServices(plugin, {} as any, {} as any);
+    const services = await createCodexWorkspaceServices(plugin, {} as any, {} as any);
+    await services.refreshModelCatalog!();
 
     expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
   });

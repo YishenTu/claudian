@@ -1098,6 +1098,34 @@ describe('InputController - Message Queue', () => {
       expect(deps.state.isStreaming).toBe(false);
     });
 
+    it('awaits provider turn preparation before encoding the first message', async () => {
+      const calls: string[] = [];
+      deps = createSendableDeps();
+      (deps as any).mockAgentService.prepareForTurn = jest.fn(async () => {
+        calls.push('prepareForTurn');
+      });
+      (deps as any).mockAgentService.prepareTurn = jest.fn().mockImplementation((request: any) => {
+        calls.push('prepareTurn');
+        return {
+          request,
+          persistedContent: request.text,
+          prompt: request.text,
+          isCompact: false,
+          mcpMentions: new Set(),
+        };
+      });
+      (deps as any).mockAgentService.query = jest.fn().mockImplementation(() => (
+        createMockStream([{ type: 'done' }])
+      ));
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = '@server-a hello';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(calls).toEqual(['prepareForTurn', 'prepareTurn']);
+    });
+
     it('should persist replay-safe user content instead of transport-only prompt', async () => {
       deps = createSendableDeps();
       (deps as any).mockAgentService.prepareTurn = jest.fn().mockReturnValue({

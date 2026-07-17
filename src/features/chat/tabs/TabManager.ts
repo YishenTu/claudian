@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 
+import { StartupProfiler } from '../../../core/performance/StartupProfiler';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -12,6 +13,7 @@ import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { Conversation, SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
+import { scheduleAnimationFrame } from '../../../utils/animationFrame';
 import { revealWorkspaceLeaf } from '../../../utils/obsidianCompat';
 import type { FeatureHost } from '../../FeatureHost';
 import { getTabProviderId } from './providerResolution';
@@ -26,6 +28,7 @@ import {
   initializeTabService,
   initializeTabUI,
   recycleTabRuntime,
+  refreshTabWorkspaceServices,
   setupServiceCallbacks,
   wireTabInputEvents,
 } from './Tab';
@@ -100,6 +103,7 @@ export class TabManager implements TabManagerInterface {
   private isSwitchingTab = false;
   private pendingSwitchTabId: TabId | null = null;
   private pendingTabCreations = 0;
+  private profiledFirstHydration = false;
 
   /**
    * Gets the current max tabs limit from settings.
@@ -171,7 +175,7 @@ export class TabManager implements TabManagerInterface {
       const { activate = true, draftModel } = options;
 
     const conversation = conversationId
-      ? await this.plugin.getConversationById(conversationId)
+      ? this.plugin.getCachedConversation(conversationId)
       : undefined;
 
     // Inherit the active tab's provider so the new blank tab picks up its model
@@ -208,9 +212,10 @@ export class TabManager implements TabManagerInterface {
       getProviderCatalogConfig: () => this.getProviderCatalogConfig(tab),
       onProviderChanged: (providerId) => {
         this.callbacks.onTabProviderChanged?.(tab.id, providerId);
-        void this.prewarmProviderTab(tab).catch(() => {
-          // Keep provider switching non-blocking even if command warmup fails.
-        });
+        void this.ensureTabWorkspaceServices(tab, providerId, 'provider-selection')
+          .catch(() => {
+            // Provider selection remains usable even when optional workspace services fail.
+          });
       },
     });
 
@@ -233,8 +238,6 @@ export class TabManager implements TabManagerInterface {
 
     if (!this.isRestoringState && (activate || !this.activeTabId)) {
       await this.switchToTab(tab.id);
-    } else if (!this.isRestoringState) {
-      this.maybePrimeProviderRuntime(tab);
     }
 
       return tab;
@@ -278,34 +281,64 @@ export class TabManager implements TabManagerInterface {
       activateTab(tab);
       this.callbacks.onActiveTabChanged?.(previousTabId, tabId);
 
-      // Load conversation if not already loaded
-      if (tab.conversationId && tab.state.messages.length === 0) {
-        await tab.controllers.conversationController?.switchTo(tab.conversationId);
-      } else if (
-        tab.conversationId
-        && tab.state.messages.length > 0
-        && tab.service
-        && !tab.state.isStreaming
-        && !tab.state.isSwitchingConversation
-        && !tab.state.hasPendingConversationSave
-      ) {
-        // Passive sync is only safe once local tab state has been persisted.
-        const conversation = this.plugin.getConversationSync(tab.conversationId);
-        if (conversation) {
-          const hasMessages = conversation.messages.length > 0;
-          const externalContextPaths = hasMessages
-            ? conversation.externalContextPaths || []
-            : (this.plugin.settings.persistentExternalContextPaths || []);
-
-          tab.service.syncConversationState(conversation, externalContextPaths);
-        }
-      } else if (!tab.conversationId && tab.state.messages.length === 0) {
-        // New tab with no conversation - initialize welcome greeting
-        tab.controllers.conversationController?.initializeWelcome();
+      const providerId = tab.service?.providerId ?? tab.providerId;
+      const needsHydration = !!tab.conversationId && tab.state.messages.length === 0;
+      if (needsHydration) {
+        tab.hydrationState = 'loading';
+        this.renderTabHydrationState(tab);
+        await this.waitForTabPaint(tab);
+        if (!this.isTabAlive(tab)) return;
       }
 
+      try {
+        await this.ensureTabWorkspaceServices(tab, providerId, 'tab-activation');
+
+        // Load conversation if not already loaded
+        if (needsHydration && tab.conversationId) {
+          const span = this.profiledFirstHydration ? null : StartupProfiler.start('active-hydration');
+          this.profiledFirstHydration = true;
+          try {
+            await tab.controllers.conversationController?.switchTo(tab.conversationId);
+          } finally {
+            if (span) {
+              StartupProfiler.finish(span);
+            }
+          }
+          if (!this.isTabAlive(tab)) return;
+          tab.hydrationState = 'ready';
+        } else if (
+          tab.conversationId
+          && tab.state.messages.length > 0
+          && tab.service
+          && !tab.state.isStreaming
+          && !tab.state.isSwitchingConversation
+          && !tab.state.hasPendingConversationSave
+        ) {
+          // Passive sync is only safe once local tab state has been persisted.
+          const conversation = this.plugin.getConversationSync(tab.conversationId);
+          if (conversation) {
+            const hasMessages = conversation.messages.length > 0;
+            const externalContextPaths = hasMessages
+              ? conversation.externalContextPaths || []
+              : (this.plugin.settings.persistentExternalContextPaths || []);
+
+            tab.service.syncConversationState(conversation, externalContextPaths);
+          }
+          tab.hydrationState = 'ready';
+        } else if (!tab.conversationId && tab.state.messages.length === 0) {
+          // New tab with no conversation - initialize welcome greeting
+          tab.controllers.conversationController?.initializeWelcome();
+          tab.hydrationState = 'ready';
+        }
+      } catch (error) {
+        if (!needsHydration || !this.isTabAlive(tab)) throw error;
+        tab.hydrationState = 'failed';
+        this.renderTabHydrationState(tab, error);
+        return;
+      }
+
+      if (!this.isTabAlive(tab)) return;
       this.callbacks.onTabSwitched?.(previousTabId, tabId);
-      this.maybePrimeProviderRuntime(tab);
     } finally {
       this.isSwitchingTab = false;
       const pendingTabId = this.pendingSwitchTabId;
@@ -338,6 +371,9 @@ export class TabManager implements TabManagerInterface {
     if (this.tabs.size === 1 && !tab.conversationId && tab.state.messages.length === 0) {
       return false;
     }
+
+    // Prevent in-flight hydration from mutating this tab while close awaits persistence.
+    tab.lifecycleState = 'closing';
 
     // Save conversation before closing. Cleanup remains mandatory if save fails.
     let saveError: unknown;
@@ -383,6 +419,43 @@ export class TabManager implements TabManagerInterface {
       throw saveError;
     }
     return true;
+  }
+
+  private isTabAlive(tab: TabData): boolean {
+    return tab.lifecycleState !== 'closing' && this.tabs.get(tab.id) === tab;
+  }
+
+  private waitForTabPaint(tab: TabData): Promise<void> {
+    return new Promise(resolve => {
+      scheduleAnimationFrame(resolve, tab.dom.contentEl.ownerDocument?.defaultView ?? null);
+    });
+  }
+
+  private renderTabHydrationState(tab: TabData, error?: unknown): void {
+    const messagesEl = tab.dom.messagesEl;
+    messagesEl.empty();
+
+    const statusEl = messagesEl.createDiv({ cls: 'claudian-tab-hydration' });
+    if (!error) {
+      statusEl.createDiv({
+        cls: 'claudian-tab-hydration-loading',
+        text: 'Loading conversation…',
+      });
+      return;
+    }
+
+    statusEl.createDiv({
+      cls: 'claudian-tab-hydration-error',
+      text: error instanceof Error ? error.message : 'Failed to load conversation',
+    });
+    const retryButton = statusEl.createEl('button', {
+      cls: 'mod-cta claudian-tab-hydration-retry',
+      text: 'Retry',
+    });
+    retryButton.addEventListener('click', () => {
+      if (!this.isTabAlive(tab)) return;
+      void this.switchToTab(tab.id);
+    });
   }
 
   // ============================================
@@ -507,7 +580,6 @@ export class TabManager implements TabManagerInterface {
       await activeTab.controllers.conversationController?.createNew();
       // Sync tab.conversationId with the newly created conversation
       activeTab.conversationId = activeTab.state.currentConversationId;
-      this.maybePrimeProviderRuntime(activeTab);
     }
   }
 
@@ -727,6 +799,10 @@ export class TabManager implements TabManagerInterface {
     }
 
     const providerId = getTabProviderId(targetTab, this.plugin);
+    if (!ProviderWorkspaceRegistry.getIfInitialized(providerId)) {
+      await ProviderWorkspaceRegistry.ensureInitialized(this.plugin.providerHost, providerId, 'command-picker');
+    }
+
     const staticCapabilities = ProviderRegistry.getCapabilities(providerId);
     if (!staticCapabilities.supportsProviderCommands) {
       return [];
@@ -818,6 +894,21 @@ export class TabManager implements TabManagerInterface {
     void this.prewarmProviderTab(tab).catch(() => {});
   }
 
+  private async ensureTabWorkspaceServices(
+    tab: TabData,
+    providerId: ProviderId,
+    reason: string,
+  ): Promise<void> {
+    if (!ProviderWorkspaceRegistry.getIfInitialized(providerId)) {
+      await ProviderWorkspaceRegistry.ensureInitialized(
+        this.plugin.providerHost,
+        providerId,
+        reason,
+      );
+    }
+    refreshTabWorkspaceServices(tab, this.plugin);
+  }
+
   private isProviderCommandLoaderAvailable(providerId: ProviderId): boolean {
     const loader = ProviderWorkspaceRegistry.getRuntimeCommandLoader(providerId);
     if (!loader) return false;
@@ -826,11 +917,11 @@ export class TabManager implements TabManagerInterface {
 
   private async prewarmProviderTab(tab: TabData): Promise<void> {
     const providerId = tab.service?.providerId ?? tab.providerId;
-    const context = await this.buildProviderWarmupContext(tab, providerId);
     const hasReadyRuntime = tab.service?.providerId === providerId && tab.service.isReady();
     if (!hasReadyRuntime && tab.id !== this.activeTabId) {
       return;
     }
+    const context = await this.buildProviderWarmupContext(tab, providerId);
 
     switch (context.warmupMode) {
       case 'commands':

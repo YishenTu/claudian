@@ -249,6 +249,10 @@ export class ClaudianService implements ChatRuntime {
     return CLAUDE_PROVIDER_CAPABILITIES;
   }
 
+  async prepareForTurn(): Promise<void> {
+    await this.mcpManager.ensureLoaded();
+  }
+
   prepareTurn(request: ChatTurnRequest): PreparedChatTurn {
     return encodeClaudeTurn(request, this.mcpManager);
   }
@@ -568,7 +572,7 @@ export class ClaudianService implements ChatRuntime {
     // Case 1: Not running → try to start
     if (!this.persistentQuery) {
       if (!vaultPath) return false;
-      const cliPath = this.plugin.getResolvedProviderCliPath('claude');
+      const cliPath = await this.plugin.getResolvedProviderCliPath('claude');
       if (!cliPath) return false;
       await this.startPersistentQuery(vaultPath, cliPath, effectiveSessionId, externalContextPaths);
       return true;
@@ -579,7 +583,7 @@ export class ClaudianService implements ChatRuntime {
     if (options?.force) {
       this.closePersistentQuery('forced restart', { preserveHandlers: options.preserveHandlers });
       if (!vaultPath) return false;
-      const cliPath = this.plugin.getResolvedProviderCliPath('claude');
+      const cliPath = await this.plugin.getResolvedProviderCliPath('claude');
       if (!cliPath) return false;
       await this.startPersistentQuery(vaultPath, cliPath, effectiveSessionId, externalContextPaths);
       return true;
@@ -588,7 +592,7 @@ export class ClaudianService implements ChatRuntime {
     // Case 3: Check if config changed → restart if needed
     // We need vaultPath and cliPath to build config for comparison
     if (!vaultPath) return false;
-    const cliPath = this.plugin.getResolvedProviderCliPath('claude');
+    const cliPath = await this.plugin.getResolvedProviderCliPath('claude');
     if (!cliPath) return false;
 
     const newConfig = this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
@@ -596,7 +600,7 @@ export class ClaudianService implements ChatRuntime {
       // Close FIRST, then try to start new one (allows fallback if CLI unavailable)
       this.closePersistentQuery('config changed', { preserveHandlers: options?.preserveHandlers });
       // Re-check CLI path as it might have changed during close
-      const cliPathAfterClose = this.plugin.getResolvedProviderCliPath('claude');
+      const cliPathAfterClose = await this.plugin.getResolvedProviderCliPath('claude');
       if (cliPathAfterClose) {
         await this.startPersistentQuery(vaultPath, cliPathAfterClose, effectiveSessionId, externalContextPaths);
         return true;
@@ -1273,7 +1277,7 @@ export class ClaudianService implements ChatRuntime {
       return;
     }
 
-    const resolvedClaudePath = this.plugin.getResolvedProviderCliPath('claude');
+    const resolvedClaudePath = await this.plugin.getResolvedProviderCliPath('claude');
     if (!resolvedClaudePath) {
       yield { type: 'error', content: 'Claude CLI not found. Please install Claude Code CLI.' };
       return;

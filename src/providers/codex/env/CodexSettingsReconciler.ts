@@ -9,7 +9,7 @@ import { codexChatUIConfig } from '../ui/CodexChatUIConfig';
 
 const ENV_HASH_KEYS = ['OPENAI_MODEL', 'OPENAI_BASE_URL', 'OPENAI_API_KEY'];
 
-function computeCodexEnvHash(envText: string): string {
+export function computeCodexEnvHash(envText: string): string {
   const envVars = parseEnvironmentVariables(envText || '');
   return ENV_HASH_KEYS
     .filter(key => envVars[key])

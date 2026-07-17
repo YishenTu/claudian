@@ -169,7 +169,7 @@ export class CodexAuxQueryRunner {
   }
 
   private async startProcess(): Promise<void> {
-    this.launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
+    this.launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
     this.process = new CodexAppServerProcess(this.launchSpec);
     this.process.start();
 

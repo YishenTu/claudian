@@ -172,6 +172,9 @@ export interface TabDOMElements {
  */
 export type TabLifecycleState = 'blank' | 'bound_cold' | 'bound_active' | 'closing';
 
+/** Conversation hydration state, independent from runtime activation. */
+export type TabHydrationState = 'idle' | 'loading' | 'ready' | 'failed';
+
 /**
  * Represents a single tab in the multi-tab system.
  * Each tab is an independent chat session with its own runtime instance.
@@ -184,6 +187,9 @@ export interface TabData {
 
   /** Explicit lifecycle state. */
   lifecycleState: TabLifecycleState;
+
+  /** State of loading the provider-owned conversation into the tab UI. */
+  hydrationState: TabHydrationState;
 
   /**
    * Draft model selected in a blank tab (before first send).

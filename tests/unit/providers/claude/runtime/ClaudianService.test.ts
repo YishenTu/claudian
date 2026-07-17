@@ -70,6 +70,7 @@ describe('ClaudianService', () => {
 
     mockMcpManager = {
       loadServers: jest.fn().mockResolvedValue(undefined),
+      ensureLoaded: jest.fn().mockResolvedValue(undefined),
       getAllDisallowedMcpTools: jest.fn().mockReturnValue([]),
       getActiveServers: jest.fn().mockReturnValue({}),
       getDisallowedMcpTools: jest.fn().mockReturnValue([]),
@@ -81,6 +82,12 @@ describe('ClaudianService', () => {
   });
 
   describe('prepareTurn', () => {
+    it('loads MCP configuration before the first turn is encoded', async () => {
+      await service.prepareForTurn();
+
+      expect(mockMcpManager.ensureLoaded).toHaveBeenCalledTimes(1);
+    });
+
     it('should return PreparedChatTurn with encoded prompt', () => {
       const result = service.prepareTurn({ text: 'hello world' });
       expect(result.request.text).toBe('hello world');

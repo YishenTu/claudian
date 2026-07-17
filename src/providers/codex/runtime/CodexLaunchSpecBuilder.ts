@@ -26,6 +26,7 @@ export function buildCodexLaunchSpec(
     hostVaultPath: options.hostVaultPath,
     resolveDefaultWslDistro: options.resolveDefaultWslDistro,
   });
+
   const pathMapper = createCodexPathMapper(target);
   const spawnCwd = options.hostVaultPath ?? process.cwd();
 

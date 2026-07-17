@@ -33,7 +33,7 @@ jobs:
         run: node scripts/check-release-version.mjs "${{ github.ref_name }}"
 
       - name: Build
-        run: npm run build
+        run: npm run build && npm run check:performance
 
       - name: Generate artifact attestations
         uses: actions/attest@v4

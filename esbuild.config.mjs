@@ -29,6 +29,7 @@ if (existsSync('.env.local')) {
 }
 
 const prod = process.argv[2] === 'production';
+const PRODUCTION_BUNDLE_BUDGET_BYTES = 2_800_000;
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -95,29 +96,54 @@ const patchSdkImportMeta = {
   },
 };
 
-const patchRendererUnsafeUnref = {
-  name: 'patch-renderer-unsafe-unref',
+function createPatchRendererUnsafeUnref(outputPaths) {
+  return {
+    name: 'patch-renderer-unsafe-unref',
+    setup(build) {
+      build.onEnd(async (result) => {
+        if (result.errors.length > 0) return;
+
+        for (const outputPath of outputPaths) {
+          if (!existsSync(outputPath)) continue;
+          const bundlePath = path.join(process.cwd(), outputPath);
+          const originalContents = await fsPromises.readFile(bundlePath, 'utf8');
+          const patchedBundle = patchRendererUnsafeUnrefSites(originalContents);
+
+          if (patchedBundle.contents !== originalContents) {
+            await fsPromises.writeFile(bundlePath, patchedBundle.contents, 'utf8');
+          }
+
+          const unsafeMatches = findUnsafeTimerUnrefSites(patchedBundle.contents);
+          if (unsafeMatches.length > 0) {
+            const details = unsafeMatches
+              .slice(0, 5)
+              .map((match) => `line ${match.line}: ${match.snippet}`)
+              .join('\n');
+
+            throw new Error(
+              `Renderer-unsafe timer .unref() calls remain in ${outputPath}:\n${details}`,
+            );
+          }
+        }
+      });
+    },
+  };
+}
+
+const enforceProductionBundleBudget = {
+  name: 'enforce-production-bundle-budget',
   setup(build) {
+    if (!prod) return;
+
     build.onEnd(async (result) => {
       if (result.errors.length > 0 || !existsSync('main.js')) return;
 
       const bundlePath = path.join(process.cwd(), 'main.js');
-      const originalContents = await fsPromises.readFile(bundlePath, 'utf8');
-      const patchedBundle = patchRendererUnsafeUnrefSites(originalContents);
+      const { size } = await fsPromises.stat(bundlePath);
 
-      if (patchedBundle.contents !== originalContents) {
-        await fsPromises.writeFile(bundlePath, patchedBundle.contents, 'utf8');
-      }
-
-      const unsafeMatches = findUnsafeTimerUnrefSites(patchedBundle.contents);
-      if (unsafeMatches.length > 0) {
-        const details = unsafeMatches
-          .slice(0, 5)
-          .map((match) => `line ${match.line}: ${match.snippet}`)
-          .join('\n');
-
+      if (size > PRODUCTION_BUNDLE_BUDGET_BYTES) {
         throw new Error(
-          `Renderer-unsafe timer .unref() calls remain in main.js:\n${details}`,
+          `Production main.js is ${size} bytes; budget is ${PRODUCTION_BUNDLE_BUDGET_BYTES} bytes.`,
         );
       }
     });
@@ -158,38 +184,46 @@ const copyToObsidian = {
   }
 };
 
-const context = await esbuild.context({
+const external = [
+  'obsidian',
+  'electron',
+  '@codemirror/autocomplete',
+  '@codemirror/collab',
+  '@codemirror/commands',
+  '@codemirror/language',
+  '@codemirror/lint',
+  '@codemirror/search',
+  '@codemirror/state',
+  '@codemirror/view',
+  '@lezer/common',
+  '@lezer/highlight',
+  '@lezer/lr',
+  ...builtinModules,
+  ...builtinModules.map(m => `node:${m}`),
+];
+
+const mainContext = await esbuild.context({
   entryPoints: ['src/main.ts'],
   bundle: true,
-  plugins: [patchSdkImportMeta, patchRendererUnsafeUnref, copyToObsidian],
-  external: [
-    'obsidian',
-    'electron',
-    '@codemirror/autocomplete',
-    '@codemirror/collab',
-    '@codemirror/commands',
-    '@codemirror/language',
-    '@codemirror/lint',
-    '@codemirror/search',
-    '@codemirror/state',
-    '@codemirror/view',
-    '@lezer/common',
-    '@lezer/highlight',
-    '@lezer/lr',
-    ...builtinModules,
-    ...builtinModules.map(m => `node:${m}`),
+  plugins: [
+    patchSdkImportMeta,
+    createPatchRendererUnsafeUnref(['main.js']),
+    enforceProductionBundleBudget,
+    copyToObsidian,
   ],
+  external,
   format: 'cjs',
   target: 'es2018',
   logLevel: 'info',
+  minify: prod,
   sourcemap: prod ? false : 'inline',
   treeShaking: true,
   outfile: 'main.js',
 });
 
 if (prod) {
-  await context.rebuild();
+  await mainContext.rebuild();
   process.exit(0);
 } else {
-  await context.watch();
+  await mainContext.watch();
 }

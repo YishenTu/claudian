@@ -419,6 +419,7 @@ export class InputController {
     }
 
     try {
+      await agentService.prepareForTurn?.();
       const preparedTurn = agentService.prepareTurn(turnRequest);
       userMsg.content = preparedTurn.persistedContent;
       userMsg.currentNote = preparedTurn.isCompact
@@ -1001,6 +1002,7 @@ export class InputController {
     try {
       const { displayContent, request } = this.toQueuedChatTurn(queuedMessage);
 
+      await agentService.prepareForTurn?.();
       const preparedTurn = agentService.prepareTurn(request);
       const accepted = await agentService.steer(preparedTurn);
       if (state.cancelRequested || !this.pendingSteerMessage) {

@@ -175,6 +175,44 @@ describe('ClaudianView tab controls', () => {
     expect(historyDropdown.hasClass('visible')).toBe(false);
   });
 
+  it('defers hidden history rendering and coalesces invalidations until the dropdown opens', () => {
+    const historyDropdown = createMockEl();
+    const renderHistoryDropdown = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.historyDropdown = historyDropdown;
+    view.historyDropdownDirty = true;
+    view.historyDropdownRendered = false;
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue({
+        controllers: {
+          conversationController: { renderHistoryDropdown },
+        },
+      }),
+    };
+
+    view.updateHistoryDropdown();
+    view.updateHistoryDropdown();
+
+    expect(renderHistoryDropdown).not.toHaveBeenCalled();
+
+    view.toggleHistoryDropdown();
+
+    expect(renderHistoryDropdown).toHaveBeenCalledTimes(1);
+    const firstRenderSignal = renderHistoryDropdown.mock.calls[0][1].signal as AbortSignal;
+    expect(firstRenderSignal.aborted).toBe(false);
+
+    view.updateHistoryDropdown();
+
+    expect(renderHistoryDropdown).toHaveBeenCalledTimes(2);
+
+    view.toggleHistoryDropdown();
+    expect(firstRenderSignal.aborted).toBe(true);
+    view.updateHistoryDropdown();
+
+    expect(renderHistoryDropdown).toHaveBeenCalledTimes(2);
+  });
+
   it('persists expanded title tab ids with the tab layout snapshot', () => {
     const view = Object.create(ClaudianView.prototype) as any;
 

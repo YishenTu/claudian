@@ -4,11 +4,37 @@ import type { OpencodeAgentDefinition } from '../types/agent';
 
 export class OpencodeAgentMentionProvider implements AgentMentionProvider {
   private agents: OpencodeAgentDefinition[] = [];
+  private loaded = false;
+  private loadPromise: Promise<void> | null = null;
 
   constructor(private storage: OpencodeAgentStorage) {}
 
   async loadAgents(): Promise<void> {
-    this.agents = await this.storage.loadAll();
+    if (this.loadPromise) {
+      return this.loadPromise;
+    }
+    const promise = this.storage.loadAll().then((agents) => {
+      this.agents = agents;
+      this.loaded = true;
+    });
+    this.loadPromise = promise;
+    try {
+      await promise;
+    } finally {
+      if (this.loadPromise === promise) {
+        this.loadPromise = null;
+      }
+    }
+  }
+
+  async ensureLoaded(): Promise<void> {
+    if (!this.loaded) {
+      await this.loadAgents();
+    }
+  }
+
+  isLoaded(): boolean {
+    return this.loaded;
   }
 
   searchAgents(query: string): Array<{

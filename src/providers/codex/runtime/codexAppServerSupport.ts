@@ -3,7 +3,7 @@ import type { ProviderId } from '../../../core/providers/types';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import type { InitializeResult } from './codexAppServerTypes';
-import { resolveCodexExecutionTarget } from './CodexExecutionTargetResolver';
+import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';
 import { buildCodexLaunchSpec } from './CodexLaunchSpecBuilder';
 import type { CodexLaunchSpec } from './codexLaunchTypes';
 import type { CodexRpcTransport } from './CodexRpcTransport';
@@ -34,19 +34,19 @@ export function buildCodexAppServerEnvironment(
   };
 }
 
-export function resolveCodexAppServerLaunchSpec(
+export async function resolveCodexAppServerLaunchSpec(
   plugin: ProviderHost,
   providerId: ProviderId = 'codex',
-): CodexLaunchSpec {
+): Promise<CodexLaunchSpec> {
   const hostVaultPath = getCodexAppServerWorkingDirectory(plugin);
-  const executionTarget = resolveCodexExecutionTarget({
+  const executionTarget = await resolveCodexExecutionTargetAsync({
     settings: plugin.settings,
     hostVaultPath,
   });
 
   return buildCodexLaunchSpec({
     settings: plugin.settings,
-    resolvedCliCommand: plugin.getResolvedProviderCliPath(providerId, { executionTarget }),
+    resolvedCliCommand: await plugin.getResolvedProviderCliPath(providerId, { executionTarget }),
     hostVaultPath,
     env: buildCodexAppServerEnvironment(plugin, providerId),
     executionTarget,

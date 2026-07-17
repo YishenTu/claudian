@@ -868,6 +868,18 @@ describe('McpServerSelector', () => {
     expect(selector.getEnabledServers().size).toBe(2);
   });
 
+  it('preserves persisted selections until a lazy manager finishes loading', () => {
+    const manager = {
+      getServers: jest.fn().mockReturnValue([]),
+      isLoaded: jest.fn().mockReturnValue(false),
+    } as any;
+
+    selector.setMcpManager(manager);
+    selector.setEnabledServers(['server1']);
+
+    expect(selector.getEnabledServers()).toEqual(new Set(['server1']));
+  });
+
   it('should prune enabled servers that no longer exist in manager', () => {
     selector.setMcpManager(createMockMcpManager([
       { name: 'server1', enabled: true },

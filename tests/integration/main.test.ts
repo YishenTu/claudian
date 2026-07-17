@@ -2,6 +2,7 @@
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
+import { SessionStorage } from '@/providers/claude/storage/SessionStorage';
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
 
 // Mock fs for ClaudianService
@@ -56,6 +57,7 @@ describe('ClaudianPlugin', () => {
         },
       },
       workspace: {
+        onLayoutReady: jest.fn(),
         getLeavesOfType: jest.fn().mockReturnValue([]),
         getRightLeaf: jest.fn().mockReturnValue({
           setViewState: jest.fn().mockResolvedValue(undefined),
@@ -120,6 +122,79 @@ describe('ClaudianPlugin', () => {
         name: 'Open chat view',
         callback: expect.any(Function),
       });
+    });
+
+    it('loads restored-tab metadata without waiting for the full history scan', async () => {
+      let finishHistoryScan!: (value: []) => void;
+      const historyScan = new Promise<[]>((resolve) => {
+        finishHistoryScan = resolve;
+      });
+      const restoredMetadata = {
+        id: 'restored-conversation',
+        providerId: 'claude' as const,
+        title: 'Restored conversation',
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+        .mockReturnValue(historyScan);
+      const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
+        .mockResolvedValue(restoredMetadata);
+      (plugin.loadData as jest.Mock).mockResolvedValue({
+        tabManagerState: {
+          openTabs: [{ tabId: 'tab-1', conversationId: restoredMetadata.id }],
+          activeTabId: 'tab-1',
+        },
+      });
+
+      const onloadPromise = plugin.onload();
+      const completedBeforeHistoryScan = await Promise.race([
+        onloadPromise.then(() => true),
+        new Promise<boolean>(resolve => setTimeout(() => resolve(false), 20)),
+      ]);
+      finishHistoryScan([]);
+      await onloadPromise;
+      const cachedConversation = plugin.getCachedConversation(restoredMetadata.id);
+      const didLoadRestoredMetadata = loadSpy.mock.calls.some(
+        ([id]) => id === restoredMetadata.id,
+      );
+      listSpy.mockRestore();
+      loadSpy.mockRestore();
+
+      expect(completedBeforeHistoryScan).toBe(true);
+      expect(didLoadRestoredMetadata).toBe(true);
+      expect(cachedConversation?.title).toBe(restoredMetadata.title);
+    });
+
+    it('publishes the remaining conversation metadata after layout readiness', async () => {
+      let layoutReady!: () => void;
+      const backgroundMetadata = {
+        id: 'background-conversation',
+        providerId: 'claude' as const,
+        title: 'Background conversation',
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      mockApp.workspace.onLayoutReady = jest.fn((callback: () => void) => {
+        layoutReady = callback;
+      });
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+        .mockResolvedValue([backgroundMetadata]);
+
+      await plugin.onload();
+      const beforeLayoutReady = plugin.getCachedConversation(backgroundMetadata.id);
+      layoutReady();
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        if (plugin.getCachedConversation(backgroundMetadata.id)) break;
+        await new Promise(resolve => setTimeout(resolve, 1));
+      }
+      const afterBackgroundLoad = plugin.getCachedConversation(backgroundMetadata.id);
+      const listCallCount = listSpy.mock.calls.length;
+      listSpy.mockRestore();
+
+      expect(beforeLayoutReady).toBeNull();
+      expect(listCallCount).toBe(1);
+      expect(afterBackgroundLoad?.title).toBe(backgroundMetadata.title);
     });
 
   });

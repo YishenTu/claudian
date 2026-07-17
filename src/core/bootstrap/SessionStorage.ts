@@ -1,5 +1,6 @@
+import { mapWithConcurrency } from '../../utils/concurrency';
 import { ProviderRegistry } from '../providers/ProviderRegistry';
-import { DEFAULT_CHAT_PROVIDER_ID } from '../providers/types';
+import { DEFAULT_CHAT_PROVIDER_ID, type SessionMetadataListOptions } from '../providers/types';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   Conversation,
@@ -14,6 +15,8 @@ export {
 };
 
 const SAFE_METADATA_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const SESSION_METADATA_READ_CONCURRENCY = 8;
+const SESSION_METADATA_PUBLISH_BATCH_SIZE = 16;
 
 export function isValidSessionMetadataId(id: string): boolean {
   return SAFE_METADATA_ID_PATTERN.test(id)
@@ -80,33 +83,45 @@ export class SessionStorage {
     await this.deleteLegacyMetadataIfPresent(id);
   }
 
-  async listMetadata(): Promise<SessionMetadata[]> {
-    const metas: SessionMetadata[] = [];
-
+  async listMetadata(options: SessionMetadataListOptions = {}): Promise<SessionMetadata[]> {
     const files = await this.listUniqueMetadataFiles();
-
-    for (const filePath of files) {
+    const pendingBatch: SessionMetadata[] = [];
+    const batchSize = Math.max(1, options.batchSize ?? SESSION_METADATA_PUBLISH_BATCH_SIZE);
+    const publish = (metadata: SessionMetadata): void => {
+      if (!options.onBatch) return;
+      pendingBatch.push(metadata);
+      if (pendingBatch.length >= batchSize) {
+        options.onBatch(pendingBatch.splice(0, pendingBatch.length));
+      }
+    };
+    const metas = await mapWithConcurrency(files, async (filePath) => {
       const fileId = this.getMetadataIdFromPath(filePath);
       if (!fileId || !isValidSessionMetadataId(fileId)) {
-        continue;
+        return null;
       }
       try {
         const content = await this.adapter.read(filePath);
         const raw = JSON.parse(content) as SessionMetadata;
         if (raw.id !== fileId || !isValidSessionMetadataId(raw.id)) {
-          continue;
+          return null;
         }
-        metas.push(raw);
 
         if (filePath.startsWith(`${LEGACY_SESSIONS_PATH}/`)) {
           await this.saveMetadata(raw);
         }
+        publish(raw);
+        return raw;
       } catch {
         // Skip files that fail to load.
+        return null;
       }
+    }, SESSION_METADATA_READ_CONCURRENCY);
+
+    if (pendingBatch.length > 0) {
+      options.onBatch?.(pendingBatch.splice(0, pendingBatch.length));
     }
 
-    return metas;
+    return metas.filter((meta): meta is SessionMetadata => meta !== null);
   }
 
   async listAllConversations(): Promise<ConversationMeta[]> {

@@ -33,7 +33,7 @@ export async function probeRuntimeCommands(plugin: ProviderHost): Promise<SlashC
   const vaultPath = getVaultPath(plugin.app);
   if (!vaultPath) return [];
 
-  const cliPath = plugin.getResolvedProviderCliPath('claude');
+  const cliPath = await plugin.getResolvedProviderCliPath('claude');
   if (!cliPath) return [];
 
   const customEnv = parseEnvironmentVariables(

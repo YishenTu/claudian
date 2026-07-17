@@ -109,6 +109,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   plugin: FeatureHost;
   private activeTab: SettingsTabId = 'general';
   private refreshTitleModelOptions: (() => void) | null = null;
+  private displayGeneration = 0;
 
   constructor(app: App, plugin: FeatureHost & Plugin) {
     super(app, plugin);
@@ -116,6 +117,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   }
 
   display(): void {
+    const displayGeneration = ++this.displayGeneration;
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass('claudian-settings');
@@ -132,6 +134,71 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const tabBar = containerEl.createDiv({ cls: 'claudian-settings-tabs' });
     const tabButtons = new Map<SettingsTabId, HTMLButtonElement>();
     const tabContents = new Map<SettingsTabId, HTMLDivElement>();
+    const renderedProviderTabs = new Set<ProviderId>();
+
+    const renderProviderTab = async (providerId: ProviderId): Promise<void> => {
+      if (renderedProviderTabs.has(providerId)) {
+        return;
+      }
+      renderedProviderTabs.add(providerId);
+
+      const content = tabContents.get(providerId);
+      if (!content) {
+        return;
+      }
+      content.empty();
+      content.createDiv({
+        cls: 'claudian-settings-provider-loading',
+        text: `Loading ${ProviderRegistry.getProviderDisplayName(providerId)} settings...`,
+      });
+
+      try {
+        await ProviderWorkspaceRegistry.ensureInitialized(
+          this.plugin.providerHost,
+          providerId,
+          'settings-tab',
+        );
+        await ProviderWorkspaceRegistry.prepareSettings(providerId);
+        if (displayGeneration !== this.displayGeneration) {
+          return;
+        }
+
+        content.empty();
+        const renderer = ProviderWorkspaceRegistry.getSettingsTabRenderer(providerId);
+        if (!renderer) {
+          content.createDiv({ text: 'Provider settings are unavailable.' });
+          return;
+        }
+        renderer.render(content, {
+          plugin: this.plugin.providerHost,
+          renderHiddenProviderCommandSetting: (
+            target,
+            targetProviderId,
+            copy,
+          ) => this.renderHiddenProviderCommandSetting(target, targetProviderId, copy),
+          refreshModelSelectors: () => {
+            for (const view of this.plugin.getAllViews()) {
+              view.refreshModelSelector();
+            }
+          },
+          refreshTitleGenerationModelOptions: () => this.refreshTitleModelOptions?.(),
+          renderCustomContextLimits: (target, targetProviderId) => (
+            this.renderCustomContextLimits(target, targetProviderId)
+          ),
+        });
+      } catch (error) {
+        if (displayGeneration !== this.displayGeneration) {
+          return;
+        }
+        renderedProviderTabs.delete(providerId);
+        content.empty();
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        content.createDiv({
+          cls: 'claudian-setting-validation claudian-setting-validation-error',
+          text: `Could not load provider settings: ${message}`,
+        });
+      }
+    };
 
     for (const id of tabIds) {
       const label = id === 'general'
@@ -147,6 +214,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
           tabButtons.get(tabId)?.toggleClass('claudian-settings-tab--active', tabId === id);
           tabContents.get(tabId)?.toggleClass('claudian-settings-tab-content--active', tabId === id);
         }
+        if (id !== 'general') {
+          void renderProviderTab(id);
+        }
       });
       tabButtons.set(id, button);
     }
@@ -160,27 +230,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     this.renderGeneralTab(tabContents.get('general')!);
 
-    for (const providerId of providerTabs) {
-      const content = tabContents.get(providerId);
-      if (!content) {
-        continue;
-      }
-
-      ProviderWorkspaceRegistry.getSettingsTabRenderer(providerId)?.render(content, {
-        plugin: this.plugin.providerHost,
-        renderHiddenProviderCommandSetting: (
-          target,
-          targetProviderId,
-          copy,
-        ) => this.renderHiddenProviderCommandSetting(target, targetProviderId, copy),
-        refreshModelSelectors: () => {
-          for (const view of this.plugin.getAllViews()) {
-            view.refreshModelSelector();
-          }
-        },
-        refreshTitleGenerationModelOptions: () => this.refreshTitleModelOptions?.(),
-        renderCustomContextLimits: (target, providerId) => this.renderCustomContextLimits(target, providerId),
-      });
+    if (this.activeTab !== 'general') {
+      void renderProviderTab(this.activeTab);
     }
   }
 

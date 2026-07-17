@@ -48,6 +48,9 @@ export class MentionDropdownController {
   private activeAgentFilter = false;
   private mcpManager: McpMentionProvider | null = null;
   private agentService: AgentMentionProvider | null = null;
+  private agentLoadPromise: Promise<void> | null = null;
+  private loadedAgentServices = new WeakSet<object>();
+  private activeMentionSearchText: string | null = null;
   private fixed: boolean;
   private debounceTimer: number | null = null;
 
@@ -80,6 +83,7 @@ export class MentionDropdownController {
       this.hide();
     }
     this.agentService = service;
+    this.agentLoadPromise = null;
   }
 
   preScanExternalContexts(): void {
@@ -102,6 +106,7 @@ export class MentionDropdownController {
   hide(): void {
     this.dropdown.hide();
     this.mentionStartIndex = -1;
+    this.activeMentionSearchText = null;
   }
 
   containsElement(el: Node): boolean {
@@ -157,6 +162,7 @@ export class MentionDropdownController {
       const searchText = textBeforeCursor.substring(lastAtIndex + 1);
 
       this.mentionStartIndex = lastAtIndex;
+      this.activeMentionSearchText = searchText;
       this.showMentionDropdown(searchText);
     }, 200);
   }
@@ -197,6 +203,7 @@ export class MentionDropdownController {
   }
 
   private showMentionDropdown(searchText: string): void {
+    this.ensureAgentServiceLoaded();
     const searchLower = searchText.toLowerCase();
     this.filteredMentionItems = [];
     this.filteredContextFiles = [];
@@ -343,6 +350,37 @@ export class MentionDropdownController {
     this.selectedMentionIndex = vaultItemCount > 0 ? firstVaultItemIndex : 0;
 
     this.renderMentionDropdown();
+  }
+
+  private ensureAgentServiceLoaded(): void {
+    const service = this.agentService;
+    if (
+      !service?.ensureLoaded
+      || service.isLoaded?.() === true
+      || this.loadedAgentServices.has(service)
+      || this.agentLoadPromise
+    ) {
+      return;
+    }
+
+    const promise = service.ensureLoaded();
+    this.agentLoadPromise = promise;
+    void promise.then(() => {
+      this.loadedAgentServices.add(service);
+      if (
+        this.agentService === service
+        && this.activeMentionSearchText !== null
+        && this.mentionStartIndex >= 0
+      ) {
+        this.showMentionDropdown(this.activeMentionSearchText);
+      }
+    }).catch(() => {
+      // Keep cached agent entries available if a lazy scan fails.
+    }).finally(() => {
+      if (this.agentLoadPromise === promise) {
+        this.agentLoadPromise = null;
+      }
+    });
   }
 
   private appendVaultItems(searchLower: string): number {

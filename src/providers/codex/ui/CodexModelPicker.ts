@@ -95,12 +95,15 @@ export function renderCodexModelPicker(
     failedCatalogText: 'Could not load models from Codex app-server. Check the CLI path and login state, then try again.',
     getState,
     initiallyOpen: getCodexProviderSettings(settingsBag).discoveredModels.length === 0,
-    async loadCatalog() {
-      if (!workspace.refreshModelCatalog) {
+    async loadCatalog(force) {
+      if (!workspace.modelCatalogCoordinator) {
         return 'failed';
       }
 
-      const result = await workspace.refreshModelCatalog();
+      const result = await workspace.modelCatalogCoordinator.ensureFresh('model-picker', { force });
+      if (result.backgroundRefresh) {
+        void result.backgroundRefresh.then(() => context.refreshModelSelectors());
+      }
       if (result.diagnostics) {
         new Notice(`Codex model discovery failed: ${result.diagnostics}`);
         return 'failed';

@@ -39,7 +39,7 @@ export interface ProviderHost {
   getResolvedProviderCliPath(
     providerId: ProviderId,
     context?: ProviderCliResolutionContext,
-  ): string | null;
+  ): Promise<string | null>;
 
   refreshModelSelectors?(): void;
   broadcastToActiveViewRuntimes?(

@@ -99,6 +99,14 @@ function patchRendererUnsafeUnrefSites(contents) {
     appliedPatches.push({ name: patch.name, count: matchCount });
   }
 
+  const directTimerUnrefs = findUnsafeTimerUnrefRanges(nextContents);
+  for (const site of directTimerUnrefs.sort((left, right) => right.unrefStartIndex - left.unrefStartIndex)) {
+    nextContents = `${nextContents.slice(0, site.unrefStartIndex)}.unref?.()${nextContents.slice(site.unrefEndIndex)}`;
+  }
+  if (directTimerUnrefs.length > 0) {
+    appliedPatches.push({ name: 'direct-timer-unref-guard', count: directTimerUnrefs.length });
+  }
+
   return {
     contents: nextContents,
     appliedPatches,
@@ -106,6 +114,10 @@ function patchRendererUnsafeUnrefSites(contents) {
 }
 
 function findUnsafeTimerUnrefSites(contents) {
+  return findUnsafeTimerUnrefRanges(contents).map(({ line, snippet }) => ({ line, snippet }));
+}
+
+function findUnsafeTimerUnrefRanges(contents) {
   const matches = [];
 
   let searchIndex = 0;
@@ -125,16 +137,17 @@ function findUnsafeTimerUnrefSites(contents) {
     if (unrefMatch) {
       const startIndex = timerStart.startIndex;
       const endIndex = callEnd + 1 + unrefMatch[0].length;
+      const unrefStartIndex = callEnd + 1 + unrefMatch[0].indexOf('.');
       const line = contents.slice(0, startIndex).split('\n').length;
       matches.push({
         line,
         snippet: contents.slice(startIndex, endIndex),
+        unrefStartIndex,
+        unrefEndIndex: unrefStartIndex + '.unref()'.length,
       });
-      searchIndex = endIndex;
-      continue;
     }
 
-    searchIndex = callEnd + 1;
+    searchIndex = timerStart.startIndex + timerStart.prefix.length;
   }
 
   return matches;

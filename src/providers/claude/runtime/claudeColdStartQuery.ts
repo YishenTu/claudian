@@ -54,7 +54,7 @@ export async function runColdStartQuery(
     throw new Error('Could not determine vault path');
   }
 
-  const resolvedClaudePath = config.plugin.getResolvedProviderCliPath('claude');
+  const resolvedClaudePath = await config.plugin.getResolvedProviderCliPath('claude');
   if (!resolvedClaudePath) {
     throw new Error('Claude CLI not found');
   }
