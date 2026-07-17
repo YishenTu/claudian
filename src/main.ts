@@ -112,6 +112,7 @@ export default class ClaudianPlugin extends Plugin {
   private lastKnownTabManagerState: AppTabManagerState | null = null;
   private pendingSessionMetadataScan = false;
   private pendingEnvironmentInvalidationGenerations = new Map<ProviderId, number>();
+  private blockedEnvironmentInvalidationGenerations = new Map<ProviderId, number>();
   private isLoadingRemainingSessionMetadata = false;
   private hasLoadedAllSessionMetadata = false;
   private sessionMetadataLoadTimer: number | null = null;
@@ -419,12 +420,13 @@ export default class ClaudianPlugin extends Plugin {
     const didNormalizeModelVariants = this.normalizeModelVariantSettings();
 
     const deferRemainingMetadata = options.deferNonRestoredSessionMetadata === true;
-    const initialMetadata = await StartupProfiler.runAsync(
+    const initialMetadataScan = await StartupProfiler.runAsync(
       deferRemainingMetadata ? 'restored-session-metadata-load' : 'session-metadata-load',
-      () => deferRemainingMetadata
-        ? this.loadRestoredSessionMetadata()
-        : this.storage.sessions.listMetadata(),
+      async () => deferRemainingMetadata
+        ? { metadata: await this.loadRestoredSessionMetadata(), complete: false }
+        : this.storage.sessions.scanMetadata(),
     );
+    const initialMetadata = initialMetadataScan.metadata;
     StartupProfiler.recordCount('restored-session-metadata-count', initialMetadata.length);
     StartupProfiler.recordCount('session-metadata-count', initialMetadata.length);
     this.conversationRepository.replaceAll(initialMetadata.map(meta => (
@@ -446,9 +448,9 @@ export default class ClaudianPlugin extends Plugin {
         this.conversationRepository.getAll(),
         Array.from(this.pendingEnvironmentInvalidationGenerations.keys()),
       );
-    const completedInvalidationGenerations = deferRemainingMetadata
-      ? new Map<ProviderId, number>()
-      : new Map(this.pendingEnvironmentInvalidationGenerations);
+    const completedInvalidationGenerations = initialMetadataScan.complete
+      ? new Map(this.pendingEnvironmentInvalidationGenerations)
+      : new Map<ProviderId, number>();
 
     ProviderSettingsCoordinator.projectActiveProviderState(
       this.settings,
@@ -474,7 +476,7 @@ export default class ClaudianPlugin extends Plugin {
       );
     }
     await this.completePendingSessionInvalidations(completedInvalidationGenerations);
-    this.hasLoadedAllSessionMetadata = !deferRemainingMetadata;
+    this.hasLoadedAllSessionMetadata = initialMetadataScan.complete;
     this.pendingSessionMetadataScan = deferRemainingMetadata;
   }
 
@@ -537,9 +539,6 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private async loadRemainingSessionMetadata(): Promise<void> {
-    const scanInvalidationGenerations = new Map(
-      this.pendingEnvironmentInvalidationGenerations,
-    );
     this.isLoadingRemainingSessionMetadata = true;
     try {
       const addedConversations: Conversation[] = [];
@@ -564,11 +563,12 @@ export default class ClaudianPlugin extends Plugin {
           view.notifyConversationListChanged();
         }
       };
-      const allMetadata = await this.storage.sessions.listMetadata({ onBatch: publishBatch });
+      const scan = await this.storage.sessions.scanMetadata({ onBatch: publishBatch });
       if (this.isUnloading) {
         return;
       }
 
+      const allMetadata = scan.metadata;
       StartupProfiler.recordCount('session-metadata-count', allMetadata.length);
       // Custom storage implementations may not support incremental publication yet.
       publishBatch(allMetadata);
@@ -584,9 +584,13 @@ export default class ClaudianPlugin extends Plugin {
           this.storage.sessions.toSessionMetadata(conversation),
         );
       }
-      this.hasLoadedAllSessionMetadata = true;
-      if (!this.isUnloading) {
-        await this.completePendingSessionInvalidations(scanInvalidationGenerations);
+      if (scan.complete) {
+        this.hasLoadedAllSessionMetadata = true;
+        if (!this.isUnloading) {
+          await this.completePendingSessionInvalidations(
+            this.getCompletablePendingSessionInvalidations(),
+          );
+        }
       }
     } finally {
       this.isLoadingRemainingSessionMetadata = false;
@@ -624,6 +628,33 @@ export default class ClaudianPlugin extends Plugin {
     settings.pendingProviderSessionInvalidations =
       serializePendingProviderSessionInvalidations(pending);
     return marked;
+  }
+
+  private blockEnvironmentInvalidationCompletion(
+    generations: ReadonlyMap<ProviderId, number>,
+  ): void {
+    for (const [providerId, generation] of generations) {
+      this.blockedEnvironmentInvalidationGenerations.set(providerId, generation);
+    }
+  }
+
+  private releaseEnvironmentInvalidationCompletion(
+    generations: ReadonlyMap<ProviderId, number>,
+  ): void {
+    for (const [providerId, generation] of generations) {
+      if (this.blockedEnvironmentInvalidationGenerations.get(providerId) === generation) {
+        this.blockedEnvironmentInvalidationGenerations.delete(providerId);
+      }
+    }
+  }
+
+  private getCompletablePendingSessionInvalidations(): Map<ProviderId, number> {
+    return new Map(Array.from(
+      this.pendingEnvironmentInvalidationGenerations,
+      ([providerId, generation]) => [providerId, generation] as const,
+    ).filter(([providerId, generation]) => (
+      this.blockedEnvironmentInvalidationGenerations.get(providerId) !== generation
+    )));
   }
 
   private async completePendingSessionInvalidations(
@@ -727,7 +758,6 @@ export default class ClaudianPlugin extends Plugin {
     let changed = false;
     let invalidatedConversations: Conversation[] = [];
     let invalidationGenerations = new Map<ProviderId, number>();
-    let canCompleteInvalidationsImmediately = false;
     await this.mutateSettings((settings) => {
       const settingsBag = settings as unknown as Record<string, unknown>;
       const changedScopes: EnvironmentScope[] = [];
@@ -747,8 +777,7 @@ export default class ClaudianPlugin extends Plugin {
         settings,
         reconciliation.environmentChangedProviderIds,
       );
-      canCompleteInvalidationsImmediately = this.hasLoadedAllSessionMetadata
-        && !this.isLoadingRemainingSessionMetadata;
+      this.blockEnvironmentInvalidationCompletion(invalidationGenerations);
     });
 
     if (affectedProviderIds.length === 0) {
@@ -774,7 +803,8 @@ export default class ClaudianPlugin extends Plugin {
         );
       }
     }
-    if (canCompleteInvalidationsImmediately && !this.isUnloading) {
+    this.releaseEnvironmentInvalidationCompletion(invalidationGenerations);
+    if (this.hasLoadedAllSessionMetadata && !this.isUnloading) {
       await this.completePendingSessionInvalidations(invalidationGenerations);
     }
 

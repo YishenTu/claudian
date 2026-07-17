@@ -117,7 +117,14 @@ export interface SessionMetadataListOptions {
   batchSize?: number;
 }
 
+export interface SessionMetadataScanResult {
+  metadata: SessionMetadata[];
+  /** False when any metadata directory or listed metadata file could not be read. */
+  complete: boolean;
+}
+
 export interface AppSessionStorage {
+  scanMetadata(options?: SessionMetadataListOptions): Promise<SessionMetadataScanResult>;
   listMetadata(options?: SessionMetadataListOptions): Promise<SessionMetadata[]>;
   loadMetadata(id: string): Promise<SessionMetadata | null>;
   saveMetadata(meta: SessionMetadata): Promise<void>;

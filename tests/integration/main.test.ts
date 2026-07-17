@@ -151,8 +151,8 @@ describe('ClaudianPlugin', () => {
     });
 
     it('loads restored-tab metadata without waiting for the full history scan', async () => {
-      let finishHistoryScan!: (value: []) => void;
-      const historyScan = new Promise<[]>((resolve) => {
+      let finishHistoryScan!: (value: { metadata: []; complete: true }) => void;
+      const historyScan = new Promise<{ metadata: []; complete: true }>((resolve) => {
         finishHistoryScan = resolve;
       });
       const restoredMetadata = {
@@ -162,7 +162,7 @@ describe('ClaudianPlugin', () => {
         createdAt: 1,
         updatedAt: 2,
       };
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockReturnValue(historyScan);
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
         .mockResolvedValue(restoredMetadata);
@@ -178,7 +178,7 @@ describe('ClaudianPlugin', () => {
         onloadPromise.then(() => true),
         new Promise<boolean>(resolve => setTimeout(() => resolve(false), 20)),
       ]);
-      finishHistoryScan([]);
+      finishHistoryScan({ metadata: [], complete: true });
       await onloadPromise;
       const cachedConversation = plugin.getCachedConversation(restoredMetadata.id);
       const didLoadRestoredMetadata = loadSpy.mock.calls.some(
@@ -204,8 +204,8 @@ describe('ClaudianPlugin', () => {
       mockApp.workspace.onLayoutReady = jest.fn((callback: () => void) => {
         layoutReady = callback;
       });
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
-        .mockResolvedValue([backgroundMetadata]);
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+        .mockResolvedValue({ metadata: [backgroundMetadata], complete: true });
 
       await plugin.onload();
       const beforeLayoutReady = plugin.getCachedConversation(backgroundMetadata.id);
@@ -268,10 +268,10 @@ describe('ClaudianPlugin', () => {
       });
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
         .mockResolvedValue(restoredMetadata);
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockImplementation(async (options) => {
           options?.onBatch?.([restoredMetadata, deferredMetadata]);
-          return [restoredMetadata, deferredMetadata];
+          return { metadata: [restoredMetadata, deferredMetadata], complete: true };
         });
 
       await plugin.onload();
@@ -323,13 +323,13 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockImplementation(async (options) => {
           options?.onBatch?.([firstMetadata]);
           markFirstBatchPublished();
           await laterBatchRelease;
           options?.onBatch?.([laterMetadata]);
-          return [firstMetadata, laterMetadata];
+          return { metadata: [firstMetadata, laterMetadata], complete: true };
         });
 
       const load = (plugin as any).loadRemainingSessionMetadata();
@@ -350,8 +350,130 @@ describe('ClaudianPlugin', () => {
       expect(first?.providerState).toBeUndefined();
       expect(later?.sessionId).toBeNull();
       expect(later?.providerState).toBeUndefined();
+      expect(pendingGeneration).toEqual(expect.any(Number));
+      expect(plugin.settings.pendingProviderSessionInvalidations.claude)
+        .toBeUndefined();
+    });
+
+    it('waits for an environment metadata write before completing its scan generation', async () => {
+      const firstMetadata = {
+        id: 'pending-environment-write-session',
+        providerId: 'claude' as const,
+        title: 'Pending environment write session',
+        createdAt: 1,
+        updatedAt: 2,
+        sessionId: 'pending-environment-write-session-id',
+        providerState: { providerSessionId: 'pending-environment-write-provider-session-id' },
+      };
+      const laterMetadata = {
+        id: 'later-environment-write-session',
+        providerId: 'claude' as const,
+        title: 'Later environment write session',
+        createdAt: 1,
+        updatedAt: 1,
+        sessionId: 'later-environment-write-session-id',
+        providerState: { providerSessionId: 'later-environment-write-provider-session-id' },
+      };
+      let markFirstBatchPublished!: () => void;
+      const firstBatchPublished = new Promise<void>((resolve) => {
+        markFirstBatchPublished = resolve;
+      });
+      let finishScan!: () => void;
+      const scanRelease = new Promise<void>((resolve) => {
+        finishScan = resolve;
+      });
+      let markEnvironmentWriteStarted!: () => void;
+      const environmentWriteStarted = new Promise<void>((resolve) => {
+        markEnvironmentWriteStarted = resolve;
+      });
+      let finishEnvironmentWrite!: () => void;
+      const environmentWriteRelease = new Promise<void>((resolve) => {
+        finishEnvironmentWrite = resolve;
+      });
+
+      await plugin.onload();
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+        .mockImplementation(async (options) => {
+          options?.onBatch?.([firstMetadata]);
+          markFirstBatchPublished();
+          await scanRelease;
+          options?.onBatch?.([laterMetadata]);
+          return { metadata: [firstMetadata, laterMetadata], complete: true };
+        });
+      let blockedEnvironmentWrite = false;
+      const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata')
+        .mockImplementation(async () => {
+          if (!blockedEnvironmentWrite) {
+            blockedEnvironmentWrite = true;
+            markEnvironmentWriteStarted();
+            await environmentWriteRelease;
+          }
+        });
+
+      const load = (plugin as any).loadRemainingSessionMetadata();
+      await firstBatchPublished;
+      const apply = plugin.applyEnvironmentVariables(
+        'provider:claude',
+        'ANTHROPIC_BASE_URL=https://pending-write.example.com',
+      );
+      await environmentWriteStarted;
+      const pendingGeneration = plugin.settings.pendingProviderSessionInvalidations.claude;
+      finishScan();
+      await load;
+
       expect(plugin.settings.pendingProviderSessionInvalidations.claude)
         .toBe(pendingGeneration);
+
+      finishEnvironmentWrite();
+      await apply;
+      scanSpy.mockRestore();
+      saveMetadataSpy.mockRestore();
+
+      expect(pendingGeneration).toEqual(expect.any(Number));
+      expect(plugin.settings.pendingProviderSessionInvalidations.claude)
+        .toBeUndefined();
+    });
+
+    it('keeps a pending provider invalidation after an incomplete metadata scan', async () => {
+      const settingsPath = '.claudian/claudian-settings.json';
+      const pendingGeneration = 11;
+      const deferredMetadata = {
+        id: 'incomplete-scan-session',
+        providerId: 'claude' as const,
+        title: 'Incomplete scan session',
+        createdAt: 1,
+        updatedAt: 2,
+        sessionId: 'incomplete-scan-session-id',
+        providerState: { providerSessionId: 'incomplete-scan-provider-session-id' },
+      };
+      const files = installVaultFiles({
+        [settingsPath]: JSON.stringify({
+          pendingProviderSessionInvalidations: { claude: pendingGeneration },
+          providerConfigs: {
+            claude: {
+              environmentHash: 'ANTHROPIC_BASE_URL=https://same.example.com',
+              environmentVariables: 'ANTHROPIC_BASE_URL=https://same.example.com',
+            },
+          },
+        }),
+      });
+
+      await plugin.onload();
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+        .mockImplementation(async (options) => {
+          options?.onBatch?.([deferredMetadata]);
+          return { metadata: [deferredMetadata], complete: false };
+        });
+      (plugin as any).pendingSessionMetadataScan = false;
+
+      await (plugin as any).loadRemainingSessionMetadata();
+
+      const persistedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
+      scanSpy.mockRestore();
+
+      expect(persistedSettings.pendingProviderSessionInvalidations?.claude)
+        .toBe(pendingGeneration);
+      expect((plugin as any).hasLoadedAllSessionMetadata).toBe(false);
     });
 
     it('does not persist a background metadata shell deleted before reconciliation', async () => {
@@ -372,11 +494,11 @@ describe('ClaudianPlugin', () => {
       };
 
       await plugin.onload();
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata').mockImplementation(async (options) => {
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata').mockImplementation(async (options) => {
         options?.onBatch?.([backgroundMetadata]);
         markBatchPublished();
         await scanRelease;
-        return [backgroundMetadata];
+        return { metadata: [backgroundMetadata], complete: true };
       });
       const invalidateSpy = jest.spyOn(
         ProviderSettingsCoordinator,
@@ -432,10 +554,10 @@ describe('ClaudianPlugin', () => {
       plugin.onunload();
       const restartedPlugin = new ClaudianPlugin(mockApp, mockManifest);
       (restartedPlugin.loadData as jest.Mock).mockResolvedValue({});
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockImplementation(async (options) => {
           options?.onBatch?.([deferredMetadata]);
-          return [deferredMetadata];
+          return { metadata: [deferredMetadata], complete: true };
         });
 
       await restartedPlugin.onload();
@@ -480,10 +602,10 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockImplementation(async (options) => {
           options?.onBatch?.([deferredMetadata]);
-          return [deferredMetadata];
+          return { metadata: [deferredMetadata], complete: true };
         });
       const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata')
         .mockRejectedValueOnce(new Error('metadata write failed'));

@@ -402,6 +402,15 @@ describe('SessionStorage', () => {
       expect(metas).toEqual([]);
     });
 
+    it('reports an incomplete scan when a metadata directory cannot be listed', async () => {
+      mockAdapter.listFiles.mockRejectedValue(new Error('List error'));
+
+      await expect(storage.scanMetadata()).resolves.toEqual({
+        metadata: [],
+        complete: false,
+      });
+    });
+
     it('skips files that fail to load', async () => {
       mockAdapter.listFiles.mockResolvedValue([
         '.claudian/sessions/good.meta.json',
@@ -424,6 +433,33 @@ describe('SessionStorage', () => {
 
       expect(metas).toHaveLength(1);
       expect(metas[0].id).toBe('good');
+    });
+
+    it('reports an incomplete scan when a metadata file cannot be read', async () => {
+      mockAdapter.listFiles.mockImplementation(async (path: string) => (
+        path === SESSIONS_PATH
+          ? [
+            `${SESSIONS_PATH}/good.meta.json`,
+            `${SESSIONS_PATH}/bad.meta.json`,
+          ]
+          : []
+      ));
+      mockAdapter.read.mockImplementation(async (path: string) => {
+        if (path.endsWith('/bad.meta.json')) {
+          throw new Error('Read error');
+        }
+        return JSON.stringify({
+          id: 'good',
+          title: 'Good',
+          createdAt: 1,
+          updatedAt: 2,
+        });
+      });
+
+      await expect(storage.scanMetadata()).resolves.toEqual({
+        metadata: [expect.objectContaining({ id: 'good' })],
+        complete: false,
+      });
     });
 
     it('keeps valid legacy metadata visible when best-effort migration fails', async () => {

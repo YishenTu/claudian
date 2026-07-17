@@ -1,6 +1,10 @@
 import { mapWithConcurrency } from '../../utils/concurrency';
 import { ProviderRegistry } from '../providers/ProviderRegistry';
-import { DEFAULT_CHAT_PROVIDER_ID, type SessionMetadataListOptions } from '../providers/types';
+import {
+  DEFAULT_CHAT_PROVIDER_ID,
+  type SessionMetadataListOptions,
+  type SessionMetadataScanResult,
+} from '../providers/types';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   Conversation,
@@ -89,7 +93,14 @@ export class SessionStorage {
   }
 
   async listMetadata(options: SessionMetadataListOptions = {}): Promise<SessionMetadata[]> {
-    const files = await this.listUniqueMetadataFiles();
+    return (await this.scanMetadata(options)).metadata;
+  }
+
+  async scanMetadata(
+    options: SessionMetadataListOptions = {},
+  ): Promise<SessionMetadataScanResult> {
+    const fileListing = await this.listUniqueMetadataFiles();
+    let complete = fileListing.complete;
     const pendingBatch: SessionMetadata[] = [];
     const batchSize = Math.max(1, options.batchSize ?? SESSION_METADATA_PUBLISH_BATCH_SIZE);
     const publish = (metadata: SessionMetadata): void => {
@@ -99,7 +110,7 @@ export class SessionStorage {
         options.onBatch(pendingBatch.splice(0, pendingBatch.length));
       }
     };
-    const metas = await mapWithConcurrency(files, async (filePath) => {
+    const metas = await mapWithConcurrency(fileListing.files, async (filePath) => {
       const fileId = this.getMetadataIdFromPath(filePath);
       if (!fileId || !isValidSessionMetadataId(fileId)) {
         return null;
@@ -112,6 +123,7 @@ export class SessionStorage {
           return null;
         }
       } catch {
+        complete = false;
         // Skip files that fail to load.
         return null;
       }
@@ -131,7 +143,10 @@ export class SessionStorage {
       options.onBatch?.(pendingBatch.splice(0, pendingBatch.length));
     }
 
-    return metas.filter((meta): meta is SessionMetadata => meta !== null);
+    return {
+      metadata: metas.filter((meta): meta is SessionMetadata => meta !== null),
+      complete,
+    };
   }
 
   async listAllConversations(): Promise<ConversationMeta[]> {
@@ -200,31 +215,39 @@ export class SessionStorage {
     }
   }
 
-  private async listUniqueMetadataFiles(): Promise<string[]> {
+  private async listUniqueMetadataFiles(): Promise<{ files: string[]; complete: boolean }> {
     const preferredFiles = await this.listMetadataFiles(SESSIONS_PATH);
     const fallbackFiles = await this.listMetadataFiles(LEGACY_SESSIONS_PATH);
     const filesByName = new Map<string, string>();
 
-    for (const filePath of preferredFiles) {
+    for (const filePath of preferredFiles.files) {
       filesByName.set(this.getFileName(filePath), filePath);
     }
 
-    for (const filePath of fallbackFiles) {
+    for (const filePath of fallbackFiles.files) {
       const fileName = this.getFileName(filePath);
       if (!filesByName.has(fileName)) {
         filesByName.set(fileName, filePath);
       }
     }
 
-    return Array.from(filesByName.values());
+    return {
+      files: Array.from(filesByName.values()),
+      complete: preferredFiles.complete && fallbackFiles.complete,
+    };
   }
 
-  private async listMetadataFiles(folderPath: string): Promise<string[]> {
+  private async listMetadataFiles(
+    folderPath: string,
+  ): Promise<{ files: string[]; complete: boolean }> {
     try {
       const files = await this.adapter.listFiles(folderPath);
-      return files.filter((filePath) => filePath.endsWith('.meta.json'));
+      return {
+        files: files.filter((filePath) => filePath.endsWith('.meta.json')),
+        complete: true,
+      };
     } catch {
-      return [];
+      return { files: [], complete: false };
     }
   }
 
