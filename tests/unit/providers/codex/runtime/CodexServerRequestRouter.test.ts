@@ -551,6 +551,13 @@ describe('CodexServerRequestRouter', () => {
       });
       router.setDynamicToolRegistry(registry);
 
+      expect(registry.getThreadStartSpecs()).toEqual([{
+        namespace: 'codex_app',
+        name: 'load_workspace_dependencies',
+        description: 'Load workspace dependencies',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      }]);
+
       const params = {
         threadId: 't1',
         turnId: 'turn1',

@@ -364,7 +364,7 @@ export interface ThreadStartParams {
   experimentalRawEvents?: boolean;
   persistExtendedHistory?: boolean;
   sandboxPolicy?: SandboxPolicy;
-  dynamicTools?: DynamicToolSpec[];
+  dynamicTools?: LegacyDynamicToolSpec[];
 }
 
 export interface DynamicToolFunctionSpec {
@@ -375,14 +375,17 @@ export interface DynamicToolFunctionSpec {
   deferLoading?: boolean;
 }
 
-export interface DynamicToolNamespaceSpec {
-  type: 'namespace';
+/**
+ * Flat dynamic-tool request shape accepted by Codex before explicit namespace
+ * specs and retained as a backwards-compatible input by current app servers.
+ */
+export interface LegacyDynamicToolSpec {
+  namespace?: string | null;
   name: string;
   description: string;
-  tools: DynamicToolFunctionSpec[];
+  inputSchema: unknown;
+  deferLoading?: boolean;
 }
-
-export type DynamicToolSpec = DynamicToolFunctionSpec | DynamicToolNamespaceSpec;
 
 export interface DynamicToolCallParams {
   threadId: string;

@@ -2,7 +2,7 @@ import type {
   DynamicToolCallParams,
   DynamicToolCallResponse,
   DynamicToolFunctionSpec,
-  DynamicToolSpec,
+  LegacyDynamicToolSpec,
 } from './codexAppServerTypes';
 
 export type CodexDynamicToolHandler = (
@@ -34,46 +34,37 @@ export class CodexDynamicToolRegistry {
     this.registrations.set(key, registration);
   }
 
-  getThreadStartSpecs(): DynamicToolSpec[] {
-    const rootTools: DynamicToolFunctionSpec[] = [];
-    const namespaces = new Map<string, {
-      description: string;
-      tools: DynamicToolFunctionSpec[];
-    }>();
+  getThreadStartSpecs(): LegacyDynamicToolSpec[] {
+    const specs: LegacyDynamicToolSpec[] = [];
+    const namespaceDescriptions = new Map<string, string>();
 
     for (const registration of this.registrations.values()) {
       if (!registration.includeInThreadStart) continue;
 
-      if (!registration.namespace) {
-        rootTools.push(registration.tool);
-        continue;
-      }
-
-      const existing = namespaces.get(registration.namespace.name);
-      if (existing) {
-        if (existing.description !== registration.namespace.description) {
+      if (registration.namespace) {
+        const existingDescription = namespaceDescriptions.get(registration.namespace.name);
+        if (
+          existingDescription !== undefined
+          && existingDescription !== registration.namespace.description
+        ) {
           throw new Error(
             `Conflicting dynamic tool namespace description: ${registration.namespace.name}`,
           );
         }
-        existing.tools.push(registration.tool);
-      } else {
-        namespaces.set(registration.namespace.name, {
-          description: registration.namespace.description,
-          tools: [registration.tool],
-        });
+        namespaceDescriptions.set(registration.namespace.name, registration.namespace.description);
       }
+
+      const { name, description, inputSchema, deferLoading } = registration.tool;
+      specs.push({
+        ...(registration.namespace ? { namespace: registration.namespace.name } : {}),
+        name,
+        description,
+        inputSchema,
+        ...(deferLoading !== undefined ? { deferLoading } : {}),
+      });
     }
 
-    return [
-      ...rootTools,
-      ...Array.from(namespaces, ([name, namespace]) => ({
-        type: 'namespace' as const,
-        name,
-        description: namespace.description,
-        tools: namespace.tools,
-      })),
-    ];
+    return specs;
   }
 
   isIncludedInThreadStart(namespace: string | null, tool: string): boolean {

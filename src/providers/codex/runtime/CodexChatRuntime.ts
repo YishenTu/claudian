@@ -119,6 +119,12 @@ function resolveCodexServiceTier(
   return model.defaultServiceTier;
 }
 
+const LEGACY_WORKSPACE_DEPENDENCY_NOTICE =
+  'This conversation was created before Claudian added Codex workspace dependency tools. It can continue for other tasks, but skills that require load_workspace_dependencies are unavailable in this thread. Start a new conversation to use them.';
+
+const LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS =
+  'This thread predates Claudian client-hosted workspace dependency tools. If the user requests a skill that requires load_workspace_dependencies, explain that they must start a new conversation in Claudian. Do not emulate the tool, search for dependency paths, or install replacement dependencies.';
+
 export class CodexChatRuntime implements ChatRuntime {
   readonly providerId: ProviderId = 'codex';
 
@@ -142,6 +148,7 @@ export class CodexChatRuntime implements ChatRuntime {
   private loadedThreadId: string | null = null;
   private currentThreadPath: string | null = null;
   private workspaceDependencyToolVersion: number | null = null;
+  private legacyWorkspaceDependencyNoticeKeys = new Set<string>();
   private pendingTurnNotifications: Array<{ method: string; params: unknown }> = [];
 
   // Chunk buffer: notifications push here, query() drains
@@ -351,23 +358,32 @@ export class CodexChatRuntime implements ChatRuntime {
       let threadPath: string | null = null;
       let threadTargetPath: string | null = null;
       let completedPendingFork = false;
-      const shouldMigrateLegacyThread = !turn.isCompact
-        && (this.pendingFork !== null || existingThreadId !== null)
-        && this.workspaceDependencyToolVersion !== CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION
-        && this.dynamicToolRegistry.isIncludedInThreadStart(
-          CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE,
-          CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME,
-        );
+      const isLegacyWorkspaceDependencyThread = (
+        this.pendingFork !== null || existingThreadId !== null
+      ) && (
+        this.workspaceDependencyToolVersion === null
+        || this.workspaceDependencyToolVersion < CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION
+      );
+      const baseInstructions = isLegacyWorkspaceDependencyThread
+        ? `${promptText}\n\n${LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS}`
+        : promptText;
+      const legacyNoticeKey = this.pendingFork
+        ? `fork:${this.pendingFork.sessionId}:${this.pendingFork.resumeAt}`
+        : existingThreadId
+          ? `thread:${existingThreadId}`
+          : null;
 
-      if (shouldMigrateLegacyThread) {
-        const startResult = await this.startThread(model, providerSettings, promptText);
-        threadId = startResult.thread.id;
-        threadTargetPath = startResult.thread.path ?? null;
-        threadPath = this.toHostSessionPath(threadTargetPath);
-        this.loadedThreadId = threadId;
-        this.pendingFork = null;
-        turn = this.prependHistoryContext(turn, _conversationHistory);
-      } else if (this.pendingFork) {
+      if (
+        !turn.isCompact
+        && isLegacyWorkspaceDependencyThread
+        && legacyNoticeKey
+        && !this.legacyWorkspaceDependencyNoticeKeys.has(legacyNoticeKey)
+      ) {
+        this.legacyWorkspaceDependencyNoticeKeys.add(legacyNoticeKey);
+        yield { type: 'notice', level: 'warning', content: LEGACY_WORKSPACE_DEPENDENCY_NOTICE };
+      }
+
+      if (this.pendingFork) {
         // Pending fork: fork the source thread, optionally roll back, then start a turn
         const fork = this.pendingFork;
 
@@ -394,7 +410,7 @@ export class CodexChatRuntime implements ChatRuntime {
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
           serviceTier: resolveCodexServiceTier(providerSettings.serviceTier, model, providerSettings),
-          baseInstructions: promptText,
+          baseInstructions,
           experimentalRawEvents: true,
           persistExtendedHistory: true,
         });
@@ -408,6 +424,9 @@ export class CodexChatRuntime implements ChatRuntime {
 
         this.loadedThreadId = threadId;
         completedPendingFork = true;
+        if (isLegacyWorkspaceDependencyThread) {
+          this.legacyWorkspaceDependencyNoticeKeys.add(`thread:${threadId}`);
+        }
 
         // Build replay suffix from conversation history after the checkpoint
         if (_conversationHistory && _conversationHistory.length > 0) {
@@ -434,7 +453,7 @@ export class CodexChatRuntime implements ChatRuntime {
           approvalPolicy: permissionMode.approvalPolicy,
           sandbox: permissionMode.sandbox,
           serviceTier: resolveCodexServiceTier(providerSettings.serviceTier, model, providerSettings),
-          baseInstructions: promptText,
+          baseInstructions,
           experimentalRawEvents: true,
           persistExtendedHistory: true,
         });
@@ -804,6 +823,7 @@ export class CodexChatRuntime implements ChatRuntime {
     this.loadedThreadId = null;
     this.currentThreadPath = null;
     this.workspaceDependencyToolVersion = null;
+    this.legacyWorkspaceDependencyNoticeKeys.clear();
     this.currentTurnId = null;
     this.currentQueryThreadId = null;
     this.pendingTurnNotifications = [];
@@ -924,7 +944,7 @@ export class CodexChatRuntime implements ChatRuntime {
     const initializeResult = await initializeCodexAppServerTransport(this.transport);
     this.runtimeContext = createCodexRuntimeContext(launchSpec, initializeResult);
     this.dynamicToolRegistry = new CodexDynamicToolRegistry();
-    const workspaceDependencyTool = await createCodexWorkspaceDependencyTool(this.runtimeContext);
+    const workspaceDependencyTool = createCodexWorkspaceDependencyTool(this.runtimeContext);
     this.dynamicToolRegistry.register(workspaceDependencyTool);
     this.serverRequestRouter.setDynamicToolRegistry(this.dynamicToolRegistry);
     this.clientConfigKey = clientConfigKey;
@@ -955,21 +975,6 @@ export class CodexChatRuntime implements ChatRuntime {
       ? CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION
       : null;
     return startResult;
-  }
-
-  private prependHistoryContext(
-    turn: PreparedChatTurn,
-    conversationHistory?: ChatMessage[],
-  ): PreparedChatTurn {
-    const historyContext = conversationHistory
-      ? buildContextFromHistory(conversationHistory)
-      : '';
-    if (!historyContext.trim()) return turn;
-
-    return {
-      ...turn,
-      prompt: `${historyContext}\n\nUser: ${turn.prompt}`,
-    };
   }
 
   private wireTransportHandlers(): void {

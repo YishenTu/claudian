@@ -9,11 +9,11 @@ export const CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE = 'codex_app';
 export const CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME = 'load_workspace_dependencies';
 export const CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION = 1;
 
-export async function createCodexWorkspaceDependencyTool(
+export function createCodexWorkspaceDependencyTool(
   context: CodexRuntimeContext,
-): Promise<CodexDynamicToolRegistration> {
+): CodexDynamicToolRegistration {
   return {
-    includeInThreadStart: await resolveCodexWorkspaceDependencies(context) !== null,
+    includeInThreadStart: true,
     namespace: {
       name: CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE,
       description: 'Tools provided by the Claudian Codex host.',
@@ -50,7 +50,7 @@ export async function createCodexWorkspaceDependencyTool(
           success: false,
           contentItems: [{
             type: 'inputText',
-            text: 'The bundled Codex workspace dependency runtime is no longer available. Report this as a blocker and do not guess or install replacement dependencies.',
+            text: 'The bundled Codex workspace dependency runtime is unavailable. Report this as a blocker and do not guess or install replacement dependencies.',
           }],
         };
       }

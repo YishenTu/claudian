@@ -638,13 +638,10 @@ describe('CodexChatRuntime', () => {
         await collectChunks(runtime.query(createTurn('create a workbook')));
 
         expect(findCall('thread/start')[1].dynamicTools).toEqual([{
-          type: 'namespace',
-          name: 'codex_app',
+          namespace: 'codex_app',
+          name: 'load_workspace_dependencies',
           description: expect.any(String),
-          tools: [expect.objectContaining({
-            type: 'function',
-            name: 'load_workspace_dependencies',
-          })],
+          inputSchema: expect.any(Object),
         }]);
 
         const response = await emitServerRequest('item/tool/call', 'request-1', {
@@ -672,10 +669,15 @@ describe('CodexChatRuntime', () => {
       }
     });
 
-    it('does not advertise the workspace dependency tool for an incomplete runtime', async () => {
+    it('advertises the workspace dependency tool and returns a blocker for an incomplete runtime', async () => {
       await collectChunks(runtime.query(createTurn('hi')));
 
-      expect(findCall('thread/start')[1].dynamicTools).toBeUndefined();
+      expect(findCall('thread/start')[1].dynamicTools).toEqual([
+        expect.objectContaining({
+          namespace: 'codex_app',
+          name: 'load_workspace_dependencies',
+        }),
+      ]);
       expect(serverRequestHandlers.has('item/tool/call')).toBe(true);
 
       const response = await emitServerRequest('item/tool/call', 'request-missing-runtime', {
@@ -689,9 +691,65 @@ describe('CodexChatRuntime', () => {
       expect(response).toEqual(expect.objectContaining({
         success: false,
         contentItems: [expect.objectContaining({
-          text: expect.stringContaining('no longer available'),
+          text: expect.stringContaining('is unavailable'),
         })],
       }));
+    });
+
+    it('refreshes workspace dependency availability without restarting the app server', async () => {
+      const workspaceRuntime = createTestWorkspaceRuntime();
+      useTestWorkspaceRuntime(workspaceRuntime);
+      const artifactManifest = path.join(
+        workspaceRuntime.dependenciesRoot,
+        'node',
+        'node_modules',
+        '@oai',
+        'artifact-tool',
+        'package.json',
+      );
+      fs.rmSync(artifactManifest);
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return workspaceRuntimeInitializeResponse(workspaceRuntime);
+        if (method === 'thread/start') return threadStartResponse('thread-runtime-refresh');
+        if (method === 'turn/start') {
+          setTimeout(() => {
+            emitNotification('turn/completed', {
+              threadId: 'thread-runtime-refresh',
+              turn: { id: 'turn-runtime-refresh', items: [], status: 'completed', error: null },
+            });
+          }, 0);
+          return turnStartResponse('turn-runtime-refresh');
+        }
+        return {};
+      });
+
+      try {
+        await collectChunks(runtime.query(createTurn('create a workbook')));
+
+        const unavailableResponse = await emitServerRequest('item/tool/call', 'request-before-install', {
+          threadId: 'thread-runtime-refresh',
+          turnId: 'turn-runtime-refresh',
+          callId: 'call-before-install',
+          namespace: 'codex_app',
+          tool: 'load_workspace_dependencies',
+          arguments: {},
+        });
+        expect(unavailableResponse).toEqual(expect.objectContaining({ success: false }));
+
+        fs.writeFileSync(artifactManifest, JSON.stringify({ version: 'test-artifact' }));
+
+        const availableResponse = await emitServerRequest('item/tool/call', 'request-after-install', {
+          threadId: 'thread-runtime-refresh',
+          turnId: 'turn-runtime-refresh',
+          callId: 'call-after-install',
+          namespace: 'codex_app',
+          tool: 'load_workspace_dependencies',
+          arguments: {},
+        });
+        expect(availableResponse).toEqual(expect.objectContaining({ success: true }));
+      } finally {
+        fs.rmSync(workspaceRuntime.home, { recursive: true, force: true });
+      }
     });
 
     it('handles host-native initialize responses that omit codexHome', async () => {
@@ -976,7 +1034,7 @@ describe('CodexChatRuntime', () => {
       expect(resumeCall).toBeUndefined();
     });
 
-    it('migrates a legacy thread to a tool-capable thread and replays its history', async () => {
+    it('preserves a legacy thread and surfaces its dynamic-tool limitation', async () => {
       const workspaceRuntime = createTestWorkspaceRuntime();
       useTestWorkspaceRuntime(workspaceRuntime);
       runtime.syncConversationState({
@@ -985,32 +1043,86 @@ describe('CodexChatRuntime', () => {
       });
       mockTransportRequest.mockImplementation(async (method: string) => {
         if (method === 'initialize') return workspaceRuntimeInitializeResponse(workspaceRuntime);
-        if (method === 'thread/start') return threadStartResponse('thread-migrated');
+        if (method === 'thread/resume') return threadStartResponse('thread-legacy');
         if (method === 'turn/start') {
           setTimeout(() => {
             emitNotification('turn/completed', {
-              threadId: 'thread-migrated',
-              turn: { id: 'turn-migrated', items: [], status: 'completed', error: null },
+              threadId: 'thread-legacy',
+              turn: { id: 'turn-legacy-next', items: [], status: 'completed', error: null },
             });
           }, 0);
-          return turnStartResponse('turn-migrated');
+          return turnStartResponse('turn-legacy-next');
         }
         return {};
       });
       const history = [
-        { id: 'u1', role: 'user' as const, content: 'Earlier question', timestamp: 1 },
+        {
+          id: 'u1',
+          role: 'user' as const,
+          content: 'Earlier question with an image',
+          timestamp: 1,
+          images: [{
+            id: 'image-1',
+            name: 'chart.png',
+            mediaType: 'image/png' as const,
+            data: 'aW1hZ2U=',
+            size: 5,
+            source: 'paste' as const,
+          }],
+        },
         { id: 'a1', role: 'assistant' as const, content: 'Earlier answer', timestamp: 2 },
       ];
 
       try {
-        await collectChunks(runtime.query(createTurn('create a workbook'), history));
+        const chunks = await collectChunks(runtime.query(createTurn('create a workbook'), history));
 
-        expect(findCall('thread/resume')).toBeUndefined();
-        expect(findCall('thread/start')[1].dynamicTools).toBeDefined();
-        expect(JSON.stringify(findCall('turn/start')[1].input)).toContain('Earlier question');
-        expect(runtime.getSessionId()).toBe('thread-migrated');
+        expect(findCall('thread/start')).toBeUndefined();
+        expect(findCall('thread/resume')[1]).toEqual(expect.objectContaining({
+          threadId: 'thread-legacy',
+          baseInstructions: expect.stringMatching(/load_workspace_dependencies[\s\S]*new conversation/i),
+        }));
+        expect(JSON.stringify(findCall('turn/start')[1].input)).not.toContain('Earlier question');
+        expect(runtime.getSessionId()).toBe('thread-legacy');
+        expect(chunks).toContainEqual({
+          type: 'notice',
+          level: 'warning',
+          content: expect.stringMatching(/new conversation/i),
+        });
         expect(runtime.buildSessionUpdates({ conversation: null, sessionInvalidated: false }).updates.providerState)
-          .toEqual(expect.objectContaining({ workspaceDependencyToolVersion: 1 }));
+          .not.toEqual(expect.objectContaining({ workspaceDependencyToolVersion: 1 }));
+      } finally {
+        fs.rmSync(workspaceRuntime.home, { recursive: true, force: true });
+      }
+    });
+
+    it('retains a legacy session when turn/start fails', async () => {
+      const workspaceRuntime = createTestWorkspaceRuntime();
+      useTestWorkspaceRuntime(workspaceRuntime);
+      runtime.syncConversationState({
+        sessionId: 'thread-legacy-failure',
+        providerState: {
+          threadId: 'thread-legacy-failure',
+          sessionFilePath: '/tmp/legacy-failure.jsonl',
+        },
+      });
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') return workspaceRuntimeInitializeResponse(workspaceRuntime);
+        if (method === 'thread/resume') return threadStartResponse('thread-legacy-failure');
+        if (method === 'turn/start') throw new Error('turn rejected');
+        return {};
+      });
+
+      try {
+        const chunks = await collectChunks(runtime.query(createTurn('retry-safe request')));
+
+        expect(chunks).toContainEqual({ type: 'error', content: 'turn rejected' });
+        expect(findCall('thread/start')).toBeUndefined();
+        expect(runtime.getSessionId()).toBe('thread-legacy-failure');
+        expect(runtime.buildSessionUpdates({ conversation: null, sessionInvalidated: false }).updates)
+          .toEqual(expect.objectContaining({
+            sessionId: 'thread-legacy-failure',
+            providerState: expect.not.objectContaining({ workspaceDependencyToolVersion: 1 }),
+          }));
       } finally {
         fs.rmSync(workspaceRuntime.home, { recursive: true, force: true });
       }
@@ -1061,7 +1173,7 @@ describe('CodexChatRuntime', () => {
       expect(toolResponse).toEqual(expect.objectContaining({
         success: false,
         contentItems: [expect.objectContaining({
-          text: expect.stringContaining('no longer available'),
+          text: expect.stringContaining('is unavailable'),
         })],
       }));
     });
@@ -2292,7 +2404,7 @@ describe('CodexChatRuntime', () => {
       expect(runtime.getSessionId()).toBe('fork-thread-1');
     });
 
-    it('migrates a fork from a legacy source to a tool-capable thread', async () => {
+    it('preserves a fork from a legacy source and surfaces its dynamic-tool limitation', async () => {
       const workspaceRuntime = createTestWorkspaceRuntime();
       useTestWorkspaceRuntime(workspaceRuntime);
       runtime.syncConversationState({
@@ -2301,31 +2413,41 @@ describe('CodexChatRuntime', () => {
       });
       mockTransportRequest.mockImplementation(async (method: string) => {
         if (method === 'initialize') return workspaceRuntimeInitializeResponse(workspaceRuntime);
-        if (method === 'thread/start') return threadStartResponse('fork-migrated');
+        if (method === 'thread/fork') {
+          const response = threadStartResponse('fork-legacy');
+          response.thread.turns = [
+            { id: 'turn-legacy', items: [], status: 'completed', error: null },
+          ];
+          return response;
+        }
+        if (method === 'thread/resume') return threadStartResponse('fork-legacy');
         if (method === 'turn/start') {
           setTimeout(() => {
             emitNotification('turn/completed', {
-              threadId: 'fork-migrated',
-              turn: { id: 'turn-fork-migrated', items: [], status: 'completed', error: null },
+              threadId: 'fork-legacy',
+              turn: { id: 'turn-fork-legacy', items: [], status: 'completed', error: null },
             });
           }, 0);
-          return turnStartResponse('turn-fork-migrated');
+          return turnStartResponse('turn-fork-legacy');
         }
         return {};
       });
-      const history = [
-        { id: 'u1', role: 'user' as const, content: 'Source question', timestamp: 1 },
-        { id: 'a1', role: 'assistant' as const, content: 'Source answer', timestamp: 2 },
-      ];
 
       try {
-        await collectChunks(runtime.query(createTurn('forked workbook request'), history));
+        const chunks = await collectChunks(runtime.query(createTurn('forked workbook request')));
 
-        expect(findCall('thread/fork')).toBeUndefined();
-        expect(findCall('thread/resume')).toBeUndefined();
-        expect(findCall('thread/start')[1].dynamicTools).toBeDefined();
-        expect(JSON.stringify(findCall('turn/start')[1].input)).toContain('Source question');
-        expect(runtime.getSessionId()).toBe('fork-migrated');
+        expect(findCall('thread/start')).toBeUndefined();
+        expect(findCall('thread/fork')[1].threadId).toBe('legacy-source');
+        expect(findCall('thread/resume')[1]).toEqual(expect.objectContaining({
+          threadId: 'fork-legacy',
+          baseInstructions: expect.stringMatching(/load_workspace_dependencies[\s\S]*new conversation/i),
+        }));
+        expect(runtime.getSessionId()).toBe('fork-legacy');
+        expect(chunks).toContainEqual({
+          type: 'notice',
+          level: 'warning',
+          content: expect.stringMatching(/new conversation/i),
+        });
       } finally {
         fs.rmSync(workspaceRuntime.home, { recursive: true, force: true });
       }
