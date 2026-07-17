@@ -18,9 +18,9 @@ import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 import { stripLegacyInterruptIndicator } from '../../../utils/interrupt';
+import { escapeRawHtmlTags } from '../../../utils/markdownHtml';
 import {
   escapeMathDelimitersForStreaming,
-  escapeRawHtmlTags,
   normalizeLatexMathDelimiters,
 } from '../../../utils/markdownMath';
 import type { FeatureHost } from '../../FeatureHost';
@@ -684,8 +684,10 @@ export class MessageRenderer {
       const renderMarkdown = options?.deferMath
         ? escapeMathDelimitersForStreaming(normalizedMarkdown)
         : normalizedMarkdown;
+      // Escape user-authored HTML first so placeholders like <meta-name> render
+      // as plain text. Trusted plugin markup (image embeds) is injected only
+      // after this step, otherwise it would be escaped too.
       const safeMarkdown = escapeRawHtmlTags(renderMarkdown);
-      // Inject trusted embed HTML only after user-authored HTML has been escaped.
       const processedMarkdown = replaceImageEmbedsWithHtml(
         safeMarkdown,
         this.app,
