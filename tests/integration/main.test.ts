@@ -29,6 +29,31 @@ describe('ClaudianPlugin', () => {
     return call[0];
   }
 
+  function installVaultFiles(initialFiles: Record<string, string>): Map<string, string> {
+    const files = new Map(Object.entries(initialFiles));
+    const folders = new Set<string>(['.claudian']);
+    mockApp.vault.adapter.exists.mockImplementation(async (path: string) => (
+      files.has(path) || folders.has(path)
+    ));
+    mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+      const content = files.get(path);
+      if (content === undefined) {
+        throw new Error(`Missing test file: ${path}`);
+      }
+      return content;
+    });
+    mockApp.vault.adapter.write.mockImplementation(async (path: string, content: string) => {
+      files.set(path, content);
+    });
+    mockApp.vault.adapter.remove.mockImplementation(async (path: string) => {
+      files.delete(path);
+    });
+    mockApp.vault.adapter.mkdir.mockImplementation(async (path: string) => {
+      folders.add(path);
+    });
+    return files;
+  }
+
   beforeEach(() => {
     // Reset mocks
     jest.clearAllMocks();
@@ -313,6 +338,7 @@ describe('ClaudianPlugin', () => {
         'provider:claude',
         'ANTHROPIC_BASE_URL=https://changed-during-scan.example.com',
       );
+      const pendingGeneration = plugin.settings.pendingProviderSessionInvalidations.claude;
       releaseLaterBatch();
       await load;
 
@@ -324,6 +350,8 @@ describe('ClaudianPlugin', () => {
       expect(first?.providerState).toBeUndefined();
       expect(later?.sessionId).toBeNull();
       expect(later?.providerState).toBeUndefined();
+      expect(plugin.settings.pendingProviderSessionInvalidations.claude)
+        .toBe(pendingGeneration);
     });
 
     it('does not persist a background metadata shell deleted before reconciliation', async () => {
@@ -371,6 +399,118 @@ describe('ClaudianPlugin', () => {
       expect(invalidationCallCount).toBeGreaterThan(0);
       expect(saveMetadataCallCount).toBe(0);
       expect(plugin.getCachedConversation(backgroundMetadata.id)).toBeNull();
+    });
+
+    it('retries a pending provider invalidation after unload and restart', async () => {
+      const settingsPath = '.claudian/claudian-settings.json';
+      const deferredMetadata = {
+        id: 'restart-deferred-session',
+        providerId: 'claude' as const,
+        title: 'Restart deferred session',
+        createdAt: 1,
+        updatedAt: 2,
+        sessionId: 'restart-session-id',
+        providerState: { providerSessionId: 'restart-provider-session-id' },
+      };
+      const files = installVaultFiles({
+        [settingsPath]: JSON.stringify({
+          providerConfigs: {
+            claude: {
+              environmentHash: 'ANTHROPIC_BASE_URL=https://old.example.com',
+              environmentVariables: 'ANTHROPIC_BASE_URL=https://new.example.com',
+            },
+          },
+        }),
+      });
+
+      await plugin.onload();
+      const firstRunSettings = JSON.parse(files.get(settingsPath) ?? '{}');
+      const pendingGeneration = firstRunSettings.pendingProviderSessionInvalidations?.claude;
+
+      expect(pendingGeneration).toEqual(expect.any(Number));
+
+      plugin.onunload();
+      const restartedPlugin = new ClaudianPlugin(mockApp, mockManifest);
+      (restartedPlugin.loadData as jest.Mock).mockResolvedValue({});
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+        .mockImplementation(async (options) => {
+          options?.onBatch?.([deferredMetadata]);
+          return [deferredMetadata];
+        });
+
+      await restartedPlugin.onload();
+      await (restartedPlugin as any).loadRemainingSessionMetadata();
+
+      const restartedConversation = restartedPlugin.getCachedConversation(deferredMetadata.id);
+      const persistedMetadata = JSON.parse(
+        files.get('.claudian/sessions/restart-deferred-session.meta.json') ?? '{}',
+      );
+      const restartedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
+      listSpy.mockRestore();
+
+      expect(restartedConversation?.sessionId).toBeNull();
+      expect(restartedConversation?.providerState).toBeUndefined();
+      expect(persistedMetadata.sessionId).toBeNull();
+      expect(persistedMetadata).not.toHaveProperty('providerState');
+      expect(restartedSettings.pendingProviderSessionInvalidations?.claude).toBeUndefined();
+    });
+
+    it('keeps a pending provider invalidation when a metadata write fails', async () => {
+      const settingsPath = '.claudian/claudian-settings.json';
+      const pendingGeneration = 7;
+      const deferredMetadata = {
+        id: 'failed-write-session',
+        providerId: 'claude' as const,
+        title: 'Failed write session',
+        createdAt: 1,
+        updatedAt: 2,
+        sessionId: 'failed-write-session-id',
+        providerState: { providerSessionId: 'failed-write-provider-session-id' },
+      };
+      const files = installVaultFiles({
+        [settingsPath]: JSON.stringify({
+          pendingProviderSessionInvalidations: { claude: pendingGeneration },
+          providerConfigs: {
+            claude: {
+              environmentHash: 'ANTHROPIC_BASE_URL=https://same.example.com',
+              environmentVariables: 'ANTHROPIC_BASE_URL=https://same.example.com',
+            },
+          },
+        }),
+      });
+
+      await plugin.onload();
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+        .mockImplementation(async (options) => {
+          options?.onBatch?.([deferredMetadata]);
+          return [deferredMetadata];
+        });
+      const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata')
+        .mockRejectedValueOnce(new Error('metadata write failed'));
+      (plugin as any).pendingSessionMetadataScan = false;
+
+      let loadError: unknown;
+      try {
+        await (plugin as any).loadRemainingSessionMetadata();
+      } catch (error) {
+        loadError = error;
+      }
+      listSpy.mockRestore();
+      saveMetadataSpy.mockRestore();
+
+      expect(loadError).toEqual(new Error('metadata write failed'));
+      const persistedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
+      expect(persistedSettings.pendingProviderSessionInvalidations?.claude)
+        .toBe(pendingGeneration);
+
+      await plugin.applyEnvironmentVariables(
+        'provider:claude',
+        'ANTHROPIC_BASE_URL=https://next.example.com',
+      );
+
+      const settingsAfterEnvironmentChange = JSON.parse(files.get(settingsPath) ?? '{}');
+      expect(settingsAfterEnvironmentChange.pendingProviderSessionInvalidations?.claude)
+        .toEqual(expect.any(Number));
     });
 
   });

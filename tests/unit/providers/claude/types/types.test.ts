@@ -119,6 +119,7 @@ describe('types.ts', () => {
         savedProviderServiceTier: {},
         savedProviderThinkingBudget: {},
         savedProviderPermissionMode: {},
+        pendingProviderSessionInvalidations: {},
       };
 
       expect(settings.permissionMode).toBe('yolo');
@@ -171,6 +172,7 @@ describe('types.ts', () => {
         savedProviderServiceTier: {},
         savedProviderThinkingBudget: {},
         savedProviderPermissionMode: {},
+        pendingProviderSessionInvalidations: {},
       };
 
       expect(settings.model).toBe('anthropic/custom-model-v1');
@@ -224,6 +226,7 @@ describe('types.ts', () => {
         savedProviderServiceTier: {},
         savedProviderThinkingBudget: {},
         savedProviderPermissionMode: {},
+        pendingProviderSessionInvalidations: {},
       };
 
       expect(settings.lastClaudeModel).toBe('opus');

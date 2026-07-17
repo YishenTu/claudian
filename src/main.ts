@@ -60,6 +60,49 @@ function isClaudianView(value: unknown): value is ClaudianView {
     && typeof (value as { getTabManager?: unknown }).getTabManager === 'function';
 }
 
+function readPendingProviderSessionInvalidations(
+  settings: Record<string, unknown>,
+): Map<ProviderId, number> {
+  const registeredProviderIds = new Set(ProviderRegistry.getRegisteredProviderIds());
+  const value = settings.pendingProviderSessionInvalidations;
+  const pending = new Map<ProviderId, number>();
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return pending;
+  }
+
+  for (const [providerId, generation] of Object.entries(value)) {
+    if (
+      registeredProviderIds.has(providerId)
+      && typeof generation === 'number'
+      && Number.isSafeInteger(generation)
+      && generation > 0
+    ) {
+      pending.set(providerId, generation);
+    }
+  }
+  return pending;
+}
+
+function serializePendingProviderSessionInvalidations(
+  pending: ReadonlyMap<ProviderId, number>,
+): Partial<Record<string, number>> {
+  return Object.fromEntries(
+    Array.from(pending.entries()).sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function hasSamePendingProviderSessionInvalidations(
+  value: unknown,
+  pending: ReadonlyMap<ProviderId, number>,
+): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const entries = Object.entries(value);
+  return entries.length === pending.size
+    && entries.every(([providerId, generation]) => pending.get(providerId) === generation);
+}
+
 export default class ClaudianPlugin extends Plugin {
   settings!: ClaudianSettings;
   storage!: SharedAppStorage;
@@ -68,8 +111,9 @@ export default class ClaudianPlugin extends Plugin {
   private conversationRepository!: ConversationRepository;
   private lastKnownTabManagerState: AppTabManagerState | null = null;
   private pendingSessionMetadataScan = false;
-  private pendingEnvironmentInvalidationProviderIds = new Set<ProviderId>();
+  private pendingEnvironmentInvalidationGenerations = new Map<ProviderId, number>();
   private isLoadingRemainingSessionMetadata = false;
+  private hasLoadedAllSessionMetadata = false;
   private sessionMetadataLoadTimer: number | null = null;
   private remainingSessionMetadataLoad: Promise<void> | null = null;
   private isUnloading = false;
@@ -219,7 +263,6 @@ export default class ClaudianPlugin extends Plugin {
 
   onunload(): void {
     this.isUnloading = true;
-    this.pendingEnvironmentInvalidationProviderIds.clear();
     if (this.sessionMetadataLoadTimer !== null) {
       window.clearTimeout(this.sessionMetadataLoadTimer);
       this.sessionMetadataLoadTimer = null;
@@ -319,6 +362,7 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   async loadSettings(options: { deferNonRestoredSessionMetadata?: boolean } = {}) {
+    this.hasLoadedAllSessionMetadata = false;
     this.storage = new SharedStorageService(this);
     const { claudian } = await this.storage.initialize();
     this.lastKnownTabManagerState = await this.storage.getTabManagerState();
@@ -335,6 +379,7 @@ export default class ClaudianPlugin extends Plugin {
         await this.storage.saveClaudianSettings(settings);
       },
     );
+    const didNormalizePendingSessionInvalidations = this.syncPendingSessionInvalidations();
     this.conversationRepository = new ConversationRepository({
       getSettings: () => this.settings,
       getVaultPath: () => getVaultPath(this.app),
@@ -391,32 +436,45 @@ export default class ClaudianPlugin extends Plugin {
 
     const backfilledConversations = this.conversationRepository.backfillResponseTimestamps();
 
-    const {
-      changed,
-      environmentChangedProviderIds,
-      invalidatedConversations,
-    } = this.reconcileModelWithEnvironment();
-    this.pendingEnvironmentInvalidationProviderIds.clear();
-    if (deferRemainingMetadata) {
-      for (const providerId of environmentChangedProviderIds) {
-        this.pendingEnvironmentInvalidationProviderIds.add(providerId);
-      }
-    }
+    const reconciliation = this.reconcileModelWithEnvironment();
+    this.markPendingSessionInvalidations(
+      this.settings,
+      reconciliation.environmentChangedProviderIds,
+    );
+    const pendingInvalidatedConversations = ProviderSettingsCoordinator
+      .invalidateConversationSessions(
+        this.conversationRepository.getAll(),
+        Array.from(this.pendingEnvironmentInvalidationGenerations.keys()),
+      );
+    const completedInvalidationGenerations = deferRemainingMetadata
+      ? new Map<ProviderId, number>()
+      : new Map(this.pendingEnvironmentInvalidationGenerations);
 
     ProviderSettingsCoordinator.projectActiveProviderState(
       this.settings,
     );
 
-    if (changed || didNormalizeModelVariants || didNormalizeProviderSelection) {
+    if (
+      reconciliation.changed
+      || didNormalizeModelVariants
+      || didNormalizeProviderSelection
+      || didNormalizePendingSessionInvalidations
+    ) {
       await this.saveSettings();
     }
 
-    const conversationsToSave = new Set([...backfilledConversations, ...invalidatedConversations]);
+    const conversationsToSave = new Set([
+      ...backfilledConversations,
+      ...reconciliation.invalidatedConversations,
+      ...pendingInvalidatedConversations,
+    ]);
     for (const conv of conversationsToSave) {
       await this.storage.sessions.saveMetadata(
         this.storage.sessions.toSessionMetadata(conv)
       );
     }
+    await this.completePendingSessionInvalidations(completedInvalidationGenerations);
+    this.hasLoadedAllSessionMetadata = !deferRemainingMetadata;
     this.pendingSessionMetadataScan = deferRemainingMetadata;
   }
 
@@ -479,6 +537,9 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private async loadRemainingSessionMetadata(): Promise<void> {
+    const scanInvalidationGenerations = new Map(
+      this.pendingEnvironmentInvalidationGenerations,
+    );
     this.isLoadingRemainingSessionMetadata = true;
     try {
       const addedConversations: Conversation[] = [];
@@ -489,7 +550,7 @@ export default class ClaudianPlugin extends Plugin {
         const shells = metadata.map(meta => this.createConversationMetadataShell(meta));
         const invalidatedShells = ProviderSettingsCoordinator.invalidateConversationSessions(
           shells,
-          Array.from(this.pendingEnvironmentInvalidationProviderIds),
+          Array.from(this.pendingEnvironmentInvalidationGenerations.keys()),
         );
         const invalidatedIds = new Set(invalidatedShells.map(({ id }) => id));
         const added = this.conversationRepository.mergeMetadataConversations(shells);
@@ -523,9 +584,88 @@ export default class ClaudianPlugin extends Plugin {
           this.storage.sessions.toSessionMetadata(conversation),
         );
       }
+      this.hasLoadedAllSessionMetadata = true;
+      if (!this.isUnloading) {
+        await this.completePendingSessionInvalidations(scanInvalidationGenerations);
+      }
     } finally {
       this.isLoadingRemainingSessionMetadata = false;
-      this.pendingEnvironmentInvalidationProviderIds.clear();
+    }
+  }
+
+  private syncPendingSessionInvalidations(): boolean {
+    const pending = readPendingProviderSessionInvalidations(this.settings);
+    const changed = !hasSamePendingProviderSessionInvalidations(
+      this.settings.pendingProviderSessionInvalidations,
+      pending,
+    );
+    this.settings.pendingProviderSessionInvalidations =
+      serializePendingProviderSessionInvalidations(pending);
+    this.pendingEnvironmentInvalidationGenerations = pending;
+    return changed;
+  }
+
+  private markPendingSessionInvalidations(
+    settings: ClaudianSettings,
+    providerIds: ProviderId[],
+  ): Map<ProviderId, number> {
+    const pending = readPendingProviderSessionInvalidations(settings);
+    const marked = new Map<ProviderId, number>();
+    for (const providerId of new Set(providerIds)) {
+      const previousGeneration = Math.max(
+        pending.get(providerId) ?? 0,
+        this.pendingEnvironmentInvalidationGenerations.get(providerId) ?? 0,
+      );
+      const generation = Math.max(Date.now(), previousGeneration + 1);
+      pending.set(providerId, generation);
+      this.pendingEnvironmentInvalidationGenerations.set(providerId, generation);
+      marked.set(providerId, generation);
+    }
+    settings.pendingProviderSessionInvalidations =
+      serializePendingProviderSessionInvalidations(pending);
+    return marked;
+  }
+
+  private async completePendingSessionInvalidations(
+    completedGenerations: ReadonlyMap<ProviderId, number>,
+  ): Promise<void> {
+    if (completedGenerations.size === 0) {
+      return;
+    }
+
+    const removed = new Map<ProviderId, number>();
+    try {
+      await this.mutateSettingsConditionally((settings) => {
+        const pending = readPendingProviderSessionInvalidations(settings);
+        for (const [providerId, generation] of completedGenerations) {
+          if (pending.get(providerId) === generation) {
+            pending.delete(providerId);
+            removed.set(providerId, generation);
+          }
+        }
+        if (removed.size === 0) {
+          return false;
+        }
+        settings.pendingProviderSessionInvalidations =
+          serializePendingProviderSessionInvalidations(pending);
+        return true;
+      });
+    } catch (error) {
+      const pending = readPendingProviderSessionInvalidations(this.settings);
+      for (const [providerId, generation] of removed) {
+        if (this.pendingEnvironmentInvalidationGenerations.get(providerId) === generation) {
+          pending.set(providerId, generation);
+        }
+      }
+      this.settings.pendingProviderSessionInvalidations =
+        serializePendingProviderSessionInvalidations(pending);
+      throw error;
+    }
+
+    for (const [providerId, generation] of removed) {
+      if (this.pendingEnvironmentInvalidationGenerations.get(providerId) === generation) {
+        this.pendingEnvironmentInvalidationGenerations.delete(providerId);
+      }
     }
   }
 
@@ -586,6 +726,8 @@ export default class ClaudianPlugin extends Plugin {
     let affectedProviderIds: ProviderId[] = [];
     let changed = false;
     let invalidatedConversations: Conversation[] = [];
+    let invalidationGenerations = new Map<ProviderId, number>();
+    let canCompleteInvalidationsImmediately = false;
     await this.mutateSettings((settings) => {
       const settingsBag = settings as unknown as Record<string, unknown>;
       const changedScopes: EnvironmentScope[] = [];
@@ -601,11 +743,12 @@ export default class ClaudianPlugin extends Plugin {
       const reconciliation = this.reconcileModelWithEnvironment(affectedProviderIds);
       changed = reconciliation.changed;
       invalidatedConversations = reconciliation.invalidatedConversations;
-      if (this.pendingSessionMetadataScan || this.isLoadingRemainingSessionMetadata) {
-        for (const providerId of reconciliation.environmentChangedProviderIds) {
-          this.pendingEnvironmentInvalidationProviderIds.add(providerId);
-        }
-      }
+      invalidationGenerations = this.markPendingSessionInvalidations(
+        settings,
+        reconciliation.environmentChangedProviderIds,
+      );
+      canCompleteInvalidationsImmediately = this.hasLoadedAllSessionMetadata
+        && !this.isLoadingRemainingSessionMetadata;
     });
 
     if (affectedProviderIds.length === 0) {
@@ -630,6 +773,9 @@ export default class ClaudianPlugin extends Plugin {
           this.storage.sessions.toSessionMetadata(conv)
         );
       }
+    }
+    if (canCompleteInvalidationsImmediately && !this.isUnloading) {
+      await this.completePendingSessionInvalidations(invalidationGenerations);
     }
 
     const openViews = this.getAllViews();
