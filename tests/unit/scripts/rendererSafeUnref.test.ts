@@ -98,4 +98,20 @@ describe('rendererSafeUnref helpers', () => {
       { line: 5, snippet: 'setInterval(run, 1000).unref()' },
     ]);
   });
+
+  it('guards minified direct timer unref calls that do not match SDK source shapes', () => {
+    const input = [
+      'setTimeout((i,o)=>{i.exitCode===null&&i.kill("SIGKILL"),o()},5e3,n,e).unref();',
+      'new Promise(i=>setTimeout(i,2e3).unref())',
+    ].join('');
+
+    const result = patchRendererUnsafeUnrefSites(input);
+
+    expect(result.appliedPatches).toContainEqual({
+      name: 'direct-timer-unref-guard',
+      count: 2,
+    });
+    expect(result.contents).toContain('.unref?.()');
+    expect(findUnsafeTimerUnrefSites(result.contents)).toEqual([]);
+  });
 });

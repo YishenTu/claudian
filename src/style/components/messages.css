@@ -260,3 +260,32 @@
   font-size: 11px;
   white-space: nowrap;
 }
+
+.claudian-tab-hydration {
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.claudian-tab-hydration-loading::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  border: 2px solid var(--background-modifier-border);
+  border-top-color: var(--interactive-accent);
+  border-radius: 50%;
+  animation: claudian-spin 0.8s linear infinite;
+  vertical-align: -2px;
+}
+
+.claudian-tab-hydration-error {
+  max-width: 420px;
+  color: var(--text-error, var(--claudian-error));
+}

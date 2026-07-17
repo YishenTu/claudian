@@ -9,6 +9,7 @@ import type { App } from 'obsidian';
 
 export class VaultFileAdapter {
   private writeQueue: Promise<void> = Promise.resolve();
+  private folderCreationPromises = new Map<string, Promise<void>>();
 
   constructor(private app: App) {}
 
@@ -102,15 +103,43 @@ export class VaultFileAdapter {
 
   /** Ensure a folder exists, creating it and parent folders if needed. */
   async ensureFolder(path: string): Promise<void> {
-    if (await this.exists(path)) return;
-
-    // Create parent folders recursively
     const parts = path.split('/').filter(Boolean);
     let current = '';
     for (const part of parts) {
       current = current ? `${current}/${part}` : part;
-      if (!(await this.exists(current))) {
-        await this.app.vault.adapter.mkdir(current);
+      await this.ensureSingleFolder(current);
+    }
+  }
+
+  private async ensureSingleFolder(path: string): Promise<void> {
+    const existing = this.folderCreationPromises.get(path);
+    if (existing) {
+      await existing;
+      return;
+    }
+    if (await this.exists(path)) return;
+
+    const pendingAfterCheck = this.folderCreationPromises.get(path);
+    if (pendingAfterCheck) {
+      await pendingAfterCheck;
+      return;
+    }
+
+    const creation = (async () => {
+      try {
+        await this.app.vault.adapter.mkdir(path);
+      } catch (error) {
+        if (!(await this.exists(path))) {
+          throw error;
+        }
+      }
+    })();
+    this.folderCreationPromises.set(path, creation);
+    try {
+      await creation;
+    } finally {
+      if (this.folderCreationPromises.get(path) === creation) {
+        this.folderCreationPromises.delete(path);
       }
     }
   }

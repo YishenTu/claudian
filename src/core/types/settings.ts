@@ -134,6 +134,9 @@ export interface ClaudianSettings {
   savedProviderThinkingBudget: Partial<Record<string, string>>;
   savedProviderPermissionMode: Partial<Record<string, string>>;
 
+  // Internal lifecycle state. Entries remain until all affected session metadata is durable.
+  pendingProviderSessionInvalidations: Partial<Record<string, number>>;
+
   // State (provider-specific, round-tripped opaquely)
   lastCustomModel?: string;
 

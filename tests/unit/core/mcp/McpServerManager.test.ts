@@ -401,5 +401,29 @@ describe('McpServerManager', () => {
       await manager.loadServers();
       expect(manager.getServers()).toEqual(servers);
     });
+
+    it('deduplicates concurrent loads and retries after failure', async () => {
+      const load = jest.fn()
+        .mockRejectedValueOnce(new Error('temporary failure'))
+        .mockResolvedValueOnce([]);
+      const manager = new McpServerManager({ load });
+
+      const first = manager.loadServers();
+      await expect(first).rejects.toThrow('temporary failure');
+      await expect(manager.loadServers()).resolves.toBeUndefined();
+
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(manager.isLoaded()).toBe(true);
+    });
+
+    it('does not reload storage when ensureLoaded already has data', async () => {
+      const load = jest.fn().mockResolvedValue([]);
+      const manager = new McpServerManager({ load });
+
+      await manager.ensureLoaded();
+      await manager.ensureLoaded();
+
+      expect(load).toHaveBeenCalledTimes(1);
+    });
   });
 });

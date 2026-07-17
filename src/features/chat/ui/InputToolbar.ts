@@ -953,6 +953,7 @@ export class McpServerSelector {
 
   private pruneEnabledServers(): void {
     if (!this.mcpManager) return;
+    if (this.mcpManager.isLoaded?.() === false) return;
     const activeNames = new Set(this.mcpManager.getServers().filter((s) => s.enabled).map((s) => s.name));
     let changed = false;
     for (const name of this.enabledServers) {
@@ -983,7 +984,17 @@ export class McpServerSelector {
 
     // Re-render dropdown content on hover (CSS handles visibility)
     this.container.addEventListener('mouseenter', () => {
-      this.renderDropdown();
+      const load = this.mcpManager?.ensureLoaded?.();
+      if (load) {
+        void load.then(() => {
+          this.updateDisplay();
+          this.renderDropdown();
+        }).catch(() => {
+          // Keep the selector usable with its last known state when config loading fails.
+        });
+      } else {
+        this.renderDropdown();
+      }
     });
   }
 
@@ -1077,7 +1088,8 @@ export class McpServerSelector {
     if (!this.iconEl || !this.badgeEl) return;
 
     const count = this.enabledServers.size;
-    const hasServers = (this.mcpManager?.getServers().length || 0) > 0;
+    const isPendingLazyLoad = this.mcpManager?.isLoaded?.() === false;
+    const hasServers = isPendingLazyLoad || (this.mcpManager?.getServers().length || 0) > 0;
 
     // Show/hide container based on whether there are servers and visibility
     if (!hasServers || !this.visible) {

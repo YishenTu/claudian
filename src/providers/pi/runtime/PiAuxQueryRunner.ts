@@ -156,7 +156,7 @@ export class PiAuxQueryRunner implements AuxQueryRunner {
   private async ensureReady(systemPrompt: string): Promise<void> {
     const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
     const settings = getPiProviderSettings(settingsBag);
-    const command = this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
+    const command = await this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
     const envText = getRuntimeEnvironmentText(settingsBag, 'pi');
     const env = {

@@ -22,7 +22,12 @@ export interface ProviderModelPickerState {
   selectedIds: string[];
 }
 
+export interface ProviderModelPickerController {
+  refresh(): void;
+}
+
 export interface ProviderModelPickerOptions {
+  checkCatalogFreshnessWhenCached?: boolean;
   container: HTMLElement;
   emptyCatalogText: string;
   failedCatalogText: string;
@@ -40,7 +45,9 @@ export interface ProviderModelPickerOptions {
   settingDescription: string;
 }
 
-export function renderProviderModelPicker(options: ProviderModelPickerOptions): void {
+export function renderProviderModelPicker(
+  options: ProviderModelPickerOptions,
+): ProviderModelPickerController {
   new Setting(options.container)
     .setName('Visible models')
     .setDesc(options.settingDescription);
@@ -390,7 +397,14 @@ export function renderProviderModelPicker(options: ProviderModelPickerOptions): 
   };
 
   const loadCatalog = async (force: boolean): Promise<void> => {
-    if (loadingCatalog || (!force && options.getState().discoveredCount > 0)) {
+    if (
+      loadingCatalog
+      || (
+        !force
+        && !options.checkCatalogFreshnessWhenCached
+        && options.getState().discoveredCount > 0
+      )
+    ) {
       return;
     }
 
@@ -416,4 +430,5 @@ export function renderProviderModelPicker(options: ProviderModelPickerOptions): 
   if (options.loadCatalogOnRender) {
     void loadCatalog(false);
   }
+  return { refresh: renderAll };
 }

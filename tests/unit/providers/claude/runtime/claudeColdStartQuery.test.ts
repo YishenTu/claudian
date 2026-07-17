@@ -1,5 +1,6 @@
 import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 
+import * as sdkLoader from '@/providers/claude/loadClaudeAgentSdk';
 import { type ColdStartQueryConfig, runColdStartQuery } from '@/providers/claude/runtime/claudeColdStartQuery';
 
 const sdkMock = sdkModule as unknown as {
@@ -284,6 +285,28 @@ describe('runColdStartQuery', () => {
   });
 
   describe('abort handling', () => {
+    it('does not start a query when aborted while the SDK is loading', async () => {
+      let resolveQuery!: (query: typeof sdkModule.query) => void;
+      const loadingQuery = new Promise<typeof sdkModule.query>((resolve) => {
+        resolveQuery = resolve;
+      });
+      const loaderSpy = jest.spyOn(sdkLoader, 'loadClaudeAgentQuery').mockReturnValue(loadingQuery);
+      const agentQuery = jest.fn() as unknown as typeof sdkModule.query;
+      const abortController = new AbortController();
+
+      const result = runColdStartQuery(createConfig({ abortController }), 'hi');
+      await Promise.resolve();
+      abortController.abort();
+      resolveQuery(agentQuery);
+
+      try {
+        await expect(result).rejects.toThrow('Cancelled');
+        expect(agentQuery).not.toHaveBeenCalled();
+      } finally {
+        loaderSpy.mockRestore();
+      }
+    });
+
     it('throws Cancelled when aborted mid-stream', async () => {
       const abortController = new AbortController();
 

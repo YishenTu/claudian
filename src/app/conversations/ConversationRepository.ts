@@ -16,11 +16,46 @@ export interface ConversationRepositoryDeps {
 
 export class ConversationRepository {
   private conversations: Conversation[] = [];
+  private hydratedConversationIds = new Set<string>();
+  private hydrationPromises = new Map<string, Promise<Conversation | null>>();
+  private conversationGenerations = new Map<string, number>();
+  private deletedConversationIds = new Set<string>();
 
   constructor(private readonly deps: ConversationRepositoryDeps) {}
 
   replaceAll(conversations: Conversation[]): void {
+    for (const conversation of this.conversations) {
+      this.invalidateConversation(conversation.id);
+    }
     this.conversations = conversations;
+    this.deletedConversationIds.clear();
+    this.hydratedConversationIds = new Set(
+      conversations.filter((conversation) => conversation.messages.length > 0).map(({ id }) => id),
+    );
+    this.hydrationPromises.clear();
+  }
+
+  mergeMetadataConversations(conversations: Conversation[]): Conversation[] {
+    const existingIds = new Set(this.conversations.map(({ id }) => id));
+    const added = conversations.filter(({ id }) => (
+      !existingIds.has(id) && !this.deletedConversationIds.has(id)
+    ));
+    if (added.length === 0) {
+      return [];
+    }
+
+    this.conversations.push(...added);
+    this.conversations.sort(
+      (left, right) => (
+        (right.lastResponseAt ?? right.updatedAt) - (left.lastResponseAt ?? left.updatedAt)
+      ),
+    );
+    for (const conversation of added) {
+      if (conversation.messages.length > 0) {
+        this.hydratedConversationIds.add(conversation.id);
+      }
+    }
+    return added;
   }
 
   getAll(): Conversation[] {
@@ -71,19 +106,17 @@ export class ConversationRepository {
       messages: [],
     };
 
+    this.deletedConversationIds.delete(conversation.id);
     this.conversations.unshift(conversation);
+    if (!sessionId) {
+      this.hydratedConversationIds.add(conversation.id);
+    }
     await this.save(conversation);
     return conversation;
   }
 
   async switchTo(id: string): Promise<Conversation | null> {
-    const conversation = this.getSync(id);
-    if (!conversation) return null;
-
-    await this.reconcileProviderSession(conversation);
-    await this.ensureSelectedModel(conversation);
-    await this.hydrate(conversation);
-    return conversation;
+    return this.ensureHydrated(id);
   }
 
   async delete(
@@ -94,7 +127,16 @@ export class ConversationRepository {
     if (index === -1) return;
 
     const conversation = this.conversations[index];
+    const pendingHydration = this.hydrationPromises.get(id) ?? null;
+    this.deletedConversationIds.add(id);
     this.conversations.splice(index, 1);
+    this.hydratedConversationIds.delete(id);
+    this.hydrationPromises.delete(id);
+    this.invalidateConversation(id);
+
+    if (pendingHydration) {
+      await Promise.allSettled([pendingHydration]);
+    }
 
     if (options.deleteProviderSession !== false) {
       const vaultPath = this.deps.getVaultPath();
@@ -177,16 +219,92 @@ export class ConversationRepository {
       }
     }
     Object.assign(conversation, safeUpdates, { updatedAt: Date.now() });
+    if (
+      'sessionId' in safeUpdates
+      || 'providerState' in safeUpdates
+      || 'resumeAtMessageId' in safeUpdates
+    ) {
+      this.hydratedConversationIds.delete(id);
+      this.invalidateConversation(id);
+    }
     await this.save(conversation);
   }
 
   async getById(id: string): Promise<Conversation | null> {
+    return this.ensureHydrated(id);
+  }
+
+  getCachedConversation(id: string): Conversation | null {
+    return this.getSync(id);
+  }
+
+  getMetadata(id: string): ConversationMeta | null {
     const conversation = this.getSync(id);
-    if (conversation) {
-      await this.reconcileProviderSession(conversation);
-      await this.ensureSelectedModel(conversation);
-      await this.hydrate(conversation);
+    if (!conversation) {
+      return null;
     }
+    return {
+      id: conversation.id,
+      providerId: conversation.providerId,
+      title: conversation.title,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      lastResponseAt: conversation.lastResponseAt,
+      messageCount: conversation.messages.length,
+      preview: this.getPreview(conversation),
+      titleGenerationStatus: conversation.titleGenerationStatus,
+    };
+  }
+
+  async ensureHydrated(id: string): Promise<Conversation | null> {
+    const conversation = this.getSync(id);
+    if (!conversation) {
+      return null;
+    }
+
+    const existing = this.hydrationPromises.get(id);
+    if (existing) {
+      return existing;
+    }
+
+    const generation = this.getConversationGeneration(id);
+    const promise = this.hydratedConversationIds.has(id)
+      ? this.reconcileHydratedConversation(conversation, generation)
+      : this.hydrateConversation(id, generation);
+    this.hydrationPromises.set(id, promise);
+    try {
+      return await promise;
+    } finally {
+      if (this.hydrationPromises.get(id) === promise) {
+        this.hydrationPromises.delete(id);
+      }
+    }
+  }
+
+  private async reconcileHydratedConversation(
+    conversation: Conversation,
+    generation: number,
+  ): Promise<Conversation | null> {
+    await this.ensureSelectedModel(conversation);
+    return this.isConversationCurrent(conversation, generation) ? conversation : null;
+  }
+
+  private async hydrateConversation(
+    id: string,
+    generation: number,
+  ): Promise<Conversation | null> {
+    const conversation = this.getSync(id);
+    if (!conversation) {
+      return null;
+    }
+
+    await this.reconcileProviderSession(conversation);
+    if (!this.isConversationCurrent(conversation, generation)) return null;
+    await this.ensureSelectedModel(conversation);
+    if (!this.isConversationCurrent(conversation, generation)) return null;
+    await this.hydrateProviderHistory(conversation);
+    if (!this.isConversationCurrent(conversation, generation)) return null;
+    this.hydratedConversationIds.add(id);
     return conversation;
   }
 
@@ -260,7 +378,7 @@ export class ConversationRepository {
     await this.save(conversation);
   }
 
-  private async hydrate(conversation: Conversation): Promise<void> {
+  private async hydrateProviderHistory(conversation: Conversation): Promise<void> {
     const vaultPath = this.deps.getVaultPath();
     await ProviderRegistry
       .getConversationHistoryService(conversation.providerId)
@@ -289,6 +407,19 @@ export class ConversationRepository {
 
   private save(conversation: Conversation): Promise<void> {
     return this.deps.sessions.saveMetadata(this.deps.sessions.toSessionMetadata(conversation));
+  }
+
+  private getConversationGeneration(id: string): number {
+    return this.conversationGenerations.get(id) ?? 0;
+  }
+
+  private invalidateConversation(id: string): void {
+    this.conversationGenerations.set(id, this.getConversationGeneration(id) + 1);
+  }
+
+  private isConversationCurrent(conversation: Conversation, generation: number): boolean {
+    return this.getSync(conversation.id) === conversation
+      && this.getConversationGeneration(conversation.id) === generation;
   }
 
   private generateId(): string {

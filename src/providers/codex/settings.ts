@@ -34,6 +34,8 @@ export interface CodexProviderConfig {
   reasoningSummary: CodexReasoningSummary;
   environmentVariables: string;
   environmentHash: string;
+  catalogTimestamp: number;
+  catalogFingerprint: string;
   installationMethodsByHost: HostnameInstallationMethods;
   wslDistroOverridesByHost: HostnameCliPaths;
 }
@@ -99,6 +101,8 @@ export interface CodexProviderSettings {
   reasoningSummary: CodexProviderConfig['reasoningSummary'];
   environmentVariables: CodexProviderConfig['environmentVariables'];
   environmentHash: CodexProviderConfig['environmentHash'];
+  catalogTimestamp: CodexProviderConfig['catalogTimestamp'];
+  catalogFingerprint: CodexProviderConfig['catalogFingerprint'];
   installationMethod: CodexInstallationMethod;
   installationMethodsByHost: CodexProviderConfig['installationMethodsByHost'];
   wslDistroOverride: string;
@@ -117,6 +121,8 @@ export const DEFAULT_CODEX_PROVIDER_CONFIG: Readonly<CodexProviderConfig> = Obje
   reasoningSummary: 'detailed',
   environmentVariables: '',
   environmentHash: '',
+  catalogTimestamp: 0,
+  catalogFingerprint: '',
   installationMethodsByHost: {},
   wslDistroOverridesByHost: {},
 });
@@ -402,6 +408,12 @@ function getCodexStoredConfig(
     environmentHash: (config.environmentHash as string | undefined)
       ?? (settings.lastCodexEnvHash as string | undefined)
       ?? DEFAULT_CODEX_PROVIDER_CONFIG.environmentHash,
+    catalogTimestamp: typeof config.catalogTimestamp === 'number'
+      ? config.catalogTimestamp
+      : DEFAULT_CODEX_PROVIDER_CONFIG.catalogTimestamp,
+    catalogFingerprint: typeof config.catalogFingerprint === 'string'
+      ? config.catalogFingerprint
+      : DEFAULT_CODEX_PROVIDER_CONFIG.catalogFingerprint,
     installationMethodsByHost,
     wslDistroOverridesByHost,
   };
@@ -597,6 +609,8 @@ export function updateCodexProviderSettings(
     reasoningSummary: next.reasoningSummary,
     environmentVariables: next.environmentVariables,
     environmentHash: next.environmentHash,
+    catalogTimestamp: next.catalogTimestamp,
+    catalogFingerprint: next.catalogFingerprint,
     installationMethodsByHost,
     wslDistroOverridesByHost,
   });

@@ -5,6 +5,7 @@ import type { ProviderChatUIConfig, ProviderId } from './types';
 
 export interface SettingsReconciliationResult {
   changed: boolean;
+  environmentChangedProviderIds: ProviderId[];
   invalidatedConversations: Conversation[];
 }
 
@@ -457,6 +458,7 @@ export class ProviderSettingsCoordinator {
   ): SettingsReconciliationResult {
     let anyChanged = false;
     const allInvalidated: Conversation[] = [];
+    const environmentChangedProviderIds: ProviderId[] = [];
     const settingsProvider = getSettingsProviderId(settings);
 
     for (const providerId of providerIds) {
@@ -477,6 +479,7 @@ export class ProviderSettingsCoordinator {
 
       if (changed) {
         anyChanged = true;
+        environmentChangedProviderIds.push(providerId);
         this.persistProjectedProviderState(targetSettings, providerId);
         if (providerId !== settingsProvider) {
           mergeProviderSettings(settings, targetSettings);
@@ -489,7 +492,26 @@ export class ProviderSettingsCoordinator {
       anyChanged = true;
     }
 
-    return { changed: anyChanged, invalidatedConversations: allInvalidated };
+    return {
+      changed: anyChanged,
+      environmentChangedProviderIds,
+      invalidatedConversations: allInvalidated,
+    };
+  }
+
+  static invalidateConversationSessions(
+    conversations: Conversation[],
+    providerIds: ProviderId[],
+  ): Conversation[] {
+    const invalidatedConversations: Conversation[] = [];
+    for (const providerId of new Set(providerIds)) {
+      const providerConversations = conversations.filter(c => c.providerId === providerId);
+      invalidatedConversations.push(
+        ...ProviderRegistry.getSettingsReconciler(providerId)
+          .invalidateConversationSessions(providerConversations),
+      );
+    }
+    return invalidatedConversations;
   }
 
   static normalizeAllModelVariants(settings: Record<string, unknown>): boolean {

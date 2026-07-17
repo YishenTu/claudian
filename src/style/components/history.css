@@ -219,3 +219,19 @@
   opacity: 0.6;
   cursor: default;
 }
+
+.claudian-history-load-more {
+  width: calc(100% - 16px);
+  margin: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.claudian-history-load-more:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}

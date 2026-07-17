@@ -2,7 +2,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Mock fs and os modules BEFORE importing AgentManager
-jest.mock('fs');
+jest.mock('fs', () => {
+  const actual = jest.requireActual('fs');
+  return {
+    ...actual,
+    existsSync: jest.fn(),
+    readdirSync: jest.fn(),
+    readFileSync: jest.fn(),
+    promises: {
+      ...actual.promises,
+      readdir: jest.fn(),
+      readFile: jest.fn(),
+    },
+  };
+});
 jest.mock('os', () => ({
   homedir: jest.fn().mockReturnValue('/home/user'),
 }));
@@ -11,6 +24,7 @@ import { AgentManager } from '@/providers/claude/agents/AgentManager';
 import type { PluginManager } from '@/providers/claude/plugins/PluginManager';
 
 const mockFs = jest.mocked(fs);
+const mockFsPromises = jest.mocked(fs.promises);
 
 // Create a mock PluginManager
 function createMockPluginManager(plugins: Array<{ name: string; enabled: boolean; installPath: string }> = []): PluginManager {
@@ -83,6 +97,12 @@ describe('AgentManager', () => {
     // os.homedir is already mocked to return HOME_DIR
     mockFs.existsSync.mockReturnValue(false);
     mockFs.readdirSync.mockReturnValue([]);
+    (mockFsPromises.readdir as jest.Mock).mockImplementation(
+      async (...args: Parameters<typeof fs.readdirSync>) => mockFs.readdirSync(...args),
+    );
+    (mockFsPromises.readFile as jest.Mock).mockImplementation(
+      async (...args: Parameters<typeof fs.readFileSync>) => mockFs.readFileSync(...args),
+    );
   });
 
   describe('constructor', () => {

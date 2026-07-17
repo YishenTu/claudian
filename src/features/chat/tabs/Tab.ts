@@ -411,6 +411,13 @@ function applyProviderUIGating(tab: TabData, plugin: FeatureHost): void {
   tab.ui.contextUsageMeter?.update(tab.state.usage);
 }
 
+export function refreshTabWorkspaceServices(tab: TabData, plugin: FeatureHost): void {
+  const providerId = getTabProviderId(tab, plugin);
+  tab.ui.mcpServerSelector?.setMcpManager(getProviderMcpManager(providerId));
+  syncSlashCommandDropdownForProvider(tab, plugin);
+  applyProviderUIGating(tab, plugin);
+}
+
 function syncTabProviderServices(
   tab: TabData,
   plugin: FeatureHost,
@@ -553,6 +560,7 @@ export function createTab(options: TabCreateOptions): TabData {
     set lifecycleState(value) {
       session.lifecycleState = value;
     },
+    hydrationState: isBound ? 'idle' : 'ready',
     get draftModel() {
       return session.draftModel;
     },
@@ -698,7 +706,15 @@ export async function initializeTabService(
       ? await plugin.getConversationById(tab.conversationId)
       : null
   );
+  if (isClosingLifecycleState(tab.lifecycleState)) {
+    return;
+  }
   const providerId = getTabProviderId(tab, plugin, conversation);
+  await ProviderWorkspaceRegistry.ensureInitialized(plugin.providerHost, providerId, 'tab-runtime');
+  if (isClosingLifecycleState(tab.lifecycleState)) {
+    return;
+  }
+  refreshTabWorkspaceServices(tab, plugin);
   const selectedModel = conversation
     ? resolveConversationModel(plugin.settings, providerId, conversation).model
     : getTabSelectedModel(tab, plugin);
@@ -1447,6 +1463,7 @@ export function initializeTabControllers(
       getSelectedModel: () => getTabSelectedModel(tab, plugin),
       dismissPendingInlinePrompts: () => tab.controllers.inputController?.dismissPendingApproval(),
       awaitBackgroundWork: () => tab.session.awaitBackgroundWork(),
+      isDisposed: () => tab.lifecycleState === 'closing',
       ensureServiceForConversation: async (conversation) => {
         const nextProviderId = getTabProviderId(tab, plugin, conversation);
         const providerChanged = tab.providerId !== nextProviderId;
@@ -1543,6 +1560,9 @@ export function initializeTabControllers(
         }
 
         await initializeTabService(tab, plugin);
+        if (isClosingLifecycleState(tab.lifecycleState)) {
+          return false;
+        }
         setupServiceCallbacks(tab, plugin);
 
         // Transition: lock model selector to bound provider

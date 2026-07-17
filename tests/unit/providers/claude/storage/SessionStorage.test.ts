@@ -140,6 +140,24 @@ describe('SessionStorage', () => {
       );
     });
 
+    it('keeps valid legacy metadata visible when migration fails', async () => {
+      const metadata = {
+        id: 'session-legacy',
+        title: 'Legacy Session',
+        createdAt: 1700000000,
+        updatedAt: 1700001000,
+      };
+
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${LEGACY_SESSIONS_PATH}/session-legacy.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify(metadata));
+      mockAdapter.write.mockRejectedValue(new Error('EEXIST: .claudian/sessions'));
+
+      await expect(storage.loadMetadata('session-legacy')).resolves.toEqual(metadata);
+      expect(mockAdapter.delete).not.toHaveBeenCalled();
+    });
+
     it('skips mismatched legacy metadata without migrating or modifying it', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
         path === `${LEGACY_SESSIONS_PATH}/session-requested.meta.json`
@@ -384,6 +402,16 @@ describe('SessionStorage', () => {
       expect(metas).toEqual([]);
     });
 
+    it('reports an incomplete scan when a metadata directory cannot be listed', async () => {
+      mockAdapter.listFiles.mockRejectedValue(new Error('List error'));
+
+      await expect(storage.scanMetadata()).resolves.toEqual({
+        metadata: [],
+        complete: false,
+        invalidMetadataCount: 0,
+      });
+    });
+
     it('skips files that fail to load', async () => {
       mockAdapter.listFiles.mockResolvedValue([
         '.claudian/sessions/good.meta.json',
@@ -408,6 +436,69 @@ describe('SessionStorage', () => {
       expect(metas[0].id).toBe('good');
     });
 
+    it('reports an incomplete scan when a metadata file cannot be read', async () => {
+      mockAdapter.listFiles.mockImplementation(async (path: string) => (
+        path === SESSIONS_PATH
+          ? [
+            `${SESSIONS_PATH}/good.meta.json`,
+            `${SESSIONS_PATH}/bad.meta.json`,
+          ]
+          : []
+      ));
+      mockAdapter.read.mockImplementation(async (path: string) => {
+        if (path.endsWith('/bad.meta.json')) {
+          throw new Error('Read error');
+        }
+        return JSON.stringify({
+          id: 'good',
+          title: 'Good',
+          createdAt: 1,
+          updatedAt: 2,
+        });
+      });
+
+      await expect(storage.scanMetadata()).resolves.toEqual({
+        metadata: [expect.objectContaining({ id: 'good' })],
+        complete: false,
+        invalidMetadataCount: 0,
+      });
+    });
+
+    it('reports malformed metadata without making the I/O scan incomplete', async () => {
+      mockAdapter.listFiles.mockImplementation(async (path: string) => (
+        path === SESSIONS_PATH
+          ? [`${SESSIONS_PATH}/malformed.meta.json`]
+          : []
+      ));
+      mockAdapter.read.mockResolvedValue('{"id":');
+
+      await expect(storage.scanMetadata()).resolves.toEqual({
+        metadata: [],
+        complete: true,
+        invalidMetadataCount: 1,
+      });
+    });
+
+    it('keeps valid legacy metadata visible when best-effort migration fails', async () => {
+      mockAdapter.listFiles.mockImplementation(async (path: string) => (
+        path === LEGACY_SESSIONS_PATH
+          ? [`${LEGACY_SESSIONS_PATH}/legacy.meta.json`]
+          : []
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'legacy',
+        title: 'Legacy session',
+        createdAt: 1,
+        updatedAt: 2,
+      }));
+      mockAdapter.write.mockRejectedValue(new Error('EEXIST: .claudian/sessions'));
+
+      await expect(storage.listMetadata()).resolves.toEqual([
+        expect.objectContaining({ id: 'legacy', title: 'Legacy session' }),
+      ]);
+      expect(mockAdapter.delete).not.toHaveBeenCalled();
+    });
+
     it('skips metadata whose JSON id does not match the filename without modifying it', async () => {
       const original = JSON.stringify({
         id: 'different-id',
@@ -425,6 +516,66 @@ describe('SessionStorage', () => {
       expect(mockAdapter.read).toHaveBeenCalledTimes(1);
       expect(mockAdapter.write).not.toHaveBeenCalled();
       expect(mockAdapter.delete).not.toHaveBeenCalled();
+    });
+
+    it('reads metadata with bounded concurrency while preserving file order', async () => {
+      const ids = Array.from({ length: 12 }, (_, index) => `session-${index}`);
+      let activeReads = 0;
+      let maxActiveReads = 0;
+
+      mockAdapter.listFiles.mockImplementation(async (path: string) => (
+        path === SESSIONS_PATH
+          ? ids.map(id => `${SESSIONS_PATH}/${id}.meta.json`)
+          : []
+      ));
+      mockAdapter.read.mockImplementation(async (path: string) => {
+        activeReads += 1;
+        maxActiveReads = Math.max(maxActiveReads, activeReads);
+        await new Promise(resolve => setTimeout(resolve, 1));
+        activeReads -= 1;
+        const id = path.split('/').pop()!.replace('.meta.json', '');
+        return JSON.stringify({ id, title: id, createdAt: 1, updatedAt: 1 });
+      });
+
+      const metas = await storage.listMetadata();
+
+      expect(maxActiveReads).toBeGreaterThan(1);
+      expect(maxActiveReads).toBeLessThanOrEqual(8);
+      expect(metas.map(meta => meta.id)).toEqual(ids);
+    });
+
+    it('publishes completed metadata batches before the full scan settles', async () => {
+      const ids = Array.from({ length: 12 }, (_, index) => `session-${index}`);
+      const blockedIds = new Set(ids.slice(4));
+      let releaseBlockedReads!: () => void;
+      const blockedReads = new Promise<void>(resolve => {
+        releaseBlockedReads = resolve;
+      });
+      const onBatch = jest.fn();
+      mockAdapter.listFiles.mockImplementation(async (path: string) => (
+        path === SESSIONS_PATH
+          ? ids.map(id => `${SESSIONS_PATH}/${id}.meta.json`)
+          : []
+      ));
+      mockAdapter.read.mockImplementation(async (path: string) => {
+        const id = path.split('/').pop()!.replace('.meta.json', '');
+        if (blockedIds.has(id)) {
+          await blockedReads;
+        }
+        return JSON.stringify({ id, title: id, createdAt: 1, updatedAt: 1 });
+      });
+
+      const scan = storage.listMetadata({ onBatch, batchSize: 4 });
+      for (let attempt = 0; attempt < 10 && onBatch.mock.calls.length === 0; attempt += 1) {
+        await Promise.resolve();
+      }
+
+      expect(onBatch).toHaveBeenCalledWith(expect.arrayContaining([
+        expect.objectContaining({ id: 'session-0' }),
+      ]));
+
+      releaseBlockedReads();
+      await expect(scan).resolves.toHaveLength(ids.length);
     });
   });
 

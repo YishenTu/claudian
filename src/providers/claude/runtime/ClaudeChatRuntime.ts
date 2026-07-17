@@ -21,7 +21,6 @@ import type {
   SDKUserMessage,
   SlashCommand as SDKSlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import { Notice } from 'obsidian';
 
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
@@ -73,6 +72,7 @@ import {
 } from '../../../utils/session';
 import { CLAUDE_PROVIDER_CAPABILITIES } from '../capabilities';
 import { loadSubagentFinalResult, loadSubagentToolCalls } from '../history/ClaudeHistoryStore';
+import { loadClaudeAgentQuery } from '../loadClaudeAgentSdk';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { encodeClaudeTurn } from '../prompt/ClaudeTurnEncoder';
 import {
@@ -167,6 +167,7 @@ export class ClaudianService implements ChatRuntime {
   private responseConsumerRunning = false;
   private responseConsumerPromise: Promise<void> | null = null;
   private shuttingDown = false;
+  private persistentQueryGeneration = 0;
 
   // Tracked configuration for detecting changes that require restart
   private currentConfig: PersistentQueryConfig | null = null;
@@ -247,6 +248,10 @@ export class ClaudianService implements ChatRuntime {
 
   getCapabilities() {
     return CLAUDE_PROVIDER_CAPABILITIES;
+  }
+
+  async prepareForTurn(): Promise<void> {
+    await this.mcpManager.ensureLoaded();
   }
 
   prepareTurn(request: ChatTurnRequest): PreparedChatTurn {
@@ -568,7 +573,7 @@ export class ClaudianService implements ChatRuntime {
     // Case 1: Not running → try to start
     if (!this.persistentQuery) {
       if (!vaultPath) return false;
-      const cliPath = this.plugin.getResolvedProviderCliPath('claude');
+      const cliPath = await this.plugin.getResolvedProviderCliPath('claude');
       if (!cliPath) return false;
       await this.startPersistentQuery(vaultPath, cliPath, effectiveSessionId, externalContextPaths);
       return true;
@@ -579,7 +584,7 @@ export class ClaudianService implements ChatRuntime {
     if (options?.force) {
       this.closePersistentQuery('forced restart', { preserveHandlers: options.preserveHandlers });
       if (!vaultPath) return false;
-      const cliPath = this.plugin.getResolvedProviderCliPath('claude');
+      const cliPath = await this.plugin.getResolvedProviderCliPath('claude');
       if (!cliPath) return false;
       await this.startPersistentQuery(vaultPath, cliPath, effectiveSessionId, externalContextPaths);
       return true;
@@ -588,7 +593,7 @@ export class ClaudianService implements ChatRuntime {
     // Case 3: Check if config changed → restart if needed
     // We need vaultPath and cliPath to build config for comparison
     if (!vaultPath) return false;
-    const cliPath = this.plugin.getResolvedProviderCliPath('claude');
+    const cliPath = await this.plugin.getResolvedProviderCliPath('claude');
     if (!cliPath) return false;
 
     const newConfig = this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
@@ -596,7 +601,7 @@ export class ClaudianService implements ChatRuntime {
       // Close FIRST, then try to start new one (allows fallback if CLI unavailable)
       this.closePersistentQuery('config changed', { preserveHandlers: options?.preserveHandlers });
       // Re-check CLI path as it might have changed during close
-      const cliPathAfterClose = this.plugin.getResolvedProviderCliPath('claude');
+      const cliPathAfterClose = await this.plugin.getResolvedProviderCliPath('claude');
       if (cliPathAfterClose) {
         await this.startPersistentQuery(vaultPath, cliPathAfterClose, effectiveSessionId, externalContextPaths);
         return true;
@@ -619,6 +624,15 @@ export class ClaudianService implements ChatRuntime {
     externalContextPaths?: string[]
   ): Promise<void> {
     if (this.persistentQuery) {
+      return;
+    }
+
+    const startGeneration = ++this.persistentQueryGeneration;
+    const agentQuery = await loadClaudeAgentQuery();
+    if (
+      startGeneration !== this.persistentQueryGeneration
+      || this.persistentQuery
+    ) {
       return;
     }
 
@@ -689,6 +703,7 @@ export class ClaudianService implements ChatRuntime {
    * Closes the persistent query and cleans up resources.
    */
   closePersistentQuery(_reason?: string, options?: ClosePersistentQueryOptions): void {
+    this.persistentQueryGeneration += 1;
     if (!this.persistentQuery) {
       return;
     }
@@ -1273,7 +1288,7 @@ export class ClaudianService implements ChatRuntime {
       return;
     }
 
-    const resolvedClaudePath = this.plugin.getResolvedProviderCliPath('claude');
+    const resolvedClaudePath = await this.plugin.getResolvedProviderCliPath('claude');
     if (!resolvedClaudePath) {
       yield { type: 'error', content: 'Claude CLI not found. Please install Claude Code CLI.' };
       return;
@@ -1718,6 +1733,10 @@ export class ClaudianService implements ChatRuntime {
     const streamState = createTransformStreamState();
     const usageState = createTransformUsageState();
     try {
+      const agentQuery = await loadClaudeAgentQuery();
+      if (ctx.abortController?.signal.aborted) {
+        return;
+      }
       const response = agentQuery({ prompt: queryPrompt, options });
       this.recordTurnMetadata({ wasSent: true });
       let streamSessionId: string | null = this.sessionManager.getSessionId();

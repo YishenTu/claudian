@@ -5,7 +5,7 @@ import { getHostnameKey } from '../../../utils/env';
 import type { CodexInstallationMethod } from '../settings';
 import { getCodexProviderSettings } from '../settings';
 import { resolveCodexCliPath } from './CodexBinaryLocator';
-import { resolveCodexExecutionTarget } from './CodexExecutionTargetResolver';
+import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';
 import type { CodexExecutionTarget } from './codexLaunchTypes';
 
 export class CodexCliResolver {
@@ -19,34 +19,19 @@ export class CodexCliResolver {
   resolveFromSettings(
     settings: Record<string, unknown>,
     context: ProviderCliResolutionContext = {},
-  ): string | null {
+  ): string | null | Promise<string | null> {
     const codexSettings = getCodexProviderSettings(settings);
     const hostnamePath = (codexSettings.cliPathsByHost[this.cachedHostname] ?? '').trim();
     const legacyPath = codexSettings.cliPath.trim();
     const envText = getRuntimeEnvironmentText(settings, 'codex');
-    const executionTarget = getCodexExecutionTargetFromContext(context)
-      ?? resolveCodexExecutionTarget({ settings });
-    const executionTargetKey = getCodexExecutionTargetCacheKey(executionTarget);
-
-    if (
-      this.resolvedPath &&
-      hostnamePath === this.lastHostnamePath &&
-      legacyPath === this.lastLegacyPath &&
-      envText === this.lastEnvText &&
-      executionTargetKey === this.lastExecutionTargetKey
-    ) {
-      return this.resolvedPath;
+    const executionTarget = getCodexExecutionTargetFromContext(context);
+    if (executionTarget) {
+      return this.resolveAndCache(hostnamePath, legacyPath, envText, executionTarget);
     }
 
-    this.lastHostnamePath = hostnamePath;
-    this.lastLegacyPath = legacyPath;
-    this.lastEnvText = envText;
-    this.lastExecutionTargetKey = executionTargetKey;
-
-    this.resolvedPath = resolveCodexCliPath(hostnamePath, legacyPath, envText, {
-      executionTarget,
-    });
-    return this.resolvedPath;
+    return resolveCodexExecutionTargetAsync({ settings }).then((resolvedTarget) => (
+      this.resolveAndCache(hostnamePath, legacyPath, envText, resolvedTarget)
+    ));
   }
 
   resolve(
@@ -70,6 +55,35 @@ export class CodexCliResolver {
     this.lastLegacyPath = '';
     this.lastEnvText = '';
     this.lastExecutionTargetKey = '';
+  }
+
+  private resolveAndCache(
+    hostnamePath: string,
+    legacyPath: string,
+    envText: string,
+    executionTarget: CodexExecutionTarget,
+  ): string | null {
+    const executionTargetKey = getCodexExecutionTargetCacheKey(executionTarget);
+
+    if (
+      this.resolvedPath &&
+      hostnamePath === this.lastHostnamePath &&
+      legacyPath === this.lastLegacyPath &&
+      envText === this.lastEnvText &&
+      executionTargetKey === this.lastExecutionTargetKey
+    ) {
+      return this.resolvedPath;
+    }
+
+    this.lastHostnamePath = hostnamePath;
+    this.lastLegacyPath = legacyPath;
+    this.lastEnvText = envText;
+    this.lastExecutionTargetKey = executionTargetKey;
+
+    this.resolvedPath = resolveCodexCliPath(hostnamePath, legacyPath, envText, {
+      executionTarget,
+    });
+    return this.resolvedPath;
   }
 }
 

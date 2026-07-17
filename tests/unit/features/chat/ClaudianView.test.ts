@@ -175,6 +175,44 @@ describe('ClaudianView tab controls', () => {
     expect(historyDropdown.hasClass('visible')).toBe(false);
   });
 
+  it('defers hidden history rendering and coalesces invalidations until the dropdown opens', () => {
+    const historyDropdown = createMockEl();
+    const renderHistoryDropdown = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.historyDropdown = historyDropdown;
+    view.historyDropdownDirty = true;
+    view.historyDropdownRendered = false;
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue({
+        controllers: {
+          conversationController: { renderHistoryDropdown },
+        },
+      }),
+    };
+
+    view.updateHistoryDropdown();
+    view.updateHistoryDropdown();
+
+    expect(renderHistoryDropdown).not.toHaveBeenCalled();
+
+    view.toggleHistoryDropdown();
+
+    expect(renderHistoryDropdown).toHaveBeenCalledTimes(1);
+    const firstRenderSignal = renderHistoryDropdown.mock.calls[0][1].signal as AbortSignal;
+    expect(firstRenderSignal.aborted).toBe(false);
+
+    view.updateHistoryDropdown();
+
+    expect(renderHistoryDropdown).toHaveBeenCalledTimes(2);
+
+    view.toggleHistoryDropdown();
+    expect(firstRenderSignal.aborted).toBe(true);
+    view.updateHistoryDropdown();
+
+    expect(renderHistoryDropdown).toHaveBeenCalledTimes(2);
+  });
+
   it('persists expanded title tab ids with the tab layout snapshot', () => {
     const view = Object.create(ClaudianView.prototype) as any;
 
@@ -229,6 +267,39 @@ describe('ClaudianView tab controls', () => {
     expect(view.tabBar.setExpandedTitleTabIds).toHaveBeenCalledWith(['tab-1']);
     expect(view.updateTabBar).toHaveBeenCalledTimes(1);
     expect(view.tabManager.createTab).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClaudianView shutdown', () => {
+  it('disposes view resources when the final tab-state flush fails', async () => {
+    const error = new Error('disk full');
+    const view = Object.create(ClaudianView.prototype) as any;
+    const destroy = jest.fn().mockResolvedValue(undefined);
+    const tabBarDestroy = jest.fn();
+    const persistenceDispose = jest.fn();
+
+    Object.assign(view, {
+      cancelHistoryRendering: jest.fn(),
+      eventRefs: [],
+      mentionCacheCoordinator: {},
+      pendingTabBarUpdate: null,
+      persistTabStateImmediate: jest.fn().mockRejectedValue(error),
+      plugin: { app: { vault: { offref: jest.fn() } } },
+      restoreActiveInputToTabContent: jest.fn(),
+      scope: {},
+      tabBar: { destroy: tabBarDestroy },
+      tabManager: { destroy },
+      tabStatePersistence: { dispose: persistenceDispose },
+    });
+
+    await expect(view.onClose()).resolves.toBeUndefined();
+
+    expect(persistenceDispose).toHaveBeenCalledTimes(1);
+    expect(view.restoreActiveInputToTabContent).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(tabBarDestroy).toHaveBeenCalledTimes(1);
+    expect(view.tabManager).toBeNull();
+    expect(view.scope).toBeNull();
   });
 });
 

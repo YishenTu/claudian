@@ -32,7 +32,7 @@ export class PiModelDiscoveryService {
     }
 
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
-    const command = this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
+    const command = await this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
     const envText = getRuntimeEnvironmentText(this.plugin.settings, 'pi');
     const env = {
       ...process.env,

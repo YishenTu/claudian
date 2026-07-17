@@ -10,7 +10,20 @@ jest.mock('os', () => ({
 }));
 
 // Mock fs module
-jest.mock('fs');
+jest.mock('fs', () => {
+  const actual = jest.requireActual('fs');
+  return {
+    ...actual,
+    existsSync: jest.fn(),
+    readFileSync: jest.fn(),
+    realpathSync: jest.fn(),
+    promises: {
+      ...actual.promises,
+      readFile: jest.fn(),
+      realpath: jest.fn(),
+    },
+  };
+});
 
 // Mock obsidian
 jest.mock('obsidian', () => ({
@@ -22,6 +35,7 @@ import { Notice } from 'obsidian';
 import { PluginManager } from '@/providers/claude/plugins/PluginManager';
 
 const mockFs = fs as jest.Mocked<typeof fs>;
+const mockFsPromises = jest.mocked(fs.promises);
 
 // Create a mock CCSettingsStorage
 function createMockCCSettingsStorage() {
@@ -41,6 +55,19 @@ const customGlobalSettingsPath = path.join(customConfigDir, 'settings.json');
 describe('PluginManager', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (mockFsPromises.readFile as jest.Mock).mockImplementation(
+      async (...args: Parameters<typeof fs.readFileSync>) => {
+        if (!mockFs.existsSync(args[0] as fs.PathLike)) throw new Error('ENOENT');
+        return mockFs.readFileSync(...args);
+      },
+    );
+    (mockFsPromises.realpath as jest.Mock).mockImplementation(
+      async (filePath: fs.PathLike) => {
+        const resolved = mockFs.realpathSync(filePath);
+        if (!resolved) throw new Error('ENOENT');
+        return resolved;
+      },
+    );
   });
 
   describe('loadPlugins', () => {

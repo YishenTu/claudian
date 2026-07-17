@@ -37,7 +37,7 @@ describe('ClaudianProviderHost', () => {
 
     await host.saveSettings();
     await host.applyEnvironmentVariables('provider:codex', 'OPENAI_API_KEY=test');
-    expect(host.getResolvedProviderCliPath('codex')).toBe('/usr/bin/codex');
+    await expect(host.getResolvedProviderCliPath('codex')).resolves.toBe('/usr/bin/codex');
 
     expect(trace).toEqual(['save', 'environment', 'cli']);
     expect('registerView' in host).toBe(false);

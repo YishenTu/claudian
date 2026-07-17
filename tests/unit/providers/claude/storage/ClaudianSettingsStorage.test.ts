@@ -402,7 +402,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(getCodexProviderSettings(result).wslDistroOverride).toBe('');
     });
 
-    it('drops a persisted Codex runtime catalog while preserving hand-picked model IDs', async () => {
+    it('loads a persisted Codex model catalog with hand-picked model IDs', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
         providerConfigs: {
@@ -416,12 +416,9 @@ describe('ClaudianSettingsStorage', () => {
 
       const result = await storage.load();
       const codexSettings = getCodexProviderSettings(result);
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
-      expect(codexSettings.discoveredModels).toEqual([]);
+      expect(codexSettings.discoveredModels).toEqual(TEST_CODEX_CATALOG);
       expect(codexSettings.visibleModels).toEqual(['gpt-5.4-mini']);
-      expect(writtenContent.providerConfigs.codex).not.toHaveProperty('discoveredModels');
-      expect(writtenContent.providerConfigs.codex.visibleModels).toEqual(['gpt-5.4-mini']);
     });
 
     it('normalizes invalid Codex installation fields from provider config', async () => {
@@ -677,7 +674,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent).not.toHaveProperty('slashCommands');
     });
 
-    it('persists hand-picked Codex model IDs without the runtime catalog', async () => {
+    it('persists the Codex catalog with hand-picked model IDs', async () => {
       const settings = {
         ...DEFAULT_SETTINGS,
         providerConfigs: {
@@ -693,12 +690,12 @@ describe('ClaudianSettingsStorage', () => {
       await storage.save(settings);
 
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-      expect(writtenContent.providerConfigs.codex).not.toHaveProperty('discoveredModels');
+      expect(writtenContent.providerConfigs.codex.discoveredModels).toEqual(TEST_CODEX_CATALOG);
       expect(writtenContent.providerConfigs.codex.visibleModels).toEqual(['gpt-5.4-mini']);
       expect(getCodexProviderSettings(settings).discoveredModels).toEqual(TEST_CODEX_CATALOG);
     });
 
-    it('preserves Codex model aliases across restart without the runtime catalog', async () => {
+    it('preserves Codex model aliases and catalog across restart', async () => {
       const settings = {
         ...DEFAULT_SETTINGS,
         providerConfigs: {
@@ -717,7 +714,7 @@ describe('ClaudianSettingsStorage', () => {
       await storage.save(settings);
       const persistedContent = mockAdapter.write.mock.calls[0][1];
       const persistedSettings = JSON.parse(persistedContent);
-      expect(persistedSettings.providerConfigs.codex).not.toHaveProperty('discoveredModels');
+      expect(persistedSettings.providerConfigs.codex.discoveredModels).toEqual(TEST_CODEX_CATALOG);
       expect(persistedSettings.providerConfigs.codex.modelAliases).toEqual({
         'gpt-5.5': 'Primary',
       });
@@ -729,6 +726,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(getCodexProviderSettings(reloaded).modelAliases).toEqual({
         'gpt-5.5': 'Primary',
       });
+      expect(getCodexProviderSettings(reloaded).discoveredModels).toEqual(TEST_CODEX_CATALOG);
       updateCodexProviderSettings(reloaded, { discoveredModels: TEST_CODEX_CATALOG as any });
       expect(getCodexProviderSettings(reloaded).modelAliases).toEqual({
         'gpt-5.5': 'Primary',

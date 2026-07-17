@@ -36,14 +36,10 @@ function findFirstExistingPath(entries: string[], candidates: string[]): string 
 
 function isExistingFile(filePath: string): boolean {
   try {
-    if (fs.existsSync(filePath)) {
-      const stat = fs.statSync(filePath);
-      return stat.isFile();
-    }
+    return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
   } catch {
-    // Inaccessible path
+    return false;
   }
-  return false;
 }
 
 function findClaudeCodeNodeEntrypoint(packageRoot: string): string | null {

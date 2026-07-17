@@ -32,7 +32,9 @@ export interface MentionDropdownCallbacks {
 }
 
 export interface McpMentionProvider {
+  ensureLoaded?: () => Promise<void>;
   getContextSavingServers: () => Array<{ name: string }>;
+  isLoaded?: () => boolean;
 }
 
 export class MentionDropdownController {
@@ -47,9 +49,15 @@ export class MentionDropdownController {
   private activeContextFilter: { folderName: string; contextRoot: string } | null = null;
   private activeAgentFilter = false;
   private mcpManager: McpMentionProvider | null = null;
+  private mcpLoadPromise: Promise<void> | null = null;
+  private loadedMcpServices = new WeakSet<object>();
   private agentService: AgentMentionProvider | null = null;
+  private agentLoadPromise: Promise<void> | null = null;
+  private loadedAgentServices = new WeakSet<object>();
+  private activeMentionSearchText: string | null = null;
   private fixed: boolean;
   private debounceTimer: number | null = null;
+  private destroyed = false;
 
   constructor(
     containerEl: HTMLElement,
@@ -73,6 +81,7 @@ export class MentionDropdownController {
 
   setMcpManager(manager: McpMentionProvider | null): void {
     this.mcpManager = manager;
+    this.mcpLoadPromise = null;
   }
 
   setAgentService(service: AgentMentionProvider | null): void {
@@ -80,6 +89,7 @@ export class MentionDropdownController {
       this.hide();
     }
     this.agentService = service;
+    this.agentLoadPromise = null;
   }
 
   preScanExternalContexts(): void {
@@ -102,6 +112,7 @@ export class MentionDropdownController {
   hide(): void {
     this.dropdown.hide();
     this.mentionStartIndex = -1;
+    this.activeMentionSearchText = null;
   }
 
   containsElement(el: Node): boolean {
@@ -109,9 +120,18 @@ export class MentionDropdownController {
   }
 
   destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
     if (this.debounceTimer !== null) {
       window.clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
     }
+    this.activeMentionSearchText = null;
+    this.mentionStartIndex = -1;
+    this.agentLoadPromise = null;
+    this.mcpLoadPromise = null;
+    this.agentService = null;
+    this.mcpManager = null;
     this.dropdown.destroy();
   }
 
@@ -157,6 +177,7 @@ export class MentionDropdownController {
       const searchText = textBeforeCursor.substring(lastAtIndex + 1);
 
       this.mentionStartIndex = lastAtIndex;
+      this.activeMentionSearchText = searchText;
       this.showMentionDropdown(searchText);
     }, 200);
   }
@@ -197,6 +218,9 @@ export class MentionDropdownController {
   }
 
   private showMentionDropdown(searchText: string): void {
+    if (this.destroyed) return;
+    this.ensureAgentServiceLoaded();
+    this.ensureMcpServiceLoaded();
     const searchLower = searchText.toLowerCase();
     this.filteredMentionItems = [];
     this.filteredContextFiles = [];
@@ -343,6 +367,72 @@ export class MentionDropdownController {
     this.selectedMentionIndex = vaultItemCount > 0 ? firstVaultItemIndex : 0;
 
     this.renderMentionDropdown();
+  }
+
+  private ensureAgentServiceLoaded(): void {
+    const service = this.agentService;
+    if (
+      !service?.ensureLoaded
+      || service.isLoaded?.() === true
+      || this.loadedAgentServices.has(service)
+      || this.agentLoadPromise
+    ) {
+      return;
+    }
+
+    const promise = service.ensureLoaded();
+    this.agentLoadPromise = promise;
+    void promise.then(() => {
+      this.loadedAgentServices.add(service);
+      if (
+        !this.destroyed
+        &&
+        this.agentService === service
+        && this.activeMentionSearchText !== null
+        && this.mentionStartIndex >= 0
+      ) {
+        this.showMentionDropdown(this.activeMentionSearchText);
+      }
+    }).catch(() => {
+      // Keep cached agent entries available if a lazy scan fails.
+    }).finally(() => {
+      if (this.agentLoadPromise === promise) {
+        this.agentLoadPromise = null;
+      }
+    });
+  }
+
+  private ensureMcpServiceLoaded(): void {
+    const service = this.mcpManager;
+    if (
+      this.destroyed
+      || !service?.ensureLoaded
+      || service.isLoaded?.() === true
+      || this.loadedMcpServices.has(service)
+      || this.mcpLoadPromise
+    ) {
+      return;
+    }
+
+    const promise = service.ensureLoaded();
+    this.mcpLoadPromise = promise;
+    void promise.then(() => {
+      this.loadedMcpServices.add(service);
+      if (
+        !this.destroyed
+        && this.mcpManager === service
+        && this.activeMentionSearchText !== null
+        && this.mentionStartIndex >= 0
+      ) {
+        this.showMentionDropdown(this.activeMentionSearchText);
+      }
+    }).catch(() => {
+      // Keep cached MCP entries available if a lazy load fails.
+    }).finally(() => {
+      if (this.mcpLoadPromise === promise) {
+        this.mcpLoadPromise = null;
+      }
+    });
   }
 
   private appendVaultItems(searchLower: string): number {

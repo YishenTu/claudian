@@ -1,10 +1,10 @@
 import type { SlashCommand as SDKSlashCommand } from '@anthropic-ai/claude-agent-sdk';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { SlashCommand } from '../../../core/types';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
+import { loadClaudeAgentQuery } from '../loadClaudeAgentSdk';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import {
   getClaudeProviderSettings,
@@ -33,7 +33,7 @@ export async function probeRuntimeCommands(plugin: ProviderHost): Promise<SlashC
   const vaultPath = getVaultPath(plugin.app);
   if (!vaultPath) return [];
 
-  const cliPath = plugin.getResolvedProviderCliPath('claude');
+  const cliPath = await plugin.getResolvedProviderCliPath('claude');
   if (!cliPath) return [];
 
   const customEnv = parseEnvironmentVariables(
@@ -52,6 +52,7 @@ export async function probeRuntimeCommands(plugin: ProviderHost): Promise<SlashC
   };
 
   try {
+    const agentQuery = await loadClaudeAgentQuery();
     const conversation = agentQuery({
       prompt: '',
       options: {

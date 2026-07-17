@@ -24,7 +24,7 @@ export interface ClaudeDynamicUpdateDeps {
   getCurrentConfig: () => PersistentQueryConfig | null;
   mutateCurrentConfig: (mutate: (config: PersistentQueryConfig) => void) => void;
   getVaultPath: () => string | null;
-  getCliPath: () => string | null;
+  getCliPath: () => Promise<string | null>;
   getScopedSettings: () => ClaudianSettings;
   getPermissionMode: () => PermissionMode;
   resolveSDKPermissionMode: (mode: PermissionMode) => SDKPermissionMode;
@@ -56,7 +56,7 @@ export async function applyClaudeDynamicUpdates(
     return;
   }
 
-  const cliPath = deps.getCliPath();
+  const cliPath = await deps.getCliPath();
   if (!cliPath) {
     return;
   }

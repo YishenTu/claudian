@@ -52,6 +52,7 @@ export interface FeatureHost {
   renameConversation(id: string, title: string): Promise<void>;
   updateConversation(id: string, updates: Partial<Conversation>): Promise<void>;
   getConversationById(id: string): Promise<Conversation | null>;
+  getCachedConversation(id: string): Conversation | null;
   getConversationSync(id: string): Conversation | null;
   getConversationList(): ConversationMeta[];
 

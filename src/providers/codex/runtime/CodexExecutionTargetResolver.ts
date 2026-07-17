@@ -1,4 +1,5 @@
-import { execFileSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
+import { promisify } from 'util';
 
 import { getCodexProviderSettings } from '../settings';
 import type {
@@ -91,13 +92,29 @@ export function parseDefaultWslDistroListOutput(output: string | Buffer): string
   return undefined;
 }
 
+const execFileAsync = promisify(execFile);
+
 function resolveDefaultWslDistroName(): string | undefined {
   try {
     const output = execFileSync('wsl.exe', ['--list', '--verbose'], {
       stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5_000,
       windowsHide: true,
     });
     return parseDefaultWslDistroListOutput(output);
+  } catch {
+    return undefined;
+  }
+}
+
+async function resolveDefaultWslDistroNameAsync(): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync('wsl.exe', ['--list', '--verbose'], {
+      encoding: null,
+      timeout: 5_000,
+      windowsHide: true,
+    });
+    return parseDefaultWslDistroListOutput(stdout);
   } catch {
     return undefined;
   }
@@ -121,6 +138,42 @@ export function resolveCodexExecutionTarget(
       || inferWslDistroFromWindowsPath(options.hostVaultPath)
       || options.resolveDefaultWslDistro?.()
       || resolveDefaultWslDistroName();
+
+    return {
+      method: 'wsl',
+      platformFamily: 'unix',
+      platformOs: 'linux',
+      distroName,
+    };
+  }
+
+  return {
+    method: 'native-windows',
+    platformFamily: 'windows',
+    platformOs: 'windows',
+  };
+}
+
+export async function resolveCodexExecutionTargetAsync(
+  options: ResolveCodexExecutionTargetOptions,
+): Promise<CodexExecutionTarget> {
+  const hostPlatform = options.hostPlatform ?? process.platform;
+  if (hostPlatform !== 'win32') {
+    return {
+      method: 'host-native',
+      platformFamily: resolveHostPlatformFamily(hostPlatform),
+      platformOs: resolveHostPlatformOs(hostPlatform),
+    };
+  }
+
+  const codexSettings = getCodexProviderSettings(options.settings);
+  if (codexSettings.installationMethod === 'wsl') {
+    const distroName = codexSettings.wslDistroOverride
+      || inferWslDistroFromWindowsPath(options.hostVaultPath)
+      || (options.resolveDefaultWslDistro
+        ? await Promise.resolve(options.resolveDefaultWslDistro())
+        : undefined)
+      || await resolveDefaultWslDistroNameAsync();
 
     return {
       method: 'wsl',

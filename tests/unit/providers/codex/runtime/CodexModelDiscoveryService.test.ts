@@ -7,6 +7,7 @@ const mockProcessStart = jest.fn();
 const mockProcessShutdown = jest.fn().mockResolvedValue(undefined);
 const mockProcessStderr = jest.fn().mockReturnValue('');
 const mockResolveLaunchSpec = jest.fn();
+const mockInitializeTransport = jest.fn();
 
 jest.mock('@/providers/codex/runtime/CodexRpcTransport', () => ({
   CodexRpcTransport: jest.fn().mockImplementation(() => ({
@@ -26,12 +27,7 @@ jest.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
 }));
 
 jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => ({
-  initializeCodexAppServerTransport: jest.fn().mockResolvedValue({
-    userAgent: 'test/0.1',
-    codexHome: '/home/user/.codex',
-    platformFamily: 'unix',
-    platformOs: 'linux',
-  }),
+  initializeCodexAppServerTransport: (...args: unknown[]) => mockInitializeTransport(...args),
   resolveCodexAppServerLaunchSpec: (...args: unknown[]) => mockResolveLaunchSpec(...args),
 }));
 
@@ -67,6 +63,12 @@ function createPlugin(enabled = true) {
 describe('CodexModelDiscoveryService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInitializeTransport.mockResolvedValue({
+      userAgent: 'test/0.1',
+      codexHome: '/home/user/.codex',
+      platformFamily: 'unix',
+      platformOs: 'linux',
+    });
     mockResolveLaunchSpec.mockReturnValue({
       targetCwd: '/workspace',
       command: 'codex',
@@ -150,5 +152,87 @@ describe('CodexModelDiscoveryService', () => {
     });
     expect(mockProcessStart).not.toHaveBeenCalled();
     expect(mockProcessShutdown).not.toHaveBeenCalled();
+  });
+
+  it('disposes transport and shuts down process when aborted', async () => {
+    let finishInitialization!: (value: {
+      codexHome: string;
+      platformFamily: string;
+      platformOs: string;
+      userAgent: string;
+    }) => void;
+    mockInitializeTransport.mockReturnValueOnce(new Promise((resolve) => {
+      finishInitialization = resolve;
+    }));
+
+    const service = new CodexModelDiscoveryService(createPlugin());
+    const controller = new AbortController();
+
+    const discoveryPromise = service.discoverModels(controller.signal);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    controller.abort();
+    finishInitialization({
+      userAgent: 'test/0.1',
+      codexHome: '/home/user/.codex',
+      platformFamily: 'unix',
+      platformOs: 'linux',
+    });
+
+    const result = await discoveryPromise;
+    if (result.kind !== 'completed') {
+      throw new Error('Expected completed Codex model discovery');
+    }
+    expect(result.diagnostics).toMatch(/cancelled/i);
+    expect(mockTransportDispose).toHaveBeenCalled();
+    expect(mockProcessShutdown).toHaveBeenCalled();
+  });
+
+  it('returns cancellation diagnostics when already aborted before start', async () => {
+    const service = new CodexModelDiscoveryService(createPlugin());
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await service.discoverModels(controller.signal);
+    if (result.kind !== 'completed') {
+      throw new Error('Expected completed Codex model discovery');
+    }
+
+    expect(result.diagnostics).toMatch(/cancelled/i);
+    expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
+    expect(mockProcessStart).not.toHaveBeenCalled();
+  });
+
+  it('does not start Codex when aborted during launch-spec resolution', async () => {
+    let resolveLaunchSpec!: (value: {
+      args: string[];
+      command: string;
+      env: Record<string, string>;
+      spawnCwd: string;
+      targetCwd: string;
+    }) => void;
+    mockResolveLaunchSpec.mockReturnValueOnce(new Promise((resolve) => {
+      resolveLaunchSpec = resolve;
+    }));
+
+    const service = new CodexModelDiscoveryService(createPlugin());
+    const controller = new AbortController();
+    const discoveryPromise = service.discoverModels(controller.signal);
+
+    controller.abort();
+    resolveLaunchSpec({
+      targetCwd: '/workspace',
+      command: 'codex',
+      args: ['app-server', '--listen', 'stdio://'],
+      spawnCwd: '/workspace',
+      env: {},
+    });
+
+    await expect(discoveryPromise).resolves.toEqual({
+      kind: 'completed',
+      diagnostics: 'Codex model discovery was cancelled',
+      models: [],
+    });
+    expect(mockProcessStart).not.toHaveBeenCalled();
+    expect(mockTransportStart).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,8 @@ export interface ChatRuntime {
   readonly providerId: ProviderId;
 
   getCapabilities(): Readonly<ProviderCapabilities>;
+  /** Loads provider-owned state required for synchronous turn encoding. Must be idempotent. */
+  prepareForTurn?(): Promise<void>;
   prepareTurn(request: ChatTurnRequest): PreparedChatTurn;
   onReadyStateChange(listener: (ready: boolean) => void): () => void;
   setResumeCheckpoint(checkpointId: string | undefined): void;

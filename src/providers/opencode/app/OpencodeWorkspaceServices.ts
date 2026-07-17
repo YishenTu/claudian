@@ -30,7 +30,6 @@ export async function createOpencodeWorkspaceServices(
 ): Promise<OpencodeWorkspaceServices> {
   const agentStorage = new OpencodeAgentStorage(vaultAdapter);
   const agentMentionProvider = new OpencodeAgentMentionProvider(agentStorage);
-  await agentMentionProvider.loadAgents();
 
   return {
     agentStorage,
@@ -43,6 +42,7 @@ export async function createOpencodeWorkspaceServices(
     refreshAgentMentions: async () => {
       await agentMentionProvider.loadAgents();
     },
+    prepareSettings: async () => agentMentionProvider.loadAgents(),
   };
 }
 

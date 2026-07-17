@@ -43,10 +43,31 @@ function computeOpencodeEnvHash(envText: string): string {
     .join('|');
 }
 
+function invalidateOpencodeConversationSessions(conversations: Conversation[]): Conversation[] {
+  const invalidatedConversations: Conversation[] = [];
+  for (const conversation of conversations) {
+    if (conversation.providerId !== 'opencode') {
+      continue;
+    }
+
+    const state = getOpencodeState(conversation.providerState);
+    if (!conversation.sessionId && !state.databasePath) {
+      continue;
+    }
+
+    conversation.sessionId = null;
+    conversation.providerState = undefined;
+    invalidatedConversations.push(conversation);
+  }
+  return invalidatedConversations;
+}
+
 export const opencodeSettingsReconciler: ProviderSettingsReconciler = {
   handleEnvironmentChange(settings: Record<string, unknown>): boolean {
     return clearOpencodeDiscoveryState(settings);
   },
+
+  invalidateConversationSessions: invalidateOpencodeConversationSessions,
 
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
@@ -60,21 +81,7 @@ export const opencodeSettingsReconciler: ProviderSettingsReconciler = {
       return { changed: false, invalidatedConversations: [] };
     }
 
-    const invalidatedConversations: Conversation[] = [];
-    for (const conversation of conversations) {
-      if (conversation.providerId !== 'opencode') {
-        continue;
-      }
-
-      const state = getOpencodeState(conversation.providerState);
-      if (!conversation.sessionId && !state.databasePath) {
-        continue;
-      }
-
-      conversation.sessionId = null;
-      conversation.providerState = undefined;
-      invalidatedConversations.push(conversation);
-    }
+    const invalidatedConversations = invalidateOpencodeConversationSessions(conversations);
 
     updateOpencodeProviderSettings(settings, { environmentHash: currentHash });
     return { changed: true, invalidatedConversations };

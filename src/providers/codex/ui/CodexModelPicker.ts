@@ -89,18 +89,29 @@ export function renderCodexModelPicker(
     context.refreshModelSelectors();
   };
 
-  renderProviderModelPicker({
+  let refreshPicker = (): void => {};
+  const picker = renderProviderModelPicker({
+    checkCatalogFreshnessWhenCached: true,
     container,
     emptyCatalogText: 'No Codex models discovered yet. Click Discover to query app-server.',
     failedCatalogText: 'Could not load models from Codex app-server. Check the CLI path and login state, then try again.',
     getState,
     initiallyOpen: getCodexProviderSettings(settingsBag).discoveredModels.length === 0,
-    async loadCatalog() {
-      if (!workspace.refreshModelCatalog) {
+    async loadCatalog(force) {
+      if (!workspace.modelCatalogCoordinator) {
         return 'failed';
       }
 
-      const result = await workspace.refreshModelCatalog();
+      const result = await workspace.modelCatalogCoordinator.ensureFresh('model-picker', { force });
+      if (result.backgroundRefresh) {
+        void result.backgroundRefresh.then(
+          () => {
+            context.refreshModelSelectors();
+            refreshPicker();
+          },
+          () => refreshPicker(),
+        );
+      }
       if (result.diagnostics) {
         new Notice(`Codex model discovery failed: ${result.diagnostics}`);
         return 'failed';
@@ -121,4 +132,5 @@ export function renderCodexModelPicker(
     searchPlaceholder: 'Filter by model name, description, or ID...',
     settingDescription: 'Choose which app-server models appear in the Codex selector. Existing session models stay pinned even when hidden here.',
   });
+  refreshPicker = picker.refresh;
 }

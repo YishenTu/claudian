@@ -40,12 +40,10 @@ export async function createClaudeWorkspaceServices(
   adapter: VaultFileAdapter,
 ): Promise<ClaudeWorkspaceServices> {
   const claudeStorage = new StorageService(plugin, adapter);
-  await claudeStorage.ensureDirectories();
 
   const cliResolver = new ClaudeCliResolver();
   const mcpStorage = claudeStorage.mcp;
   const mcpManager = new McpServerManager(mcpStorage);
-  await mcpManager.loadServers();
 
   const vaultPath = getVaultPath(plugin.app) ?? '';
   const getClaudeConfigDir = () => resolveClaudeConfigDir({
@@ -61,11 +59,9 @@ export async function createClaudeWorkspaceServices(
     claudeStorage.ccSettings,
     getClaudeConfigDir,
   );
-  await pluginManager.loadPlugins();
 
   const agentStorage = claudeStorage.agents;
   const agentManager = new AgentManager(vaultPath, pluginManager, getClaudeConfigDir);
-  await agentManager.loadAgents();
 
   const commandCatalog = new ClaudeCommandCatalog(
     claudeStorage.commands,
@@ -87,6 +83,13 @@ export async function createClaudeWorkspaceServices(
     settingsTabRenderer: claudeSettingsTabRenderer,
     refreshAgentMentions: async () => {
       await pluginManager.loadPlugins();
+      await agentManager.loadAgents();
+    },
+    prepareSettings: async () => {
+      await Promise.all([
+        mcpManager.loadServers(),
+        pluginManager.loadPlugins(),
+      ]);
       await agentManager.loadAgents();
     },
   };

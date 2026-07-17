@@ -6,7 +6,7 @@
  * - settings.json: enabled state (project overrides global)
  */
 
-import * as fs from 'fs';
+import { promises as fs } from 'fs';
 import { Notice } from 'obsidian';
 import * as path from 'path';
 
@@ -19,21 +19,17 @@ interface SettingsFile {
   enabledPlugins?: Record<string, boolean>;
 }
 
-function readJsonFile<T>(filePath: string): T | null {
+async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
-    if (!fs.existsSync(filePath)) {
-      return null;
-    }
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(content) as T;
+    return JSON.parse(await fs.readFile(filePath, 'utf-8')) as T;
   } catch {
     return null;
   }
 }
 
-function normalizePathForComparison(p: string): string {
+async function normalizePathForComparison(p: string): Promise<string> {
   try {
-    const resolved = fs.realpathSync(p);
+    const resolved = await fs.realpath(p);
     if (typeof resolved === 'string' && resolved.length > 0) {
       return resolved;
     }
@@ -44,14 +40,14 @@ function normalizePathForComparison(p: string): string {
   return path.resolve(p);
 }
 
-function selectInstalledPluginEntry(
+async function selectInstalledPluginEntry(
   entries: InstalledPluginEntry[],
   normalizedVaultPath: string
-): InstalledPluginEntry | null {
+): Promise<InstalledPluginEntry | null> {
   for (const entry of entries) {
     if (entry.scope !== 'project') continue;
     if (!entry.projectPath) continue;
-    if (normalizePathForComparison(entry.projectPath) === normalizedVaultPath) {
+    if (await normalizePathForComparison(entry.projectPath) === normalizedVaultPath) {
       return entry;
     }
   }
@@ -72,6 +68,7 @@ export class PluginManager {
   private vaultPath: string;
   private resolveConfigDir: () => string;
   private plugins: PluginInfo[] = [];
+  private loadPromise: Promise<void> | null = null;
 
   constructor(
     vaultPath: string,
@@ -84,19 +81,33 @@ export class PluginManager {
   }
 
   async loadPlugins(): Promise<void> {
+    if (this.loadPromise) {
+      return this.loadPromise;
+    }
+    const promise = this.loadPluginsInternal();
+    this.loadPromise = promise;
+    try {
+      await promise;
+    } finally {
+      if (this.loadPromise === promise) {
+        this.loadPromise = null;
+      }
+    }
+  }
+
+  private async loadPluginsInternal(): Promise<void> {
     const configDir = this.resolveConfigDir();
-    const installedPlugins = readJsonFile<InstalledPluginsFile>(
-      path.join(configDir, 'plugins', 'installed_plugins.json'),
-    );
-    const globalSettings = readJsonFile<SettingsFile>(path.join(configDir, 'settings.json'));
-    const projectSettings = await this.loadProjectSettings();
+    const [installedPlugins, globalSettings, projectSettings, normalizedVaultPath] = await Promise.all([
+      readJsonFile<InstalledPluginsFile>(path.join(configDir, 'plugins', 'installed_plugins.json')),
+      readJsonFile<SettingsFile>(path.join(configDir, 'settings.json')),
+      this.loadProjectSettings(),
+      normalizePathForComparison(this.vaultPath),
+    ]);
 
     const globalEnabled = globalSettings?.enabledPlugins ?? {};
     const projectEnabled = projectSettings?.enabledPlugins ?? {};
 
     const plugins: PluginInfo[] = [];
-    const normalizedVaultPath = normalizePathForComparison(this.vaultPath);
-
     if (installedPlugins?.plugins) {
       for (const [pluginId, entries] of Object.entries(installedPlugins.plugins)) {
         if (!entries || entries.length === 0) continue;
@@ -105,7 +116,7 @@ export class PluginManager {
         if (!Array.isArray(entries)) {
           new Notice(`Claudian: plugin "${pluginId}" has malformed entry in installed_plugins.json (expected array, got ${typeof entries})`);
         }
-        const entry = selectInstalledPluginEntry(entriesArray, normalizedVaultPath);
+        const entry = await selectInstalledPluginEntry(entriesArray, normalizedVaultPath);
         if (!entry) continue;
 
         const scope: PluginScope = entry.scope === 'project' ? 'project' : 'user';

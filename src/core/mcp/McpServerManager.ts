@@ -9,13 +9,40 @@ export interface McpStorageAdapter {
 export class McpServerManager {
   private servers: ManagedMcpServer[] = [];
   private storage: McpStorageAdapter;
+  private loadPromise: Promise<void> | null = null;
+  private loaded = false;
 
   constructor(storage: McpStorageAdapter) {
     this.storage = storage;
   }
 
   async loadServers(): Promise<void> {
-    this.servers = await this.storage.load();
+    if (this.loadPromise) {
+      return this.loadPromise;
+    }
+    const promise = this.storage.load().then((servers) => {
+      this.servers = servers;
+      this.loaded = true;
+    });
+    this.loadPromise = promise;
+    try {
+      await promise;
+    } finally {
+      if (this.loadPromise === promise) {
+        this.loadPromise = null;
+      }
+    }
+  }
+
+  async ensureLoaded(): Promise<void> {
+    if (this.loaded) {
+      return;
+    }
+    await this.loadServers();
+  }
+
+  isLoaded(): boolean {
+    return this.loaded;
   }
 
   getServers(): ManagedMcpServer[] {

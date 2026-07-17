@@ -24,6 +24,8 @@ function runConversationAction(action: () => Promise<void>, failureMessage: stri
   });
 }
 
+const DEFAULT_HISTORY_PAGE_SIZE = 100;
+
 export interface ConversationCallbacks {
   onNewConversation?: () => void;
   onConversationLoaded?: () => void;
@@ -52,6 +54,8 @@ export interface ConversationControllerDeps {
   ensureServiceForConversation?: (conversation: Conversation | null) => Promise<void>;
   dismissPendingInlinePrompts?: () => void;
   awaitBackgroundWork?: () => Promise<void>;
+  /** True once the owning tab has begun teardown. */
+  isDisposed?: () => boolean;
 }
 
 type SaveOptions = {
@@ -74,6 +78,9 @@ type HistoryRenderOptions = {
   getConversationOpenState?: (id: string) => HistoryConversationOpenState;
   getConversationStatus?: (id: string) => HistoryConversationStatus;
   onRerender: () => void;
+  signal?: AbortSignal;
+  pageSize?: number;
+  visibleCount?: number;
 };
 
 export class ConversationController {
@@ -253,6 +260,7 @@ export class ConversationController {
   async switchTo(id: string): Promise<void> {
     const { plugin, state, subagentManager } = this.deps;
 
+    if (this.deps.isDisposed?.()) return;
     if (id === state.currentConversationId) return;
     if (state.isStreaming) return;
     if (state.isSwitchingConversation) return;
@@ -265,17 +273,20 @@ export class ConversationController {
       if (this.deps.awaitBackgroundWork) {
         await this.deps.awaitBackgroundWork();
       }
+      if (this.deps.isDisposed?.()) return;
       subagentManager.orphanAllActive();
       await this.save();
+      if (this.deps.isDisposed?.()) return;
 
       subagentManager.clear();
 
       const conversation = await plugin.switchConversation(id);
-      if (!conversation) {
+      if (!conversation || this.deps.isDisposed?.()) {
         return;
       }
 
       await this.deps.ensureServiceForConversation?.(conversation);
+      if (this.deps.isDisposed?.()) return;
 
       this.deps.getInputEl().value = '';
       this.deps.clearQueuedMessage();
@@ -583,6 +594,7 @@ export class ConversationController {
     options: HistoryRenderOptions
   ): void {
     const { plugin, state } = this.deps;
+    if (options.signal?.aborted) return;
 
     container.empty();
 
@@ -601,8 +613,12 @@ export class ConversationController {
     const conversations = [...allConversations].sort((a, b) => {
       return (b.lastResponseAt ?? b.createdAt) - (a.lastResponseAt ?? a.createdAt);
     });
+    const pageSize = Math.max(1, options.pageSize ?? DEFAULT_HISTORY_PAGE_SIZE);
+    const visibleCount = Math.max(pageSize, options.visibleCount ?? pageSize);
+    const visibleConversations = conversations.slice(0, visibleCount);
 
-    for (const conv of conversations) {
+    for (const conv of visibleConversations) {
+      if (options.signal?.aborted) return;
       const fallbackOpenState: HistoryConversationOpenState =
         conv.id === state.currentConversationId ? 'current' : 'closed';
       const conversationStatus = this.getHistoryConversationStatus(conv.id, fallbackOpenState, options);
@@ -739,6 +755,20 @@ export class ConversationController {
           ),
           'Failed to delete conversation',
         );
+      });
+    }
+
+    if (visibleConversations.length < conversations.length && !options.signal?.aborted) {
+      const loadMoreButton = list.createEl('button', {
+        cls: 'claudian-history-load-more',
+        text: `Load more (${conversations.length - visibleConversations.length} remaining)`,
+      });
+      loadMoreButton.addEventListener('click', () => {
+        if (options.signal?.aborted) return;
+        this.renderHistoryItems(container, {
+          ...options,
+          visibleCount: visibleCount + pageSize,
+        });
       });
     }
   }

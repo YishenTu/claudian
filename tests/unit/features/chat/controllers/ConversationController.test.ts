@@ -777,6 +777,46 @@ describe('ConversationController', () => {
         expect(container.children.length).toBe(2); // header + list
       });
 
+      it('paginates large history lists and loads the next bounded page on demand', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue(
+          Array.from({ length: 125 }, (_, index) => ({
+            id: `conv-${index}`,
+            title: `Conversation ${index}`,
+            createdAt: 125 - index,
+          })),
+        );
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          pageSize: 25,
+        });
+
+        let list = container.children[1];
+        expect(list.querySelectorAll('.claudian-history-item')).toHaveLength(25);
+        const loadMore = list.querySelector('.claudian-history-load-more');
+        expect(loadMore).not.toBeNull();
+
+        loadMore!.click();
+        list = container.children[1];
+        expect(list.querySelectorAll('.claudian-history-item')).toHaveLength(50);
+        expect(list.querySelector('.claudian-history-load-more')).not.toBeNull();
+      });
+
+      it('does not render when the history render signal is already aborted', () => {
+        const container = createMockEl();
+        container.createDiv({ cls: 'sentinel' });
+        const abortController = new AbortController();
+        abortController.abort();
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          signal: abortController.signal,
+        });
+
+        expect(container.querySelector('.sentinel')).not.toBeNull();
+      });
+
       it('should highlight conversations already open in a tab', () => {
         const container = createMockEl();
 

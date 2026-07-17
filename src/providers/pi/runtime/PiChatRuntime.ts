@@ -287,7 +287,7 @@ export class PiChatRuntime implements ChatRuntime {
 
     const allowSessionCreation = options?.allowSessionCreation !== false;
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
-    const resolvedCliPath = this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
+    const resolvedCliPath = await this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
     const runtimeEnvText = getRuntimeEnvironmentText(this.plugin.settings, 'pi');
     if (allowSessionCreation) {
       const materialized = await this.materializePendingFork(

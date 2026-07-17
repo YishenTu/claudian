@@ -37,6 +37,25 @@ function computePiEnvHash(envText: string): string {
     .join('|');
 }
 
+function invalidatePiConversationSessions(conversations: Conversation[]): Conversation[] {
+  const invalidatedConversations: Conversation[] = [];
+  for (const conversation of conversations) {
+    if (conversation.providerId !== 'pi') {
+      continue;
+    }
+
+    const state = getPiState(conversation.providerState);
+    if (!conversation.sessionId && !state.sessionId && !state.sessionFile) {
+      continue;
+    }
+
+    conversation.sessionId = null;
+    conversation.providerState = undefined;
+    invalidatedConversations.push(conversation);
+  }
+  return invalidatedConversations;
+}
+
 export const piSettingsReconciler: ProviderSettingsReconciler = {
   handleEnvironmentChange(settings: Record<string, unknown>): boolean {
     const current = getPiProviderSettings(settings);
@@ -48,6 +67,8 @@ export const piSettingsReconciler: ProviderSettingsReconciler = {
     });
     return true;
   },
+
+  invalidateConversationSessions: invalidatePiConversationSessions,
 
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
@@ -61,21 +82,7 @@ export const piSettingsReconciler: ProviderSettingsReconciler = {
       return { changed: false, invalidatedConversations: [] };
     }
 
-    const invalidatedConversations: Conversation[] = [];
-    for (const conversation of conversations) {
-      if (conversation.providerId !== 'pi') {
-        continue;
-      }
-
-      const state = getPiState(conversation.providerState);
-      if (!conversation.sessionId && !state.sessionId && !state.sessionFile) {
-        continue;
-      }
-
-      conversation.sessionId = null;
-      conversation.providerState = undefined;
-      invalidatedConversations.push(conversation);
-    }
+    const invalidatedConversations = invalidatePiConversationSessions(conversations);
 
     updatePiProviderSettings(settings, { environmentHash: currentHash });
     return { changed: true, invalidatedConversations };

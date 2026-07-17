@@ -89,6 +89,8 @@ export interface ProviderSettingsStorageAdapter {
 export interface ProviderSettingsReconciler {
   handleEnvironmentChange?(settings: Record<string, unknown>): boolean;
 
+  invalidateConversationSessions(conversations: Conversation[]): Conversation[];
+
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
     conversations: Conversation[],
@@ -109,8 +111,24 @@ export interface AppTabManagerState {
 }
 
 /** Provider-neutral session metadata storage. */
+export interface SessionMetadataListOptions {
+  /** Receives successful reads incrementally. Batches may follow completion order. */
+  onBatch?: (metadata: SessionMetadata[]) => void;
+  batchSize?: number;
+}
+
+export interface SessionMetadataScanResult {
+  metadata: SessionMetadata[];
+  /** False when any metadata directory or listed metadata file could not be read. */
+  complete: boolean;
+  /** Files that were read successfully but did not contain valid session metadata. */
+  invalidMetadataCount: number;
+}
+
 export interface AppSessionStorage {
-  listMetadata(): Promise<SessionMetadata[]>;
+  scanMetadata(options?: SessionMetadataListOptions): Promise<SessionMetadataScanResult>;
+  listMetadata(options?: SessionMetadataListOptions): Promise<SessionMetadata[]>;
+  loadMetadata(id: string): Promise<SessionMetadata | null>;
   saveMetadata(meta: SessionMetadata): Promise<void>;
   deleteMetadata(id: string): Promise<void>;
   toSessionMetadata(conv: Conversation): SessionMetadata;
@@ -150,6 +168,8 @@ export interface AppAgentStorage {
 export type AgentMentionSource = AgentDefinition['source'];
 
 export interface AgentMentionProvider {
+  ensureLoaded?(): Promise<void>;
+  isLoaded?(): boolean;
   searchAgents(query: string): Array<{
     id: string;
     name: string;
@@ -346,7 +366,7 @@ export interface ProviderCliResolver {
   resolveFromSettings(
     settings: Record<string, unknown>,
     context?: ProviderCliResolutionContext,
-  ): string | null;
+  ): string | null | Promise<string | null>;
   reset(): void;
 }
 
@@ -398,6 +418,8 @@ export interface ProviderWorkspaceServices {
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
   refreshAgentMentions?(): Promise<void>;
   refreshModelCatalog?(): Promise<ProviderModelCatalogRefreshResult>;
+  prepareSettings?(): Promise<void>;
+  dispose?(): Promise<void> | void;
 }
 
 export interface ProviderModelCatalogRefreshResult {

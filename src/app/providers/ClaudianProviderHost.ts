@@ -70,10 +70,10 @@ export class ClaudianProviderHost implements ProviderHost {
     return this.plugin.applyEnvironmentVariablesBatch(updates);
   }
 
-  getResolvedProviderCliPath(
+  async getResolvedProviderCliPath(
     providerId: ProviderId,
     context?: ProviderCliResolutionContext,
-  ): string | null {
+  ): Promise<string | null> {
     return this.plugin.getResolvedProviderCliPath(providerId, context);
   }
 

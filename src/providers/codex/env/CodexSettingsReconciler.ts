@@ -9,7 +9,7 @@ import { codexChatUIConfig } from '../ui/CodexChatUIConfig';
 
 const ENV_HASH_KEYS = ['OPENAI_MODEL', 'OPENAI_BASE_URL', 'OPENAI_API_KEY'];
 
-function computeCodexEnvHash(envText: string): string {
+export function computeCodexEnvHash(envText: string): string {
   const envVars = parseEnvironmentVariables(envText || '');
   return ENV_HASH_KEYS
     .filter(key => envVars[key])
@@ -18,7 +18,22 @@ function computeCodexEnvHash(envText: string): string {
     .join('|');
 }
 
+function invalidateCodexConversationSessions(conversations: Conversation[]): Conversation[] {
+  const invalidatedConversations: Conversation[] = [];
+  for (const conversation of conversations) {
+    const state = getCodexState(conversation.providerState);
+    if (conversation.providerId === 'codex' && (conversation.sessionId || state.threadId)) {
+      conversation.sessionId = null;
+      conversation.providerState = undefined;
+      invalidatedConversations.push(conversation);
+    }
+  }
+  return invalidatedConversations;
+}
+
 export const codexSettingsReconciler: ProviderSettingsReconciler = {
+  invalidateConversationSessions: invalidateCodexConversationSessions,
+
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
     conversations: Conversation[],
@@ -31,15 +46,7 @@ export const codexSettingsReconciler: ProviderSettingsReconciler = {
       return { changed: false, invalidatedConversations: [] };
     }
 
-    const invalidatedConversations: Conversation[] = [];
-    for (const conv of conversations) {
-      const state = getCodexState(conv.providerState);
-      if (conv.providerId === 'codex' && (conv.sessionId || state.threadId)) {
-        conv.sessionId = null;
-        conv.providerState = undefined;
-        invalidatedConversations.push(conv);
-      }
-    }
+    const invalidatedConversations = invalidateCodexConversationSessions(conversations);
 
     const currentModel = typeof settings.model === 'string' ? settings.model : '';
     const nextModel = resolveCodexModelSelection(settings, currentModel);

@@ -275,7 +275,7 @@ export class CodexChatRuntime implements ChatRuntime {
     this.assertLifecycleCurrent(generation);
     const promptSettings = this.getSystemPromptSettings();
     const promptKey = computeSystemPromptKey(promptSettings);
-    const launchSpec = resolveCodexAppServerLaunchSpec(this.plugin, this.providerId);
+    const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, this.providerId);
     const clientConfigKey = [promptKey, JSON.stringify({
       command: launchSpec.command,
       args: launchSpec.args,

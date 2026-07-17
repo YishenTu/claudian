@@ -36,7 +36,6 @@ export const codexProviderRegistration: ProviderModule = {
       'codexEnabled',
       'lastCodexEnvHash',
     ],
-    runtimeOnlyFields: ['discoveredModels'],
     normalizeStored(target, stored) {
       const normalization = normalizeCodexStoredConfig(stored);
       target.providerConfigs ??= {};
