@@ -67,7 +67,15 @@ function inferPreviousModelEnvironmentType(
   return previousOption.environmentTypes[0];
 }
 
+function invalidateClaudeConversationSessions(conversations: Conversation[]): Conversation[] {
+  return conversations.filter(conv => (
+    conv.providerId === 'claude' && clearClaudeResumeState(conv)
+  ));
+}
+
 export const claudeSettingsReconciler: ProviderSettingsReconciler = {
+  invalidateConversationSessions: invalidateClaudeConversationSessions,
+
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
     conversations: Conversation[],
@@ -80,12 +88,7 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
       return { changed: false, invalidatedConversations: [] };
     }
 
-    const invalidatedConversations: Conversation[] = [];
-    for (const conv of conversations) {
-      if (conv.providerId === 'claude' && clearClaudeResumeState(conv)) {
-        invalidatedConversations.push(conv);
-      }
-    }
+    const invalidatedConversations = invalidateClaudeConversationSessions(conversations);
 
     const currentModel = typeof settings.model === 'string' ? settings.model : '';
     const claudeSettings = getClaudeProviderSettings(settings);

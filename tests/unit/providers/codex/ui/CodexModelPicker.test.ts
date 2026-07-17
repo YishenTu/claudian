@@ -321,4 +321,62 @@ describe('CodexModelPicker', () => {
     expect(plugin.saveSettings).not.toHaveBeenCalled();
     expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
   });
+
+  it('checks cached catalog freshness on open and rerenders after background refresh', async () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+    const refreshedCatalog = [
+      ...TEST_CODEX_CATALOG,
+      {
+        ...TEST_CODEX_CATALOG[1],
+        model: 'gpt-5.6-new',
+        displayName: 'GPT-5.6 New',
+        description: 'Newly discovered model',
+      },
+    ];
+    let finishBackgroundRefresh!: (value: {
+      kind: 'completed';
+      models: typeof refreshedCatalog;
+      refreshed: true;
+    }) => void;
+    const backgroundRefresh = new Promise<{
+      kind: 'completed';
+      models: typeof refreshedCatalog;
+      refreshed: true;
+    }>((resolve) => {
+      finishBackgroundRefresh = resolve;
+    });
+    const ensureFresh = jest.fn().mockResolvedValue({
+      kind: 'completed',
+      models: TEST_CODEX_CATALOG,
+      refreshed: false,
+      backgroundRefresh,
+    });
+
+    renderCodexModelPicker(createElement() as any, context, {
+      modelCatalogCoordinator: { ensureFresh },
+    } as any);
+
+    const catalog = findElement(element =>
+      element.classes.has('claudian-provider-model-picker-catalog')
+    );
+    catalog.open = true;
+    catalog.trigger('toggle');
+    await flushPromises();
+
+    expect(ensureFresh).toHaveBeenCalledWith('model-picker', { force: false });
+
+    plugin.settings.providerConfigs.codex.discoveredModels = refreshedCatalog;
+    finishBackgroundRefresh({
+      kind: 'completed',
+      models: refreshedCatalog,
+      refreshed: true,
+    });
+    await flushPromises();
+
+    expect(elements.some(element => (
+      element.tag === 'label' && element.title === 'gpt-5.6-new'
+    ))).toBe(true);
+    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(2);
+  });
 });

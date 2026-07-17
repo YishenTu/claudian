@@ -89,6 +89,8 @@ export interface ProviderSettingsStorageAdapter {
 export interface ProviderSettingsReconciler {
   handleEnvironmentChange?(settings: Record<string, unknown>): boolean;
 
+  invalidateConversationSessions(conversations: Conversation[]): Conversation[];
+
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
     conversations: Conversation[],

@@ -23,7 +23,10 @@ import {
   setEnvironmentVariablesForScope,
 } from './core/providers/providerEnvironment';
 import { ProviderRegistry } from './core/providers/ProviderRegistry';
-import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
+import {
+  ProviderSettingsCoordinator,
+  type SettingsReconciliationResult,
+} from './core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
 import type {
   ProviderCliResolutionContext,
@@ -65,6 +68,8 @@ export default class ClaudianPlugin extends Plugin {
   private conversationRepository!: ConversationRepository;
   private lastKnownTabManagerState: AppTabManagerState | null = null;
   private pendingSessionMetadataScan = false;
+  private pendingEnvironmentInvalidationProviderIds = new Set<ProviderId>();
+  private isLoadingRemainingSessionMetadata = false;
   private sessionMetadataLoadTimer: number | null = null;
   private remainingSessionMetadataLoad: Promise<void> | null = null;
   private isUnloading = false;
@@ -214,6 +219,7 @@ export default class ClaudianPlugin extends Plugin {
 
   onunload(): void {
     this.isUnloading = true;
+    this.pendingEnvironmentInvalidationProviderIds.clear();
     if (this.sessionMetadataLoadTimer !== null) {
       window.clearTimeout(this.sessionMetadataLoadTimer);
       this.sessionMetadataLoadTimer = null;
@@ -385,7 +391,17 @@ export default class ClaudianPlugin extends Plugin {
 
     const backfilledConversations = this.conversationRepository.backfillResponseTimestamps();
 
-    const { changed, invalidatedConversations } = this.reconcileModelWithEnvironment();
+    const {
+      changed,
+      environmentChangedProviderIds,
+      invalidatedConversations,
+    } = this.reconcileModelWithEnvironment();
+    this.pendingEnvironmentInvalidationProviderIds.clear();
+    if (deferRemainingMetadata) {
+      for (const providerId of environmentChangedProviderIds) {
+        this.pendingEnvironmentInvalidationProviderIds.add(providerId);
+      }
+    }
 
     ProviderSettingsCoordinator.projectActiveProviderState(
       this.settings,
@@ -463,51 +479,53 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private async loadRemainingSessionMetadata(): Promise<void> {
-    const addedConversations: Conversation[] = [];
-    const publishBatch = (metadata: SessionMetadata[]): void => {
-      if (this.isUnloading || metadata.length === 0) return;
+    this.isLoadingRemainingSessionMetadata = true;
+    try {
+      const addedConversations: Conversation[] = [];
+      const invalidatedConversations: Conversation[] = [];
+      const publishBatch = (metadata: SessionMetadata[]): void => {
+        if (this.isUnloading || metadata.length === 0) return;
 
-      const added = this.conversationRepository.mergeMetadataConversations(
-        metadata.map(meta => this.createConversationMetadataShell(meta)),
-      );
-      if (added.length === 0) return;
+        const shells = metadata.map(meta => this.createConversationMetadataShell(meta));
+        const invalidatedShells = ProviderSettingsCoordinator.invalidateConversationSessions(
+          shells,
+          Array.from(this.pendingEnvironmentInvalidationProviderIds),
+        );
+        const invalidatedIds = new Set(invalidatedShells.map(({ id }) => id));
+        const added = this.conversationRepository.mergeMetadataConversations(shells);
+        if (added.length === 0) return;
 
-      addedConversations.push(...added);
-      for (const view of this.getAllViews()) {
-        view.notifyConversationListChanged();
+        addedConversations.push(...added);
+        invalidatedConversations.push(
+          ...added.filter(conversation => invalidatedIds.has(conversation.id)),
+        );
+        for (const view of this.getAllViews()) {
+          view.notifyConversationListChanged();
+        }
+      };
+      const allMetadata = await this.storage.sessions.listMetadata({ onBatch: publishBatch });
+      if (this.isUnloading) {
+        return;
       }
-    };
-    const allMetadata = await this.storage.sessions.listMetadata({ onBatch: publishBatch });
-    if (this.isUnloading) {
-      return;
-    }
 
-    StartupProfiler.recordCount('session-metadata-count', allMetadata.length);
-    // Custom storage implementations may not support incremental publication yet.
-    publishBatch(allMetadata);
-    const currentAddedConversations = addedConversations.filter((conversation) => (
-      this.conversationRepository.getCachedConversation(conversation.id) === conversation
-    ));
-    StartupProfiler.recordCount('background-session-metadata-count', currentAddedConversations.length);
-    if (currentAddedConversations.length === 0) {
-      return;
-    }
-
-    const { changed, invalidatedConversations } = ProviderSettingsCoordinator.reconcileProviders(
-      this.settings,
-      currentAddedConversations,
-      ProviderRegistry.getRegisteredProviderIds(),
-    );
-    if (changed) {
-      await this.saveSettings();
-    }
-    for (const conversation of invalidatedConversations) {
-      if (this.conversationRepository.getCachedConversation(conversation.id) !== conversation) {
-        continue;
+      StartupProfiler.recordCount('session-metadata-count', allMetadata.length);
+      // Custom storage implementations may not support incremental publication yet.
+      publishBatch(allMetadata);
+      const currentAddedConversations = addedConversations.filter((conversation) => (
+        this.conversationRepository.getCachedConversation(conversation.id) === conversation
+      ));
+      StartupProfiler.recordCount('background-session-metadata-count', currentAddedConversations.length);
+      for (const conversation of invalidatedConversations) {
+        if (this.conversationRepository.getCachedConversation(conversation.id) !== conversation) {
+          continue;
+        }
+        await this.storage.sessions.saveMetadata(
+          this.storage.sessions.toSessionMetadata(conversation),
+        );
       }
-      await this.storage.sessions.saveMetadata(
-        this.storage.sessions.toSessionMetadata(conversation),
-      );
+    } finally {
+      this.isLoadingRemainingSessionMetadata = false;
+      this.pendingEnvironmentInvalidationProviderIds.clear();
     }
   }
 
@@ -583,6 +601,11 @@ export default class ClaudianPlugin extends Plugin {
       const reconciliation = this.reconcileModelWithEnvironment(affectedProviderIds);
       changed = reconciliation.changed;
       invalidatedConversations = reconciliation.invalidatedConversations;
+      if (this.pendingSessionMetadataScan || this.isLoadingRemainingSessionMetadata) {
+        for (const providerId of reconciliation.environmentChangedProviderIds) {
+          this.pendingEnvironmentInvalidationProviderIds.add(providerId);
+        }
+      }
     });
 
     if (affectedProviderIds.length === 0) {
@@ -715,10 +738,9 @@ export default class ClaudianPlugin extends Plugin {
     return cliResolver.resolveFromSettings(this.settings, context);
   }
 
-  private reconcileModelWithEnvironment(providerIds: ProviderId[] = ProviderRegistry.getRegisteredProviderIds()): {
-    changed: boolean;
-    invalidatedConversations: Conversation[];
-  } {
+  private reconcileModelWithEnvironment(
+    providerIds: ProviderId[] = ProviderRegistry.getRegisteredProviderIds(),
+  ): SettingsReconciliationResult {
     return ProviderSettingsCoordinator.reconcileProviders(
       this.settings,
       this.conversationRepository.getAll(),

@@ -51,6 +51,13 @@ export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLik
 
     try {
       const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
+      if (signal?.aborted) {
+        return {
+          kind: 'completed',
+          diagnostics: 'Codex model discovery was cancelled',
+          models: [],
+        };
+      }
       process = new CodexAppServerProcess(launchSpec);
       process.start();
       transport = new CodexRpcTransport(process);

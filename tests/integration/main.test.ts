@@ -198,6 +198,134 @@ describe('ClaudianPlugin', () => {
       expect(afterBackgroundLoad?.title).toBe(backgroundMetadata.title);
     });
 
+    it('invalidates restored and deferred sessions after a provider environment change', async () => {
+      const restoredMetadata = {
+        id: 'restored-environment-session',
+        providerId: 'claude' as const,
+        title: 'Restored environment session',
+        createdAt: 1,
+        updatedAt: 3,
+        sessionId: 'restored-session-id',
+        providerState: { providerSessionId: 'restored-provider-session-id' },
+        resumeAtMessageId: 'restored-message-id',
+      };
+      const deferredMetadata = {
+        id: 'deferred-environment-session',
+        providerId: 'claude' as const,
+        title: 'Deferred environment session',
+        createdAt: 1,
+        updatedAt: 2,
+        sessionId: 'deferred-session-id',
+        providerState: { providerSessionId: 'deferred-provider-session-id' },
+        resumeAtMessageId: 'deferred-message-id',
+      };
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => (
+        path === '.claudian/claudian-settings.json'
+      ));
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === '.claudian/claudian-settings.json') {
+          return JSON.stringify({
+            providerConfigs: {
+              claude: {
+                environmentHash: 'ANTHROPIC_BASE_URL=https://old.example.com',
+                environmentVariables: 'ANTHROPIC_BASE_URL=https://new.example.com',
+              },
+            },
+          });
+        }
+        return '';
+      });
+      (plugin.loadData as jest.Mock).mockResolvedValue({
+        tabManagerState: {
+          openTabs: [{ tabId: 'tab-1', conversationId: restoredMetadata.id }],
+          activeTabId: 'tab-1',
+        },
+      });
+      const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
+        .mockResolvedValue(restoredMetadata);
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+        .mockImplementation(async (options) => {
+          options?.onBatch?.([restoredMetadata, deferredMetadata]);
+          return [restoredMetadata, deferredMetadata];
+        });
+
+      await plugin.onload();
+      await (plugin as any).loadRemainingSessionMetadata();
+
+      const restored = plugin.getCachedConversation(restoredMetadata.id);
+      const deferred = plugin.getCachedConversation(deferredMetadata.id);
+      loadSpy.mockRestore();
+      listSpy.mockRestore();
+
+      expect(restored).toEqual(expect.objectContaining({
+        sessionId: null,
+        providerState: undefined,
+      }));
+      expect(restored).not.toHaveProperty('resumeAtMessageId');
+      expect(deferred).toEqual(expect.objectContaining({
+        sessionId: null,
+        providerState: undefined,
+      }));
+      expect(deferred).not.toHaveProperty('resumeAtMessageId');
+    });
+
+    it('invalidates later metadata batches when the environment changes during the scan', async () => {
+      const firstMetadata = {
+        id: 'first-scanned-session',
+        providerId: 'claude' as const,
+        title: 'First scanned session',
+        createdAt: 1,
+        updatedAt: 2,
+        sessionId: 'first-session-id',
+        providerState: { providerSessionId: 'first-provider-session-id' },
+      };
+      const laterMetadata = {
+        id: 'later-scanned-session',
+        providerId: 'claude' as const,
+        title: 'Later scanned session',
+        createdAt: 1,
+        updatedAt: 1,
+        sessionId: 'later-session-id',
+        providerState: { providerSessionId: 'later-provider-session-id' },
+      };
+      let markFirstBatchPublished!: () => void;
+      const firstBatchPublished = new Promise<void>((resolve) => {
+        markFirstBatchPublished = resolve;
+      });
+      let releaseLaterBatch!: () => void;
+      const laterBatchRelease = new Promise<void>((resolve) => {
+        releaseLaterBatch = resolve;
+      });
+
+      await plugin.onload();
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'listMetadata')
+        .mockImplementation(async (options) => {
+          options?.onBatch?.([firstMetadata]);
+          markFirstBatchPublished();
+          await laterBatchRelease;
+          options?.onBatch?.([laterMetadata]);
+          return [firstMetadata, laterMetadata];
+        });
+
+      const load = (plugin as any).loadRemainingSessionMetadata();
+      await firstBatchPublished;
+      await plugin.applyEnvironmentVariables(
+        'provider:claude',
+        'ANTHROPIC_BASE_URL=https://changed-during-scan.example.com',
+      );
+      releaseLaterBatch();
+      await load;
+
+      const first = plugin.getCachedConversation(firstMetadata.id);
+      const later = plugin.getCachedConversation(laterMetadata.id);
+      listSpy.mockRestore();
+
+      expect(first?.sessionId).toBeNull();
+      expect(first?.providerState).toBeUndefined();
+      expect(later?.sessionId).toBeNull();
+      expect(later?.providerState).toBeUndefined();
+    });
+
     it('does not persist a background metadata shell deleted before reconciliation', async () => {
       let finishScan!: () => void;
       let markBatchPublished!: () => void;
@@ -222,11 +350,10 @@ describe('ClaudianPlugin', () => {
         await scanRelease;
         return [backgroundMetadata];
       });
-      const reconcileSpy = jest.spyOn(ProviderSettingsCoordinator, 'reconcileProviders')
-        .mockImplementation((_settings, conversations) => ({
-          changed: false,
-          invalidatedConversations: [...conversations],
-        }));
+      const invalidateSpy = jest.spyOn(
+        ProviderSettingsCoordinator,
+        'invalidateConversationSessions',
+      ).mockImplementation((conversations) => [...conversations]);
       const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata');
 
       const load = (plugin as any).loadRemainingSessionMetadata();
@@ -235,13 +362,13 @@ describe('ClaudianPlugin', () => {
       saveMetadataSpy.mockClear();
       finishScan();
       await load;
-      const reconcileCallCount = reconcileSpy.mock.calls.length;
+      const invalidationCallCount = invalidateSpy.mock.calls.length;
       const saveMetadataCallCount = saveMetadataSpy.mock.calls.length;
       listSpy.mockRestore();
-      reconcileSpy.mockRestore();
+      invalidateSpy.mockRestore();
       saveMetadataSpy.mockRestore();
 
-      expect(reconcileCallCount).toBe(0);
+      expect(invalidationCallCount).toBeGreaterThan(0);
       expect(saveMetadataCallCount).toBe(0);
       expect(plugin.getCachedConversation(backgroundMetadata.id)).toBeNull();
     });
