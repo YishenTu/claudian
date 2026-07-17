@@ -408,6 +408,7 @@ describe('SessionStorage', () => {
       await expect(storage.scanMetadata()).resolves.toEqual({
         metadata: [],
         complete: false,
+        invalidMetadataCount: 0,
       });
     });
 
@@ -459,6 +460,22 @@ describe('SessionStorage', () => {
       await expect(storage.scanMetadata()).resolves.toEqual({
         metadata: [expect.objectContaining({ id: 'good' })],
         complete: false,
+        invalidMetadataCount: 0,
+      });
+    });
+
+    it('reports malformed metadata without making the I/O scan incomplete', async () => {
+      mockAdapter.listFiles.mockImplementation(async (path: string) => (
+        path === SESSIONS_PATH
+          ? [`${SESSIONS_PATH}/malformed.meta.json`]
+          : []
+      ));
+      mockAdapter.read.mockResolvedValue('{"id":');
+
+      await expect(storage.scanMetadata()).resolves.toEqual({
+        metadata: [],
+        complete: true,
+        invalidMetadataCount: 1,
       });
     });
 

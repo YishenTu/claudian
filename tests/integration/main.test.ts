@@ -151,8 +151,13 @@ describe('ClaudianPlugin', () => {
     });
 
     it('loads restored-tab metadata without waiting for the full history scan', async () => {
-      let finishHistoryScan!: (value: { metadata: []; complete: true }) => void;
-      const historyScan = new Promise<{ metadata: []; complete: true }>((resolve) => {
+      type EmptyMetadataScan = {
+        metadata: [];
+        complete: true;
+        invalidMetadataCount: 0;
+      };
+      let finishHistoryScan!: (value: EmptyMetadataScan) => void;
+      const historyScan = new Promise<EmptyMetadataScan>((resolve) => {
         finishHistoryScan = resolve;
       });
       const restoredMetadata = {
@@ -178,7 +183,7 @@ describe('ClaudianPlugin', () => {
         onloadPromise.then(() => true),
         new Promise<boolean>(resolve => setTimeout(() => resolve(false), 20)),
       ]);
-      finishHistoryScan({ metadata: [], complete: true });
+      finishHistoryScan({ metadata: [], complete: true, invalidMetadataCount: 0 });
       await onloadPromise;
       const cachedConversation = plugin.getCachedConversation(restoredMetadata.id);
       const didLoadRestoredMetadata = loadSpy.mock.calls.some(
@@ -205,7 +210,11 @@ describe('ClaudianPlugin', () => {
         layoutReady = callback;
       });
       const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
-        .mockResolvedValue({ metadata: [backgroundMetadata], complete: true });
+        .mockResolvedValue({
+          metadata: [backgroundMetadata],
+          complete: true,
+          invalidMetadataCount: 0,
+        });
 
       await plugin.onload();
       const beforeLayoutReady = plugin.getCachedConversation(backgroundMetadata.id);
@@ -271,7 +280,11 @@ describe('ClaudianPlugin', () => {
       const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockImplementation(async (options) => {
           options?.onBatch?.([restoredMetadata, deferredMetadata]);
-          return { metadata: [restoredMetadata, deferredMetadata], complete: true };
+          return {
+            metadata: [restoredMetadata, deferredMetadata],
+            complete: true,
+            invalidMetadataCount: 0,
+          };
         });
 
       await plugin.onload();
@@ -329,7 +342,11 @@ describe('ClaudianPlugin', () => {
           markFirstBatchPublished();
           await laterBatchRelease;
           options?.onBatch?.([laterMetadata]);
-          return { metadata: [firstMetadata, laterMetadata], complete: true };
+          return {
+            metadata: [firstMetadata, laterMetadata],
+            complete: true,
+            invalidMetadataCount: 0,
+          };
         });
 
       const load = (plugin as any).loadRemainingSessionMetadata();
@@ -398,7 +415,11 @@ describe('ClaudianPlugin', () => {
           markFirstBatchPublished();
           await scanRelease;
           options?.onBatch?.([laterMetadata]);
-          return { metadata: [firstMetadata, laterMetadata], complete: true };
+          return {
+            metadata: [firstMetadata, laterMetadata],
+            complete: true,
+            invalidMetadataCount: 0,
+          };
         });
       let blockedEnvironmentWrite = false;
       const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata')
@@ -462,7 +483,11 @@ describe('ClaudianPlugin', () => {
       const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockImplementation(async (options) => {
           options?.onBatch?.([deferredMetadata]);
-          return { metadata: [deferredMetadata], complete: false };
+          return {
+            metadata: [deferredMetadata],
+            complete: false,
+            invalidMetadataCount: 0,
+          };
         });
       (plugin as any).pendingSessionMetadataScan = false;
 
@@ -498,7 +523,11 @@ describe('ClaudianPlugin', () => {
         options?.onBatch?.([backgroundMetadata]);
         markBatchPublished();
         await scanRelease;
-        return { metadata: [backgroundMetadata], complete: true };
+        return {
+          metadata: [backgroundMetadata],
+          complete: true,
+          invalidMetadataCount: 0,
+        };
       });
       const invalidateSpy = jest.spyOn(
         ProviderSettingsCoordinator,
@@ -557,7 +586,11 @@ describe('ClaudianPlugin', () => {
       const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockImplementation(async (options) => {
           options?.onBatch?.([deferredMetadata]);
-          return { metadata: [deferredMetadata], complete: true };
+          return {
+            metadata: [deferredMetadata],
+            complete: true,
+            invalidMetadataCount: 0,
+          };
         });
 
       await restartedPlugin.onload();
@@ -605,7 +638,11 @@ describe('ClaudianPlugin', () => {
       const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockImplementation(async (options) => {
           options?.onBatch?.([deferredMetadata]);
-          return { metadata: [deferredMetadata], complete: true };
+          return {
+            metadata: [deferredMetadata],
+            complete: true,
+            invalidMetadataCount: 0,
+          };
         });
       const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata')
         .mockRejectedValueOnce(new Error('metadata write failed'));
@@ -930,6 +967,82 @@ describe('ClaudianPlugin', () => {
       const updated = await plugin.getConversationById(conv.id);
       expect(updated?.sessionId).toBeNull();
       expect(saveMetadataSpy).toHaveBeenCalled();
+    });
+
+    it('serializes overlapping environment invalidation writes', async () => {
+      await plugin.onload();
+      (plugin as any).hasLoadedAllSessionMetadata = true;
+      await plugin.createConversation({ sessionId: 'overlapping-session' });
+      let finishFirstWrite!: () => void;
+      const firstWriteRelease = new Promise<void>((resolve) => {
+        finishFirstWrite = resolve;
+      });
+      let markFirstWriteStarted!: () => void;
+      const firstWriteStarted = new Promise<void>((resolve) => {
+        markFirstWriteStarted = resolve;
+      });
+      let blockedFirstWrite = false;
+      const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata')
+        .mockImplementation(async () => {
+          if (!blockedFirstWrite) {
+            blockedFirstWrite = true;
+            markFirstWriteStarted();
+            await firstWriteRelease;
+          }
+        });
+
+      const firstUpdate = plugin.applyEnvironmentVariables(
+        'provider:claude',
+        'ANTHROPIC_BASE_URL=https://first-overlap.example.com',
+      );
+      await firstWriteStarted;
+      let secondUpdateSettled = false;
+      const secondUpdate = plugin.applyEnvironmentVariables(
+        'provider:claude',
+        'ANTHROPIC_BASE_URL=https://second-overlap.example.com',
+      ).finally(() => {
+        secondUpdateSettled = true;
+      });
+      await new Promise(resolve => setTimeout(resolve, 1));
+      const markerWhileFirstWritePending =
+        plugin.settings.pendingProviderSessionInvalidations.claude;
+      const secondSettledWhileFirstWritePending = secondUpdateSettled;
+
+      finishFirstWrite();
+      await Promise.all([firstUpdate, secondUpdate]);
+      saveMetadataSpy.mockRestore();
+
+      expect(markerWhileFirstWritePending).toEqual(expect.any(Number));
+      expect(secondSettledWhileFirstWritePending).toBe(false);
+      expect(plugin.settings.pendingProviderSessionInvalidations.claude)
+        .toBeUndefined();
+    });
+
+    it('flushes already-invalidated sessions after an earlier environment write fails', async () => {
+      await plugin.onload();
+      (plugin as any).hasLoadedAllSessionMetadata = true;
+      await plugin.createConversation({ sessionId: 'failed-overlap-session' });
+      const saveMetadataSpy = jest.spyOn(plugin.storage.sessions, 'saveMetadata')
+        .mockRejectedValueOnce(new Error('metadata write failed'));
+
+      await expect(plugin.applyEnvironmentVariables(
+        'provider:claude',
+        'ANTHROPIC_BASE_URL=https://failed-write.example.com',
+      )).rejects.toThrow('metadata write failed');
+      await plugin.applyEnvironmentVariables(
+        'provider:claude',
+        'ANTHROPIC_BASE_URL=https://retry-write.example.com',
+      );
+      const saveCallCount = saveMetadataSpy.mock.calls.length;
+      const retriedMetadata = saveMetadataSpy.mock.calls[1]?.[0];
+      saveMetadataSpy.mockRestore();
+
+      expect(saveCallCount).toBe(2);
+      expect(retriedMetadata).toEqual(expect.objectContaining({
+        sessionId: null,
+      }));
+      expect(plugin.settings.pendingProviderSessionInvalidations.claude)
+        .toBeUndefined();
     });
 
     it('broadcasts ensureReady with force when env changes without model change', async () => {

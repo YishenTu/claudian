@@ -101,6 +101,7 @@ export class SessionStorage {
   ): Promise<SessionMetadataScanResult> {
     const fileListing = await this.listUniqueMetadataFiles();
     let complete = fileListing.complete;
+    let invalidMetadataCount = 0;
     const pendingBatch: SessionMetadata[] = [];
     const batchSize = Math.max(1, options.batchSize ?? SESSION_METADATA_PUBLISH_BATCH_SIZE);
     const publish = (metadata: SessionMetadata): void => {
@@ -115,16 +116,29 @@ export class SessionStorage {
       if (!fileId || !isValidSessionMetadataId(fileId)) {
         return null;
       }
-      let raw: SessionMetadata;
+      let content: string;
       try {
-        const content = await this.adapter.read(filePath);
-        raw = JSON.parse(content) as SessionMetadata;
-        if (raw.id !== fileId || !isValidSessionMetadataId(raw.id)) {
-          return null;
-        }
+        content = await this.adapter.read(filePath);
       } catch {
         complete = false;
-        // Skip files that fail to load.
+        // A later scan may recover a transient I/O failure.
+        return null;
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        invalidMetadataCount += 1;
+        return null;
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        invalidMetadataCount += 1;
+        return null;
+      }
+      const raw = parsed as SessionMetadata;
+      if (raw.id !== fileId || !isValidSessionMetadataId(raw.id)) {
+        invalidMetadataCount += 1;
         return null;
       }
 
@@ -146,6 +160,7 @@ export class SessionStorage {
     return {
       metadata: metas.filter((meta): meta is SessionMetadata => meta !== null),
       complete,
+      invalidMetadataCount,
     };
   }
 

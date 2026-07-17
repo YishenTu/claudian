@@ -121,6 +121,8 @@ export interface SessionMetadataScanResult {
   metadata: SessionMetadata[];
   /** False when any metadata directory or listed metadata file could not be read. */
   complete: boolean;
+  /** Files that were read successfully but did not contain valid session metadata. */
+  invalidMetadataCount: number;
 }
 
 export interface AppSessionStorage {

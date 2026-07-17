@@ -113,6 +113,7 @@ export default class ClaudianPlugin extends Plugin {
   private pendingSessionMetadataScan = false;
   private pendingEnvironmentInvalidationGenerations = new Map<ProviderId, number>();
   private blockedEnvironmentInvalidationGenerations = new Map<ProviderId, number>();
+  private environmentUpdateTail: Promise<void> = Promise.resolve();
   private isLoadingRemainingSessionMetadata = false;
   private hasLoadedAllSessionMetadata = false;
   private sessionMetadataLoadTimer: number | null = null;
@@ -423,12 +424,20 @@ export default class ClaudianPlugin extends Plugin {
     const initialMetadataScan = await StartupProfiler.runAsync(
       deferRemainingMetadata ? 'restored-session-metadata-load' : 'session-metadata-load',
       async () => deferRemainingMetadata
-        ? { metadata: await this.loadRestoredSessionMetadata(), complete: false }
+        ? {
+          metadata: await this.loadRestoredSessionMetadata(),
+          complete: false,
+          invalidMetadataCount: 0,
+        }
         : this.storage.sessions.scanMetadata(),
     );
     const initialMetadata = initialMetadataScan.metadata;
     StartupProfiler.recordCount('restored-session-metadata-count', initialMetadata.length);
     StartupProfiler.recordCount('session-metadata-count', initialMetadata.length);
+    StartupProfiler.recordCount(
+      'invalid-session-metadata-count',
+      initialMetadataScan.invalidMetadataCount,
+    );
     this.conversationRepository.replaceAll(initialMetadata.map(meta => (
       this.createConversationMetadataShell(meta)
     )).sort(
@@ -570,6 +579,10 @@ export default class ClaudianPlugin extends Plugin {
 
       const allMetadata = scan.metadata;
       StartupProfiler.recordCount('session-metadata-count', allMetadata.length);
+      StartupProfiler.recordCount(
+        'invalid-session-metadata-count',
+        scan.invalidMetadataCount,
+      );
       // Custom storage implementations may not support incremental publication yet.
       publishBatch(allMetadata);
       const currentAddedConversations = addedConversations.filter((conversation) => (
@@ -749,6 +762,17 @@ export default class ClaudianPlugin extends Plugin {
   async applyEnvironmentVariablesBatch(
     updates: Array<{ scope: EnvironmentScope; envText: string }>,
   ): Promise<void> {
+    const queuedUpdates = updates.map(update => ({ ...update }));
+    const apply = this.environmentUpdateTail.then(
+      () => this.applyEnvironmentVariablesBatchNow(queuedUpdates),
+    );
+    this.environmentUpdateTail = apply.catch(() => undefined);
+    await apply;
+  }
+
+  private async applyEnvironmentVariablesBatchNow(
+    updates: Array<{ scope: EnvironmentScope; envText: string }>,
+  ): Promise<void> {
     const nextEnvironmentByScope = new Map<EnvironmentScope, string>();
     for (const update of updates) {
       nextEnvironmentByScope.set(update.scope, update.envText);
@@ -756,7 +780,6 @@ export default class ClaudianPlugin extends Plugin {
 
     let affectedProviderIds: ProviderId[] = [];
     let changed = false;
-    let invalidatedConversations: Conversation[] = [];
     let invalidationGenerations = new Map<ProviderId, number>();
     await this.mutateSettings((settings) => {
       const settingsBag = settings as unknown as Record<string, unknown>;
@@ -772,7 +795,6 @@ export default class ClaudianPlugin extends Plugin {
       ProviderSettingsCoordinator.handleEnvironmentChange(settingsBag, affectedProviderIds);
       const reconciliation = this.reconcileModelWithEnvironment(affectedProviderIds);
       changed = reconciliation.changed;
-      invalidatedConversations = reconciliation.invalidatedConversations;
       invalidationGenerations = this.markPendingSessionInvalidations(
         settings,
         reconciliation.environmentChangedProviderIds,
@@ -796,8 +818,15 @@ export default class ClaudianPlugin extends Plugin {
         await ProviderWorkspaceRegistry.refreshAgentMentions(providerId);
       }
     }
-    if (invalidatedConversations.length > 0) {
-      for (const conv of invalidatedConversations) {
+    if (invalidationGenerations.size > 0) {
+      const invalidatedProviderIds = new Set(invalidationGenerations.keys());
+      const conversationsToPersist = this.conversationRepository.getAll().filter(
+        conversation => invalidatedProviderIds.has(conversation.providerId),
+      );
+      for (const conv of conversationsToPersist) {
+        if (this.conversationRepository.getCachedConversation(conv.id) !== conv) {
+          continue;
+        }
         await this.storage.sessions.saveMetadata(
           this.storage.sessions.toSessionMetadata(conv)
         );
