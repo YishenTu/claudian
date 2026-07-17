@@ -1,3 +1,4 @@
+import { formatReasoningValueLabel } from '../../../core/providers/reasoning';
 import type {
   ProviderChatUIConfig,
   ProviderPermissionModeToggleConfig,
@@ -107,7 +108,7 @@ export const piChatUIConfig: ProviderChatUIConfig = {
     const levels = piModel?.thinkingLevels
       ?? (decodePiModelId(model) ? DEFAULT_PI_REASONING_LEVELS : ['off']);
     return levels.map((level) => ({
-      label: formatThinkingLevelLabel(level),
+      label: formatReasoningValueLabel(level),
       value: level,
     }));
   },
@@ -258,12 +259,6 @@ function buildModelOption(model: PiDiscoveredModel, alias: string | undefined): 
 function formatFallbackLabel(encodedId: string): string {
   const decoded = decodePiModelId(encodedId);
   return decoded ? `${decoded.provider}/${decoded.modelId}` : 'Pi';
-}
-
-function formatThinkingLevelLabel(value: PiThinkingLevel): string {
-  return value === 'xhigh'
-    ? 'XHigh'
-    : value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function pushOption(

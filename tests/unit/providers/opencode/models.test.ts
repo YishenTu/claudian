@@ -81,7 +81,7 @@ describe('OpenCode base model derivation', () => {
           { label: 'Medium', value: 'medium' },
           { label: 'High', value: 'high' },
           { label: 'Max', value: 'max' },
-          { label: 'XHigh', value: 'xhigh' },
+          { label: 'xHigh', value: 'xhigh' },
         ],
       },
     ]);
