@@ -126,12 +126,12 @@ export class ModelSelector {
 
       const icon = model.providerIcon ?? this.callbacks.getUIConfig().getProviderIcon?.();
       if (icon) {
-        option.appendChild(createProviderIconSvg(icon, {
+        createProviderIconSvg(icon, {
           className: 'claudian-model-provider-icon',
           height: 12,
-          ownerDocument: option.ownerDocument,
+          parent: option,
           width: 12,
-        }));
+        });
       }
       option.createSpan({ text: model.label });
       if (model.description) {
@@ -972,7 +972,7 @@ export class McpServerSelector {
     if (!manager || manager.isLoaded?.() !== false) return;
 
     const load = manager.ensureLoaded?.();
-    if (!load) return;
+    if (load === undefined) return;
 
     void load.then(() => {
       if (this.mcpManager !== manager) return;
@@ -1171,20 +1171,20 @@ export class ContextUsageMeter {
     const y2 = cy + radius * Math.sin(endRad);
 
     const gaugeEl = this.container.createDiv({ cls: 'claudian-context-meter-gauge' });
-    const svg = gaugeEl.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const svg = gaugeEl.createSvg('svg');
     svg.setAttribute('width', String(size));
     svg.setAttribute('height', String(size));
     svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
 
     const pathData = `M ${x1} ${y1} A ${radius} ${radius} 0 1 1 ${x2} ${y2}`;
-    const backgroundPath = gaugeEl.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const backgroundPath = svg.createSvg('path');
     backgroundPath.classList.add('claudian-meter-bg');
     backgroundPath.setAttribute('d', pathData);
     backgroundPath.setAttribute('fill', 'none');
     backgroundPath.setAttribute('stroke-width', String(strokeWidth));
     backgroundPath.setAttribute('stroke-linecap', 'round');
 
-    const fillPath = gaugeEl.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const fillPath = svg.createSvg('path');
     fillPath.classList.add('claudian-meter-fill');
     fillPath.setAttribute('d', pathData);
     fillPath.setAttribute('fill', 'none');

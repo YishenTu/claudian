@@ -226,7 +226,9 @@ export class CodexModelCatalogCoordinator {
       }
 
       if (!catalogFingerprint) {
-        throw catalogFingerprintError ?? new Error('Codex catalog fingerprint resolution failed');
+        throw catalogFingerprintError instanceof Error
+          ? catalogFingerprintError
+          : new Error('Codex catalog fingerprint resolution failed');
       }
       const persistedResult = await this.persistCatalog(
         discoveryResult.models,

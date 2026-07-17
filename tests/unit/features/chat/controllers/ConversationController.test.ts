@@ -1293,17 +1293,19 @@ describe('ConversationController', () => {
         (titleEl as any).replaceWith = jest.fn();
       }
 
-      const origDocument = global.document;
-      global.document = { createElement: jest.fn().mockReturnValue(mockInput) } as any;
+      const origCreateEl = item.createEl;
+      item.createEl = jest.fn().mockReturnValue(mockInput) as any;
 
       try {
         clickHandlers![0]({ stopPropagation: jest.fn() });
 
-        expect(global.document.createElement).toHaveBeenCalledWith('input');
-        expect((mockInput as any).value).toBe('Test Title');
+        expect(item.createEl).toHaveBeenCalledWith('input', {
+          cls: 'claudian-rename-input',
+          attr: { type: 'text', value: 'Test Title' },
+        });
         expect(titleEl!.replaceWith).toHaveBeenCalledWith(mockInput);
       } finally {
-        global.document = origDocument;
+        item.createEl = origCreateEl;
       }
     });
 

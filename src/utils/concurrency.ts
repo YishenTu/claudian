@@ -10,7 +10,7 @@ export async function mapWithConcurrency<T, U>(
     throw new Error('Concurrency must be at least 1');
   }
 
-  const results: U[] = new Array(items.length);
+  const results: U[] = new Array<U>(items.length);
   let index = 0;
 
   async function worker(): Promise<void> {

@@ -197,18 +197,53 @@ class MockElement {
   }
 
   // Obsidian-style helper methods
-  createDiv(options?: { cls?: string; text?: string }): MockElement {
+  createDiv(options?: { cls?: string; text?: string; attr?: Record<string, string> }): MockElement {
     const el = new MockElement('div');
     if (options?.cls) el.className = options.cls;
     if (options?.text) el.textContent = options.text;
+    if (options?.attr) {
+      for (const [key, value] of Object.entries(options.attr)) {
+        el.setAttribute(key, value);
+      }
+    }
     this.appendChild(el);
     return el;
   }
 
-  createSpan(options?: { cls?: string; text?: string }): MockElement {
+  createSpan(options?: { cls?: string; text?: string; attr?: Record<string, string> }): MockElement {
     const el = new MockElement('span');
     if (options?.cls) el.className = options.cls;
     if (options?.text) el.textContent = options.text;
+    if (options?.attr) {
+      for (const [key, value] of Object.entries(options.attr)) {
+        el.setAttribute(key, value);
+      }
+    }
+    this.appendChild(el);
+    return el;
+  }
+
+  createEl(tag: string, options?: { cls?: string; text?: string; attr?: Record<string, string> }): MockElement {
+    const el = new MockElement(tag);
+    if (options?.cls) el.className = options.cls;
+    if (options?.text) el.textContent = options.text;
+    if (options?.attr) {
+      for (const [key, value] of Object.entries(options.attr)) {
+        el.setAttribute(key, value);
+      }
+    }
+    this.appendChild(el);
+    return el;
+  }
+
+  createSvg(tag: string, options?: { cls?: string; attr?: Record<string, string> }): MockElement {
+    const el = new MockElement(tag);
+    if (options?.cls) el.className = options.cls;
+    if (options?.attr) {
+      for (const [key, value] of Object.entries(options.attr)) {
+        el.setAttribute(key, value);
+      }
+    }
     this.appendChild(el);
     return el;
   }

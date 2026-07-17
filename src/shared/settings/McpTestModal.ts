@@ -20,23 +20,18 @@ function formatToggleError(error: unknown): string {
   return error.message || 'Failed to update tool setting';
 }
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
 function appendSpinnerSvg(container: HTMLElement): void {
-  const svg = container.ownerDocument.createElementNS(SVG_NS, 'svg');
+  const svg = container.createSvg('svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('fill', 'none');
   svg.setAttribute('stroke', 'currentColor');
   svg.setAttribute('stroke-width', '2');
 
-  const path = container.ownerDocument.createElementNS(SVG_NS, 'path');
+  const path = svg.createSvg('path');
   path.setAttribute(
     'd',
     'M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83'
   );
-  svg.appendChild(path);
-
-  container.appendChild(svg);
 }
 
 export class McpTestModal extends Modal {

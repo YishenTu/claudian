@@ -322,12 +322,9 @@ export class ClaudianView extends ItemView {
    * The wrapper is moved to the active tab's nav row on tab switches.
    */
   private buildNavRowContent(): HTMLElement {
-    const activeDocument = this.containerEl.ownerDocument;
+    const wrapper = this.containerEl.createDiv({ cls: 'claudian-input-nav-content' });
 
-    const fragment = activeDocument.createDocumentFragment();
-
-    this.tabBarContainerEl = activeDocument.createElement('div');
-    this.tabBarContainerEl.className = 'claudian-tab-bar-container';
+    this.tabBarContainerEl = wrapper.createDiv({ cls: 'claudian-tab-bar-container' });
     this.tabBar = new TabBar(this.tabBarContainerEl, {
       onTabClick: (tabId) => this.handleTabClick(tabId),
       onTabClose: (tabId) => {
@@ -338,10 +335,8 @@ export class ClaudianView extends ItemView {
       },
       onTitleExpansionChanged: () => this.persistTabState(),
     });
-    fragment.appendChild(this.tabBarContainerEl);
 
-    const navActionsEl = activeDocument.createElement('div');
-    navActionsEl.className = 'claudian-input-nav-actions';
+    const navActionsEl = wrapper.createDiv({ cls: 'claudian-input-nav-actions' });
 
     this.newTabButtonEl = navActionsEl.createDiv({ cls: 'claudian-input-nav-btn claudian-new-tab-btn' });
     setIcon(this.newTabButtonEl, 'square-plus');
@@ -373,11 +368,6 @@ export class ClaudianView extends ItemView {
       this.toggleHistoryDropdown();
     });
 
-    fragment.appendChild(navActionsEl);
-
-    const wrapper = activeDocument.createElement('div');
-    wrapper.className = 'claudian-input-nav-content';
-    wrapper.appendChild(fragment);
     return wrapper;
   }
 
@@ -539,13 +529,12 @@ export class ClaudianView extends ItemView {
     const existing = this.logoEl.querySelector('svg');
     if (existing?.getAttribute('data-provider') === providerId) return;
     this.logoEl.empty();
-    const svg = createProviderIconSvg(icon, {
+    createProviderIconSvg(icon, {
       dataProvider: providerId,
       height: 18,
-      ownerDocument: this.logoEl.ownerDocument,
+      parent: this.logoEl,
       width: 18,
     });
-    this.logoEl.appendChild(svg);
   }
 
   // ============================================

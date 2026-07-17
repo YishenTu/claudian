@@ -132,5 +132,5 @@ export function renderCodexModelPicker(
     searchPlaceholder: 'Filter by model name, description, or ID...',
     settingDescription: 'Choose which app-server models appear in the Codex selector. Existing session models stay pinned even when hidden here.',
   });
-  refreshPicker = picker.refresh;
+  refreshPicker = picker.refresh.bind(picker);
 }

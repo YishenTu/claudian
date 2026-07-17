@@ -516,9 +516,8 @@ export default class ClaudianPlugin extends Plugin {
       }, 0);
     };
 
-    const onLayoutReady = this.app.workspace.onLayoutReady;
-    if (typeof onLayoutReady === 'function') {
-      onLayoutReady.call(this.app.workspace, schedule);
+    if (typeof this.app.workspace.onLayoutReady === 'function') {
+      this.app.workspace.onLayoutReady(schedule);
     } else {
       schedule();
     }

@@ -930,10 +930,10 @@ export class ConversationController {
     const titleEl = item.querySelector('.claudian-history-item-title') as HTMLElement;
     if (!titleEl) return;
 
-    const input = (item.ownerDocument ?? window.document).createElement('input');
-    input.type = 'text';
-    input.className = 'claudian-rename-input';
-    input.value = currentTitle;
+    const input = item.createEl('input', {
+      cls: 'claudian-rename-input',
+      attr: { type: 'text', value: currentTitle },
+    });
 
     titleEl.replaceWith(input);
     input.focus();

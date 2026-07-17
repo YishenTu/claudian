@@ -33,7 +33,7 @@ export interface CodexWorkspaceDependencies {
   fallbackBinaries: string;
 }
 
-function targetPathApi(context: CodexRuntimeContext): typeof path.posix | typeof path.win32 {
+function targetPathApi(context: CodexRuntimeContext): typeof path {
   return context.launchSpec.target.platformFamily === 'windows' ? path.win32 : path.posix;
 }
 

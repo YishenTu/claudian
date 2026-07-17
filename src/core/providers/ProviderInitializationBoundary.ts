@@ -76,9 +76,9 @@ export class ProviderInitializationBoundary {
     const promises: Promise<void>[] = [];
     for (const [providerId, services] of Object.entries(this.services)) {
       if (!services) continue;
-      const dispose = services.dispose;
-      if (typeof dispose === 'function') {
-        promises.push(Promise.resolve().then(() => dispose.call(services)));
+      const dispose = services.dispose?.bind(services);
+      if (dispose) {
+        promises.push(Promise.resolve(dispose()));
       }
       delete this.services[providerId];
     }

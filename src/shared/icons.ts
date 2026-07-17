@@ -4,34 +4,27 @@ export const MCP_ICON_SVG = `<svg fill="currentColor" fill-rule="evenodd" height
 
 export const CHECK_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const MCP_ICON_PATHS = [
   'M15.688 2.343a2.588 2.588 0 00-3.61 0l-9.626 9.44a.863.863 0 01-1.203 0 .823.823 0 010-1.18l9.626-9.44a4.313 4.313 0 016.016 0 4.116 4.116 0 011.204 3.54 4.3 4.3 0 013.609 1.18l.05.05a4.115 4.115 0 010 5.9l-8.706 8.537a.274.274 0 000 .393l1.788 1.754a.823.823 0 010 1.18.863.863 0 01-1.203 0l-1.788-1.753a1.92 1.92 0 010-2.754l8.706-8.538a2.47 2.47 0 000-3.54l-.05-.049a2.588 2.588 0 00-3.607-.003l-7.172 7.034-.002.002-.098.097a.863.863 0 01-1.204 0 .823.823 0 010-1.18l7.273-7.133a2.47 2.47 0 00-.003-3.537z',
   'M14.485 4.703a.823.823 0 000-1.18.863.863 0 00-1.204 0l-7.119 6.982a4.115 4.115 0 000 5.9 4.314 4.314 0 006.016 0l7.12-6.982a.823.823 0 000-1.18.863.863 0 00-1.204 0l-7.119 6.982a2.588 2.588 0 01-3.61 0 2.47 2.47 0 010-3.54l7.12-6.982z',
 ];
 
-function createSvgElement(ownerDocument: Document, tagName: string): SVGElement {
-  return ownerDocument.createElementNS(SVG_NS, tagName);
-}
-
 export function appendMcpIcon(container: HTMLElement): void {
   container.empty();
 
-  const svg = createSvgElement(container.ownerDocument, 'svg');
+  const svg = container.createSvg('svg');
   svg.setAttribute('fill', 'currentColor');
   svg.setAttribute('fill-rule', 'evenodd');
   svg.setAttribute('height', '1em');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('width', '1em');
 
-  const title = createSvgElement(container.ownerDocument, 'title');
+  const title = svg.createSvg('title');
   title.textContent = 'MCP';
-  svg.appendChild(title);
 
   for (const pathData of MCP_ICON_PATHS) {
-    const path = createSvgElement(container.ownerDocument, 'path');
+    const path = svg.createSvg('path');
     path.setAttribute('d', pathData);
-    svg.appendChild(path);
   }
 
   container.appendChild(svg);
@@ -40,7 +33,7 @@ export function appendMcpIcon(container: HTMLElement): void {
 export function appendCheckIcon(container: HTMLElement): void {
   container.empty();
 
-  const svg = createSvgElement(container.ownerDocument, 'svg');
+  const svg = container.createSvg('svg');
   svg.setAttribute('width', '12');
   svg.setAttribute('height', '12');
   svg.setAttribute('viewBox', '0 0 24 24');
@@ -50,9 +43,8 @@ export function appendCheckIcon(container: HTMLElement): void {
   svg.setAttribute('stroke-linecap', 'round');
   svg.setAttribute('stroke-linejoin', 'round');
 
-  const polyline = createSvgElement(container.ownerDocument, 'polyline');
+  const polyline = svg.createSvg('polyline');
   polyline.setAttribute('points', '20 6 9 17 4 12');
-  svg.appendChild(polyline);
 
   container.appendChild(svg);
 }
@@ -122,7 +114,7 @@ export interface CreateProviderIconSvgOptions {
   className?: string;
   dataProvider?: string;
   height?: number | string;
-  ownerDocument?: Document;
+  parent?: HTMLElement;
   width?: number | string;
 }
 
@@ -130,8 +122,8 @@ export function createProviderIconSvg(
   icon: ProviderIconSvg,
   options: CreateProviderIconSvgOptions = {},
 ): SVGElement {
-  const ownerDocument = options.ownerDocument ?? window.document;
-  const svg = ownerDocument.createElementNS(SVG_NS, 'svg');
+  const parent = options.parent ?? activeDocument.body;
+  const svg = parent.createSvg('svg');
   svg.setAttribute('viewBox', icon.viewBox);
   svg.setAttribute('fill', 'none');
   svg.setAttribute('aria-hidden', 'true');
@@ -152,27 +144,26 @@ export function createProviderIconSvg(
 
   if (icon.kind === 'composite') {
     for (const child of icon.children) {
-      svg.appendChild(createProviderSvgChild(child, ownerDocument));
+      svg.appendChild(createProviderSvgChild(child, svg));
     }
     return svg;
   }
 
-  const path = ownerDocument.createElementNS(SVG_NS, 'path');
+  const path = svg.createSvg('path');
   path.setAttribute('d', icon.path);
   path.setAttribute('fill', 'currentColor');
-  svg.appendChild(path);
   return svg;
 }
 
-function createProviderSvgChild(child: ProviderSvgChild, ownerDocument: Document): SVGElement {
-  const element = ownerDocument.createElementNS(SVG_NS, child.tag);
+function createProviderSvgChild(child: ProviderSvgChild, parent: SVGElement): SVGElement {
+  const element = parent.createSvg(child.tag);
   for (const [name, value] of Object.entries(child.attributes)) {
     element.setAttribute(name, value);
   }
 
   if (child.tag === 'g') {
     for (const nestedChild of child.children) {
-      element.appendChild(createProviderSvgChild(nestedChild, ownerDocument));
+      element.appendChild(createProviderSvgChild(nestedChild, element));
     }
   }
 

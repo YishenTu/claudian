@@ -110,16 +110,18 @@ function extractLinkPathFromTarget(linkTarget: string): string {
  * Click handling is done via event delegation in registerFileLinkHandler.
  */
 function createWikilink(
-  ownerDocument: Document,
+  parent: HTMLElement,
   linkTarget: string,
   displayText: string
 ): HTMLElement {
-  const link = ownerDocument.createElement('a');
-  link.className = 'claudian-file-link internal-link';
-  link.textContent = displayText;
-  link.setAttribute('data-href', linkTarget);
-  link.setAttribute('href', linkTarget);
-  return link;
+  return parent.createEl('a', {
+    cls: 'claudian-file-link internal-link',
+    text: displayText,
+    attr: {
+      'data-href': linkTarget,
+      href: linkTarget,
+    },
+  });
 }
 
 function repairEmptyInternalLink(app: App, link: HTMLAnchorElement): void {
@@ -163,7 +165,8 @@ export function registerFileLinkHandler(
   });
 }
 
-function buildFragmentWithLinks(ownerDocument: Document, text: string, matches: WikilinkMatch[]): DocumentFragment {
+function buildFragmentWithLinks(parent: HTMLElement, text: string, matches: WikilinkMatch[]): DocumentFragment {
+  const ownerDocument = parent.ownerDocument;
   const fragment = ownerDocument.createDocumentFragment();
   let currentIndex = text.length;
 
@@ -177,7 +180,7 @@ function buildFragmentWithLinks(ownerDocument: Document, text: string, matches: 
       );
     }
 
-    fragment.insertBefore(createWikilink(ownerDocument, linkTarget, displayText), fragment.firstChild);
+    fragment.insertBefore(createWikilink(parent, linkTarget, displayText), fragment.firstChild);
     currentIndex = index;
   }
 
@@ -198,7 +201,10 @@ function processTextNode(app: App, node: Text): boolean {
   const matches = findWikilinks(app, text);
   if (matches.length === 0) return false;
 
-  node.parentNode?.replaceChild(buildFragmentWithLinks(node.ownerDocument, text, matches), node);
+  const parent = node.parentElement;
+  if (!parent) return false;
+
+  node.parentNode?.replaceChild(buildFragmentWithLinks(parent, text, matches), node);
   return true;
 }
 
@@ -225,7 +231,7 @@ export function processFileLinks(app: App, container: HTMLElement): void {
     if (matches.length === 0) return;
 
     codeEl.textContent = '';
-    codeEl.appendChild(buildFragmentWithLinks(container.ownerDocument, text, matches));
+    codeEl.appendChild(buildFragmentWithLinks(codeEl, text, matches));
   });
 
   const walker = container.ownerDocument.createTreeWalker(

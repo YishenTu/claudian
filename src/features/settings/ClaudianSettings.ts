@@ -116,6 +116,15 @@ export class ClaudianSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  /**
+   * Declarative settings definitions for Obsidian 1.13.0+ settings search.
+   * Claudian still builds its settings imperatively in display(); this empty
+   * array satisfies the contract so the tab is registered in search.
+   */
+  getSettingDefinitions(): unknown[] {
+    return [];
+  }
+
   display(): void {
     const displayGeneration = ++this.displayGeneration;
     const { containerEl } = this;

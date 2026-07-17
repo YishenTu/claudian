@@ -12,7 +12,7 @@ describe('createProviderIconSvg', () => {
     const svg = createProviderIconSvg(OPENAI_PROVIDER_ICON, {
       className: 'test-icon',
       height: 12,
-      ownerDocument: document,
+      parent: document.body,
       width: 12,
     });
 
@@ -31,7 +31,7 @@ describe('createProviderIconSvg', () => {
     const svg = createProviderIconSvg(OPENCODE_PROVIDER_ICON, {
       dataProvider: 'opencode',
       height: 18,
-      ownerDocument: document,
+      parent: document.body,
       width: 18,
     });
 
@@ -44,7 +44,7 @@ describe('createProviderIconSvg', () => {
   it('renders the Pi provider icon as currentColor composite paths', () => {
     const svg = createProviderIconSvg(PI_PROVIDER_ICON, {
       dataProvider: 'pi',
-      ownerDocument: document,
+      parent: document.body,
     });
 
     expect(svg.getAttribute('viewBox')).toBe('0 0 800 800');

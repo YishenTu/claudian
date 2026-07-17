@@ -521,33 +521,29 @@ export class InlineEditSession {
 
   createInputDOM(): HTMLElement {
     const ownerDocument = this.getOwnerDocument();
-    const container = ownerDocument.createElement('div');
-    container.className = 'claudian-inline-input-container';
+    const container = createDiv({ cls: 'claudian-inline-input-container' });
     this.containerEl = container;
 
-    this.agentReplyEl = ownerDocument.createElement('div');
-    this.agentReplyEl.className = 'claudian-inline-agent-reply claudian-hidden';
-    container.appendChild(this.agentReplyEl);
+    this.agentReplyEl = container.createDiv({ cls: 'claudian-inline-agent-reply claudian-hidden' });
 
-    const inputWrap = ownerDocument.createElement('div');
-    inputWrap.className = 'claudian-inline-input-wrap';
-    container.appendChild(inputWrap);
+    const inputWrap = container.createDiv({ cls: 'claudian-inline-input-wrap' });
 
-    this.inputEl = ownerDocument.createElement('input');
-    this.inputEl.type = 'text';
-    this.inputEl.className = 'claudian-inline-input';
-    this.inputEl.placeholder = this.mode === 'cursor' ? 'Insert instructions...' : 'Edit instructions...';
-    this.inputEl.spellcheck = false;
-    inputWrap.appendChild(this.inputEl);
+    const inputEl = inputWrap.createEl('input', {
+      cls: 'claudian-inline-input',
+      attr: {
+        type: 'text',
+        placeholder: this.mode === 'cursor' ? 'Insert instructions...' : 'Edit instructions...',
+        spellcheck: 'false',
+      },
+    });
+    this.inputEl = inputEl;
 
-    this.spinnerEl = ownerDocument.createElement('div');
-    this.spinnerEl.className = 'claudian-inline-spinner claudian-hidden';
-    inputWrap.appendChild(this.spinnerEl);
+    this.spinnerEl = inputWrap.createDiv({ cls: 'claudian-inline-spinner claudian-hidden' });
 
     const inlineCatalog = ProviderWorkspaceRegistry.getCommandCatalog(this.resolvedProviderId);
     this.slashCommandDropdown = new SlashCommandDropdown(
       ownerDocument.body,
-      this.inputEl,
+      inputEl,
       {
         onSelect: () => {},
         onHide: () => {},
@@ -564,7 +560,7 @@ export class InlineEditSession {
 
     this.mentionDropdown = new MentionDropdownController(
       ownerDocument.body,
-      this.inputEl,
+      inputEl,
       {
         // Inline-edit resolves @mentions at send time from input text.
         onAttachFile: () => {},
@@ -580,29 +576,23 @@ export class InlineEditSession {
       { fixed: true }
     );
 
-    this.inputEl.addEventListener('keydown', (e) => this.handleKeydown(e));
-    this.inputEl.addEventListener('input', () => this.mentionDropdown?.handleInputChange());
+    inputEl.addEventListener('keydown', (e) => this.handleKeydown(e));
+    inputEl.addEventListener('input', () => this.mentionDropdown?.handleInputChange());
 
-    window.setTimeout(() => this.inputEl?.focus(), 50);
+    window.setTimeout(() => inputEl.focus(), 50);
     return container;
   }
 
   createDiffPreviewDOM(diffOps: DiffOp[]): HTMLElement {
-    const ownerDocument = this.getOwnerDocument();
-    const previewEl = ownerDocument.createElement('div');
-    previewEl.className = 'claudian-inline-diff-preview';
+    const previewEl = createDiv({ cls: 'claudian-inline-diff-preview' });
 
-    const bodyEl = ownerDocument.createElement('div');
-    bodyEl.className = 'claudian-inline-diff-preview-body markdown-rendered';
-    previewEl.appendChild(bodyEl);
+    const bodyEl = previewEl.createDiv({ cls: 'claudian-inline-diff-preview-body markdown-rendered' });
 
-    const actionsEl = ownerDocument.createElement('div');
-    actionsEl.className = 'claudian-inline-preview-actions';
+    const actionsEl = previewEl.createDiv({ cls: 'claudian-inline-preview-actions' });
     actionsEl.setAttribute('role', 'toolbar');
     actionsEl.setAttribute('aria-label', 'Inline edit actions');
     actionsEl.appendChild(this.createPreviewActionButton('Reject', 'reject', () => this.reject()));
     actionsEl.appendChild(this.createPreviewActionButton('Accept', 'accept', () => this.accept()));
-    previewEl.appendChild(actionsEl);
 
     void this.renderMarkdownDiffPreview(bodyEl, diffOps);
     return previewEl;
@@ -613,14 +603,16 @@ export class InlineEditSession {
     variant: 'accept' | 'reject',
     onClick: () => void
   ): HTMLButtonElement {
-    const ownerDocument = this.getOwnerDocument();
-    const button = ownerDocument.createElement('button');
-    button.type = 'button';
-    button.className = `claudian-inline-preview-action ${variant}`;
-    button.textContent = label;
-    button.setAttribute('aria-label', `${label} inline edit`);
-    button.title = variant === 'accept' ? 'Accept (enter)' : 'Reject (esc)';
-    button.addEventListener('click', (event) => {
+    const button = createEl('button', {
+      cls: `claudian-inline-preview-action ${variant}`,
+      text: label,
+      attr: {
+        type: 'button',
+        'aria-label': `${label} inline edit`,
+        title: variant === 'accept' ? 'Accept (enter)' : 'Reject (esc)',
+      },
+    });
+    button.addEventListener('click', (event: MouseEvent) => {
       event.preventDefault?.();
       event.stopPropagation?.();
       onClick();
@@ -644,9 +636,7 @@ export class InlineEditSession {
     for (const document of buildMarkdownDiffDocuments(diffOps)) {
       if (!document.markdown) continue;
 
-      const opEl = this.getOwnerDocument().createElement('div');
-      opEl.className = `claudian-diff-block ${getDiffBlockClass(document.type)}`;
-      container.appendChild(opEl);
+      const opEl = container.createDiv({ cls: `claudian-diff-block ${getDiffBlockClass(document.type)}` });
       await this.renderMarkdownPreview(opEl, document.markdown);
     }
   }
@@ -760,7 +750,7 @@ export class InlineEditSession {
     if (!this.agentReplyEl || !this.containerEl) return;
     const replyEl = this.agentReplyEl;
     const renderVersion = ++this.agentReplyRenderVersion;
-    const renderedEl = this.getOwnerDocument().createElement('div');
+    const renderedEl = this.agentReplyEl.createDiv();
 
     replyEl.removeClass('claudian-hidden');
     replyEl.empty();
