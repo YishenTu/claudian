@@ -167,7 +167,7 @@ export function registerFileLinkHandler(
 
 function buildFragmentWithLinks(parent: HTMLElement, text: string, matches: WikilinkMatch[]): DocumentFragment {
   const ownerDocument = parent.ownerDocument;
-  const fragment = ownerDocument.createDocumentFragment();
+  const fragment = ownerDocument.defaultView?.createFragment() ?? createFragment();
   let currentIndex = text.length;
 
   for (const { index, fullMatch, linkTarget, displayText } of matches) {

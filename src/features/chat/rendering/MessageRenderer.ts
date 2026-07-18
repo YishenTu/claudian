@@ -707,7 +707,7 @@ export class MessageRenderer {
         if (pre.parentElement?.classList.contains('claudian-code-wrapper')) return;
 
         // Create wrapper
-        const wrapper = createEl('div', { cls: 'claudian-code-wrapper' });
+        const wrapper = createDiv({ cls: 'claudian-code-wrapper' });
         pre.parentElement?.insertBefore(wrapper, pre);
         wrapper.appendChild(pre);
 
@@ -717,7 +717,7 @@ export class MessageRenderer {
           const match = code.className.match(/language-(\w+)/);
           if (match) {
             wrapper.classList.add('has-language');
-            const label = createEl('span', {
+            const label = createSpan({
               cls: 'claudian-code-lang-label',
               text: match[1],
             });

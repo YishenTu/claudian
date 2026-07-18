@@ -118,11 +118,11 @@ export class EnvSnippetModal extends Modal {
       const existingLimits = this.snippet?.contextLimits ?? this.plugin.settings.customContextLimits ?? {};
       const existingAliases = this.snippet?.modelAliases ?? this.plugin.settings.customModelAliases ?? {};
 
-      contextLimitsContainer.createEl('div', {
+      contextLimitsContainer.createDiv({
         text: t('settings.customModelOverrides.name'),
         cls: 'setting-item-name',
       });
-      contextLimitsContainer.createEl('div', {
+      contextLimitsContainer.createDiv({
         text: t('settings.customModelOverrides.desc'),
         cls: 'setting-item-description',
       });

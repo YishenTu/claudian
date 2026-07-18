@@ -103,6 +103,7 @@ export default defineConfig([
     },
     rules: {
       ...stagedObsidianRules,
+      'obsidianmd/prefer-create-el': 'error',
       '@typescript-eslint/no-duplicate-type-constituents': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/only-throw-error': 'error',
