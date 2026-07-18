@@ -7,14 +7,15 @@
 .claudian-nav-sidebar {
   position: absolute;
   inset-block: 12px;
-  inset-inline-end: 3px;
+  inset-inline-start: 3px;
+  inset-inline-end: auto;
   z-index: 100;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  width: 36px;
+  gap: 1px;
+  width: 28px;
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
@@ -22,7 +23,7 @@
 }
 
 .claudian-nav-sidebar.visible {
-  opacity: 0.32;
+  opacity: 0.58;
   pointer-events: auto;
 }
 
@@ -75,7 +76,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 34px;
+  width: 28px;
   min-height: 0;
   max-height: 360px;
   overflow: hidden;
@@ -100,16 +101,16 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  width: 32px;
+  align-items: flex-start;
+  gap: 3px;
+  width: 24px;
   max-height: 100%;
-  padding: 9px 5px;
+  padding: 6px 2px;
   overflow-y: auto;
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   scrollbar-width: none;
   backdrop-filter: blur(8px);
 }
@@ -125,9 +126,9 @@
 .claudian-nav-outline-marker {
   position: relative;
   flex: 0 0 auto;
-  width: 20px;
-  height: 12px;
-  min-height: 12px;
+  width: 18px;
+  height: 10px;
+  min-height: 10px;
   padding: 0;
   border: 0;
   border-radius: 4px;
@@ -158,7 +159,7 @@
 }
 
 .claudian-nav-outline-marker[data-outline-kind="prompt"] {
-  width: 22px;
+  width: 20px;
 }
 
 .claudian-nav-outline-marker[data-outline-kind="prompt"]::before {
@@ -166,11 +167,11 @@
 }
 
 .claudian-nav-outline-marker[data-outline-level="2"] {
-  width: 15px;
+  width: 14px;
 }
 
 .claudian-nav-outline-marker[data-outline-level="3"] {
-  width: 10px;
+  width: 9px;
 }
 
 .claudian-nav-outline-marker:hover,
@@ -202,7 +203,8 @@
 .claudian-nav-outline-preview {
   position: absolute;
   inset-block-start: 50%;
-  inset-inline-end: 42px;
+  inset-inline-start: 34px;
+  inset-inline-end: auto;
   z-index: 101;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -262,7 +264,8 @@
 .claudian-nav-toc-popover {
   position: absolute;
   inset-block-start: 50%;
-  inset-inline-end: 42px;
+  inset-inline-start: 34px;
+  inset-inline-end: auto;
   z-index: 101;
   display: flex;
   flex-direction: column;
@@ -351,17 +354,17 @@
 
 @container claudian-chat (max-width: 359px) {
   .claudian-nav-sidebar {
-    inset-inline-end: 1px;
-    width: 30px;
+    inset-inline-start: 1px;
+    width: 26px;
   }
 
   .claudian-nav-outline-slot {
-    width: 30px;
+    width: 26px;
   }
 
   .claudian-nav-outline-track {
-    width: 27px;
-    padding-inline: 4px;
+    width: 22px;
+    padding-inline: 2px;
   }
 
   .claudian-nav-outline-marker[data-outline-kind="prompt"] {
@@ -378,7 +381,8 @@
 
   .claudian-nav-outline-preview,
   .claudian-nav-toc-popover {
-    inset-inline-end: 36px;
+    inset-inline-start: 30px;
+    inset-inline-end: auto;
     width: min(240px, calc(100% - 42px));
   }
 }
@@ -392,30 +396,17 @@
     display: none;
   }
 
+  .claudian-nav-outline-slot {
+    flex: 1 1 auto;
+    max-height: 360px;
+  }
+
   .claudian-nav-btn-toc.has-outline {
-    display: flex;
+    display: none;
   }
 
   .claudian-nav-outline-track {
-    display: none;
-  }
-
-  .claudian-nav-outline-slot {
-    flex: 0 0 32px;
-    max-height: 32px;
-  }
-
-  .claudian-nav-btn-toc {
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--background-modifier-border);
-    color: var(--text-muted);
-    background: var(--background-primary);
-    opacity: 1;
-  }
-
-  .claudian-nav-outline-preview {
-    display: none;
+    display: flex;
   }
 }
 
