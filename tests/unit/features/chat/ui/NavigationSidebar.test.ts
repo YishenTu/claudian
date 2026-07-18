@@ -1059,7 +1059,7 @@ describe('NavigationSidebar', () => {
       expect(markers[2].style['--claudian-outline-offset']).toBe('12.00px');
     });
 
-    it('renders a fallback marker for an assistant Thought block without headings', () => {
+    it('does not treat an assistant Thought block as an outline entry', () => {
       messagesEl.scrollHeight = 2000;
       messagesEl.clientHeight = 500;
       const assistant = addMessage('assistant', 180);
@@ -1072,10 +1072,7 @@ describe('NavigationSidebar', () => {
       );
 
       const markers = parentEl.querySelectorAll('.claudian-nav-outline-marker');
-      expect(markers).toHaveLength(1);
-      expect(markers[0].getAttribute('data-outline-kind')).toBe('response');
-      expect(markers[0].getAttribute('aria-label')).toBe('Thought: Thought');
-      expect(markers[0].getAttribute('aria-current')).toBe('location');
+      expect(markers).toHaveLength(0);
       expect(thought).not.toBeNull();
     });
 

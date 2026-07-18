@@ -14,17 +14,21 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
+  gap: 0;
   width: 28px;
   overflow: hidden;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
   opacity: 0;
   pointer-events: none;
   transition: opacity 160ms ease;
 }
 
 .claudian-nav-sidebar.visible {
-  opacity: 0.58;
-  pointer-events: auto;
+  opacity: 1;
+  pointer-events: none;
 }
 
 .claudian-nav-sidebar.visible:hover,
@@ -54,20 +58,8 @@
     transform 140ms ease;
 }
 
-.claudian-nav-sidebar:hover > .claudian-nav-btn:not(.claudian-nav-btn-toc),
-.claudian-nav-sidebar:focus-within > .claudian-nav-btn:not(.claudian-nav-btn-toc) {
-  opacity: 0.86;
-}
-
-.claudian-nav-btn:hover {
-  color: var(--text-normal);
-  background: var(--background-modifier-hover);
-  transform: scale(1.04);
-}
-
-.claudian-nav-btn svg {
-  width: 15px;
-  height: 15px;
+.claudian-nav-sidebar > .claudian-nav-btn:not(.claudian-nav-btn-toc) {
+  display: none;
 }
 
 .claudian-nav-outline-slot {
@@ -80,6 +72,9 @@
   min-height: 0;
   max-height: 360px;
   overflow: hidden;
+  border: 0;
+  background: none;
+  box-shadow: none;
 }
 
 .claudian-nav-btn-toc {
@@ -87,10 +82,6 @@
   width: 28px;
   height: 28px;
   opacity: 1;
-}
-
-.claudian-nav-sidebar > .claudian-nav-btn:not(.claudian-nav-btn-toc) {
-  flex: 0 0 28px;
 }
 
 .claudian-nav-btn-toc.has-outline {
@@ -113,10 +104,11 @@
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  background: transparent;
+  background: none;
   box-shadow: none;
   scrollbar-width: none;
-  backdrop-filter: blur(8px);
+  backdrop-filter: none;
+  pointer-events: none;
 }
 
 .claudian-nav-outline-track:empty {
@@ -127,20 +119,28 @@
   display: none;
 }
 
-.claudian-nav-outline-marker {
+button.claudian-nav-outline-marker {
+  all: unset;
+  box-sizing: border-box;
   position: absolute;
   inset-inline-start: 50%;
   inset-block-start: calc(50% + var(--claudian-outline-offset, 0px));
   width: 24px;
   height: 12px;
   min-height: 12px;
+  margin: 0;
   padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: inherit;
+  background: transparent !important;
+  box-shadow: none !important;
   cursor: pointer;
-  opacity: 0.58;
+  opacity: 0.42;
+  pointer-events: auto;
   appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-appearance: none;
   transform: translate(-50%, -50%);
   transform-origin: center;
   transition:
@@ -149,13 +149,13 @@
     transform 140ms ease;
 }
 
-.claudian-nav-outline-marker::before {
+button.claudian-nav-outline-marker::before {
   position: absolute;
   inset-inline-start: 50%;
   inset-block-start: 50%;
   width: 17px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: 1px;
   background: var(--text-faint);
   content: "";
   transform: translate(-50%, -50%);
@@ -165,31 +165,35 @@
     box-shadow 140ms ease;
 }
 
-.claudian-nav-outline-marker:hover,
-.claudian-nav-outline-marker:focus-visible {
+button.claudian-nav-outline-marker:hover,
+button.claudian-nav-outline-marker:active,
+button.claudian-nav-outline-marker:focus,
+button.claudian-nav-outline-marker:focus-visible {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
   opacity: 1;
   transform: translate(-50%, -50%) scaleX(1.12);
 }
 
-.claudian-nav-outline-marker:hover::before,
-.claudian-nav-outline-marker:focus-visible::before {
+button.claudian-nav-outline-marker:hover::before,
+button.claudian-nav-outline-marker:focus-visible::before {
   background: var(--text-normal);
 }
 
-.claudian-nav-outline-marker:focus-visible {
-  outline: 1px solid var(--claudian-brand, var(--interactive-accent));
-  outline-offset: 1px;
+button.claudian-nav-outline-marker:focus-visible {
+  outline: none;
 }
 
-.claudian-nav-outline-marker.is-active {
+button.claudian-nav-outline-marker.is-active {
   opacity: 1;
 }
 
-.claudian-nav-outline-marker.is-active::before {
+button.claudian-nav-outline-marker.is-active::before {
   width: 22px;
-  height: 3px;
-  background: var(--claudian-brand, var(--interactive-accent));
-  box-shadow: 0 0 0 1px rgba(var(--claudian-brand-rgb), 0.12);
+  height: 2px;
+  background: var(--text-normal);
+  box-shadow: none;
 }
 
 .claudian-nav-outline-preview {
@@ -385,7 +389,7 @@
   }
 
   .claudian-nav-outline-track {
-    display: flex;
+    display: block;
   }
 }
 
@@ -399,7 +403,7 @@
   }
 
   .claudian-nav-outline-track {
-    display: flex;
+    display: block;
   }
 
   .claudian-nav-outline-slot {
