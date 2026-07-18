@@ -20,6 +20,7 @@
     "test:architecture": "node --test scripts/check-architecture-boundaries.test.mjs",
     "test:watch": "node scripts/run-jest.js --watch",
     "test:coverage": "node scripts/run-jest.js --coverage",
+    "preversion": "bun install --frozen-lockfile",
     "version": "node scripts/sync-version.js && git add manifest.json"
   },
   "keywords": [
