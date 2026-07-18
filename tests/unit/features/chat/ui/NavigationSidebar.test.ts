@@ -52,7 +52,11 @@ class MockClassList {
 class MockElement {
   tagName: string;
   classList = new MockClassList();
-  style: Record<string, string> = {};
+  style = {
+    setProperty: (name: string, value: string): void => {
+      this.style[name] = value;
+    },
+  } as Record<string, string> & { setProperty(name: string, value: string): void };
   ownerDocument: { defaultView: Window | null; activeElement?: MockElement | null };
   children: MockElement[] = [];
   attributes: Record<string, string> = {};
@@ -1034,6 +1038,25 @@ describe('NavigationSidebar', () => {
       expect(markers[1].getAttribute('data-outline-kind')).toBe('heading');
       expect(markers[1].getAttribute('data-outline-level')).toBe('2');
       expect(markers[2].getAttribute('data-outline-level')).toBe('3');
+    });
+
+    it('packs outline markers around the center of the compact rail', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      addMessage('user', 0, 'First task');
+      addMessage('user', 180, 'Second task');
+      addMessage('user', 360, 'Third task');
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      const markers = parentEl.querySelectorAll('.claudian-nav-outline-marker');
+      expect(markers).toHaveLength(3);
+      expect(markers[0].style['--claudian-outline-offset']).toBe('-12.00px');
+      expect(markers[1].style['--claudian-outline-offset']).toBe('0.00px');
+      expect(markers[2].style['--claudian-outline-offset']).toBe('12.00px');
     });
 
     it('renders a fallback marker for an assistant Thought block without headings', () => {

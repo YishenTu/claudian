@@ -24,6 +24,8 @@ interface ConversationOutlineEntry {
 
 const OUTLINE_EXCERPT_LENGTH = 140;
 const OUTLINE_REFRESH_DELAY_MS = 80;
+const OUTLINE_COMPACT_MAX_GAP_PX = 12;
+const OUTLINE_COMPACT_MAX_SPAN_PX = 216;
 let nextOutlinePreviewId = 0;
 let nextDirectoryPopoverId = 0;
 
@@ -570,7 +572,7 @@ export class NavigationSidebar {
     this.outlineTrack.empty();
     this.tocBtn.classList.toggle('has-outline', this.outlineEntries.length > 0);
 
-    this.outlineEntries.forEach((entry) => {
+    this.outlineEntries.forEach((entry, index) => {
       const marker = this.outlineTrack.createEl('button', {
         cls: 'claudian-nav-outline-marker',
         attr: {
@@ -580,6 +582,7 @@ export class NavigationSidebar {
           'data-outline-level': String(entry.level),
         },
       });
+      this.positionOutlineMarker(marker, index);
       this.outlineMarkers.push(marker);
 
       const selectEntry = (event?: Event): void => {
@@ -684,6 +687,15 @@ export class NavigationSidebar {
     }
   }
 
+  private positionOutlineMarker(marker: HTMLElement, index: number): void {
+    const count = this.outlineEntries.length;
+    const gap = count > 1
+      ? Math.min(OUTLINE_COMPACT_MAX_GAP_PX, OUTLINE_COMPACT_MAX_SPAN_PX / (count - 1))
+      : 0;
+    const offset = (index - (count - 1) / 2) * gap;
+    marker.style.setProperty('--claudian-outline-offset', `${offset.toFixed(2)}px`);
+  }
+
   private showOutlinePreview(entry: ConversationOutlineEntry, marker: HTMLElement): void {
     this.hideOutlinePreview();
     this.resolveEntryTarget(entry);
@@ -700,8 +712,19 @@ export class NavigationSidebar {
         text: entry.excerpt,
       });
     }
+    this.positionOutlinePreview(preview, marker);
     this.outlinePreview = preview;
     this.outlinePreviewTrigger = marker;
+  }
+
+  private positionOutlinePreview(preview: HTMLElement, marker: HTMLElement): void {
+    const parentRect = this.parentEl.getBoundingClientRect?.();
+    const markerRect = marker.getBoundingClientRect?.();
+    if (!parentRect || !markerRect || parentRect.height <= 0) return;
+
+    const markerCenter = markerRect.top - parentRect.top + markerRect.height / 2;
+    const top = Math.max(12, Math.min(markerCenter, parentRect.height - 12));
+    preview.style.setProperty('--claudian-outline-preview-top', `${top}px`);
   }
 
   private hideOutlinePreview(): void {
