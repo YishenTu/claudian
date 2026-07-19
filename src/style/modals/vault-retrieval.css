@@ -1,0 +1,79 @@
+.claudian-vault-retrieval-modal {
+  width: min(760px, calc(100vw - 48px));
+}
+
+.claudian-vault-retrieval-query {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin-bottom: 12px;
+}
+
+.claudian-vault-retrieval-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(58vh, 560px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.claudian-vault-retrieval-item {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--background-secondary);
+}
+
+.claudian-vault-retrieval-item-header {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.claudian-vault-retrieval-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: var(--text-accent);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.claudian-vault-retrieval-source:hover {
+  text-decoration: underline;
+}
+
+.claudian-vault-retrieval-source span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-vault-retrieval-excerpt {
+  margin-top: 6px;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.45;
+}
+
+.claudian-vault-retrieval-matches {
+  margin-top: 6px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-vault-retrieval-empty {
+  color: var(--text-muted);
+  padding: 14px 0;
+}
+
+.claudian-vault-retrieval-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+

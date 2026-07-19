@@ -1312,6 +1312,17 @@ describe('Tab - Activation/Deactivation', () => {
 
       expect(tab.dom.contentEl.style.display).toBe('none');
     });
+
+    it('should collapse transient navigation overlays', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const collapse = jest.fn();
+      tab.ui.navigationSidebar = { collapse } as any;
+
+      deactivateTab(tab);
+
+      expect(collapse).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -1348,7 +1359,7 @@ describe('Tab - Event Wiring', () => {
 
       wireTabInputEvents(tab, options.plugin);
 
-      expect(tab.dom.eventCleanups.length).toBe(3); // keydown, input, scroll
+      expect(tab.dom.eventCleanups.length).toBe(4); // keydown, input, drag/drop, scroll
     });
   });
 });

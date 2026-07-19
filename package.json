@@ -1,7 +1,7 @@
 {
-  "name": "claudian",
-  "version": "2.0.39",
-  "description": "Claudian - Claude Code embedded in Obsidian sidebar",
+  "name": "claudian-plus",
+  "version": "2.0.42",
+  "description": "Claudian Plus - a Codex-first AI workspace embedded in Obsidian",
   "main": "main.js",
   "engines": {
     "node": ">=24 <25"
@@ -30,7 +30,15 @@
     "productivity",
     "ide"
   ],
-  "author": "Yishen Tu",
+  "author": "wuyifan-code",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wuyifan-code/Claudian-plus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wuyifan-code/Claudian-plus/issues"
+  },
+  "homepage": "https://github.com/wuyifan-code/Claudian-plus#readme",
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",

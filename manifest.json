@@ -1,10 +1,10 @@
 {
-  "id": "realclaudian",
-  "name": "Claudian",
-  "version": "2.0.39",
+  "id": "claudian-plus",
+  "name": "Claudian Plus",
+  "version": "2.0.42",
   "minAppVersion": "1.7.2",
-  "description": "Embeds Claude Code, Codex, and other coding agents as AI collaborators in your vault. Your vault becomes their working directory, giving them capabilities for file reads and writes, search, bash commands, and multi-step workflows.",
-  "author": "Yishen Tu",
-  "authorUrl": "https://github.com/YishenTu",
+  "description": "A Codex-first enhanced Claudian fork for local-first knowledge work.",
+  "author": "wuyifan-code",
+  "authorUrl": "https://github.com/wuyifan-code",
   "isDesktopOnly": true
 }

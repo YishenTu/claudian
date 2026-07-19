@@ -82,6 +82,8 @@ data.json
 
 # Test artifacts
 test-results/
+.playwright-cli/
+output/playwright/
 
 # Development files
 sandbox/

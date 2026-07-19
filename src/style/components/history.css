@@ -35,6 +35,23 @@
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
+.claudian-history-search {
+  min-width: 0;
+  flex: 1;
+  margin-left: 8px;
+  padding: 4px 7px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-history-search:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+}
+
 .claudian-history-list {
   max-height: 350px;
   overflow-y: auto;

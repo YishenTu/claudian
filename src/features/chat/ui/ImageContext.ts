@@ -125,8 +125,10 @@ export class ImageContextManager {
     e.preventDefault();
     e.stopPropagation();
 
-    if (e.dataTransfer?.types.includes('Files')) {
+    if (this.isImageDrag(e)) {
       this.dropOverlay?.addClass('visible');
+    } else {
+      this.dropOverlay?.removeClass('visible');
     }
   }
 
@@ -170,6 +172,24 @@ export class ImageContextManager {
         await this.addImageFromFile(file, 'drop');
       }
     }
+  }
+
+  private isImageDrag(e: DragEvent): boolean {
+    const items = e.dataTransfer?.items;
+    if (items) {
+      for (let index = 0; index < items.length; index += 1) {
+        if (items[index].kind === 'file' && items[index].type.startsWith('image/')) {
+          return true;
+        }
+      }
+    }
+
+    const files = e.dataTransfer?.files;
+    if (!files) return false;
+    for (let index = 0; index < files.length; index += 1) {
+      if (this.isImageFile(files[index])) return true;
+    }
+    return false;
   }
 
   private setupPasteHandler() {

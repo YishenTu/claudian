@@ -28,6 +28,11 @@
   box-shadow: var(--claudian-input-wrapper-box-shadow);
 }
 
+.claudian-input-wrapper.claudian-drop-target-active {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+
 /* Nav row (tab badges start, action icons end) - above input wrapper */
 .claudian-input-nav-row {
   display: flex;

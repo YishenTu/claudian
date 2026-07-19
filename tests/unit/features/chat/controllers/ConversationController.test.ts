@@ -662,6 +662,22 @@ describe('ConversationController', () => {
         expect(firstTitle?.textContent).toBe('New');
       });
 
+      it('filters conversations by the provided search query', () => {
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'conv-codex', title: 'Codex setup', preview: 'Use gpt-5.6', providerId: 'codex', createdAt: 1000 },
+          { id: 'conv-other', title: 'Release notes', preview: 'A UI polish pass', providerId: 'claude', createdAt: 2000 },
+        ]);
+
+        controller.renderHistoryDropdown(dropdown, {
+          onSelectConversation: jest.fn(),
+          searchQuery: 'gpt-5.6',
+        });
+
+        const list = dropdown.children[1];
+        expect(list.querySelectorAll('.claudian-history-item')).toHaveLength(1);
+        expect(list.querySelector('.claudian-history-item-title')?.textContent).toBe('Codex setup');
+      });
+
       it('should mark current conversation as active', () => {
         deps.state.currentConversationId = 'conv-1';
 

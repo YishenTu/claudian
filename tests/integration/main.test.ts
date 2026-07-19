@@ -100,8 +100,8 @@ describe('ClaudianPlugin', () => {
     };
 
     mockManifest = {
-      id: 'claudian',
-      name: 'Claudian',
+      id: 'claudian-plus',
+      name: 'Claudian Plus',
       version: '0.1.0',
     };
 
@@ -135,7 +135,7 @@ describe('ClaudianPlugin', () => {
 
       expect((plugin.addRibbonIcon as jest.Mock)).toHaveBeenCalledWith(
         'bot',
-        'Open Claudian',
+        'Open Claudian Plus',
         expect.any(Function)
       );
     });

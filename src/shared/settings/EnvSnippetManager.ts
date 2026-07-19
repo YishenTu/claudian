@@ -8,6 +8,7 @@ import {
 import type { ProviderHost } from '../../core/providers/ProviderHost';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import type { EnvironmentScope, EnvSnippet } from '../../core/types';
+import { VIEW_TYPE_CLAUDIAN } from '../../core/types/chat';
 import { t } from '../../i18n/i18n';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import { confirmDelete } from '../modals/ConfirmModal';
@@ -377,7 +378,7 @@ export class EnvSnippetManager {
     });
 
     this.onContextLimitsChange?.();
-    const view = this.plugin.app.workspace.getLeavesOfType('claudian-view')[0]?.view as {
+    const view = this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0]?.view as {
       refreshModelSelector?(): void;
     } | undefined;
     view?.refreshModelSelector?.();

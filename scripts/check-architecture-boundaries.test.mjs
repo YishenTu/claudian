@@ -18,7 +18,7 @@ function findMatches(roots, pattern) {
   for (const root of roots) {
     for (const file of listTypeScriptFiles(root)) {
       if (pattern.test(fs.readFileSync(file, 'utf8'))) {
-        matches.push(path.relative(process.cwd(), file));
+        matches.push(path.relative(process.cwd(), file).split(path.sep).join('/'));
       }
     }
   }

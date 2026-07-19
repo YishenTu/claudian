@@ -3,12 +3,25 @@ import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
 import { type ClaudianSettings } from '../../core/types/settings';
 import { getBuiltInProviderDefaultConfigs } from '../../providers/defaultProviderConfigs';
 
+export const ENHANCED_DEFAULT_CODEX_MODEL = 'gpt-5.6-sol';
+
+function getEnhancedProviderDefaultConfigs(): ClaudianSettings['providerConfigs'] {
+  const providerConfigs = getBuiltInProviderDefaultConfigs();
+  providerConfigs.codex = {
+    ...providerConfigs.codex,
+    enabled: true,
+  };
+  return providerConfigs;
+}
+
 export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   userName: '',
 
-  permissionMode: 'yolo',
+  // A fresh install must not grant an agent approval-free access to the whole
+  // machine. Users can still opt into YOLO explicitly from the toolbar.
+  permissionMode: 'normal',
 
-  model: 'haiku',
+  model: ENHANCED_DEFAULT_CODEX_MODEL,
   thinkingBudget: 'off',
   effortLevel: DEFAULT_REASONING_VALUE,
   serviceTier: 'default',
@@ -34,10 +47,12 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
 
   locale: 'en',
 
-  providerConfigs: getBuiltInProviderDefaultConfigs(),
+  providerConfigs: getEnhancedProviderDefaultConfigs(),
 
-  settingsProvider: 'claude',
-  savedProviderModel: {},
+  settingsProvider: 'codex',
+  savedProviderModel: {
+    codex: ENHANCED_DEFAULT_CODEX_MODEL,
+  },
   savedProviderEffort: {},
   savedProviderServiceTier: {},
   savedProviderThinkingBudget: {},

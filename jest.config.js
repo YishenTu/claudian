@@ -25,12 +25,12 @@ module.exports = {
     {
       ...baseConfig,
       displayName: 'unit',
-      testMatch: ['<rootDir>/tests/unit/**/*.test.ts'],
+      testRegex: '[/\\\\]tests[/\\\\]unit[/\\\\].*\\.test\\.ts$',
     },
     {
       ...baseConfig,
       displayName: 'integration',
-      testMatch: ['<rootDir>/tests/integration/**/*.test.ts'],
+      testRegex: '[/\\\\]tests[/\\\\]integration[/\\\\].*\\.test\\.ts$',
     },
   ],
   collectCoverageFrom: [

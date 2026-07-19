@@ -3,6 +3,7 @@ import type { App } from 'obsidian';
 import type { SharedAppStorage } from '../core/bootstrap/storage';
 import type { ProviderHost } from '../core/providers/ProviderHost';
 import type { AppTabManagerState, ProviderId } from '../core/providers/types';
+import type { VaultRetrievalService } from '../core/retrieval/VaultRetrievalService';
 import type { ChatRuntime } from '../core/runtime/ChatRuntime';
 import type { ClaudianSettings, Conversation, ConversationMeta } from '../core/types';
 import type { TabData, TabId, TabManagerViewHost } from './chat/tabs/types';
@@ -29,6 +30,7 @@ export interface FeatureHost {
   readonly providerHost: ProviderHost;
   readonly settings: ClaudianSettings;
   readonly storage: SharedAppStorage;
+  readonly vaultRetrievalService?: VaultRetrievalService;
 
   mutateSettings(
     mutation: (settings: ClaudianSettings) => void | Promise<void>,

@@ -23,17 +23,17 @@ export function createThinkingBlock(
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
   header.setAttribute('aria-expanded', 'false');
-  header.setAttribute('aria-label', 'Extended thinking - click to expand');
+  header.setAttribute('aria-label', 'Execution details - click to expand');
 
   // Label with timer
   const labelEl = header.createSpan({ cls: 'claudian-thinking-label' });
   const startTime = Date.now();
-  labelEl.setText('Thinking 0s...');
+  labelEl.setText('Working 0s...');
 
   // Start timer interval to update label every second
   const timerInterval = window.setInterval(() => {
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
-    labelEl.setText(`Thinking ${elapsed}s...`);
+    labelEl.setText(`Working ${elapsed}s...`);
   }, 1000);
 
   // Collapsible content (collapsed by default)
@@ -76,7 +76,7 @@ export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   const durationSeconds = Math.floor((Date.now() - state.startTime) / 1000);
 
   // Update label to show final duration (without "...")
-  state.labelEl.setText(`Thought for ${durationSeconds}s`);
+  state.labelEl.setText(`Execution details · ${durationSeconds}s`);
 
   // Collapse when done and sync state
   const header = state.wrapperEl.querySelector('.claudian-thinking-header');
@@ -105,11 +105,14 @@ export function renderStoredThinkingBlock(
   const header = wrapperEl.createDiv({ cls: 'claudian-thinking-header' });
   header.setAttribute('tabindex', '0');
   header.setAttribute('role', 'button');
-  header.setAttribute('aria-label', 'Extended thinking - click to expand');
+  header.setAttribute('aria-expanded', 'false');
+  header.setAttribute('aria-label', 'Execution details - click to expand');
 
   // Label with duration
   const labelEl = header.createSpan({ cls: 'claudian-thinking-label' });
-  const labelText = durationSeconds !== undefined ? `Thought for ${durationSeconds}s` : 'Thought';
+  const labelText = durationSeconds !== undefined
+    ? `Execution details · ${durationSeconds}s`
+    : 'Execution details';
   labelEl.setText(labelText);
 
   // Collapsible content

@@ -46,6 +46,7 @@ import { SubagentManager } from '../services/SubagentManager';
 import { ChatState } from '../state/ChatState';
 import { BangBashModeManager as BangBashModeManagerClass } from '../ui/BangBashModeManager';
 import { ComposerContextTray } from '../ui/ComposerContextTray';
+import { buildDroppedMention, extractDroppedPaths, resolveDroppedVaultItems } from '../ui/dragDrop';
 import { FileContextManager } from '../ui/FileContext';
 import { ImageContextManager } from '../ui/ImageContext';
 import { createInputToolbar } from '../ui/InputToolbar';
@@ -1691,6 +1692,64 @@ export function wireTabInputEvents(tab: TabData, plugin: FeatureHost): void {
   dom.inputEl.addEventListener('input', inputHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('input', inputHandler));
 
+  let dragDepth = 0;
+  const dropTarget = dom.inputWrapper;
+  const clearDropTargetState = (): void => {
+    dragDepth = 0;
+    dropTarget.removeClass('claudian-drop-target-active');
+  };
+  const dragEnterHandler = (event: DragEvent): void => {
+    if (extractDroppedPaths(event.dataTransfer).length === 0) return;
+    event.preventDefault();
+    dragDepth += 1;
+    dropTarget.addClass('claudian-drop-target-active');
+  };
+  const dragOverHandler = (event: DragEvent): void => {
+    if (extractDroppedPaths(event.dataTransfer).length === 0) return;
+    event.preventDefault();
+    event.dataTransfer!.dropEffect = 'copy';
+  };
+  const dragLeaveHandler = (): void => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) dropTarget.removeClass('claudian-drop-target-active');
+  };
+  const dropHandler = (event: DragEvent): void => {
+    const items = resolveDroppedVaultItems(plugin.app, extractDroppedPaths(event.dataTransfer));
+    clearDropTargetState();
+    if (items.length === 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    for (const item of items) {
+      if (item.kind === 'file') {
+        ui.fileContextManager?.attachFilePath(item.path);
+      } else {
+        ui.fileContextManager?.attachFolderPath(item.path);
+      }
+    }
+
+    const input = dom.inputEl;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    const mentionText = items.map(buildDroppedMention).join('');
+    input.setRangeText(mentionText, start, end, 'end');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+    new Notice(`Added ${items.length} vault item${items.length === 1 ? '' : 's'} to context.`);
+  };
+
+  dropTarget.addEventListener('dragenter', dragEnterHandler);
+  dropTarget.addEventListener('dragover', dragOverHandler);
+  dropTarget.addEventListener('dragleave', dragLeaveHandler);
+  dropTarget.addEventListener('drop', dropHandler);
+  dom.eventCleanups.push(() => {
+    dropTarget.removeEventListener('dragenter', dragEnterHandler);
+    dropTarget.removeEventListener('dragover', dragOverHandler);
+    dropTarget.removeEventListener('dragleave', dragLeaveHandler);
+    dropTarget.removeEventListener('drop', dropHandler);
+    clearDropTargetState();
+  });
+
   // Scroll listener for auto-scroll control (tracks position always, not just during streaming)
   const SCROLL_THRESHOLD = 20; // pixels from bottom to consider "at bottom"
   const RE_ENABLE_DELAY = 150; // ms to wait before re-enabling auto-scroll
@@ -1755,6 +1814,7 @@ export function activateTab(tab: TabData): void {
  * Deactivates a tab (hides it and stops services).
  */
 export function deactivateTab(tab: TabData): void {
+  tab.ui.navigationSidebar?.collapse();
   tab.dom.contentEl.addClass('claudian-hidden');
   tab.controllers.selectionController?.stop();
   tab.controllers.browserSelectionController?.stop();

@@ -13,6 +13,7 @@ import {
   type ProviderId,
   type TitleGenerationService,
 } from '../../../core/providers/types';
+import { VaultRetrievalService } from '../../../core/retrieval/VaultRetrievalService';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import {
   cloneChatTurnRequest,
@@ -29,6 +30,7 @@ import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision, StreamChunk } from '../../../core/types';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
+import { VaultRetrievalModal } from '../../../shared/modals/VaultRetrievalModal';
 import type { BrowserSelectionContext } from '../../../utils/browser';
 import type { CanvasSelectionContext } from '../../../utils/canvas';
 import { extractUserDisplayContent } from '../../../utils/context';
@@ -161,6 +163,11 @@ export class InputController {
     return this.deps.getAuxiliaryModel?.()
       ?? this.getAgentService()?.getAuxiliaryModel?.()
       ?? null;
+  }
+
+  private getVaultRetrievalService(): VaultRetrievalService {
+    return this.deps.plugin.vaultRetrievalService
+      ?? new VaultRetrievalService(this.deps.plugin.app);
   }
 
   private syncInstructionRefineModelOverride(
@@ -1757,6 +1764,40 @@ export class InputController {
           return;
         }
         await this.deps.onForkAll();
+        break;
+      }
+      case 'vault-search': {
+        if (!args) {
+          new Notice('Usage: /vault-search [query]');
+          return;
+        }
+        try {
+          const results = await this.getVaultRetrievalService().search(args);
+          new VaultRetrievalModal(this.deps.plugin.app, {
+            title: 'Vault search',
+            query: args,
+            results,
+          }).open();
+        } catch (error) {
+          new Notice(`Vault search failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        break;
+      }
+      case 'insight': {
+        try {
+          const retrieval = await this.getVaultRetrievalService().buildInsightPrompt(args);
+          new VaultRetrievalModal(this.deps.plugin.app, {
+            title: 'Vault insight',
+            query: args,
+            results: retrieval.results,
+            prompt: retrieval.prompt,
+            onAskAgent: (prompt) => {
+              void this.sendMessage({ content: prompt });
+            },
+          }).open();
+        } catch (error) {
+          new Notice(`Insight preparation failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
         break;
       }
       default: {

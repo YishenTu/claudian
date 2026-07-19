@@ -13,12 +13,14 @@ interface PendingRequest {
 
 type NotificationHandler = (params: unknown) => void;
 type ServerRequestHandler = (requestId: string | number, params: unknown) => Promise<unknown>;
+type CloseHandler = (error: Error) => void;
 
 export class CodexRpcTransport {
   private nextId = 1;
   private pending = new Map<number, PendingRequest>();
   private notificationHandlers = new Map<string, NotificationHandler>();
   private serverRequestHandlers = new Map<string, ServerRequestHandler>();
+  private closeHandlers = new Set<CloseHandler>();
   private disposed = false;
 
   constructor(private readonly proc: CodexAppServerProcess) {}
@@ -28,7 +30,17 @@ export class CodexRpcTransport {
     rl.on('line', (line) => this.handleLine(line));
 
     this.proc.onExit(() => {
-      this.rejectAllPending(new Error(this.buildProcessExitMessage()));
+      const error = new Error(this.buildProcessExitMessage());
+      this.rejectAllPending(error);
+      if (this.disposed) return;
+
+      for (const handler of this.closeHandlers) {
+        try {
+          handler(error);
+        } catch {
+          // A lifecycle observer must not break transport cleanup.
+        }
+      }
     });
   }
 
@@ -75,8 +87,18 @@ export class CodexRpcTransport {
     this.serverRequestHandlers.set(method, handler);
   }
 
+  /** Observe an app-server process exit while keeping pending RPC rejection intact. */
+  onClose(handler: CloseHandler): void {
+    this.closeHandlers.add(handler);
+  }
+
+  offClose(handler: CloseHandler): void {
+    this.closeHandlers.delete(handler);
+  }
+
   dispose(): void {
     this.disposed = true;
+    this.closeHandlers.clear();
     this.rejectAllPending(new Error('Transport disposed'));
   }
 
@@ -132,7 +154,13 @@ export class CodexRpcTransport {
 
     if (msg.error) {
       const err = msg.error as JsonRpcError;
-      pending.reject(new Error(err.message));
+      const rpcError = new Error(err.message) as Error & {
+        code?: number;
+        data?: unknown;
+      };
+      rpcError.code = err.code;
+      rpcError.data = err.data;
+      pending.reject(rpcError);
     } else {
       pending.resolve(msg.result);
     }

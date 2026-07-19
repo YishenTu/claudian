@@ -104,7 +104,7 @@ export class ClaudianView extends ItemView {
   }
 
   getDisplayText(): string {
-    return 'Claudian';
+    return 'Claudian Plus';
   }
 
   getIcon(): string {
@@ -314,7 +314,7 @@ export class ClaudianView extends ItemView {
     this.logoEl = titleEl.createSpan({ cls: 'claudian-logo' });
     this.syncHeaderLogo(DEFAULT_CHAT_PROVIDER_ID);
 
-    titleEl.createEl('h4', { text: 'Claudian', cls: 'claudian-title-text' });
+    titleEl.createEl('h4', { text: 'Claudian Plus', cls: 'claudian-title-text' });
   }
 
   /**

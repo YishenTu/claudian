@@ -29,13 +29,13 @@ import {
 describe('types.ts', () => {
   describe('VIEW_TYPE_CLAUDIAN', () => {
     it('should be defined as the correct view type', () => {
-      expect(VIEW_TYPE_CLAUDIAN).toBe('claudian-view');
+      expect(VIEW_TYPE_CLAUDIAN).toBe('claudian-plus-view');
     });
   });
 
   describe('DEFAULT_SETTINGS', () => {
-    it('should default to yolo permission mode', () => {
-      expect(DEFAULT_SETTINGS.permissionMode).toBe('yolo');
+    it('should default to normal permission mode', () => {
+      expect(DEFAULT_SETTINGS.permissionMode).toBe('normal');
     });
 
     it('should have sharedEnvironmentVariables as empty string by default', () => {

@@ -61,10 +61,32 @@ describe('ClaudianSettingsStorage', () => {
       const result = await storage.load();
 
       expect(result.model).toBe(DEFAULT_SETTINGS.model);
+      expect(result.model).toBe('gpt-5.6-sol');
+      expect(result.settingsProvider).toBe('codex');
+      expect(getCodexProviderSettings(result).enabled).toBe(true);
       expect(result.thinkingBudget).toBe(DEFAULT_SETTINGS.thinkingBudget);
       expect(result.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
       expect(result.requireCommandOrControlEnterToSend).toBe(false);
       expect(mockAdapter.read).not.toHaveBeenCalled();
+    });
+
+    it('preserves an existing Claude selection and disabled Codex config', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        model: 'claude-opus-4-5',
+        settingsProvider: 'claude',
+        providerConfigs: {
+          codex: {
+            enabled: false,
+          },
+        },
+      }));
+
+      const result = await storage.load();
+
+      expect(result.model).toBe('claude-opus-4-5');
+      expect(result.settingsProvider).toBe('claude');
+      expect(getCodexProviderSettings(result).enabled).toBe(false);
     });
 
     it('loads legacy .claude settings and migrates them to .claudian', async () => {

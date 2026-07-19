@@ -70,8 +70,15 @@ export class FileContextManager {
         if (filePath === this.currentNotePath) {
           this.currentNotePath = null;
           this.state.detachFile(filePath);
-          this.refreshCurrentNoteChip();
+          this.refreshContextChips();
+          return;
         }
+        this.state.detachFile(filePath);
+        this.refreshContextChips();
+      },
+      onRemoveFolder: (folderPath) => {
+        this.state.detachFolder(folderPath);
+        this.refreshContextChips();
       },
       onOpenFile: (filePath) => {
         void (async (): Promise<void> => {
@@ -93,7 +100,7 @@ export class FileContextManager {
       this.dropdownContainerEl,
       this.inputEl,
       {
-        onAttachFile: (filePath) => this.state.attachFile(filePath),
+        onAttachFile: (filePath) => this.attachFilePath(filePath),
         onMcpMentionChange: (servers) => this.onMcpMentionChange?.(servers),
         onAgentMentionSelect: (agentId) => this.callbacks.onAgentMentionSelect?.(agentId),
         getMentionedMcpServers: () => this.state.getMentionedMcpServers(),
@@ -124,6 +131,26 @@ export class FileContextManager {
     return this.state.getAttachedFiles();
   }
 
+  getAttachedFolders(): Set<string> {
+    return this.state.getAttachedFolders();
+  }
+
+  /** Attach a vault-relative file from a drag/drop or another UI surface. */
+  attachFilePath(filePath: string): void {
+    const normalizedPath = this.normalizePathForVault(filePath);
+    if (!normalizedPath) return;
+    this.state.attachFile(normalizedPath);
+    this.refreshContextChips();
+  }
+
+  /** Attach a vault-relative folder from a drag/drop or another UI surface. */
+  attachFolderPath(folderPath: string): void {
+    const normalizedPath = this.normalizePathForVault(folderPath);
+    if (!normalizedPath) return;
+    this.state.attachFolder(normalizedPath);
+    this.refreshContextChips();
+  }
+
   /** Checks whether current note should be sent for this session. */
   shouldSendCurrentNote(notePath?: string | null): boolean {
     const resolvedPath = notePath ?? this.currentNotePath;
@@ -147,14 +174,14 @@ export class FileContextManager {
   resetForNewConversation() {
     this.currentNotePath = null;
     this.state.resetForNewConversation();
-    this.refreshCurrentNoteChip();
+    this.refreshContextChips();
   }
 
   /** Resets state for loading an existing conversation. */
   resetForLoadedConversation(hasMessages: boolean) {
     this.currentNotePath = null;
     this.state.resetForLoadedConversation(hasMessages);
-    this.refreshCurrentNoteChip();
+    this.refreshContextChips();
   }
 
   /** Sets current note (for restoring persisted state). */
@@ -163,7 +190,7 @@ export class FileContextManager {
     if (notePath) {
       this.state.attachFile(notePath);
     }
-    this.refreshCurrentNoteChip();
+    this.refreshContextChips();
   }
 
   /** Auto-attaches the currently focused file (for new sessions). */
@@ -174,7 +201,7 @@ export class FileContextManager {
       if (normalizedPath) {
         this.currentNotePath = normalizedPath;
         this.state.attachFile(normalizedPath);
-        this.refreshCurrentNoteChip();
+        this.refreshContextChips();
       }
     }
   }
@@ -192,7 +219,7 @@ export class FileContextManager {
       } else {
         this.currentNotePath = null;
       }
-      this.refreshCurrentNoteChip();
+      this.refreshContextChips();
     }
   }
 
@@ -274,8 +301,13 @@ export class FileContextManager {
     return normalizePathForVaultUtil(rawPath, vaultPath);
   }
 
-  private refreshCurrentNoteChip(): void {
+  private refreshContextChips(): void {
     this.chipsView.renderCurrentNote(this.currentNotePath);
+    this.chipsView.renderAttachments(
+      [...this.state.getAttachedFiles()],
+      [...this.state.getAttachedFolders()],
+      this.currentNotePath,
+    );
     this.callbacks.onChipsChanged?.();
   }
 
@@ -302,7 +334,7 @@ export class FileContextManager {
     }
 
     if (needsUpdate) {
-      this.refreshCurrentNoteChip();
+      this.refreshContextChips();
     }
   }
 
@@ -325,7 +357,7 @@ export class FileContextManager {
     }
 
     if (needsUpdate) {
-      this.refreshCurrentNoteChip();
+      this.refreshContextChips();
     }
   }
 

@@ -25,7 +25,7 @@ describe('ThinkingBlockRenderer', () => {
 
       const state = createThinkingBlock(parentEl, mockRenderContent);
 
-      expect(state.labelEl.textContent).toContain('Thinking');
+      expect(state.labelEl.textContent).toContain('Working');
     });
 
     it('should clean up timer on finalize', () => {
@@ -68,7 +68,7 @@ describe('ThinkingBlockRenderer', () => {
       const duration = finalizeThinkingBlock(state);
 
       expect(duration).toBeGreaterThanOrEqual(5);
-      expect(state.labelEl.textContent).toContain('Thought for');
+      expect(state.labelEl.textContent).toContain('Execution details');
     });
 
     it('should sync isExpanded state so toggle works correctly after finalize', () => {

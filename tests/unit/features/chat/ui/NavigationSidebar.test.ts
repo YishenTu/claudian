@@ -52,8 +52,12 @@ class MockClassList {
 class MockElement {
   tagName: string;
   classList = new MockClassList();
-  style: Record<string, string> = {};
-  ownerDocument: { defaultView: Window | null };
+  style = {
+    setProperty: (name: string, value: string): void => {
+      this.style[name] = value;
+    },
+  } as Record<string, string> & { setProperty(name: string, value: string): void };
+  ownerDocument: { defaultView: Window | null; activeElement?: MockElement | null };
   children: MockElement[] = [];
   attributes: Record<string, string> = {};
   dataset: Record<string, string> = {};
@@ -66,6 +70,21 @@ class MockElement {
   public scrollToCalls: Array<{ top: number; behavior: string }> = [];
 
   offsetTop = 0;
+  offsetHeight = 2;
+
+  get parentElement(): MockElement | null {
+    return this.parent;
+  }
+
+  get parentNode(): MockElement | null {
+    return this.parent;
+  }
+
+  get nextElementSibling(): MockElement | null {
+    if (!this.parent) return null;
+    const index = this.parent.children.indexOf(this);
+    return index >= 0 ? this.parent.children[index + 1] ?? null : null;
+  }
 
   constructor(tagName: string) {
     this.tagName = tagName.toUpperCase();
@@ -114,8 +133,14 @@ class MockElement {
 
   appendChild(child: MockElement): MockElement {
     child.parent = this;
+    child.ownerDocument = this.ownerDocument;
     this.children.push(child);
     return child;
+  }
+
+  contains(node: MockElement): boolean {
+    if (node === this) return true;
+    return this.children.some(child => child.contains(node));
   }
 
   remove(): void {
@@ -130,6 +155,15 @@ class MockElement {
 
   getAttribute(name: string): string | null {
     return this.attributes[name] ?? null;
+  }
+
+  removeAttribute(name: string): void {
+    delete this.attributes[name];
+  }
+
+  focus(): void {
+    this.ownerDocument.activeElement = this;
+    this.dispatchEvent({ type: 'focus' });
   }
 
   addEventListener(type: string, listener: Listener, _options?: any): void {
@@ -161,7 +195,14 @@ class MockElement {
   }
 
   createDiv(options?: { cls?: string; text?: string; attr?: Record<string, string> }): MockElement {
-    const el = new MockElement('div');
+    return this.createEl('div', options);
+  }
+
+  createEl(
+    tagName: string,
+    options?: { cls?: string; text?: string; attr?: Record<string, string> }
+  ): MockElement {
+    const el = new MockElement(tagName);
     if (options?.cls) el.className = options.cls;
     if (options?.text) el.textContent = options.text;
     if (options?.attr) {
@@ -189,7 +230,7 @@ class MockElement {
       if (attributeMatch) {
         return el.getAttribute(attributeMatch[1]) === attributeMatch[2];
       }
-      return false;
+      return el.tagName.toLowerCase() === singleSelector.toLowerCase();
     };
     const traverse = (el: MockElement): void => {
       if (selectors.some((singleSelector) => matchesSelector(el, singleSelector))) {
@@ -292,6 +333,10 @@ describe('NavigationSidebar', () => {
       const container = parentEl.querySelector('.claudian-nav-sidebar');
       expect(container).not.toBeNull();
       expect(container!.children.length).toBe(5);
+      const buttons = container!.querySelectorAll('.claudian-nav-btn');
+      expect(buttons).toHaveLength(5);
+      expect(buttons.every(button => button.tagName === 'BUTTON')).toBe(true);
+      expect(buttons.every(button => button.getAttribute('type') === 'button')).toBe(true);
     });
 
     it('should set correct aria-labels on buttons', () => {
@@ -301,7 +346,7 @@ describe('NavigationSidebar', () => {
       );
 
       const container = parentEl.querySelector('.claudian-nav-sidebar');
-      const buttons = container!.children;
+      const buttons = container!.querySelectorAll('.claudian-nav-btn');
 
       expect(buttons[0].getAttribute('aria-label')).toBe('Scroll to top');
       expect(buttons[1].getAttribute('aria-label')).toBe('Previous message');
@@ -317,7 +362,7 @@ describe('NavigationSidebar', () => {
       );
 
       const container = parentEl.querySelector('.claudian-nav-sidebar');
-      const buttons = container!.children;
+      const buttons = container!.querySelectorAll('.claudian-nav-btn');
 
       expect(buttons[0].getAttribute('data-icon')).toBe('chevrons-up');
       expect(buttons[1].getAttribute('data-icon')).toBe('chevron-up');
@@ -414,6 +459,23 @@ describe('NavigationSidebar', () => {
       expect(messagesEl.scrollToCalls.length).toBe(1);
       expect(messagesEl.scrollToCalls[0].top).toBe(0);
       expect(messagesEl.scrollToCalls[0].behavior).toBe('smooth');
+    });
+
+    it('should disable smooth scrolling when reduced motion is requested', () => {
+      messagesEl.scrollHeight = 1000;
+      messagesEl.clientHeight = 500;
+      (messagesEl.ownerDocument.defaultView as any).matchMedia = jest.fn(() => ({
+        matches: true,
+      }));
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      parentEl.querySelector('.claudian-nav-btn-top')!.click();
+
+      expect(messagesEl.scrollToCalls[0].behavior).toBe('auto');
     });
   });
 
@@ -605,8 +667,7 @@ describe('NavigationSidebar', () => {
     }
 
     function getDirectoryButton(parent: MockElement): MockElement {
-      const container = parent.querySelector('.claudian-nav-sidebar')!;
-      return container.children[2];
+      return parent.querySelector('.claudian-nav-btn-toc')!;
     }
 
     it('should show an empty directory state when there are no user messages', () => {
@@ -626,7 +687,7 @@ describe('NavigationSidebar', () => {
       const popover = parentEl.querySelector('.claudian-nav-toc-popover');
       const emptyState = parentEl.querySelector('.claudian-nav-toc-empty');
       expect(popover).not.toBeNull();
-      expect(emptyState?.textContent).toBe('No user prompts in this conversation');
+      expect(emptyState?.textContent).toBe('No outline entries in this conversation');
     });
 
     it('should render directory entries for user messages only', () => {
@@ -739,6 +800,34 @@ describe('NavigationSidebar', () => {
       expect(parentEl.querySelector('.claudian-nav-toc-popover')).toBeNull();
     });
 
+    it('should expose dialog semantics and return focus on Escape', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      addMessage(messagesEl, 'user', 0, 'First prompt');
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      const directoryBtn = getDirectoryButton(parentEl);
+      directoryBtn.click();
+      const popover = parentEl.querySelector('.claudian-nav-toc-popover')!;
+
+      expect(directoryBtn.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(directoryBtn.getAttribute('aria-controls')).toBe(popover.getAttribute('id'));
+      expect(popover.getAttribute('role')).toBe('dialog');
+      popover.dispatchEvent({
+        type: 'keydown',
+        key: 'Escape',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+      });
+
+      expect(parentEl.querySelector('.claudian-nav-toc-popover')).toBeNull();
+      expect(parentEl.ownerDocument.activeElement).toBe(directoryBtn);
+    });
+
     it('should keep the directory button visible when message DOM changes', () => {
       messagesEl.scrollHeight = 1000;
       messagesEl.clientHeight = 500;
@@ -781,12 +870,12 @@ describe('NavigationSidebar', () => {
           removedNodes: [userMsg],
         } as unknown as MutationRecord,
       ], {} as MutationObserver);
-      jest.advanceTimersByTime(16);
+      jest.advanceTimersByTime(80);
 
       const emptyState = parentEl.querySelector('.claudian-nav-toc-empty');
       expect(directoryBtn.classList.contains('claudian-hidden')).toBe(false);
       expect(parentEl.querySelector('.claudian-nav-toc-popover')).not.toBeNull();
-      expect(emptyState?.textContent).toBe('No user prompts in this conversation');
+      expect(emptyState?.textContent).toBe('No outline entries in this conversation');
     });
 
     it('should not rebuild an open directory for assistant content mutations', () => {
@@ -842,13 +931,531 @@ describe('NavigationSidebar', () => {
           attributeName: 'data-toc-title',
         } as unknown as MutationRecord,
       ], {} as MutationObserver);
-      jest.advanceTimersByTime(16);
+
+      expect(parentEl.querySelector('.claudian-nav-toc-popover')).toBe(originalPopover);
+      jest.advanceTimersByTime(80);
 
       const updatedPopover = parentEl.querySelector('.claudian-nav-toc-popover');
       const items = parentEl.querySelectorAll('.claudian-nav-toc-item');
       expect(updatedPopover).not.toBe(originalPopover);
       expect(items).toHaveLength(1);
       expect(items[0].textContent).toBe('1. Updated prompt');
+    });
+
+    it('should restore directory keyboard focus after a debounced refresh', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      addMessage(messagesEl, 'user', 0, 'First prompt');
+      const secondMessage = addMessage(messagesEl, 'user', 400, 'Second prompt');
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      getDirectoryButton(parentEl).click();
+      const originalItems = parentEl.querySelectorAll('.claudian-nav-toc-item');
+      originalItems[1].focus();
+
+      secondMessage.setAttribute('data-toc-title', 'Updated second prompt');
+      mutationCallback?.([
+        {
+          type: 'attributes',
+          target: secondMessage,
+          attributeName: 'data-toc-title',
+        } as unknown as MutationRecord,
+      ], {} as MutationObserver);
+      jest.advanceTimersByTime(80);
+
+      const refreshedItems = parentEl.querySelectorAll('.claudian-nav-toc-item');
+      expect(refreshedItems[1]).not.toBe(originalItems[1]);
+      expect(parentEl.ownerDocument.activeElement).toBe(refreshedItems[1]);
+    });
+  });
+
+  describe('floating conversation outline', () => {
+    function addMessage(
+      role: 'user' | 'assistant',
+      offset: number,
+      title?: string
+    ): MockElement {
+      const msg = messagesEl.createDiv({ cls: `claudian-message claudian-message-${role}` });
+      msg.offsetTop = offset;
+      if (title) msg.setAttribute('data-toc-title', title);
+      return msg;
+    }
+
+    function addHeading(
+      message: MockElement,
+      level: 1 | 2 | 3,
+      title: string,
+      offset: number,
+      contextText = title
+    ): MockElement {
+      const content = message.querySelector('.claudian-message-content')
+        ?? message.createDiv({ cls: 'claudian-message-content' });
+      content.textContent = contextText;
+      const textBlock = content.querySelector('.claudian-text-block')
+        ?? content.createDiv({ cls: 'claudian-text-block' });
+      textBlock.textContent = contextText;
+      const heading = new MockElement(`h${level}`);
+      heading.textContent = title;
+      heading.offsetTop = offset;
+      textBlock.appendChild(heading);
+      const excerpt = contextText.startsWith(title)
+        ? contextText.slice(title.length).trim()
+        : contextText.trim();
+      if (excerpt) {
+        const paragraph = new MockElement('p');
+        paragraph.textContent = excerpt;
+        textBlock.appendChild(paragraph);
+      }
+      return heading;
+    }
+
+    it('renders prompt and assistant heading markers with hierarchy metadata', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      addMessage('user', 0, 'Build a semantic search index');
+      const assistant = addMessage('assistant', 180);
+      addHeading(assistant, 2, 'Index architecture', 40);
+      addHeading(assistant, 3, 'Incremental updates', 240);
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      const track = parentEl.querySelector('.claudian-nav-outline-track');
+      const markers = parentEl.querySelectorAll('.claudian-nav-outline-marker');
+      expect(track).not.toBeNull();
+      expect(track?.getAttribute('aria-label')).toBe('Conversation outline');
+      expect(markers).toHaveLength(3);
+      expect(markers.every(marker => marker.tagName === 'BUTTON')).toBe(true);
+      expect(markers.every(marker => marker.parentElement?.tagName !== 'BUTTON')).toBe(true);
+      expect(markers[0].getAttribute('data-outline-kind')).toBe('prompt');
+      expect(markers[0].getAttribute('data-outline-level')).toBe('1');
+      expect(markers[1].getAttribute('data-outline-kind')).toBe('heading');
+      expect(markers[1].getAttribute('data-outline-level')).toBe('2');
+      expect(markers[2].getAttribute('data-outline-level')).toBe('3');
+    });
+
+    it('packs outline markers around the center of the compact rail', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      addMessage('user', 0, 'First task');
+      addMessage('user', 180, 'Second task');
+      addMessage('user', 360, 'Third task');
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      const markers = parentEl.querySelectorAll('.claudian-nav-outline-marker');
+      expect(markers).toHaveLength(3);
+      expect(markers[0].style['--claudian-outline-offset']).toBe('-12.00px');
+      expect(markers[1].style['--claudian-outline-offset']).toBe('0.00px');
+      expect(markers[2].style['--claudian-outline-offset']).toBe('12.00px');
+    });
+
+    it('does not treat an assistant Thought block as an outline entry', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      const assistant = addMessage('assistant', 180);
+      const content = assistant.createDiv({ cls: 'claudian-message-content' });
+      const thought = content.createDiv({ cls: 'claudian-thinking-block', text: 'Thought' });
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      const markers = parentEl.querySelectorAll('.claudian-nav-outline-marker');
+      expect(markers).toHaveLength(0);
+      expect(thought).not.toBeNull();
+    });
+
+    it('shows a heading preview card on marker hover', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      const assistant = addMessage('assistant', 180);
+      addHeading(
+        assistant,
+        2,
+        'Index architecture',
+        40,
+        'Index architecture Hybrid retrieval combines lexical and semantic recall.'
+      );
+      assistant.querySelector('.claudian-message-content')!.textContent +=
+        ' Verbose tool output should not leak into the preview.';
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      const marker = parentEl.querySelector('.claudian-nav-outline-marker')!;
+      marker.dispatchEvent({ type: 'mouseenter' });
+
+      const preview = parentEl.querySelector('.claudian-nav-outline-preview');
+      expect(preview).not.toBeNull();
+      expect(marker.getAttribute('aria-describedby')).toBe(preview?.getAttribute('id'));
+      expect(parentEl.querySelector('.claudian-nav-outline-preview-badge')?.textContent).toBe('H2');
+      expect(parentEl.querySelector('.claudian-nav-outline-preview-title')?.textContent)
+        .toBe('Index architecture');
+      expect(parentEl.querySelector('.claudian-nav-outline-preview-excerpt')?.textContent)
+        .toContain('Hybrid retrieval');
+      expect(parentEl.querySelector('.claudian-nav-outline-preview-excerpt')?.textContent)
+        .not.toContain('Verbose tool output');
+
+      marker.dispatchEvent({ type: 'mouseleave' });
+      expect(marker.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('uses only the selected heading section for duplicate-title previews', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      const assistant = addMessage('assistant', 180);
+      addHeading(assistant, 2, 'Repeated heading', 40, 'Repeated heading First section.');
+      addHeading(assistant, 2, 'Repeated heading', 240, 'Repeated heading Second section.');
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      const markers = parentEl.querySelectorAll('.claudian-nav-outline-marker');
+      markers[1].dispatchEvent({ type: 'mouseenter' });
+
+      const excerpt = parentEl.querySelector('.claudian-nav-outline-preview-excerpt')?.textContent;
+      expect(excerpt).toBe('Second section.');
+      expect(excerpt).not.toContain('First section.');
+    });
+
+    it('scrolls directly to a selected assistant heading', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      const assistant = addMessage('assistant', 400);
+      addHeading(assistant, 2, 'Implementation', 80);
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      parentEl.querySelector('.claudian-nav-outline-marker')!.click();
+
+      const lastCall = messagesEl.scrollToCalls[messagesEl.scrollToCalls.length - 1];
+      expect(lastCall.top).toBe(470);
+      expect(lastCall.behavior).toBe('smooth');
+    });
+
+    it('highlights the last outline marker above the reading line', () => {
+      messagesEl.scrollHeight = 2200;
+      messagesEl.clientHeight = 600;
+      addMessage('user', 0, 'First task');
+      addMessage('user', 500, 'Second task');
+      addMessage('user', 1100, 'Third task');
+      messagesEl.scrollTop = 520;
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+      messagesEl.dispatchEvent({ type: 'scroll' });
+      jest.advanceTimersByTime(16);
+
+      const markers = parentEl.querySelectorAll('.claudian-nav-outline-marker');
+      expect(markers[0].classList.contains('is-active')).toBe(false);
+      expect(markers[1].classList.contains('is-active')).toBe(true);
+      expect(markers[2].classList.contains('is-active')).toBe(false);
+    });
+
+    it('finds the active entry with logarithmic layout reads on long conversations', () => {
+      messagesEl.scrollHeight = 8000;
+      messagesEl.clientHeight = 500;
+      const targets = Array.from({ length: 64 }, (_, index) => (
+        addMessage('user', index * 100, `Task ${index + 1}`)
+      ));
+      const containerRect = jest.fn(() => ({ top: 0 } as DOMRect));
+      (messagesEl as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect =
+        containerRect;
+      const targetRects = targets.map((target) => {
+        const rect = jest.fn(() => ({ top: target.offsetTop - messagesEl.scrollTop } as DOMRect));
+        (target as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = rect;
+        return rect;
+      });
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+      containerRect.mockClear();
+      targetRects.forEach(rect => rect.mockClear());
+
+      messagesEl.scrollTop = 5700;
+      messagesEl.dispatchEvent({ type: 'scroll' });
+      jest.advanceTimersByTime(16);
+
+      const targetReadCount = targetRects.reduce((sum, rect) => sum + rect.mock.calls.length, 0);
+      expect(containerRect).toHaveBeenCalledTimes(1);
+      expect(targetReadCount).toBeLessThanOrEqual(7);
+    });
+
+    it('keeps the active marker inside the visible outline track', () => {
+      messagesEl.scrollHeight = 3000;
+      messagesEl.clientHeight = 400;
+      Array.from({ length: 20 }, (_, index) => (
+        addMessage('user', index * 100, `Task ${index + 1}`)
+      ));
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+      const track = parentEl.querySelector('.claudian-nav-outline-track')!;
+      track.clientHeight = 36;
+      track.scrollToCalls = [];
+      parentEl.querySelectorAll('.claudian-nav-outline-marker').forEach((marker, index) => {
+        marker.offsetTop = index * 8;
+        marker.offsetHeight = 3;
+      });
+
+      messagesEl.scrollTop = 1700;
+      messagesEl.dispatchEvent({ type: 'scroll' });
+      jest.advanceTimersByTime(16);
+
+      expect(track.scrollToCalls).toHaveLength(1);
+      expect(track.scrollToCalls[0].top).toBeGreaterThan(0);
+    });
+
+    it('reveals the active marker when a previously hidden track becomes visible', () => {
+      messagesEl.scrollHeight = 3000;
+      messagesEl.clientHeight = 400;
+      Array.from({ length: 20 }, (_, index) => (
+        addMessage('user', index * 100, `Task ${index + 1}`)
+      ));
+      messagesEl.scrollTop = 1700;
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+      const track = parentEl.querySelector('.claudian-nav-outline-track')!;
+      const markers = parentEl.querySelectorAll('.claudian-nav-outline-marker');
+      markers.forEach((marker, index) => {
+        marker.offsetTop = index * 14;
+        marker.offsetHeight = 12;
+      });
+
+      track.clientHeight = 0;
+      sidebar.updateVisibility();
+      jest.advanceTimersByTime(16);
+      track.clientHeight = 48;
+      track.scrollToCalls = [];
+      sidebar.updateVisibility();
+      jest.advanceTimersByTime(16);
+
+      expect(track.scrollToCalls).toHaveLength(1);
+      expect(track.scrollToCalls[0].top).toBeGreaterThan(0);
+    });
+
+    it('refreshes markers when streamed assistant headings appear', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      const assistant = addMessage('assistant', 180);
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+      expect(parentEl.querySelectorAll('.claudian-nav-outline-marker')).toHaveLength(0);
+
+      const heading = addHeading(assistant, 2, 'Streamed heading', 60);
+      mutationCallback?.([
+        {
+          type: 'childList',
+          target: assistant,
+          addedNodes: [heading],
+          removedNodes: [],
+        } as unknown as MutationRecord,
+      ], {} as MutationObserver);
+      jest.advanceTimersByTime(80);
+
+      expect(parentEl.querySelectorAll('.claudian-nav-outline-marker')).toHaveLength(1);
+    });
+
+    it('keeps marker focus when a streamed heading changes the outline structure', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      const assistant = addMessage('assistant', 180);
+      addHeading(assistant, 2, 'First heading', 40);
+      addHeading(assistant, 2, 'Focused heading', 180);
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+      const originalMarkers = parentEl.querySelectorAll('.claudian-nav-outline-marker');
+      originalMarkers[1].focus();
+
+      const addedHeading = addHeading(assistant, 3, 'New streamed heading', 320);
+      mutationCallback?.([
+        {
+          type: 'childList',
+          target: addedHeading.parentElement,
+          addedNodes: [addedHeading],
+          removedNodes: [],
+        } as unknown as MutationRecord,
+      ], {} as MutationObserver);
+      jest.advanceTimersByTime(80);
+
+      const refreshedMarkers = parentEl.querySelectorAll('.claudian-nav-outline-marker');
+      expect(refreshedMarkers[1]).not.toBe(originalMarkers[1]);
+      expect(parentEl.ownerDocument.activeElement).toBe(refreshedMarkers[1]);
+      expect(parentEl.querySelector('.claudian-nav-outline-preview-title')?.textContent)
+        .toBe('Focused heading');
+    });
+
+    it('reuses markers and resolves a replaced heading before the debounce fires', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      const assistant = addMessage('assistant', 180);
+      const oldHeading = addHeading(
+        assistant,
+        2,
+        'Stable heading',
+        40,
+        'Stable heading Old text.'
+      );
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+      const originalMarker = parentEl.querySelector('.claudian-nav-outline-marker')!;
+      const textBlock = assistant.querySelector('.claudian-text-block')!;
+      textBlock.empty();
+      const newHeading = addHeading(
+        assistant,
+        2,
+        'Stable heading',
+        160,
+        'Stable heading Updated text.'
+      );
+      mutationCallback?.([
+        {
+          type: 'childList',
+          target: textBlock,
+          addedNodes: [newHeading],
+          removedNodes: [oldHeading],
+        } as unknown as MutationRecord,
+      ], {} as MutationObserver);
+
+      originalMarker.click();
+      expect(messagesEl.scrollToCalls.at(-1)?.top).toBe(330);
+
+      jest.advanceTimersByTime(80);
+      expect(parentEl.querySelector('.claudian-nav-outline-marker')).toBe(originalMarker);
+    });
+
+    it('rescans only the assistant message dirtied by streaming DOM replacement', () => {
+      messagesEl.scrollHeight = 5000;
+      messagesEl.clientHeight = 500;
+      const assistants = Array.from({ length: 12 }, (_, index) => {
+        const assistant = addMessage('assistant', index * 300);
+        addHeading(
+          assistant,
+          2,
+          `Heading ${index + 1}`,
+          40,
+          `Heading ${index + 1} Initial text.`
+        );
+        return assistant;
+      });
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+      const dirtyMessage = assistants.at(-1)!;
+      const dirtyTextBlock = dirtyMessage.querySelector('.claudian-text-block')!;
+      const oldHeading = dirtyTextBlock.querySelector('h2')!;
+      const querySpies = assistants.map(message => jest.spyOn(message, 'querySelectorAll'));
+
+      dirtyTextBlock.empty();
+      const newHeading = addHeading(
+        dirtyMessage,
+        2,
+        'Heading 12',
+        40,
+        'Heading 12 Updated text.'
+      );
+      querySpies.forEach(spy => spy.mockClear());
+      mutationCallback?.([
+        {
+          type: 'childList',
+          target: dirtyTextBlock,
+          addedNodes: [newHeading],
+          removedNodes: [oldHeading],
+        } as unknown as MutationRecord,
+      ], {} as MutationObserver);
+      jest.advanceTimersByTime(80);
+
+      querySpies.slice(0, -1).forEach(spy => expect(spy).not.toHaveBeenCalled());
+      expect(querySpies.at(-1)).toHaveBeenCalled();
+    });
+
+    it('ignores headings rendered inside assistant tool surfaces', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      const assistant = addMessage('assistant', 180);
+      const content = assistant.createDiv({ cls: 'claudian-message-content' });
+      const toolSurface = content.createDiv({ cls: 'claudian-tool-call' });
+      const toolHeading = new MockElement('h2');
+      toolHeading.textContent = 'Tool output heading';
+      toolSurface.appendChild(toolHeading);
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+
+      expect(parentEl.querySelectorAll('.claudian-nav-outline-marker')).toHaveLength(0);
+
+      parentEl.querySelector('.claudian-nav-btn-toc')!.click();
+      const originalPopover = parentEl.querySelector('.claudian-nav-toc-popover');
+      mutationCallback?.([
+        {
+          type: 'childList',
+          target: toolSurface,
+          addedNodes: [toolHeading],
+          removedNodes: [],
+        } as unknown as MutationRecord,
+      ], {} as MutationObserver);
+      jest.advanceTimersByTime(80);
+
+      expect(parentEl.querySelector('.claudian-nav-toc-popover')).toBe(originalPopover);
+    });
+
+    it('collapses transient outline surfaces when its tab is deactivated', () => {
+      messagesEl.scrollHeight = 2000;
+      messagesEl.clientHeight = 500;
+      addMessage('user', 0, 'First task');
+
+      sidebar = new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement
+      );
+      parentEl.querySelector('.claudian-nav-outline-marker')!
+        .dispatchEvent({ type: 'mouseenter' });
+      parentEl.querySelector('.claudian-nav-btn-toc')!.click();
+
+      sidebar.collapse();
+
+      expect(parentEl.querySelector('.claudian-nav-outline-preview')).toBeNull();
+      expect(parentEl.querySelector('.claudian-nav-toc-popover')).toBeNull();
     });
   });
 

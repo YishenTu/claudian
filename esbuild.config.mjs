@@ -29,6 +29,7 @@ if (existsSync('.env.local')) {
 }
 
 const prod = process.argv[2] === 'production';
+const pluginManifest = JSON.parse(readFileSync('manifest.json', 'utf8'));
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -132,7 +133,7 @@ function createPatchRendererUnsafeUnref(outputPaths) {
 // Obsidian plugin folder path (set via OBSIDIAN_VAULT env var or .env.local)
 const OBSIDIAN_VAULT = process.env.OBSIDIAN_VAULT;
 const OBSIDIAN_PLUGIN_PATH = OBSIDIAN_VAULT && existsSync(OBSIDIAN_VAULT)
-  ? path.join(OBSIDIAN_VAULT, '.obsidian', 'plugins', 'claudian')
+  ? path.join(OBSIDIAN_VAULT, '.obsidian', 'plugins', pluginManifest.id)
   : null;
 
 // Plugin to copy built files to Obsidian plugin folder
