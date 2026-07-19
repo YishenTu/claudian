@@ -125,6 +125,8 @@
   justify-content: flex-start;
   flex-shrink: 0;
   padding: 4px 6px 6px 6px;
+  flex-wrap: wrap;
+  row-gap: 12px;
 }
 
 /* Composer queue status row (queued follow-up preview + steer action) */
