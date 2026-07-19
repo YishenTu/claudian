@@ -84,12 +84,26 @@ export class ClaudeUsageGuardService {
   private timer: number | null = null;
   private wasBlocked = false;
   private disposed = false;
+  private readonly initialCheck: Promise<void>;
 
   constructor(private readonly plugin: ProviderHost) {
+    this.initialCheck = this.tick();
     this.timer = window.setInterval(() => {
       void this.tick();
     }, POLL_INTERVAL_MS);
-    void this.tick();
+  }
+
+  /**
+   * Resolves once the first usage check has run (or the timeout elapses),
+   * so callers that gate on workspace init can avoid a cold-start window
+   * where a Claude account already over the threshold could still send one
+   * message before the guard has any state to check.
+   */
+  async awaitInitialCheck(timeoutMs = 5_000): Promise<void> {
+    await Promise.race([
+      this.initialCheck,
+      new Promise<void>((resolve) => window.setTimeout(resolve, timeoutMs)),
+    ]);
   }
 
   dispose(): void {
@@ -125,7 +139,11 @@ export class ClaudeUsageGuardService {
     try {
       usage = await fetchUsage(token);
     } catch {
-      // Transient/API error on this undocumented endpoint — retry next tick.
+      // Transient/API error on this undocumented endpoint (expired token,
+      // network hiccup, endpoint change). Fail open rather than leaving the
+      // user paused indefinitely; the next successful poll re-blocks if
+      // usage is still over the threshold.
+      this.clearBlockIfNeeded('Claudian resumed: could not confirm Claude usage, failing open.');
       return;
     }
     if (this.disposed) return;
@@ -156,11 +174,13 @@ export class ClaudeUsageGuardService {
     new Notice(`Claudian paused: Claude usage reached ${percentLabel}%. Resuming automatically${resetLabel}.`);
   }
 
-  private clearBlockIfNeeded(): void {
+  private clearBlockIfNeeded(
+    message = 'Claudian resumed: Claude usage dropped below the guard threshold.',
+  ): void {
     if (!this.wasBlocked) return;
     this.wasBlocked = false;
     setUsageGuardBlock(null);
-    new Notice('Claudian resumed: Claude usage dropped below the guard threshold.');
+    new Notice(message);
   }
 }
 

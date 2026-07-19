@@ -142,4 +142,29 @@ describe('ClaudeUsageGuardService', () => {
     service.dispose();
     expect(getUsageGuardBlock()).toBeNull();
   });
+
+  it('fails open instead of staying blocked forever when a later poll errors', async () => {
+    mockUsageResponse({ five_hour: { utilization: 95 } });
+    service = new ClaudeUsageGuardService(createPlugin());
+    await flush();
+    expect(getUsageGuardBlock()).not.toBeNull();
+
+    mockedRequest.mockImplementationOnce((() => {
+      const req = new FakeRequest();
+      queueMicrotask(() => req.emit('error', new Error('token expired')));
+      return req as unknown as ReturnType<typeof https.request>;
+    }) as typeof https.request);
+    await (service as any).tick();
+    await flush();
+
+    expect(getUsageGuardBlock()).toBeNull();
+  });
+
+  it('resolves awaitInitialCheck once the first poll completes', async () => {
+    mockUsageResponse({ five_hour: { utilization: 30 } });
+    service = new ClaudeUsageGuardService(createPlugin());
+
+    await expect(service.awaitInitialCheck(1_000)).resolves.toBeUndefined();
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
 });

@@ -3436,4 +3436,21 @@ describe('InputController - Usage Guard', () => {
 
     expect((deps as any).mockAgentService.query).toHaveBeenCalled();
   });
+
+  it('restores a queued resend to the composer instead of dropping it when blocked', async () => {
+    setUsageGuardBlock({ reason: 'Claudian is paused: Claude usage is at 92%.' });
+    const deps = createSendableDeps();
+    const inputEl = deps.getInputEl();
+    inputEl.value = '';
+
+    // Mirrors processQueuedMessage(): it clears its own queue slot before
+    // resending, so the guard must not silently drop this content.
+    await new InputController(deps).sendMessage({
+      content: 'queued follow-up',
+      turnRequestOverride: { text: 'queued follow-up' },
+    });
+
+    expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
+    expect(inputEl.value).toBe('queued follow-up');
+  });
 });

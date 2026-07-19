@@ -72,6 +72,11 @@ export async function createClaudeWorkspaceServices(
   );
 
   const usageGuardService = new ClaudeUsageGuardService(plugin);
+  // Cold start: make sure the first usage check has a chance to run (or
+  // times out) before this provider is considered ready, so an account
+  // already over the threshold can't slip a message through on the very
+  // first send after Obsidian starts.
+  await usageGuardService.awaitInitialCheck();
 
   return {
     claudeStorage,

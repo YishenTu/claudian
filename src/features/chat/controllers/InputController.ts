@@ -255,6 +255,17 @@ export class InputController {
       const usageGuardBlock = getUsageGuardBlock();
       if (usageGuardBlock) {
         new Notice(usageGuardBlock.reason);
+        if (!shouldUseInput) {
+          // Programmatic resend (e.g. a message already popped off the
+          // queue by processQueuedMessage()) — its slot is already cleared,
+          // so put it back in the composer instead of dropping it.
+          const turnRequest = options?.turnRequestOverride
+            ?? this.buildTurnSubmission({ content, images: imageOverride }).turnRequest;
+          this.restoreMessageToInput(
+            this.createQueuedMessage(content, turnRequest),
+            { mergeWithComposer: true },
+          );
+        }
         return;
       }
     }
