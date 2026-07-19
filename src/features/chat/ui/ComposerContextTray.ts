@@ -8,12 +8,13 @@ import {
 
 export type ComposerContextSlot =
   | 'current-note'
+  | 'vault-context'
   | 'editor-selection'
   | 'browser-selection'
   | 'canvas-selection'
   | 'images';
 
-export type ComposerContextItemKind = 'note' | 'selection' | 'image';
+export type ComposerContextItemKind = 'note' | 'file' | 'folder' | 'selection' | 'image';
 
 export interface ComposerContextItem {
   id: string;
@@ -32,6 +33,7 @@ export interface ComposerContextTrayOptions {
 
 const SLOT_ORDER: readonly ComposerContextSlot[] = [
   'current-note',
+  'vault-context',
   'editor-selection',
   'browser-selection',
   'canvas-selection',

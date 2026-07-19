@@ -200,10 +200,17 @@ describe('builtInCommands', () => {
       expect(names).toContain('fork');
     });
 
-    it('returns only commands supported by codex capabilities', () => {
+    it('returns universal commands alongside codex capability-supported commands', () => {
       const commands = getBuiltInCommandsForDropdown('codex');
-      expect(commands.length).toBe(4);
-      expect(commands.map(c => c.name)).toEqual(['clear', 'add-dir', 'resume', 'fork']);
+      expect(commands.length).toBe(6);
+      expect(commands.map(c => c.name)).toEqual([
+        'clear',
+        'add-dir',
+        'resume',
+        'fork',
+        'vault-search',
+        'insight',
+      ]);
     });
   });
 

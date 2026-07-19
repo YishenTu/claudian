@@ -1359,7 +1359,7 @@ describe('Tab - Event Wiring', () => {
 
       wireTabInputEvents(tab, options.plugin);
 
-      expect(tab.dom.eventCleanups.length).toBe(3); // keydown, input, scroll
+      expect(tab.dom.eventCleanups.length).toBe(4); // keydown, input, drag/drop, scroll
     });
   });
 });

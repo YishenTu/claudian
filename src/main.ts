@@ -34,6 +34,7 @@ import type {
 } from './core/providers/types';
 import type { AppTabManagerState } from './core/providers/types';
 import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
+import { VaultRetrievalService } from './core/retrieval/VaultRetrievalService';
 import type {
   ClaudianSettings,
   Conversation,
@@ -107,6 +108,7 @@ export default class ClaudianPlugin extends Plugin {
   settings!: ClaudianSettings;
   storage!: SharedAppStorage;
   readonly providerHost = new ClaudianProviderHost(this);
+  readonly vaultRetrievalService = new VaultRetrievalService(this.app);
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
   private conversationRepository!: ConversationRepository;
   private lastKnownTabManagerState: AppTabManagerState | null = null;

@@ -17,6 +17,8 @@ const mockTransportRequest = jest.fn();
 const mockTransportNotify = jest.fn();
 const mockTransportOnNotification = jest.fn();
 const mockTransportOnServerRequest = jest.fn();
+const mockTransportOnClose = jest.fn();
+const mockTransportOffClose = jest.fn();
 const mockTransportDispose = jest.fn();
 const mockTransportStart = jest.fn();
 const mockResolveLaunchSpec = jest.fn();
@@ -27,6 +29,8 @@ jest.mock('@/providers/codex/runtime/CodexRpcTransport', () => ({
     notify: mockTransportNotify,
     onNotification: mockTransportOnNotification,
     onServerRequest: mockTransportOnServerRequest,
+    onClose: mockTransportOnClose,
+    offClose: mockTransportOffClose,
     dispose: mockTransportDispose,
     start: mockTransportStart,
   })),
@@ -80,10 +84,12 @@ type CapturedServerRequestHandler = (requestId: string | number, params: unknown
 // Notification handlers captured by onNotification
 let notificationHandlers: Map<string, (params: unknown) => void>;
 let serverRequestHandlers: Map<string, CapturedServerRequestHandler>;
+let transportCloseHandler: ((error: Error) => void) | null;
 
 function captureHandlers(): void {
   notificationHandlers = new Map();
   serverRequestHandlers = new Map();
+  transportCloseHandler = null;
 
   mockTransportOnNotification.mockImplementation((method: string, handler: any) => {
     notificationHandlers.set(method, handler);
@@ -91,6 +97,12 @@ function captureHandlers(): void {
 
   mockTransportOnServerRequest.mockImplementation((method: string, handler: any) => {
     serverRequestHandlers.set(method, handler);
+  });
+  mockTransportOnClose.mockImplementation((handler: (error: Error) => void) => {
+    transportCloseHandler = handler;
+  });
+  mockTransportOffClose.mockImplementation((handler: (error: Error) => void) => {
+    if (transportCloseHandler === handler) transportCloseHandler = null;
   });
 }
 
@@ -656,7 +668,11 @@ describe('CodexChatRuntime', () => {
           success: true,
           contentItems: [expect.objectContaining({
             type: 'inputText',
-            text: expect.stringContaining(path.join(workspaceRuntime.dependenciesRoot, 'node', 'node_modules')),
+            // Codex paths are serialized with POSIX separators even on the
+            // Windows host so they remain valid for native/WSL targets.
+            text: expect.stringContaining(
+              path.join(workspaceRuntime.dependenciesRoot, 'node', 'node_modules').replaceAll('\\', '/'),
+            ),
           })],
         }));
 
@@ -1015,6 +1031,31 @@ describe('CodexChatRuntime', () => {
       expect(startCall).toBeUndefined();
     });
 
+    it('marks a missing persisted thread for provider-session recovery', async () => {
+      runtime.syncConversationState({
+        sessionId: 'thread-missing',
+        providerState: { threadId: 'thread-missing', sessionFilePath: '/tmp/missing.jsonl' },
+      });
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/resume': () => {
+          const error = new Error('Thread not found') as Error & { code?: number };
+          error.code = -32000;
+          throw error;
+        },
+      }));
+      captureHandlers();
+
+      const chunks = await collectChunks(runtime.query(createTurn('recover this session')));
+
+      expect(chunks).toContainEqual(expect.objectContaining({
+        type: 'error',
+        code: 'provider_session_missing',
+        providerSessionId: 'thread-missing',
+      }));
+      expect(chunks).toContainEqual({ type: 'done' });
+      expect(runtime.getSessionId()).toBeNull();
+    });
+
     it('skips resume when thread is already loaded in this daemon', async () => {
       // First query starts a new thread
       await collectChunks(runtime.query(createTurn()));
@@ -1369,6 +1410,32 @@ describe('CodexChatRuntime', () => {
 
       expect(chunks).toContainEqual({ type: 'error', content: 'Model error' });
       expect(chunks).toContainEqual({ type: 'done' });
+    });
+
+    it('ends the stream when the app-server exits after turn/start', async () => {
+      mockTransportRequest.mockImplementation(buildRequestHandler({
+        'thread/start': () => threadStartResponse('thread-process-exit'),
+        'turn/start': () => turnStartResponse('turn-process-exit'),
+      }));
+      captureHandlers();
+
+      const gen = runtime.query(createTurn('wait for a process failure'));
+      const firstResult = gen.next();
+      await new Promise(resolve => setTimeout(resolve, 25));
+      expect(transportCloseHandler).not.toBeNull();
+      transportCloseHandler!(new Error('process exited unexpectedly'));
+
+      const chunks: StreamChunk[] = [];
+      const first = await firstResult;
+      if (!first.done && first.value) chunks.push(first.value);
+      for await (const chunk of gen) chunks.push(chunk);
+
+      expect(chunks).toContainEqual(expect.objectContaining({
+        type: 'error',
+        content: expect.stringContaining('app-server stopped'),
+      }));
+      expect(chunks).toContainEqual({ type: 'done' });
+      expect(runtime.isReady()).toBe(false);
     });
 
     it('ignores stale turn completion from a canceled previous turn', async () => {
@@ -2844,7 +2911,10 @@ describe('CodexChatRuntime', () => {
 
       const gen = runtime.query(createCompactTurn());
       const firstResult = gen.next();
-      await new Promise(r => setTimeout(r, 50));
+      for (let attempt = 0; attempt < 50 && (runtime as any).currentTurnId !== 'turn-cc2'; attempt++) {
+        await new Promise(r => setTimeout(r, 10));
+      }
+      expect((runtime as any).currentTurnId).toBe('turn-cc2');
 
       runtime.cancel();
 

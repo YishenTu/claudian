@@ -34,8 +34,8 @@ describe('types.ts', () => {
   });
 
   describe('DEFAULT_SETTINGS', () => {
-    it('should default to yolo permission mode', () => {
-      expect(DEFAULT_SETTINGS.permissionMode).toBe('yolo');
+    it('should default to normal permission mode', () => {
+      expect(DEFAULT_SETTINGS.permissionMode).toBe('normal');
     });
 
     it('should have sharedEnvironmentVariables as empty string by default', () => {

@@ -125,6 +125,28 @@ const LEGACY_WORKSPACE_DEPENDENCY_NOTICE =
 const LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS =
   'This thread predates Claudian client-hosted workspace dependency tools. If the user requests a skill that requires load_workspace_dependencies, explain that they must start a new conversation in Claudian. Do not emulate the tool, search for dependency paths, or install replacement dependencies.';
 
+function isMissingCodexThreadError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const candidate = error as { message?: unknown; code?: unknown; data?: unknown };
+  const message = typeof candidate.message === 'string' ? candidate.message.toLowerCase() : '';
+  const data = typeof candidate.data === 'string'
+    ? candidate.data.toLowerCase()
+    : JSON.stringify(candidate.data ?? '').toLowerCase();
+  const text = `${message} ${data}`;
+
+  // Codex has used both a dedicated not-found error and human-readable
+  // variants across app-server releases. Keep this narrow to thread/session
+  // failures so ordinary model or network errors remain retryable errors.
+  const mentionsThread = text.includes('thread') || text.includes('session');
+  const indicatesMissing = text.includes('not found')
+    || text.includes('does not exist')
+    || text.includes('missing')
+    || text.includes('unknown thread')
+    || text.includes('no such thread');
+  return mentionsThread && indicatesMissing;
+}
+
 export class CodexChatRuntime implements ChatRuntime {
   readonly providerId: ProviderId = 'codex';
 
@@ -336,6 +358,8 @@ export class CodexChatRuntime implements ChatRuntime {
       }
     };
 
+    const transportWithLifecycle = this.transport;
+
     // Set up notification router to push chunks
     this.notificationRouter = new CodexNotificationRouter(
       (chunk) => enqueueChunk(chunk),
@@ -351,6 +375,21 @@ export class CodexChatRuntime implements ChatRuntime {
       return;
     }
 
+    // A successful turn/start leaves query() waiting on notifications. If the
+    // app-server exits after that RPC has resolved, no pending request remains
+    // for the transport to reject, so explicitly end the stream here.
+    const transportCloseHandler = (error: Error): void => {
+      if (this.disposed || this.canceled || !this.currentQueryThreadId) return;
+      this.setReady(false);
+      enqueueChunk({
+        type: 'error',
+        content: `Codex app-server stopped before completing the turn.\n\n${error.message}`,
+      });
+      enqueueChunk({ type: 'done' });
+    };
+    transportWithLifecycle?.onClose?.(transportCloseHandler);
+
+    let resumedThreadId: string | null = null;
     try {
       // Thread lifecycle
       const existingThreadId = this.session.getThreadId();
@@ -446,6 +485,7 @@ export class CodexChatRuntime implements ChatRuntime {
         }
       } else if (existingThreadId && existingThreadId !== this.loadedThreadId) {
         // Resume a persisted thread not yet loaded in this daemon
+        resumedThreadId = existingThreadId;
         const permissionMode = this.resolveSandboxConfig();
         const resumeResult = await this.transport!.request<ThreadResumeResult>('thread/resume', {
           threadId: existingThreadId,
@@ -590,11 +630,27 @@ export class CodexChatRuntime implements ChatRuntime {
         yield { type: 'done' };
         return;
       }
+      if (resumedThreadId && isMissingCodexThreadError(err)) {
+        const missingThreadId = resumedThreadId;
+        this.session.reset();
+        this.loadedThreadId = null;
+        this.currentThreadPath = null;
+        const message = err instanceof Error ? err.message : 'Codex thread no longer exists';
+        yield {
+          type: 'error',
+          content: `Codex thread ${missingThreadId} is no longer available. ${message}`,
+          code: 'provider_session_missing',
+          providerSessionId: missingThreadId,
+        };
+        yield { type: 'done' };
+        return;
+      }
       const message = err instanceof Error ? err.message : 'Unknown Codex error';
       yield { type: 'error', content: message };
       yield { type: 'done' };
       return;
     } finally {
+      transportWithLifecycle?.offClose(transportCloseHandler);
       this.notificationRouter?.endTurn();
 
       this.cleanupActiveInputBundles();

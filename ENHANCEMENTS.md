@@ -28,31 +28,32 @@ The fork keeps provider compatibility while making Codex the default agent runti
 - Track the active reading section and follow the current provider's theme color.
 - Collapse to the existing directory control in narrow or touch-oriented layouts.
 
-### M1: Drag notes and folders into chat
+### M1: Drag notes and folders into chat — MVP delivered
 
 - Accept Obsidian file-explorer drag payloads in the composer.
 - Route notes through the current file attachment flow.
 - Route folders through the current `@folder/` context flow.
-- Show visible context chips and reject unsupported or oversized payloads explicitly.
+- Show an active drop target, resolve only Vault-owned paths, and reject unsupported payloads explicitly.
 
-### M2: Conversation search
+### M2: Conversation search — metadata MVP delivered
 
 - Add instant title filtering to the history panel.
-- Add a provider-neutral local full-text index for user and assistant messages.
+- Search title, first-message preview, and Provider without touching provider-owned transcript files.
+- Add a provider-neutral local full-text index for user and assistant messages (next iteration).
 - Support date, provider, and model filters with direct navigation to a matched message.
 - Delete index records when a conversation is removed.
 
-### M3: Hybrid vault retrieval
+### M3: Hybrid vault retrieval — local MVP delivered
 
 - Incrementally index Markdown blocks by path, heading, modification time, and content hash.
-- Combine lexical retrieval with embeddings and optional reranking.
+- Combine lexical overlap with heading/path/link/recency boosts; embeddings and optional reranking are next.
 - Give explicit context, the current note, and linked notes predictable priority.
 - Return clickable block-level citations and expose index privacy controls.
 
-### M4: Insight engine
+### M4: Insight engine — source-backed entry point delivered
 
 - Surface related older notes, topic evolution, and useful follow-up questions.
-- Require at least two traceable sources for generated insights.
+- `/insight` now builds a source-grounded prompt with numbered citations and an explicit uncertainty check.
 - Start with user-triggered reviews before adding optional scheduled discovery.
 - Learn from useful, not useful, and mute-topic feedback.
 

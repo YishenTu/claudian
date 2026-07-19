@@ -11,4 +11,8 @@ describe('enhanced default settings', () => {
       enabled: true,
     });
   });
+
+  it('does not grant fresh installs approval-free full-machine access', () => {
+    expect(DEFAULT_CLAUDIAN_SETTINGS.permissionMode).toBe('normal');
+  });
 });

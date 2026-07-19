@@ -81,11 +81,13 @@ type HistoryRenderOptions = {
   signal?: AbortSignal;
   pageSize?: number;
   visibleCount?: number;
+  searchQuery?: string;
 };
 
 export class ConversationController {
   private deps: ConversationControllerDeps;
   private callbacks: ConversationCallbacks;
+  private historySearchQuery = '';
 
   constructor(deps: ConversationControllerDeps, callbacks: ConversationCallbacks = {}) {
     this.deps = deps;
@@ -582,6 +584,7 @@ export class ConversationController {
     this.renderHistoryItems(dropdown, {
       onSelectConversation: (id) => this.switchTo(id),
       onRerender: () => this.updateHistoryDropdown(),
+      searchQuery: this.historySearchQuery,
     });
   }
 
@@ -600,6 +603,28 @@ export class ConversationController {
 
     const dropdownHeader = container.createDiv({ cls: 'claudian-history-header' });
     dropdownHeader.createSpan({ text: 'Conversations' });
+    const searchInput = dropdownHeader.createEl('input', {
+      cls: 'claudian-history-search',
+      type: 'search',
+      placeholder: 'Search title or first message',
+      value: options.searchQuery ?? this.historySearchQuery,
+      attr: { 'aria-label': 'Search conversations' },
+    });
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value;
+      const cursor = searchInput.selectionStart ?? query.length;
+      this.historySearchQuery = query;
+      this.renderHistoryItems(container, {
+        ...options,
+        searchQuery: query,
+        visibleCount: options.pageSize,
+      });
+      const nextInput = container.querySelector<HTMLInputElement>('.claudian-history-search');
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.setSelectionRange(cursor, cursor);
+      }
+    });
 
     const list = container.createDiv({ cls: 'claudian-history-list' });
     const allConversations = plugin.getConversationList();
@@ -610,9 +635,24 @@ export class ConversationController {
     }
 
     // Sort by lastResponseAt (fallback to createdAt) descending
-    const conversations = [...allConversations].sort((a, b) => {
+    const searchQuery = (options.searchQuery ?? this.historySearchQuery).trim().toLowerCase();
+    const conversations = [...allConversations]
+      .filter((conversation) => {
+        if (!searchQuery) return true;
+        const haystack = [
+          conversation.title,
+          conversation.preview,
+          conversation.providerId,
+        ].join(' ').toLowerCase();
+        return haystack.includes(searchQuery);
+      })
+      .sort((a, b) => {
       return (b.lastResponseAt ?? b.createdAt) - (a.lastResponseAt ?? a.createdAt);
-    });
+      });
+    if (conversations.length === 0) {
+      list.createDiv({ cls: 'claudian-history-empty', text: 'No matching conversations' });
+      return;
+    }
     const pageSize = Math.max(1, options.pageSize ?? DEFAULT_HISTORY_PAGE_SIZE);
     const visibleCount = Math.max(pageSize, options.visibleCount ?? pageSize);
     const visibleConversations = conversations.slice(0, visibleCount);

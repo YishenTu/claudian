@@ -450,7 +450,10 @@ describe('ImageContextManager - Private Helpers', () => {
       const event = {
         preventDefault: jest.fn(),
         stopPropagation: jest.fn(),
-        dataTransfer: { types: ['Files'] },
+        dataTransfer: {
+          items: [{ kind: 'file', type: 'image/png' }],
+          files: [],
+        },
       };
 
       manager['handleDragEnter'](event as any);

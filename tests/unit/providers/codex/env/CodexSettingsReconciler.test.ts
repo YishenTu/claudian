@@ -1,9 +1,22 @@
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 
 import type { Conversation } from '@/core/types';
-import { codexSettingsReconciler } from '@/providers/codex/env/CodexSettingsReconciler';
+import {
+  codexSettingsReconciler,
+  computeCodexEnvHash,
+} from '@/providers/codex/env/CodexSettingsReconciler';
 
 describe('codexSettingsReconciler', () => {
+  it('fingerprints environment values without persisting secrets or raw URLs', () => {
+    const hash = computeCodexEnvHash(
+      'OPENAI_API_KEY=super-secret\nOPENAI_BASE_URL=https://api.example.com/v1\nOPENAI_MODEL=gpt-5.6-sol',
+    );
+
+    expect(hash).not.toContain('super-secret');
+    expect(hash).not.toContain('https://api.example.com/v1');
+    expect(hash).toMatch(/^OPENAI_API_KEY=[0-9a-f]{64}\|OPENAI_BASE_URL=[0-9a-f]{64}\|OPENAI_MODEL=[0-9a-f]{64}$/);
+  });
+
   it('invalidates both sessionId and providerState when the Codex env hash changes', () => {
     const conversation = {
       providerId: 'codex',
@@ -80,8 +93,8 @@ describe('codexSettingsReconciler', () => {
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toBeUndefined();
     expect(settings.model).toBe('openai-codex/my-custom-model');
-    expect((settings.providerConfigs as any).codex.environmentHash).toBe(
-      'OPENAI_BASE_URL=https://api.example.com/v1',
+    expect((settings.providerConfigs as any).codex.environmentHash).toMatch(
+      /^OPENAI_BASE_URL=[0-9a-f]{64}$/,
     );
   });
 
@@ -102,8 +115,8 @@ describe('codexSettingsReconciler', () => {
 
     expect(result.changed).toBe(true);
     expect(settings.model).toBe(TEST_CODEX_MODEL);
-    expect((settings.providerConfigs as any).codex.environmentHash).toBe(
-      'OPENAI_BASE_URL=https://api.example.com/v1',
+    expect((settings.providerConfigs as any).codex.environmentHash).toMatch(
+      /^OPENAI_BASE_URL=[0-9a-f]{64}$/,
     );
   });
 });

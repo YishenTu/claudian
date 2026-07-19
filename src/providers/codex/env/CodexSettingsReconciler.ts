@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
@@ -13,7 +15,10 @@ export function computeCodexEnvHash(envText: string): string {
   const envVars = parseEnvironmentVariables(envText || '');
   return ENV_HASH_KEYS
     .filter(key => envVars[key])
-    .map(key => `${key}=${envVars[key]}`)
+    // This value is persisted in the vault settings file. Never write model
+    // endpoints or API keys into it verbatim; only a stable fingerprint is
+    // needed to detect environment changes and invalidate stale sessions.
+    .map(key => `${key}=${createHash('sha256').update(envVars[key]).digest('hex')}`)
     .sort()
     .join('|');
 }

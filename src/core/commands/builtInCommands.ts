@@ -8,7 +8,7 @@
 import { ProviderRegistry } from '../providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId } from '../providers/types';
 
-export type BuiltInCommandAction = 'clear' | 'add-dir' | 'resume' | 'fork';
+export type BuiltInCommandAction = 'clear' | 'add-dir' | 'resume' | 'fork' | 'vault-search' | 'insight';
 type BuiltInCommandCapability = 'supportsNativeHistory' | 'supportsFork';
 type BuiltInCommandSupportContext = ProviderId | Pick<ProviderCapabilities, BuiltInCommandCapability>;
 
@@ -56,6 +56,22 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     description: 'Fork entire conversation to new session',
     action: 'fork',
     requiredCapability: 'supportsFork',
+  },
+  {
+    name: 'vault-search',
+    aliases: ['search-vault'],
+    description: 'Search local Markdown sources in the vault',
+    action: 'vault-search',
+    hasArgs: true,
+    argumentHint: '[query]',
+  },
+  {
+    name: 'insight',
+    aliases: ['related'],
+    description: 'Find related sources and ask the active Agent for insights',
+    action: 'insight',
+    hasArgs: true,
+    argumentHint: '[topic]',
   },
 ];
 

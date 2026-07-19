@@ -17,7 +17,9 @@ function getEnhancedProviderDefaultConfigs(): ClaudianSettings['providerConfigs'
 export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   userName: '',
 
-  permissionMode: 'yolo',
+  // A fresh install must not grant an agent approval-free access to the whole
+  // machine. Users can still opt into YOLO explicitly from the toolbar.
+  permissionMode: 'normal',
 
   model: ENHANCED_DEFAULT_CODEX_MODEL,
   thinkingBudget: 'off',

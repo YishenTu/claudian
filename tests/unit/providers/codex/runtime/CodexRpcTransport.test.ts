@@ -257,6 +257,28 @@ describe('CodexRpcTransport', () => {
 
       await expect(promise).rejects.toThrow('unknown variant priority');
     });
+
+    it('notifies active turn observers when the app-server exits', () => {
+      const onClose = jest.fn();
+      transport.onClose(onClose);
+
+      const exitCb = (proc.onExit as jest.Mock).mock.calls[0][0];
+      exitCb(1, null);
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onClose.mock.calls[0][0]).toBeInstanceOf(Error);
+    });
+
+    it('does not notify close observers after disposal', () => {
+      const onClose = jest.fn();
+      transport.onClose(onClose);
+      transport.dispose();
+
+      const exitCb = (proc.onExit as jest.Mock).mock.calls[0][0];
+      exitCb(0, null);
+
+      expect(onClose).not.toHaveBeenCalled();
+    });
   });
 
   describe('request timeout', () => {

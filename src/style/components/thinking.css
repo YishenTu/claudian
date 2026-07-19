@@ -17,7 +17,8 @@
 }
 
 .claudian-thinking-block {
-  margin: 8px 0;
+  margin: 4px 0;
+  color: var(--text-muted);
 }
 
 .claudian-text-block+.claudian-thinking-block {
@@ -40,23 +41,32 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  min-height: 22px;
+  padding: 2px 0;
   cursor: pointer;
   overflow: hidden;
+  color: var(--text-faint);
+  transition: color 120ms ease;
+}
+
+.claudian-thinking-header:hover,
+.claudian-thinking-header:focus-visible {
+  color: var(--text-muted);
 }
 
 .claudian-thinking-label {
   flex: 1;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 500;
-  color: var(--claudian-brand);
+  letter-spacing: 0.01em;
+  color: currentColor;
 }
 
 /* Thinking block content - tree-branch style */
 .claudian-thinking-content {
-  padding: 4px 0;
+  padding: 3px 0;
   padding-inline-start: 24px;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--text-muted);
   max-height: 400px;
