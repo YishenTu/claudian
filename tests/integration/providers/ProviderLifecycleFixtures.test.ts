@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 
+import { AcpClientConnection } from '@/providers/acp/AcpClientConnection';
 import { AcpJsonRpcTransport } from '@/providers/acp/AcpJsonRpcTransport';
 import { AcpSubprocess } from '@/providers/acp/AcpSubprocess';
 import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
@@ -52,6 +53,89 @@ describe('provider lifecycle fixture subprocesses', () => {
 
     transport.dispose();
     await processOwner.shutdown();
+    expect(processOwner.isAlive()).toBe(false);
+  });
+
+  it('runs the Kimi initialize/session/config/permission/prompt flow through a real ACP child', async () => {
+    const processOwner = new AcpSubprocess({
+      args: [fixturePath, 'kimi-acp'],
+      command: process.execPath,
+      cwd: process.cwd(),
+      env: { ...process.env },
+    });
+    processOwner.start();
+    const transport = new AcpJsonRpcTransport({
+      input: processOwner.stdout,
+      onClose: listener => processOwner.onClose(listener),
+      output: processOwner.stdin,
+    }, 2_000);
+    const permissionRequests: unknown[] = [];
+    const notifications: unknown[] = [];
+    const connection = new AcpClientConnection({
+      clientInfo: { name: 'claudian-kimi-fixture', version: '0.0.0' },
+      delegate: {
+        onSessionNotification: notification => {
+          notifications.push(notification);
+        },
+        requestPermission: async request => {
+          permissionRequests.push(request);
+          return { outcome: { outcome: 'selected', optionId: 'approve_once' } };
+        },
+      },
+      transport,
+    });
+    transport.start();
+
+    try {
+      const initialized = await connection.initialize();
+      expect(initialized).toMatchObject({
+        protocolVersion: 1,
+        agentInfo: { name: 'Kimi Code CLI Fixture', version: '0.27.0' },
+        authMethods: [{ id: 'login' }],
+      });
+
+      const session = await connection.newSession({ cwd: process.cwd(), mcpServers: [] });
+      expect(session.sessionId).toBe('kimi-fixture-session');
+      expect(session.configOptions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'model', currentValue: 'kimi-code/k2' }),
+        expect.objectContaining({ id: 'thinking', currentValue: 'off' }),
+        expect.objectContaining({ id: 'mode', currentValue: 'default' }),
+      ]));
+
+      const configured = await connection.setConfigOption({
+        configId: 'model',
+        sessionId: session.sessionId,
+        type: 'select',
+        value: 'kimi-code/k3',
+      });
+      expect(configured.configOptions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'model', currentValue: 'kimi-code/k3' }),
+      ]));
+
+      await expect(connection.prompt({
+        prompt: [{ type: 'text', text: 'fixture prompt' }],
+        sessionId: session.sessionId,
+      })).resolves.toMatchObject({ stopReason: 'end_turn' });
+      expect(permissionRequests).toEqual([
+        expect.objectContaining({
+          sessionId: 'kimi-fixture-session',
+          options: expect.arrayContaining([
+            expect.objectContaining({ optionId: 'approve_once' }),
+            expect.objectContaining({ optionId: 'reject' }),
+          ]),
+        }),
+      ]);
+      expect(notifications).toEqual([
+        expect.objectContaining({
+          sessionId: 'kimi-fixture-session',
+          update: expect.objectContaining({ sessionUpdate: 'agent_message_chunk' }),
+        }),
+      ]);
+    } finally {
+      connection.dispose();
+      transport.dispose();
+      await processOwner.shutdown();
+    }
     expect(processOwner.isAlive()).toBe(false);
   });
 

@@ -110,6 +110,37 @@ export const PI_PROVIDER_ICON: ProviderIconSvg = {
   ],
 };
 
+/** Kimi Code monochrome robot-face mark (stroke + eyes), currentColor. */
+export const KIMI_PROVIDER_ICON: ProviderIconSvg = {
+  kind: 'composite',
+  viewBox: '0 0 24 24',
+  children: [
+    {
+      tag: 'path',
+      attributes: {
+        d: 'M5.2 4.5h13.6a2.2 2.2 0 0 1 2.2 2.2v8.6a2.2 2.2 0 0 1-2.2 2.2H5.2A2.2 2.2 0 0 1 3 15.3V6.7A2.2 2.2 0 0 1 5.2 4.5Z',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '1.6',
+      },
+    },
+    {
+      tag: 'path',
+      attributes: {
+        d: 'M9.6 8h1.4a0.45 0.45 0 0 1 0.45 0.45v1.7A0.45 0.45 0 0 1 11 10.6H9.6A0.45 0.45 0 0 1 9.15 10.15v-1.7A0.45 0.45 0 0 1 9.6 8Z',
+        fill: 'currentColor',
+      },
+    },
+    {
+      tag: 'path',
+      attributes: {
+        d: 'M15.6 8h1.4a0.45 0.45 0 0 1 0.45 0.45v1.7a0.45 0.45 0 0 1-0.45 0.45h-1.4a0.45 0.45 0 0 1-0.45-0.45v-1.7A0.45 0.45 0 0 1 15.6 8Z',
+        fill: 'currentColor',
+      },
+    },
+  ],
+};
+
 export interface CreateProviderIconSvgOptions {
   className?: string;
   dataProvider?: string;

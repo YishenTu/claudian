@@ -2,7 +2,7 @@
 
 ## Project
 
-Claudian is an Obsidian plugin that embeds provider-backed coding agents in a sidebar and inline-edit flow. Claude is the default provider. Codex, OpenCode, and Pi are optional providers that plug into the same conversation model through `Conversation.providerId` and opaque provider-owned `providerState`.
+Claudian is an Obsidian plugin that embeds provider-backed coding agents in a sidebar and inline-edit flow. Claude is the default provider. Codex, OpenCode, Pi, and Kimi Code are optional providers that plug into the same conversation model through `Conversation.providerId` and opaque provider-owned `providerState`.
 
 Do not assume provider parity. Check each provider's `capabilities.ts`, `registration.ts`, and UI config before wiring shared behavior.
 
@@ -17,6 +17,7 @@ Do not assume provider parity. Check each provider's `capabilities.ts`, `registr
   - `src/providers/codex/AGENTS.md`
   - `src/providers/opencode/AGENTS.md`
   - `src/providers/pi/AGENTS.md`
+  - `src/providers/kimi/AGENTS.md`
   - `src/style/AGENTS.md`
 
 ## Commands
@@ -82,6 +83,7 @@ The feature layer depends on `core/` contracts, not provider internals. Provider
 | `~/.claude/projects/{vault}/*.jsonl` | Claude-native transcripts |
 | `~/.codex/sessions/**/*.jsonl` | Codex-native transcripts |
 | `~/.pi/agent/sessions/` | Pi user-level sessions |
+| `~/.kimi-code/` (or `$KIMI_CODE_HOME`) | Kimi Code config, sessions, credentials (provider never writes credentials) |
 
 ## Development Rules
 

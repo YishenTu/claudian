@@ -2,6 +2,7 @@
 
 import {
   createProviderIconSvg,
+  KIMI_PROVIDER_ICON,
   OPENAI_PROVIDER_ICON,
   OPENCODE_PROVIDER_ICON,
   PI_PROVIDER_ICON,
@@ -52,5 +53,16 @@ describe('createProviderIconSvg', () => {
     expect(paths).toHaveLength(2);
     expect(paths[0].getAttribute('fill-rule')).toBe('evenodd');
     expect(paths.every(path => path.getAttribute('fill') === 'currentColor')).toBe(true);
+  });
+
+  it('renders the Kimi provider icon as a composite mark', () => {
+    const svg = createProviderIconSvg(KIMI_PROVIDER_ICON, {
+      dataProvider: 'kimi',
+      parent: document.body,
+    });
+
+    expect(svg.getAttribute('viewBox')).toBe('0 0 24 24');
+    expect(svg.getAttribute('data-provider')).toBe('kimi');
+    expect(svg.querySelectorAll('path').length).toBeGreaterThanOrEqual(2);
   });
 });
