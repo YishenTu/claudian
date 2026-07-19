@@ -216,6 +216,15 @@
       "name": "Safe mode",
       "desc": "Permission mode used when the Safe toggle is active."
     },
+    "usageGuard": "Usage Guard",
+    "usageGuardEnabled": {
+      "name": "Enable usage guard",
+      "desc": "Check your Claude 5-hour usage every minute. When it reaches the threshold below, Claudian pauses sending new messages and resumes automatically once usage drops back under it."
+    },
+    "usageGuardThreshold": {
+      "name": "Pause threshold (%)",
+      "desc": "Pause sending once 5-hour usage reaches this percentage."
+    },
     "codexSafeMode": {
       "name": "Safe mode",
       "desc": "Sandbox mode used when the Safe toggle is active."

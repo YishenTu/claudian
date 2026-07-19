@@ -28,6 +28,8 @@ export interface ClaudeProviderSettings {
   titleModelEnvironmentType: ClaudeModelEnvironmentType | '';
   environmentVariables: string;
   environmentHash: string;
+  usageGuardEnabled: boolean;
+  usageGuardThresholdPercent: number;
 }
 
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
@@ -43,7 +45,15 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   titleModelEnvironmentType: '',
   environmentVariables: '',
   environmentHash: '',
+  usageGuardEnabled: false,
+  usageGuardThresholdPercent: 90,
 });
+
+function normalizeUsageGuardThresholdPercent(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(100, Math.max(1, Math.round(value)))
+    : undefined;
+}
 
 function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -120,6 +130,10 @@ export function getClaudeProviderSettings(
     environmentHash: (config.environmentHash as string | undefined)
       ?? (settings.lastEnvHash as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentHash,
+    usageGuardEnabled: (config.usageGuardEnabled as boolean | undefined)
+      ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.usageGuardEnabled,
+    usageGuardThresholdPercent: normalizeUsageGuardThresholdPercent(config.usageGuardThresholdPercent)
+      ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.usageGuardThresholdPercent,
   };
 }
 

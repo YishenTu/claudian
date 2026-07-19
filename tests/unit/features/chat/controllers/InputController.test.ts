@@ -1,6 +1,7 @@
 import { createMockEl } from '@test/helpers/mockElement';
 import { Notice } from 'obsidian';
 
+import { getUsageGuardBlock, setUsageGuardBlock } from '@/core/usageGuard/UsageGuardState';
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { encodeClaudeTurn } from '@/providers/claude/prompt/ClaudeTurnEncoder';
@@ -3402,5 +3403,37 @@ describe('InputController - Message Queue', () => {
       expect(restoreFn).toHaveBeenCalled();
       expect(mockAgentService.query).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('InputController - Usage Guard', () => {
+  afterEach(() => {
+    setUsageGuardBlock(null);
+  });
+
+  it('blocks sending and shows the reason when the usage guard is active', async () => {
+    setUsageGuardBlock({ reason: 'Claudian is paused: Claude usage is at 92%.' });
+    const deps = createSendableDeps();
+    const inputEl = deps.getInputEl();
+    inputEl.value = 'hello';
+
+    await new InputController(deps).sendMessage();
+
+    expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenCalledWith('Claudian is paused: Claude usage is at 92%.');
+    // Input is preserved so the user can resend once the guard clears.
+    expect(inputEl.value).toBe('hello');
+  });
+
+  it('sends normally once the usage guard clears', async () => {
+    expect(getUsageGuardBlock()).toBeNull();
+    const deps = createSendableDeps();
+    (deps as any).mockAgentService.query = jest.fn().mockImplementation(() => createMockStream([{ type: 'done' }]));
+    const inputEl = deps.getInputEl();
+    inputEl.value = 'hello';
+
+    await new InputController(deps).sendMessage();
+
+    expect((deps as any).mockAgentService.query).toHaveBeenCalled();
   });
 });

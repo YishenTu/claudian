@@ -216,6 +216,15 @@
       "name": "安全模式",
       "desc": "啟用 Safe 開關時使用的權限模式。"
     },
+    "usageGuard": "用量守衛",
+    "usageGuardEnabled": {
+      "name": "啟用用量守衛",
+      "desc": "每分鐘檢查一次 Claude 的 5 小時用量。達到下方門檻時，Claudian 會暫停傳送新訊息，用量降回門檻以下後自動恢復。"
+    },
+    "usageGuardThreshold": {
+      "name": "暫停門檻 (%)",
+      "desc": "5 小時用量達到此百分比時暫停傳送。"
+    },
     "codexSafeMode": {
       "name": "安全模式",
       "desc": "啟用 Safe 開關時使用的沙盒模式。"

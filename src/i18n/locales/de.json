@@ -216,6 +216,15 @@
       "name": "Sicherheitsmodus",
       "desc": "Berechtigungsmodus, der verwendet wird, wenn der Safe-Schalter aktiv ist."
     },
+    "usageGuard": "Nutzungswächter",
+    "usageGuardEnabled": {
+      "name": "Nutzungswächter aktivieren",
+      "desc": "Prüft jede Minute Ihre 5-Stunden-Nutzung von Claude. Wird der unten festgelegte Schwellenwert erreicht, pausiert Claudian das Senden neuer Nachrichten und setzt automatisch fort, sobald die Nutzung wieder darunter liegt."
+    },
+    "usageGuardThreshold": {
+      "name": "Pausierschwelle (%)",
+      "desc": "Sendevorgänge pausieren, sobald die 5-Stunden-Nutzung diesen Prozentsatz erreicht."
+    },
     "codexSafeMode": {
       "name": "Sicherheitsmodus",
       "desc": "Sandbox-Modus, der verwendet wird, wenn der Safe-Schalter aktiv ist."
