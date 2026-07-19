@@ -1,9 +1,9 @@
 {
   "id": "claudian-plus",
   "name": "Claudian Plus",
-  "version": "2.0.40",
+  "version": "2.0.41",
   "minAppVersion": "1.7.2",
-  "description": "A Codex-first enhanced Claudian fork for local-first knowledge work in Obsidian.",
+  "description": "A Codex-first enhanced Claudian fork for local-first knowledge work.",
   "author": "wuyifan-code",
   "authorUrl": "https://github.com/wuyifan-code",
   "isDesktopOnly": true

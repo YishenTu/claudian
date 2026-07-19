@@ -6,6 +6,14 @@
 
 > A Codex-first AI workspace for Obsidian.
 
+## English Overview
+
+Claudian Plus is a Codex-first AI workspace for local-first knowledge work. It brings Codex, Claude, OpenCode, and Pi into one desktop chat workspace with a floating conversation outline, searchable local history, drag-and-drop note and folder context, and source-backed vault search.
+
+## Installation
+
+Download `main.js`, `manifest.json`, and `styles.css` from the latest GitHub release and place them in `.obsidian/plugins/claudian-plus/`. Enable **Claudian Plus** in the app's community plugin settings. The plugin is desktop-only because it integrates with local agent CLIs. Configure your provider and CLI login in the plugin settings.
+
 插件 ID：`claudian-plus`
 
 基于 [Claudian](https://github.com/YishenTu/claudian) 的增强分支，面向长期使用 Obsidian、Coding Agent 和 AI 工作流的用户。
