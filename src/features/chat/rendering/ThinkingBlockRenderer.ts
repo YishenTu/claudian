@@ -50,8 +50,18 @@ export function createThinkingBlock(
     isExpanded: false,
   };
 
-  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
-  setupCollapsible(wrapperEl, header, contentEl, state);
+  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS).
+  // Render the accumulated content on expand: while collapsed, the streaming
+  // loop skips rendering into this hidden block, so the DOM may be stale/empty
+  // when the user opens it (mid-stream or after finalize).
+  setupCollapsible(wrapperEl, header, contentEl, state, {
+    onToggle: (isExpanded) => {
+      if (!isExpanded) return;
+      void renderContent(contentEl, state.content).catch(() => {
+        contentEl.setText(state.content);
+      });
+    },
+  });
 
   return state;
 }

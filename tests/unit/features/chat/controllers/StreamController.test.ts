@@ -254,6 +254,51 @@ describe('StreamController - Text Content', () => {
       );
     });
 
+    it('should throttle successive streaming text renders', async () => {
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.appendText('First');
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+
+      // A second chunk shortly after must not re-render until the throttle window elapses.
+      await controller.appendText(' second');
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(150);
+      await Promise.resolve();
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(2);
+      expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(
+        deps.state.currentTextEl,
+        'First second'
+      );
+    });
+
+    it('should skip live text renders while the leaf is hidden, then flush on finalize', async () => {
+      const msg = createTestMessage();
+      const hiddenEl = {
+        offsetParent: null,
+        ownerDocument: { body: { contains: () => true } },
+      };
+      deps.getMessagesEl = () => hiddenEl as any;
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.appendText('While hidden');
+      jest.advanceTimersByTime(500);
+      await Promise.resolve();
+      expect(deps.renderer.renderContent).not.toHaveBeenCalled();
+
+      // finalize forces the render through regardless of visibility.
+      await controller.finalizeCurrentTextBlock(msg);
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        expect.anything(),
+        'While hidden'
+      );
+    });
+
     it('should defer math rendering during live text renders', async () => {
       deps.state.currentTextEl = createMockEl();
 
@@ -1441,6 +1486,7 @@ describe('StreamController - Text Content', () => {
         labelEl: createMockEl(),
         content: '',
         startTime: Date.now(),
+        isExpanded: true,
       });
 
       await controller.handleStreamChunk({ type: 'thinking', content: 'Let ' }, msg);
@@ -1465,6 +1511,7 @@ describe('StreamController - Text Content', () => {
         labelEl: createMockEl(),
         content: '',
         startTime: Date.now(),
+        isExpanded: true,
       });
 
       await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning $x^2$' }, msg);
@@ -1489,6 +1536,7 @@ describe('StreamController - Text Content', () => {
         labelEl: createMockEl(),
         content: '',
         startTime: Date.now(),
+        isExpanded: true,
       });
 
       await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning $x^2$' }, msg);
@@ -1511,7 +1559,17 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should flush a pending thinking render before finalizing', async () => {
+      const { createThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
       const msg = createTestMessage();
+      const contentEl = createMockEl();
+      createThinkingBlock.mockReturnValueOnce({
+        wrapperEl: createMockEl(),
+        contentEl,
+        labelEl: createMockEl(),
+        content: '',
+        startTime: Date.now(),
+        isExpanded: true,
+      });
 
       await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning' }, msg);
       await controller.finalizeCurrentThinkingBlock(msg);
@@ -1522,6 +1580,38 @@ describe('StreamController - Text Content', () => {
       );
       expect(msg.contentBlocks).toContainEqual(
         expect.objectContaining({ type: 'thinking', content: 'Reasoning' })
+      );
+    });
+
+    it('should skip live renders while the thinking block is collapsed', async () => {
+      const { createThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
+      const msg = createTestMessage();
+      const contentEl = createMockEl();
+      // Collapsed by default (isExpanded falsy): the streaming loop must not
+      // render into the hidden block.
+      createThinkingBlock.mockReturnValueOnce({
+        wrapperEl: createMockEl(),
+        contentEl,
+        labelEl: createMockEl(),
+        content: '',
+        startTime: Date.now(),
+        isExpanded: false,
+      });
+
+      await controller.handleStreamChunk({ type: 'thinking', content: 'Hidden ' }, msg);
+      await controller.handleStreamChunk({ type: 'thinking', content: 'reasoning' }, msg);
+
+      jest.advanceTimersByTime(500);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).not.toHaveBeenCalled();
+
+      // Finalizing a collapsed block still records the content without painting
+      // the hidden DOM (it renders lazily on expand).
+      await controller.finalizeCurrentThinkingBlock(msg);
+      expect(deps.renderer.renderContent).not.toHaveBeenCalled();
+      expect(msg.contentBlocks).toContainEqual(
+        expect.objectContaining({ type: 'thinking', content: 'Hidden reasoning' })
       );
     });
   });

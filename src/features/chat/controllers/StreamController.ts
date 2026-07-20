@@ -30,6 +30,7 @@ import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
+  scheduleDelayedFrame,
 } from '../../../utils/animationFrame';
 import { formatDurationMmSs } from '../../../utils/date';
 import { extractDiffData } from '../../../utils/diff';
@@ -78,6 +79,16 @@ export interface StreamControllerDeps {
   persistConversation?: () => Promise<void>;
 }
 
+/**
+ * Minimum wall-clock gap between successive streaming markdown re-renders of the
+ * same block. Each render redoes the whole block, so rendering every animation
+ * frame is O(block^2). ~150ms is imperceptible while cutting render work ~10x.
+ */
+const STREAMING_RENDER_MIN_INTERVAL_MS = 150;
+
+/** Poll interval for re-checking visibility while a render target is hidden. */
+const HIDDEN_RENDER_POLL_INTERVAL_MS = 250;
+
 export class StreamController {
   private static readonly ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS = [200, 600, 1500] as const;
 
@@ -86,10 +97,14 @@ export class StreamController {
   private pendingTextRenderPromise: Promise<void> | null = null;
   private resolvePendingTextRender: (() => void) | null = null;
   private isTextRenderRunning = false;
+  private lastTextRenderTime = Number.NEGATIVE_INFINITY;
+  private forceTextRenderFlush = false;
   private pendingThinkingRenderFrame: ScheduledAnimationFrame | null = null;
   private pendingThinkingRenderPromise: Promise<void> | null = null;
   private resolvePendingThinkingRender: (() => void) | null = null;
   private isThinkingRenderRunning = false;
+  private lastThinkingRenderTime = Number.NEGATIVE_INFINITY;
+  private forceThinkingRenderFlush = false;
   private pendingToolOutputFrames = new Map<string, ScheduledAnimationFrame>();
   private pendingScrollFrame: ScheduledAnimationFrame | null = null;
 
@@ -741,17 +756,44 @@ export class StreamController {
     const pendingRender = this.pendingTextRenderPromise;
     if (!pendingRender) return;
 
+    // Force the final render through the throttle/visibility gates so the block
+    // is fully rendered even if the stream ends while it is throttled or hidden.
+    this.forceTextRenderFlush = true;
     if (this.pendingTextRenderFrame !== null) {
       cancelScheduledAnimationFrame(this.pendingTextRenderFrame);
       this.pendingTextRenderFrame = null;
+    }
+    if (!this.isTextRenderRunning) {
       void this.renderPendingText();
     }
 
     await pendingRender;
   }
 
+  private scheduleTextRenderRetry(delayMs: number): void {
+    this.pendingTextRenderFrame = scheduleDelayedFrame(() => {
+      this.pendingTextRenderFrame = null;
+      void this.renderPendingText();
+    }, delayMs, this.getStreamingRenderWindow());
+  }
+
   private async renderPendingText(): Promise<void> {
     if (this.isTextRenderRunning) return;
+
+    if (!this.forceTextRenderFlush) {
+      if (this.isRenderTargetHidden()) {
+        // Skip painting a hidden leaf/tab; keep polling so a mid-stream reveal
+        // catches up. finalize forces a render regardless (see flush).
+        this.scheduleTextRenderRetry(HIDDEN_RENDER_POLL_INTERVAL_MS);
+        return;
+      }
+      const wait = this.streamingRenderThrottleWait(this.lastTextRenderTime);
+      if (wait > 0) {
+        this.scheduleTextRenderRetry(wait);
+        return;
+      }
+    }
+
     this.isTextRenderRunning = true;
 
     const { state, renderer } = this.deps;
@@ -766,6 +808,7 @@ export class StreamController {
         } else {
           await renderer.renderContent(textEl, content);
         }
+        this.lastTextRenderTime = Date.now();
         this.scrollToBottom();
       }
     } catch {
@@ -782,6 +825,7 @@ export class StreamController {
       return;
     }
 
+    this.forceTextRenderFlush = false;
     const resolve = this.resolvePendingTextRender;
     this.pendingTextRenderPromise = null;
     this.resolvePendingTextRender = null;
@@ -794,6 +838,8 @@ export class StreamController {
       this.pendingTextRenderFrame = null;
     }
 
+    this.forceTextRenderFlush = false;
+    this.lastTextRenderTime = Number.NEGATIVE_INFINITY;
     const resolve = this.resolvePendingTextRender;
     this.pendingTextRenderPromise = null;
     this.resolvePendingTextRender = null;
@@ -852,7 +898,9 @@ export class StreamController {
     await this.flushPendingThinkingRender();
 
     const thinkingState = state.currentThinkingState;
-    if (this.getStreamingRenderOptions(thinkingState.content)) {
+    // A collapsed block is hidden and renders lazily on expand, so only the
+    // deferred-math re-render is needed here when the block is expanded.
+    if (thinkingState.isExpanded && this.getStreamingRenderOptions(thinkingState.content)) {
       await renderer.renderContent(thinkingState.contentEl, thinkingState.content);
     }
 
@@ -891,40 +939,70 @@ export class StreamController {
     const pendingRender = this.pendingThinkingRenderPromise;
     if (!pendingRender) return;
 
+    this.forceThinkingRenderFlush = true;
     if (this.pendingThinkingRenderFrame !== null) {
       cancelScheduledAnimationFrame(this.pendingThinkingRenderFrame);
       this.pendingThinkingRenderFrame = null;
+    }
+    if (!this.isThinkingRenderRunning) {
       void this.renderPendingThinking();
     }
 
     await pendingRender;
   }
 
+  private scheduleThinkingRenderRetry(delayMs: number): void {
+    this.pendingThinkingRenderFrame = scheduleDelayedFrame(() => {
+      this.pendingThinkingRenderFrame = null;
+      void this.renderPendingThinking();
+    }, delayMs, this.getThinkingRenderWindow());
+  }
+
   private async renderPendingThinking(): Promise<void> {
     if (this.isThinkingRenderRunning) return;
-    this.isThinkingRenderRunning = true;
 
     const { state, renderer } = this.deps;
     const thinkingState = state.currentThinkingState;
     const content = thinkingState?.content ?? '';
 
-    try {
-      if (thinkingState) {
-        const options = this.getStreamingRenderOptions(content);
-        if (options) {
-          await renderer.renderContent(thinkingState.contentEl, content, options);
-        } else {
-          await renderer.renderContent(thinkingState.contentEl, content);
-        }
-        this.scrollToBottom();
+    // Skip rendering into a collapsed (hidden) thinking block; it renders lazily
+    // on expand (ThinkingBlockRenderer wires an on-expand render). This is the
+    // biggest streaming win since thinking blocks are collapsed by default.
+    if (!thinkingState || !thinkingState.isExpanded) {
+      this.finishThinkingRender();
+      return;
+    }
+
+    if (!this.forceThinkingRenderFlush) {
+      if (this.isRenderTargetHidden()) {
+        this.scheduleThinkingRenderRetry(HIDDEN_RENDER_POLL_INTERVAL_MS);
+        return;
       }
+      const wait = this.streamingRenderThrottleWait(this.lastThinkingRenderTime);
+      if (wait > 0) {
+        this.scheduleThinkingRenderRetry(wait);
+        return;
+      }
+    }
+
+    this.isThinkingRenderRunning = true;
+
+    try {
+      const options = this.getStreamingRenderOptions(content);
+      if (options) {
+        await renderer.renderContent(thinkingState.contentEl, content, options);
+      } else {
+        await renderer.renderContent(thinkingState.contentEl, content);
+      }
+      this.lastThinkingRenderTime = Date.now();
+      this.scrollToBottom();
     } catch {
       // MessageRenderer owns user-visible render fallback; keep stream state moving.
     } finally {
       this.isThinkingRenderRunning = false;
     }
 
-    if (state.currentThinkingState === thinkingState && thinkingState && thinkingState.content !== content) {
+    if (state.currentThinkingState === thinkingState && thinkingState.content !== content) {
       this.pendingThinkingRenderFrame = scheduleAnimationFrame(() => {
         this.pendingThinkingRenderFrame = null;
         void this.renderPendingThinking();
@@ -932,6 +1010,11 @@ export class StreamController {
       return;
     }
 
+    this.finishThinkingRender();
+  }
+
+  private finishThinkingRender(): void {
+    this.forceThinkingRenderFlush = false;
     const resolve = this.resolvePendingThinkingRender;
     this.pendingThinkingRenderPromise = null;
     this.resolvePendingThinkingRender = null;
@@ -944,10 +1027,30 @@ export class StreamController {
       this.pendingThinkingRenderFrame = null;
     }
 
+    this.forceThinkingRenderFlush = false;
+    this.lastThinkingRenderTime = Number.NEGATIVE_INFINITY;
     const resolve = this.resolvePendingThinkingRender;
     this.pendingThinkingRenderPromise = null;
     this.resolvePendingThinkingRender = null;
     resolve?.();
+  }
+
+  /** Milliseconds still to wait before the next throttled streaming render. */
+  private streamingRenderThrottleWait(lastRenderTime: number): number {
+    return STREAMING_RENDER_MIN_INTERVAL_MS - (Date.now() - lastRenderTime);
+  }
+
+  /**
+   * True when the messages container is attached but not painted (inactive tab,
+   * background leaf, or collapsed sidebar). offsetParent is null for a
+   * display:none ancestor; the attachment check avoids treating an element torn
+   * down mid-stream as merely hidden.
+   */
+  private isRenderTargetHidden(): boolean {
+    const el = this.deps.getMessagesEl();
+    if (el.offsetParent !== null) return false;
+    const doc = el.ownerDocument;
+    return !!doc?.body?.contains(el);
   }
 
   // ============================================

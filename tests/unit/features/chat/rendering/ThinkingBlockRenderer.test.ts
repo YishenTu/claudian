@@ -39,6 +39,26 @@ describe('ThinkingBlockRenderer', () => {
 
       expect(state.timerInterval).toBeNull();
     });
+
+    it('should render accumulated content when expanded (streaming loop skips collapsed blocks)', () => {
+      const parentEl = createMockEl();
+
+      const state = createThinkingBlock(parentEl, mockRenderContent);
+      // Simulate content accumulated by the streaming loop while collapsed.
+      state.content = 'deferred reasoning';
+      expect(mockRenderContent).not.toHaveBeenCalled();
+
+      const header = (state.wrapperEl as any)._children[0];
+      const clickHandlers = header._eventListeners.get('click') || [];
+      clickHandlers[0]();
+
+      expect(mockRenderContent).toHaveBeenCalledWith(state.contentEl, 'deferred reasoning');
+
+      // Collapsing again must not trigger another render.
+      mockRenderContent.mockClear();
+      clickHandlers[0]();
+      expect(mockRenderContent).not.toHaveBeenCalled();
+    });
   });
 
   describe('finalizeThinkingBlock', () => {
