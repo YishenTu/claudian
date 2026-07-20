@@ -8,6 +8,7 @@ import type { UsageInfo } from '@/core/types';
 import {
   ContextUsageMeter,
   createInputToolbar,
+  InputToolbarLayoutController,
   McpServerSelector,
   ModelSelector,
   ModeSelector,
@@ -471,6 +472,11 @@ describe('ThinkingBudgetSelector', () => {
     it('should display current effort level for Claude models', () => {
       const current = parentEl.querySelector('.claudian-thinking-current');
       expect(current?.textContent).toBe('High');
+    });
+
+    it('should render the effort label for responsive styling', () => {
+      const effort = parentEl.querySelector('.claudian-thinking-effort');
+      expect(effort?.querySelector('.claudian-thinking-label-text')?.textContent).toBe('Effort:');
     });
   });
 
@@ -1038,10 +1044,21 @@ describe('ContextUsageMeter', () => {
     expect(container?.style.display).toBe('flex');
   });
 
-  it('should display percentage', () => {
+  it('should render percentage text for responsive styling', () => {
     meter.update(makeUsage({ contextTokens: 50000, contextWindow: 200000, percentage: 25 }));
     const percent = parentEl.querySelector('.claudian-context-meter-percent');
     expect(percent?.textContent).toBe('25%');
+  });
+
+  it('should expose usage details to assistive technology', () => {
+    meter.update(makeUsage({ contextTokens: 50000, contextWindow: 200000, percentage: 25 }));
+    const container = parentEl.querySelector('.claudian-context-meter');
+    expect(container?.getAttribute('role')).toBe('progressbar');
+    expect(container?.getAttribute('aria-label')).toBe('Context usage');
+    expect(container?.getAttribute('aria-valuemin')).toBe('0');
+    expect(container?.getAttribute('aria-valuemax')).toBe('100');
+    expect(container?.getAttribute('aria-valuenow')).toBe('25');
+    expect(container?.getAttribute('aria-valuetext')).toBe('50k / 200k');
   });
 
   it('should add warning class when usage > 80%', () => {
@@ -1079,6 +1096,91 @@ describe('ContextUsageMeter', () => {
     meter.update(makeUsage({ contextTokens: 160000, contextWindow: 200000, percentage: 80 }));
     const container = parentEl.querySelector('.claudian-context-meter');
     expect(container?.getAttribute('data-tooltip')).toBe('160k / 200k');
+  });
+});
+
+describe('InputToolbarLayoutController', () => {
+  function setRect(element: any, top: number, width = 40, height = 24): void {
+    element.getBoundingClientRect = jest.fn().mockReturnValue({
+      top,
+      bottom: top + height,
+      left: 0,
+      right: width,
+      width,
+      height,
+      x: 0,
+      y: top,
+      toJSON: jest.fn(),
+    });
+  }
+
+  it('should compact optional labels when toolbar items wrap', () => {
+    const toolbarEl = createMockEl();
+    const firstItem = toolbarEl.createDiv();
+    const wrappedItem = toolbarEl.createDiv();
+    setRect(firstItem, 0);
+    setRect(wrappedItem, 36);
+
+    const controller = new InputToolbarLayoutController(toolbarEl);
+    controller.refreshLayout();
+
+    expect(toolbarEl.hasClass('claudian-input-toolbar--compact')).toBe(true);
+    controller.destroy();
+  });
+
+  it('should show optional labels when all toolbar items fit on one line', () => {
+    const toolbarEl = createMockEl();
+    const firstItem = toolbarEl.createDiv();
+    const secondItem = toolbarEl.createDiv();
+    setRect(firstItem, 0, 40, 24);
+    setRect(secondItem, 3, 40, 18);
+    toolbarEl.addClass('claudian-input-toolbar--compact');
+
+    const controller = new InputToolbarLayoutController(toolbarEl);
+    controller.refreshLayout();
+
+    expect(toolbarEl.hasClass('claudian-input-toolbar--compact')).toBe(false);
+    controller.destroy();
+  });
+
+  it('should remeasure after resize and disconnect its observer on destroy', () => {
+    const toolbarEl = createMockEl();
+    const firstItem = toolbarEl.createDiv();
+    const secondItem = toolbarEl.createDiv();
+    setRect(firstItem, 0);
+    setRect(secondItem, 0);
+
+    const observerCallbacks: {
+      resize?: ResizeObserverCallback;
+      frame?: FrameRequestCallback;
+    } = {};
+    const observe = jest.fn();
+    const disconnect = jest.fn();
+    toolbarEl.ownerDocument.defaultView.requestAnimationFrame = jest.fn((callback) => {
+      observerCallbacks.frame = callback;
+      return 1;
+    });
+    toolbarEl.ownerDocument.defaultView.ResizeObserver = class {
+      constructor(callback: ResizeObserverCallback) {
+        observerCallbacks.resize = callback;
+      }
+      observe = observe;
+      unobserve = jest.fn();
+      disconnect = disconnect;
+    };
+
+    const controller = new InputToolbarLayoutController(toolbarEl);
+    expect(observe).toHaveBeenCalledWith(toolbarEl);
+    observerCallbacks.frame?.(0);
+    expect(toolbarEl.hasClass('claudian-input-toolbar--compact')).toBe(false);
+
+    setRect(secondItem, 36);
+    observerCallbacks.resize?.([], {} as ResizeObserver);
+    observerCallbacks.frame?.(0);
+    expect(toolbarEl.hasClass('claudian-input-toolbar--compact')).toBe(true);
+
+    controller.destroy();
+    expect(disconnect).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1176,6 +1278,7 @@ describe('createInputToolbar', () => {
     expect(toolbar.modeSelector).toBeInstanceOf(ModeSelector);
     expect(toolbar.thinkingBudgetSelector).toBeInstanceOf(ThinkingBudgetSelector);
     expect(toolbar.contextUsageMeter).toBeInstanceOf(ContextUsageMeter);
+    expect(toolbar.layoutController).toBeInstanceOf(InputToolbarLayoutController);
     expect(toolbar.mcpServerSelector).toBeInstanceOf(McpServerSelector);
     expect(toolbar.permissionToggle).toBeInstanceOf(PermissionToggle);
     expect(toolbar.serviceTierToggle).toBeInstanceOf(ServiceTierToggle);

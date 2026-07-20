@@ -163,6 +163,10 @@ const createMockContextUsageMeter = () => ({
   setVisible: jest.fn(),
 });
 
+const createMockToolbarLayoutController = () => ({
+  destroy: jest.fn(),
+});
+
 const createMockExternalContextSelector = () => ({
   getExternalContexts: jest.fn().mockReturnValue([]),
   setOnChange: jest.fn(),
@@ -197,6 +201,7 @@ let mockModelSelector: ReturnType<typeof createMockModelSelector>;
 let mockModeSelector: ReturnType<typeof createMockModeSelector>;
 let mockThinkingBudgetSelector: ReturnType<typeof createMockThinkingBudgetSelector>;
 let mockContextUsageMeter: ReturnType<typeof createMockContextUsageMeter>;
+let mockToolbarLayoutController: ReturnType<typeof createMockToolbarLayoutController>;
 let mockExternalContextSelector: ReturnType<typeof createMockExternalContextSelector>;
 let mockMcpServerSelector: ReturnType<typeof createMockMcpServerSelector>;
 let mockPermissionToggle: ReturnType<typeof createMockPermissionToggle>;
@@ -277,6 +282,7 @@ jest.mock('@/features/chat/ui/InputToolbar', () => ({
     mockModeSelector = createMockModeSelector();
     mockThinkingBudgetSelector = createMockThinkingBudgetSelector();
     mockContextUsageMeter = createMockContextUsageMeter();
+    mockToolbarLayoutController = createMockToolbarLayoutController();
     mockExternalContextSelector = createMockExternalContextSelector();
     mockMcpServerSelector = createMockMcpServerSelector();
     mockPermissionToggle = createMockPermissionToggle();
@@ -286,6 +292,7 @@ jest.mock('@/features/chat/ui/InputToolbar', () => ({
       modeSelector: mockModeSelector,
       thinkingBudgetSelector: mockThinkingBudgetSelector,
       contextUsageMeter: mockContextUsageMeter,
+      layoutController: mockToolbarLayoutController,
       externalContextSelector: mockExternalContextSelector,
       mcpServerSelector: mockMcpServerSelector,
       permissionToggle: mockPermissionToggle,
@@ -1388,6 +1395,16 @@ describe('Tab - Destruction', () => {
       await destroyTab(tab);
 
       expect(tab.dom.eventCleanups.length).toBe(0);
+    });
+
+    it('should destroy the input toolbar layout controller', async () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      initializeTabUI(tab, options.plugin);
+
+      await destroyTab(tab);
+
+      expect(mockToolbarLayoutController.destroy).toHaveBeenCalledTimes(1);
     });
 
     it('should unsubscribe from ready state changes when tab is destroyed', async () => {

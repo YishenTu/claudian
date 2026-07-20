@@ -1068,6 +1068,8 @@ function initializeInputToolbar(
     },
   });
 
+  dom.eventCleanups.push(() => toolbarComponents.layoutController.destroy());
+
   tab.ui.modelSelector = toolbarComponents.modelSelector;
   tab.ui.modeSelector = toolbarComponents.modeSelector;
   tab.ui.thinkingBudgetSelector = toolbarComponents.thinkingBudgetSelector;

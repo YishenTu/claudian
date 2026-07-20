@@ -123,10 +123,18 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  flex-wrap: wrap;
   flex-shrink: 0;
+  row-gap: 12px;
   padding: 4px 6px 6px 6px;
   flex-wrap: wrap;
   row-gap: 12px;
+}
+
+/* Hide secondary text when the full toolbar would wrap. */
+.claudian-input-toolbar--compact .claudian-thinking-effort > .claudian-thinking-label-text,
+.claudian-input-toolbar--compact .claudian-context-meter-percent {
+  display: none;
 }
 
 /* Composer queue status row (queued follow-up preview + steer action) */
