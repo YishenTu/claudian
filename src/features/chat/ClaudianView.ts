@@ -836,6 +836,25 @@ export class ClaudianView extends ItemView {
     return this.tabManager?.getActiveTab() ?? null;
   }
 
+  /** Appends text to the active composer without sending it. */
+  appendToActiveInput(text: string): boolean {
+    const inputEl = this.tabManager?.getActiveTab()?.dom.inputEl;
+    if (!inputEl || !text) return false;
+
+    const currentValue = inputEl.value;
+    const separator = currentValue && !/\s$/.test(currentValue) ? ' ' : '';
+    inputEl.value = `${currentValue}${separator}${text}`;
+
+    const cursorPosition = inputEl.value.length;
+    inputEl.selectionStart = cursorPosition;
+    inputEl.selectionEnd = cursorPosition;
+
+    const EventConstructor = inputEl.ownerDocument.defaultView?.Event ?? Event;
+    inputEl.dispatchEvent(new EventConstructor('input', { bubbles: true }));
+    inputEl.focus();
+    return true;
+  }
+
   notifyConversationListChanged(): void {
     this.updateHistoryDropdown();
   }

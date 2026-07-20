@@ -13,6 +13,7 @@ export class Plugin {
   addCommand = jest.fn();
   addSettingTab = jest.fn();
   registerView = jest.fn();
+  registerEvent = jest.fn();
   loadData = jest.fn().mockResolvedValue({});
   saveData = jest.fn().mockResolvedValue(undefined);
 }

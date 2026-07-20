@@ -6,6 +6,7 @@ import { type ExternalContextFile, externalContextScanner } from '../../utils/ex
 import { extractMcpMentions } from '../../utils/mcp';
 import { SelectableDropdown } from '../components/SelectableDropdown';
 import { appendMcpIcon } from '../icons';
+import { formatVaultFileMention } from './formatMention';
 import {
   type AgentMentionProvider,
   type FolderMentionItem,
@@ -706,7 +707,11 @@ export class MentionDropdownController {
         if (normalizedPath) {
           this.callbacks.onAttachFile(normalizedPath);
         }
-        this.insertReplacement(beforeAt, `@${normalizedPath ?? selectedItem.name} `, afterCursor);
+        this.insertReplacement(
+          beforeAt,
+          formatVaultFileMention(normalizedPath ?? selectedItem.name),
+          afterCursor,
+        );
         break;
       }
     }

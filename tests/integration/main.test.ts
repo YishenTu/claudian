@@ -83,6 +83,7 @@ describe('ClaudianPlugin', () => {
         },
       },
       workspace: {
+        on: jest.fn().mockReturnValue({ id: 'workspace-event' }),
         onLayoutReady: jest.fn(),
         getLeavesOfType: jest.fn().mockReturnValue([]),
         getRightLeaf: jest.fn().mockReturnValue({
@@ -148,6 +149,16 @@ describe('ClaudianPlugin', () => {
         name: 'Open chat view',
         callback: expect.any(Function),
       });
+    });
+
+    it('registers the file explorer context menu', async () => {
+      await plugin.onload();
+
+      expect(mockApp.workspace.on).toHaveBeenCalledWith(
+        'file-menu',
+        expect.any(Function),
+      );
+      expect(plugin.registerEvent).toHaveBeenCalledWith({ id: 'workspace-event' });
     });
 
     it('loads restored-tab metadata without waiting for the full history scan', async () => {

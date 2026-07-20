@@ -45,6 +45,7 @@ import {
 } from './core/types';
 import type { ChatViewPlacement, EnvironmentScope } from './core/types/settings';
 import { ClaudianView } from './features/chat/ClaudianView';
+import { registerFileMenu } from './features/chat/fileMenu';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n/i18n';
@@ -133,6 +134,7 @@ export default class ClaudianPlugin extends Plugin {
         VIEW_TYPE_CLAUDIAN,
         (leaf) => new ClaudianView(leaf, this)
       );
+      registerFileMenu(this);
 
       this.addRibbonIcon('bot', 'Open Claudian', () => {
         void this.activateView();

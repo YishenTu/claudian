@@ -270,6 +270,59 @@ describe('ClaudianView tab controls', () => {
   });
 });
 
+describe('ClaudianView composer input', () => {
+  function createComposerHarness(existingContent: string): {
+    inputEl: HTMLTextAreaElement;
+    inputHandler: jest.Mock;
+    view: any;
+  } {
+    const inputEl = createMockEl('textarea') as unknown as HTMLTextAreaElement;
+    const inputHandler = jest.fn();
+    inputEl.value = existingContent;
+    inputEl.selectionStart = 0;
+    inputEl.selectionEnd = 0;
+    inputEl.focus = jest.fn();
+    inputEl.addEventListener('input', inputHandler);
+
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue({ dom: { inputEl } }),
+    };
+
+    return { inputEl, inputHandler, view };
+  }
+
+  it('appends text after existing composer content', () => {
+    const { inputEl, inputHandler, view } = createComposerHarness('Review this note');
+
+    const appended = view.appendToActiveInput('@projects/plan.md ');
+
+    expect(appended).toBe(true);
+    expect(inputEl.value).toBe('Review this note @projects/plan.md ');
+    expect(inputEl.selectionStart).toBe(inputEl.value.length);
+    expect(inputEl.selectionEnd).toBe(inputEl.value.length);
+    expect(inputHandler).toHaveBeenCalledTimes(1);
+    expect(inputEl.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not add another separator when existing content ends in whitespace', () => {
+    const { inputEl, view } = createComposerHarness('Review this note\n');
+
+    view.appendToActiveInput('@projects/plan.md ');
+
+    expect(inputEl.value).toBe('Review this note\n@projects/plan.md ');
+  });
+
+  it('returns false when there is no active composer', () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue(null),
+    };
+
+    expect(view.appendToActiveInput('@projects/plan.md ')).toBe(false);
+  });
+});
+
 describe('ClaudianView shutdown', () => {
   it('disposes view resources when the final tab-state flush fails', async () => {
     const error = new Error('disk full');
