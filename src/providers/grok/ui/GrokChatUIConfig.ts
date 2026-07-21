@@ -1,3 +1,4 @@
+import { formatReasoningValueLabel } from '../../../core/providers/reasoning';
 import type {
   ProviderChatUIConfig,
   ProviderPermissionModeToggleConfig,
@@ -79,8 +80,8 @@ export const grokChatUIConfig: ProviderChatUIConfig = {
   getReasoningOptions(model, settings): ProviderReasoningOption[] {
     return (getExplicitlySelectedGrokModel(model, settings)?.reasoningEfforts ?? [])
       .map(option => ({
-        description: option.description,
-        label: option.label,
+        ...(option.description ? { description: option.description } : {}),
+        label: formatReasoningValueLabel(option.value),
         value: option.value,
       }));
   },

@@ -13,9 +13,9 @@ const catalog = {
       displayName: 'Grok 4',
       rawId: 'grok-4',
       reasoningEfforts: [
-        { description: 'Fast', label: 'Low', value: 'low' },
-        { label: 'Medium', value: 'medium' },
-        { label: 'High', value: 'high' },
+        { description: 'Fast', label: 'Low Effort', value: 'low' },
+        { label: 'Medium Effort', value: 'medium' },
+        { label: 'High Effort', value: 'high' },
       ],
       supportsReasoning: true,
     },
