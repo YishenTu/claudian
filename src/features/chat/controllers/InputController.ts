@@ -27,6 +27,7 @@ import type {
 } from '../../../core/runtime/types';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision, StreamChunk } from '../../../core/types';
+import { getUsageGuardBlock } from '../../../core/usageGuard/UsageGuardState';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import type { BrowserSelectionContext } from '../../../utils/browser';
@@ -248,6 +249,25 @@ export class InputController {
       }
       await this.executeBuiltInCommand(builtInCmd.command, builtInCmd.args);
       return;
+    }
+
+    if (this.getActiveProviderId() === 'claude') {
+      const usageGuardBlock = getUsageGuardBlock();
+      if (usageGuardBlock) {
+        new Notice(usageGuardBlock.reason);
+        if (!shouldUseInput) {
+          // Programmatic resend (e.g. a message already popped off the
+          // queue by processQueuedMessage()) — its slot is already cleared,
+          // so put it back in the composer instead of dropping it.
+          const turnRequest = options?.turnRequestOverride
+            ?? this.buildTurnSubmission({ content, images: imageOverride }).turnRequest;
+          this.restoreMessageToInput(
+            this.createQueuedMessage(content, turnRequest),
+            { mergeWithComposer: true },
+          );
+        }
+        return;
+      }
     }
 
     // If agent is working, queue the message instead of dropping it

@@ -22,6 +22,7 @@ import { PluginManager } from '../plugins/PluginManager';
 import { ClaudeCliResolver } from '../runtime/ClaudeCliResolver';
 import { StorageService } from '../storage/StorageService';
 import { claudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
+import { ClaudeUsageGuardService } from '../usageGuard/ClaudeUsageGuardService';
 
 export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
   claudeStorage: StorageService;
@@ -33,6 +34,7 @@ export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
   agentManager: AppAgentManager;
   commandCatalog: ProviderCommandCatalog;
   agentMentionProvider: AppAgentManager;
+  usageGuardService: ClaudeUsageGuardService;
 }
 
 export async function createClaudeWorkspaceServices(
@@ -69,6 +71,13 @@ export async function createClaudeWorkspaceServices(
     () => probeRuntimeCommands(plugin),
   );
 
+  const usageGuardService = new ClaudeUsageGuardService(plugin);
+  // Cold start: make sure the first usage check has a chance to run (or
+  // times out) before this provider is considered ready, so an account
+  // already over the threshold can't slip a message through on the very
+  // first send after Obsidian starts.
+  await usageGuardService.awaitInitialCheck();
+
   return {
     claudeStorage,
     cliResolver,
@@ -81,6 +90,7 @@ export async function createClaudeWorkspaceServices(
     commandCatalog,
     agentMentionProvider: agentManager,
     settingsTabRenderer: claudeSettingsTabRenderer,
+    usageGuardService,
     refreshAgentMentions: async () => {
       await pluginManager.loadPlugins();
       await agentManager.loadAgents();
@@ -91,6 +101,9 @@ export async function createClaudeWorkspaceServices(
         pluginManager.loadPlugins(),
       ]);
       await agentManager.loadAgents();
+    },
+    dispose: () => {
+      usageGuardService.dispose();
     },
   };
 }

@@ -32,6 +32,7 @@ jest.mock('obsidian', () => {
     public textAreaComponents: MockTextAreaComponent[] = [];
     public dropdownComponents: MockDropdownComponent[] = [];
     public toggleComponents: MockToggleComponent[] = [];
+    public sliderComponents: MockSliderComponent[] = [];
 
     constructor(_container: unknown) {
       createdSettings.push(this);
@@ -76,6 +77,13 @@ jest.mock('obsidian', () => {
     addToggle(callback: (toggle: MockToggleComponent) => void) {
       const component = createToggleComponent();
       this.toggleComponents.push(component);
+      callback(component);
+      return this;
+    }
+
+    addSlider(callback: (slider: MockSliderComponent) => void) {
+      const component = createSliderComponent();
+      this.sliderComponents.push(component);
       callback(component);
       return this;
     }
@@ -172,6 +180,18 @@ interface MockToggleComponent {
   onChange: jest.MockedFunction<(callback: (value: boolean) => Promise<void> | void) => MockToggleComponent>;
 }
 
+interface MockSliderComponent {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChangeCallback: ((value: number) => Promise<void> | void) | null;
+  setLimits: jest.MockedFunction<(min: number, max: number, step: number) => MockSliderComponent>;
+  setValue: jest.MockedFunction<(value: number) => MockSliderComponent>;
+  setDynamicTooltip: jest.MockedFunction<() => MockSliderComponent>;
+  onChange: jest.MockedFunction<(callback: (value: number) => Promise<void> | void) => MockSliderComponent>;
+}
+
 const createdSettings: Array<{
   name: string;
   desc: string;
@@ -180,6 +200,7 @@ const createdSettings: Array<{
   textAreaComponents: MockTextAreaComponent[];
   dropdownComponents: MockDropdownComponent[];
   toggleComponents: MockToggleComponent[];
+  sliderComponents: MockSliderComponent[];
 }> = [];
 
 function createInputEl(): MockInputEl & { _listeners: Map<string, Array<() => void>> } {
@@ -266,6 +287,32 @@ function createToggleComponent(): MockToggleComponent {
     return component;
   });
   component.onChange = jest.fn((callback: (value: boolean) => Promise<void> | void) => {
+    component.onChangeCallback = callback;
+    return component;
+  });
+
+  return component;
+}
+
+function createSliderComponent(): MockSliderComponent {
+  const component = {} as MockSliderComponent;
+  component.value = 0;
+  component.min = 0;
+  component.max = 0;
+  component.step = 0;
+  component.onChangeCallback = null;
+  component.setLimits = jest.fn((min: number, max: number, step: number) => {
+    component.min = min;
+    component.max = max;
+    component.step = step;
+    return component;
+  });
+  component.setValue = jest.fn((value: number) => {
+    component.value = value;
+    return component;
+  });
+  component.setDynamicTooltip = jest.fn(() => component);
+  component.onChange = jest.fn((callback: (value: number) => Promise<void> | void) => {
     component.onChangeCallback = callback;
     return component;
   });
@@ -479,5 +526,37 @@ describe('ClaudeSettingsTab', () => {
     expect(plugin.settings.titleGenerationModel).toBe('');
     expect(mockSaveSettings).toHaveBeenCalledTimes(1);
     expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the usage guard toggle disabled with a 90% threshold by default', () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+
+    const enabledSetting = findSetting('settings.usageGuardEnabled.name');
+    const thresholdSetting = findSetting('settings.usageGuardThreshold.name');
+
+    expect(enabledSetting.toggleComponents[0].value).toBe(false);
+    expect(thresholdSetting.sliderComponents[0].value).toBe(90);
+    expect(thresholdSetting.sliderComponents[0].min).toBe(50);
+    expect(thresholdSetting.sliderComponents[0].max).toBe(100);
+  });
+
+  it('persists usage guard toggle and threshold changes', async () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+
+    const enabledToggle = findSetting('settings.usageGuardEnabled.name').toggleComponents[0];
+    await enabledToggle.onChangeCallback?.(true);
+    expect(plugin.settings.providerConfigs.claude.usageGuardEnabled).toBe(true);
+
+    const thresholdSlider = findSetting('settings.usageGuardThreshold.name').sliderComponents[0];
+    await thresholdSlider.onChangeCallback?.(75);
+    expect(plugin.settings.providerConfigs.claude.usageGuardThresholdPercent).toBe(75);
+
+    expect(mockSaveSettings).toHaveBeenCalledTimes(2);
   });
 });

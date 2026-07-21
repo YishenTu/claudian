@@ -216,6 +216,15 @@
       "name": "Modo seguro",
       "desc": "Modo de permissão usado quando o controle Safe está ativo."
     },
+    "usageGuard": "Guarda de uso",
+    "usageGuardEnabled": {
+      "name": "Ativar guarda de uso",
+      "desc": "Verifica seu uso de 5 horas do Claude a cada minuto. Ao atingir o limite abaixo, o Claudian pausa o envio de novas mensagens e retoma automaticamente quando o uso volta a ficar abaixo dele."
+    },
+    "usageGuardThreshold": {
+      "name": "Limite de pausa (%)",
+      "desc": "Pausar o envio quando o uso de 5 horas atingir esta porcentagem."
+    },
     "codexSafeMode": {
       "name": "Modo seguro",
       "desc": "Modo de sandbox usado quando o controle Safe está ativo."

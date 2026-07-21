@@ -216,6 +216,15 @@
       "name": "Modo seguro",
       "desc": "Modo de permisos usado cuando el interruptor Seguro está activo."
     },
+    "usageGuard": "Guardián de uso",
+    "usageGuardEnabled": {
+      "name": "Activar guardián de uso",
+      "desc": "Comprueba tu uso de Claude de 5 horas cada minuto. Al alcanzar el umbral definido abajo, Claudian pausa el envío de nuevos mensajes y se reanuda automáticamente cuando el uso vuelve a bajar de ese umbral."
+    },
+    "usageGuardThreshold": {
+      "name": "Umbral de pausa (%)",
+      "desc": "Pausa el envío cuando el uso de 5 horas alcanza este porcentaje."
+    },
     "codexSafeMode": {
       "name": "Modo seguro",
       "desc": "Modo de sandbox usado cuando el interruptor Seguro está activo."

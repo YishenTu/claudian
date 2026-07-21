@@ -173,6 +173,38 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           })
       );
 
+    // --- Usage Guard ---
+
+    new Setting(container).setName(t('settings.usageGuard')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.usageGuardEnabled.name'))
+      .setDesc(t('settings.usageGuardEnabled.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(claudeSettings.usageGuardEnabled)
+          .onChange(async (value) => {
+            await context.plugin.mutateSettings((settings) => {
+              updateClaudeProviderSettings(settings, { usageGuardEnabled: value });
+            });
+          })
+      );
+
+    new Setting(container)
+      .setName(t('settings.usageGuardThreshold.name'))
+      .setDesc(t('settings.usageGuardThreshold.desc'))
+      .addSlider((slider) => {
+        slider
+          .setLimits(50, 100, 5)
+          .setValue(claudeSettings.usageGuardThresholdPercent)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            await context.plugin.mutateSettings((settings) => {
+              updateClaudeProviderSettings(settings, { usageGuardThresholdPercent: value });
+            });
+          });
+      });
+
     // --- Models ---
 
     new Setting(container).setName(t('settings.models')).setHeading();
