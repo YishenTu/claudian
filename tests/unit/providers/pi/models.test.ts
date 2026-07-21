@@ -15,6 +15,7 @@ describe('Pi model helpers', () => {
   });
 
   it('rejects invalid Pi model ids', () => {
+    expect(encodePiModelId('', '')).toBe('');
     expect(decodePiModelId('')).toBeNull();
     expect(decodePiModelId('pi:')).toBeNull();
     expect(decodePiModelId('pi:anthropic')).toBeNull();

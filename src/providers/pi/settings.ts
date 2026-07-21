@@ -446,7 +446,7 @@ function retargetRemovedPiSelections(
       : PI_DEFAULT_THINKING_LEVEL);
 
   const maybeRetargetModel = (value: unknown): string | null => {
-    if (typeof value !== 'string' || !isPiModelSelectionId(value) || value === 'pi') {
+    if (typeof value !== 'string' || !isPiModelSelectionId(value)) {
       return null;
     }
 

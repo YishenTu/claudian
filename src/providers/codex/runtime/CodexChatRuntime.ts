@@ -36,7 +36,8 @@ import {
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFile,
 } from '../history/CodexHistoryStore';
-import { findCodexModel, getDefaultCodexModel } from '../models';
+import { getCodexModelOptions } from '../modelOptions';
+import { findCodexModel } from '../models';
 import { toCodexRuntimeModelId } from '../modelSelection';
 import { encodeCodexTurn } from '../prompt/encodeCodexTurn';
 import {
@@ -320,6 +321,16 @@ export class CodexChatRuntime implements ChatRuntime {
     }
     this.resetTurnMetadata();
     let turn = originalTurn;
+    const providerSettings = this.getProviderSettings();
+    const model = this.resolveModel(queryOptions, providerSettings);
+    if (!model) {
+      yield {
+        type: 'error',
+        content: 'No Codex model is selected. Enable a model in Claudian settings.',
+      };
+      yield { type: 'done' };
+      return;
+    }
     await this.ensureReady();
 
     this.canceled = false;
@@ -329,8 +340,6 @@ export class CodexChatRuntime implements ChatRuntime {
     this.currentQueryThreadId = null;
     this.pendingTurnNotifications = [];
 
-    const providerSettings = this.getProviderSettings();
-    const model = this.resolveModel(queryOptions, providerSettings);
     const promptSettings = this.getSystemPromptSettings();
     const promptText = buildSystemPrompt(promptSettings);
 
@@ -911,7 +920,7 @@ export class CodexChatRuntime implements ChatRuntime {
   }
 
   getAuxiliaryModel(): string | null {
-    return this.currentConversationModel ?? this.resolveModel() ?? null;
+    return this.resolveModel() ?? null;
   }
 
   private setCurrentConversationModel(model: unknown): void {
@@ -925,10 +934,13 @@ export class CodexChatRuntime implements ChatRuntime {
   ): string | undefined {
     const model = queryOptions?.model ?? providerSettings.model as string | undefined;
     if (model) {
-      return toCodexRuntimeModelId(model);
+      const runtimeModel = toCodexRuntimeModelId(model);
+      const isEnabled = getCodexModelOptions(providerSettings).some(option =>
+        toCodexRuntimeModelId(option.value) === runtimeModel
+      );
+      return isEnabled ? runtimeModel : undefined;
     }
-
-    return getDefaultCodexModel(getCodexProviderSettings(providerSettings).discoveredModels)?.model;
+    return undefined;
   }
 
   private resolveSandboxConfig(): { approvalPolicy: string; sandbox: string } {

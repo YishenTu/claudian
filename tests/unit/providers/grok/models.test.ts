@@ -3,36 +3,26 @@ import {
   encodeGrokModelId,
   findGrokModel,
   GROK_CONTEXT_WINDOW_FALLBACK,
-  GROK_SYNTHETIC_MODEL_ID,
   isGrokModelSelectionId,
   mergeGrokDiscoveredModels,
   normalizeGrokDiscoveredModels,
   resolveGrokContextWindow,
   resolveGrokDefaultReasoningEffort,
-  resolveGrokRawModelId,
 } from '@/providers/grok/models';
 
 describe('Grok model identity', () => {
-  it('uses the reserved native default and grok/ for explicit raw ids', () => {
-    expect(GROK_SYNTHETIC_MODEL_ID).toBe('grok');
+  it('uses only provider-qualified explicit model ids', () => {
     expect(encodeGrokModelId('kimi-coding')).toBe('grok/kimi-coding');
     expect(encodeGrokModelId('grok/kimi-coding')).toBe('grok/kimi-coding');
-    expect(encodeGrokModelId('')).toBe('grok');
-    expect(encodeGrokModelId('grok/')).toBe('grok');
+    expect(encodeGrokModelId('')).toBe('');
+    expect(encodeGrokModelId('grok/')).toBe('');
     expect(decodeGrokModelId('grok/kimi-coding')).toBe('kimi-coding');
     expect(decodeGrokModelId('grok')).toBeNull();
     expect(decodeGrokModelId(' grok/kimi-coding ')).toBe('kimi-coding');
-    expect(isGrokModelSelectionId('grok')).toBe(true);
+    expect(isGrokModelSelectionId('grok')).toBe(false);
     expect(isGrokModelSelectionId('grok/kimi-coding')).toBe(true);
     expect(isGrokModelSelectionId('grok/')).toBe(false);
     expect(isGrokModelSelectionId('kimi-coding')).toBe(false);
-  });
-
-  it('resolves explicit selections and the synthetic provider default through one contract', () => {
-    expect(resolveGrokRawModelId('grok/kimi-coding', 'grok-4.5')).toBe('kimi-coding');
-    expect(resolveGrokRawModelId('grok', 'grok-4.5')).toBe('grok-4.5');
-    expect(resolveGrokRawModelId('grok', null)).toBeNull();
-    expect(resolveGrokRawModelId('claude-sonnet', 'grok-4.5')).toBeNull();
   });
 });
 
@@ -46,6 +36,7 @@ describe('Grok model metadata', () => {
       description: ' Fast custom model ',
       displayName: ' Kimi Coding ',
       rawId: ' kimi-coding ',
+      reasoningMetadataResolved: true,
       reasoningEfforts: [
         { description: 'Quick', label: ' Low ', value: ' low ' },
         { value: 'high' },
@@ -59,6 +50,7 @@ describe('Grok model metadata', () => {
       description: 'Fast custom model',
       displayName: 'Kimi Coding',
       rawId: 'kimi-coding',
+      reasoningMetadataResolved: true,
       reasoningEfforts: [
         { description: 'Quick', label: 'Low', value: 'low' },
         { label: 'High', value: 'high' },
@@ -129,6 +121,31 @@ describe('Grok model metadata', () => {
       expect.objectContaining({ rawId: 'glm-coding' }),
     ]);
     expect(findGrokModel(merged, 'grok/kimi-coding')?.contextWindow).toBe(200_000);
+  });
+
+  it('treats resolved ACP reasoning metadata as authoritative', () => {
+    const [merged] = mergeGrokDiscoveredModels([{
+      defaultReasoningEffort: 'high',
+      displayName: 'Reasoner',
+      rawId: 'reasoner',
+      reasoningEfforts: [{ label: 'High', value: 'high' }],
+      reasoningMetadataResolved: true,
+      supportsReasoning: true,
+    }], [{
+      displayName: 'Reasoner',
+      rawId: 'reasoner',
+      reasoningEfforts: [],
+      reasoningMetadataResolved: true,
+      supportsReasoning: false,
+    }]);
+
+    expect(merged).toEqual({
+      displayName: 'Reasoner',
+      rawId: 'reasoner',
+      reasoningEfforts: [],
+      reasoningMetadataResolved: true,
+      supportsReasoning: false,
+    });
   });
 
   it('resolves preferred, declared, high, and first reasoning defaults in order', () => {

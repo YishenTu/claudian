@@ -217,10 +217,16 @@ function makeCatalog() {
     fingerprint: 'catalog',
     models: [
       {
+        defaultReasoningEffort: 'medium',
         displayName: 'Grok 4',
         rawId: 'grok-4',
-        reasoningEfforts: [],
-        supportsReasoning: false,
+        reasoningMetadataResolved: true,
+        reasoningEfforts: [
+          { label: 'Low', value: 'low' },
+          { label: 'Medium', value: 'medium' },
+          { label: 'High', value: 'high' },
+        ],
+        supportsReasoning: true,
       },
       {
         displayName: 'Kimi Coding',
@@ -266,7 +272,7 @@ function createPlugin(): any {
           cliPathsByHost: {},
           enabled: true,
           modelAliases: {},
-          preferredReasoningByModel: {},
+          preferredReasoningByModel: { 'grok-4': 'medium' },
           visibleModels: ['grok-4'],
         },
       },
@@ -456,7 +462,7 @@ describe('GrokSettingsTab', () => {
     expect(notices).toEqual(['Grok model discovery failed: Grok CLI is not logged in']);
   });
 
-  it('persists picker visibility and aliases while keeping native default outside raw ids', async () => {
+  it('persists picker visibility and aliases for discovered raw model ids', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
     grokSettingsTabRenderer.render(createContainer(), context);
@@ -481,6 +487,23 @@ describe('GrokSettingsTab', () => {
     expect(getGrokProviderSettings(plugin.settings).visibleModels).toBeNull();
     expect(context.refreshModelSelectors).toHaveBeenCalled();
     expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('prunes reasoning metadata and preferences when a model is disabled', async () => {
+    const plugin = createPlugin();
+    grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
+
+    await getPickerOptions().onSelectedIdsChange(['kimi-coding']);
+
+    const settings = getGrokProviderSettings(plugin.settings);
+    expect(settings.preferredReasoningByModel).toEqual({});
+    expect(settings.currentCatalog?.models.find(model => model.rawId === 'grok-4'))
+      .toEqual(expect.objectContaining({
+        reasoningEfforts: [],
+        supportsReasoning: false,
+      }));
+    expect(settings.currentCatalog?.models.find(model => model.rawId === 'grok-4'))
+      .not.toHaveProperty('reasoningMetadataResolved');
   });
 
   it('renders only hidden runtime commands and the Grok environment scope', () => {

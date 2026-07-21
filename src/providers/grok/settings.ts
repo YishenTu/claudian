@@ -1,5 +1,6 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
+import { STANDARD_REASONING_VALUES } from '../../core/providers/reasoning';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import {
   getHostnameKey,
@@ -7,7 +8,9 @@ import {
   migrateLegacyHostnameKeyedMap,
 } from '../../utils/env';
 import {
+  clearGrokReasoningMetadata,
   decodeGrokModelId,
+  getGrokAvailableReasoningEfforts,
   type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,
 } from './models';
@@ -92,6 +95,15 @@ export function getGrokProviderSettings(
     allowedModelIds.add(modelId);
   }
 
+  const visibleModels = normalizeGrokVisibleModels(
+    config.visibleModels,
+    allowedModelIds,
+    catalogModels.length > 0,
+  );
+  const enabledModelIds = new Set(
+    visibleModels ?? catalogModels.map(model => model.rawId),
+  );
+
   return {
     catalogsByHost,
     cliPath: readTrimmedString(config.cliPath)
@@ -113,14 +125,11 @@ export function getGrokProviderSettings(
     ),
     preferredReasoningByModel: normalizeGrokPreferredReasoningByModel(
       config.preferredReasoningByModel,
-      allowedModelIds,
+      enabledModelIds,
       catalogModels,
+      true,
     ),
-    visibleModels: normalizeGrokVisibleModels(
-      config.visibleModels,
-      allowedModelIds,
-      catalogModels.length > 0,
-    ),
+    visibleModels,
   };
 }
 
@@ -157,6 +166,14 @@ export function updateGrokProviderSettings(
     allowedModelIds.add(modelId);
   }
   const hasCatalog = catalogModels.length > 0;
+  const visibleModels = normalizeGrokVisibleModels(
+    updates.visibleModels === undefined ? current.visibleModels : updates.visibleModels,
+    allowedModelIds,
+    hasCatalog,
+  );
+  const enabledModelIds = new Set(
+    visibleModels ?? catalogModels.map(model => model.rawId),
+  );
 
   const next: PersistedGrokProviderSettings = {
     catalogsByHost,
@@ -174,18 +191,50 @@ export function updateGrokProviderSettings(
     ),
     preferredReasoningByModel: normalizeGrokPreferredReasoningByModel(
       updates.preferredReasoningByModel ?? current.preferredReasoningByModel,
-      allowedModelIds,
+      enabledModelIds,
       catalogModels,
+      true,
     ),
-    visibleModels: normalizeGrokVisibleModels(
-      updates.visibleModels === undefined ? current.visibleModels : updates.visibleModels,
-      allowedModelIds,
-      hasCatalog,
-    ),
+    visibleModels,
   };
 
   setProviderConfig(settings, 'grok', next as unknown as Record<string, unknown>);
   return { ...next, currentCatalog };
+}
+
+export function updateGrokVisibleModels(
+  settings: Record<string, unknown>,
+  visibleModels: string[] | null,
+): GrokProviderSettings {
+  const current = getGrokProviderSettings(settings);
+  const normalizedVisibleModels = normalizeGrokVisibleModels(
+    visibleModels,
+    new Set(current.currentCatalog?.models.map(model => model.rawId) ?? []),
+    Boolean(current.currentCatalog?.models.length),
+  );
+  const enabledModelIds = new Set(
+    normalizedVisibleModels
+      ?? current.currentCatalog?.models.map(model => model.rawId)
+      ?? [],
+  );
+  const catalogsByHost = Object.fromEntries(
+    Object.entries(current.catalogsByHost).map(([hostKey, catalog]) => [
+      hostKey,
+      {
+        ...catalog,
+        models: catalog.models.map(model => (
+          normalizedVisibleModels === null || enabledModelIds.has(model.rawId)
+            ? model
+            : clearGrokReasoningMetadata(model)
+        )),
+      },
+    ]),
+  );
+  return updateGrokProviderSettings(settings, {
+    catalogsByHost,
+    preferredReasoningByModel: current.preferredReasoningByModel,
+    visibleModels: normalizedVisibleModels,
+  });
 }
 
 export function getCurrentGrokCatalog(
@@ -283,13 +332,13 @@ export function normalizeGrokPreferredReasoningByModel(
   value: unknown,
   allowedModelIds: ReadonlySet<string> = new Set(),
   catalogModels: GrokDiscoveredModel[] = [],
+  restrictToAllowed = catalogModels.length > 0,
 ): Record<string, string> {
   if (!isRecord(value)) {
     return {};
   }
 
   const catalogById = new Map(catalogModels.map(model => [model.rawId, model] as const));
-  const restrictToAllowed = catalogModels.length > 0;
   const normalized: Record<string, string> = {};
   for (const [modelId, effortValue] of Object.entries(value)) {
     const rawModelId = normalizeRawModelId(modelId);
@@ -302,9 +351,11 @@ export function normalizeGrokPreferredReasoningByModel(
       continue;
     }
 
-    const model = catalogById.get(rawModelId);
-    const supportedEfforts = model?.reasoningEfforts.map(option => option.value) ?? [];
-    if (supportedEfforts.length > 0 && !supportedEfforts.includes(effort)) {
+    const catalogModel = catalogById.get(rawModelId);
+    const supportedEfforts = new Set(catalogModel
+      ? getGrokAvailableReasoningEfforts(catalogModel).map(option => option.value)
+      : STANDARD_REASONING_VALUES);
+    if (!supportedEfforts.has(effort)) {
       continue;
     }
     normalized[rawModelId] = effort;
@@ -394,7 +445,7 @@ function normalizeRawModelId(value: unknown): string | null {
     return null;
   }
   const normalized = value.trim();
-  if (!normalized || normalized === 'grok') {
+  if (!normalized) {
     return null;
   }
   return decodeGrokModelId(normalized) ?? normalized;

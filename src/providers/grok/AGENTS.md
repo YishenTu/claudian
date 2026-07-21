@@ -18,8 +18,9 @@
 
 ## Models and Settings
 
-- `grok` is the synthetic native-default model. Explicit selections are `grok/<raw-id>` in Claudian and raw ids on the ACP wire.
+- Model selections are `grok/<raw-id>` in Claudian and raw ids on the ACP wire. The discovered catalog default is the provider default.
 - Catalog snapshots are current-device scoped and contain only normalized non-secret metadata.
+- Expose Low, Medium, and High as the initial fallback for enabled models. After a real ACP session, persist and prefer the chosen model's advertised reasoning metadata; never create a session solely for discovery, and prune reasoning state when a model is disabled.
 - Do not rewrite `~/.grok/config.toml`, own BYOK endpoints, or source shell startup files.
 - Do not add a generic ACP runtime superclass; share protocol primitives while keeping xAI behavior provider-owned.
 

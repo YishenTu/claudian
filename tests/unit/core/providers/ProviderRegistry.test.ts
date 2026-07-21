@@ -224,7 +224,7 @@ describe('ProviderRegistry', () => {
       settings: {
         titleGenerationModel: TEST_CODEX_MODEL,
         providerConfigs: {
-          codex: { enabled: true },
+          codex: { enabled: true, visibleModels: [TEST_CODEX_MODEL] },
         },
       },
     } as any);
@@ -285,7 +285,7 @@ describe('ProviderRegistry', () => {
       settings: {
         titleGenerationModel: 'sonnet',
         providerConfigs: {
-          codex: { enabled: true },
+          codex: { enabled: true, visibleModels: [TEST_CODEX_MODEL] },
         },
       },
     } as any;

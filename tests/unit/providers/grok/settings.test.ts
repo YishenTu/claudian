@@ -15,6 +15,7 @@ import {
   normalizeGrokCatalogSnapshot,
   updateCurrentGrokCatalog,
   updateGrokProviderSettings,
+  updateGrokVisibleModels,
 } from '@/providers/grok/settings';
 import {
   buildGrokProviderState,
@@ -157,7 +158,7 @@ describe('Grok settings', () => {
             unknown: 'Drop me',
           },
           preferredReasoningByModel: {
-            'kimi-coding': 'high',
+            'kimi-coding': 'medium',
             'legacy-model': 'low',
             unknown: 'xhigh',
           },
@@ -177,7 +178,7 @@ describe('Grok settings', () => {
       'legacy-model': 'Legacy',
     });
     expect(settings.preferredReasoningByModel).toEqual({
-      'kimi-coding': 'high',
+      'kimi-coding': 'medium',
       'legacy-model': 'low',
     });
   });
@@ -205,6 +206,47 @@ describe('Grok settings', () => {
       visibleModels: ['kimi-coding'],
     });
     expect((settings.providerConfigs as Record<string, unknown>).codex).toEqual({ enabled: true });
+  });
+
+  it('prunes disabled reasoning state from every host catalog', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        grok: {
+          catalogsByHost: {
+            'device:current': {
+              ...currentCatalog,
+              models: currentCatalog.models.map(model => ({
+                ...model,
+                reasoningMetadataResolved: true,
+              })),
+            },
+            'device:other': {
+              ...otherCatalog,
+              models: otherCatalog.models.map(model => ({
+                ...model,
+                reasoningEfforts: [{ label: 'High', value: 'high' }],
+                reasoningMetadataResolved: true,
+                supportsReasoning: true,
+              })),
+            },
+          },
+          preferredReasoningByModel: { 'kimi-coding': 'high' },
+          visibleModels: ['kimi-coding'],
+        },
+      },
+    };
+
+    updateGrokVisibleModels(settings, []);
+
+    const grok = getGrokProviderSettings(settings);
+    expect(grok.preferredReasoningByModel).toEqual({});
+    for (const catalogSnapshot of Object.values(grok.catalogsByHost)) {
+      for (const model of catalogSnapshot.models) {
+        expect(model.reasoningEfforts).toEqual([]);
+        expect(model.supportsReasoning).toBe(false);
+        expect(model).not.toHaveProperty('reasoningMetadataResolved');
+      }
+    }
   });
 });
 

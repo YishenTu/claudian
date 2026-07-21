@@ -667,29 +667,6 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.effortLevel).toBe('high');
     });
 
-    it('clears a stale Grok effort projection for the synthetic native-default model', () => {
-      const settings: Record<string, unknown> = {
-        settingsProvider: 'grok',
-        model: 'grok',
-        effortLevel: 'high',
-        savedProviderModel: { grok: 'grok' },
-        savedProviderEffort: { grok: 'high' },
-        providerConfigs: {
-          grok: {
-            enabled: true,
-            preferredReasoningByModel: { 'grok-4': 'low' },
-          },
-        },
-      };
-
-      ProviderSettingsCoordinator.projectActiveProviderState(settings);
-
-      expect(settings.effortLevel).toBeUndefined();
-      expect(settings.savedProviderEffort).toEqual({});
-      expect(settings.providerConfigs).toMatchObject({
-        grok: { preferredReasoningByModel: { 'grok-4': 'low' } },
-      });
-    });
   });
 
   describe('persistProjectedProviderState', () => {
@@ -731,18 +708,6 @@ describe('ProviderSettingsCoordinator', () => {
       });
     });
 
-    it('removes a stale saved effort when the active projection has no effort', () => {
-      const settings: Record<string, unknown> = {
-        settingsProvider: 'grok',
-        model: 'grok',
-        savedProviderModel: { grok: 'grok' },
-        savedProviderEffort: { grok: 'high' },
-      };
-
-      ProviderSettingsCoordinator.persistProjectedProviderState(settings, 'grok');
-
-      expect(settings.savedProviderEffort).toEqual({});
-    });
   });
 
   describe('projectProviderState', () => {

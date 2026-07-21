@@ -1,6 +1,7 @@
 import {
   formatReasoningValueLabel,
   resolvePreferredReasoningDefault,
+  STANDARD_REASONING_VALUES,
 } from '../../core/providers/reasoning';
 
 export interface GrokReasoningEffort {
@@ -16,27 +17,29 @@ export interface GrokDiscoveredModel {
   description?: string;
   displayName: string;
   rawId: string;
+  reasoningMetadataResolved?: boolean;
   reasoningEfforts: GrokReasoningEffort[];
   supportsReasoning: boolean;
 }
 
-export const GROK_SYNTHETIC_MODEL_ID = 'grok';
 export const GROK_MODEL_PREFIX = 'grok/';
 export const GROK_CONTEXT_WINDOW_FALLBACK = 200_000;
 const GROK_REASONING_EFFORT_ORDER = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+const GROK_FALLBACK_REASONING_EFFORTS: readonly GrokReasoningEffort[] = Object.freeze(
+  STANDARD_REASONING_VALUES.map(value => Object.freeze({
+    label: formatReasoningValueLabel(value),
+    value,
+  })),
+);
 
 export function isGrokModelSelectionId(model: string): boolean {
-  const normalized = model.trim();
-  return normalized === GROK_SYNTHETIC_MODEL_ID || decodeGrokModelId(normalized) !== null;
+  return decodeGrokModelId(model.trim()) !== null;
 }
 
 export function encodeGrokModelId(rawModelId: string): string {
   const normalized = rawModelId.trim();
-  if (!normalized) {
-    return GROK_SYNTHETIC_MODEL_ID;
-  }
-  if (normalized === GROK_MODEL_PREFIX) {
-    return GROK_SYNTHETIC_MODEL_ID;
+  if (!normalized || normalized === GROK_MODEL_PREFIX) {
+    return '';
   }
   return normalized.startsWith(GROK_MODEL_PREFIX)
     ? normalized
@@ -50,21 +53,6 @@ export function decodeGrokModelId(model: string): string | null {
   }
   const rawModelId = normalized.slice(GROK_MODEL_PREFIX.length).trim();
   return rawModelId || null;
-}
-
-export function resolveGrokRawModelId(
-  model: string,
-  defaultModelId: string | null | undefined,
-): string | null {
-  const explicitRawId = decodeGrokModelId(model);
-  if (explicitRawId) {
-    return explicitRawId;
-  }
-  if (model.trim() !== GROK_SYNTHETIC_MODEL_ID) {
-    return null;
-  }
-  const normalizedDefault = defaultModelId?.trim();
-  return normalizedDefault || null;
 }
 
 export function normalizeGrokDiscoveredModels(value: unknown): GrokDiscoveredModel[] {
@@ -113,10 +101,38 @@ export function findGrokModel(
   modelId: string,
 ): GrokDiscoveredModel | null {
   const rawModelId = decodeGrokModelId(modelId) ?? modelId.trim();
-  if (!rawModelId || rawModelId === GROK_SYNTHETIC_MODEL_ID) {
+  if (!rawModelId) {
     return null;
   }
   return models.find(model => model.rawId === rawModelId) ?? null;
+}
+
+export function getGrokAvailableReasoningEfforts(
+  model: GrokDiscoveredModel | null | undefined,
+): readonly GrokReasoningEffort[] {
+  if (!model) {
+    return [];
+  }
+  if (model.reasoningMetadataResolved !== true) {
+    return GROK_FALLBACK_REASONING_EFFORTS;
+  }
+  if (model.reasoningEfforts.length > 0) {
+    return model.reasoningEfforts;
+  }
+  return model.supportsReasoning
+    ? GROK_FALLBACK_REASONING_EFFORTS
+    : [];
+}
+
+export function clearGrokReasoningMetadata(
+  model: GrokDiscoveredModel,
+): GrokDiscoveredModel {
+  const cleared = { ...model };
+  delete cleared.defaultReasoningEffort;
+  delete cleared.reasoningMetadataResolved;
+  cleared.reasoningEfforts = [];
+  cleared.supportsReasoning = false;
+  return cleared;
 }
 
 export function resolveGrokDefaultReasoningEffort(
@@ -222,6 +238,9 @@ function normalizeGrokDiscoveredModel(value: unknown): GrokDiscoveredModel | nul
     ...(description ? { description } : {}),
     displayName,
     rawId,
+    ...(value.reasoningMetadataResolved === true
+      ? { reasoningMetadataResolved: true }
+      : {}),
     reasoningEfforts: reasoning.reasoningEfforts,
     supportsReasoning: reasoning.supportsReasoning,
   };
@@ -283,9 +302,15 @@ function mergeGrokModelMetadata(
   current: GrokDiscoveredModel,
   incoming: GrokDiscoveredModel,
 ): GrokDiscoveredModel {
-  const reasoningEfforts = incoming.reasoningEfforts.length > 0
+  const incomingReasoningIsAuthoritative = incoming.reasoningMetadataResolved === true;
+  const reasoningEfforts = incomingReasoningIsAuthoritative
     ? incoming.reasoningEfforts
-    : current.reasoningEfforts;
+    : incoming.reasoningEfforts.length > 0
+      ? incoming.reasoningEfforts
+      : current.reasoningEfforts;
+  const defaultReasoningEffort = incomingReasoningIsAuthoritative
+    ? incoming.defaultReasoningEffort
+    : incoming.defaultReasoningEffort ?? current.defaultReasoningEffort;
   const incomingDisplayNameIsRich = incoming.displayName !== incoming.rawId;
 
   return {
@@ -295,18 +320,23 @@ function mergeGrokModelMetadata(
     ...(incoming.contextWindow ?? current.contextWindow
       ? { contextWindow: incoming.contextWindow ?? current.contextWindow }
       : {}),
-    ...(incoming.defaultReasoningEffort ?? current.defaultReasoningEffort
-      ? { defaultReasoningEffort: incoming.defaultReasoningEffort ?? current.defaultReasoningEffort }
+    ...(defaultReasoningEffort
+      ? { defaultReasoningEffort }
       : {}),
     ...(incoming.description ?? current.description
       ? { description: incoming.description ?? current.description }
       : {}),
     displayName: incomingDisplayNameIsRich ? incoming.displayName : current.displayName,
     rawId: current.rawId,
+    ...(incoming.reasoningMetadataResolved || current.reasoningMetadataResolved
+      ? { reasoningMetadataResolved: true }
+      : {}),
     reasoningEfforts,
-    supportsReasoning: incoming.supportsReasoning
-      || current.supportsReasoning
-      || reasoningEfforts.length > 0,
+    supportsReasoning: incomingReasoningIsAuthoritative
+      ? incoming.supportsReasoning || reasoningEfforts.length > 0
+      : incoming.supportsReasoning
+        || current.supportsReasoning
+        || reasoningEfforts.length > 0,
   };
 }
 

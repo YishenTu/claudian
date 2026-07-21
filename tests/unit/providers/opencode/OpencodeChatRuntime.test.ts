@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import {
@@ -11,7 +13,14 @@ import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 function createMockPlugin(overrides: Record<string, unknown> = {}): any {
   const plugin: any = {
-    settings: {},
+    settings: {
+      model: 'opencode:anthropic/claude-sonnet-4',
+      providerConfigs: {
+        opencode: {
+          visibleModels: ['anthropic/claude-sonnet-4'],
+        },
+      },
+    },
     manifest: { version: '0.0.0-test' },
     getAllViews: jest.fn().mockReturnValue([]),
     getResolvedProviderCliPath: jest.fn().mockReturnValue('/usr/local/bin/opencode'),
@@ -40,6 +49,25 @@ function createMockPlugin(overrides: Record<string, unknown> = {}): any {
 describe('OpencodeChatRuntime', () => {
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('rejects a turn without an enabled OpenCode model before starting the runtime', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin({ settings: {} }));
+    const ensureReady = jest.spyOn(runtime, 'ensureReady');
+
+    const chunks = [];
+    for await (const chunk of runtime.query(runtime.prepareTurn({ text: 'Hello' }))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      {
+        type: 'error',
+        content: 'No OpenCode model is selected. Enable a discovered model in Claudian settings.',
+      },
+      { type: 'done' },
+    ]);
+    expect(ensureReady).not.toHaveBeenCalled();
   });
 
   it('captures available ACP commands even when no turn is active', async () => {

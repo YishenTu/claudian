@@ -25,6 +25,7 @@ import {
   getGrokProviderSettings,
   normalizeGrokVisibleModels,
   updateGrokProviderSettings,
+  updateGrokVisibleModels,
 } from '../settings';
 
 const GROK_PROVIDER_ID = 'grok' as const;
@@ -250,14 +251,14 @@ function renderGrokModelPicker(
         return;
       }
       await context.plugin.mutateSettings((settings) => {
-        updateGrokProviderSettings(settings, { visibleModels: nextVisibleModels });
+        updateGrokVisibleModels(settings, nextVisibleModels);
       });
       context.refreshModelSelectors();
       context.refreshTitleGenerationModelOptions();
     },
     providerName: 'Grok',
     searchPlaceholder: 'Filter by model name, description, or alias ID...',
-    settingDescription: 'Choose which discovered models appear beside Grok (native default). Existing session models stay pinned even when hidden here.',
+    settingDescription: 'Choose which discovered Grok models are available in Claudian. Grok is unavailable when no models are selected.',
   });
 }
 

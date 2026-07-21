@@ -39,3 +39,4 @@
 - `CodexAuxQueryRunner` owns its own process, transport, and thread. It is independent from the chat runtime.
 - `CodexTaskResultInterpreter` is intentionally no-op because Claudian's Claude async-agent task system does not apply to Codex.
 - Codex is opt-in and must stay disabled by default.
+- Only explicitly enabled models belong in the chat selector. Do not preserve hidden session models or fall back to the app-server default when none are enabled.

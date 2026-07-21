@@ -8,7 +8,6 @@ import {
   groupOpencodeDiscoveredModels,
   isOpencodeModelSelectionId,
   OPENCODE_DEFAULT_THINKING_LEVEL,
-  OPENCODE_SYNTHETIC_MODEL_ID,
   resolveOpencodeBaseModelRawId,
   resolveOpencodeDefaultThinkingLevel,
   splitOpencodeModelLabel,
@@ -19,7 +18,7 @@ describe('OpenCode model identity', () => {
   it('namespaces provider-owned model ids for the shared selector', () => {
     expect(encodeOpencodeModelId('anthropic/claude-sonnet-4')).toBe('opencode:anthropic/claude-sonnet-4');
     expect(decodeOpencodeModelId('opencode:anthropic/claude-sonnet-4')).toBe('anthropic/claude-sonnet-4');
-    expect(decodeOpencodeModelId(OPENCODE_SYNTHETIC_MODEL_ID)).toBeNull();
+    expect(encodeOpencodeModelId('')).toBe('');
     expect(isOpencodeModelSelectionId('opencode:anthropic/claude-sonnet-4')).toBe(true);
     expect(isOpencodeModelSelectionId('claude-sonnet-4')).toBe(false);
   });
@@ -117,7 +116,7 @@ describe('OpenCode base model derivation', () => {
 });
 
 describe('opencodeChatUIConfig', () => {
-  it('appends saved variant selections only when absent from visible models', () => {
+  it('excludes saved variant selections when their base model is not enabled', () => {
     const options = opencodeChatUIConfig.getModelOptions({
       model: 'haiku',
       providerConfigs: {
@@ -146,11 +145,6 @@ describe('opencodeChatUIConfig', () => {
         description: 'ACP runtime',
         label: 'OpenAI/GPT-5',
         value: 'opencode:openai/gpt-5',
-      },
-      {
-        description: 'ACP runtime',
-        label: 'Anthropic/Claude Sonnet 4',
-        value: 'opencode:anthropic/claude-sonnet-4',
       },
     ]);
   });
@@ -206,10 +200,10 @@ describe('opencodeChatUIConfig', () => {
     ]);
   });
 
-  it('falls back to the synthetic entry before models are discovered', () => {
-    expect(opencodeChatUIConfig.getModelOptions({})).toEqual([
-      { description: 'ACP runtime', label: 'OpenCode', value: 'opencode' },
-    ]);
+  it('has no model fallback when no models are enabled', () => {
+    expect(opencodeChatUIConfig.getModelOptions({})).toEqual([]);
+    expect(opencodeChatUIConfig.getDefaultModel!({})).toBeNull();
+    expect(opencodeChatUIConfig.ownsModel('opencode:anthropic/claude-sonnet-4', {})).toBe(true);
   });
 
   it('returns per-model thinking options from ACP thought-level discovery', () => {

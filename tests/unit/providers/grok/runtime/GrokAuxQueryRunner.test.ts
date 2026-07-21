@@ -258,11 +258,11 @@ describe('GrokAuxQueryRunner', () => {
     expect(onTextChunk).toHaveBeenNthCalledWith(2, 'Refined answer');
   });
 
-  it('uses the native default by omitting model metadata for the synthetic model', async () => {
+  it('uses the native default when no auxiliary model is supplied', async () => {
     const runner = new GrokAuxQueryRunner(makeHost());
 
     await runner.query({
-      model: 'grok',
+      model: undefined,
       systemPrompt: 'Use native defaults',
     }, 'Generate a title');
 
@@ -471,7 +471,7 @@ describe('GrokAuxQueryRunner', () => {
     const runner = new GrokAuxQueryRunner(host);
 
     await runner.query({ model: 'grok/model-a', systemPrompt: 'Refine prompt' }, 'Explicit');
-    await runner.query({ model: 'grok', systemPrompt: 'Refine prompt' }, 'Native');
+    await runner.query({ model: undefined, systemPrompt: 'Refine prompt' }, 'Native');
 
     expect(MockAcpSubprocess).toHaveBeenCalledTimes(2);
     expect(connection.newSession).toHaveBeenCalledTimes(1);
@@ -498,9 +498,9 @@ describe('GrokAuxQueryRunner', () => {
     const runner = new GrokAuxQueryRunner(makeHost());
 
     await runner.query({ model: 'grok/model-a', systemPrompt: 'Refine prompt' }, 'Explicit');
-    await expect(runner.query({ model: 'grok', systemPrompt: 'Refine prompt' }, 'Native'))
+    await expect(runner.query({ model: undefined, systemPrompt: 'Refine prompt' }, 'Native'))
       .rejects.toThrow('native reload unavailable');
-    await expect(runner.query({ model: 'grok', systemPrompt: 'Refine prompt' }, 'Retry native'))
+    await expect(runner.query({ model: undefined, systemPrompt: 'Refine prompt' }, 'Retry native'))
       .resolves.toBe('Refined answer');
 
     expect(MockAcpSubprocess).toHaveBeenCalledTimes(3);

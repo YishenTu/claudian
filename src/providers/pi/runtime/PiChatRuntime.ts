@@ -47,7 +47,6 @@ import {
   clampPiThinkingLevel,
   decodePiModelId,
   findPiModel,
-  PI_SYNTHETIC_MODEL_ID,
 } from '../models';
 import {
   createPiEventNormalizationState,
@@ -386,6 +385,14 @@ export class PiChatRuntime implements ChatRuntime {
   ): AsyncGenerator<StreamChunk> {
     if (queryOptions?.model) {
       this.setCurrentConversationModel(queryOptions.model);
+    }
+    if (!this.resolveSelectedModel(this.getProviderSettings(), queryOptions)) {
+      yield {
+        type: 'error',
+        content: 'No Pi model is selected. Enable a discovered model in Claudian settings.',
+      };
+      yield { type: 'done' };
+      return;
     }
     const conversationGeneration = this.conversationGeneration;
     this.currentTurnMetadata = {};
@@ -831,8 +838,14 @@ export class PiChatRuntime implements ChatRuntime {
     }
 
     const selectedModel = this.resolveSelectedModel(this.getProviderSettings(), queryOptions);
-    const payload = selectedModel ? buildPiSetModelPayload(selectedModel) : null;
-    if (!payload || this.currentModel === selectedModel) {
+    if (!selectedModel) {
+      throw new Error('No Pi model is selected. Enable a discovered model in Claudian settings.');
+    }
+    const payload = buildPiSetModelPayload(selectedModel);
+    if (!payload) {
+      throw new Error('The selected Pi model is invalid. Enable a discovered model in Claudian settings.');
+    }
+    if (this.currentModel === selectedModel) {
       return;
     }
 
@@ -1071,11 +1084,11 @@ export class PiChatRuntime implements ChatRuntime {
       ? providerSettings.model
       : '';
 
-    if (!selectedModel || selectedModel === PI_SYNTHETIC_MODEL_ID || !decodePiModelId(selectedModel)) {
+    if (!selectedModel || !decodePiModelId(selectedModel)) {
       return null;
     }
-
-    return selectedModel;
+    const visibleModels = getPiProviderSettings(providerSettings).visibleModels;
+    return visibleModels.includes(selectedModel) ? selectedModel : null;
   }
 
   private resolveSelectedThinkingLevel(

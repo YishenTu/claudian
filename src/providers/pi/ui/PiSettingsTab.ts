@@ -190,7 +190,7 @@ function renderPiModelPicker(
       context.refreshModelSelectors();
     },
     providerName: 'Pi',
-    settingDescription: 'Choose which Pi models appear in the chat selector. Filter by provider or type to search. The current session model stays pinned even if it is not selected here.',
+    settingDescription: 'Choose which Pi models are available in the chat selector. Filter by provider or type to search. Pi chat is unavailable when no models are selected.',
   });
 }
 

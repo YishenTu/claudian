@@ -256,7 +256,7 @@ function renderOpencodeModelPicker(
       context.refreshModelSelectors();
     },
     providerName: 'OpenCode',
-    settingDescription: 'Choose which OpenCode models appear in the chat selector. Filter by provider or type to search. The current session model stays pinned even if it is not selected here.',
+    settingDescription: 'Choose which OpenCode models are available in the chat selector. Filter by provider or type to search. OpenCode chat is unavailable when no models are selected.',
   });
 }
 

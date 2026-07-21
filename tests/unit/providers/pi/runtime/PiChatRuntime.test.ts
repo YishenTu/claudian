@@ -96,10 +96,22 @@ function createPlugin(): any {
     },
     getResolvedProviderCliPath: jest.fn(() => 'pi'),
     settings: {
+      effortLevel: 'off',
       mediaFolder: 'media',
+      model: 'pi:anthropic/claude-sonnet-4',
       providerConfigs: {
         pi: {
+          discoveredModels: [{
+            encodedId: 'pi:anthropic/claude-sonnet-4',
+            id: 'claude-sonnet-4',
+            input: ['text'],
+            label: 'Claude Sonnet 4',
+            provider: 'anthropic',
+            reasoning: false,
+            thinkingLevels: ['off'],
+          }],
           enabled: true,
+          visibleModels: ['pi:anthropic/claude-sonnet-4'],
         },
       },
       systemPrompt: '',
@@ -502,24 +514,24 @@ describe('PiChatRuntime', () => {
     });
   });
 
-  it('does not apply thinking level when only the synthetic Pi fallback model is selected', async () => {
-    const runtime = new PiChatRuntime(createPlugin());
+  it('rejects a turn without an enabled Pi model before starting the runtime', async () => {
+    const plugin = createPlugin();
+    plugin.settings.model = '';
+    plugin.settings.providerConfigs.pi.visibleModels = [];
+    const runtime = new PiChatRuntime(plugin);
     const chunks: unknown[] = [];
-    const promise = (async () => {
-      for await (const chunk of runtime.query(createTurn(runtime))) {
-        chunks.push(chunk);
-      }
-    })();
+    for await (const chunk of runtime.query(createTurn(runtime))) {
+      chunks.push(chunk);
+    }
 
-    await flushPromises();
-    mockTransportInstances[0].eventHandlers[0]({ type: 'agent_end' });
-    await promise;
-
-    expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
-    expect(mockTransportInstances[0].request).not.toHaveBeenCalledWith(
-      'set_thinking_level',
-      expect.anything(),
-    );
+    expect(chunks).toEqual([
+      {
+        type: 'error',
+        content: 'No Pi model is selected. Enable a discovered model in Claudian settings.',
+      },
+      { type: 'done' },
+    ]);
+    expect(mockSubprocessInstances).toHaveLength(0);
   });
 
   it('does not bootstrap local history after readiness refresh finds an existing Pi session', async () => {

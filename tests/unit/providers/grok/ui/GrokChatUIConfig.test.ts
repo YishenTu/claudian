@@ -12,10 +12,11 @@ const catalog = {
       description: 'xAI coding model',
       displayName: 'Grok 4',
       rawId: 'grok-4',
+      reasoningMetadataResolved: true,
       reasoningEfforts: [
-        { description: 'Fast', label: 'Low Effort', value: 'low' },
-        { label: 'Medium Effort', value: 'medium' },
+        { description: 'Fastest', label: 'Minimal Effort', value: 'minimal' },
         { label: 'High Effort', value: 'high' },
+        { label: 'Extra High Effort', value: 'xhigh' },
       ],
       supportsReasoning: true,
     },
@@ -57,22 +58,19 @@ jest.mock('@/utils/env', () => ({
 }));
 
 describe('GrokChatUIConfig', () => {
-  it('owns only the reserved native default and provider-qualified Grok models', () => {
-    expect(grokChatUIConfig.ownsModel('grok', {})).toBe(true);
-    expect(grokChatUIConfig.ownsModel('grok/grok-4', {})).toBe(true);
+  it('owns only enabled provider-qualified Grok models and resolves the enabled default', () => {
+    expect(grokChatUIConfig.ownsModel('grok', {})).toBe(false);
+    expect(grokChatUIConfig.ownsModel('grok/grok-4', makeSettings())).toBe(true);
+    expect(grokChatUIConfig.ownsModel('grok/kimi-coding', makeSettings())).toBe(false);
     expect(grokChatUIConfig.ownsModel('grok/', {})).toBe(false);
     expect(grokChatUIConfig.ownsModel('grok-4', {})).toBe(false);
-    expect(grokChatUIConfig.getDefaultModel?.({})).toBe('grok');
+    expect(grokChatUIConfig.getDefaultModel?.({})).toBeNull();
+    expect(grokChatUIConfig.getDefaultModel?.(makeSettings())).toBe('grok/grok-4');
     expect(grokChatUIConfig.getProviderIcon?.()).toBe(GROK_PROVIDER_ICON);
   });
 
-  it('always exposes native default and applies visibility and aliases to catalog models', () => {
+  it('exposes only discovered models and applies visibility and aliases', () => {
     expect(grokChatUIConfig.getModelOptions(makeSettings())).toEqual([
-      {
-        description: 'Use the model selected by Grok',
-        label: 'Grok (native default)',
-        value: 'grok',
-      },
       expect.objectContaining({
         description: 'xAI coding model',
         label: 'Fast Grok',
@@ -88,43 +86,55 @@ describe('GrokChatUIConfig', () => {
         },
       },
     })).map(option => option.value)).toEqual([
-      'grok',
       'grok/grok-4',
       'grok/kimi-coding',
     ]);
   });
 
-  it('pins the active and saved session selections even when hidden from the picker', () => {
+  it('does not expose active or saved selections that the user disabled', () => {
     const options = grokChatUIConfig.getModelOptions(makeSettings({
       model: 'grok/kimi-coding',
       savedProviderModel: { grok: 'grok/retired-alias' },
     }));
 
-    expect(options).toEqual([
-      expect.objectContaining({ value: 'grok' }),
-      expect.objectContaining({ value: 'grok/grok-4' }),
-      expect.objectContaining({
-        description: 'Custom Kimi alias',
-        label: 'Kimi Coding',
-        value: 'grok/kimi-coding',
-      }),
-      expect.objectContaining({
-        description: 'Selected in an existing session',
-        label: 'retired-alias',
-        value: 'grok/retired-alias',
-      }),
-    ]);
+    expect(options.map(option => option.value)).toEqual(['grok/grok-4']);
   });
 
-  it('pins a hidden title-generation selection so reconciliation does not discard it', () => {
+  it('does not expose a disabled title-generation selection', () => {
     const options = grokChatUIConfig.getModelOptions(makeSettings({
       titleGenerationModel: 'grok/kimi-coding',
     }));
 
-    expect(options).toContainEqual(expect.objectContaining({
-      label: 'Kimi Coding',
-      value: 'grok/kimi-coding',
-    }));
+    expect(options.map(option => option.value)).toEqual(['grok/grok-4']);
+  });
+
+  it('uses the first enabled model when the native catalog default is disabled', () => {
+    const settings = makeSettings({
+      providerConfigs: {
+        grok: {
+          catalogsByHost: { 'device:current': catalog },
+          visibleModels: ['kimi-coding'],
+        },
+      },
+    });
+
+    expect(grokChatUIConfig.getDefaultModel?.(settings)).toBe('grok/kimi-coding');
+    expect(grokChatUIConfig.getModelOptions(settings).map(option => option.value))
+      .toEqual(['grok/kimi-coding']);
+  });
+
+  it('has no default or options when the user enables no models', () => {
+    const settings = makeSettings({
+      providerConfigs: {
+        grok: {
+          catalogsByHost: { 'device:current': catalog },
+          visibleModels: [],
+        },
+      },
+    });
+
+    expect(grokChatUIConfig.getDefaultModel?.(settings)).toBeNull();
+    expect(grokChatUIConfig.getModelOptions(settings)).toEqual([]);
   });
 
   it('projects reasoning options, defaults, and preferences from model metadata', () => {
@@ -133,53 +143,73 @@ describe('GrokChatUIConfig', () => {
     expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/grok-4', settings)).toBe(true);
     expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/kimi-coding', settings)).toBe(false);
     expect(grokChatUIConfig.getReasoningOptions('grok/grok-4', settings)).toEqual([
-      { description: 'Fast', label: 'Low', value: 'low' },
-      { label: 'Medium', value: 'medium' },
+      { description: 'Fastest', label: 'Minimal', value: 'minimal' },
       { label: 'High', value: 'high' },
+      { label: 'xHigh', value: 'xhigh' },
     ]);
     expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-4', settings)).toBe('high');
 
-    grokChatUIConfig.applyReasoningSelection?.('grok/grok-4', 'low', settings);
+    grokChatUIConfig.applyReasoningSelection?.('grok/grok-4', 'xhigh', settings);
     expect(getGrokProviderSettings(settings).preferredReasoningByModel).toEqual({
-      'grok-4': 'low',
+      'grok-4': 'xhigh',
     });
 
     grokChatUIConfig.applyModelDefaults('grok/grok-4', settings);
     expect(settings.model).toBe('grok/grok-4');
-    expect(settings.effortLevel).toBe('low');
+    expect(settings.effortLevel).toBe('xhigh');
 
     settings.effortLevel = 'medium';
     grokChatUIConfig.applyModelProjectionDefaults?.('grok/grok-4', settings);
-    expect(settings.effortLevel).toBe('low');
+    expect(settings.effortLevel).toBe('xhigh');
   });
 
-  it('does not project reasoning metadata onto the synthetic native-default selection', () => {
+  it('uses and persists the standard fallback for models without reasoning metadata', () => {
     const settings = makeSettings({
-      effortLevel: 'medium',
-      savedProviderEffort: { claude: 'high', grok: 'medium' },
+      providerConfigs: {
+        grok: {
+          catalogsByHost: { 'device:current': catalog },
+          preferredReasoningByModel: { 'grok-4': 'high' },
+          visibleModels: ['grok-4', 'kimi-coding'],
+        },
+      },
     });
 
-    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok', settings)).toBe(false);
-    expect(grokChatUIConfig.getReasoningOptions('grok', settings)).toEqual([]);
-    expect(grokChatUIConfig.getDefaultReasoningValue('grok', settings)).toBe('');
-    expect(grokChatUIConfig.getContextWindowSize('grok', undefined, settings)).toBe(256_000);
+    expect(grokChatUIConfig.getReasoningOptions('grok/kimi-coding', settings)).toEqual([
+      { label: 'Low', value: 'low' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'High', value: 'high' },
+    ]);
+    expect(grokChatUIConfig.getDefaultReasoningValue('grok/kimi-coding', settings)).toBe('high');
 
-    grokChatUIConfig.applyReasoningSelection?.('grok', 'low', settings);
+    grokChatUIConfig.applyReasoningSelection?.('grok/kimi-coding', 'medium', settings);
     expect(getGrokProviderSettings(settings).preferredReasoningByModel).toEqual({
       'grok-4': 'high',
+      'kimi-coding': 'medium',
     });
-    expect(settings.effortLevel).toBeUndefined();
-    expect(settings.savedProviderEffort).toEqual({ claude: 'high' });
-
-    settings.effortLevel = 'low';
-    (settings.savedProviderEffort as Record<string, string>).grok = 'low';
-    grokChatUIConfig.applyModelProjectionDefaults?.('grok', settings);
-    expect(settings.effortLevel).toBeUndefined();
-    expect(settings.savedProviderEffort).toEqual({ claude: 'high' });
-    expect(grokChatUIConfig.normalizeModelVariant('grok', settings)).toBe('grok');
   });
 
-  it('preserves explicit model preferences across a synthetic selection', () => {
+  it('hides reasoning after ACP resolves an enabled model as non-reasoning', () => {
+    const resolvedCatalog = {
+      ...catalog,
+      models: catalog.models.map(model => model.rawId === 'kimi-coding'
+        ? { ...model, reasoningMetadataResolved: true }
+        : model),
+    };
+    const settings = makeSettings({
+      providerConfigs: {
+        grok: {
+          catalogsByHost: { 'device:current': resolvedCatalog },
+          visibleModels: ['kimi-coding'],
+        },
+      },
+    });
+
+    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/kimi-coding', settings)).toBe(false);
+    expect(grokChatUIConfig.getReasoningOptions('grok/kimi-coding', settings)).toEqual([]);
+    expect(grokChatUIConfig.getDefaultReasoningValue('grok/kimi-coding', settings)).toBe('');
+  });
+
+  it('preserves explicit model preferences across projection updates', () => {
     const settings = makeSettings({
       effortLevel: 'medium',
       savedProviderEffort: { grok: 'medium' },
@@ -188,18 +218,11 @@ describe('GrokChatUIConfig', () => {
     grokChatUIConfig.applyModelDefaults('grok/grok-4', settings);
     expect(settings.effortLevel).toBe('high');
 
-    grokChatUIConfig.applyReasoningSelection?.('grok/grok-4', 'low', settings);
-    grokChatUIConfig.applyModelDefaults('grok', settings);
-    expect(settings.effortLevel).toBeUndefined();
-    expect(settings.savedProviderEffort).toEqual({});
-    expect(getGrokProviderSettings(settings).preferredReasoningByModel).toEqual({
-      'grok-4': 'low',
-    });
-
+    grokChatUIConfig.applyReasoningSelection?.('grok/grok-4', 'xhigh', settings);
     grokChatUIConfig.applyModelProjectionDefaults?.('grok/grok-4', settings);
-    expect(settings.effortLevel).toBe('low');
+    expect(settings.effortLevel).toBe('xhigh');
     expect(getGrokProviderSettings(settings).preferredReasoningByModel).toEqual({
-      'grok-4': 'low',
+      'grok-4': 'xhigh',
     });
   });
 

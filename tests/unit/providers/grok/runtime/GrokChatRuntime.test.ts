@@ -332,7 +332,7 @@ describe('GrokChatRuntime', () => {
   });
 
   it('can force readiness for a blank runtime without creating a native session', async () => {
-    const harness = createHarness({ host: createHost({ settings: { model: 'grok' } }) });
+    const harness = createHarness({ host: createHost({ settings: { model: 'grok/grok-4.5' } }) });
 
     await expect(harness.runtime.ensureReady({
       allowSessionCreation: false,
@@ -346,7 +346,7 @@ describe('GrokChatRuntime', () => {
   it('registers owner readiness during a held transition for future quiescence', async () => {
     const lifecycle = new GrokAuxiliaryLifecycleCoordinator();
     const harness = createHarness({
-      host: createHost({ settings: { model: 'grok' } }),
+      host: createHost({ settings: { model: 'grok/grok-4.5' } }),
       lifecycle,
     });
     const currentTransition = await lifecycle.beginEnvironmentChange();
@@ -517,10 +517,10 @@ describe('GrokChatRuntime', () => {
     });
   });
 
-  it('starts a fresh synthetic selection without a raw model id or model reconciliation', async () => {
+  it('rejects a turn when no explicit enabled model is selected', async () => {
     const host = createHost({
       settings: {
-        model: 'grok',
+        model: '',
         providerConfigs: {
           grok: {
             catalogsByHost: {
@@ -538,174 +538,16 @@ describe('GrokChatRuntime', () => {
     });
     const harness = createHarness({ host });
 
-    await collect(harness.runtime);
+    const chunks = await collect(harness.runtime);
 
-    const newSession = harness.process.requests.find(request => request.method === 'session/new');
-    expect(record(record(newSession?.params)._meta)).not.toHaveProperty('modelId');
+    expect(chunks).toEqual([
+      expect.objectContaining({ content: expect.stringContaining('No Grok model is selected'), type: 'error' }),
+      { type: 'done' },
+    ]);
+    expect(harness.process.requests.filter(request => request.method === 'session/new'))
+      .toEqual([]);
     expect(harness.process.requests.filter(request => request.method === 'session/set_model'))
       .toEqual([]);
-  });
-
-  it('reloads the same binding without a model id when switching from explicit to synthetic', async () => {
-    const harness = createHarness({
-      handlers: {
-        load(message, process) {
-          const response = sessionResponse('session-stable');
-          record(response.models).currentModelId = 'native-current';
-          process.respond(message, response);
-        },
-        newSession(message, process) {
-          process.respond(message, sessionResponse('session-stable'));
-        },
-      },
-      host: createHost({ settings: { effortLevel: 'xhigh', model: 'grok/kimi-coding' } }),
-    });
-
-    await collect(harness.runtime, 'Explicit model');
-    const nativeDefaultChunks = await collect(harness.runtime, 'Native default', 'grok');
-
-    const requests = harness.processes.flatMap(process => process.requests);
-    const newSessions = requests
-      .filter(request => request.method === 'session/new');
-    const loads = requests.filter(request => request.method === 'session/load');
-    expect(newSessions).toHaveLength(1);
-    expect(loads).toHaveLength(1);
-    expect(record(loads[0].params).sessionId).toBe('session-stable');
-    expect(record(record(loads[0].params)._meta)).not.toHaveProperty('modelId');
-    expect(requests
-      .filter(request => request.method === 'session/set_model')
-      .map(request => record(request.params).modelId))
-      .toEqual(['kimi-coding']);
-    expect(requests
-      .filter(request => request.method === 'session/prompt')
-      .map(request => record(request.params).sessionId))
-      .toEqual(['session-stable', 'session-stable']);
-    expect(nativeDefaultChunks).toEqual([
-      expect.objectContaining({ sessionId: 'session-stable', type: 'usage' }),
-      { type: 'done' },
-    ]);
-    expect(harness.runtime.getSessionId()).toBe('session-stable');
-    expect((harness.runtime as any).currentSessionModelId).toBe('native-current');
-    expect(harness.processes).toHaveLength(2);
-  });
-
-  it('reapplies an explicit model after a native-default load omits model metadata', async () => {
-    const harness = createHarness({
-      handlers: {
-        load(message, process) {
-          process.respond(message, { sessionId: 'session-stable' });
-        },
-        newSession(message, process) {
-          process.respond(message, sessionResponse('session-stable'));
-        },
-      },
-      host: createHost({ settings: { effortLevel: 'xhigh', model: 'grok/kimi-coding' } }),
-    });
-
-    await collect(harness.runtime, 'Explicit model');
-    await collect(harness.runtime, 'Native default', 'grok');
-    await collect(harness.runtime, 'Explicit model again', 'grok/kimi-coding');
-
-    const requests = harness.processes.flatMap(process => process.requests);
-    expect(requests
-      .filter(request => request.method === 'session/set_model')
-      .map(request => record(request.params).modelId))
-      .toEqual(['kimi-coding', 'kimi-coding']);
-    expect(requests
-      .filter(request => request.method === 'session/prompt')
-      .map(request => record(request.params).sessionId))
-      .toEqual(['session-stable', 'session-stable', 'session-stable']);
-  });
-
-  it('keeps an explicit binding recoverable when the native-default reload fails', async () => {
-    let loadAttempts = 0;
-    const harness = createHarness({
-      handlers: {
-        load(message, process) {
-          loadAttempts += 1;
-          if (loadAttempts === 1) {
-            process.stdout.write(`${JSON.stringify({
-              error: { code: -32000, message: 'native reload unavailable' },
-              id: message.id,
-              jsonrpc: '2.0',
-            })}\n`);
-            return;
-          }
-          const response = sessionResponse('session-stable');
-          record(response.models).currentModelId = 'native-current';
-          process.respond(message, response);
-        },
-        newSession(message, process) {
-          process.respond(message, sessionResponse('session-stable'));
-        },
-      },
-      host: createHost({ settings: { model: 'grok/kimi-coding' } }),
-    });
-
-    await collect(harness.runtime, 'Explicit model');
-    const failed = await collect(harness.runtime, 'Native default', 'grok');
-
-    expect(failed).toEqual([
-      expect.objectContaining({ content: expect.stringContaining('native reload unavailable'), type: 'error' }),
-      { type: 'done' },
-    ]);
-    expect(harness.runtime.getSessionId()).toBe('session-stable');
-    expect(harness.runtime.consumeSessionInvalidation()).toBe(false);
-
-    const recovered = await collect(harness.runtime, 'Retry native default', 'grok');
-    const requests = harness.processes.flatMap(process => process.requests);
-    expect(recovered).toContainEqual(expect.objectContaining({ type: 'done' }));
-    expect(requests.filter(request => request.method === 'session/new')).toHaveLength(1);
-    expect(requests.filter(request => request.method === 'session/load')).toHaveLength(2);
-    expect(requests
-      .filter(request => request.method === 'session/load')
-      .every(request => record(request.params).sessionId === 'session-stable'))
-      .toBe(true);
-    expect(requests
-      .filter(request => request.method === 'session/load')
-      .every(request => !('modelId' in record(record(request.params)._meta))))
-      .toBe(true);
-    expect(harness.runtime.getSessionId()).toBe('session-stable');
-  });
-
-  it('does not send a prepared turn after the bound conversation changes', async () => {
-    let pendingLoad: { message: JsonRpcMessage; process: FakeGrokProcess } | null = null;
-    const harness = createHarness({
-      handlers: {
-        load(message, process) {
-          pendingLoad = { message, process };
-        },
-        newSession(message, process) {
-          process.respond(message, sessionResponse('session-stable'));
-        },
-      },
-      host: createHost({ settings: { model: 'grok/kimi-coding' } }),
-    });
-
-    await collect(harness.runtime, 'Explicit model');
-    const switching = collect(harness.runtime, 'Native default', 'grok');
-    while (!pendingLoad) await tick();
-
-    harness.runtime.syncConversationState({
-      id: 'other-conversation',
-      providerState: {},
-      sessionId: 'saved-other',
-    });
-    const load = pendingLoad as { message: JsonRpcMessage; process: FakeGrokProcess };
-    await tick();
-    const preparationShutdownCalls = load.process.shutdownCalls;
-    if (preparationShutdownCalls === 0) {
-      load.process.respond(load.message, sessionResponse('session-stable'));
-    }
-
-    await expect(switching).resolves.toEqual([
-      expect.objectContaining({ content: expect.stringMatching(/conversation changed/i), type: 'error' }),
-      { type: 'done' },
-    ]);
-    const requests = harness.processes.flatMap(process => process.requests);
-    expect(requests.filter(request => request.method === 'session/prompt')).toHaveLength(1);
-    expect(preparationShutdownCalls).toBe(1);
-    expect(harness.runtime.getSessionId()).toBe('saved-other');
   });
 
   it('does not retarget a turn waiting for transition admission after conversation changes', async () => {

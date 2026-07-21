@@ -50,11 +50,13 @@ function makeHost(options: {
   catalog?: ReturnType<typeof makeCatalog> | null;
   enabled?: boolean;
   otherHostCatalog?: ReturnType<typeof makeCatalog>;
+  visibleModels?: string[] | null;
 } = {}): ProviderHost {
   const {
     catalog = null,
     enabled = true,
     otherHostCatalog = makeCatalog({ fingerprint: 'other', models: [makeModel('other-model')] }),
+    visibleModels = null,
   } = options;
   const settings = {
     providerConfigs: {
@@ -65,6 +67,7 @@ function makeHost(options: {
           'device:other': otherHostCatalog,
         },
         enabled,
+        visibleModels,
       },
     },
   } as unknown as Record<string, unknown>;
@@ -367,6 +370,48 @@ describe('GrokModelCatalogCoordinator', () => {
         rawId: 'kimi-coding',
       }),
       expect.objectContaining({ rawId: 'glm-coding' }),
+    ]);
+  });
+
+  it('persists live ACP reasoning metadata only for enabled models', async () => {
+    const host = makeHost({
+      catalog: makeCatalog({
+        models: [makeModel('kimi-coding', 'Kimi'), {
+          displayName: 'GLM',
+          rawId: 'glm-coding',
+          reasoningEfforts: [{ label: 'High', value: 'high' }],
+          reasoningMetadataResolved: true,
+          supportsReasoning: true,
+        }],
+      }),
+      visibleModels: ['kimi-coding'],
+    });
+    const coordinator = new GrokModelCatalogCoordinator(host, makeService(completedResult()));
+
+    await coordinator.mergeLiveModels([{
+      displayName: 'Kimi',
+      rawId: 'kimi-coding',
+      reasoningEfforts: [{ label: 'High', value: 'high' }],
+      reasoningMetadataResolved: true,
+      supportsReasoning: true,
+    }, {
+      displayName: 'GLM',
+      rawId: 'glm-coding',
+      reasoningEfforts: [{ label: 'High', value: 'high' }],
+      reasoningMetadataResolved: true,
+      supportsReasoning: true,
+    }]);
+
+    expect(getCurrentGrokCatalog(host.settings)?.models).toEqual([
+      expect.objectContaining({
+        rawId: 'kimi-coding',
+        reasoningMetadataResolved: true,
+      }),
+      expect.objectContaining({
+        rawId: 'glm-coding',
+        reasoningEfforts: [],
+        supportsReasoning: false,
+      }),
     ]);
   });
 

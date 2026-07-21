@@ -493,6 +493,28 @@ describe('CodexChatRuntime', () => {
     expect(await runtime.getSupportedCommands()).toEqual([]);
   });
 
+  it('rejects a turn without an enabled Codex model before starting the runtime', async () => {
+    const emptyRuntime = new CodexChatRuntime(createMockPlugin({
+      model: '',
+      providerConfigs: {
+        codex: {
+          discoveredModels: [],
+          visibleModels: [],
+        },
+      },
+    }));
+
+    await expect(collectChunks(emptyRuntime.query(createTurn()))).resolves.toEqual([
+      {
+        type: 'error',
+        content: 'No Codex model is selected. Enable a model in Claudian settings.',
+      },
+      { type: 'done' },
+    ]);
+    expect(mockProcessStart).not.toHaveBeenCalled();
+    emptyRuntime.cleanup();
+  });
+
   it('should return canRewind: false', async () => {
     expect((await runtime.rewind('u1', 'a1')).canRewind).toBe(false);
   });
@@ -814,6 +836,7 @@ describe('CodexChatRuntime', () => {
         providerConfigs: {
           codex: {
             reasoningSummary: 'concise',
+            visibleModels: [TEST_CODEX_MODEL],
           },
         },
       }));

@@ -12,7 +12,6 @@ import {
   getPiSupportedThinkingLevels,
   isPiModelSelectionId,
   PI_DEFAULT_THINKING_LEVEL,
-  PI_SYNTHETIC_MODEL_ID,
   type PiDiscoveredModel,
   type PiThinkingLevel,
 } from '../models';
@@ -21,9 +20,6 @@ import {
   updatePiProviderSettings,
 } from '../settings';
 
-const PI_MODELS: ProviderUIOption[] = [
-  { value: PI_SYNTHETIC_MODEL_ID, label: 'Pi', description: 'Configure models in settings' },
-];
 const DEFAULT_PI_REASONING_LEVELS = getPiSupportedThinkingLevels({ reasoning: true });
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const PI_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
@@ -40,14 +36,6 @@ export const piChatUIConfig: ProviderChatUIConfig = {
       model.encodedId,
       buildModelOption(model, piSettings.modelAliases[model.encodedId]),
     ]));
-    const savedProviderModel = (
-      settings.savedProviderModel
-      && typeof settings.savedProviderModel === 'object'
-      && !Array.isArray(settings.savedProviderModel)
-    )
-      ? settings.savedProviderModel as Record<string, unknown>
-      : null;
-
     const options: ProviderUIOption[] = [];
     const seen = new Set<string>();
     for (const encodedId of [...piSettings.visibleModels].reverse()) {
@@ -64,34 +52,15 @@ export const piChatUIConfig: ProviderChatUIConfig = {
       );
     }
 
-    const selectedModelValues = [
-      typeof settings.model === 'string' ? settings.model : '',
-      typeof savedProviderModel?.pi === 'string' ? savedProviderModel.pi : '',
-    ];
+    return options;
+  },
 
-    for (const model of selectedModelValues) {
-      if (!model || model === PI_SYNTHETIC_MODEL_ID || !decodePiModelId(model)) {
-        continue;
-      }
-
-      pushOption(
-        options,
-        seen,
-        model,
-        discoveredModels.get(model)
-          ?? {
-            description: 'Selected in an existing session',
-            label: piSettings.modelAliases[model] ?? formatFallbackLabel(model),
-            value: model,
-          },
-      );
-    }
-
-    return options.length > 0 ? options : [...PI_MODELS];
+  getDefaultModel(settings: Record<string, unknown>): string | null {
+    return getPiProviderSettings(settings).visibleModels[0] ?? null;
   },
 
   ownsModel(model: string): boolean {
-    return model === PI_SYNTHETIC_MODEL_ID || decodePiModelId(model) !== null;
+    return isPiModelSelectionId(model);
   },
 
   isAdaptiveReasoningModel(model: string, settings: Record<string, unknown>): boolean {

@@ -15,7 +15,7 @@ describe('provider lifecycle fixture subprocesses', () => {
     let launchSpec: { args: string[]; command: string } | null = null;
     let processOwner: AcpSubprocess | null = null;
     const settings = {
-      model: 'grok',
+      model: 'grok/grok-4.5',
       permissionMode: 'normal',
       providerConfigs: { grok: { enabled: true } },
     };

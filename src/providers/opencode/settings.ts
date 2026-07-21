@@ -402,9 +402,7 @@ function retargetRemovedOpencodeSelections(
     }
 
     const rawModelId = decodeOpencodeModelId(value);
-    if (!rawModelId) {
-      return fallbackModelId;
-    }
+    if (!rawModelId) return null;
 
     const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, next.discoveredModels);
     return visibleSet.has(baseRawId) ? null : fallbackModelId;

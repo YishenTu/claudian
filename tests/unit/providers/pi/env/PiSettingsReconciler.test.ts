@@ -54,7 +54,7 @@ describe('piSettingsReconciler', () => {
     };
 
     expect(piSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
-    expect(settings.model).toBe('pi');
+    expect(settings.model).toBe('');
     expect(settings.titleGenerationModel).toBe('');
     expect(settings.savedProviderModel).toEqual({});
   });

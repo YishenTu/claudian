@@ -92,7 +92,7 @@ describe('Grok provider registration', () => {
     grokProviderRegistration.setEnabled?.(settings, true);
     expect(getGrokProviderSettings(settings).enabled).toBe(true);
     expect(ProviderRegistry.resolveProviderForModel('grok/grok-4.5', settings)).toBe('grok');
-    expect(ProviderRegistry.resolveProviderForModel('grok', settings)).toBe('grok');
+    expect(ProviderRegistry.resolveProviderForModel('grok', settings)).toBe('claude');
   });
 
   it('constructs runtime and auxiliary factories against initialized workspace services', () => {

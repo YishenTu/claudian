@@ -67,7 +67,6 @@ import { updateOpencodeDiscoveryState } from '../discoveryState';
 import {
   sameDiscoveredModels,
   sameModes,
-  sameStringList,
   sameStringMap,
   sameThinkingOptionsByModel,
 } from '../internal/compareCollections';
@@ -79,7 +78,6 @@ import {
   normalizeOpencodeDiscoveredModels,
   normalizeOpencodeModelVariants,
   OPENCODE_DEFAULT_THINKING_LEVEL,
-  OPENCODE_SYNTHETIC_MODEL_ID,
   resolveOpencodeBaseModelRawId,
   resolveOpencodeDefaultThinkingLevel,
 } from '../models';
@@ -432,6 +430,14 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
     if (queryOptions?.model) {
       this.setCurrentConversationModel(queryOptions.model);
+    }
+    if (!this.resolveSelectedRawModelId(queryOptions)) {
+      yield {
+        type: 'error',
+        content: 'No OpenCode model is selected. Enable a discovered model in Claudian settings.',
+      };
+      yield { type: 'done' };
+      return;
     }
     const conversationGeneration = this.conversationGeneration;
     const previousMessages = conversationHistory ?? [];
@@ -865,6 +871,11 @@ export class OpencodeChatRuntime implements ChatRuntime {
       return null;
     }
 
+    const visibleModels = getOpencodeProviderSettings(providerSettings).visibleModels;
+    if (!visibleModels.includes(normalizedBaseRawModelId)) {
+      return null;
+    }
+
     return normalizedBaseRawModelId;
   }
 
@@ -887,7 +898,6 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     if (
       selectedModel
-      && selectedModel !== OPENCODE_SYNTHETIC_MODEL_ID
       && isOpencodeModelSelectionId(selectedModel)
     ) {
       const selectedRawModelId = this.resolveSelectedRawModelId(queryOptions);
@@ -962,7 +972,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     const selectedRawModelId = this.resolveSelectedRawModelId(queryOptions);
-    if (!selectedRawModelId || selectedRawModelId === this.currentSessionModelId) {
+    if (!selectedRawModelId) {
+      throw new Error('No OpenCode model is selected. Enable a discovered model in Claudian settings.');
+    }
+    if (selectedRawModelId === this.currentSessionModelId) {
       return;
     }
 
@@ -1087,9 +1100,6 @@ export class OpencodeChatRuntime implements ChatRuntime {
       }
     }
 
-    const nextVisibleModels = currentSettings.visibleModels.length === 0 && currentBaseRawModelId
-      ? [currentBaseRawModelId]
-      : currentSettings.visibleModels;
     const shouldSeedCurrentThinking = currentBaseRawModelId
       && defaultThinkingLevel
       && (
@@ -1105,7 +1115,6 @@ export class OpencodeChatRuntime implements ChatRuntime {
         [currentBaseRawModelId]: defaultThinkingLevel,
       }
       : currentSettings.preferredThinkingByModel;
-    const shouldSeedVisibleModels = !sameStringList(currentSettings.visibleModels, nextVisibleModels);
     const shouldSeedPreferredThinking = !sameStringMap(
       currentSettings.preferredThinkingByModel,
       nextPreferredThinkingByModel,
@@ -1118,9 +1127,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
     );
     const discoveryChanged = shouldUpdateDiscoveredModels
       && updateOpencodeDiscoveryState(settingsBag, { discoveredModels });
-    let changed = shouldSeedVisibleModels || shouldSeedPreferredThinking;
+    let changed = shouldSeedPreferredThinking;
 
-    if (currentBaseRawModelId) {
+    if (currentBaseRawModelId && currentSettings.visibleModels.includes(currentBaseRawModelId)) {
       const probeSettings = {
         ...settingsBag,
         savedProviderEffort: {
@@ -1150,18 +1159,17 @@ export class OpencodeChatRuntime implements ChatRuntime {
         ) {
           return;
         }
-        if (currentBaseRawModelId) {
+        if (currentBaseRawModelId && currentSettings.visibleModels.includes(currentBaseRawModelId)) {
           this.seedActiveModelSelection(
             settings,
             encodeOpencodeModelId(currentBaseRawModelId),
             defaultThinkingLevel,
           );
         }
-        if (shouldUpdateThinkingOptions || shouldSeedPreferredThinking || shouldSeedVisibleModels) {
+        if (shouldUpdateThinkingOptions || shouldSeedPreferredThinking) {
           updateOpencodeProviderSettings(settings, {
             ...(shouldSeedPreferredThinking ? { preferredThinkingByModel: nextPreferredThinkingByModel } : {}),
             ...(shouldUpdateThinkingOptions ? { thinkingOptionsByModel: nextThinkingOptionsByModel } : {}),
-            ...(shouldSeedVisibleModels ? { visibleModels: nextVisibleModels } : {}),
           });
         }
       });
@@ -1185,7 +1193,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const savedModel = typeof savedProviderModel.opencode === 'string'
       ? savedProviderModel.opencode
       : '';
-    if (!savedModel || savedModel === OPENCODE_SYNTHETIC_MODEL_ID) {
+    if (!savedModel) {
       savedProviderModel.opencode = modelSelection;
       changed = true;
     }
@@ -1210,7 +1218,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     const activeModel = typeof settingsBag.model === 'string' ? settingsBag.model : '';
-    if (!activeModel || activeModel === OPENCODE_SYNTHETIC_MODEL_ID) {
+    if (!activeModel) {
       settingsBag.model = modelSelection;
       changed = true;
     }

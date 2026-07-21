@@ -41,7 +41,7 @@ describe('buildGrokSessionMeta', () => {
     vaultPath: '/vault',
   };
 
-  it('omits a model for the synthetic default and fails invalid permissions safe', () => {
+  it('omits an invalid unqualified model and fails invalid permissions safe', () => {
     expect(buildGrokSessionMeta({
       model: 'grok',
       permissionMode: 'legacy-bypass',

@@ -241,13 +241,5 @@ describe('Pi settings normalization', () => {
     expect(piSettingsReconciler.normalizeModelVariantSettings(nonReasoningSettings)).toBe(true);
     expect(nonReasoningSettings.effortLevel).toBe('off');
 
-    const fallbackSettings: Record<string, unknown> = {
-      effortLevel: '',
-      model: 'pi',
-      providerConfigs: { pi: {} },
-    };
-
-    expect(piSettingsReconciler.normalizeModelVariantSettings(fallbackSettings)).toBe(true);
-    expect(fallbackSettings.effortLevel).toBe('off');
   });
 });

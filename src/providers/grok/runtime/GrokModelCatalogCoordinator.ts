@@ -5,6 +5,7 @@ import type {
 } from '../../../core/providers/types';
 import { computeGrokEnvironmentHash } from '../env/GrokSettingsReconciler';
 import {
+  clearGrokReasoningMetadata,
   type GrokDiscoveredModel,
   mergeGrokDiscoveredModels,
   normalizeGrokDiscoveredModels,
@@ -166,7 +167,14 @@ export class GrokModelCatalogCoordinator {
       return { changed: false };
     }
     this.prepareLiveContext(contextKey);
-    const normalizedLiveModels = normalizeGrokDiscoveredModels(liveModels);
+    const settings = getGrokProviderSettings(this.plugin.settings);
+    const enabledModelIds = new Set(settings.visibleModels ?? []);
+    const normalizedLiveModels = normalizeGrokDiscoveredModels(liveModels)
+      .map(model => (
+        settings.visibleModels === null || enabledModelIds.has(model.rawId)
+          ? model
+          : clearGrokReasoningMetadata(model)
+      ));
     if (normalizedLiveModels.length === 0) {
       return { changed: false };
     }
@@ -362,7 +370,19 @@ export class GrokModelCatalogCoordinator {
         return false;
       }
       const current = getCurrentGrokCatalog(settings);
-      const snapshot = buildSnapshot(current);
+      const builtSnapshot = buildSnapshot(current);
+      const visibleModels = getGrokProviderSettings(settings).visibleModels;
+      const enabledModelIds = new Set(visibleModels ?? []);
+      const snapshot = visibleModels === null
+        ? builtSnapshot
+        : {
+          ...builtSnapshot,
+          models: builtSnapshot.models.map(model => (
+            enabledModelIds.has(model.rawId)
+              ? model
+              : clearGrokReasoningMetadata(model)
+          )),
+        };
       const changed = !sameCatalogContent(current, snapshot);
       const persistedSettingsChanged = !sameValue(current, snapshot);
       if (persistedSettingsChanged) {

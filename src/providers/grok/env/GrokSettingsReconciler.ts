@@ -6,8 +6,6 @@ import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import {
   decodeGrokModelId,
   encodeGrokModelId,
-  GROK_MODEL_PREFIX,
-  GROK_SYNTHETIC_MODEL_ID,
 } from '../models';
 import {
   clearCurrentGrokCatalog,
@@ -71,13 +69,9 @@ function normalizeSelectionAt(settings: Record<string, unknown>, key: string): b
 
   const trimmed = current.trim();
   let normalized: string | null = null;
-  if (trimmed === GROK_SYNTHETIC_MODEL_ID || trimmed === GROK_MODEL_PREFIX) {
-    normalized = GROK_SYNTHETIC_MODEL_ID;
-  } else {
-    const rawModelId = decodeGrokModelId(trimmed);
-    if (rawModelId) {
-      normalized = encodeGrokModelId(rawModelId);
-    }
+  const rawModelId = decodeGrokModelId(trimmed);
+  if (rawModelId) {
+    normalized = encodeGrokModelId(rawModelId);
   }
 
   if (normalized === null || normalized === current) {

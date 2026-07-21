@@ -52,6 +52,7 @@ import { computeGrokEnvironmentHash } from '../env/GrokSettingsReconciler';
 import { resolveGrokSessionDirectory } from '../history/GrokHistoryPathResolver';
 import {
   decodeGrokModelId,
+  encodeGrokModelId,
   type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,
   normalizeGrokReasoningMetadata,
@@ -193,7 +194,6 @@ export class GrokChatRuntime implements ChatRuntime {
   private conversationId: string | null = null;
   private currentContextUsage: AcpUsageUpdate | null = null;
   private currentConversationModel: string | null = null;
-  private currentExplicitModelId: string | null = null;
   private currentLaunchKey: string | null = null;
   private currentModelContextKey: string | null = null;
   private currentPromptUsage: AcpUsage | null = null;
@@ -272,7 +272,6 @@ export class GrokChatRuntime implements ChatRuntime {
     this.setCurrentConversationModel(conversation?.selectedModel);
 
     if (nextSessionId !== this.sessionId) {
-      this.currentExplicitModelId = null;
       this.currentSessionEffort = null;
       this.currentSessionModelId = null;
       this.loadedSessionId = null;
@@ -574,7 +573,6 @@ export class GrokChatRuntime implements ChatRuntime {
     this.cancel();
     this.sessionId = null;
     this.loadedSessionId = null;
-    this.currentExplicitModelId = null;
     this.currentSessionModelId = null;
     this.currentSessionEffort = null;
     this.currentLaunchKey = null;
@@ -982,15 +980,9 @@ export class GrokChatRuntime implements ChatRuntime {
       });
       if (!this.isConversationCurrent(conversationGeneration)) return false;
       const prepared = this.prepareSessionResponse(response);
-      await this.mergeSessionModels(
-        prepared.models,
-        this.resolveSelectedModel() === 'grok'
-          ? prepared.currentModelId ?? undefined
-          : undefined,
-      );
+      await this.mergeSessionModels(prepared.models);
       if (!this.isConversationCurrent(conversationGeneration)) return false;
       this.commitSessionResponse(prepared);
-      this.currentExplicitModelId = decodeGrokModelId(this.resolveSelectedModel());
       this.notificationMirrorDeduplicator.reset();
       for (const pending of pendingNotifications) {
         if (pending.notification.sessionId === prepared.sessionId) {
@@ -1029,15 +1021,9 @@ export class GrokChatRuntime implements ChatRuntime {
       });
       if (!this.isConversationCurrent(conversationGeneration)) return false;
       const prepared = this.prepareSessionResponse(response, sessionId);
-      await this.mergeSessionModels(
-        prepared.models,
-        this.resolveSelectedModel() === 'grok'
-          ? prepared.currentModelId ?? undefined
-          : undefined,
-      );
+      await this.mergeSessionModels(prepared.models);
       if (!this.isConversationCurrent(conversationGeneration)) return false;
       this.commitSessionResponse(prepared);
-      this.currentExplicitModelId = decodeGrokModelId(this.resolveSelectedModel());
       return this.isConversationCurrent(conversationGeneration);
     } catch (error) {
       this.lastError = toError(error, `Failed to load Grok session ${sessionId}.`);
@@ -1061,12 +1047,6 @@ export class GrokChatRuntime implements ChatRuntime {
     if (!this.connection) return sessionId;
     const rawModelId = decodeGrokModelId(this.resolveSelectedModel(queryOptions));
     if (!rawModelId) {
-      if (!this.currentExplicitModelId) return sessionId;
-      await this.shutdownProcess();
-      const loaded = await this.ensureReady({ allowSessionCreation: false });
-      if (!loaded || this.sessionId !== sessionId) {
-        throw this.lastError ?? new Error('Failed to restore the native-default Grok session.');
-      }
       return sessionId;
     }
     const effort = this.resolveSelectedEffort(rawModelId);
@@ -1074,7 +1054,6 @@ export class GrokChatRuntime implements ChatRuntime {
       rawModelId === this.currentSessionModelId
       && effort === this.currentSessionEffort
     ) {
-      this.currentExplicitModelId = rawModelId;
       return sessionId;
     }
 
@@ -1085,7 +1064,6 @@ export class GrokChatRuntime implements ChatRuntime {
     });
     this.currentSessionModelId = rawModelId;
     this.currentSessionEffort = effort;
-    this.currentExplicitModelId = rawModelId;
     await this.mergeSetModelMetadata(response._meta);
     return sessionId;
   }
@@ -1223,6 +1201,7 @@ export class GrokChatRuntime implements ChatRuntime {
       description: model.description ?? undefined,
       displayName: model.name,
       rawId: model.id,
+      reasoningMetadataResolved: true,
     })));
     const current = models.find(model => model.rawId === state.currentModelId);
     return {
@@ -1283,7 +1262,10 @@ export class GrokChatRuntime implements ChatRuntime {
 
   private async mergeSetModelMetadata(metadata: AcpMetadata | null | undefined): Promise<void> {
     if (!isRecord(metadata) || !isRecord(metadata.model)) return;
-    const model = normalizeGrokDiscoveredModels([metadata.model]);
+    const model = normalizeGrokDiscoveredModels([{
+      ...metadata.model,
+      reasoningMetadataResolved: true,
+    }]);
     if (model.length > 0) {
       await this.modelCatalogCoordinator?.mergeLiveModels(
         model,
@@ -1322,7 +1304,11 @@ export class GrokChatRuntime implements ChatRuntime {
   private resolveSelectedModel(queryOptions?: ChatRuntimeQueryOptions): string {
     const settings = this.getProviderSettings();
     const model = queryOptions?.model ?? settings.model;
-    return typeof model === 'string' && model.trim() ? model.trim() : 'grok';
+    const rawModelId = typeof model === 'string' ? decodeGrokModelId(model) : null;
+    if (rawModelId) {
+      return encodeGrokModelId(rawModelId);
+    }
+    throw new Error('No Grok model is selected. Enable a discovered model in Claudian settings.');
   }
 
   private resolveSelectedEffort(rawModelId: string): string | null {
