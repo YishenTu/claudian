@@ -1065,6 +1065,55 @@ describe('InputController - Message Queue', () => {
 
       expect((deps as any).mockAgentService.cancel).not.toHaveBeenCalled();
     });
+
+    it('waits for first-turn Grok session persistence after requesting cancellation', async () => {
+      let releaseQuery!: () => void;
+      let releaseSave!: () => void;
+      let markSaveStarted!: () => void;
+      const queryCancelled = new Promise<void>((resolve) => { releaseQuery = resolve; });
+      const saveAllowed = new Promise<void>((resolve) => { releaseSave = resolve; });
+      const saveStarted = new Promise<void>((resolve) => { markSaveStarted = resolve; });
+      let persistedSessionId: string | null = null;
+      deps = createSendableDeps();
+      const mockAgentService = (deps as any).mockAgentService as ReturnType<typeof createMockAgentService>;
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Start a Grok session';
+      mockAgentService.providerId = 'grok';
+      mockAgentService.getSessionId.mockReturnValue('grok-live-session');
+      mockAgentService.cancel.mockImplementation(() => { releaseQuery(); });
+      mockAgentService.query.mockImplementation(() => (async function* () {
+        await queryCancelled;
+        yield { type: 'done' };
+      })());
+      (deps.conversationController.save as jest.Mock).mockImplementation(async () => {
+        markSaveStarted();
+        await saveAllowed;
+        persistedSessionId = mockAgentService.getSessionId();
+      });
+      controller = new InputController(deps);
+
+      const send = controller.sendMessage();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(deps.state.isStreaming).toBe(true);
+
+      let quiesced = false;
+      const quiesce = controller.cancelStreamingAndWait().then(() => { quiesced = true; });
+      await saveStarted;
+
+      expect(mockAgentService.cancel).toHaveBeenCalledTimes(1);
+      expect(deps.conversationController.save).toHaveBeenCalled();
+      expect(quiesced).toBe(false);
+      expect(persistedSessionId).toBeNull();
+
+      releaseSave();
+      await quiesce;
+      await send;
+
+      expect(quiesced).toBe(true);
+      expect(persistedSessionId).toBe('grok-live-session');
+      expect(deps.state.isStreaming).toBe(false);
+    });
   });
 
   describe('Sending messages', () => {

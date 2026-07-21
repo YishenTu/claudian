@@ -144,6 +144,7 @@ const createMockClaudianService = (overrides?: {
     supportsProviderCommands: true,
     supportsImageAttachments: true,
     supportsInstructionMode: true,
+    supportsLegacySubagentTools: true,
     supportsMcpTools: true,
     reasoningControl: 'effort',
   }),
@@ -884,6 +885,7 @@ describe('Tab - Service Initialization', () => {
         supportsProviderCommands: false,
         supportsImageAttachments: true,
         supportsInstructionMode: false,
+        supportsLegacySubagentTools: false,
         supportsMcpTools: false,
         reasoningControl: 'none',
       });
@@ -2834,6 +2836,7 @@ describe('Tab - UI Callback Wiring', () => {
         supportsProviderCommands: false,
         supportsImageAttachments: true,
         supportsInstructionMode: false,
+        supportsLegacySubagentTools: false,
         supportsMcpTools: false,
         reasoningControl: 'none',
       });

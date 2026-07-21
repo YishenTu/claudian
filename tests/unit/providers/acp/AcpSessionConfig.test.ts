@@ -3,9 +3,18 @@ import {
   extractAcpSessionModeState,
   extractAcpSessionThoughtLevelState,
   flattenAcpSessionConfigSelectOptions,
+  resolveAcpLoadSessionId,
 } from '../../../../src/providers/acp';
 
 describe('AcpSessionConfig', () => {
+  it('uses the requested id when session/load omits its compatibility id', () => {
+    expect(resolveAcpLoadSessionId({}, 'saved-session')).toBe('saved-session');
+    expect(resolveAcpLoadSessionId({ sessionId: 'saved-session' }, 'saved-session'))
+      .toBe('saved-session');
+    expect(() => resolveAcpLoadSessionId({ sessionId: 'different-session' }, 'saved-session'))
+      .toThrow(/different session id/i);
+  });
+
   it('flattens grouped select options', () => {
     expect(flattenAcpSessionConfigSelectOptions([
       {
@@ -92,6 +101,88 @@ describe('AcpSessionConfig', () => {
         { description: 'Fast', id: 'openai/gpt-5-mini', name: 'OpenAI/GPT-5 Mini' },
       ],
       currentModelId: 'openai/gpt-5-mini',
+    });
+  });
+
+  it('normalizes standard modelId entries and preserves opaque model metadata', () => {
+    expect(extractAcpSessionModelState({
+      models: {
+        _meta: { 'vendor.example/catalog': { revision: 7 } },
+        availableModels: [
+          {
+            _meta: {
+              reasoningEfforts: ['low', 'high'],
+              'vendor.example/model': { contextTokens: 200_000 },
+            },
+            description: 'Standard ACP model entry',
+            modelId: 'model-standard',
+            name: 'Standard Model',
+          },
+        ],
+        currentModelId: 'model-standard',
+      },
+    })).toEqual({
+      _meta: { 'vendor.example/catalog': { revision: 7 } },
+      availableModels: [
+        {
+          _meta: {
+            reasoningEfforts: ['low', 'high'],
+            'vendor.example/model': { contextTokens: 200_000 },
+          },
+          description: 'Standard ACP model entry',
+          id: 'model-standard',
+          name: 'Standard Model',
+        },
+      ],
+      currentModelId: 'model-standard',
+    });
+  });
+
+  it('keeps legacy id model entries compatible while preserving metadata', () => {
+    expect(extractAcpSessionModelState({
+      models: {
+        availableModels: [
+          {
+            _meta: { 'vendor.example/model': 'legacy' },
+            id: 'model-legacy',
+            name: 'Legacy Model',
+          },
+        ],
+        currentModelId: 'model-legacy',
+      },
+    })).toEqual({
+      availableModels: [
+        {
+          _meta: { 'vendor.example/model': 'legacy' },
+          id: 'model-legacy',
+          name: 'Legacy Model',
+        },
+      ],
+      currentModelId: 'model-legacy',
+    });
+  });
+
+  it('keeps config-option precedence while preserving session model-state metadata', () => {
+    expect(extractAcpSessionModelState({
+      configOptions: [
+        {
+          category: 'model',
+          currentValue: 'config-model',
+          id: 'selected_model',
+          name: 'Model',
+          options: [{ name: 'Config Model', value: 'config-model' }],
+          type: 'select',
+        },
+      ],
+      models: {
+        _meta: { 'vendor.example/catalog': 'session-metadata' },
+        availableModels: [{ modelId: 'session-model', name: 'Session Model' }],
+        currentModelId: 'session-model',
+      },
+    })).toEqual({
+      _meta: { 'vendor.example/catalog': 'session-metadata' },
+      availableModels: [{ id: 'config-model', name: 'Config Model' }],
+      currentModelId: 'config-model',
     });
   });
 

@@ -1320,6 +1320,13 @@ export class InputController {
     streamController.hideThinkingIndicator();
   }
 
+  /** Cancels the active turn and waits for its cleanup and conversation persistence. */
+  async cancelStreamingAndWait(): Promise<void> {
+    const activeTurn = this.turnCoordinator.current;
+    this.cancelStreaming();
+    await activeTurn;
+  }
+
   private syncScrollToBottomAfterRenderUpdates(): void {
     const { plugin, state } = this.deps;
     if (!(plugin.settings.enableAutoScroll ?? true)) return;

@@ -63,6 +63,8 @@ export interface AcpToolCallSnapshot {
   input: Record<string, unknown>;
   name: string;
   output: string;
+  rawInput?: unknown;
+  rawOutput?: unknown;
   status?: AcpToolCallStatus | null;
 }
 
@@ -153,6 +155,8 @@ export class AcpSessionUpdateNormalizer {
       input: normalizeToolInput(toolCall.rawInput),
       name: normalizeToolName(toolCall.title, toolCall.kind),
       output: renderToolPayload(toolCall.content, toolCall.rawOutput),
+      rawInput: toolCall.rawInput,
+      rawOutput: toolCall.rawOutput,
       status: toolCall.status,
     };
     this.toolCalls.set(toolCall.toolCallId, toolState);
@@ -194,6 +198,10 @@ export class AcpSessionUpdateNormalizer {
 
     if (toolCallUpdate.rawInput !== undefined) {
       current.input = normalizeToolInput(toolCallUpdate.rawInput);
+      current.rawInput = toolCallUpdate.rawInput;
+    }
+    if (toolCallUpdate.rawOutput !== undefined) {
+      current.rawOutput = toolCallUpdate.rawOutput;
     }
 
     const nextOutput = renderToolPayload(toolCallUpdate.content ?? undefined, toolCallUpdate.rawOutput)

@@ -3,6 +3,8 @@ import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
   ProviderCliResolver,
+  ProviderModelCatalogRefreshResult,
+  ProviderTransitionOwnerContext,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
@@ -26,6 +28,9 @@ export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
   agentMentionProvider: CodexAgentMentionProvider;
   cliResolver: ProviderCliResolver;
   modelCatalogCoordinator: CodexModelCatalogCoordinator;
+  refreshModelCatalog(
+    context?: ProviderTransitionOwnerContext,
+  ): Promise<ProviderModelCatalogRefreshResult>;
 }
 
 function createCodexCliResolver(): ProviderCliResolver {
@@ -68,7 +73,7 @@ export async function createCodexWorkspaceServices(
     refreshAgentMentions: async () => {
       await agentMentionProvider.loadAgents();
     },
-    refreshModelCatalog: async () => modelCatalogCoordinator.refreshModelCatalog(),
+    refreshModelCatalog: async context => modelCatalogCoordinator.refreshModelCatalog(context),
     prepareSettings: async () => agentMentionProvider.loadAgents(),
     dispose: () => modelCatalogCoordinator.dispose(),
   };

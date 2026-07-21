@@ -5,6 +5,7 @@ describe('built-in ProviderModule catalog', () => {
     expect(BUILT_IN_PROVIDER_MODULES.map(module => module.id)).toEqual([
       'claude',
       'codex',
+      'grok',
       'opencode',
       'pi',
     ]);

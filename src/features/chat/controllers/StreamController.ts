@@ -1,6 +1,7 @@
 import { TFile } from 'obsidian';
 
 import { resolveConversationModel } from '../../../core/providers/conversationModel';
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
@@ -23,8 +24,17 @@ import {
   TOOL_TODO_WRITE,
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
+import {
+  extractToolProviderPayload,
+  normalizeToolProviderPayload,
+} from '../../../core/tools/toolProviderPayload';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
-import type { ChatMessage, StreamChunk, SubagentInfo, ToolCallInfo } from '../../../core/types';
+import type {
+  ChatMessage,
+  StreamChunk,
+  SubagentInfo,
+  ToolCallInfo,
+} from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import {
   cancelScheduledAnimationFrame,
@@ -109,6 +119,13 @@ export class StreamController {
     return resolveSubagentLifecycleAdapter(this.getActiveProviderId(), toolName);
   }
 
+  private supportsLegacySubagentTools(): boolean {
+    const service = this.deps.getAgentService?.();
+    const capabilities = service?.getCapabilities()
+      ?? ProviderRegistry.getCapabilities(this.getActiveProviderId());
+    return capabilities.supportsLegacySubagentTools;
+  }
+
   private normalizeToolResultContent(content: unknown): string {
     return extractToolResultContent(content, { fallbackIndent: 2 });
   }
@@ -146,7 +163,7 @@ export class StreamController {
         }
         await this.finalizeCurrentTextBlock(msg);
 
-        if (isSubagentToolName(chunk.name)) {
+        if (isSubagentToolName(chunk.name) && this.supportsLegacySubagentTools()) {
           // Flush pending tools before Agent
           this.flushPendingTools();
           this.handleTaskToolUseViaManager(chunk, msg);
@@ -253,7 +270,7 @@ export class StreamController {
    * Tools are rendered when flushPendingTools is called (on next content type or tool_result).
    */
   private handleRegularToolUse(
-    chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
+    chunk: Extract<StreamChunk, { type: 'tool_use' }>,
     msg: ChatMessage
   ): void {
     const { state } = this.deps;
@@ -261,10 +278,19 @@ export class StreamController {
     // Check if this is an update to an existing tool call
     const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
     if (existingToolCall) {
+      const refinedName = chunk.name.trim();
+      const nameChanged = refinedName.length > 0 && refinedName !== existingToolCall.name;
+      if (nameChanged) {
+        existingToolCall.name = refinedName;
+      }
+      mergeToolProviderPayload(existingToolCall, chunk.providerPayload);
       const newInput = chunk.input || {};
-      if (Object.keys(newInput).length > 0) {
+      const inputChanged = Object.keys(newInput).length > 0;
+      if (inputChanged) {
         existingToolCall.input = { ...existingToolCall.input, ...newInput };
+      }
 
+      if (nameChanged || inputChanged) {
         // Re-parse TodoWrite on input updates (streaming may complete the input)
         if (existingToolCall.name === TOOL_TODO_WRITE) {
           const todos = parseTodoInput(existingToolCall.input);
@@ -278,8 +304,11 @@ export class StreamController {
           this.capturePlanFilePath(existingToolCall.input);
         }
 
+        const rendererRebuilt = nameChanged
+          && this.rebuildRenderedToolRenderer(existingToolCall);
+
         // If already rendered, update the header name + summary
-        const toolEl = state.toolCallElements.get(chunk.id);
+        const toolEl = rendererRebuilt ? null : state.toolCallElements.get(chunk.id);
         if (toolEl) {
           const nameEl = toolEl.querySelector('.claudian-tool-name')
             ?? toolEl.querySelector('.claudian-write-edit-name');
@@ -298,10 +327,12 @@ export class StreamController {
     }
 
     // Create new tool call
+    const providerPayload = normalizeToolProviderPayload(chunk.providerPayload);
     const toolCall: ToolCallInfo = {
       id: chunk.id,
       name: chunk.name,
       input: chunk.input,
+      ...(providerPayload ? { providerPayload } : {}),
       status: 'running',
       isExpanded: false,
     };
@@ -333,6 +364,51 @@ export class StreamController {
       });
       this.showThinkingIndicator();
     }
+  }
+
+  private rebuildRenderedToolRenderer(toolCall: ToolCallInfo): boolean {
+    const { state } = this.deps;
+    const currentEl = state.toolCallElements.get(toolCall.id);
+    if (!currentEl) return false;
+
+    const needsWriteEditRenderer = isWriteEditTool(toolCall.name);
+
+    const parentEl = currentEl.parentElement;
+    if (!parentEl) return false;
+
+    this.cancelPendingToolOutputRender(toolCall.id);
+    const initiallyExpanded = toolCall.isExpanded === true;
+    let replacementEl: HTMLElement;
+
+    if (needsWriteEditRenderer) {
+      const writeEditState = createWriteEditBlock(parentEl, toolCall, { initiallyExpanded });
+      replacementEl = writeEditState.wrapperEl;
+      state.writeEditStates.set(toolCall.id, writeEditState);
+      state.toolCallElements.set(toolCall.id, replacementEl);
+
+      if (toolCall.diffData) {
+        updateWriteEditWithDiff(writeEditState, toolCall.diffData);
+      }
+      if (toolCall.status !== 'running') {
+        finalizeWriteEditBlock(
+          writeEditState,
+          toolCall.status === 'error' || toolCall.status === 'blocked',
+        );
+      }
+    } else {
+      state.writeEditStates.delete(toolCall.id);
+      replacementEl = renderToolCall(parentEl, toolCall, state.toolCallElements, {
+        initiallyExpanded,
+      });
+      state.toolCallElements.set(toolCall.id, replacementEl);
+      if (toolCall.result !== undefined || toolCall.status !== 'running') {
+        updateToolCallResult(toolCall.id, toolCall, state.toolCallElements);
+      }
+    }
+
+    parentEl.insertBefore(replacementEl, currentEl);
+    currentEl.remove();
+    return true;
   }
 
   private getActiveProviderModel(): string | undefined {
@@ -631,6 +707,13 @@ export class StreamController {
     const isBlocked = isBlockedToolResult(normalizedContent, chunk.isError);
 
     if (existingToolCall) {
+      const providerPayload = extractToolProviderPayload(chunk.toolUseResult);
+      if (providerPayload) {
+        existingToolCall.providerPayload = {
+          ...existingToolCall.providerPayload,
+          ...providerPayload,
+        };
+      }
       // Tools that resolve via dedicated callbacks (not content-based) skip
       // blocked detection — their status is determined solely by isError
       if (chunk.isError) {
@@ -956,11 +1039,11 @@ export class StreamController {
 
   /** Delegates Agent tool_use to SubagentManager and updates message based on result. */
   private handleTaskToolUseViaManager(
-    chunk: { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> },
+    chunk: Extract<StreamChunk, { type: 'tool_use' }>,
     msg: ChatMessage
   ): void {
     const { state, subagentManager } = this.deps;
-    this.ensureTaskToolCall(msg, chunk.id, chunk.input);
+    this.ensureTaskToolCall(msg, chunk.id, chunk.input, chunk.providerPayload);
 
     const result = subagentManager.handleTaskToolUse(chunk.id, chunk.input, state.currentContentEl);
 
@@ -1024,16 +1107,27 @@ export class StreamController {
     this.applySubagentToTaskToolCall(taskToolCall, info);
 
     msg.contentBlocks = msg.contentBlocks || [];
-    const existingBlock = msg.contentBlocks.find(
-      block => block.type === 'subagent' && block.subagentId === toolId
+    const existingBlockIndex = msg.contentBlocks.findIndex(
+      block => block.type === 'subagent' && block.subagentId === toolId,
     );
-    if (existingBlock && mode && existingBlock.type === 'subagent') {
-      existingBlock.mode = mode;
-    } else if (!existingBlock) {
-      msg.contentBlocks.push(mode
-        ? { type: 'subagent', subagentId: toolId, mode }
-        : { type: 'subagent', subagentId: toolId }
-      );
+    const toolBlockIndex = msg.contentBlocks.findIndex(
+      block => block.type === 'tool_use' && block.toolId === toolId,
+    );
+    const subagentBlock = mode
+      ? { type: 'subagent' as const, subagentId: toolId, mode }
+      : { type: 'subagent' as const, subagentId: toolId };
+    if (existingBlockIndex >= 0) {
+      const existingBlock = msg.contentBlocks[existingBlockIndex];
+      if (mode && existingBlock.type === 'subagent') {
+        existingBlock.mode = mode;
+      }
+      if (toolBlockIndex >= 0 && toolBlockIndex !== existingBlockIndex) {
+        msg.contentBlocks.splice(toolBlockIndex, 1);
+      }
+    } else if (toolBlockIndex >= 0) {
+      msg.contentBlocks.splice(toolBlockIndex, 1, subagentBlock);
+    } else {
+      msg.contentBlocks.push(subagentBlock);
     }
   }
 
@@ -1346,28 +1440,44 @@ export class StreamController {
   private ensureTaskToolCall(
     msg: ChatMessage,
     toolId: string,
-    input?: Record<string, unknown>
+    input?: Record<string, unknown>,
+    providerPayload?: unknown,
   ): ToolCallInfo {
     msg.toolCalls = msg.toolCalls || [];
-    const existing = msg.toolCalls.find(
-      tc => tc.id === toolId && isSubagentToolName(tc.name)
-    );
+    const existing = msg.toolCalls.find(tc => tc.id === toolId);
     if (existing) {
       if (input && Object.keys(input).length > 0) {
         existing.input = { ...existing.input, ...input };
       }
+      mergeToolProviderPayload(existing, providerPayload);
+      if (!isSubagentToolName(existing.name)) {
+        existing.name = TOOL_TASK;
+        this.removeToolCardRenderer(toolId);
+      }
       return existing;
     }
 
+    const normalizedProviderPayload = normalizeToolProviderPayload(providerPayload);
     const taskToolCall: ToolCallInfo = {
       id: toolId,
       name: TOOL_TASK,
       input: input ? { ...input } : {},
+      ...(normalizedProviderPayload ? { providerPayload: normalizedProviderPayload } : {}),
       status: 'running',
       isExpanded: false,
     };
     msg.toolCalls.push(taskToolCall);
     return taskToolCall;
+  }
+
+  private removeToolCardRenderer(toolId: string): void {
+    const { state } = this.deps;
+    this.cancelPendingToolOutputRender(toolId);
+    state.pendingTools.delete(toolId);
+    state.writeEditStates.delete(toolId);
+    const toolEl = state.toolCallElements.get(toolId);
+    state.toolCallElements.delete(toolId);
+    toolEl?.remove();
   }
 
   private applySubagentToTaskToolCall(taskToolCall: ToolCallInfo, subagent: SubagentInfo): void {
@@ -1619,4 +1729,13 @@ export class StreamController {
     // Reset response timer (duration already captured at this point)
     state.responseStartTime = null;
   }
+}
+
+function mergeToolProviderPayload(toolCall: ToolCallInfo, value: unknown): void {
+  const providerPayload = normalizeToolProviderPayload(value);
+  if (!providerPayload) return;
+  toolCall.providerPayload = {
+    ...toolCall.providerPayload,
+    ...providerPayload,
+  };
 }

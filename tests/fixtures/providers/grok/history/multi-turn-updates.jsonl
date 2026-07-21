@@ -1,0 +1,16 @@
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"user_message_chunk","messageId":"user-1","content":{"type":"text","text":"Inspect "},"_meta":{"promptIndex":0}}},"timestamp":1700000000}
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"user_message_chunk","messageId":"user-1","content":{"type":"text","text":"the sample file."},"_meta":{"promptIndex":0}}},"timestamp":1700000000}
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"agent_thought_chunk","messageId":"thought-1","content":{"type":"text","text":"I will read it."}}},"timestamp":1700000001}
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"tool_call","toolCallId":"tool-1","title":"read_file","kind":"read","status":"pending","rawInput":{"path":"notes/sample.md"}}},"timestamp":1700000002}
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"tool_call_update","toolCallId":"tool-1","status":"completed","content":[{"type":"content","content":{"type":"text","text":"sample text"}}],"rawOutput":{"output_bytes":[115,97,109,112,108,101,32,116,101,120,116],"current_dir":"<vault>","output_file":"<native-output-file>"}}},"timestamp":1700000003}
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"agent_message_chunk","messageId":"assistant-1","content":{"type":"text","text":"Do"}}},"timestamp":1700000004}
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"agent_message_chunk","messageId":"assistant-1","content":{"type":"text","text":"ne."}}},"timestamp":1700000004}
+{"method":"_x.ai/session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"turn_completed","prompt_id":"prompt-1","stop_reason":"end_turn","usage":{"inputTokens":10,"outputTokens":4,"reasoningTokens":2,"totalTokens":16}}},"timestamp":1700000005}
+not-json
+{"method":"unknown/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"unknown_update"}},"timestamp":1700000006}
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"user_message_chunk","messageId":"user-2","content":{"type":"text","text":"Stop now."}}},"timestamp":1700000010}
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"agent_message_chunk","messageId":"assistant-2","content":{"type":"text","text":"Stopping."}}},"timestamp":1700000011}
+{"method":"x.ai/session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"turn_completed","prompt_id":"prompt-2","stop_reason":"cancelled"}},"timestamp":1700000012}
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"user_message_chunk","messageId":"user-3","content":{"type":"text","text":"Incomplete turn."}}},"timestamp":1700000020}
+{"method":"session/update","params":{"sessionId":"session-fixture","update":{"sessionUpdate":"agent_message_chunk","messageId":"assistant-3","content":{"type":"text","text":"This tail must be omitted."}}},"timestamp":1700000021}
+{"method":

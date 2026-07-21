@@ -23,6 +23,46 @@ for await (const line of rl) {
     process.stdout.write('null\n42\n"ignored"\n');
   }
 
+  if (mode === 'grok') {
+    if (message.id === undefined) {
+      continue;
+    }
+    const respond = result => process.stdout.write(`${JSON.stringify({
+      id: message.id,
+      jsonrpc: '2.0',
+      result,
+    })}\n`);
+    if (message.method === 'initialize') {
+      respond({
+        agentCapabilities: { loadSession: true, promptCapabilities: { image: false } },
+        agentInfo: { name: 'fixture-grok', version: '0.2.106' },
+        protocolVersion: 1,
+      });
+      continue;
+    }
+    if (message.method === 'session/new' || message.method === 'session/load') {
+      respond({ sessionId: 'fixture-grok-session' });
+      continue;
+    }
+    if (message.method === 'session/prompt') {
+      process.stdout.write(`${JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId: 'fixture-grok-session',
+          update: {
+            content: { text: 'fixture Grok response', type: 'text' },
+            sessionUpdate: 'agent_message_chunk',
+          },
+        },
+      })}\n`);
+      respond({ stopReason: 'end_turn' });
+      continue;
+    }
+    respond({});
+    continue;
+  }
+
   if (mode === 'pi') {
     process.stdout.write(`${JSON.stringify({
       id: message.id,

@@ -14,6 +14,7 @@ import {
   getCodexProviderSettings,
   updateCodexProviderSettings,
 } from '@/providers/codex/settings';
+import { getGrokProviderSettings } from '@/providers/grok/settings';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { getPiProviderSettings } from '@/providers/pi/settings';
 
@@ -351,6 +352,58 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.providerConfigs.codex.wslDistroOverridesByHost).toEqual({
         'host-b': 'Debian',
       });
+    });
+
+    it('migrates Grok CLI and catalog maps to the opaque device key', async () => {
+      mockGetHostnameKey.mockReturnValue('device:current');
+      mockGetLegacyHostnameKey.mockReturnValue('host-a');
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        providerConfigs: {
+          grok: {
+            catalogsByHost: {
+              'host-a': {
+                defaultModelId: 'grok-4.5',
+                fingerprint: 'current',
+                models: [{ displayName: 'Grok 4.5', rawId: 'grok-4.5' }],
+                refreshedAt: 1,
+              },
+              'host-b': {
+                defaultModelId: null,
+                fingerprint: 'other',
+                models: [],
+                refreshedAt: 2,
+              },
+            },
+            cliPathsByHost: {
+              'host-a': '/custom/grok-a',
+              'host-b': '/custom/grok-b',
+            },
+            enabled: true,
+          },
+        },
+      }));
+
+      const result = await storage.load();
+      const grokSettings = getGrokProviderSettings(result);
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(grokSettings.cliPathsByHost).toEqual({
+        'device:current': '/custom/grok-a',
+        'host-b': '/custom/grok-b',
+      });
+      expect(grokSettings.catalogsByHost).toEqual(expect.objectContaining({
+        'device:current': expect.objectContaining({ fingerprint: 'current' }),
+        'host-b': expect.objectContaining({ fingerprint: 'other' }),
+      }));
+      expect(writtenContent.providerConfigs.grok.cliPathsByHost).toEqual({
+        'device:current': '/custom/grok-a',
+        'host-b': '/custom/grok-b',
+      });
+      expect(writtenContent.providerConfigs.grok.catalogsByHost).toEqual(expect.objectContaining({
+        'device:current': expect.objectContaining({ fingerprint: 'current' }),
+        'host-b': expect.objectContaining({ fingerprint: 'other' }),
+      }));
     });
 
     it('strips legacy Codex installation scalar fields from non-Windows provider config', async () => {

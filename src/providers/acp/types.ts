@@ -11,6 +11,7 @@ export type AcpPermissionOptionId = string;
 export type AcpPositionEncodingKind = 'utf-16' | 'utf-32' | 'utf-8';
 export type AcpRole = 'assistant' | 'user';
 export type AcpStopReason = string;
+export type AcpMetadata = Record<string, unknown>;
 
 export interface AcpImplementation {
   name: string;
@@ -81,12 +82,14 @@ export interface AcpAgentCapabilities {
 }
 
 export interface AcpInitializeRequest {
+  _meta?: AcpMetadata | null;
   clientCapabilities?: AcpClientCapabilities;
   clientInfo?: AcpImplementation | null;
   protocolVersion: AcpProtocolVersion;
 }
 
 export interface AcpInitializeResponse {
+  _meta?: AcpMetadata | null;
   agentCapabilities?: AcpAgentCapabilities;
   agentInfo?: AcpImplementation | null;
   authMethods?: AcpAuthMethod[];
@@ -141,13 +144,17 @@ export interface AcpSessionModeState {
   currentModeId: AcpSessionModeId;
 }
 
-export interface AcpModelInfo {
-  id: string;
+export type AcpModelInfo = {
+  _meta?: AcpMetadata | null;
   name: string;
   description?: string | null;
-}
+} & (
+  | { id?: string; modelId: string }
+  | { id: string; modelId?: string }
+);
 
 export interface AcpSessionModelState {
+  _meta?: AcpMetadata | null;
   availableModels: AcpModelInfo[];
   currentModelId: string;
 }
@@ -183,12 +190,14 @@ export type AcpSessionConfigOption = {
 );
 
 export interface AcpNewSessionRequest {
+  _meta?: AcpMetadata | null;
   additionalDirectories?: string[];
   cwd: string;
   mcpServers: AcpMcpServer[];
 }
 
 export interface AcpNewSessionResponse {
+  _meta?: AcpMetadata | null;
   configOptions?: AcpSessionConfigOption[] | null;
   models?: AcpSessionModelState | null;
   modes?: AcpSessionModeState | null;
@@ -196,6 +205,7 @@ export interface AcpNewSessionResponse {
 }
 
 export interface AcpLoadSessionRequest {
+  _meta?: AcpMetadata | null;
   additionalDirectories?: string[];
   cwd: string;
   mcpServers: AcpMcpServer[];
@@ -203,10 +213,11 @@ export interface AcpLoadSessionRequest {
 }
 
 export interface AcpLoadSessionResponse {
+  _meta?: AcpMetadata | null;
   configOptions?: AcpSessionConfigOption[] | null;
   models?: AcpSessionModelState | null;
   modes?: AcpSessionModeState | null;
-  sessionId: AcpSessionId;
+  sessionId?: AcpSessionId | null;
 }
 
 export interface AcpListSessionsRequest {
@@ -310,6 +321,20 @@ export interface AcpSetSessionModeRequest {
 }
 
 export type AcpSetSessionModeResponse = Record<string, never>;
+
+export type AcpSetSessionModelMetadata = AcpMetadata & {
+  reasoningEffort?: string;
+};
+
+export interface AcpSetSessionModelRequest {
+  _meta?: AcpSetSessionModelMetadata | null;
+  modelId: string;
+  sessionId: AcpSessionId;
+}
+
+export interface AcpSetSessionModelResponse {
+  _meta?: AcpMetadata | null;
+}
 
 export type AcpSetSessionConfigOptionRequest =
   | {
@@ -446,7 +471,7 @@ export interface AcpUsageUpdate {
   used: number;
 }
 
-export type AcpSessionUpdate =
+export type AcpSessionUpdate = { _meta?: AcpMetadata | null } & (
   | (AcpContentChunk & { sessionUpdate: 'user_message_chunk' })
   | (AcpContentChunk & { sessionUpdate: 'agent_message_chunk' })
   | (AcpContentChunk & { sessionUpdate: 'agent_thought_chunk' })
@@ -457,9 +482,11 @@ export type AcpSessionUpdate =
   | (AcpCurrentModeUpdate & { sessionUpdate: 'current_mode_update' })
   | (AcpConfigOptionUpdate & { sessionUpdate: 'config_option_update' })
   | (AcpSessionInfoUpdate & { sessionUpdate: 'session_info_update' })
-  | (AcpUsageUpdate & { sessionUpdate: 'usage_update' });
+  | (AcpUsageUpdate & { sessionUpdate: 'usage_update' })
+);
 
 export interface AcpSessionNotification {
+  _meta?: AcpMetadata | null;
   sessionId: AcpSessionId;
   update: AcpSessionUpdate;
 }

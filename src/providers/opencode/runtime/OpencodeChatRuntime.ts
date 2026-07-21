@@ -15,7 +15,6 @@ import type {
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
   ApprovalCallback,
-  ApprovalDecisionOption,
   AskUserQuestionCallback,
   AutoTurnCallback,
   ChatRewindMode,
@@ -29,7 +28,6 @@ import type {
   SessionUpdateResult,
 } from '../../../core/runtime/types';
 import type {
-  ApprovalDecision,
   ChatMessage,
   Conversation,
   ExitPlanModeCallback,
@@ -58,7 +56,12 @@ import {
   extractAcpSessionModelState,
   extractAcpSessionModeState,
   extractAcpSessionThoughtLevelState,
+  resolveAcpLoadSessionId,
 } from '../../acp';
+import {
+  buildAcpApprovalDecisionOptions,
+  mapAcpApprovalDecision,
+} from '../../acp/AcpPermissionAdapter';
 import { OPENCODE_PROVIDER_CAPABILITIES } from '../capabilities';
 import { updateOpencodeDiscoveryState } from '../discoveryState';
 import {
@@ -1370,10 +1373,11 @@ export class OpencodeChatRuntime implements ChatRuntime {
       if (!this.isConversationCurrent(conversationGeneration)) {
         return false;
       }
+      const loadedSessionId = resolveAcpLoadSessionId(response, sessionId);
       this.sessionInvalidated = false;
-      this.loadedSessionId = response.sessionId;
-      this.sessionId = response.sessionId;
-      this.sessionCwds.set(response.sessionId, cwd);
+      this.loadedSessionId = loadedSessionId;
+      this.sessionId = loadedSessionId;
+      this.sessionCwds.set(loadedSessionId, cwd);
       await this.syncSessionModelState({
         configOptions: response.configOptions ?? null,
         models: response.models ?? null,
@@ -1497,7 +1501,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       },
     );
 
-    return mapApprovalDecision(decision, request.options);
+    return mapAcpApprovalDecision(decision, request.options);
   }
 
   private setSupportedCommands(commands: SlashCommand[]): void {
@@ -1797,75 +1801,4 @@ function formatPermissionLabel(permissionId: string): string {
     .filter(Boolean)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(' ');
-}
-
-function mapApprovalDecision(
-  decision: ApprovalDecision,
-  options: readonly {
-    kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
-    optionId: string;
-  }[],
-): AcpRequestPermissionResponse {
-  if (decision === 'allow') {
-    return selectPermissionOption(options, ['allow_once', 'allow_always']);
-  }
-
-  if (decision === 'allow-always') {
-    return selectPermissionOption(options, ['allow_always', 'allow_once']);
-  }
-
-  if (decision === 'deny') {
-    return selectPermissionOption(options, ['reject_once', 'reject_always']);
-  }
-
-  if (typeof decision === 'object' && decision.type === 'select-option') {
-    return {
-      outcome: {
-        optionId: decision.value,
-        outcome: 'selected',
-      },
-    };
-  }
-
-  return { outcome: { outcome: 'cancelled' } };
-}
-
-function buildAcpApprovalDecisionOptions(
-  options: readonly {
-    kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
-    name: string;
-    optionId: string;
-  }[],
-): ApprovalDecisionOption[] {
-  return options.map((option) => ({
-    ...(option.kind === 'allow_once'
-      ? { decision: 'allow' as const }
-      : option.kind === 'allow_always'
-      ? { decision: 'allow-always' as const }
-      : {}),
-    label: option.name,
-    value: option.optionId,
-  }));
-}
-
-function selectPermissionOption(
-  options: readonly {
-    kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
-    optionId: string;
-  }[],
-  preferredKinds: readonly ('allow_once' | 'allow_always' | 'reject_once' | 'reject_always')[],
-): AcpRequestPermissionResponse {
-  for (const kind of preferredKinds) {
-    const option = options.find((entry) => entry.kind === kind);
-    if (option) {
-      return {
-        outcome: {
-          optionId: option.optionId,
-          outcome: 'selected',
-        },
-      };
-    }
-  }
-
-  return { outcome: { outcome: 'cancelled' } };
 }

@@ -60,6 +60,7 @@ function mockCapabilities(providerId: 'claude' | 'codex' = 'claude') {
     supportsProviderCommands: true,
     supportsImageAttachments: true,
     supportsInstructionMode: true,
+    supportsLegacySubagentTools: providerId === 'claude',
     supportsMcpTools: true,
     reasoningControl: 'effort' as const,
   });

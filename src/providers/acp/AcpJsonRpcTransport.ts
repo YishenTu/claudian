@@ -256,6 +256,22 @@ export class AcpJsonRpcTransport {
     this.trySendRaw({ jsonrpc: '2.0', method, params });
   }
 
+  flush(): Promise<void> {
+    if (this.disposed) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      try {
+        this.streams.output.write('', (error?: Error | null) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
   dispose(error: Error = new JsonRpcTransportClosedError('JSON-RPC transport disposed')): void {
     if (this.disposed) {
       return;

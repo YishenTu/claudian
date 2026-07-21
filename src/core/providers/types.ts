@@ -31,6 +31,7 @@ export interface ProviderCapabilities {
   supportsProviderCommands: boolean;
   supportsImageAttachments: boolean;
   supportsInstructionMode: boolean;
+  supportsLegacySubagentTools: boolean;
   supportsMcpTools: boolean;
   supportsTurnSteer?: boolean;
   reasoningControl: 'effort' | 'token-budget' | 'none';
@@ -86,7 +87,12 @@ export interface ProviderSettingsStorageAdapter {
   ): boolean;
 }
 
+export type ProviderEnvironmentSessionPolicy = 'invalidate' | 'reload';
+
 export interface ProviderSettingsReconciler {
+  /** Defaults to `invalidate` for backward compatibility. */
+  environmentSessionPolicy?: ProviderEnvironmentSessionPolicy;
+
   handleEnvironmentChange?(settings: Record<string, unknown>): boolean;
 
   invalidateConversationSessions(conversations: Conversation[]): Conversation[];
@@ -358,7 +364,11 @@ export interface ProviderChatUIConfig {
 // Provider-owned boundary services
 // ---------------------------------------------------------------------------
 
-export interface ProviderCliResolutionContext {
+export interface ProviderTransitionOwnerContext {
+  providerTransitionOwner?: boolean;
+}
+
+export interface ProviderCliResolutionContext extends ProviderTransitionOwnerContext {
   executionTarget?: unknown;
 }
 
@@ -408,6 +418,10 @@ export interface ProviderTabWarmupPolicy {
   resolveMode(context: ProviderTabWarmupContext): ProviderTabWarmupMode;
 }
 
+export interface ProviderEnvironmentTransition {
+  release(): Promise<void>;
+}
+
 export interface ProviderWorkspaceServices {
   commandCatalog?: ProviderCommandCatalog | null;
   agentMentionProvider?: AgentMentionProvider | null;
@@ -416,8 +430,11 @@ export interface ProviderWorkspaceServices {
   tabWarmupPolicy?: ProviderTabWarmupPolicy | null;
   mcpServerManager?: McpServerManager | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
-  refreshAgentMentions?(): Promise<void>;
-  refreshModelCatalog?(): Promise<ProviderModelCatalogRefreshResult>;
+  refreshAgentMentions?(context?: ProviderTransitionOwnerContext): Promise<void>;
+  refreshModelCatalog?(
+    context?: ProviderTransitionOwnerContext,
+  ): Promise<ProviderModelCatalogRefreshResult>;
+  beginAuxiliaryServicesEnvironmentChange?(): Promise<ProviderEnvironmentTransition>;
   prepareSettings?(): Promise<void>;
   dispose?(): Promise<void> | void;
 }

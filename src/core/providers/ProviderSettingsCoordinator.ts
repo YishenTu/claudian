@@ -6,7 +6,12 @@ import type { ProviderChatUIConfig, ProviderId } from './types';
 export interface SettingsReconciliationResult {
   changed: boolean;
   environmentChangedProviderIds: ProviderId[];
+  sessionInvalidationProviderIds: ProviderId[];
   invalidatedConversations: Conversation[];
+}
+
+export interface ReconcileProviderSettingsOptions {
+  invalidateConversations?: boolean;
 }
 
 const PROJECTION_KEYS = new Set([
@@ -299,6 +304,8 @@ export class ProviderSettingsCoordinator {
     }
     if (typeof settings.effortLevel === 'string') {
       savedEffort[providerId] = settings.effortLevel;
+    } else {
+      delete savedEffort[providerId];
     }
     const serviceTierToggle = uiConfig.getServiceTierToggle?.(projectedSettings) ?? null;
     if (serviceTierToggle && typeof settings.serviceTier === 'string') {
@@ -375,17 +382,23 @@ export class ProviderSettingsCoordinator {
     }) ?? null;
 
     const isAdaptive = Boolean(model) && uiConfig.isAdaptiveReasoningModel(model, settings);
+    const acceptsEffortProjection = isAdaptive
+      || Object.prototype.hasOwnProperty.call(settings, 'effortLevel');
 
-    if (savedEffort?.[providerId] !== undefined) {
-      settings.effortLevel = savedEffort[providerId];
-    } else if (canReuseCurrentProjection && currentEffort !== undefined) {
-      settings.effortLevel = currentEffort;
-    } else if (isAdaptive) {
-      settings.effortLevel = uiConfig.getDefaultReasoningValue(model, settings);
-    }
+    if (acceptsEffortProjection) {
+      if (savedEffort?.[providerId] !== undefined) {
+        settings.effortLevel = savedEffort[providerId];
+      } else if (canReuseCurrentProjection && currentEffort !== undefined) {
+        settings.effortLevel = currentEffort;
+      } else if (isAdaptive) {
+        settings.effortLevel = uiConfig.getDefaultReasoningValue(model, settings);
+      }
 
-    if (isAdaptive) {
-      settings.effortLevel = normalizeReasoningValue(uiConfig, settings, model, settings.effortLevel);
+      if (isAdaptive) {
+        settings.effortLevel = normalizeReasoningValue(uiConfig, settings, model, settings.effortLevel);
+      }
+    } else {
+      delete settings.effortLevel;
     }
 
     if (savedServiceTier?.[providerId] !== undefined) {
@@ -455,15 +468,20 @@ export class ProviderSettingsCoordinator {
     settings: Record<string, unknown>,
     conversations: Conversation[],
     providerIds: ProviderId[],
+    options: ReconcileProviderSettingsOptions = {},
   ): SettingsReconciliationResult {
     let anyChanged = false;
     const allInvalidated: Conversation[] = [];
     const environmentChangedProviderIds: ProviderId[] = [];
+    const sessionInvalidationProviderIds: ProviderId[] = [];
     const settingsProvider = getSettingsProviderId(settings);
 
     for (const providerId of providerIds) {
       const reconciler = ProviderRegistry.getSettingsReconciler(providerId);
       const providerConversations = conversations.filter(c => c.providerId === providerId);
+      const reconciliationConversations = options.invalidateConversations === false
+        ? []
+        : providerConversations;
       const targetSettings = providerId === settingsProvider
         ? settings
         : cloneProviderSettings(settings);
@@ -474,18 +492,23 @@ export class ProviderSettingsCoordinator {
 
       const { changed, invalidatedConversations } = reconciler.reconcileModelWithEnvironment(
         targetSettings,
-        providerConversations,
+        reconciliationConversations,
       );
 
       if (changed) {
         anyChanged = true;
         environmentChangedProviderIds.push(providerId);
+        if ((reconciler.environmentSessionPolicy ?? 'invalidate') === 'invalidate') {
+          sessionInvalidationProviderIds.push(providerId);
+        }
         this.persistProjectedProviderState(targetSettings, providerId);
         if (providerId !== settingsProvider) {
           mergeProviderSettings(settings, targetSettings);
         }
       }
-      allInvalidated.push(...invalidatedConversations);
+      if (options.invalidateConversations !== false) {
+        allInvalidated.push(...invalidatedConversations);
+      }
     }
 
     if (this.reconcileTitleGenerationModelSelection(settings)) {
@@ -495,6 +518,7 @@ export class ProviderSettingsCoordinator {
     return {
       changed: anyChanged,
       environmentChangedProviderIds,
+      sessionInvalidationProviderIds,
       invalidatedConversations: allInvalidated,
     };
   }

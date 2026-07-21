@@ -1,4 +1,6 @@
 import type {
+  AcpLoadSessionResponse,
+  AcpMetadata,
   AcpModelInfo,
   AcpSessionConfigOption,
   AcpSessionConfigSelectGroup,
@@ -9,8 +11,29 @@ import type {
   AcpSessionModeState,
 } from './types';
 
+export function resolveAcpLoadSessionId(
+  response: Pick<AcpLoadSessionResponse, 'sessionId'>,
+  requestedSessionId: string,
+): string {
+  const returnedSessionId = typeof response.sessionId === 'string' && response.sessionId.trim()
+    ? response.sessionId
+    : null;
+  if (returnedSessionId && returnedSessionId !== requestedSessionId) {
+    throw new Error('ACP session/load returned a different session id.');
+  }
+  return requestedSessionId;
+}
+
+export interface AcpResolvedModelInfo {
+  _meta?: AcpMetadata | null;
+  description?: string | null;
+  id: string;
+  name: string;
+}
+
 export interface AcpResolvedSessionModelState {
-  availableModels: AcpModelInfo[];
+  _meta?: AcpMetadata | null;
+  availableModels: AcpResolvedModelInfo[];
   currentModelId: string | null;
 }
 
@@ -44,11 +67,15 @@ export function extractAcpSessionModelState(params: {
   models?: AcpSessionModelState | null;
 }): AcpResolvedSessionModelState {
   const { items, current } = resolveSelectItems(params.configOptions, 'model');
+  const metadata = params.models && '_meta' in params.models
+    ? { _meta: params.models._meta }
+    : {};
   if (items) {
-    return { availableModels: items, currentModelId: current };
+    return { ...metadata, availableModels: items, currentModelId: current };
   }
   return {
-    availableModels: params.models?.availableModels ?? [],
+    ...metadata,
+    availableModels: params.models?.availableModels.map(normalizeAcpModelInfo) ?? [],
     currentModelId: params.models?.currentModelId ?? current,
   };
 }
@@ -132,6 +159,20 @@ function isSelectGroup(
   option: AcpSessionConfigSelectOption | AcpSessionConfigSelectGroup,
 ): option is AcpSessionConfigSelectGroup {
   return 'options' in option;
+}
+
+function normalizeAcpModelInfo(model: AcpModelInfo): AcpResolvedModelInfo {
+  const id = model.modelId ?? model.id;
+  if (id === undefined) {
+    throw new Error('ACP model entry must include modelId or id');
+  }
+
+  return {
+    ...('_meta' in model ? { _meta: model._meta } : {}),
+    ...('description' in model ? { description: model.description } : {}),
+    id,
+    name: model.name,
+  };
 }
 
 function normalizeComparableKey(value: string | null | undefined): string {

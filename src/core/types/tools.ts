@@ -28,6 +28,13 @@ export interface AskUserQuestionItem {
 /** User-provided answers keyed by question text or stable question id. */
 export type AskUserAnswers = Record<string, string | string[]>;
 
+/** Provider-owned fields for lossless per-tool replay and persistence. */
+export interface ToolProviderPayload {
+  rawInput?: unknown;
+  rawName?: string;
+  rawOutput?: unknown;
+}
+
 /** Tool call tracking with status and result. */
 export interface ToolCallInfo {
   id: string;
@@ -35,6 +42,7 @@ export interface ToolCallInfo {
   input: Record<string, unknown>;
   status: 'running' | 'completed' | 'error' | 'blocked';
   result?: string;
+  providerPayload?: ToolProviderPayload;
   isExpanded?: boolean;
   diffData?: ToolDiffData;
   resolvedAnswers?: AskUserAnswers;

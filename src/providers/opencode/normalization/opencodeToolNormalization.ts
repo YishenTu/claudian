@@ -14,7 +14,10 @@ import {
 } from '../../../core/tools/toolNames';
 import type { AskUserAnswers, AskUserQuestionItem } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
-import { AcpToolStreamAdapter } from '../../acp';
+import {
+  type AcpResolvedToolRawName,
+  AcpToolStreamAdapter,
+} from '../../acp';
 
 const TOOL_NAME_MAP: Record<string, string> = {
   bash: TOOL_BASH,
@@ -239,34 +242,46 @@ function extractToolMetadata(rawOutput: unknown): Record<string, unknown> | null
 }
 
 export function resolveOpencodeRawToolName(
-  currentRawName: string | undefined,
+  currentRawName: AcpResolvedToolRawName | undefined,
   update: {
     kind?: string | null;
     title?: string | null;
   },
-): string {
+): AcpResolvedToolRawName {
   const titleName = firstTrimmedString(update.title);
   const knownTitleName = titleName && isKnownToolName(titleName)
     ? titleName.trim().toLowerCase()
     : undefined;
 
   if (knownTitleName) {
-    return knownTitleName;
+    return { provenance: 'title', rawName: knownTitleName };
   }
 
+  if (
+    titleName
+    && (
+      currentRawName?.provenance !== 'mapped-kind'
+      && (
+        currentRawName?.provenance !== 'title'
+        || !isKnownToolName(currentRawName.rawName)
+      )
+    )
+  ) {
+    return { provenance: 'title', rawName: titleName };
+  }
   if (currentRawName) {
     return currentRawName;
   }
 
   switch (update.kind) {
     case 'execute':
-      return 'bash';
+      return { provenance: 'mapped-kind', rawName: 'bash' };
     case 'fetch':
-      return 'webfetch';
+      return { provenance: 'mapped-kind', rawName: 'webfetch' };
     case 'read':
-      return 'read';
+      return { provenance: 'mapped-kind', rawName: 'read' };
     default:
-      return titleName ?? 'tool';
+      return { provenance: 'fallback', rawName: 'tool' };
   }
 }
 

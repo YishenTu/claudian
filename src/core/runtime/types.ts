@@ -73,6 +73,7 @@ export interface ChatRuntimeQueryOptions {
 export interface ChatRuntimeEnsureReadyOptions {
   allowSessionCreation?: boolean;
   force?: boolean;
+  providerTransitionOwner?: boolean;
 }
 
 export type ChatRuntimeConversationState = Pick<

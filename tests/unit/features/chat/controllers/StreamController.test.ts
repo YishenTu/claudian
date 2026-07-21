@@ -60,6 +60,7 @@ jest.mock('@/features/chat/rendering/WriteEditRenderer', () => ({
 
 jest.mock('@/utils/path', () => ({
   getVaultPath: jest.fn().mockReturnValue('/test/vault'),
+  normalizePathForVault: jest.fn((path: string | undefined) => path),
 }));
 
 const originalWindow = (globalThis as { window?: Window }).window;
@@ -110,6 +111,7 @@ function createMockDeps(): StreamControllerDeps {
     loadSubagentFinalResult: jest.fn().mockResolvedValue(null),
     getCapabilities: jest.fn().mockReturnValue({
       providerId: 'claude',
+      supportsLegacySubagentTools: true,
       supportsPlanMode: true,
       planPathPrefix: '/.claude/plans/',
     }),
@@ -190,6 +192,28 @@ function createMockUsage(overrides: Record<string, any> = {}) {
     percentage: 10,
     ...overrides,
   };
+}
+
+function installOrderedMockParent(parent: any): void {
+  parent.insertBefore = jest.fn((element: any, reference: any) => {
+    const existingIndex = parent.children.indexOf(element);
+    if (existingIndex >= 0) parent.children.splice(existingIndex, 1);
+    const referenceIndex = parent.children.indexOf(reference);
+    parent.children.splice(referenceIndex >= 0 ? referenceIndex : parent.children.length, 0, element);
+  });
+}
+
+function mountMockChild(parent: any, child: any): any {
+  parent.children.push(child);
+  Object.defineProperty(child, 'parentElement', {
+    configurable: true,
+    value: parent,
+  });
+  child.remove = jest.fn(() => {
+    const index = parent.children.indexOf(child);
+    if (index >= 0) parent.children.splice(index, 1);
+  });
+  return child;
 }
 
 describe('StreamController - Text Content', () => {
@@ -550,6 +574,148 @@ describe('StreamController - Text Content', () => {
           subagent: expect.objectContaining({ id: 'task-1' }),
         })
       );
+    });
+
+    it.each([
+      'Agent',
+      'Task',
+      'task',
+      'task_output',
+      'wait_for_task',
+      'kill_task',
+      'future_agent',
+    ])(
+      'keeps Grok %s tools as ordinary lossless cards',
+      async (name) => {
+        const msg = createTestMessage();
+        deps.state.currentContentEl = createMockEl();
+        deps.getAgentService = () => ({
+          providerId: 'grok',
+          getCapabilities: jest.fn().mockReturnValue({
+            providerId: 'grok',
+            supportsLegacySubagentTools: false,
+          }),
+        }) as any;
+
+        await controller.handleStreamChunk({
+          id: `grok-${name}`,
+          input: { opaque: name },
+          name,
+          providerPayload: { rawInput: { opaque: name }, rawName: name },
+          type: 'tool_use',
+        }, msg);
+
+        expect(deps.subagentManager.handleTaskToolUse).not.toHaveBeenCalled();
+        expect(msg.toolCalls).toEqual([expect.objectContaining({
+          id: `grok-${name}`,
+          input: { opaque: name },
+          name,
+          providerPayload: { rawInput: { opaque: name }, rawName: name },
+          status: 'running',
+        })]);
+        expect(msg.contentBlocks).toEqual([{ type: 'tool_use', toolId: `grok-${name}` }]);
+      },
+    );
+
+    it('converts an OpenCode generic card to Agent in place without duplicate state or DOM', async () => {
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      renderToolCall.mockReset();
+      const parentEl = createMockEl();
+      installOrderedMockParent(parentEl);
+      deps.state.currentContentEl = parentEl;
+      deps.getAgentService = () => ({
+        providerId: 'opencode',
+        getCapabilities: jest.fn().mockReturnValue({
+          providerId: 'opencode',
+          supportsLegacySubagentTools: true,
+        }),
+      }) as any;
+      const genericEl = createMockEl();
+      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo, elements: Map<string, any>) => {
+        mountMockChild(parent, genericEl);
+        elements.set(toolCall.id, genericEl);
+        return genericEl;
+      });
+      (deps.subagentManager.handleTaskToolUse as jest.Mock).mockReturnValueOnce({
+        action: 'created_sync',
+        subagentState: {
+          info: {
+            id: 'opencode-agent',
+            description: 'Inspect the vault',
+            status: 'running',
+            toolCalls: [],
+          },
+        },
+      });
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk({
+        id: 'opencode-agent',
+        input: { description: 'Inspect' },
+        name: 'tool',
+        providerPayload: { rawInput: { description: 'Inspect' }, rawName: 'tool' },
+        type: 'tool_use',
+      }, msg);
+      await controller.handleStreamChunk({ type: 'text', content: 'Intervening content' }, msg);
+      const toolCall = msg.toolCalls![0];
+      Object.assign(toolCall, { isExpanded: true, result: 'partial result' });
+
+      await controller.handleStreamChunk({
+        id: 'opencode-agent',
+        input: { prompt: 'Inspect the vault' },
+        name: 'Agent',
+        providerPayload: {
+          rawInput: { prompt: 'Inspect the vault' },
+          rawName: 'task',
+          rawOutput: { phase: 'started' },
+        },
+        type: 'tool_use',
+      }, msg);
+
+      expect(msg.toolCalls).toEqual([toolCall]);
+      expect(toolCall).toMatchObject({
+        input: { description: 'Inspect', prompt: 'Inspect the vault' },
+        isExpanded: true,
+        name: TOOL_TASK,
+        providerPayload: {
+          rawInput: { prompt: 'Inspect the vault' },
+          rawName: 'task',
+          rawOutput: { phase: 'started' },
+        },
+        result: 'partial result',
+        subagent: expect.objectContaining({ id: 'opencode-agent' }),
+      });
+      expect(msg.contentBlocks).toEqual([
+        { type: 'subagent', subagentId: 'opencode-agent' },
+        { content: 'Intervening content', type: 'text' },
+      ]);
+      expect(deps.subagentManager.handleTaskToolUse).toHaveBeenCalledTimes(1);
+      expect(genericEl.remove).toHaveBeenCalledTimes(1);
+      expect(deps.state.toolCallElements.has('opencode-agent')).toBe(false);
+      expect(deps.state.writeEditStates.has('opencode-agent')).toBe(false);
+    });
+
+    it('continues routing Claude Agent tools through the legacy subagent manager', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+      (deps.subagentManager.handleTaskToolUse as jest.Mock).mockReturnValueOnce({
+        action: 'buffered',
+      });
+
+      await controller.handleStreamChunk({
+        id: 'claude-agent',
+        input: { prompt: 'Inspect' },
+        name: 'Agent',
+        type: 'tool_use',
+      }, msg);
+
+      expect(deps.subagentManager.handleTaskToolUse).toHaveBeenCalledWith(
+        'claude-agent',
+        { prompt: 'Inspect' },
+        deps.state.currentContentEl,
+      );
+      expect(msg.toolCalls).toHaveLength(1);
+      expect(msg.toolCalls![0].name).toBe(TOOL_TASK);
     });
 
     it('should render TodoWrite inline and update panel', async () => {
@@ -2157,6 +2323,562 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Tool header update on input re-dispatch', () => {
+    it.each([
+      ['Bash', { command: 'npm test' }],
+      ['Read', { file_path: 'notes/test.md' }],
+    ])('refines a pending generic tool to %s without duplicating it', async (name, input) => {
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk({
+        id: 'refined-tool',
+        input: {},
+        name: 'tool',
+        providerPayload: { rawName: 'tool' },
+        type: 'tool_use',
+      }, msg);
+      await controller.handleStreamChunk({
+        id: 'refined-tool',
+        input,
+        name,
+        providerPayload: { rawName: name.toLowerCase() },
+        type: 'tool_use',
+      }, msg);
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      expect(msg.toolCalls).toHaveLength(1);
+      expect(msg.contentBlocks).toEqual([{ type: 'tool_use', toolId: 'refined-tool' }]);
+      expect(msg.toolCalls![0]).toMatchObject({
+        id: 'refined-tool',
+        input,
+        name,
+        providerPayload: { rawName: name.toLowerCase() },
+        status: 'running',
+      });
+      expect(renderToolCall).toHaveBeenCalledTimes(1);
+      expect(renderToolCall).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: 'refined-tool', name }),
+        expect.any(Map),
+        { initiallyExpanded: false },
+      );
+    });
+
+    it('selects the Edit renderer after a pending generic tool is refined', async () => {
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      const { createWriteEditBlock } = jest.requireMock('@/features/chat/rendering/WriteEditRenderer');
+      createWriteEditBlock.mockReturnValueOnce({ wrapperEl: createMockEl() });
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'edit-refined', name: 'tool', input: {} },
+        msg,
+      );
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'edit-refined',
+        name: 'Edit',
+        input: { file_path: 'notes/test.md', old_string: 'old', new_string: 'new' },
+      }, msg);
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      expect(msg.toolCalls).toHaveLength(1);
+      expect(msg.contentBlocks).toEqual([{ type: 'tool_use', toolId: 'edit-refined' }]);
+      expect(createWriteEditBlock).toHaveBeenCalledTimes(1);
+      expect(createWriteEditBlock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: 'edit-refined', name: 'Edit' }),
+        { initiallyExpanded: false },
+      );
+      expect(renderToolCall).not.toHaveBeenCalled();
+    });
+
+    it.each(['Edit', 'Write'])('migrates a rendered generic tool in place to %s and finalizes its diff', async (name) => {
+      const { renderToolCall, updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      const {
+        createWriteEditBlock,
+        finalizeWriteEditBlock,
+        updateWriteEditWithDiff,
+      } = jest.requireMock('@/features/chat/rendering/WriteEditRenderer');
+      const parentEl = createMockEl();
+      installOrderedMockParent(parentEl);
+      deps.state.currentContentEl = parentEl;
+      const genericEl = createMockEl();
+      const writeEditEl = createMockEl();
+      let writeEditState: any;
+      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo, elements: Map<string, any>) => {
+        mountMockChild(parent, genericEl);
+        elements.set(toolCall.id, genericEl);
+        return genericEl;
+      });
+      createWriteEditBlock.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+        mountMockChild(parent, writeEditEl);
+        writeEditState = { wrapperEl: writeEditEl, toolCall, isExpanded: toolCall.isExpanded };
+        return writeEditState;
+      });
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk({
+        id: 'migrated-edit',
+        input: {},
+        name: 'tool',
+        providerPayload: { rawName: 'tool' },
+        type: 'tool_use',
+      }, msg);
+      await controller.handleStreamChunk({ type: 'text', content: 'Intervening content' }, msg);
+      const interveningTextEl = parentEl.children[1];
+      await controller.handleStreamChunk(
+        { type: 'tool_output', id: 'migrated-edit', content: 'partial output' },
+        msg,
+      );
+
+      await controller.handleStreamChunk({
+        id: 'migrated-edit',
+        input: name === 'Edit'
+          ? { file_path: 'notes/test.md', old_string: 'old', new_string: 'new' }
+          : { file_path: 'notes/test.md', content: 'new' },
+        name,
+        providerPayload: { rawInput: { path: 'notes/test.md' }, rawName: name.toLowerCase() },
+        type: 'tool_use',
+      }, msg);
+
+      expect(msg.toolCalls).toHaveLength(1);
+      expect(msg.contentBlocks?.filter(block => block.type === 'tool_use')).toEqual([
+        { type: 'tool_use', toolId: 'migrated-edit' },
+      ]);
+      expect(genericEl.remove).toHaveBeenCalledTimes(1);
+      expect(parentEl.children[0]).toBe(writeEditEl);
+      expect(parentEl.children[1]).toBe(interveningTextEl);
+      expect(deps.state.toolCallElements.get('migrated-edit')).toBe(writeEditEl);
+      expect(deps.state.writeEditStates.get('migrated-edit')).toBe(writeEditState);
+      expect(updateToolCallResult).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+      expect(updateToolCallResult).not.toHaveBeenCalled();
+
+      await controller.handleStreamChunk({
+        content: 'updated file',
+        id: 'migrated-edit',
+        toolUseResult: {
+          filePath: 'notes/test.md',
+          structuredPatch: [{
+            lines: ['-old', '+new'],
+            newLines: 1,
+            newStart: 1,
+            oldLines: 1,
+            oldStart: 1,
+          }],
+        },
+        type: 'tool_result',
+      }, msg);
+
+      expect(msg.toolCalls![0]).toMatchObject({
+        id: 'migrated-edit',
+        name,
+        result: 'updated file',
+        status: 'completed',
+        providerPayload: { rawInput: { path: 'notes/test.md' }, rawName: name.toLowerCase() },
+        diffData: {
+          filePath: 'notes/test.md',
+          stats: { added: 1, removed: 1 },
+        },
+      });
+      expect(updateWriteEditWithDiff).toHaveBeenCalledWith(
+        writeEditState,
+        msg.toolCalls![0].diffData,
+      );
+      expect(finalizeWriteEditBlock).toHaveBeenCalledWith(writeEditState, false);
+    });
+
+    it('migrates a rendered Write tool back to generic without losing tool state', async () => {
+      const { renderToolCall, updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      const { createWriteEditBlock } = jest.requireMock('@/features/chat/rendering/WriteEditRenderer');
+      const parentEl = createMockEl();
+      installOrderedMockParent(parentEl);
+      deps.state.currentContentEl = parentEl;
+      const writeEditEl = createMockEl();
+      const genericEl = createMockEl();
+      const writeEditState = { wrapperEl: writeEditEl, isExpanded: true };
+      createWriteEditBlock.mockImplementationOnce((parent: any) => {
+        mountMockChild(parent, writeEditEl);
+        return writeEditState;
+      });
+      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo, elements: Map<string, any>) => {
+        mountMockChild(parent, genericEl);
+        elements.set(toolCall.id, genericEl);
+        return genericEl;
+      });
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk({
+        id: 'reverse-migration',
+        input: { content: 'draft', file_path: 'notes/test.md' },
+        name: 'Write',
+        providerPayload: { rawName: 'write_file', rawOutput: { partial: true } },
+        type: 'tool_use',
+      }, msg);
+      await controller.handleStreamChunk({ type: 'text', content: 'Intervening content' }, msg);
+      const interveningTextEl = parentEl.children[1];
+      const toolCall = msg.toolCalls![0];
+      const diffData = {
+        filePath: 'notes/test.md',
+        diffLines: [{ type: 'insert' as const, text: 'draft', newLineNum: 1 }],
+        stats: { added: 1, removed: 0 },
+      };
+      const subagent = {
+        id: 'agent-1',
+        description: 'Existing agent',
+        status: 'completed' as const,
+        toolCalls: [],
+        isExpanded: true,
+      };
+      Object.assign(toolCall, {
+        diffData,
+        isExpanded: true,
+        result: 'existing result',
+        status: 'completed',
+        subagent,
+      });
+      await controller.handleStreamChunk(
+        { type: 'tool_output', id: 'reverse-migration', content: ' queued output' },
+        msg,
+      );
+
+      await controller.handleStreamChunk({
+        id: 'reverse-migration',
+        input: { file_path: 'notes/refined.md' },
+        name: 'Read',
+        providerPayload: { rawInput: { path: 'notes/refined.md' }, rawName: 'read_file' },
+        type: 'tool_use',
+      }, msg);
+
+      expect(msg.toolCalls).toHaveLength(1);
+      expect(msg.contentBlocks?.filter(block => block.type === 'tool_use')).toEqual([
+        { type: 'tool_use', toolId: 'reverse-migration' },
+      ]);
+      expect(msg.toolCalls![0]).toBe(toolCall);
+      expect(toolCall).toMatchObject({
+        diffData,
+        input: { content: 'draft', file_path: 'notes/refined.md' },
+        isExpanded: true,
+        name: 'Read',
+        providerPayload: {
+          rawInput: { path: 'notes/refined.md' },
+          rawName: 'read_file',
+          rawOutput: { partial: true },
+        },
+        result: 'existing result queued output',
+        status: 'completed',
+        subagent,
+      });
+      expect(renderToolCall).toHaveBeenCalledWith(
+        parentEl,
+        toolCall,
+        deps.state.toolCallElements,
+        { initiallyExpanded: true },
+      );
+      expect(updateToolCallResult).toHaveBeenCalledTimes(1);
+      expect(updateToolCallResult).toHaveBeenCalledWith(
+        'reverse-migration',
+        toolCall,
+        deps.state.toolCallElements,
+      );
+      expect(writeEditEl.remove).toHaveBeenCalledTimes(1);
+      expect(parentEl.children[0]).toBe(genericEl);
+      expect(parentEl.children[1]).toBe(interveningTextEl);
+      expect(deps.state.toolCallElements.get('reverse-migration')).toBe(genericEl);
+      expect(deps.state.writeEditStates.has('reverse-migration')).toBe(false);
+
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+      expect(updateToolCallResult).toHaveBeenCalledTimes(1);
+    });
+
+    it('rebuilds rendered generic tools for forward and reverse normalized-name changes', async () => {
+      const { renderToolCall, updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      renderToolCall.mockReset();
+      const parentEl = createMockEl();
+      installOrderedMockParent(parentEl);
+      deps.state.currentContentEl = parentEl;
+      const initialEl = createMockEl();
+      const bashEl = createMockEl();
+      const unknownEl = createMockEl();
+      for (const element of [initialEl, bashEl, unknownEl]) {
+        renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo, elements: Map<string, any>) => {
+          mountMockChild(parent, element);
+          elements.set(toolCall.id, element);
+          return element;
+        });
+      }
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'generic-migration', name: 'tool', input: {} },
+        msg,
+      );
+      await controller.handleStreamChunk({ type: 'text', content: 'Intervening content' }, msg);
+      const interveningTextEl = parentEl.children[1];
+      const toolCall = msg.toolCalls![0];
+      const diffData = {
+        filePath: 'notes/test.md',
+        diffLines: [],
+        stats: { added: 0, removed: 0 },
+      };
+      const subagent = {
+        id: 'agent-1',
+        description: 'Existing agent',
+        status: 'completed' as const,
+        toolCalls: [],
+        isExpanded: true,
+      };
+      Object.assign(toolCall, {
+        diffData,
+        isExpanded: true,
+        result: 'existing result',
+        status: 'completed',
+        subagent,
+      });
+
+      await controller.handleStreamChunk({
+        id: 'generic-migration',
+        input: { command: 'npm test' },
+        name: 'Bash',
+        providerPayload: { rawName: 'run_terminal_command' },
+        type: 'tool_use',
+      }, msg);
+      await controller.handleStreamChunk({
+        id: 'generic-migration',
+        input: { future: true },
+        name: 'future_tool',
+        providerPayload: { rawOutput: { complete: true } },
+        type: 'tool_use',
+      }, msg);
+
+      expect(msg.toolCalls).toEqual([toolCall]);
+      expect(msg.contentBlocks?.filter(block => block.type === 'tool_use')).toEqual([
+        { type: 'tool_use', toolId: 'generic-migration' },
+      ]);
+      expect(toolCall).toMatchObject({
+        diffData,
+        input: { command: 'npm test', future: true },
+        isExpanded: true,
+        name: 'future_tool',
+        providerPayload: {
+          rawName: 'run_terminal_command',
+          rawOutput: { complete: true },
+        },
+        result: 'existing result',
+        status: 'completed',
+        subagent,
+      });
+      expect(renderToolCall).toHaveBeenCalledTimes(3);
+      expect(renderToolCall).toHaveBeenNthCalledWith(
+        2,
+        parentEl,
+        toolCall,
+        deps.state.toolCallElements,
+        { initiallyExpanded: true },
+      );
+      expect(renderToolCall).toHaveBeenNthCalledWith(
+        3,
+        parentEl,
+        toolCall,
+        deps.state.toolCallElements,
+        { initiallyExpanded: true },
+      );
+      expect(updateToolCallResult).toHaveBeenCalledTimes(2);
+      expect(initialEl.remove).toHaveBeenCalledTimes(1);
+      expect(bashEl.remove).toHaveBeenCalledTimes(1);
+      expect(parentEl.children[0]).toBe(unknownEl);
+      expect(parentEl.children[1]).toBe(interveningTextEl);
+      expect(deps.state.toolCallElements.get('generic-migration')).toBe(unknownEl);
+      expect(deps.state.writeEditStates.has('generic-migration')).toBe(false);
+    });
+
+    it('rebuilds a rendered generic tool as TodoWrite and updates todo state once', async () => {
+      const { parseTodoInput } = jest.requireMock('@/core/tools/todo');
+      const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      renderToolCall.mockReset();
+      const todos = [{ content: 'Task', status: 'in_progress', activeForm: 'Working' }];
+      parseTodoInput.mockReturnValueOnce(todos);
+      const parentEl = createMockEl();
+      installOrderedMockParent(parentEl);
+      deps.state.currentContentEl = parentEl;
+      const initialEl = createMockEl();
+      const todoEl = createMockEl();
+      for (const element of [initialEl, todoEl]) {
+        renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo, elements: Map<string, any>) => {
+          mountMockChild(parent, element);
+          elements.set(toolCall.id, element);
+          return element;
+        });
+      }
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'todo-migration', name: 'tool', input: {} },
+        msg,
+      );
+      await controller.handleStreamChunk({ type: 'text', content: 'Intervening content' }, msg);
+      await controller.handleStreamChunk({
+        id: 'todo-migration',
+        input: { todos },
+        name: TOOL_TODO_WRITE,
+        type: 'tool_use',
+      }, msg);
+
+      expect(msg.toolCalls).toHaveLength(1);
+      expect(msg.toolCalls![0]).toMatchObject({ name: TOOL_TODO_WRITE, input: { todos } });
+      expect(msg.contentBlocks?.filter(block => block.type === 'tool_use')).toHaveLength(1);
+      expect(parseTodoInput).toHaveBeenCalledTimes(1);
+      expect(parseTodoInput).toHaveBeenCalledWith({ todos });
+      expect(deps.state.currentTodos).toEqual(todos);
+      expect(initialEl.remove).toHaveBeenCalledTimes(1);
+      expect(deps.state.toolCallElements.get('todo-migration')).toBe(todoEl);
+    });
+
+    it('rebuilds a rendered generic tool as AskUserQuestion without duplicating result handling', async () => {
+      const coreTools = jest.requireMock('@/core/tools/toolInput');
+      const { renderToolCall, updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      renderToolCall.mockReset();
+      const parentEl = createMockEl();
+      installOrderedMockParent(parentEl);
+      deps.state.currentContentEl = parentEl;
+      const initialEl = createMockEl();
+      const askEl = createMockEl();
+      for (const element of [initialEl, askEl]) {
+        renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo, elements: Map<string, any>) => {
+          mountMockChild(parent, element);
+          elements.set(toolCall.id, element);
+          return element;
+        });
+      }
+      coreTools.extractResolvedAnswers.mockReturnValueOnce({ color: 'Blue' });
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'ask-migration', name: 'tool', input: {} },
+        msg,
+      );
+      await controller.handleStreamChunk({ type: 'text', content: 'Intervening content' }, msg);
+      await controller.handleStreamChunk({
+        id: 'ask-migration',
+        input: { questions: [{ id: 'color', question: 'Color?' }] },
+        name: 'AskUserQuestion',
+        type: 'tool_use',
+      }, msg);
+      await controller.handleStreamChunk({
+        content: 'answered',
+        id: 'ask-migration',
+        toolUseResult: { answers: { color: 'Blue' } },
+        type: 'tool_result',
+      }, msg);
+
+      expect(msg.toolCalls).toHaveLength(1);
+      expect(msg.contentBlocks?.filter(block => block.type === 'tool_use')).toHaveLength(1);
+      expect(msg.toolCalls![0]).toMatchObject({
+        name: 'AskUserQuestion',
+        resolvedAnswers: { color: 'Blue' },
+        result: 'answered',
+        status: 'completed',
+      });
+      expect(coreTools.extractResolvedAnswers).toHaveBeenCalledTimes(1);
+      expect(initialEl.remove).toHaveBeenCalledTimes(1);
+      expect(deps.state.toolCallElements.get('ask-migration')).toBe(askEl);
+      expect(updateToolCallResult).toHaveBeenCalledTimes(1);
+      expect(updateToolCallResult).toHaveBeenCalledWith(
+        'ask-migration',
+        msg.toolCalls![0],
+        deps.state.toolCallElements,
+      );
+    });
+
+    it('preserves result and lifecycle state while refining the normalized name', async () => {
+      const msg = createTestMessage();
+      const diffData = {
+        filePath: 'notes/test.md',
+        diffLines: [],
+        stats: { added: 1, removed: 0 },
+      };
+      const subagent = {
+        id: 'agent-1',
+        description: 'Existing agent',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: true,
+      };
+      msg.toolCalls = [{
+        id: 'preserved-tool',
+        name: 'tool',
+        input: { existing: true },
+        providerPayload: { rawName: 'tool', rawOutput: { partial: true } },
+        status: 'completed',
+        result: 'existing result',
+        diffData,
+        subagent,
+        isExpanded: true,
+      } as ToolCallInfo];
+
+      await controller.handleStreamChunk({
+        id: 'preserved-tool',
+        input: { command: 'npm test' },
+        name: 'Bash',
+        providerPayload: { rawInput: { command: 'npm test' }, rawName: 'run_terminal_command' },
+        type: 'tool_use',
+      }, msg);
+
+      expect(msg.toolCalls).toHaveLength(1);
+      expect(msg.toolCalls![0]).toMatchObject({
+        input: { command: 'npm test', existing: true },
+        name: 'Bash',
+        providerPayload: {
+          rawInput: { command: 'npm test' },
+          rawName: 'run_terminal_command',
+          rawOutput: { partial: true },
+        },
+        result: 'existing result',
+        status: 'completed',
+      });
+      expect(msg.toolCalls![0].diffData).toBe(diffData);
+      expect(msg.toolCalls![0].subagent).toBe(subagent);
+      expect(msg.toolCalls![0].isExpanded).toBe(true);
+    });
+
+    it('accepts an unknown refined name but ignores a later blank name', async () => {
+      const msg = createTestMessage();
+      const rawInput = { opaque: true };
+      const rawOutput = { future: ['lossless'] };
+
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'unknown-tool',
+        name: 'execute',
+        input: rawInput,
+        providerPayload: { rawInput, rawName: 'execute' },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'unknown-tool',
+        name: 'future_tool',
+        input: rawInput,
+        providerPayload: { rawInput, rawName: 'future_tool', rawOutput },
+      }, msg);
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'unknown-tool', name: '   ', input: { later: true } },
+        msg,
+      );
+
+      expect(msg.toolCalls).toHaveLength(1);
+      expect(msg.toolCalls![0]).toMatchObject({
+        input: { later: true, opaque: true },
+        name: 'future_tool',
+        providerPayload: { rawInput, rawName: 'future_tool', rawOutput },
+      });
+    });
+
     it('second tool_use with same id updates existing tool input and header', async () => {
       const { getToolName, getToolSummary } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
@@ -2199,6 +2921,36 @@ describe('StreamController - Text Content', () => {
       // Header texts should be updated
       expect(nameChild.textContent).toBe('Read');
       expect(summaryChild.textContent).toBe('updated.md');
+    });
+
+    it('refreshes a rendered header for a title-only name refinement', async () => {
+      const { getToolName, getToolSummary } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'title-only', name: 'tool', input: {} },
+        msg,
+      );
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+
+      const toolEl = createMockEl();
+      const nameChild = toolEl.createDiv({ cls: 'claudian-tool-name' });
+      const summaryChild = toolEl.createDiv({ cls: 'claudian-tool-summary' });
+      deps.state.toolCallElements.set('title-only', toolEl);
+      getToolName.mockReturnValueOnce('Read');
+      getToolSummary.mockReturnValueOnce('');
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'title-only', name: 'Read', input: {} },
+        msg,
+      );
+
+      expect(msg.toolCalls![0].name).toBe('Read');
+      expect(getToolName).toHaveBeenCalledWith('Read', {});
+      expect(getToolSummary).toHaveBeenCalledWith('Read', {});
+      expect(nameChild.textContent).toBe('Read');
+      expect(summaryChild.textContent).toBe('');
     });
   });
 
@@ -2574,6 +3326,73 @@ describe('StreamController - Plan Mode', () => {
   });
 
   describe('blocked detection bypass', () => {
+    it('persists provider payload from an incomplete tool stream without changing presentation', async () => {
+      const rawInput = ['opaque', { nested: true }];
+      const rawOutput = { partial: { bytes: [1, 2, 3] } };
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk({
+        id: 'future-incomplete',
+        input: {},
+        name: 'Read',
+        providerPayload: { rawInput, rawName: 'future_tool' },
+        type: 'tool_use',
+      }, msg);
+      await controller.handleStreamChunk({
+        id: 'future-incomplete',
+        input: {},
+        name: 'Read',
+        providerPayload: { rawInput, rawName: 'future_tool', rawOutput },
+        type: 'tool_use',
+      }, msg);
+
+      expect(JSON.parse(JSON.stringify(msg)).toolCalls[0]).toMatchObject({
+        input: {},
+        name: 'Read',
+        providerPayload: { rawInput, rawName: 'future_tool', rawOutput },
+        status: 'running',
+      });
+    });
+
+    it('persists provider tool payload without replacing concise presentation', async () => {
+      const rawInput = ['opaque', { nested: true }];
+      const rawOutput = { future: { bytes: [1, 2, 3] } };
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk({
+        id: 'future-1',
+        input: {},
+        name: 'future_tool',
+        type: 'tool_use',
+      }, msg);
+      await controller.handleStreamChunk({
+        content: 'Concise result',
+        id: 'future-1',
+        toolUseResult: {
+          providerPayload: {
+            rawInput,
+            rawName: 'future_tool',
+            rawOutput,
+          },
+        },
+        type: 'tool_result',
+      }, msg);
+
+      const persisted = JSON.parse(JSON.stringify(msg));
+      expect(persisted.toolCalls[0]).toMatchObject({
+        input: {},
+        name: 'future_tool',
+        providerPayload: {
+          rawInput,
+          rawName: 'future_tool',
+          rawOutput,
+        },
+        result: 'Concise result',
+        status: 'completed',
+      });
+      expect(persisted.toolCalls[0].result).not.toContain('bytes');
+    });
+
     it('should hydrate AskUserQuestion resolvedAnswers from result text fallback', async () => {
       const coreTools = jest.requireMock('@/core/tools/toolInput');
       (coreTools.extractResolvedAnswers as jest.Mock).mockReturnValueOnce(undefined);

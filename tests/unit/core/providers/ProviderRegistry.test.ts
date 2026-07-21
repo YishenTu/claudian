@@ -91,6 +91,14 @@ describe('ProviderRegistry', () => {
     expect(caps.supportsFork).toBe(false);
   });
 
+  it('opts only validated providers into legacy Agent and Task routing', () => {
+    expect(ProviderRegistry.getCapabilities('claude').supportsLegacySubagentTools).toBe(true);
+    expect(ProviderRegistry.getCapabilities('opencode').supportsLegacySubagentTools).toBe(true);
+    expect(ProviderRegistry.getCapabilities('grok').supportsLegacySubagentTools).toBe(false);
+    expect(ProviderRegistry.getCapabilities('codex').supportsLegacySubagentTools).toBe(false);
+    expect(ProviderRegistry.getCapabilities('pi').supportsLegacySubagentTools).toBe(false);
+  });
+
   it('returns Pi capabilities', () => {
     const caps = ProviderRegistry.getCapabilities('pi');
     expect(caps.providerId).toBe('pi');
@@ -104,6 +112,7 @@ describe('ProviderRegistry', () => {
     const ids = ProviderRegistry.getRegisteredProviderIds();
     expect(ids).toContain('claude');
     expect(ids).toContain('codex');
+    expect(ids).toContain('grok');
     expect(ids).toContain('pi');
   });
 
@@ -127,10 +136,11 @@ describe('ProviderRegistry', () => {
     expect(ProviderRegistry.getEnabledProviderIds({
       providerConfigs: {
         codex: { enabled: true },
+        grok: { enabled: true },
         opencode: { enabled: true },
         pi: { enabled: true },
       },
-    })).toEqual(['opencode', 'pi', 'codex', 'claude']);
+    })).toEqual(['opencode', 'pi', 'grok', 'codex', 'claude']);
   });
 
   it('exposes title generation models only from enabled providers', () => {
@@ -164,6 +174,7 @@ describe('ProviderRegistry', () => {
   it('returns the display name from provider registration metadata', () => {
     expect(ProviderRegistry.getProviderDisplayName('claude')).toBe('Claude');
     expect(ProviderRegistry.getProviderDisplayName('codex')).toBe('Codex');
+    expect(ProviderRegistry.getProviderDisplayName('grok')).toBe('Grok');
   });
 
   it('routes auto title generation to Claude independently of chat provider state', async () => {

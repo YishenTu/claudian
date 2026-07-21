@@ -49,4 +49,8 @@ export interface ProviderHost {
     action: (runtime: ChatRuntime) => Promise<void> | void,
   ): Promise<void>;
   recycleProviderRuntimes?(providerId: ProviderId): Promise<void>;
+  mutateProviderSettingsAndRecycleRuntimes?(
+    providerId: ProviderId,
+    mutation: (settings: ClaudianSettings) => void | Promise<void>,
+  ): Promise<void>;
 }
