@@ -885,6 +885,46 @@ describe('GrokChatRuntime', () => {
     );
   });
 
+  it('adapts Grok tool input for rendering while preserving the wire payload', async () => {
+    const rawInput = { limit: 5, offset: 1, target_file: 'note.md' };
+    const harness = createHarness({
+      handlers: {
+        prompt(message, process) {
+          process.notify('session/update', {
+            sessionId: 'session-new',
+            update: {
+              rawInput,
+              sessionUpdate: 'tool_call',
+              status: 'in_progress',
+              title: 'read_file',
+              toolCallId: 'tool-read',
+            },
+          });
+          process.notify('session/update', {
+            sessionId: 'session-new',
+            update: {
+              content: [{ content: { text: 'file contents', type: 'text' }, type: 'content' }],
+              sessionUpdate: 'tool_call_update',
+              status: 'completed',
+              toolCallId: 'tool-read',
+            },
+          });
+          process.respond(message, promptResponse());
+        },
+      },
+    });
+
+    const chunks = await collect(harness.runtime);
+
+    expect(chunks).toContainEqual(expect.objectContaining({
+      id: 'tool-read',
+      input: expect.objectContaining({ file_path: 'note.md', target_file: 'note.md' }),
+      name: 'Read',
+      providerPayload: { rawInput, rawName: 'read_file' },
+      type: 'tool_use',
+    }));
+  });
+
   it('refines a live generic tool name when a recognized raw title arrives later', async () => {
     const harness = createHarness({
       handlers: {

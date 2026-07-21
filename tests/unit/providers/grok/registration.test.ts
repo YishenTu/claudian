@@ -72,7 +72,11 @@ describe('Grok provider registration', () => {
     expect(grokProviderRegistration.environmentKeyPatterns?.some(pattern => pattern.test('GROK_HOME'))).toBe(true);
     expect(grokProviderRegistration.environmentKeyPatterns?.some(pattern => pattern.test('XAI_API_KEY'))).toBe(true);
     expect(grokProviderRegistration.environmentKeyPatterns?.some(pattern => pattern.test('OPENAI_API_KEY'))).toBe(false);
-    expect(grokProviderRegistration).not.toHaveProperty('subagentLifecycleAdapter');
+    expect(grokProviderRegistration.subagentLifecycleAdapter).toMatchObject({
+      isSpawnTool: expect.any(Function),
+      isWaitTool: expect.any(Function),
+      isCloseTool: expect.any(Function),
+    });
     expect(grokProviderRegistration.settingsReconciler.environmentSessionPolicy).toBe('reload');
     expect(grokProviderRegistration.historyService).toHaveProperty('hydrateConversationHistory');
     expect(grokProviderRegistration.taskResultInterpreter).toHaveProperty('resolveTerminalStatus');

@@ -13,7 +13,7 @@
 - Account authentication is Grok-native. Never call ACP `authenticate` automatically or persist xAI credentials.
 - Preserve `Conversation.sessionId` and provider state across prompt, CLI-path, and environment changes. Recycle the process and load the same native session.
 - Use Grok's native history read-only. Never delete or mutate a Grok session when a Claudian conversation is deleted.
-- Keep Grok/xAI tools enabled and preserve unknown tool data losslessly. Grok task-family tools remain ordinary tool cards.
+- Keep Grok/xAI tools enabled and preserve unknown tool data losslessly. Adapt Grok task-family lifecycle calls into the shared subagent renderer while retaining their raw names and payloads.
 - Expose Safe and YOLO only. Claudian does not expose Grok plan mode.
 
 ## Models and Settings

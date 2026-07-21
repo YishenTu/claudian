@@ -11,6 +11,7 @@ import { GrokTitleGenerationService } from './auxiliary/GrokTitleGenerationServi
 import { GROK_PROVIDER_CAPABILITIES } from './capabilities';
 import { grokSettingsReconciler } from './env/GrokSettingsReconciler';
 import { GrokConversationHistoryService } from './history/GrokConversationHistoryService';
+import { grokSubagentLifecycleAdapter } from './normalization/grokSubagentNormalization';
 import { GrokChatRuntime } from './runtime/GrokChatRuntime';
 import { getGrokProviderSettings, updateGrokProviderSettings } from './settings';
 import { grokChatUIConfig } from './ui/GrokChatUIConfig';
@@ -55,6 +56,7 @@ export const grokProviderRegistration: ProviderModule = {
       return false;
     },
   },
+  subagentLifecycleAdapter: grokSubagentLifecycleAdapter,
   taskResultInterpreter: new GrokTaskResultInterpreter(),
   workspace: grokWorkspaceRegistration,
 };

@@ -49,7 +49,7 @@ function createMockComponent() {
   };
 }
 
-function mockCapabilities(providerId: 'claude' | 'codex' = 'claude') {
+function mockCapabilities(providerId: 'claude' | 'codex' | 'grok' = 'claude') {
   return () => ({
     providerId,
     supportsPersistentRuntime: true,
@@ -68,7 +68,7 @@ function mockCapabilities(providerId: 'claude' | 'codex' = 'claude') {
 
 function createRenderer(
   messagesEl?: any,
-  providerId: 'claude' | 'codex' = 'claude',
+  providerId: 'claude' | 'codex' | 'grok' = 'claude',
   settings: Record<string, unknown> = {},
 ) {
   const el = messagesEl ?? createMockEl();
@@ -1730,6 +1730,90 @@ describe('MessageRenderer', () => {
           status: 'completed',
           result: 'Patched utils.ts and verified imports.',
         })
+      );
+    });
+
+    it('renders a stored Grok background task with the async subagent renderer', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl, 'grok');
+
+      const msg: ChatMessage = {
+        id: 'm-grok-subagent',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [
+          {
+            id: 'spawn-1',
+            name: 'spawn_subagent',
+            input: {
+              description: 'Inspect tools',
+              prompt: 'Inspect every mapping.',
+              run_in_background: true,
+              task_id: 'task-1',
+            },
+            status: 'completed',
+            result: 'Spawned task-1',
+          } as any,
+          {
+            id: 'output-1',
+            name: 'get_command_or_subagent_output',
+            input: { task_ids: ['task-1'] },
+            providerPayload: {
+              rawName: 'get_command_or_subagent_output',
+              rawOutput: {
+                Result: [{ output: 'All mappings verified.', status: 'completed', task_id: 'task-1' }],
+                type: 'task_output',
+              },
+            },
+            status: 'completed',
+            result: 'All mappings verified.',
+          } as any,
+        ],
+        contentBlocks: [{ type: 'tool_use', toolId: 'spawn-1' } as any],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredAsyncSubagent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          asyncStatus: 'completed',
+          description: 'Inspect tools',
+          mode: 'async',
+          result: 'All mappings verified.',
+          status: 'completed',
+        }),
+      );
+      expect(renderStoredSubagent).not.toHaveBeenCalled();
+      expect(renderStoredToolCall).not.toHaveBeenCalled();
+    });
+
+    it('renders Grok output calls that target background commands', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl, 'grok');
+      const outputToolCall = {
+        id: 'output-command',
+        name: 'get_command_or_subagent_output',
+        input: { task_id: 'command-1' },
+        status: 'completed',
+        result: 'Command finished.',
+      } as any;
+      const msg: ChatMessage = {
+        id: 'm-grok-command-output',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [outputToolCall],
+        contentBlocks: [{ type: 'tool_use', toolId: 'output-command' } as any],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredToolCall).toHaveBeenCalledWith(
+        expect.anything(),
+        outputToolCall,
+        expect.anything(),
       );
     });
   });

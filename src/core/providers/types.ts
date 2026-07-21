@@ -577,8 +577,14 @@ export interface ProviderSubagentLifecycleAdapter {
     spawnToolCall: ToolCallInfo,
     siblingToolCalls?: ToolCallInfo[],
   ): SubagentInfo;
-  extractSpawnResult(raw: string | undefined): ProviderSubagentLaunchResult;
-  extractWaitResult(raw: string | undefined): ProviderSubagentWaitResult;
+  extractSpawnResult(
+    raw: string | undefined,
+    toolCall?: ToolCallInfo,
+  ): ProviderSubagentLaunchResult;
+  extractWaitResult(
+    raw: string | undefined,
+    toolCall?: ToolCallInfo,
+  ): ProviderSubagentWaitResult;
 }
 
 // ---------------------------------------------------------------------------

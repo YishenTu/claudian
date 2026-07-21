@@ -1,4 +1,5 @@
 import {
+  TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
@@ -6,8 +7,11 @@ import {
   TOOL_GREP,
   TOOL_KILL_SHELL,
   TOOL_LS,
+  TOOL_NOTEBOOK_EDIT,
   TOOL_READ,
+  TOOL_SKILL,
   TOOL_TODO_WRITE,
+  TOOL_TOOL_SEARCH,
   TOOL_WEB_FETCH,
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
@@ -15,19 +19,25 @@ import {
 import type { AcpToolRawNameProvenance } from '../../acp/AcpToolStreamAdapter';
 
 const GROK_TOOL_NAME_MAP: Readonly<Record<string, string>> = {
-  apply_patch: TOOL_EDIT,
+  apply_patch: TOOL_APPLY_PATCH,
   ask_user_question: TOOL_ASK_USER_QUESTION,
+  edit_notebook: TOOL_NOTEBOOK_EDIT,
   get_terminal_command_output: TOOL_BASH_OUTPUT,
   grep: TOOL_GREP,
+  hashline_edit: TOOL_EDIT,
+  hashline_grep: TOOL_GREP,
   hashline_read: TOOL_READ,
   kill_terminal_command: TOOL_KILL_SHELL,
   list_dir: TOOL_LS,
   read_file: TOOL_READ,
   run_terminal_command: TOOL_BASH,
   search_replace: TOOL_EDIT,
+  search_tool: TOOL_TOOL_SEARCH,
+  skill: TOOL_SKILL,
   todo_write: TOOL_TODO_WRITE,
   web_fetch: TOOL_WEB_FETCH,
   web_search: TOOL_WEB_SEARCH,
+  write: TOOL_WRITE,
   write_file: TOOL_WRITE,
 };
 
@@ -106,7 +116,7 @@ export function normalizeGrokToolCall(value: {
 }, currentRawName?: GrokRawToolNameResolution): GrokNormalizedToolCall {
   const rawName = resolveGrokRawToolName(currentRawName, value).rawName;
   return {
-    input: normalizeToolInput(value.rawInput),
+    input: normalizeToolInput(rawName, value.rawInput),
     name: normalizeGrokToolName(rawName),
     output: formatToolOutput(value.rawOutput),
     rawInput: value.rawInput,
@@ -135,11 +145,55 @@ export function buildGrokToolProviderPayload(value: {
   };
 }
 
-function normalizeToolInput(value: unknown): Record<string, unknown> {
-  if (isRecord(value)) {
-    return value;
+function normalizeToolInput(rawName: string, value: unknown): Record<string, unknown> {
+  const input = isRecord(value)
+    ? value
+    : value === undefined ? {} : { value };
+
+  switch (rawName.trim().toLowerCase()) {
+    case 'hashline_read':
+    case 'read_file':
+      return addInputAlias(input, 'file_path', ['target_file', 'path']);
+    case 'list_dir':
+      return addInputAlias(input, 'path', ['target_directory']);
+    case 'skill':
+      return addInputAlias(input, 'skill', ['name']);
+    case 'spawn_subagent':
+    case 'task':
+      return addInputAlias(input, 'run_in_background', ['background']);
+    case 'todo_write':
+      return normalizeTodoInput(input);
+    default:
+      return input;
   }
-  return value === undefined ? {} : { value };
+}
+
+function addInputAlias(
+  input: Record<string, unknown>,
+  targetKey: string,
+  sourceKeys: readonly string[],
+): Record<string, unknown> {
+  if (input[targetKey] !== undefined) return input;
+  for (const sourceKey of sourceKeys) {
+    if (input[sourceKey] !== undefined) {
+      return { ...input, [targetKey]: input[sourceKey] };
+    }
+  }
+  return input;
+}
+
+function normalizeTodoInput(input: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(input.todos)) return input;
+
+  let changed = false;
+  const todos = input.todos.map((todo) => {
+    if (!isRecord(todo) || typeof todo.content !== 'string' || todo.activeForm !== undefined) {
+      return todo;
+    }
+    changed = true;
+    return { ...todo, activeForm: todo.content };
+  });
+  return changed ? { ...input, todos } : input;
 }
 
 function formatToolOutput(value: unknown): string {

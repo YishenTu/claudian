@@ -324,11 +324,11 @@ export class MessageRenderer {
         if (block.type === 'subagent') return true;
         if (block.type === 'tool_use') {
           const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
-          if (toolCall && this.shouldRenderToolCall(toolCall)) return true;
+          if (toolCall && this.shouldRenderToolCall(toolCall, msg)) return true;
         }
       }
     }
-    if (msg.toolCalls?.some(toolCall => this.shouldRenderToolCall(toolCall))) return true;
+    if (msg.toolCalls?.some(toolCall => this.shouldRenderToolCall(toolCall, msg))) return true;
     return false;
   }
 
@@ -451,7 +451,7 @@ export class MessageRenderer {
    * and Codex collab agent lifecycle tools.
    */
   private renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo, msg?: ChatMessage): void {
-    if (!this.shouldRenderToolCall(toolCall)) return;
+    if (!this.shouldRenderToolCall(toolCall, msg)) return;
     const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(toolCall.name);
 
     if (isWriteEditTool(toolCall.name)) {
@@ -469,15 +469,35 @@ export class MessageRenderer {
     }
   }
 
-  private shouldRenderToolCall(toolCall: ToolCallInfo): boolean {
+  private shouldRenderToolCall(toolCall: ToolCallInfo, msg?: ChatMessage): boolean {
     if (toolCall.name === TOOL_AGENT_OUTPUT) return false;
     if (toolCall.name === TOOL_WRITE_STDIN && this.isSilentWriteStdinTool(toolCall)) return false;
     if (toolCall.name === 'custom_tool_call_output') return false;
 
     const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(toolCall.name);
-    if (subagentLifecycleAdapter?.isHiddenTool(toolCall.name)) return false;
+    if (
+      subagentLifecycleAdapter?.isHiddenTool(toolCall.name)
+      && msg
+      && this.isLinkedProviderSubagentTool(toolCall, msg, subagentLifecycleAdapter)
+    ) return false;
 
     return true;
+  }
+
+  private isLinkedProviderSubagentTool(
+    toolCall: ToolCallInfo,
+    msg: ChatMessage,
+    adapter: NonNullable<ReturnType<MessageRenderer['getSubagentLifecycleAdapter']>>,
+  ): boolean {
+    const agentIdToSpawnId = new Map<string, string>();
+    for (const sibling of msg.toolCalls ?? []) {
+      if (!adapter.isSpawnTool(sibling.name)) continue;
+      const spawnResult = adapter.extractSpawnResult(sibling.result, sibling);
+      const agentId = spawnResult.agentId
+        ?? adapter.buildSubagentInfo(sibling, msg.toolCalls ?? []).agentId;
+      if (agentId) agentIdToSpawnId.set(agentId, sibling.id);
+    }
+    return adapter.resolveSpawnToolIds(toolCall, agentIdToSpawnId).length > 0;
   }
 
   private isSilentWriteStdinTool(toolCall: ToolCallInfo): boolean {
@@ -516,6 +536,10 @@ export class MessageRenderer {
       spawnToolCall,
       msg.toolCalls ?? [],
     );
+    if (subagentInfo.mode === 'async') {
+      renderStoredAsyncSubagent(contentEl, subagentInfo);
+      return;
+    }
     renderStoredSubagent(contentEl, subagentInfo);
   }
 

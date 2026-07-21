@@ -11,15 +11,21 @@ describe('grokToolNormalization', () => {
     ['kill_terminal_command', 'KillShell'],
     ['read_file', 'Read'],
     ['hashline_read', 'Read'],
+    ['write', 'Write'],
     ['write_file', 'Write'],
     ['search_replace', 'Edit'],
-    ['apply_patch', 'Edit'],
+    ['hashline_edit', 'Edit'],
+    ['edit_notebook', 'NotebookEdit'],
+    ['apply_patch', 'apply_patch'],
     ['list_dir', 'LS'],
     ['grep', 'Grep'],
+    ['hashline_grep', 'Grep'],
     ['todo_write', 'TodoWrite'],
     ['web_search', 'WebSearch'],
     ['web_fetch', 'WebFetch'],
     ['ask_user_question', 'AskUserQuestion'],
+    ['skill', 'Skill'],
+    ['search_tool', 'ToolSearch'],
   ])('maps %s to the approved renderer %s', (rawName, expected) => {
     expect(normalizeGrokToolName(rawName)).toBe(expected);
   });
@@ -63,6 +69,52 @@ describe('grokToolNormalization', () => {
       rawName: 'future_xai_tool',
       rawOutput,
     });
+  });
+
+  it.each([
+    ['read_file', { target_file: 'notes/readme.md' }, { file_path: 'notes/readme.md' }],
+    ['hashline_read', { target_file: 'notes/readme.md' }, { file_path: 'notes/readme.md' }],
+    ['list_dir', { target_directory: 'src/providers' }, { path: 'src/providers' }],
+    ['skill', { name: 'commit' }, { skill: 'commit' }],
+  ])('adapts %s input to its renderer contract', (rawName, rawInput, expected) => {
+    const normalized = normalizeGrokToolCall({ rawInput, title: rawName });
+
+    expect(normalized.input).toEqual(expect.objectContaining({
+      ...rawInput,
+      ...expected,
+    }));
+    expect(normalized.rawInput).toBe(rawInput);
+  });
+
+  it('adds renderer todo fields without mutating the provider payload', () => {
+    const rawInput = {
+      merge: false,
+      todos: [{ content: 'Run tests', id: 'test', status: 'in_progress' }],
+    };
+
+    const normalized = normalizeGrokToolCall({ rawInput, title: 'todo_write' });
+
+    expect(normalized.input.todos).toEqual([{
+      activeForm: 'Run tests',
+      content: 'Run tests',
+      id: 'test',
+      status: 'in_progress',
+    }]);
+    expect(normalized.rawInput).toBe(rawInput);
+    expect(rawInput.todos[0]).not.toHaveProperty('activeForm');
+  });
+
+  it('aliases the observed Grok background flag for the subagent renderer', () => {
+    const rawInput = { background: true, description: 'Inspect tools' };
+
+    const normalized = normalizeGrokToolCall({ rawInput, title: 'spawn_subagent' });
+
+    expect(normalized.input).toEqual({
+      background: true,
+      description: 'Inspect tools',
+      run_in_background: true,
+    });
+    expect(normalized.rawInput).toBe(rawInput);
   });
 
   it('retains the raw tool name when later titles become presentation text', () => {

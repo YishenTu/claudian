@@ -82,7 +82,7 @@ describe('GrokServerRequestRouter', () => {
       });
       expect(callback).toHaveBeenCalledWith(
         'Read',
-        { path: 'notes/example.md' },
+        { file_path: 'notes/example.md', path: 'notes/example.md' },
         'Grok wants to use Read.',
         expect.any(Object),
       );

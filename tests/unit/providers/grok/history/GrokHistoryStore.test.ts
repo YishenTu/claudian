@@ -184,6 +184,44 @@ describe('GrokHistoryStore', () => {
     expect(toolCall.result).not.toContain('bytes');
   });
 
+  it('hydrates renderer input aliases without changing persisted Grok payloads', () => {
+    const rawInput = { target_directory: 'src/providers' };
+    const records = [
+      {
+        content: { text: 'List providers', type: 'text' },
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        rawInput,
+        status: 'in_progress',
+        title: 'list_dir',
+        toolCallId: 'tool-list',
+        sessionUpdate: 'tool_call',
+      },
+      {
+        content: [{ content: { text: 'provider entries', type: 'text' }, type: 'content' }],
+        status: 'completed',
+        toolCallId: 'tool-list',
+        sessionUpdate: 'tool_call_update',
+      },
+      { sessionUpdate: 'turn_completed' },
+    ].map((update, index) => JSON.stringify({
+      method: '_x.ai/session/update',
+      params: { sessionId: 'session-list', update },
+      timestamp: 450 + index,
+    })).join('\n');
+
+    const toolCall = parseGrokHistoryContent(records, 'session-list').messages[1]?.toolCalls?.[0];
+
+    expect(toolCall).toMatchObject({
+      input: { path: 'src/providers', target_directory: 'src/providers' },
+      name: 'LS',
+      providerPayload: { rawInput, rawName: 'list_dir' },
+      result: 'provider entries',
+      status: 'completed',
+    });
+  });
+
   it('replays a late unknown title over a generic kind without losing raw payloads', () => {
     const rawInput = { opaque: ['future'] };
     const rawOutput = { future: { bytes: [1, 2, 3] } };

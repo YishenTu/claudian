@@ -26,11 +26,17 @@ jest.mock('@/core/tools/toolInput', () => ({
 }));
 
 jest.mock('@/features/chat/rendering/SubagentRenderer', () => ({
+  createAsyncSubagentBlock: jest.fn().mockReturnValue({
+    info: { id: 'task-1', description: 'test', mode: 'async', status: 'running', toolCalls: [] },
+    labelEl: { setText: jest.fn() },
+  }),
   createSubagentBlock: jest.fn().mockReturnValue({
     info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
     labelEl: { setText: jest.fn() },
   }),
+  finalizeAsyncSubagent: jest.fn(),
   finalizeSubagentBlock: jest.fn(),
+  updateAsyncSubagentRunning: jest.fn(),
 }));
 
 jest.mock('@/features/chat/rendering/ThinkingBlockRenderer', () => ({
@@ -579,10 +585,6 @@ describe('StreamController - Text Content', () => {
     it.each([
       'Agent',
       'Task',
-      'task',
-      'task_output',
-      'wait_for_task',
-      'kill_task',
       'future_agent',
     ])(
       'keeps Grok %s tools as ordinary lossless cards',
@@ -3065,6 +3067,194 @@ describe('StreamController - Text Content', () => {
         'Patched utils.ts and verified imports.',
         false,
       );
+    });
+  });
+
+  describe('Grok subagent lifecycle', () => {
+    beforeEach(() => {
+      deps.getAgentService = () => ({
+        providerId: 'grok',
+        getCapabilities: jest.fn().mockReturnValue({
+          providerId: 'grok',
+          supportsLegacySubagentTools: false,
+        }),
+      }) as any;
+    });
+
+    it('updates one background block across refined spawn input and output completion', async () => {
+      const {
+        createAsyncSubagentBlock,
+        finalizeAsyncSubagent,
+        updateAsyncSubagentRunning,
+      } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
+      const asyncState = {
+        info: {
+          id: 'spawn-1',
+          description: 'Inspect tools',
+          mode: 'async',
+          status: 'running',
+          toolCalls: [],
+        },
+        labelEl: { setText: jest.fn() },
+      };
+      createAsyncSubagentBlock.mockReturnValueOnce(asyncState);
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'spawn-1',
+        name: 'spawn_subagent',
+        input: { background: true, description: 'Inspect tools', prompt: 'Inspect them.' },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'spawn-1',
+        name: 'spawn_subagent',
+        input: { run_in_background: true, task_id: 'task-7' },
+        providerPayload: {
+          rawInput: { run_in_background: true, task_id: 'task-7' },
+          rawName: 'spawn_subagent',
+        },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'spawn-1',
+        content: 'Spawned task-7',
+        toolUseResult: {
+          providerPayload: {
+            rawInput: { run_in_background: true, task_id: 'task-7' },
+            rawName: 'spawn_subagent',
+            rawOutput: { text: 'Spawned task-7', type: 'text' },
+          },
+        },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'output-1',
+        name: 'get_command_or_subagent_output',
+        input: { task_ids: ['task-7'], timeout_ms: 30000 },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'output-1',
+        content: 'Renderer mappings verified.',
+        toolUseResult: {
+          providerPayload: {
+            rawName: 'get_command_or_subagent_output',
+            rawOutput: {
+              Result: [{ output: 'Renderer mappings verified.', status: 'completed', task_id: 'task-7' }],
+              type: 'task_output',
+            },
+          },
+        },
+      }, msg);
+
+      expect(msg.toolCalls).toHaveLength(2);
+      expect(msg.toolCalls![0]).toEqual(expect.objectContaining({
+        id: 'spawn-1',
+        input: expect.objectContaining({ task_id: 'task-7' }),
+        providerPayload: expect.objectContaining({
+          rawOutput: { text: 'Spawned task-7', type: 'text' },
+        }),
+      }));
+      expect(createAsyncSubagentBlock).toHaveBeenCalledTimes(1);
+      expect(updateAsyncSubagentRunning).toHaveBeenCalledWith(asyncState, 'task-7');
+      expect(finalizeAsyncSubagent).toHaveBeenCalledWith(
+        asyncState,
+        'Renderer mappings verified.',
+        false,
+      );
+    });
+
+    it('finalizes a foreground spawn directly from its terminal result', async () => {
+      const { createSubagentBlock, finalizeSubagentBlock } = jest.requireMock(
+        '@/features/chat/rendering/SubagentRenderer',
+      );
+      const syncState = {
+        info: { id: 'spawn-2', description: 'Review code', status: 'running', toolCalls: [] },
+        labelEl: { setText: jest.fn() },
+      };
+      createSubagentBlock.mockReturnValueOnce(syncState);
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'spawn-2',
+        name: 'spawn_subagent',
+        input: { description: 'Review code', prompt: 'Review it.', run_in_background: false },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'spawn-2',
+        content: 'No material findings.',
+        toolUseResult: {
+          providerPayload: {
+            rawName: 'spawn_subagent',
+            rawOutput: { text: 'No material findings.', type: 'text' },
+          },
+        },
+      }, msg);
+
+      expect(finalizeSubagentBlock).toHaveBeenCalledWith(syncState, 'No material findings.', false);
+    });
+
+    it('finalizes a killed background task as an error', async () => {
+      const { createAsyncSubagentBlock, finalizeAsyncSubagent } = jest.requireMock(
+        '@/features/chat/rendering/SubagentRenderer',
+      );
+      const asyncState = {
+        info: { id: 'spawn-3', description: 'Wait', mode: 'async', status: 'running', toolCalls: [] },
+        labelEl: { setText: jest.fn() },
+      };
+      createAsyncSubagentBlock.mockReturnValueOnce(asyncState);
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk({
+        type: 'tool_use', id: 'spawn-3', name: 'task',
+        input: { description: 'Wait', run_in_background: true, task_id: 'task-3' },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result', id: 'spawn-3', content: 'Started task-3',
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_use', id: 'kill-3', name: 'kill_task', input: { task_id: 'task-3' },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result', id: 'kill-3', content: 'Task task-3 cancelled',
+      }, msg);
+
+      expect(finalizeAsyncSubagent).toHaveBeenCalledWith(
+        asyncState,
+        'Task task-3 cancelled',
+        true,
+      );
+    });
+
+    it('keeps the shared output tool visible for a background command', async () => {
+      const { renderToolCall, updateToolCallResult } = jest.requireMock(
+        '@/features/chat/rendering/ToolCallRenderer',
+      );
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'output-command',
+        name: 'get_command_or_subagent_output',
+        input: { task_id: 'command-1', timeout_ms: 30000 },
+        providerPayload: {
+          rawInput: { task_id: 'command-1', timeout_ms: 30000 },
+          rawName: 'get_command_or_subagent_output',
+        },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'output-command',
+        content: 'Command finished.',
+      }, msg);
+
+      expect(msg.contentBlocks).toEqual([{ type: 'tool_use', toolId: 'output-command' }]);
+      expect(renderToolCall).toHaveBeenCalled();
+      expect(updateToolCallResult).toHaveBeenCalled();
     });
   });
 
