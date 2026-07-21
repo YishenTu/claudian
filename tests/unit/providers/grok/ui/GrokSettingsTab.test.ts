@@ -332,7 +332,11 @@ describe('GrokSettingsTab', () => {
     const context = createContext(plugin);
     grokSettingsTabRenderer.render(createContainer(), context);
 
-    await findSetting('Enable Grok').toggleComponents[0].onChangeCallback?.(true);
+    const enableSetting = findSetting('Enable Grok');
+    expect(enableSetting.desc).toBe(
+      'Make enabled Grok models available for new conversations. Existing sessions are preserved when disabled.',
+    );
+    await enableSetting.toggleComponents[0].onChangeCallback?.(true);
 
     expect(plugin.settings.providerConfigs.grok.enabled).toBe(true);
     expect(mockRefreshModelCatalog).toHaveBeenCalledTimes(1);
@@ -436,17 +440,20 @@ describe('GrokSettingsTab', () => {
     });
   });
 
-  it('renders login and BYOK documentation without any credential input', () => {
+  it('omits authentication and BYOK documentation sections', () => {
     const plugin = createPlugin();
     grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
-    expect(findSetting('Grok account').desc).toContain('grok login');
-    expect(findSetting('Grok-native custom models').desc).toContain('~/.grok/config.toml');
-    expect(findSetting('Grok-native custom models').desc).toContain('env_key');
-    expect(findSetting('Grok-native custom models').desc).toContain('DeepSeek');
-    expect(findSetting('Grok-native custom models').desc).toContain('Kimi');
-    expect(findSetting('Grok-native custom models').desc).toContain('GLM');
-    expect(createdSettings.every(setting => setting.name !== 'API key')).toBe(true);
+    expect(createdSettings.map(setting => setting.name)).not.toEqual(expect.arrayContaining([
+      'Authentication',
+      'Grok account',
+      'Bring your own model',
+      'Grok-native custom models',
+    ]));
+    expect(mockRenderEnvironmentSettingsSection).toHaveBeenCalledWith(expect.objectContaining({
+      heading: 'Environment',
+      scope: 'provider:grok',
+    }));
   });
 
   it('delegates refresh and reports concise workspace diagnostics', async () => {

@@ -470,7 +470,11 @@ describe('OpencodeSettingsTab', () => {
     const context = createContext(plugin);
 
     opencodeSettingsTabRenderer.render(createContainer(), context);
-    await findSetting('Enable OpenCode').toggleComponents[0].onChangeCallback?.(false);
+    const enableSetting = findSetting('Enable OpenCode');
+    expect(enableSetting.desc).toBe(
+      'Make enabled OpenCode models available for new conversations. Existing sessions are preserved when disabled.',
+    );
+    await enableSetting.toggleComponents[0].onChangeCallback?.(false);
 
     expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalledTimes(1);
   });

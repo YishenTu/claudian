@@ -6,6 +6,7 @@ import type {
   ProviderSettingsTabRenderer,
   ProviderSettingsTabRendererContext,
 } from '../../../core/providers/types';
+import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import {
   type ProviderModelPickerModel,
@@ -44,8 +45,8 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName('Setup').setHeading();
 
     new Setting(container)
-      .setName('Enable OpenCode')
-      .setDesc('Launch `opencode acp` as a provider.')
+      .setName(t('settings.providerEnablement.name', { provider: 'OpenCode' }))
+      .setDesc(t('settings.providerEnablement.desc', { provider: 'OpenCode' }))
       .addToggle((toggle) =>
         toggle
           .setValue(opencodeSettings.enabled)

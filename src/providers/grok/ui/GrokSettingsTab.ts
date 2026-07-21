@@ -11,6 +11,7 @@ import type {
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import type { ClaudianSettings } from '../../../core/types';
+import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import {
   type ProviderModelPickerModel,
@@ -56,10 +57,8 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName('Setup').setHeading();
 
     new Setting(container)
-      // Grok is a product name.
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
-      .setName('Enable Grok')
-      .setDesc('Launch `grok agent --no-leader stdio` as a provider.')
+      .setName(t('settings.providerEnablement.name', { provider: 'Grok' }))
+      .setDesc(t('settings.providerEnablement.desc', { provider: 'Grok' }))
       .addToggle(toggle => toggle
         .setValue(initialSettings.enabled)
         .onChange(async (enabled) => {
@@ -171,20 +170,8 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       updateCliPathValidation(initialCliPath, text.inputEl);
     });
 
-    new Setting(container).setName('Authentication').setHeading();
-    new Setting(container)
-      .setName('Grok account')
-      .setDesc('Run `grok login` in a terminal to use your existing grok.com account. Authentication stays in the Grok CLI; Claudian never requests or stores the token.');
-
     new Setting(container).setName('Models').setHeading();
     renderGrokModelPicker(container, context, settingsBag, refreshModelCatalog);
-
-    new Setting(container).setName('Bring your own model').setHeading();
-    new Setting(container)
-      .setName('Grok-native custom models')
-      // Grok, DeepSeek, Kimi, and GLM are product names.
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
-      .setDesc('Define aliases and endpoints in Grok’s native ~/.grok/config.toml, reference secrets with env_key, and provide those variables in the Grok environment section below. DeepSeek, Kimi, and GLM configurations are documentation examples only; Claudian never writes Grok config.');
 
     new Setting(container).setName('Commands').setHeading();
     context.renderHiddenProviderCommandSetting(container, GROK_PROVIDER_ID, {

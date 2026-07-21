@@ -310,11 +310,11 @@
       "name": "Language",
       "desc": "Change the display language of the plugin interface"
     },
+    "providerEnablement": {
+      "name": "Enable {provider}",
+      "desc": "Make enabled {provider} models available for new conversations. Existing sessions are preserved when disabled."
+    },
     "codex": {
-      "enableProvider": {
-        "name": "Enable Codex provider",
-        "desc": "When enabled, Codex models appear in the model selector for new conversations. Existing Codex sessions are preserved."
-      },
       "installationMethod": {
         "name": "Installation method",
         "desc": "How Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.",

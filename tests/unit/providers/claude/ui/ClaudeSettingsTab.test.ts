@@ -422,6 +422,22 @@ describe('ClaudeSettingsTab', () => {
     expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableSonnet1M.name');
   });
 
+  it('scopes custom model overrides to the Claude environment section', () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+    const target = createContainer();
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+
+    const environmentOptions = mockRenderEnvironmentSettingsSection.mock.calls[0]?.[0];
+    expect(environmentOptions).toEqual(expect.objectContaining({
+      scope: 'provider:claude',
+      renderCustomContextLimits: expect.any(Function),
+    }));
+    environmentOptions.renderCustomContextLimits(target);
+    expect(context.renderCustomContextLimits).toHaveBeenCalledWith(target, 'claude');
+  });
+
   it('does not switch the active model while the custom models textarea is mid-edit', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);

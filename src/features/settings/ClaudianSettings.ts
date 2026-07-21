@@ -571,7 +571,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
       name: 'Shared environment',
       desc: 'Provider-neutral runtime variables shared across all providers. Use this for PATH, proxy, cert, and temp variables.',
       placeholder: 'PATH=/opt/homebrew/bin:/usr/local/bin\nHTTPS_PROXY=http://proxy.example.com:8080\nSSL_CERT_FILE=/path/to/cert.pem',
-      renderCustomContextLimits: (target) => this.renderCustomContextLimits(target),
     });
   }
 
@@ -601,21 +600,15 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
   }
 
-  private renderCustomContextLimits(container: HTMLElement, providerId?: ProviderId): void {
+  private renderCustomContextLimits(container: HTMLElement, providerId: ProviderId): void {
     container.empty();
 
     const uniqueModelIds = new Set<string>();
-    const providerIds = providerId
-      ? [providerId]
-      : ProviderRegistry.getRegisteredProviderIds();
-
-    for (const targetProviderId of providerIds) {
-      const envVars = parseEnvironmentVariables(
-        this.plugin.getActiveEnvironmentVariables(targetProviderId),
-      );
-      for (const modelId of ProviderRegistry.getChatUIConfig(targetProviderId).getCustomModelIds(envVars)) {
-        uniqueModelIds.add(modelId);
-      }
+    const envVars = parseEnvironmentVariables(
+      this.plugin.getActiveEnvironmentVariables(providerId),
+    );
+    for (const modelId of ProviderRegistry.getChatUIConfig(providerId).getCustomModelIds(envVars)) {
+      uniqueModelIds.add(modelId);
     }
 
     if (uniqueModelIds.size === 0) {

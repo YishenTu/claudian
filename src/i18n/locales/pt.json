@@ -310,11 +310,11 @@
       "name": "Idioma",
       "desc": "Alterar o idioma de exibição da interface do plugin"
     },
+    "providerEnablement": {
+      "name": "Ativar {provider}",
+      "desc": "Disponibilizar os modelos {provider} ativados para novas conversas. As sessões existentes são preservadas quando o provedor é desativado."
+    },
     "codex": {
-      "enableProvider": {
-        "name": "Ativar provedor Codex",
-        "desc": "Quando ativado, modelos Codex aparecem no seletor de modelos para novas conversas. Sessões Codex existentes são preservadas."
-      },
       "installationMethod": {
         "name": "Método de instalação",
         "desc": "Como o Claudian deve iniciar o Codex no Windows. Windows nativo usa um caminho de executável do Windows. WSL inicia a CLI Linux dentro de uma distro selecionada.",

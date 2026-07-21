@@ -310,11 +310,11 @@
       "name": "言語",
       "desc": "プラグインインターフェースの表示言語を変更"
     },
+    "providerEnablement": {
+      "name": "{provider} を有効化",
+      "desc": "有効にした {provider} モデルを新しい会話で使用できるようにします。無効にしても既存のセッションは保持されます。"
+    },
     "codex": {
-      "enableProvider": {
-        "name": "Codex プロバイダーを有効化",
-        "desc": "有効にすると、新しい会話のモデルセレクターに Codex モデルが表示されます。既存の Codex セッションは保持されます。"
-      },
       "installationMethod": {
         "name": "インストール方式",
         "desc": "Windows で Claudian が Codex を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",

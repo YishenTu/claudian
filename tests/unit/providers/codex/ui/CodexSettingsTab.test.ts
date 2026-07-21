@@ -434,7 +434,11 @@ describe('CodexSettingsTab', () => {
     const context = createContext(plugin);
 
     codexSettingsTabRenderer.render(createContainer(), context);
-    await findSetting('Enable Codex provider').toggleComponents[0].onChangeCallback?.(false);
+    const enableSetting = findSetting('Enable Codex');
+    expect(enableSetting.desc).toBe(
+      'Make enabled Codex models available for new conversations. Existing sessions are preserved when disabled.',
+    );
+    await enableSetting.toggleComponents[0].onChangeCallback?.(false);
 
     expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalledTimes(1);
   });

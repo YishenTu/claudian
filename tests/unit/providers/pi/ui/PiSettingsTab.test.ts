@@ -403,7 +403,11 @@ describe('PiSettingsTab', () => {
     const settings: Record<string, unknown> = { providerConfigs: { pi: { enabled: false } } };
     const context = render(settings);
 
-    await findSetting('Enable Pi').toggleComponents[0].onChangeCallback?.(true);
+    const enableSetting = findSetting('Enable Pi');
+    expect(enableSetting.desc).toBe(
+      'Make enabled Pi models available for new conversations. Existing sessions are preserved when disabled.',
+    );
+    await enableSetting.toggleComponents[0].onChangeCallback?.(true);
 
     expect(getPiProviderSettings(settings).enabled).toBe(true);
     expect(context.plugin.saveSettings).toHaveBeenCalled();

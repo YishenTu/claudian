@@ -310,11 +310,11 @@
       "name": "語言",
       "desc": "更改插件介面的顯示語言"
     },
+    "providerEnablement": {
+      "name": "啟用 {provider}",
+      "desc": "讓已啟用的 {provider} 模型可用於新對話。停用後，現有工作階段仍會保留。"
+    },
     "codex": {
-      "enableProvider": {
-        "name": "啟用 Codex 提供者",
-        "desc": "啟用後，Codex 模型會出現在新對話的模型選擇器中。現有 Codex 工作階段會保留。"
-      },
       "installationMethod": {
         "name": "安裝方式",
         "desc": "Claudian 在 Windows 上啟動 Codex 的方式。原生 Windows 使用 Windows 可執行檔路徑；WSL 會在所選發行版內啟動 Linux CLI。",

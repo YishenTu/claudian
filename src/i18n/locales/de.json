@@ -310,11 +310,11 @@
       "name": "Sprache",
       "desc": "Anzeigesprache der Plugin-Oberfläche ändern"
     },
+    "providerEnablement": {
+      "name": "{provider} aktivieren",
+      "desc": "Aktivierte {provider}-Modelle für neue Unterhaltungen verfügbar machen. Bestehende Sitzungen bleiben beim Deaktivieren erhalten."
+    },
     "codex": {
-      "enableProvider": {
-        "name": "Codex-Anbieter aktivieren",
-        "desc": "Wenn aktiviert, erscheinen Codex-Modelle in der Modellauswahl für neue Unterhaltungen. Bestehende Codex-Sitzungen bleiben erhalten."
-      },
       "installationMethod": {
         "name": "Installationsmethode",
         "desc": "Wie Claudian Codex unter Windows starten soll. Native Windows verwendet einen Windows-Programmpfad. WSL startet die Linux-CLI in einer ausgewählten Distribution.",

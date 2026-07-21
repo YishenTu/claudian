@@ -7,6 +7,7 @@ import type {
   ProviderSettingsTabRenderer,
   ProviderSettingsTabRendererContext,
 } from '../../../core/providers/types';
+import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import {
   type ProviderModelPickerModel,
@@ -35,8 +36,8 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName('Setup').setHeading();
 
     new Setting(container)
-      .setName('Enable Pi')
-      .setDesc('Launch `pi --mode rpc` as a provider.')
+      .setName(t('settings.providerEnablement.name', { provider: 'Pi' }))
+      .setDesc(t('settings.providerEnablement.desc', { provider: 'Pi' }))
       .addToggle((toggle) =>
         toggle
           .setValue(piSettings.enabled)

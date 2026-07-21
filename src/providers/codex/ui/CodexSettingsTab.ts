@@ -38,8 +38,8 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName(t('settings.setup')).setHeading();
 
     new Setting(container)
-      .setName(t('settings.codex.enableProvider.name'))
-      .setDesc(t('settings.codex.enableProvider.desc'))
+      .setName(t('settings.providerEnablement.name', { provider: 'Codex' }))
+      .setDesc(t('settings.providerEnablement.desc', { provider: 'Codex' }))
       .addToggle((toggle) =>
         toggle
           .setValue(codexSettings.enabled)

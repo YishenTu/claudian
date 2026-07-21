@@ -456,7 +456,7 @@ export interface ProviderSettingsTabRendererContext {
   ): void;
   refreshModelSelectors(): void;
   refreshTitleGenerationModelOptions(): void;
-  renderCustomContextLimits(container: HTMLElement, providerId?: ProviderId): void;
+  renderCustomContextLimits(container: HTMLElement, providerId: ProviderId): void;
 }
 
 export interface ProviderSettingsTabRenderer {

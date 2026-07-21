@@ -310,11 +310,11 @@
       "name": "언어",
       "desc": "플러그인 인터페이스의 표시 언어 변경"
     },
+    "providerEnablement": {
+      "name": "{provider} 활성화",
+      "desc": "활성화된 {provider} 모델을 새 대화에서 사용할 수 있게 합니다. 비활성화해도 기존 세션은 유지됩니다."
+    },
     "codex": {
-      "enableProvider": {
-        "name": "Codex 공급자 활성화",
-        "desc": "활성화하면 새 대화의 모델 선택기에 Codex 모델이 표시됩니다. 기존 Codex 세션은 유지됩니다."
-      },
       "installationMethod": {
         "name": "설치 방식",
         "desc": "Windows에서 Claudian이 Codex를 실행하는 방식입니다. 네이티브 Windows는 Windows 실행 파일 경로를 사용하고, WSL은 선택한 배포판 안에서 Linux CLI를 실행합니다.",
