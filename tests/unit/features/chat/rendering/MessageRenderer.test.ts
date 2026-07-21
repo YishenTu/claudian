@@ -116,7 +116,9 @@ describe('MessageRenderer', () => {
     expect(emptySpy).toHaveBeenCalled();
     expect(renderStoredSpy).toHaveBeenCalledTimes(1);
     expect(welcomeEl.hasClass('claudian-welcome')).toBe(true);
-    expect(welcomeEl.children[0].textContent).toBe('Hello');
+    expect(welcomeEl.children[0].hasClass('claudian-welcome-brand')).toBe(true);
+    expect(welcomeEl.children[0].textContent).toBe('Claudian');
+    expect(welcomeEl.children[1].textContent).toBe('Hello');
   });
 
   it('renders empty messages list with just welcome element', () => {

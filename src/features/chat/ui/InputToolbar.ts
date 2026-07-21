@@ -101,9 +101,19 @@ export class ModelSelector {
     const modelInfo = models.find(m => m.value === currentModel);
 
     const displayModel = modelInfo || models[0];
+    const icon = displayModel?.providerIcon
+      ?? this.callbacks.getUIConfig().getProviderIcon?.();
 
     this.buttonEl.empty();
 
+    if (icon) {
+      createProviderIconSvg(icon, {
+        className: 'claudian-model-provider-icon',
+        height: 12,
+        parent: this.buttonEl,
+        width: 12,
+      });
+    }
     const labelEl = this.buttonEl.createSpan({ cls: 'claudian-model-label' });
     labelEl.setText(displayModel?.label || 'Unknown');
   }
