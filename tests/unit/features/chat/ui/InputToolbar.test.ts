@@ -77,6 +77,7 @@ function filterVisibleModels(
 
 function createMockUIConfig() {
   return {
+    getProviderIcon: jest.fn().mockReturnValue(null),
     getModelOptions: jest.fn().mockImplementation((settings: {
       enableOpus1M?: boolean;
       enableSonnet1M?: boolean;
@@ -207,6 +208,46 @@ describe('ModelSelector', () => {
     const label = btn?.querySelector('.claudian-model-label');
     expect(label).not.toBeNull();
     expect(label?.textContent).toBe('Sonnet');
+  });
+
+  it('should display the selected provider icon before the model label', () => {
+    const providerIcon = {
+      kind: 'path' as const,
+      viewBox: '0 0 16 16',
+      path: 'M1 1h14v14H1z',
+    };
+    const uiConfig = createMockUIConfig();
+    uiConfig.getProviderIcon.mockReturnValue(providerIcon);
+    callbacks.getUIConfig.mockReturnValue(uiConfig);
+
+    selector.updateDisplay();
+
+    const btn = parentEl.querySelector('.claudian-model-btn');
+    const icon = btn?.querySelector('.claudian-model-provider-icon');
+    const label = btn?.querySelector('.claudian-model-label');
+    expect(icon).not.toBeNull();
+    expect(icon?.getAttribute('width')).toBe('12');
+    expect(icon?.getAttribute('height')).toBe('12');
+    expect(btn?.children).toEqual([icon, label]);
+  });
+
+  it('should prefer the selected model provider icon in a mixed-provider picker', () => {
+    const selectedProviderIcon = {
+      kind: 'path' as const,
+      viewBox: '0 0 24 24',
+      path: 'M2 2h20v20H2z',
+    };
+    const uiConfig = createMockUIConfig();
+    uiConfig.getModelOptions.mockReturnValue([
+      { value: 'sonnet', label: 'Sonnet', providerIcon: selectedProviderIcon },
+    ]);
+    callbacks.getUIConfig.mockReturnValue(uiConfig);
+
+    selector.updateDisplay();
+
+    const icon = parentEl.querySelector('.claudian-model-btn')
+      ?.querySelector('.claudian-model-provider-icon');
+    expect(icon?.getAttribute('viewBox')).toBe(selectedProviderIcon.viewBox);
   });
 
   it('should display first model when current model not found', () => {

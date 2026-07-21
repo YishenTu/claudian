@@ -515,6 +515,20 @@ describe('Tab - Creation', () => {
       expect(tab.id).toMatch(/^tab-/);
     });
 
+    it('should create the welcome container with Claudian branding', () => {
+      const tab = createTab(createMockOptions());
+
+      expect(tab.dom.welcomeEl?.querySelector('.claudian-welcome-brand')?.textContent)
+        .toBe('Claudian');
+    });
+
+    it('should describe composer actions in the input placeholder', () => {
+      const tab = createTab(createMockOptions());
+
+      expect(tab.dom.inputEl.getAttribute('placeholder'))
+        .toBe('Ask to make changes, @mention files,  run /commands');
+    });
+
     it('should use provided tab ID when specified', () => {
       const options = createMockOptions({ tabId: 'custom-tab-id' });
       const tab = createTab(options);

@@ -30,11 +30,12 @@
   align-items: center;
   justify-content: center;
   text-align: center;
+  gap: 10px;
   padding: 20px;
   min-height: 200px;
 }
 
-.claudian-welcome-greeting {
+.claudian-welcome-text {
   font-family: 'Copernicus', 'Tiempos Headline', 'Tiempos', Georgia, 'Times New Roman', serif;
   font-size: 28px;
   font-weight: 300;

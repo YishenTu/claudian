@@ -160,6 +160,15 @@ describe('ConversationController', () => {
         expect(fileContextManager.autoAttachActiveFile).toHaveBeenCalled();
       });
 
+      it('should recreate the branded welcome for a new conversation', async () => {
+        await controller.createNew();
+
+        const welcomeEl = deps.getWelcomeEl()!;
+        expect(welcomeEl.querySelector('.claudian-welcome-brand')?.textContent)
+          .toBe('Claudian');
+        expect(welcomeEl.querySelector('.claudian-welcome-greeting')).not.toBeNull();
+      });
+
       it('should clear todos for new conversation', async () => {
         deps.state.currentTodos = [
           { content: 'Existing todo', status: 'pending', activeForm: 'Doing existing todo' }
@@ -316,16 +325,13 @@ describe('ConversationController', () => {
       const welcomeEl = deps.getWelcomeEl()!;
       const createDivSpy = jest.spyOn(welcomeEl, 'createDiv');
 
-      // First call should add greeting
       controller.initializeWelcome();
-      expect(createDivSpy).toHaveBeenCalledTimes(1);
+      const initialCallCount = createDivSpy.mock.calls.length;
+      expect(welcomeEl.querySelector('.claudian-welcome-brand')).not.toBeNull();
+      expect(welcomeEl.querySelector('.claudian-welcome-greeting')).not.toBeNull();
 
-      // Mock querySelector to return an element (greeting already exists)
-      welcomeEl.querySelector = jest.fn().mockReturnValue(createMockEl());
-
-      // Second call should not add another greeting
       controller.initializeWelcome();
-      expect(createDivSpy).toHaveBeenCalledTimes(1); // Still 1, not 2
+      expect(createDivSpy).toHaveBeenCalledTimes(initialCallCount);
     });
   });
 

@@ -7,7 +7,6 @@
 @import "./base/animations.css";
 
 /* Components */
-@import "./components/header.css";
 @import "./components/tabs.css";
 @import "./components/history.css";
 @import "./components/messages.css";

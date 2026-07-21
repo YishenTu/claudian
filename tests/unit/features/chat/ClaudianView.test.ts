@@ -23,7 +23,6 @@ function createViewHarness(options: {
     getTabCount: jest.fn().mockReturnValue(options.tabCount ?? 1),
   };
   view.tabBarContainerEl = createMockEl();
-  view.logoEl = createMockEl();
   view.newTabButtonEl = newTabButtonEl;
 
   return { newTabButtonEl, view };

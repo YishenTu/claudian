@@ -40,6 +40,7 @@ import { SelectionController } from '../controllers/SelectionController';
 import { StreamController } from '../controllers/StreamController';
 import { MessageRenderer } from '../rendering/MessageRenderer';
 import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
+import { createWelcomeElement } from '../rendering/Welcome';
 import { findRewindContext } from '../rewind';
 import { BangBashService } from '../services/BangBashService';
 import { SubagentManager } from '../services/SubagentManager';
@@ -633,7 +634,7 @@ export function createTab(options: TabCreateOptions): TabData {
 function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   const messagesWrapperEl = contentEl.createDiv({ cls: 'claudian-messages-wrapper' });
   const messagesEl = messagesWrapperEl.createDiv({ cls: 'claudian-messages' });
-  const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
+  const welcomeEl = createWelcomeElement(messagesEl);
   const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
   const inputComposerEl = contentEl.createDiv({ cls: 'claudian-input-composer' });
   const inputContainerEl = inputComposerEl.createDiv({ cls: 'claudian-input-container' });
@@ -644,7 +645,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   const inputEl = inputWrapper.createEl('textarea', {
     cls: 'claudian-input',
     attr: {
-      placeholder: 'How can i help you today?',
+      placeholder: 'Ask to make changes, @mention files,  run /commands',
       rows: '3',
       dir: 'auto',
     },

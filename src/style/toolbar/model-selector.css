@@ -71,6 +71,9 @@
 
 .claudian-model-provider-icon {
   flex-shrink: 0;
+}
+
+.claudian-model-option .claudian-model-provider-icon {
   opacity: 0.7;
 }
 
