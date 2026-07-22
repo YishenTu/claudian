@@ -60,7 +60,8 @@
   },
   "overrides": {
     "@babel/core": "7.29.7",
-    "hono": "4.12.26",
-    "js-yaml": "4.2.0"
+    "@hono/node-server": "2.0.11",
+    "hono": "4.12.31",
+    "js-yaml": "4.3.0"
   }
 }

@@ -127,8 +127,6 @@
   flex-shrink: 0;
   row-gap: 12px;
   padding: 4px 6px 6px 6px;
-  flex-wrap: wrap;
-  row-gap: 12px;
 }
 
 /* Hide secondary text when the full toolbar would wrap. */
