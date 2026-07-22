@@ -13,6 +13,7 @@ describe('model selection namespacing', () => {
       expect(getProviderModelSelectionPrefix('codex')).toBe('openai-codex/');
       expect(getProviderModelSelectionPrefix('opencode')).toBe('opencode/');
       expect(getProviderModelSelectionPrefix('pi')).toBe('pi/');
+      expect(getProviderModelSelectionPrefix('grok')).toBe('grok/');
     });
 
     it('returns null for a provider with no registered prefix', () => {
@@ -69,6 +70,10 @@ describe('model selection namespacing', () => {
       expect(decodeProviderModelSelectionId('pi/assistant')).toEqual({
         providerId: 'pi',
         modelId: 'assistant',
+      });
+      expect(decodeProviderModelSelectionId('grok/kimi-coding')).toEqual({
+        providerId: 'grok',
+        modelId: 'kimi-coding',
       });
     });
 
@@ -141,6 +146,7 @@ describe('model selection namespacing', () => {
       ['codex', 'openai-codex/', 'gpt-5-custom'],
       ['opencode', 'opencode/', 'qwen-max'],
       ['pi', 'pi/', 'assistant-1'],
+      ['grok', 'grok/', 'kimi-coding'],
     ] as const)('round-trips a %s model id through encode and toRuntimeModelId', (providerId, prefix, modelId) => {
       const encoded = encodeProviderModelSelectionId(providerId, modelId);
       expect(encoded).toBe(`${prefix}${modelId}`);

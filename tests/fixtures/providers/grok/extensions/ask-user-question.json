@@ -1,0 +1,38 @@
+{
+  "grokVersion": "0.2.106",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": "<request-id>",
+    "method": "_x.ai/ask_user_question",
+    "params": {
+      "sessionId": "<session-id>",
+      "toolCallId": "<tool-call-id>",
+      "questions": [
+        {
+          "question": "Choose a smoke-test option?",
+          "options": [
+            {
+              "label": "Alpha",
+              "description": "First harmless value"
+            },
+            {
+              "label": "Beta",
+              "description": "Second harmless value"
+            }
+          ],
+          "multiSelect": false
+        }
+      ],
+      "mode": "default"
+    }
+  },
+  "acceptedResponse": {
+    "outcome": "accepted",
+    "answers": {
+      "Choose a smoke-test option?": ["Alpha"]
+    }
+  },
+  "cancelledResponse": {
+    "outcome": "cancelled"
+  }
+}

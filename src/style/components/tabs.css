@@ -86,6 +86,10 @@
   border-color: var(--claudian-brand-pi, #ffffff);
 }
 
+.claudian-tab-badge-streaming[data-provider="grok"] {
+  border-color: var(--claudian-brand-grok, #ffffff);
+}
+
 .claudian-tab-badge-attention {
   border-color: var(--text-error);
 }

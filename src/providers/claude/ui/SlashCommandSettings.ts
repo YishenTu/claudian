@@ -1,8 +1,8 @@
 import type { App, ToggleComponent } from 'obsidian';
 import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
-import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
+import type { ProviderVaultEntryRepository } from '../../../core/providers/commands/ProviderVaultEntryRepository';
 import { t } from '../../../i18n/i18n';
 import { extractFirstParagraph, normalizeArgumentHint, parseSlashCommandContent, validateCommandName } from '../../../utils/slashCommand';
 
@@ -302,27 +302,27 @@ export class SlashCommandModal extends Modal {
 export class SlashCommandSettings {
   private app: App;
   private containerEl: HTMLElement;
-  private catalog: ProviderCommandCatalog | null;
+  private repository: ProviderVaultEntryRepository | null;
   private commands: ProviderCommandEntry[] = [];
 
   constructor(
     containerEl: HTMLElement,
     app: App,
-    catalog: ProviderCommandCatalog | null,
+    repository: ProviderVaultEntryRepository | null,
   ) {
     this.app = app;
     this.containerEl = containerEl;
-    this.catalog = catalog;
+    this.repository = repository;
     void this.loadAndRender();
   }
 
   private async loadAndRender(): Promise<void> {
-    if (!this.catalog) {
+    if (!this.repository) {
       this.renderUnavailable();
       return;
     }
 
-    this.commands = await this.catalog.listVaultEntries();
+    this.commands = await this.repository.listVaultEntries();
     this.render();
   }
 
@@ -444,14 +444,14 @@ export class SlashCommandSettings {
   }
 
   private async saveCommand(cmd: ProviderCommandEntry, existing: ProviderCommandEntry | null): Promise<void> {
-    if (!this.catalog) {
+    if (!this.repository) {
       return;
     }
 
-    await this.catalog.saveVaultEntry(cmd);
+    await this.repository.saveVaultEntry(cmd);
 
     if (existing && existing.name !== cmd.name) {
-      await this.catalog.deleteVaultEntry(existing);
+      await this.repository.deleteVaultEntry(existing);
     }
 
     await this.reloadCommands();
@@ -462,11 +462,11 @@ export class SlashCommandSettings {
   }
 
   private async deleteCommand(cmd: ProviderCommandEntry): Promise<void> {
-    if (!this.catalog) {
+    if (!this.repository) {
       return;
     }
 
-    await this.catalog.deleteVaultEntry(cmd);
+    await this.repository.deleteVaultEntry(cmd);
 
     await this.reloadCommands();
 
@@ -476,7 +476,7 @@ export class SlashCommandSettings {
   }
 
   private async transformToSkill(cmd: ProviderCommandEntry): Promise<void> {
-    if (!this.catalog) {
+    if (!this.repository) {
       return;
     }
 
@@ -504,8 +504,8 @@ export class SlashCommandSettings {
       insertPrefix: '/',
     };
 
-    await this.catalog.saveVaultEntry(skill);
-    await this.catalog.deleteVaultEntry(cmd);
+    await this.repository.saveVaultEntry(skill);
+    await this.repository.deleteVaultEntry(cmd);
 
     await this.reloadCommands();
     this.render();
@@ -513,12 +513,12 @@ export class SlashCommandSettings {
   }
 
   private async reloadCommands(): Promise<void> {
-    if (!this.catalog) {
+    if (!this.repository) {
       this.commands = [];
       return;
     }
 
-    this.commands = await this.catalog.listVaultEntries();
+    this.commands = await this.repository.listVaultEntries();
   }
 
   public refresh(): void {

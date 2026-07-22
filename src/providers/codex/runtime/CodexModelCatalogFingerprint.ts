@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderTransitionOwnerContext } from '../../../core/providers/types';
 import { getVaultPath } from '../../../utils/path';
 import { computeCodexEnvHash } from '../env/CodexSettingsReconciler';
 import { getCodexProviderSettings } from '../settings';
@@ -37,14 +38,20 @@ export function buildCodexCatalogFingerprint(
     .digest('hex')}`;
 }
 
-export async function computeCodexCatalogFingerprint(plugin: ProviderHost): Promise<string> {
+export async function computeCodexCatalogFingerprint(
+  plugin: ProviderHost,
+  context?: ProviderTransitionOwnerContext,
+): Promise<string> {
   const settings = plugin.settings;
   const hostVaultPath = getVaultPath(plugin.app) ?? null;
   const executionTarget = await resolveCodexExecutionTargetAsync({
     settings,
     hostVaultPath,
   });
-  const resolvedCliCommand = await plugin.getResolvedProviderCliPath('codex', { executionTarget });
+  const resolvedCliCommand = await plugin.getResolvedProviderCliPath('codex', {
+    ...context,
+    executionTarget,
+  });
   const executionTargetKey = [
     executionTarget.method,
     executionTarget.platformFamily,

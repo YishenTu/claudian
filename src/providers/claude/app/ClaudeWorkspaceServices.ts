@@ -1,5 +1,6 @@
 import { McpServerManager } from '../../../core/mcp/McpServerManager';
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
+import type { ProviderVaultEntryRepository } from '../../../core/providers/commands/ProviderVaultEntryRepository';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
@@ -32,6 +33,7 @@ export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
   agentStorage: AppAgentStorage;
   agentManager: AppAgentManager;
   commandCatalog: ProviderCommandCatalog;
+  vaultCommandRepository: ProviderVaultEntryRepository;
   agentMentionProvider: AppAgentManager;
 }
 
@@ -79,6 +81,7 @@ export async function createClaudeWorkspaceServices(
     agentStorage,
     agentManager,
     commandCatalog,
+    vaultCommandRepository: commandCatalog,
     agentMentionProvider: agentManager,
     settingsTabRenderer: claudeSettingsTabRenderer,
     refreshAgentMentions: async () => {

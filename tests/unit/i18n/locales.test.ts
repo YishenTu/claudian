@@ -27,6 +27,8 @@ const locales = {
 
 const localizedKeys = [
   'chat.rewind.confirmMessageConversationOnly',
+  'chat.rewind.confirmMessageConflicts',
+  'chat.rewind.inProgress',
   'chat.rewind.menuConversationOnly',
   'chat.rewind.menuCodeAndConversation',
   'chat.rewind.noticeConversationOnly',
@@ -82,8 +84,8 @@ const localizedKeys = [
   'settings.codexSafeMode.desc',
   'settings.customModels.name',
   'settings.customModels.desc',
-  'settings.codex.enableProvider.name',
-  'settings.codex.enableProvider.desc',
+  'settings.providerEnablement.name',
+  'settings.providerEnablement.desc',
   'settings.codex.customModels.name',
   'settings.codex.customModels.desc',
   'settings.codex.reasoningSummary.name',

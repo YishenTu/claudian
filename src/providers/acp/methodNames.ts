@@ -6,6 +6,7 @@ export type AcpLogicalMethod =
   | 'listSessions'
   | 'prompt'
   | 'cancel'
+  | 'setModel'
   | 'setMode'
   | 'setConfigOption';
 
@@ -20,6 +21,7 @@ const ACP_METHOD_CANDIDATES = {
   newSession: ['session/new', 'newSession'],
   prompt: ['session/prompt', 'prompt'],
   setConfigOption: ['session/set_config_option', 'setSessionConfigOption'],
+  setModel: ['session/set_model', 'setSessionModel'],
   setMode: ['session/set_mode', 'setSessionMode'],
 } as const satisfies Record<AcpLogicalMethod, readonly string[]>;
 

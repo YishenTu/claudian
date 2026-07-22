@@ -21,6 +21,7 @@ const mockNotice = Notice as jest.Mock;
 
 function createMockInputEl() {
   return {
+    dispatchEvent: jest.fn().mockReturnValue(true),
     value: '',
     focus: jest.fn(),
   } as unknown as HTMLTextAreaElement;
@@ -369,6 +370,50 @@ describe('InputController - Message Queue', () => {
   });
 
   describe('Queuing messages while streaming', () => {
+    it('should restore a rewound message and its images into the composer', () => {
+      const images = [{ id: 'image-1', name: 'reference.png' }];
+
+      (controller as any).restoreRewoundMessageToComposer({
+        content: 'restored prompt',
+        images,
+      });
+
+      expect(inputEl.value).toBe('restored prompt');
+      expect(deps.getImageContextManager()?.setImages).toHaveBeenCalledWith(images);
+      expect(deps.resetInputHeight).toHaveBeenCalled();
+      expect(inputEl.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({
+        bubbles: true,
+        type: 'input',
+      }));
+      expect(inputEl.focus).toHaveBeenCalled();
+    });
+
+    it('should clear unrelated composer images when the rewound message has none', () => {
+      const imageContextManager = deps.getImageContextManager()!;
+      (imageContextManager.getAttachedImages as jest.Mock).mockReturnValue([
+        { id: 'stale-image', name: 'stale.png' },
+      ]);
+
+      controller.restoreRewoundMessageToComposer({ content: 'text-only prompt' });
+
+      expect(imageContextManager.setImages).toHaveBeenCalledWith([]);
+    });
+
+    it('should not send while rewind is in progress', async () => {
+      const ensureServiceInitialized = jest.fn().mockResolvedValue(true);
+      deps = createMockDeps({ ensureServiceInitialized });
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      controller = new InputController(deps);
+      (deps.state as any).isRewinding = true;
+      inputEl.value = 'keep this draft';
+
+      await controller.sendMessage();
+
+      expect(inputEl.value).toBe('keep this draft');
+      expect(ensureServiceInitialized).not.toHaveBeenCalled();
+      expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('rewind to finish'));
+    });
+
     it('should queue message when isStreaming is true', async () => {
       deps.state.isStreaming = true;
       inputEl.value = 'queued message';
@@ -737,7 +782,7 @@ describe('InputController - Message Queue', () => {
         canvasContext: null,
       });
       expect(mockNotice).toHaveBeenCalledWith(
-        'Failed to steer the queued Codex message. It is still available.',
+        'Failed to steer the queued message. It is still available.',
       );
     });
 
@@ -794,6 +839,96 @@ describe('InputController - Message Queue', () => {
         editorContext: null,
         browserContext: null,
         canvasContext: null,
+      });
+    });
+
+    it('registers steered content before a provider boundary can consume it', async () => {
+      deps = createSendableDeps();
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'grok';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'grok',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: false,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: true,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockImplementation((request: any) => ({
+        request: {
+          ...request,
+          currentNotePath: request.text === 'steer prompt' ? 'notes/steer.md' : undefined,
+        },
+        persistedContent: request.text === 'steer prompt'
+          ? 'persisted steer prompt'
+          : request.text,
+        prompt: request.text,
+        isCompact: false,
+        mcpMentions: new Set(),
+      }));
+
+      let releaseBoundary!: () => void;
+      let markBoundaryConsumed!: () => void;
+      const boundaryGate = new Promise<void>((resolve) => { releaseBoundary = resolve; });
+      const boundaryConsumed = new Promise<void>((resolve) => { markBoundaryConsumed = resolve; });
+      const firstChunkHandled = new Promise<void>((resolve) => {
+        (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk) => {
+          if (chunk.type === 'text' && chunk.content === 'partial') resolve();
+        });
+      });
+      mockAgentService.query = jest.fn().mockImplementation(() => (async function* () {
+        yield { type: 'user_message_start', content: 'first prompt', itemId: 'user-1' };
+        yield { type: 'assistant_message_start', itemId: 'assistant-1' };
+        yield { type: 'text', content: 'partial' };
+        await boundaryGate;
+        yield { type: 'user_message_start', content: 'wire steer', itemId: 'user-2' };
+        markBoundaryConsumed();
+        yield { type: 'assistant_message_start', itemId: 'assistant-2' };
+        yield { type: 'done' };
+      })());
+      mockAgentService.steer = jest.fn().mockImplementation(async () => {
+        releaseBoundary();
+        await boundaryConsumed;
+        return true;
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'first prompt';
+      controller = new InputController(deps);
+      const sendPromise = controller.sendMessage();
+      await firstChunkHandled;
+
+      const steerImage = {
+        data: 'c3RlZXI=',
+        id: 'steer-image',
+        mediaType: 'image/png' as const,
+        name: 'steer.png',
+        size: 5,
+        source: 'paste' as const,
+      };
+      deps.state.queuedMessage = {
+        content: 'steer prompt',
+        images: [steerImage],
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      controller.updateQueueIndicator();
+      (deps.state.queueIndicatorEl as any)
+        .querySelector('.claudian-queue-indicator-action')
+        ?.click();
+
+      await sendPromise;
+
+      expect(deps.state.messages[2]).toMatchObject({
+        content: 'persisted steer prompt',
+        currentNote: 'notes/steer.md',
+        displayContent: 'steer prompt',
+        images: [steerImage],
+        role: 'user',
       });
     });
 
@@ -1064,6 +1199,55 @@ describe('InputController - Message Queue', () => {
       controller.cancelStreaming();
 
       expect((deps as any).mockAgentService.cancel).not.toHaveBeenCalled();
+    });
+
+    it('waits for first-turn Grok session persistence after requesting cancellation', async () => {
+      let releaseQuery!: () => void;
+      let releaseSave!: () => void;
+      let markSaveStarted!: () => void;
+      const queryCancelled = new Promise<void>((resolve) => { releaseQuery = resolve; });
+      const saveAllowed = new Promise<void>((resolve) => { releaseSave = resolve; });
+      const saveStarted = new Promise<void>((resolve) => { markSaveStarted = resolve; });
+      let persistedSessionId: string | null = null;
+      deps = createSendableDeps();
+      const mockAgentService = (deps as any).mockAgentService as ReturnType<typeof createMockAgentService>;
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'Start a Grok session';
+      mockAgentService.providerId = 'grok';
+      mockAgentService.getSessionId.mockReturnValue('grok-live-session');
+      mockAgentService.cancel.mockImplementation(() => { releaseQuery(); });
+      mockAgentService.query.mockImplementation(() => (async function* () {
+        await queryCancelled;
+        yield { type: 'done' };
+      })());
+      (deps.conversationController.save as jest.Mock).mockImplementation(async () => {
+        markSaveStarted();
+        await saveAllowed;
+        persistedSessionId = mockAgentService.getSessionId();
+      });
+      controller = new InputController(deps);
+
+      const send = controller.sendMessage();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(deps.state.isStreaming).toBe(true);
+
+      let quiesced = false;
+      const quiesce = controller.cancelStreamingAndWait().then(() => { quiesced = true; });
+      await saveStarted;
+
+      expect(mockAgentService.cancel).toHaveBeenCalledTimes(1);
+      expect(deps.conversationController.save).toHaveBeenCalled();
+      expect(quiesced).toBe(false);
+      expect(persistedSessionId).toBeNull();
+
+      releaseSave();
+      await quiesce;
+      await send;
+
+      expect(quiesced).toBe(true);
+      expect(persistedSessionId).toBe('grok-live-session');
+      expect(deps.state.isStreaming).toBe(false);
     });
   });
 

@@ -63,7 +63,7 @@ describe('PiChatUIConfig', () => {
     ]);
   });
 
-  it('pins saved selections after visible model options', () => {
+  it('excludes saved selections that are not enabled', () => {
     const options = piChatUIConfig.getModelOptions({
       ...settings,
       savedProviderModel: {
@@ -76,24 +76,19 @@ describe('PiChatUIConfig', () => {
         label: 'Sonnet',
         value: 'pi:anthropic/claude-sonnet-4',
       }),
-      expect.objectContaining({
-        label: 'GPT-5',
-        value: 'pi:openai/gpt-5',
-      }),
     ]);
   });
 
-  it('returns a synthetic fallback before discovery', () => {
-    expect(piChatUIConfig.getModelOptions({ providerConfigs: { pi: {} } })).toEqual([
-      { value: 'pi', label: 'Pi', description: 'Configure models in settings' },
-    ]);
-    expect(piChatUIConfig.ownsModel('pi', { providerConfigs: { pi: {} } })).toBe(true);
+  it('has no model fallback when no models are enabled', () => {
+    expect(piChatUIConfig.getModelOptions({ providerConfigs: { pi: {} } })).toEqual([]);
+    expect(piChatUIConfig.getDefaultModel!({ providerConfigs: { pi: {} } })).toBeNull();
+    expect(piChatUIConfig.ownsModel('pi', { providerConfigs: { pi: {} } })).toBe(false);
     expect(piChatUIConfig.ownsModel('pi:anthropic/claude-sonnet-4', { providerConfigs: { pi: {} } })).toBe(true);
     expect(piChatUIConfig.ownsModel('pi:invalid', { providerConfigs: { pi: {} } })).toBe(false);
-    expect(piChatUIConfig.getReasoningOptions('pi', { providerConfigs: { pi: {} } })).toEqual([
-      { label: 'Off', value: 'off' },
-    ]);
-    expect(piChatUIConfig.getDefaultReasoningValue('pi', { providerConfigs: { pi: {} } })).toBe('off');
+  });
+
+  it('uses the first enabled model as the default', () => {
+    expect(piChatUIConfig.getDefaultModel!(settings)).toBe('pi:anthropic/claude-sonnet-4');
   });
 
   it('maps reasoning options and defaults from cached model metadata', () => {

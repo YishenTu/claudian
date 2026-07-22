@@ -1,4 +1,5 @@
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderTransitionOwnerContext } from '../../../core/providers/types';
 import {
   type CodexDiscoveredModel,
   normalizeCodexDiscoveredModels,
@@ -24,7 +25,10 @@ export type CodexModelDiscoveryResult =
   };
 
 export interface CodexModelDiscoveryServiceLike {
-  discoverModels(signal?: AbortSignal): Promise<CodexModelDiscoveryResult>;
+  discoverModels(
+    signal?: AbortSignal,
+    context?: ProviderTransitionOwnerContext,
+  ): Promise<CodexModelDiscoveryResult>;
 }
 
 const MODEL_LIST_PAGE_SIZE = 100;
@@ -32,7 +36,10 @@ const MODEL_LIST_PAGE_SIZE = 100;
 export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLike {
   constructor(private readonly plugin: ProviderHost) {}
 
-  async discoverModels(signal?: AbortSignal): Promise<CodexModelDiscoveryResult> {
+  async discoverModels(
+    signal?: AbortSignal,
+    context?: ProviderTransitionOwnerContext,
+  ): Promise<CodexModelDiscoveryResult> {
     if (!getCodexProviderSettings(this.plugin.settings).enabled) {
       return { kind: 'skipped', reason: 'provider-disabled' };
     }
@@ -50,7 +57,11 @@ export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLik
     let abortListener: (() => void) | null = null;
 
     try {
-      const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
+      const launchSpec = await resolveCodexAppServerLaunchSpec(
+        this.plugin,
+        'codex',
+        context,
+      );
       if (signal?.aborted) {
         return {
           kind: 'completed',

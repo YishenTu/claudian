@@ -91,6 +91,35 @@ describe('ProviderRegistry', () => {
     expect(caps.supportsFork).toBe(false);
   });
 
+  it('registers provider-owned subagent protocols outside the capability matrix', () => {
+    const claudeAdapter = ProviderRegistry.getSubagentAdapter('claude');
+    expect(claudeAdapter).toMatchObject({
+      protocol: 'managed-agent',
+    });
+    const opencodeAdapter = ProviderRegistry.getSubagentAdapter('opencode');
+    expect(opencodeAdapter).toMatchObject({
+      protocol: 'managed-agent',
+    });
+    expect(ProviderRegistry.getSubagentAdapter('grok')).toMatchObject({
+      protocol: 'lifecycle',
+    });
+    expect(ProviderRegistry.getSubagentAdapter('codex')).toMatchObject({
+      protocol: 'lifecycle',
+    });
+    expect(ProviderRegistry.getSubagentAdapter('pi')).toBeNull();
+
+    expect(claudeAdapter?.isSpawnTool('Agent')).toBe(true);
+    expect(claudeAdapter?.isSpawnTool('Task')).toBe(true);
+    expect(opencodeAdapter?.isSpawnTool('Agent')).toBe(true);
+    expect(opencodeAdapter?.isSpawnTool('Task')).toBe(false);
+
+    for (const providerId of ['claude', 'opencode', 'grok', 'codex', 'pi'] as const) {
+      expect(ProviderRegistry.getCapabilities(providerId)).not.toHaveProperty(
+        'supportsLegacySubagentTools',
+      );
+    }
+  });
+
   it('returns Pi capabilities', () => {
     const caps = ProviderRegistry.getCapabilities('pi');
     expect(caps.providerId).toBe('pi');
@@ -104,6 +133,7 @@ describe('ProviderRegistry', () => {
     const ids = ProviderRegistry.getRegisteredProviderIds();
     expect(ids).toContain('claude');
     expect(ids).toContain('codex');
+    expect(ids).toContain('grok');
     expect(ids).toContain('pi');
   });
 
@@ -127,10 +157,11 @@ describe('ProviderRegistry', () => {
     expect(ProviderRegistry.getEnabledProviderIds({
       providerConfigs: {
         codex: { enabled: true },
+        grok: { enabled: true },
         opencode: { enabled: true },
         pi: { enabled: true },
       },
-    })).toEqual(['opencode', 'pi', 'codex', 'claude']);
+    })).toEqual(['opencode', 'pi', 'grok', 'codex', 'claude']);
   });
 
   it('exposes title generation models only from enabled providers', () => {
@@ -164,6 +195,7 @@ describe('ProviderRegistry', () => {
   it('returns the display name from provider registration metadata', () => {
     expect(ProviderRegistry.getProviderDisplayName('claude')).toBe('Claude');
     expect(ProviderRegistry.getProviderDisplayName('codex')).toBe('Codex');
+    expect(ProviderRegistry.getProviderDisplayName('grok')).toBe('Grok');
   });
 
   it('routes auto title generation to Claude independently of chat provider state', async () => {
@@ -213,7 +245,7 @@ describe('ProviderRegistry', () => {
       settings: {
         titleGenerationModel: TEST_CODEX_MODEL,
         providerConfigs: {
-          codex: { enabled: true },
+          codex: { enabled: true, visibleModels: [TEST_CODEX_MODEL] },
         },
       },
     } as any);
@@ -274,7 +306,7 @@ describe('ProviderRegistry', () => {
       settings: {
         titleGenerationModel: 'sonnet',
         providerConfigs: {
-          codex: { enabled: true },
+          codex: { enabled: true, visibleModels: [TEST_CODEX_MODEL] },
         },
       },
     } as any;

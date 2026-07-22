@@ -65,7 +65,9 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
   },
 
   getDefaultModel(settings: Record<string, unknown>): string | null {
-    return getDefaultCodexModel(getVisibleDiscoveredModels(settings))?.model ?? null;
+    return getDefaultCodexModel(getVisibleDiscoveredModels(settings))?.model
+      ?? getCodexModelOptions(settings)[0]?.value
+      ?? null;
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {

@@ -28,6 +28,13 @@ export interface AskUserQuestionItem {
 /** User-provided answers keyed by question text or stable question id. */
 export type AskUserAnswers = Record<string, string | string[]>;
 
+/** Provider-owned fields for lossless per-tool replay and persistence. */
+export interface ToolProviderPayload {
+  rawInput?: unknown;
+  rawName?: string;
+  rawOutput?: unknown;
+}
+
 /** Tool call tracking with status and result. */
 export interface ToolCallInfo {
   id: string;
@@ -35,6 +42,7 @@ export interface ToolCallInfo {
   input: Record<string, unknown>;
   status: 'running' | 'completed' | 'error' | 'blocked';
   result?: string;
+  providerPayload?: ToolProviderPayload;
   isExpanded?: boolean;
   diffData?: ToolDiffData;
   resolvedAnswers?: AskUserAnswers;
@@ -44,11 +52,22 @@ export interface ToolCallInfo {
 export type ExitPlanModeDecision =
   | { type: 'approve' }
   | { type: 'approve-new-session'; planContent: string }
-  | { type: 'feedback'; text: string };
+  | { type: 'feedback'; text: string }
+  | { type: 'abandon' };
+
+export interface ExitPlanModePresentationOptions {
+  allowAbandon?: boolean;
+  allowNewSession?: boolean;
+  approveLabel?: string;
+  dismissOnEscape?: boolean;
+  feedbackLabel?: string;
+  shiftTabDecision?: 'abandon';
+}
 
 export type ExitPlanModeCallback = (
   input: Record<string, unknown>,
   signal?: AbortSignal,
+  presentation?: ExitPlanModePresentationOptions,
 ) => Promise<ExitPlanModeDecision | null>;
 
 /** Subagent execution mode: sync (nested tools) or async (background). */
@@ -62,7 +81,7 @@ export type AsyncSubagentStatus =
   | 'error'
   | 'orphaned';
 
-/** Subagent (Agent tool, legacy Task) tracking for sync and async modes. */
+/** Subagent (Agent tool) tracking for sync and async modes. */
 export interface SubagentInfo {
   id: string;
   description: string;

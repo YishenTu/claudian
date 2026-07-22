@@ -2598,6 +2598,61 @@ describe('ConversationController - Rewind', () => {
     expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'code-and-conversation');
   });
 
+  it('should initialize a cold conversation runtime before previewing rewind', async () => {
+    let agentService: typeof mockAgentService | null = null;
+    const ensureServiceInitialized = jest.fn().mockImplementation(async () => {
+      agentService = mockAgentService;
+      return true;
+    });
+    mockAgentService.previewRewind = jest.fn().mockResolvedValue({ canRewind: true });
+    deps = createMockDeps({
+      getAgentService: () => agentService,
+      ensureServiceInitialized,
+    } as any);
+    controller = new ConversationController(deps);
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
+      { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
+    ];
+
+    await controller.rewind('m2');
+
+    expect(ensureServiceInitialized).toHaveBeenCalledTimes(1);
+    expect(mockAgentService.previewRewind).toHaveBeenCalledWith(
+      'user-uuid',
+      'prev-a',
+      'code-and-conversation',
+    );
+    expect(mockAgentService.rewind).toHaveBeenCalled();
+  });
+
+  it('should reject a second rewind while the first preview is pending', async () => {
+    const previewResolvers: Array<(value: { canRewind: true }) => void> = [];
+    mockAgentService.previewRewind = jest.fn().mockImplementation(() => (
+      new Promise(resolve => { previewResolvers.push(resolve); })
+    ));
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
+      { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
+    ];
+
+    const firstRewind = controller.rewind('m2');
+    await Promise.resolve();
+    const secondRewind = controller.rewind('m2');
+    await Promise.resolve();
+    const previewCallCountBeforeResolution = mockAgentService.previewRewind.mock.calls.length;
+    previewResolvers.forEach(resolve => resolve({ canRewind: true }));
+    await Promise.all([firstRewind, secondRewind]);
+
+    expect(previewCallCountBeforeResolution).toBe(1);
+    expect(mockAgentService.rewind).toHaveBeenCalledTimes(1);
+    expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('rewind to finish'));
+  });
+
   it('should show Notice when message ID not found', async () => {
     deps.state.messages = [
       { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'a1' },
@@ -2675,6 +2730,7 @@ describe('ConversationController - Rewind', () => {
     expect(mockNotice).toHaveBeenCalled();
     const msg = mockNotice.mock.calls[0][0] as string;
     expect(msg).toContain('SDK error');
+    expect(deps.state.isRewinding).toBe(false);
   });
 
   it('should show i18n Notice when canRewind is false', async () => {
@@ -2695,6 +2751,7 @@ describe('ConversationController - Rewind', () => {
 
   it('should truncateAt, save with resumeAtMessageId, and renderMessages on success', async () => {
     deps.state.currentConversationId = 'conv-1';
+    deps.state.usage = { inputTokens: 100, outputTokens: 50 } as any;
     deps.state.messages = [
       { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
@@ -2707,6 +2764,7 @@ describe('ConversationController - Rewind', () => {
 
     expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'code-and-conversation');
     expect(truncateSpy).toHaveBeenCalledWith('m2');
+    expect(deps.state.usage).toBeNull();
     expect(deps.renderer.renderMessages).toHaveBeenCalledWith(
       expect.any(Array),
       expect.any(Function)
@@ -2726,6 +2784,37 @@ describe('ConversationController - Rewind', () => {
     expect(noticeMsg).toContain('1');
 
     truncateSpy.mockRestore();
+  });
+
+  it('should restore the rewound message through the composer owner', async () => {
+    const restoreMessageToComposer = jest.fn();
+    deps = createMockDeps({
+      getAgentService: () => mockAgentService,
+      restoreMessageToComposer,
+    } as any);
+    controller = new ConversationController(deps);
+    const images = [{ id: 'image-1', name: 'reference.png' }];
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
+      {
+        content: '',
+        displayContent: 'restore this prompt',
+        id: 'm2',
+        images: images as any,
+        role: 'user',
+        timestamp: 2,
+        userMessageId: 'user-uuid',
+      },
+      { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
+    ];
+
+    await controller.rewind('m2');
+
+    expect(restoreMessageToComposer).toHaveBeenCalledWith({
+      content: 'restore this prompt',
+      images,
+    });
   });
 
   it('should rewind to before the first user message and clear provider session state', async () => {
@@ -2781,6 +2870,109 @@ describe('ConversationController - Rewind', () => {
     );
     const noticeMsg = mockNotice.mock.calls[0][0] as string;
     expect(noticeMsg).toBe('Rewound conversation; file changes kept');
+  });
+
+  it('should warn that file rewind is destructive', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
+      { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
+    ];
+
+    await controller.rewind('m2');
+
+    expect(confirm).toHaveBeenCalledWith(
+      deps.plugin.app,
+      expect.stringContaining('cannot be undone'),
+      'Rewind',
+    );
+    expect((confirm as jest.Mock).mock.calls[0][1]).not.toContain('does not affect');
+  });
+
+  it('should preview file rewind and surface provider conflicts before confirmation', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
+      { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
+    ];
+    mockAgentService.previewRewind = jest.fn().mockResolvedValue({
+      canRewind: true,
+      conflicts: [{ conflictType: 'modified_externally', path: 'notes/conflicted.md' }],
+      filesChanged: ['notes/conflicted.md'],
+    });
+
+    await controller.rewind('m2');
+
+    expect(mockAgentService.previewRewind).toHaveBeenCalledWith(
+      'user-uuid',
+      'prev-a',
+      'code-and-conversation',
+    );
+    expect(confirm).toHaveBeenCalledWith(
+      deps.plugin.app,
+      expect.stringContaining('notes/conflicted.md'),
+      'Rewind',
+    );
+    expect((confirm as jest.Mock).mock.calls[0][1]).toContain('overwritten');
+    expect(mockAgentService.rewind).toHaveBeenCalled();
+  });
+
+  it('should abort when provider rewind preview rejects the checkpoint', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
+      { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
+      { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
+    ];
+    mockAgentService.previewRewind = jest.fn().mockResolvedValue({
+      canRewind: false,
+      error: 'Checkpoint is no longer available',
+    });
+
+    await controller.rewind('m2');
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('Checkpoint is no longer available'));
+  });
+
+  it('should preserve a provider-native session when rewinding before the first prompt', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [
+      { id: 'm1', role: 'user', content: 'first prompt', timestamp: 1, userMessageId: 'user-uuid' },
+      { id: 'm2', role: 'assistant', content: 'resp', timestamp: 2, assistantMessageId: 'resp-a' },
+    ];
+    mockAgentService.getSessionId.mockReturnValue('native-session');
+    mockAgentService.rewind.mockResolvedValue({
+      canRewind: true,
+      filesChanged: [],
+      sessionStrategy: 'preserve-provider-session',
+    });
+    (deps.plugin.getConversationSync as jest.Mock).mockReturnValue({
+      id: 'conv-1',
+      messages: deps.state.messages,
+      providerId: 'grok',
+      providerState: { sessionDirectory: '/trusted/native-session' },
+      sessionId: 'native-session',
+    });
+
+    await controller.rewind('m1');
+
+    expect(mockAgentService.buildSessionUpdates).toHaveBeenCalled();
+    expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+      'conv-1',
+      expect.objectContaining({
+        messages: [],
+        resumeAtMessageId: undefined,
+        sessionId: 'native-session',
+      }),
+    );
+    expect(deps.plugin.updateConversation).not.toHaveBeenCalledWith(
+      'conv-1',
+      expect.objectContaining({ sessionId: null }),
+    );
   });
 
   it('should abort when confirmation is declined', async () => {

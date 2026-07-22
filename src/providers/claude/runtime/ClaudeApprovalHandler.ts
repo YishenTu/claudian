@@ -60,6 +60,9 @@ export function createClaudeApprovalCallback(
         if (decision.type === 'feedback') {
           return { behavior: 'deny', message: decision.text, interrupt: false };
         }
+        if (decision.type === 'abandon') {
+          return { behavior: 'deny', message: 'User abandoned the plan.', interrupt: true };
+        }
 
         const permissionMode = deps.getPermissionMode();
         const sdkMode = deps.resolveSDKPermissionMode(permissionMode);

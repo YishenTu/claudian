@@ -49,6 +49,6 @@ export const codexProviderRegistration: ProviderModule = {
   createInlineEditService: (plugin) => new CodexInlineEditService(plugin),
   historyService: new CodexConversationHistoryService(),
   taskResultInterpreter: new CodexTaskResultInterpreter(),
-  subagentLifecycleAdapter: codexSubagentLifecycleAdapter,
+  subagentAdapter: codexSubagentLifecycleAdapter,
   workspace: codexWorkspaceRegistration,
 };

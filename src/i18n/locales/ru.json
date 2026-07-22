@@ -23,9 +23,11 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Откатить до этой точки? Изменения файлов после этого сообщения будут отменены. Откат не затрагивает файлы, отредактированные вручную или через bash.",
+      "confirmMessage": "Откатить до этой точки? Изменения файлов после этого сообщения могут быть перезаписаны или удалены. Это действие нельзя отменить.",
+      "confirmMessageConflicts": "Откатить до этой точки? Будут перезаписаны файлы, изменённые вне агента ({count}):\n{files}",
       "confirmMessageConversationOnly": "Откатить разговор до этой точки? Изменения файлов будут сохранены.",
       "confirmButton": "Откатить",
+      "inProgress": "Дождитесь завершения текущего отката.",
       "ariaLabel": "Откатить сюда",
       "menuConversationOnly": "Откатить только разговор",
       "menuCodeAndConversation": "Откатить код + разговор",
@@ -310,11 +312,11 @@
       "name": "Язык",
       "desc": "Изменить язык интерфейса плагина"
     },
+    "providerEnablement": {
+      "name": "Включить {provider}",
+      "desc": "Сделать включённые модели {provider} доступными для новых бесед. Существующие сеансы сохраняются после отключения."
+    },
     "codex": {
-      "enableProvider": {
-        "name": "Включить провайдера Codex",
-        "desc": "Когда включено, модели Codex появляются в выборе моделей для новых бесед. Существующие сеансы Codex сохраняются."
-      },
       "installationMethod": {
         "name": "Способ установки",
         "desc": "Как Claudian должен запускать Codex в Windows. Нативный Windows использует путь к Windows-исполняемому файлу. WSL запускает Linux CLI внутри выбранного дистрибутива.",
@@ -353,7 +355,7 @@
       },
       "skills": {
         "name": "Навыки Codex",
-        "desc": "Управляйте навыками Codex уровня vault, сохраненными в .codex/skills/ или .agents/skills/. Навыки уровня home здесь исключены.",
+        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
         "hiddenName": "Скрытые навыки",
         "hiddenDesc": "Скрыть отдельные навыки Codex из списка. Введите имена навыков без начального $, по одному на строку.",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
@@ -371,6 +373,11 @@
         "name": "Окружение Codex",
         "desc": "Только переменные среды выполнения, принадлежащие Codex. Используйте для настроек OPENAI_* и CODEX_*. Если автоопределению Codex нужна помощь, добавьте каталог установки в общий PATH, а не в этот раздел провайдера."
       }
+    },
+    "agentSkills": {
+      "sectionTitle": "Skills", "header": "Shared skills", "fixedRoot": "Managed in .agents/skills", "sharedExpectation": "Manage skills shared across all enabled providers in .agents/skills/.", "noSkills": "No shared skills configured. Click + to create one.", "skillBadge": "skill", "diagnosticsTitle": "Skills needing attention", "loadFailed": "Could not load shared skills.", "savedRefreshFailed": "Saved, but provider refresh failed.", "validationFailed": "Invalid skill: {message}", "collisionFailed": "A skill named \"{name}\" already exists.", "saveFailed": "Failed to save shared skill: {message}", "deleteFailed": "Failed to move shared skill to trash: {message}", "staleConflict": "This skill changed elsewhere; refresh before saving.", "created": "Shared skill \"{name}\" created.", "updated": "Shared skill \"{name}\" updated.", "deleted": "Shared skill \"{name}\" moved to trash.",
+      "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
+      "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
     },
     "codexSkills": {
       "modal": {

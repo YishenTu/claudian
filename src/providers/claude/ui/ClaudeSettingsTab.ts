@@ -228,7 +228,7 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new SlashCommandSettings(
       slashCommandsContainer,
       context.plugin.app,
-      claudeWorkspace.commandCatalog,
+      claudeWorkspace.vaultCommandRepository,
     );
 
     context.renderHiddenProviderCommandSetting(container, 'claude', {

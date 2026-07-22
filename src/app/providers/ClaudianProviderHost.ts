@@ -109,4 +109,11 @@ export class ClaudianProviderHost implements ProviderHost {
       view.refreshModelSelector?.();
     }
   }
+
+  mutateProviderSettingsAndRecycleRuntimes(
+    providerId: ProviderId,
+    mutation: (settings: typeof this.plugin.settings) => void | Promise<void>,
+  ): Promise<void> {
+    return this.plugin.mutateProviderSettingsAndRecycleRuntimes(providerId, mutation);
+  }
 }

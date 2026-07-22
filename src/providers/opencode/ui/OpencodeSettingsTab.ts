@@ -6,6 +6,7 @@ import type {
   ProviderSettingsTabRenderer,
   ProviderSettingsTabRendererContext,
 } from '../../../core/providers/types';
+import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import {
   type ProviderModelPickerModel,
@@ -44,8 +45,8 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName('Setup').setHeading();
 
     new Setting(container)
-      .setName('Enable OpenCode')
-      .setDesc('Launch `opencode acp` as a provider.')
+      .setName(t('settings.providerEnablement.name', { provider: 'OpenCode' }))
+      .setDesc(t('settings.providerEnablement.desc', { provider: 'OpenCode' }))
       .addToggle((toggle) =>
         toggle
           .setValue(opencodeSettings.enabled)
@@ -125,14 +126,10 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName('Models').setHeading();
     renderOpencodeModelPicker(container, context, settingsBag);
 
-    new Setting(container).setName('Commands and skills').setHeading();
+    new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
+    context.renderAgentSkillSettings(container, 'opencode');
 
-    const commandsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
-    commandsDesc.createEl('p', {
-      cls: 'setting-item-description',
-      text: 'OpenCode can auto-detect vault-level Claude slash commands from .claude/commands/ and skills from .claude/skills/, .codex/skills/, and .agents/skills/. Manage those entries in the Claude or Codex settings tab. This setting only hides entries from the OpenCode dropdown.',
-    });
-
+    new Setting(container).setName('Commands').setHeading();
     context.renderHiddenProviderCommandSetting(container, 'opencode', {
       name: 'Hidden Commands and Skills',
       desc: 'Hide specific OpenCode commands and skills from the dropdown. Enter names without the leading slash, one per line.',
@@ -256,7 +253,7 @@ function renderOpencodeModelPicker(
       context.refreshModelSelectors();
     },
     providerName: 'OpenCode',
-    settingDescription: 'Choose which OpenCode models appear in the chat selector. Filter by provider or type to search. The current session model stays pinned even if it is not selected here.',
+    settingDescription: 'Choose which OpenCode models are available in the chat selector. Filter by provider or type to search. OpenCode chat is unavailable when no models are selected.',
   });
 }
 

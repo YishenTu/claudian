@@ -23,7 +23,6 @@ export interface DecodedPiModelId {
   provider: string;
 }
 
-export const PI_SYNTHETIC_MODEL_ID = 'pi';
 export const PI_MODEL_PREFIX = 'pi:';
 export const PI_DEFAULT_THINKING_LEVEL: PiThinkingLevel = DEFAULT_REASONING_VALUE;
 
@@ -45,14 +44,14 @@ const DEFAULT_REASONING_LEVELS: PiThinkingLevel[] = [
 ];
 
 export function isPiModelSelectionId(model: string): boolean {
-  return model === PI_SYNTHETIC_MODEL_ID || model.startsWith(PI_MODEL_PREFIX);
+  return decodePiModelId(model) !== null;
 }
 
 export function encodePiModelId(provider: string, modelId: string): string {
   const normalizedProvider = provider.trim();
   const normalizedModelId = modelId.trim();
   if (!normalizedProvider || !normalizedModelId) {
-    return PI_SYNTHETIC_MODEL_ID;
+    return '';
   }
 
   return `${PI_MODEL_PREFIX}${normalizedProvider}/${normalizedModelId}`;

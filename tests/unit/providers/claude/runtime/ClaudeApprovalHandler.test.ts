@@ -1,3 +1,4 @@
+import { TOOL_EXIT_PLAN_MODE } from '@/core/tools/toolNames';
 import { createClaudeApprovalCallback } from '@/providers/claude/runtime/ClaudeApprovalHandler';
 
 function createDeps(decision: 'allow' | 'allow-always') {
@@ -61,5 +62,19 @@ describe('createClaudeApprovalCallback', () => {
       }],
     });
     expect(deps.notifyAlwaysAppliedOnce).not.toHaveBeenCalled();
+  });
+
+  it('does not interpret a provider-specific abandon decision as Claude approval', async () => {
+    const deps = {
+      ...createDeps('allow'),
+      getExitPlanModeCallback: () => jest.fn().mockResolvedValue({ type: 'abandon' }),
+    };
+    const callback = createClaudeApprovalCallback(deps);
+
+    await expect(callback(TOOL_EXIT_PLAN_MODE, {}, options)).resolves.toEqual({
+      behavior: 'deny',
+      interrupt: true,
+      message: 'User abandoned the plan.',
+    });
   });
 });

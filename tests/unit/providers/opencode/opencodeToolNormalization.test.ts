@@ -1,6 +1,7 @@
 import {
   createOpencodeToolStreamAdapter,
   normalizeOpencodeToolInput,
+  resolveOpencodeRawToolName,
 } from '../../../../src/providers/opencode/normalization/opencodeToolNormalization';
 
 describe('normalizeOpencodeToolInput', () => {
@@ -65,6 +66,94 @@ describe('normalizeOpencodeToolInput', () => {
 });
 
 describe('createOpencodeToolStreamAdapter', () => {
+  it('refines a generic kind fallback to unknown late titles without extra output-only uses', () => {
+    const adapter = createOpencodeToolStreamAdapter();
+
+    expect(adapter.normalizeToolCall({
+      kind: 'other',
+      rawInput: { command: 'pwd' },
+      title: '',
+      toolCallId: 'tool-future',
+    }, [{
+      id: 'tool-future',
+      input: {},
+      name: 'tool',
+      type: 'tool_use',
+    }])).toEqual([{
+      id: 'tool-future',
+      input: { command: 'pwd' },
+      name: 'tool',
+      type: 'tool_use',
+    }]);
+
+    expect(adapter.normalizeToolCallUpdate({
+      title: 'future_tool',
+      toolCallId: 'tool-future',
+    }, [])).toEqual([{
+      id: 'tool-future',
+      input: { command: 'pwd' },
+      name: 'future_tool',
+      type: 'tool_use',
+    }]);
+    expect(adapter.normalizeToolCallUpdate({
+      rawOutput: { output: 'done' },
+      toolCallId: 'tool-future',
+    }, [])).toEqual([]);
+  });
+
+  it.each([
+    {
+      displayTitle: 'Run terminal command',
+      expectedInput: { command: 'pwd' },
+      expectedName: 'Bash',
+      kind: 'execute' as const,
+      rawInput: { command: 'pwd' },
+    },
+    {
+      displayTitle: 'notes/today.md',
+      expectedInput: { file_path: 'notes/today.md' },
+      expectedName: 'Read',
+      kind: 'read' as const,
+      rawInput: { filePath: 'notes/today.md' },
+    },
+    {
+      displayTitle: 'Fetching documentation',
+      expectedInput: { url: 'https://example.com/docs' },
+      expectedName: 'WebFetch',
+      kind: 'fetch' as const,
+      rawInput: { url: 'https://example.com/docs' },
+    },
+  ])('keeps authoritative $kind normalization across a late display title', ({
+    displayTitle,
+    expectedInput,
+    expectedName,
+    kind,
+    rawInput,
+  }) => {
+    const adapter = createOpencodeToolStreamAdapter();
+    expect(adapter.normalizeToolCall({
+      kind,
+      rawInput,
+      title: '',
+      toolCallId: `tool-${kind}`,
+    }, [{
+      id: `tool-${kind}`,
+      input: {},
+      name: 'tool',
+      type: 'tool_use',
+    }])).toEqual([{
+      id: `tool-${kind}`,
+      input: expectedInput,
+      name: expectedName,
+      type: 'tool_use',
+    }]);
+
+    expect(adapter.normalizeToolCallUpdate({
+      title: displayTitle,
+      toolCallId: `tool-${kind}`,
+    }, [])).toEqual([]);
+  });
+
   it('keeps the original tool identity when completion updates replace title with a filepath', () => {
     const adapter = createOpencodeToolStreamAdapter();
 
@@ -193,5 +282,45 @@ describe('createOpencodeToolStreamAdapter', () => {
       name: 'WebSearch',
       type: 'tool_use',
     }]);
+  });
+});
+
+describe('resolveOpencodeRawToolName', () => {
+  it('tracks fallback and multiple late-title updates explicitly', () => {
+    const fallback = resolveOpencodeRawToolName(undefined, { kind: 'other' });
+    expect(fallback).toEqual({ provenance: 'fallback', rawName: 'tool' });
+
+    const firstTitle = resolveOpencodeRawToolName(fallback, { title: 'future_tool' });
+    expect(firstTitle).toEqual({ provenance: 'title', rawName: 'future_tool' });
+    expect(resolveOpencodeRawToolName(firstTitle, {})).toEqual(firstTitle);
+    expect(resolveOpencodeRawToolName(firstTitle, { title: 'future_tool_v2' })).toEqual({
+      provenance: 'title',
+      rawName: 'future_tool_v2',
+    });
+  });
+
+  it.each([
+    ['execute', 'bash'],
+    ['read', 'read'],
+    ['fetch', 'webfetch'],
+  ] as const)('marks the %s kind mapping authoritative', (kind, rawName) => {
+    const knownKind = resolveOpencodeRawToolName(undefined, { kind });
+    expect(knownKind).toEqual({ provenance: 'mapped-kind', rawName });
+    expect(resolveOpencodeRawToolName(knownKind, { title: 'Human presentation label' }))
+      .toEqual(knownKind);
+    expect(resolveOpencodeRawToolName(knownKind, { title: 'question' })).toEqual({
+      provenance: 'title',
+      rawName: 'question',
+    });
+  });
+
+  it('keeps authoritative known names when later titles are presentation labels', () => {
+    const known = resolveOpencodeRawToolName(undefined, { title: 'read' });
+    expect(resolveOpencodeRawToolName(known, { title: 'notes/today.md' })).toEqual(known);
+
+    expect(resolveOpencodeRawToolName(known, { title: 'bash' })).toEqual({
+      provenance: 'title',
+      rawName: 'bash',
+    });
   });
 });

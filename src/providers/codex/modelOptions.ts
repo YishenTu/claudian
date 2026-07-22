@@ -3,8 +3,6 @@ import type { ProviderUIOption } from '../../core/providers/types';
 import { getCodexModelsInPickerOrder, getDefaultCodexModel } from './models';
 import {
   encodeCodexModelSelectionId,
-  isCodexModelSelectionId,
-  looksLikeCodexModel,
   toCodexRuntimeModelId,
 } from './modelSelection';
 import { getCodexProviderSettings, getVisibleCodexModelIds } from './settings';
@@ -56,48 +54,9 @@ export function getCodexModelOptions(settings: Record<string, unknown>): Provide
     codexSettings.visibleModels,
     codexSettings.discoveredModels,
   ));
-  const savedProviderModel = (
-    settings.savedProviderModel
-    && typeof settings.savedProviderModel === 'object'
-    && !Array.isArray(settings.savedProviderModel)
-  )
-    ? settings.savedProviderModel as Record<string, unknown>
-    : null;
-  const pinnedModelIds = new Set<string>();
-  for (const value of [
-    settings.model,
-    savedProviderModel?.codex,
-    getConfiguredEnvModel(settings),
-  ]) {
-    if (typeof value === 'string' && value.trim()) {
-      pinnedModelIds.add(toCodexRuntimeModelId(value));
-    }
-  }
-  const absentPinnedSelections: string[] = [];
-  const currentModel = typeof settings.model === 'string' ? settings.model.trim() : '';
-  if (
-    codexSettings.discoveredModels.length === 0
-    && currentModel
-    && (
-      isCodexModelSelectionId(currentModel)
-      || looksLikeCodexModel(toCodexRuntimeModelId(currentModel))
-    )
-  ) {
-    absentPinnedSelections.push(currentModel);
-  }
-  const savedCodexModel = typeof savedProviderModel?.codex === 'string'
-    ? savedProviderModel.codex.trim()
-    : '';
-  if (codexSettings.discoveredModels.length === 0 && savedCodexModel) {
-    absentPinnedSelections.push(savedCodexModel);
-  }
-
   const pickerOrderedModels = getCodexModelsInPickerOrder(codexSettings.discoveredModels);
   const visibleDiscoveredModels = pickerOrderedModels
     .filter(model => visibleModelIds.has(model.model));
-  const pinnedDiscoveredModels = pickerOrderedModels.filter(model =>
-    !visibleModelIds.has(model.model) && pinnedModelIds.has(model.model)
-  );
   const models: ProviderUIOption[] = visibleDiscoveredModels.map(model => ({
     value: model.model,
     label: getModelLabel(model.model, model.displayName),
@@ -118,37 +77,6 @@ export function getCodexModelOptions(settings: Record<string, unknown>): Provide
       value: modelId,
       label: getModelLabel(modelId, formatCodexModelLabel(modelId)),
       description: 'Selected model',
-    });
-  }
-
-  for (const model of pinnedDiscoveredModels) {
-    seenModelIds.add(model.model);
-    models.push({
-      value: model.model,
-      label: getModelLabel(model.model, model.displayName),
-      description: model.description || undefined,
-    });
-  }
-
-  for (const selection of absentPinnedSelections) {
-    const modelId = toCodexRuntimeModelId(selection);
-    if (seenModelIds.has(modelId)) {
-      continue;
-    }
-
-    seenModelIds.add(modelId);
-    const fallbackOption = (
-      isCodexModelSelectionId(selection) || !looksLikeCodexModel(modelId)
-        ? createCustomCodexModelOption(modelId, 'Selected model')
-        : {
-          value: modelId,
-          label: formatCodexModelLabel(modelId),
-          description: 'Selected model',
-        }
-    );
-    models.push({
-      ...fallbackOption,
-      label: getModelLabel(modelId, fallbackOption.label),
     });
   }
 

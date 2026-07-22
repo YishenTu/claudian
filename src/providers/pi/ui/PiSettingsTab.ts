@@ -7,6 +7,7 @@ import type {
   ProviderSettingsTabRenderer,
   ProviderSettingsTabRendererContext,
 } from '../../../core/providers/types';
+import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import {
   type ProviderModelPickerModel,
@@ -35,8 +36,8 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName('Setup').setHeading();
 
     new Setting(container)
-      .setName('Enable Pi')
-      .setDesc('Launch `pi --mode rpc` as a provider.')
+      .setName(t('settings.providerEnablement.name', { provider: 'Pi' }))
+      .setDesc(t('settings.providerEnablement.desc', { provider: 'Pi' }))
       .addToggle((toggle) =>
         toggle
           .setValue(piSettings.enabled)
@@ -110,6 +111,16 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName('Models').setHeading();
     renderPiModelPicker(container, context, settingsBag);
+
+    new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
+    context.renderAgentSkillSettings(container, 'pi');
+
+    new Setting(container).setName('Commands').setHeading();
+    context.renderHiddenProviderCommandSetting(container, 'pi', {
+      name: 'Hidden Pi commands and skills',
+      desc: 'Hide runtime commands and skills advertised by Pi from the command dropdown. Enter exact names without the leading slash, one per line.',
+      placeholder: 'skill:review\ncompact',
+    });
 
     renderEnvironmentSettingsSection({
       container,
@@ -190,7 +201,7 @@ function renderPiModelPicker(
       context.refreshModelSelectors();
     },
     providerName: 'Pi',
-    settingDescription: 'Choose which Pi models appear in the chat selector. Filter by provider or type to search. The current session model stays pinned even if it is not selected here.',
+    settingDescription: 'Choose which Pi models are available in the chat selector. Filter by provider or type to search. Pi chat is unavailable when no models are selected.',
   });
 }
 

@@ -17,6 +17,8 @@ import type {
 } from '../types';
 import type { ProviderId } from '../types/provider';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
+import type { ProviderCommandDiscoveryResult } from './commands/ProviderCommandDiscoveryResult';
+import type { ProviderVaultEntryRepository } from './commands/ProviderVaultEntryRepository';
 import type { ProviderHost } from './ProviderHost';
 
 export type { ProviderId } from '../types/provider';
@@ -67,7 +69,7 @@ export interface ProviderRegistration {
   createInlineEditService: (plugin: ProviderHost) => InlineEditService;
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
-  subagentLifecycleAdapter?: ProviderSubagentLifecycleAdapter;
+  subagentAdapter?: ProviderSubagentAdapter;
 }
 
 export interface ProviderModule extends ProviderRegistration {
@@ -86,7 +88,12 @@ export interface ProviderSettingsStorageAdapter {
   ): boolean;
 }
 
+export type ProviderEnvironmentSessionPolicy = 'invalidate' | 'reload';
+
 export interface ProviderSettingsReconciler {
+  /** Defaults to `invalidate` for backward compatibility. */
+  environmentSessionPolicy?: ProviderEnvironmentSessionPolicy;
+
   handleEnvironmentChange?(settings: Record<string, unknown>): boolean;
 
   invalidateConversationSessions(conversations: Conversation[]): Conversation[];
@@ -358,7 +365,11 @@ export interface ProviderChatUIConfig {
 // Provider-owned boundary services
 // ---------------------------------------------------------------------------
 
-export interface ProviderCliResolutionContext {
+export interface ProviderTransitionOwnerContext {
+  providerTransitionOwner?: boolean;
+}
+
+export interface ProviderCliResolutionContext extends ProviderTransitionOwnerContext {
   executionTarget?: unknown;
 }
 
@@ -381,8 +392,15 @@ export interface ProviderRuntimeCommandLoaderContext {
 }
 
 export interface ProviderRuntimeCommandLoader {
+  /**
+   * Returns a provider-owned, non-secret identity for inputs that affect command discovery.
+   * Raw settings, environment values, session state, and external paths must not be included.
+   */
+  getCacheFingerprint(settings: Record<string, unknown>): string;
   isAvailable(settings: Record<string, unknown>): boolean;
-  loadCommands(context: ProviderRuntimeCommandLoaderContext): Promise<SlashCommand[]>;
+  loadCommands(
+    context: ProviderRuntimeCommandLoaderContext,
+  ): Promise<ProviderCommandDiscoveryResult<SlashCommand>>;
 }
 
 // `commands` warms provider-owned command discovery without fully priming the
@@ -408,16 +426,24 @@ export interface ProviderTabWarmupPolicy {
   resolveMode(context: ProviderTabWarmupContext): ProviderTabWarmupMode;
 }
 
+export interface ProviderEnvironmentTransition {
+  release(): Promise<void>;
+}
+
 export interface ProviderWorkspaceServices {
   commandCatalog?: ProviderCommandCatalog | null;
+  vaultCommandRepository?: ProviderVaultEntryRepository | null;
   agentMentionProvider?: AgentMentionProvider | null;
   cliResolver?: ProviderCliResolver | null;
   runtimeCommandLoader?: ProviderRuntimeCommandLoader | null;
   tabWarmupPolicy?: ProviderTabWarmupPolicy | null;
   mcpServerManager?: McpServerManager | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
-  refreshAgentMentions?(): Promise<void>;
-  refreshModelCatalog?(): Promise<ProviderModelCatalogRefreshResult>;
+  refreshAgentMentions?(context?: ProviderTransitionOwnerContext): Promise<void>;
+  refreshModelCatalog?(
+    context?: ProviderTransitionOwnerContext,
+  ): Promise<ProviderModelCatalogRefreshResult>;
+  beginAuxiliaryServicesEnvironmentChange?(): Promise<ProviderEnvironmentTransition>;
   prepareSettings?(): Promise<void>;
   dispose?(): Promise<void> | void;
 }
@@ -432,6 +458,10 @@ export interface ProviderModelCatalogRefreshResult {
 
 export interface ProviderSettingsTabRendererContext {
   plugin: ProviderHost;
+  renderAgentSkillSettings(
+    container: HTMLElement,
+    providerId: ProviderId,
+  ): void;
   renderHiddenProviderCommandSetting(
     container: HTMLElement,
     providerId: ProviderId,
@@ -439,7 +469,7 @@ export interface ProviderSettingsTabRendererContext {
   ): void;
   refreshModelSelectors(): void;
   refreshTitleGenerationModelOptions(): void;
-  renderCustomContextLimits(container: HTMLElement, providerId?: ProviderId): void;
+  renderCustomContextLimits(container: HTMLElement, providerId: ProviderId): void;
 }
 
 export interface ProviderSettingsTabRenderer {
@@ -547,8 +577,19 @@ export interface ProviderSubagentWaitResult {
   timedOut: boolean;
 }
 
+export interface ProviderManagedSubagentAdapter {
+  protocol: 'managed-agent';
+  isOutputTool(name: string): boolean;
+  isSpawnTool(name: string): boolean;
+}
+
 export interface ProviderSubagentLifecycleAdapter {
+  protocol: 'lifecycle';
   isHiddenTool(name: string): boolean;
+  isToolCallFullyOwned(
+    toolCall: ToolCallInfo,
+    agentIdToSpawnId: ReadonlyMap<string, string>,
+  ): boolean;
   isSpawnTool(name: string): boolean;
   isWaitTool(name: string): boolean;
   isCloseTool(name: string): boolean;
@@ -560,9 +601,19 @@ export interface ProviderSubagentLifecycleAdapter {
     spawnToolCall: ToolCallInfo,
     siblingToolCalls?: ToolCallInfo[],
   ): SubagentInfo;
-  extractSpawnResult(raw: string | undefined): ProviderSubagentLaunchResult;
-  extractWaitResult(raw: string | undefined): ProviderSubagentWaitResult;
+  extractSpawnResult(
+    raw: string | undefined,
+    toolCall?: ToolCallInfo,
+  ): ProviderSubagentLaunchResult;
+  extractWaitResult(
+    raw: string | undefined,
+    toolCall?: ToolCallInfo,
+  ): ProviderSubagentWaitResult;
 }
+
+export type ProviderSubagentAdapter =
+  | ProviderManagedSubagentAdapter
+  | ProviderSubagentLifecycleAdapter;
 
 // ---------------------------------------------------------------------------
 // Auxiliary service contracts

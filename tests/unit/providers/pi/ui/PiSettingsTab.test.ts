@@ -341,6 +341,7 @@ function createContext(settings: Record<string, unknown>) {
         await saveSettings();
       }),
     },
+    renderAgentSkillSettings: jest.fn(),
     refreshModelSelectors: jest.fn(),
     refreshTitleGenerationModelOptions: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),
@@ -403,7 +404,11 @@ describe('PiSettingsTab', () => {
     const settings: Record<string, unknown> = { providerConfigs: { pi: { enabled: false } } };
     const context = render(settings);
 
-    await findSetting('Enable Pi').toggleComponents[0].onChangeCallback?.(true);
+    const enableSetting = findSetting('Enable Pi');
+    expect(enableSetting.desc).toBe(
+      'Make enabled Pi models available for new conversations. Existing sessions are preserved when disabled.',
+    );
+    await enableSetting.toggleComponents[0].onChangeCallback?.(true);
 
     expect(getPiProviderSettings(settings).enabled).toBe(true);
     expect(context.plugin.saveSettings).toHaveBeenCalled();
@@ -411,11 +416,19 @@ describe('PiSettingsTab', () => {
     expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalled();
   });
 
-  it('does not render hidden command settings for Pi', () => {
+  it('renders shared skills and keeps hidden provider commands separate', () => {
     const settings: Record<string, unknown> = { providerConfigs: { pi: {} } };
     const context = render(settings);
 
-    expect(context.renderHiddenProviderCommandSetting).not.toHaveBeenCalled();
+    expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(
+      expect.anything(),
+      'pi',
+    );
+    expect(context.renderHiddenProviderCommandSetting).toHaveBeenCalledWith(
+      expect.anything(),
+      'pi',
+      expect.objectContaining({ name: 'Hidden Pi commands and skills' }),
+    );
   });
 
   it('does not render the chat input tool mode setting for Pi', () => {

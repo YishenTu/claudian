@@ -123,6 +123,57 @@ describe('CodexSkillListingService', () => {
     expect(fetchSkills).toHaveBeenNthCalledWith(2, false);
   });
 
+  it('does not let a pre-invalidation response repopulate the cache', async () => {
+    const { service, fetchSkills } = createService(5_000);
+    let resolveStale!: (skills: SkillMetadata[]) => void;
+    fetchSkills
+      .mockImplementationOnce(() => new Promise(resolve => { resolveStale = resolve; }))
+      .mockResolvedValueOnce([makeSkill('fresh')]);
+
+    const staleRequest = service.listSkills();
+    service.invalidate();
+    resolveStale([makeSkill('stale')]);
+    await expect(staleRequest).resolves.toEqual([makeSkill('stale')]);
+
+    await expect(service.listSkills()).resolves.toEqual([makeSkill('fresh')]);
+    expect(fetchSkills).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let an older normal response overwrite a newer forced refresh', async () => {
+    const { service, fetchSkills } = createService(5_000);
+    let resolveStale!: (skills: SkillMetadata[]) => void;
+    fetchSkills
+      .mockImplementationOnce(() => new Promise(resolve => { resolveStale = resolve; }))
+      .mockResolvedValueOnce([makeSkill('fresh')]);
+
+    const staleRequest = service.listSkills();
+    await expect(service.listSkills({ forceReload: true })).resolves.toEqual([makeSkill('fresh')]);
+    resolveStale([makeSkill('stale')]);
+    await expect(staleRequest).resolves.toEqual([makeSkill('stale')]);
+
+    await expect(service.listSkills()).resolves.toEqual([makeSkill('fresh')]);
+  });
+
+  it('coalesces a normal request behind an in-flight forced refresh', async () => {
+    const { service, fetchSkills } = createService(5_000);
+    let resolveForced!: (skills: SkillMetadata[]) => void;
+    fetchSkills.mockImplementationOnce(() => new Promise(resolve => {
+      resolveForced = resolve;
+    }));
+
+    const forcedRequest = service.listSkills({ forceReload: true });
+    const normalRequest = service.listSkills();
+
+    expect(fetchSkills).toHaveBeenCalledTimes(1);
+    expect(fetchSkills).toHaveBeenCalledWith(true);
+
+    resolveForced([makeSkill('fresh')]);
+    await expect(forcedRequest).resolves.toEqual([makeSkill('fresh')]);
+    await expect(normalRequest).resolves.toEqual([makeSkill('fresh')]);
+    await expect(service.listSkills()).resolves.toEqual([makeSkill('fresh')]);
+    expect(fetchSkills).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the launch spec target cwd when fetching skills from Codex', async () => {
     mockResolveLaunchSpec.mockReturnValue({
       target: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' },

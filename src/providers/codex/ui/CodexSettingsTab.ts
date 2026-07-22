@@ -12,7 +12,6 @@ import { getDefaultCodexModel } from '../models';
 import { isWindowsStyleCliReference } from '../runtime/CodexBinaryLocator';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
 import { renderCodexModelPicker } from './CodexModelPicker';
-import { CodexSkillSettings } from './CodexSkillSettings';
 import { CodexSubagentSettings } from './CodexSubagentSettings';
 
 export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
@@ -38,8 +37,8 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName(t('settings.setup')).setHeading();
 
     new Setting(container)
-      .setName(t('settings.codex.enableProvider.name'))
-      .setDesc(t('settings.codex.enableProvider.desc'))
+      .setName(t('settings.providerEnablement.name', { provider: 'Codex' }))
+      .setDesc(t('settings.providerEnablement.desc', { provider: 'Codex' }))
       .addToggle((toggle) =>
         toggle
           .setValue(codexSettings.enabled)
@@ -281,19 +280,8 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     // --- Skills ---
 
-    const codexCatalog = codexWorkspace.commandCatalog;
-    if (codexCatalog) {
-      new Setting(container).setName(t('settings.codex.skills.name')).setHeading();
-
-      const skillsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
-      skillsDesc.createEl('p', {
-        cls: 'setting-item-description',
-        text: t('settings.codex.skills.desc'),
-      });
-
-      const skillsContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
-      new CodexSkillSettings(skillsContainer, codexCatalog, context.plugin.app);
-    }
+    new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
+    context.renderAgentSkillSettings(container, 'codex');
 
     context.renderHiddenProviderCommandSetting(container, 'codex', {
       name: t('settings.codex.skills.hiddenName'),

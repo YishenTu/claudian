@@ -28,6 +28,7 @@
 - Command discovery warmup for blank tabs should use the isolated metadata database, not a persisted conversation session.
 - Do not let command discovery create a real session for history-backed conversations that have messages but no provider session yet.
 - OpenCode agent definitions are stored under `.opencode/agent` and `.opencode/agents`; keep parsing and serialization in `OpencodeAgentStorage`.
+- Only explicitly enabled models belong in the chat selector. Do not add a synthetic OpenCode entry, preserve hidden session models, or use the ACP default when none are enabled.
 
 ## Gotchas
 

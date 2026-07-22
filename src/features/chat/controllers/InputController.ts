@@ -26,7 +26,14 @@ import type {
   ChatTurnRequest,
 } from '../../../core/runtime/types';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
-import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision, StreamChunk } from '../../../core/types';
+import type {
+  ApprovalDecision,
+  ChatMessage,
+  ExitPlanModeDecision,
+  ExitPlanModePresentationOptions,
+  StreamChunk,
+} from '../../../core/types';
+import { t } from '../../../i18n/i18n';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import type { BrowserSelectionContext } from '../../../utils/browser';
@@ -123,6 +130,13 @@ export interface SendMessageOptions {
   turnRequestOverride?: ChatTurnRequest;
 }
 
+interface PendingProviderUserMessage {
+  displayContent: string;
+  persistedContent?: string;
+  currentNote?: string;
+  images?: ChatMessage['images'];
+}
+
 export class InputController {
   private deps: InputControllerDeps;
   private pendingApprovalInline: InlineAskUserQuestion | null = null;
@@ -135,12 +149,7 @@ export class InputController {
   private steerInFlight = false;
   private pendingSteerMessage: QueuedMessage | null = null;
   private activeStreamingAssistantMessage: ChatMessage | null = null;
-  private pendingProviderUserMessages: Array<{
-    displayContent: string;
-    persistedContent?: string;
-    currentNote?: string;
-    images?: ChatMessage['images'];
-  }> = [];
+  private pendingProviderUserMessages: PendingProviderUserMessage[] = [];
   private sawInitialProviderUserMessage = false;
   private awaitingProviderAssistantStart = false;
   private readonly turnCoordinator: TurnCoordinator<SendMessageOptions>;
@@ -238,6 +247,11 @@ export class InputController {
       ? imageOverride.length > 0
       : (imageContextManager?.hasImages() ?? false);
     if (!content && !hasImages) return;
+
+    if (state.isRewinding) {
+      new Notice(t('chat.rewind.inProgress'));
+      return;
+    }
 
     // Check for built-in commands first (e.g., /clear, /new, /add-dir)
     const builtInCmd = detectBuiltInCommand(content);
@@ -715,6 +729,20 @@ export class InputController {
     this.updateQueueIndicator();
   }
 
+  restoreRewoundMessageToComposer(
+    message: Pick<ChatMessage, 'content' | 'images'>,
+  ): void {
+    this.restoreMessageToInput({
+      canvasContext: null,
+      content: message.content,
+      editorContext: null,
+      images: message.images,
+    });
+    const inputEl = this.deps.getInputEl();
+    const EventConstructor = inputEl.ownerDocument?.defaultView?.Event ?? Event;
+    inputEl.dispatchEvent(new EventConstructor('input', { bubbles: true }));
+  }
+
   private restoreMessageToInput(
     message: QueuedMessage | null,
     options: { mergeWithComposer?: boolean } = {},
@@ -733,8 +761,8 @@ export class InputController {
       ? (imageContextManager?.getAttachedImages() ?? [])
       : [];
     const restoredImages = [...(images ?? []), ...currentImages];
-    if (restoredImages.length > 0) {
-      imageContextManager?.setImages(restoredImages);
+    if (imageContextManager && (!options.mergeWithComposer || restoredImages.length > 0)) {
+      imageContextManager.setImages(restoredImages);
     }
     this.deps.resetInputHeight();
     inputEl.focus();
@@ -998,35 +1026,46 @@ export class InputController {
     this.pendingSteerMessage = queuedMessage;
     this.steerInFlight = true;
     this.updateQueueIndicator();
+    let expectedProviderMessage: PendingProviderUserMessage | null = null;
 
     try {
       const { displayContent, request } = this.toQueuedChatTurn(queuedMessage);
 
       await agentService.prepareForTurn?.();
       const preparedTurn = agentService.prepareTurn(request);
-      const accepted = await agentService.steer(preparedTurn);
-      if (state.cancelRequested || !this.pendingSteerMessage) {
-        return;
-      }
-      if (!accepted) {
-        this.restoreQueuedMessageAfterSteerFailure(queuedMessage);
-        return;
-      }
-
-      this.deps.getFileContextManager()?.markCurrentNoteSent();
-
-      this.pendingProviderUserMessages.push({
+      expectedProviderMessage = {
         displayContent,
         persistedContent: preparedTurn.persistedContent,
         currentNote: preparedTurn.isCompact
           ? undefined
           : preparedTurn.request.currentNotePath,
         images: request.images,
-      });
+      };
+      this.pendingProviderUserMessages.push(expectedProviderMessage);
+      const accepted = await agentService.steer(preparedTurn);
+      if (state.cancelRequested) {
+        this.removePendingProviderUserMessage(expectedProviderMessage);
+        return;
+      }
+      if (!accepted) {
+        this.removePendingProviderUserMessage(expectedProviderMessage);
+        this.restoreQueuedMessageAfterSteerFailure(queuedMessage);
+        return;
+      }
+
+      this.deps.getFileContextManager()?.markCurrentNoteSent();
     } catch {
+      if (expectedProviderMessage) {
+        this.removePendingProviderUserMessage(expectedProviderMessage);
+      }
       this.restoreQueuedMessageAfterSteerFailure(queuedMessage);
-      new Notice('Failed to steer the queued Codex message. It is still available.');
+      new Notice('Failed to steer the queued message. It is still available.');
     }
+  }
+
+  private removePendingProviderUserMessage(message: PendingProviderUserMessage): void {
+    const index = this.pendingProviderUserMessages.indexOf(message);
+    if (index >= 0) this.pendingProviderUserMessages.splice(index, 1);
   }
 
   private restoreQueuedMessageAfterSteerFailure(
@@ -1320,6 +1359,13 @@ export class InputController {
     streamController.hideThinkingIndicator();
   }
 
+  /** Cancels the active turn and waits for its cleanup and conversation persistence. */
+  async cancelStreamingAndWait(): Promise<void> {
+    const activeTurn = this.turnCoordinator.current;
+    this.cancelStreaming();
+    await activeTurn;
+  }
+
   private syncScrollToBottomAfterRenderUpdates(): void {
     const { plugin, state } = this.deps;
     if (!(plugin.settings.enableAutoScroll ?? true)) return;
@@ -1583,6 +1629,7 @@ export class InputController {
   async handleExitPlanMode(
     input: Record<string, unknown>,
     signal?: AbortSignal,
+    presentation?: ExitPlanModePresentationOptions,
   ): Promise<ExitPlanModeDecision | null> {
     const { state, streamController } = this.deps;
     const inputContainerEl = this.deps.getInputContainerEl();
@@ -1615,6 +1662,7 @@ export class InputController {
         signal,
         renderContent,
         planPathPrefix,
+        presentation,
       );
       this.pendingExitPlanModeInline = inline;
       try {

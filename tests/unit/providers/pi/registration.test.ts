@@ -43,7 +43,10 @@ describe('Pi provider registration', () => {
   it('routes Pi model ids through the provider registry', () => {
     const settings = {
       providerConfigs: {
-        pi: { enabled: true },
+        pi: {
+          enabled: true,
+          visibleModels: ['pi:anthropic/claude-sonnet-4'],
+        },
       },
     };
 

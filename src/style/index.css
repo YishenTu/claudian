@@ -54,6 +54,7 @@
 @import "./settings/mcp-settings.css";
 @import "./settings/plugin-settings.css";
 @import "./settings/agent-settings.css";
+@import "./settings/agent-skills.css";
 @import "./settings/provider-model-picker.css";
 
 /* Accessibility */

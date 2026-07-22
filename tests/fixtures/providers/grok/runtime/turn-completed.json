@@ -1,0 +1,35 @@
+{
+  "method": "_x.ai/session_notification",
+  "params": {
+    "method": "x.ai/session_notification",
+    "params": {
+      "sessionId": "session-fixture",
+      "update": {
+        "sessionUpdate": "turn_completed",
+        "prompt_id": "prompt-fixture",
+        "stop_reason": "end_turn",
+        "usage": {
+          "inputTokens": 10327,
+          "outputTokens": 50,
+          "totalTokens": 10377,
+          "cachedReadTokens": 1280,
+          "reasoningTokens": 0,
+          "modelCalls": 1,
+          "apiDurationMs": 2254,
+          "modelUsage": {
+            "custom-model": {
+              "inputTokens": 10327,
+              "outputTokens": 50,
+              "totalTokens": 10377,
+              "cachedReadTokens": 1280,
+              "reasoningTokens": 0,
+              "modelCalls": 1,
+              "apiDurationMs": 2254
+            }
+          },
+          "numTurns": 1
+        }
+      }
+    }
+  }
+}

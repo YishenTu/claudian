@@ -5,6 +5,7 @@ import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels'
 import { getProviderSettingsSnapshotWithModel } from '@/core/providers/conversationModel';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import type { ProviderSettingsReconciler } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
 import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/settings';
 
@@ -218,6 +219,71 @@ describe('ProviderSettingsCoordinator', () => {
       );
 
       reconcileSpy.mockRestore();
+    });
+
+    it('defaults existing providers to invalidation and separates reload-policy providers', () => {
+      const defaultReconciler: ProviderSettingsReconciler = {
+        invalidateConversationSessions: jest.fn(conversations => conversations),
+        reconcileModelWithEnvironment: jest.fn((_settings, conversations) => ({
+          changed: true,
+          invalidatedConversations: conversations,
+        })),
+        normalizeModelVariantSettings: jest.fn(() => false),
+      };
+      const reloadReconciler: ProviderSettingsReconciler = {
+        environmentSessionPolicy: 'reload',
+        invalidateConversationSessions: jest.fn(conversations => conversations),
+        reconcileModelWithEnvironment: jest.fn(() => ({
+          changed: true,
+          invalidatedConversations: [],
+        })),
+        normalizeModelVariantSettings: jest.fn(() => false),
+      };
+      const originalGetSettingsReconciler = ProviderRegistry.getSettingsReconciler.bind(
+        ProviderRegistry,
+      );
+      const originalGetChatUIConfig = ProviderRegistry.getChatUIConfig.bind(ProviderRegistry);
+      const reconcilerSpy = jest.spyOn(ProviderRegistry, 'getSettingsReconciler')
+        .mockImplementation((providerId) => {
+          if (providerId === 'fake-invalidate') return defaultReconciler;
+          if (providerId === 'fake-reload') return reloadReconciler;
+          return originalGetSettingsReconciler(providerId);
+        });
+      const settingsProviderSpy = jest.spyOn(ProviderRegistry, 'resolveSettingsProviderId')
+        .mockReturnValue('fake-invalidate');
+      const uiConfigSpy = jest.spyOn(ProviderRegistry, 'getChatUIConfig')
+        .mockImplementation((providerId) => (
+          providerId === 'fake-invalidate' || providerId === 'fake-reload'
+            ? originalGetChatUIConfig('claude')
+            : originalGetChatUIConfig(providerId)
+        ));
+      const invalidatedConversation = {
+        id: 'invalidate-conversation',
+        providerId: 'fake-invalidate',
+        messages: [],
+      } as unknown as Conversation;
+      const preservedConversation = {
+        id: 'reload-conversation',
+        providerId: 'fake-reload',
+        messages: [],
+      } as unknown as Conversation;
+
+      const result = ProviderSettingsCoordinator.reconcileProviders(
+        { model: 'haiku' },
+        [invalidatedConversation, preservedConversation],
+        ['fake-invalidate', 'fake-reload'],
+      );
+      reconcilerSpy.mockRestore();
+      settingsProviderSpy.mockRestore();
+      uiConfigSpy.mockRestore();
+
+      expect(defaultReconciler.environmentSessionPolicy).toBeUndefined();
+      expect(result.environmentChangedProviderIds).toEqual([
+        'fake-invalidate',
+        'fake-reload',
+      ]);
+      expect(result.sessionInvalidationProviderIds).toEqual(['fake-invalidate']);
+      expect(result.invalidatedConversations).toEqual([invalidatedConversation]);
     });
   });
 
@@ -600,6 +666,7 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.model).toBe('claude-sonnet-4-5');
       expect(settings.effortLevel).toBe('high');
     });
+
   });
 
   describe('persistProjectedProviderState', () => {
@@ -640,6 +707,7 @@ describe('ProviderSettingsCoordinator', () => {
         codex: 'normal',
       });
     });
+
   });
 
   describe('projectProviderState', () => {

@@ -15,7 +15,6 @@ import type {
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type {
   ApprovalCallback,
-  ApprovalDecisionOption,
   AskUserQuestionCallback,
   AutoTurnCallback,
   ChatRewindMode,
@@ -29,7 +28,6 @@ import type {
   SessionUpdateResult,
 } from '../../../core/runtime/types';
 import type {
-  ApprovalDecision,
   ChatMessage,
   Conversation,
   ExitPlanModeCallback,
@@ -58,13 +56,17 @@ import {
   extractAcpSessionModelState,
   extractAcpSessionModeState,
   extractAcpSessionThoughtLevelState,
+  resolveAcpLoadSessionId,
 } from '../../acp';
+import {
+  buildAcpApprovalDecisionOptions,
+  mapAcpApprovalDecision,
+} from '../../acp/AcpPermissionAdapter';
 import { OPENCODE_PROVIDER_CAPABILITIES } from '../capabilities';
 import { updateOpencodeDiscoveryState } from '../discoveryState';
 import {
   sameDiscoveredModels,
   sameModes,
-  sameStringList,
   sameStringMap,
   sameThinkingOptionsByModel,
 } from '../internal/compareCollections';
@@ -76,7 +78,6 @@ import {
   normalizeOpencodeDiscoveredModels,
   normalizeOpencodeModelVariants,
   OPENCODE_DEFAULT_THINKING_LEVEL,
-  OPENCODE_SYNTHETIC_MODEL_ID,
   resolveOpencodeBaseModelRawId,
   resolveOpencodeDefaultThinkingLevel,
 } from '../models';
@@ -98,6 +99,12 @@ interface ActiveTurn {
   cancelled: boolean;
   queue: StreamChunkQueue;
   sessionId: string;
+}
+
+interface SupportedCommandWaiter {
+  reject: (error: Error) => void;
+  resolve: (commands: SlashCommand[]) => void;
+  timeoutId: number;
 }
 
 class StreamChunkQueue {
@@ -173,7 +180,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private lifecycleGeneration = 0;
   private restartRequiredAfterCancel = false;
   private sessionInvalidated = false;
-  private readonly supportedCommandWaiters: Array<(commands: SlashCommand[]) => void> = [];
+  private readonly pendingSupportedCommands = new Map<string, SlashCommand[]>();
+  private readonly supportedCommandListeners = new Set<(
+    commands: readonly SlashCommand[],
+  ) => void>();
+  private readonly supportedCommandWaiters: SupportedCommandWaiter[] = [];
+  private supportedCommandsAdvertised = false;
   private supportedCommands: SlashCommand[] = [];
   private sessionCwds = new Map<string, string>();
   private sessionId: string | null = null;
@@ -226,13 +238,17 @@ export class OpencodeChatRuntime implements ChatRuntime {
       || nextSessionId !== this.sessionId
       || nextDatabasePath !== this.currentDatabasePath;
     if (this.sessionId !== nextSessionId) {
+      this.rejectSupportedCommandWaiters(
+        new Error('OpenCode command discovery context changed.'),
+      );
+      this.pendingSupportedCommands.clear();
       this.currentSessionEffortConfigId = null;
       this.currentSessionEffortValue = null;
       this.currentSessionEffortValues = new Set<string>();
       this.currentSessionModelId = null;
       this.currentSessionModeId = null;
       this.sessionInvalidated = false;
-      this.setSupportedCommands([]);
+      this.clearSupportedCommands();
     }
     this.conversationId = nextConversationId;
     this.sessionId = nextSessionId;
@@ -367,7 +383,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       || this.currentLaunchKey !== nextLaunchKey;
 
     if (shouldRestart) {
-      await this.shutdownProcess();
+      await this.shutdownProcess({ preserveCommandWaiters: true });
       if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
         return false;
       }
@@ -429,6 +445,14 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
     if (queryOptions?.model) {
       this.setCurrentConversationModel(queryOptions.model);
+    }
+    if (!this.resolveSelectedRawModelId(queryOptions)) {
+      yield {
+        type: 'error',
+        content: 'No OpenCode model is selected. Enable a discovered model in Claudian settings.',
+      };
+      yield { type: 'done' };
+      return;
     }
     const conversationGeneration = this.conversationGeneration;
     const previousMessages = conversationHistory ?? [];
@@ -585,7 +609,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   async getSupportedCommands(): Promise<SlashCommand[]> {
-    if (this.supportedCommands.length > 0 && this.loadedSessionId === this.sessionId) {
+    if (this.supportedCommandsAdvertised && this.loadedSessionId === this.sessionId) {
       return [...this.supportedCommands];
     }
 
@@ -600,15 +624,45 @@ export class OpencodeChatRuntime implements ChatRuntime {
       return [];
     }
 
-    if (this.supportedCommands.length > 0) {
-      return [...this.supportedCommands];
-    }
-
     if (!this.sessionId || this.loadedSessionId !== this.sessionId) {
       return [];
     }
 
-    return this.waitForSupportedCommands();
+    try {
+      return await this.discoverSupportedCommands();
+    } catch {
+      return [];
+    }
+  }
+
+  discoverSupportedCommands(timeoutMs = 5_000): Promise<SlashCommand[]> {
+    if (this.supportedCommandsAdvertised && this.loadedSessionId === this.sessionId) {
+      return Promise.resolve(this.cloneSupportedCommands());
+    }
+
+    return new Promise<SlashCommand[]>((resolve, reject) => {
+      const waiter: SupportedCommandWaiter = {
+        reject,
+        resolve,
+        timeoutId: window.setTimeout(() => {
+          const index = this.supportedCommandWaiters.indexOf(waiter);
+          if (index >= 0) {
+            this.supportedCommandWaiters.splice(index, 1);
+          }
+          reject(new Error('Timed out waiting for OpenCode commands.'));
+        }, timeoutMs),
+      };
+      this.supportedCommandWaiters.push(waiter);
+    });
+  }
+
+  onSupportedCommandsChange(
+    listener: (commands: readonly SlashCommand[]) => void,
+  ): () => void {
+    this.supportedCommandListeners.add(listener);
+    return () => {
+      this.supportedCommandListeners.delete(listener);
+    };
   }
 
   cleanup(): void {
@@ -618,6 +672,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
     this.disposed = true;
     this.lifecycleGeneration += 1;
     this.activeTurn?.queue.close();
+    this.rejectSupportedCommandWaiters(new Error('OpenCode runtime stopped.'));
+    this.supportedCommandListeners.clear();
     void this.shutdownProcess();
   }
 
@@ -725,6 +781,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     this.unregisterTransportClose = transport.onClose((error) => {
       if (this.transport === transport) {
         this.setReady(false);
+        this.rejectSupportedCommandWaiters(error ?? new Error('OpenCode runtime closed.'));
         this.settleActiveTurn(error ?? new Error('OpenCode runtime closed'));
       }
     });
@@ -753,13 +810,17 @@ export class OpencodeChatRuntime implements ChatRuntime {
     await this.connection.initialize();
   }
 
-  private async shutdownProcess(): Promise<void> {
+  private async shutdownProcess(options?: { preserveCommandWaiters?: boolean }): Promise<void> {
     this.connectionGeneration += 1;
     this.setReady(false);
     this.settleActiveTurn();
     this.currentSessionModelId = null;
     this.currentSessionModeId = null;
-    this.setSupportedCommands([]);
+    if (!options?.preserveCommandWaiters) {
+      this.rejectSupportedCommandWaiters(new Error('OpenCode runtime stopped.'));
+    }
+    this.clearSupportedCommands();
+    this.pendingSupportedCommands.clear();
 
     this.unregisterTransportClose?.();
     this.unregisterTransportClose = null;
@@ -862,6 +923,11 @@ export class OpencodeChatRuntime implements ChatRuntime {
       return null;
     }
 
+    const visibleModels = getOpencodeProviderSettings(providerSettings).visibleModels;
+    if (!visibleModels.includes(normalizedBaseRawModelId)) {
+      return null;
+    }
+
     return normalizedBaseRawModelId;
   }
 
@@ -884,7 +950,6 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     if (
       selectedModel
-      && selectedModel !== OPENCODE_SYNTHETIC_MODEL_ID
       && isOpencodeModelSelectionId(selectedModel)
     ) {
       const selectedRawModelId = this.resolveSelectedRawModelId(queryOptions);
@@ -959,7 +1024,10 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     const selectedRawModelId = this.resolveSelectedRawModelId(queryOptions);
-    if (!selectedRawModelId || selectedRawModelId === this.currentSessionModelId) {
+    if (!selectedRawModelId) {
+      throw new Error('No OpenCode model is selected. Enable a discovered model in Claudian settings.');
+    }
+    if (selectedRawModelId === this.currentSessionModelId) {
       return;
     }
 
@@ -1084,9 +1152,6 @@ export class OpencodeChatRuntime implements ChatRuntime {
       }
     }
 
-    const nextVisibleModels = currentSettings.visibleModels.length === 0 && currentBaseRawModelId
-      ? [currentBaseRawModelId]
-      : currentSettings.visibleModels;
     const shouldSeedCurrentThinking = currentBaseRawModelId
       && defaultThinkingLevel
       && (
@@ -1102,7 +1167,6 @@ export class OpencodeChatRuntime implements ChatRuntime {
         [currentBaseRawModelId]: defaultThinkingLevel,
       }
       : currentSettings.preferredThinkingByModel;
-    const shouldSeedVisibleModels = !sameStringList(currentSettings.visibleModels, nextVisibleModels);
     const shouldSeedPreferredThinking = !sameStringMap(
       currentSettings.preferredThinkingByModel,
       nextPreferredThinkingByModel,
@@ -1115,9 +1179,9 @@ export class OpencodeChatRuntime implements ChatRuntime {
     );
     const discoveryChanged = shouldUpdateDiscoveredModels
       && updateOpencodeDiscoveryState(settingsBag, { discoveredModels });
-    let changed = shouldSeedVisibleModels || shouldSeedPreferredThinking;
+    let changed = shouldSeedPreferredThinking;
 
-    if (currentBaseRawModelId) {
+    if (currentBaseRawModelId && currentSettings.visibleModels.includes(currentBaseRawModelId)) {
       const probeSettings = {
         ...settingsBag,
         savedProviderEffort: {
@@ -1147,18 +1211,17 @@ export class OpencodeChatRuntime implements ChatRuntime {
         ) {
           return;
         }
-        if (currentBaseRawModelId) {
+        if (currentBaseRawModelId && currentSettings.visibleModels.includes(currentBaseRawModelId)) {
           this.seedActiveModelSelection(
             settings,
             encodeOpencodeModelId(currentBaseRawModelId),
             defaultThinkingLevel,
           );
         }
-        if (shouldUpdateThinkingOptions || shouldSeedPreferredThinking || shouldSeedVisibleModels) {
+        if (shouldUpdateThinkingOptions || shouldSeedPreferredThinking) {
           updateOpencodeProviderSettings(settings, {
             ...(shouldSeedPreferredThinking ? { preferredThinkingByModel: nextPreferredThinkingByModel } : {}),
             ...(shouldUpdateThinkingOptions ? { thinkingOptionsByModel: nextThinkingOptionsByModel } : {}),
-            ...(shouldSeedVisibleModels ? { visibleModels: nextVisibleModels } : {}),
           });
         }
       });
@@ -1182,7 +1245,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     const savedModel = typeof savedProviderModel.opencode === 'string'
       ? savedProviderModel.opencode
       : '';
-    if (!savedModel || savedModel === OPENCODE_SYNTHETIC_MODEL_ID) {
+    if (!savedModel) {
       savedProviderModel.opencode = modelSelection;
       changed = true;
     }
@@ -1207,7 +1270,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     const activeModel = typeof settingsBag.model === 'string' ? settingsBag.model : '';
-    if (!activeModel || activeModel === OPENCODE_SYNTHETIC_MODEL_ID) {
+    if (!activeModel) {
       settingsBag.model = modelSelection;
       changed = true;
     }
@@ -1320,7 +1383,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     try {
-      this.setSupportedCommands([]);
+      this.clearSupportedCommands();
       const response = await this.connection.newSession({
         cwd,
         mcpServers: [],
@@ -1331,6 +1394,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       this.loadedSessionId = response.sessionId;
       this.sessionId = response.sessionId;
       this.sessionCwds.set(response.sessionId, cwd);
+      this.publishPendingSupportedCommands(response.sessionId);
       await this.syncSessionModelState({
         configOptions: response.configOptions ?? null,
         models: response.models ?? null,
@@ -1347,6 +1411,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       }
       return response.sessionId;
     } catch {
+      this.rejectSupportedCommandWaiters(new Error('Failed to create an OpenCode session.'));
       return null;
     }
   }
@@ -1361,7 +1426,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     try {
-      this.setSupportedCommands([]);
+      this.clearSupportedCommands();
       const response = await this.connection.loadSession({
         cwd,
         mcpServers: [],
@@ -1370,10 +1435,11 @@ export class OpencodeChatRuntime implements ChatRuntime {
       if (!this.isConversationCurrent(conversationGeneration)) {
         return false;
       }
+      const loadedSessionId = resolveAcpLoadSessionId(response, sessionId);
       this.sessionInvalidated = false;
-      this.loadedSessionId = response.sessionId;
-      this.sessionId = response.sessionId;
-      this.sessionCwds.set(response.sessionId, cwd);
+      this.loadedSessionId = loadedSessionId;
+      this.sessionId = loadedSessionId;
+      this.sessionCwds.set(loadedSessionId, cwd);
       await this.syncSessionModelState({
         configOptions: response.configOptions ?? null,
         models: response.models ?? null,
@@ -1401,11 +1467,30 @@ export class OpencodeChatRuntime implements ChatRuntime {
     if (connectionGeneration !== this.connectionGeneration) {
       return;
     }
-    if (notification.sessionId !== this.sessionId) {
+    let normalized: ReturnType<AcpSessionUpdateNormalizer['normalize']>;
+    try {
+      normalized = this.sessionUpdateNormalizer.normalize(notification.update);
+    } catch {
+      if (notification.update.sessionUpdate === 'available_commands_update') {
+        this.rejectSupportedCommandWaiters(
+          new Error('OpenCode sent malformed command metadata.'),
+        );
+      }
       return;
     }
-
-    const normalized = this.sessionUpdateNormalizer.normalize(notification.update);
+    if (notification.sessionId !== this.sessionId) {
+      if (
+        normalized.type === 'commands'
+        && !this.sessionId
+        && this.supportedCommandWaiters.length > 0
+      ) {
+        this.pendingSupportedCommands.set(
+          notification.sessionId,
+          normalized.commands.map((command) => ({ ...command })),
+        );
+      }
+      return;
+    }
     if (normalized.type === 'config_options') {
       await this.syncSessionModelState({
         configOptions: normalized.configOptions,
@@ -1424,7 +1509,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     if (normalized.type === 'commands') {
-      this.setSupportedCommands(normalized.commands);
+      this.publishSupportedCommands(normalized.commands);
       return;
     }
 
@@ -1497,38 +1582,54 @@ export class OpencodeChatRuntime implements ChatRuntime {
       },
     );
 
-    return mapApprovalDecision(decision, request.options);
+    return mapAcpApprovalDecision(decision, request.options);
   }
 
-  private setSupportedCommands(commands: SlashCommand[]): void {
+  private publishSupportedCommands(commands: SlashCommand[]): void {
     this.supportedCommands = commands.map((command) => ({ ...command }));
+    this.supportedCommandsAdvertised = true;
 
     const waiters = this.supportedCommandWaiters.splice(0);
     for (const waiter of waiters) {
-      waiter(this.supportedCommands);
+      window.clearTimeout(waiter.timeoutId);
+      waiter.resolve(this.cloneSupportedCommands());
+    }
+
+    const snapshot = Object.freeze(this.supportedCommands.map((command) => (
+      Object.freeze({ ...command })
+    )));
+    for (const listener of this.supportedCommandListeners) {
+      try {
+        listener(snapshot);
+      } catch {
+        // Command snapshot observers cannot affect the provider runtime.
+      }
     }
   }
 
-  private waitForSupportedCommands(timeoutMs = 250): Promise<SlashCommand[]> {
-    if (this.supportedCommands.length > 0) {
-      return Promise.resolve([...this.supportedCommands]);
+  private publishPendingSupportedCommands(sessionId: string): void {
+    const commands = this.pendingSupportedCommands.get(sessionId);
+    this.pendingSupportedCommands.clear();
+    if (commands) {
+      this.publishSupportedCommands(commands);
     }
+  }
 
-    return new Promise<SlashCommand[]>((resolve) => {
-      const waiter = (commands: SlashCommand[]) => {
-        window.clearTimeout(timeoutId);
-        resolve([...commands]);
-      };
-      const timeoutId = window.setTimeout(() => {
-        const index = this.supportedCommandWaiters.indexOf(waiter);
-        if (index >= 0) {
-          this.supportedCommandWaiters.splice(index, 1);
-        }
-        resolve([...this.supportedCommands]);
-      }, timeoutMs);
+  private clearSupportedCommands(): void {
+    this.supportedCommands = [];
+    this.supportedCommandsAdvertised = false;
+  }
 
-      this.supportedCommandWaiters.push(waiter);
-    });
+  private cloneSupportedCommands(): SlashCommand[] {
+    return this.supportedCommands.map((command) => ({ ...command }));
+  }
+
+  private rejectSupportedCommandWaiters(error: Error): void {
+    const waiters = this.supportedCommandWaiters.splice(0);
+    for (const waiter of waiters) {
+      window.clearTimeout(waiter.timeoutId);
+      waiter.reject(error);
+    }
   }
 
   private async readTextFile(
@@ -1584,7 +1685,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
     this.loadedSessionId = null;
     this.currentSessionModelId = null;
     this.currentSessionModeId = null;
-    this.setSupportedCommands([]);
+    this.clearSupportedCommands();
+    this.pendingSupportedCommands.clear();
   }
 }
 
@@ -1797,75 +1899,4 @@ function formatPermissionLabel(permissionId: string): string {
     .filter(Boolean)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(' ');
-}
-
-function mapApprovalDecision(
-  decision: ApprovalDecision,
-  options: readonly {
-    kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
-    optionId: string;
-  }[],
-): AcpRequestPermissionResponse {
-  if (decision === 'allow') {
-    return selectPermissionOption(options, ['allow_once', 'allow_always']);
-  }
-
-  if (decision === 'allow-always') {
-    return selectPermissionOption(options, ['allow_always', 'allow_once']);
-  }
-
-  if (decision === 'deny') {
-    return selectPermissionOption(options, ['reject_once', 'reject_always']);
-  }
-
-  if (typeof decision === 'object' && decision.type === 'select-option') {
-    return {
-      outcome: {
-        optionId: decision.value,
-        outcome: 'selected',
-      },
-    };
-  }
-
-  return { outcome: { outcome: 'cancelled' } };
-}
-
-function buildAcpApprovalDecisionOptions(
-  options: readonly {
-    kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
-    name: string;
-    optionId: string;
-  }[],
-): ApprovalDecisionOption[] {
-  return options.map((option) => ({
-    ...(option.kind === 'allow_once'
-      ? { decision: 'allow' as const }
-      : option.kind === 'allow_always'
-      ? { decision: 'allow-always' as const }
-      : {}),
-    label: option.name,
-    value: option.optionId,
-  }));
-}
-
-function selectPermissionOption(
-  options: readonly {
-    kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
-    optionId: string;
-  }[],
-  preferredKinds: readonly ('allow_once' | 'allow_always' | 'reject_once' | 'reject_always')[],
-): AcpRequestPermissionResponse {
-  for (const kind of preferredKinds) {
-    const option = options.find((entry) => entry.kind === kind);
-    if (option) {
-      return {
-        outcome: {
-          optionId: option.optionId,
-          outcome: 'selected',
-        },
-      };
-    }
-  }
-
-  return { outcome: { outcome: 'cancelled' } };
 }

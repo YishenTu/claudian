@@ -160,6 +160,10 @@ export class ClaudianView extends ItemView {
     this.tabManager?.invalidateProviderCommandCaches(providerIds);
   }
 
+  invalidateProviderResources(providerIds: ProviderId[], generation: number): void {
+    this.tabManager?.invalidateProviderResources(providerIds, generation);
+  }
+
   /** Updates provider-scoped hidden commands on all tabs after settings changes. */
   updateHiddenProviderCommands(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
@@ -239,6 +243,7 @@ export class ClaudianView extends ItemView {
           this.updateTabBar();
           this.updateHistoryDropdown();
         },
+        onTabRewindingChanged: () => this.updateTabBar(),
         onTabTitleChanged: () => this.updateTabBar(),
         onTabAttentionChanged: () => this.updateTabBar(),
         onTabConversationChanged: () => {
@@ -663,7 +668,7 @@ export class ClaudianView extends ItemView {
         ).permissionMode as string;
         if (current === 'plan') {
           const restoreMode = activeTab.state.prePlanPermissionMode ?? 'normal';
-          void updatePlanModeUI(activeTab, this.plugin, restoreMode)
+          void updatePlanModeUI(activeTab, this.plugin, restoreMode, { syncRuntime: true })
             .finally(() => {
               const activeMode = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
                 this.plugin.settings,
@@ -678,7 +683,7 @@ export class ClaudianView extends ItemView {
             });
         } else {
           activeTab.state.prePlanPermissionMode = current;
-          void updatePlanModeUI(activeTab, this.plugin, 'plan').catch((error: unknown) => {
+          void updatePlanModeUI(activeTab, this.plugin, 'plan', { syncRuntime: true }).catch((error: unknown) => {
             const activeMode = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
               this.plugin.settings,
               providerId,

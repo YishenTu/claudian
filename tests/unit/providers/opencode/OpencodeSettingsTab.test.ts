@@ -422,6 +422,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
 function createContext(plugin: any) {
   return {
     plugin,
+    renderAgentSkillSettings: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),
     refreshModelSelectors: jest.fn(),
     refreshTitleGenerationModelOptions: jest.fn(),
@@ -470,7 +471,11 @@ describe('OpencodeSettingsTab', () => {
     const context = createContext(plugin);
 
     opencodeSettingsTabRenderer.render(createContainer(), context);
-    await findSetting('Enable OpenCode').toggleComponents[0].onChangeCallback?.(false);
+    const enableSetting = findSetting('Enable OpenCode');
+    expect(enableSetting.desc).toBe(
+      'Make enabled OpenCode models available for new conversations. Existing sessions are preserved when disabled.',
+    );
+    await enableSetting.toggleComponents[0].onChangeCallback?.(false);
 
     expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalledTimes(1);
   });
@@ -498,13 +503,17 @@ describe('OpencodeSettingsTab', () => {
     expect(mockRefreshModelSelector).toHaveBeenCalledTimes(2);
   });
 
-  it('renders a notice explaining where vault-level commands and skills are managed', () => {
+  it('renders the shared skill manager and keeps hidden runtime commands separate', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
     opencodeSettingsTabRenderer.render(createContainer(), context);
 
-    expect(findSetting('Commands and skills').heading).toBe(true);
+    expect(findSetting('Skills').heading).toBe(true);
+    expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(
+      expect.anything(),
+      'opencode',
+    );
     expect(context.renderHiddenProviderCommandSetting).toHaveBeenCalledWith(
       expect.anything(),
       'opencode',
@@ -513,12 +522,6 @@ describe('OpencodeSettingsTab', () => {
         desc: 'Hide specific OpenCode commands and skills from the dropdown. Enter names without the leading slash, one per line.',
       }),
     );
-
-    expect(createdElements).toContainEqual({
-      cls: 'setting-item-description',
-      tag: 'p',
-      text: 'OpenCode can auto-detect vault-level Claude slash commands from .claude/commands/ and skills from .claude/skills/, .codex/skills/, and .agents/skills/. Manage those entries in the Claude or Codex settings tab. This setting only hides entries from the OpenCode dropdown.',
-    });
   });
 
   it('renders vault subagent settings and refreshes runtime state when they change', async () => {

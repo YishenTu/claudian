@@ -3,7 +3,7 @@ import type {
   ProviderConversationSessionAvailability,
   ProviderHistoryPathContext,
 } from '../../../core/providers/types';
-import { isSubagentToolName, TOOL_TASK } from '../../../core/tools/toolNames';
+import { TOOL_SUBAGENT } from '../../../core/tools/toolNames';
 import type {
   AsyncSubagentStatus,
   ChatMessage,
@@ -13,6 +13,7 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
+import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
 import {
   deleteSDKSession,
@@ -118,13 +119,13 @@ function ensureTaskToolCall(
 ): ToolCallInfo {
   msg.toolCalls = msg.toolCalls || [];
   let taskToolCall = msg.toolCalls.find(
-    tc => tc.id === subagentId && isSubagentToolName(tc.name),
+    tc => tc.id === subagentId && isClaudeSubagentToolName(tc.name),
   );
 
   if (!taskToolCall) {
     taskToolCall = {
       id: subagentId,
-      name: TOOL_TASK,
+      name: TOOL_SUBAGENT,
       input: {
         description: subagent.description,
         prompt: subagent.prompt || '',
@@ -138,6 +139,8 @@ function ensureTaskToolCall(
     msg.toolCalls.push(taskToolCall);
     return taskToolCall;
   }
+
+  taskToolCall.name = TOOL_SUBAGENT;
 
   if (!taskToolCall.input.description) {
     taskToolCall.input.description = subagent.description;
@@ -365,7 +368,7 @@ function buildPersistedSubagentData(messages: ChatMessage[]): Record<string, Sub
     if (msg.role !== 'assistant' || !msg.toolCalls) continue;
 
     for (const toolCall of msg.toolCalls) {
-      if (!isSubagentToolName(toolCall.name) || !toolCall.subagent) continue;
+      if (!isClaudeSubagentToolName(toolCall.name) || !toolCall.subagent) continue;
       result[toolCall.subagent.id] = toolCall.subagent;
     }
   }

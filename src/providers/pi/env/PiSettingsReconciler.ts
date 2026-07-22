@@ -92,33 +92,33 @@ export const piSettingsReconciler: ProviderSettingsReconciler = {
     const piSettings = getPiProviderSettings(settings);
     let changed = false;
 
-    const normalizeSelection = (
-      value: unknown,
-      fallback: 'clear' | 'synthetic',
-    ): string | null => {
-      if (typeof value !== 'string' || !isPiModelSelectionId(value)) {
+    const normalizeSelection = (value: unknown): string | null => {
+      if (typeof value !== 'string') {
         return null;
       }
 
-      if (value === 'pi') {
-        return value;
+      if (!isPiModelSelectionId(value)) {
+        return value === 'pi' || value.startsWith('pi:') ? '' : null;
       }
 
       const decoded = decodePiModelId(value);
       if (decoded) {
         return encodePiModelId(decoded.provider, decoded.modelId);
       }
-
-      return fallback === 'synthetic' ? 'pi' : '';
+      return null;
     };
 
-    const modelSelection = normalizeSelection(settings.model, 'synthetic');
-    if (typeof settings.model === 'string' && modelSelection && settings.model !== modelSelection) {
+    const modelSelection = normalizeSelection(settings.model);
+    if (
+      typeof settings.model === 'string'
+      && modelSelection !== null
+      && settings.model !== modelSelection
+    ) {
       settings.model = modelSelection;
       changed = true;
     }
 
-    const titleModelSelection = normalizeSelection(settings.titleGenerationModel, 'clear');
+    const titleModelSelection = normalizeSelection(settings.titleGenerationModel);
     if (
       typeof settings.titleGenerationModel === 'string'
       && titleModelSelection !== null
@@ -131,7 +131,7 @@ export const piSettingsReconciler: ProviderSettingsReconciler = {
     const savedProviderModelRaw = settings.savedProviderModel;
     if (savedProviderModelRaw && typeof savedProviderModelRaw === 'object' && !Array.isArray(savedProviderModelRaw)) {
       const savedProviderModel = savedProviderModelRaw as Record<string, unknown>;
-      const savedSelection = normalizeSelection(savedProviderModel.pi, 'clear');
+      const savedSelection = normalizeSelection(savedProviderModel.pi);
       if (
         typeof savedProviderModel.pi === 'string'
         && savedSelection !== null

@@ -27,6 +27,7 @@
 - Runtime commands come from the `get_commands` RPC and are exposed through `PiCommandCatalog`.
 - Pi runtime commands are not editable or deletable from Claudian.
 - Model discovery uses a separate subprocess and may receive extension UI requests. Keep model normalization in `models.ts`.
+- Only explicitly enabled models belong in the chat selector. Do not add a synthetic Pi entry, preserve hidden session models, or use the runtime default when none are enabled.
 - Use model-provided context windows when available; otherwise preserve the existing fallback behavior.
 
 ## Gotchas

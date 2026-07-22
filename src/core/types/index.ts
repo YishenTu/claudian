@@ -43,10 +43,12 @@ export {
   type AsyncSubagentStatus,
   type ExitPlanModeCallback,
   type ExitPlanModeDecision,
+  type ExitPlanModePresentationOptions,
   type SubagentInfo,
   type SubagentMode,
   type ToolCallInfo,
   type ToolDiffData,
+  type ToolProviderPayload,
 } from './tools';
 
 // Agent types

@@ -7,6 +7,7 @@ export interface SystemPromptSettings {
 
 export interface SystemPromptBuildOptions {
   appendices?: string[];
+  toolGuidanceProfile?: 'claudian' | 'provider-native';
 }
 
 function getPathRules(vaultPath?: string): string {
@@ -25,23 +26,30 @@ function getPathRules(vaultPath?: string): string {
 **External context paths**: When external directories are selected, use absolute paths to access files there. These directories are explicitly granted for the current session.`;
 }
 
-function getBaseSystemPrompt(
-  vaultPath?: string,
-  userName?: string,
-): string {
-  const vaultInfo = vaultPath ? `\n\nVault absolute path: ${vaultPath}` : '';
+function getUserContext(userName?: string): string {
   const trimmedUserName = userName?.trim();
-  const userContext = trimmedUserName
-    ? `## User Context\n\nYou are collaborating with **${trimmedUserName}**.\n\n`
+  return trimmedUserName
+    ? `## User Context\n\nYou are collaborating with **${trimmedUserName}**.`
     : '';
+}
+
+function getTimeContext(
+  toolGuidanceProfile: 'claudian' | 'provider-native',
+): string {
+  const currentDateGuidance = toolGuidanceProfile === 'claudian'
+    ? '- **Current Date**: Use `bash: date` to get the current date and time. Never guess or assume.\n'
+    : '';
+
+  return `## Time Context
+
+${currentDateGuidance}- **Knowledge Status**: You possess extensive internal knowledge up to your training cutoff. You do not know the exact date of your cutoff, but you must assume that your internal weights are static and "past," while the Current Date is "present."`;
+}
+
+function getVaultContext(vaultPath?: string): string {
+  const vaultInfo = vaultPath ? `\n\nVault absolute path: ${vaultPath}` : '';
   const pathRules = getPathRules(vaultPath);
 
-  return `${userContext}## Time Context
-
-- **Current Date**: Use \`bash: date\` to get the current date and time. Never guess or assume.
-- **Knowledge Status**: You possess extensive internal knowledge up to your training cutoff. You do not know the exact date of your cutoff, but you must assume that your internal weights are static and "past," while the Current Date is "present."
-
-## Identity & Role
+  return `## Identity & Role
 
 You are **Claudian**, an expert AI assistant specialized in Obsidian vault management, knowledge organization, and code analysis. You operate directly inside the user's Obsidian vault.
 
@@ -125,6 +133,18 @@ selected webpage content
 **When present:** The user selected this text before sending their message. Use this context to understand what they're referring to.`;
 }
 
+function getBaseSystemPrompt(
+  vaultPath: string | undefined,
+  userName: string | undefined,
+  toolGuidanceProfile: 'claudian' | 'provider-native',
+): string {
+  return [
+    getUserContext(userName),
+    getTimeContext(toolGuidanceProfile),
+    getVaultContext(vaultPath),
+  ].filter(Boolean).join('\n\n');
+}
+
 function getImageInstructions(mediaFolder: string): string {
   const folder = mediaFolder.trim();
   const mediaPath = folder ? `./${folder}` : '.';
@@ -177,9 +197,16 @@ export function buildSystemPrompt(
   settings: SystemPromptSettings = {},
   options: SystemPromptBuildOptions = {},
 ): string {
-  let prompt = getBaseSystemPrompt(settings.vaultPath, settings.userName);
+  const toolGuidanceProfile = options.toolGuidanceProfile ?? 'claudian';
+  let prompt = getBaseSystemPrompt(
+    settings.vaultPath,
+    settings.userName,
+    toolGuidanceProfile,
+  );
 
-  prompt += getImageInstructions(settings.mediaFolder || '');
+  if (toolGuidanceProfile === 'claudian') {
+    prompt += getImageInstructions(settings.mediaFolder || '');
+  }
   prompt += getAppendixSections(options.appendices);
 
   if (settings.customPrompt?.trim()) {
@@ -207,6 +234,10 @@ export function computeSystemPromptKey(
 
   if (appendixKey) {
     parts.push(appendixKey);
+  }
+
+  if (options.toolGuidanceProfile === 'provider-native') {
+    parts.push(options.toolGuidanceProfile);
   }
 
   return parts.join('::');

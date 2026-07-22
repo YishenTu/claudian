@@ -23,9 +23,11 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "回退到此處？此訊息之後的檔案變更將被還原。回退不會影響手動或透過 bash 編輯的檔案。",
+      "confirmMessage": "回退到此處？此訊息之後的檔案變更可能被覆寫或刪除。此操作無法復原。",
+      "confirmMessageConflicts": "回退到此處？偵測到 {count} 個檔案在代理之外被修改，繼續操作將覆寫這些變更：\n{files}",
       "confirmMessageConversationOnly": "將對話回退到此處？檔案變更將保留。",
       "confirmButton": "回退",
+      "inProgress": "請等待目前的回退操作完成。",
       "ariaLabel": "回退到此處",
       "menuConversationOnly": "僅回退對話",
       "menuCodeAndConversation": "回退程式碼 + 對話",
@@ -310,11 +312,11 @@
       "name": "語言",
       "desc": "更改插件介面的顯示語言"
     },
+    "providerEnablement": {
+      "name": "啟用 {provider}",
+      "desc": "讓已啟用的 {provider} 模型可用於新對話。停用後，現有工作階段仍會保留。"
+    },
     "codex": {
-      "enableProvider": {
-        "name": "啟用 Codex 提供者",
-        "desc": "啟用後，Codex 模型會出現在新對話的模型選擇器中。現有 Codex 工作階段會保留。"
-      },
       "installationMethod": {
         "name": "安裝方式",
         "desc": "Claudian 在 Windows 上啟動 Codex 的方式。原生 Windows 使用 Windows 可執行檔路徑；WSL 會在所選發行版內啟動 Linux CLI。",
@@ -353,7 +355,7 @@
       },
       "skills": {
         "name": "Codex 技能",
-        "desc": "管理儲存在 .codex/skills/ 或 .agents/skills/ 中的 Vault 層級 Codex 技能。此處不包含主目錄層級技能。",
+        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
         "hiddenName": "隱藏技能",
         "hiddenDesc": "從下拉選單中隱藏特定 Codex 技能。每行輸入一個技能名稱，不帶前導 $。",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
@@ -371,6 +373,11 @@
         "name": "Codex 環境",
         "desc": "僅限 Codex 擁有的執行階段變數。用於 OPENAI_* 和 CODEX_* 設定。如果 Codex 自動偵測需要協助，請把安裝目錄新增到共享 PATH，而不是此提供者環境。"
       }
+    },
+    "agentSkills": {
+      "sectionTitle": "Skills", "header": "Shared skills", "fixedRoot": "Managed in .agents/skills", "sharedExpectation": "Manage skills shared across all enabled providers in .agents/skills/.", "noSkills": "No shared skills configured. Click + to create one.", "skillBadge": "skill", "diagnosticsTitle": "Skills needing attention", "loadFailed": "Could not load shared skills.", "savedRefreshFailed": "Saved, but provider refresh failed.", "validationFailed": "Invalid skill: {message}", "collisionFailed": "A skill named \"{name}\" already exists.", "saveFailed": "Failed to save shared skill: {message}", "deleteFailed": "Failed to move shared skill to trash: {message}", "staleConflict": "This skill changed elsewhere; refresh before saving.", "created": "Shared skill \"{name}\" created.", "updated": "Shared skill \"{name}\" updated.", "deleted": "Shared skill \"{name}\" moved to trash.",
+      "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
+      "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
     },
     "codexSkills": {
       "modal": {

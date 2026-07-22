@@ -199,7 +199,7 @@ describe('CodexChatUIConfig', () => {
       ]);
     });
 
-    it('keeps an existing Codex session model pinned when it is filtered out', () => {
+    it('excludes an existing Codex session model when it is filtered out', () => {
       const settings = withDiscoveredModels({
         model: TEST_CODEX_MODEL,
         providerConfigs: {
@@ -211,7 +211,6 @@ describe('CodexChatUIConfig', () => {
 
       expect(codexChatUIConfig.getModelOptions(settings).map(option => option.value)).toEqual([
         'gpt-5.4-mini',
-        TEST_CODEX_MODEL,
       ]);
     });
 
@@ -234,7 +233,7 @@ describe('CodexChatUIConfig', () => {
       }]);
     });
 
-    it('keeps saved and current Codex selections usable when discovery fails', () => {
+    it('does not expose saved and current Codex selections when no models are enabled', () => {
       const options = codexChatUIConfig.getModelOptions({
         settingsProvider: 'claude',
         model: 'gpt-current-session',
@@ -254,18 +253,7 @@ describe('CodexChatUIConfig', () => {
         },
       });
 
-      expect(options).toEqual([
-        {
-          value: 'gpt-current-session',
-          label: 'Current',
-          description: 'Selected model',
-        },
-        {
-          value: 'openai-codex/saved-custom-model',
-          label: 'Saved',
-          description: 'Selected model',
-        },
-      ]);
+      expect(options).toEqual([]);
     });
 
     it('does not treat another provider current model as a Codex fallback', () => {
@@ -314,6 +302,17 @@ describe('CodexChatUIConfig', () => {
           },
         },
       }))).toBe('gpt-5.4-mini');
+    });
+
+    it('has no default when no models are enabled', () => {
+      expect(codexChatUIConfig.getDefaultModel!({
+        providerConfigs: {
+          codex: {
+            discoveredModels: [],
+            visibleModels: [],
+          },
+        },
+      })).toBeNull();
     });
   });
 
@@ -443,7 +442,7 @@ describe('CodexChatUIConfig', () => {
   });
 
   describe('isDefaultModel', () => {
-    it('should return true for built-in models', () => {
+    it('identifies Codex model names for provider routing', () => {
       expect(codexChatUIConfig.isDefaultModel(TEST_CODEX_MODEL)).toBe(true);
       expect(codexChatUIConfig.isDefaultModel('gpt-5.4-mini')).toBe(true);
     });

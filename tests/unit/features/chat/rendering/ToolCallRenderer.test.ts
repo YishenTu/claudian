@@ -92,6 +92,69 @@ describe('ToolCallRenderer', () => {
       expect(content?.hasClass('claudian-hidden')).toBe(false);
       expect(header?.getAttribute('aria-expanded')).toBe('true');
     });
+
+    it('builds Bash-specific classes, icon, command content, and toggle state', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'Bash',
+        input: { command: 'npm test' },
+      });
+      const toolEl = renderToolCall(parentEl, toolCall, new Map());
+      const header = toolEl.querySelector('.claudian-tool-header');
+      const content = toolEl.querySelector('.claudian-tool-content');
+
+      expect(toolEl.hasClass('claudian-tool-call-bash')).toBe(true);
+      expect(toolEl.querySelector('.claudian-tool-bash-command')?.textContent).toBe('$ npm test');
+      expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'terminal');
+
+      (header as HTMLElement | null)?.click();
+      expect(toolCall.isExpanded).toBe(true);
+      expect(content?.hasClass('claudian-hidden')).toBe(false);
+    });
+
+    it('builds TodoWrite preview, content, icon, and toggle handlers', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'TodoWrite',
+        input: {
+          todos: [{ content: 'Task', status: 'in_progress', activeForm: 'Working' }],
+        },
+      });
+      const toolEl = renderToolCall(parentEl, toolCall, new Map());
+      const header = toolEl.querySelector('.claudian-tool-header');
+      const currentTask = toolEl.querySelector('.claudian-tool-current');
+      const status = toolEl.querySelector('.claudian-tool-status');
+      const content = toolEl.querySelector('.claudian-tool-content');
+
+      expect(currentTask?.textContent).toBe('Working');
+      expect(content?.hasClass('claudian-tool-content-todo')).toBe(true);
+      expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'list-checks');
+
+      (header as HTMLElement | null)?.click();
+      expect(toolCall.isExpanded).toBe(true);
+      expect(currentTask?.hasClass('claudian-hidden')).toBe(true);
+      expect(status?.hasClass('claudian-hidden')).toBe(true);
+    });
+
+    it('builds AskUserQuestion content and renders resolved answers through its dedicated updater', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'AskUserQuestion',
+        input: { questions: [{ id: 'color', question: 'Color?' }] },
+        resolvedAnswers: { color: 'Blue' },
+      });
+      const toolCallElements = new Map<string, HTMLElement>();
+      const toolEl = renderToolCall(parentEl, toolCall, toolCallElements);
+      const content = toolEl.querySelector('.claudian-tool-content');
+
+      expect(content?.hasClass('claudian-tool-content-ask')).toBe(true);
+      expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'help-circle');
+
+      toolCall.status = 'completed';
+      toolCall.result = 'answered';
+      updateToolCallResult(toolCall.id, toolCall, toolCallElements);
+      expect(toolEl.querySelector('.claudian-ask-review-a-text')?.textContent).toBe('Blue');
+    });
   });
 
   describe('renderStoredToolCall', () => {

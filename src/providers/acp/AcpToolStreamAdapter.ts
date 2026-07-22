@@ -1,9 +1,20 @@
-import type { StreamChunk } from '../../core/types';
+import { normalizeToolProviderPayload } from '../../core/tools/toolProviderPayload';
+import type { StreamChunk, ToolProviderPayload } from '../../core/types';
 import type { SDKToolUseResult } from '../../core/types/diff';
 import type { AcpToolCall, AcpToolCallUpdate } from './types';
 
 interface AcpToolStreamState {
   input: Record<string, unknown>;
+  rawInput?: unknown;
+  rawName: string;
+  rawNameProvenance: AcpToolRawNameProvenance;
+  rawOutput?: unknown;
+}
+
+export type AcpToolRawNameProvenance = 'fallback' | 'kind' | 'mapped-kind' | 'title';
+
+export interface AcpResolvedToolRawName {
+  provenance: AcpToolRawNameProvenance;
   rawName: string;
 }
 
@@ -14,14 +25,15 @@ export interface AcpToolStreamPresentationAdapter {
     rawName: string | undefined,
     input: Record<string, unknown>,
     rawOutput: unknown,
+    rawInput: unknown,
   ): SDKToolUseResult | undefined;
   resolveRawToolName(
-    currentRawName: string | undefined,
+    currentRawName: AcpResolvedToolRawName | undefined,
     update: {
       kind?: string | null;
       title?: string | null;
     },
-  ): string;
+  ): AcpResolvedToolRawName;
 }
 
 export class AcpToolStreamAdapter {
@@ -37,32 +49,44 @@ export class AcpToolStreamAdapter {
     const state = this.updateToolState(undefined, {
       kind: toolCall.kind,
       rawInput: toolCall.rawInput,
+      rawOutput: toolCall.rawOutput,
       title: toolCall.title,
     });
     this.toolStates.set(toolCall.toolCallId, state);
-    return chunks.map((chunk) => this.normalizeChunk(chunk, state, toolCall.rawOutput));
+    return chunks.map((chunk) => this.normalizeChunk(chunk, state));
   }
 
   normalizeToolCallUpdate(toolCallUpdate: AcpToolCallUpdate, chunks: StreamChunk[]): StreamChunk[] {
-    const state = this.updateToolState(this.toolStates.get(toolCallUpdate.toolCallId), {
+    const current = this.toolStates.get(toolCallUpdate.toolCallId);
+    const state = this.updateToolState(current, {
       kind: toolCallUpdate.kind,
       rawInput: toolCallUpdate.rawInput,
+      rawOutput: toolCallUpdate.rawOutput,
       title: toolCallUpdate.title,
     });
     this.toolStates.set(toolCallUpdate.toolCallId, state);
 
     const result: StreamChunk[] = [];
-    if (toolCallUpdate.rawInput !== undefined) {
+    const providerPayloadFields = this.buildProviderPayloadFields(state);
+    if (
+      toolCallUpdate.rawInput !== undefined
+      || state.rawName !== current?.rawName
+      || (
+        toolCallUpdate.rawOutput !== undefined
+        && providerPayloadFields.providerPayload !== undefined
+      )
+    ) {
       result.push({
         id: toolCallUpdate.toolCallId,
         input: state.input,
         name: this.adapter.normalizeToolName(state.rawName),
+        ...providerPayloadFields,
         type: 'tool_use',
       });
     }
 
     for (const chunk of chunks) {
-      result.push(this.normalizeChunk(chunk, state, toolCallUpdate.rawOutput));
+      result.push(this.normalizeChunk(chunk, state));
     }
 
     return result;
@@ -73,38 +97,58 @@ export class AcpToolStreamAdapter {
     update: {
       kind?: string | null;
       rawInput?: unknown;
+      rawOutput?: unknown;
       title?: string | null;
     },
   ): AcpToolStreamState {
-    const nextRawName = this.adapter.resolveRawToolName(current?.rawName, update);
+    const nextRawName = this.adapter.resolveRawToolName(current ? {
+      provenance: current.rawNameProvenance,
+      rawName: current.rawName,
+    } : undefined, update);
     const nextInput = current?.input ?? {};
+    const rawInput = update.rawInput !== undefined ? update.rawInput : current?.rawInput;
+    const rawOutput = update.rawOutput !== undefined ? update.rawOutput : current?.rawOutput;
 
     if (update.rawInput !== undefined) {
-      const rawInput = normalizeRawToolInput(update.rawInput);
-      return this.buildToolState(nextRawName, { ...nextInput, ...rawInput });
+      const normalizedRawInput = normalizeRawToolInput(update.rawInput);
+      return this.buildToolState(
+        nextRawName,
+        { ...nextInput, ...normalizedRawInput },
+        rawInput,
+        rawOutput,
+      );
     }
 
-    if (nextRawName !== current?.rawName) {
-      return this.buildToolState(nextRawName, nextInput);
+    if (
+      nextRawName.rawName !== current?.rawName
+      || nextRawName.provenance !== current?.rawNameProvenance
+    ) {
+      return this.buildToolState(nextRawName, nextInput, rawInput, rawOutput);
     }
 
-    return current ?? this.buildToolState(nextRawName, {});
+    return current && rawOutput === current.rawOutput
+      ? current
+      : this.buildToolState(nextRawName, nextInput, rawInput, rawOutput);
   }
 
   private buildToolState(
-    rawName: string,
+    rawName: AcpResolvedToolRawName,
     input: Record<string, unknown>,
+    rawInput?: unknown,
+    rawOutput?: unknown,
   ): AcpToolStreamState {
     return {
-      input: this.adapter.normalizeToolInput(rawName, input),
-      rawName,
+      input: this.adapter.normalizeToolInput(rawName.rawName, input),
+      rawInput,
+      rawName: rawName.rawName,
+      rawNameProvenance: rawName.provenance,
+      rawOutput,
     };
   }
 
   private normalizeChunk(
     chunk: StreamChunk,
     state: AcpToolStreamState,
-    rawOutput?: unknown,
   ): StreamChunk {
     switch (chunk.type) {
       case 'tool_use':
@@ -112,9 +156,15 @@ export class AcpToolStreamAdapter {
           ...chunk,
           input: state.input,
           name: this.adapter.normalizeToolName(state.rawName),
+          ...this.buildProviderPayloadFields(state),
         };
       case 'tool_result': {
-        const toolUseResult = this.adapter.normalizeToolUseResult(state.rawName, state.input, rawOutput);
+        const toolUseResult = this.adapter.normalizeToolUseResult(
+          state.rawName,
+          state.input,
+          state.rawOutput,
+          state.rawInput,
+        );
         return toolUseResult
           ? { ...chunk, toolUseResult }
           : chunk;
@@ -122,6 +172,19 @@ export class AcpToolStreamAdapter {
       default:
         return chunk;
     }
+  }
+
+  private buildProviderPayloadFields(
+    state: AcpToolStreamState,
+  ): { providerPayload?: ToolProviderPayload } {
+    const result = this.adapter.normalizeToolUseResult(
+      state.rawName,
+      state.input,
+      state.rawOutput,
+      state.rawInput,
+    );
+    const providerPayload = normalizeToolProviderPayload(result?.providerPayload);
+    return providerPayload ? { providerPayload } : {};
   }
 }
 

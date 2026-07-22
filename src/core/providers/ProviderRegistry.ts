@@ -13,7 +13,7 @@ import {
   type ProviderRegistration,
   type ProviderSettingsReconciler,
   type ProviderSettingsStorageAdapter,
-  type ProviderSubagentLifecycleAdapter,
+  type ProviderSubagentAdapter,
   type ProviderTaskResultInterpreter,
   type ProviderUIOption,
   type TitleGenerationCallback,
@@ -92,10 +92,10 @@ export class ProviderRegistry {
     return this.getProviderRegistration(providerId).taskResultInterpreter;
   }
 
-  static getSubagentLifecycleAdapter(
+  static getSubagentAdapter(
     providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID,
-  ): ProviderSubagentLifecycleAdapter | null {
-    return this.getProviderRegistration(providerId).subagentLifecycleAdapter ?? null;
+  ): ProviderSubagentAdapter | null {
+    return this.getProviderRegistration(providerId).subagentAdapter ?? null;
   }
 
   static getCapabilities(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderCapabilities {

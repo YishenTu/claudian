@@ -1,5 +1,8 @@
 import type { Component, WorkspaceLeaf } from 'obsidian';
 
+import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
+import type { ProviderCommandDiscoveryResult } from '../../../core/providers/commands/ProviderCommandDiscoveryResult';
+import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
@@ -84,6 +87,13 @@ export interface TabManagerInterface {
 
 /** Tab identifier type. */
 export type TabId = string;
+
+export type ProviderCatalogInfo = {
+  config: ProviderCommandDropdownConfig;
+  getEntries: () => Promise<ProviderCommandDiscoveryResult<ProviderCommandEntry>>;
+} | null;
+
+export type ProviderCatalogResolver = () => ProviderCatalogInfo;
 
 /** Generates a unique tab ID. */
 export function generateTabId(): TabId {
@@ -209,6 +219,12 @@ export interface TabData {
   /** Named owner of the per-tab runtime reference. */
   runtimeSupervisor: RuntimeSupervisor;
 
+  /** Tab-manager hook for generation-guarded provider command subscriptions. */
+  onRuntimeInstalled?: (runtime: ChatRuntime) => void;
+
+  /** Tab-manager-owned provider discovery callback retained across UI/runtime refreshes. */
+  providerCatalogResolver: ProviderCatalogResolver | null;
+
   /** Whether the service has been initialized (lazy start). */
   serviceInitialized: boolean;
 
@@ -269,6 +285,9 @@ export interface TabManagerCallbacks {
 
   /** Called when tab streaming state changes. */
   onTabStreamingChanged?: (tabId: TabId, isStreaming: boolean) => void;
+
+  /** Called when tab rewind transaction state changes. */
+  onTabRewindingChanged?: (tabId: TabId, isRewinding: boolean) => void;
 
   /** Called when tab title changes. */
   onTabTitleChanged?: (tabId: TabId, title: string) => void;

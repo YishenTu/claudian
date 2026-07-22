@@ -331,6 +331,11 @@ describe('InlineEditModal - openAndWait', () => {
             claude: [],
             opencode: [],
           },
+          providerConfigs: {
+            opencode: {
+              visibleModels: ['anthropic/claude-sonnet-4'],
+            },
+          },
         },
         getConversationSync: jest.fn().mockReturnValue(null),
         getView: jest.fn().mockReturnValue({

@@ -13,11 +13,12 @@ beforeAll(() => {
   (globalThis as any).document = { activeElement: null };
 });
 
-function fireKeyDown(root: any, key: string, isComposing = false): void {
+function fireKeyDown(root: any, key: string, isComposing = false, shiftKey = false): void {
   root.dispatchEvent({
     type: 'keydown',
     key,
     isComposing,
+    shiftKey,
     preventDefault: jest.fn(),
     stopPropagation: jest.fn(),
   });
@@ -171,6 +172,43 @@ describe('InlineExitPlanMode', () => {
 
     fireKeyDown(root, 'Enter');
     expect(resolve).toHaveBeenCalledWith({ type: 'feedback', text: 'Please revise the plan' });
+  });
+
+  it('renders provider-supplied plan content with native Implement, Revise, and Abandon actions', () => {
+    const container = createMockEl();
+    const resolve = jest.fn();
+    const renderContent = jest.fn().mockResolvedValue(undefined);
+    const widget = new InlineExitPlanMode(
+      container,
+      { planContent: '# Native plan' },
+      resolve,
+      undefined,
+      renderContent,
+      undefined,
+      {
+        allowAbandon: true,
+        allowNewSession: false,
+        approveLabel: 'Implement',
+        dismissOnEscape: false,
+        feedbackLabel: 'Revise',
+        shiftTabDecision: 'abandon',
+      },
+    );
+
+    widget.render();
+
+    const root = findRoot(container);
+    const items = findItems(root);
+    const labels = root.querySelectorAll('claudian-ask-item-label')
+      .map((label: any) => label.textContent);
+    expect(renderContent).toHaveBeenCalledWith(expect.anything(), '# Native plan');
+    expect(items).toHaveLength(3);
+    expect(labels).toEqual(['Implement', 'Revise: ', 'Abandon']);
+
+    fireKeyDown(root, 'Escape');
+    expect(resolve).not.toHaveBeenCalled();
+    fireKeyDown(root, 'Tab', false, true);
+    expect(resolve).toHaveBeenCalledWith({ type: 'abandon' });
   });
 
   it('does not submit feedback on Enter during IME composition', () => {

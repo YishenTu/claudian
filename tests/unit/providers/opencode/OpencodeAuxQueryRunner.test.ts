@@ -34,6 +34,7 @@ function createMockPlugin(settings: Record<string, unknown> = {}) {
       providerConfigs: {
         opencode: {
           enabled: true,
+          visibleModels: ['openai/gpt-5'],
         },
       },
       settingsProvider: 'opencode',
@@ -240,7 +241,14 @@ describe('OpencodeAuxQueryRunner', () => {
       sessionId: 'session-1',
     });
 
-    const runner = new OpencodeAuxQueryRunner(createMockPlugin(), {
+    const runner = new OpencodeAuxQueryRunner(createMockPlugin({
+      providerConfigs: {
+        opencode: {
+          enabled: true,
+          visibleModels: ['openai/gpt-5.4'],
+        },
+      },
+    }), {
       agentProfile: 'passive',
       artifactPurpose: 'title-gen',
     });

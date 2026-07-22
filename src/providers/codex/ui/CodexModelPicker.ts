@@ -130,7 +130,7 @@ export function renderCodexModelPicker(
     onSelectedIdsChange: persistVisibleModels,
     providerName: 'Codex',
     searchPlaceholder: 'Filter by model name, description, or ID...',
-    settingDescription: 'Choose which app-server models appear in the Codex selector. Existing session models stay pinned even when hidden here.',
+    settingDescription: 'Choose which app-server models are available in the Codex selector. Codex chat is unavailable when no models are selected.',
   });
   refreshPicker = picker.refresh.bind(picker);
 }

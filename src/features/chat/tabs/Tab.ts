@@ -2,8 +2,7 @@ import type { Component } from 'obsidian';
 import { Notice, Platform } from 'obsidian';
 
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
-import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
-import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
+import { normalizeProviderCommandDiscoveryItems } from '../../../core/providers/commands/ProviderCommandDiscoveryResult';
 import {
   getProviderSettingsSnapshotWithModel,
   normalizeProviderModelSelection,
@@ -57,7 +56,15 @@ import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
 import { getTabProviderId } from './providerResolution';
 import { TabSession } from './TabSession';
-import type { TabData, TabDOMElements, TabId, TabManagerViewHost, TabProviderContext } from './types';
+import type {
+  ProviderCatalogInfo,
+  ProviderCatalogResolver,
+  TabData,
+  TabDOMElements,
+  TabId,
+  TabManagerViewHost,
+  TabProviderContext,
+} from './types';
 import { generateTabId } from './types';
 
 type TabProviderSettings = Record<string, unknown> & {
@@ -124,9 +131,11 @@ export interface TabCreateOptions {
   /** Provider to inherit for blank tabs (e.g. from the active tab). */
   defaultProviderId?: ProviderId;
   onStreamingChanged?: (isStreaming: boolean) => void;
+  onRewindingChanged?: (isRewinding: boolean) => void;
   onTitleChanged?: (title: string) => void;
   onAttentionChanged?: (needsAttention: boolean) => void;
   onConversationIdChanged?: (conversationId: string | null) => void;
+  onRuntimeInstalled?: (runtime: ChatRuntime) => void;
 }
 
 export { getTabProviderId } from './providerResolution';
@@ -306,11 +315,6 @@ function sendTabInputMessageFromEnterKey(
   return sendTabInputMessage(tab, e);
 }
 
-type ProviderCatalogInfo = {
-  config: ProviderCommandDropdownConfig;
-  getEntries: () => Promise<ProviderCommandEntry[]>;
-} | null;
-
 function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalogInfo {
   const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
   if (!catalog) {
@@ -319,7 +323,9 @@ function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalog
 
   return {
     config: catalog.getDropdownConfig(),
-    getEntries: () => catalog.listDropdownEntries({ includeBuiltIns: false }),
+    getEntries: async () => normalizeProviderCommandDiscoveryItems(
+      await catalog.listDropdownEntries({ includeBuiltIns: false }),
+    ),
   };
 }
 
@@ -330,7 +336,7 @@ function getProviderMcpManager(providerId: ProviderId) {
 function syncSlashCommandDropdownForProvider(
   tab: TabData,
   plugin: FeatureHost,
-  getProviderCatalogConfig?: () => ProviderCatalogInfo,
+  getProviderCatalogConfig?: ProviderCatalogResolver,
   conversation?: Conversation | null,
 ): void {
   const dropdown = tab.ui.slashCommandDropdown;
@@ -338,13 +344,13 @@ function syncSlashCommandDropdownForProvider(
     return;
   }
 
-  const catalogInfo = getProviderCatalogConfig?.()
+  const catalogInfo = (getProviderCatalogConfig ?? tab.providerCatalogResolver)?.()
     ?? getRegistryProviderCatalogInfo(getTabProviderId(tab, plugin, conversation));
 
   if (catalogInfo) {
     dropdown.setProviderCatalog?.(catalogInfo.config, catalogInfo.getEntries);
   } else {
-    dropdown.resetSdkSkillsCache();
+    dropdown.clearProviderCatalog?.();
   }
 
   dropdown.setHiddenCommands(getTabHiddenCommands(tab, plugin, conversation));
@@ -507,6 +513,7 @@ export function createTab(options: TabCreateOptions): TabData {
     conversation,
     tabId,
     onStreamingChanged,
+    onRewindingChanged,
     onAttentionChanged,
     onConversationIdChanged,
   } = options;
@@ -517,6 +524,7 @@ export function createTab(options: TabCreateOptions): TabData {
 
   const state = new ChatState({
     onStreamingStateChanged: onStreamingChanged,
+    onRewindingStateChanged: onRewindingChanged,
     onAttentionChanged: onAttentionChanged,
     onConversationChanged: onConversationIdChanged,
   });
@@ -587,6 +595,8 @@ export function createTab(options: TabCreateOptions): TabData {
       runtimeSupervisor.setCurrent(runtime);
     },
     runtimeSupervisor,
+    onRuntimeInstalled: options.onRuntimeInstalled,
+    providerCatalogResolver: null,
     serviceInitialized: false,
     state,
     controllers: {
@@ -668,13 +678,13 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
 }
 
 /**
- * Initializes the tab's chat runtime for the send path.
+ * Initializes the tab's chat runtime for provider-backed tab actions.
  *
  * This is the ONLY place a runtime is created. Called from:
- * - ensureServiceInitialized() in InputController.sendMessage()
+ * - the shared ensureServiceInitialized() callback used by send and rewind
  *
- * Session sync is passive (state update only). The runtime is started
- * on demand by query() inside the send path.
+ * Session sync is passive (state update only). The provider process starts
+ * only when the selected action explicitly calls into the runtime.
  */
 export async function initializeTabService(
   tab: TabData,
@@ -720,7 +730,11 @@ export async function initializeTabService(
     ? resolveConversationModel(plugin.settings, providerId, conversation).model
     : getTabSelectedModel(tab, plugin);
 
-  if (tab.serviceInitialized && tab.service?.providerId === providerId) {
+  if (
+    tab.serviceInitialized
+    && tab.service?.providerId === providerId
+    && !tab.runtimeSupervisor.isInvalidated
+  ) {
     return;
   }
 
@@ -763,7 +777,9 @@ export async function initializeTabService(
 
     tab.providerId = providerId;
     tab.service = service;
+    tab.runtimeSupervisor.setCurrent(service, plugin.getAgentSkillResourceGeneration?.() ?? 0);
     tab.serviceInitialized = true;
+    tab.onRuntimeInstalled?.(service);
 
     // Update lifecycle state
     if (tab.lifecycleState === 'blank') {
@@ -822,7 +838,7 @@ function initializeContextManagers(tab: TabData, plugin: FeatureHost): void {
 function initializeSlashCommands(
   tab: TabData,
   getHiddenCommands?: () => Set<string>,
-  catalogInfo?: { config: ProviderCommandDropdownConfig; getEntries: () => Promise<ProviderCommandEntry[]> } | null,
+  catalogInfo?: ProviderCatalogInfo,
 ): void {
   const { dom } = tab;
 
@@ -836,7 +852,7 @@ function initializeSlashCommands(
     {
       hiddenCommands: getHiddenCommands?.() ?? new Set(),
       providerConfig: catalogInfo?.config,
-      getProviderEntries: catalogInfo?.getEntries,
+      discoverProviderEntries: catalogInfo?.getEntries,
     }
   );
 }
@@ -905,6 +921,7 @@ function initializeInputToolbar(
   plugin: FeatureHost,
   getProviderCatalogConfig?: () => ProviderCatalogInfo,
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>,
+  onCommandContextChanged?: () => void,
 ): void {
   const { dom } = tab;
 
@@ -937,6 +954,7 @@ function initializeInputToolbar(
       // For blank tabs, update draft model and derive provider
       if (tab.lifecycleState === 'blank') {
         const previousProvider = tab.providerId;
+        const previousModel = tab.draftModel;
         tab.draftModel = model;
         const newProvider = getEnabledProviderForModel(
           model,
@@ -950,11 +968,22 @@ function initializeInputToolbar(
         if (didProviderChange) {
           syncTabProviderServices(tab, plugin);
         }
-        syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
-
         const uiConfig = ProviderRegistry.getChatUIConfig(newProvider);
         if (didProviderChange) {
-          await onProviderChanged?.(newProvider);
+          tab.ui.slashCommandDropdown?.clearProviderCatalog?.();
+          try {
+            await onProviderChanged?.(newProvider);
+          } catch (error) {
+            tab.draftModel = previousModel;
+            tab.providerId = previousProvider;
+            syncTabProviderServices(tab, plugin);
+            syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
+            refreshTabProviderUI(tab, plugin);
+            applyProviderUIGating(tab, plugin);
+            throw error;
+          }
+        } else {
+          syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
         }
         await uiConfig.prepareModelMetadata?.(
           model,
@@ -1090,6 +1119,7 @@ function initializeInputToolbar(
   // Wire external context changes
   tab.ui.externalContextSelector.setOnChange(() => {
     tab.ui.fileContextManager?.preScanExternalContexts();
+    onCommandContextChanged?.();
   });
 
   // Initialize persistent paths
@@ -1111,8 +1141,9 @@ function initializeInputToolbar(
 }
 
 export interface InitializeTabUIOptions {
-  getProviderCatalogConfig?: () => ProviderCatalogInfo;
+  getProviderCatalogConfig?: ProviderCatalogResolver;
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>;
+  onCommandContextChanged?: () => void;
 }
 
 /**
@@ -1125,6 +1156,7 @@ export function initializeTabUI(
   options: InitializeTabUIOptions = {}
 ): void {
   const { dom, state } = tab;
+  tab.providerCatalogResolver = options.getProviderCatalogConfig ?? null;
 
   tab.ui.contextTray = new ComposerContextTray(dom.contextRowEl, {
     onDidChange: () => {
@@ -1149,7 +1181,13 @@ export function initializeTabUI(
   }
 
   initializeInstructionAndTodo(tab, plugin);
-  initializeInputToolbar(tab, plugin, options.getProviderCatalogConfig, options.onProviderChanged);
+  initializeInputToolbar(
+    tab,
+    plugin,
+    options.getProviderCatalogConfig,
+    options.onProviderChanged,
+    options.onCommandContextChanged,
+  );
 
   state.callbacks = {
     ...state.callbacks,
@@ -1260,6 +1298,10 @@ async function handleForkRequest(
     new Notice(t('chat.fork.unavailableStreaming'));
     return;
   }
+  if (state.isRewinding) {
+    new Notice(t('chat.rewind.inProgress'));
+    return;
+  }
 
   const msgs = state.messages;
   const userIdx = msgs.findIndex(m => m.id === userMessageId);
@@ -1309,6 +1351,10 @@ async function handleForkAll(
 
   if (state.isStreaming) {
     new Notice(t('chat.fork.unavailableStreaming'));
+    return;
+  }
+  if (state.isRewinding) {
+    new Notice(t('chat.rewind.inProgress'));
     return;
   }
 
@@ -1384,6 +1430,34 @@ export function initializeTabControllers(
     (() => ProviderCatalogInfo) | undefined;
 
   const { dom, state, services, ui } = tab;
+  const ensureServiceInitialized = async (): Promise<boolean> => {
+    if (
+      tab.serviceInitialized
+      && tab.lifecycleState === 'bound_active'
+      && !tab.runtimeSupervisor.isInvalidated
+    ) {
+      return true;
+    }
+
+    try {
+      if (tab.lifecycleState === 'blank' && tab.draftModel) {
+        tab.providerId = getEnabledProviderForModel(tab.draftModel, plugin.settings);
+      }
+
+      await initializeTabService(tab, plugin);
+      if (isClosingLifecycleState(tab.lifecycleState)) {
+        return false;
+      }
+      setupServiceCallbacks(tab, plugin);
+
+      refreshTabProviderUI(tab, plugin);
+      applyProviderUIGating(tab, plugin);
+      return true;
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : 'Failed to initialize chat service');
+      return false;
+    }
+  };
 
   // Create renderer
   tab.renderer = new MessageRenderer(
@@ -1455,6 +1529,9 @@ export function initializeTabControllers(
       setWelcomeEl: (el) => { dom.welcomeEl = el; },
       getMessagesEl: () => dom.messagesEl,
       getInputEl: () => dom.inputEl,
+      restoreMessageToComposer: message => (
+        tab.controllers.inputController!.restoreRewoundMessageToComposer(message)
+      ),
       getFileContextManager: () => ui.fileContextManager,
       getImageContextManager: () => ui.imageContextManager,
       getMcpServerSelector: () => ui.mcpServerSelector,
@@ -1463,6 +1540,7 @@ export function initializeTabControllers(
       getTitleGenerationService: () => services.titleGenerationService,
       getStatusPanel: () => ui.statusPanel,
       getAgentService: () => tab.service, // Use tab's service instead of plugin's
+      ensureServiceInitialized,
       getSelectedModel: () => getTabSelectedModel(tab, plugin),
       dismissPendingInlinePrompts: () => tab.controllers.inputController?.dismissPendingApproval(),
       awaitBackgroundWork: () => tab.session.awaitBackgroundWork(),
@@ -1476,7 +1554,7 @@ export function initializeTabControllers(
           syncTabProviderServices(tab, plugin);
         }
 
-        // Bind session state only — runtime starts on send
+        // Bind session state only — runtime starts on the next provider-backed action
         tab.conversationId = conversation?.id ?? null;
         tab.draftModel = null;
         tab.lifecycleState = conversation ? 'bound_cold' : 'blank';
@@ -1547,36 +1625,7 @@ export function initializeTabControllers(
     getSubagentManager: () => services.subagentManager,
     getTabProviderId: () => getTabProviderId(tab, plugin),
     turnOwner: tab.session,
-    ensureServiceInitialized: async () => {
-      if (tab.serviceInitialized && tab.lifecycleState === 'bound_active') {
-        return true;
-      }
-
-      try {
-        // For blank tabs on first send: derive provider from draft model
-        if (tab.lifecycleState === 'blank' && tab.draftModel) {
-          const derivedProvider = getEnabledProviderForModel(
-            tab.draftModel,
-            plugin.settings,
-          );
-          tab.providerId = derivedProvider;
-        }
-
-        await initializeTabService(tab, plugin);
-        if (isClosingLifecycleState(tab.lifecycleState)) {
-          return false;
-        }
-        setupServiceCallbacks(tab, plugin);
-
-        // Transition: lock model selector to bound provider
-        refreshTabProviderUI(tab, plugin);
-        applyProviderUIGating(tab, plugin);
-        return true;
-      } catch (error) {
-        new Notice(error instanceof Error ? error.message : 'Failed to initialize chat service');
-        return false;
-      }
-    },
+    ensureServiceInitialized,
     openConversation,
     onForkAll: forkRequestCallback
       ? () => handleForkAll(tab, plugin, forkRequestCallback)
@@ -1959,9 +2008,13 @@ export function setupServiceCallbacks(tab: TabData, plugin: FeatureHost): void {
         ?? null
     );
     tab.service.setExitPlanModeCallback(
-      async (input, signal) => {
-        const decision = await tab.controllers.inputController?.handleExitPlanMode(input, signal) ?? null;
-        // Revert only on approve; feedback and cancel keep plan mode active.
+      async (input, signal, presentation) => {
+        const decision = await tab.controllers.inputController?.handleExitPlanMode(
+          input,
+          signal,
+          presentation,
+        ) ?? null;
+        // Restore the base mode only when the provider leaves or abandons plan mode.
         if (decision !== null && decision.type !== 'feedback') {
           // Only restore permission mode if still in plan mode — user may have toggled out via Shift+Tab
           if (getTabPermissionMode(tab, plugin) === 'plan') {
@@ -2147,9 +2200,11 @@ export async function updatePlanModeUI(
   tab: TabData,
   plugin: FeatureHost,
   mode: string,
+  options: { syncRuntime?: boolean } = {},
 ): Promise<void> {
   const providerId = getTabProviderId(tab, plugin);
   const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+  const previousMode = getTabPermissionMode(tab, plugin);
   try {
     await plugin.mutateSettings((settings) => {
       const snapshot = getWritableTabSettingsSnapshot(tab, plugin, settings);
@@ -2164,6 +2219,26 @@ export async function updatePlanModeUI(
         snapshot,
       );
     });
+    if (options.syncRuntime) {
+      try {
+        await tab.service?.setSessionMode?.(getTabPermissionMode(tab, plugin));
+      } catch (error) {
+        await plugin.mutateSettings((settings) => {
+          const snapshot = getWritableTabSettingsSnapshot(tab, plugin, settings);
+          if (uiConfig.applyPermissionMode) {
+            uiConfig.applyPermissionMode(previousMode, snapshot);
+          } else {
+            snapshot.permissionMode = previousMode;
+          }
+          ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
+            settings,
+            providerId,
+            snapshot,
+          );
+        });
+        throw error;
+      }
+    }
   } finally {
     const activeMode = getTabPermissionMode(tab, plugin);
     tab.ui.permissionToggle?.updateDisplay();

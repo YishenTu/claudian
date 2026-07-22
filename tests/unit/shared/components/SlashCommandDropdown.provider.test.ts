@@ -1,6 +1,7 @@
 import { createMockEl } from '@test/helpers/mockElement';
 
 import type { ProviderCommandDropdownConfig } from '@/core/providers/commands/ProviderCommandCatalog';
+import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import {
   SlashCommandDropdown,
@@ -60,6 +61,29 @@ function getRenderedItems(containerEl: any): { name: string; description: string
 
 function getRenderedCommandNames(containerEl: any): string[] {
   return getRenderedItems(containerEl).map(i => i.name);
+}
+
+function getDiscoveryState(containerEl: any): { text: string; retry: any | null } | null {
+  const dropdownEl = containerEl.children.find(
+    (c: any) => c.hasClass('claudian-slash-dropdown')
+  );
+  const stateEl = dropdownEl?.children.find(
+    (c: any) => c.hasClass('claudian-slash-provider-state')
+  );
+  if (!stateEl) return null;
+  const messageEl = stateEl.children.find(
+    (c: any) => c.hasClass('claudian-slash-provider-state-message')
+  );
+  const retry = stateEl.children.find(
+    (c: any) => c.hasClass('claudian-slash-provider-retry')
+  ) ?? null;
+  return { text: messageEl?.textContent ?? '', retry };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(finish => { resolve = finish; });
+  return { promise, resolve };
 }
 
 const CLAUDE_CONFIG: ProviderCommandDropdownConfig = {
@@ -245,7 +269,10 @@ describe('SlashCommandDropdown - provider catalog', () => {
       expect(claudeEntries).toHaveBeenCalledTimes(1);
 
       // Switch provider
-      const codexEntries = jest.fn().mockResolvedValue(CODEX_ENTRIES);
+      const codexEntries = jest.fn().mockResolvedValue({
+        status: 'ready',
+        items: CODEX_ENTRIES,
+      });
       dropdown.setProviderCatalog(CODEX_CONFIG, codexEntries);
 
       inputEl.value = '$';
@@ -254,6 +281,335 @@ describe('SlashCommandDropdown - provider catalog', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(codexEntries).toHaveBeenCalledTimes(1);
+
+      dropdown.destroy();
+    });
+
+    it('immediately removes rendered entries when the provider catalog changes', async () => {
+      const dropdown = new SlashCommandDropdown(
+        containerEl,
+        inputEl,
+        callbacks,
+        { providerConfig: CLAUDE_CONFIG, getProviderEntries: async () => CLAUDE_ENTRIES },
+      );
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(getRenderedCommandNames(containerEl)).toContain('/review');
+
+      dropdown.setProviderCatalog(
+        CODEX_CONFIG,
+        async () => ({ status: 'ready', items: [CODEX_ENTRIES[0]] }),
+      );
+
+      expect(dropdown.isVisible()).toBe(false);
+      expect(getRenderedCommandNames(containerEl)).not.toContain('/review');
+      expect(callbacks.onHide).toHaveBeenCalled();
+
+      dropdown.destroy();
+    });
+  });
+
+  describe('typed provider discovery', () => {
+    it.each([
+      ['codex', ['/', '$'], 'claudian-v2-shared', '$'],
+      ['grok', ['/'], 'claudian-v2-shared', '/'],
+      ['pi', ['/'], 'skill:claudian-v2-shared', '/'],
+      ['opencode', ['/'], 'claudian-v2-shared', '/'],
+    ] as const)(
+      'settles discovery and renders every %s protocol entry before a prompt',
+      async (providerId, triggerChars, commandName, displayPrefix) => {
+        const entries: [ProviderCommandEntry, ProviderCommandEntry] = [
+          {
+            id: `${providerId}:fixture-1`,
+            providerId,
+            kind: 'skill' as const,
+            name: commandName,
+            description: 'First provider-advertised entry',
+            content: '',
+            scope: 'runtime' as const,
+            source: 'sdk' as const,
+            isEditable: false,
+            isDeletable: false,
+            displayPrefix,
+            insertPrefix: displayPrefix,
+          },
+          {
+            id: `${providerId}:fixture-2`,
+            providerId,
+            kind: 'skill' as const,
+            name: `${commandName}-second`,
+            description: 'Second provider-advertised entry',
+            content: '',
+            scope: 'runtime' as const,
+            source: 'sdk' as const,
+            isEditable: false,
+            isDeletable: false,
+            displayPrefix,
+            insertPrefix: displayPrefix,
+          },
+        ];
+        const dropdown = new SlashCommandDropdown(
+          containerEl,
+          inputEl,
+          callbacks,
+          {
+            providerConfig: {
+              providerId,
+              triggerChars: [...triggerChars],
+              builtInPrefix: '/',
+              skillPrefix: displayPrefix,
+              commandPrefix: '/',
+            },
+            discoverProviderEntries: async () => ({ status: 'ready', items: entries }),
+          },
+        );
+
+        inputEl.value = '/';
+        inputEl.selectionStart = 1;
+        dropdown.handleInputChange();
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(getRenderedCommandNames(containerEl)).toEqual(expect.arrayContaining([
+          `${displayPrefix}${commandName}`,
+          `${displayPrefix}${commandName}-second`,
+        ]));
+        expect(getDiscoveryState(containerEl)).toBeNull();
+
+        dropdown.destroy();
+      },
+    );
+
+    it('renders built-ins with loading immediately, then ready entries without another input', async () => {
+      const response = deferred<ProviderCommandDiscoveryResult<ProviderCommandEntry>>();
+      const discoverProviderEntries = jest.fn().mockReturnValue(response.promise);
+      const dropdown = new SlashCommandDropdown(
+        containerEl,
+        inputEl,
+        callbacks,
+        { providerConfig: CLAUDE_CONFIG, discoverProviderEntries },
+      );
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+
+      expect(getRenderedCommandNames(containerEl)).toContain('/clear');
+      expect(getDiscoveryState(containerEl)?.text).toBe('Loading provider commands…');
+
+      response.resolve({ status: 'ready', items: [CLAUDE_ENTRIES[0]] });
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(getRenderedCommandNames(containerEl)).toContain('/review');
+      expect(getDiscoveryState(containerEl)).toBeNull();
+      expect(discoverProviderEntries).toHaveBeenCalledTimes(1);
+
+      dropdown.destroy();
+    });
+
+    it('replaces an unresponsive provider discovery with a retryable error', async () => {
+      jest.useFakeTimers();
+      try {
+        const dropdown = new SlashCommandDropdown(
+          containerEl,
+          inputEl,
+          callbacks,
+          {
+            providerConfig: CLAUDE_CONFIG,
+            discoverProviderEntries: () => new Promise(() => undefined),
+          },
+        );
+
+        inputEl.value = '/';
+        inputEl.selectionStart = 1;
+        dropdown.handleInputChange();
+        expect(getDiscoveryState(containerEl)?.text).toBe('Loading provider commands…');
+
+        await jest.advanceTimersByTimeAsync(10_000);
+
+        const state = getDiscoveryState(containerEl);
+        expect(state?.text).toBe('Provider command discovery timed out');
+        expect(state?.retry).not.toBeNull();
+
+        dropdown.destroy();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it.each([
+      [{ status: 'empty' } as const, 'No provider commands advertised'],
+      [
+        { status: 'requires-session', message: 'Start a conversation to load commands.' } as const,
+        'Start a conversation to load commands.',
+      ],
+    ])('renders the %s state distinctly', async (result, message) => {
+      const dropdown = new SlashCommandDropdown(
+        containerEl,
+        inputEl,
+        callbacks,
+        { providerConfig: CLAUDE_CONFIG, discoverProviderEntries: async () => result },
+      );
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(getDiscoveryState(containerEl)?.text).toBe(message);
+      expect(getDiscoveryState(containerEl)?.retry).toBeNull();
+
+      dropdown.destroy();
+    });
+
+    it('renders a retryable error and retries from its action', async () => {
+      const discoverProviderEntries = jest.fn()
+        .mockResolvedValueOnce({
+          status: 'error',
+          message: 'Could not load provider commands',
+          retryable: true,
+        })
+        .mockResolvedValueOnce({ status: 'ready', items: [CLAUDE_ENTRIES[0]] });
+      const dropdown = new SlashCommandDropdown(
+        containerEl,
+        inputEl,
+        callbacks,
+        { providerConfig: CLAUDE_CONFIG, discoverProviderEntries },
+      );
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const state = getDiscoveryState(containerEl);
+      expect(state?.text).toBe('Could not load provider commands');
+      expect(state?.retry).not.toBeNull();
+
+      state!.retry.click();
+      expect(getDiscoveryState(containerEl)?.text).toBe('Loading provider commands…');
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(getRenderedCommandNames(containerEl)).toContain('/review');
+      expect(discoverProviderEntries).toHaveBeenCalledTimes(2);
+
+      dropdown.destroy();
+    });
+
+    it('retries a failed discovery when the trigger is reopened', async () => {
+      const discoverProviderEntries = jest.fn()
+        .mockResolvedValueOnce({
+          status: 'error',
+          message: 'Could not load provider commands',
+          retryable: true,
+        })
+        .mockResolvedValueOnce({ status: 'empty' });
+      const dropdown = new SlashCommandDropdown(
+        containerEl,
+        inputEl,
+        callbacks,
+        { providerConfig: CLAUDE_CONFIG, discoverProviderEntries },
+      );
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      dropdown.hide();
+
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(discoverProviderEntries).toHaveBeenCalledTimes(2);
+      expect(getDiscoveryState(containerEl)?.text).toBe('No provider commands advertised');
+
+      dropdown.destroy();
+    });
+
+    it('discards an older provider completion after setProviderCatalog', async () => {
+      const oldResponse = deferred<ProviderCommandDiscoveryResult<ProviderCommandEntry>>();
+      const dropdown = new SlashCommandDropdown(
+        containerEl,
+        inputEl,
+        callbacks,
+        { providerConfig: CLAUDE_CONFIG, discoverProviderEntries: () => oldResponse.promise },
+      );
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+
+      dropdown.setProviderCatalog(
+        CODEX_CONFIG,
+        async () => ({ status: 'ready', items: [CODEX_ENTRIES[0]] }),
+      );
+      inputEl.value = '$';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      oldResponse.resolve({ status: 'ready', items: [CLAUDE_ENTRIES[0]] });
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(getRenderedCommandNames(containerEl)).toContain('$analyze');
+      expect(getRenderedCommandNames(containerEl)).not.toContain('/review');
+
+      dropdown.destroy();
+    });
+
+    it('preserves exact provider prefixes and qualified names', async () => {
+      const qualifiedEntry: ProviderCommandEntry = {
+        ...CLAUDE_ENTRIES[0],
+        id: 'grok-local-review',
+        providerId: 'grok',
+        name: 'local:review',
+        displayPrefix: '/',
+        insertPrefix: '/',
+      };
+      const dropdown = new SlashCommandDropdown(
+        containerEl,
+        inputEl,
+        callbacks,
+        {
+          providerConfig: { ...CLAUDE_CONFIG, providerId: 'grok' },
+          discoverProviderEntries: async () => ({ status: 'ready', items: [qualifiedEntry] }),
+        },
+      );
+
+      inputEl.value = '/local';
+      inputEl.selectionStart = 6;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      dropdown.handleKeydown({ key: 'Enter', preventDefault: jest.fn() } as any);
+
+      expect(inputEl.value).toBe('/local:review ');
+
+      dropdown.destroy();
+    });
+
+    it('never invokes typed discovery for the legacy catalog-only path', async () => {
+      const legacyEntries = jest.fn().mockResolvedValue(CLAUDE_ENTRIES);
+      const typedDiscovery = jest.fn();
+      const dropdown = new SlashCommandDropdown(
+        containerEl,
+        inputEl,
+        callbacks,
+        {
+          providerConfig: CLAUDE_CONFIG,
+          getProviderEntries: legacyEntries,
+          discoverProviderEntries: typedDiscovery,
+        },
+      );
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdown.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(legacyEntries).toHaveBeenCalledTimes(1);
+      expect(typedDiscovery).not.toHaveBeenCalled();
 
       dropdown.destroy();
     });

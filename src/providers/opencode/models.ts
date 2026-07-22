@@ -31,7 +31,6 @@ export interface OpencodeDiscoveredModelGroup {
   providerLabel: string;
 }
 
-export const OPENCODE_SYNTHETIC_MODEL_ID = 'opencode';
 export const OPENCODE_DEFAULT_THINKING_LEVEL = 'default';
 
 const OPENCODE_MODEL_PREFIX = 'opencode:';
@@ -62,12 +61,12 @@ export function resolveOpencodeDefaultThinkingLevel(
 }
 
 export function isOpencodeModelSelectionId(model: string): boolean {
-  return model === OPENCODE_SYNTHETIC_MODEL_ID || model.startsWith(OPENCODE_MODEL_PREFIX);
+  return decodeOpencodeModelId(model) !== null;
 }
 
 export function encodeOpencodeModelId(rawModelId: string): string {
   const normalized = rawModelId.trim();
-  return normalized ? `${OPENCODE_MODEL_PREFIX}${normalized}` : OPENCODE_SYNTHETIC_MODEL_ID;
+  return normalized ? `${OPENCODE_MODEL_PREFIX}${normalized}` : '';
 }
 
 export function decodeOpencodeModelId(model: string): string | null {

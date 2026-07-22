@@ -7,7 +7,7 @@ import {
   TOOL_AGENT_OUTPUT,
   TOOL_APPLY_PATCH,
   TOOL_SPAWN_AGENT,
-  TOOL_TASK,
+  TOOL_SUBAGENT,
   TOOL_WAIT_AGENT,
   TOOL_WRITE_STDIN,
 } from '@/core/tools/toolNames';
@@ -49,7 +49,7 @@ function createMockComponent() {
   };
 }
 
-function mockCapabilities(providerId: 'claude' | 'codex' = 'claude') {
+function mockCapabilities(providerId: 'claude' | 'codex' | 'grok' = 'claude') {
   return () => ({
     providerId,
     supportsPersistentRuntime: true,
@@ -67,7 +67,7 @@ function mockCapabilities(providerId: 'claude' | 'codex' = 'claude') {
 
 function createRenderer(
   messagesEl?: any,
-  providerId: 'claude' | 'codex' = 'claude',
+  providerId: 'claude' | 'codex' | 'grok' = 'claude',
   settings: Record<string, unknown> = {},
 ) {
   const el = messagesEl ?? createMockEl();
@@ -513,14 +513,14 @@ describe('MessageRenderer', () => {
         { id: 'read', name: 'Read', input: { file_path: 'notes/test.md' } } as any,
         {
           id: 'sub-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Async subagent' },
           status: 'running',
           subagent: { id: 'sub-1', mode: 'async', status: 'running', toolCalls: [], isExpanded: false },
         } as any,
         {
           id: 'sub-2',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Sync subagent' },
           status: 'running',
           subagent: { id: 'sub-2', mode: 'sync', status: 'running', toolCalls: [], isExpanded: false },
@@ -870,7 +870,7 @@ describe('MessageRenderer', () => {
       toolCalls: [
         {
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Run tests' },
           status: 'completed',
           result: 'All passed',
@@ -909,7 +909,7 @@ describe('MessageRenderer', () => {
       toolCalls: [
         {
           id: 'task-async-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Background task', run_in_background: true },
           status: 'completed',
           result: 'Task running',
@@ -956,7 +956,7 @@ describe('MessageRenderer', () => {
       toolCalls: [
         {
           id: 'task-async-structured-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Background task', run_in_background: true },
           status: 'completed',
           result: [{ type: 'text', text: '{"status":"running"}' }] as any,
@@ -993,7 +993,7 @@ describe('MessageRenderer', () => {
       toolCalls: [
         {
           id: 'task-hint-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Background task from block hint' },
           status: 'running',
           subagent: {
@@ -1568,13 +1568,13 @@ describe('MessageRenderer', () => {
   });
 
   // ============================================
-  // Task tool rendering - error and running status
+  // Agent tool rendering - error and running status
   // ============================================
 
-  describe('Task tool rendering - error and running status', () => {
-    it('renders Task tool with error status as subagent with status error', () => {
+  describe('Agent tool rendering - error and running status', () => {
+    it('renders Agent tool with error status as subagent with status error', () => {
       const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl, 'codex');
+      const { renderer } = createRenderer(messagesEl);
 
       (renderStoredSubagent as jest.Mock).mockClear();
 
@@ -1586,7 +1586,7 @@ describe('MessageRenderer', () => {
         toolCalls: [
           {
             id: 'task-err',
-            name: TOOL_TASK,
+            name: TOOL_SUBAGENT,
             input: { description: 'Failing task' },
             status: 'error',
             result: 'Something went wrong',
@@ -1610,9 +1610,9 @@ describe('MessageRenderer', () => {
       );
     });
 
-    it('renders Task tool with running status (default case in switch)', () => {
+    it('renders Agent tool with running status (default case in switch)', () => {
       const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl, 'codex');
+      const { renderer } = createRenderer(messagesEl);
 
       (renderStoredSubagent as jest.Mock).mockClear();
 
@@ -1624,7 +1624,7 @@ describe('MessageRenderer', () => {
         toolCalls: [
           {
             id: 'task-run',
-            name: TOOL_TASK,
+            name: TOOL_SUBAGENT,
             input: { description: 'Running task' },
             status: 'pending',
           } as any,
@@ -1646,7 +1646,7 @@ describe('MessageRenderer', () => {
       );
     });
 
-    it('renders Task tool with no description uses fallback Subagent task', () => {
+    it('renders Agent tool with no description using the fallback label', () => {
       const messagesEl = createMockEl();
       const { renderer } = createRenderer(messagesEl);
 
@@ -1660,7 +1660,7 @@ describe('MessageRenderer', () => {
         toolCalls: [
           {
             id: 'task-no-desc',
-            name: TOOL_TASK,
+            name: TOOL_SUBAGENT,
             input: {},
             status: 'completed',
             result: 'Done',
@@ -1729,6 +1729,134 @@ describe('MessageRenderer', () => {
           status: 'completed',
           result: 'Patched utils.ts and verified imports.',
         })
+      );
+    });
+
+    it('renders a stored Grok background task with the async subagent renderer', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl, 'grok');
+
+      const msg: ChatMessage = {
+        id: 'm-grok-subagent',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [
+          {
+            id: 'spawn-1',
+            name: 'spawn_subagent',
+            input: {
+              description: 'Inspect tools',
+              prompt: 'Inspect every mapping.',
+              run_in_background: true,
+              task_id: 'task-1',
+            },
+            status: 'completed',
+            result: 'Spawned task-1',
+          } as any,
+          {
+            id: 'output-1',
+            name: 'get_command_or_subagent_output',
+            input: { task_ids: ['task-1'] },
+            providerPayload: {
+              rawName: 'get_command_or_subagent_output',
+              rawOutput: {
+                Result: [{ output: 'All mappings verified.', status: 'completed', task_id: 'task-1' }],
+                type: 'task_output',
+              },
+            },
+            status: 'completed',
+            result: 'All mappings verified.',
+          } as any,
+        ],
+        contentBlocks: [{ type: 'tool_use', toolId: 'spawn-1' } as any],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredAsyncSubagent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          asyncStatus: 'completed',
+          description: 'Inspect tools',
+          mode: 'async',
+          result: 'All mappings verified.',
+          status: 'completed',
+        }),
+      );
+      expect(renderStoredSubagent).not.toHaveBeenCalled();
+      expect(renderStoredToolCall).not.toHaveBeenCalled();
+    });
+
+    it('renders Grok output calls that target background commands', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl, 'grok');
+      const outputToolCall = {
+        id: 'output-command',
+        name: 'get_command_or_subagent_output',
+        input: { task_id: 'command-1' },
+        status: 'completed',
+        result: 'Command finished.',
+      } as any;
+      const msg: ChatMessage = {
+        id: 'm-grok-command-output',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [outputToolCall],
+        contentBlocks: [{ type: 'tool_use', toolId: 'output-command' } as any],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredToolCall).toHaveBeenCalledWith(
+        expect.anything(),
+        outputToolCall,
+        expect.anything(),
+      );
+    });
+
+    it('renders stored Grok output calls with mixed command and subagent targets', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl, 'grok');
+      const outputToolCall = {
+        id: 'output-mixed',
+        name: 'get_command_or_subagent_output',
+        input: { task_ids: ['task-1', 'command-1'] },
+        status: 'completed',
+        result: 'Subagent and command finished.',
+      } as any;
+      const msg: ChatMessage = {
+        id: 'm-grok-mixed-output',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [
+          {
+            id: 'spawn-1',
+            name: 'spawn_subagent',
+            input: {
+              description: 'Inspect tools',
+              run_in_background: true,
+              task_id: 'task-1',
+            },
+            status: 'completed',
+            result: 'Spawned task-1',
+          } as any,
+          outputToolCall,
+        ],
+        contentBlocks: [
+          { type: 'tool_use', toolId: 'spawn-1' } as any,
+          { type: 'tool_use', toolId: 'output-mixed' } as any,
+        ],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredToolCall).toHaveBeenCalledWith(
+        expect.anything(),
+        outputToolCall,
+        expect.anything(),
       );
     });
   });

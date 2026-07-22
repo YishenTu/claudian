@@ -1,6 +1,6 @@
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
-import { isSubagentToolName } from '../../../core/tools/toolNames';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
+import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
 import { filterActiveBranch } from './sdkBranchFilter';
 import type { SDKSessionLoadResult } from './sdkHistoryTypes';
@@ -139,7 +139,7 @@ export async function loadSDKSessionMessages(
     for (const msg of chatMessages) {
       if (msg.role !== 'assistant' || !msg.toolCalls) continue;
       for (const toolCall of msg.toolCalls) {
-        if (!isSubagentToolName(toolCall.name)) continue;
+        if (!isClaudeSubagentToolName(toolCall.name)) continue;
         if (toolCall.subagent) continue;
         if (toolCall.input?.run_in_background !== true) continue;
 

@@ -6,6 +6,7 @@ import type {
   AsyncSubagentCompletionCallback,
   AutoTurnCallback,
   ChatRewindMode,
+  ChatRewindPreview,
   ChatRewindResult,
   ChatRuntimeConversationState,
   ChatRuntimeEnsureReadyOptions,
@@ -44,13 +45,24 @@ export interface ChatRuntime {
   consumeSessionInvalidation(): boolean;
   isReady(): boolean;
   getSupportedCommands(): Promise<SlashCommand[]>;
+  /** Publishes provider-native command snapshots without committing them to a shared catalog. */
+  onSupportedCommandsChange?(
+    listener: (commands: readonly SlashCommand[]) => void,
+  ): () => void;
   getAuxiliaryModel?(): string | null;
   cleanup(): void;
+  previewRewind?(
+    userMessageId: string,
+    assistantMessageId: string | undefined,
+    mode?: ChatRewindMode,
+  ): Promise<ChatRewindPreview>;
   rewind(userMessageId: string, assistantMessageId: string | undefined, mode?: ChatRewindMode): Promise<ChatRewindResult>;
   setApprovalCallback(callback: ApprovalCallback | null): void;
   setApprovalDismisser(dismisser: (() => void) | null): void;
   setAskUserQuestionCallback(callback: AskUserQuestionCallback | null): void;
   setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void;
+  /** Applies a provider-native session mode when a live session exists. */
+  setSessionMode?(mode: string): Promise<boolean>;
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void;
   setAsyncSubagentCompletionCallback?(callback: AsyncSubagentCompletionCallback | null): void;
   setAutoTurnCallback(callback: AutoTurnCallback | null): void;

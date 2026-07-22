@@ -1,0 +1,16 @@
+{
+  "grokVersion": "0.2.106",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": "<request-id>",
+    "method": "_x.ai/exit_plan_mode",
+    "params": {
+      "sessionId": "<session-id>",
+      "toolCallId": "<tool-call-id>",
+      "planContent": "<sanitized-nonempty-plan>"
+    }
+  },
+  "response": {
+    "outcome": "abandoned"
+  }
+}
