@@ -258,6 +258,7 @@ export function buildGrokSubagentInfo(
 }
 
 export const grokSubagentLifecycleAdapter: ProviderSubagentLifecycleAdapter = {
+  protocol: 'lifecycle',
   isHiddenTool(name) {
     const normalized = normalizedName(name);
     return GROK_SUBAGENT_WAIT_TOOLS.has(normalized)

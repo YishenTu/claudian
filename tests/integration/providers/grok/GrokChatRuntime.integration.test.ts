@@ -12,7 +12,6 @@ const CAPABILITIES: ProviderCapabilities = {
   supportsFork: true,
   supportsImageAttachments: true,
   supportsInstructionMode: true,
-  supportsLegacySubagentTools: false,
   supportsMcpTools: false,
   supportsNativeHistory: true,
   supportsPersistentRuntime: true,

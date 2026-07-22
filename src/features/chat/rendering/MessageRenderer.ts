@@ -1,12 +1,14 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer, Menu, Notice, setIcon } from 'obsidian';
 
-import { DEFAULT_CHAT_PROVIDER_ID, type ProviderCapabilities } from '../../../core/providers/types';
+import {
+  DEFAULT_CHAT_PROVIDER_ID,
+  type ProviderCapabilities,
+  type ProviderSubagentLifecycleAdapter,
+} from '../../../core/providers/types';
 import type { ChatRewindMode } from '../../../core/runtime/types';
 import {
-  isSubagentToolName,
   isWriteEditTool,
-  TOOL_AGENT_OUTPUT,
   TOOL_APPLY_PATCH,
   TOOL_WRITE_STDIN,
 } from '../../../core/tools/toolNames';
@@ -26,7 +28,7 @@ import {
 import type { FeatureHost } from '../../FeatureHost';
 import { findRewindContext } from '../rewind';
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
-import { resolveSubagentLifecycleAdapter } from './subagentLifecycleResolution';
+import { resolveSubagentAdapter } from './subagentAdapterResolution';
 import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
@@ -86,7 +88,6 @@ export class MessageRenderer {
       supportsProviderCommands: false,
       supportsImageAttachments: false,
       supportsInstructionMode: false,
-      supportsLegacySubagentTools: false,
       supportsMcpTools: false,
       supportsTurnSteer: false,
       reasoningControl: 'none' as const,
@@ -101,8 +102,8 @@ export class MessageRenderer {
     this.messagesEl = el;
   }
 
-  private getSubagentLifecycleAdapter(toolName?: string) {
-    return resolveSubagentLifecycleAdapter(this.getCapabilities().providerId, toolName);
+  private getSubagentAdapter(toolName?: string) {
+    return resolveSubagentAdapter(this.getCapabilities().providerId, toolName);
   }
 
   private shouldExpandFileEditsByDefault(): boolean {
@@ -396,9 +397,12 @@ export class MessageRenderer {
           const boundaryEl = contentEl.createDiv({ cls: 'claudian-compact-boundary' });
           boundaryEl.createSpan({ cls: 'claudian-compact-boundary-label', text: 'Conversation compacted' });
         } else if (block.type === 'subagent') {
-          const taskToolCall = msg.toolCalls?.find(
-            tc => tc.id === block.subagentId && isSubagentToolName(tc.name)
-          );
+          const taskToolCall = msg.toolCalls?.find((toolCall) => {
+            if (toolCall.id !== block.subagentId) return false;
+            const adapter = this.getSubagentAdapter(toolCall.name);
+            return adapter?.protocol === 'managed-agent'
+              && adapter.isSpawnTool(toolCall.name);
+          });
           if (!taskToolCall) continue;
 
           this.renderTaskSubagent(contentEl, taskToolCall, block.mode);
@@ -452,15 +456,22 @@ export class MessageRenderer {
    */
   private renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo, msg?: ChatMessage): void {
     if (!this.shouldRenderToolCall(toolCall, msg)) return;
-    const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(toolCall.name);
+    const subagentAdapter = this.getSubagentAdapter(toolCall.name);
 
     if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall, {
         initiallyExpanded: this.shouldExpandFileEditsByDefault(),
       });
-    } else if (isSubagentToolName(toolCall.name)) {
+    } else if (
+      subagentAdapter?.protocol === 'managed-agent'
+      && subagentAdapter.isSpawnTool(toolCall.name)
+    ) {
       this.renderTaskSubagent(contentEl, toolCall);
-    } else if (subagentLifecycleAdapter?.isSpawnTool(toolCall.name) && msg) {
+    } else if (
+      subagentAdapter?.protocol === 'lifecycle'
+      && subagentAdapter.isSpawnTool(toolCall.name)
+      && msg
+    ) {
       this.renderProviderLifecycleSubagent(contentEl, toolCall, msg);
     } else {
       renderStoredToolCall(contentEl, toolCall, {
@@ -470,15 +481,19 @@ export class MessageRenderer {
   }
 
   private shouldRenderToolCall(toolCall: ToolCallInfo, msg?: ChatMessage): boolean {
-    if (toolCall.name === TOOL_AGENT_OUTPUT) return false;
     if (toolCall.name === TOOL_WRITE_STDIN && this.isSilentWriteStdinTool(toolCall)) return false;
     if (toolCall.name === 'custom_tool_call_output') return false;
 
-    const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(toolCall.name);
+    const subagentAdapter = this.getSubagentAdapter(toolCall.name);
     if (
-      subagentLifecycleAdapter?.isHiddenTool(toolCall.name)
+      subagentAdapter?.protocol === 'managed-agent'
+      && subagentAdapter.isOutputTool(toolCall.name)
+    ) return false;
+    if (
+      subagentAdapter?.protocol === 'lifecycle'
+      && subagentAdapter.isHiddenTool(toolCall.name)
       && msg
-      && this.isLinkedProviderSubagentTool(toolCall, msg, subagentLifecycleAdapter)
+      && this.isLinkedProviderSubagentTool(toolCall, msg, subagentAdapter)
     ) return false;
 
     return true;
@@ -487,7 +502,7 @@ export class MessageRenderer {
   private isLinkedProviderSubagentTool(
     toolCall: ToolCallInfo,
     msg: ChatMessage,
-    adapter: NonNullable<ReturnType<MessageRenderer['getSubagentLifecycleAdapter']>>,
+    adapter: ProviderSubagentLifecycleAdapter,
   ): boolean {
     const agentIdToSpawnId = new Map<string, string>();
     for (const sibling of msg.toolCalls ?? []) {
@@ -526,13 +541,13 @@ export class MessageRenderer {
     spawnToolCall: ToolCallInfo,
     msg: ChatMessage,
   ): void {
-    const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(spawnToolCall.name);
-    if (!subagentLifecycleAdapter) {
+    const subagentAdapter = this.getSubagentAdapter(spawnToolCall.name);
+    if (!subagentAdapter || subagentAdapter.protocol !== 'lifecycle') {
       renderStoredToolCall(contentEl, spawnToolCall);
       return;
     }
 
-    const subagentInfo = subagentLifecycleAdapter.buildSubagentInfo(
+    const subagentInfo = subagentAdapter.buildSubagentInfo(
       spawnToolCall,
       msg.toolCalls ?? [],
     );

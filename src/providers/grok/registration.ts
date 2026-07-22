@@ -55,7 +55,7 @@ export const grokProviderRegistration: ProviderModule = {
       return false;
     },
   },
-  subagentLifecycleAdapter: grokSubagentLifecycleAdapter,
+  subagentAdapter: grokSubagentLifecycleAdapter,
   taskResultInterpreter: new GrokTaskResultInterpreter(),
   workspace: grokWorkspaceRegistration,
 };

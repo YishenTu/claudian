@@ -1,11 +1,11 @@
 import { TFile } from 'obsidian';
 
 import { resolveConversationModel } from '../../../core/providers/conversationModel';
-import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
   type ProviderId,
+  type ProviderSubagentAdapter,
   type ProviderSubagentLifecycleAdapter,
 } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
@@ -14,13 +14,11 @@ import { parseTodoInput } from '../../../core/tools/todo';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import {
   isEditTool,
-  isSubagentToolName,
   isWriteEditTool,
   skipsBlockedDetection,
-  TOOL_AGENT_OUTPUT,
   TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
-  TOOL_TASK,
+  TOOL_SUBAGENT,
   TOOL_TODO_WRITE,
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
@@ -48,7 +46,7 @@ import { getVaultPath, normalizePathForVault } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
 import { FLAVOR_TEXTS } from '../constants';
 import type { MessageRenderer, RenderContentOptions } from '../rendering/MessageRenderer';
-import { resolveSubagentLifecycleAdapter } from '../rendering/subagentLifecycleResolution';
+import { resolveSubagentAdapter } from '../rendering/subagentAdapterResolution';
 import {
   type AsyncSubagentState,
   createAsyncSubagentBlock,
@@ -119,15 +117,8 @@ export class StreamController {
     return this.deps.getAgentService?.()?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
   }
 
-  private getSubagentLifecycleAdapter(toolName?: string): ProviderSubagentLifecycleAdapter | null {
-    return resolveSubagentLifecycleAdapter(this.getActiveProviderId(), toolName);
-  }
-
-  private supportsLegacySubagentTools(): boolean {
-    const service = this.deps.getAgentService?.();
-    const capabilities = service?.getCapabilities()
-      ?? ProviderRegistry.getCapabilities(this.getActiveProviderId());
-    return capabilities.supportsLegacySubagentTools;
+  private getSubagentAdapter(toolName?: string): ProviderSubagentAdapter | null {
+    return resolveSubagentAdapter(this.getActiveProviderId(), toolName);
   }
 
   private normalizeToolResultContent(content: unknown): string {
@@ -167,29 +158,28 @@ export class StreamController {
         }
         await this.finalizeCurrentTextBlock(msg);
 
-        if (isSubagentToolName(chunk.name) && this.supportsLegacySubagentTools()) {
-          // Flush pending tools before Agent
-          this.flushPendingTools();
-          this.handleTaskToolUseViaManager(chunk, msg);
+        const subagentAdapter = this.getSubagentAdapter(chunk.name);
+        if (subagentAdapter?.protocol === 'managed-agent') {
+          if (subagentAdapter.isSpawnTool(chunk.name)) {
+            this.flushPendingTools();
+            this.handleTaskToolUseViaManager(chunk, msg);
+          } else if (subagentAdapter.isOutputTool(chunk.name)) {
+            this.handleAgentOutputToolUse(chunk, msg);
+          }
           break;
         }
-
-        if (chunk.name === TOOL_AGENT_OUTPUT) {
-          this.handleAgentOutputToolUse(chunk, msg);
-          break;
-        }
-
-        const subagentLifecycleAdapter = this.getSubagentLifecycleAdapter(chunk.name);
-        if (subagentLifecycleAdapter?.isSpawnTool(chunk.name)) {
-          this.handleProviderSubagentSpawn(chunk, msg, subagentLifecycleAdapter);
-          break;
-        }
-        if (
-          subagentLifecycleAdapter?.isHiddenTool(chunk.name)
-          && this.isLinkedProviderSubagentTool(chunk, subagentLifecycleAdapter)
-        ) {
-          this.handleProviderHiddenSubagentTool(chunk, msg);
-          break;
+        if (subagentAdapter?.protocol === 'lifecycle') {
+          if (subagentAdapter.isSpawnTool(chunk.name)) {
+            this.handleProviderSubagentSpawn(chunk, msg, subagentAdapter);
+            break;
+          }
+          if (
+            subagentAdapter.isHiddenTool(chunk.name)
+            && this.isLinkedProviderSubagentTool(chunk, subagentAdapter)
+          ) {
+            this.handleProviderHiddenSubagentTool(chunk, msg);
+            break;
+          }
         }
 
         this.handleRegularToolUse(chunk, msg);
@@ -645,8 +635,8 @@ export class StreamController {
     if (!existingToolCall) return false;
     const normalizedContent = this.normalizeToolResultContent(chunk.content);
 
-    const adapter = this.getSubagentLifecycleAdapter(existingToolCall.name);
-    if (!adapter) return false;
+    const adapter = this.getSubagentAdapter(existingToolCall.name);
+    if (!adapter || adapter.protocol !== 'lifecycle') return false;
     if (
       adapter.isHiddenTool(existingToolCall.name)
       && adapter.resolveSpawnToolIds(
@@ -772,7 +762,10 @@ export class StreamController {
     const normalizedContent = this.normalizeToolResultContent(chunk.content);
 
     const lifecycleToolCall = msg.toolCalls?.find(toolCall => toolCall.id === chunk.id);
-    if (lifecycleToolCall && this.getSubagentLifecycleAdapter(lifecycleToolCall.name)) {
+    const lifecycleAdapter = lifecycleToolCall
+      ? this.getSubagentAdapter(lifecycleToolCall.name)
+      : null;
+    if (lifecycleToolCall && lifecycleAdapter?.protocol === 'lifecycle') {
       mergeToolProviderPayload(lifecycleToolCall, chunk.toolUseResult?.providerPayload);
     }
 
@@ -1559,8 +1552,8 @@ export class StreamController {
         existing.input = { ...existing.input, ...input };
       }
       mergeToolProviderPayload(existing, providerPayload);
-      if (!isSubagentToolName(existing.name)) {
-        existing.name = TOOL_TASK;
+      if (existing.name !== TOOL_SUBAGENT) {
+        existing.name = TOOL_SUBAGENT;
         this.removeToolCardRenderer(toolId);
       }
       return existing;
@@ -1569,7 +1562,7 @@ export class StreamController {
     const normalizedProviderPayload = normalizeToolProviderPayload(providerPayload);
     const taskToolCall: ToolCallInfo = {
       id: toolId,
-      name: TOOL_TASK,
+      name: TOOL_SUBAGENT,
       input: input ? { ...input } : {},
       ...(normalizedProviderPayload ? { providerPayload: normalizedProviderPayload } : {}),
       status: 'running',
@@ -1601,7 +1594,7 @@ export class StreamController {
 
   private linkTaskToolCallToSubagent(msg: ChatMessage, subagent: SubagentInfo): boolean {
     const taskToolCall = msg.toolCalls?.find(
-      tc => tc.id === subagent.id && isSubagentToolName(tc.name)
+      tc => tc.id === subagent.id && tc.name === TOOL_SUBAGENT
     );
     if (!taskToolCall) return false;
     this.applySubagentToTaskToolCall(taskToolCall, subagent);

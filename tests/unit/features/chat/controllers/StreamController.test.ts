@@ -8,7 +8,7 @@ import {
   TOOL_AGENT_OUTPUT,
   TOOL_APPLY_PATCH,
   TOOL_SPAWN_AGENT,
-  TOOL_TASK,
+  TOOL_SUBAGENT,
   TOOL_TODO_WRITE,
   TOOL_WAIT_AGENT,
 } from '@/core/tools/toolNames';
@@ -117,7 +117,6 @@ function createMockDeps(): StreamControllerDeps {
     loadSubagentFinalResult: jest.fn().mockResolvedValue(null),
     getCapabilities: jest.fn().mockReturnValue({
       providerId: 'claude',
-      supportsLegacySubagentTools: true,
       supportsPlanMode: true,
       planPathPrefix: '/.claude/plans/',
     }),
@@ -565,7 +564,7 @@ describe('StreamController - Text Content', () => {
         {
           type: 'tool_use',
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { prompt: 'Do something', subagent_type: 'general-purpose', run_in_background: false },
         },
         msg
@@ -576,7 +575,7 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls).toContainEqual(
         expect.objectContaining({
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           subagent: expect.objectContaining({ id: 'task-1' }),
         })
       );
@@ -595,7 +594,6 @@ describe('StreamController - Text Content', () => {
           providerId: 'grok',
           getCapabilities: jest.fn().mockReturnValue({
             providerId: 'grok',
-            supportsLegacySubagentTools: false,
           }),
         }) as any;
 
@@ -629,7 +627,6 @@ describe('StreamController - Text Content', () => {
         providerId: 'opencode',
         getCapabilities: jest.fn().mockReturnValue({
           providerId: 'opencode',
-          supportsLegacySubagentTools: true,
         }),
       }) as any;
       const genericEl = createMockEl();
@@ -678,7 +675,7 @@ describe('StreamController - Text Content', () => {
       expect(toolCall).toMatchObject({
         input: { description: 'Inspect', prompt: 'Inspect the vault' },
         isExpanded: true,
-        name: TOOL_TASK,
+        name: TOOL_SUBAGENT,
         providerPayload: {
           rawInput: { prompt: 'Inspect the vault' },
           rawName: 'task',
@@ -697,7 +694,7 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.writeEditStates.has('opencode-agent')).toBe(false);
     });
 
-    it('continues routing Claude Agent tools through the legacy subagent manager', async () => {
+    it('routes the current Claude Agent tool through the managed subagent protocol', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
       (deps.subagentManager.handleTaskToolUse as jest.Mock).mockReturnValueOnce({
@@ -717,7 +714,7 @@ describe('StreamController - Text Content', () => {
         deps.state.currentContentEl,
       );
       expect(msg.toolCalls).toHaveLength(1);
-      expect(msg.toolCalls![0].name).toBe(TOOL_TASK);
+      expect(msg.toolCalls![0].name).toBe(TOOL_SUBAGENT);
     });
 
     it('should render TodoWrite inline and update panel', async () => {
@@ -1065,7 +1062,7 @@ describe('StreamController - Text Content', () => {
       expect(renderToolCall).not.toHaveBeenCalled();
 
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', subagent_type: 'general-purpose', run_in_background: false } },
+        { type: 'tool_use', id: 'task-1', name: TOOL_SUBAGENT, input: { prompt: 'Do something', subagent_type: 'general-purpose', run_in_background: false } },
         msg
       );
 
@@ -1472,14 +1469,14 @@ describe('StreamController - Text Content', () => {
       });
 
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', run_in_background: true } },
+        { type: 'tool_use', id: 'task-1', name: TOOL_SUBAGENT, input: { prompt: 'Do something', run_in_background: true } },
         msg
       );
 
       expect(msg.toolCalls).toContainEqual(
         expect.objectContaining({
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           subagent: expect.objectContaining({
             id: 'task-1',
             mode: 'async',
@@ -1498,14 +1495,14 @@ describe('StreamController - Text Content', () => {
       });
 
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Updated' } },
+        { type: 'tool_use', id: 'task-1', name: TOOL_SUBAGENT, input: { prompt: 'Updated' } },
         msg
       );
 
       expect(msg.toolCalls).toContainEqual(
         expect.objectContaining({
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
         })
       );
       expect(msg.contentBlocks).toEqual([]);
@@ -1522,7 +1519,7 @@ describe('StreamController - Text Content', () => {
         timestamp: Date.now(),
         toolCalls: [{
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'test' },
           status: 'running',
           subagent: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
@@ -1546,7 +1543,7 @@ describe('StreamController - Text Content', () => {
         timestamp: Date.now(),
         toolCalls: [{
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'test' },
           status: 'running',
         }],
@@ -1701,7 +1698,7 @@ describe('StreamController - Text Content', () => {
 
       // Task without run_in_background - manager returns buffered
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', subagent_type: 'general-purpose' } },
+        { type: 'tool_use', id: 'task-1', name: TOOL_SUBAGENT, input: { prompt: 'Do something', subagent_type: 'general-purpose' } },
         msg
       );
 
@@ -1735,7 +1732,7 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls).toContainEqual(
         expect.objectContaining({
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           subagent: expect.objectContaining({ id: 'task-1' }),
         })
       );
@@ -1748,7 +1745,7 @@ describe('StreamController - Text Content', () => {
 
       // Task without run_in_background - manager returns buffered
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', subagent_type: 'general-purpose' } },
+        { type: 'tool_use', id: 'task-1', name: TOOL_SUBAGENT, input: { prompt: 'Do something', subagent_type: 'general-purpose' } },
         msg
       );
 
@@ -1772,7 +1769,7 @@ describe('StreamController - Text Content', () => {
 
       // Task without run_in_background - manager returns buffered
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something', subagent_type: 'general-purpose' } },
+        { type: 'tool_use', id: 'task-1', name: TOOL_SUBAGENT, input: { prompt: 'Do something', subagent_type: 'general-purpose' } },
         msg
       );
 
@@ -1801,7 +1798,7 @@ describe('StreamController - Text Content', () => {
       deps.state.currentContentEl = createMockEl();
 
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something' } },
+        { type: 'tool_use', id: 'task-1', name: TOOL_SUBAGENT, input: { prompt: 'Do something' } },
         msg
       );
 
@@ -1847,7 +1844,7 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls).toContainEqual(
         expect.objectContaining({
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           subagent: expect.objectContaining({ mode: 'async' }),
         })
       );
@@ -1858,7 +1855,7 @@ describe('StreamController - Text Content', () => {
       deps.state.currentContentEl = createMockEl();
 
       await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'task-1', name: TOOL_TASK, input: { prompt: 'Do something' } },
+        { type: 'tool_use', id: 'task-1', name: TOOL_SUBAGENT, input: { prompt: 'Do something' } },
         msg
       );
 
@@ -2964,7 +2961,7 @@ describe('StreamController - Text Content', () => {
       msg.toolCalls = [
         {
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Do something' },
           status: 'running',
           subagent: { id: 'task-1', description: 'Do something', status: 'running', toolCalls: [], isExpanded: false },
@@ -3076,7 +3073,6 @@ describe('StreamController - Text Content', () => {
         providerId: 'grok',
         getCapabilities: jest.fn().mockReturnValue({
           providerId: 'grok',
-          supportsLegacySubagentTools: false,
         }),
       }) as any;
     });

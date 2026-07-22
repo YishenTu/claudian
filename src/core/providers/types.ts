@@ -33,7 +33,6 @@ export interface ProviderCapabilities {
   supportsProviderCommands: boolean;
   supportsImageAttachments: boolean;
   supportsInstructionMode: boolean;
-  supportsLegacySubagentTools: boolean;
   supportsMcpTools: boolean;
   supportsTurnSteer?: boolean;
   reasoningControl: 'effort' | 'token-budget' | 'none';
@@ -70,7 +69,7 @@ export interface ProviderRegistration {
   createInlineEditService: (plugin: ProviderHost) => InlineEditService;
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
-  subagentLifecycleAdapter?: ProviderSubagentLifecycleAdapter;
+  subagentAdapter?: ProviderSubagentAdapter;
 }
 
 export interface ProviderModule extends ProviderRegistration {
@@ -578,7 +577,14 @@ export interface ProviderSubagentWaitResult {
   timedOut: boolean;
 }
 
+export interface ProviderManagedSubagentAdapter {
+  protocol: 'managed-agent';
+  isOutputTool(name: string): boolean;
+  isSpawnTool(name: string): boolean;
+}
+
 export interface ProviderSubagentLifecycleAdapter {
+  protocol: 'lifecycle';
   isHiddenTool(name: string): boolean;
   isSpawnTool(name: string): boolean;
   isWaitTool(name: string): boolean;
@@ -600,6 +606,10 @@ export interface ProviderSubagentLifecycleAdapter {
     toolCall?: ToolCallInfo,
   ): ProviderSubagentWaitResult;
 }
+
+export type ProviderSubagentAdapter =
+  | ProviderManagedSubagentAdapter
+  | ProviderSubagentLifecycleAdapter;
 
 // ---------------------------------------------------------------------------
 // Auxiliary service contracts

@@ -91,12 +91,33 @@ describe('ProviderRegistry', () => {
     expect(caps.supportsFork).toBe(false);
   });
 
-  it('opts only validated providers into legacy Agent and Task routing', () => {
-    expect(ProviderRegistry.getCapabilities('claude').supportsLegacySubagentTools).toBe(true);
-    expect(ProviderRegistry.getCapabilities('opencode').supportsLegacySubagentTools).toBe(true);
-    expect(ProviderRegistry.getCapabilities('grok').supportsLegacySubagentTools).toBe(false);
-    expect(ProviderRegistry.getCapabilities('codex').supportsLegacySubagentTools).toBe(false);
-    expect(ProviderRegistry.getCapabilities('pi').supportsLegacySubagentTools).toBe(false);
+  it('registers provider-owned subagent protocols outside the capability matrix', () => {
+    const claudeAdapter = ProviderRegistry.getSubagentAdapter('claude');
+    expect(claudeAdapter).toMatchObject({
+      protocol: 'managed-agent',
+    });
+    const opencodeAdapter = ProviderRegistry.getSubagentAdapter('opencode');
+    expect(opencodeAdapter).toMatchObject({
+      protocol: 'managed-agent',
+    });
+    expect(ProviderRegistry.getSubagentAdapter('grok')).toMatchObject({
+      protocol: 'lifecycle',
+    });
+    expect(ProviderRegistry.getSubagentAdapter('codex')).toMatchObject({
+      protocol: 'lifecycle',
+    });
+    expect(ProviderRegistry.getSubagentAdapter('pi')).toBeNull();
+
+    expect(claudeAdapter?.isSpawnTool('Agent')).toBe(true);
+    expect(claudeAdapter?.isSpawnTool('Task')).toBe(false);
+    expect(opencodeAdapter?.isSpawnTool('Agent')).toBe(true);
+    expect(opencodeAdapter?.isSpawnTool('Task')).toBe(false);
+
+    for (const providerId of ['claude', 'opencode', 'grok', 'codex', 'pi'] as const) {
+      expect(ProviderRegistry.getCapabilities(providerId)).not.toHaveProperty(
+        'supportsLegacySubagentTools',
+      );
+    }
   });
 
   it('returns Pi capabilities', () => {

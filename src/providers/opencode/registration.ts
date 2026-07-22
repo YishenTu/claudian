@@ -9,6 +9,7 @@ import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
 import { OpencodeChatRuntime } from './runtime/OpencodeChatRuntime';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from './settings';
+import { opencodeSubagentAdapter } from './subagentAdapter';
 import { opencodeChatUIConfig } from './ui/OpencodeChatUIConfig';
 
 export const opencodeProviderRegistration: ProviderModule = {
@@ -34,5 +35,6 @@ export const opencodeProviderRegistration: ProviderModule = {
     },
   },
   taskResultInterpreter: new OpencodeTaskResultInterpreter(),
+  subagentAdapter: opencodeSubagentAdapter,
   workspace: opencodeWorkspaceRegistration,
 };

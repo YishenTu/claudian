@@ -10,7 +10,6 @@ export const CODEX_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Objec
   supportsProviderCommands: true,
   supportsImageAttachments: true,
   supportsInstructionMode: true,
-  supportsLegacySubagentTools: false,
   supportsMcpTools: false,
   supportsTurnSteer: true,
   reasoningControl: 'effort',

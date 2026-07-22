@@ -7,7 +7,7 @@ import {
   TOOL_AGENT_OUTPUT,
   TOOL_APPLY_PATCH,
   TOOL_SPAWN_AGENT,
-  TOOL_TASK,
+  TOOL_SUBAGENT,
   TOOL_WAIT_AGENT,
   TOOL_WRITE_STDIN,
 } from '@/core/tools/toolNames';
@@ -60,7 +60,6 @@ function mockCapabilities(providerId: 'claude' | 'codex' | 'grok' = 'claude') {
     supportsProviderCommands: true,
     supportsImageAttachments: true,
     supportsInstructionMode: true,
-    supportsLegacySubagentTools: providerId === 'claude',
     supportsMcpTools: true,
     reasoningControl: 'effort' as const,
   });
@@ -514,14 +513,14 @@ describe('MessageRenderer', () => {
         { id: 'read', name: 'Read', input: { file_path: 'notes/test.md' } } as any,
         {
           id: 'sub-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Async subagent' },
           status: 'running',
           subagent: { id: 'sub-1', mode: 'async', status: 'running', toolCalls: [], isExpanded: false },
         } as any,
         {
           id: 'sub-2',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Sync subagent' },
           status: 'running',
           subagent: { id: 'sub-2', mode: 'sync', status: 'running', toolCalls: [], isExpanded: false },
@@ -871,7 +870,7 @@ describe('MessageRenderer', () => {
       toolCalls: [
         {
           id: 'task-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Run tests' },
           status: 'completed',
           result: 'All passed',
@@ -910,7 +909,7 @@ describe('MessageRenderer', () => {
       toolCalls: [
         {
           id: 'task-async-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Background task', run_in_background: true },
           status: 'completed',
           result: 'Task running',
@@ -957,7 +956,7 @@ describe('MessageRenderer', () => {
       toolCalls: [
         {
           id: 'task-async-structured-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Background task', run_in_background: true },
           status: 'completed',
           result: [{ type: 'text', text: '{"status":"running"}' }] as any,
@@ -994,7 +993,7 @@ describe('MessageRenderer', () => {
       toolCalls: [
         {
           id: 'task-hint-1',
-          name: TOOL_TASK,
+          name: TOOL_SUBAGENT,
           input: { description: 'Background task from block hint' },
           status: 'running',
           subagent: {
@@ -1569,13 +1568,13 @@ describe('MessageRenderer', () => {
   });
 
   // ============================================
-  // Task tool rendering - error and running status
+  // Agent tool rendering - error and running status
   // ============================================
 
-  describe('Task tool rendering - error and running status', () => {
-    it('renders Task tool with error status as subagent with status error', () => {
+  describe('Agent tool rendering - error and running status', () => {
+    it('renders Agent tool with error status as subagent with status error', () => {
       const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl, 'codex');
+      const { renderer } = createRenderer(messagesEl);
 
       (renderStoredSubagent as jest.Mock).mockClear();
 
@@ -1587,7 +1586,7 @@ describe('MessageRenderer', () => {
         toolCalls: [
           {
             id: 'task-err',
-            name: TOOL_TASK,
+            name: TOOL_SUBAGENT,
             input: { description: 'Failing task' },
             status: 'error',
             result: 'Something went wrong',
@@ -1611,9 +1610,9 @@ describe('MessageRenderer', () => {
       );
     });
 
-    it('renders Task tool with running status (default case in switch)', () => {
+    it('renders Agent tool with running status (default case in switch)', () => {
       const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl, 'codex');
+      const { renderer } = createRenderer(messagesEl);
 
       (renderStoredSubagent as jest.Mock).mockClear();
 
@@ -1625,7 +1624,7 @@ describe('MessageRenderer', () => {
         toolCalls: [
           {
             id: 'task-run',
-            name: TOOL_TASK,
+            name: TOOL_SUBAGENT,
             input: { description: 'Running task' },
             status: 'pending',
           } as any,
@@ -1647,7 +1646,7 @@ describe('MessageRenderer', () => {
       );
     });
 
-    it('renders Task tool with no description uses fallback Subagent task', () => {
+    it('renders Agent tool with no description using the fallback label', () => {
       const messagesEl = createMockEl();
       const { renderer } = createRenderer(messagesEl);
 
@@ -1661,7 +1660,7 @@ describe('MessageRenderer', () => {
         toolCalls: [
           {
             id: 'task-no-desc',
-            name: TOOL_TASK,
+            name: TOOL_SUBAGENT,
             input: {},
             status: 'completed',
             result: 'Done',

@@ -5,7 +5,7 @@ import { isAbsolute, sep } from 'path';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { ProviderTaskResultInterpreter } from '../../../core/providers/types';
 import type { AsyncSubagentCompletion } from '../../../core/runtime/types';
-import { TOOL_TASK } from '../../../core/tools/toolNames';
+import { TOOL_SUBAGENT } from '../../../core/tools/toolNames';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type {
   SubagentInfo,
@@ -161,7 +161,7 @@ export class SubagentManager {
     if (!currentContentEl) {
       const toolCall: ToolCallInfo = {
         id: taskToolId,
-        name: TOOL_TASK,
+        name: TOOL_SUBAGENT,
         input: taskInput || {},
         status: 'running',
         isExpanded: false,
@@ -174,7 +174,7 @@ export class SubagentManager {
     if (!mode) {
       const toolCall: ToolCallInfo = {
         id: taskToolId,
-        name: TOOL_TASK,
+        name: TOOL_SUBAGENT,
         input: taskInput || {},
         status: 'running',
         isExpanded: false,

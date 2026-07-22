@@ -174,6 +174,7 @@ export function isCodexSubagentSpawnToolCall(toolCall: ToolCallInfo): boolean {
 }
 
 export const codexSubagentLifecycleAdapter: ProviderSubagentLifecycleAdapter = {
+  protocol: 'lifecycle',
   isHiddenTool(name: string): boolean {
     return name === TOOL_WAIT || name === TOOL_WAIT_AGENT || name === TOOL_CLOSE_AGENT;
   },

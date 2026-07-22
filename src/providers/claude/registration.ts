@@ -13,6 +13,7 @@ import { ClaudeConversationHistoryService } from './history/ClaudeConversationHi
 import { ClaudianService as ClaudeChatRuntime } from './runtime/ClaudeChatRuntime';
 import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpreter';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
+import { claudeSubagentAdapter } from './subagentAdapter';
 import { claudeChatUIConfig } from './ui/ClaudeChatUIConfig';
 
 const LEGACY_CLAUDE_1M_SETTINGS = ['enableOpus1M', 'enableSonnet1M'] as const;
@@ -64,5 +65,6 @@ export const claudeProviderRegistration: ProviderModule = {
   createInlineEditService: (plugin) => new ClaudeInlineEditService(plugin),
   historyService: new ClaudeConversationHistoryService(),
   taskResultInterpreter: new ClaudeTaskResultInterpreter(),
+  subagentAdapter: claudeSubagentAdapter,
   workspace: claudeWorkspaceRegistration,
 };

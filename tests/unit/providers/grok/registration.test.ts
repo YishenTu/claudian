@@ -72,7 +72,8 @@ describe('Grok provider registration', () => {
     expect(grokProviderRegistration.environmentKeyPatterns?.some(pattern => pattern.test('GROK_HOME'))).toBe(true);
     expect(grokProviderRegistration.environmentKeyPatterns?.some(pattern => pattern.test('XAI_API_KEY'))).toBe(true);
     expect(grokProviderRegistration.environmentKeyPatterns?.some(pattern => pattern.test('OPENAI_API_KEY'))).toBe(false);
-    expect(grokProviderRegistration.subagentLifecycleAdapter).toMatchObject({
+    expect(grokProviderRegistration.subagentAdapter).toMatchObject({
+      protocol: 'lifecycle',
       isSpawnTool: expect.any(Function),
       isWaitTool: expect.any(Function),
       isCloseTool: expect.any(Function),
