@@ -55,6 +55,8 @@ export interface ChatRuntime {
   setApprovalDismisser(dismisser: (() => void) | null): void;
   setAskUserQuestionCallback(callback: AskUserQuestionCallback | null): void;
   setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void;
+  /** Applies a provider-native session mode when a live session exists. */
+  setSessionMode?(mode: string): Promise<boolean>;
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void;
   setAsyncSubagentCompletionCallback?(callback: AsyncSubagentCompletionCallback | null): void;
   setAutoTurnCallback(callback: AutoTurnCallback | null): void;

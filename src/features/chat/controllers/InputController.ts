@@ -26,7 +26,13 @@ import type {
   ChatTurnRequest,
 } from '../../../core/runtime/types';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
-import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision, StreamChunk } from '../../../core/types';
+import type {
+  ApprovalDecision,
+  ChatMessage,
+  ExitPlanModeDecision,
+  ExitPlanModePresentationOptions,
+  StreamChunk,
+} from '../../../core/types';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import type { BrowserSelectionContext } from '../../../utils/browser';
@@ -1603,6 +1609,7 @@ export class InputController {
   async handleExitPlanMode(
     input: Record<string, unknown>,
     signal?: AbortSignal,
+    presentation?: ExitPlanModePresentationOptions,
   ): Promise<ExitPlanModeDecision | null> {
     const { state, streamController } = this.deps;
     const inputContainerEl = this.deps.getInputContainerEl();
@@ -1635,6 +1642,7 @@ export class InputController {
         signal,
         renderContent,
         planPathPrefix,
+        presentation,
       );
       this.pendingExitPlanModeInline = inline;
       try {

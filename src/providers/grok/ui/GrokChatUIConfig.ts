@@ -25,6 +25,8 @@ const GROK_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveLabel: 'Safe',
   activeValue: 'yolo',
   activeLabel: 'YOLO',
+  planValue: 'plan',
+  planLabel: 'PLAN',
 };
 
 export const grokChatUIConfig: ProviderChatUIConfig = {
@@ -170,12 +172,23 @@ export const grokChatUIConfig: ProviderChatUIConfig = {
   },
 
   resolvePermissionMode(settings): string {
+    if (settings.permissionMode === 'plan') return 'plan';
     return settings.permissionMode === 'yolo' ? 'yolo' : 'normal';
   },
 
   applyPermissionMode(value, settings): void {
     if (isRecord(settings)) {
-      settings.permissionMode = value === 'yolo' ? 'yolo' : 'normal';
+      const currentMode = settings.permissionMode;
+      if (value === 'plan') {
+        if (currentMode === 'normal' || currentMode === 'yolo') {
+          updateGrokProviderSettings(settings, { planBasePermissionMode: currentMode });
+        }
+        settings.permissionMode = 'plan';
+        return;
+      }
+      const baseMode = value === 'yolo' ? 'yolo' : 'normal';
+      updateGrokProviderSettings(settings, { planBasePermissionMode: baseMode });
+      settings.permissionMode = baseMode;
     }
   },
 

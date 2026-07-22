@@ -270,6 +270,7 @@ export class GrokChatRuntime implements ChatRuntime {
   private currentModelContextKey: string | null = null;
   private currentPromptUsage: AcpUsage | null = null;
   private currentSessionEffort: string | null = null;
+  private currentSessionModeId: 'default' | 'plan' | null = null;
   private currentSessionModelId: string | null = null;
   private currentTurnMetadata: ChatTurnMetadata = {};
   private disposed = false;
@@ -279,7 +280,9 @@ export class GrokChatRuntime implements ChatRuntime {
   private process: GrokRuntimeProcess | null = null;
   private ready = false;
   private readonly readyListeners = new Set<(ready: boolean) => void>();
+  private permissionModeSyncCallback: ((sdkMode: string) => void) | null = null;
   private readinessFlight: { key: string; promise: Promise<boolean> } | null = null;
+  private requestedSessionModeId: 'default' | 'plan' | null = null;
   private readonly requestRouter = new GrokServerRequestRouter();
   private readonly notificationMirrorDeduplicator = new GrokSessionNotificationMirrorDeduplicator();
   private readonly sessionModelContextWindows = new Map<string, number>();
@@ -366,6 +369,8 @@ export class GrokChatRuntime implements ChatRuntime {
 
     if (targetChanged) {
       this.currentSessionEffort = null;
+      this.currentSessionModeId = null;
+      this.requestedSessionModeId = null;
       this.currentSessionModelId = null;
       this.sessionModelContextWindows.clear();
       this.loadedSessionId = null;
@@ -591,6 +596,15 @@ export class GrokChatRuntime implements ChatRuntime {
       }
       return { error: this.formatModelSelectionError(error), sessionId: null };
     }
+    try {
+      const desiredMode = this.requestedSessionModeId
+        ?? (this.getProviderSettings().permissionMode === 'plan' ? 'plan' : null);
+      if (desiredMode) {
+        await this.setSessionMode(desiredMode);
+      }
+    } catch (error) {
+      return { error: this.formatRuntimeError(error), sessionId: null };
+    }
     if (!this.isConversationCurrent(conversationGeneration)) {
       return { error: 'The Grok conversation changed before the turn started.', sessionId: null };
     }
@@ -730,6 +744,8 @@ export class GrokChatRuntime implements ChatRuntime {
     this.loadedSessionId = null;
     this.currentSessionModelId = null;
     this.currentSessionEffort = null;
+    this.currentSessionModeId = null;
+    this.requestedSessionModeId = null;
     this.sessionModelContextWindows.clear();
     this.currentLaunchKey = null;
     this.sessionInvalidated = false;
@@ -861,14 +877,42 @@ export class GrokChatRuntime implements ChatRuntime {
     this.requestRouter.setAskUserQuestionCallback(callback);
   }
 
-  setExitPlanModeCallback(_callback: ExitPlanModeCallback | null): void {}
+  setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void {
+    this.requestRouter.setExitPlanModeCallback(callback);
+  }
 
-  setUnsupportedPlanModeNoticeCallback(callback: ((message: string) => void) | null): void {
-    this.requestRouter.setNoticeCallback(callback);
+  async setSessionMode(mode: string): Promise<boolean> {
+    const modeId = mode === 'plan' ? 'plan' : 'default';
+    const connection = this.connection;
+    const sessionId = this.sessionId;
+    if (!connection || !sessionId || !this.ready) {
+      this.requestedSessionModeId = modeId;
+      return false;
+    }
+    if (this.currentSessionModeId === modeId) {
+      this.requestedSessionModeId = modeId;
+      return true;
+    }
+    const connectionGeneration = this.connectionGeneration;
+    await connection.setMode({ modeId, sessionId });
+    this.requestedSessionModeId = modeId;
+    if (
+      connection !== this.connection
+      || connectionGeneration !== this.connectionGeneration
+      || sessionId !== this.sessionId
+    ) return false;
+    this.currentSessionModeId = modeId;
+    return true;
   }
 
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void {
-    this.requestRouter.setPermissionModeSyncCallback(callback);
+    this.permissionModeSyncCallback = callback;
+    this.requestRouter.setPermissionModeSyncCallback((mode) => {
+      if (
+        this.currentSessionModeId !== 'plan'
+        && this.getProviderSettings().permissionMode !== 'plan'
+      ) callback?.(mode);
+    });
   }
 
   setAutoTurnCallback(_callback: AutoTurnCallback | null): void {}
@@ -958,7 +1002,7 @@ export class GrokChatRuntime implements ChatRuntime {
     const environmentHash = computeGrokEnvironmentHash(this.plugin.settings);
     const promptSettings = this.getPromptSettings(cwd);
     const settings = this.getProviderSettings();
-    const yoloMode = settings.permissionMode === 'yolo';
+    const yoloMode = resolveGrokBasePermissionMode(settings) === 'yolo';
     const nextLaunchKey = JSON.stringify({
       cliPath,
       cwd,
@@ -1329,7 +1373,7 @@ export class GrokChatRuntime implements ChatRuntime {
     const settings = this.getProviderSettings();
     return { ...buildGrokSessionMeta({
       model: this.resolveSelectedModel(),
-      permissionMode: settings.permissionMode,
+      permissionMode: resolveGrokBasePermissionMode(settings),
       promptSettings,
     }) };
   }
@@ -1405,6 +1449,20 @@ export class GrokChatRuntime implements ChatRuntime {
     }
     if (normalized.type === 'config_options') {
       await this.syncSessionModels({ configOptions: normalized.configOptions });
+      return;
+    }
+    if (normalized.type === 'current_mode') {
+      const mode = normalized.currentModeId === 'plan' ? 'plan' : 'default';
+      this.currentSessionModeId = mode;
+      this.requestedSessionModeId = mode;
+      const uiMode = mode === 'plan'
+        ? 'plan'
+        : getGrokProviderSettings(this.getProviderSettings()).planBasePermissionMode;
+      try {
+        this.permissionModeSyncCallback?.(uiMode);
+      } catch {
+        // UI synchronization is best-effort and must not disrupt the ACP stream.
+      }
       return;
     }
     if (!this.activeTurn || this.activeTurn.sessionId !== notification.sessionId) return;
@@ -1911,6 +1969,14 @@ function projectSavedProviderValue(
   const projection = settings[mapKey];
   if (!isRecord(projection) || typeof projection.grok !== 'string') return;
   settings[targetKey] = projection.grok;
+}
+
+function resolveGrokBasePermissionMode(settings: Record<string, unknown>): 'normal' | 'yolo' {
+  if (settings.permissionMode === 'yolo') return 'yolo';
+  if (settings.permissionMode === 'plan') {
+    return getGrokProviderSettings(settings).planBasePermissionMode;
+  }
+  return 'normal';
 }
 
 function redactDiagnostic(message: string): string {

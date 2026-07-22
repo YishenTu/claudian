@@ -12,7 +12,7 @@ describe('GROK_PROVIDER_CAPABILITIES', () => {
       supportsMcpTools: false,
       supportsNativeHistory: true,
       supportsPersistentRuntime: true,
-      supportsPlanMode: false,
+      supportsPlanMode: true,
       supportsProviderCommands: true,
       supportsRewind: false,
       supportsTurnSteer: true,

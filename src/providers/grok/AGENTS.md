@@ -15,7 +15,7 @@
 - Use Grok's native history read-only. Never delete or mutate a Grok session when a Claudian conversation is deleted.
 - Send image attachments as ACP image content blocks and rehydrate their persisted native blocks. Use Grok's `x.ai/interject` and `x.ai/session/fork` extensions behind typed provider-owned boundaries for steering and forks.
 - Keep Grok/xAI tools enabled and preserve unknown tool data losslessly. Adapt Grok task-family lifecycle calls into the shared subagent renderer while retaining their raw names and payloads.
-- Expose Safe and YOLO only. Claudian does not expose Grok plan mode.
+- Expose Safe, Plan, and YOLO. Plan is a native ACP session mode layered over the remembered Safe or YOLO base; native mode updates remain authoritative.
 
 ## Models and Settings
 

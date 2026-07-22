@@ -31,6 +31,7 @@ export interface PersistedGrokProviderSettings {
   environmentHash: string;
   visibleModels: string[] | null;
   modelAliases: Record<string, string>;
+  planBasePermissionMode: 'normal' | 'yolo';
   preferredReasoningByModel: Record<string, string>;
 }
 
@@ -46,6 +47,7 @@ export const DEFAULT_GROK_PROVIDER_SETTINGS: Readonly<PersistedGrokProviderSetti
   environmentHash: '',
   environmentVariables: '',
   modelAliases: {},
+  planBasePermissionMode: 'normal',
   preferredReasoningByModel: {},
   visibleModels: null,
 });
@@ -123,6 +125,7 @@ export function getGrokProviderSettings(
       allowedModelIds,
       catalogModels.length > 0,
     ),
+    planBasePermissionMode: normalizeGrokBasePermissionMode(config.planBasePermissionMode),
     preferredReasoningByModel: normalizeGrokPreferredReasoningByModel(
       config.preferredReasoningByModel,
       enabledModelIds,
@@ -189,6 +192,9 @@ export function updateGrokProviderSettings(
       allowedModelIds,
       hasCatalog,
     ),
+    planBasePermissionMode: updates.planBasePermissionMode !== undefined
+      ? normalizeGrokBasePermissionMode(updates.planBasePermissionMode)
+      : current.planBasePermissionMode,
     preferredReasoningByModel: normalizeGrokPreferredReasoningByModel(
       updates.preferredReasoningByModel ?? current.preferredReasoningByModel,
       enabledModelIds,
@@ -453,6 +459,10 @@ function normalizeRawModelId(value: unknown): string | null {
 
 function readTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeGrokBasePermissionMode(value: unknown): 'normal' | 'yolo' {
+  return value === 'yolo' ? 'yolo' : 'normal';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

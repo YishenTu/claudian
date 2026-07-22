@@ -25,7 +25,7 @@ const CAPABILITIES: ProviderCapabilities = {
   supportsMcpTools: false,
   supportsNativeHistory: true,
   supportsPersistentRuntime: true,
-  supportsPlanMode: false,
+  supportsPlanMode: true,
   supportsProviderCommands: true,
   supportsRewind: false,
   supportsTurnSteer: true,
@@ -55,6 +55,7 @@ class FakeGrokProcess implements GrokRuntimeProcess {
       newSession?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       prompt?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       sessionFork?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
+      setMode?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       setModel?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
     } = {},
   ) {
@@ -163,6 +164,10 @@ class FakeGrokProcess implements GrokRuntimeProcess {
       case 'session/set_model':
         if (this.handlers.setModel) this.handlers.setModel(message, this);
         else this.respond(message, { _meta: {} });
+        return;
+      case 'session/set_mode':
+        if (this.handlers.setMode) this.handlers.setMode(message, this);
+        else this.respond(message, {});
         return;
       case 'session/prompt':
         if (this.handlers.prompt) this.handlers.prompt(message, this);
@@ -579,6 +584,96 @@ describe('GrokChatRuntime', () => {
       sessionId: 'saved-session',
       _meta: expect.objectContaining({ yoloMode }),
     });
+  });
+
+  it('starts a cold plan session with the remembered YOLO base and sets native plan mode before prompting', async () => {
+    const host = createHost({
+      settings: {
+        permissionMode: 'plan',
+        providerConfigs: {
+          grok: {
+            enabled: true,
+            planBasePermissionMode: 'yolo',
+          },
+        },
+      },
+    });
+    const harness = createHarness({ host });
+
+    await collect(harness.runtime);
+
+    const created = harness.process.requests.find(request => request.method === 'session/new');
+    expect(record(created?.params)._meta).toEqual(expect.objectContaining({ yoloMode: true }));
+    const methods = harness.process.requests.map(request => request.method);
+    expect(methods.indexOf('session/set_mode')).toBeGreaterThan(methods.indexOf('session/new'));
+    expect(methods.indexOf('session/set_mode')).toBeLessThan(methods.indexOf('session/prompt'));
+    expect(harness.process.requests.find(request => request.method === 'session/set_mode')?.params)
+      .toEqual({ modeId: 'plan', sessionId: 'session-new' });
+  });
+
+  it('sets native session mode immediately and accepts authoritative mode updates while idle', async () => {
+    const modeSync = jest.fn();
+    const harness = createHarness({
+      handlers: {
+        setMode(message, process) {
+          process.respond(message, {});
+          process.notify('session/update', {
+            sessionId: 'session-new',
+            update: { currentModeId: record(message.params).modeId, sessionUpdate: 'current_mode_update' },
+          });
+        },
+      },
+    });
+    harness.runtime.setPermissionModeSyncCallback(modeSync);
+    await harness.runtime.ensureReady();
+
+    await expect(harness.runtime.setSessionMode('plan')).resolves.toBe(true);
+    await tick();
+
+    expect(harness.process.requests.find(request => request.method === 'session/set_mode')?.params)
+      .toEqual({ modeId: 'plan', sessionId: 'session-new' });
+    expect(modeSync).toHaveBeenCalledWith('plan');
+  });
+
+  it('defers a mode transition requested before session creation and applies it before the prompt', async () => {
+    const harness = createHarness();
+
+    await expect(harness.runtime.setSessionMode('plan')).resolves.toBe(false);
+    await collect(harness.runtime);
+
+    const methods = harness.process.requests.map(request => request.method);
+    expect(methods.indexOf('session/set_mode')).toBeGreaterThan(methods.indexOf('session/new'));
+    expect(methods.indexOf('session/set_mode')).toBeLessThan(methods.indexOf('session/prompt'));
+    expect(harness.process.requests.find(request => request.method === 'session/set_mode')?.params)
+      .toEqual({ modeId: 'plan', sessionId: 'session-new' });
+  });
+
+  it('keeps Plan over yolo notifications and restores the remembered base on native exit', async () => {
+    const host = createHost({
+      settings: {
+        permissionMode: 'plan',
+        providerConfigs: {
+          grok: { enabled: true, planBasePermissionMode: 'yolo' },
+        },
+      },
+    });
+    const harness = createHarness({ host });
+    const modeSync = jest.fn();
+    harness.runtime.setPermissionModeSyncCallback(modeSync);
+    await harness.runtime.ensureReady();
+
+    harness.process.notify('session/update', {
+      sessionId: 'session-new',
+      update: { currentModeId: 'plan', sessionUpdate: 'current_mode_update' },
+    });
+    harness.process.notify('_x.ai/yolo_mode_changed', { yolo_mode: false });
+    harness.process.notify('session/update', {
+      sessionId: 'session-new',
+      update: { currentModeId: 'default', sessionUpdate: 'current_mode_update' },
+    });
+    await tick();
+
+    expect(modeSync.mock.calls).toEqual([['plan'], ['yolo']]);
   });
 
   it('sets an explicit model and effort once per changed tuple', async () => {
@@ -1815,7 +1910,10 @@ describe('GrokChatRuntime', () => {
   it('routes defensive permissions and xAI question/plan/yolo extensions through turn-owned UI', async () => {
     const approval = jest.fn().mockResolvedValue('allow');
     const ask = jest.fn().mockResolvedValue({ 'Choose?': 'Yes' });
-    const notice = jest.fn();
+    const exitPlan = jest.fn().mockResolvedValue({
+      type: 'feedback',
+      text: 'Add rollback steps',
+    });
     const modeSync = jest.fn();
     const extensionResults: unknown[] = [];
     const harness = createHarness({
@@ -1844,19 +1942,19 @@ describe('GrokChatRuntime', () => {
     });
     harness.runtime.setApprovalCallback(approval);
     harness.runtime.setAskUserQuestionCallback(ask);
+    harness.runtime.setExitPlanModeCallback(exitPlan);
     harness.runtime.setPermissionModeSyncCallback(modeSync);
-    harness.runtime.setUnsupportedPlanModeNoticeCallback(notice);
 
     await collect(harness.runtime);
 
     expect(extensionResults).toEqual([
       { answers: { 'Choose?': ['Yes'] }, outcome: 'accepted' },
-      { outcome: 'abandoned' },
+      { feedback: 'Add rollback steps', outcome: 'cancelled' },
       { outcome: { optionId: 'allow-now', outcome: 'selected' } },
     ]);
     expect(approval).toHaveBeenCalled();
     expect(ask).toHaveBeenCalled();
-    expect(notice).toHaveBeenCalled();
+    expect(exitPlan).toHaveBeenCalled();
     expect(modeSync).toHaveBeenCalledWith('yolo');
   });
 

@@ -2,6 +2,10 @@ import type {
   ApprovalCallback,
   AskUserQuestionCallback,
 } from '../../../core/runtime/types';
+import type {
+  ExitPlanModeCallback,
+  ExitPlanModePresentationOptions,
+} from '../../../core/types';
 import {
   type AcpPermissionOption,
   type AcpRequestPermissionRequest,
@@ -28,11 +32,18 @@ const CANCELLED_PERMISSION_RESPONSE: AcpRequestPermissionResponse = {
   outcome: { outcome: 'cancelled' },
 };
 const ABANDONED_PLAN_RESPONSE = { outcome: 'abandoned' } as const;
-const UNSUPPORTED_PLAN_NOTICE =
-  'Grok plan mode is not supported in Claudian. The plan was abandoned.';
+const CANCELLED_PLAN_RESPONSE = { outcome: 'cancelled' } as const;
+const GROK_PLAN_PRESENTATION: Readonly<ExitPlanModePresentationOptions> = Object.freeze({
+  allowAbandon: true,
+  allowNewSession: false,
+  approveLabel: 'Implement',
+  dismissOnEscape: false,
+  feedbackLabel: 'Revise',
+  shiftTabDecision: 'abandon',
+});
 
 export type GrokPermissionMode = 'normal' | 'yolo';
-type PendingInteractionKind = 'approval' | 'question';
+type PendingInteractionKind = 'approval' | 'plan' | 'question';
 
 interface GrokQuestionOption {
   description: string;
@@ -77,7 +88,7 @@ export class GrokServerRequestRouter {
   private approvalCallback: ApprovalCallback | null = null;
   private approvalDismisser: (() => void) | null = null;
   private askUserQuestionCallback: AskUserQuestionCallback | null = null;
-  private noticeCallback: ((message: string) => void) | null = null;
+  private exitPlanModeCallback: ExitPlanModeCallback | null = null;
   private pendingInteraction: PendingInteraction | null = null;
   private permissionModeSyncCallback: ((mode: GrokPermissionMode) => void) | null = null;
 
@@ -101,8 +112,8 @@ export class GrokServerRequestRouter {
     this.askUserQuestionCallback = callback;
   }
 
-  setNoticeCallback(callback: ((message: string) => void) | null): void {
-    this.noticeCallback = callback;
+  setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void {
+    this.exitPlanModeCallback = callback;
   }
 
   setPermissionModeSyncCallback(
@@ -149,7 +160,7 @@ export class GrokServerRequestRouter {
       case 'x.ai/ask_user_question':
         return this.handleAskUserQuestion(params, signal);
       case 'x.ai/exit_plan_mode':
-        return this.handleExitPlanMode(params);
+        return this.handleExitPlanMode(params, signal);
       default:
         throw new GrokMethodNotSupportedError(method);
     }
@@ -197,7 +208,7 @@ export class GrokServerRequestRouter {
     this.approvalCallback = null;
     this.approvalDismisser = null;
     this.askUserQuestionCallback = null;
-    this.noticeCallback = null;
+    this.exitPlanModeCallback = null;
     this.permissionModeSyncCallback = null;
   }
 
@@ -227,15 +238,33 @@ export class GrokServerRequestRouter {
     }
   }
 
-  private handleExitPlanMode(params: unknown): { outcome: 'abandoned' } {
-    if (isValidExitPlanModeRequest(params, this.activeSessionId)) {
-      try {
-        this.noticeCallback?.(UNSUPPORTED_PLAN_NOTICE);
-      } catch {
-        // The notice is non-blocking; abandoning plan mode remains mandatory.
+  private async handleExitPlanMode(params: unknown, signal?: AbortSignal): Promise<unknown> {
+    const input = parseExitPlanModeRequest(params, this.activeSessionId);
+    const callback = this.exitPlanModeCallback;
+    if (!input) return ABANDONED_PLAN_RESPONSE;
+    if (!callback || signal?.aborted) return CANCELLED_PLAN_RESPONSE;
+
+    const pending = this.beginPending('plan', signal);
+    try {
+      const decision = await Promise.race([
+        Promise.resolve(callback(input, pending.abortController.signal, GROK_PLAN_PRESENTATION)),
+        pending.cancelled.then(() => null),
+      ]);
+      if (!decision) return CANCELLED_PLAN_RESPONSE;
+      if (decision.type === 'approve') return { outcome: 'approved' };
+      if (decision.type === 'abandon') return ABANDONED_PLAN_RESPONSE;
+      if (decision.type === 'feedback') {
+        const feedback = decision.text.trim();
+        return feedback
+          ? { feedback, outcome: 'cancelled' }
+          : CANCELLED_PLAN_RESPONSE;
       }
+      return CANCELLED_PLAN_RESPONSE;
+    } catch {
+      return CANCELLED_PLAN_RESPONSE;
+    } finally {
+      this.finishPending(pending);
     }
-    return ABANDONED_PLAN_RESPONSE;
   }
 
   private beginPending(
@@ -360,7 +389,11 @@ function parseQuestion(value: unknown): GrokQuestion | null {
   const question = normalizeOpaqueString(value.question);
   const id = normalizeOptionalOpaqueId(value.id);
   if (!question || id === null) return null;
-  if (value.multiSelect !== undefined && typeof value.multiSelect !== 'boolean') {
+  if (
+    value.multiSelect !== undefined
+    && value.multiSelect !== null
+    && typeof value.multiSelect !== 'boolean'
+  ) {
     return null;
   }
   if (!Array.isArray(value.options) || value.options.length === 0) {
@@ -466,16 +499,21 @@ function buildAcceptedQuestionResponse(
   };
 }
 
-function isValidExitPlanModeRequest(
+function parseExitPlanModeRequest(
   value: unknown,
   activeSessionId: string | null,
-): boolean {
-  return isRecord(value)
-    && matchesActiveSession(value.sessionId, activeSessionId)
-    && normalizeOpaqueString(value.toolCallId) !== null
-    && (value.planContent === undefined
-      || value.planContent === null
-      || typeof value.planContent === 'string');
+): Record<string, unknown> | null {
+  if (
+    !isRecord(value)
+    || !matchesActiveSession(value.sessionId, activeSessionId)
+    || normalizeOpaqueString(value.toolCallId) === null
+    || (value.planContent !== undefined
+      && value.planContent !== null
+      && typeof value.planContent !== 'string')
+  ) return null;
+  return typeof value.planContent === 'string'
+    ? { planContent: value.planContent }
+    : {};
 }
 
 function isPermissionOption(value: unknown): value is AcpPermissionOption {

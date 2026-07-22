@@ -1223,6 +1223,31 @@ describe('Tab - Service Initialization', () => {
       expect(tab.dom.inputWrapper.hasClass('claudian-input-plan-mode')).toBe(true);
     });
 
+    it('forwards user-requested plan transitions to a warm provider session', async () => {
+      const plugin = createMockPlugin();
+      const tab = createTab(createMockOptions({ plugin }));
+      const setSessionMode = jest.fn().mockResolvedValue(true);
+      tab.service = { setSessionMode } as any;
+
+      await updatePlanModeUI(tab, plugin, 'plan', { syncRuntime: true });
+
+      expect(setSessionMode).toHaveBeenCalledWith('plan');
+    });
+
+    it('rolls back the projected mode when a warm provider rejects the native transition', async () => {
+      const plugin = createMockPlugin();
+      const tab = createTab(createMockOptions({ plugin }));
+      tab.service = {
+        setSessionMode: jest.fn().mockRejectedValue(new Error('native mode failed')),
+      } as any;
+
+      await expect(updatePlanModeUI(tab, plugin, 'plan', { syncRuntime: true }))
+        .rejects.toThrow('native mode failed');
+
+      expect(plugin.settings.permissionMode).toBe('yolo');
+      expect(tab.dom.inputWrapper.hasClass('claudian-input-plan-mode')).toBe(false);
+    });
+
     it('resets to blank state when the new-conversation callback fires', () => {
       jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
       jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);

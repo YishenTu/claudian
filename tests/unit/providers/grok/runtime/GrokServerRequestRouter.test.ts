@@ -254,6 +254,38 @@ describe('GrokServerRequestRouter', () => {
       }, expect.any(AbortSignal));
     });
 
+    it.each(['default', 'plan'] as const)(
+      'treats provider-serialized null multiSelect as false in %s mode',
+      async (mode) => {
+        const router = createRouter();
+        const callback = jest.fn(async () => ({ 'Use the default?': 'Yes' }));
+        router.setAskUserQuestionCallback(callback);
+        const params = {
+          mode,
+          questions: [{
+            multiSelect: null,
+            options: [{ description: 'Use the default behavior', label: 'Yes' }],
+            question: 'Use the default?',
+          }],
+          sessionId: SESSION_ID,
+          toolCallId: '<tool-call-id>',
+        };
+
+        await expect(router.handleRequest('x.ai/ask_user_question', params)).resolves.toEqual({
+          answers: { 'Use the default?': ['Yes'] },
+          outcome: 'accepted',
+        });
+        expect(callback).toHaveBeenCalledWith({
+          questions: [{
+            header: 'Q1',
+            multiSelect: false,
+            options: [{ description: 'Use the default behavior', label: 'Yes' }],
+            question: 'Use the default?',
+          }],
+        }, expect.any(AbortSignal));
+      },
+    );
+
     it('preserves opaque ids and serializes answers under the original question text', async () => {
       const router = createRouter();
       const callback: AskUserQuestionCallback = jest.fn(async (input) => {
@@ -320,30 +352,59 @@ describe('GrokServerRequestRouter', () => {
   });
 
   describe('plan and permission-mode extensions', () => {
-    it('returns only abandoned for exit plan mode and emits the unsupported notice', async () => {
+    it.each([
+      [{ type: 'approve' }, { outcome: 'approved' }],
+      [{ type: 'feedback', text: 'Add rollback steps' }, {
+        feedback: 'Add rollback steps',
+        outcome: 'cancelled',
+      }],
+      [{ type: 'abandon' }, { outcome: 'abandoned' }],
+    ])('maps native exit-plan decision %j to the Grok wire response', async (decision, response) => {
       const router = createRouter();
-      const notice = jest.fn();
-      router.setNoticeCallback(notice);
+      const callback = jest.fn().mockResolvedValue(decision);
+      router.setExitPlanModeCallback(callback);
 
       await expect(router.handleRequest(
         exitFixture.request.method,
         exitFixture.request.params,
-      )).resolves.toEqual(exitFixture.response);
-      expect(notice).toHaveBeenCalledWith(
-        'Grok plan mode is not supported in Claudian. The plan was abandoned.',
+      )).resolves.toEqual(response);
+      expect(callback).toHaveBeenCalledWith(
+        { planContent: '<sanitized-nonempty-plan>' },
+        expect.any(AbortSignal),
+        expect.objectContaining({
+          allowAbandon: true,
+          allowNewSession: false,
+          dismissOnEscape: false,
+          shiftTabDecision: 'abandon',
+        }),
       );
     });
 
-    it('abandons malformed exit requests without emitting a misleading notice', async () => {
+    it('abandons malformed exit requests without opening approval UI', async () => {
       const router = createRouter();
-      const notice = jest.fn();
-      router.setNoticeCallback(notice);
+      const callback = jest.fn();
+      router.setExitPlanModeCallback(callback);
 
       await expect(router.handleRequest('x.ai/exit_plan_mode', {
         ...exitFixture.request.params,
         sessionId: 'wrong-session',
       })).resolves.toEqual({ outcome: 'abandoned' });
-      expect(notice).not.toHaveBeenCalled();
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('keeps native plan mode active when approval UI is unavailable or cancelled', async () => {
+      const router = createRouter();
+
+      await expect(router.handleRequest(
+        exitFixture.request.method,
+        exitFixture.request.params,
+      )).resolves.toEqual({ outcome: 'cancelled' });
+
+      router.setExitPlanModeCallback(jest.fn().mockResolvedValue(null));
+      await expect(router.handleRequest(
+        exitFixture.request.method,
+        exitFixture.request.params,
+      )).resolves.toEqual({ outcome: 'cancelled' });
     });
 
     it('maps only boolean yolo notifications to Safe and YOLO UI values', () => {

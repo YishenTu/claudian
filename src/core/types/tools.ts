@@ -52,11 +52,22 @@ export interface ToolCallInfo {
 export type ExitPlanModeDecision =
   | { type: 'approve' }
   | { type: 'approve-new-session'; planContent: string }
-  | { type: 'feedback'; text: string };
+  | { type: 'feedback'; text: string }
+  | { type: 'abandon' };
+
+export interface ExitPlanModePresentationOptions {
+  allowAbandon?: boolean;
+  allowNewSession?: boolean;
+  approveLabel?: string;
+  dismissOnEscape?: boolean;
+  feedbackLabel?: string;
+  shiftTabDecision?: 'abandon';
+}
 
 export type ExitPlanModeCallback = (
   input: Record<string, unknown>,
   signal?: AbortSignal,
+  presentation?: ExitPlanModePresentationOptions,
 ) => Promise<ExitPlanModeDecision | null>;
 
 /** Subagent execution mode: sync (nested tools) or async (background). */

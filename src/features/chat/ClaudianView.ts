@@ -667,7 +667,7 @@ export class ClaudianView extends ItemView {
         ).permissionMode as string;
         if (current === 'plan') {
           const restoreMode = activeTab.state.prePlanPermissionMode ?? 'normal';
-          void updatePlanModeUI(activeTab, this.plugin, restoreMode)
+          void updatePlanModeUI(activeTab, this.plugin, restoreMode, { syncRuntime: true })
             .finally(() => {
               const activeMode = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
                 this.plugin.settings,
@@ -682,7 +682,7 @@ export class ClaudianView extends ItemView {
             });
         } else {
           activeTab.state.prePlanPermissionMode = current;
-          void updatePlanModeUI(activeTab, this.plugin, 'plan').catch((error: unknown) => {
+          void updatePlanModeUI(activeTab, this.plugin, 'plan', { syncRuntime: true }).catch((error: unknown) => {
             const activeMode = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
               this.plugin.settings,
               providerId,

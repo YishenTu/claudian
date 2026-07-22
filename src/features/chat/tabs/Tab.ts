@@ -1989,9 +1989,13 @@ export function setupServiceCallbacks(tab: TabData, plugin: FeatureHost): void {
         ?? null
     );
     tab.service.setExitPlanModeCallback(
-      async (input, signal) => {
-        const decision = await tab.controllers.inputController?.handleExitPlanMode(input, signal) ?? null;
-        // Revert only on approve; feedback and cancel keep plan mode active.
+      async (input, signal, presentation) => {
+        const decision = await tab.controllers.inputController?.handleExitPlanMode(
+          input,
+          signal,
+          presentation,
+        ) ?? null;
+        // Restore the base mode only when the provider leaves or abandons plan mode.
         if (decision !== null && decision.type !== 'feedback') {
           // Only restore permission mode if still in plan mode — user may have toggled out via Shift+Tab
           if (getTabPermissionMode(tab, plugin) === 'plan') {
@@ -2177,9 +2181,11 @@ export async function updatePlanModeUI(
   tab: TabData,
   plugin: FeatureHost,
   mode: string,
+  options: { syncRuntime?: boolean } = {},
 ): Promise<void> {
   const providerId = getTabProviderId(tab, plugin);
   const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+  const previousMode = getTabPermissionMode(tab, plugin);
   try {
     await plugin.mutateSettings((settings) => {
       const snapshot = getWritableTabSettingsSnapshot(tab, plugin, settings);
@@ -2194,6 +2200,26 @@ export async function updatePlanModeUI(
         snapshot,
       );
     });
+    if (options.syncRuntime) {
+      try {
+        await tab.service?.setSessionMode?.(getTabPermissionMode(tab, plugin));
+      } catch (error) {
+        await plugin.mutateSettings((settings) => {
+          const snapshot = getWritableTabSettingsSnapshot(tab, plugin, settings);
+          if (uiConfig.applyPermissionMode) {
+            uiConfig.applyPermissionMode(previousMode, snapshot);
+          } else {
+            snapshot.permissionMode = previousMode;
+          }
+          ProviderSettingsCoordinator.commitProviderSettingsSnapshot(
+            settings,
+            providerId,
+            snapshot,
+          );
+        });
+        throw error;
+      }
+    }
   } finally {
     const activeMode = getTabPermissionMode(tab, plugin);
     tab.ui.permissionToggle?.updateDisplay();

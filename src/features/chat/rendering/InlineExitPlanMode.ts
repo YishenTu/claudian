@@ -1,10 +1,14 @@
 import * as fs from 'fs';
 import * as nodePath from 'path';
 
-import type { ExitPlanModeDecision } from '../../../core/types/tools';
+import type {
+  ExitPlanModeDecision,
+  ExitPlanModePresentationOptions,
+} from '../../../core/types/tools';
 import type { RenderContentFn } from './MessageRenderer';
 
 const HINTS_TEXT = 'Arrow keys to navigate \u00B7 Enter to select \u00B7 Esc to cancel';
+type ExitPlanModeAction = 'abandon' | 'approve' | 'approve-new-session' | 'feedback';
 
 export class InlineExitPlanMode {
   private containerEl: HTMLElement;
@@ -14,12 +18,14 @@ export class InlineExitPlanMode {
   private signal?: AbortSignal;
   private renderContent?: RenderContentFn;
   private planPathPrefix?: string;
+  private presentation: ExitPlanModePresentationOptions;
   private planContent: string | null = null;
   private planReadError: string | null = null;
 
   private rootEl!: HTMLElement;
   private focusedIndex = 0;
   private items: HTMLElement[] = [];
+  private itemActions: ExitPlanModeAction[] = [];
   private feedbackInput!: HTMLInputElement;
   private isInputFocused = false;
   private boundKeyDown: (e: KeyboardEvent) => void;
@@ -32,6 +38,7 @@ export class InlineExitPlanMode {
     signal?: AbortSignal,
     renderContent?: RenderContentFn,
     planPathPrefix?: string,
+    presentation: ExitPlanModePresentationOptions = {},
   ) {
     this.containerEl = containerEl;
     this.input = input;
@@ -39,6 +46,7 @@ export class InlineExitPlanMode {
     this.signal = signal;
     this.renderContent = renderContent;
     this.planPathPrefix = planPathPrefix;
+    this.presentation = presentation;
     this.boundKeyDown = (event) => this.handleKeyDown(event);
   }
 
@@ -75,35 +83,49 @@ export class InlineExitPlanMode {
 
     const actionsEl = this.rootEl.createDiv({ cls: 'claudian-ask-list' });
 
-    const newSessionRow = actionsEl.createDiv({ cls: 'claudian-ask-item' });
-    newSessionRow.addClass('is-focused');
-    newSessionRow.createSpan({ text: '\u203A', cls: 'claudian-ask-cursor' });
-    newSessionRow.createSpan({ text: '1. ', cls: 'claudian-ask-item-num' });
-    newSessionRow.createSpan({ text: 'Approve (new session)', cls: 'claudian-ask-item-label' });
-    newSessionRow.addEventListener('click', () => {
-      this.focusedIndex = 0;
-      this.updateFocus();
-      this.handleResolve({
-        type: 'approve-new-session',
-        planContent: this.extractPlanContent(),
+    if (this.presentation.allowNewSession !== false) {
+      const newSessionRow = actionsEl.createDiv({ cls: 'claudian-ask-item' });
+      newSessionRow.createSpan({ text: '\u00A0', cls: 'claudian-ask-cursor' });
+      newSessionRow.createSpan({ text: `${this.items.length + 1}. `, cls: 'claudian-ask-item-num' });
+      newSessionRow.createSpan({ text: 'Approve (new session)', cls: 'claudian-ask-item-label' });
+      const itemIndex = this.items.length;
+      newSessionRow.addEventListener('click', () => {
+        this.focusedIndex = itemIndex;
+        this.updateFocus();
+        this.handleResolve({
+          type: 'approve-new-session',
+          planContent: this.extractPlanContent(),
+        });
       });
-    });
-    this.items.push(newSessionRow);
+      this.items.push(newSessionRow);
+      this.itemActions.push('approve-new-session');
+    }
 
     const approveRow = actionsEl.createDiv({ cls: 'claudian-ask-item' });
     approveRow.createSpan({ text: '\u00A0', cls: 'claudian-ask-cursor' });
-    approveRow.createSpan({ text: '2. ', cls: 'claudian-ask-item-num' });
-    approveRow.createSpan({ text: 'Approve (current session)', cls: 'claudian-ask-item-label' });
+    approveRow.createSpan({ text: `${this.items.length + 1}. `, cls: 'claudian-ask-item-num' });
+    approveRow.createSpan({
+      text: this.presentation.approveLabel ?? 'Approve (current session)',
+      cls: 'claudian-ask-item-label',
+    });
+    const approveIndex = this.items.length;
     approveRow.addEventListener('click', () => {
-      this.focusedIndex = 1;
+      this.focusedIndex = approveIndex;
       this.updateFocus();
       this.handleResolve({ type: 'approve' });
     });
     this.items.push(approveRow);
+    this.itemActions.push('approve');
 
     const feedbackRow = actionsEl.createDiv({ cls: 'claudian-ask-item claudian-ask-custom-item' });
     feedbackRow.createSpan({ text: '\u00A0', cls: 'claudian-ask-cursor' });
-    feedbackRow.createSpan({ text: '3. ', cls: 'claudian-ask-item-num' });
+    feedbackRow.createSpan({ text: `${this.items.length + 1}. `, cls: 'claudian-ask-item-num' });
+    if (this.presentation.feedbackLabel) {
+      feedbackRow.createSpan({
+        text: `${this.presentation.feedbackLabel}: `,
+        cls: 'claudian-ask-item-label',
+      });
+    }
     this.feedbackInput = feedbackRow.createEl('input', {
       type: 'text',
       cls: 'claudian-ask-custom-text',
@@ -111,13 +133,37 @@ export class InlineExitPlanMode {
     });
     this.feedbackInput.addEventListener('focus', () => { this.isInputFocused = true; });
     this.feedbackInput.addEventListener('blur', () => { this.isInputFocused = false; });
+    const feedbackIndex = this.items.length;
     feedbackRow.addEventListener('click', () => {
-      this.focusedIndex = 2;
+      this.focusedIndex = feedbackIndex;
       this.updateFocus();
     });
     this.items.push(feedbackRow);
+    this.itemActions.push('feedback');
 
-    this.rootEl.createDiv({ text: HINTS_TEXT, cls: 'claudian-ask-hints' });
+    if (this.presentation.allowAbandon) {
+      const abandonRow = actionsEl.createDiv({ cls: 'claudian-ask-item' });
+      abandonRow.createSpan({ text: '\u00A0', cls: 'claudian-ask-cursor' });
+      abandonRow.createSpan({ text: `${this.items.length + 1}. `, cls: 'claudian-ask-item-num' });
+      abandonRow.createSpan({ text: 'Abandon', cls: 'claudian-ask-item-label' });
+      const abandonIndex = this.items.length;
+      abandonRow.addEventListener('click', () => {
+        this.focusedIndex = abandonIndex;
+        this.updateFocus();
+        this.handleResolve({ type: 'abandon' });
+      });
+      this.items.push(abandonRow);
+      this.itemActions.push('abandon');
+    }
+
+    this.updateFocus();
+
+    this.rootEl.createDiv({
+      text: this.presentation.dismissOnEscape === false
+        ? 'Arrow keys to navigate \u00B7 Enter to select \u00B7 Shift+Tab to abandon'
+        : HINTS_TEXT,
+      cls: 'claudian-ask-hints',
+    });
 
     this.rootEl.setAttribute('tabindex', '0');
     this.rootEl.addEventListener('keydown', this.boundKeyDown);
@@ -138,6 +184,9 @@ export class InlineExitPlanMode {
   }
 
   private readPlanContent(): string | null {
+    if (typeof this.input.planContent === 'string') {
+      return this.input.planContent.trim() || null;
+    }
     const planFilePath = this.input.planFilePath as string | undefined;
     if (!planFilePath) return null;
 
@@ -165,6 +214,13 @@ export class InlineExitPlanMode {
 
   private handleKeyDown(e: KeyboardEvent): void {
     if (e.isComposing) return;
+
+    if (e.key === 'Tab' && e.shiftKey && this.presentation.shiftTabDecision === 'abandon') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.handleResolve({ type: 'abandon' });
+      return;
+    }
 
     if (this.isInputFocused) {
       if (e.key === 'Escape') {
@@ -200,21 +256,25 @@ export class InlineExitPlanMode {
       case 'Enter':
         e.preventDefault();
         e.stopPropagation();
-        if (this.focusedIndex === 0) {
+        if (this.itemActions[this.focusedIndex] === 'approve-new-session') {
           this.handleResolve({
             type: 'approve-new-session',
             planContent: this.extractPlanContent(),
           });
-        } else if (this.focusedIndex === 1) {
+        } else if (this.itemActions[this.focusedIndex] === 'approve') {
           this.handleResolve({ type: 'approve' });
-        } else if (this.focusedIndex === 2) {
+        } else if (this.itemActions[this.focusedIndex] === 'feedback') {
           this.feedbackInput.focus();
+        } else if (this.itemActions[this.focusedIndex] === 'abandon') {
+          this.handleResolve({ type: 'abandon' });
         }
         break;
       case 'Escape':
         e.preventDefault();
         e.stopPropagation();
-        this.handleResolve(null);
+        if (this.presentation.dismissOnEscape !== false) {
+          this.handleResolve(null);
+        }
         break;
     }
   }

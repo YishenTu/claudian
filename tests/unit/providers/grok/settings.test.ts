@@ -62,6 +62,7 @@ describe('Grok settings', () => {
       environmentHash: '',
       environmentVariables: '',
       modelAliases: {},
+      planBasePermissionMode: 'normal',
       preferredReasoningByModel: {},
       visibleModels: null,
     });

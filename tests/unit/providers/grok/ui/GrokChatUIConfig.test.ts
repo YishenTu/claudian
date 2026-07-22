@@ -276,21 +276,28 @@ describe('GrokChatUIConfig', () => {
     expect(grokChatUIConfig.normalizeModelVariant('claude', settings)).toBe('claude');
   });
 
-  it('exposes only Safe and YOLO without a plan or provider mode selector', () => {
+  it('exposes Plan as an overlay on the remembered Safe or YOLO base mode', () => {
     expect(grokChatUIConfig.getPermissionModeToggle?.()).toEqual({
       activeLabel: 'YOLO',
       activeValue: 'yolo',
       inactiveLabel: 'Safe',
       inactiveValue: 'normal',
+      planLabel: 'PLAN',
+      planValue: 'plan',
     });
-    expect(grokChatUIConfig.getPermissionModeToggle?.()).not.toHaveProperty('planValue');
     expect(grokChatUIConfig.getModeSelector?.({})).toBeNull();
 
-    const settings: Record<string, unknown> = { permissionMode: 'plan' };
-    expect(grokChatUIConfig.resolvePermissionMode?.(settings)).toBe('normal');
+    const settings: Record<string, unknown> = {
+      permissionMode: 'yolo',
+      providerConfigs: { grok: { enabled: true } },
+    };
+    grokChatUIConfig.applyPermissionMode?.('plan', settings);
+    expect(settings.permissionMode).toBe('plan');
+    expect(getGrokProviderSettings(settings).planBasePermissionMode).toBe('yolo');
+    expect(grokChatUIConfig.resolvePermissionMode?.(settings)).toBe('plan');
+
     grokChatUIConfig.applyPermissionMode?.('yolo', settings);
     expect(settings.permissionMode).toBe('yolo');
-    grokChatUIConfig.applyPermissionMode?.('plan', settings);
-    expect(settings.permissionMode).toBe('normal');
+    expect(getGrokProviderSettings(settings).planBasePermissionMode).toBe('yolo');
   });
 });
