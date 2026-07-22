@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import {
   parseGrokHistoryContent,
+  resolveGrokForkTargetPromptIndex,
 } from '@/providers/grok/history/GrokHistoryStore';
 
 describe('GrokHistoryStore', () => {
@@ -88,6 +89,249 @@ describe('GrokHistoryStore', () => {
         'grok-session-no-ids-turn-0-user',
         'grok-session-no-ids-turn-0-assistant',
       ]);
+  });
+
+  it('rehydrates image attachments, including image-only user turns', () => {
+    const records = [
+      {
+        content: { text: 'Compare these', type: 'text' },
+        messageId: 'user-images-1',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { data: 'aGVsbG8=', mimeType: 'image/png', type: 'image' },
+        messageId: 'user-images-1',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'First answer', type: 'text' },
+        messageId: 'assistant-images-1',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed' },
+      {
+        content: { data: 'd29ybGQ=', mimeType: 'image/webp', type: 'image' },
+        messageId: 'user-images-2',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Second answer', type: 'text' },
+        messageId: 'assistant-images-2',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed' },
+    ].map((update, index) => JSON.stringify({
+      method: '_x.ai/session/update',
+      params: { sessionId: 'session-images', update },
+      timestamp: 600 + index,
+    })).join('\n');
+
+    const messages = parseGrokHistoryContent(records, 'session-images').messages;
+
+    expect(messages[0]).toMatchObject({
+      content: 'Compare these',
+      images: [{
+        data: 'aGVsbG8=',
+        id: 'grok-session-images-turn-0-image-0',
+        mediaType: 'image/png',
+        name: 'Grok image 1.png',
+        size: 5,
+        source: 'file',
+      }],
+      role: 'user',
+    });
+    expect(messages[2]).toMatchObject({
+      content: '',
+      images: [{
+        data: 'd29ybGQ=',
+        id: 'grok-session-images-turn-1-image-0',
+        mediaType: 'image/webp',
+        name: 'Grok image 1.webp',
+        size: 5,
+        source: 'file',
+      }],
+      role: 'user',
+    });
+    expect(messages[3]).toMatchObject({ content: 'Second answer', role: 'assistant' });
+  });
+
+  it('maps an assistant checkpoint to the following zero-based Grok prompt index', () => {
+    const content = fs.readFileSync(path.join(
+      process.cwd(),
+      'tests/fixtures/providers/grok/history/multi-turn-updates.jsonl',
+    ), 'utf8');
+
+    expect(resolveGrokForkTargetPromptIndex(
+      content,
+      'session-fixture',
+      'assistant-1',
+    )).toBe(1);
+    expect(resolveGrokForkTargetPromptIndex(
+      content,
+      'session-fixture',
+      'assistant-2',
+    )).toBe(2);
+    expect(resolveGrokForkTargetPromptIndex(
+      content,
+      'session-fixture',
+      'missing-assistant',
+    )).toBeNull();
+  });
+
+  it('does not expose a fork action or increment the prompt index for stored interjections', () => {
+    const records = [
+      {
+        _meta: { promptIndex: 0 },
+        content: { text: 'Initial prompt', type: 'text' },
+        messageId: 'user-initial',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Initial response', type: 'text' },
+        messageId: 'assistant-before-steer',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      {
+        _meta: { modelId: 'grok-4.5' },
+        content: { text: 'Steer now', type: 'text' },
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Steered response', type: 'text' },
+        messageId: 'assistant-after-steer',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed' },
+      {
+        _meta: { promptIndex: 1 },
+        content: { text: 'Next prompt', type: 'text' },
+        messageId: 'user-next',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Next response', type: 'text' },
+        messageId: 'assistant-next',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed' },
+    ].map((update, index) => JSON.stringify({
+      method: '_x.ai/session/update',
+      params: { sessionId: 'session-interject', update },
+      timestamp: 800 + index,
+    })).join('\n');
+
+    const parsed = parseGrokHistoryContent(records, 'session-interject');
+    expect(parsed.messages.map(message => message.content)).toEqual([
+      'Initial prompt',
+      'Initial response',
+      'Steer now',
+      'Steered response',
+      'Next prompt',
+      'Next response',
+    ]);
+    expect(parsed.messages[2]).not.toHaveProperty('userMessageId');
+    expect(resolveGrokForkTargetPromptIndex(
+      records,
+      'session-interject',
+      'assistant-after-steer',
+    )).toBe(1);
+    expect(resolveGrokForkTargetPromptIndex(
+      records,
+      'session-interject',
+      'assistant-next',
+    )).toBe(2);
+  });
+
+  it('keeps early and consecutive interjections separate from the original prompt', () => {
+    const records = [
+      {
+        _meta: { promptIndex: 0 },
+        content: { text: 'Initial prompt', type: 'text' },
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        _meta: { promptIndex: 0 },
+        content: { data: 'aW5pdGlhbA==', mimeType: 'image/png', type: 'image' },
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        _meta: { modelId: 'grok-4.5' },
+        content: { text: 'First steer', type: 'text' },
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        _meta: { modelId: 'grok-4.5' },
+        content: { data: 'c3RlZXI=', mimeType: 'image/webp', type: 'image' },
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        _meta: { modelId: 'grok-4.5' },
+        content: { text: 'Second steer', type: 'text' },
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Final response', type: 'text' },
+        messageId: 'assistant-final',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed' },
+    ].map((update, index) => JSON.stringify({
+      method: '_x.ai/session/update',
+      params: { sessionId: 'session-early-interject', update },
+      timestamp: 900 + index,
+    })).join('\n');
+
+    const parsed = parseGrokHistoryContent(records, 'session-early-interject');
+
+    expect(parsed.messages.map(message => message.content)).toEqual([
+      'Initial prompt',
+      'First steer',
+      'Second steer',
+      'Final response',
+    ]);
+    expect(parsed.messages[0]).toMatchObject({
+      images: [{ mediaType: 'image/png' }],
+      role: 'user',
+      userMessageId: expect.any(String),
+    });
+    expect(parsed.messages[1]).toMatchObject({
+      images: [{ mediaType: 'image/webp' }],
+      role: 'user',
+    });
+    expect(parsed.messages[1]).not.toHaveProperty('userMessageId');
+    expect(parsed.messages[2]).not.toHaveProperty('userMessageId');
+    expect(resolveGrokForkTargetPromptIndex(
+      records,
+      'session-early-interject',
+      'assistant-final',
+    )).toBe(1);
+  });
+
+  it('preserves absolute Grok prompt indexes after compacted history prefixes', () => {
+    const records = [
+      {
+        _meta: { promptIndex: 12 },
+        content: { text: 'Post-compaction prompt', type: 'text' },
+        messageId: 'user-compacted',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Post-compaction response', type: 'text' },
+        messageId: 'assistant-compacted',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed' },
+    ].map((update, index) => JSON.stringify({
+      method: '_x.ai/session/update',
+      params: { sessionId: 'session-compacted', update },
+      timestamp: 900 + index,
+    })).join('\n');
+
+    expect(resolveGrokForkTargetPromptIndex(
+      records,
+      'session-compacted',
+      'assistant-compacted',
+    )).toBe(13);
   });
 
   it('uses a new user message as a fallback turn boundary and renders tool content', () => {

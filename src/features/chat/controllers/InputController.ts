@@ -123,6 +123,13 @@ export interface SendMessageOptions {
   turnRequestOverride?: ChatTurnRequest;
 }
 
+interface PendingProviderUserMessage {
+  displayContent: string;
+  persistedContent?: string;
+  currentNote?: string;
+  images?: ChatMessage['images'];
+}
+
 export class InputController {
   private deps: InputControllerDeps;
   private pendingApprovalInline: InlineAskUserQuestion | null = null;
@@ -135,12 +142,7 @@ export class InputController {
   private steerInFlight = false;
   private pendingSteerMessage: QueuedMessage | null = null;
   private activeStreamingAssistantMessage: ChatMessage | null = null;
-  private pendingProviderUserMessages: Array<{
-    displayContent: string;
-    persistedContent?: string;
-    currentNote?: string;
-    images?: ChatMessage['images'];
-  }> = [];
+  private pendingProviderUserMessages: PendingProviderUserMessage[] = [];
   private sawInitialProviderUserMessage = false;
   private awaitingProviderAssistantStart = false;
   private readonly turnCoordinator: TurnCoordinator<SendMessageOptions>;
@@ -998,35 +1000,46 @@ export class InputController {
     this.pendingSteerMessage = queuedMessage;
     this.steerInFlight = true;
     this.updateQueueIndicator();
+    let expectedProviderMessage: PendingProviderUserMessage | null = null;
 
     try {
       const { displayContent, request } = this.toQueuedChatTurn(queuedMessage);
 
       await agentService.prepareForTurn?.();
       const preparedTurn = agentService.prepareTurn(request);
-      const accepted = await agentService.steer(preparedTurn);
-      if (state.cancelRequested || !this.pendingSteerMessage) {
-        return;
-      }
-      if (!accepted) {
-        this.restoreQueuedMessageAfterSteerFailure(queuedMessage);
-        return;
-      }
-
-      this.deps.getFileContextManager()?.markCurrentNoteSent();
-
-      this.pendingProviderUserMessages.push({
+      expectedProviderMessage = {
         displayContent,
         persistedContent: preparedTurn.persistedContent,
         currentNote: preparedTurn.isCompact
           ? undefined
           : preparedTurn.request.currentNotePath,
         images: request.images,
-      });
+      };
+      this.pendingProviderUserMessages.push(expectedProviderMessage);
+      const accepted = await agentService.steer(preparedTurn);
+      if (state.cancelRequested) {
+        this.removePendingProviderUserMessage(expectedProviderMessage);
+        return;
+      }
+      if (!accepted) {
+        this.removePendingProviderUserMessage(expectedProviderMessage);
+        this.restoreQueuedMessageAfterSteerFailure(queuedMessage);
+        return;
+      }
+
+      this.deps.getFileContextManager()?.markCurrentNoteSent();
     } catch {
+      if (expectedProviderMessage) {
+        this.removePendingProviderUserMessage(expectedProviderMessage);
+      }
       this.restoreQueuedMessageAfterSteerFailure(queuedMessage);
-      new Notice('Failed to steer the queued Codex message. It is still available.');
+      new Notice('Failed to steer the queued message. It is still available.');
     }
+  }
+
+  private removePendingProviderUserMessage(message: PendingProviderUserMessage): void {
+    const index = this.pendingProviderUserMessages.indexOf(message);
+    if (index >= 0) this.pendingProviderUserMessages.splice(index, 1);
   }
 
   private restoreQueuedMessageAfterSteerFailure(

@@ -737,7 +737,7 @@ describe('InputController - Message Queue', () => {
         canvasContext: null,
       });
       expect(mockNotice).toHaveBeenCalledWith(
-        'Failed to steer the queued Codex message. It is still available.',
+        'Failed to steer the queued message. It is still available.',
       );
     });
 
@@ -794,6 +794,96 @@ describe('InputController - Message Queue', () => {
         editorContext: null,
         browserContext: null,
         canvasContext: null,
+      });
+    });
+
+    it('registers steered content before a provider boundary can consume it', async () => {
+      deps = createSendableDeps();
+      const mockAgentService = (deps as any).mockAgentService;
+      mockAgentService.providerId = 'grok';
+      mockAgentService.getCapabilities = jest.fn().mockReturnValue({
+        providerId: 'grok',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: false,
+        supportsRewind: false,
+        supportsFork: true,
+        supportsProviderCommands: true,
+        supportsTurnSteer: true,
+        reasoningControl: 'effort',
+      });
+      mockAgentService.prepareTurn = jest.fn().mockImplementation((request: any) => ({
+        request: {
+          ...request,
+          currentNotePath: request.text === 'steer prompt' ? 'notes/steer.md' : undefined,
+        },
+        persistedContent: request.text === 'steer prompt'
+          ? 'persisted steer prompt'
+          : request.text,
+        prompt: request.text,
+        isCompact: false,
+        mcpMentions: new Set(),
+      }));
+
+      let releaseBoundary!: () => void;
+      let markBoundaryConsumed!: () => void;
+      const boundaryGate = new Promise<void>((resolve) => { releaseBoundary = resolve; });
+      const boundaryConsumed = new Promise<void>((resolve) => { markBoundaryConsumed = resolve; });
+      const firstChunkHandled = new Promise<void>((resolve) => {
+        (deps.streamController.handleStreamChunk as jest.Mock).mockImplementation(async (chunk) => {
+          if (chunk.type === 'text' && chunk.content === 'partial') resolve();
+        });
+      });
+      mockAgentService.query = jest.fn().mockImplementation(() => (async function* () {
+        yield { type: 'user_message_start', content: 'first prompt', itemId: 'user-1' };
+        yield { type: 'assistant_message_start', itemId: 'assistant-1' };
+        yield { type: 'text', content: 'partial' };
+        await boundaryGate;
+        yield { type: 'user_message_start', content: 'wire steer', itemId: 'user-2' };
+        markBoundaryConsumed();
+        yield { type: 'assistant_message_start', itemId: 'assistant-2' };
+        yield { type: 'done' };
+      })());
+      mockAgentService.steer = jest.fn().mockImplementation(async () => {
+        releaseBoundary();
+        await boundaryConsumed;
+        return true;
+      });
+
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      inputEl.value = 'first prompt';
+      controller = new InputController(deps);
+      const sendPromise = controller.sendMessage();
+      await firstChunkHandled;
+
+      const steerImage = {
+        data: 'c3RlZXI=',
+        id: 'steer-image',
+        mediaType: 'image/png' as const,
+        name: 'steer.png',
+        size: 5,
+        source: 'paste' as const,
+      };
+      deps.state.queuedMessage = {
+        content: 'steer prompt',
+        images: [steerImage],
+        editorContext: null,
+        browserContext: null,
+        canvasContext: null,
+      };
+      controller.updateQueueIndicator();
+      (deps.state.queueIndicatorEl as any)
+        .querySelector('.claudian-queue-indicator-action')
+        ?.click();
+
+      await sendPromise;
+
+      expect(deps.state.messages[2]).toMatchObject({
+        content: 'persisted steer prompt',
+        currentNote: 'notes/steer.md',
+        displayContent: 'steer prompt',
+        images: [steerImage],
+        role: 'user',
       });
     });
 

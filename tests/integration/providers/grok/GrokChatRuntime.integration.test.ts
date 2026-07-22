@@ -9,8 +9,8 @@ import { GrokChatRuntime } from '@/providers/grok/runtime/GrokChatRuntime';
 const CAPABILITIES: ProviderCapabilities = {
   providerId: 'grok',
   reasoningControl: 'effort',
-  supportsFork: false,
-  supportsImageAttachments: false,
+  supportsFork: true,
+  supportsImageAttachments: true,
   supportsInstructionMode: true,
   supportsLegacySubagentTools: false,
   supportsMcpTools: false,
@@ -19,7 +19,7 @@ const CAPABILITIES: ProviderCapabilities = {
   supportsPlanMode: false,
   supportsProviderCommands: true,
   supportsRewind: false,
-  supportsTurnSteer: false,
+  supportsTurnSteer: true,
 };
 
 function createHost(vaultPath: string): ProviderHost {

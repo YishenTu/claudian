@@ -6,6 +6,7 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderCapabilities } from '@/core/providers/types';
 import type { AcpSubprocessLaunchSpec } from '@/providers/acp';
 import { GrokAuxiliaryLifecycleCoordinator } from '@/providers/grok/auxiliary/GrokAuxiliaryLifecycleCoordinator';
+import { encodeGrokSessionCwd } from '@/providers/grok/history/GrokHistoryPathResolver';
 import {
   GrokChatRuntime,
   type GrokRuntimeProcess,
@@ -17,8 +18,8 @@ const VAULT_PATH = '/tmp/claudian-grok-runtime-vault';
 const CAPABILITIES: ProviderCapabilities = {
   providerId: 'grok',
   reasoningControl: 'effort',
-  supportsFork: false,
-  supportsImageAttachments: false,
+  supportsFork: true,
+  supportsImageAttachments: true,
   supportsInstructionMode: true,
   supportsLegacySubagentTools: false,
   supportsMcpTools: false,
@@ -27,7 +28,7 @@ const CAPABILITIES: ProviderCapabilities = {
   supportsPlanMode: false,
   supportsProviderCommands: true,
   supportsRewind: false,
-  supportsTurnSteer: false,
+  supportsTurnSteer: true,
 };
 
 type JsonRpcMessage = Record<string, unknown> & { id?: number; method?: string };
@@ -49,9 +50,11 @@ class FakeGrokProcess implements GrokRuntimeProcess {
       cancel?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       commandsList?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       initialize?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
+      interject?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       load?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       newSession?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       prompt?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
+      sessionFork?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       setModel?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
     } = {},
   ) {
@@ -133,6 +136,21 @@ class FakeGrokProcess implements GrokRuntimeProcess {
       case '_x.ai/commands/list':
         if (this.handlers.commandsList) this.handlers.commandsList(message, this);
         else this.respond(message, { commands: [] });
+        return;
+      case '_x.ai/interject':
+        if (this.handlers.interject) this.handlers.interject(message, this);
+        else this.respond(message, { result: { status: 'queued' } });
+        return;
+      case '_x.ai/session/fork':
+        if (this.handlers.sessionFork) this.handlers.sessionFork(message, this);
+        else this.respond(message, {
+          chatMessagesCopied: 2,
+          newCwd: VAULT_PATH,
+          newSessionId: 'session-forked',
+          parentSessionId: 'session-new',
+          planStateCopied: false,
+          updatesCopied: 2,
+        });
         return;
       case 'session/new':
         if (this.handlers.newSession) this.handlers.newSession(message, this);
@@ -378,6 +396,32 @@ describe('GrokChatRuntime', () => {
     expect(harness.process.requests.some(request => request.method === 'session/prompt')).toBe(false);
   });
 
+  it('discovers commands for a pending fork without materializing a child session', async () => {
+    const harness = createHarness({
+      handlers: {
+        commandsList(message, process) {
+          process.respond(message, { commands: [] });
+        },
+      },
+      sessionDirectory: '/trusted/source-session',
+    });
+    harness.runtime.syncConversationState({
+      id: 'conversation-pending-fork',
+      providerState: {
+        forkSource: { resumeAt: 'assistant-1', sessionId: 'source-session' },
+        forkSourceSessionDirectory: '/trusted/source-session',
+      },
+      selectedModel: 'grok/grok-4.5',
+      sessionId: null,
+    });
+
+    await expect(harness.runtime.discoverSupportedCommands()).resolves.toEqual([]);
+    expect(harness.process.requests.map(request => request.method)).toEqual([
+      'initialize',
+      '_x.ai/commands/list',
+    ]);
+  });
+
   it('registers owner readiness during a held transition for future quiescence', async () => {
     const lifecycle = new GrokAuxiliaryLifecycleCoordinator();
     const harness = createHarness({
@@ -550,6 +594,341 @@ describe('GrokChatRuntime', () => {
       modelId: 'grok-4.5',
       _meta: { reasoningEffort: 'medium' },
     });
+  });
+
+  it('sends text and image ACP blocks for normal and image-only turns', async () => {
+    const harness = createHarness();
+    const image = {
+      data: 'aGVsbG8=',
+      id: 'image-1',
+      mediaType: 'image/png' as const,
+      name: 'sample.png',
+      size: 5,
+      source: 'paste' as const,
+    };
+
+    for await (const chunk of harness.runtime.query(harness.runtime.prepareTurn({
+      images: [image],
+      text: '',
+    }))) {
+      void chunk;
+    }
+
+    const prompt = harness.process.requests.find(request => request.method === 'session/prompt');
+    expect(record(prompt?.params)).toEqual({
+      prompt: [
+        { text: '', type: 'text' },
+        { data: 'aGVsbG8=', mimeType: 'image/png', type: 'image' },
+      ],
+      sessionId: 'session-new',
+    });
+  });
+
+  it('steers the active Grok turn through xAI interject with shared prompt blocks', async () => {
+    const harness = createHarness({
+      handlers: {
+        interject(message, process) {
+          process.notify('x.ai/session/interjection', message.params);
+          process.respond(message, { result: { status: 'queued' } });
+        },
+        prompt() {},
+      },
+    });
+    const query = collect(harness.runtime, 'Initial prompt');
+    while (harness.processes.length === 0) await tick();
+    const promptRequest = await waitForRequest(harness.process, 'session/prompt');
+    const steerTurn = harness.runtime.prepareTurn({
+      images: [{
+        data: 'aGVsbG8=',
+        id: 'image-steer',
+        mediaType: 'image/webp',
+        name: 'steer.webp',
+        size: 5,
+        source: 'drop',
+      }],
+      text: 'Focus on this instead.',
+    });
+
+    await expect(harness.runtime.steer(steerTurn)).resolves.toBe(true);
+
+    const interject = harness.process.requests.find(request => request.method === '_x.ai/interject');
+    expect(record(interject?.params)).toEqual({
+      content: [
+        { text: 'Focus on this instead.', type: 'text' },
+        { data: 'aGVsbG8=', mimeType: 'image/webp', type: 'image' },
+      ],
+      interjectionId: expect.any(String),
+      sessionId: 'session-new',
+      text: 'Focus on this instead.',
+    });
+
+    harness.process.notify('_x.ai/session/update', {
+      sessionId: 'session-new',
+      update: { sessionUpdate: 'turn_completed' },
+    });
+    harness.process.respond(promptRequest, promptResponse());
+    await expect(query).resolves.toContainEqual({
+      content: 'Focus on this instead.',
+      type: 'user_message_start',
+    });
+  });
+
+  it('keeps text-only Grok interjections on the legacy wire shape', async () => {
+    const harness = createHarness({
+      handlers: {
+        interject(message, process) {
+          process.notify('x.ai/session/interjection', message.params);
+          process.respond(message, { result: { status: 'queued' } });
+        },
+        prompt() {},
+      },
+    });
+    const query = collect(harness.runtime, 'Initial prompt');
+    while (harness.processes.length === 0) await tick();
+    const promptRequest = await waitForRequest(harness.process, 'session/prompt');
+
+    await expect(harness.runtime.steer(
+      harness.runtime.prepareTurn({ text: 'Text-only steer' }),
+    )).resolves.toBe(true);
+
+    expect(record(harness.process.requests.find(
+      request => request.method === '_x.ai/interject',
+    )?.params)).toEqual({
+      interjectionId: expect.any(String),
+      sessionId: 'session-new',
+      text: 'Text-only steer',
+    });
+    harness.process.notify('_x.ai/session/update', {
+      sessionId: 'session-new',
+      update: { sessionUpdate: 'turn_completed' },
+    });
+    harness.process.respond(promptRequest, promptResponse());
+    await query;
+  });
+
+  it('keeps the stream open for a late interjection fallback turn', async () => {
+    const harness = createHarness({
+      handlers: {
+        interject() {},
+        prompt() {},
+      },
+    });
+    const query = collect(harness.runtime, 'Initial prompt');
+    while (harness.processes.length === 0) await tick();
+    const promptRequest = await waitForRequest(harness.process, 'session/prompt');
+    const steering = harness.runtime.steer(
+      harness.runtime.prepareTurn({ text: 'Late steer' }),
+    );
+    const interjectRequest = await waitForRequest(harness.process, '_x.ai/interject');
+
+    harness.process.notify('_x.ai/session/update', {
+      sessionId: 'session-new',
+      update: { sessionUpdate: 'turn_completed' },
+    });
+    harness.process.respond(promptRequest, promptResponse());
+    await tick();
+    harness.process.notify('x.ai/session/interjection', interjectRequest.params);
+    harness.process.respond(interjectRequest, { result: { status: 'queued' } });
+    await expect(steering).resolves.toBe(true);
+    harness.process.notify('_x.ai/session/update', {
+      sessionId: 'session-new',
+      update: {
+        content: { text: 'Fallback response', type: 'text' },
+        messageId: 'assistant-fallback',
+        sessionUpdate: 'agent_message_chunk',
+      },
+    });
+    harness.process.notify('_x.ai/session/update', {
+      sessionId: 'session-new',
+      update: { prompt_id: 'interject-fallback-1', sessionUpdate: 'turn_completed' },
+    });
+
+    await expect(query).resolves.toEqual(expect.arrayContaining([
+      { content: 'Late steer', type: 'user_message_start' },
+      { content: 'Fallback response', type: 'text' },
+      { type: 'done' },
+    ]));
+  });
+
+  it('rejects an interjection response that crosses the conversation generation', async () => {
+    const harness = createHarness({
+      handlers: {
+        interject() {},
+        prompt() {},
+      },
+    });
+    const query = collect(harness.runtime, 'Initial prompt');
+    while (harness.processes.length === 0) await tick();
+    await waitForRequest(harness.process, 'session/prompt');
+
+    const steering = harness.runtime.steer(
+      harness.runtime.prepareTurn({ text: 'Stale steer' }),
+    );
+    await waitForRequest(harness.process, '_x.ai/interject');
+    harness.runtime.syncConversationState({
+      id: 'conversation-replacement',
+      providerState: {},
+      sessionId: 'replacement-session',
+    });
+
+    await expect(steering).resolves.toBe(false);
+    await expect(query).resolves.toContainEqual({ type: 'done' });
+    expect(harness.runtime.getSessionId()).toBe('replacement-session');
+  });
+
+  it('materializes a pending Grok fork before loading and prompting the child session', async () => {
+    const tempRoot = fs.mkdtempSync(path.join('/tmp', 'claudian-grok-fork-'));
+    const sourceCwd = path.join(tempRoot, 'previous-vault');
+    const sourceDirectory = path.join(
+      tempRoot,
+      'sessions',
+      encodeGrokSessionCwd(sourceCwd),
+      'session-fixture',
+    );
+    fs.mkdirSync(sourceDirectory, { recursive: true });
+    fs.copyFileSync(
+      path.join(process.cwd(), 'tests/fixtures/providers/grok/history/multi-turn-updates.jsonl'),
+      path.join(sourceDirectory, 'updates.jsonl'),
+    );
+    const harness = createHarness({
+      handlers: {
+        sessionFork(message, process) {
+          process.respond(message, {
+            chatMessagesCopied: 2,
+            newCwd: VAULT_PATH,
+            newModelId: 'grok-4.5',
+            newSessionId: 'session-forked',
+            parentSessionId: 'session-fixture',
+            planStateCopied: false,
+            updatesCopied: 8,
+          });
+        },
+      },
+      sessionDirectory: sourceDirectory,
+    });
+    harness.runtime.syncConversationState({
+      id: 'conversation-fork',
+      providerState: {
+        forkSource: { resumeAt: 'assistant-1', sessionId: 'session-fixture' },
+        forkSourceSessionDirectory: sourceDirectory,
+      },
+      selectedModel: 'grok/grok-4.5',
+      sessionId: null,
+    });
+
+    try {
+      await collect(harness.runtime, 'Continue from the fork.');
+
+      expect(harness.process.requests.map(request => request.method)).toEqual([
+        'initialize',
+        '_x.ai/session/fork',
+        'session/load',
+        'session/set_model',
+        'session/prompt',
+      ]);
+      expect(record(harness.process.requests[1]?.params)).toEqual({
+        newCwd: VAULT_PATH,
+        newModelId: 'grok-4.5',
+        sourceCwd,
+        sourceSessionId: 'session-fixture',
+        targetPromptIndex: 1,
+      });
+      expect(record(harness.process.requests[2]?.params)).toMatchObject({
+        sessionId: 'session-forked',
+      });
+      expect(harness.runtime.getSessionId()).toBe('session-forked');
+      expect(harness.runtime.resolveSessionIdForFork(null)).toBe('session-forked');
+      expect(harness.runtime.buildSessionUpdates({
+        conversation: {
+          providerId: 'grok',
+          providerState: {
+            forkSource: { resumeAt: 'assistant-1', sessionId: 'session-fixture' },
+            forkSourceSessionDirectory: sourceDirectory,
+            futureField: 'keep',
+          },
+          sessionId: null,
+        } as never,
+        sessionInvalidated: false,
+      }).updates.providerState).toEqual({
+        futureField: 'keep',
+        sessionDirectory: sourceDirectory,
+      });
+    } finally {
+      harness.runtime.cleanup();
+      fs.rmSync(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('uses Grok cwd metadata when forking a hash-directory session', async () => {
+    const tempRoot = fs.mkdtempSync(path.join('/tmp', 'claudian-grok-hash-fork-'));
+    const sourceCwd = path.join(tempRoot, 'a'.repeat(260), 'previous-vault');
+    const cwdDirectory = path.join(tempRoot, 'sessions', 'previous-vault-0123456789abcdef');
+    const sourceDirectory = path.join(cwdDirectory, 'session-fixture');
+    fs.mkdirSync(sourceDirectory, { recursive: true });
+    fs.writeFileSync(path.join(cwdDirectory, '.cwd'), sourceCwd);
+    fs.copyFileSync(
+      path.join(process.cwd(), 'tests/fixtures/providers/grok/history/multi-turn-updates.jsonl'),
+      path.join(sourceDirectory, 'updates.jsonl'),
+    );
+    const harness = createHarness({ sessionDirectory: sourceDirectory });
+    harness.runtime.syncConversationState({
+      id: 'conversation-hash-fork',
+      providerState: {
+        forkSource: { resumeAt: 'assistant-1', sessionId: 'session-fixture' },
+        forkSourceSessionDirectory: sourceDirectory,
+      },
+      sessionId: null,
+    });
+
+    try {
+      await collect(harness.runtime, 'Continue from the fork.');
+
+      expect(record(harness.process.requests.find(
+        request => request.method === '_x.ai/session/fork',
+      )?.params)).toMatchObject({ sourceCwd });
+    } finally {
+      harness.runtime.cleanup();
+      fs.rmSync(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects a hash-directory fork when its source cwd metadata is missing', async () => {
+    const tempRoot = fs.mkdtempSync(path.join('/tmp', 'claudian-grok-bad-hash-fork-'));
+    const sourceDirectory = path.join(
+      tempRoot,
+      'sessions',
+      'previous-vault-0123456789abcdef',
+      'session-fixture',
+    );
+    fs.mkdirSync(sourceDirectory, { recursive: true });
+    fs.copyFileSync(
+      path.join(process.cwd(), 'tests/fixtures/providers/grok/history/multi-turn-updates.jsonl'),
+      path.join(sourceDirectory, 'updates.jsonl'),
+    );
+    const harness = createHarness({ sessionDirectory: sourceDirectory });
+    harness.runtime.syncConversationState({
+      id: 'conversation-bad-hash-fork',
+      providerState: {
+        forkSource: { resumeAt: 'assistant-1', sessionId: 'session-fixture' },
+        forkSourceSessionDirectory: sourceDirectory,
+      },
+      sessionId: null,
+    });
+
+    try {
+      const chunks = await collect(harness.runtime, 'Continue from the fork.');
+
+      expect(chunks).toContainEqual(expect.objectContaining({
+        content: expect.stringContaining('source working directory not found'),
+        type: 'error',
+      }));
+      expect(harness.process.requests.some(
+        request => request.method === '_x.ai/session/fork',
+      )).toBe(false);
+    } finally {
+      harness.runtime.cleanup();
+      fs.rmSync(tempRoot, { force: true, recursive: true });
+    }
   });
 
   it('rejects a turn when no explicit enabled model is selected', async () => {
@@ -1397,8 +1776,38 @@ describe('GrokChatRuntime', () => {
       type: 'usage',
       usage: expect.objectContaining({
         cacheReadInputTokens: 4,
+        contextWindow: 200_000,
+        contextWindowIsAuthoritative: true,
         contextTokens: 15,
         inputTokens: 12,
+        percentage: 0,
+      }),
+    });
+  });
+
+  it('uses the selected model metadata as the context denominator without a usage update', async () => {
+    const harness = createHarness({
+      handlers: {
+        prompt(message, process) {
+          process.respond(message, {
+            stopReason: 'end_turn',
+            usage: { inputTokens: 40_000, outputTokens: 10_000, totalTokens: 50_000 },
+          });
+        },
+      },
+    });
+
+    const chunks = await collect(harness.runtime);
+
+    expect(chunks).toContainEqual({
+      sessionId: 'session-new',
+      type: 'usage',
+      usage: expect.objectContaining({
+        contextWindow: 200_000,
+        contextWindowIsAuthoritative: true,
+        contextTokens: 50_000,
+        model: 'grok/grok-4.5',
+        percentage: 25,
       }),
     });
   });
@@ -1840,7 +2249,7 @@ describe('GrokChatRuntime', () => {
     expect(errorContent).not.toContain(secret);
   });
 
-  it('preserves provider state, adds only a validated directory hint, and returns unsupported operations', async () => {
+  it('preserves provider state, adds only a validated directory hint, and keeps unsupported rewind', async () => {
     const harness = createHarness({ sessionDirectory: '/trusted/sessions/session-new' });
     await harness.runtime.ensureReady();
 
@@ -1862,6 +2271,6 @@ describe('GrokChatRuntime', () => {
     });
     await expect(harness.runtime.rewind('user', 'assistant')).resolves.toEqual({ canRewind: false });
     await expect(harness.runtime.steer?.(harness.runtime.prepareTurn({ text: 'No' }))).resolves.toBe(false);
-    expect(harness.runtime.resolveSessionIdForFork(null)).toBeNull();
+    expect(harness.runtime.resolveSessionIdForFork(null)).toBe('session-new');
   });
 });

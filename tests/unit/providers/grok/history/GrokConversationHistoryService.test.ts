@@ -149,4 +149,81 @@ describe('GrokConversationHistoryService', () => {
     expect(missingCustomConversation.messages).toEqual([]);
     expect(missingCustomConversation.providerState).toBeUndefined();
   });
+
+  it('persists a pending fork and rehydrates only its source prefix when messages are absent', async () => {
+    const service = new GrokConversationHistoryService();
+    const providerState = service.buildForkProviderState(
+      'session-fixture',
+      'assistant-1',
+      { sessionDirectory },
+    );
+    const conversation: Conversation = {
+      createdAt: 1,
+      id: 'conversation-fork',
+      messages: [],
+      providerId: 'grok',
+      providerState,
+      sessionId: null,
+      title: 'Fork',
+      updatedAt: 1,
+    };
+
+    expect(service.isPendingForkConversation(conversation)).toBe(true);
+    expect(service.resolveSessionIdForConversation(conversation)).toBe('session-fixture');
+    expect(providerState).toEqual({
+      forkSource: { resumeAt: 'assistant-1', sessionId: 'session-fixture' },
+      forkSourceSessionDirectory: sessionDirectory,
+    });
+
+    await service.hydrateConversationHistory(conversation, vaultPath, {
+      environment: { HOME: tempRoot },
+    });
+
+    expect(conversation.messages.map(message => message.id)).toEqual([
+      'user-1',
+      'assistant-1',
+    ]);
+    expect(service.buildPersistedProviderState(conversation)).toEqual(providerState);
+  });
+
+  it('rehydrates native Grok image blocks into persisted message attachments', async () => {
+    const imageHistory = [
+      {
+        content: { text: 'Inspect this', type: 'text' },
+        messageId: 'user-image',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { data: 'aGVsbG8=', mimeType: 'image/png', type: 'image' },
+        messageId: 'user-image',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Visible', type: 'text' },
+        messageId: 'assistant-image',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed' },
+    ].map((update, index) => JSON.stringify({
+      method: 'session/update',
+      params: { sessionId: 'session-fixture', update },
+      timestamp: 700 + index,
+    })).join('\n');
+    await fs.writeFile(updatesPath, imageHistory, 'utf8');
+    const service = new GrokConversationHistoryService();
+    const conversation = createConversation();
+
+    await service.hydrateConversationHistory(conversation, vaultPath, {
+      environment: { HOME: tempRoot },
+    });
+
+    expect(conversation.messages[0]).toMatchObject({
+      content: 'Inspect this',
+      images: [{
+        data: 'aGVsbG8=',
+        mediaType: 'image/png',
+        size: 5,
+      }],
+    });
+  });
 });

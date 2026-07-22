@@ -3,7 +3,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
+  decodeGrokSessionCwd,
   encodeGrokSessionCwd,
+  resolveGrokSessionCwd,
   resolveGrokSessionDirectory,
 } from '@/providers/grok/history/GrokHistoryPathResolver';
 
@@ -45,6 +47,25 @@ describe('GrokHistoryPathResolver', () => {
     expect(resolveGrokSessionDirectory(undefined, 'session-custom', vaultPath, {
       environment: { GROK_HOME: customHome, HOME: tempRoot },
     })).toBe(customDirectory);
+  });
+
+  it('round-trips an encoded source cwd and rejects non-canonical directory names', () => {
+    const sourceCwd = path.join(tempRoot, 'previous vault');
+    const encoded = encodeGrokSessionCwd(sourceCwd);
+
+    expect(decodeGrokSessionCwd(encoded)).toBe(path.resolve(sourceCwd));
+    expect(decodeGrokSessionCwd('not-an-absolute-path')).toBeNull();
+    expect(decodeGrokSessionCwd('%E0%A4%A')).toBeNull();
+  });
+
+  it('resolves a hash-based Grok session cwd from its metadata file', () => {
+    const sourceCwd = path.join(tempRoot, 'a'.repeat(260), 'vault');
+    const cwdDirectory = path.join(tempRoot, '.grok', 'sessions', 'vault-0123456789abcdef');
+    const sessionDirectory = path.join(cwdDirectory, 'session-hashed-cwd');
+    fs.mkdirSync(sessionDirectory, { recursive: true });
+    fs.writeFileSync(path.join(cwdDirectory, '.cwd'), sourceCwd);
+
+    expect(resolveGrokSessionCwd(sessionDirectory)).toBe(path.resolve(sourceCwd));
   });
 
   it('never crosses from a configured home into the default home', () => {

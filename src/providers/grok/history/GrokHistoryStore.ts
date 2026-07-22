@@ -1,7 +1,13 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import type { ChatMessage, ContentBlock, ToolCallInfo } from '../../../core/types';
+import type {
+  ChatMessage,
+  ContentBlock,
+  ImageAttachment,
+  ImageMediaType,
+  ToolCallInfo,
+} from '../../../core/types';
 import {
   buildGrokToolProviderPayload,
   type GrokRawToolNameResolution,
@@ -50,6 +56,9 @@ interface PendingTurn {
   assistantContent: string;
   assistantId?: string;
   blocks: ContentBlock[];
+  images: ImageAttachment[];
+  isInterjection: boolean;
+  promptIndex: number | null;
   startedAt: number;
   tools: Map<string, StoredTool>;
   toolOrder: string[];
@@ -83,28 +92,63 @@ export function parseGrokHistoryContent(
     const updateType = readString(update.sessionUpdate) ?? readString(update.type);
     if (updateType === 'user_message_chunk') {
       const incomingUserId = resolveNativeId(update, 'user');
+      const incomingPromptIndex = readPromptIndex(update);
+      const hasPendingUserContent = Boolean(
+        pending
+        && (pending.userContent || pending.images.length > 0),
+      );
+      const startsEarlyInterjection = Boolean(
+        pending
+        && incomingPromptIndex === null
+        && (
+          pending.promptIndex !== null
+          || (pending.isInterjection && hasPendingUserContent && isTextContent(update.content))
+        ),
+      );
       const startsNewTurn = pending && (
         pending.assistantContent
         || pending.blocks.length > 0
+        || startsEarlyInterjection
         || (
-          pending.userContent
+          hasPendingUserContent
           && pending.userId !== undefined
           && incomingUserId !== undefined
           && pending.userId !== incomingUserId
         )
       );
       if (pending && startsNewTurn) {
-        if (pending.assistantContent || pending.blocks.length > 0 || pending.tools.size > 0) {
-          messages.push(...finalizeTurn(pending, sessionId));
+        const completed = finalizeTurn(pending, sessionId);
+        if (
+          completed.length > 0
+          && (
+            startsEarlyInterjection
+            || pending.assistantContent
+            || pending.blocks.length > 0
+            || pending.tools.size > 0
+          )
+        ) {
+          messages.push(...completed);
           turnIndex += 1;
         }
-        pending = createPendingTurn(turnIndex, record.timestamp);
+        pending = createPendingTurn(
+          turnIndex,
+          record.timestamp,
+          incomingPromptIndex === null,
+        );
       } else if (!pending) {
         pending = createPendingTurn(turnIndex, record.timestamp);
       }
       const text = extractContentText(update.content);
       pending.userContent += text;
+      const image = extractImageAttachment(
+        update.content,
+        sessionId,
+        pending.turnIndex,
+        pending.images.length,
+      );
+      if (image) pending.images.push(image);
       pending.userId ??= incomingUserId;
+      pending.promptIndex ??= incomingPromptIndex;
       continue;
     }
 
@@ -162,10 +206,104 @@ export async function loadGrokHistory(
   }
 }
 
-function createPendingTurn(turnIndex: number, timestamp: number): PendingTurn {
+export function resolveGrokForkTargetPromptIndex(
+  content: string,
+  sessionId: string,
+  resumeAt: string,
+): number | null {
+  let activePromptIndex: number | null = null;
+  let nextFallbackPromptIndex = 0;
+
+  for (const line of content.split(/\r?\n/)) {
+    const record = parseRecord(line);
+    if (!record || !HISTORY_METHODS.has(record.method)) continue;
+    if (readString(record.params.sessionId) !== sessionId) continue;
+    const update = readRecord(record.params.update);
+    if (!update) continue;
+    const updateType = readString(update.sessionUpdate) ?? readString(update.type);
+
+    if (updateType === 'rewind_marker') {
+      const target = readNonNegativeInteger(update.target_prompt_index)
+        ?? readNonNegativeInteger(update.targetPromptIndex);
+      if (target !== null) nextFallbackPromptIndex = target;
+      activePromptIndex = null;
+      continue;
+    }
+    if (updateType === 'user_message_chunk') {
+      const advertisedPromptIndex = readPromptIndex(update);
+      if (advertisedPromptIndex !== null) {
+        activePromptIndex = advertisedPromptIndex;
+        nextFallbackPromptIndex = Math.max(
+          nextFallbackPromptIndex,
+          advertisedPromptIndex + 1,
+        );
+      } else if (activePromptIndex === null) {
+        activePromptIndex = nextFallbackPromptIndex;
+        nextFallbackPromptIndex += 1;
+      }
+      continue;
+    }
+    if (
+      updateType === 'agent_message_chunk'
+      && resolveNativeId(update, 'assistant') === resumeAt
+      && activePromptIndex !== null
+    ) {
+      return activePromptIndex + 1;
+    }
+    if (updateType === 'turn_completed') {
+      const promptId = readString(update.prompt_id) ?? readString(update.promptId);
+      if (promptId === resumeAt && activePromptIndex !== null) {
+        return activePromptIndex + 1;
+      }
+      activePromptIndex = null;
+    }
+  }
+
+  return resolveLegacyForkTargetPromptIndex(content, sessionId, resumeAt);
+}
+
+function resolveLegacyForkTargetPromptIndex(
+  content: string,
+  sessionId: string,
+  resumeAt: string,
+): number | null {
+  let completedPrompts = 0;
+  for (const message of parseGrokHistoryContent(content, sessionId).messages) {
+    if (message.role === 'user' && message.userMessageId) {
+      completedPrompts += 1;
+      continue;
+    }
+    if (message.assistantMessageId === resumeAt) {
+      return completedPrompts;
+    }
+  }
+  return null;
+}
+
+export async function loadGrokForkTargetPromptIndex(
+  sessionDirectory: string,
+  sessionId: string,
+  resumeAt: string,
+): Promise<number | null> {
+  try {
+    const content = await fs.readFile(path.join(sessionDirectory, 'updates.jsonl'), 'utf8');
+    return resolveGrokForkTargetPromptIndex(content, sessionId, resumeAt);
+  } catch {
+    return null;
+  }
+}
+
+function createPendingTurn(
+  turnIndex: number,
+  timestamp: number,
+  isInterjection = false,
+): PendingTurn {
   return {
     assistantContent: '',
     blocks: [],
+    images: [],
+    isInterjection,
+    promptIndex: null,
     startedAt: normalizeTimestamp(timestamp),
     tools: new Map(),
     toolOrder: [],
@@ -226,7 +364,7 @@ function finalizeTurn(
   sessionId: string,
   promptId?: string,
 ): ChatMessage[] {
-  if (!turn.userContent) {
+  if (!turn.userContent && turn.images.length === 0) {
     return [];
   }
   const scope = sanitizeId(sessionId);
@@ -239,7 +377,8 @@ function finalizeTurn(
     id: userId,
     role: 'user',
     timestamp: turn.startedAt,
-    userMessageId: userId,
+    ...(!turn.isInterjection ? { userMessageId: userId } : {}),
+    ...(turn.images.length > 0 ? { images: turn.images } : {}),
   };
 
   if (!turn.assistantContent && turn.blocks.length === 0 && turn.tools.size === 0) {
@@ -313,6 +452,44 @@ function extractContentText(value: unknown): string {
   return resource && typeof resource.text === 'string' ? resource.text : '';
 }
 
+function isTextContent(value: unknown): boolean {
+  return readRecord(value)?.type === 'text';
+}
+
+function extractImageAttachment(
+  value: unknown,
+  sessionId: string,
+  turnIndex: number,
+  imageIndex: number,
+): ImageAttachment | null {
+  const content = readRecord(value);
+  if (!content || content.type !== 'image') return null;
+  const data = readString(content.data);
+  const mediaType = readImageMediaType(content.mimeType);
+  if (!data || !mediaType) return null;
+  const extension = mediaType === 'image/jpeg' ? 'jpg' : mediaType.slice('image/'.length);
+  return {
+    data,
+    id: `grok-${sanitizeId(sessionId)}-turn-${turnIndex}-image-${imageIndex}`,
+    mediaType,
+    name: `Grok image ${imageIndex + 1}.${extension}`,
+    size: Buffer.from(data, 'base64').byteLength,
+    source: 'file',
+  };
+}
+
+function readImageMediaType(value: unknown): ImageMediaType | null {
+  switch (value) {
+    case 'image/gif':
+    case 'image/jpeg':
+    case 'image/png':
+    case 'image/webp':
+      return value;
+    default:
+      return null;
+  }
+}
+
 function renderToolContent(value: unknown): string {
   if (!Array.isArray(value)) {
     return '';
@@ -346,6 +523,15 @@ function resolveNativeId(update: Record<string, unknown>, role: string): string 
     ?? (typeof metadata?.promptIndex === 'number'
       ? `${role}-${metadata.promptIndex}`
       : undefined);
+}
+
+function readPromptIndex(update: Record<string, unknown>): number | null {
+  const metadata = readRecord(update._meta);
+  return readNonNegativeInteger(metadata?.promptIndex);
+}
+
+function readNonNegativeInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function normalizeUsage(value: unknown): GrokHistoryUsage | undefined {

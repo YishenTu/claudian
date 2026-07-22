@@ -11,6 +11,29 @@ export function encodeGrokSessionCwd(cwd: string): string {
   return encodeURIComponent(path.resolve(cwd));
 }
 
+export function decodeGrokSessionCwd(encodedCwd: string): string | null {
+  try {
+    const decoded = decodeURIComponent(encodedCwd);
+    if (!path.isAbsolute(decoded)) return null;
+    return path.resolve(decoded);
+  } catch {
+    return null;
+  }
+}
+
+export function resolveGrokSessionCwd(sessionDirectory: string): string | null {
+  const cwdDirectory = path.dirname(path.resolve(sessionDirectory));
+  const decoded = decodeGrokSessionCwd(path.basename(cwdDirectory));
+  if (decoded) return decoded;
+
+  try {
+    const storedCwd = fs.readFileSync(path.join(cwdDirectory, '.cwd'), 'utf8').trim();
+    return path.isAbsolute(storedCwd) ? path.resolve(storedCwd) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveGrokSessionDirectory(
   persistedHint: string | null | undefined,
   sessionId: string | null | undefined,

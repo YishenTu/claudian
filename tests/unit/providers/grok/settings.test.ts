@@ -19,6 +19,7 @@ import {
 } from '@/providers/grok/settings';
 import {
   buildGrokProviderState,
+  buildPersistedGrokProviderState,
   parseGrokProviderState,
 } from '@/providers/grok/types';
 
@@ -263,5 +264,27 @@ describe('Grok provider state', () => {
       sessionDirectory: '/tmp/.grok/sessions/vault/session-id',
     });
     expect(buildGrokProviderState('../outside')).toBeUndefined();
+  });
+
+  it('sanitizes and persists pending native fork state without unrelated fields', () => {
+    expect(parseGrokProviderState({
+      forkSource: { resumeAt: ' assistant-1 ', sessionId: ' source-session ' },
+      forkSourceSessionDirectory: ' /tmp/.grok/sessions/vault/source-session ',
+      token: 'do-not-preserve',
+    })).toEqual({
+      forkSource: { resumeAt: 'assistant-1', sessionId: 'source-session' },
+      forkSourceSessionDirectory: '/tmp/.grok/sessions/vault/source-session',
+    });
+    expect(buildPersistedGrokProviderState({
+      forkSource: { resumeAt: 'assistant-1', sessionId: 'source-session' },
+      forkSourceSessionDirectory: '/tmp/.grok/sessions/vault/source-session',
+    })).toEqual({
+      forkSource: { resumeAt: 'assistant-1', sessionId: 'source-session' },
+      forkSourceSessionDirectory: '/tmp/.grok/sessions/vault/source-session',
+    });
+    expect(parseGrokProviderState({
+      forkSource: { resumeAt: '', sessionId: 'source-session' },
+      forkSourceSessionDirectory: '../outside',
+    })).toEqual({});
   });
 });

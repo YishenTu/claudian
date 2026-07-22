@@ -3,7 +3,10 @@ import type {
   ProviderHistoryPathContext,
 } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
-import { buildGrokProviderState, parseGrokProviderState } from '../types';
+import {
+  buildPersistedGrokProviderState,
+  parseGrokProviderState,
+} from '../types';
 import { resolveGrokSessionDirectory } from './GrokHistoryPathResolver';
 import { loadGrokHistory } from './GrokHistoryStore';
 
@@ -15,12 +18,49 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<void> {
+    const state = parseGrokProviderState(conversation.providerState);
+    if (this.isPendingForkConversation(conversation)) {
+      if (!pathContext) {
+        this.hydratedKeys.delete(conversation.id);
+        return;
+      }
+      const forkSource = state.forkSource!;
+      const sourceSessionDirectory = resolveGrokSessionDirectory(
+        state.forkSourceSessionDirectory,
+        forkSource.sessionId,
+        vaultPath,
+        pathContext,
+      );
+      if (sourceSessionDirectory !== state.forkSourceSessionDirectory) {
+        conversation.providerState = buildPersistedGrokProviderState({
+          ...state,
+          forkSourceSessionDirectory: sourceSessionDirectory ?? undefined,
+        }) as Record<string, unknown> | undefined;
+      }
+      if (conversation.messages.length > 0) return;
+      if (!sourceSessionDirectory) {
+        this.hydratedKeys.delete(conversation.id);
+        return;
+      }
+      const hydrationKey = `fork::${sourceSessionDirectory}::${forkSource.resumeAt}`;
+      const parsed = await loadGrokHistory(sourceSessionDirectory, forkSource.sessionId);
+      const checkpointIndex = parsed.messages.findIndex(message => (
+        message.role === 'assistant' && message.assistantMessageId === forkSource.resumeAt
+      ));
+      if (checkpointIndex < 0) {
+        this.hydratedKeys.delete(conversation.id);
+        return;
+      }
+      conversation.messages = parsed.messages.slice(0, checkpointIndex + 1);
+      this.hydratedKeys.set(conversation.id, hydrationKey);
+      return;
+    }
+
     const sessionId = conversation.sessionId;
     if (!sessionId || !pathContext) {
       this.hydratedKeys.delete(conversation.id);
       return;
     }
-    const state = parseGrokProviderState(conversation.providerState);
     const sessionDirectory = resolveGrokSessionDirectory(
       state.sessionDirectory,
       sessionId,
@@ -28,9 +68,10 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
       pathContext,
     );
     if (sessionDirectory !== state.sessionDirectory) {
-      conversation.providerState = buildGrokProviderState(sessionDirectory) as
-        | Record<string, unknown>
-        | undefined;
+      conversation.providerState = buildPersistedGrokProviderState({
+        ...state,
+        sessionDirectory: sessionDirectory ?? undefined,
+      }) as Record<string, unknown> | undefined;
     }
     if (!sessionDirectory) {
       this.hydratedKeys.delete(conversation.id);
@@ -62,26 +103,37 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
   }
 
   resolveSessionIdForConversation(conversation: Conversation | null): string | null {
-    return conversation?.sessionId ?? null;
+    const state = parseGrokProviderState(conversation?.providerState);
+    return conversation?.sessionId ?? state.forkSource?.sessionId ?? null;
   }
 
-  isPendingForkConversation(_conversation: Conversation): boolean {
-    return false;
+  isPendingForkConversation(conversation: Conversation): boolean {
+    const state = parseGrokProviderState(conversation.providerState);
+    return Boolean(state.forkSource && !conversation.sessionId);
   }
 
   buildForkProviderState(
-    _sourceSessionId: string,
-    _resumeAt: string,
-    _sourceProviderState?: Record<string, unknown>,
+    sourceSessionId: string,
+    resumeAt: string,
+    sourceProviderState?: Record<string, unknown>,
   ): Record<string, unknown> {
-    return {};
+    const sourceState = parseGrokProviderState(sourceProviderState);
+    return (buildPersistedGrokProviderState({
+      forkSource: { resumeAt, sessionId: sourceSessionId },
+      ...(sourceState.sessionDirectory || sourceState.forkSourceSessionDirectory
+        ? {
+          forkSourceSessionDirectory: sourceState.sessionDirectory
+            ?? sourceState.forkSourceSessionDirectory,
+        }
+        : {}),
+    }) as Record<string, unknown> | undefined) ?? {};
   }
 
   buildPersistedProviderState(
     conversation: Conversation,
   ): Record<string, unknown> | undefined {
-    return buildGrokProviderState(
-      parseGrokProviderState(conversation.providerState).sessionDirectory,
+    return buildPersistedGrokProviderState(
+      parseGrokProviderState(conversation.providerState),
     ) as Record<string, unknown> | undefined;
   }
 }

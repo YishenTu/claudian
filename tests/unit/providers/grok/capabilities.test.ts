@@ -5,8 +5,8 @@ describe('GROK_PROVIDER_CAPABILITIES', () => {
     expect(GROK_PROVIDER_CAPABILITIES).toEqual({
       providerId: 'grok',
       reasoningControl: 'effort',
-      supportsFork: false,
-      supportsImageAttachments: false,
+      supportsFork: true,
+      supportsImageAttachments: true,
       supportsInstructionMode: true,
       supportsLegacySubagentTools: false,
       supportsMcpTools: false,
@@ -15,7 +15,7 @@ describe('GROK_PROVIDER_CAPABILITIES', () => {
       supportsPlanMode: false,
       supportsProviderCommands: true,
       supportsRewind: false,
-      supportsTurnSteer: false,
+      supportsTurnSteer: true,
     });
   });
 });
