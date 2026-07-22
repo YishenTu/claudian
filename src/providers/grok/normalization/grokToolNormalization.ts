@@ -186,7 +186,8 @@ function normalizeTodoInput(input: Record<string, unknown>): Record<string, unkn
   if (!Array.isArray(input.todos)) return input;
 
   let changed = false;
-  const todos = input.todos.map((todo) => {
+  const rawTodos: unknown[] = input.todos;
+  const todos = rawTodos.map((todo) => {
     if (!isRecord(todo) || typeof todo.content !== 'string' || todo.activeForm !== undefined) {
       return todo;
     }

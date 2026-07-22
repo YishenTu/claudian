@@ -109,6 +109,7 @@ export default defineConfig([
       '@typescript-eslint/only-throw-error': 'error',
       '@typescript-eslint/no-unsafe-argument': 'error',
       '@typescript-eslint/no-unsafe-assignment': 'error',
+      '@typescript-eslint/no-unsafe-return': 'error',
       '@typescript-eslint/no-unnecessary-type-assertion': 'error',
       '@typescript-eslint/unbound-method': 'error',
     },
