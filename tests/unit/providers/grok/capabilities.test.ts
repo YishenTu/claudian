@@ -13,7 +13,7 @@ describe('GROK_PROVIDER_CAPABILITIES', () => {
       supportsPersistentRuntime: true,
       supportsPlanMode: true,
       supportsProviderCommands: true,
-      supportsRewind: false,
+      supportsRewind: true,
       supportsTurnSteer: true,
     });
   });

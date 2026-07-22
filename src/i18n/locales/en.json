@@ -23,9 +23,11 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Rewind to this point? File changes after this message will be reverted. Rewinding does not affect files edited manually or via bash.",
+      "confirmMessage": "Rewind to this point? File changes after this message may be overwritten or removed. This cannot be undone.",
+      "confirmMessageConflicts": "Rewind to this point? {count} file(s) were modified outside the agent and will be overwritten:\n{files}",
       "confirmMessageConversationOnly": "Rewind conversation to this point? File changes will be kept.",
       "confirmButton": "Rewind",
+      "inProgress": "Please wait for the current rewind to finish.",
       "ariaLabel": "Rewind to here",
       "menuConversationOnly": "Rewind conversation only",
       "menuCodeAndConversation": "Rewind code + conversation",

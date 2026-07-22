@@ -23,9 +23,11 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Retroceder até este ponto? As alterações de arquivos após esta mensagem serão revertidas. O retrocesso não afeta arquivos editados manualmente ou via bash.",
+      "confirmMessage": "Retroceder até este ponto? As alterações de arquivos após esta mensagem podem ser sobrescritas ou removidas. Esta ação não pode ser desfeita.",
+      "confirmMessageConflicts": "Retroceder até este ponto? {count} arquivo(s) modificados fora do agente serão sobrescritos:\n{files}",
       "confirmMessageConversationOnly": "Retroceder a conversa até este ponto? As alterações de arquivos serão mantidas.",
       "confirmButton": "Retroceder",
+      "inProgress": "Aguarde a conclusão do retrocesso atual.",
       "ariaLabel": "Retroceder até aqui",
       "menuConversationOnly": "Retroceder somente conversa",
       "menuCodeAndConversation": "Retroceder código + conversa",

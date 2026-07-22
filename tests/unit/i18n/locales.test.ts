@@ -27,6 +27,8 @@ const locales = {
 
 const localizedKeys = [
   'chat.rewind.confirmMessageConversationOnly',
+  'chat.rewind.confirmMessageConflicts',
+  'chat.rewind.inProgress',
   'chat.rewind.menuConversationOnly',
   'chat.rewind.menuCodeAndConversation',
   'chat.rewind.noticeConversationOnly',

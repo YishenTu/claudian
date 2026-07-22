@@ -2,8 +2,8 @@ import { Menu, Notice, setIcon } from 'obsidian';
 
 import type { TitleGenerationService } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
-import type { ChatRewindMode } from '../../../core/runtime/types';
-import type { Conversation } from '../../../core/types';
+import type { ChatRewindConflict, ChatRewindMode } from '../../../core/runtime/types';
+import type { ChatMessage, Conversation } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { confirm } from '../../../shared/modals/ConfirmModal';
 import { extractUserDisplayContent } from '../../../utils/context';
@@ -26,6 +26,19 @@ function runConversationAction(action: () => Promise<void>, failureMessage: stri
 }
 
 const DEFAULT_HISTORY_PAGE_SIZE = 100;
+const MAX_REWIND_CONFLICT_PATHS = 5;
+
+function buildRewindConflictConfirmation(conflicts: ChatRewindConflict[]): string {
+  const visiblePaths = conflicts
+    .slice(0, MAX_REWIND_CONFLICT_PATHS)
+    .map(conflict => `- ${conflict.path}`);
+  const omitted = conflicts.length - visiblePaths.length;
+  if (omitted > 0) visiblePaths.push(`- +${omitted} more`);
+  return t('chat.rewind.confirmMessageConflicts', {
+    count: conflicts.length,
+    files: visiblePaths.join('\n'),
+  });
+}
 
 export interface ConversationCallbacks {
   onNewConversation?: () => void;
@@ -43,6 +56,7 @@ export interface ConversationControllerDeps {
   setWelcomeEl: (el: HTMLElement | null) => void;
   getMessagesEl: () => HTMLElement;
   getInputEl: () => HTMLTextAreaElement;
+  restoreMessageToComposer?: (message: Pick<ChatMessage, 'content' | 'images'>) => void;
   getFileContextManager: () => FileContextManager | null;
   getImageContextManager: () => ImageContextManager | null;
   getMcpServerSelector: () => McpServerSelector | null;
@@ -51,6 +65,7 @@ export interface ConversationControllerDeps {
   getTitleGenerationService: () => TitleGenerationService | null;
   getStatusPanel: () => StatusPanel | null;
   getAgentService?: () => ChatRuntime | null;
+  ensureServiceInitialized?: () => Promise<boolean>;
   getSelectedModel?: () => string | null;
   ensureServiceForConversation?: (conversation: Conversation | null) => Promise<void>;
   dismissPendingInlinePrompts?: () => void;
@@ -111,6 +126,7 @@ export class ConversationController {
     const { plugin, state, subagentManager } = this.deps;
     const force = !!options.force;
     if (state.isStreaming && !force) return;
+    if (state.isRewinding) return;
     if (state.isCreatingConversation) return;
     if (state.isSwitchingConversation) return;
 
@@ -263,6 +279,7 @@ export class ConversationController {
     if (this.deps.isDisposed?.()) return;
     if (id === state.currentConversationId) return;
     if (state.isStreaming) return;
+    if (state.isRewinding) return;
     if (state.isSwitchingConversation) return;
     if (state.isCreatingConversation) return;
 
@@ -308,12 +325,10 @@ export class ConversationController {
   ): Promise<void> {
     const { plugin, state, renderer } = this.deps;
 
-    const agentServiceForCheck = this.getAgentService();
-    if (agentServiceForCheck && !agentServiceForCheck.getCapabilities().supportsRewind) {
-      new Notice(t('chat.rewind.failed', { error: 'Rewind is not supported by this provider.' }));
+    if (state.isRewinding) {
+      new Notice(t('chat.rewind.inProgress'));
       return;
     }
-
     if (state.isStreaming) {
       new Notice(t('chat.rewind.unavailableStreaming'));
       return;
@@ -338,73 +353,172 @@ export class ConversationController {
     }
     const prevAssistantUuid = rewindCtx.prevAssistantUuid;
 
-    const confirmed = await confirm(
-      plugin.app,
-      mode === 'conversation'
+    const conversationId = state.currentConversationId;
+    const isTargetCurrent = (): boolean => {
+      if (state.currentConversationId !== conversationId) return false;
+      const currentMessages = state.messages;
+      const currentUserIdx = currentMessages.findIndex(message => message.id === userMessageId);
+      if (currentUserIdx < 0) return false;
+      const currentUser = currentMessages[currentUserIdx];
+      if (currentUser.userMessageId !== userMsg.userMessageId) return false;
+      const currentContext = findRewindContext(currentMessages, currentUserIdx);
+      return currentContext.hasResponse
+        && currentContext.prevAssistantUuid === prevAssistantUuid;
+    };
+
+    state.isRewinding = true;
+    try {
+      if (this.deps.ensureServiceInitialized) {
+        let initialized = false;
+        try {
+          initialized = await this.deps.ensureServiceInitialized();
+        } catch (e) {
+          new Notice(t('chat.rewind.failed', {
+            error: e instanceof Error ? e.message : 'Failed to initialize agent service',
+          }));
+          return;
+        }
+        if (this.deps.isDisposed?.()) return;
+        if (!initialized) {
+          new Notice(t('chat.rewind.failed', { error: 'Agent service not available' }));
+          return;
+        }
+      }
+
+      const agentService = this.getAgentService();
+      if (!agentService) {
+        new Notice(t('chat.rewind.failed', { error: 'Agent service not available' }));
+        return;
+      }
+      if (!agentService.getCapabilities().supportsRewind) {
+        new Notice(t('chat.rewind.failed', { error: 'Rewind is not supported by this provider.' }));
+        return;
+      }
+      if (!isTargetCurrent()) {
+        new Notice(t('chat.rewind.failed', { error: 'Conversation changed while rewinding.' }));
+        return;
+      }
+
+      let confirmationMessage = mode === 'conversation'
         ? t('chat.rewind.confirmMessageConversationOnly')
-        : t('chat.rewind.confirmMessage'),
-      t('chat.rewind.confirmButton')
-    );
-    if (!confirmed) return;
+        : t('chat.rewind.confirmMessage');
+      if (mode === 'code-and-conversation' && agentService.previewRewind) {
+        let preview;
+        try {
+          preview = await agentService.previewRewind(
+            userMsg.userMessageId,
+            prevAssistantUuid,
+            mode,
+          );
+        } catch (e) {
+          new Notice(t('chat.rewind.failed', {
+            error: e instanceof Error ? e.message : 'Unknown error',
+          }));
+          return;
+        }
+        if (!preview.canRewind) {
+          new Notice(t('chat.rewind.cannot', { error: preview.error ?? 'Unknown error' }));
+          return;
+        }
+        if (preview.conflicts && preview.conflicts.length > 0) {
+          confirmationMessage = buildRewindConflictConfirmation(preview.conflicts);
+        }
+        if (state.isStreaming) {
+          new Notice(t('chat.rewind.unavailableStreaming'));
+          return;
+        }
+        if (!isTargetCurrent() || this.getAgentService() !== agentService) {
+          new Notice(t('chat.rewind.failed', { error: 'Conversation changed while rewinding.' }));
+          return;
+        }
+      }
 
-    if (state.isStreaming) {
-      new Notice(t('chat.rewind.unavailableStreaming'));
-      return;
-    }
+      const confirmed = await confirm(
+        plugin.app,
+        confirmationMessage,
+        t('chat.rewind.confirmButton')
+      );
+      if (!confirmed) return;
 
-    const agentService = this.getAgentService();
-    if (!agentService) {
-      new Notice(t('chat.rewind.failed', { error: 'Agent service not available' }));
-      return;
-    }
+      if (state.isStreaming) {
+        new Notice(t('chat.rewind.unavailableStreaming'));
+        return;
+      }
+      if (!isTargetCurrent() || this.getAgentService() !== agentService) {
+        new Notice(t('chat.rewind.failed', { error: 'Conversation changed while rewinding.' }));
+        return;
+      }
 
-    let result;
-    try {
-      result = await agentService.rewind(userMsg.userMessageId, prevAssistantUuid, mode);
-    } catch (e) {
-      new Notice(t('chat.rewind.failed', { error: e instanceof Error ? e.message : 'Unknown error' }));
-      return;
-    }
-    if (!result.canRewind) {
-      new Notice(t('chat.rewind.cannot', { error: result.error ?? 'Unknown error' }));
-      return;
-    }
+      let result;
+      try {
+        result = await agentService.rewind(userMsg.userMessageId, prevAssistantUuid, mode);
+      } catch (e) {
+        new Notice(t('chat.rewind.failed', { error: e instanceof Error ? e.message : 'Unknown error' }));
+        return;
+      }
+      if (!result.canRewind) {
+        new Notice(t('chat.rewind.cannot', { error: result.error ?? 'Unknown error' }));
+        return;
+      }
+      if (!isTargetCurrent() || this.getAgentService() !== agentService) {
+        new Notice(t('chat.rewind.failed', { error: 'Conversation changed while rewinding.' }));
+        return;
+      }
 
-    state.truncateAt(userMessageId);
+      state.truncateAt(userMessageId);
+      state.usage = null;
 
-    const inputEl = this.deps.getInputEl();
-    inputEl.value = userMsg.content;
-    inputEl.focus();
+      const restoredContent = userMsg.displayContent
+        ?? extractUserDisplayContent(userMsg.content)
+        ?? userMsg.content;
+      if (this.deps.restoreMessageToComposer) {
+        this.deps.restoreMessageToComposer({
+          content: restoredContent,
+          images: userMsg.images,
+        });
+      } else {
+        const inputEl = this.deps.getInputEl();
+        inputEl.value = restoredContent;
+        inputEl.focus();
+      }
 
-    const welcomeEl = renderer.renderMessages(state.messages, () => this.getGreeting());
-    this.deps.setWelcomeEl(welcomeEl);
-    this.updateWelcomeVisibility();
+      const welcomeEl = renderer.renderMessages(state.messages, () => this.getGreeting());
+      this.deps.setWelcomeEl(welcomeEl);
+      this.updateWelcomeVisibility();
 
-    const filesChanged = result.filesChanged?.length ?? 0;
-    let saveError: string | null = null;
-    try {
-      await this.save(false, {
-        resumeAtMessageId: prevAssistantUuid,
-        resetProviderSession: !prevAssistantUuid,
-      });
-    } catch (e) {
-      saveError = e instanceof Error ? e.message : 'Failed to save';
-    }
+      const filesChanged = result.filesChanged?.length ?? 0;
+      let saveError: string | null = null;
+      try {
+        await this.save(
+          false,
+          result.sessionStrategy === 'preserve-provider-session'
+            ? { resumeAtMessageId: undefined }
+            : {
+              resumeAtMessageId: prevAssistantUuid,
+              resetProviderSession: !prevAssistantUuid,
+            },
+        );
+      } catch (e) {
+        saveError = e instanceof Error ? e.message : 'Failed to save';
+      }
 
-    if (saveError) {
+      if (saveError) {
+        new Notice(
+          mode === 'conversation'
+            ? t('chat.rewind.noticeConversationOnlySaveFailed', { error: saveError })
+            : t('chat.rewind.noticeSaveFailed', { count: String(filesChanged), error: saveError })
+        );
+        return;
+      }
+
       new Notice(
         mode === 'conversation'
-          ? t('chat.rewind.noticeConversationOnlySaveFailed', { error: saveError })
-          : t('chat.rewind.noticeSaveFailed', { count: String(filesChanged), error: saveError })
+          ? t('chat.rewind.noticeConversationOnly')
+          : t('chat.rewind.notice', { count: String(filesChanged) })
       );
-      return;
+    } finally {
+      state.isRewinding = false;
     }
-
-    new Notice(
-      mode === 'conversation'
-        ? t('chat.rewind.noticeConversationOnly')
-        : t('chat.rewind.notice', { count: String(filesChanged) })
-    );
   }
 
   /**

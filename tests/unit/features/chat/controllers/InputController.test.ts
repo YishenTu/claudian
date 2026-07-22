@@ -21,6 +21,7 @@ const mockNotice = Notice as jest.Mock;
 
 function createMockInputEl() {
   return {
+    dispatchEvent: jest.fn().mockReturnValue(true),
     value: '',
     focus: jest.fn(),
   } as unknown as HTMLTextAreaElement;
@@ -369,6 +370,50 @@ describe('InputController - Message Queue', () => {
   });
 
   describe('Queuing messages while streaming', () => {
+    it('should restore a rewound message and its images into the composer', () => {
+      const images = [{ id: 'image-1', name: 'reference.png' }];
+
+      (controller as any).restoreRewoundMessageToComposer({
+        content: 'restored prompt',
+        images,
+      });
+
+      expect(inputEl.value).toBe('restored prompt');
+      expect(deps.getImageContextManager()?.setImages).toHaveBeenCalledWith(images);
+      expect(deps.resetInputHeight).toHaveBeenCalled();
+      expect(inputEl.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({
+        bubbles: true,
+        type: 'input',
+      }));
+      expect(inputEl.focus).toHaveBeenCalled();
+    });
+
+    it('should clear unrelated composer images when the rewound message has none', () => {
+      const imageContextManager = deps.getImageContextManager()!;
+      (imageContextManager.getAttachedImages as jest.Mock).mockReturnValue([
+        { id: 'stale-image', name: 'stale.png' },
+      ]);
+
+      controller.restoreRewoundMessageToComposer({ content: 'text-only prompt' });
+
+      expect(imageContextManager.setImages).toHaveBeenCalledWith([]);
+    });
+
+    it('should not send while rewind is in progress', async () => {
+      const ensureServiceInitialized = jest.fn().mockResolvedValue(true);
+      deps = createMockDeps({ ensureServiceInitialized });
+      inputEl = deps.getInputEl() as ReturnType<typeof createMockInputEl>;
+      controller = new InputController(deps);
+      (deps.state as any).isRewinding = true;
+      inputEl.value = 'keep this draft';
+
+      await controller.sendMessage();
+
+      expect(inputEl.value).toBe('keep this draft');
+      expect(ensureServiceInitialized).not.toHaveBeenCalled();
+      expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('rewind to finish'));
+    });
+
     it('should queue message when isStreaming is true', async () => {
       deps.state.isStreaming = true;
       inputEl.value = 'queued message';

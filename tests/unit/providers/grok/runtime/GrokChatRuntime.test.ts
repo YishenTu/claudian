@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { PassThrough } from 'node:stream';
 
@@ -26,7 +27,7 @@ const CAPABILITIES: ProviderCapabilities = {
   supportsPersistentRuntime: true,
   supportsPlanMode: true,
   supportsProviderCommands: true,
-  supportsRewind: false,
+  supportsRewind: true,
   supportsTurnSteer: true,
 };
 
@@ -53,6 +54,7 @@ class FakeGrokProcess implements GrokRuntimeProcess {
       load?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       newSession?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       prompt?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
+      rewindExecute?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       sessionFork?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       setMode?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       setModel?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
@@ -110,6 +112,14 @@ class FakeGrokProcess implements GrokRuntimeProcess {
     this.send({ id: message.id, jsonrpc: '2.0', result });
   }
 
+  respondError(message: JsonRpcMessage, errorMessage: string): void {
+    this.send({
+      error: { code: -32603, message: errorMessage },
+      id: message.id,
+      jsonrpc: '2.0',
+    });
+  }
+
   private receive(message: JsonRpcMessage): void {
     if (message.id !== undefined && !message.method) {
       this.responseWaiters.get(message.id)?.(message.result);
@@ -150,6 +160,19 @@ class FakeGrokProcess implements GrokRuntimeProcess {
           parentSessionId: 'session-new',
           planStateCopied: false,
           updatesCopied: 2,
+        });
+        return;
+      case '_x.ai/rewind/execute':
+        if (this.handlers.rewindExecute) this.handlers.rewindExecute(message, this);
+        else this.respond(message, {
+          clean_files: [],
+          conflicts: [],
+          error: null,
+          mode: record(message.params).mode,
+          prompt_text: null,
+          reverted_files: [],
+          success: record(message.params).force === true,
+          target_prompt_index: record(message.params).targetPromptIndex,
         });
         return;
       case 'session/new':
@@ -301,6 +324,29 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function createRewindHistoryDirectory(): string {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-grok-runtime-rewind-'));
+  const records = [{
+    _meta: { promptIndex: 0 },
+    content: { text: 'First prompt', type: 'text' },
+    messageId: 'user-first',
+    sessionUpdate: 'user_message_chunk',
+  }, {
+    content: { text: 'First answer', type: 'text' },
+    messageId: 'assistant-first',
+    sessionUpdate: 'agent_message_chunk',
+  }, {
+    prompt_id: 'assistant-first',
+    sessionUpdate: 'turn_completed',
+  }].map((update, index) => JSON.stringify({
+    method: '_x.ai/session/update',
+    params: { sessionId: 'session-existing', update },
+    timestamp: 1_000 + index,
+  })).join('\n');
+  fs.writeFileSync(path.join(directory, 'updates.jsonl'), records, 'utf8');
+  return directory;
 }
 
 describe('GrokChatRuntime', () => {
@@ -1338,6 +1384,49 @@ describe('GrokChatRuntime', () => {
     ]);
   });
 
+  it('retains Grok metadata event IDs when content chunks omit ACP message IDs', async () => {
+    const harness = createHarness({
+      handlers: {
+        prompt(message, process) {
+          process.notify('_x.ai/session/update', {
+            _meta: { eventId: 'user-event-id', promptId: 'prompt-id' },
+            sessionId: 'session-new',
+            update: {
+              _meta: { promptIndex: 0 },
+              content: { text: 'Prompt', type: 'text' },
+              sessionUpdate: 'user_message_chunk',
+            },
+          });
+          process.notify('_x.ai/session/update', {
+            _meta: { eventId: 'assistant-event-id', promptId: 'prompt-id' },
+            sessionId: 'session-new',
+            update: {
+              content: { text: 'Answer', type: 'text' },
+              sessionUpdate: 'agent_message_chunk',
+            },
+          });
+          process.respond(message, { stopReason: 'end_turn' });
+        },
+      },
+    });
+
+    const chunks = await collect(harness.runtime);
+
+    expect(chunks).toContainEqual({
+      content: 'Prompt',
+      itemId: 'user-event-id',
+      type: 'user_message_start',
+    });
+    expect(chunks).toContainEqual({
+      itemId: 'assistant-event-id',
+      type: 'assistant_message_start',
+    });
+    expect(harness.runtime.consumeTurnMetadata()).toMatchObject({
+      assistantMessageId: 'assistant-event-id',
+      userMessageId: 'user-event-id',
+    });
+  });
+
   it.each([
     'x.ai/models/update',
     '_x.ai/models/update',
@@ -2346,7 +2435,286 @@ describe('GrokChatRuntime', () => {
     expect(errorContent).not.toContain(secret);
   });
 
-  it('preserves provider state, adds only a validated directory hint, and keeps unsupported rewind', async () => {
+  it('previews and executes native rewind on a cold persisted session', async () => {
+    const sessionDirectory = createRewindHistoryDirectory();
+    try {
+      const harness = createHarness({
+        handlers: {
+          rewindExecute(message, process) {
+            const params = record(message.params);
+            if (params.force === false) {
+              process.respond(message, {
+                clean_files: ['notes/clean.md'],
+                conflicts: [{
+                  conflict_type: 'modified_externally',
+                  path: 'notes/conflicted.md',
+                }],
+                error: 'External modifications detected. Confirm to revert anyway.',
+                mode: 'all',
+                prompt_text: null,
+                reverted_files: [],
+                success: false,
+                target_prompt_index: 1,
+              });
+              return;
+            }
+            process.respond(message, {
+              clean_files: [],
+              conflicts: [],
+              error: null,
+              mode: 'all',
+              prompt_text: 'Second prompt',
+              reverted_files: ['notes/clean.md', 'notes/conflicted.md'],
+              success: true,
+              target_prompt_index: 1,
+            });
+          },
+        },
+        sessionDirectory,
+      });
+      harness.runtime.syncConversationState({
+        id: 'conversation-existing',
+        providerState: { sessionDirectory },
+        selectedModel: 'grok/grok-4.5',
+        sessionId: 'session-existing',
+      });
+
+      await expect(harness.runtime.previewRewind(
+        'user-second',
+        'assistant-first',
+        'code-and-conversation',
+      )).resolves.toEqual({
+        canRewind: true,
+        conflicts: [{
+          conflictType: 'modified_externally',
+          path: 'notes/conflicted.md',
+        }],
+        filesChanged: ['notes/clean.md', 'notes/conflicted.md'],
+      });
+      expect(harness.process.requests.map(request => request.method)).toEqual([
+        'initialize',
+        'session/load',
+        '_x.ai/rewind/execute',
+      ]);
+      expect(record(harness.process.requests[2]?.params)).toEqual({
+        force: false,
+        mode: 'all',
+        sessionId: 'session-existing',
+        targetPromptIndex: 1,
+      });
+
+      await expect(harness.runtime.rewind(
+        'user-second',
+        'assistant-first',
+        'code-and-conversation',
+      )).resolves.toEqual({
+        canRewind: true,
+        filesChanged: ['notes/clean.md', 'notes/conflicted.md'],
+        sessionStrategy: 'preserve-provider-session',
+      });
+      expect(record(harness.process.requests[3]?.params)).toEqual({
+        force: true,
+        mode: 'all',
+        sessionId: 'session-existing',
+        targetPromptIndex: 1,
+      });
+      expect(harness.runtime.getSessionId()).toBe('session-existing');
+    } finally {
+      fs.rmSync(sessionDirectory, { force: true, recursive: true });
+    }
+  });
+
+  it('rewinds before the first prompt without clearing the native session', async () => {
+    const harness = createHarness({
+      handlers: {
+        rewindExecute(message, process) {
+          process.respond(message, {
+            clean_files: [],
+            conflicts: [],
+            error: null,
+            mode: 'conversation_only',
+            prompt_text: 'First prompt',
+            reverted_files: [],
+            success: true,
+            target_prompt_index: 0,
+          });
+        },
+      },
+    });
+    harness.runtime.syncConversationState({
+      id: 'conversation-existing',
+      providerState: {},
+      selectedModel: 'grok/grok-4.5',
+      sessionId: 'session-existing',
+    });
+
+    await expect(harness.runtime.rewind(
+      'user-first',
+      undefined,
+      'conversation',
+    )).resolves.toEqual({
+      canRewind: true,
+      filesChanged: [],
+      sessionStrategy: 'preserve-provider-session',
+    });
+    expect(record(harness.process.requests.at(-1)?.params)).toEqual({
+      force: true,
+      mode: 'conversation_only',
+      sessionId: 'session-existing',
+      targetPromptIndex: 0,
+    });
+    expect(harness.runtime.getSessionId()).toBe('session-existing');
+  });
+
+  it('rejects a rewind response that crosses conversation generations', async () => {
+    const sessionDirectory = createRewindHistoryDirectory();
+    try {
+      const harness = createHarness({
+        handlers: { rewindExecute() {} },
+        sessionDirectory,
+      });
+      harness.runtime.syncConversationState({
+        id: 'conversation-existing',
+        providerState: { sessionDirectory },
+        selectedModel: 'grok/grok-4.5',
+        sessionId: 'session-existing',
+      });
+      const rewind = harness.runtime.rewind(
+        'user-second',
+        'assistant-first',
+        'code-and-conversation',
+      );
+      while (harness.processes.length === 0) await tick();
+      const request = await waitForRequest(harness.process, '_x.ai/rewind/execute');
+      const process = harness.process;
+
+      harness.runtime.syncConversationState({
+        id: 'conversation-other',
+        providerState: {},
+        selectedModel: 'grok/grok-4.5',
+        sessionId: 'session-other',
+      });
+      process.respond(request, {
+        clean_files: [],
+        conflicts: [],
+        error: null,
+        mode: 'all',
+        prompt_text: 'Second prompt',
+        reverted_files: [],
+        success: true,
+        target_prompt_index: 1,
+      });
+
+      await expect(rewind).resolves.toEqual({
+        canRewind: false,
+        error: 'The Grok conversation changed while rewinding.',
+      });
+      expect(harness.runtime.getSessionId()).toBe('session-other');
+    } finally {
+      fs.rmSync(sessionDirectory, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects turns and duplicate rewinds while native rewind is in flight', async () => {
+    const sessionDirectory = createRewindHistoryDirectory();
+    try {
+      const harness = createHarness({
+        handlers: { rewindExecute() {} },
+        sessionDirectory,
+      });
+      harness.runtime.syncConversationState({
+        id: 'conversation-existing',
+        providerState: { sessionDirectory },
+        selectedModel: 'grok/grok-4.5',
+        sessionId: 'session-existing',
+      });
+
+      const rewind = harness.runtime.rewind(
+        'user-second',
+        'assistant-first',
+        'code-and-conversation',
+      );
+      while (harness.processes.length === 0) await tick();
+      const request = await waitForRequest(harness.process, '_x.ai/rewind/execute');
+
+      await expect(harness.runtime.rewind(
+        'user-second',
+        'assistant-first',
+        'code-and-conversation',
+      )).resolves.toEqual({
+        canRewind: false,
+        error: 'A Grok rewind is already in progress.',
+      });
+      await expect(collect(harness.runtime)).resolves.toEqual([
+        { type: 'error', content: 'Cannot send a Grok turn while rewind is in progress.' },
+        { type: 'done' },
+      ]);
+
+      harness.process.respond(request, {
+        clean_files: [],
+        conflicts: [],
+        error: null,
+        mode: 'all',
+        prompt_text: 'Second prompt',
+        reverted_files: [],
+        success: true,
+        target_prompt_index: 1,
+      });
+      await expect(rewind).resolves.toMatchObject({ canRewind: true });
+    } finally {
+      fs.rmSync(sessionDirectory, { force: true, recursive: true });
+    }
+  });
+
+  it('releases the runtime rewind lock when the native request fails', async () => {
+    const sessionDirectory = createRewindHistoryDirectory();
+    let rewindRequestCount = 0;
+    try {
+      const harness = createHarness({
+        handlers: {
+          rewindExecute(message, process) {
+            rewindRequestCount += 1;
+            if (rewindRequestCount === 1) {
+              process.respondError(message, 'rewind timed out');
+              return;
+            }
+            process.respond(message, {
+              clean_files: [],
+              conflicts: [],
+              error: null,
+              mode: 'all',
+              prompt_text: 'Second prompt',
+              reverted_files: [],
+              success: true,
+              target_prompt_index: 1,
+            });
+          },
+        },
+        sessionDirectory,
+      });
+      harness.runtime.syncConversationState({
+        id: 'conversation-existing',
+        providerState: { sessionDirectory },
+        selectedModel: 'grok/grok-4.5',
+        sessionId: 'session-existing',
+      });
+
+      await expect(harness.runtime.rewind(
+        'user-second',
+        'assistant-first',
+        'code-and-conversation',
+      )).resolves.toMatchObject({ canRewind: false });
+      await expect(harness.runtime.rewind(
+        'user-second',
+        'assistant-first',
+        'code-and-conversation',
+      )).resolves.toMatchObject({ canRewind: true });
+    } finally {
+      fs.rmSync(sessionDirectory, { force: true, recursive: true });
+    }
+  });
+
+  it('preserves provider state and adds only a validated directory hint', async () => {
     const harness = createHarness({ sessionDirectory: '/trusted/sessions/session-new' });
     await harness.runtime.ensureReady();
 
@@ -2366,7 +2734,6 @@ describe('GrokChatRuntime', () => {
         sessionId: 'session-new',
       },
     });
-    await expect(harness.runtime.rewind('user', 'assistant')).resolves.toEqual({ canRewind: false });
     await expect(harness.runtime.steer?.(harness.runtime.prepareTurn({ text: 'No' }))).resolves.toBe(false);
     expect(harness.runtime.resolveSessionIdForFork(null)).toBe('session-new');
   });

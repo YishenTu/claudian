@@ -3116,6 +3116,20 @@ describe('Tab - Controller Configuration', () => {
   });
 
   describe('InputController configuration', () => {
+    it('shares the cold-runtime initializer with rewind actions', () => {
+      const { ConversationController } = jest.requireMock('@/features/chat/controllers/ConversationController');
+      const { InputController } = jest.requireMock('@/features/chat/controllers/InputController');
+      const options = createMockOptions();
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, {} as any, options.mcpManager);
+
+      const conversationConfig = ConversationController.mock.calls.at(-1)[0];
+      const inputConfig = InputController.mock.calls.at(-1)[0];
+      expect(conversationConfig.ensureServiceInitialized).toBe(inputConfig.ensureServiceInitialized);
+    });
+
     it('should wire ensureServiceInitialized to return true when already initialized and bound_active', async () => {
       const { InputController } = jest.requireMock('@/features/chat/controllers/InputController');
       const options = createMockOptions();
@@ -3461,6 +3475,21 @@ describe('Tab - handleForkRequest', () => {
     await forkCallback('u1');
 
     expect(mockNotice).toHaveBeenCalled();
+  });
+
+  it('should reject a message fork while rewind is in progress', async () => {
+    const { tab, forkCallback, forkRequestCallback } = setupForkTest();
+    tab.state.isRewinding = true;
+    tab.state.messages = [
+      { id: 'a0', role: 'assistant', content: 'hi', timestamp: 1, assistantMessageId: 'asst-0' },
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 2, userMessageId: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'asst-1' },
+    ];
+
+    await forkCallback('u1');
+
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('rewind to finish'));
   });
 
   it('should show notice when message ID not found', async () => {
@@ -3819,6 +3848,20 @@ describe('Tab - handleForkAll (via /fork command)', () => {
 
     expect(mockNotice).toHaveBeenCalled();
     expect(forkRequestCallback).not.toHaveBeenCalled();
+  });
+
+  it('should reject /fork while rewind is in progress', async () => {
+    const { tab, onForkAll, forkRequestCallback } = setupForkAllTest();
+    tab.state.isRewinding = true;
+    tab.state.messages = [
+      { id: 'u1', role: 'user', content: 'hello', timestamp: 1, userMessageId: 'user-u' },
+      { id: 'a1', role: 'assistant', content: 'resp', timestamp: 2, assistantMessageId: 'asst-1' },
+    ];
+
+    await onForkAll();
+
+    expect(forkRequestCallback).not.toHaveBeenCalled();
+    expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('rewind to finish'));
   });
 
   it('should show notice when no messages', async () => {

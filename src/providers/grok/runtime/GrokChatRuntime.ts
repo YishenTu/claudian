@@ -9,6 +9,7 @@ import type {
   AskUserQuestionCallback,
   AutoTurnCallback,
   ChatRewindMode,
+  ChatRewindPreview,
   ChatRewindResult,
   ChatRuntimeConversationState,
   ChatRuntimeEnsureReadyOptions,
@@ -53,7 +54,10 @@ import {
   resolveGrokSessionCwd,
   resolveGrokSessionDirectory,
 } from '../history/GrokHistoryPathResolver';
-import { loadGrokForkTargetPromptIndex } from '../history/GrokHistoryStore';
+import {
+  loadGrokPromptIndexAfterAssistant,
+  resolveGrokUpdateMessageId,
+} from '../history/GrokHistoryStore';
 import {
   decodeGrokModelId,
   encodeGrokModelId,
@@ -81,7 +85,9 @@ import { buildGrokPromptBlocks, buildGrokPromptText } from './buildGrokPrompt';
 import { waitForGrokCancelDelivery } from './GrokCancelDelivery';
 import { GrokCliResolver } from './GrokCliResolver';
 import {
+  type GrokRewindMode,
   requestGrokInterjection,
+  requestGrokRewind,
   requestGrokSessionFork,
 } from './GrokExtensionRequests';
 import { buildGrokRuntimeEnv } from './GrokRuntimeEnvironment';
@@ -206,6 +212,16 @@ interface PreparedGrokSessionResponse extends PreparedGrokSessionModels {
   sessionId: string;
 }
 
+interface PreparedGrokRewind {
+  connectionGeneration: number;
+  conversationGeneration: number;
+  mode: GrokRewindMode;
+  operation: symbol;
+  sessionId: string;
+  targetPromptIndex: number;
+  transport: AcpJsonRpcTransport;
+}
+
 interface GrokListCommandsResponse {
   commands: AcpAvailableCommand[];
 }
@@ -269,6 +285,7 @@ export class GrokChatRuntime implements ChatRuntime {
   private currentLaunchKey: string | null = null;
   private currentModelContextKey: string | null = null;
   private currentPromptUsage: AcpUsage | null = null;
+  private currentSessionDirectoryHint: string | null = null;
   private currentSessionEffort: string | null = null;
   private currentSessionModeId: 'default' | 'plan' | null = null;
   private currentSessionModelId: string | null = null;
@@ -283,6 +300,7 @@ export class GrokChatRuntime implements ChatRuntime {
   private permissionModeSyncCallback: ((sdkMode: string) => void) | null = null;
   private readinessFlight: { key: string; promise: Promise<boolean> } | null = null;
   private requestedSessionModeId: 'default' | 'plan' | null = null;
+  private rewindOperation: symbol | null = null;
   private readonly requestRouter = new GrokServerRequestRouter();
   private readonly notificationMirrorDeduplicator = new GrokSessionNotificationMirrorDeduplicator();
   private readonly sessionModelContextWindows = new Map<string, number>();
@@ -379,6 +397,7 @@ export class GrokChatRuntime implements ChatRuntime {
       this.requestRouter.setActiveSessionId(nextSessionId);
     }
     this.conversationId = nextConversationId;
+    this.currentSessionDirectoryHint = state.sessionDirectory ?? null;
     this.sessionId = nextSessionId;
     this.pendingFork = nextPendingFork;
     this.pendingForkSourceSessionDirectory = nextPendingForkSourceSessionDirectory;
@@ -456,6 +475,11 @@ export class GrokChatRuntime implements ChatRuntime {
     queryOptions: ChatRuntimeQueryOptions | undefined,
     execution: TurnExecution,
   ): AsyncGenerator<StreamChunk> {
+    if (this.rewindOperation) {
+      yield { type: 'error', content: 'Cannot send a Grok turn while rewind is in progress.' };
+      yield { type: 'done' };
+      return;
+    }
     if (this.activeTurn || this.startingTurn) {
       yield { type: 'error', content: 'Grok does not support overlapping turns.' };
       yield { type: 'done' };
@@ -745,6 +769,7 @@ export class GrokChatRuntime implements ChatRuntime {
     this.currentSessionModelId = null;
     this.currentSessionEffort = null;
     this.currentSessionModeId = null;
+    this.currentSessionDirectoryHint = null;
     this.requestedSessionModeId = null;
     this.sessionModelContextWindows.clear();
     this.currentLaunchKey = null;
@@ -859,10 +884,195 @@ export class GrokChatRuntime implements ChatRuntime {
 
   async rewind(
     _userMessageId: string,
-    _assistantMessageId: string | undefined,
-    _mode?: ChatRewindMode,
+    assistantMessageId: string | undefined,
+    mode: ChatRewindMode = 'code-and-conversation',
   ): Promise<ChatRewindResult> {
-    return { canRewind: false };
+    const operation = this.beginRewindOperation();
+    if (!operation) {
+      return { canRewind: false, error: 'A Grok rewind is already in progress.' };
+    }
+    let prepared: PreparedGrokRewind | null = null;
+    try {
+      const preparation = await this.prepareRewind(assistantMessageId, mode, operation);
+      if ('error' in preparation) return { canRewind: false, error: preparation.error };
+      prepared = preparation;
+      const response = await requestGrokRewind(prepared.transport, {
+        force: true,
+        mode: prepared.mode,
+        sessionId: prepared.sessionId,
+        targetPromptIndex: prepared.targetPromptIndex,
+      });
+      if (!this.isRewindCurrent(prepared)) return this.staleRewindResult();
+      if (
+        response.mode !== prepared.mode
+        || response.targetPromptIndex !== prepared.targetPromptIndex
+      ) {
+        return { canRewind: false, error: 'Grok returned an unexpected rewind checkpoint.' };
+      }
+      if (!response.success) {
+        return {
+          canRewind: false,
+          error: response.error ?? 'Grok could not rewind this checkpoint.',
+        };
+      }
+      return {
+        canRewind: true,
+        filesChanged: response.revertedFiles,
+        sessionStrategy: 'preserve-provider-session',
+      };
+    } catch (error) {
+      if (
+        (prepared && !this.isRewindCurrent(prepared))
+        || (!prepared && this.rewindOperation !== operation)
+      ) return this.staleRewindResult();
+      return { canRewind: false, error: this.formatRuntimeError(error) };
+    } finally {
+      this.finishRewindOperation(operation);
+    }
+  }
+
+  async previewRewind(
+    _userMessageId: string,
+    assistantMessageId: string | undefined,
+    mode: ChatRewindMode = 'code-and-conversation',
+  ): Promise<ChatRewindPreview> {
+    const operation = this.beginRewindOperation();
+    if (!operation) {
+      return { canRewind: false, error: 'A Grok rewind is already in progress.' };
+    }
+    let prepared: PreparedGrokRewind | null = null;
+    try {
+      const preparation = await this.prepareRewind(assistantMessageId, mode, operation);
+      if ('error' in preparation) return { canRewind: false, error: preparation.error };
+      prepared = preparation;
+      const response = await requestGrokRewind(prepared.transport, {
+        force: false,
+        mode: prepared.mode,
+        sessionId: prepared.sessionId,
+        targetPromptIndex: prepared.targetPromptIndex,
+      });
+      if (!this.isRewindCurrent(prepared)) return this.staleRewindResult();
+      if (
+        response.mode !== prepared.mode
+        || response.targetPromptIndex !== prepared.targetPromptIndex
+      ) {
+        return { canRewind: false, error: 'Grok returned an unexpected rewind checkpoint.' };
+      }
+      if (response.error && response.conflicts.length === 0) {
+        return { canRewind: false, error: response.error };
+      }
+      const filesChanged = Array.from(new Set([
+        ...response.cleanFiles,
+        ...response.conflicts.map(conflict => conflict.path),
+      ]));
+      return {
+        canRewind: true,
+        ...(response.conflicts.length > 0 ? { conflicts: response.conflicts } : {}),
+        ...(filesChanged.length > 0 ? { filesChanged } : {}),
+      };
+    } catch (error) {
+      if (
+        (prepared && !this.isRewindCurrent(prepared))
+        || (!prepared && this.rewindOperation !== operation)
+      ) return this.staleRewindResult();
+      return { canRewind: false, error: this.formatRuntimeError(error) };
+    } finally {
+      this.finishRewindOperation(operation);
+    }
+  }
+
+  private async prepareRewind(
+    assistantMessageId: string | undefined,
+    mode: ChatRewindMode,
+    operation: symbol,
+  ): Promise<PreparedGrokRewind | { error: string }> {
+    if (this.rewindOperation !== operation) return this.staleRewindResult();
+    if (this.activeTurn || this.startingTurn) {
+      return { error: 'Cannot rewind Grok while a turn is running.' };
+    }
+    const conversationGeneration = this.conversationGeneration;
+    const expectedSessionId = this.sessionId;
+    if (!expectedSessionId) return { error: 'The Grok conversation has no native session.' };
+    const ready = await this.ensureReady({ allowSessionCreation: false });
+    if (
+      !ready
+      || !this.isConversationCurrent(conversationGeneration)
+      || this.sessionId !== expectedSessionId
+    ) {
+      return this.isConversationCurrent(conversationGeneration)
+        ? { error: this.formatRuntimeError(this.lastError ?? 'Grok rewind is unavailable.') }
+        : this.staleRewindResult();
+    }
+    if (this.rewindOperation !== operation) return this.staleRewindResult();
+    if (this.activeTurn || this.startingTurn) {
+      return { error: 'Cannot rewind Grok while a turn is running.' };
+    }
+    const transport = this.transport;
+    if (!transport || transport.isClosed || this.loadedSessionId !== expectedSessionId) {
+      return { error: 'Grok rewind transport is unavailable.' };
+    }
+    const connectionGeneration = this.connectionGeneration;
+    let targetPromptIndex = 0;
+    if (assistantMessageId) {
+      const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
+      const cliPath = this.cliResolver.resolveFromSettings(this.plugin.settings);
+      if (!cliPath) return { error: 'Grok CLI is unavailable.' };
+      const environment = buildGrokRuntimeEnv(this.plugin.settings, cliPath);
+      const sessionDirectory = this.resolveSessionDirectory(
+        this.currentSessionDirectoryHint,
+        expectedSessionId,
+        cwd,
+        { environment, hostPlatform: process.platform },
+      );
+      if (!sessionDirectory) {
+        return { error: 'Grok rewind history is unavailable.' };
+      }
+      targetPromptIndex = await loadGrokPromptIndexAfterAssistant(
+        sessionDirectory,
+        expectedSessionId,
+        assistantMessageId,
+      ) ?? -1;
+      if (targetPromptIndex < 0) {
+        return { error: 'The Grok rewind checkpoint is no longer available.' };
+      }
+    }
+    const prepared: PreparedGrokRewind = {
+      connectionGeneration,
+      conversationGeneration,
+      mode: mode === 'conversation' ? 'conversation_only' : 'all',
+      operation,
+      sessionId: expectedSessionId,
+      targetPromptIndex,
+      transport,
+    };
+    return this.isRewindCurrent(prepared) ? prepared : this.staleRewindResult();
+  }
+
+  private isRewindCurrent(prepared: PreparedGrokRewind): boolean {
+    return prepared.operation === this.rewindOperation
+      && prepared.transport === this.transport
+      && !prepared.transport.isClosed
+      && prepared.connectionGeneration === this.connectionGeneration
+      && prepared.sessionId === this.sessionId
+      && this.isConversationCurrent(prepared.conversationGeneration);
+  }
+
+  private beginRewindOperation(): symbol | null {
+    if (this.rewindOperation) return null;
+    const operation = Symbol('grok-rewind');
+    this.rewindOperation = operation;
+    return operation;
+  }
+
+  private finishRewindOperation(operation: symbol): void {
+    if (this.rewindOperation === operation) this.rewindOperation = null;
+  }
+
+  private staleRewindResult(): { canRewind: false; error: string } {
+    return {
+      canRewind: false,
+      error: 'The Grok conversation changed while rewinding.',
+    };
   }
 
   setApprovalCallback(callback: ApprovalCallback | null): void {
@@ -953,7 +1163,10 @@ export class GrokChatRuntime implements ChatRuntime {
         cwd,
         { environment, hostPlatform: process.platform },
       );
-      if (sessionDirectory) providerState.sessionDirectory = sessionDirectory;
+      if (sessionDirectory) {
+        providerState.sessionDirectory = sessionDirectory;
+        this.currentSessionDirectoryHint = sessionDirectory;
+      }
     }
 
     return {
@@ -1322,7 +1535,7 @@ export class GrokChatRuntime implements ChatRuntime {
     if (!sourceSessionDirectory) {
       throw new Error(`Grok fork source session not found: ${pendingFork.sessionId}`);
     }
-    const targetPromptIndex = await loadGrokForkTargetPromptIndex(
+    const targetPromptIndex = await loadGrokPromptIndexAfterAssistant(
       sourceSessionDirectory,
       pendingFork.sessionId,
       pendingFork.resumeAt,
@@ -1468,15 +1681,34 @@ export class GrokChatRuntime implements ChatRuntime {
     if (!this.activeTurn || this.activeTurn.sessionId !== notification.sessionId) return;
 
     switch (normalized.type) {
-      case 'message_chunk':
-        if (normalized.role === 'assistant' && normalized.messageId) {
-          this.currentTurnMetadata.assistantMessageId = normalized.messageId;
+      case 'message_chunk': {
+        const messageId = normalized.messageId
+          ?? (normalized.role === 'assistant' || normalized.role === 'user'
+            ? resolveGrokUpdateMessageId(
+              notification.update,
+              normalized.role,
+              notification._meta,
+            )
+            : undefined);
+        if (normalized.role === 'assistant' && messageId) {
+          this.currentTurnMetadata.assistantMessageId = messageId;
         }
-        if (normalized.role === 'user' && normalized.messageId) {
-          this.currentTurnMetadata.userMessageId = normalized.messageId;
+        if (normalized.role === 'user' && messageId) {
+          this.currentTurnMetadata.userMessageId = messageId;
         }
-        for (const chunk of normalized.streamChunks) this.activeTurn.queue.push(chunk);
+        for (const chunk of normalized.streamChunks) {
+          if (
+            messageId
+            && (chunk.type === 'assistant_message_start' || chunk.type === 'user_message_start')
+            && !chunk.itemId
+          ) {
+            this.activeTurn.queue.push({ ...chunk, itemId: messageId });
+          } else {
+            this.activeTurn.queue.push(chunk);
+          }
+        }
         return;
+      }
       case 'tool_call':
         for (const chunk of this.toolStreamAdapter.normalizeToolCall(
           normalized.toolCall,

@@ -33,6 +33,7 @@ import type {
   ExitPlanModePresentationOptions,
   StreamChunk,
 } from '../../../core/types';
+import { t } from '../../../i18n/i18n';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import type { BrowserSelectionContext } from '../../../utils/browser';
@@ -246,6 +247,11 @@ export class InputController {
       ? imageOverride.length > 0
       : (imageContextManager?.hasImages() ?? false);
     if (!content && !hasImages) return;
+
+    if (state.isRewinding) {
+      new Notice(t('chat.rewind.inProgress'));
+      return;
+    }
 
     // Check for built-in commands first (e.g., /clear, /new, /add-dir)
     const builtInCmd = detectBuiltInCommand(content);
@@ -723,6 +729,20 @@ export class InputController {
     this.updateQueueIndicator();
   }
 
+  restoreRewoundMessageToComposer(
+    message: Pick<ChatMessage, 'content' | 'images'>,
+  ): void {
+    this.restoreMessageToInput({
+      canvasContext: null,
+      content: message.content,
+      editorContext: null,
+      images: message.images,
+    });
+    const inputEl = this.deps.getInputEl();
+    const EventConstructor = inputEl.ownerDocument?.defaultView?.Event ?? Event;
+    inputEl.dispatchEvent(new EventConstructor('input', { bubbles: true }));
+  }
+
   private restoreMessageToInput(
     message: QueuedMessage | null,
     options: { mergeWithComposer?: boolean } = {},
@@ -741,8 +761,8 @@ export class InputController {
       ? (imageContextManager?.getAttachedImages() ?? [])
       : [];
     const restoredImages = [...(images ?? []), ...currentImages];
-    if (restoredImages.length > 0) {
-      imageContextManager?.setImages(restoredImages);
+    if (imageContextManager && (!options.mergeWithComposer || restoredImages.length > 0)) {
+      imageContextManager.setImages(restoredImages);
     }
     this.deps.resetInputHeight();
     inputEl.focus();

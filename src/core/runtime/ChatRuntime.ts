@@ -6,6 +6,7 @@ import type {
   AsyncSubagentCompletionCallback,
   AutoTurnCallback,
   ChatRewindMode,
+  ChatRewindPreview,
   ChatRewindResult,
   ChatRuntimeConversationState,
   ChatRuntimeEnsureReadyOptions,
@@ -50,6 +51,11 @@ export interface ChatRuntime {
   ): () => void;
   getAuxiliaryModel?(): string | null;
   cleanup(): void;
+  previewRewind?(
+    userMessageId: string,
+    assistantMessageId: string | undefined,
+    mode?: ChatRewindMode,
+  ): Promise<ChatRewindPreview>;
   rewind(userMessageId: string, assistantMessageId: string | undefined, mode?: ChatRewindMode): Promise<ChatRewindResult>;
   setApprovalCallback(callback: ApprovalCallback | null): void;
   setApprovalDismisser(dismisser: (() => void) | null): void;

@@ -23,9 +23,11 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos después de este mensaje serán revertidos. El rebobinado no afecta archivos editados manualmente o mediante bash.",
+      "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos posteriores a este mensaje podrían sobrescribirse o eliminarse. Esta acción no se puede deshacer.",
+      "confirmMessageConflicts": "¿Rebobinar a este punto? Se sobrescribirán {count} archivo(s) modificados fuera del agente:\n{files}",
       "confirmMessageConversationOnly": "¿Rebobinar la conversación hasta este punto? Se conservarán los cambios de archivos.",
       "confirmButton": "Rebobinar",
+      "inProgress": "Espera a que termine el rebobinado actual.",
       "ariaLabel": "Rebobinar hasta aquí",
       "menuConversationOnly": "Rebobinar solo conversación",
       "menuCodeAndConversation": "Rebobinar código + conversación",

@@ -3,7 +3,7 @@ import * as path from 'node:path';
 
 import {
   parseGrokHistoryContent,
-  resolveGrokForkTargetPromptIndex,
+  resolveGrokPromptIndexAfterAssistant,
 } from '@/providers/grok/history/GrokHistoryStore';
 
 describe('GrokHistoryStore', () => {
@@ -48,6 +48,151 @@ describe('GrokHistoryStore', () => {
       outputTokens: 4,
       totalTokens: 16,
     }));
+  });
+
+  it('rehydrates only the active branch after a native rewind marker', () => {
+    const updates = [
+      {
+        _meta: { promptIndex: 0 },
+        content: { text: 'First prompt', type: 'text' },
+        messageId: 'user-first',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'First answer', type: 'text' },
+        messageId: 'assistant-first',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed', usage: { totalTokens: 10 } },
+      {
+        _meta: { promptIndex: 1 },
+        content: { text: 'Abandoned prompt', type: 'text' },
+        messageId: 'user-abandoned',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Abandoned answer', type: 'text' },
+        messageId: 'assistant-abandoned',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed', usage: { totalTokens: 20 } },
+      { sessionUpdate: 'rewind_marker', target_prompt_index: 1 },
+      {
+        _meta: { promptIndex: 1 },
+        content: { text: 'Replacement prompt', type: 'text' },
+        messageId: 'user-replacement',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Replacement answer', type: 'text' },
+        messageId: 'assistant-replacement',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed', usage: { totalTokens: 15 } },
+    ];
+    const content = updates.map((update, index) => JSON.stringify({
+      method: '_x.ai/session/update',
+      params: { sessionId: 'session-rewind', update },
+      timestamp: 1_000 + index,
+    })).join('\n');
+
+    const parsed = parseGrokHistoryContent(content, 'session-rewind');
+
+    expect(parsed.messages.map(message => message.content)).toEqual([
+      'First prompt',
+      'First answer',
+      'Replacement prompt',
+      'Replacement answer',
+    ]);
+    expect(parsed.messages.map(message => message.id)).not.toContain('assistant-abandoned');
+    expect(parsed.lastUsage).toEqual({ totalTokens: 15 });
+  });
+
+  it('handles repeated rewinds to zero without resurrecting abandoned turns', () => {
+    const turn = (
+      promptIndex: number,
+      suffix: string,
+    ): Array<Record<string, unknown>> => [{
+      _meta: { promptIndex },
+      content: { text: `${suffix} prompt`, type: 'text' },
+      messageId: `user-${suffix}`,
+      sessionUpdate: 'user_message_chunk',
+    }, {
+      content: { text: `${suffix} answer`, type: 'text' },
+      messageId: `assistant-${suffix}`,
+      sessionUpdate: 'agent_message_chunk',
+    }, {
+      sessionUpdate: 'turn_completed',
+    }];
+    const updates = [
+      ...turn(0, 'original'),
+      ...turn(1, 'second'),
+      { sessionUpdate: 'rewind_marker', target_prompt_index: 1 },
+      ...turn(1, 'first-replacement'),
+      { sessionUpdate: 'rewind_marker', target_prompt_index: 0 },
+      ...turn(0, 'root-replacement'),
+    ];
+    const content = updates.map((update, index) => JSON.stringify({
+      method: '_x.ai/session/update',
+      params: { sessionId: 'session-repeated-rewind', update },
+      timestamp: 2_000 + index,
+    })).join('\n');
+
+    expect(parseGrokHistoryContent(content, 'session-repeated-rewind').messages.map(
+      message => message.content,
+    )).toEqual([
+      'root-replacement prompt',
+      'root-replacement answer',
+    ]);
+  });
+
+  it('discards interjections owned by a rewound prompt while preserving earlier ones', () => {
+    const updates = [
+      {
+        _meta: { promptIndex: 0 },
+        content: { text: 'Kept prompt', type: 'text' },
+        messageId: 'user-kept',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Kept answer', type: 'text' },
+        messageId: 'assistant-kept',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed' },
+      {
+        _meta: { promptIndex: 1 },
+        content: { text: 'Discarded prompt', type: 'text' },
+        messageId: 'user-discarded',
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Partial answer', type: 'text' },
+        messageId: 'assistant-partial',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      {
+        _meta: { modelId: 'grok-4.5' },
+        content: { text: 'Discarded steer', type: 'text' },
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        content: { text: 'Discarded steered answer', type: 'text' },
+        messageId: 'assistant-steered',
+        sessionUpdate: 'agent_message_chunk',
+      },
+      { sessionUpdate: 'turn_completed' },
+      { sessionUpdate: 'rewind_marker', target_prompt_index: 1 },
+    ];
+    const content = updates.map((update, index) => JSON.stringify({
+      method: '_x.ai/session/update',
+      params: { sessionId: 'session-rewind-interjection', update },
+      timestamp: 3_000 + index,
+    })).join('\n');
+
+    expect(parseGrokHistoryContent(content, 'session-rewind-interjection').messages.map(
+      message => message.content,
+    )).toEqual(['Kept prompt', 'Kept answer']);
   });
 
   it('uses deterministic ids when native message and prompt ids are absent', () => {
@@ -161,21 +306,62 @@ describe('GrokHistoryStore', () => {
       'tests/fixtures/providers/grok/history/multi-turn-updates.jsonl',
     ), 'utf8');
 
-    expect(resolveGrokForkTargetPromptIndex(
+    expect(resolveGrokPromptIndexAfterAssistant(
       content,
       'session-fixture',
       'assistant-1',
     )).toBe(1);
-    expect(resolveGrokForkTargetPromptIndex(
+    expect(resolveGrokPromptIndexAfterAssistant(
       content,
       'session-fixture',
       'assistant-2',
     )).toBe(2);
-    expect(resolveGrokForkTargetPromptIndex(
+    expect(resolveGrokPromptIndexAfterAssistant(
       content,
       'session-fixture',
       'missing-assistant',
     )).toBeNull();
+  });
+
+  it('maps persisted notification metadata IDs when chunks omit message IDs', () => {
+    const records = [{
+      _meta: { promptIndex: 0 },
+      content: { text: 'Prompt', type: 'text' },
+      sessionUpdate: 'user_message_chunk',
+    }, {
+      content: { text: 'Answer', type: 'text' },
+      sessionUpdate: 'agent_message_chunk',
+    }, {
+      prompt_id: 'prompt-id',
+      sessionUpdate: 'turn_completed',
+    }].map((update, index) => JSON.stringify({
+      method: '_x.ai/session/update',
+      params: {
+        _meta: {
+          eventId: index === 0 ? 'user-event-id' : 'assistant-event-id',
+          promptId: 'prompt-id',
+        },
+        sessionId: 'session-outer-meta',
+        update,
+      },
+      timestamp: index,
+    })).join('\n');
+
+    const parsed = parseGrokHistoryContent(records, 'session-outer-meta');
+
+    expect(parsed.messages[0]).toMatchObject({
+      id: 'user-event-id',
+      userMessageId: 'user-event-id',
+    });
+    expect(parsed.messages[1]).toMatchObject({
+      assistantMessageId: 'assistant-event-id',
+      id: 'assistant-event-id',
+    });
+    expect(resolveGrokPromptIndexAfterAssistant(
+      records,
+      'session-outer-meta',
+      'assistant-event-id',
+    )).toBe(1);
   });
 
   it('does not expose a fork action or increment the prompt index for stored interjections', () => {
@@ -230,12 +416,12 @@ describe('GrokHistoryStore', () => {
       'Next response',
     ]);
     expect(parsed.messages[2]).not.toHaveProperty('userMessageId');
-    expect(resolveGrokForkTargetPromptIndex(
+    expect(resolveGrokPromptIndexAfterAssistant(
       records,
       'session-interject',
       'assistant-after-steer',
     )).toBe(1);
-    expect(resolveGrokForkTargetPromptIndex(
+    expect(resolveGrokPromptIndexAfterAssistant(
       records,
       'session-interject',
       'assistant-next',
@@ -300,7 +486,7 @@ describe('GrokHistoryStore', () => {
     });
     expect(parsed.messages[1]).not.toHaveProperty('userMessageId');
     expect(parsed.messages[2]).not.toHaveProperty('userMessageId');
-    expect(resolveGrokForkTargetPromptIndex(
+    expect(resolveGrokPromptIndexAfterAssistant(
       records,
       'session-early-interject',
       'assistant-final',
@@ -327,7 +513,7 @@ describe('GrokHistoryStore', () => {
       timestamp: 900 + index,
     })).join('\n');
 
-    expect(resolveGrokForkTargetPromptIndex(
+    expect(resolveGrokPromptIndexAfterAssistant(
       records,
       'session-compacted',
       'assistant-compacted',

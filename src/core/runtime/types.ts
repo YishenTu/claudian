@@ -91,9 +91,24 @@ export interface ChatRewindResult {
   filesChanged?: string[];
   insertions?: number;
   deletions?: number;
+  sessionStrategy?: ChatRewindSessionStrategy;
+}
+
+export interface ChatRewindConflict {
+  conflictType: string;
+  path: string;
+}
+
+export interface ChatRewindPreview {
+  canRewind: boolean;
+  conflicts?: ChatRewindConflict[];
+  error?: string;
+  filesChanged?: string[];
 }
 
 export type ChatRewindMode = 'conversation' | 'code-and-conversation';
+
+export type ChatRewindSessionStrategy = 'checkpoint-resume' | 'preserve-provider-session';
 
 export interface AsyncSubagentCompletion {
   type: 'async_subagent_completion';

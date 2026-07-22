@@ -59,6 +59,7 @@ interface PendingTurn {
   images: ImageAttachment[];
   isInterjection: boolean;
   promptIndex: number | null;
+  timelinePromptIndex: number | null;
   startedAt: number;
   tools: Map<string, StoredTool>;
   toolOrder: string[];
@@ -67,14 +68,37 @@ interface PendingTurn {
   userId?: string;
 }
 
+interface CompletedTurn {
+  messages: ChatMessage[];
+  promptIndex: number;
+  usage?: GrokHistoryUsage;
+}
+
 export function parseGrokHistoryContent(
   content: string,
   sessionId: string,
 ): ParsedGrokHistory {
-  const messages: ChatMessage[] = [];
-  let lastUsage: GrokHistoryUsage | undefined;
+  let completedTurns: CompletedTurn[] = [];
   let pending: PendingTurn | null = null;
+  let activePromptIndex: number | null = null;
+  let nextFallbackPromptIndex = 0;
   let turnIndex = 0;
+
+  const commitPending = (
+    turn: PendingTurn,
+    promptId?: string,
+    usage?: GrokHistoryUsage,
+  ): boolean => {
+    const messages = finalizeTurn(turn, sessionId, promptId);
+    if (messages.length === 0 || turn.timelinePromptIndex === null) return false;
+    completedTurns.push({
+      messages,
+      promptIndex: turn.timelinePromptIndex,
+      ...(usage ? { usage } : {}),
+    });
+    turnIndex += 1;
+    return true;
+  };
 
   for (const line of content.split(/\r?\n/)) {
     const record = parseRecord(line);
@@ -90,8 +114,24 @@ export function parseGrokHistoryContent(
     }
 
     const updateType = readString(update.sessionUpdate) ?? readString(update.type);
+    if (updateType === 'rewind_marker') {
+      const targetPromptIndex = readNonNegativeInteger(update.target_prompt_index)
+        ?? readNonNegativeInteger(update.targetPromptIndex);
+      pending = null;
+      if (targetPromptIndex !== null) {
+        completedTurns = completedTurns.filter(turn => turn.promptIndex < targetPromptIndex);
+        activePromptIndex = completedTurns.at(-1)?.promptIndex ?? null;
+        nextFallbackPromptIndex = targetPromptIndex;
+        turnIndex = completedTurns.length;
+      }
+      continue;
+    }
     if (updateType === 'user_message_chunk') {
-      const incomingUserId = resolveNativeId(update, 'user');
+      const incomingUserId = resolveGrokUpdateMessageId(
+        update,
+        'user',
+        record.params._meta,
+      );
       const incomingPromptIndex = readPromptIndex(update);
       const hasPendingUserContent = Boolean(
         pending
@@ -117,26 +157,38 @@ export function parseGrokHistoryContent(
         )
       );
       if (pending && startsNewTurn) {
-        const completed = finalizeTurn(pending, sessionId);
         if (
-          completed.length > 0
-          && (
-            startsEarlyInterjection
-            || pending.assistantContent
-            || pending.blocks.length > 0
-            || pending.tools.size > 0
-          )
+          startsEarlyInterjection
+          || pending.assistantContent
+          || pending.blocks.length > 0
+          || pending.tools.size > 0
         ) {
-          messages.push(...completed);
-          turnIndex += 1;
+          commitPending(pending);
         }
         pending = createPendingTurn(
           turnIndex,
           record.timestamp,
-          incomingPromptIndex === null,
+          startsEarlyInterjection,
         );
       } else if (!pending) {
         pending = createPendingTurn(turnIndex, record.timestamp);
+      }
+      if (incomingPromptIndex !== null) {
+        pending.promptIndex ??= incomingPromptIndex;
+        pending.timelinePromptIndex ??= incomingPromptIndex;
+        activePromptIndex = incomingPromptIndex;
+        nextFallbackPromptIndex = Math.max(
+          nextFallbackPromptIndex,
+          incomingPromptIndex + 1,
+        );
+      } else if (pending.timelinePromptIndex === null) {
+        if (pending.isInterjection && activePromptIndex !== null) {
+          pending.timelinePromptIndex = activePromptIndex;
+        } else {
+          pending.timelinePromptIndex = nextFallbackPromptIndex;
+          activePromptIndex = nextFallbackPromptIndex;
+          nextFallbackPromptIndex += 1;
+        }
       }
       const text = extractContentText(update.content);
       pending.userContent += text;
@@ -148,7 +200,6 @@ export function parseGrokHistoryContent(
       );
       if (image) pending.images.push(image);
       pending.userId ??= incomingUserId;
-      pending.promptIndex ??= incomingPromptIndex;
       continue;
     }
 
@@ -165,7 +216,11 @@ export function parseGrokHistoryContent(
     if (updateType === 'agent_message_chunk') {
       const text = extractContentText(update.content);
       pending.assistantContent += text;
-      pending.assistantId ??= resolveNativeId(update, 'assistant');
+      pending.assistantId ??= resolveGrokUpdateMessageId(
+        update,
+        'assistant',
+        record.params._meta,
+      );
       appendContentBlock(pending.blocks, 'text', text);
       continue;
     }
@@ -177,17 +232,20 @@ export function parseGrokHistoryContent(
 
     if (updateType === 'turn_completed') {
       const promptId = readString(update.prompt_id) ?? readString(update.promptId);
-      const completed = finalizeTurn(pending, sessionId, promptId);
-      messages.push(...completed);
       const usage = normalizeUsage(update.usage);
-      if (usage) {
-        lastUsage = usage;
-      }
-      turnIndex += 1;
+      commitPending(pending, promptId, usage);
       pending = null;
     }
   }
 
+  const messages = completedTurns.flatMap(turn => turn.messages);
+  let lastUsage: GrokHistoryUsage | undefined;
+  for (let index = completedTurns.length - 1; index >= 0; index -= 1) {
+    if (completedTurns[index].usage) {
+      lastUsage = completedTurns[index].usage;
+      break;
+    }
+  }
   return {
     ...(lastUsage ? { lastUsage } : {}),
     messages,
@@ -206,7 +264,7 @@ export async function loadGrokHistory(
   }
 }
 
-export function resolveGrokForkTargetPromptIndex(
+export function resolveGrokPromptIndexAfterAssistant(
   content: string,
   sessionId: string,
   resumeAt: string,
@@ -245,7 +303,7 @@ export function resolveGrokForkTargetPromptIndex(
     }
     if (
       updateType === 'agent_message_chunk'
-      && resolveNativeId(update, 'assistant') === resumeAt
+      && resolveGrokUpdateMessageId(update, 'assistant', record.params._meta) === resumeAt
       && activePromptIndex !== null
     ) {
       return activePromptIndex + 1;
@@ -280,14 +338,14 @@ function resolveLegacyForkTargetPromptIndex(
   return null;
 }
 
-export async function loadGrokForkTargetPromptIndex(
+export async function loadGrokPromptIndexAfterAssistant(
   sessionDirectory: string,
   sessionId: string,
   resumeAt: string,
 ): Promise<number | null> {
   try {
     const content = await fs.readFile(path.join(sessionDirectory, 'updates.jsonl'), 'utf8');
-    return resolveGrokForkTargetPromptIndex(content, sessionId, resumeAt);
+    return resolveGrokPromptIndexAfterAssistant(content, sessionId, resumeAt);
   } catch {
     return null;
   }
@@ -304,6 +362,7 @@ function createPendingTurn(
     images: [],
     isInterjection,
     promptIndex: null,
+    timelinePromptIndex: null,
     startedAt: normalizeTimestamp(timestamp),
     tools: new Map(),
     toolOrder: [],
@@ -515,13 +574,22 @@ function renderToolContent(value: unknown): string {
   }).join('\n\n');
 }
 
-function resolveNativeId(update: Record<string, unknown>, role: string): string | undefined {
-  const metadata = readRecord(update._meta);
+export function resolveGrokUpdateMessageId(
+  value: unknown,
+  role: 'assistant' | 'user',
+  notificationMetadata?: unknown,
+): string | undefined {
+  const update = readRecord(value);
+  if (!update) return undefined;
+  const updateMetadata = readRecord(update._meta);
+  const outerMetadata = readRecord(notificationMetadata);
   return readString(update.messageId)
-    ?? readString(metadata?.eventId)
-    ?? readString(metadata?.promptId)
-    ?? (typeof metadata?.promptIndex === 'number'
-      ? `${role}-${metadata.promptIndex}`
+    ?? readString(updateMetadata?.eventId)
+    ?? readString(outerMetadata?.eventId)
+    ?? readString(updateMetadata?.promptId)
+    ?? readString(outerMetadata?.promptId)
+    ?? (typeof updateMetadata?.promptIndex === 'number'
+      ? `${role}-${updateMetadata.promptIndex}`
       : undefined);
 }
 

@@ -17,7 +17,7 @@ const CAPABILITIES: ProviderCapabilities = {
   supportsPersistentRuntime: true,
   supportsPlanMode: false,
   supportsProviderCommands: true,
-  supportsRewind: false,
+  supportsRewind: true,
   supportsTurnSteer: true,
 };
 

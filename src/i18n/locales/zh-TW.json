@@ -23,9 +23,11 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "回退到此處？此訊息之後的檔案變更將被還原。回退不會影響手動或透過 bash 編輯的檔案。",
+      "confirmMessage": "回退到此處？此訊息之後的檔案變更可能被覆寫或刪除。此操作無法復原。",
+      "confirmMessageConflicts": "回退到此處？偵測到 {count} 個檔案在代理之外被修改，繼續操作將覆寫這些變更：\n{files}",
       "confirmMessageConversationOnly": "將對話回退到此處？檔案變更將保留。",
       "confirmButton": "回退",
+      "inProgress": "請等待目前的回退操作完成。",
       "ariaLabel": "回退到此處",
       "menuConversationOnly": "僅回退對話",
       "menuCodeAndConversation": "回退程式碼 + 對話",

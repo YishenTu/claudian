@@ -23,9 +23,11 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "Zu diesem Punkt zurückspulen? Dateiänderungen nach dieser Nachricht werden rückgängig gemacht. Das Zurückspulen betrifft keine manuell oder über Bash bearbeiteten Dateien.",
+      "confirmMessage": "Zu diesem Punkt zurückspulen? Dateiänderungen nach dieser Nachricht können überschrieben oder entfernt werden. Dies kann nicht rückgängig gemacht werden.",
+      "confirmMessageConflicts": "Zu diesem Punkt zurückspulen? {count} außerhalb des Agenten geänderte Datei(en) werden überschrieben:\n{files}",
       "confirmMessageConversationOnly": "Konversation zu diesem Punkt zurückspulen? Dateiänderungen bleiben erhalten.",
       "confirmButton": "Zurückspulen",
+      "inProgress": "Bitte warten Sie, bis das aktuelle Zurückspulen abgeschlossen ist.",
       "ariaLabel": "Hierher zurückspulen",
       "menuConversationOnly": "Nur Konversation zurückspulen",
       "menuCodeAndConversation": "Code + Konversation zurückspulen",

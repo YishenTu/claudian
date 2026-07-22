@@ -23,9 +23,11 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更が元に戻されます。手動またはbashで編集されたファイルには影響しません。",
+      "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更は上書きまたは削除される可能性があります。この操作は元に戻せません。",
+      "confirmMessageConflicts": "この時点に巻き戻しますか？エージェント外で変更された {count} 個のファイルが上書きされます：\n{files}",
       "confirmMessageConversationOnly": "会話をこの時点に巻き戻しますか？ファイル変更は保持されます。",
       "confirmButton": "巻き戻す",
+      "inProgress": "現在の巻き戻しが完了するまでお待ちください。",
       "ariaLabel": "ここに巻き戻す",
       "menuConversationOnly": "会話のみ巻き戻す",
       "menuCodeAndConversation": "コード + 会話を巻き戻す",

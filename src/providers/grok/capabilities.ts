@@ -11,6 +11,6 @@ export const GROK_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object
   supportsPersistentRuntime: true,
   supportsPlanMode: true,
   supportsProviderCommands: true,
-  supportsRewind: false,
+  supportsRewind: true,
   supportsTurnSteer: true,
 });

@@ -23,9 +23,11 @@
   },
   "chat": {
     "rewind": {
-      "confirmMessage": "回退到此处？此消息之后的文件更改将被还原。回退不会影响手动或通过 bash 编辑的文件。",
+      "confirmMessage": "回退到此处？此消息之后的文件更改可能被覆盖或删除。此操作无法撤销。",
+      "confirmMessageConflicts": "回退到此处？检测到 {count} 个文件在代理之外被修改，继续操作将覆盖这些更改：\n{files}",
       "confirmMessageConversationOnly": "将对话回退到此处？文件更改将保留。",
       "confirmButton": "回退",
+      "inProgress": "请等待当前回退操作完成。",
       "ariaLabel": "回退到此处",
       "menuConversationOnly": "仅回退对话",
       "menuCodeAndConversation": "回退代码 + 对话",

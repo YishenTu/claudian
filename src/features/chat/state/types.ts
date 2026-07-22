@@ -57,6 +57,8 @@ export interface ChatStateData {
   isCreatingConversation: boolean;
   /** Guards against concurrent operations during conversation switching. */
   isSwitchingConversation: boolean;
+  /** Guards the destructive rewind transaction from overlapping tab actions. */
+  isRewinding: boolean;
   /** Local tab state is ahead of persisted conversation metadata. */
   hasPendingConversationSave: boolean;
 
