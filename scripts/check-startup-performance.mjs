@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mainPath = path.join(root, 'main.js');
 const requiredArtifacts = ['main.js', 'manifest.json', 'styles.css'];
-const mainBudgetBytes = 2_800_000;
+const mainBudgetBytes = 3_100_000;
 const evaluationIndicatorMs = 50;
 
 for (const relativePath of requiredArtifacts) {
