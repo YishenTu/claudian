@@ -286,6 +286,9 @@ export interface TabManagerCallbacks {
   /** Called when tab streaming state changes. */
   onTabStreamingChanged?: (tabId: TabId, isStreaming: boolean) => void;
 
+  /** Called when tab rewind transaction state changes. */
+  onTabRewindingChanged?: (tabId: TabId, isRewinding: boolean) => void;
+
   /** Called when tab title changes. */
   onTabTitleChanged?: (tabId: TabId, title: string) => void;
 

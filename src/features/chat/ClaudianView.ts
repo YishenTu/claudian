@@ -243,6 +243,7 @@ export class ClaudianView extends ItemView {
           this.updateTabBar();
           this.updateHistoryDropdown();
         },
+        onTabRewindingChanged: () => this.updateTabBar(),
         onTabTitleChanged: () => this.updateTabBar(),
         onTabAttentionChanged: () => this.updateTabBar(),
         onTabConversationChanged: () => {

@@ -1815,6 +1815,50 @@ describe('MessageRenderer', () => {
         expect.anything(),
       );
     });
+
+    it('renders stored Grok output calls with mixed command and subagent targets', () => {
+      const messagesEl = createMockEl();
+      const { renderer } = createRenderer(messagesEl, 'grok');
+      const outputToolCall = {
+        id: 'output-mixed',
+        name: 'get_command_or_subagent_output',
+        input: { task_ids: ['task-1', 'command-1'] },
+        status: 'completed',
+        result: 'Subagent and command finished.',
+      } as any;
+      const msg: ChatMessage = {
+        id: 'm-grok-mixed-output',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: [
+          {
+            id: 'spawn-1',
+            name: 'spawn_subagent',
+            input: {
+              description: 'Inspect tools',
+              run_in_background: true,
+              task_id: 'task-1',
+            },
+            status: 'completed',
+            result: 'Spawned task-1',
+          } as any,
+          outputToolCall,
+        ],
+        contentBlocks: [
+          { type: 'tool_use', toolId: 'spawn-1' } as any,
+          { type: 'tool_use', toolId: 'output-mixed' } as any,
+        ],
+      };
+
+      renderer.renderStoredMessage(msg);
+
+      expect(renderStoredToolCall).toHaveBeenCalledWith(
+        expect.anything(),
+        outputToolCall,
+        expect.anything(),
+      );
+    });
   });
 
   // ============================================

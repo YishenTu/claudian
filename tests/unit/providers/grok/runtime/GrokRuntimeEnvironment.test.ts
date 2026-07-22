@@ -1,3 +1,5 @@
+import * as path from 'node:path';
+
 import { buildGrokRuntimeEnv } from '@/providers/grok/runtime/GrokRuntimeEnvironment';
 
 describe('buildGrokRuntimeEnv', () => {
@@ -13,13 +15,38 @@ describe('buildGrokRuntimeEnv', () => {
         },
       },
       sharedEnvironmentVariables: 'HTTPS_PROXY=https://proxy.example.com',
-    }, '/resolved/bin/grok');
+    }, process.execPath);
     delete process.env.GROK_P1_PROCESS_ONLY;
 
     expect(env.GROK_P1_PROCESS_ONLY).toBe('from-process');
     expect(env.HTTPS_PROXY).toBe('https://proxy.example.com');
     expect(env.CUSTOM_API_KEY).toBe('provider-secret');
-    expect(env.PATH?.split(pathDelimiter())).toContain('/provider/bin');
+    expect(env.PATH?.split(path.delimiter)).toContain('/provider/bin');
+    expect(env.PATH?.split(path.delimiter)).toContain(path.dirname(process.execPath));
+  });
+
+  it('applies provider over shared over process precedence for duplicate keys', () => {
+    process.env.GROK_PRECEDENCE = 'from-process';
+    process.env.GROK_SHARED_PRECEDENCE = 'from-process';
+    try {
+      const env = buildGrokRuntimeEnv({
+        providerConfigs: {
+          grok: {
+            environmentVariables: 'GROK_PRECEDENCE=from-provider',
+          },
+        },
+        sharedEnvironmentVariables: [
+          'GROK_PRECEDENCE=from-shared',
+          'GROK_SHARED_PRECEDENCE=from-shared',
+        ].join('\n'),
+      }, process.execPath);
+
+      expect(env.GROK_PRECEDENCE).toBe('from-provider');
+      expect(env.GROK_SHARED_PRECEDENCE).toBe('from-shared');
+    } finally {
+      delete process.env.GROK_PRECEDENCE;
+      delete process.env.GROK_SHARED_PRECEDENCE;
+    }
   });
 
   it('does not source shell expressions or force Grok config, auth, model, or telemetry', () => {
@@ -39,7 +66,3 @@ describe('buildGrokRuntimeEnv', () => {
     expect(env).not.toHaveProperty('GROK_TOKEN');
   });
 });
-
-function pathDelimiter(): string {
-  return process.platform === 'win32' ? ';' : ':';
-}

@@ -148,4 +148,46 @@ describe('GrokSettingsReconciler', () => {
       .toEqual({ changed: false, invalidatedConversations: [] });
     expect(getGrokProviderSettings(settings).currentCatalog).toEqual(catalog('current-model'));
   });
+
+  it('normalizes qualified Grok selections in every shared model slot', () => {
+    const settings: Record<string, unknown> = {
+      model: '  grok/grok-4.5  ',
+      titleGenerationModel: ' grok/grok-3 ',
+      savedProviderModel: {
+        claude: 'claude-sonnet-4-5',
+        grok: ' grok/grok-code-fast-1 ',
+      },
+    };
+
+    expect(grokSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
+    expect(settings).toEqual({
+      model: 'grok/grok-4.5',
+      titleGenerationModel: 'grok/grok-3',
+      savedProviderModel: {
+        claude: 'claude-sonnet-4-5',
+        grok: 'grok/grok-code-fast-1',
+      },
+    });
+  });
+
+  it('leaves normalized, unqualified, and unrelated provider selections unchanged', () => {
+    const settings: Record<string, unknown> = {
+      model: 'grok/grok-4.5',
+      titleGenerationModel: 'claude-sonnet-4-5',
+      savedProviderModel: {
+        codex: 'gpt-5.4',
+        grok: 'grok-3',
+      },
+    };
+
+    expect(grokSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(false);
+    expect(settings).toEqual({
+      model: 'grok/grok-4.5',
+      titleGenerationModel: 'claude-sonnet-4-5',
+      savedProviderModel: {
+        codex: 'gpt-5.4',
+        grok: 'grok-3',
+      },
+    });
+  });
 });

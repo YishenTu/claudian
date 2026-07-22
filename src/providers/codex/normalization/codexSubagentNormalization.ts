@@ -173,10 +173,27 @@ export function isCodexSubagentSpawnToolCall(toolCall: ToolCallInfo): boolean {
   return toolCall.name === TOOL_SPAWN_AGENT;
 }
 
+function getCodexLifecycleTargetIds(toolCall: ToolCallInfo): string[] {
+  const targetIds = new Set(Object.keys(extractCodexWaitResult(toolCall.result).statuses));
+  const targets = Array.isArray(toolCall.input.targets)
+    ? toolCall.input.targets
+    : Array.isArray(toolCall.input.ids)
+      ? toolCall.input.ids
+      : [];
+  for (const target of targets) {
+    if (typeof target === 'string') targetIds.add(target);
+  }
+  return [...targetIds];
+}
+
 export const codexSubagentLifecycleAdapter: ProviderSubagentLifecycleAdapter = {
   protocol: 'lifecycle',
   isHiddenTool(name: string): boolean {
     return name === TOOL_WAIT || name === TOOL_WAIT_AGENT || name === TOOL_CLOSE_AGENT;
+  },
+  isToolCallFullyOwned(toolCall, agentIdToSpawnId): boolean {
+    const targetIds = getCodexLifecycleTargetIds(toolCall);
+    return targetIds.length > 0 && targetIds.every(targetId => agentIdToSpawnId.has(targetId));
   },
   isSpawnTool(name: string): boolean {
     return name === TOOL_SPAWN_AGENT;
@@ -192,23 +209,8 @@ export const codexSubagentLifecycleAdapter: ProviderSubagentLifecycleAdapter = {
     agentIdToSpawnId,
   ): string[] {
     const spawnIds = new Set<string>();
-    const waitResult = extractCodexWaitResult(waitToolCall.result);
-
-    for (const agentId of Object.keys(waitResult.statuses)) {
-      const spawnId = agentIdToSpawnId.get(agentId);
-      if (spawnId) {
-        spawnIds.add(spawnId);
-      }
-    }
-
-    const targets = Array.isArray(waitToolCall.input.targets)
-      ? waitToolCall.input.targets
-      : Array.isArray(waitToolCall.input.ids)
-        ? waitToolCall.input.ids
-        : [];
-    for (const target of targets) {
-      if (typeof target !== 'string') continue;
-      const spawnId = agentIdToSpawnId.get(target);
+    for (const targetId of getCodexLifecycleTargetIds(waitToolCall)) {
+      const spawnId = agentIdToSpawnId.get(targetId);
       if (spawnId) {
         spawnIds.add(spawnId);
       }

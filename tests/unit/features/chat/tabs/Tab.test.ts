@@ -2820,10 +2820,11 @@ describe('Tab - UI Callback Wiring', () => {
     });
 
     it('should wire external context onChange to pre-scan contexts', () => {
+      const onCommandContextChanged = jest.fn();
       const options = createMockOptions();
       const tab = createTab(options);
 
-      initializeTabUI(tab, options.plugin);
+      initializeTabUI(tab, options.plugin, { onCommandContextChanged });
 
       // Get the setOnChange callback
       const onChange = mockExternalContextSelector.setOnChange.mock.calls[0][0];
@@ -2832,6 +2833,7 @@ describe('Tab - UI Callback Wiring', () => {
       onChange();
 
       expect(mockFileContextManager.preScanExternalContexts).toHaveBeenCalled();
+      expect(onCommandContextChanged).toHaveBeenCalledTimes(1);
     });
 
     it('should wire persistence change to save settings', async () => {

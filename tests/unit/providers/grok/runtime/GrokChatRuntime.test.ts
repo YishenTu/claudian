@@ -39,6 +39,7 @@ class FakeGrokProcess implements GrokRuntimeProcess {
   readonly stderr = new PassThrough();
   readonly requests: JsonRpcMessage[] = [];
   shutdownCalls = 0;
+  stderrSnapshot = '';
   private alive = false;
   private readonly closeListeners = new Set<(error?: Error) => void>();
   private nextServerRequestId = 10_000;
@@ -80,7 +81,7 @@ class FakeGrokProcess implements GrokRuntimeProcess {
   }
 
   getStderrSnapshot(): string {
-    return '';
+    return this.stderrSnapshot;
   }
 
   onClose(listener: (error?: Error) => void): () => void {
@@ -917,7 +918,7 @@ describe('GrokChatRuntime', () => {
   });
 
   it('materializes a pending Grok fork before loading and prompting the child session', async () => {
-    const tempRoot = fs.mkdtempSync(path.join('/tmp', 'claudian-grok-fork-'));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-grok-fork-'));
     const sourceCwd = path.join(tempRoot, 'previous-vault');
     const sourceDirectory = path.join(
       tempRoot,
@@ -1000,7 +1001,7 @@ describe('GrokChatRuntime', () => {
   });
 
   it('uses Grok cwd metadata when forking a hash-directory session', async () => {
-    const tempRoot = fs.mkdtempSync(path.join('/tmp', 'claudian-grok-hash-fork-'));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-grok-hash-fork-'));
     const sourceCwd = path.join(tempRoot, 'a'.repeat(260), 'previous-vault');
     const cwdDirectory = path.join(tempRoot, 'sessions', 'previous-vault-0123456789abcdef');
     const sourceDirectory = path.join(cwdDirectory, 'session-fixture');
@@ -1033,7 +1034,7 @@ describe('GrokChatRuntime', () => {
   });
 
   it('rejects a hash-directory fork when its source cwd metadata is missing', async () => {
-    const tempRoot = fs.mkdtempSync(path.join('/tmp', 'claudian-grok-bad-hash-fork-'));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-grok-bad-hash-fork-'));
     const sourceDirectory = path.join(
       tempRoot,
       'sessions',
@@ -2406,6 +2407,37 @@ describe('GrokChatRuntime', () => {
     expect(chunks).not.toContainEqual(expect.objectContaining({
       content: expect.stringMatching(/grok login/i),
     }));
+  });
+
+  it('classifies stderr-only API-key failures without exposing the credential', async () => {
+    const harness = createHarness({ handlers: { prompt() {} } });
+    const iterator = harness.runtime.query(harness.runtime.prepareTurn({ text: 'Wait' }));
+    const first = iterator.next();
+    await tick();
+    harness.process.stderrSnapshot = 'invalid API key XAI_API_KEY=stderr-secret';
+
+    harness.process.close(new Error('transport closed'));
+
+    await expect(first).resolves.toEqual({
+      done: false,
+      value: expect.objectContaining({ content: expect.stringMatching(/env_key/i), type: 'error' }),
+    });
+    expect(JSON.stringify(await first)).not.toContain('stderr-secret');
+  });
+
+  it('classifies stderr-only expired login diagnostics as Grok authentication errors', async () => {
+    const harness = createHarness({ handlers: { prompt() {} } });
+    const iterator = harness.runtime.query(harness.runtime.prepareTurn({ text: 'Wait' }));
+    const first = iterator.next();
+    await tick();
+    harness.process.stderrSnapshot = 'authentication token expired';
+
+    harness.process.close(new Error('transport closed'));
+
+    await expect(first).resolves.toEqual({
+      done: false,
+      value: expect.objectContaining({ content: expect.stringMatching(/grok login/i), type: 'error' }),
+    });
   });
 
   it.each([

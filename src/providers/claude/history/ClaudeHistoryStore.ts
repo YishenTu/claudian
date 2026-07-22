@@ -1,6 +1,6 @@
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
-import { isClaudeSubagentToolName } from './claudeSubagentToolNames';
+import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
 import { filterActiveBranch } from './sdkBranchFilter';
 import type { SDKSessionLoadResult } from './sdkHistoryTypes';

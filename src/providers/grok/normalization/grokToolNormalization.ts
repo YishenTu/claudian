@@ -17,6 +17,7 @@ import {
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
 import type { AcpToolRawNameProvenance } from '../../acp/AcpToolStreamAdapter';
+import { GROK_SUBAGENT_LIFECYCLE_TOOL_NAMES } from './grokLifecycleToolNames';
 
 const GROK_TOOL_NAME_MAP: Readonly<Record<string, string>> = {
   apply_patch: TOOL_APPLY_PATCH,
@@ -41,13 +42,6 @@ const GROK_TOOL_NAME_MAP: Readonly<Record<string, string>> = {
   write_file: TOOL_WRITE,
 };
 
-const GROK_TASK_TOOL_NAMES = new Set([
-  'kill_task',
-  'task',
-  'task_output',
-  'wait_for_task',
-]);
-
 export interface GrokNormalizedToolCall {
   input: Record<string, unknown>;
   name: string;
@@ -71,7 +65,7 @@ export interface GrokRawToolNameResolution {
 export function normalizeGrokToolName(rawName: string): string {
   const normalized = rawName.trim();
   const lookup = normalized.toLowerCase();
-  if (GROK_TASK_TOOL_NAMES.has(lookup)) {
+  if (GROK_SUBAGENT_LIFECYCLE_TOOL_NAMES.has(lookup)) {
     return normalized || 'tool';
   }
   return GROK_TOOL_NAME_MAP[lookup] ?? (normalized || 'tool');
@@ -85,7 +79,10 @@ export function resolveGrokRawToolName(
   const normalizedTitle = title?.toLowerCase();
   if (
     normalizedTitle
-    && (normalizedTitle in GROK_TOOL_NAME_MAP || GROK_TASK_TOOL_NAMES.has(normalizedTitle))
+    && (
+      normalizedTitle in GROK_TOOL_NAME_MAP
+      || GROK_SUBAGENT_LIFECYCLE_TOOL_NAMES.has(normalizedTitle)
+    )
   ) {
     return { provenance: 'title', rawName: normalizedTitle };
   }
@@ -129,7 +126,10 @@ function isKnownGrokRawToolName(rawName: string | undefined): boolean {
   const normalized = rawName?.trim().toLowerCase();
   return Boolean(
     normalized
-    && (normalized in GROK_TOOL_NAME_MAP || GROK_TASK_TOOL_NAMES.has(normalized))
+    && (
+      normalized in GROK_TOOL_NAME_MAP
+      || GROK_SUBAGENT_LIFECYCLE_TOOL_NAMES.has(normalized)
+    )
   );
 }
 

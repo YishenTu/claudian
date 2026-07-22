@@ -322,12 +322,8 @@ export interface AcpSetSessionModeRequest {
 
 export type AcpSetSessionModeResponse = Record<string, never>;
 
-export type AcpSetSessionModelMetadata = AcpMetadata & {
-  reasoningEffort?: string;
-};
-
 export interface AcpSetSessionModelRequest {
-  _meta?: AcpSetSessionModelMetadata | null;
+  _meta?: AcpMetadata | null;
   modelId: string;
   sessionId: AcpSessionId;
 }

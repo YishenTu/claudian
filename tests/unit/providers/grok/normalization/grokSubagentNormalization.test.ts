@@ -111,6 +111,39 @@ describe('grokSubagentNormalization', () => {
     }));
   });
 
+  it('completes a background spawn from a raw-output-only task id', () => {
+    const spawn = toolCall({
+      id: 'spawn-output-only',
+      name: 'spawn_subagent',
+      input: { run_in_background: true, task_id: 'task-output-only' },
+      result: 'Started task-output-only',
+      status: 'completed',
+    });
+    const output = toolCall({
+      id: 'output-only',
+      name: 'get_command_or_subagent_output',
+      input: {},
+      providerPayload: {
+        rawName: 'get_command_or_subagent_output',
+        rawOutput: {
+          Result: [{
+            output: 'Output-only completion.',
+            status: 'completed',
+            task_id: 'task-output-only',
+          }],
+        },
+      },
+      result: 'Output-only completion.',
+      status: 'completed',
+    });
+
+    expect(buildGrokSubagentInfo(spawn, [spawn, output])).toEqual(expect.objectContaining({
+      asyncStatus: 'completed',
+      result: 'Output-only completion.',
+      status: 'completed',
+    }));
+  });
+
   it('links wait and kill calls to spawn calls by task id', () => {
     const taskIds = new Map([
       ['task-1', 'spawn-1'],

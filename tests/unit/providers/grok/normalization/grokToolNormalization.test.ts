@@ -125,6 +125,23 @@ describe('grokToolNormalization', () => {
       .toEqual({ provenance: 'title', rawName: 'read_file' });
   });
 
+  it.each([
+    'spawn_subagent',
+    'task',
+    'get_command_or_subagent_output',
+    'task_output',
+    'wait_commands_or_subagents',
+    'wait_for_task',
+    'kill_command_or_subagent',
+    'kill_task',
+  ])('retains lifecycle raw name %s when a later title is presentation text', (rawName) => {
+    const current = { provenance: 'title' as const, rawName };
+
+    expect(resolveGrokRawToolName(current, {
+      title: 'Human-readable lifecycle status',
+    })).toEqual(current);
+  });
+
   it('replaces a kind fallback with late unknown titles and retains their provenance', () => {
     const kindFallback = resolveGrokRawToolName(undefined, { kind: 'execute' });
     expect(kindFallback).toEqual({ provenance: 'kind', rawName: 'execute' });

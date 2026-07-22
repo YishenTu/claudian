@@ -4,15 +4,15 @@ import type {
   ProviderSubagentWaitStatus,
 } from '../../../core/providers/types';
 import type { SubagentInfo, ToolCallInfo } from '../../../core/types';
+import {
+  GROK_SUBAGENT_CLOSE_TOOL_NAMES,
+  GROK_SUBAGENT_SPAWN_TOOL_NAMES,
+  GROK_SUBAGENT_WAIT_TOOL_NAMES,
+} from './grokLifecycleToolNames';
 
-const GROK_SUBAGENT_SPAWN_TOOLS = new Set(['spawn_subagent', 'task']);
-const GROK_SUBAGENT_WAIT_TOOLS = new Set([
-  'get_command_or_subagent_output',
-  'task_output',
-  'wait_commands_or_subagents',
-  'wait_for_task',
-]);
-const GROK_SUBAGENT_CLOSE_TOOLS = new Set(['kill_command_or_subagent', 'kill_task']);
+const GROK_SUBAGENT_SPAWN_TOOLS: ReadonlySet<string> = new Set(GROK_SUBAGENT_SPAWN_TOOL_NAMES);
+const GROK_SUBAGENT_WAIT_TOOLS: ReadonlySet<string> = new Set(GROK_SUBAGENT_WAIT_TOOL_NAMES);
+const GROK_SUBAGENT_CLOSE_TOOLS: ReadonlySet<string> = new Set(GROK_SUBAGENT_CLOSE_TOOL_NAMES);
 
 interface GrokTaskResult {
   id?: string;
@@ -113,6 +113,15 @@ function getTargetIds(toolCall: ToolCallInfo): string[] {
   return [...result];
 }
 
+function getLifecycleTargetIds(toolCall: ToolCallInfo): string[] {
+  const targetIds = new Set(getTargetIds(toolCall));
+  const waitResult = extractGrokWaitResult(toolCall.result, toolCall);
+  for (const taskId of Object.keys(waitResult.statuses)) {
+    targetIds.add(taskId);
+  }
+  return [...targetIds];
+}
+
 export function extractGrokSpawnResult(
   raw: string | undefined,
   toolCall?: ToolCallInfo,
@@ -179,7 +188,7 @@ function getPrompt(spawnToolCall: ToolCallInfo): string {
 
 function matchesSpawn(lifecycleToolCall: ToolCallInfo, taskId: string | undefined): boolean {
   if (!taskId) return false;
-  return getTargetIds(lifecycleToolCall).includes(taskId);
+  return getLifecycleTargetIds(lifecycleToolCall).includes(taskId);
 }
 
 export function buildGrokSubagentInfo(
@@ -264,6 +273,10 @@ export const grokSubagentLifecycleAdapter: ProviderSubagentLifecycleAdapter = {
     return GROK_SUBAGENT_WAIT_TOOLS.has(normalized)
       || GROK_SUBAGENT_CLOSE_TOOLS.has(normalized);
   },
+  isToolCallFullyOwned(toolCall, agentIdToSpawnId) {
+    const targetIds = getLifecycleTargetIds(toolCall);
+    return targetIds.length > 0 && targetIds.every(taskId => agentIdToSpawnId.has(taskId));
+  },
   isSpawnTool(name) {
     return GROK_SUBAGENT_SPAWN_TOOLS.has(normalizedName(name));
   },
@@ -275,12 +288,7 @@ export const grokSubagentLifecycleAdapter: ProviderSubagentLifecycleAdapter = {
   },
   resolveSpawnToolIds(lifecycleToolCall, agentIdToSpawnId) {
     const spawnIds = new Set<string>();
-    for (const taskId of getTargetIds(lifecycleToolCall)) {
-      const spawnId = agentIdToSpawnId.get(taskId);
-      if (spawnId) spawnIds.add(spawnId);
-    }
-    const waitResult = extractGrokWaitResult(lifecycleToolCall.result, lifecycleToolCall);
-    for (const taskId of Object.keys(waitResult.statuses)) {
+    for (const taskId of getLifecycleTargetIds(lifecycleToolCall)) {
       const spawnId = agentIdToSpawnId.get(taskId);
       if (spawnId) spawnIds.add(spawnId);
     }

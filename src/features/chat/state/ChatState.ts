@@ -148,6 +148,7 @@ export class ChatState {
 
   set isRewinding(value: boolean) {
     this.state.isRewinding = value;
+    this._callbacks.onRewindingStateChanged?.(value);
   }
 
   get hasPendingConversationSave(): boolean {

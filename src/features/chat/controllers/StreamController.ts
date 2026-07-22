@@ -175,7 +175,7 @@ export class StreamController {
           }
           if (
             subagentAdapter.isHiddenTool(chunk.name)
-            && this.isLinkedProviderSubagentTool(chunk, subagentAdapter)
+            && this.isFullyOwnedProviderSubagentTool(chunk, subagentAdapter)
           ) {
             this.handleProviderHiddenSubagentTool(chunk, msg);
             break;
@@ -320,6 +320,7 @@ export class StreamController {
         }
         // If still pending, the updated input is already in the toolCall object
       }
+      this.ensureRegularToolCallVisibility(existingToolCall, msg);
       return;
     }
 
@@ -361,6 +362,22 @@ export class StreamController {
       });
       this.showThinkingIndicator();
     }
+  }
+
+  private ensureRegularToolCallVisibility(toolCall: ToolCallInfo, msg: ChatMessage): void {
+    msg.contentBlocks = msg.contentBlocks || [];
+    if (!msg.contentBlocks.some(block => block.type === 'tool_use' && block.toolId === toolCall.id)) {
+      msg.contentBlocks.push({ type: 'tool_use', toolId: toolCall.id });
+    }
+
+    const { state } = this.deps;
+    if (state.pendingTools.has(toolCall.id) || state.toolCallElements.has(toolCall.id)) return;
+    if (!state.currentContentEl) return;
+    state.pendingTools.set(toolCall.id, {
+      toolCall,
+      parentEl: state.currentContentEl,
+    });
+    this.showThinkingIndicator();
   }
 
   private rebuildRenderedToolRenderer(toolCall: ToolCallInfo): boolean {
@@ -481,6 +498,14 @@ export class StreamController {
     state.pendingTools.clear();
   }
 
+  private flushPendingToolsBefore(toolId: string): void {
+    const { state } = this.deps;
+    for (const pendingToolId of [...state.pendingTools.keys()]) {
+      if (pendingToolId === toolId) return;
+      this.renderPendingTool(pendingToolId);
+    }
+  }
+
   /**
    * Renders a single pending tool call and moves it from pending to rendered state.
    */
@@ -534,16 +559,15 @@ export class StreamController {
     msg: ChatMessage,
     adapter: ProviderSubagentLifecycleAdapter,
   ): void {
-    const { state } = this.deps;
-
     const existingToolCall = msg.toolCalls?.find(toolCall => toolCall.id === chunk.id);
     if (existingToolCall) {
       existingToolCall.name = chunk.name.trim() || existingToolCall.name;
       existingToolCall.input = { ...existingToolCall.input, ...chunk.input };
       mergeToolProviderPayload(existingToolCall, chunk.providerPayload);
       const subagentInfo = adapter.buildSubagentInfo(existingToolCall, msg.toolCalls ?? []);
-      this.updateProviderSubagentState(chunk.id, subagentInfo);
-      this.bindProviderSubagentId(chunk.id, subagentInfo.agentId);
+      existingToolCall.subagent = subagentInfo;
+      this.ensureProviderSubagentState(chunk.id, subagentInfo);
+      this.bindProviderSubagentId(chunk.id, subagentInfo.agentId, msg, adapter);
       return;
     }
 
@@ -561,22 +585,65 @@ export class StreamController {
     msg.contentBlocks = msg.contentBlocks || [];
     msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
 
-    // Render as subagent block immediately
-    if (state.currentContentEl) {
-      this.flushPendingTools();
-      const subagentInfo = adapter.buildSubagentInfo(toolCall, msg.toolCalls);
+    const subagentInfo = adapter.buildSubagentInfo(toolCall, msg.toolCalls);
+    toolCall.subagent = subagentInfo;
+    this.ensureProviderSubagentState(chunk.id, subagentInfo);
+    this.bindProviderSubagentId(chunk.id, subagentInfo.agentId, msg, adapter);
+  }
 
-      const subagentState = subagentInfo.mode === 'async'
-        ? createAsyncSubagentBlock(state.currentContentEl, chunk.id, {
-          description: subagentInfo.description,
-          prompt: subagentInfo.prompt,
-        })
-        : createSubagentBlock(state.currentContentEl, chunk.id, {
-          description: subagentInfo.description,
-          prompt: subagentInfo.prompt,
-        });
-      this.lifecycleSubagentStates.set(chunk.id, subagentState);
-      this.bindProviderSubagentId(chunk.id, subagentInfo.agentId);
+  private ensureProviderSubagentState(
+    spawnId: string,
+    subagentInfo: SubagentInfo,
+  ): void {
+    const existingSubagentState = this.lifecycleSubagentStates.get(spawnId);
+    const existingMode = existingSubagentState?.info.mode ?? 'sync';
+    const nextMode = subagentInfo.mode ?? 'sync';
+    if (existingSubagentState && existingMode === nextMode) {
+      this.updateProviderSubagentState(spawnId, subagentInfo);
+      return;
+    }
+
+    const { state } = this.deps;
+    const regularToolEl = state.toolCallElements.get(spawnId);
+    const previousEl = existingSubagentState?.wrapperEl ?? regularToolEl;
+    const pendingSpawn = state.pendingTools.get(spawnId);
+    const parentEl = previousEl?.parentElement
+      ?? pendingSpawn?.parentEl
+      ?? state.currentContentEl;
+    if (!parentEl) return;
+
+    this.cancelPendingToolOutputRender(spawnId);
+    if (pendingSpawn) {
+      this.flushPendingToolsBefore(spawnId);
+      state.pendingTools.delete(spawnId);
+    } else if (!previousEl) {
+      this.flushPendingTools();
+    }
+    state.writeEditStates.delete(spawnId);
+    state.toolCallElements.delete(spawnId);
+
+    const subagentState = subagentInfo.mode === 'async'
+      ? createAsyncSubagentBlock(parentEl, spawnId, {
+        description: subagentInfo.description,
+        prompt: subagentInfo.prompt,
+      })
+      : createSubagentBlock(parentEl, spawnId, {
+        description: subagentInfo.description,
+        prompt: subagentInfo.prompt,
+      });
+    if (previousEl?.parentElement === parentEl) {
+      parentEl.insertBefore(subagentState.wrapperEl, previousEl);
+    }
+    previousEl?.remove();
+
+    this.lifecycleSubagentStates.set(spawnId, subagentState);
+    this.updateProviderSubagentState(spawnId, subagentInfo);
+    if (subagentInfo.status === 'completed' || subagentInfo.status === 'error') {
+      this.finalizeProviderSubagentState(
+        spawnId,
+        subagentInfo.result || (subagentInfo.status === 'error' ? 'Error' : 'DONE'),
+        subagentInfo.status === 'error',
+      );
     }
   }
 
@@ -589,6 +656,15 @@ export class StreamController {
       existingToolCall.name = chunk.name.trim() || existingToolCall.name;
       existingToolCall.input = { ...existingToolCall.input, ...chunk.input };
       mergeToolProviderPayload(existingToolCall, chunk.providerPayload);
+      this.removeProviderSubagentToolCard(chunk.id);
+      if (existingToolCall.status !== 'running' && existingToolCall.result !== undefined) {
+        this.handleProviderSubagentResult({
+          type: 'tool_result',
+          id: existingToolCall.id,
+          content: existingToolCall.result,
+          isError: existingToolCall.status === 'error' || existingToolCall.status === 'blocked',
+        }, msg);
+      }
       return;
     }
 
@@ -604,23 +680,24 @@ export class StreamController {
     };
     msg.toolCalls = msg.toolCalls || [];
     msg.toolCalls.push(toolCall);
+    msg.contentBlocks = msg.contentBlocks || [];
+    msg.contentBlocks.push({ type: 'tool_use', toolId: chunk.id });
   }
 
-  private isLinkedProviderSubagentTool(
+  private isFullyOwnedProviderSubagentTool(
     chunk: Extract<StreamChunk, { type: 'tool_use' }>,
     adapter: ProviderSubagentLifecycleAdapter,
   ): boolean {
+    const providerPayload = normalizeToolProviderPayload(chunk.providerPayload);
     const candidate: ToolCallInfo = {
       id: chunk.id,
       name: chunk.name,
       input: chunk.input,
+      ...(providerPayload ? { providerPayload } : {}),
       status: 'running',
       isExpanded: false,
     };
-    return adapter.resolveSpawnToolIds(
-      candidate,
-      this.lifecycleAgentIdToSpawnId,
-    ).length > 0;
+    return adapter.isToolCallFullyOwned(candidate, this.lifecycleAgentIdToSpawnId);
   }
 
   /**
@@ -637,12 +714,20 @@ export class StreamController {
 
     const adapter = this.getSubagentAdapter(existingToolCall.name);
     if (!adapter || adapter.protocol !== 'lifecycle') return false;
+    const linkedSpawnIds = adapter.resolveSpawnToolIds(
+      existingToolCall,
+      this.lifecycleAgentIdToSpawnId,
+    );
+    const isFullyOwned = adapter.isToolCallFullyOwned(
+      existingToolCall,
+      this.lifecycleAgentIdToSpawnId,
+    );
+    if (adapter.isHiddenTool(existingToolCall.name) && isFullyOwned) {
+      this.removeProviderSubagentToolCard(chunk.id);
+    }
     if (
       adapter.isHiddenTool(existingToolCall.name)
-      && adapter.resolveSpawnToolIds(
-        existingToolCall,
-        this.lifecycleAgentIdToSpawnId,
-      ).length === 0
+      && linkedSpawnIds.length === 0
     ) {
       return false;
     }
@@ -656,7 +741,12 @@ export class StreamController {
       const subagentInfo = adapter.buildSubagentInfo(existingToolCall, msg.toolCalls ?? []);
       existingToolCall.subagent = subagentInfo;
       this.updateProviderSubagentState(chunk.id, subagentInfo);
-      this.bindProviderSubagentId(chunk.id, spawnResult.agentId ?? subagentInfo.agentId);
+      this.bindProviderSubagentId(
+        chunk.id,
+        spawnResult.agentId ?? subagentInfo.agentId,
+        msg,
+        adapter,
+      );
 
       if (subagentInfo.status === 'completed' || subagentInfo.status === 'error') {
         this.finalizeProviderSubagentState(
@@ -672,10 +762,7 @@ export class StreamController {
       existingToolCall.status = chunk.isError ? 'error' : 'completed';
       existingToolCall.result = normalizedContent;
 
-      for (const spawnId of adapter.resolveSpawnToolIds(
-        existingToolCall,
-        this.lifecycleAgentIdToSpawnId,
-      )) {
+      for (const spawnId of linkedSpawnIds) {
         const spawnToolCall = msg.toolCalls?.find(tc => tc.id === spawnId);
         const subagentState = this.lifecycleSubagentStates.get(spawnId);
         if (!spawnToolCall || !subagentState) continue;
@@ -692,16 +779,13 @@ export class StreamController {
           );
         }
       }
-      return true;
+      return isFullyOwned;
     }
 
     if (adapter.isCloseTool(existingToolCall.name)) {
       existingToolCall.status = chunk.isError ? 'error' : 'completed';
       existingToolCall.result = normalizedContent;
-      for (const spawnId of adapter.resolveSpawnToolIds(
-        existingToolCall,
-        this.lifecycleAgentIdToSpawnId,
-      )) {
+      for (const spawnId of linkedSpawnIds) {
         const spawnToolCall = msg.toolCalls?.find(toolCall => toolCall.id === spawnId);
         if (!spawnToolCall) continue;
         const subagentInfo = adapter.buildSubagentInfo(spawnToolCall, msg.toolCalls ?? []);
@@ -713,13 +797,18 @@ export class StreamController {
           true,
         );
       }
-      return true;
+      return isFullyOwned;
     }
 
     return false;
   }
 
-  private bindProviderSubagentId(spawnId: string, agentId: string | undefined): void {
+  private bindProviderSubagentId(
+    spawnId: string,
+    agentId: string | undefined,
+    msg?: ChatMessage,
+    adapter?: ProviderSubagentLifecycleAdapter,
+  ): void {
     if (!agentId) return;
     const isNewBinding = this.lifecycleAgentIdToSpawnId.get(agentId) !== spawnId;
     this.lifecycleAgentIdToSpawnId.set(agentId, spawnId);
@@ -727,6 +816,34 @@ export class StreamController {
     if (state?.info.mode === 'async' && isNewBinding) {
       updateAsyncSubagentRunning(state as AsyncSubagentState, agentId);
     }
+    if (isNewBinding && msg && adapter) {
+      this.hideNewlyLinkedProviderSubagentTools(spawnId, msg, adapter);
+    }
+  }
+
+  private hideNewlyLinkedProviderSubagentTools(
+    spawnId: string,
+    msg: ChatMessage,
+    adapter: ProviderSubagentLifecycleAdapter,
+  ): void {
+    const hiddenToolIds = new Set(
+      (msg.toolCalls ?? [])
+        .filter(toolCall => (
+          adapter.isHiddenTool(toolCall.name)
+          && adapter.isToolCallFullyOwned(toolCall, this.lifecycleAgentIdToSpawnId)
+          && adapter.resolveSpawnToolIds(toolCall, this.lifecycleAgentIdToSpawnId).includes(spawnId)
+        ))
+        .map(toolCall => toolCall.id),
+    );
+    if (hiddenToolIds.size === 0) return;
+
+    for (const toolId of hiddenToolIds) {
+      this.removeProviderSubagentToolCard(toolId);
+    }
+  }
+
+  private removeProviderSubagentToolCard(toolId: string): void {
+    this.removeToolCardRenderer(toolId);
   }
 
   private updateProviderSubagentState(spawnId: string, info: SubagentInfo): void {

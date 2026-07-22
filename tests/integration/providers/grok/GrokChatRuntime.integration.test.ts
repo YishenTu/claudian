@@ -64,14 +64,13 @@ describe('GrokChatRuntime JSON-RPC integration', () => {
   it('orders initialize/new/prompt/update/cancel and initializes/load on resume', async () => {
     tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-grok-agent-'));
     const logPath = path.join(tempDirectory, 'requests.jsonl');
-    const executablePath = path.join(tempDirectory, 'fake-grok');
-    await fs.writeFile(executablePath, fakeAgentSource(logPath), 'utf8');
-    await fs.chmod(executablePath, 0o755);
+    const agentPath = path.join(tempDirectory, 'agent');
+    await fs.writeFile(agentPath, fakeAgentSource(logPath), 'utf8');
     const host = createHost(tempDirectory);
 
     const first = new GrokChatRuntime(host, {
       capabilities: CAPABILITIES,
-      cliResolver: { resolveFromSettings: () => executablePath },
+      cliResolver: { resolveFromSettings: () => process.execPath },
     });
     const chunks = await collect(first, 'live');
     expect(chunks).toContainEqual({ content: 'fake live response', type: 'text' });
@@ -109,12 +108,11 @@ describe('GrokChatRuntime JSON-RPC integration', () => {
   it('renders and persists mirrored text and tool events once while preserving repeats', async () => {
     tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-grok-agent-'));
     const logPath = path.join(tempDirectory, 'requests.jsonl');
-    const executablePath = path.join(tempDirectory, 'fake-grok');
-    await fs.writeFile(executablePath, fakeAgentSource(logPath), 'utf8');
-    await fs.chmod(executablePath, 0o755);
+    const agentPath = path.join(tempDirectory, 'agent');
+    await fs.writeFile(agentPath, fakeAgentSource(logPath), 'utf8');
     const runtime = new GrokChatRuntime(createHost(tempDirectory), {
       capabilities: CAPABILITIES,
-      cliResolver: { resolveFromSettings: () => executablePath },
+      cliResolver: { resolveFromSettings: () => process.execPath },
     });
 
     const chunks = await collect(runtime, 'mirrors');
@@ -146,8 +144,7 @@ async function readMethods(logPath: string): Promise<string[]> {
 }
 
 function fakeAgentSource(logPath: string): string {
-  return `#!/usr/bin/env node
-const fs = require('node:fs');
+  return `const fs = require('node:fs');
 const readline = require('node:readline');
 const actualLogPath = ${JSON.stringify(logPath)};
 const write = value => process.stdout.write(JSON.stringify(value) + '\\n');

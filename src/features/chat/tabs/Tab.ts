@@ -131,6 +131,7 @@ export interface TabCreateOptions {
   /** Provider to inherit for blank tabs (e.g. from the active tab). */
   defaultProviderId?: ProviderId;
   onStreamingChanged?: (isStreaming: boolean) => void;
+  onRewindingChanged?: (isRewinding: boolean) => void;
   onTitleChanged?: (title: string) => void;
   onAttentionChanged?: (needsAttention: boolean) => void;
   onConversationIdChanged?: (conversationId: string | null) => void;
@@ -512,6 +513,7 @@ export function createTab(options: TabCreateOptions): TabData {
     conversation,
     tabId,
     onStreamingChanged,
+    onRewindingChanged,
     onAttentionChanged,
     onConversationIdChanged,
   } = options;
@@ -522,6 +524,7 @@ export function createTab(options: TabCreateOptions): TabData {
 
   const state = new ChatState({
     onStreamingStateChanged: onStreamingChanged,
+    onRewindingStateChanged: onRewindingChanged,
     onAttentionChanged: onAttentionChanged,
     onConversationChanged: onConversationIdChanged,
   });
@@ -918,6 +921,7 @@ function initializeInputToolbar(
   plugin: FeatureHost,
   getProviderCatalogConfig?: () => ProviderCatalogInfo,
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>,
+  onCommandContextChanged?: () => void,
 ): void {
   const { dom } = tab;
 
@@ -1115,6 +1119,7 @@ function initializeInputToolbar(
   // Wire external context changes
   tab.ui.externalContextSelector.setOnChange(() => {
     tab.ui.fileContextManager?.preScanExternalContexts();
+    onCommandContextChanged?.();
   });
 
   // Initialize persistent paths
@@ -1138,6 +1143,7 @@ function initializeInputToolbar(
 export interface InitializeTabUIOptions {
   getProviderCatalogConfig?: ProviderCatalogResolver;
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>;
+  onCommandContextChanged?: () => void;
 }
 
 /**
@@ -1175,7 +1181,13 @@ export function initializeTabUI(
   }
 
   initializeInstructionAndTodo(tab, plugin);
-  initializeInputToolbar(tab, plugin, options.getProviderCatalogConfig, options.onProviderChanged);
+  initializeInputToolbar(
+    tab,
+    plugin,
+    options.getProviderCatalogConfig,
+    options.onProviderChanged,
+    options.onCommandContextChanged,
+  );
 
   state.callbacks = {
     ...state.callbacks,

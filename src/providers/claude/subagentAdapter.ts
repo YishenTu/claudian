@@ -1,5 +1,6 @@
 import type { ProviderManagedSubagentAdapter } from '../../core/providers/types';
-import { TOOL_AGENT_OUTPUT, TOOL_SUBAGENT } from '../../core/tools/toolNames';
+import { TOOL_AGENT_OUTPUT } from '../../core/tools/toolNames';
+import { isClaudeSubagentToolName } from './subagentToolNames';
 
 export const claudeSubagentAdapter: ProviderManagedSubagentAdapter = {
   protocol: 'managed-agent',
@@ -7,6 +8,6 @@ export const claudeSubagentAdapter: ProviderManagedSubagentAdapter = {
     return name === TOOL_AGENT_OUTPUT;
   },
   isSpawnTool(name) {
-    return name === TOOL_SUBAGENT;
+    return isClaudeSubagentToolName(name);
   },
 };

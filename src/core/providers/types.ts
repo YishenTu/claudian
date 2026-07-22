@@ -586,6 +586,10 @@ export interface ProviderManagedSubagentAdapter {
 export interface ProviderSubagentLifecycleAdapter {
   protocol: 'lifecycle';
   isHiddenTool(name: string): boolean;
+  isToolCallFullyOwned(
+    toolCall: ToolCallInfo,
+    agentIdToSpawnId: ReadonlyMap<string, string>,
+  ): boolean;
   isSpawnTool(name: string): boolean;
   isWaitTool(name: string): boolean;
   isCloseTool(name: string): boolean;

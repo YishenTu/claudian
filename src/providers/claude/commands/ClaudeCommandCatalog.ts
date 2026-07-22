@@ -1,6 +1,7 @@
 import type {
   ProviderCommandCatalog,
   ProviderCommandDropdownConfig,
+  ProviderCommandListContext,
 } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { ProviderVaultEntryRepository } from '../../../core/providers/commands/ProviderVaultEntryRepository';
@@ -63,8 +64,9 @@ const BUILTIN_HIDDEN_COMMANDS = new Set([
 export type CommandProbe = () => Promise<SlashCommand[]>;
 
 export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVaultEntryRepository {
-  private sdkCommands: SlashCommand[] = [];
-  private probePromise: Promise<void> | null = null;
+  private runtimeCommands: SlashCommand[] = [];
+  private probedCommands: SlashCommand[] | null = null;
+  private probePromise: Promise<SlashCommand[]> | null = null;
 
   constructor(
     private commandStorage: SlashCommandStorage,
@@ -73,18 +75,28 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
   ) {}
 
   setRuntimeCommands(commands: SlashCommand[]): void {
-    this.sdkCommands = commands;
+    this.runtimeCommands = commands.map(command => ({ ...command }));
+    if (commands.length === 0) {
+      this.probedCommands = null;
+    }
   }
 
-  async listDropdownEntries(context: { includeBuiltIns: boolean }): Promise<ProviderCommandEntry[]> {
-    void context;
+  async listDropdownEntries(context: ProviderCommandListContext): Promise<ProviderCommandEntry[]> {
     // SDK commands already include vault commands/skills (the SDK scans
     // .claude/commands/ and .claude/skills/ internally). No file scan needed.
-    // When the cache is empty (cold start, no active runtime), probe the SDK.
-    if (this.sdkCommands.length === 0 && this.probe) {
-      await this.ensureProbed();
+    let commands = context.runtimeCommands;
+    if (commands === undefined) {
+      const allowCachedRuntimeCommands = context.allowCachedRuntimeCommands !== false;
+      if (allowCachedRuntimeCommands && this.runtimeCommands.length > 0) {
+        commands = this.runtimeCommands;
+      } else {
+        const probedCommands = await this.ensureProbed();
+        commands = allowCachedRuntimeCommands && this.runtimeCommands.length > 0
+          ? this.runtimeCommands
+          : probedCommands;
+      }
     }
-    const runtimeEntries = this.sdkCommands
+    const runtimeEntries = commands
       .filter(cmd => !BUILTIN_HIDDEN_COMMANDS.has(cmd.name.toLowerCase()))
       .map(slashCommandToEntry);
     if (runtimeEntries.length > 0) {
@@ -94,21 +106,22 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
   }
 
   /** Probe the SDK for commands. Deduplicates concurrent calls. */
-  private async ensureProbed(): Promise<void> {
-    if (!this.probe) return;
+  private async ensureProbed(): Promise<SlashCommand[]> {
+    if (this.probedCommands) return this.probedCommands;
+    if (!this.probe) return [];
     if (!this.probePromise) {
       this.probePromise = this.probe().then((commands) => {
-        // Only apply probe results if the runtime hasn't provided fresher data
-        if (this.sdkCommands.length === 0 && commands.length > 0) {
-          this.sdkCommands = commands;
-        }
+        this.probedCommands = commands.map(command => ({ ...command }));
+        return this.probedCommands;
       }).catch(() => {
         // Probe is best-effort
+        this.probedCommands = [];
+        return this.probedCommands;
       }).finally(() => {
         this.probePromise = null;
       });
     }
-    await this.probePromise;
+    return await this.probePromise;
   }
 
   async listVaultEntries(): Promise<ProviderCommandEntry[]> {
@@ -145,6 +158,6 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
   }
 
   async refresh(): Promise<void> {
-    // Claude revalidation happens externally via setRuntimeCommands
+    this.probedCommands = null;
   }
 }

@@ -493,13 +493,13 @@ export class MessageRenderer {
       subagentAdapter?.protocol === 'lifecycle'
       && subagentAdapter.isHiddenTool(toolCall.name)
       && msg
-      && this.isLinkedProviderSubagentTool(toolCall, msg, subagentAdapter)
+      && this.isFullyOwnedProviderSubagentTool(toolCall, msg, subagentAdapter)
     ) return false;
 
     return true;
   }
 
-  private isLinkedProviderSubagentTool(
+  private isFullyOwnedProviderSubagentTool(
     toolCall: ToolCallInfo,
     msg: ChatMessage,
     adapter: ProviderSubagentLifecycleAdapter,
@@ -512,7 +512,7 @@ export class MessageRenderer {
         ?? adapter.buildSubagentInfo(sibling, msg.toolCalls ?? []).agentId;
       if (agentId) agentIdToSpawnId.set(agentId, sibling.id);
     }
-    return adapter.resolveSpawnToolIds(toolCall, agentIdToSpawnId).length > 0;
+    return adapter.isToolCallFullyOwned(toolCall, agentIdToSpawnId);
   }
 
   private isSilentWriteStdinTool(toolCall: ToolCallInfo): boolean {

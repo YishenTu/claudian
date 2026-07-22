@@ -88,6 +88,11 @@ type ProviderCommandWarmupEntry = {
   promise: Promise<ProviderCommandDiscoveryResult<SlashCommand>>;
 };
 
+type SdkCommandDiscovery = {
+  result: ProviderCommandDiscoveryResult<SlashCommand>;
+  runtimeCommands?: readonly SlashCommand[];
+};
+
 type RuntimeCommandSubscription = {
   runtime: ChatRuntime;
   unsubscribe: () => void;
@@ -206,6 +211,9 @@ export class TabManager implements TabManagerInterface {
         onStreamingChanged: (isStreaming) => {
           this.callbacks.onTabStreamingChanged?.(tab.id, isStreaming);
         },
+        onRewindingChanged: (isRewinding) => {
+          this.callbacks.onTabRewindingChanged?.(tab.id, isRewinding);
+        },
         onTitleChanged: (title) => {
           this.callbacks.onTabTitleChanged?.(tab.id, title);
         },
@@ -227,6 +235,10 @@ export class TabManager implements TabManagerInterface {
       // Initialize UI components with provider catalog
       initializeTabUI(tab, this.plugin, {
         getProviderCatalogConfig: () => this.getProviderCatalogConfig(tab),
+        onCommandContextChanged: () => {
+          this.bumpTabCommandContextRevision(tab.id);
+          tab.ui.slashCommandDropdown?.resetSdkSkillsCache();
+        },
         onProviderChanged: async (providerId) => {
           this.bumpTabCommandContextRevision(tab.id);
           await this.ensureTabWorkspaceServices(tab, providerId, 'provider-selection');
@@ -375,6 +387,11 @@ export class TabManager implements TabManagerInterface {
   async closeTab(tabId: TabId, force = false): Promise<boolean> {
     const tab = this.tabs.get(tabId);
     if (!tab) {
+      return false;
+    }
+
+    // Rewind is a provider/local-state transaction and cannot be interrupted by teardown.
+    if (tab.state.isRewinding) {
       return false;
     }
 
@@ -529,7 +546,7 @@ export class TabManager implements TabManagerInterface {
         isActive: tab.id === this.activeTabId,
         isStreaming: tab.state.isStreaming,
         needsAttention: tab.state.needsAttention,
-        canClose: this.tabs.size > 1 || !tab.state.isStreaming,
+        canClose: !tab.state.isRewinding && (this.tabs.size > 1 || !tab.state.isStreaming),
       });
     }
 
@@ -829,12 +846,10 @@ export class TabManager implements TabManagerInterface {
 
   /**
    * Gets provider-scoped SDK supported commands for a tab.
-   * Reuses a ready runtime from the same provider when available to avoid
-   * leaking commands across providers in mixed-provider workspaces.
    * @returns Array of SDK commands, or empty array if no service is ready.
    */
   async getSdkCommands(tabId?: TabId): Promise<SlashCommand[]> {
-    const result = await this.getSdkCommandDiscovery(tabId);
+    const { result } = await this.getSdkCommandDiscovery(tabId);
     return result.status === 'ready' ? [...result.items] : [];
   }
 
@@ -845,23 +860,30 @@ export class TabManager implements TabManagerInterface {
     if (!targetTab) return { status: 'empty' };
 
     const providerId = getTabProviderId(targetTab, this.plugin);
-    const result = await this.getSdkCommandDiscovery(targetTab.id);
+    const discovery = await this.getSdkCommandDiscovery(targetTab.id);
+    const { result } = discovery;
     if (result.status === 'error' || result.status === 'requires-session') {
       return result;
     }
 
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     if (!catalog) return { status: 'empty' };
-    const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
+    const entries = await catalog.listDropdownEntries({
+      includeBuiltIns: false,
+      allowCachedRuntimeCommands: discovery.runtimeCommands !== undefined,
+      ...(discovery.runtimeCommands !== undefined
+        ? { runtimeCommands: discovery.runtimeCommands }
+        : {}),
+    });
     return normalizeProviderCommandDiscoveryItems(entries);
   }
 
   private async getSdkCommandDiscovery(
     tabId?: TabId,
-  ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
+  ): Promise<SdkCommandDiscovery> {
     const targetTab = (tabId ? this.tabs.get(tabId) : this.getActiveTab()) ?? null;
     if (!targetTab) {
-      return { status: 'empty' };
+      return { result: { status: 'empty' } };
     }
 
     const providerId = getTabProviderId(targetTab, this.plugin);
@@ -871,7 +893,7 @@ export class TabManager implements TabManagerInterface {
 
     const staticCapabilities = ProviderRegistry.getCapabilities(providerId);
     if (!staticCapabilities.supportsProviderCommands) {
-      return { status: 'empty' };
+      return { result: { status: 'empty' } };
     }
 
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
@@ -883,48 +905,40 @@ export class TabManager implements TabManagerInterface {
       && runtimeCommandLoader
       && targetTab.id !== this.activeTabId
     ) {
-      catalog?.setRuntimeCommands([]);
-      return { status: 'empty' };
+      return { result: { status: 'empty' }, runtimeCommands: [] };
     }
     let result: ProviderCommandDiscoveryResult<SlashCommand> = { status: 'empty' };
+    let hasRuntimeSnapshot = false;
 
     const targetService = targetTab.service;
     if (runtimeCommandLoader) {
+      hasRuntimeSnapshot = true;
       result = await this.ensureProviderCommandRuntime(targetTab, providerId, context);
     } else if (
       targetService?.providerId === providerId
       && targetService.isReady()
       && !targetTab.runtimeSupervisor.isInvalidated
     ) {
+      hasRuntimeSnapshot = true;
       result = normalizeProviderCommandDiscoveryItems(
         await targetService.getSupportedCommands(),
       );
-    } else {
-      for (const tab of this.tabs.values()) {
-        if (tab.id === targetTab.id) {
-          continue;
-        }
-        if (
-          tab.service?.providerId === providerId
-          && tab.service.isReady()
-          && !tab.runtimeSupervisor.isInvalidated
-        ) {
-          result = normalizeProviderCommandDiscoveryItems(
-            await tab.service.getSupportedCommands(),
-          );
-          break;
-        }
-      }
     }
 
     if (
       catalog
+      && targetTab.id === this.activeTabId
       && this.isCommandContextCurrent(targetTab, providerId, commandContext)
       && (result.status === 'ready' || result.status === 'empty')
     ) {
       catalog.setRuntimeCommands(result.status === 'ready' ? [...result.items] : []);
     }
-    return result;
+    return {
+      result,
+      ...(hasRuntimeSnapshot && (result.status === 'ready' || result.status === 'empty')
+        ? { runtimeCommands: result.status === 'ready' ? result.items : [] }
+        : {}),
+    };
   }
 
   private async ensureProviderCommandRuntime(
@@ -1210,9 +1224,11 @@ export class TabManager implements TabManagerInterface {
       ) {
         return;
       }
-      ProviderWorkspaceRegistry.getCommandCatalog(providerId)?.setRuntimeCommands(
-        commands.map(command => ({ ...command })),
-      );
+      if (tab.id === this.activeTabId) {
+        ProviderWorkspaceRegistry.getCommandCatalog(providerId)?.setRuntimeCommands(
+          commands.map(command => ({ ...command })),
+        );
+      }
       this.providerCommandCache.delete(tab.id);
       tab.ui.slashCommandDropdown?.resetSdkSkillsCache();
     });

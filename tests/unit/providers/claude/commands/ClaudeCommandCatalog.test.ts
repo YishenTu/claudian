@@ -160,6 +160,27 @@ Deploy the app`,
       expect(probe).not.toHaveBeenCalled();
     });
 
+    it('probes independently when cached runtime fallback is disabled', async () => {
+      const adapter = createMockAdapter({});
+      const commands = new SlashCommandStorage(adapter);
+      const skills = new SkillStorage(adapter);
+      const probe = jest.fn().mockResolvedValue([
+        { id: 'sdk:cold', name: 'cold', description: 'Cold tab command', content: '', source: 'sdk' },
+      ]);
+      const catalog = new ClaudeCommandCatalog(commands, skills, probe);
+      catalog.setRuntimeCommands([
+        { id: 'sdk:active', name: 'active', description: 'Active tab command', content: '', source: 'sdk' },
+      ]);
+
+      const entries = await catalog.listDropdownEntries({
+        includeBuiltIns: false,
+        allowCachedRuntimeCommands: false,
+      });
+
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(entries.map(entry => entry.name)).toEqual(['cold']);
+    });
+
     it('deduplicates concurrent probe calls', async () => {
       const adapter = createMockAdapter({});
       const commands = new SlashCommandStorage(adapter);

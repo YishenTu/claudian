@@ -13,6 +13,7 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
+import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
 import {
   deleteSDKSession,
@@ -23,7 +24,6 @@ import {
   locateSDKSession,
   locateSDKSessions,
 } from './ClaudeHistoryStore';
-import { isClaudeSubagentToolName } from './claudeSubagentToolNames';
 import type { SDKSessionLocation } from './sdkSessionPaths';
 
 function chooseRicherResult(sdkResult?: string, cachedResult?: string): string | undefined {

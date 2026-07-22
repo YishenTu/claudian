@@ -1,6 +1,7 @@
 import type {
   ProviderCommandCatalog,
   ProviderCommandDropdownConfig,
+  ProviderCommandListContext,
 } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { SlashCommand } from '../../../core/types';
@@ -38,9 +39,11 @@ export class GrokCommandCatalog implements ProviderCommandCatalog {
   }
 
   async listDropdownEntries(
-    _context: { includeBuiltIns: boolean },
+    context: ProviderCommandListContext,
   ): Promise<ProviderCommandEntry[]> {
-    return this.runtimeCommands.map(slashCommandToEntry);
+    const commands = context.runtimeCommands
+      ?? (context.allowCachedRuntimeCommands === false ? [] : this.runtimeCommands);
+    return commands.map(slashCommandToEntry);
   }
 
   getDropdownConfig(): ProviderCommandDropdownConfig {
