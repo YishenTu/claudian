@@ -594,6 +594,65 @@ describe('PiChatRuntime', () => {
     expect(mockSubprocessInstances).toHaveLength(1);
   });
 
+  it('discovers exact native skill names through no-session get_commands', async () => {
+    mockRequestImplementation = async (type: string) => {
+      if (type === 'get_commands') {
+        return {
+          commands: [{
+            description: 'Shared review skill',
+            name: 'skill:shared-review',
+            scope: 'project',
+            source: 'skill',
+          }],
+        };
+      }
+      return {};
+    };
+    const runtime = new PiChatRuntime(createPlugin());
+
+    await expect(runtime.ensureReady({ allowSessionCreation: false })).resolves.toBe(true);
+    await expect(runtime.discoverSupportedCommands()).resolves.toEqual([{
+      content: '',
+      description: 'Shared review skill',
+      id: 'pi:skill:skill:shared-review',
+      kind: 'skill',
+      name: 'skill:shared-review',
+      source: 'sdk',
+    }]);
+
+    const launchSpec = mockSubprocessInstances[0].launchSpec as { args: string[] };
+    expect(launchSpec.args).toContain('--no-session');
+    expect(launchSpec.args).not.toContain('--approve');
+    expect(mockTransportInstances[0].request).not.toHaveBeenCalledWith('prompt', expect.anything());
+  });
+
+  it('propagates get_commands transport failures on the strict discovery path', async () => {
+    mockRequestImplementation = async (type: string) => {
+      if (type === 'get_commands') {
+        throw new Error('transport closed');
+      }
+      return {};
+    };
+    const runtime = new PiChatRuntime(createPlugin());
+
+    await runtime.ensureReady({ allowSessionCreation: false });
+
+    await expect(runtime.discoverSupportedCommands()).rejects.toThrow('transport closed');
+    await expect(runtime.getSupportedCommands()).resolves.toEqual([]);
+  });
+
+  it('rejects malformed get_commands responses instead of treating them as empty', async () => {
+    mockRequestImplementation = async (type: string) => (
+      type === 'get_commands' ? { unexpected: true } : {}
+    );
+    const runtime = new PiChatRuntime(createPlugin());
+
+    await runtime.ensureReady({ allowSessionCreation: false });
+
+    await expect(runtime.discoverSupportedCommands())
+      .rejects.toThrow('Pi returned malformed command metadata.');
+  });
+
   it('clamps stale effort selections to the selected Pi model thinking levels', async () => {
     const plugin = createPlugin();
     plugin.settings.providerConfigs.pi = {

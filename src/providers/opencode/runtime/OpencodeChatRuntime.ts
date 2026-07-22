@@ -101,6 +101,12 @@ interface ActiveTurn {
   sessionId: string;
 }
 
+interface SupportedCommandWaiter {
+  reject: (error: Error) => void;
+  resolve: (commands: SlashCommand[]) => void;
+  timeoutId: number;
+}
+
 class StreamChunkQueue {
   private closed = false;
   private readonly items: StreamChunk[] = [];
@@ -174,7 +180,12 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private lifecycleGeneration = 0;
   private restartRequiredAfterCancel = false;
   private sessionInvalidated = false;
-  private readonly supportedCommandWaiters: Array<(commands: SlashCommand[]) => void> = [];
+  private readonly pendingSupportedCommands = new Map<string, SlashCommand[]>();
+  private readonly supportedCommandListeners = new Set<(
+    commands: readonly SlashCommand[],
+  ) => void>();
+  private readonly supportedCommandWaiters: SupportedCommandWaiter[] = [];
+  private supportedCommandsAdvertised = false;
   private supportedCommands: SlashCommand[] = [];
   private sessionCwds = new Map<string, string>();
   private sessionId: string | null = null;
@@ -227,13 +238,17 @@ export class OpencodeChatRuntime implements ChatRuntime {
       || nextSessionId !== this.sessionId
       || nextDatabasePath !== this.currentDatabasePath;
     if (this.sessionId !== nextSessionId) {
+      this.rejectSupportedCommandWaiters(
+        new Error('OpenCode command discovery context changed.'),
+      );
+      this.pendingSupportedCommands.clear();
       this.currentSessionEffortConfigId = null;
       this.currentSessionEffortValue = null;
       this.currentSessionEffortValues = new Set<string>();
       this.currentSessionModelId = null;
       this.currentSessionModeId = null;
       this.sessionInvalidated = false;
-      this.setSupportedCommands([]);
+      this.clearSupportedCommands();
     }
     this.conversationId = nextConversationId;
     this.sessionId = nextSessionId;
@@ -368,7 +383,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       || this.currentLaunchKey !== nextLaunchKey;
 
     if (shouldRestart) {
-      await this.shutdownProcess();
+      await this.shutdownProcess({ preserveCommandWaiters: true });
       if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
         return false;
       }
@@ -594,7 +609,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   }
 
   async getSupportedCommands(): Promise<SlashCommand[]> {
-    if (this.supportedCommands.length > 0 && this.loadedSessionId === this.sessionId) {
+    if (this.supportedCommandsAdvertised && this.loadedSessionId === this.sessionId) {
       return [...this.supportedCommands];
     }
 
@@ -609,15 +624,45 @@ export class OpencodeChatRuntime implements ChatRuntime {
       return [];
     }
 
-    if (this.supportedCommands.length > 0) {
-      return [...this.supportedCommands];
-    }
-
     if (!this.sessionId || this.loadedSessionId !== this.sessionId) {
       return [];
     }
 
-    return this.waitForSupportedCommands();
+    try {
+      return await this.discoverSupportedCommands();
+    } catch {
+      return [];
+    }
+  }
+
+  discoverSupportedCommands(timeoutMs = 5_000): Promise<SlashCommand[]> {
+    if (this.supportedCommandsAdvertised && this.loadedSessionId === this.sessionId) {
+      return Promise.resolve(this.cloneSupportedCommands());
+    }
+
+    return new Promise<SlashCommand[]>((resolve, reject) => {
+      const waiter: SupportedCommandWaiter = {
+        reject,
+        resolve,
+        timeoutId: window.setTimeout(() => {
+          const index = this.supportedCommandWaiters.indexOf(waiter);
+          if (index >= 0) {
+            this.supportedCommandWaiters.splice(index, 1);
+          }
+          reject(new Error('Timed out waiting for OpenCode commands.'));
+        }, timeoutMs),
+      };
+      this.supportedCommandWaiters.push(waiter);
+    });
+  }
+
+  onSupportedCommandsChange(
+    listener: (commands: readonly SlashCommand[]) => void,
+  ): () => void {
+    this.supportedCommandListeners.add(listener);
+    return () => {
+      this.supportedCommandListeners.delete(listener);
+    };
   }
 
   cleanup(): void {
@@ -627,6 +672,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
     this.disposed = true;
     this.lifecycleGeneration += 1;
     this.activeTurn?.queue.close();
+    this.rejectSupportedCommandWaiters(new Error('OpenCode runtime stopped.'));
+    this.supportedCommandListeners.clear();
     void this.shutdownProcess();
   }
 
@@ -734,6 +781,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     this.unregisterTransportClose = transport.onClose((error) => {
       if (this.transport === transport) {
         this.setReady(false);
+        this.rejectSupportedCommandWaiters(error ?? new Error('OpenCode runtime closed.'));
         this.settleActiveTurn(error ?? new Error('OpenCode runtime closed'));
       }
     });
@@ -762,13 +810,17 @@ export class OpencodeChatRuntime implements ChatRuntime {
     await this.connection.initialize();
   }
 
-  private async shutdownProcess(): Promise<void> {
+  private async shutdownProcess(options?: { preserveCommandWaiters?: boolean }): Promise<void> {
     this.connectionGeneration += 1;
     this.setReady(false);
     this.settleActiveTurn();
     this.currentSessionModelId = null;
     this.currentSessionModeId = null;
-    this.setSupportedCommands([]);
+    if (!options?.preserveCommandWaiters) {
+      this.rejectSupportedCommandWaiters(new Error('OpenCode runtime stopped.'));
+    }
+    this.clearSupportedCommands();
+    this.pendingSupportedCommands.clear();
 
     this.unregisterTransportClose?.();
     this.unregisterTransportClose = null;
@@ -1331,7 +1383,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     try {
-      this.setSupportedCommands([]);
+      this.clearSupportedCommands();
       const response = await this.connection.newSession({
         cwd,
         mcpServers: [],
@@ -1342,6 +1394,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       this.loadedSessionId = response.sessionId;
       this.sessionId = response.sessionId;
       this.sessionCwds.set(response.sessionId, cwd);
+      this.publishPendingSupportedCommands(response.sessionId);
       await this.syncSessionModelState({
         configOptions: response.configOptions ?? null,
         models: response.models ?? null,
@@ -1358,6 +1411,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
       }
       return response.sessionId;
     } catch {
+      this.rejectSupportedCommandWaiters(new Error('Failed to create an OpenCode session.'));
       return null;
     }
   }
@@ -1372,7 +1426,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     try {
-      this.setSupportedCommands([]);
+      this.clearSupportedCommands();
       const response = await this.connection.loadSession({
         cwd,
         mcpServers: [],
@@ -1413,11 +1467,30 @@ export class OpencodeChatRuntime implements ChatRuntime {
     if (connectionGeneration !== this.connectionGeneration) {
       return;
     }
-    if (notification.sessionId !== this.sessionId) {
+    let normalized: ReturnType<AcpSessionUpdateNormalizer['normalize']>;
+    try {
+      normalized = this.sessionUpdateNormalizer.normalize(notification.update);
+    } catch {
+      if (notification.update.sessionUpdate === 'available_commands_update') {
+        this.rejectSupportedCommandWaiters(
+          new Error('OpenCode sent malformed command metadata.'),
+        );
+      }
       return;
     }
-
-    const normalized = this.sessionUpdateNormalizer.normalize(notification.update);
+    if (notification.sessionId !== this.sessionId) {
+      if (
+        normalized.type === 'commands'
+        && !this.sessionId
+        && this.supportedCommandWaiters.length > 0
+      ) {
+        this.pendingSupportedCommands.set(
+          notification.sessionId,
+          normalized.commands.map((command) => ({ ...command })),
+        );
+      }
+      return;
+    }
     if (normalized.type === 'config_options') {
       await this.syncSessionModelState({
         configOptions: normalized.configOptions,
@@ -1436,7 +1509,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
 
     if (normalized.type === 'commands') {
-      this.setSupportedCommands(normalized.commands);
+      this.publishSupportedCommands(normalized.commands);
       return;
     }
 
@@ -1512,35 +1585,51 @@ export class OpencodeChatRuntime implements ChatRuntime {
     return mapAcpApprovalDecision(decision, request.options);
   }
 
-  private setSupportedCommands(commands: SlashCommand[]): void {
+  private publishSupportedCommands(commands: SlashCommand[]): void {
     this.supportedCommands = commands.map((command) => ({ ...command }));
+    this.supportedCommandsAdvertised = true;
 
     const waiters = this.supportedCommandWaiters.splice(0);
     for (const waiter of waiters) {
-      waiter(this.supportedCommands);
+      window.clearTimeout(waiter.timeoutId);
+      waiter.resolve(this.cloneSupportedCommands());
+    }
+
+    const snapshot = Object.freeze(this.supportedCommands.map((command) => (
+      Object.freeze({ ...command })
+    )));
+    for (const listener of this.supportedCommandListeners) {
+      try {
+        listener(snapshot);
+      } catch {
+        // Command snapshot observers cannot affect the provider runtime.
+      }
     }
   }
 
-  private waitForSupportedCommands(timeoutMs = 250): Promise<SlashCommand[]> {
-    if (this.supportedCommands.length > 0) {
-      return Promise.resolve([...this.supportedCommands]);
+  private publishPendingSupportedCommands(sessionId: string): void {
+    const commands = this.pendingSupportedCommands.get(sessionId);
+    this.pendingSupportedCommands.clear();
+    if (commands) {
+      this.publishSupportedCommands(commands);
     }
+  }
 
-    return new Promise<SlashCommand[]>((resolve) => {
-      const waiter = (commands: SlashCommand[]) => {
-        window.clearTimeout(timeoutId);
-        resolve([...commands]);
-      };
-      const timeoutId = window.setTimeout(() => {
-        const index = this.supportedCommandWaiters.indexOf(waiter);
-        if (index >= 0) {
-          this.supportedCommandWaiters.splice(index, 1);
-        }
-        resolve([...this.supportedCommands]);
-      }, timeoutMs);
+  private clearSupportedCommands(): void {
+    this.supportedCommands = [];
+    this.supportedCommandsAdvertised = false;
+  }
 
-      this.supportedCommandWaiters.push(waiter);
-    });
+  private cloneSupportedCommands(): SlashCommand[] {
+    return this.supportedCommands.map((command) => ({ ...command }));
+  }
+
+  private rejectSupportedCommandWaiters(error: Error): void {
+    const waiters = this.supportedCommandWaiters.splice(0);
+    for (const waiter of waiters) {
+      window.clearTimeout(waiter.timeoutId);
+      waiter.reject(error);
+    }
   }
 
   private async readTextFile(
@@ -1596,7 +1685,8 @@ export class OpencodeChatRuntime implements ChatRuntime {
     this.loadedSessionId = null;
     this.currentSessionModelId = null;
     this.currentSessionModeId = null;
-    this.setSupportedCommands([]);
+    this.clearSupportedCommands();
+    this.pendingSupportedCommands.clear();
   }
 }
 

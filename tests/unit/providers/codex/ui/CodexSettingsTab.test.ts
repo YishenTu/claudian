@@ -116,10 +116,6 @@ jest.mock('@/providers/codex/ui/CodexModelPicker', () => ({
   renderCodexModelPicker: (...args: unknown[]) => mockRenderCodexModelPicker(...args),
 }));
 
-jest.mock('@/providers/codex/ui/CodexSkillSettings', () => ({
-  CodexSkillSettings: jest.fn(),
-}));
-
 jest.mock('@/providers/codex/ui/CodexSubagentSettings', () => ({
   CodexSubagentSettings: jest.fn(),
 }));
@@ -373,6 +369,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
 function createContext(plugin: any) {
   return {
     plugin,
+    renderAgentSkillSettings: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),
     refreshModelSelectors: jest.fn(),
     refreshTitleGenerationModelOptions: jest.fn(),
@@ -455,6 +452,20 @@ describe('CodexSettingsTab', () => {
       container,
       context,
       expect.objectContaining({ commandCatalog: null }),
+    );
+  });
+
+  it('renders the fixed-root shared skill manager', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+    const container = createContainer();
+
+    codexSettingsTabRenderer.render(container, context);
+
+    expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(
+      container,
+      'codex',
     );
   });
 

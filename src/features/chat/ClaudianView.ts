@@ -160,6 +160,10 @@ export class ClaudianView extends ItemView {
     this.tabManager?.invalidateProviderCommandCaches(providerIds);
   }
 
+  invalidateProviderResources(providerIds: ProviderId[], generation: number): void {
+    this.tabManager?.invalidateProviderResources(providerIds, generation);
+  }
+
   /** Updates provider-scoped hidden commands on all tabs after settings changes. */
   updateHiddenProviderCommands(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {

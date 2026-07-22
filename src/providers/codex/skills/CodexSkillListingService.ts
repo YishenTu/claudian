@@ -95,7 +95,8 @@ export function findPreferredCodexSkillByName(
 export class CodexSkillListingService implements CodexSkillListProvider {
   private cache: SkillMetadata[] | null = null;
   private cacheExpiresAt = 0;
-  private pending: Promise<SkillMetadata[]> | null = null;
+  private pending: { generation: number; promise: Promise<SkillMetadata[]> } | null = null;
+  private generation = 0;
   private readonly ttlMs: number;
   private readonly now: () => number;
 
@@ -109,34 +110,43 @@ export class CodexSkillListingService implements CodexSkillListProvider {
 
   async listSkills(options?: { forceReload?: boolean }): Promise<SkillMetadata[]> {
     if (options?.forceReload) {
-      const skills = await this.fetchSkills(true);
-      this.storeCache(skills);
-      return skills;
+      const generation = ++this.generation;
+      return this.startFetch(true, generation);
+    }
+
+    if (this.pending?.generation === this.generation) {
+      return this.pending.promise;
     }
 
     if (this.cache && this.now() < this.cacheExpiresAt) {
       return this.cache;
     }
 
-    if (this.pending) {
-      return this.pending;
-    }
+    return this.startFetch(false, this.generation);
+  }
 
-    this.pending = this.fetchSkills(false)
+  private startFetch(forceReload: boolean, generation: number): Promise<SkillMetadata[]> {
+    const promise = this.fetchSkills(forceReload)
       .then((skills) => {
-        this.storeCache(skills);
+        if (generation === this.generation) {
+          this.storeCache(skills);
+        }
         return skills;
       })
       .finally(() => {
-        this.pending = null;
+        if (this.pending?.promise === promise) {
+          this.pending = null;
+        }
       });
-
-    return this.pending;
+    this.pending = { generation, promise };
+    return promise;
   }
 
   invalidate(): void {
+    this.generation++;
     this.cache = null;
     this.cacheExpiresAt = 0;
+    this.pending = null;
   }
 
   private async fetchSkills(forceReload: boolean): Promise<SkillMetadata[]> {

@@ -122,6 +122,7 @@ export default class ClaudianPlugin extends Plugin {
   private pendingEnvironmentInvalidationGenerations = new Map<ProviderId, number>();
   private blockedEnvironmentInvalidationGenerations = new Map<ProviderId, number>();
   private environmentUpdateTail: Promise<void> = Promise.resolve();
+  private agentSkillResourceGeneration = 0;
   private isLoadingRemainingSessionMetadata = false;
   private hasLoadedAllSessionMetadata = false;
   private sessionMetadataLoadTimer: number | null = null;
@@ -773,6 +774,21 @@ export default class ClaudianPlugin extends Plugin {
     onCommitted?: SettingsCommit<ClaudianSettings>,
   ): Promise<void> {
     await this.settingsCoordinator.mutate(mutation, onCommitted);
+  }
+
+  getAgentSkillResourceGeneration(): number {
+    return this.agentSkillResourceGeneration;
+  }
+
+  async notifyAgentSkillsChanged(): Promise<void> {
+    const providerIds: ProviderId[] = ['codex', 'grok', 'pi', 'opencode'];
+    const generation = ++this.agentSkillResourceGeneration;
+
+    for (const view of this.getAllViews()) {
+      view.invalidateProviderResources(providerIds, generation);
+    }
+
+    await ProviderWorkspaceRegistry.getIfInitialized('codex')?.commandCatalog?.refresh();
   }
 
   async mutateSettingsConditionally(

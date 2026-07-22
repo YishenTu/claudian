@@ -353,7 +353,7 @@
       },
       "skills": {
         "name": "Codex スキル",
-        "desc": ".codex/skills/ または .agents/skills/ に保存された Vault レベルの Codex スキルを管理します。ホームレベルのスキルはここでは除外されます。",
+        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
         "hiddenName": "非表示のスキル",
         "hiddenDesc": "特定の Codex スキルをドロップダウンから非表示にします。先頭の $ なしでスキル名を1行に1つ入力してください。",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
@@ -371,6 +371,11 @@
         "name": "Codex 環境",
         "desc": "Codex が所有するランタイム変数のみ。OPENAI_* と CODEX_* 設定に使用します。Codex の自動検出に補助が必要な場合は、このプロバイダー環境ではなく共有 PATH にインストールディレクトリを追加してください。"
       }
+    },
+    "agentSkills": {
+      "sectionTitle": "Skills", "header": "Shared skills", "fixedRoot": "Managed in .agents/skills", "sharedExpectation": "Manage skills shared across all enabled providers in .agents/skills/.", "noSkills": "No shared skills configured. Click + to create one.", "skillBadge": "skill", "diagnosticsTitle": "Skills needing attention", "loadFailed": "Could not load shared skills.", "savedRefreshFailed": "Saved, but provider refresh failed.", "validationFailed": "Invalid skill: {message}", "collisionFailed": "A skill named \"{name}\" already exists.", "saveFailed": "Failed to save shared skill: {message}", "deleteFailed": "Failed to move shared skill to trash: {message}", "staleConflict": "This skill changed elsewhere; refresh before saving.", "created": "Shared skill \"{name}\" created.", "updated": "Shared skill \"{name}\" updated.", "deleted": "Shared skill \"{name}\" moved to trash.",
+      "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
+      "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
     },
     "codexSkills": {
       "modal": {

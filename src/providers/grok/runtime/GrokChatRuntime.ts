@@ -29,6 +29,7 @@ import { appendCurrentNote } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import { getVaultPath } from '../../../utils/path';
 import {
+  type AcpAvailableCommand,
   AcpClientConnection,
   AcpJsonRpcTransport,
   type AcpLoadSessionResponse,
@@ -44,10 +45,10 @@ import {
   type AcpUsageUpdate,
   buildAcpUsageInfo,
   extractAcpSessionModelState,
+  normalizeAcpAvailableCommands,
 } from '../../acp';
 import type { GrokAuxiliaryLifecycleCoordinator } from '../auxiliary/GrokAuxiliaryLifecycleCoordinator';
 import { GROK_PROVIDER_CAPABILITIES } from '../capabilities';
-import type { GrokCommandCatalog } from '../commands/GrokCommandCatalog';
 import { computeGrokEnvironmentHash } from '../env/GrokSettingsReconciler';
 import { resolveGrokSessionDirectory } from '../history/GrokHistoryPathResolver';
 import {
@@ -92,6 +93,46 @@ const GROK_MODEL_UPDATE_ALIASES = [
   'x.ai/models/update',
   '_x.ai/models/update',
 ] as const;
+
+function cloneSlashCommand(command: SlashCommand): SlashCommand {
+  return {
+    ...command,
+    allowedTools: command.allowedTools ? [...command.allowedTools] : undefined,
+    hooks: command.hooks
+      ? cloneJsonRecord(command.hooks)
+      : undefined,
+  };
+}
+
+function cloneJsonRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, cloneJsonValue(entry)]),
+  );
+}
+
+function cloneJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(cloneJsonValue);
+  if (value && typeof value === 'object') {
+    return cloneJsonRecord(value as Record<string, unknown>);
+  }
+  return value;
+}
+
+function freezeSlashCommand(command: SlashCommand): SlashCommand {
+  const clone = cloneSlashCommand(command);
+  if (clone.allowedTools) Object.freeze(clone.allowedTools);
+  if (clone.hooks) deepFreezeJsonValue(clone.hooks);
+  return Object.freeze(clone);
+}
+
+function deepFreezeJsonValue(value: unknown): void {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return;
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    deepFreezeJsonValue(child);
+  }
+  Object.freeze(value);
+}
+
 interface ActiveTurn {
   abortController: AbortController;
   cancelled: boolean;
@@ -137,6 +178,10 @@ interface PreparedGrokSessionResponse extends PreparedGrokSessionModels {
   sessionId: string;
 }
 
+interface GrokListCommandsResponse {
+  commands: AcpAvailableCommand[];
+}
+
 export interface GrokRuntimeProcess {
   readonly stdin: NodeJS.WritableStream;
   readonly stdout: NodeJS.ReadableStream;
@@ -150,7 +195,6 @@ export interface GrokRuntimeProcess {
 export interface GrokChatRuntimeOptions {
   capabilities?: Readonly<ProviderCapabilities>;
   cliResolver?: GrokCliResolverLike;
-  commandCatalog?: Pick<GrokCommandCatalog, 'setRuntimeCommands'> | null;
   modelCatalogCoordinator?: GrokLiveModelCoordinatorLike | null;
   lifecycle?: GrokAuxiliaryLifecycleCoordinator;
   processFactory?: (launchSpec: AcpSubprocessLaunchSpec) => GrokRuntimeProcess;
@@ -215,7 +259,11 @@ export class GrokChatRuntime implements ChatRuntime {
   private sessionInvalidated = false;
   private readonly sessionUpdateNormalizer = new AcpSessionUpdateNormalizer();
   private shutdownFlight: Promise<void> | null = null;
-  private supportedCommands: SlashCommand[] = [];
+  private readonly supportedCommandListeners = new Set<(
+    commands: readonly SlashCommand[],
+  ) => void>();
+  private supportedCommandsAdvertised = false;
+  private supportedCommands: readonly SlashCommand[] = [];
   private startingTurn: TurnExecution | null = null;
   private readonly toolStreamAdapter = createGrokToolStreamAdapter();
   private transport: AcpJsonRpcTransport | null = null;
@@ -224,7 +272,6 @@ export class GrokChatRuntime implements ChatRuntime {
 
   private readonly capabilities: Readonly<ProviderCapabilities>;
   private readonly cliResolver: GrokCliResolverLike;
-  private readonly commandCatalog: Pick<GrokCommandCatalog, 'setRuntimeCommands'> | null;
   private readonly modelCatalogCoordinator: GrokLiveModelCoordinatorLike | null;
   private readonly lifecycle: GrokAuxiliaryLifecycleCoordinator | null;
   private readonly processFactory: (launchSpec: AcpSubprocessLaunchSpec) => GrokRuntimeProcess;
@@ -236,7 +283,6 @@ export class GrokChatRuntime implements ChatRuntime {
   ) {
     this.capabilities = options.capabilities ?? GROK_PROVIDER_CAPABILITIES;
     this.cliResolver = options.cliResolver ?? new GrokCliResolver();
-    this.commandCatalog = options.commandCatalog ?? null;
     this.modelCatalogCoordinator = options.modelCatalogCoordinator ?? null;
     this.lifecycle = options.lifecycle ?? null;
     this.processFactory = options.processFactory ?? (spec => new AcpSubprocess(spec));
@@ -276,7 +322,7 @@ export class GrokChatRuntime implements ChatRuntime {
       this.currentSessionModelId = null;
       this.loadedSessionId = null;
       this.sessionInvalidated = false;
-      this.setSupportedCommands([]);
+      this.setSupportedCommands([], false);
       this.requestRouter.setActiveSessionId(nextSessionId);
     }
     this.conversationId = nextConversationId;
@@ -578,7 +624,7 @@ export class GrokChatRuntime implements ChatRuntime {
     this.currentLaunchKey = null;
     this.sessionInvalidated = false;
     this.requestRouter.setActiveSessionId(null);
-    this.setSupportedCommands([]);
+    this.setSupportedCommands([], false);
     void this.shutdownProcess();
   }
 
@@ -602,7 +648,46 @@ export class GrokChatRuntime implements ChatRuntime {
       const ready = await this.ensureReady({ allowSessionCreation: false });
       if (!ready) return [];
     }
-    return this.supportedCommands.map(command => ({ ...command }));
+    return this.supportedCommands.map(cloneSlashCommand);
+  }
+
+  async discoverSupportedCommands(timeoutMs = 5_000): Promise<SlashCommand[]> {
+    const ready = await this.ensureReady({ allowSessionCreation: false });
+    const transport = this.transport;
+    if (!ready || !transport || transport.isClosed) {
+      throw new Error('Grok command transport is unavailable.');
+    }
+    const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
+    const response = await transport.request<GrokListCommandsResponse>(
+      '_x.ai/commands/list',
+      { cwd },
+      { timeoutMs },
+    );
+    if (!Array.isArray(response.commands)) {
+      throw new Error('Grok returned malformed command metadata.');
+    }
+    return normalizeAcpAvailableCommands(response.commands);
+  }
+
+  getReadySupportedCommandsSnapshot(): SlashCommand[] | null {
+    if (
+      this.disposed
+      || !this.ready
+      || !this.sessionId
+      || this.loadedSessionId !== this.sessionId
+      || !this.supportedCommandsAdvertised
+    ) {
+      return null;
+    }
+    return this.supportedCommands.map(cloneSlashCommand);
+  }
+
+  onSupportedCommandsChange(
+    listener: (commands: readonly SlashCommand[]) => void,
+  ): () => void {
+    if (this.disposed) return () => undefined;
+    this.supportedCommandListeners.add(listener);
+    return () => this.supportedCommandListeners.delete(listener);
   }
 
   getAuxiliaryModel(): string | null {
@@ -628,6 +713,7 @@ export class GrokChatRuntime implements ChatRuntime {
       if (this.startingTurn === startingTurn) this.startingTurn = null;
     }
     this.requestRouter.dispose();
+    this.supportedCommandListeners.clear();
     this.lifecycle?.untrack(this);
     void this.shutdownProcess();
   }
@@ -972,7 +1058,7 @@ export class GrokChatRuntime implements ChatRuntime {
     const pendingNotifications: PendingGrokSessionNotification[] = [];
     this.pendingNewSessionNotifications = pendingNotifications;
     try {
-      this.setSupportedCommands([]);
+      this.setSupportedCommands([], false);
       const response = await this.connection.newSession({
         _meta: this.buildSessionMeta(promptSettings),
         cwd,
@@ -1012,7 +1098,7 @@ export class GrokChatRuntime implements ChatRuntime {
   ): Promise<boolean> {
     if (!this.connection) return false;
     try {
-      this.setSupportedCommands([]);
+      this.setSupportedCommands([], false);
       const response = await this.connection.loadSession({
         _meta: this.buildSessionMeta(promptSettings),
         cwd,
@@ -1275,9 +1361,17 @@ export class GrokChatRuntime implements ChatRuntime {
     }
   }
 
-  private setSupportedCommands(commands: SlashCommand[]): void {
-    this.supportedCommands = commands.map(command => ({ ...command }));
-    this.commandCatalog?.setRuntimeCommands(this.supportedCommands);
+  private setSupportedCommands(commands: SlashCommand[], advertised = true): void {
+    const snapshot = Object.freeze(commands.map(command => freezeSlashCommand(command)));
+    this.supportedCommandsAdvertised = advertised;
+    this.supportedCommands = snapshot;
+    for (const listener of this.supportedCommandListeners) {
+      try {
+        listener(snapshot);
+      } catch {
+        // A UI subscriber cannot interrupt the provider protocol stream.
+      }
+    }
   }
 
   private settleActiveTurn(error?: Error): void {

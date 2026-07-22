@@ -7,7 +7,7 @@ export const CODEX_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Objec
   supportsPlanMode: true,
   supportsRewind: false,
   supportsFork: true,
-  supportsProviderCommands: false,
+  supportsProviderCommands: true,
   supportsImageAttachments: true,
   supportsInstructionMode: true,
   supportsLegacySubagentTools: false,

@@ -1,7 +1,7 @@
 const mockCreatedRuntimes: Array<{
   cleanup: jest.Mock;
+  discoverSupportedCommands: jest.Mock;
   ensureReady: jest.Mock;
-  getSupportedCommands: jest.Mock;
   providerId: string;
   syncConversationState: jest.Mock;
 }> = [];
@@ -10,10 +10,16 @@ jest.mock('@/providers/pi/runtime/PiChatRuntime', () => ({
   PiChatRuntime: jest.fn().mockImplementation(() => {
     const runtime = {
       cleanup: jest.fn(),
-      ensureReady: jest.fn().mockResolvedValue(true),
-      getSupportedCommands: jest.fn().mockResolvedValue([
-        { content: '', id: 'pi:runtime:test', name: 'test', source: 'sdk' },
+      discoverSupportedCommands: jest.fn().mockResolvedValue([
+        {
+          content: '',
+          id: 'pi:skill:skill:shared-review',
+          kind: 'skill',
+          name: 'skill:shared-review',
+          source: 'sdk',
+        },
       ]),
+      ensureReady: jest.fn().mockResolvedValue(true),
       providerId: 'pi',
       syncConversationState: jest.fn(),
     };
@@ -45,11 +51,30 @@ describe('PiRuntimeCommandLoader', () => {
     mockCreatedRuntimes.length = 0;
   });
 
+  it('builds a deterministic fingerprint without settings or environment text', () => {
+    const loader = new PiRuntimeCommandLoader();
+    const settings = {
+      providerConfigs: {
+        pi: {
+          cliPath: '/private/provider/bin/pi',
+          enabled: true,
+          environmentVariables: 'SECRET_SENTINEL=do-not-retain',
+        },
+      },
+    };
+
+    const fingerprint = loader.getCacheFingerprint(settings);
+
+    expect(fingerprint).toBe('pi:commands:v1:enabled');
+    expect(fingerprint).not.toContain('SECRET_SENTINEL');
+    expect(fingerprint).not.toContain('/private/provider');
+  });
+
   it('does not reuse a live runtime for a pre-session conversation when session creation is disallowed', async () => {
     const runtime = {
       cleanup: jest.fn(),
+      discoverSupportedCommands: jest.fn(),
       ensureReady: jest.fn(),
-      getSupportedCommands: jest.fn(),
       isReady: jest.fn().mockReturnValue(true),
       providerId: 'pi',
       syncConversationState: jest.fn(),
@@ -67,7 +92,11 @@ describe('PiRuntimeCommandLoader', () => {
       runtime: runtime as any,
     });
 
-    expect(commands).toEqual([]);
+    expect(commands).toEqual({
+      message: 'Pi command discovery is unavailable for this tab state.',
+      retryable: true,
+      status: 'error',
+    });
     expect(runtime.ensureReady).not.toHaveBeenCalled();
     expect(runtime.syncConversationState).not.toHaveBeenCalled();
     expect(PiChatRuntime).not.toHaveBeenCalled();
@@ -87,9 +116,14 @@ describe('PiRuntimeCommandLoader', () => {
       runtime: null,
     });
 
-    expect(commands).toEqual([
-      { content: '', id: 'pi:runtime:test', name: 'test', source: 'sdk' },
-    ]);
+    expect(commands).toEqual({
+      items: [expect.objectContaining({
+        id: 'pi:skill:skill:shared-review',
+        kind: 'skill',
+        name: 'skill:shared-review',
+      })],
+      status: 'ready',
+    });
     expect(PiChatRuntime).toHaveBeenCalledTimes(1);
     expect(mockCreatedRuntimes[0].syncConversationState).not.toHaveBeenCalled();
     expect(mockCreatedRuntimes[0].ensureReady).toHaveBeenCalledWith({ allowSessionCreation: false });
@@ -105,9 +139,13 @@ describe('PiRuntimeCommandLoader', () => {
       runtime: null,
     });
 
-    expect(commands).toEqual([
-      { content: '', id: 'pi:runtime:test', name: 'test', source: 'sdk' },
-    ]);
+    expect(commands).toEqual({
+      items: [expect.objectContaining({
+        kind: 'skill',
+        name: 'skill:shared-review',
+      })],
+      status: 'ready',
+    });
     expect(PiChatRuntime).toHaveBeenCalledTimes(1);
     expect(mockCreatedRuntimes[0].syncConversationState).not.toHaveBeenCalled();
     expect(mockCreatedRuntimes[0].ensureReady).toHaveBeenCalledWith({ allowSessionCreation: false });
@@ -117,10 +155,10 @@ describe('PiRuntimeCommandLoader', () => {
   it('reuses a ready Pi runtime without creating a command-only process', async () => {
     const runtime = {
       cleanup: jest.fn(),
-      ensureReady: jest.fn().mockResolvedValue(true),
-      getSupportedCommands: jest.fn().mockResolvedValue([
+      discoverSupportedCommands: jest.fn().mockResolvedValue([
         { content: '', id: 'pi:runtime:live', name: 'live', source: 'sdk' },
       ]),
+      ensureReady: jest.fn().mockResolvedValue(true),
       isReady: jest.fn().mockReturnValue(true),
       providerId: 'pi',
       syncConversationState: jest.fn(),
@@ -138,12 +176,49 @@ describe('PiRuntimeCommandLoader', () => {
       runtime: runtime as any,
     });
 
-    expect(commands).toEqual([
-      { content: '', id: 'pi:runtime:live', name: 'live', source: 'sdk' },
-    ]);
+    expect(commands).toEqual({
+      items: [{ content: '', id: 'pi:runtime:live', name: 'live', source: 'sdk' }],
+      status: 'ready',
+    });
     expect(PiChatRuntime).not.toHaveBeenCalled();
     expect(runtime.syncConversationState).toHaveBeenCalledWith(conversation, ['docs']);
     expect(runtime.ensureReady).toHaveBeenCalledWith({ allowSessionCreation: false });
     expect(runtime.cleanup).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes an authoritative empty response from transport failure', async () => {
+    const loader = new PiRuntimeCommandLoader();
+    const emptyRuntime = {
+      cleanup: jest.fn(),
+      discoverSupportedCommands: jest.fn().mockResolvedValue([]),
+      ensureReady: jest.fn().mockResolvedValue(true),
+      isReady: jest.fn().mockReturnValue(true),
+      providerId: 'pi',
+      syncConversationState: jest.fn(),
+    };
+    const failedRuntime = {
+      ...emptyRuntime,
+      discoverSupportedCommands: jest.fn().mockRejectedValue(new Error('SECRET_SENTINEL transport failed')),
+    };
+    const conversation = createConversation({ sessionId: 'session-1' });
+
+    await expect(loader.loadCommands({
+      conversation,
+      externalContextPaths: [],
+      plugin: {} as any,
+      runtime: emptyRuntime as any,
+    })).resolves.toEqual({ status: 'empty' });
+    const failure = await loader.loadCommands({
+      conversation,
+      externalContextPaths: [],
+      plugin: {} as any,
+      runtime: failedRuntime as any,
+    });
+    expect(failure).toEqual({
+      message: 'Could not load Pi commands.',
+      retryable: true,
+      status: 'error',
+    });
+    expect(JSON.stringify(failure)).not.toContain('SECRET_SENTINEL');
   });
 });

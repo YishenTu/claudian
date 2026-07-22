@@ -353,7 +353,7 @@
       },
       "skills": {
         "name": "Codex 技能",
-        "desc": "管理存储在 .codex/skills/ 或 .agents/skills/ 中的 Vault 级 Codex 技能。此处不包含主目录级技能。",
+        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
         "hiddenName": "隐藏技能",
         "hiddenDesc": "从下拉菜单中隐藏特定 Codex 技能。每行输入一个技能名称，不带前导 $。",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
@@ -371,6 +371,11 @@
         "name": "Codex 环境",
         "desc": "仅限 Codex 拥有的运行时变量。用于 OPENAI_* 和 CODEX_* 设置。如果 Codex 自动检测需要帮助，请把安装目录添加到共享 PATH，而不是此提供商环境。"
       }
+    },
+    "agentSkills": {
+      "sectionTitle": "Skills", "header": "Shared skills", "fixedRoot": "Managed in .agents/skills", "sharedExpectation": "Manage skills shared across all enabled providers in .agents/skills/.", "noSkills": "No shared skills configured. Click + to create one.", "skillBadge": "skill", "diagnosticsTitle": "Skills needing attention", "loadFailed": "Could not load shared skills.", "savedRefreshFailed": "Saved, but provider refresh failed.", "validationFailed": "Invalid skill: {message}", "collisionFailed": "A skill named \"{name}\" already exists.", "saveFailed": "Failed to save shared skill: {message}", "deleteFailed": "Failed to move shared skill to trash: {message}", "staleConflict": "This skill changed elsewhere; refresh before saving.", "created": "Shared skill \"{name}\" created.", "updated": "Shared skill \"{name}\" updated.", "deleted": "Shared skill \"{name}\" moved to trash.",
+      "modal": { "titleEdit": "Edit Shared Skill", "titleAdd": "Add Shared Skill", "name": "Skill name", "nameDesc": "Lowercase letters and numbers separated by single hyphens", "namePlaceholder": "code-reviewer", "description": "Description", "descriptionDesc": "Required portable description used by providers to select the skill", "descriptionPlaceholder": "Reviews code for correctness and maintainability", "instructions": "Instructions", "instructionsDesc": "Required SKILL.md instructions", "instructionsPlaceholder": "Review the supplied code and report actionable findings..." },
+      "delete": { "title": "Delete Shared Skill", "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.", "confirm": "Move to trash" }
     },
     "codexSkills": {
       "modal": {

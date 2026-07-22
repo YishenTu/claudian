@@ -6,8 +6,7 @@ import type { VaultFileAdapter } from './VaultFileAdapter';
 
 /**
  * Filesystem adapter rooted at the user's home directory.
- * Implements the same interface as VaultFileAdapter so storage
- * classes (like CodexSkillStorage) can scan home-level paths.
+ * Implements the common file methods used by provider-owned home-level storage.
  */
 export class HomeFileAdapter implements Pick<VaultFileAdapter,
   'exists' | 'read' | 'write' | 'delete' | 'deleteFolder' | 'listFolders' | 'ensureFolder'

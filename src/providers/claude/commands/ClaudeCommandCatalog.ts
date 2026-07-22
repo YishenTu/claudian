@@ -3,6 +3,7 @@ import type {
   ProviderCommandDropdownConfig,
 } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
+import type { ProviderVaultEntryRepository } from '../../../core/providers/commands/ProviderVaultEntryRepository';
 import type { SlashCommand } from '../../../core/types';
 import { isSkill } from '../../../utils/slashCommand';
 import type { SkillStorage } from '../storage/SkillStorage';
@@ -61,7 +62,7 @@ const BUILTIN_HIDDEN_COMMANDS = new Set([
 
 export type CommandProbe = () => Promise<SlashCommand[]>;
 
-export class ClaudeCommandCatalog implements ProviderCommandCatalog {
+export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVaultEntryRepository {
   private sdkCommands: SlashCommand[] = [];
   private probePromise: Promise<void> | null = null;
 

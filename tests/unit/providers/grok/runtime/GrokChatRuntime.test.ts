@@ -6,7 +6,6 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderCapabilities } from '@/core/providers/types';
 import type { AcpSubprocessLaunchSpec } from '@/providers/acp';
 import { GrokAuxiliaryLifecycleCoordinator } from '@/providers/grok/auxiliary/GrokAuxiliaryLifecycleCoordinator';
-import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog';
 import {
   GrokChatRuntime,
   type GrokRuntimeProcess,
@@ -48,6 +47,7 @@ class FakeGrokProcess implements GrokRuntimeProcess {
     readonly launchSpec: AcpSubprocessLaunchSpec,
     private readonly handlers: {
       cancel?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
+      commandsList?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       initialize?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       load?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
       newSession?: (message: JsonRpcMessage, process: FakeGrokProcess) => void;
@@ -129,6 +129,10 @@ class FakeGrokProcess implements GrokRuntimeProcess {
           authMethods: [{ id: 'grok-login', type: 'agent' }],
           protocolVersion: 1,
         });
+        return;
+      case '_x.ai/commands/list':
+        if (this.handlers.commandsList) this.handlers.commandsList(message, this);
+        else this.respond(message, { commands: [] });
         return;
       case 'session/new':
         if (this.handlers.newSession) this.handlers.newSession(message, this);
@@ -220,7 +224,6 @@ function createHarness(params: {
   lifecycle?: GrokAuxiliaryLifecycleCoordinator;
   sessionDirectory?: string | null;
 } = {}): {
-  catalog: GrokCommandCatalog;
   host: ProviderHost;
   liveModels: jest.Mock;
   process: FakeGrokProcess;
@@ -228,14 +231,12 @@ function createHarness(params: {
   runtime: GrokChatRuntime;
 } {
   const host = params.host ?? createHost();
-  const catalog = new GrokCommandCatalog();
   const liveModels = jest.fn().mockResolvedValue({ changed: false });
   const processes: FakeGrokProcess[] = [];
   let process!: FakeGrokProcess;
   const runtime = new GrokChatRuntime(host, {
     capabilities: CAPABILITIES,
     cliResolver: { resolveFromSettings: () => '/opt/grok/bin/grok' },
-    commandCatalog: catalog,
     lifecycle: params.lifecycle,
     modelCatalogCoordinator: { mergeLiveModels: liveModels },
     processFactory: (launchSpec) => {
@@ -245,7 +246,7 @@ function createHarness(params: {
     },
     resolveSessionDirectory: () => params.sessionDirectory ?? null,
   });
-  return { catalog, host, liveModels, get process() { return process; }, processes, runtime };
+  return { host, liveModels, get process() { return process; }, processes, runtime };
 }
 
 async function collect(
@@ -341,6 +342,40 @@ describe('GrokChatRuntime', () => {
 
     expect(harness.process.requests.map(request => request.method)).toEqual(['initialize']);
     expect(harness.runtime.getSessionId()).toBeNull();
+  });
+
+  it('lists exact provider commands before a session without sending a prompt', async () => {
+    const harness = createHarness({
+      handlers: {
+        commandsList(message, process) {
+          process.respond(message, {
+            commands: [{
+              description: 'Run the shared skill',
+              input: { hint: '[request]' },
+              name: '/repo:shared-review',
+            }],
+          });
+        },
+      },
+    });
+
+    await expect(harness.runtime.discoverSupportedCommands()).resolves.toEqual([{
+      argumentHint: '[request]',
+      content: '',
+      description: 'Run the shared skill',
+      id: 'acp:repo:shared-review',
+      name: 'repo:shared-review',
+      source: 'sdk',
+    }]);
+
+    expect(harness.process.requests.map(request => request.method)).toEqual([
+      'initialize',
+      '_x.ai/commands/list',
+    ]);
+    expect(record(harness.process.requests[1]?.params)).toEqual({ cwd: VAULT_PATH });
+    expect(harness.process.requests.some(request => request.method === 'session/new')).toBe(false);
+    expect(harness.process.requests.some(request => request.method === 'session/load')).toBe(false);
+    expect(harness.process.requests.some(request => request.method === 'session/prompt')).toBe(false);
   });
 
   it('registers owner readiness during a held transition for future quiescence', async () => {
@@ -718,14 +753,53 @@ describe('GrokChatRuntime', () => {
     expect(harness.process.requests.filter(request => request.method === 'session/load')).toHaveLength(1);
   });
 
-  it('replays matching command metadata advertised before session/new returns', async () => {
+  it('publishes an immutable qualified command snapshot advertised before session/new returns', async () => {
     const harness = createHarness({
       handlers: {
         newSession(message, process) {
           process.notify('session/update', {
             sessionId: 'session-new',
             update: {
-              availableCommands: [{ description: 'Review changes', name: '/review' }],
+              availableCommands: [{ description: 'Review changes', name: '/local:review' }],
+              sessionUpdate: 'available_commands_update',
+            },
+          });
+          process.respond(message, sessionResponse('session-new'));
+        },
+      },
+    });
+    const snapshots: ReadonlyArray<unknown>[] = [];
+    harness.runtime.onSupportedCommandsChange(commands => snapshots.push(commands));
+
+    await expect(harness.runtime.ensureReady()).resolves.toBe(true);
+
+    await expect(harness.runtime.getSupportedCommands()).resolves.toEqual([
+      expect.objectContaining({ name: 'local:review' }),
+    ]);
+    const advertised = snapshots.find(snapshot => snapshot.length > 0);
+    expect(advertised).toEqual([expect.objectContaining({ name: 'local:review' })]);
+    expect(Object.isFrozen(advertised)).toBe(true);
+    expect(Object.isFrozen(advertised?.[0])).toBe(true);
+    harness.runtime.cleanup();
+  });
+
+  it('does not treat a ready session as an authoritative empty command snapshot', async () => {
+    const harness = createHarness();
+
+    await expect(harness.runtime.ensureReady()).resolves.toBe(true);
+
+    expect(harness.runtime.getReadySupportedCommandsSnapshot()).toBeNull();
+    harness.runtime.cleanup();
+  });
+
+  it('retains an explicitly advertised empty command snapshot as authoritative', async () => {
+    const harness = createHarness({
+      handlers: {
+        newSession(message, process) {
+          process.notify('session/update', {
+            sessionId: 'session-new',
+            update: {
+              availableCommands: [],
               sessionUpdate: 'available_commands_update',
             },
           });
@@ -736,12 +810,7 @@ describe('GrokChatRuntime', () => {
 
     await expect(harness.runtime.ensureReady()).resolves.toBe(true);
 
-    await expect(harness.runtime.getSupportedCommands()).resolves.toEqual([
-      expect.objectContaining({ name: 'review' }),
-    ]);
-    await expect(harness.catalog.listDropdownEntries({ includeBuiltIns: true })).resolves.toEqual([
-      expect.objectContaining({ name: 'review', providerId: 'grok' }),
-    ]);
+    expect(harness.runtime.getReadySupportedCommandsSnapshot()).toEqual([]);
     harness.runtime.cleanup();
   });
 
@@ -780,6 +849,8 @@ describe('GrokChatRuntime', () => {
       },
     });
     harness.runtime.syncConversationState({ providerState: {}, sessionId: 'saved-session' });
+    const listener = jest.fn();
+    harness.runtime.onSupportedCommandsChange(listener);
 
     const chunks = await collect(harness.runtime);
 
@@ -789,8 +860,8 @@ describe('GrokChatRuntime', () => {
     await expect(harness.runtime.getSupportedCommands()).resolves.toEqual([
       expect.objectContaining({ name: 'review' }),
     ]);
-    await expect(harness.catalog.listDropdownEntries({ includeBuiltIns: true })).resolves.toEqual([
-      expect.objectContaining({ name: 'review', providerId: 'grok' }),
+    expect(listener).toHaveBeenCalledWith([
+      expect.objectContaining({ name: 'review' }),
     ]);
   });
 

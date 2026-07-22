@@ -57,5 +57,8 @@ const cliResolver = ProviderWorkspaceRegistry.getCliResolver(providerId);
 - Plan mode is capability-driven. Do not hardcode provider IDs in feature logic unless the provider contract cannot express the distinction.
 - Command discovery differs by provider:
   - Claude merges runtime-discovered commands with vault commands and skills.
-  - Codex skills come from `CodexSkillCatalog` and do not depend on runtime command discovery.
+  - Codex skills come from app-server `skills/list` through `CodexSkillCatalog`.
   - OpenCode and Pi expose runtime commands through their provider protocols.
+- Shared skill management is a separate settings-owned flow over `.agents/skills` for Codex, Grok, Pi, and OpenCode. Runtime command catalogs must never import, scan, or synthesize entries from that repository.
+- Claude keeps its own `.claude/commands` and `.claude/skills` repository. Legacy provider skill roots are not migrated or managed.
+- Provider command caches and live snapshots are resource-generation fenced; cache identities contain only provider-owned non-secret fingerprints and monotonic generations.

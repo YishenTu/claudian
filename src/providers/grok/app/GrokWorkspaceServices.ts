@@ -13,6 +13,7 @@ import { GrokCliResolver } from '../runtime/GrokCliResolver';
 import { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
 import { GrokModelCatalogService } from '../runtime/GrokModelCatalogService';
 import { grokSettingsTabRenderer } from '../ui/GrokSettingsTab';
+import { GrokRuntimeCommandLoader } from './GrokRuntimeCommandLoader';
 
 export interface GrokWorkspaceServices extends ProviderWorkspaceServices {
   auxiliaryLifecycle: GrokAuxiliaryLifecycleCoordinator;
@@ -47,6 +48,7 @@ export async function createGrokWorkspaceServices(
     cliResolver: new GrokCliResolver(),
     commandCatalog: new GrokCommandCatalog(),
     modelCatalogCoordinator,
+    runtimeCommandLoader: new GrokRuntimeCommandLoader(),
     settingsTabRenderer: grokSettingsTabRenderer,
     tabWarmupPolicy: grokTabWarmupPolicy,
     refreshModelCatalog: context => modelCatalogCoordinator.refreshModelCatalog(context),

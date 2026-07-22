@@ -88,8 +88,9 @@ describe('ProviderWorkspaceRegistry', () => {
 
   it('returns the runtime command loader for a provider', () => {
     const runtimeCommandLoader = {
+      getCacheFingerprint: jest.fn().mockReturnValue('enabled:bundled-cli'),
       isAvailable: jest.fn().mockReturnValue(true),
-      loadCommands: jest.fn().mockResolvedValue([]),
+      loadCommands: jest.fn().mockResolvedValue({ status: 'empty' }),
     };
 
     ProviderWorkspaceRegistry.setServices('opencode', {
@@ -97,6 +98,30 @@ describe('ProviderWorkspaceRegistry', () => {
     });
 
     expect(ProviderWorkspaceRegistry.getRuntimeCommandLoader('opencode')).toBe(runtimeCommandLoader);
+  });
+
+  it('keeps editable vault repositories separate from runtime command catalogs', () => {
+    const commandCatalog = {
+      listDropdownEntries: jest.fn(),
+      setRuntimeCommands: jest.fn(),
+      getDropdownConfig: jest.fn(),
+      refresh: jest.fn(),
+    };
+    const vaultCommandRepository = {
+      listVaultEntries: jest.fn(),
+      saveVaultEntry: jest.fn(),
+      deleteVaultEntry: jest.fn(),
+    };
+
+    ProviderWorkspaceRegistry.setServices('claude', {
+      commandCatalog,
+      vaultCommandRepository,
+    });
+
+    const services = ProviderWorkspaceRegistry.getServices('claude');
+    expect(services?.commandCatalog).toBe(commandCatalog);
+    expect(services?.vaultCommandRepository).toBe(vaultCommandRepository);
+    expect(commandCatalog).not.toHaveProperty('saveVaultEntry');
   });
 
   it('returns the tab warmup policy for a provider', () => {

@@ -13,6 +13,7 @@ export interface FeatureTabManagerHost {
   switchToTab(tabId: TabId): Promise<void>;
   broadcastToAllTabs(action: (runtime: ChatRuntime) => Promise<void>): Promise<void>;
   recycleProviderRuntimes(providerIds: ProviderId | ProviderId[]): Promise<void>;
+  invalidateProviderResources(providerIds: ProviderId | ProviderId[], generation: number): void;
 }
 
 export interface FeatureViewHost extends TabManagerViewHost {
@@ -21,6 +22,7 @@ export interface FeatureViewHost extends TabManagerViewHost {
   refreshModelSelector(): void;
   refreshTabControls(): void;
   updateHiddenProviderCommands(): void;
+  invalidateProviderResources(providerIds: ProviderId[], generation: number): void;
 }
 
 /** Application capabilities consumed by user-facing features. */
@@ -34,6 +36,8 @@ export interface FeatureHost {
     mutation: (settings: ClaudianSettings) => void | Promise<void>,
   ): Promise<void>;
   getActiveEnvironmentVariables(providerId?: ProviderId): string;
+  getAgentSkillResourceGeneration(): number;
+  notifyAgentSkillsChanged(): Promise<void>;
 
   createConversation(options?: {
     providerId?: ProviderId;

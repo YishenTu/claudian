@@ -48,6 +48,7 @@ function createMockPlugin(overrides: Record<string, unknown> = {}): any {
 
 describe('OpencodeChatRuntime', () => {
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -105,6 +106,143 @@ describe('OpencodeChatRuntime', () => {
         source: 'sdk',
       },
     ]);
+  });
+
+  it('captures a command notification that arrives before session/new resolves', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    let resolveSession!: (value: { sessionId: string }) => void;
+    const newSession = jest.fn(() => new Promise<{ sessionId: string }>((resolve) => {
+      resolveSession = resolve;
+    }));
+    (runtime as any).connection = { newSession };
+
+    const commandsPromise = runtime.discoverSupportedCommands(5_000);
+    const sessionPromise = (runtime as any).createSession('/tmp/claudian-test-vault');
+    await (runtime as any).handleSessionNotification({
+      sessionId: 'session-early',
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [{ name: 'local:shared-review', description: 'Shared review' }],
+      },
+    });
+    resolveSession({ sessionId: 'session-early' });
+
+    await expect(sessionPromise).resolves.toBe('session-early');
+    await expect(commandsPromise).resolves.toEqual([expect.objectContaining({
+      name: 'local:shared-review',
+    })]);
+  });
+
+  it('keeps the early command waiter installed across the startup reset', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    const commandsPromise = runtime.discoverSupportedCommands(5_000);
+
+    await (runtime as any).shutdownProcess({ preserveCommandWaiters: true });
+    (runtime as any).sessionId = 'session-startup';
+    (runtime as any).loadedSessionId = 'session-startup';
+    await (runtime as any).handleSessionNotification({
+      sessionId: 'session-startup',
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [{ name: 'shared-review' }],
+      },
+    });
+
+    await expect(commandsPromise).resolves.toEqual([
+      expect.objectContaining({ name: 'shared-review' }),
+    ]);
+  });
+
+  it('treats an advertised empty command list as an authoritative snapshot', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-empty' });
+    (runtime as any).loadedSessionId = 'session-empty';
+
+    const commandsPromise = runtime.discoverSupportedCommands(5_000);
+    await (runtime as any).handleSessionNotification({
+      sessionId: 'session-empty',
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [],
+      },
+    });
+
+    await expect(commandsPromise).resolves.toEqual([]);
+  });
+
+  it('rejects strict command discovery after 5 seconds and removes the waiter', async () => {
+    jest.useFakeTimers();
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-timeout' });
+    (runtime as any).loadedSessionId = 'session-timeout';
+
+    const commandsPromise = runtime.discoverSupportedCommands(5_000);
+    jest.advanceTimersByTime(5_000);
+
+    await expect(commandsPromise).rejects.toThrow('Timed out waiting for OpenCode commands.');
+    expect((runtime as any).supportedCommandWaiters).toHaveLength(0);
+  });
+
+  it('rejects command waiters on cleanup and malformed command notifications', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-malformed' });
+    (runtime as any).loadedSessionId = 'session-malformed';
+    const malformedPromise = runtime.discoverSupportedCommands(5_000);
+
+    await (runtime as any).handleSessionNotification({
+      sessionId: 'session-malformed',
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: null,
+      },
+    });
+
+    await expect(malformedPromise).rejects.toThrow('OpenCode sent malformed command metadata.');
+
+    const cleanupPromise = runtime.discoverSupportedCommands(5_000);
+    runtime.cleanup();
+    await expect(cleanupPromise).rejects.toThrow('OpenCode runtime stopped.');
+    expect((runtime as any).supportedCommandWaiters).toHaveLength(0);
+  });
+
+  it('rejects a pending command waiter when the runtime process exits', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    const commandsPromise = runtime.discoverSupportedCommands(5_000);
+
+    (runtime as any).rejectSupportedCommandWaiters(new Error('OpenCode runtime closed.'));
+
+    await expect(commandsPromise).rejects.toThrow('OpenCode runtime closed.');
+    expect((runtime as any).supportedCommandWaiters).toHaveLength(0);
+  });
+
+  it('publishes immutable native command snapshots to runtime subscribers', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-live' });
+    (runtime as any).loadedSessionId = 'session-live';
+    const snapshots: Array<readonly unknown[]> = [];
+    const unsubscribe = runtime.onSupportedCommandsChange((commands) => snapshots.push(commands));
+
+    await (runtime as any).handleSessionNotification({
+      sessionId: 'session-live',
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [{ name: 'scope:shared-review', description: 'Shared review' }],
+      },
+    });
+
+    expect(snapshots).toHaveLength(1);
+    expect(Object.isFrozen(snapshots[0])).toBe(true);
+    expect(Object.isFrozen(snapshots[0][0])).toBe(true);
+    expect(snapshots[0]).toEqual([expect.objectContaining({ name: 'scope:shared-review' })]);
+    unsubscribe();
+    await (runtime as any).handleSessionNotification({
+      sessionId: 'session-live',
+      update: {
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [{ name: 'second' }],
+      },
+    });
+    expect(snapshots).toHaveLength(1);
   });
 
   it('does not create a session when commands are requested before a session exists', async () => {

@@ -188,7 +188,28 @@ describe('GrokChatUIConfig', () => {
     });
   });
 
-  it('hides reasoning after ACP resolves an enabled model as non-reasoning', () => {
+  it('keeps Low, Medium, and High for an enabled selection while catalog metadata reloads', () => {
+    const settings = makeSettings({
+      model: 'grok/grok-4.5',
+      providerConfigs: {
+        grok: {
+          catalogsByHost: {},
+          visibleModels: ['grok-4.5'],
+        },
+      },
+      savedProviderModel: { grok: 'grok/grok-4.5' },
+    });
+
+    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/grok-4.5', settings)).toBe(true);
+    expect(grokChatUIConfig.getReasoningOptions('grok/grok-4.5', settings)).toEqual([
+      { label: 'Low', value: 'low' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'High', value: 'high' },
+    ]);
+    expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-4.5', settings)).toBe('high');
+  });
+
+  it('keeps the standard fallback when ACP resolves no effort choices', () => {
     const resolvedCatalog = {
       ...catalog,
       models: catalog.models.map(model => model.rawId === 'kimi-coding'
@@ -204,9 +225,13 @@ describe('GrokChatUIConfig', () => {
       },
     });
 
-    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/kimi-coding', settings)).toBe(false);
-    expect(grokChatUIConfig.getReasoningOptions('grok/kimi-coding', settings)).toEqual([]);
-    expect(grokChatUIConfig.getDefaultReasoningValue('grok/kimi-coding', settings)).toBe('');
+    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/kimi-coding', settings)).toBe(true);
+    expect(grokChatUIConfig.getReasoningOptions('grok/kimi-coding', settings)).toEqual([
+      { label: 'Low', value: 'low' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'High', value: 'high' },
+    ]);
+    expect(grokChatUIConfig.getDefaultReasoningValue('grok/kimi-coding', settings)).toBe('high');
   });
 
   it('preserves explicit model preferences across projection updates', () => {

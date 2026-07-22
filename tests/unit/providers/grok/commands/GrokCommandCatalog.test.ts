@@ -1,18 +1,17 @@
-import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog';
 
 describe('GrokCommandCatalog', () => {
-  it('deduplicates runtime commands case-insensitively and strips leading slashes', async () => {
+  it('preserves provider-advertised names, order, and case exactly', async () => {
     const catalog = new GrokCommandCatalog();
     catalog.setRuntimeCommands([
-      { id: 'first', name: '/review', description: 'Review changes', content: '', source: 'sdk' },
+      { id: 'first', name: 'local:review', description: 'Review changes', content: '', source: 'sdk' },
       { id: 'duplicate', name: 'REVIEW', description: 'Duplicate', content: '', source: 'sdk' },
-      { id: 'help', name: '///help', argumentHint: '[topic]', content: '', source: 'sdk' },
-      { id: 'empty', name: '///', content: '', source: 'sdk' },
+      { id: 'help', name: 'help', argumentHint: '[topic]', content: '', source: 'sdk' },
     ]);
 
     await expect(catalog.listDropdownEntries({ includeBuiltIns: true })).resolves.toEqual([
-      expect.objectContaining({ id: 'first', name: 'review' }),
+      expect.objectContaining({ id: 'first', name: 'local:review' }),
+      expect.objectContaining({ id: 'duplicate', name: 'REVIEW' }),
       expect.objectContaining({ id: 'help', name: 'help', argumentHint: '[topic]' }),
     ]);
   });
@@ -55,17 +54,13 @@ describe('GrokCommandCatalog', () => {
     });
   });
 
-  it('has no vault persistence or hidden discovery session', async () => {
+  it('is runtime-only and has no hidden discovery mechanism', async () => {
     const catalog = new GrokCommandCatalog();
-    const entry = {} as ProviderCommandEntry;
 
-    await expect(catalog.listVaultEntries()).resolves.toEqual([]);
-    await expect(catalog.saveVaultEntry(entry)).rejects.toThrow(
-      'Grok runtime commands are not editable from Claudian.',
-    );
-    await expect(catalog.deleteVaultEntry(entry)).rejects.toThrow(
-      'Grok runtime commands are not deletable from Claudian.',
-    );
+    expect(catalog).not.toHaveProperty('listVaultEntries');
+    expect(catalog).not.toHaveProperty('saveVaultEntry');
+    expect(catalog).not.toHaveProperty('deleteVaultEntry');
+    expect(catalog).not.toHaveProperty('inspect');
     await expect(catalog.refresh()).resolves.toBeUndefined();
   });
 });

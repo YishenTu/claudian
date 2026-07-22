@@ -8,6 +8,7 @@ jest.mock('@/providers/grok/runtime/GrokModelCatalogService', () => ({
   })),
 }));
 
+import { GrokRuntimeCommandLoader } from '@/providers/grok/app/GrokRuntimeCommandLoader';
 import {
   createGrokWorkspaceServices,
   grokWorkspaceRegistration,
@@ -68,7 +69,7 @@ describe('GrokWorkspaceServices', () => {
     expect(services.commandCatalog).toBeInstanceOf(GrokCommandCatalog);
     expect(services.settingsTabRenderer).toBe(grokSettingsTabRenderer);
     expect(services.tabWarmupPolicy?.resolveMode({} as any)).toBe('none');
-    expect(services.runtimeCommandLoader).toBeUndefined();
+    expect(services.runtimeCommandLoader).toBeInstanceOf(GrokRuntimeCommandLoader);
     expect(services.agentMentionProvider).toBeUndefined();
     expect(services.mcpServerManager).toBeUndefined();
     expect(mockDiscoverCatalog).not.toHaveBeenCalled();

@@ -1,7 +1,7 @@
 import { PiCommandCatalog } from '@/providers/pi/commands/PiCommandCatalog';
 
 describe('PiCommandCatalog', () => {
-  it('maps deduped runtime commands into slash dropdown entries', async () => {
+  it('maps runtime commands into slash dropdown entries without changing order', async () => {
     const catalog = new PiCommandCatalog();
     catalog.setRuntimeCommands([
       {
@@ -9,7 +9,7 @@ describe('PiCommandCatalog', () => {
         content: '',
         description: 'Review changes',
         id: 'pi:prompt:review',
-        name: '/review',
+        name: 'review',
         source: 'sdk',
       },
       {
@@ -44,6 +44,12 @@ describe('PiCommandCatalog', () => {
         scope: 'runtime',
       }),
       expect.objectContaining({
+        description: 'Duplicate review',
+        id: 'pi:prompt:review-duplicate',
+        name: 'review',
+        providerId: 'pi',
+      }),
+      expect.objectContaining({
         id: 'pi:skill:test',
         kind: 'skill',
         name: 'test',
@@ -52,7 +58,7 @@ describe('PiCommandCatalog', () => {
     ]);
   });
 
-  it('uses slash triggers and rejects vault edits', async () => {
+  it('uses slash triggers without exposing editable vault operations', () => {
     const catalog = new PiCommandCatalog();
 
     expect(catalog.getDropdownConfig()).toEqual({
@@ -62,8 +68,23 @@ describe('PiCommandCatalog', () => {
       skillPrefix: '/',
       triggerChars: ['/'],
     });
-    await expect(catalog.listVaultEntries()).resolves.toEqual([]);
-    await expect(catalog.saveVaultEntry({} as any)).rejects.toThrow('not editable');
-    await expect(catalog.deleteVaultEntry({} as any)).rejects.toThrow('not deletable');
+    expect('listVaultEntries' in catalog).toBe(false);
+    expect('saveVaultEntry' in catalog).toBe(false);
+    expect('deleteVaultEntry' in catalog).toBe(false);
+  });
+
+  it('preserves provider-advertised names and order', async () => {
+    const catalog = new PiCommandCatalog();
+    catalog.setRuntimeCommands([
+      { content: '', id: 'one', name: 'skill:shared-review', source: 'sdk' },
+      { content: '', id: 'two', name: 'scope:qualified', source: 'sdk' },
+    ]);
+
+    const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
+
+    expect(entries.map((entry) => entry.name)).toEqual([
+      'skill:shared-review',
+      'scope:qualified',
+    ]);
   });
 });

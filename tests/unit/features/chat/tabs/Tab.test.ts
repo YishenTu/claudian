@@ -24,6 +24,7 @@ import {
   initializeTabUI,
   onProviderAvailabilityChanged,
   recycleTabRuntime,
+  refreshTabWorkspaceServices,
   setupServiceCallbacks,
   type TabCreateOptions,
   updatePlanModeUI,
@@ -81,10 +82,12 @@ const createMockImageContextManager = () => ({
 });
 
 const createMockSlashCommandDropdown = () => ({
+  clearProviderCatalog: jest.fn(),
   handleKeydown: jest.fn().mockReturnValue(false),
   isVisible: jest.fn().mockReturnValue(false),
   hide: jest.fn(),
   resetSdkSkillsCache: jest.fn(),
+  setProviderCatalog: jest.fn(),
   setHiddenCommands: jest.fn(),
   setEnabled: jest.fn(),
   destroy: jest.fn(),
@@ -463,6 +466,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
     updateConversation: jest.fn().mockResolvedValue(undefined),
     saveSettings: jest.fn().mockResolvedValue(undefined),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
+    getAgentSkillResourceGeneration: jest.fn().mockReturnValue(0),
     ...pluginOverrides,
   };
   plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
@@ -2949,6 +2953,10 @@ describe('Tab - UI Callback Wiring', () => {
         insertPrefix: '/',
       }];
       const mockConfig = { providerId: 'claude' as const, triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/' };
+      const managerGetEntries = jest.fn().mockResolvedValue({
+        status: 'ready',
+        items: mockEntries,
+      });
       const plugin = createMockPlugin();
       const options = createMockOptions({ plugin });
       const tab = createTab(options);
@@ -2956,7 +2964,7 @@ describe('Tab - UI Callback Wiring', () => {
       initializeTabUI(tab, plugin, {
         getProviderCatalogConfig: () => ({
           config: mockConfig,
-          getEntries: jest.fn().mockResolvedValue(mockEntries),
+          getEntries: managerGetEntries,
         }),
       });
 
@@ -2965,7 +2973,16 @@ describe('Tab - UI Callback Wiring', () => {
       const opts = constructorCall[3]; // 4th argument is options
 
       expect(opts.providerConfig).toEqual(mockConfig);
-      expect(typeof opts.getProviderEntries).toBe('function');
+      expect(typeof opts.discoverProviderEntries).toBe('function');
+
+      const setProviderCatalogSpy = jest.fn();
+      tab.ui.slashCommandDropdown!.setProviderCatalog = setProviderCatalogSpy;
+      refreshTabWorkspaceServices(tab, plugin);
+
+      expect(setProviderCatalogSpy).toHaveBeenCalledTimes(1);
+      const [, reboundGetEntries] = setProviderCatalogSpy.mock.calls[0];
+      await reboundGetEntries();
+      expect(managerGetEntries).toHaveBeenCalledTimes(1);
     });
 
     it('should wire provider-scoped hidden commands into the slash dropdown', () => {
@@ -3050,6 +3067,25 @@ describe('Tab - Service Initialization Error Handling', () => {
     expect(tab.service).not.toBeNull();
   });
 
+  it('replaces an initialized runtime after its resource generation is invalidated', async () => {
+    const options = createMockOptions();
+    (options.plugin.getAgentSkillResourceGeneration as jest.Mock).mockReturnValue(2);
+    const tab = createTab(options);
+    const previousService = createMockClaudianService() as any;
+    const replacementService = createMockClaudianService() as any;
+    jest.spyOn(ProviderRegistry, 'createChatRuntime').mockReturnValue(replacementService);
+    tab.service = previousService;
+    tab.serviceInitialized = true;
+    tab.runtimeSupervisor.setCurrent(previousService, 1);
+    tab.runtimeSupervisor.invalidate(2);
+
+    await initializeTabService(tab, options.plugin, options.mcpManager);
+
+    expect(previousService.cleanup).toHaveBeenCalledTimes(1);
+    expect(tab.service).toBe(replacementService);
+    expect(tab.runtimeSupervisor.isInvalidated).toBe(false);
+  });
+
 });
 
 describe('Tab - Controller Configuration', () => {
@@ -3076,6 +3112,37 @@ describe('Tab - Controller Configuration', () => {
       tab.lifecycleState = 'bound_active';
       const result = await config.ensureServiceInitialized();
       expect(result).toBe(true);
+    });
+
+    it('does not reuse an invalidated initialized runtime in the actual send guard', async () => {
+      const { InputController } = jest.requireMock('@/features/chat/controllers/InputController');
+      const options = createMockOptions();
+      (options.plugin.getAgentSkillResourceGeneration as jest.Mock).mockReturnValue(3);
+      const tab = createTab(options);
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, {} as any, options.mcpManager);
+      const config = InputController.mock.calls[0][0];
+      const previousService = createMockClaudianService() as any;
+      const replacementService = createMockClaudianService() as any;
+      Object.assign(replacementService, {
+        setApprovalCallback: jest.fn(),
+        setApprovalDismisser: jest.fn(),
+        setAskUserQuestionCallback: jest.fn(),
+        setExitPlanModeCallback: jest.fn(),
+        setAutoTurnCallback: jest.fn(),
+        setPermissionModeSyncCallback: jest.fn(),
+      });
+      jest.spyOn(ProviderRegistry, 'createChatRuntime').mockReturnValue(replacementService);
+      tab.service = previousService;
+      tab.serviceInitialized = true;
+      tab.lifecycleState = 'bound_active';
+      tab.runtimeSupervisor.setCurrent(previousService, 2);
+      tab.runtimeSupervisor.invalidate(3);
+
+      await expect(config.ensureServiceInitialized()).resolves.toBe(true);
+
+      expect(previousService.cleanup).toHaveBeenCalledTimes(1);
+      expect(tab.service).toBe(replacementService);
     });
 
     it('should wire getAgentService to return tab service', () => {
@@ -3330,7 +3397,8 @@ describe('Tab - Controller Configuration', () => {
       callbacks.onConversationLoaded();
       callbacks.onConversationSwitched();
 
-      expect(mockSlashCommandDropdown.resetSdkSkillsCache).toHaveBeenCalledTimes(3);
+      expect(mockSlashCommandDropdown.clearProviderCatalog).toHaveBeenCalledTimes(1);
+      expect(mockSlashCommandDropdown.resetSdkSkillsCache).toHaveBeenCalledTimes(2);
     });
   });
 });
@@ -4090,6 +4158,35 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     expect(settled).toBe(true);
   });
 
+  it('rolls back a blank-tab provider change when workspace initialization fails', async () => {
+    jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+    jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+
+    const plugin = createMockPlugin();
+    const tab = createTab(createMockOptions({ plugin }));
+    const previousProvider = tab.providerId;
+    const previousModel = tab.draftModel;
+    const onProviderChanged = jest.fn().mockRejectedValue(new Error('workspace init failed'));
+    initializeTabUI(tab, plugin, { onProviderChanged });
+    const clearProviderCatalog = jest.spyOn(
+      tab.ui.slashCommandDropdown!,
+      'clearProviderCatalog',
+    );
+
+    const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
+      createInputToolbar: jest.Mock;
+    };
+    const toolbarCallbacks = toolbarModule.createInputToolbar.mock.calls.at(-1)?.[1];
+
+    await expect(toolbarCallbacks.onModelChange(TEST_CODEX_MODEL))
+      .rejects.toThrow('workspace init failed');
+
+    expect(clearProviderCatalog).toHaveBeenCalled();
+    expect(tab.providerId).toBe(previousProvider);
+    expect(tab.draftModel).toBe(previousModel);
+  });
+
   it('does not trigger provider warmup when a blank-tab model switch stays on OpenCode', async () => {
     jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
     jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
@@ -4222,7 +4319,7 @@ describe('Tab - Blank Tab Draft Model Change', () => {
       }),
       refresh: jest.fn(),
     };
-    const managerGetEntries = jest.fn().mockResolvedValue([
+    const managerEntries = [
       {
         id: 'codex-skill-analyze',
         providerId: 'codex',
@@ -4237,7 +4334,11 @@ describe('Tab - Blank Tab Draft Model Change', () => {
         displayPrefix: '$',
         insertPrefix: '$',
       },
-    ]);
+    ];
+    const managerGetEntries = jest.fn().mockResolvedValue({
+      status: 'ready',
+      items: managerEntries,
+    });
 
     ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: codexCatalog as any });
 
@@ -4252,6 +4353,12 @@ describe('Tab - Blank Tab Draft Model Change', () => {
           }
           : null
       ),
+      onProviderChanged: async () => {
+        tab.ui.slashCommandDropdown?.setProviderCatalog(
+          codexCatalog.getDropdownConfig(),
+          managerGetEntries,
+        );
+      },
     });
 
     // Mock setProviderCatalog on the dropdown
@@ -4344,7 +4451,9 @@ describe('Tab - Blank Tab Draft Model Change', () => {
       },
     });
     const tab = createTab(createMockOptions({ plugin }));
-    initializeTabUI(tab, plugin);
+    initializeTabUI(tab, plugin, {
+      onProviderChanged: async () => refreshTabWorkspaceServices(tab, plugin),
+    });
 
     const setProviderCatalogSpy = jest.fn();
     const setHiddenCommandsSpy = jest.fn();

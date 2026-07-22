@@ -154,6 +154,7 @@ export class PiChatRuntime implements ChatRuntime {
   private sessionInvalidated = false;
   private sessionResetPromise: Promise<void> | null = null;
   private supportedCommands: SlashCommand[] = [];
+  private supportedCommandsLoaded = false;
   private shutdownPromise: Promise<void> | null = null;
   private transport: PiRpcTransport | null = null;
   private unregisterTransportClose: (() => void) | null = null;
@@ -547,20 +548,25 @@ export class PiChatRuntime implements ChatRuntime {
   }
 
   async getSupportedCommands(): Promise<SlashCommand[]> {
-    if (this.supportedCommands.length > 0) {
-      return [...this.supportedCommands];
-    }
-    if (!this.transport || this.transport.isClosed) {
-      return [];
-    }
-
     try {
-      const response = await this.transport.request('get_commands', {}, 10_000);
-      this.supportedCommands = normalizePiRuntimeCommands(response);
-      return [...this.supportedCommands];
+      return await this.discoverSupportedCommands();
     } catch {
       return [];
     }
+  }
+
+  async discoverSupportedCommands(): Promise<SlashCommand[]> {
+    if (this.supportedCommandsLoaded) {
+      return [...this.supportedCommands];
+    }
+    if (!this.transport || this.transport.isClosed) {
+      throw new Error('Pi command transport is unavailable.');
+    }
+
+    const response = await this.transport.request('get_commands', {}, 10_000);
+    this.supportedCommands = normalizePiRuntimeCommands(response);
+    this.supportedCommandsLoaded = true;
+    return [...this.supportedCommands];
   }
 
   getAuxiliaryModel(): string | null {
@@ -788,6 +794,7 @@ export class PiChatRuntime implements ChatRuntime {
       await process.shutdown().catch(() => {});
     }
     this.supportedCommands = [];
+    this.supportedCommandsLoaded = false;
   }
 
   private handleRpcEvent(event: PiRpcRecord): void {
@@ -1220,22 +1227,29 @@ function isCompactCommand(text: string): boolean {
 }
 
 function normalizePiRuntimeCommands(response: unknown): SlashCommand[] {
+  const responseRecord = getRecord(response);
   const records = Array.isArray(response)
     ? response
-    : Array.isArray(getRecord(response).commands)
-    ? getRecord(response).commands as unknown[]
-    : [];
+    : Array.isArray(responseRecord.commands)
+    ? responseRecord.commands as unknown[]
+    : null;
+  if (!records) {
+    throw new Error('Pi returned malformed command metadata.');
+  }
   const commands: SlashCommand[] = [];
   const seen = new Set<string>();
 
   for (const record of records) {
     const entry = getRecord(record);
-    const name = getString(entry.name)?.replace(/^\/+/, '');
-    if (!name || seen.has(name.toLowerCase())) {
+    const name = getString(entry.name);
+    if (!name) {
+      throw new Error('Pi returned malformed command metadata.');
+    }
+    if (seen.has(name)) {
       continue;
     }
 
-    seen.add(name.toLowerCase());
+    seen.add(name);
     const source = getString(entry.source);
     commands.push({
       content: '',

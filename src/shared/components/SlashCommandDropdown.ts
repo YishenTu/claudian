@@ -1,5 +1,6 @@
 import { getBuiltInCommandsForDropdown } from '../../core/commands/builtInCommands';
 import type { ProviderCommandDropdownConfig } from '../../core/providers/commands/ProviderCommandCatalog';
+import type { ProviderCommandDiscoveryResult } from '../../core/providers/commands/ProviderCommandDiscoveryResult';
 import type { ProviderCommandEntry } from '../../core/providers/commands/ProviderCommandEntry';
 import type { SlashCommand } from '../../core/types';
 import { normalizeArgumentHint } from '../../utils/slashCommand';
@@ -25,8 +26,17 @@ export interface SlashCommandDropdownOptions {
   fixed?: boolean;
   hiddenCommands?: Set<string>;
   providerConfig?: ProviderCommandDropdownConfig;
+  /** Catalog-only compatibility path used by auxiliary consumers such as inline edit. */
   getProviderEntries?: () => Promise<ProviderCommandEntry[]>;
+  /** Typed provider-protocol discovery used by the active chat composer. */
+  discoverProviderEntries?: () => Promise<ProviderCommandDiscoveryResult<ProviderCommandEntry>>;
 }
+
+type ProviderDiscoveryViewState =
+  | { status: 'loading' }
+  | ProviderCommandDiscoveryResult<ProviderCommandEntry>;
+
+const PROVIDER_DISCOVERY_TIMEOUT_MS = 8_000;
 
 export class SlashCommandDropdown {
   private containerEl: HTMLElement;
@@ -44,10 +54,15 @@ export class SlashCommandDropdown {
 
   private providerConfig: ProviderCommandDropdownConfig | null;
   private getProviderEntries: (() => Promise<ProviderCommandEntry[]>) | null;
+  private discoverProviderEntries: (
+    () => Promise<ProviderCommandDiscoveryResult<ProviderCommandEntry>>
+  ) | null;
   private cachedProviderEntries: ProviderCommandEntry[] = [];
   private providerEntriesFetched = false;
+  private providerDiscoveryState: ProviderDiscoveryViewState | null = null;
 
   private requestId = 0;
+  private catalogGeneration = 0;
 
   constructor(
     containerEl: HTMLElement,
@@ -62,6 +77,9 @@ export class SlashCommandDropdown {
     this.hiddenCommands = options.hiddenCommands ?? new Set();
     this.providerConfig = options.providerConfig ?? null;
     this.getProviderEntries = options.getProviderEntries ?? null;
+    this.discoverProviderEntries = options.getProviderEntries
+      ? null
+      : options.discoverProviderEntries ?? null;
 
     this.onInput = () => this.handleInputChange();
     this.inputEl.addEventListener('input', this.onInput);
@@ -80,13 +98,29 @@ export class SlashCommandDropdown {
 
   setProviderCatalog(
     config: ProviderCommandDropdownConfig,
-    getEntries: () => Promise<ProviderCommandEntry[]>,
+    discoverEntries: () => Promise<ProviderCommandDiscoveryResult<ProviderCommandEntry>>,
   ): void {
+    this.clearProviderView();
+    this.catalogGeneration++;
+    this.requestId++;
     this.providerConfig = config;
-    this.getProviderEntries = getEntries;
+    this.discoverProviderEntries = discoverEntries;
+    this.getProviderEntries = null;
     this.cachedProviderEntries = [];
     this.providerEntriesFetched = false;
-    this.requestId = 0;
+    this.providerDiscoveryState = null;
+  }
+
+  clearProviderCatalog(): void {
+    this.clearProviderView();
+    this.catalogGeneration++;
+    this.requestId++;
+    this.providerConfig = null;
+    this.discoverProviderEntries = null;
+    this.getProviderEntries = null;
+    this.cachedProviderEntries = [];
+    this.providerEntriesFetched = false;
+    this.providerDiscoveryState = null;
   }
 
   handleInputChange(): void {
@@ -165,6 +199,7 @@ export class SlashCommandDropdown {
   }
 
   hide(): void {
+    this.requestId++;
     if (this.dropdownEl) {
       this.dropdownEl.removeClass('visible');
     }
@@ -173,6 +208,8 @@ export class SlashCommandDropdown {
   }
 
   destroy(): void {
+    this.catalogGeneration++;
+    this.requestId++;
     this.inputEl.removeEventListener('input', this.onInput);
     if (this.dropdownEl) {
       this.dropdownEl.remove();
@@ -181,9 +218,16 @@ export class SlashCommandDropdown {
   }
 
   resetSdkSkillsCache(): void {
+    this.requestId++;
     this.cachedProviderEntries = [];
     this.providerEntriesFetched = false;
-    this.requestId = 0;
+    this.providerDiscoveryState = null;
+  }
+
+  private clearProviderView(): void {
+    this.filteredItems = [];
+    this.hide();
+    this.dropdownEl?.empty();
   }
 
   private getInputValue(): string {
@@ -205,25 +249,89 @@ export class SlashCommandDropdown {
 
   private async showDropdown(searchText: string, isAtPosition0 = true): Promise<void> {
     const currentRequest = ++this.requestId;
+    const currentGeneration = this.catalogGeneration;
     const searchLower = searchText.toLowerCase();
+    const includeBuiltIns = isAtPosition0 && this.activeTriggerChar === '/';
+
+    if (this.discoverProviderEntries) {
+      this.providerDiscoveryState = { status: 'loading' };
+      this.cachedProviderEntries = [];
+      this.updateFilteredItems(searchLower, includeBuiltIns);
+      this.render();
+
+      let result: ProviderCommandDiscoveryResult<ProviderCommandEntry>;
+      try {
+        result = await this.discoverProviderEntriesWithTimeout();
+      } catch {
+        result = {
+          status: 'error',
+          message: 'Could not load provider commands',
+          retryable: true,
+        };
+      }
+
+      if (
+        currentRequest !== this.requestId
+        || currentGeneration !== this.catalogGeneration
+      ) {
+        return;
+      }
+
+      this.providerDiscoveryState = result;
+      this.cachedProviderEntries = result.status === 'ready' ? [...result.items] : [];
+      this.updateFilteredItems(searchLower, includeBuiltIns);
+      this.finishRender(searchText);
+      return;
+    }
 
     await this.fetchProviderEntries(currentRequest);
 
     if (currentRequest !== this.requestId) return;
 
-    const includeBuiltIns = isAtPosition0 && this.activeTriggerChar === '/';
-    const allItems = this.buildItemList(includeBuiltIns);
+    this.updateFilteredItems(searchLower, includeBuiltIns);
+    this.finishRender(searchText);
+  }
 
-    this.filteredItems = allItems
+  private async discoverProviderEntriesWithTimeout(): Promise<
+    ProviderCommandDiscoveryResult<ProviderCommandEntry>
+  > {
+    if (!this.discoverProviderEntries) {
+      return { status: 'empty' };
+    }
+
+    let timeoutId: number | null = null;
+    const timeout = new Promise<ProviderCommandDiscoveryResult<ProviderCommandEntry>>(
+      resolve => {
+        timeoutId = window.setTimeout(() => resolve({
+          status: 'error',
+          message: 'Provider command discovery timed out',
+          retryable: true,
+        }), PROVIDER_DISCOVERY_TIMEOUT_MS);
+      },
+    );
+
+    try {
+      return await Promise.race([this.discoverProviderEntries(), timeout]);
+    } finally {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  private updateFilteredItems(searchLower: string, includeBuiltIns: boolean): void {
+    this.filteredItems = this.buildItemList(includeBuiltIns)
       .filter(item =>
-        item.name.toLowerCase().includes(searchLower) ||
-        item.description?.toLowerCase().includes(searchLower)
+        item.name.toLowerCase().includes(searchLower)
+        || item.description?.toLowerCase().includes(searchLower)
       )
       .sort((a, b) => a.name.localeCompare(b.name));
+  }
 
-    if (currentRequest !== this.requestId) return;
-
-    if (searchText.length > 0 && this.filteredItems.length === 0) {
+  private finishRender(searchText: string): void {
+    const hasProviderState = this.providerDiscoveryState?.status !== 'ready'
+      && this.providerDiscoveryState !== null;
+    if (searchText.length > 0 && this.filteredItems.length === 0 && !hasProviderState) {
       this.hide();
       return;
     }
@@ -315,7 +423,7 @@ export class SlashCommandDropdown {
 
     this.dropdownEl.empty();
 
-    if (this.filteredItems.length === 0) {
+    if (this.filteredItems.length === 0 && !this.providerDiscoveryState) {
       const emptyEl = this.dropdownEl.createDiv({ cls: 'claudian-slash-empty' });
       emptyEl.setText('No matching commands');
     } else {
@@ -352,10 +460,46 @@ export class SlashCommandDropdown {
       }
     }
 
+    this.renderProviderDiscoveryState();
+
     this.dropdownEl.addClass('visible');
 
     if (this.isFixed) {
       this.positionFixed();
+    }
+  }
+
+  private renderProviderDiscoveryState(): void {
+    if (!this.dropdownEl || !this.providerDiscoveryState) return;
+
+    const state = this.providerDiscoveryState;
+    if (state.status === 'ready') return;
+
+    const stateEl = this.dropdownEl.createDiv({
+      cls: `claudian-slash-provider-state is-${state.status}`,
+    });
+    const messageEl = stateEl.createSpan({ cls: 'claudian-slash-provider-state-message' });
+
+    switch (state.status) {
+      case 'loading':
+        messageEl.setText('Loading provider commands…');
+        break;
+      case 'empty':
+        messageEl.setText('No provider commands advertised');
+        break;
+      case 'requires-session':
+        messageEl.setText(state.message);
+        break;
+      case 'error': {
+        messageEl.setText(state.message);
+        const retryEl = stateEl.createEl('button', {
+          cls: 'claudian-slash-provider-retry',
+          text: 'Retry',
+          attr: { type: 'button' },
+        });
+        retryEl.addEventListener('click', () => this.handleInputChange());
+        break;
+      }
     }
   }
 

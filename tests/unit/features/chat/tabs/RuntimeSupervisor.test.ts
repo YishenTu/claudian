@@ -43,4 +43,30 @@ describe('RuntimeSupervisor', () => {
     expect(() => supervisor.cleanup()).toThrow('cleanup failed');
     expect(supervisor.current).toBe(runtime);
   });
+
+  it('marks an installed runtime stale only for a newer resource generation', () => {
+    const runtime = createRuntime('runtime', []);
+    const supervisor = new RuntimeSupervisor();
+
+    supervisor.setCurrent(runtime, 3);
+    supervisor.invalidate(3);
+    expect(supervisor.isInvalidated).toBe(false);
+
+    supervisor.invalidate(4);
+    expect(supervisor.isInvalidated).toBe(true);
+    expect(supervisor.current).toBe(runtime);
+  });
+
+  it('clears invalidation only when a replacement is installed for the current generation', () => {
+    const first = createRuntime('first', []);
+    const second = createRuntime('second', []);
+    const supervisor = new RuntimeSupervisor(first, 1);
+
+    supervisor.invalidate(5);
+    supervisor.setCurrent(second, 4);
+    expect(supervisor.isInvalidated).toBe(true);
+
+    supervisor.setCurrent(second, 5);
+    expect(supervisor.isInvalidated).toBe(false);
+  });
 });

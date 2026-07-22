@@ -286,6 +286,7 @@ function createContext(plugin: any): any {
     plugin,
     refreshModelSelectors: jest.fn(),
     refreshTitleGenerationModelOptions: jest.fn(),
+    renderAgentSkillSettings: jest.fn(),
     renderCustomContextLimits: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),
   };
@@ -519,6 +520,10 @@ describe('GrokSettingsTab', () => {
     const container = createContainer();
     grokSettingsTabRenderer.render(container, context);
 
+    expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(
+      container,
+      'grok',
+    );
     expect(context.renderHiddenProviderCommandSetting).toHaveBeenCalledWith(
       container,
       'grok',

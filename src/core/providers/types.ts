@@ -17,6 +17,8 @@ import type {
 } from '../types';
 import type { ProviderId } from '../types/provider';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
+import type { ProviderCommandDiscoveryResult } from './commands/ProviderCommandDiscoveryResult';
+import type { ProviderVaultEntryRepository } from './commands/ProviderVaultEntryRepository';
 import type { ProviderHost } from './ProviderHost';
 
 export type { ProviderId } from '../types/provider';
@@ -391,8 +393,15 @@ export interface ProviderRuntimeCommandLoaderContext {
 }
 
 export interface ProviderRuntimeCommandLoader {
+  /**
+   * Returns a provider-owned, non-secret identity for inputs that affect command discovery.
+   * Raw settings, environment values, session state, and external paths must not be included.
+   */
+  getCacheFingerprint(settings: Record<string, unknown>): string;
   isAvailable(settings: Record<string, unknown>): boolean;
-  loadCommands(context: ProviderRuntimeCommandLoaderContext): Promise<SlashCommand[]>;
+  loadCommands(
+    context: ProviderRuntimeCommandLoaderContext,
+  ): Promise<ProviderCommandDiscoveryResult<SlashCommand>>;
 }
 
 // `commands` warms provider-owned command discovery without fully priming the
@@ -424,6 +433,7 @@ export interface ProviderEnvironmentTransition {
 
 export interface ProviderWorkspaceServices {
   commandCatalog?: ProviderCommandCatalog | null;
+  vaultCommandRepository?: ProviderVaultEntryRepository | null;
   agentMentionProvider?: AgentMentionProvider | null;
   cliResolver?: ProviderCliResolver | null;
   runtimeCommandLoader?: ProviderRuntimeCommandLoader | null;
@@ -449,6 +459,10 @@ export interface ProviderModelCatalogRefreshResult {
 
 export interface ProviderSettingsTabRendererContext {
   plugin: ProviderHost;
+  renderAgentSkillSettings(
+    container: HTMLElement,
+    providerId: ProviderId,
+  ): void;
   renderHiddenProviderCommandSetting(
     container: HTMLElement,
     providerId: ProviderId,

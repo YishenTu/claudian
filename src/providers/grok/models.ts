@@ -113,15 +113,13 @@ export function getGrokAvailableReasoningEfforts(
   if (!model) {
     return [];
   }
-  if (model.reasoningMetadataResolved !== true) {
-    return GROK_FALLBACK_REASONING_EFFORTS;
-  }
-  if (model.reasoningEfforts.length > 0) {
+  if (
+    model.reasoningMetadataResolved === true
+    && model.reasoningEfforts.length > 0
+  ) {
     return model.reasoningEfforts;
   }
-  return model.supportsReasoning
-    ? GROK_FALLBACK_REASONING_EFFORTS
-    : [];
+  return GROK_FALLBACK_REASONING_EFFORTS;
 }
 
 export function clearGrokReasoningMetadata(

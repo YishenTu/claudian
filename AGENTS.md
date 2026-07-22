@@ -62,6 +62,7 @@ The feature layer depends on `core/` contracts, not provider internals. Provider
 - New provider behavior must be expressed through registries and capabilities: `ProviderRegistry`, `ProviderWorkspaceRegistry`, `ProviderChatUIConfig`, provider capabilities, and provider-owned settings reconciliation.
 - Model, permission, plan-mode, command, MCP, skill, and subagent behavior is provider-specific unless the core contract explicitly makes it shared.
 - When provider behavior is uncertain, inspect real runtime output first. Put throwaway scripts, traces, and handoff notes in `.context/`.
+- Shared skill management for Codex, Grok, Pi, and OpenCode owns only `.agents/skills`; composer discovery remains exclusively provider-protocol-driven. Claude stays on `.claude/skills` and `.claude/commands`, and legacy provider roots are never migrated automatically.
 
 ## Storage
 
@@ -74,8 +75,8 @@ The feature layer depends on `core/` contracts, not provider internals. Provider
 | `.claude/commands/**/*.md` | Claude slash commands |
 | `.claude/skills/*/SKILL.md` | Claude skills |
 | `.claude/agents/*.md` | Claude vault agents |
-| `.codex/skills/*/SKILL.md` | Codex vault skills |
-| `.agents/skills/*/SKILL.md` | Alternate Codex vault skill root |
+| `.agents/skills/*/SKILL.md` | Claudian-managed shared vault skills for Codex, Grok, Pi, and OpenCode |
+| `.codex/skills/*/SKILL.md` | Legacy/provider-native Codex skills; never managed or migrated by Claudian |
 | `.codex/agents/*.toml` | Codex vault subagent definitions |
 | `.opencode/agent`, `.opencode/agents` | OpenCode agent definitions |
 | `.pi/agent/sessions/` | Pi vault-local sessions |

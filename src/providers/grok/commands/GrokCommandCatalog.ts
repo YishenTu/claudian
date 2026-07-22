@@ -30,50 +30,17 @@ function slashCommandToEntry(command: SlashCommand): ProviderCommandEntry {
   };
 }
 
-function dedupeRuntimeCommands(commands: SlashCommand[]): SlashCommand[] {
-  const deduped: SlashCommand[] = [];
-  const seen = new Set<string>();
-
-  for (const command of commands) {
-    const normalizedName = command.name.trim().replace(/^\/+/, '');
-    if (!normalizedName) continue;
-
-    const key = normalizedName.toLowerCase();
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    deduped.push({
-      ...command,
-      name: normalizedName,
-    });
-  }
-
-  return deduped;
-}
-
 export class GrokCommandCatalog implements ProviderCommandCatalog {
   private runtimeCommands: SlashCommand[] = [];
 
   setRuntimeCommands(commands: SlashCommand[]): void {
-    this.runtimeCommands = dedupeRuntimeCommands(commands);
+    this.runtimeCommands = commands.map(command => ({ ...command }));
   }
 
   async listDropdownEntries(
     _context: { includeBuiltIns: boolean },
   ): Promise<ProviderCommandEntry[]> {
     return this.runtimeCommands.map(slashCommandToEntry);
-  }
-
-  async listVaultEntries(): Promise<ProviderCommandEntry[]> {
-    return [];
-  }
-
-  async saveVaultEntry(_entry: ProviderCommandEntry): Promise<void> {
-    throw new Error('Grok runtime commands are not editable from Claudian.');
-  }
-
-  async deleteVaultEntry(_entry: ProviderCommandEntry): Promise<void> {
-    throw new Error('Grok runtime commands are not deletable from Claudian.');
   }
 
   getDropdownConfig(): ProviderCommandDropdownConfig {

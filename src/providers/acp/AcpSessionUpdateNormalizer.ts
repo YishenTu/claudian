@@ -98,7 +98,7 @@ export class AcpSessionUpdateNormalizer {
         return { plan: update, type: 'plan' };
       case 'available_commands_update':
         return {
-          commands: update.availableCommands.map(mapAcpCommandToSlashCommand),
+          commands: normalizeAcpAvailableCommands(update.availableCommands),
           type: 'commands',
         };
       case 'current_mode_update':
@@ -256,6 +256,12 @@ export class AcpSessionUpdateNormalizer {
     seen.add(key);
     return true;
   }
+}
+
+export function normalizeAcpAvailableCommands(
+  commands: readonly AcpAvailableCommand[],
+): SlashCommand[] {
+  return commands.map(mapAcpCommandToSlashCommand);
 }
 
 function mapAcpCommandToSlashCommand(command: AcpAvailableCommand): SlashCommand {

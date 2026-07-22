@@ -5,6 +5,8 @@ import { claudeSettingsTabRenderer } from '@/providers/claude/ui/ClaudeSettingsT
 
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
+const mockSlashCommandSettings = jest.fn();
+const mockVaultCommandRepository = {};
 
 jest.mock('fs');
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
@@ -100,6 +102,7 @@ jest.mock('@/providers/claude/app/ClaudeWorkspaceServices', () => ({
       reset: jest.fn(),
     },
     commandCatalog: {},
+    vaultCommandRepository: mockVaultCommandRepository,
     agentManager: {},
     agentStorage: {},
     mcpStorage: {},
@@ -116,7 +119,11 @@ jest.mock('@/providers/claude/ui/PluginSettingsManager', () => ({
 }));
 
 jest.mock('@/providers/claude/ui/SlashCommandSettings', () => ({
-  SlashCommandSettings: jest.fn(),
+  SlashCommandSettings: class MockSlashCommandSettings {
+    constructor(...args: unknown[]) {
+      mockSlashCommandSettings(...args);
+    }
+  },
 }));
 
 jest.mock('@/i18n/i18n', () => ({
@@ -375,6 +382,7 @@ function createContext(plugin: any) {
     plugin,
     refreshModelSelectors: jest.fn(),
     refreshTitleGenerationModelOptions: jest.fn(),
+    renderAgentSkillSettings: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
@@ -420,6 +428,20 @@ describe('ClaudeSettingsTab', () => {
 
     expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableOpus1M.name');
     expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableSonnet1M.name');
+  });
+
+  it('keeps Claude CRUD on its explicit vault repository without the shared manager', () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+
+    expect(context.renderAgentSkillSettings).not.toHaveBeenCalled();
+    expect(mockSlashCommandSettings).toHaveBeenCalledWith(
+      expect.anything(),
+      plugin.app,
+      mockVaultCommandRepository,
+    );
   });
 
   it('scopes custom model overrides to the Claude environment section', () => {

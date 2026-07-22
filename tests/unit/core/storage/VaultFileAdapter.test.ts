@@ -1,6 +1,50 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import type { App } from 'obsidian';
 
-import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import {
+  ManagedResourceCollisionError,
+  ManagedResourceRelocationError,
+  VaultFileAdapter,
+} from '@/core/storage/VaultFileAdapter';
+
+function createDesktopFsAdapter(
+  root: string,
+  hooks: {
+    afterExists?: (relativePath: string, exists: boolean) => Promise<void>;
+    afterList?: (relativePath: string) => Promise<void>;
+    beforeRename?: (source: string, target: string) => Promise<void>;
+  } = {},
+): any {
+  const resolve = (relativePath: string) => path.join(root, ...relativePath.split('/'));
+  return {
+    exists: async (relativePath: string) => fs.access(resolve(relativePath)).then(
+      () => true,
+      () => false,
+    ).then(async (exists) => {
+      await hooks.afterExists?.(relativePath, exists);
+      return exists;
+    }),
+    getBasePath: () => root,
+    list: async (relativePath: string) => {
+      const entries = await fs.readdir(resolve(relativePath), { withFileTypes: true });
+      await hooks.afterList?.(relativePath);
+      return {
+        files: entries.filter(entry => entry.isFile() || entry.isSymbolicLink())
+          .map(entry => `${relativePath}/${entry.name}`),
+        folders: entries.filter(entry => entry.isDirectory()).map(entry => `${relativePath}/${entry.name}`),
+      };
+    },
+    mkdir: async (relativePath: string) => fs.mkdir(resolve(relativePath)),
+    rename: async (source: string, target: string) => {
+      await hooks.beforeRename?.(source, target);
+      await fs.rename(resolve(source), resolve(target));
+    },
+    rmdir: async (relativePath: string) => fs.rmdir(resolve(relativePath)),
+  };
+}
 
 describe('VaultFileAdapter', () => {
   let mockAdapter: jest.Mocked<any>;
@@ -19,7 +63,10 @@ describe('VaultFileAdapter', () => {
       rename: jest.fn(),
       list: jest.fn(),
       mkdir: jest.fn(),
+      rmdir: jest.fn(),
       stat: jest.fn(),
+      trashSystem: jest.fn(),
+      trashLocal: jest.fn(),
     };
 
     mockApp.vault = { adapter: mockAdapter } as any;
@@ -551,6 +598,348 @@ describe('VaultFileAdapter', () => {
       const result = await vaultAdapter.stat('empty.md');
 
       expect(result).toEqual({ mtime: 1234567890, size: 0 });
+    });
+  });
+
+  describe('managed resources', () => {
+    it.each([
+      ['managed root', '.agents', 'folder'],
+      ['skills root', '.agents/skills', 'folder'],
+      ['package', '.agents/skills/portable-skill', 'folder'],
+      ['SKILL.md', '.agents/skills/portable-skill/SKILL.md', 'file'],
+    ] as const)('rejects a symlinked %s on desktop adapters', async (_label, relative, type) => {
+      const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-'));
+      const externalPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-external-'));
+      try {
+        if (relative !== '.agents') {
+          await fs.mkdir(path.join(vaultPath, '.agents/skills/portable-skill'), { recursive: true });
+        }
+        const target = type === 'folder'
+          ? externalPath
+          : path.join(externalPath, 'SKILL.md');
+        if (type === 'file') await fs.writeFile(target, 'external');
+        if (type === 'folder' && relative !== '.agents') {
+          await fs.rm(path.join(vaultPath, relative), { recursive: true });
+        }
+        await fs.symlink(target, path.join(vaultPath, relative));
+        const desktopApp = {
+          vault: { adapter: { getBasePath: () => vaultPath } },
+        } as unknown as App;
+
+        await expect(new VaultFileAdapter(desktopApp).verifyManagedPath(relative, {
+          expectedType: type,
+        })).rejects.toThrow('symlink');
+      } finally {
+        await fs.rm(vaultPath, { recursive: true, force: true });
+        await fs.rm(externalPath, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects paths outside the normalized vault namespace', async () => {
+      await expect(vaultAdapter.verifyManagedPath('../escape', {
+        expectedType: 'folder',
+        allowMissing: true,
+      })).rejects.toThrow('vault-relative');
+
+      expect(mockAdapter.stat).not.toHaveBeenCalled();
+    });
+
+    it('rejects an existing path with the wrong adapter-reported type', async () => {
+      mockAdapter.stat.mockResolvedValue({ type: 'file', ctime: 0, mtime: 0, size: 0 });
+
+      await expect(vaultAdapter.verifyManagedPath('.agents/skills', {
+        expectedType: 'folder',
+      })).rejects.toThrow('folder');
+    });
+
+    it('creates missing managed root segments and revalidates each one', async () => {
+      const folders = new Set<string>();
+      mockAdapter.stat.mockImplementation(async (path: string) => folders.has(path)
+        ? { type: 'folder', ctime: 0, mtime: 0, size: 0 }
+        : null);
+      mockAdapter.mkdir.mockImplementation(async (path: string) => {
+        folders.add(path);
+      });
+
+      await vaultAdapter.ensureManagedFolder('.agents/skills');
+
+      expect(mockAdapter.mkdir.mock.calls).toEqual([['.agents'], ['.agents/skills']]);
+      expect(mockAdapter.stat).toHaveBeenCalledWith('.agents/skills');
+    });
+
+    it('rejects an exclusive directory claim when the target already exists', async () => {
+      mockAdapter.stat.mockImplementation(async (path: string) => ({
+        type: 'folder', ctime: 0, mtime: 0, size: 0, path,
+      }));
+
+      await expect(vaultAdapter.createManagedFolderExclusive('.agents/skills/existing'))
+        .rejects.toMatchObject({ name: 'ManagedResourceCollisionError' });
+      expect(mockAdapter.mkdir).not.toHaveBeenCalled();
+    });
+
+    it('reports a race-lost exclusive directory claim as a collision', async () => {
+      const racingTargets = new Set(['.agents', '.agents/skills']);
+      mockAdapter.stat.mockImplementation(async (path: string) => racingTargets.has(path)
+        ? { type: 'folder', ctime: 0, mtime: 0, size: 0 }
+        : null);
+      mockAdapter.mkdir.mockImplementation(async (path: string) => {
+        racingTargets.add(path);
+        throw new Error('EEXIST');
+      });
+
+      await expect(vaultAdapter.createManagedFolderExclusive('.agents/skills/racing'))
+        .rejects.toMatchObject({ name: 'ManagedResourceCollisionError' });
+    });
+
+    it('propagates an exclusive claim failure when no competing target exists', async () => {
+      mockAdapter.stat.mockImplementation(async (path: string) => path === '.agents/skills'
+        || path === '.agents'
+        ? { type: 'folder', ctime: 0, mtime: 0, size: 0 }
+        : null);
+      mockAdapter.mkdir.mockRejectedValue(new Error('Permission denied'));
+
+      await expect(vaultAdapter.createManagedFolderExclusive('.agents/skills/failing'))
+        .rejects.toThrow('Could not exclusively create');
+    });
+
+    it('relocates direct package entries into an exclusive target with SKILL.md last', async () => {
+      const existing = new Map<string, 'file' | 'folder'>([
+        ['.agents', 'folder'],
+        ['.agents/skills', 'folder'],
+        ['.agents/skills/old', 'folder'],
+        ['.agents/skills/old/SKILL.md', 'file'],
+        ['.agents/skills/old/assets', 'folder'],
+      ]);
+      mockAdapter.stat.mockImplementation(async (path: string) => {
+        const type = existing.get(path);
+        return type ? { type, ctime: 0, mtime: 0, size: 0 } : null;
+      });
+      mockAdapter.mkdir.mockImplementation(async (path: string) => {
+        if (existing.has(path)) throw new Error('EEXIST');
+        existing.set(path, 'folder');
+      });
+      mockAdapter.list.mockResolvedValue({
+        files: ['.agents/skills/old/SKILL.md'],
+        folders: ['.agents/skills/old/assets'],
+      });
+      const moveEntry = jest.spyOn(vaultAdapter as any, 'moveManagedEntryNoReplace');
+      moveEntry.mockImplementation(async (...args: unknown[]) => {
+        const [source, target] = args as [string, string];
+        const type = existing.get(source);
+        if (!type || existing.has(target)) throw new Error('rename failed');
+        existing.delete(source);
+        existing.set(target, type);
+      });
+      mockAdapter.rmdir.mockImplementation(async (path: string) => {
+        existing.delete(path);
+      });
+
+      await vaultAdapter.relocateManagedPackageNoReplace(
+        '.agents/skills/old',
+        '.agents/skills/new',
+      );
+
+      expect(moveEntry.mock.calls).toEqual([
+        ['.agents/skills/old/assets', '.agents/skills/new/assets'],
+        ['.agents/skills/old/SKILL.md', '.agents/skills/new/SKILL.md'],
+      ]);
+      expect(existing.has('.agents/skills/old')).toBe(false);
+      expect(existing.has('.agents/skills/new/SKILL.md')).toBe(true);
+    });
+
+    it('rolls back moved entries when relocation fails', async () => {
+      const existing = new Set([
+        '.agents', '.agents/skills', '.agents/skills/old',
+        '.agents/skills/old/a.txt', '.agents/skills/old/SKILL.md',
+      ]);
+      mockAdapter.stat.mockImplementation(async (path: string) => existing.has(path)
+        ? { type: path.endsWith('.txt') || path.endsWith('.md') ? 'file' : 'folder', ctime: 0, mtime: 0, size: 0 }
+        : null);
+      mockAdapter.exists.mockImplementation(async (path: string) => existing.has(path));
+      mockAdapter.mkdir.mockImplementation(async (path: string) => {
+        existing.add(path);
+      });
+      mockAdapter.list.mockResolvedValue({
+        files: ['.agents/skills/old/a.txt', '.agents/skills/old/SKILL.md'],
+        folders: [],
+      });
+      jest.spyOn(vaultAdapter as any, 'moveManagedEntryNoReplace')
+        .mockImplementation(async (...args: unknown[]) => {
+        const [source, target] = args as [string, string];
+        if (source.endsWith('/SKILL.md') && source.includes('/old/')) {
+          throw new Error('rename failed at /private/vault/.agents/skills/old/SKILL.md');
+        }
+        existing.delete(source);
+        existing.add(target);
+      });
+      mockAdapter.rmdir.mockImplementation(async (path: string) => {
+        existing.delete(path);
+      });
+
+      let relocationError: (Error & { cause?: Error }) | null = null;
+      try {
+        await vaultAdapter.relocateManagedPackageNoReplace(
+          '.agents/skills/old',
+          '.agents/skills/new',
+        );
+      } catch (error) {
+        relocationError = error as Error & { cause?: Error };
+      }
+
+      expect(relocationError?.message).toBe(
+        'Failed to relocate managed package from .agents/skills/old to .agents/skills/new',
+      );
+      expect(relocationError?.message).not.toContain('/private/vault');
+      expect(relocationError?.cause?.message).toContain('/private/vault');
+
+      expect(existing.has('.agents/skills/old/a.txt')).toBe(true);
+      expect(existing.has('.agents/skills/new')).toBe(false);
+    });
+
+    it('preserves nested collision classification after complete rollback', async () => {
+      const existing = new Map<string, 'file' | 'folder'>([
+        ['.agents', 'folder'],
+        ['.agents/skills', 'folder'],
+        ['.agents/skills/old', 'folder'],
+        ['.agents/skills/old/assets', 'folder'],
+      ]);
+      mockAdapter.stat.mockImplementation(async (resourcePath: string) => {
+        const type = existing.get(resourcePath);
+        return type ? { type, ctime: 0, mtime: 0, size: 0 } : null;
+      });
+      mockAdapter.mkdir.mockImplementation(async (resourcePath: string) => {
+        existing.set(resourcePath, 'folder');
+      });
+      mockAdapter.list.mockResolvedValue({
+        files: [],
+        folders: ['.agents/skills/old/assets'],
+      });
+      jest.spyOn(vaultAdapter as any, 'moveManagedEntryNoReplace')
+        .mockRejectedValue(new ManagedResourceRelocationError(
+          '.agents/skills/old/assets',
+          '.agents/skills/new/assets',
+          new ManagedResourceCollisionError('.agents/skills/new/assets/example.txt'),
+          [],
+        ));
+      mockAdapter.rmdir.mockImplementation(async (resourcePath: string) => {
+        existing.delete(resourcePath);
+      });
+
+      await expect(vaultAdapter.relocateManagedPackageNoReplace(
+        '.agents/skills/old',
+        '.agents/skills/new',
+      )).rejects.toBeInstanceOf(ManagedResourceCollisionError);
+      expect(existing.has('.agents/skills/old')).toBe(true);
+      expect(existing.has('.agents/skills/new')).toBe(false);
+    });
+
+    it('never overwrites a destination child created during relocation', async () => {
+      const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-'));
+      try {
+        await fs.mkdir(path.join(vaultPath, '.agents/skills/old'), { recursive: true });
+        await fs.writeFile(path.join(vaultPath, '.agents/skills/old/a.txt'), 'source');
+        await fs.writeFile(path.join(vaultPath, '.agents/skills/old/SKILL.md'), 'skill');
+        let raced = false;
+        const existenceChecks: string[] = [];
+        const adapter = createDesktopFsAdapter(vaultPath, {
+          async afterExists(relativePath, exists) {
+            existenceChecks.push(relativePath);
+            if (relativePath === '.agents/skills/new/a.txt' && !exists) {
+              await fs.writeFile(path.join(vaultPath, '.agents/skills/new/a.txt'), 'racer');
+              raced = true;
+            }
+          },
+        });
+
+        let relocationError: unknown;
+        try {
+          await new VaultFileAdapter({ vault: { adapter } } as unknown as App)
+            .relocateManagedPackageNoReplace('.agents/skills/old', '.agents/skills/new');
+        } catch (error) {
+          relocationError = error;
+        }
+
+        expect(relocationError).toBeInstanceOf(Error);
+        expect(existenceChecks).toContain('.agents/skills/new/a.txt');
+        expect(raced).toBe(true);
+        await expect(fs.readFile(path.join(vaultPath, '.agents/skills/old/a.txt'), 'utf8'))
+          .resolves.toBe('source');
+        await expect(fs.readFile(path.join(vaultPath, '.agents/skills/new/a.txt'), 'utf8'))
+          .resolves.toBe('racer');
+      } finally {
+        await fs.rm(vaultPath, { recursive: true, force: true });
+      }
+    });
+
+    it('never overwrites a source child created before rollback', async () => {
+      const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-'));
+      try {
+        await fs.mkdir(path.join(vaultPath, '.agents/skills/old'), { recursive: true });
+        await fs.writeFile(path.join(vaultPath, '.agents/skills/old/a.txt'), 'source');
+        await fs.writeFile(path.join(vaultPath, '.agents/skills/old/SKILL.md'), 'skill');
+        const adapter = createDesktopFsAdapter(vaultPath, {
+          async afterExists(relativePath, exists) {
+            if (relativePath === '.agents/skills/new/SKILL.md' && !exists) {
+              await fs.writeFile(path.join(vaultPath, '.agents/skills/new/SKILL.md'), 'blocker');
+            }
+            if (
+              relativePath === '.agents/skills/new/a.txt'
+              && exists
+              && await fs.access(path.join(vaultPath, '.agents/skills/old/a.txt')).then(
+                () => false,
+                () => true,
+              )
+            ) {
+              await fs.writeFile(path.join(vaultPath, '.agents/skills/old/a.txt'), 'racer');
+            }
+          },
+          async beforeRename(source) {
+            if (source === '.agents/skills/old/SKILL.md') {
+              throw new Error('forced move failure');
+            }
+          },
+        });
+
+        await expect(new VaultFileAdapter({ vault: { adapter } } as unknown as App)
+          .relocateManagedPackageNoReplace('.agents/skills/old', '.agents/skills/new'))
+          .rejects.toThrow();
+
+        await expect(fs.readFile(path.join(vaultPath, '.agents/skills/old/a.txt'), 'utf8'))
+          .resolves.toBe('racer');
+        await expect(fs.readFile(path.join(vaultPath, '.agents/skills/new/a.txt'), 'utf8'))
+          .resolves.toBe('source');
+      } finally {
+        await fs.rm(vaultPath, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('trash', () => {
+    it('does nothing when the path is missing', async () => {
+      mockAdapter.exists.mockResolvedValue(false);
+
+      await vaultAdapter.trash('.agents/skills/missing');
+
+      expect(mockAdapter.trashSystem).not.toHaveBeenCalled();
+      expect(mockAdapter.trashLocal).not.toHaveBeenCalled();
+    });
+
+    it('uses system trash when available', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.trashSystem.mockResolvedValue(true);
+
+      await vaultAdapter.trash('.agents/skills/portable-skill');
+
+      expect(mockAdapter.trashLocal).not.toHaveBeenCalled();
+    });
+
+    it('falls back to local trash and propagates failures', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.trashSystem.mockResolvedValue(false);
+      mockAdapter.trashLocal.mockRejectedValue(new Error('trash failed'));
+
+      await expect(vaultAdapter.trash('.agents/skills/portable-skill'))
+        .rejects.toThrow('Could not trash managed resource');
     });
   });
 });

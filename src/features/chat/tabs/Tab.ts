@@ -2,8 +2,7 @@ import type { Component } from 'obsidian';
 import { Notice, Platform } from 'obsidian';
 
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
-import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
-import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
+import { normalizeProviderCommandDiscoveryItems } from '../../../core/providers/commands/ProviderCommandDiscoveryResult';
 import {
   getProviderSettingsSnapshotWithModel,
   normalizeProviderModelSelection,
@@ -57,7 +56,15 @@ import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
 import { getTabProviderId } from './providerResolution';
 import { TabSession } from './TabSession';
-import type { TabData, TabDOMElements, TabId, TabManagerViewHost, TabProviderContext } from './types';
+import type {
+  ProviderCatalogInfo,
+  ProviderCatalogResolver,
+  TabData,
+  TabDOMElements,
+  TabId,
+  TabManagerViewHost,
+  TabProviderContext,
+} from './types';
 import { generateTabId } from './types';
 
 type TabProviderSettings = Record<string, unknown> & {
@@ -127,6 +134,7 @@ export interface TabCreateOptions {
   onTitleChanged?: (title: string) => void;
   onAttentionChanged?: (needsAttention: boolean) => void;
   onConversationIdChanged?: (conversationId: string | null) => void;
+  onRuntimeInstalled?: (runtime: ChatRuntime) => void;
 }
 
 export { getTabProviderId } from './providerResolution';
@@ -306,11 +314,6 @@ function sendTabInputMessageFromEnterKey(
   return sendTabInputMessage(tab, e);
 }
 
-type ProviderCatalogInfo = {
-  config: ProviderCommandDropdownConfig;
-  getEntries: () => Promise<ProviderCommandEntry[]>;
-} | null;
-
 function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalogInfo {
   const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
   if (!catalog) {
@@ -319,7 +322,9 @@ function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalog
 
   return {
     config: catalog.getDropdownConfig(),
-    getEntries: () => catalog.listDropdownEntries({ includeBuiltIns: false }),
+    getEntries: async () => normalizeProviderCommandDiscoveryItems(
+      await catalog.listDropdownEntries({ includeBuiltIns: false }),
+    ),
   };
 }
 
@@ -330,7 +335,7 @@ function getProviderMcpManager(providerId: ProviderId) {
 function syncSlashCommandDropdownForProvider(
   tab: TabData,
   plugin: FeatureHost,
-  getProviderCatalogConfig?: () => ProviderCatalogInfo,
+  getProviderCatalogConfig?: ProviderCatalogResolver,
   conversation?: Conversation | null,
 ): void {
   const dropdown = tab.ui.slashCommandDropdown;
@@ -338,13 +343,13 @@ function syncSlashCommandDropdownForProvider(
     return;
   }
 
-  const catalogInfo = getProviderCatalogConfig?.()
+  const catalogInfo = (getProviderCatalogConfig ?? tab.providerCatalogResolver)?.()
     ?? getRegistryProviderCatalogInfo(getTabProviderId(tab, plugin, conversation));
 
   if (catalogInfo) {
     dropdown.setProviderCatalog?.(catalogInfo.config, catalogInfo.getEntries);
   } else {
-    dropdown.resetSdkSkillsCache();
+    dropdown.clearProviderCatalog?.();
   }
 
   dropdown.setHiddenCommands(getTabHiddenCommands(tab, plugin, conversation));
@@ -587,6 +592,8 @@ export function createTab(options: TabCreateOptions): TabData {
       runtimeSupervisor.setCurrent(runtime);
     },
     runtimeSupervisor,
+    onRuntimeInstalled: options.onRuntimeInstalled,
+    providerCatalogResolver: null,
     serviceInitialized: false,
     state,
     controllers: {
@@ -720,7 +727,11 @@ export async function initializeTabService(
     ? resolveConversationModel(plugin.settings, providerId, conversation).model
     : getTabSelectedModel(tab, plugin);
 
-  if (tab.serviceInitialized && tab.service?.providerId === providerId) {
+  if (
+    tab.serviceInitialized
+    && tab.service?.providerId === providerId
+    && !tab.runtimeSupervisor.isInvalidated
+  ) {
     return;
   }
 
@@ -763,7 +774,9 @@ export async function initializeTabService(
 
     tab.providerId = providerId;
     tab.service = service;
+    tab.runtimeSupervisor.setCurrent(service, plugin.getAgentSkillResourceGeneration?.() ?? 0);
     tab.serviceInitialized = true;
+    tab.onRuntimeInstalled?.(service);
 
     // Update lifecycle state
     if (tab.lifecycleState === 'blank') {
@@ -822,7 +835,7 @@ function initializeContextManagers(tab: TabData, plugin: FeatureHost): void {
 function initializeSlashCommands(
   tab: TabData,
   getHiddenCommands?: () => Set<string>,
-  catalogInfo?: { config: ProviderCommandDropdownConfig; getEntries: () => Promise<ProviderCommandEntry[]> } | null,
+  catalogInfo?: ProviderCatalogInfo,
 ): void {
   const { dom } = tab;
 
@@ -836,7 +849,7 @@ function initializeSlashCommands(
     {
       hiddenCommands: getHiddenCommands?.() ?? new Set(),
       providerConfig: catalogInfo?.config,
-      getProviderEntries: catalogInfo?.getEntries,
+      discoverProviderEntries: catalogInfo?.getEntries,
     }
   );
 }
@@ -937,6 +950,7 @@ function initializeInputToolbar(
       // For blank tabs, update draft model and derive provider
       if (tab.lifecycleState === 'blank') {
         const previousProvider = tab.providerId;
+        const previousModel = tab.draftModel;
         tab.draftModel = model;
         const newProvider = getEnabledProviderForModel(
           model,
@@ -950,11 +964,22 @@ function initializeInputToolbar(
         if (didProviderChange) {
           syncTabProviderServices(tab, plugin);
         }
-        syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
-
         const uiConfig = ProviderRegistry.getChatUIConfig(newProvider);
         if (didProviderChange) {
-          await onProviderChanged?.(newProvider);
+          tab.ui.slashCommandDropdown?.clearProviderCatalog?.();
+          try {
+            await onProviderChanged?.(newProvider);
+          } catch (error) {
+            tab.draftModel = previousModel;
+            tab.providerId = previousProvider;
+            syncTabProviderServices(tab, plugin);
+            syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
+            refreshTabProviderUI(tab, plugin);
+            applyProviderUIGating(tab, plugin);
+            throw error;
+          }
+        } else {
+          syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
         }
         await uiConfig.prepareModelMetadata?.(
           model,
@@ -1111,7 +1136,7 @@ function initializeInputToolbar(
 }
 
 export interface InitializeTabUIOptions {
-  getProviderCatalogConfig?: () => ProviderCatalogInfo;
+  getProviderCatalogConfig?: ProviderCatalogResolver;
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>;
 }
 
@@ -1125,6 +1150,7 @@ export function initializeTabUI(
   options: InitializeTabUIOptions = {}
 ): void {
   const { dom, state } = tab;
+  tab.providerCatalogResolver = options.getProviderCatalogConfig ?? null;
 
   tab.ui.contextTray = new ComposerContextTray(dom.contextRowEl, {
     onDidChange: () => {
@@ -1548,7 +1574,11 @@ export function initializeTabControllers(
     getTabProviderId: () => getTabProviderId(tab, plugin),
     turnOwner: tab.session,
     ensureServiceInitialized: async () => {
-      if (tab.serviceInitialized && tab.lifecycleState === 'bound_active') {
+      if (
+        tab.serviceInitialized
+        && tab.lifecycleState === 'bound_active'
+        && !tab.runtimeSupervisor.isInvalidated
+      ) {
         return true;
       }
 

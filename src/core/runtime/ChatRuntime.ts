@@ -44,6 +44,10 @@ export interface ChatRuntime {
   consumeSessionInvalidation(): boolean;
   isReady(): boolean;
   getSupportedCommands(): Promise<SlashCommand[]>;
+  /** Publishes provider-native command snapshots without committing them to a shared catalog. */
+  onSupportedCommandsChange?(
+    listener: (commands: readonly SlashCommand[]) => void,
+  ): () => void;
   getAuxiliaryModel?(): string | null;
   cleanup(): void;
   rewind(userMessageId: string, assistantMessageId: string | undefined, mode?: ChatRewindMode): Promise<ChatRewindResult>;

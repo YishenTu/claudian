@@ -57,3 +57,16 @@ test('persisted settings changes use the coordinator boundary', () => {
   ].includes(file));
   assert.deepEqual(matches, []);
 });
+
+test('runtime command discovery cannot import shared skill management', () => {
+  const roots = [
+    path.join(sourceRoot, 'features', 'chat'),
+    path.join(sourceRoot, 'shared', 'components'),
+    ...['claude', 'codex', 'grok', 'opencode', 'pi'].flatMap(provider => [
+      path.join(sourceRoot, 'providers', provider, 'app'),
+      path.join(sourceRoot, 'providers', provider, 'commands'),
+    ]).filter(fs.existsSync),
+  ];
+  const pattern = /from\s+['"][^'"]*(?:core\/skills|AgentSkillSettings)/;
+  assert.deepEqual(findMatches(roots, pattern), []);
+});

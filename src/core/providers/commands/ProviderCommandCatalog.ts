@@ -12,9 +12,6 @@ export interface ProviderCommandDropdownConfig {
 
 export interface ProviderCommandCatalog {
   listDropdownEntries(context: { includeBuiltIns: boolean }): Promise<ProviderCommandEntry[]>;
-  listVaultEntries(): Promise<ProviderCommandEntry[]>;
-  saveVaultEntry(entry: ProviderCommandEntry): Promise<void>;
-  deleteVaultEntry(entry: ProviderCommandEntry): Promise<void>;
   setRuntimeCommands(commands: SlashCommand[]): void;
   getDropdownConfig(): ProviderCommandDropdownConfig;
   refresh(): Promise<void>;

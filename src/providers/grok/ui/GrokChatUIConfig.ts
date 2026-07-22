@@ -233,9 +233,15 @@ function getExplicitlySelectedGrokModel(
   const catalogModels = grokSettings.currentCatalog?.models ?? [];
   const visibleModels = grokSettings.visibleModels
     ?? catalogModels.map(entry => entry.rawId);
-  return visibleModels.includes(rawId)
-    ? findGrokModel(catalogModels, rawId)
-    : null;
+  if (!visibleModels.includes(rawId)) {
+    return null;
+  }
+  return findGrokModel(catalogModels, rawId) ?? {
+    displayName: rawId,
+    rawId,
+    reasoningEfforts: [],
+    supportsReasoning: false,
+  };
 }
 
 function clearSavedGrokEffortProjection(settings: Record<string, unknown>): void {

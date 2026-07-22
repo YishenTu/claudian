@@ -34,7 +34,6 @@ export const grokProviderRegistration: ProviderModule = {
     return new GrokChatRuntime(plugin, {
       capabilities: GROK_PROVIDER_CAPABILITIES,
       cliResolver: workspace.cliResolver,
-      commandCatalog: workspace.commandCatalog,
       lifecycle: workspace.auxiliaryLifecycle,
       modelCatalogCoordinator: workspace.modelCatalogCoordinator,
     });

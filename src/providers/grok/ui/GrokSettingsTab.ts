@@ -173,6 +173,9 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName('Models').setHeading();
     renderGrokModelPicker(container, context, settingsBag, refreshModelCatalog);
 
+    new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
+    context.renderAgentSkillSettings(container, GROK_PROVIDER_ID);
+
     new Setting(container).setName('Commands').setHeading();
     context.renderHiddenProviderCommandSetting(container, GROK_PROVIDER_ID, {
       name: 'Hidden Grok commands',

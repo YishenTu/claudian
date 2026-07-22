@@ -101,14 +101,13 @@ describe('Grok provider registration', () => {
 
   it('constructs runtime and auxiliary factories against initialized workspace services', () => {
     const plugin = createPlugin();
-    const commandCatalog = new GrokCommandCatalog();
     const cliResolver = new GrokCliResolver();
     const modelCatalogCoordinator = {
       mergeLiveModels: jest.fn(),
     } as unknown as GrokModelCatalogCoordinator;
     ProviderWorkspaceRegistry.setServices('grok', {
       cliResolver,
-      commandCatalog,
+      commandCatalog: new GrokCommandCatalog(),
       modelCatalogCoordinator,
     } as any);
 
@@ -117,9 +116,9 @@ describe('Grok provider registration', () => {
     expect(runtime.getCapabilities()).toBe(grokProviderRegistration.capabilities);
     expect(runtime).toMatchObject({
       cliResolver,
-      commandCatalog,
       modelCatalogCoordinator,
     });
+    expect(runtime).not.toHaveProperty('commandCatalog');
     expect(grokProviderRegistration.createTitleGenerationService(plugin)).toBeDefined();
     expect(grokProviderRegistration.createInstructionRefineService(plugin)).toBeDefined();
     expect(grokProviderRegistration.createInlineEditService(plugin)).toBeDefined();

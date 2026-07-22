@@ -353,7 +353,7 @@
       },
       "skills": {
         "name": "Codex skills",
-        "desc": "Manage vault-level Codex skills stored in .codex/skills/ or .agents/skills/. Home-level skills are excluded here.",
+        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
         "hiddenName": "Hidden Skills",
         "hiddenDesc": "Hide specific Codex skills from the dropdown. Enter skill names without the leading $, one per line.",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
@@ -370,6 +370,43 @@
       "environment": {
         "name": "Codex environment",
         "desc": "Codex-owned runtime variables only. Use this for OPENAI_* and CODEX_* settings. If Codex auto-detection needs help, add its install directory to shared PATH instead of this provider section."
+      }
+    },
+    "agentSkills": {
+      "sectionTitle": "Skills",
+      "header": "Shared skills",
+      "fixedRoot": "Managed in .agents/skills",
+      "sharedExpectation": "Manage skills shared across all enabled providers in .agents/skills/.",
+      "noSkills": "No shared skills configured. Click + to create one.",
+      "skillBadge": "skill",
+      "diagnosticsTitle": "Skills needing attention",
+      "loadFailed": "Could not load shared skills.",
+      "savedRefreshFailed": "Saved, but provider refresh failed.",
+      "validationFailed": "Invalid skill: {message}",
+      "collisionFailed": "A skill named \"{name}\" already exists.",
+      "saveFailed": "Failed to save shared skill: {message}",
+      "deleteFailed": "Failed to move shared skill to trash: {message}",
+      "staleConflict": "This skill changed elsewhere; refresh before saving.",
+      "created": "Shared skill \"{name}\" created.",
+      "updated": "Shared skill \"{name}\" updated.",
+      "deleted": "Shared skill \"{name}\" moved to trash.",
+      "modal": {
+        "titleEdit": "Edit Shared Skill",
+        "titleAdd": "Add Shared Skill",
+        "name": "Skill name",
+        "nameDesc": "Lowercase letters and numbers separated by single hyphens",
+        "namePlaceholder": "code-reviewer",
+        "description": "Description",
+        "descriptionDesc": "Required portable description used by providers to select the skill",
+        "descriptionPlaceholder": "Reviews code for correctness and maintainability",
+        "instructions": "Instructions",
+        "instructionsDesc": "Required SKILL.md instructions",
+        "instructionsPlaceholder": "Review the supplied code and report actionable findings..."
+      },
+      "delete": {
+        "title": "Delete Shared Skill",
+        "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
+        "confirm": "Move to trash"
       }
     },
     "codexSkills": {
