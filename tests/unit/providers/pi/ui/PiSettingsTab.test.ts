@@ -334,6 +334,7 @@ function createContext(settings: Record<string, unknown>) {
   const saveSettings = jest.fn().mockResolvedValue(undefined);
   return {
     plugin: {
+      notifyProviderChatOptionsChanged: jest.fn(),
       saveSettings,
       settings,
       mutateSettings: jest.fn(async (mutation: (current: any) => void | Promise<void>) => {
@@ -485,7 +486,7 @@ describe('PiSettingsTab', () => {
     expect(mockDiscoverModels).toHaveBeenCalledTimes(1);
     expect(getPiProviderSettings(settings).discoveredModels).toHaveLength(1);
     expect(getPiProviderSettings(settings).visibleModels).toEqual(['pi:anthropic/claude-sonnet-4']);
-    expect(context.refreshModelSelectors).toHaveBeenCalled();
+    expect(context.plugin.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('pi');
 
     mockDiscoverModels.mockResolvedValueOnce({
       diagnostics: 'not logged in',
@@ -527,6 +528,37 @@ describe('PiSettingsTab', () => {
 
     expect(getPiProviderSettings(settings).discoveredModels).toEqual([cachedModel]);
     expect(context.plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it('does not publish unchanged model discovery', async () => {
+    const cachedModel = {
+      encodedId: 'pi:anthropic/claude-sonnet-4',
+      id: 'claude-sonnet-4',
+      input: ['text'] as Array<'text'>,
+      label: 'Claude Sonnet 4',
+      provider: 'anthropic',
+      reasoning: true,
+      thinkingLevels: ['off', 'medium'] as Array<'off' | 'medium'>,
+    };
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        pi: {
+          discoveredModels: [cachedModel],
+          visibleModels: [cachedModel.encodedId],
+        },
+      },
+    };
+    const context = render(settings);
+    mockDiscoverModels.mockResolvedValueOnce({
+      kind: 'completed',
+      models: [cachedModel],
+    });
+
+    await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
+    await flushPromises();
+
+    expect(context.plugin.saveSettings).not.toHaveBeenCalled();
+    expect(context.plugin.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
   });
 
   it('persists visible model choices and aliases', async () => {

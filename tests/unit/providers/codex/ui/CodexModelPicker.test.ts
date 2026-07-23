@@ -299,7 +299,7 @@ describe('CodexModelPicker', () => {
 
     expect(ensureFresh).toHaveBeenCalledWith('model-picker', { force: true });
     expect(plugin.saveSettings).not.toHaveBeenCalled();
-    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
+    expect(context.refreshModelSelectors).not.toHaveBeenCalled();
   });
 
   it('does not save when refresh only changes the runtime catalog', async () => {
@@ -319,7 +319,7 @@ describe('CodexModelPicker', () => {
     await flushPromises();
 
     expect(plugin.saveSettings).not.toHaveBeenCalled();
-    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
+    expect(context.refreshModelSelectors).not.toHaveBeenCalled();
   });
 
   it('checks cached catalog freshness on open and rerenders after background refresh', async () => {
@@ -377,6 +377,6 @@ describe('CodexModelPicker', () => {
     expect(elements.some(element => (
       element.tag === 'label' && element.title === 'gpt-5.6-new'
     ))).toBe(true);
-    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(2);
+    expect(context.refreshModelSelectors).not.toHaveBeenCalled();
   });
 });

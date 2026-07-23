@@ -276,6 +276,30 @@ describe('ModelSelector', () => {
     expect(options[2]?.children[0]?.textContent).toBe('Haiku');
   });
 
+  it('should reread model options before the dropdown becomes visible', () => {
+    const uiConfig = callbacks.getUIConfig();
+    uiConfig.getModelOptions.mockReturnValue([
+      { value: 'gpt-new', label: 'GPT New' },
+      { value: 'gpt-fast', label: 'GPT Fast' },
+    ]);
+    callbacks.getSettings.mockReturnValue({
+      model: 'gpt-new',
+      thinkingBudget: 'low',
+      effortLevel: 'high',
+      serviceTier: 'default',
+      permissionMode: 'normal',
+    });
+
+    parentEl.querySelector('.claudian-model-selector')?.dispatchEvent('mouseenter');
+
+    expect(parentEl.querySelector('.claudian-model-label')?.textContent).toBe('GPT New');
+    const options = parentEl.querySelector('.claudian-model-dropdown')?.children ?? [];
+    expect(options.map((option: any) => option.children[0]?.textContent)).toEqual([
+      'GPT Fast',
+      'GPT New',
+    ]);
+  });
+
   it('should mark current model as selected', () => {
     const dropdown = parentEl.querySelector('.claudian-model-dropdown');
     const options = dropdown?.children || [];

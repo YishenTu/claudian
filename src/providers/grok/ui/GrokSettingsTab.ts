@@ -47,7 +47,6 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         new Notice(`Grok model discovery failed: ${result.diagnostics}`);
         return 'failed';
       }
-      context.refreshModelSelectors();
       context.refreshTitleGenerationModelOptions();
       return (getGrokProviderSettings(settingsBag).currentCatalog?.models.length ?? 0) > 0
         ? 'loaded'

@@ -83,6 +83,7 @@ function createFakeHost(overrides: {
     },
     getResolvedProviderCliPath: jest.fn(() => resolvedCliPath),
     getActiveEnvironmentVariables: jest.fn(() => envText),
+    notifyProviderChatOptionsChanged: jest.fn(),
     mutateSettingsConditionally: jest.fn(async (mutation) => {
       return mutation({
         ...DEFAULT_CODEX_PROVIDER_SETTINGS,
@@ -243,6 +244,53 @@ describe('CodexModelCatalogCoordinator', () => {
     expect(result.backgroundRefresh).toBeDefined();
     await result.backgroundRefresh;
     expect(discovery.discoverModels).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes mounted model selectors after a background catalog change commits', async () => {
+    const cachedModel = makeModel('gpt-4o');
+    const discoveredModel = makeModel('gpt-4o-mini');
+    const host = createFakeHost({
+      discoveredModels: [cachedModel],
+      catalogTimestamp: 1,
+    });
+    (host.mutateSettingsConditionally as jest.Mock).mockImplementation(async (mutation) => {
+      await mutation(host.settings);
+    });
+    const coordinator = new CodexModelCatalogCoordinator(host, createDiscovery({
+      kind: 'completed',
+      models: [discoveredModel],
+    }));
+
+    const result = await coordinator.ensureFresh('layout-ready');
+
+    expect(result.models).toEqual([cachedModel]);
+    expect(host.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
+
+    await result.backgroundRefresh;
+
+    expect(getCodexProviderSettings(host.settings).discoveredModels).toEqual([discoveredModel]);
+    expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('codex');
+  });
+
+  it('does not refresh mounted model selectors when only catalog freshness changes', async () => {
+    const cachedModel = makeModel('gpt-4o');
+    const host = createFakeHost({
+      discoveredModels: [cachedModel],
+      catalogTimestamp: 1,
+    });
+    (host.mutateSettingsConditionally as jest.Mock).mockImplementation(async (mutation) => {
+      await mutation(host.settings);
+    });
+    const coordinator = new CodexModelCatalogCoordinator(host, createDiscovery({
+      kind: 'completed',
+      models: [cachedModel],
+    }));
+
+    const result = await coordinator.ensureFresh('layout-ready');
+    const backgroundResult = await result.backgroundRefresh;
+
+    expect(backgroundResult?.refreshed).toBe(false);
+    expect(host.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
   });
 
   it('preserves cached models when cache fingerprint resolution fails', async () => {

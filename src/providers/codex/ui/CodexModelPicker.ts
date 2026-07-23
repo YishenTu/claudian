@@ -105,10 +105,7 @@ export function renderCodexModelPicker(
       const result = await workspace.modelCatalogCoordinator.ensureFresh('model-picker', { force });
       if (result.backgroundRefresh) {
         void result.backgroundRefresh.then(
-          () => {
-            context.refreshModelSelectors();
-            refreshPicker();
-          },
+          () => refreshPicker(),
           () => refreshPicker(),
         );
       }
@@ -116,7 +113,6 @@ export function renderCodexModelPicker(
         new Notice(`Codex model discovery failed: ${result.diagnostics}`);
         return 'failed';
       }
-      context.refreshModelSelectors();
       return getCodexProviderSettings(settingsBag).discoveredModels.length > 0 ? 'loaded' : 'empty';
     },
     loadingCatalogText: 'Loading the Codex model catalog...',

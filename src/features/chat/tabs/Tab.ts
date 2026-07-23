@@ -4,6 +4,7 @@ import { Notice, Platform } from 'obsidian';
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import { normalizeProviderCommandDiscoveryItems } from '../../../core/providers/commands/ProviderCommandDiscoveryResult';
 import {
+  findProviderModelOption,
   getProviderSettingsSnapshotWithModel,
   normalizeProviderModelSelection,
   resolveConversationModel,
@@ -456,10 +457,39 @@ function cleanupTabRuntime(tab: TabData): void {
   tab.serviceInitialized = false;
 }
 
+function resolveBlankTabFallback(
+  settings: Record<string, unknown>,
+  enabledProviderIds: ProviderId[],
+  preferredProviderId: ProviderId,
+): { model: string; providerId: ProviderId } | null {
+  const providerIds = [
+    ...(enabledProviderIds.includes(preferredProviderId) ? [preferredProviderId] : []),
+    ...enabledProviderIds.filter(providerId => providerId !== preferredProviderId),
+  ];
+
+  for (const providerId of providerIds) {
+    const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+    const modelOptions = uiConfig.getModelOptions(settings);
+    if (modelOptions.length === 0) {
+      continue;
+    }
+
+    const defaultModel = uiConfig.getDefaultModel?.(settings);
+    const availableDefault = defaultModel
+      ? findProviderModelOption(providerId, defaultModel, settings)
+      : null;
+    return {
+      model: availableDefault ?? modelOptions[0].value,
+      providerId,
+    };
+  }
+
+  return null;
+}
+
 /**
- * Called when provider availability changes. If a blank tab targets a provider
- * that is now disabled, it falls back to the first enabled provider's default
- * blank-tab model. Refreshes model selector options for all blank tabs.
+ * Reconciles blank drafts after provider or model availability changes.
+ * Prefer the draft provider's advertised default before crossing providers.
  */
 export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost): void {
   if (tab.lifecycleState !== 'blank') return;
@@ -469,17 +499,26 @@ export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost)
   let nextProviderId = tab.providerId;
 
   if (tab.draftModel) {
-    const draftProvider = getEnabledProviderForModel(tab.draftModel, settingsSnapshot);
-    const draftProviderOwnsModel = ProviderRegistry
-      .getChatUIConfig(draftProvider)
-      .ownsModel(tab.draftModel, settingsSnapshot);
-    if (!enabledProviderIds.includes(draftProvider) || !draftProviderOwnsModel) {
-      const fallbackProviderId = enabledProviderIds[0] ?? DEFAULT_CHAT_PROVIDER_ID;
-      const fallbackModels = ProviderRegistry.getChatUIConfig(fallbackProviderId)
-        .getModelOptions(settingsSnapshot);
-      tab.draftModel = fallbackModels[0]?.value ?? tab.draftModel;
-      nextProviderId = fallbackProviderId;
+    const draftProvider = getEnabledProviderForModel(
+      tab.draftModel,
+      settingsSnapshot,
+      tab.providerId,
+    );
+    const availableDraftModel = enabledProviderIds.includes(draftProvider)
+      ? findProviderModelOption(draftProvider, tab.draftModel, settingsSnapshot)
+      : null;
+    if (!availableDraftModel) {
+      const fallback = resolveBlankTabFallback(
+        settingsSnapshot,
+        enabledProviderIds,
+        draftProvider,
+      );
+      if (fallback) {
+        tab.draftModel = fallback.model;
+        nextProviderId = fallback.providerId;
+      }
     } else {
+      tab.draftModel = availableDraftModel;
       nextProviderId = draftProvider;
     }
   }

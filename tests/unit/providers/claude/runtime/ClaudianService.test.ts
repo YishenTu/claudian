@@ -4,7 +4,7 @@ import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { Notice } from 'obsidian';
 
 import type { McpServerManager } from '@/core/mcp/McpServerManager';
-import type ClaudianPlugin from '@/main';
+import type { ProviderHost } from '@/core/providers/ProviderHost';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import * as sdkLoader from '@/providers/claude/loadClaudeAgentSdk';
 import { ClaudianService } from '@/providers/claude/runtime/ClaudeChatRuntime';
@@ -24,7 +24,7 @@ const sdkMock = sdkModule as unknown as {
 type MockMcpServerManager = jest.Mocked<McpServerManager>;
 
 describe('ClaudianService', () => {
-  let mockPlugin: Partial<ClaudianPlugin>;
+  let mockPlugin: Partial<ProviderHost>;
   let mockMcpManager: MockMcpServerManager;
   let service: ClaudianService;
 
@@ -67,7 +67,7 @@ describe('ClaudianService', () => {
       pluginManager: {
         getPluginsKey: jest.fn().mockReturnValue(''),
       },
-    } as unknown as ClaudianPlugin;
+    } as unknown as ProviderHost;
 
     mockMcpManager = {
       loadServers: jest.fn().mockResolvedValue(undefined),
@@ -79,7 +79,7 @@ describe('ClaudianService', () => {
       transformMentions: jest.fn().mockImplementation((text: string) => text),
     } as unknown as MockMcpServerManager;
 
-    service = new ClaudianService(mockPlugin as ClaudianPlugin, mockMcpManager);
+    service = new ClaudianService(mockPlugin as ProviderHost, mockMcpManager);
   });
 
   describe('prepareTurn', () => {

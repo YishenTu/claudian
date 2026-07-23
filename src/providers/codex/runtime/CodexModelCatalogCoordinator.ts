@@ -282,6 +282,9 @@ export class CodexModelCatalogCoordinator {
         };
       }
       this.state = 'ready';
+      if (persistedResult.changed) {
+        this.plugin.notifyProviderChatOptionsChanged('codex');
+      }
       return {
         kind: 'completed',
         models: discoveryResult.models,

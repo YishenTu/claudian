@@ -995,6 +995,63 @@ describe('Tab - Service Initialization', () => {
       expect(mockSlashCommandDropdown.resetSdkSkillsCache).toHaveBeenCalled();
     });
 
+    it('falls back a removed blank Codex draft to the refreshed Codex default', () => {
+      jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+
+      const plugin = createMockPlugin();
+      const tab = createTab(createMockOptions({ plugin }));
+      initializeTabUI(tab, plugin);
+
+      tab.draftModel = 'gpt-5.3-removed';
+      tab.providerId = 'codex';
+      tab.lifecycleState = 'blank';
+
+      onProviderAvailabilityChanged(tab, plugin);
+
+      expect(tab.providerId).toBe('codex');
+      expect(tab.draftModel).toBe(TEST_CODEX_MODEL);
+    });
+
+    it('keeps the known draft provider when an unprefixed custom model disappears', () => {
+      jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+
+      const plugin = createMockPlugin();
+      const tab = createTab(createMockOptions({ plugin }));
+      initializeTabUI(tab, plugin);
+
+      tab.draftModel = 'my-custom-model';
+      tab.providerId = 'codex';
+      tab.lifecycleState = 'blank';
+
+      onProviderAvailabilityChanged(tab, plugin);
+
+      expect(tab.providerId).toBe('codex');
+      expect(tab.draftModel).toBe(TEST_CODEX_MODEL);
+    });
+
+    it('preserves a blank Codex draft that remains in the refreshed catalog', () => {
+      jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+
+      const plugin = createMockPlugin();
+      const tab = createTab(createMockOptions({ plugin }));
+      initializeTabUI(tab, plugin);
+
+      tab.draftModel = 'gpt-5.4-mini';
+      tab.providerId = 'codex';
+      tab.lifecycleState = 'blank';
+
+      onProviderAvailabilityChanged(tab, plugin);
+
+      expect(tab.providerId).toBe('codex');
+      expect(tab.draftModel).toBe('gpt-5.4-mini');
+    });
+
     it('rebinds provider-scoped helper services when a newly enabled provider takes over the draft model', () => {
       const createInstructionRefineServiceSpy = jest.spyOn(ProviderRegistry, 'createInstructionRefineService')
         .mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);

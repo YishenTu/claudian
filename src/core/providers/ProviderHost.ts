@@ -41,7 +41,7 @@ export interface ProviderHost {
     context?: ProviderCliResolutionContext,
   ): Promise<string | null>;
 
-  refreshModelSelectors?(): void;
+  notifyProviderChatOptionsChanged(providerId: ProviderId): void;
   broadcastToActiveViewRuntimes?(
     action: (runtime: ChatRuntime) => Promise<void> | void,
   ): Promise<void>;

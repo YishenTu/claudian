@@ -1,9 +1,115 @@
 import { createMockEl } from '@test/helpers/mockElement';
 import { Platform, Scope } from 'obsidian';
 
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ClaudianView } from '@/features/chat/ClaudianView';
 
 const MockScope = Scope as typeof Scope & { instances: Scope[] };
+
+function createModelRefreshTab(providerId: 'codex' | 'grok') {
+  return {
+    conversationId: null,
+    dom: {
+      inputWrapper: {
+        toggleClass: jest.fn(),
+      },
+    },
+    lifecycleState: 'bound_cold',
+    providerId,
+    service: null,
+    state: { usage: null },
+    ui: {
+      modeSelector: {
+        renderOptions: jest.fn(),
+        updateDisplay: jest.fn(),
+      },
+      modelSelector: {
+        renderOptions: jest.fn(),
+        updateDisplay: jest.fn(),
+      },
+      permissionToggle: { updateDisplay: jest.fn() },
+      serviceTierToggle: { updateDisplay: jest.fn() },
+      thinkingBudgetSelector: { updateDisplay: jest.fn() },
+    },
+  };
+}
+
+function createBlankModelRefreshTab(providerId: 'codex' | 'grok') {
+  return {
+    ...createModelRefreshTab(providerId),
+    draftModel: null,
+    lifecycleState: 'blank',
+    services: {
+      instructionRefineService: null,
+      subagentManager: {
+        setTaskResultInterpreter: jest.fn(),
+      },
+    },
+    ui: {
+      ...createModelRefreshTab(providerId).ui,
+      permissionToggle: {
+        setVisible: jest.fn(),
+        updateDisplay: jest.fn(),
+      },
+    },
+  };
+}
+
+describe('ClaudianView model refresh routing', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('refreshes matching bound tabs and all blank tabs without priming runtimes', () => {
+    jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot')
+      .mockImplementation((_settings, providerId) => ({
+        customContextLimits: {},
+        model: `${providerId}-model`,
+        permissionMode: 'normal',
+      }));
+    jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+      getContextWindowSize: jest.fn().mockReturnValue(200_000),
+      getPermissionModeToggle: jest.fn().mockReturnValue(null),
+    } as any);
+    jest.spyOn(ProviderRegistry, 'getCapabilities').mockImplementation(providerId => ({
+      providerId,
+      supportsImageAttachments: false,
+      supportsMcpTools: false,
+      supportsPlanMode: false,
+    } as any));
+    jest.spyOn(ProviderRegistry, 'getEnabledProviderIds').mockReturnValue(['codex', 'grok']);
+    jest.spyOn(ProviderRegistry, 'createInstructionRefineService')
+      .mockReturnValue(null as any);
+    jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter')
+      .mockReturnValue(null as any);
+
+    const codexTab = createModelRefreshTab('codex');
+    const grokTab = createModelRefreshTab('grok');
+    const blankGrokTab = createBlankModelRefreshTab('grok');
+    const primeProviderRuntime = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.plugin = {
+      getConversationSync: jest.fn().mockReturnValue(null),
+      providerHost: {},
+      settings: {},
+    };
+    view.tabManager = {
+      getAllTabs: jest.fn().mockReturnValue([codexTab, grokTab, blankGrokTab]),
+      primeProviderRuntime,
+    };
+
+    view.refreshModelSelector('codex');
+
+    expect(codexTab.ui.modelSelector.updateDisplay).toHaveBeenCalledTimes(1);
+    expect(codexTab.ui.modelSelector.renderOptions).toHaveBeenCalledTimes(1);
+    expect(grokTab.ui.modelSelector.updateDisplay).not.toHaveBeenCalled();
+    expect(grokTab.ui.modelSelector.renderOptions).not.toHaveBeenCalled();
+    expect(blankGrokTab.ui.modelSelector.updateDisplay).toHaveBeenCalled();
+    expect(blankGrokTab.ui.modelSelector.renderOptions).toHaveBeenCalled();
+    expect(primeProviderRuntime).not.toHaveBeenCalled();
+  });
+});
 
 function createViewHarness(options: {
   canCreateTab: boolean;

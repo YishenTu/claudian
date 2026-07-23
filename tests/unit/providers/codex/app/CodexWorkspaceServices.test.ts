@@ -65,6 +65,7 @@ function createPlugin(
       },
     },
     saveSettings: jest.fn().mockResolvedValue(undefined),
+    notifyProviderChatOptionsChanged: jest.fn(),
     getResolvedProviderCliPath: jest.fn(),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
     app: {
@@ -121,6 +122,20 @@ describe('CodexWorkspaceServices', () => {
     await services.refreshModelCatalog!();
 
     expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes a deferred layout-ready catalog to mounted model selectors', async () => {
+    const plugin = createPlugin(true);
+    const sol = makeDiscoveredModel('gpt-5.6-sol');
+    mockDiscoverModels.mockResolvedValue({ kind: 'completed', models: [sol] });
+    await createCodexWorkspaceServices(plugin, {} as any);
+    const layoutReadyCallback = plugin.app.workspace.onLayoutReady.mock.calls[0][0];
+
+    layoutReadyCallback();
+    await new Promise(resolve => setImmediate(resolve));
+
+    expect(getCodexProviderSettings(plugin.settings).discoveredModels).toEqual([sol]);
+    expect(plugin.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('codex');
   });
 
   it('does not start app-server for a disabled provider', async () => {

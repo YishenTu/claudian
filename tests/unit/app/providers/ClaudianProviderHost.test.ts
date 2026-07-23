@@ -44,6 +44,23 @@ describe('ClaudianProviderHost', () => {
     expect('addCommand' in host).toBe(false);
   });
 
+  it('routes provider chat-option changes to every view with provider scope', () => {
+    const firstRefresh = jest.fn();
+    const secondRefresh = jest.fn();
+    const plugin = createPlugin({
+      getAllViews: jest.fn(() => [
+        { refreshModelSelector: firstRefresh },
+        { refreshModelSelector: secondRefresh },
+      ]),
+    });
+    const host = new ClaudianProviderHost(plugin);
+
+    host.notifyProviderChatOptionsChanged('codex');
+
+    expect(firstRefresh).toHaveBeenCalledWith('codex');
+    expect(secondRefresh).toHaveBeenCalledWith('codex');
+  });
+
   it('delivers provider runtime recycling to views in their existing order', async () => {
     const trace: string[] = [];
     const createView = (id: string) => ({

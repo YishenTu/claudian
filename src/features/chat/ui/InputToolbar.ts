@@ -73,6 +73,10 @@ export class ModelSelector {
     this.callbacks = callbacks;
     this.container = parentEl.createDiv({ cls: 'claudian-model-selector' });
     this.render();
+    this.container.addEventListener('mouseenter', () => {
+      this.updateDisplay();
+      this.renderOptions();
+    });
   }
 
   private getAvailableModels() {

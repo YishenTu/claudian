@@ -16,7 +16,7 @@ function trimModel(model: unknown): string {
   return typeof model === 'string' ? model.trim() : '';
 }
 
-function findModelOption(
+export function findProviderModelOption(
   providerId: ProviderId,
   model: string,
   settings: Record<string, unknown>,
@@ -52,7 +52,7 @@ export function normalizeProviderModelSelection(
     model: rawModel,
   };
 
-  const rawOption = findModelOption(providerId, rawModel, rawSettings);
+  const rawOption = findProviderModelOption(providerId, rawModel, rawSettings);
   if (rawOption) {
     return rawOption;
   }
@@ -69,7 +69,7 @@ export function normalizeProviderModelSelection(
     ...baseSettings,
     model: normalizedModel,
   };
-  const normalizedOption = findModelOption(providerId, normalizedModel, normalizedSettings);
+  const normalizedOption = findProviderModelOption(providerId, normalizedModel, normalizedSettings);
   if (normalizedOption) {
     return normalizedOption;
   }

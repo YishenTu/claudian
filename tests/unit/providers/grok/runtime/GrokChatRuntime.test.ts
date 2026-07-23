@@ -258,7 +258,7 @@ function createHost(overrides: Record<string, unknown> = {}): ProviderHost {
     manifest: { version: '1.2.3' },
     mutateSettings: jest.fn(async mutation => mutation(settings as never)),
     mutateSettingsConditionally: jest.fn(async mutation => { await mutation(settings as never); }),
-    refreshModelSelectors: jest.fn(),
+    notifyProviderChatOptionsChanged: jest.fn(),
     ...overrides,
     settings,
   } as unknown as ProviderHost;

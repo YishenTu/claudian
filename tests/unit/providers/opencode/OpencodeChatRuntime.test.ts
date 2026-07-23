@@ -34,9 +34,9 @@ function createMockPlugin(overrides: Record<string, unknown> = {}): any {
     },
     ...overrides,
   };
-  plugin.refreshModelSelectors ??= jest.fn(() => {
+  plugin.notifyProviderChatOptionsChanged ??= jest.fn((providerId: string) => {
     for (const view of plugin.getAllViews()) {
-      view.refreshModelSelector();
+      view.refreshModelSelector(providerId);
     }
   });
   plugin.mutateSettings ??= jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {

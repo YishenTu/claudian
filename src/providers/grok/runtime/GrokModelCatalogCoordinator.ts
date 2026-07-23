@@ -209,7 +209,7 @@ export class GrokModelCatalogCoordinator {
       this.pendingLiveRevisions.delete(revision);
     }
     if (persisted.changed) {
-      this.plugin.refreshModelSelectors?.();
+      this.plugin.notifyProviderChatOptionsChanged('grok');
     }
     return persisted;
   }
@@ -273,7 +273,7 @@ export class GrokModelCatalogCoordinator {
       }
       this.state = 'ready';
       if (persisted.changed) {
-        this.plugin.refreshModelSelectors?.();
+        this.plugin.notifyProviderChatOptionsChanged('grok');
       }
       return {
         catalog: this.getCachedCatalog(),
