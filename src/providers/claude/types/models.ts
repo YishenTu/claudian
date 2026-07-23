@@ -213,7 +213,14 @@ export function resolveContextWindowSize(
   }
 
   if (isValidContextLimit(runtimeContextWindow)) {
-    return { contextWindow: runtimeContextWindow, source: 'runtime' };
+    // The SDK can under-report a 1M-context model's window as the 200k standard
+    // window (issue #924), which pinned the context meter at "approaching limit"
+    // for context that plainly exceeds 200k. A runtime value must never shrink a
+    // known-larger model default; trust it only when it meets or exceeds it.
+    const modelDefault = getContextWindowSize(model);
+    if (runtimeContextWindow >= modelDefault) {
+      return { contextWindow: runtimeContextWindow, source: 'runtime' };
+    }
   }
 
   return {

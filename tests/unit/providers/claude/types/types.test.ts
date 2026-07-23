@@ -700,6 +700,75 @@ describe('types.ts', () => {
     });
   });
 
+  describe('resolveContextWindowSize', () => {
+    it('trusts a runtime window that meets or exceeds the model default', () => {
+      expect(resolveContextWindowSize('sonnet', undefined, CONTEXT_WINDOW_1M)).toEqual({
+        contextWindow: CONTEXT_WINDOW_1M,
+        source: 'runtime',
+      });
+      // A gateway advertising a larger-than-default window is still honored.
+      expect(resolveContextWindowSize('sonnet', undefined, 2_000_000)).toEqual({
+        contextWindow: 2_000_000,
+        source: 'runtime',
+      });
+    });
+
+    it('ignores a runtime window that under-reports a known 1M model as the standard window', () => {
+      // Regression for #924: the Claude SDK can report rawMaxTokens=200k for a
+      // 1M-context model. Trusting it made the footer meter read e.g. 358k/200k
+      // ("approaching limit") for context that plainly exceeds 200k. The runtime
+      // value must never shrink a known-larger model default.
+      expect(resolveContextWindowSize('sonnet', undefined, CONTEXT_WINDOW_STANDARD)).toEqual({
+        contextWindow: CONTEXT_WINDOW_1M,
+        source: 'model-default',
+      });
+      expect(resolveContextWindowSize('opus', undefined, CONTEXT_WINDOW_STANDARD)).toEqual({
+        contextWindow: CONTEXT_WINDOW_1M,
+        source: 'model-default',
+      });
+      expect(resolveContextWindowSize('fable', undefined, CONTEXT_WINDOW_STANDARD)).toEqual({
+        contextWindow: CONTEXT_WINDOW_1M,
+        source: 'model-default',
+      });
+    });
+
+    it('trusts the runtime window for a standard-window model', () => {
+      // haiku is a 200k model; a 200k runtime value is not an under-report.
+      expect(resolveContextWindowSize('haiku', undefined, CONTEXT_WINDOW_STANDARD)).toEqual({
+        contextWindow: CONTEXT_WINDOW_STANDARD,
+        source: 'runtime',
+      });
+    });
+
+    it('falls back to the model default when no runtime window is available', () => {
+      expect(resolveContextWindowSize('sonnet')).toEqual({
+        contextWindow: CONTEXT_WINDOW_1M,
+        source: 'model-default',
+      });
+      expect(resolveContextWindowSize('haiku', undefined, undefined)).toEqual({
+        contextWindow: CONTEXT_WINDOW_STANDARD,
+        source: 'model-default',
+      });
+    });
+
+    it('ignores an invalid runtime window and uses the model default', () => {
+      for (const bad of [0, -1, NaN, Infinity, -Infinity]) {
+        expect(resolveContextWindowSize('sonnet', undefined, bad)).toEqual({
+          contextWindow: CONTEXT_WINDOW_1M,
+          source: 'model-default',
+        });
+      }
+    });
+
+    it('prefers a custom limit over both runtime and model default', () => {
+      const customLimits = { 'custom-model': 256_000 };
+      expect(resolveContextWindowSize('custom-model', customLimits, CONTEXT_WINDOW_STANDARD)).toEqual({
+        contextWindow: 256_000,
+        source: 'custom',
+      });
+    });
+  });
+
   describe('supportsXHighEffort', () => {
     it('returns true for opaque custom model ids', () => {
       expect(supportsXHighEffort('custom-model')).toBe(true);
