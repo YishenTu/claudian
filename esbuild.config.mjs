@@ -82,7 +82,7 @@ const patchSdkImportMeta = {
   setup(build) {
     build.onLoad(
       {
-        filter: /[\\/]node_modules[\\/](?:@openai[\\/]codex-sdk[\\/]dist[\\/]index\.js|@anthropic-ai[\\/]claude-agent-sdk[\\/]sdk\.mjs)$/,
+        filter: /[\\/]node_modules[\\/](?:@openai[\\/]codex-sdk[\\/]dist[\\/]index\.js|@anthropic-ai[\\/]claude-agent-sdk[\\/]sdk\.mjs|@qoder-ai[\\/]qoder-agent-sdk[\\/]dist[\\/].*\.js)$/,
       },
       async (args) => {
         const contents = await fsPromises.readFile(args.path, 'utf8');

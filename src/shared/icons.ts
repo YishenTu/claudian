@@ -115,6 +115,35 @@ export const GROK_PROVIDER_ICON: ProviderIconSvg = {
   path: 'M3.25 3h4.18l4.8 6.64L17.88 3h3.17l-7.36 8.65L20.44 21h-4.18l-5.16-7.14L5.02 21H1.85l7.79-9.16L3.25 3Zm3.03 1.7 10.85 14.6h1.28L7.56 4.7H6.28Z',
 };
 
+export const QODER_PROVIDER_ICON: ProviderIconSvg = {
+  kind: 'composite',
+  viewBox: '0 0 24 24',
+  children: [
+    {
+      tag: 'path',
+      attributes: {
+        d: 'M7.5 2h9A5.5 5.5 0 0 1 22 7.5v9a5.5 5.5 0 0 1-5.5 5.5h-9A5.5 5.5 0 0 1 2 16.5v-9A5.5 5.5 0 0 1 7.5 2Z',
+        fill: '#00C853',
+      },
+    },
+    {
+      tag: 'path',
+      attributes: {
+        d: 'M12 6.4a5.6 5.6 0 1 0 0 11.2 5.6 5.6 0 0 0 0-11.2Zm0 2.75a2.85 2.85 0 1 1 0 5.7 2.85 2.85 0 0 1 0-5.7Z',
+        fill: '#0B1F12',
+        'fill-rule': 'evenodd',
+      },
+    },
+    {
+      tag: 'path',
+      attributes: {
+        d: 'M13.55 14.1 17.5 18.05l-1.95 1.95-3.95-3.95Z',
+        fill: '#0B1F12',
+      },
+    },
+  ],
+};
+
 export interface CreateProviderIconSvgOptions {
   className?: string;
   dataProvider?: string;

@@ -5,6 +5,7 @@ import { codexProviderRegistration } from './codex/registration';
 import { grokProviderRegistration } from './grok/registration';
 import { opencodeProviderRegistration } from './opencode/registration';
 import { piProviderRegistration } from './pi/registration';
+import { qoderProviderRegistration } from './qoder/registration';
 
 let builtInProvidersRegistered = false;
 
@@ -14,6 +15,7 @@ export const BUILT_IN_PROVIDER_MODULES = [
   grokProviderRegistration,
   opencodeProviderRegistration,
   piProviderRegistration,
+  qoderProviderRegistration,
 ] as const;
 
 export function registerBuiltInProviders(): void {
