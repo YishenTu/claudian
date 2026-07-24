@@ -8,6 +8,8 @@ import {
 import { createMockEl } from '@test/helpers/mockElement';
 import { Notice, Platform } from 'obsidian';
 
+import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
+import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { SelectionController } from '@/features/chat/controllers/SelectionController';
@@ -86,8 +88,8 @@ const createMockSlashCommandDropdown = () => ({
   handleKeydown: jest.fn().mockReturnValue(false),
   isVisible: jest.fn().mockReturnValue(false),
   hide: jest.fn(),
-  resetSdkSkillsCache: jest.fn(),
   setProviderCatalog: jest.fn(),
+  setProviderId: jest.fn(),
   setHiddenCommands: jest.fn(),
   setEnabled: jest.fn(),
   destroy: jest.fn(),
@@ -190,6 +192,7 @@ const createMockPermissionToggle = () => ({
 });
 
 const createMockServiceTierToggle = () => ({
+  toggle: jest.fn().mockResolvedValue(true),
   updateDisplay: jest.fn(),
 });
 
@@ -981,10 +984,25 @@ describe('Tab - Service Initialization', () => {
       const staleService = createMockClaudianService({ providerId: 'codex' });
       tab.service = staleService as any;
       tab.serviceInitialized = true;
+      const discovery = new ProviderCommandDiscoveryStore<ProviderCommandEntry>(
+        async () => ({ status: 'empty' }),
+      );
+      const invalidateDiscovery = jest.spyOn(discovery, 'invalidate');
+      tab.providerCatalogResolver = () => ({
+        config: {
+          providerId: 'claude',
+          triggerChars: ['/'],
+          builtInPrefix: '/',
+          skillPrefix: '/',
+          commandPrefix: '/',
+        },
+        discovery,
+      });
 
       // Disable Codex
       plugin.settings.codexEnabled = false;
       plugin.settings.providerConfigs.codex.enabled = false;
+      mockSlashCommandDropdown.setProviderCatalog.mockClear();
 
       onProviderAvailabilityChanged(tab, plugin);
 
@@ -992,7 +1010,13 @@ describe('Tab - Service Initialization', () => {
       expect(tab.providerId).toBe('claude');
       expect(tab.service).toBeNull();
       expect(tab.serviceInitialized).toBe(false);
-      expect(mockSlashCommandDropdown.resetSdkSkillsCache).toHaveBeenCalled();
+      expect(mockSlashCommandDropdown.setProviderCatalog).toHaveBeenCalledWith(
+        expect.objectContaining({ providerId: 'claude' }),
+        discovery,
+      );
+      expect(invalidateDiscovery).toHaveBeenCalledTimes(1);
+      expect(mockSlashCommandDropdown.setProviderCatalog.mock.invocationCallOrder[0])
+        .toBeLessThan(invalidateDiscovery.mock.invocationCallOrder[0]);
     });
 
     it('falls back a removed blank Codex draft to the refreshed Codex default', () => {
@@ -3038,6 +3062,9 @@ describe('Tab - UI Callback Wiring', () => {
         status: 'ready',
         items: mockEntries,
       });
+      const managerDiscovery = new ProviderCommandDiscoveryStore<ProviderCommandEntry>(
+        managerGetEntries,
+      );
       const plugin = createMockPlugin();
       const options = createMockOptions({ plugin });
       const tab = createTab(options);
@@ -3045,7 +3072,7 @@ describe('Tab - UI Callback Wiring', () => {
       initializeTabUI(tab, plugin, {
         getProviderCatalogConfig: () => ({
           config: mockConfig,
-          getEntries: managerGetEntries,
+          discovery: managerDiscovery,
         }),
       });
 
@@ -3053,16 +3080,17 @@ describe('Tab - UI Callback Wiring', () => {
       const constructorCall = SlashCommandDropdown.mock.calls[0];
       const opts = constructorCall[3]; // 4th argument is options
 
+      expect(opts.providerId).toBe('claude');
       expect(opts.providerConfig).toEqual(mockConfig);
-      expect(typeof opts.discoverProviderEntries).toBe('function');
+      expect(opts.providerDiscovery).toBe(managerDiscovery);
 
       const setProviderCatalogSpy = jest.fn();
       tab.ui.slashCommandDropdown!.setProviderCatalog = setProviderCatalogSpy;
       refreshTabWorkspaceServices(tab, plugin);
 
       expect(setProviderCatalogSpy).toHaveBeenCalledTimes(1);
-      const [, reboundGetEntries] = setProviderCatalogSpy.mock.calls[0];
-      await reboundGetEntries();
+      const [, reboundDiscovery] = setProviderCatalogSpy.mock.calls[0];
+      await reboundDiscovery.load();
       expect(managerGetEntries).toHaveBeenCalledTimes(1);
     });
 
@@ -3476,13 +3504,27 @@ describe('Tab - Controller Configuration', () => {
       expect(tab.dom.welcomeEl).toBe(newWelcomeEl);
     });
 
-    it('should reset slash-command cache across conversation lifecycle events', () => {
+    it('should invalidate provider commands across conversation lifecycle events', () => {
       const { ConversationController } = jest.requireMock('@/features/chat/controllers/ConversationController');
       const options = createMockOptions();
       const tab = createTab(options);
       const mockComponent = {} as any;
+      const discovery = new ProviderCommandDiscoveryStore<ProviderCommandEntry>(
+        async () => ({ status: 'empty' }),
+      );
+      const invalidateDiscovery = jest.spyOn(discovery, 'invalidate');
+      const getProviderCatalogConfig = () => ({
+        config: {
+          providerId: 'claude' as const,
+          triggerChars: ['/'],
+          builtInPrefix: '/',
+          skillPrefix: '/',
+          commandPrefix: '/',
+        },
+        discovery,
+      });
 
-      initializeTabUI(tab, options.plugin);
+      initializeTabUI(tab, options.plugin, { getProviderCatalogConfig });
       initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
 
       const constructorCall = ConversationController.mock.calls[0];
@@ -3492,8 +3534,7 @@ describe('Tab - Controller Configuration', () => {
       callbacks.onConversationLoaded();
       callbacks.onConversationSwitched();
 
-      expect(mockSlashCommandDropdown.clearProviderCatalog).toHaveBeenCalledTimes(1);
-      expect(mockSlashCommandDropdown.resetSdkSkillsCache).toHaveBeenCalledTimes(2);
+      expect(invalidateDiscovery).toHaveBeenCalledTimes(2);
     });
   });
 });
@@ -4463,6 +4504,9 @@ describe('Tab - Blank Tab Draft Model Change', () => {
       status: 'ready',
       items: managerEntries,
     });
+    const managerDiscovery = new ProviderCommandDiscoveryStore<ProviderCommandEntry>(
+      managerGetEntries,
+    );
 
     ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: codexCatalog as any });
 
@@ -4473,14 +4517,14 @@ describe('Tab - Blank Tab Draft Model Change', () => {
         tab.providerId === 'codex'
           ? {
             config: codexCatalog.getDropdownConfig(),
-            getEntries: managerGetEntries,
+            discovery: managerDiscovery,
           }
           : null
       ),
       onProviderChanged: async () => {
         tab.ui.slashCommandDropdown?.setProviderCatalog(
           codexCatalog.getDropdownConfig(),
-          managerGetEntries,
+          managerDiscovery,
         );
       },
     });
@@ -4498,11 +4542,11 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     await toolbarCallbacks.onModelChange(TEST_CODEX_MODEL);
 
     expect(setProviderCatalogSpy).toHaveBeenCalledTimes(1);
-    const [config, getEntries] = setProviderCatalogSpy.mock.calls[0];
+    const [config, discovery] = setProviderCatalogSpy.mock.calls[0];
     expect(config.triggerChars).toEqual(['/', '$']);
     expect(config.skillPrefix).toBe('$');
-    expect(typeof getEntries).toBe('function');
-    await getEntries();
+    expect(discovery).toBe(managerDiscovery);
+    await discovery.load();
     expect(managerGetEntries).toHaveBeenCalledTimes(1);
     expect(codexCatalog.listDropdownEntries).not.toHaveBeenCalled();
   });
@@ -4737,8 +4781,9 @@ describe('Tab - History Bind Without Runtime', () => {
       }),
       refresh: jest.fn(),
     };
-    const managerGetEntries = jest.fn().mockResolvedValue([
-      {
+    const managerGetEntries = jest.fn().mockResolvedValue({
+      status: 'ready',
+      items: [{
         id: 'codex-skill-analyze',
         providerId: 'codex',
         kind: 'skill',
@@ -4751,8 +4796,11 @@ describe('Tab - History Bind Without Runtime', () => {
         isDeletable: true,
         displayPrefix: '$',
         insertPrefix: '$',
-      },
-    ]);
+      }],
+    });
+    const managerDiscovery = new ProviderCommandDiscoveryStore<ProviderCommandEntry>(
+      managerGetEntries,
+    );
     ProviderWorkspaceRegistry.setServices('codex', { commandCatalog: codexCatalog as any });
 
     const plugin = createMockPlugin({
@@ -4794,7 +4842,7 @@ describe('Tab - History Bind Without Runtime', () => {
         tab.providerId === 'codex'
           ? {
             config: codexCatalog.getDropdownConfig(),
-            getEntries: managerGetEntries,
+            discovery: managerDiscovery,
           }
           : null
       ),
@@ -4810,7 +4858,7 @@ describe('Tab - History Bind Without Runtime', () => {
         tab.providerId === 'codex'
           ? {
             config: codexCatalog.getDropdownConfig(),
-            getEntries: managerGetEntries,
+            discovery: managerDiscovery,
           }
           : null
       ),
@@ -4835,8 +4883,8 @@ describe('Tab - History Bind Without Runtime', () => {
 
     expect(setProviderCatalogSpy).toHaveBeenCalledTimes(1);
     expect(setHiddenCommandsSpy).toHaveBeenCalledWith(new Set(['analyze']));
-    const [, getEntries] = setProviderCatalogSpy.mock.calls[0];
-    await getEntries();
+    const [, discovery] = setProviderCatalogSpy.mock.calls[0];
+    await discovery.load();
     expect(managerGetEntries).toHaveBeenCalledTimes(1);
     expect(codexCatalog.listDropdownEntries).not.toHaveBeenCalled();
   });
@@ -4895,6 +4943,10 @@ describe('Tab - Destroy Lifecycle Transition', () => {
 });
 
 describe('Tab - InputController getTabProviderId wiring', () => {
+  beforeEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('wires getTabProviderId to InputController deps', () => {
     jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
     jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
@@ -4914,5 +4966,48 @@ describe('Tab - InputController getTabProviderId wiring', () => {
     // For a blank tab with default model, should resolve to claude
     const result = config.getTabProviderId();
     expect(result).toBe('claude');
+  });
+
+  it('wires the fast command to a tab-level action independent of the toolbar widget', async () => {
+    const plugin = createMockPlugin({
+      settings: {
+        settingsProvider: 'codex',
+        model: TEST_CODEX_MODEL,
+        serviceTier: 'default',
+        savedProviderModel: {
+          claude: 'claude-sonnet-4-5',
+          codex: TEST_CODEX_MODEL,
+        },
+        savedProviderEffort: {
+          claude: 'high',
+          codex: 'medium',
+        },
+        savedProviderServiceTier: {
+          claude: 'default',
+          codex: 'default',
+        },
+        savedProviderThinkingBudget: {
+          claude: 'low',
+          codex: 'off',
+        },
+      },
+    });
+    const tab = createTab(createMockOptions({
+      plugin,
+      draftModel: TEST_CODEX_MODEL,
+    }));
+    initializeTabUI(tab, plugin);
+    initializeTabControllers(tab, plugin, {} as any, createMockMcpManager());
+
+    const { InputController } = jest.requireMock('@/features/chat/controllers/InputController') as { InputController: jest.Mock };
+    const lastCall = InputController.mock.calls[InputController.mock.calls.length - 1];
+    const config = lastCall[0];
+
+    expect(config.getTabProviderId()).toBe('codex');
+    await expect(config.toggleFastMode()).resolves.toBe(true);
+    expect(plugin.settings.serviceTier).toBe('priority');
+    expect(plugin.settings.savedProviderServiceTier.codex).toBe('priority');
+    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(mockServiceTierToggle.toggle).not.toHaveBeenCalled();
   });
 });

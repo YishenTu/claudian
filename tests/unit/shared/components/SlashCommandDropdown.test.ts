@@ -1,6 +1,8 @@
 import { createMockEl } from '@test/helpers/mockElement';
 
 import type { ProviderCommandDropdownConfig } from '@/core/providers/commands/ProviderCommandCatalog';
+import { normalizeProviderCommandDiscoveryItems } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
+import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import {
   SlashCommandDropdown,
@@ -77,6 +79,14 @@ const PROVIDER_ENTRIES: ProviderCommandEntry[] = [
   makeEntry('compact', 'Compact context'),
 ];
 
+function createEntryDiscovery(
+  loader: () => Promise<readonly ProviderCommandEntry[]>,
+): ProviderCommandDiscoveryStore<ProviderCommandEntry> {
+  return new ProviderCommandDiscoveryStore(async () =>
+    normalizeProviderCommandDiscoveryItems(await loader()),
+  );
+}
+
 describe('SlashCommandDropdown', () => {
   let containerEl: any;
   let inputEl: any;
@@ -113,6 +123,35 @@ describe('SlashCommandDropdown', () => {
     });
   });
 
+  it('can exclude chat-action built-ins while retaining provider entries', async () => {
+    const getProviderEntries = jest.fn().mockResolvedValue(PROVIDER_ENTRIES);
+    const dropdownWithoutBuiltIns = new SlashCommandDropdown(
+      containerEl,
+      inputEl,
+      callbacks,
+      {
+        providerConfig: CLAUDE_CONFIG,
+        providerDiscovery: createEntryDiscovery(getProviderEntries),
+        includeBuiltIns: false,
+      },
+    );
+
+    inputEl.value = '/';
+    inputEl.selectionStart = 1;
+    dropdownWithoutBuiltIns.handleInputChange();
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const commandNames = getRenderedCommandNames(containerEl);
+    expect(commandNames).toEqual(expect.arrayContaining([
+      'commit',
+      'pr',
+    ]));
+    expect(commandNames).not.toContain('clear');
+    expect(commandNames).not.toContain('add-dir');
+
+    dropdownWithoutBuiltIns.destroy();
+  });
+
   describe('setEnabled', () => {
     it('should not show dropdown when disabled', async () => {
       dropdown.setEnabled(false);
@@ -147,7 +186,7 @@ describe('SlashCommandDropdown', () => {
 
       const dropdownWithHidden = new SlashCommandDropdown(
         containerEl, inputEl, callbacks,
-        { hiddenCommands, providerConfig: CLAUDE_CONFIG, getProviderEntries }
+        { hiddenCommands, providerConfig: CLAUDE_CONFIG, providerDiscovery: createEntryDiscovery(getProviderEntries) }
       );
 
       inputEl.value = '/';
@@ -170,7 +209,7 @@ describe('SlashCommandDropdown', () => {
 
       const dropdownWithHidden = new SlashCommandDropdown(
         containerEl, inputEl, callbacks,
-        { hiddenCommands, providerConfig: CLAUDE_CONFIG, getProviderEntries }
+        { hiddenCommands, providerConfig: CLAUDE_CONFIG, providerDiscovery: createEntryDiscovery(getProviderEntries) }
       );
 
       inputEl.value = '/';
@@ -196,7 +235,7 @@ describe('SlashCommandDropdown', () => {
 
       const dropdownWithEntries = new SlashCommandDropdown(
         containerEl, inputEl, callbacks,
-        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
+        { providerConfig: CLAUDE_CONFIG, providerDiscovery: createEntryDiscovery(getProviderEntries) }
       );
 
       inputEl.value = '/cle';
@@ -219,7 +258,7 @@ describe('SlashCommandDropdown', () => {
 
       const d = new SlashCommandDropdown(
         containerEl, inputEl, callbacks,
-        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
+        { providerConfig: CLAUDE_CONFIG, providerDiscovery: createEntryDiscovery(getProviderEntries) }
       );
 
       inputEl.value = '/';
@@ -236,92 +275,6 @@ describe('SlashCommandDropdown', () => {
       d.destroy();
     });
 
-    it('should retry fetch when previous result was empty', async () => {
-      const getProviderEntries = jest.fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(PROVIDER_ENTRIES);
-
-      const d = new SlashCommandDropdown(
-        containerEl, inputEl, callbacks,
-        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
-      );
-
-      inputEl.value = '/';
-      inputEl.selectionStart = 1;
-      d.handleInputChange();
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      inputEl.value = '/c';
-      inputEl.selectionStart = 2;
-      d.handleInputChange();
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      expect(getProviderEntries).toHaveBeenCalledTimes(2);
-      d.destroy();
-    });
-
-    it('should retry fetch when previous call threw error', async () => {
-      const getProviderEntries = jest.fn()
-        .mockRejectedValueOnce(new Error('Not ready'))
-        .mockResolvedValueOnce(PROVIDER_ENTRIES);
-
-      const d = new SlashCommandDropdown(
-        containerEl, inputEl, callbacks,
-        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
-      );
-
-      inputEl.value = '/';
-      inputEl.selectionStart = 1;
-      d.handleInputChange();
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      inputEl.value = '/c';
-      inputEl.selectionStart = 2;
-      d.handleInputChange();
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      expect(getProviderEntries).toHaveBeenCalledTimes(2);
-      d.destroy();
-    });
-  });
-
-  describe('race condition handling', () => {
-    it('should discard stale results when newer request is made', async () => {
-      let resolveFirst: (value: ProviderCommandEntry[]) => void;
-      const firstPromise = new Promise<ProviderCommandEntry[]>(resolve => { resolveFirst = resolve; });
-
-      const getProviderEntries = jest.fn()
-        .mockReturnValueOnce(firstPromise)
-        .mockResolvedValueOnce([makeEntry('new-command', 'New')]);
-
-      const d = new SlashCommandDropdown(
-        containerEl, inputEl, callbacks,
-        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
-      );
-
-      inputEl.value = '/';
-      inputEl.selectionStart = 1;
-      d.handleInputChange();
-
-      inputEl.value = '/n';
-      inputEl.selectionStart = 2;
-      d.handleInputChange();
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      resolveFirst!(PROVIDER_ENTRIES);
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      inputEl.value = '/';
-      inputEl.selectionStart = 1;
-      d.handleInputChange();
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      const names = getRenderedCommandNames(containerEl);
-      expect(names).toContain('new-command');
-      expect(names).not.toContain('commit');
-
-      d.destroy();
-    });
   });
 
   describe('setHiddenCommands', () => {
@@ -330,7 +283,7 @@ describe('SlashCommandDropdown', () => {
 
       const d = new SlashCommandDropdown(
         containerEl, inputEl, callbacks,
-        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
+        { providerConfig: CLAUDE_CONFIG, providerDiscovery: createEntryDiscovery(getProviderEntries) }
       );
 
       inputEl.value = '/';
@@ -348,33 +301,6 @@ describe('SlashCommandDropdown', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(getRenderedCommandNames(containerEl)).not.toContain('commit');
-
-      d.destroy();
-    });
-  });
-
-  describe('resetSdkSkillsCache', () => {
-    it('should clear cached entries and allow refetch', async () => {
-      const getProviderEntries = jest.fn().mockResolvedValue(PROVIDER_ENTRIES);
-
-      const d = new SlashCommandDropdown(
-        containerEl, inputEl, callbacks,
-        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
-      );
-
-      inputEl.value = '/';
-      inputEl.selectionStart = 1;
-      d.handleInputChange();
-      await new Promise(resolve => setTimeout(resolve, 10));
-      expect(getProviderEntries).toHaveBeenCalledTimes(1);
-
-      d.resetSdkSkillsCache();
-
-      inputEl.value = '/c';
-      inputEl.selectionStart = 2;
-      d.handleInputChange();
-      await new Promise(resolve => setTimeout(resolve, 10));
-      expect(getProviderEntries).toHaveBeenCalledTimes(2);
 
       d.destroy();
     });
@@ -443,7 +369,7 @@ describe('SlashCommandDropdown', () => {
 
       const d = new SlashCommandDropdown(
         containerEl, inputEl, callbacks,
-        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
+        { providerConfig: CLAUDE_CONFIG, providerDiscovery: createEntryDiscovery(getProviderEntries) }
       );
 
       inputEl.value = '/com';
@@ -463,7 +389,7 @@ describe('SlashCommandDropdown', () => {
 
       const d = new SlashCommandDropdown(
         containerEl, inputEl, callbacks,
-        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
+        { providerConfig: CLAUDE_CONFIG, providerDiscovery: createEntryDiscovery(getProviderEntries) }
       );
 
       inputEl.value = '/pull';
@@ -490,7 +416,7 @@ describe('SlashCommandDropdown', () => {
 
       const d = new SlashCommandDropdown(
         containerEl, inputEl, callbacks,
-        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
+        { providerConfig: CLAUDE_CONFIG, providerDiscovery: createEntryDiscovery(getProviderEntries) }
       );
 
       inputEl.value = '/';

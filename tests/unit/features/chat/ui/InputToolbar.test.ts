@@ -846,6 +846,18 @@ describe('ServiceTierToggle', () => {
     const container = parentEl2.querySelector('.claudian-service-tier-toggle');
     expect(container?.style.display).toBe('none');
   });
+
+  it('does not toggle when the provider exposes no fast service tier', async () => {
+    callbacks.getUIConfig.mockReturnValue({
+      ...createMockUIConfig(),
+      getServiceTierToggle: jest.fn().mockReturnValue(null),
+    });
+    const parentEl2 = createMockEl();
+    const toggle = new ServiceTierToggle(parentEl2, callbacks);
+
+    await expect(toggle.toggle()).resolves.toBe(false);
+    expect(callbacks.onServiceTierChange).not.toHaveBeenCalled();
+  });
 });
 
 describe('McpServerSelector', () => {

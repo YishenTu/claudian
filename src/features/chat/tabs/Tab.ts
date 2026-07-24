@@ -3,6 +3,7 @@ import { Notice, Platform } from 'obsidian';
 
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import { normalizeProviderCommandDiscoveryItems } from '../../../core/providers/commands/ProviderCommandDiscoveryResult';
+import { ProviderCommandDiscoveryStore } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
 import {
   findProviderModelOption,
   getProviderSettingsSnapshotWithModel,
@@ -31,6 +32,7 @@ import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDro
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
+import { toggleServiceTier } from '../actions/toggleServiceTier';
 import { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import { CanvasSelectionController } from '../controllers/CanvasSelectionController';
 import { ConversationController } from '../controllers/ConversationController';
@@ -324,8 +326,10 @@ function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalog
 
   return {
     config: catalog.getDropdownConfig(),
-    getEntries: async () => normalizeProviderCommandDiscoveryItems(
-      await catalog.listDropdownEntries({ includeBuiltIns: false }),
+    discovery: new ProviderCommandDiscoveryStore(async () =>
+      normalizeProviderCommandDiscoveryItems(
+        await catalog.listDropdownEntries({ includeBuiltIns: false }),
+      ),
     ),
   };
 }
@@ -345,16 +349,27 @@ function syncSlashCommandDropdownForProvider(
     return;
   }
 
+  const providerId = getTabProviderId(tab, plugin, conversation);
   const catalogInfo = (getProviderCatalogConfig ?? tab.providerCatalogResolver)?.()
-    ?? getRegistryProviderCatalogInfo(getTabProviderId(tab, plugin, conversation));
+    ?? getRegistryProviderCatalogInfo(providerId);
+
+  dropdown.setProviderId(providerId);
 
   if (catalogInfo) {
-    dropdown.setProviderCatalog?.(catalogInfo.config, catalogInfo.getEntries);
+    dropdown.setProviderCatalog?.(catalogInfo.config, catalogInfo.discovery);
   } else {
     dropdown.clearProviderCatalog?.();
   }
 
   dropdown.setHiddenCommands(getTabHiddenCommands(tab, plugin, conversation));
+}
+
+function invalidateTabProviderCommands(
+  tab: TabData,
+  getProviderCatalogConfig?: ProviderCatalogResolver,
+): void {
+  const catalogInfo = (getProviderCatalogConfig ?? tab.providerCatalogResolver)?.() ?? null;
+  catalogInfo?.discovery.invalidate();
 }
 
 async function updateTabProviderSettings(
@@ -374,6 +389,28 @@ async function updateTabProviderSettings(
     );
   });
   return snapshot;
+}
+
+async function updateTabServiceTier(
+  tab: TabData,
+  plugin: FeatureHost,
+  serviceTier: string,
+): Promise<void> {
+  await updateTabProviderSettings(tab, plugin, (settings) => {
+    settings.serviceTier = serviceTier;
+  });
+  tab.ui.serviceTierToggle?.updateDisplay();
+}
+
+async function toggleTabServiceTier(
+  tab: TabData,
+  plugin: FeatureHost,
+): Promise<boolean> {
+  return await toggleServiceTier({
+    getUIConfig: () => getTabChatUIConfig(tab, plugin),
+    getSettings: () => getTabSettingsSnapshot(tab, plugin),
+    onServiceTierChange: serviceTier => updateTabServiceTier(tab, plugin, serviceTier),
+  });
 }
 
 function refreshTabProviderUI(tab: TabData, plugin: FeatureHost): void {
@@ -536,8 +573,8 @@ export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost)
   }
 
   syncTabProviderServices(tab, plugin);
-  tab.ui.slashCommandDropdown?.setHiddenCommands(getTabHiddenCommands(tab, plugin));
-  tab.ui.slashCommandDropdown?.resetSdkSkillsCache();
+  syncSlashCommandDropdownForProvider(tab, plugin);
+  invalidateTabProviderCommands(tab);
   refreshTabProviderUI(tab, plugin);
   applyProviderUIGating(tab, plugin);
 }
@@ -876,6 +913,7 @@ function initializeContextManagers(tab: TabData, plugin: FeatureHost): void {
 
 function initializeSlashCommands(
   tab: TabData,
+  providerId: ProviderId,
   getHiddenCommands?: () => Set<string>,
   catalogInfo?: ProviderCatalogInfo,
 ): void {
@@ -889,9 +927,10 @@ function initializeSlashCommands(
       onHide: () => {},
     },
     {
+      providerId,
       hiddenCommands: getHiddenCommands?.() ?? new Set(),
       providerConfig: catalogInfo?.config,
-      discoverProviderEntries: catalogInfo?.getEntries,
+      providerDiscovery: catalogInfo?.discovery,
     }
   );
 }
@@ -1115,10 +1154,7 @@ function initializeInputToolbar(
       });
     },
     onServiceTierChange: async (serviceTier: string) => {
-      await updateTabProviderSettings(tab, plugin, (settings) => {
-        settings.serviceTier = serviceTier;
-      });
-      tab.ui.serviceTierToggle?.updateDisplay();
+      await updateTabServiceTier(tab, plugin, serviceTier);
     },
     onPermissionModeChange: async (mode: string) => {
       await updateTabProviderSettings(tab, plugin, (settings) => {
@@ -1208,6 +1244,7 @@ export function initializeTabUI(
   const catalogInfo = options.getProviderCatalogConfig?.() ?? null;
   initializeSlashCommands(
     tab,
+    getTabProviderId(tab, plugin),
     () => getTabHiddenCommands(tab, plugin),
     catalogInfo,
   );
@@ -1629,8 +1666,8 @@ export function initializeTabControllers(
         applyProviderUIGating(tab, plugin);
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
       },
-      onConversationLoaded: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),
-      onConversationSwitched: () => ui.slashCommandDropdown?.resetSdkSkillsCache(),
+      onConversationLoaded: () => invalidateTabProviderCommands(tab, getProviderCatalogConfig),
+      onConversationSwitched: () => invalidateTabProviderCommands(tab, getProviderCatalogConfig),
     }
   );
 
@@ -1669,6 +1706,7 @@ export function initializeTabControllers(
     onForkAll: forkRequestCallback
       ? () => handleForkAll(tab, plugin, forkRequestCallback)
       : undefined,
+    toggleFastMode: () => toggleTabServiceTier(tab, plugin),
     restorePrePlanPermissionModeIfNeeded: async () => {
       if (getTabPermissionMode(tab, plugin) === 'plan') {
         const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';

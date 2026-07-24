@@ -230,6 +230,16 @@ describe('InlineEditModal - openAndWait', () => {
         }),
       } as any;
       plugin.providerHost = plugin;
+      jest.spyOn(ProviderWorkspaceRegistry, 'getCommandCatalog').mockReturnValue({
+        getDropdownConfig: jest.fn().mockReturnValue({
+          providerId: 'codex',
+          triggerChars: ['/', '$'],
+          builtInPrefix: '/',
+          skillPrefix: '$',
+          commandPrefix: '/',
+        }),
+        listDropdownEntries: jest.fn().mockResolvedValue([]),
+      } as any);
       const editor = {} as any;
       const view = { editor } as any;
 
@@ -288,6 +298,9 @@ describe('InlineEditModal - openAndWait', () => {
       );
       const constructorCall = SlashCommandDropdown.mock.calls[0];
       expect(Array.from(constructorCall[3].hiddenCommands)).toEqual(['analyze']);
+      expect(constructorCall[3].includeBuiltIns).toBe(false);
+      expect(constructorCall[3].providerDiscovery).toBeDefined();
+      expect(constructorCall[3].getProviderEntries).toBeUndefined();
 
       widgetRef?.reject();
       await expect(resultPromise).resolves.toEqual({ decision: 'reject' });

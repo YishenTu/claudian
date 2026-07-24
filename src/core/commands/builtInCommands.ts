@@ -8,9 +8,12 @@
 import { ProviderRegistry } from '../providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId } from '../providers/types';
 
-export type BuiltInCommandAction = 'clear' | 'add-dir' | 'resume' | 'fork';
+export type BuiltInCommandAction = 'clear' | 'add-dir' | 'resume' | 'fork' | 'fast';
 type BuiltInCommandCapability = 'supportsNativeHistory' | 'supportsFork';
-type BuiltInCommandSupportContext = ProviderId | Pick<ProviderCapabilities, BuiltInCommandCapability>;
+type BuiltInCommandCapabilityContext =
+  Pick<ProviderCapabilities, BuiltInCommandCapability>
+  & Partial<Pick<ProviderCapabilities, 'providerId'>>;
+type BuiltInCommandSupportContext = ProviderId | BuiltInCommandCapabilityContext;
 
 export interface BuiltInCommand {
   name: string;
@@ -23,6 +26,8 @@ export interface BuiltInCommand {
   argumentHint?: string;
   /** When set, provider capabilities must expose this feature. */
   requiredCapability?: BuiltInCommandCapability;
+  /** When set, only these providers expose and execute the command. */
+  supportedProviderIds?: ProviderId[];
 }
 
 export interface BuiltInCommandResult {
@@ -57,6 +62,12 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     action: 'fork',
     requiredCapability: 'supportsFork',
   },
+  {
+    name: 'fast',
+    description: 'Toggle fast mode',
+    action: 'fast',
+    supportedProviderIds: ['codex'],
+  },
 ];
 
 /** Map of command names/aliases to their definitions. */
@@ -73,7 +84,7 @@ for (const cmd of BUILT_IN_COMMANDS) {
 
 function resolveCapabilities(
   context: BuiltInCommandSupportContext,
-): Pick<ProviderCapabilities, BuiltInCommandCapability> | null {
+): BuiltInCommandCapabilityContext | null {
   if (typeof context !== 'string') {
     return context;
   }
@@ -85,11 +96,31 @@ function resolveCapabilities(
   }
 }
 
+function isBuiltInCommandProviderSupported(
+  command: BuiltInCommand,
+  context?: BuiltInCommandSupportContext,
+): boolean {
+  if (!command.supportedProviderIds || !context) {
+    return true;
+  }
+
+  const providerId = typeof context === 'string' ? context : context.providerId;
+  return Boolean(providerId && command.supportedProviderIds.includes(providerId));
+}
+
 export function isBuiltInCommandSupported(
   command: BuiltInCommand,
   context?: BuiltInCommandSupportContext,
 ): boolean {
-  if (!command.requiredCapability || !context) {
+  if (!context) {
+    return true;
+  }
+
+  if (!isBuiltInCommandProviderSupported(command, context)) {
+    return false;
+  }
+
+  if (!command.requiredCapability) {
     return true;
   }
 
@@ -99,9 +130,13 @@ export function isBuiltInCommandSupported(
 
 /**
  * Checks if input is a built-in command.
+ * Provider-scoped commands are left to other providers' command handling.
  * Returns the command and arguments if found, null otherwise.
  */
-export function detectBuiltInCommand(input: string): BuiltInCommandResult | null {
+export function detectBuiltInCommand(
+  input: string,
+  context?: BuiltInCommandSupportContext,
+): BuiltInCommandResult | null {
   const trimmed = input.trim();
   if (!trimmed.startsWith('/')) return null;
 
@@ -112,6 +147,7 @@ export function detectBuiltInCommand(input: string): BuiltInCommandResult | null
   const cmdName = match[1].toLowerCase();
   const command = commandMap.get(cmdName);
   if (!command) return null;
+  if (!isBuiltInCommandProviderSupported(command, context)) return null;
 
   const args = (match[2] || '').trim();
 
