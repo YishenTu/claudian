@@ -343,8 +343,7 @@ function createContext(settings: Record<string, unknown>) {
       }),
     },
     renderAgentSkillSettings: jest.fn(),
-    refreshModelSelectors: jest.fn(),
-    refreshTitleGenerationModelOptions: jest.fn(),
+    notifyProviderModelOptionsChanged: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),
   };
 }
@@ -413,8 +412,7 @@ describe('PiSettingsTab', () => {
 
     expect(getPiProviderSettings(settings).enabled).toBe(true);
     expect(context.plugin.saveSettings).toHaveBeenCalled();
-    expect(context.refreshModelSelectors).toHaveBeenCalled();
-    expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('pi');
   });
 
   it('renders shared skills and keeps hidden provider commands separate', () => {
@@ -486,7 +484,7 @@ describe('PiSettingsTab', () => {
     expect(mockDiscoverModels).toHaveBeenCalledTimes(1);
     expect(getPiProviderSettings(settings).discoveredModels).toHaveLength(1);
     expect(getPiProviderSettings(settings).visibleModels).toEqual(['pi:anthropic/claude-sonnet-4']);
-    expect(context.plugin.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('pi');
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('pi');
 
     mockDiscoverModels.mockResolvedValueOnce({
       diagnostics: 'not logged in',
@@ -558,7 +556,7 @@ describe('PiSettingsTab', () => {
     await flushPromises();
 
     expect(context.plugin.saveSettings).not.toHaveBeenCalled();
-    expect(context.plugin.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
   });
 
   it('persists visible model choices and aliases', async () => {
@@ -594,6 +592,7 @@ describe('PiSettingsTab', () => {
     expect(getPiProviderSettings(settings).modelAliases).toEqual({
       'pi:anthropic/claude-sonnet-4': 'Sonnet',
     });
-    expect(context.refreshModelSelectors).toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(2);
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('pi');
   });
 });

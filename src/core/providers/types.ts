@@ -469,8 +469,8 @@ export interface ProviderSettingsTabRendererContext {
     providerId: ProviderId,
     copy: { name: string; desc: string; placeholder: string },
   ): void;
-  refreshModelSelectors(): void;
-  refreshTitleGenerationModelOptions(): void;
+  /** Publish provider model-option changes to every settings and chat consumer. */
+  notifyProviderModelOptionsChanged(providerId: ProviderId): void;
   renderCustomContextLimits(container: HTMLElement, providerId: ProviderId): void;
 }
 

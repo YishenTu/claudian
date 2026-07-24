@@ -49,8 +49,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
             if (value) {
               await refreshCodexModelCatalog();
             }
-            context.refreshModelSelectors();
-            context.refreshTitleGenerationModelOptions();
+            context.notifyProviderModelOptionsChanged('codex');
           })
       );
 

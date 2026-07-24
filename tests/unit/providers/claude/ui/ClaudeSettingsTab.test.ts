@@ -380,8 +380,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
 function createContext(plugin: any) {
   return {
     plugin,
-    refreshModelSelectors: jest.fn(),
-    refreshTitleGenerationModelOptions: jest.fn(),
+    notifyProviderModelOptionsChanged: jest.fn(),
     renderAgentSkillSettings: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),
     renderCustomContextLimits: jest.fn(),
@@ -474,7 +473,7 @@ describe('ClaudeSettingsTab', () => {
     expect(plugin.settings.providerConfigs.claude.customModels).toBe('claude-opus-4-6');
     expect(plugin.settings.model).toBe('claude-opus-4-6');
     expect(mockSaveSettings).not.toHaveBeenCalled();
-    expect(context.refreshModelSelectors).not.toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
   });
 
   it('offers auto as a Claude safe mode and persists it', async () => {
@@ -516,6 +515,6 @@ describe('ClaudeSettingsTab', () => {
     expect(plugin.settings.model).toBe('sonnet');
     expect(plugin.settings.titleGenerationModel).toBe('');
     expect(mockSaveSettings).toHaveBeenCalledTimes(1);
-    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('claude');
   });
 });

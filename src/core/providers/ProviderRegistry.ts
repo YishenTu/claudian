@@ -126,7 +126,10 @@ export class ProviderRegistry {
           continue;
         }
         seenValues.add(option.value);
-        options.push(option);
+        options.push({
+          ...option,
+          label: `${this.getProviderDisplayName(providerId)}: ${option.label}`,
+        });
       }
     }
 

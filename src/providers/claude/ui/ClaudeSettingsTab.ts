@@ -196,7 +196,7 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
             ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings);
           });
           savedCustomModels = nextCustomModels;
-          context.refreshModelSelectors();
+          context.notifyProviderModelOptionsChanged('claude');
         };
 
         text

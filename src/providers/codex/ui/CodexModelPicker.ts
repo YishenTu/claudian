@@ -86,7 +86,7 @@ export function renderCodexModelPicker(
       updateCodexProviderSettings(settings, { visibleModels: nextVisibleModels });
       ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
     });
-    context.refreshModelSelectors();
+    context.notifyProviderModelOptionsChanged('codex');
   };
 
   let refreshPicker = (): void => {};
@@ -105,13 +105,21 @@ export function renderCodexModelPicker(
       const result = await workspace.modelCatalogCoordinator.ensureFresh('model-picker', { force });
       if (result.backgroundRefresh) {
         void result.backgroundRefresh.then(
-          () => refreshPicker(),
+          (backgroundResult) => {
+            refreshPicker();
+            if (backgroundResult.refreshed) {
+              context.notifyProviderModelOptionsChanged('codex');
+            }
+          },
           () => refreshPicker(),
         );
       }
       if (result.diagnostics) {
         new Notice(`Codex model discovery failed: ${result.diagnostics}`);
         return 'failed';
+      }
+      if (result.refreshed) {
+        context.notifyProviderModelOptionsChanged('codex');
       }
       return getCodexProviderSettings(settingsBag).discoveredModels.length > 0 ? 'loaded' : 'empty';
     },
@@ -121,7 +129,7 @@ export function renderCodexModelPicker(
       await context.plugin.mutateSettings((settings) => {
         updateCodexProviderSettings(settings, { modelAliases });
       });
-      context.refreshModelSelectors();
+      context.notifyProviderModelOptionsChanged('codex');
     },
     onSelectedIdsChange: persistVisibleModels,
     providerName: 'Codex',

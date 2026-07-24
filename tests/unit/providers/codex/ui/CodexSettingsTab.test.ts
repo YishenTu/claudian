@@ -371,8 +371,7 @@ function createContext(plugin: any) {
     plugin,
     renderAgentSkillSettings: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),
-    refreshModelSelectors: jest.fn(),
-    refreshTitleGenerationModelOptions: jest.fn(),
+    notifyProviderModelOptionsChanged: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
 }
@@ -437,7 +436,7 @@ describe('CodexSettingsTab', () => {
     );
     await enableSetting.toggleComponents[0].onChangeCallback?.(false);
 
-    expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalledTimes(1);
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
   });
 
   it('renders the app-server model visibility picker', () => {

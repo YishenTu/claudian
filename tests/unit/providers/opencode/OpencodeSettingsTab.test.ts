@@ -424,8 +424,7 @@ function createContext(plugin: any) {
     plugin,
     renderAgentSkillSettings: jest.fn(),
     renderHiddenProviderCommandSetting: jest.fn(),
-    refreshModelSelectors: jest.fn(),
-    refreshTitleGenerationModelOptions: jest.fn(),
+    notifyProviderModelOptionsChanged: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
 }
@@ -477,7 +476,7 @@ describe('OpencodeSettingsTab', () => {
     );
     await enableSetting.toggleComponents[0].onChangeCallback?.(false);
 
-    expect(context.refreshTitleGenerationModelOptions).toHaveBeenCalledTimes(1);
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('opencode');
   });
 
   it('stores the CLI path per host and resets active runtime state across all views', async () => {
@@ -604,7 +603,7 @@ describe('OpencodeSettingsTab', () => {
       { allowSessionCreation: true },
     );
     expect(mockRuntimeCleanup).toHaveBeenCalledTimes(1);
-    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(1);
   });
 
   it('loads the OpenCode model catalog immediately when a fresh picker starts expanded', async () => {
@@ -645,7 +644,7 @@ describe('OpencodeSettingsTab', () => {
       { allowSessionCreation: true },
     );
     expect(mockRuntimeCleanup).toHaveBeenCalledTimes(1);
-    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(1);
   });
 
   it('loads the OpenCode catalog when saved models start with the browser collapsed', async () => {
@@ -681,7 +680,7 @@ describe('OpencodeSettingsTab', () => {
       plugin,
       { allowSessionCreation: true },
     );
-    expect(context.refreshModelSelectors).toHaveBeenCalledTimes(1);
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(1);
   });
 
   it('warms and persists thinking metadata when a model is added to the visible list', async () => {
@@ -724,7 +723,7 @@ describe('OpencodeSettingsTab', () => {
       plugin,
       'opencode:deepseek/deepseek-v4-pro',
     );
-    expect(context.refreshModelSelectors).toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('opencode');
   });
 
   it('persists aliases through the shared model picker', async () => {
@@ -751,6 +750,6 @@ describe('OpencodeSettingsTab', () => {
     expect(getOpencodeProviderSettings(plugin.settings).modelAliases).toEqual({
       'deepseek/deepseek-v4-pro': 'V4 Pro',
     });
-    expect(context.refreshModelSelectors).toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('opencode');
   });
 });
