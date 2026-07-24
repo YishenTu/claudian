@@ -2,7 +2,7 @@
 
 ## Project
 
-Claudian is an Obsidian plugin that embeds provider-backed coding agents in a sidebar and inline-edit flow. Claude is the default provider. Codex, OpenCode, and Pi are optional providers that plug into the same conversation model through `Conversation.providerId` and opaque provider-owned `providerState`.
+Claudian is an Obsidian plugin that embeds provider-backed coding agents in a sidebar and inline-edit flow. Claude is the default provider. Codex, Grok, Qoder, OpenCode, and Pi are optional providers that plug into the same conversation model through `Conversation.providerId` and opaque provider-owned `providerState`.
 
 Do not assume provider parity. Check each provider's `capabilities.ts`, `registration.ts`, and UI config before wiring shared behavior.
 
@@ -15,6 +15,8 @@ Do not assume provider parity. Check each provider's `capabilities.ts`, `registr
   - `src/features/chat/AGENTS.md`
   - `src/providers/claude/AGENTS.md`
   - `src/providers/codex/AGENTS.md`
+  - `src/providers/grok/AGENTS.md`
+  - `src/providers/qoder/AGENTS.md`
   - `src/providers/opencode/AGENTS.md`
   - `src/providers/pi/AGENTS.md`
   - `src/style/AGENTS.md`
@@ -62,7 +64,7 @@ The feature layer depends on `core/` contracts, not provider internals. Provider
 - New provider behavior must be expressed through registries and capabilities: `ProviderRegistry`, `ProviderWorkspaceRegistry`, `ProviderChatUIConfig`, provider capabilities, and provider-owned settings reconciliation.
 - Model, permission, plan-mode, command, MCP, skill, and subagent behavior is provider-specific unless the core contract explicitly makes it shared.
 - When provider behavior is uncertain, inspect real runtime output first. Put throwaway scripts, traces, and handoff notes in `.context/`.
-- Shared skill management for Codex, Grok, Pi, and OpenCode owns only `.agents/skills`; composer discovery remains exclusively provider-protocol-driven. Claude stays on `.claude/skills` and `.claude/commands`, and legacy provider roots are never migrated automatically.
+- Shared skill management for Codex, Grok, Qoder, Pi, and OpenCode owns only `.agents/skills`; composer discovery remains exclusively provider-protocol-driven. Claude stays on `.claude/skills` and `.claude/commands`, and legacy provider roots are never migrated automatically.
 
 ## Storage
 
@@ -75,13 +77,15 @@ The feature layer depends on `core/` contracts, not provider internals. Provider
 | `.claude/commands/**/*.md` | Claude slash commands |
 | `.claude/skills/*/SKILL.md` | Claude skills |
 | `.claude/agents/*.md` | Claude vault agents |
-| `.agents/skills/*/SKILL.md` | Claudian-managed shared vault skills for Codex, Grok, Pi, and OpenCode |
+| `.agents/skills/*/SKILL.md` | Claudian-managed shared vault skills for Codex, Grok, Qoder, Pi, and OpenCode |
 | `.codex/skills/*/SKILL.md` | Legacy/provider-native Codex skills; never managed or migrated by Claudian |
 | `.codex/agents/*.toml` | Codex vault subagent definitions |
 | `.opencode/agent`, `.opencode/agents` | OpenCode agent definitions |
 | `.pi/agent/sessions/` | Pi vault-local sessions |
 | `~/.claude/projects/{vault}/*.jsonl` | Claude-native transcripts |
 | `~/.codex/sessions/**/*.jsonl` | Codex-native transcripts |
+| `~/.grok/sessions/` or `$GROK_HOME/sessions/` | Grok-native transcripts |
+| `~/.qoder/projects/**/*.jsonl` or `$QODER_CONFIG_DIR/projects/**/*.jsonl` | Qoder-native transcripts |
 | `~/.pi/agent/sessions/` | Pi user-level sessions |
 
 ## Development Rules
