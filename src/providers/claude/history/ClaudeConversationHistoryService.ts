@@ -14,7 +14,11 @@ import type {
   ToolCallInfo,
 } from '../../../core/types';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
-import { type ClaudeProviderState, getClaudeState } from '../types/providerState';
+import {
+  type ClaudeProviderState,
+  getClaudeConversationSessionIds,
+  getClaudeState,
+} from '../types/providerState';
 import {
   deleteSDKSession,
   encodeVaultPathForSDK,
@@ -23,6 +27,7 @@ import {
   loadSubagentToolCalls,
   locateSDKSession,
   locateSDKSessions,
+  readLegacyConversationSessionId,
 } from './ClaudeHistoryStore';
 import type { SDKSessionLocation } from './sdkSessionPaths';
 
@@ -397,15 +402,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   private relocatedSessionPathsByConversation = new Map<string, Map<string, string>>();
 
   private getConversationSessionIds(conversation: Conversation): string[] {
-    const state = getClaudeState(conversation.providerState);
-    if (this.isPendingForkConversation(conversation)) {
-      return [state.forkSource!.sessionId];
-    }
-
-    return [...new Set([
-      ...(state.previousProviderSessionIds || []),
-      state.providerSessionId ?? conversation.sessionId,
-    ].filter((id): id is string => !!id))];
+    return getClaudeConversationSessionIds(conversation);
   }
 
   private synchronizeHistoryCache(
@@ -602,12 +599,27 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     if (!vaultPath) {
       return;
     }
+
+    let allSessionIds = this.getConversationSessionIds(conversation);
+    if (allSessionIds.length === 0) {
+      const recoveredSessionId = await readLegacyConversationSessionId(
+        vaultPath,
+        conversation.id,
+      );
+      if (recoveredSessionId) {
+        conversation.providerState = sanitizeProviderState({
+          ...getClaudeState(conversation.providerState),
+          previousProviderSessionIds: [recoveredSessionId],
+        });
+        allSessionIds = [recoveredSessionId];
+      }
+    }
+
     this.synchronizeHistoryCache(conversation, vaultPath, pathContext);
     if (this.hydratedConversationIds.has(conversation.id)) return;
 
     const state = getClaudeState(conversation.providerState);
     const isPendingFork = this.isPendingForkConversation(conversation);
-    const allSessionIds = this.getConversationSessionIds(conversation);
 
     if (allSessionIds.length === 0) {
       return;

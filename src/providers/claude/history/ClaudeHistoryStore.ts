@@ -1,3 +1,6 @@
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
@@ -65,6 +68,54 @@ export {
   extractAgentIdFromToolUseResult,
   resolveToolUseResultStatus,
 } from './sdkAsyncSubagent';
+
+export function parseLegacyConversationSessionId(
+  content: string,
+  conversationId: string,
+): string | null {
+  const firstLine = content.split(/\r?\n/, 1)[0];
+  if (!firstLine) {
+    return null;
+  }
+
+  try {
+    const record = JSON.parse(firstLine) as {
+      type?: unknown;
+      id?: unknown;
+      sessionId?: unknown;
+    };
+    if (
+      record.type !== 'meta'
+      || record.id !== conversationId
+      || typeof record.sessionId !== 'string'
+      || !isValidSessionId(record.sessionId)
+    ) {
+      return null;
+    }
+    return record.sessionId;
+  } catch {
+    return null;
+  }
+}
+
+export async function readLegacyConversationSessionId(
+  vaultPath: string,
+  conversationId: string,
+): Promise<string | null> {
+  if (!isValidSessionId(conversationId)) {
+    return null;
+  }
+
+  try {
+    const content = await fs.readFile(
+      path.join(vaultPath, '.claude', 'sessions', `${conversationId}.jsonl`),
+      'utf8',
+    );
+    return parseLegacyConversationSessionId(content, conversationId);
+  } catch {
+    return null;
+  }
+}
 
 export async function loadSDKSessionMessages(
   vaultPath: string,

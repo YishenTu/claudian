@@ -28,6 +28,9 @@ describe('claudeSettingsReconciler', () => {
       expect(result.changed).toBe(true);
       expect(result.invalidatedConversations).toEqual([conversation]);
       expect(conversation.sessionId).toBeNull();
+      expect(conversation.providerState).toEqual({
+        previousProviderSessionIds: ['session-1'],
+      });
       expect(settings.model).toBe('claude-code/claude-opus-4-6');
       expect(getClaudeProviderSettings(settings).environmentHash).toBe(
         'ANTHROPIC_BASE_URL=https://api.example.com',
@@ -54,7 +57,7 @@ describe('claudeSettingsReconciler', () => {
       expect(settings.model).toBe('sonnet');
     });
 
-    it('invalidates only Claude conversations and clears every Claude-owned resume field', () => {
+    it('invalidates only Claude conversations and preserves Claude transcript references', () => {
       const claudeConversation = {
         id: 'claude-conversation',
         providerId: 'claude',
@@ -93,8 +96,9 @@ describe('claudeSettingsReconciler', () => {
 
       expect(result.invalidatedConversations).toEqual([claudeConversation]);
       expect(claudeConversation.sessionId).toBeNull();
-      expect(claudeConversation.resumeAtMessageId).toBeUndefined();
+      expect(claudeConversation.resumeAtMessageId).toBe('assistant-1');
       expect(claudeConversation.providerState).toEqual({
+        previousProviderSessionIds: ['previous-session', 'provider-session'],
         subagentData: { task: { id: 'task' } },
         uiMetadata: { keep: true },
       });
@@ -126,7 +130,81 @@ describe('claudeSettingsReconciler', () => {
       const result = claudeSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
 
       expect(result.invalidatedConversations).toEqual([conversation]);
-      expect(conversation.providerState).toBeUndefined();
+      expect(conversation.providerState).toEqual({
+        previousProviderSessionIds: ['provider-session'],
+      });
+    });
+
+    it('preserves transcript session ids when invalidating resumable Claude state', () => {
+      const conversation = {
+        id: 'claude-history-backed',
+        providerId: 'claude',
+        sessionId: 'legacy-session',
+        resumeAtMessageId: 'assistant-checkpoint',
+        providerState: {
+          providerSessionId: 'current-provider-session',
+          previousProviderSessionIds: ['previous-provider-session'],
+          subagentData: { task: { id: 'task' } },
+        },
+        messages: [],
+      } as unknown as Conversation;
+      const settings: Record<string, unknown> = {
+        model: 'sonnet',
+        providerConfigs: {
+          claude: {
+            environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
+            environmentHash: '',
+          },
+        },
+      };
+
+      const first = claudeSettingsReconciler.reconcileModelWithEnvironment(
+        settings,
+        [conversation],
+      );
+      const second = claudeSettingsReconciler.invalidateConversationSessions([conversation]);
+
+      expect(first.invalidatedConversations).toEqual([conversation]);
+      expect(second).toEqual([]);
+      expect(conversation).toMatchObject({
+        sessionId: null,
+        resumeAtMessageId: 'assistant-checkpoint',
+        providerState: {
+          previousProviderSessionIds: [
+            'previous-provider-session',
+            'current-provider-session',
+          ],
+          subagentData: { task: { id: 'task' } },
+        },
+      });
+      expect(conversation.providerState).not.toHaveProperty('providerSessionId');
+    });
+
+    it('converts a pending fork into replayable history at the fork checkpoint', () => {
+      const conversation = {
+        id: 'pending-fork',
+        providerId: 'claude',
+        sessionId: null,
+        providerState: {
+          forkSource: {
+            sessionId: 'fork-source-session',
+            resumeAt: 'fork-source-checkpoint',
+          },
+        },
+        messages: [],
+      } as unknown as Conversation;
+
+      const invalidated = claudeSettingsReconciler.invalidateConversationSessions([conversation]);
+
+      expect(invalidated).toEqual([conversation]);
+      expect(conversation).toMatchObject({
+        sessionId: null,
+        resumeAtMessageId: 'fork-source-checkpoint',
+        providerState: {
+          previousProviderSessionIds: ['fork-source-session'],
+        },
+      });
+      expect(conversation.providerState).not.toHaveProperty('forkSource');
     });
 
     it('reconciles the Fable alias to its tier mapping when all tier mappings change', () => {
