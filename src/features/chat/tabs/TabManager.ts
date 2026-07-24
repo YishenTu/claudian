@@ -932,13 +932,21 @@ export class TabManager implements TabManagerInterface {
       && targetService.isReady()
       && !targetTab.runtimeSupervisor.isInvalidated
     ) {
-      hasRuntimeSnapshot = true;
-      result = normalizeProviderCommandDiscoveryItems(
-        await (signal
-          ? targetService.getSupportedCommands(signal)
-          : targetService.getSupportedCommands()),
-      );
-      signal?.throwIfAborted();
+      if (targetService.getSupportedCommandsSnapshot) {
+        const snapshot = targetService.getSupportedCommandsSnapshot();
+        if (snapshot !== null) {
+          hasRuntimeSnapshot = true;
+          result = normalizeProviderCommandDiscoveryItems(snapshot);
+        }
+      } else {
+        hasRuntimeSnapshot = true;
+        result = normalizeProviderCommandDiscoveryItems(
+          await (signal
+            ? targetService.getSupportedCommands(signal)
+            : targetService.getSupportedCommands()),
+        );
+        signal?.throwIfAborted();
+      }
     }
 
     if (

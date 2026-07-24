@@ -45,6 +45,8 @@ export interface ChatRuntime {
   consumeSessionInvalidation(): boolean;
   isReady(): boolean;
   getSupportedCommands(signal?: AbortSignal): Promise<SlashCommand[]>;
+  /** Returns provider command metadata only when an authoritative snapshot is available. */
+  getSupportedCommandsSnapshot?(): SlashCommand[] | null;
   /** Publishes provider-native command snapshots without committing them to a shared catalog. */
   onSupportedCommandsChange?(
     listener: (commands: readonly SlashCommand[]) => void,

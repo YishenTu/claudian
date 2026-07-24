@@ -2496,12 +2496,13 @@ describe('TabManager - Provider Command Catalog', () => {
     expect(claudeCatalog.listDropdownEntries).not.toHaveBeenCalled();
   });
 
-  it('should refresh Claude runtime commands before listing catalog entries', async () => {
+  it('should use the Claude runtime command snapshot before listing catalog entries', async () => {
     const supportedCommands = [{ id: 'sdk:commit', name: 'commit', content: '', source: 'sdk' }];
     const readyService = {
       providerId: 'claude',
       isReady: jest.fn().mockReturnValue(true),
-      getSupportedCommands: jest.fn().mockResolvedValue(supportedCommands),
+      getSupportedCommands: jest.fn(),
+      getSupportedCommandsSnapshot: jest.fn().mockReturnValue(supportedCommands),
     };
     const claudeCatalog = {
       listDropdownEntries: jest.fn().mockResolvedValue([]),
@@ -2533,9 +2534,8 @@ describe('TabManager - Provider Command Catalog', () => {
     const catalogConfig = options.getProviderCatalogConfig();
     await catalogConfig.discovery.load();
 
-    expect(readyService.getSupportedCommands).toHaveBeenCalledWith(
-      expect.any(AbortSignal),
-    );
+    expect(readyService.getSupportedCommandsSnapshot).toHaveBeenCalledTimes(1);
+    expect(readyService.getSupportedCommands).not.toHaveBeenCalled();
     expect(claudeCatalog.setRuntimeCommands).toHaveBeenCalledWith(supportedCommands);
     expect(claudeCatalog.listDropdownEntries).toHaveBeenCalledWith(expect.objectContaining({
       includeBuiltIns: false,
@@ -2543,11 +2543,76 @@ describe('TabManager - Provider Command Catalog', () => {
     }));
   });
 
+  it('uses the Claude catalog probe when a ready runtime has no command snapshot', async () => {
+    const probedEntry = {
+      id: 'sdk:probe',
+      providerId: 'claude',
+      kind: 'command',
+      name: 'probe',
+      description: 'Probed command',
+      content: '',
+      scope: 'runtime',
+      source: 'sdk',
+      isEditable: false,
+      isDeletable: false,
+      displayPrefix: '/',
+      insertPrefix: '/',
+    };
+    const readyService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn(),
+      getSupportedCommandsSnapshot: jest.fn().mockReturnValue(null),
+    };
+    const claudeCatalog = {
+      listDropdownEntries: jest.fn(async (context: {
+        runtimeCommands?: readonly unknown[];
+      }) => context.runtimeCommands === undefined ? [probedEntry] : []),
+      setRuntimeCommands: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        providerId: 'claude',
+        triggerChars: ['/'],
+        builtInPrefix: '/',
+        skillPrefix: '/',
+        commandPrefix: '/',
+      }),
+    };
+    ProviderWorkspaceRegistry.setServices('claude', {
+      commandCatalog: claudeCatalog as any,
+    });
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-claude',
+        providerId: 'claude',
+        service: readyService,
+      }),
+    });
+    const tab = await manager.createTab();
+    const discovery = (manager as any).providerCommandDiscoveryStores.get(tab!.id);
+
+    await expect(discovery.load()).resolves.toEqual({
+      items: [probedEntry],
+      status: 'ready',
+    });
+
+    expect(readyService.getSupportedCommandsSnapshot).toHaveBeenCalledTimes(1);
+    expect(readyService.getSupportedCommands).not.toHaveBeenCalled();
+    expect(claudeCatalog.listDropdownEntries).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowCachedRuntimeCommands: false,
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(claudeCatalog.listDropdownEntries.mock.calls[0]?.[0])
+      .not.toHaveProperty('runtimeCommands');
+  });
+
   it('should clear Claude runtime commands when revalidation returns no commands', async () => {
     const readyService = {
       providerId: 'claude',
       isReady: jest.fn().mockReturnValue(true),
-      getSupportedCommands: jest.fn().mockResolvedValue([]),
+      getSupportedCommands: jest.fn(),
+      getSupportedCommandsSnapshot: jest.fn().mockReturnValue([]),
     };
     const claudeCatalog = {
       listDropdownEntries: jest.fn().mockResolvedValue([]),
@@ -2576,6 +2641,8 @@ describe('TabManager - Provider Command Catalog', () => {
     const tab = await manager.createTab();
 
     await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual([]);
+    expect(readyService.getSupportedCommandsSnapshot).toHaveBeenCalledTimes(1);
+    expect(readyService.getSupportedCommands).not.toHaveBeenCalled();
     expect(claudeCatalog.setRuntimeCommands).toHaveBeenCalledWith([]);
   });
 

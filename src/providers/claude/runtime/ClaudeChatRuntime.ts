@@ -196,6 +196,7 @@ export class ClaudianService implements ChatRuntime {
 
   // SDK command cache — populated on system/init, cleared on persistent query close
   private cachedSdkCommands: SlashCommand[] = [];
+  private hasCachedSdkCommandSnapshot = false;
 
   private _asyncSubagentCompletionCallback: AsyncSubagentCompletionCallback | null = null;
 
@@ -748,6 +749,7 @@ export class ClaudianService implements ChatRuntime {
     this.authoritativeContextWindow = null;
     this.contextWindowDiscovery = null;
     this.cachedSdkCommands = [];
+    this.hasCachedSdkCommandSnapshot = false;
     this.streamTransformState.clearAll();
     this.usageTransformState.clear();
     this._autoTurnBuffer = [];
@@ -1855,19 +1857,18 @@ export class ClaudianService implements ChatRuntime {
 
   /**
    * Get supported commands (SDK skills).
-   * Returns cached commands populated on system/init. Falls back to a fresh
-   * supportedCommands() call if the cache is empty (e.g., dropdown opened
-   * before the first init event).
+   * Live query control requests are deliberately excluded: dropdown discovery
+   * must not interrupt or otherwise own the active Claude session.
    */
   async getSupportedCommands(signal?: AbortSignal): Promise<SlashCommand[]> {
     signal?.throwIfAborted();
-    if (this.cachedSdkCommands.length > 0) {
-      return this.cachedSdkCommands;
-    }
-    if (!this.persistentQuery) {
-      return [];
-    }
-    return this.fetchAndCacheCommands(this.persistentQuery, signal);
+    return this.getSupportedCommandsSnapshot() ?? [];
+  }
+
+  getSupportedCommandsSnapshot(): SlashCommand[] | null {
+    return this.hasCachedSdkCommandSnapshot
+      ? this.cachedSdkCommands.map(command => ({ ...command }))
+      : null;
   }
 
   /**
@@ -1876,28 +1877,10 @@ export class ClaudianService implements ChatRuntime {
    */
   private async fetchAndCacheCommands(
     query: Query | null,
-    signal?: AbortSignal,
   ): Promise<SlashCommand[]> {
     if (!query) return [];
-    signal?.throwIfAborted();
-    let onAbort: (() => void) | null = null;
-    const aborted = signal
-      ? new Promise<never>((_resolve, reject) => {
-        onAbort = () => {
-          if (this.persistentQuery === query) {
-            this.closePersistentQuery('command discovery aborted');
-          }
-          reject(signal.reason ?? new Error('Claude command discovery aborted'));
-        };
-        signal.addEventListener('abort', onAbort, { once: true });
-      })
-      : null;
     try {
-      const commandRequest = query.supportedCommands();
-      const sdkCommands: SDKSlashCommand[] = aborted
-        ? await Promise.race([commandRequest, aborted])
-        : await commandRequest;
-      signal?.throwIfAborted();
+      const sdkCommands: SDKSlashCommand[] = await query.supportedCommands();
       const mappedCommands = sdkCommands.map((cmd) => ({
         id: `sdk:${cmd.name}`,
         name: cmd.name,
@@ -1910,14 +1893,10 @@ export class ClaudianService implements ChatRuntime {
         return this.cachedSdkCommands;
       }
       this.cachedSdkCommands = mappedCommands;
+      this.hasCachedSdkCommandSnapshot = true;
       return this.cachedSdkCommands;
     } catch {
-      signal?.throwIfAborted();
       return [];
-    } finally {
-      if (onAbort && signal) {
-        signal.removeEventListener('abort', onAbort);
-      }
     }
   }
 
