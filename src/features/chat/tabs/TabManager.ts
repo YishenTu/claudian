@@ -16,6 +16,7 @@ import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { Conversation, SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
+import { throwIfAborted, toAbortError } from '../../../utils/abort';
 import { scheduleAnimationFrame } from '../../../utils/animationFrame';
 import { revealWorkspaceLeaf } from '../../../utils/obsidianCompat';
 import type { FeatureHost } from '../../FeatureHost';
@@ -893,13 +894,13 @@ export class TabManager implements TabManagerInterface {
     tabId?: TabId,
     signal?: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<ProviderCommandEntry>> {
-    signal?.throwIfAborted();
+    throwIfAborted(signal, 'Provider command discovery aborted');
     const targetTab = (tabId ? this.tabs.get(tabId) : this.getActiveTab()) ?? null;
     if (!targetTab) return { status: 'empty' };
 
     const providerId = getTabProviderId(targetTab, this.plugin);
     const discovery = await this.getSdkCommandDiscovery(targetTab.id, signal);
-    signal?.throwIfAborted();
+    throwIfAborted(signal, 'Provider command discovery aborted');
     const { result } = discovery;
     if (result.status === 'error' || result.status === 'requires-session') {
       return result;
@@ -922,7 +923,7 @@ export class TabManager implements TabManagerInterface {
     tabId?: TabId,
     signal?: AbortSignal,
   ): Promise<SdkCommandDiscovery> {
-    signal?.throwIfAborted();
+    throwIfAborted(signal, 'Provider command discovery aborted');
     const targetTab = (tabId ? this.tabs.get(tabId) : this.getActiveTab()) ?? null;
     if (!targetTab) {
       return { result: { status: 'empty' } };
@@ -931,7 +932,7 @@ export class TabManager implements TabManagerInterface {
     const providerId = getTabProviderId(targetTab, this.plugin);
     if (!ProviderWorkspaceRegistry.getIfInitialized(providerId)) {
       await ProviderWorkspaceRegistry.ensureInitialized(this.plugin.providerHost, providerId, 'command-picker');
-      signal?.throwIfAborted();
+      throwIfAborted(signal, 'Provider command discovery aborted');
     }
 
     const staticCapabilities = ProviderRegistry.getCapabilities(providerId);
@@ -942,7 +943,7 @@ export class TabManager implements TabManagerInterface {
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     const runtimeCommandLoader = ProviderWorkspaceRegistry.getRuntimeCommandLoader(providerId);
     const context = await this.buildProviderWarmupContext(targetTab, providerId);
-    signal?.throwIfAborted();
+    throwIfAborted(signal, 'Provider command discovery aborted');
     const commandContext = this.buildProviderCommandContext(targetTab, providerId, context);
     if (
       targetTab.lifecycleState === 'blank'
@@ -976,7 +977,7 @@ export class TabManager implements TabManagerInterface {
             ? targetService.getSupportedCommands(signal)
             : targetService.getSupportedCommands()),
         );
-        signal?.throwIfAborted();
+        throwIfAborted(signal, 'Provider command discovery aborted');
       }
     }
 
@@ -1002,7 +1003,7 @@ export class TabManager implements TabManagerInterface {
     warmupContext?: ProviderWarmupContext,
     signal?: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
-    signal?.throwIfAborted();
+    throwIfAborted(signal, 'Provider command discovery aborted');
     if (!this.isProviderCommandLoaderAvailable(providerId)) {
       return { status: 'empty' };
     }
@@ -1214,14 +1215,14 @@ export class TabManager implements TabManagerInterface {
     }
     if (signal.aborted) {
       warmup.abortController.abort();
-      signal.throwIfAborted();
+      throwIfAborted(signal, 'Provider command discovery aborted');
     }
 
     let onAbort: (() => void) | null = null;
     const aborted = new Promise<never>((_resolve, reject) => {
       onAbort = () => {
         warmup.abortController.abort();
-        reject(signal.reason ?? new Error('Provider command discovery aborted'));
+        reject(toAbortError(signal, 'Provider command discovery aborted'));
       };
       signal.addEventListener('abort', onAbort, { once: true });
     });

@@ -2,6 +2,7 @@ import type { SlashCommand as SDKSlashCommand } from '@anthropic-ai/claude-agent
 
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { SlashCommand } from '../../../core/types';
+import { throwIfAborted, toAbortError } from '../../../utils/abort';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { loadClaudeAgentQuery } from '../loadClaudeAgentSdk';
@@ -29,13 +30,14 @@ async function awaitWithAbort<T>(
   if (!signal) {
     return await promise;
   }
-  signal.throwIfAborted();
+  throwIfAborted(signal, 'Claude command discovery aborted');
 
   let onAbort: (() => void) | null = null;
   const aborted = new Promise<never>((_resolve, reject) => {
-    onAbort = () => reject(
-      signal.reason ?? new Error('Claude command discovery aborted'),
-    );
+    onAbort = () => reject(toAbortError(
+      signal,
+      'Claude command discovery aborted',
+    ));
     signal.addEventListener('abort', onAbort, { once: true });
   });
   try {
@@ -58,7 +60,7 @@ export async function probeRuntimeCommands(
   plugin: ProviderHost,
   signal?: AbortSignal,
 ): Promise<SlashCommand[]> {
-  signal?.throwIfAborted();
+  throwIfAborted(signal, 'Claude command discovery aborted');
   const abortController = new AbortController();
   const onAbort = (): void => abortController.abort();
   signal?.addEventListener('abort', onAbort, { once: true });
@@ -116,13 +118,13 @@ export async function probeRuntimeCommands(
           );
           commands = mapSdkCommands(sdkCommands);
         } catch {
-          signal?.throwIfAborted();
+          throwIfAborted(signal, 'Claude command discovery aborted');
         }
         break;
       }
     }
   } catch {
-    signal?.throwIfAborted();
+    throwIfAborted(signal, 'Claude command discovery aborted');
     // Probe failures are best-effort; caller cancellation remains observable.
   } finally {
     signal?.removeEventListener('abort', onAbort);

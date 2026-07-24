@@ -127,4 +127,33 @@ describe('probeRuntimeCommands', () => {
 
     await expect(probe).rejects.toMatchObject({ name: 'AbortError' });
   });
+
+  it('normalizes a non-Error abort reason before rejecting', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'probe-session' },
+    ], { appendResult: false });
+    sdkMock.setMockSupportedCommandsImplementation(
+      () => new Promise(() => undefined),
+    );
+    const abortController = new AbortController();
+
+    const probe = probeRuntimeCommands(
+      createMockPlugin(),
+      abortController.signal,
+    );
+    for (
+      let i = 0;
+      i < 10 && !sdkMock.getLastResponse()?.supportedCommands.mock.calls.length;
+      i++
+    ) {
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
+
+    abortController.abort('caller cancelled');
+
+    await expect(probe).rejects.toMatchObject({
+      message: 'Claude command discovery aborted',
+      cause: 'caller cancelled',
+    });
+  });
 });
