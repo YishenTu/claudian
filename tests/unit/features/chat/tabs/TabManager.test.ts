@@ -2172,6 +2172,50 @@ describe('TabManager - Provider Resource Generations', () => {
     }
   });
 
+  it('normalizes a non-Error command discovery abort reason before rejecting', async () => {
+    const loader = {
+      getCacheFingerprint: jest.fn().mockReturnValue('opencode:abort'),
+      isAvailable: jest.fn().mockReturnValue(true),
+      loadCommands: jest.fn(({ signal }: { signal: AbortSignal }) => (
+        new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => reject(new Error('Loader aborted')),
+            { once: true },
+          );
+        })
+      )),
+    };
+    ProviderWorkspaceRegistry.setServices('opencode', {
+      commandCatalog: { setRuntimeCommands: jest.fn() } as any,
+      runtimeCommandLoader: loader as any,
+      tabWarmupPolicy: commandWarmupPolicy as any,
+    });
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-opencode',
+        providerId: 'opencode',
+        draftModel: 'opencode:test',
+        lifecycleState: 'blank',
+        ui: { externalContextSelector: { getExternalContexts: jest.fn().mockReturnValue([]) } },
+      }),
+    });
+    const tab = await manager.createTab();
+    const abortController = new AbortController();
+
+    const discovery = manager.getProviderCommandDiscovery(
+      tab!.id,
+      abortController.signal,
+    );
+    await flushMicrotasks(8);
+    abortController.abort('caller cancelled');
+
+    await expect(discovery).rejects.toMatchObject({
+      message: 'Provider command discovery aborted',
+      cause: 'caller cancelled',
+    });
+  });
+
   it('keeps secrets and conversation state out of command cache keys', async () => {
     const secret = 'secret-sentinel-value';
     const loader = {
