@@ -221,4 +221,25 @@ describe('PiRuntimeCommandLoader', () => {
     });
     expect(JSON.stringify(failure)).not.toContain('SECRET_SENTINEL');
   });
+
+  it('cleans up the isolated process when discovery is aborted', async () => {
+    const abortController = new AbortController();
+    const conversation = createConversation({ sessionId: 'session-1' });
+
+    const discovery = new PiRuntimeCommandLoader().loadCommands({
+      conversation,
+      externalContextPaths: [],
+      plugin: {} as any,
+      runtime: null,
+      signal: abortController.signal,
+    });
+    abortController.abort();
+
+    await expect(discovery).resolves.toEqual({
+      message: 'Could not load Pi commands.',
+      retryable: true,
+      status: 'error',
+    });
+    expect(mockCreatedRuntimes[0].cleanup).toHaveBeenCalledTimes(1);
+  });
 });

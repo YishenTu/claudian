@@ -23,6 +23,7 @@ export class PiRuntimeCommandLoader implements ProviderRuntimeCommandLoader {
   async loadCommands(
     context: ProviderRuntimeCommandLoaderContext,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
+    context.signal?.throwIfAborted();
     const persistedState = getPiState(context.conversation?.providerState);
     const hasPersistedSession = Boolean(
       context.conversation?.sessionId
@@ -49,6 +50,16 @@ export class PiRuntimeCommandLoader implements ProviderRuntimeCommandLoader {
     const runtime = canReuseRuntime
       ? context.runtime!
       : new PiChatRuntime(context.plugin);
+    let cleanedUp = false;
+    const cleanup = (): void => {
+      if (runtime === context.runtime || cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
+      runtime.cleanup();
+    };
+    const onAbort = (): void => cleanup();
+    context.signal?.addEventListener('abort', onAbort, { once: true });
 
     try {
       if (canReuseRuntime && context.conversation) {
@@ -58,6 +69,7 @@ export class PiRuntimeCommandLoader implements ProviderRuntimeCommandLoader {
       const ready = await runtime.ensureReady({
         allowSessionCreation: false,
       });
+      context.signal?.throwIfAborted();
       if (!ready) {
         return {
           message: 'Could not load Pi commands.',
@@ -67,7 +79,7 @@ export class PiRuntimeCommandLoader implements ProviderRuntimeCommandLoader {
       }
 
       return normalizeProviderCommandDiscoveryItems(
-        await (runtime as PiChatRuntime).discoverSupportedCommands(),
+        await (runtime as PiChatRuntime).discoverSupportedCommands(context.signal),
       );
     } catch {
       return {
@@ -76,9 +88,8 @@ export class PiRuntimeCommandLoader implements ProviderRuntimeCommandLoader {
         status: 'error' as const,
       };
     } finally {
-      if (runtime !== context.runtime) {
-        runtime.cleanup();
-      }
+      context.signal?.removeEventListener('abort', onAbort);
+      cleanup();
     }
   }
 }

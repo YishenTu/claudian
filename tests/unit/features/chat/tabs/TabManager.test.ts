@@ -2085,6 +2085,7 @@ describe('TabManager - Provider Resource Generations', () => {
   it('starts a fresh runtime warmup when discovery is retried after its outer timeout', async () => {
     jest.useFakeTimers();
     let resolveFirst!: (result: any) => void;
+    let firstSignal: AbortSignal | undefined;
     try {
       const firstWarmup = new Promise(resolve => {
         resolveFirst = resolve;
@@ -2093,7 +2094,10 @@ describe('TabManager - Provider Resource Generations', () => {
         getCacheFingerprint: jest.fn().mockReturnValue('opencode:retry'),
         isAvailable: jest.fn().mockReturnValue(true),
         loadCommands: jest.fn()
-          .mockReturnValueOnce(firstWarmup)
+          .mockImplementationOnce((context: { signal?: AbortSignal }) => {
+            firstSignal = context.signal;
+            return firstWarmup;
+          })
           .mockResolvedValueOnce({ status: 'empty' }),
       };
       const catalog = {
@@ -2127,15 +2131,22 @@ describe('TabManager - Provider Resource Generations', () => {
         message: 'Provider command discovery timed out',
         retryable: true,
       });
+      expect(firstSignal?.aborted).toBe(true);
 
       const retry = discovery.retry();
       await flushMicrotasks(8);
       const loadCountAfterRetry = loader.loadCommands.mock.calls.length;
+      const secondSignal = loader.loadCommands.mock.calls[1]?.[0]?.signal as
+        | AbortSignal
+        | undefined;
 
       resolveFirst({ status: 'error', message: 'Old request timed out', retryable: true });
       await retry;
 
       expect(loadCountAfterRetry).toBe(2);
+      expect(secondSignal).toBeDefined();
+      expect(secondSignal).not.toBe(firstSignal);
+      expect(secondSignal?.aborted).toBe(false);
       expect(discovery.getSnapshot()).toEqual({ status: 'empty' });
     } finally {
       jest.useRealTimers();
@@ -2480,6 +2491,7 @@ describe('TabManager - Provider Command Catalog', () => {
     expect(mockCatalog.listDropdownEntries).toHaveBeenCalledWith({
       includeBuiltIns: false,
       allowCachedRuntimeCommands: false,
+      signal: expect.any(AbortSignal),
     });
     expect(claudeCatalog.listDropdownEntries).not.toHaveBeenCalled();
   });

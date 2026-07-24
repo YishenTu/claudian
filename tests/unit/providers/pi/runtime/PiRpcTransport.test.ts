@@ -113,4 +113,21 @@ describe('PiRpcTransport', () => {
     input.write('{"type":"response","id":"req_2","success":true,"result":{"ok":true}}\n');
     await expect(next).resolves.toEqual({ ok: true });
   });
+
+  it('rejects an aborted request and removes it from the pending set', async () => {
+    const { input, transport } = createTransport();
+    const abortController = new AbortController();
+    const request = transport.request(
+      'get_commands',
+      {},
+      1_000,
+      abortController.signal,
+    );
+
+    abortController.abort();
+
+    await expect(request).rejects.toThrow('Request aborted: get_commands');
+    input.write('{"type":"response","id":"req_1","success":true,"result":[]}\n');
+    expect((transport as any).pending).toHaveProperty('size', 0);
+  });
 });

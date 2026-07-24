@@ -85,6 +85,7 @@ type ProviderCommandContext = ProviderWarmupContext & {
 };
 
 type ProviderCommandWarmupEntry = {
+  abortController: AbortController;
   key: string;
   promise: Promise<ProviderCommandDiscoveryResult<SlashCommand>>;
 };
@@ -412,6 +413,8 @@ export class TabManager implements TabManagerInterface {
 
     // Prevent in-flight hydration from mutating this tab while close awaits persistence.
     tab.lifecycleState = 'closing';
+    this.providerCommandDiscoveryStores.get(tabId)?.invalidate();
+    this.cancelProviderRuntimeCommandWarmup(tabId);
 
     // Save conversation before closing. Cleanup remains mandatory if save fails.
     let saveError: unknown;
@@ -430,7 +433,6 @@ export class TabManager implements TabManagerInterface {
     // Destroy tab resources (async for proper cleanup)
     await destroyTab(tab);
     this.unbindRuntimeCommandSubscription(tabId);
-    this.providerRuntimeCommandWarmups.delete(tabId);
     this.providerRuntimeCommandCache.delete(tabId);
     this.providerCommandDiscoveryStores.delete(tabId);
     this.tabCommandContextRevisions.delete(tabId);
@@ -858,12 +860,15 @@ export class TabManager implements TabManagerInterface {
 
   async getProviderCommandDiscovery(
     tabId?: TabId,
+    signal?: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<ProviderCommandEntry>> {
+    signal?.throwIfAborted();
     const targetTab = (tabId ? this.tabs.get(tabId) : this.getActiveTab()) ?? null;
     if (!targetTab) return { status: 'empty' };
 
     const providerId = getTabProviderId(targetTab, this.plugin);
-    const discovery = await this.getSdkCommandDiscovery(targetTab.id);
+    const discovery = await this.getSdkCommandDiscovery(targetTab.id, signal);
+    signal?.throwIfAborted();
     const { result } = discovery;
     if (result.status === 'error' || result.status === 'requires-session') {
       return result;
@@ -873,6 +878,7 @@ export class TabManager implements TabManagerInterface {
     if (!catalog) return { status: 'empty' };
     const entries = await catalog.listDropdownEntries({
       includeBuiltIns: false,
+      ...(signal ? { signal } : {}),
       allowCachedRuntimeCommands: discovery.runtimeCommands !== undefined,
       ...(discovery.runtimeCommands !== undefined
         ? { runtimeCommands: discovery.runtimeCommands }
@@ -883,7 +889,9 @@ export class TabManager implements TabManagerInterface {
 
   private async getSdkCommandDiscovery(
     tabId?: TabId,
+    signal?: AbortSignal,
   ): Promise<SdkCommandDiscovery> {
+    signal?.throwIfAborted();
     const targetTab = (tabId ? this.tabs.get(tabId) : this.getActiveTab()) ?? null;
     if (!targetTab) {
       return { result: { status: 'empty' } };
@@ -892,6 +900,7 @@ export class TabManager implements TabManagerInterface {
     const providerId = getTabProviderId(targetTab, this.plugin);
     if (!ProviderWorkspaceRegistry.getIfInitialized(providerId)) {
       await ProviderWorkspaceRegistry.ensureInitialized(this.plugin.providerHost, providerId, 'command-picker');
+      signal?.throwIfAborted();
     }
 
     const staticCapabilities = ProviderRegistry.getCapabilities(providerId);
@@ -902,6 +911,7 @@ export class TabManager implements TabManagerInterface {
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     const runtimeCommandLoader = ProviderWorkspaceRegistry.getRuntimeCommandLoader(providerId);
     const context = await this.buildProviderWarmupContext(targetTab, providerId);
+    signal?.throwIfAborted();
     const commandContext = this.buildProviderCommandContext(targetTab, providerId, context);
     if (
       targetTab.lifecycleState === 'blank'
@@ -916,7 +926,7 @@ export class TabManager implements TabManagerInterface {
     const targetService = targetTab.service;
     if (runtimeCommandLoader) {
       hasRuntimeSnapshot = true;
-      result = await this.ensureProviderCommandRuntime(targetTab, providerId, context);
+      result = await this.ensureProviderCommandRuntime(targetTab, providerId, context, signal);
     } else if (
       targetService?.providerId === providerId
       && targetService.isReady()
@@ -926,6 +936,7 @@ export class TabManager implements TabManagerInterface {
       result = normalizeProviderCommandDiscoveryItems(
         await targetService.getSupportedCommands(),
       );
+      signal?.throwIfAborted();
     }
 
     if (
@@ -948,7 +959,9 @@ export class TabManager implements TabManagerInterface {
     tab: TabData,
     providerId: ProviderId,
     warmupContext?: ProviderWarmupContext,
+    signal?: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
+    signal?.throwIfAborted();
     if (!this.isProviderCommandLoaderAvailable(providerId)) {
       return { status: 'empty' };
     }
@@ -973,20 +986,28 @@ export class TabManager implements TabManagerInterface {
 
     const existing = this.providerRuntimeCommandWarmups.get(tab.id);
     if (existing?.key === context.cacheKey) {
-      return await existing.promise;
+      return await this.awaitProviderCommandWarmup(existing, signal);
     }
-    this.providerRuntimeCommandWarmups.delete(tab.id);
+    this.cancelProviderRuntimeCommandWarmup(tab.id);
 
-    const warmup = this.warmProviderCommandRuntime(tab, providerId, context).finally(() => {
+    const abortController = new AbortController();
+    const warmup = this.warmProviderCommandRuntime(
+      tab,
+      providerId,
+      context,
+      abortController.signal,
+    ).finally(() => {
       if (this.providerRuntimeCommandWarmups.get(tab.id)?.promise === warmup) {
         this.providerRuntimeCommandWarmups.delete(tab.id);
       }
     });
-    this.providerRuntimeCommandWarmups.set(tab.id, {
+    const entry: ProviderCommandWarmupEntry = {
+      abortController,
       key: context.cacheKey,
       promise: warmup,
-    });
-    return await warmup;
+    };
+    this.providerRuntimeCommandWarmups.set(tab.id, entry);
+    return await this.awaitProviderCommandWarmup(entry, signal);
   }
 
   private maybePrimeProviderRuntime(tab: TabData): void {
@@ -1130,8 +1151,47 @@ export class TabManager implements TabManagerInterface {
       tabId,
       (this.tabCommandContextRevisions.get(tabId) ?? 0) + 1,
     );
-    this.providerRuntimeCommandWarmups.delete(tabId);
+    this.cancelProviderRuntimeCommandWarmup(tabId);
     this.providerRuntimeCommandCache.delete(tabId);
+  }
+
+  private cancelProviderRuntimeCommandWarmup(tabId: TabId): void {
+    const warmup = this.providerRuntimeCommandWarmups.get(tabId);
+    if (!warmup) {
+      return;
+    }
+    warmup.abortController.abort();
+    this.providerRuntimeCommandWarmups.delete(tabId);
+  }
+
+  private async awaitProviderCommandWarmup(
+    warmup: ProviderCommandWarmupEntry,
+    signal?: AbortSignal,
+  ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
+    if (!signal) {
+      return await warmup.promise;
+    }
+    if (signal.aborted) {
+      warmup.abortController.abort();
+      signal.throwIfAborted();
+    }
+
+    let onAbort: (() => void) | null = null;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      onAbort = () => {
+        warmup.abortController.abort();
+        reject(signal.reason ?? new Error('Provider command discovery aborted'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+
+    try {
+      return await Promise.race([warmup.promise, aborted]);
+    } finally {
+      if (onAbort) {
+        signal.removeEventListener('abort', onAbort);
+      }
+    }
   }
 
   private isCommandContextCurrent(
@@ -1170,6 +1230,7 @@ export class TabManager implements TabManagerInterface {
     tab: TabData,
     providerId: ProviderId,
     context: ProviderCommandContext,
+    signal: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
     const loader = ProviderWorkspaceRegistry.getRuntimeCommandLoader(providerId);
     if (!loader) {
@@ -1183,6 +1244,7 @@ export class TabManager implements TabManagerInterface {
       externalContextPaths: context.externalContextPaths,
       plugin: this.plugin.providerHost,
       runtime: context.runtime,
+      signal,
     });
 
     if (
@@ -1215,7 +1277,7 @@ export class TabManager implements TabManagerInterface {
     }
 
     const discovery = new ProviderCommandDiscoveryStore(
-      () => this.getProviderCommandDiscovery(tabId),
+      signal => this.getProviderCommandDiscovery(tabId, signal),
       {
         onBeforeRetry: () => this.advanceTabCommandContextRevision(tabId),
       },
@@ -1324,13 +1386,19 @@ export class TabManager implements TabManagerInterface {
 
   /** Destroys all tabs and cleans up resources. */
   async destroy(): Promise<void> {
+    for (const discovery of this.providerCommandDiscoveryStores.values()) {
+      discovery.invalidate();
+    }
+    for (const warmup of this.providerRuntimeCommandWarmups.values()) {
+      warmup.abortController.abort();
+    }
+
     // Each tab drains background work and persists its final state during teardown.
     await Promise.all(Array.from(this.tabs.values()).map(tab => destroyTab(tab)));
 
     for (const tabId of this.runtimeCommandSubscriptions.keys()) {
       this.unbindRuntimeCommandSubscription(tabId);
     }
-
     this.tabs.clear();
     this.providerRuntimeCommandWarmups.clear();
     this.providerRuntimeCommandCache.clear();

@@ -49,14 +49,24 @@ describe('ProviderCommandDiscoveryStore', () => {
 
   it('invalidates a cached result and ignores stale completion', async () => {
     const stale = deferred<ProviderCommandDiscoveryResult<string>>();
-    const loader = jest.fn()
-      .mockReturnValueOnce(stale.promise)
-      .mockResolvedValueOnce({ status: 'ready', items: ['fresh'] });
+    const signals: AbortSignal[] = [];
+    const loader = jest.fn((signal: AbortSignal) => {
+      signals.push(signal);
+      return signals.length === 1
+        ? stale.promise
+        : Promise.resolve({
+          status: 'ready',
+          items: ['fresh'],
+        } as ProviderCommandDiscoveryResult<string>);
+    });
     const store = new ProviderCommandDiscoveryStore(loader);
 
     const staleLoad = store.load();
     store.invalidate();
+    expect(signals[0]?.aborted).toBe(true);
+
     const freshLoad = store.load();
+    expect(signals[1]?.aborted).toBe(false);
     await freshLoad;
 
     stale.resolve({ status: 'ready', items: ['stale'] });
@@ -118,8 +128,12 @@ describe('ProviderCommandDiscoveryStore', () => {
   it('turns an unresponsive load into a retryable timeout', async () => {
     jest.useFakeTimers();
     try {
+      let loaderSignal: AbortSignal | null = null;
       const store = new ProviderCommandDiscoveryStore<string>(
-        () => new Promise(() => undefined),
+        (signal) => {
+          loaderSignal = signal;
+          return new Promise(() => undefined);
+        },
         { timeoutMs: 100 },
       );
 
@@ -127,6 +141,7 @@ describe('ProviderCommandDiscoveryStore', () => {
       await jest.advanceTimersByTimeAsync(100);
       await load;
 
+      expect((loaderSignal as AbortSignal | null)?.aborted).toBe(true);
       expect(store.getSnapshot()).toEqual({
         status: 'error',
         message: 'Provider command discovery timed out',

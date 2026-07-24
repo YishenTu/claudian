@@ -389,6 +389,8 @@ export interface ProviderRuntimeCommandLoaderContext {
   externalContextPaths: string[];
   plugin: ProviderHost;
   runtime: ChatRuntime | null;
+  /** Cancels provider-owned discovery work when its consumer is invalidated. */
+  signal?: AbortSignal;
 }
 
 export interface ProviderRuntimeCommandLoader {

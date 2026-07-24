@@ -198,4 +198,37 @@ describe('OpencodeRuntimeCommandLoader', () => {
 
     expect(cleanupSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('cleans up the isolated process when discovery is aborted', async () => {
+    const abortController = new AbortController();
+    jest.spyOn(OpencodeChatRuntime.prototype, 'syncConversationState').mockImplementation(() => {});
+    jest.spyOn(OpencodeChatRuntime.prototype, 'ensureReady').mockResolvedValue(true);
+    jest.spyOn(OpencodeChatRuntime.prototype, 'discoverSupportedCommands')
+      .mockImplementation((_timeoutMs, signal) => (
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          });
+        })
+      ));
+    const cleanupSpy = jest.spyOn(OpencodeChatRuntime.prototype, 'cleanup')
+      .mockImplementation(() => {});
+
+    const discovery = new OpencodeRuntimeCommandLoader().loadCommands({
+      allowSessionCreation: true,
+      conversation: null,
+      externalContextPaths: [],
+      plugin: createMockPlugin(),
+      runtime: null,
+      signal: abortController.signal,
+    });
+    abortController.abort();
+
+    await expect(discovery).resolves.toEqual({
+      message: 'Could not load OpenCode commands.',
+      retryable: true,
+      status: 'error',
+    });
+    expect(cleanupSpy).toHaveBeenCalledTimes(1);
+  });
 });

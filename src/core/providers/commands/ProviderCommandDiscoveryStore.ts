@@ -42,13 +42,16 @@ export class ProviderCommandDiscoveryStore<T>
 implements ProviderCommandDiscoveryController<T> {
   private snapshot: ProviderCommandDiscoverySnapshot<T> = { status: 'idle' };
   private inFlight: Promise<ProviderCommandDiscoveryResult<T>> | null = null;
+  private loadAbortController: AbortController | null = null;
   private generation = 0;
   private readonly listeners = new Set<() => void>();
   private readonly onBeforeRetry: (() => void) | undefined;
   private readonly timeoutMs: number;
 
   constructor(
-    private readonly loader: () => Promise<ProviderCommandDiscoveryResult<T>>,
+    private readonly loader: (
+      signal: AbortSignal,
+    ) => Promise<ProviderCommandDiscoveryResult<T>>,
     options: ProviderCommandDiscoveryStoreOptions = {},
   ) {
     this.onBeforeRetry = options.onBeforeRetry;
@@ -75,7 +78,9 @@ implements ProviderCommandDiscoveryController<T> {
     }
 
     const generation = this.generation;
-    const load = this.loadWithTimeout()
+    const abortController = new AbortController();
+    this.loadAbortController = abortController;
+    const load = this.loadWithTimeout(abortController)
       .catch((): ProviderCommandDiscoveryResult<T> => ({
         status: 'error',
         message: 'Could not load provider commands',
@@ -91,6 +96,9 @@ implements ProviderCommandDiscoveryController<T> {
       .finally(() => {
         if (this.inFlight === load) {
           this.inFlight = null;
+        }
+        if (this.loadAbortController === abortController) {
+          this.loadAbortController = null;
         }
       });
 
@@ -108,6 +116,8 @@ implements ProviderCommandDiscoveryController<T> {
 
   invalidate(): void {
     this.generation++;
+    this.loadAbortController?.abort();
+    this.loadAbortController = null;
     this.inFlight = null;
     this.snapshot = { status: 'idle' };
     this.notify();
@@ -120,18 +130,23 @@ implements ProviderCommandDiscoveryController<T> {
     };
   }
 
-  private async loadWithTimeout(): Promise<ProviderCommandDiscoveryResult<T>> {
+  private async loadWithTimeout(
+    abortController: AbortController,
+  ): Promise<ProviderCommandDiscoveryResult<T>> {
     let timeoutId: number | null = null;
     const timeout = new Promise<ProviderCommandDiscoveryResult<T>>(resolve => {
-      timeoutId = window.setTimeout(() => resolve({
-        status: 'error',
-        message: 'Provider command discovery timed out',
-        retryable: true,
-      }), this.timeoutMs);
+      timeoutId = window.setTimeout(() => {
+        resolve({
+          status: 'error',
+          message: 'Provider command discovery timed out',
+          retryable: true,
+        });
+        abortController.abort();
+      }, this.timeoutMs);
     });
 
     try {
-      return await Promise.race([this.loader(), timeout]);
+      return await Promise.race([this.loader(abortController.signal), timeout]);
     } finally {
       if (timeoutId !== null) {
         window.clearTimeout(timeoutId);

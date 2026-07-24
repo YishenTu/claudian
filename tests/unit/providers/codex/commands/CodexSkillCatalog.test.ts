@@ -35,10 +35,14 @@ describe('CodexSkillCatalog', () => {
       },
     ]);
     const catalog = new CodexSkillCatalog(listProvider);
+    const signal = new AbortController().signal;
 
-    const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
+    const entries = await catalog.listDropdownEntries({
+      includeBuiltIns: false,
+      signal,
+    });
 
-    expect(listProvider.listSkills).toHaveBeenCalledTimes(1);
+    expect(listProvider.listSkills).toHaveBeenCalledWith({ signal });
     expect(entries.map(entry => entry.name)).toEqual([
       'legacy-skill',
       'shared-skill',

@@ -804,8 +804,13 @@ export class GrokChatRuntime implements ChatRuntime {
     return this.supportedCommands.map(cloneSlashCommand);
   }
 
-  async discoverSupportedCommands(timeoutMs = 5_000): Promise<SlashCommand[]> {
+  async discoverSupportedCommands(
+    timeoutMs = 5_000,
+    signal?: AbortSignal,
+  ): Promise<SlashCommand[]> {
+    signal?.throwIfAborted();
     const ready = await this.ensureReady({ allowSessionCreation: false });
+    signal?.throwIfAborted();
     const transport = this.transport;
     if (!ready || !transport || transport.isClosed) {
       throw new Error('Grok command transport is unavailable.');
@@ -814,7 +819,7 @@ export class GrokChatRuntime implements ChatRuntime {
     const response = await transport.request<GrokListCommandsResponse>(
       '_x.ai/commands/list',
       { cwd },
-      { timeoutMs },
+      { signal, timeoutMs },
     );
     if (!Array.isArray(response.commands)) {
       throw new Error('Grok returned malformed command metadata.');
