@@ -33,6 +33,29 @@ export function scheduleAnimationFrame(
   };
 }
 
+/**
+ * Schedules a callback after a fixed delay in the given window, returning a
+ * handle cancellable by {@link cancelScheduledAnimationFrame}. Used to throttle
+ * or defer work that would otherwise run every animation frame.
+ */
+export function scheduleDelayedFrame(
+  callback: () => void,
+  delayMs: number,
+  ownerWindow: Window | null = getRendererWindow(),
+): ScheduledAnimationFrame {
+  const targetWindow = ownerWindow ?? getRendererWindow();
+  if (!targetWindow) {
+    callback();
+    return { kind: 'timeout', id: 0, ownerWindow: null };
+  }
+
+  return {
+    kind: 'timeout',
+    id: targetWindow.setTimeout(callback, delayMs),
+    ownerWindow: targetWindow,
+  };
+}
+
 export function cancelScheduledAnimationFrame(frame: ScheduledAnimationFrame): void {
   const targetWindow = frame.ownerWindow ?? getRendererWindow();
   if (!targetWindow) return;
