@@ -22,7 +22,6 @@ import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
 import { TabStatePersistenceCoordinator } from './services/TabStatePersistenceCoordinator';
 import {
   getTabProviderId,
-  onProviderAvailabilityChanged,
   sendTabInputMessageFromExplicitEnterShortcut,
   updatePlanModeUI,
 } from './tabs/Tab';
@@ -111,8 +110,8 @@ export class ClaudianView extends ItemView {
 
   /** Refreshes model-dependent UI across all tabs (used after settings/env changes). */
   refreshModelSelector(changedProviderId?: ProviderId): void {
+    this.tabManager?.reconcileProviderAvailability();
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      onProviderAvailabilityChanged(tab, this.plugin);
       const providerId = getTabProviderId(tab, this.plugin);
       if (
         changedProviderId
@@ -222,11 +221,13 @@ export class ClaudianView extends ItemView {
       this.tabContentEl,
       this,
       {
+        onPersistedStateChanged: () => {
+          this.persistTabState();
+        },
         onTabCreated: () => {
           this.updateTabBar();
           this.updateHistoryDropdown();
           this.updateInputLocation();
-          this.persistTabState();
           this.syncProviderBrandColor();
         },
         onActiveTabChanged: () => {
@@ -239,14 +240,12 @@ export class ClaudianView extends ItemView {
           this.updateTabBar();
           this.updateHistoryDropdown();
           this.updateInputLocation();
-          this.persistTabState();
           this.syncProviderBrandColor();
         },
         onTabClosed: () => {
           this.updateTabBar();
           this.updateHistoryDropdown();
           this.updateInputLocation();
-          this.persistTabState();
         },
         onTabStreamingChanged: () => {
           this.updateTabBar();
@@ -258,7 +257,6 @@ export class ClaudianView extends ItemView {
         onTabConversationChanged: () => {
           this.updateTabBar();
           this.updateHistoryDropdown();
-          this.persistTabState();
           this.syncProviderBrandColor();
         },
         onTabProviderChanged: () => {

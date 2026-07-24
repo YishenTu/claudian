@@ -222,6 +222,9 @@ export interface TabData {
   /** Tab-manager hook for generation-guarded provider command subscriptions. */
   onRuntimeInstalled?: (runtime: ChatRuntime) => void;
 
+  /** Tab-manager hook for mutations that change the serialized tab state. */
+  onPersistedStateChanged?: () => void;
+
   /** Tab-manager-owned provider discovery callback retained across UI/runtime refreshes. */
   providerCatalogResolver: ProviderCatalogResolver | null;
 
@@ -271,6 +274,9 @@ export interface PersistedTabManagerState {
  * Callbacks for tab state changes.
  */
 export interface TabManagerCallbacks {
+  /** Called whenever the serialized tab-manager state may have changed. */
+  onPersistedStateChanged?: () => void;
+
   /** Called when a tab is created. */
   onTabCreated?: (tab: TabData) => void;
 

@@ -1004,7 +1004,7 @@ describe('Tab - Service Initialization', () => {
       plugin.settings.providerConfigs.codex.enabled = false;
       mockSlashCommandDropdown.setProviderCatalog.mockClear();
 
-      onProviderAvailabilityChanged(tab, plugin);
+      expect(onProviderAvailabilityChanged(tab, plugin)).toBe(true);
 
       expect(staleService.cleanup).toHaveBeenCalled();
       expect(tab.providerId).toBe('claude');
@@ -1032,7 +1032,7 @@ describe('Tab - Service Initialization', () => {
       tab.providerId = 'codex';
       tab.lifecycleState = 'blank';
 
-      onProviderAvailabilityChanged(tab, plugin);
+      expect(onProviderAvailabilityChanged(tab, plugin)).toBe(true);
 
       expect(tab.providerId).toBe('codex');
       expect(tab.draftModel).toBe(TEST_CODEX_MODEL);
@@ -1051,7 +1051,7 @@ describe('Tab - Service Initialization', () => {
       tab.providerId = 'codex';
       tab.lifecycleState = 'blank';
 
-      onProviderAvailabilityChanged(tab, plugin);
+      expect(onProviderAvailabilityChanged(tab, plugin)).toBe(true);
 
       expect(tab.providerId).toBe('codex');
       expect(tab.draftModel).toBe(TEST_CODEX_MODEL);
@@ -1070,7 +1070,7 @@ describe('Tab - Service Initialization', () => {
       tab.providerId = 'codex';
       tab.lifecycleState = 'blank';
 
-      onProviderAvailabilityChanged(tab, plugin);
+      expect(onProviderAvailabilityChanged(tab, plugin)).toBe(false);
 
       expect(tab.providerId).toBe('codex');
       expect(tab.draftModel).toBe('gpt-5.4-mini');
@@ -2269,6 +2269,66 @@ describe('Tab - Controller Initialization', () => {
       initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
 
       expect(tab.controllers.conversationController).toBeDefined();
+    });
+
+    it('notifies persisted state after a direct conversation reset commits the blank draft', async () => {
+      const conversationControllerModule = jest.requireMock(
+        '@/features/chat/controllers/ConversationController',
+      ) as { ConversationController: jest.Mock };
+      conversationControllerModule.ConversationController.mockImplementationOnce(
+        (_deps: unknown, callbacks: { onNewConversation?: () => void }) => ({
+          createNew: jest.fn(async () => callbacks.onNewConversation?.()),
+          rewind: jest.fn().mockResolvedValue(undefined),
+          save: jest.fn().mockResolvedValue(undefined),
+        }),
+      );
+
+      const plugin = createMockPlugin({
+        settings: {
+          savedProviderModel: {
+            claude: 'claude-sonnet-4-5',
+            codex: TEST_CODEX_MODEL,
+          },
+        },
+      });
+      const snapshots: Array<{
+        conversationId: string | null;
+        draftModel: string | null;
+        lifecycleState: string;
+        providerId: string;
+      }> = [];
+      const options = createMockOptions({
+        plugin,
+        conversation: {
+          id: 'conv-codex',
+          providerId: 'codex',
+          title: 'Codex conversation',
+          messages: [],
+          sessionId: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        onPersistedStateChanged: () => {
+          snapshots.push({
+            conversationId: tab.conversationId,
+            draftModel: tab.draftModel,
+            lifecycleState: tab.lifecycleState,
+            providerId: tab.providerId,
+          });
+        },
+      });
+      const tab = createTab(options);
+      initializeTabUI(tab, plugin);
+      initializeTabControllers(tab, plugin, {} as any, createMockMcpManager());
+
+      await tab.controllers.conversationController?.createNew();
+
+      expect(snapshots).toEqual([{
+        conversationId: null,
+        draftModel: TEST_CODEX_MODEL,
+        lifecycleState: 'blank',
+        providerId: 'codex',
+      }]);
     });
 
     it('should forward rewind mode from renderer to ConversationController', async () => {
@@ -4235,7 +4295,8 @@ describe('Tab - Blank Tab Draft Model Change', () => {
 
     const plugin = createMockPlugin();
     const tab = createTab(createMockOptions({ plugin }));
-    initializeTabUI(tab, plugin);
+    const onDraftModelChanged = jest.fn();
+    initializeTabUI(tab, plugin, { onDraftModelChanged });
 
     expect(tab.lifecycleState).toBe('blank');
     expect(tab.service).toBeNull();
@@ -4254,6 +4315,7 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     expect(tab.service).toBeNull();
     expect(tab.serviceInitialized).toBe(false);
     expect(tab.lifecycleState).toBe('blank');
+    expect(onDraftModelChanged).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes the service-tier toggle when the model changes on a blank tab', async () => {
@@ -4333,7 +4395,8 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     const previousProvider = tab.providerId;
     const previousModel = tab.draftModel;
     const onProviderChanged = jest.fn().mockRejectedValue(new Error('workspace init failed'));
-    initializeTabUI(tab, plugin, { onProviderChanged });
+    const onDraftModelChanged = jest.fn();
+    initializeTabUI(tab, plugin, { onDraftModelChanged, onProviderChanged });
     const clearProviderCatalog = jest.spyOn(
       tab.ui.slashCommandDropdown!,
       'clearProviderCatalog',
@@ -4350,6 +4413,7 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     expect(clearProviderCatalog).toHaveBeenCalled();
     expect(tab.providerId).toBe(previousProvider);
     expect(tab.draftModel).toBe(previousModel);
+    expect(onDraftModelChanged).not.toHaveBeenCalled();
   });
 
   it('does not trigger provider warmup when a blank-tab model switch stays on OpenCode', async () => {
@@ -4386,7 +4450,8 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     const onProviderChanged = jest.fn().mockImplementation(() => new Promise<void>((resolve) => {
       releaseWarmup = resolve;
     }));
-    initializeTabUI(tab, plugin, { onProviderChanged });
+    const onDraftModelChanged = jest.fn();
+    initializeTabUI(tab, plugin, { onDraftModelChanged, onProviderChanged });
 
     const toolbarModule = jest.requireMock('@/features/chat/ui/InputToolbar') as {
       createInputToolbar: jest.Mock;
@@ -4403,6 +4468,7 @@ describe('Tab - Blank Tab Draft Model Change', () => {
     expect(tab.providerId).toBe('opencode');
     expect(tab.draftModel).toBe('opencode:anthropic/claude-sonnet-4');
     expect(onProviderChanged).not.toHaveBeenCalled();
+    expect(onDraftModelChanged).toHaveBeenCalledTimes(1);
 
     await changePromise;
     expect(settled).toBe(true);

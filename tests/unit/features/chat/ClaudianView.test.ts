@@ -5,6 +5,12 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ClaudianView } from '@/features/chat/ClaudianView';
 
+const mockTabManagerConstructor = jest.fn();
+jest.mock('@/features/chat/tabs/TabManager', () => ({
+  TabManager: jest.fn().mockImplementation((...args: unknown[]) =>
+    mockTabManagerConstructor(...args)),
+}));
+
 const MockScope = Scope as typeof Scope & { instances: Scope[] };
 
 function createModelRefreshTab(providerId: 'codex' | 'grok') {
@@ -97,6 +103,7 @@ describe('ClaudianView model refresh routing', () => {
     view.tabManager = {
       getAllTabs: jest.fn().mockReturnValue([codexTab, grokTab, blankGrokTab]),
       primeProviderRuntime,
+      reconcileProviderAvailability: jest.fn(),
     };
 
     view.refreshModelSelector('codex');
@@ -107,6 +114,7 @@ describe('ClaudianView model refresh routing', () => {
     expect(grokTab.ui.modelSelector.renderOptions).not.toHaveBeenCalled();
     expect(blankGrokTab.ui.modelSelector.updateDisplay).toHaveBeenCalled();
     expect(blankGrokTab.ui.modelSelector.renderOptions).toHaveBeenCalled();
+    expect(view.tabManager.reconcileProviderAvailability).toHaveBeenCalledTimes(1);
     expect(primeProviderRuntime).not.toHaveBeenCalled();
   });
 });
@@ -372,6 +380,43 @@ describe('ClaudianView tab controls', () => {
     expect(view.tabBar.setExpandedTitleTabIds).toHaveBeenCalledWith(['tab-1']);
     expect(view.updateTabBar).toHaveBeenCalledTimes(1);
     expect(view.tabManager.createTab).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClaudianView tab persistence wiring', () => {
+  it('schedules persistence from the tab manager persisted-state signal', async () => {
+    let tabManagerCallbacks: any;
+    mockTabManagerConstructor.mockReset();
+    mockTabManagerConstructor.mockImplementation(
+      (_plugin, _containerEl, _view, callbacks) => {
+        tabManagerCallbacks = callbacks;
+        return {
+          getAllTabs: jest.fn().mockReturnValue([]),
+        };
+      },
+    );
+
+    const persistTabState = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      attachNavRowContentToInputFooter: jest.fn(),
+      buildInputFooter: jest.fn(),
+      buildNavRowContent: jest.fn().mockReturnValue(createMockEl()),
+      containerEl: createMockEl(),
+      contentEl: createMockEl(),
+      persistTabState,
+      plugin: {},
+      restoreOrCreateTabs: jest.fn().mockResolvedValue(undefined),
+      syncProviderBrandColor: jest.fn(),
+      updateInputLocation: jest.fn(),
+      updateTabBarVisibility: jest.fn(),
+      wireEventHandlers: jest.fn(),
+    });
+
+    await view.onOpenImpl();
+    tabManagerCallbacks.onPersistedStateChanged();
+
+    expect(persistTabState).toHaveBeenCalledTimes(1);
   });
 });
 
