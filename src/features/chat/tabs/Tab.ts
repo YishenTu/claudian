@@ -139,6 +139,7 @@ export interface TabCreateOptions {
   onAttentionChanged?: (needsAttention: boolean) => void;
   onConversationIdChanged?: (conversationId: string | null) => void;
   onRuntimeInstalled?: (runtime: ChatRuntime) => void;
+  onPersistedStateChanged?: () => void;
 }
 
 export { getTabProviderId } from './providerResolution';
@@ -528,11 +529,13 @@ function resolveBlankTabFallback(
  * Reconciles blank drafts after provider or model availability changes.
  * Prefer the draft provider's advertised default before crossing providers.
  */
-export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost): void {
-  if (tab.lifecycleState !== 'blank') return;
+export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost): boolean {
+  if (tab.lifecycleState !== 'blank') return false;
 
   const settingsSnapshot = plugin.settings as unknown as Record<string, unknown>;
   const enabledProviderIds = ProviderRegistry.getEnabledProviderIds(settingsSnapshot);
+  const previousDraftModel = tab.draftModel;
+  const previousProviderId = tab.providerId;
   let nextProviderId = tab.providerId;
 
   if (tab.draftModel) {
@@ -577,6 +580,7 @@ export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost)
   invalidateTabProviderCommands(tab);
   refreshTabProviderUI(tab, plugin);
   applyProviderUIGating(tab, plugin);
+  return tab.draftModel !== previousDraftModel || tab.providerId !== previousProviderId;
 }
 
 /**
@@ -672,6 +676,7 @@ export function createTab(options: TabCreateOptions): TabData {
     },
     runtimeSupervisor,
     onRuntimeInstalled: options.onRuntimeInstalled,
+    onPersistedStateChanged: options.onPersistedStateChanged,
     providerCatalogResolver: null,
     serviceInitialized: false,
     state,
@@ -999,6 +1004,7 @@ function initializeInputToolbar(
   plugin: FeatureHost,
   getProviderCatalogConfig?: () => ProviderCatalogInfo,
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>,
+  onDraftModelChanged?: () => void,
   onCommandContextChanged?: () => void,
 ): void {
   const { dom } = tab;
@@ -1063,6 +1069,7 @@ function initializeInputToolbar(
         } else {
           syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
         }
+        onDraftModelChanged?.();
         await uiConfig.prepareModelMetadata?.(
           model,
           getProviderSettingsSnapshotWithModel(plugin.settings, newProvider, model),
@@ -1218,6 +1225,7 @@ function initializeInputToolbar(
 export interface InitializeTabUIOptions {
   getProviderCatalogConfig?: ProviderCatalogResolver;
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>;
+  onDraftModelChanged?: () => void;
   onCommandContextChanged?: () => void;
 }
 
@@ -1262,6 +1270,7 @@ export function initializeTabUI(
     plugin,
     options.getProviderCatalogConfig,
     options.onProviderChanged,
+    options.onDraftModelChanged,
     options.onCommandContextChanged,
   );
 
@@ -1665,6 +1674,7 @@ export function initializeTabControllers(
         refreshTabProviderUI(tab, plugin);
         applyProviderUIGating(tab, plugin);
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
+        tab.onPersistedStateChanged?.();
       },
       onConversationLoaded: () => invalidateTabProviderCommands(tab, getProviderCatalogConfig),
       onConversationSwitched: () => invalidateTabProviderCommands(tab, getProviderCatalogConfig),

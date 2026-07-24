@@ -30,6 +30,7 @@ import {
   initializeTabControllers,
   initializeTabService,
   initializeTabUI,
+  onProviderAvailabilityChanged,
   recycleTabRuntime,
   refreshTabWorkspaceServices,
   setupServiceCallbacks,
@@ -231,8 +232,10 @@ export class TabManager implements TabManagerInterface {
           // Sync tab.conversationId when conversation is lazily created
           tab.conversationId = conversationId;
           this.callbacks.onTabConversationChanged?.(tab.id, conversationId);
+          this.notifyPersistedStateChanged();
         },
         onRuntimeInstalled: (runtime) => this.bindRuntimeCommandSubscription(tab, runtime),
+        onPersistedStateChanged: () => this.notifyPersistedStateChanged(),
       });
 
       this.tabCommandContextRevisions.set(tab.id, 0);
@@ -248,6 +251,9 @@ export class TabManager implements TabManagerInterface {
           this.bumpTabCommandContextRevision(tab.id);
           await this.ensureTabWorkspaceServices(tab, providerId, 'provider-selection');
           this.callbacks.onTabProviderChanged?.(tab.id, providerId);
+        },
+        onDraftModelChanged: () => {
+          this.notifyPersistedStateChanged();
         },
       });
 
@@ -267,6 +273,9 @@ export class TabManager implements TabManagerInterface {
       this.pendingTabCreations -= 1;
       reservationHeld = false;
       this.callbacks.onTabCreated?.(tab);
+      if (!this.isRestoringState) {
+        this.notifyPersistedStateChanged();
+      }
 
       if (!this.isRestoringState && (activate || !this.activeTabId)) {
         await this.switchToTab(tab.id);
@@ -312,6 +321,9 @@ export class TabManager implements TabManagerInterface {
       this.activeTabId = tabId;
       activateTab(tab);
       this.callbacks.onActiveTabChanged?.(previousTabId, tabId);
+      if (previousTabId !== tabId) {
+        this.notifyPersistedStateChanged();
+      }
 
       const providerId = tab.service?.providerId ?? tab.providerId;
       const needsHydration = !!tab.conversationId && tab.hydrationState !== 'ready';
@@ -437,12 +449,15 @@ export class TabManager implements TabManagerInterface {
     this.providerCommandDiscoveryStores.delete(tabId);
     this.tabCommandContextRevisions.delete(tabId);
     this.tabs.delete(tabId);
+    const wasActiveTab = this.activeTabId === tabId;
+    if (wasActiveTab) {
+      this.activeTabId = null;
+    }
     this.callbacks.onTabClosed?.(tabId);
+    this.notifyPersistedStateChanged();
 
     // If we closed the active tab, switch to another
-    if (this.activeTabId === tabId) {
-      this.activeTabId = null;
-
+    if (wasActiveTab) {
       if (this.tabs.size > 0) {
         // Fallback strategy: prefer previous tab, except for first tab (go to next)
         const fallbackTabId = closingIndex === 0
@@ -523,6 +538,18 @@ export class TabManager implements TabManagerInterface {
   /** Gets all tabs. */
   getAllTabs(): TabData[] {
     return Array.from(this.tabs.values());
+  }
+
+  /** Reconciles blank drafts after provider/model availability changes. */
+  reconcileProviderAvailability(): void {
+    let persistedStateChanged = false;
+    for (const tab of this.tabs.values()) {
+      persistedStateChanged = onProviderAvailabilityChanged(tab, this.plugin)
+        || persistedStateChanged;
+    }
+    if (persistedStateChanged) {
+      this.notifyPersistedStateChanged();
+    }
   }
 
   /** Gets the number of tabs. */
@@ -782,6 +809,10 @@ export class TabManager implements TabManagerInterface {
   // ============================================
   // Persistence
   // ============================================
+
+  private notifyPersistedStateChanged(): void {
+    this.callbacks.onPersistedStateChanged?.();
+  }
 
   /** Gets the state to persist. */
   getPersistedState(): PersistedTabManagerState {

@@ -17,6 +17,7 @@ const mockDeactivateTab = jest.fn();
 const mockInitializeTabUI = jest.fn();
 const mockInitializeTabControllers = jest.fn();
 const mockInitializeTabService = jest.fn().mockResolvedValue(undefined);
+const mockOnProviderAvailabilityChanged = jest.fn().mockReturnValue(false);
 const mockRefreshTabWorkspaceServices = jest.fn();
 const mockSetupServiceCallbacks = jest.fn();
 const mockRecycleTabRuntime = jest.fn(async (tab: any) => {
@@ -41,6 +42,7 @@ jest.mock('@/features/chat/tabs/Tab', () => ({
   initializeTabUI: (...args: any[]) => mockInitializeTabUI(...args),
   initializeTabControllers: (...args: any[]) => mockInitializeTabControllers(...args),
   initializeTabService: (...args: any[]) => mockInitializeTabService(...args),
+  onProviderAvailabilityChanged: (...args: any[]) => mockOnProviderAvailabilityChanged(...args),
   refreshTabWorkspaceServices: (...args: any[]) => mockRefreshTabWorkspaceServices(...args),
   setupServiceCallbacks: (...args: any[]) => mockSetupServiceCallbacks(...args),
   recycleTabRuntime: (tab: any) => mockRecycleTabRuntime(tab),
@@ -269,6 +271,7 @@ describe('TabManager - Tab Lifecycle', () => {
       onTabCreated: jest.fn(),
       onTabSwitched: jest.fn(),
       onTabClosed: jest.fn(),
+      onPersistedStateChanged: jest.fn(),
       onTabStreamingChanged: jest.fn(),
       onTabTitleChanged: jest.fn(),
       onTabAttentionChanged: jest.fn(),
@@ -286,6 +289,7 @@ describe('TabManager - Tab Lifecycle', () => {
       expect(mockInitializeTabUI).toHaveBeenCalled();
       expect(mockInitializeTabControllers).toHaveBeenCalled();
       expect(mockWireTabInputEvents).toHaveBeenCalled();
+      expect(callbacks.onPersistedStateChanged).toHaveBeenCalled();
     });
 
     it('should call onTabCreated callback', async () => {
@@ -371,6 +375,7 @@ describe('TabManager - Tab Lifecycle', () => {
       expect(mockDeactivateTab).toHaveBeenCalled();
       expect(mockActivateTab).toHaveBeenCalled();
       expect(callbacks.onTabSwitched).toHaveBeenCalled();
+      expect(callbacks.onPersistedStateChanged).toHaveBeenCalled();
     });
 
     it('should not switch to non-existent tab', async () => {
@@ -540,12 +545,14 @@ describe('TabManager - Tab Lifecycle', () => {
 
       const tab1 = await manager.createTab();
       await manager.createTab(); // Need at least 2 tabs to close one
+      (callbacks.onPersistedStateChanged as jest.Mock).mockClear();
 
       const closed = await manager.closeTab(tab1!.id);
 
       expect(closed).toBe(true);
       expect(mockDestroyTab).toHaveBeenCalled();
       expect(callbacks.onTabClosed).toHaveBeenCalledWith(tab1!.id);
+      expect(callbacks.onPersistedStateChanged).toHaveBeenCalled();
     });
 
     it('should not close streaming tab unless forced', async () => {
@@ -592,6 +599,7 @@ describe('TabManager - Tab Lifecycle', () => {
       const manager = createManager({ callbacks });
       await manager.createTab();
       await manager.createTab();
+      (callbacks.onPersistedStateChanged as jest.Mock).mockClear();
 
       await expect(manager.closeTab('rewinding-tab')).resolves.toBe(false);
       await expect(manager.closeTab('rewinding-tab', true)).resolves.toBe(false);
@@ -600,6 +608,7 @@ describe('TabManager - Tab Lifecycle', () => {
       expect(mockDestroyTab).not.toHaveBeenCalled();
       expect(manager.getTab('rewinding-tab')).toBe(rewindingTab);
       expect(rewindingTab.lifecycleState).not.toBe('closing');
+      expect(callbacks.onPersistedStateChanged).not.toHaveBeenCalled();
     });
 
     it('allows close after rewind settles', async () => {
@@ -986,14 +995,24 @@ describe('TabManager - Conversation Management', () => {
   });
 
   describe('createNewConversation', () => {
-    it('should create new conversation in active tab', async () => {
-      const activeTab = manager.getActiveTab();
-      const createNew = jest.fn().mockResolvedValue(undefined);
+    it('relies on the tab reset commit for a single persisted-state notification', async () => {
+      const onPersistedStateChanged = jest.fn();
+      const notifyingManager = createManager({
+        callbacks: { onPersistedStateChanged },
+        plugin,
+      });
+      const activeTab = await notifyingManager.createTab();
+      const createOptions = mockCreateTab.mock.calls.at(-1)?.[0];
+      const createNew = jest.fn(async () => {
+        createOptions.onPersistedStateChanged();
+      });
       activeTab!.controllers.conversationController = { createNew } as any;
+      onPersistedStateChanged.mockClear();
 
-      await manager.createNewConversation();
+      await notifyingManager.createNewConversation();
 
       expect(createNew).toHaveBeenCalled();
+      expect(onPersistedStateChanged).toHaveBeenCalledTimes(1);
     });
   });
 });
@@ -2827,6 +2846,63 @@ describe('TabManager - Callback Wiring', () => {
     jest.clearAllMocks();
   });
 
+  it('marks persisted state dirty after successful blank-tab draft changes', async () => {
+    const onPersistedStateChanged = jest.fn();
+    const manager = createManager({
+      callbacks: { onPersistedStateChanged },
+      tabFactory: () => createMockTabData({ id: 'test-tab' }),
+    });
+
+    await manager.createTab();
+    onPersistedStateChanged.mockClear();
+
+    const initializeOptions = mockInitializeTabUI.mock.calls.at(-1)?.[2];
+    initializeOptions.onDraftModelChanged();
+
+    expect(onPersistedStateChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mark persisted state dirty when availability reconciliation is unchanged', async () => {
+    const onPersistedStateChanged = jest.fn();
+    const manager = createManager({
+      callbacks: { onPersistedStateChanged },
+    });
+    await manager.createTab();
+    onPersistedStateChanged.mockClear();
+    mockOnProviderAvailabilityChanged.mockReturnValueOnce(false);
+
+    manager.reconcileProviderAvailability();
+
+    expect(onPersistedStateChanged).not.toHaveBeenCalled();
+  });
+
+  it('marks persisted state dirty when provider availability reconciles a blank draft', async () => {
+    const onPersistedStateChanged = jest.fn();
+    const tab = createMockTabData({
+      id: 'test-tab',
+      draftModel: 'removed-model',
+    });
+    const manager = createManager({
+      callbacks: { onPersistedStateChanged },
+      tabFactory: () => tab,
+    });
+    await manager.createTab();
+    onPersistedStateChanged.mockClear();
+    mockOnProviderAvailabilityChanged.mockImplementationOnce((targetTab) => {
+      targetTab.draftModel = TEST_CODEX_MODEL;
+      targetTab.providerId = 'codex';
+      return true;
+    });
+
+    manager.reconcileProviderAvailability();
+
+    expect(mockOnProviderAvailabilityChanged).toHaveBeenCalledWith(
+      tab,
+      expect.anything(),
+    );
+    expect(onPersistedStateChanged).toHaveBeenCalledTimes(1);
+  });
+
   describe('ChatState callbacks during tab creation', () => {
     it('should wire onStreamingChanged callback to TabManager callbacks', async () => {
       const onTabStreamingChanged = jest.fn();
@@ -2885,7 +2961,11 @@ describe('TabManager - Callback Wiring', () => {
 
     it('should wire onConversationIdChanged callback to sync tab conversationId', async () => {
       const onTabConversationChanged = jest.fn();
-      const callbacks: TabManagerCallbacks = { onTabConversationChanged };
+      const onPersistedStateChanged = jest.fn();
+      const callbacks: TabManagerCallbacks = {
+        onPersistedStateChanged,
+        onTabConversationChanged,
+      };
 
       let capturedCallbacks: any;
       const tabData = createMockTabData({
@@ -2900,6 +2980,7 @@ describe('TabManager - Callback Wiring', () => {
 
       const manager = new TabManager(createMockPlugin(), createMockMcpManager(), createMockEl(), createMockView(), callbacks);
       await manager.createTab();
+      onPersistedStateChanged.mockClear();
       const invalidateDiscovery = jest.spyOn(
         (manager as any).providerCommandDiscoveryStores.get('test-tab'),
         'invalidate'
@@ -2918,6 +2999,7 @@ describe('TabManager - Callback Wiring', () => {
       expect((manager as any).tabCommandContextRevisions.get('test-tab')).toBe(1);
       expect((manager as any).providerRuntimeCommandCache.has('test-tab')).toBe(false);
       expect(invalidateDiscovery).toHaveBeenCalledTimes(1);
+      expect(onPersistedStateChanged).toHaveBeenCalledTimes(1);
     });
   });
 });
