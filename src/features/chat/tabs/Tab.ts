@@ -736,7 +736,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   const inputEl = inputWrapper.createEl('textarea', {
     cls: 'claudian-input',
     attr: {
-      placeholder: 'Ask to make changes, @mention files,  run /commands',
+      placeholder: 'Ask to make changes, @mention files, run /commands',
       rows: '3',
       dir: 'auto',
     },
