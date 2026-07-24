@@ -111,12 +111,14 @@ export interface InputControllerDeps {
   getAuxiliaryModel?: () => string | null;
   getAgentService?: () => ChatRuntime | null;
   getSubagentManager: () => SubagentManager;
-  /** Tab-level provider fallback for blank tabs (derived from draft model). */
+  /** Authoritative tab/conversation provider, independent of runtime lifecycle. */
   getTabProviderId?: () => ProviderId;
   /** Returns true if ready. */
   ensureServiceInitialized?: () => Promise<boolean>;
   openConversation?: (conversationId: string) => Promise<void>;
   onForkAll?: () => Promise<void>;
+  /** Toggles the active provider's fast service tier when available. */
+  toggleFastMode?: () => Promise<boolean>;
   restorePrePlanPermissionModeIfNeeded?: () => void | Promise<void>;
   turnOwner?: ActiveTurnOwner;
 }
@@ -179,10 +181,15 @@ export class InputController {
   }
 
   private getActiveProviderId(): ProviderId {
+    const tabProviderId = this.deps.getTabProviderId?.();
+    if (tabProviderId) {
+      return tabProviderId;
+    }
+
     const agentService = this.getAgentService();
     const conversationId = this.deps.state.currentConversationId;
     if (!conversationId) {
-      return this.deps.getTabProviderId?.() ?? agentService?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
+      return agentService?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
     }
 
     if (agentService?.providerId) {
@@ -254,7 +261,7 @@ export class InputController {
     }
 
     // Check for built-in commands first (e.g., /clear, /new, /add-dir)
-    const builtInCmd = detectBuiltInCommand(content);
+    const builtInCmd = detectBuiltInCommand(content, this.getActiveProviderId());
     if (builtInCmd) {
       if (shouldUseInput) {
         inputEl.value = '';
@@ -1805,6 +1812,17 @@ export class InputController {
           return;
         }
         await this.deps.onForkAll();
+        break;
+      }
+      case 'fast': {
+        try {
+          const toggled = await this.deps.toggleFastMode?.() ?? false;
+          if (!toggled) {
+            new Notice('Fast mode is not available for this model.');
+          }
+        } catch {
+          new Notice('Failed to toggle fast mode.');
+        }
         break;
       }
       default: {

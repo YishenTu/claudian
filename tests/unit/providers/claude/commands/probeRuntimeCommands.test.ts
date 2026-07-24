@@ -4,8 +4,18 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { probeRuntimeCommands } from '@/providers/claude/commands/probeRuntimeCommands';
 
 const sdkMock = sdkModule as unknown as {
+  getLastResponse: () => {
+    supportedCommands: jest.Mock;
+  } | null;
   setMockMessages: (messages: any[], options?: { appendResult?: boolean }) => void;
   setMockSupportedCommands: (commands: Array<{ name: string; description: string; argumentHint?: string }>) => void;
+  setMockSupportedCommandsImplementation: (
+    implementation: () => Promise<Array<{
+      name: string;
+      description: string;
+      argumentHint?: string;
+    }>>,
+  ) => void;
   resetMockMessages: () => void;
   getLastOptions: () => sdkModule.Options | undefined;
 };
@@ -88,5 +98,33 @@ describe('probeRuntimeCommands', () => {
     }));
 
     expect(sdkMock.getLastOptions()?.extraArgs).toEqual({ 'enable-auto-mode': null });
+  });
+
+  it('aborts an in-flight SDK probe when its caller is cancelled', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'probe-session' },
+    ], { appendResult: false });
+    sdkMock.setMockSupportedCommandsImplementation(
+      () => new Promise(() => undefined),
+    );
+    const abortController = new AbortController();
+
+    const probe = probeRuntimeCommands(
+      createMockPlugin(),
+      abortController.signal,
+    );
+    for (
+      let i = 0;
+      i < 10 && !sdkMock.getLastResponse()?.supportedCommands.mock.calls.length;
+      i++
+    ) {
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
+    expect(sdkMock.getLastResponse()?.supportedCommands).toHaveBeenCalledTimes(1);
+
+    abortController.abort();
+    expect(sdkMock.getLastOptions()?.abortController?.signal.aborted).toBe(true);
+
+    await expect(probe).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

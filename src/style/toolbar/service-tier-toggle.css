@@ -37,3 +37,7 @@
 .claudian-service-tier-button.active {
   color: var(--claudian-brand);
 }
+
+.claudian-service-tier-button.active .claudian-service-tier-icon svg {
+  stroke-width: 2.5;
+}

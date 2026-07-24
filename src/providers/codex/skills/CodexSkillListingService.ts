@@ -13,7 +13,10 @@ import { CodexRpcTransport } from '../runtime/CodexRpcTransport';
 import { createCodexRuntimeContext } from '../runtime/CodexRuntimeContext';
 
 export interface CodexSkillListProvider {
-  listSkills(options?: { forceReload?: boolean }): Promise<SkillMetadata[]>;
+  listSkills(options?: {
+    forceReload?: boolean;
+    signal?: AbortSignal;
+  }): Promise<SkillMetadata[]>;
   invalidate(): void;
 }
 
@@ -108,10 +111,23 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     this.now = options.now ?? (() => Date.now());
   }
 
-  async listSkills(options?: { forceReload?: boolean }): Promise<SkillMetadata[]> {
+  async listSkills(options?: {
+    forceReload?: boolean;
+    signal?: AbortSignal;
+  }): Promise<SkillMetadata[]> {
+    options?.signal?.throwIfAborted();
     if (options?.forceReload) {
       const generation = ++this.generation;
-      return this.startFetch(true, generation);
+      return this.startFetch(true, generation, options.signal);
+    }
+
+    if (options?.signal) {
+      if (this.cache && this.now() < this.cacheExpiresAt) {
+        return this.cache;
+      }
+      // A request-scoped signal owns its process lifetime. Do not coalesce it
+      // behind work that another consumer may invalidate independently.
+      return this.startFetch(false, this.generation, options.signal);
     }
 
     if (this.pending?.generation === this.generation) {
@@ -125,8 +141,15 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     return this.startFetch(false, this.generation);
   }
 
-  private startFetch(forceReload: boolean, generation: number): Promise<SkillMetadata[]> {
-    const promise = this.fetchSkills(forceReload)
+  private startFetch(
+    forceReload: boolean,
+    generation: number,
+    signal?: AbortSignal,
+  ): Promise<SkillMetadata[]> {
+    const fetch = signal
+      ? this.fetchSkills(forceReload, signal)
+      : this.fetchSkills(forceReload);
+    const promise = fetch
       .then((skills) => {
         if (generation === this.generation) {
           this.storeCache(skills);
@@ -138,7 +161,9 @@ export class CodexSkillListingService implements CodexSkillListProvider {
           this.pending = null;
         }
       });
-    this.pending = { generation, promise };
+    if (!signal) {
+      this.pending = { generation, promise };
+    }
     return promise;
   }
 
@@ -149,16 +174,24 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     this.pending = null;
   }
 
-  private async fetchSkills(forceReload: boolean): Promise<SkillMetadata[]> {
+  private async fetchSkills(
+    forceReload: boolean,
+    signal?: AbortSignal,
+  ): Promise<SkillMetadata[]> {
+    signal?.throwIfAborted();
     const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
+    signal?.throwIfAborted();
     const process = new CodexAppServerProcess(launchSpec);
     process.start();
 
     const transport = new CodexRpcTransport(process);
     transport.start();
+    const onAbort = (): void => transport.dispose();
+    signal?.addEventListener('abort', onAbort, { once: true });
 
     try {
       const initializeResult = await initializeCodexAppServerTransport(transport);
+      signal?.throwIfAborted();
       createCodexRuntimeContext(launchSpec, initializeResult);
       const result = await transport.request<SkillsListResult>('skills/list', {
         cwds: [launchSpec.targetCwd],
@@ -171,6 +204,7 @@ export class CodexSkillListingService implements CodexSkillListProvider {
         path: launchSpec.pathMapper.toHostPath(skill.path) ?? skill.path,
       }));
     } finally {
+      signal?.removeEventListener('abort', onAbort);
       transport.dispose();
       await process.shutdown();
     }

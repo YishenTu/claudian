@@ -98,6 +98,19 @@ describe('builtInCommands', () => {
       expect(detectBuiltInCommand('/FORK')).not.toBeNull();
       expect(detectBuiltInCommand('/Fork')).not.toBeNull();
     });
+
+    it('detects /fast command', () => {
+      const result = detectBuiltInCommand('/fast');
+      expect(result).not.toBeNull();
+      expect(result?.command.name).toBe('fast');
+      expect(result?.command.action).toBe('fast');
+      expect(result?.args).toBe('');
+    });
+
+    it('leaves provider-restricted commands to other providers', () => {
+      expect(detectBuiltInCommand('/fast', 'claude')).toBeNull();
+      expect(detectBuiltInCommand('/fast', 'codex')?.command.action).toBe('fast');
+    });
   });
 
   describe('getBuiltInCommandsForDropdown', () => {
@@ -155,6 +168,13 @@ describe('builtInCommands', () => {
       expect(forkCmd?.hasArgs).toBeUndefined();
     });
 
+    it('has a Codex-only fast command', () => {
+      const fastCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'fast');
+      expect(fastCmd).toBeDefined();
+      expect(fastCmd?.action).toBe('fast');
+      expect(fastCmd?.supportedProviderIds).toEqual(['codex']);
+    });
+
     it('clear has no provider restriction', () => {
       const clearCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'clear');
       expect(clearCmd?.requiredCapability).toBeUndefined();
@@ -182,13 +202,14 @@ describe('builtInCommands', () => {
       expect(commands.length).toBe(BUILT_IN_COMMANDS.length);
     });
 
-    it('returns all commands for claude provider', () => {
+    it('excludes Codex-only commands for the Claude provider', () => {
       const commands = getBuiltInCommandsForDropdown('claude');
-      expect(commands.length).toBe(BUILT_IN_COMMANDS.length);
+      expect(commands.length).toBe(BUILT_IN_COMMANDS.length - 1);
       expect(commands.map(c => c.name)).toContain('clear');
       expect(commands.map(c => c.name)).toContain('add-dir');
       expect(commands.map(c => c.name)).toContain('resume');
       expect(commands.map(c => c.name)).toContain('fork');
+      expect(commands.map(c => c.name)).not.toContain('fast');
     });
 
     it('returns all capability-supported commands for codex provider', () => {
@@ -198,12 +219,13 @@ describe('builtInCommands', () => {
       expect(names).toContain('add-dir');
       expect(names).toContain('resume');
       expect(names).toContain('fork');
+      expect(names).toContain('fast');
     });
 
     it('returns only commands supported by codex capabilities', () => {
       const commands = getBuiltInCommandsForDropdown('codex');
-      expect(commands.length).toBe(4);
-      expect(commands.map(c => c.name)).toEqual(['clear', 'add-dir', 'resume', 'fork']);
+      expect(commands.length).toBe(5);
+      expect(commands.map(c => c.name)).toEqual(['clear', 'add-dir', 'resume', 'fork', 'fast']);
     });
   });
 
@@ -233,6 +255,17 @@ describe('builtInCommands', () => {
         forkCmd,
         { supportsNativeHistory: true, supportsFork: false },
       )).toBe(false);
+    });
+
+    it('enforces explicit provider restrictions', () => {
+      const fastCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'fast')!;
+      expect(isBuiltInCommandSupported(fastCmd, 'codex')).toBe(true);
+      expect(isBuiltInCommandSupported(fastCmd, 'claude')).toBe(false);
+      expect(isBuiltInCommandSupported(fastCmd, {
+        providerId: 'codex',
+        supportsNativeHistory: true,
+        supportsFork: true,
+      })).toBe(true);
     });
   });
 

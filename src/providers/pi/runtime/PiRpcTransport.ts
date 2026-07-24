@@ -100,6 +100,7 @@ export class PiRpcTransport {
     commandType: string,
     payload: Record<string, unknown> = {},
     timeoutMs = this.defaultTimeoutMs,
+    signal?: AbortSignal,
   ): Promise<T> {
     this.start();
     if (this.disposed) {
@@ -109,9 +110,13 @@ export class PiRpcTransport {
     const id = `req_${this.nextId++}`;
     return new Promise<T>((resolve, reject) => {
       let timer: number | undefined;
+      let onAbort: (() => void) | undefined;
       const cleanup = (): void => {
         if (timer !== undefined) {
           window.clearTimeout(timer);
+        }
+        if (onAbort && signal) {
+          signal.removeEventListener('abort', onAbort);
         }
       };
 
@@ -121,6 +126,20 @@ export class PiRpcTransport {
           cleanup();
           reject(new Error(`Request timeout: ${commandType} (${timeoutMs}ms)`));
         }, timeoutMs);
+      }
+
+      if (signal?.aborted) {
+        cleanup();
+        reject(new Error(`Request aborted: ${commandType}`));
+        return;
+      }
+      if (signal) {
+        onAbort = () => {
+          this.pending.delete(id);
+          cleanup();
+          reject(new Error(`Request aborted: ${commandType}`));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
       }
 
       this.pending.set(id, {

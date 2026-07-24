@@ -12,7 +12,7 @@ import { GrokChatRuntime } from '../runtime/GrokChatRuntime';
 import { getGrokProviderSettings } from '../settings';
 
 interface GrokRuntimeCommandSource {
-  discoverSupportedCommands(timeoutMs?: number): Promise<SlashCommand[]>;
+  discoverSupportedCommands(timeoutMs?: number, signal?: AbortSignal): Promise<SlashCommand[]>;
   getReadySupportedCommandsSnapshot(): SlashCommand[] | null;
   providerId: 'grok';
 }
@@ -59,6 +59,7 @@ export class GrokRuntimeCommandLoader implements ProviderRuntimeCommandLoader {
   async loadCommands(
     context: ProviderRuntimeCommandLoaderContext,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
+    context.signal?.throwIfAborted();
     const activeSource = resolveCommandSource(context.runtime);
     try {
       const commands = activeSource?.getReadySupportedCommandsSnapshot();
@@ -74,9 +75,19 @@ export class GrokRuntimeCommandLoader implements ProviderRuntimeCommandLoader {
     }
 
     const runtime = activeSource ?? this.createRuntime(context.plugin);
+    let cleanedUp = false;
+    const cleanup = (): void => {
+      if (activeSource || cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
+      runtime.cleanup();
+    };
+    const onAbort = (): void => cleanup();
+    context.signal?.addEventListener('abort', onAbort, { once: true });
     try {
       return normalizeProviderCommandDiscoveryItems(
-        await runtime.discoverSupportedCommands(5_000),
+        await runtime.discoverSupportedCommands(5_000, context.signal),
       );
     } catch {
       return {
@@ -85,9 +96,8 @@ export class GrokRuntimeCommandLoader implements ProviderRuntimeCommandLoader {
         status: 'error',
       };
     } finally {
-      if (!activeSource) {
-        runtime.cleanup();
-      }
+      context.signal?.removeEventListener('abort', onAbort);
+      cleanup();
     }
   }
 }

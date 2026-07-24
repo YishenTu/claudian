@@ -200,6 +200,47 @@ Deploy the app`,
       expect(b).toHaveLength(1);
     });
 
+    it('cancels a request-scoped probe and starts fresh work on retry', async () => {
+      const adapter = createMockAdapter({});
+      const commands = new SlashCommandStorage(adapter);
+      const skills = new SkillStorage(adapter);
+      let resolveFirst!: (commands: SlashCommand[]) => void;
+      const firstProbe = new Promise<SlashCommand[]>((resolve) => {
+        resolveFirst = resolve;
+      });
+      const freshCommands: SlashCommand[] = [{
+        id: 'sdk:fresh',
+        name: 'fresh',
+        description: 'Fresh command',
+        content: '',
+        source: 'sdk',
+      }];
+      const probe = jest.fn()
+        .mockReturnValueOnce(firstProbe)
+        .mockResolvedValueOnce(freshCommands);
+      const catalog = new ClaudeCommandCatalog(commands, skills, probe);
+      const firstController = new AbortController();
+      const secondController = new AbortController();
+
+      const abandoned = catalog.listDropdownEntries({
+        includeBuiltIns: false,
+        signal: firstController.signal,
+      });
+      firstController.abort();
+      const retry = catalog.listDropdownEntries({
+        includeBuiltIns: false,
+        signal: secondController.signal,
+      });
+      resolveFirst([]);
+
+      await expect(abandoned).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(retry).resolves.toEqual([
+        expect.objectContaining({ name: 'fresh' }),
+      ]);
+      expect(probe).toHaveBeenNthCalledWith(1, firstController.signal);
+      expect(probe).toHaveBeenNthCalledWith(2, secondController.signal);
+    });
+
     it('does not overwrite runtime commands with stale probe results', async () => {
       const adapter = createMockAdapter({});
       const commands = new SlashCommandStorage(adapter);

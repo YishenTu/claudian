@@ -555,7 +555,8 @@ export class PiChatRuntime implements ChatRuntime {
     }
   }
 
-  async discoverSupportedCommands(): Promise<SlashCommand[]> {
+  async discoverSupportedCommands(signal?: AbortSignal): Promise<SlashCommand[]> {
+    signal?.throwIfAborted();
     if (this.supportedCommandsLoaded) {
       return [...this.supportedCommands];
     }
@@ -563,7 +564,7 @@ export class PiChatRuntime implements ChatRuntime {
       throw new Error('Pi command transport is unavailable.');
     }
 
-    const response = await this.transport.request('get_commands', {}, 10_000);
+    const response = await this.transport.request('get_commands', {}, 10_000, signal);
     this.supportedCommands = normalizePiRuntimeCommands(response);
     this.supportedCommandsLoaded = true;
     return [...this.supportedCommands];

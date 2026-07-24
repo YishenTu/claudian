@@ -183,6 +183,20 @@ describe('OpencodeChatRuntime', () => {
     expect((runtime as any).supportedCommandWaiters).toHaveLength(0);
   });
 
+  it('rejects cancelled command discovery and removes the waiter', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    const abortController = new AbortController();
+    const commandsPromise = runtime.discoverSupportedCommands(
+      5_000,
+      abortController.signal,
+    );
+
+    abortController.abort();
+
+    await expect(commandsPromise).rejects.toThrow('OpenCode command discovery aborted.');
+    expect((runtime as any).supportedCommandWaiters).toHaveLength(0);
+  });
+
   it('rejects command waiters on cleanup and malformed command notifications', async () => {
     const runtime = new OpencodeChatRuntime(createMockPlugin());
     runtime.syncConversationState({ providerState: {}, sessionId: 'session-malformed' });

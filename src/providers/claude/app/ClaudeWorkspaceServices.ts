@@ -68,7 +68,7 @@ export async function createClaudeWorkspaceServices(
   const commandCatalog = new ClaudeCommandCatalog(
     claudeStorage.commands,
     claudeStorage.skills,
-    () => probeRuntimeCommands(plugin),
+    signal => probeRuntimeCommands(plugin, signal),
   );
 
   return {

@@ -61,7 +61,7 @@ const BUILTIN_HIDDEN_COMMANDS = new Set([
   'insights', 'loop', 'schedule', 'security-review', 'simplify', 'update-config',
 ]);
 
-export type CommandProbe = () => Promise<SlashCommand[]>;
+export type CommandProbe = (signal?: AbortSignal) => Promise<SlashCommand[]>;
 
 export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVaultEntryRepository {
   private runtimeCommands: SlashCommand[] = [];
@@ -82,6 +82,7 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
   }
 
   async listDropdownEntries(context: ProviderCommandListContext): Promise<ProviderCommandEntry[]> {
+    context.signal?.throwIfAborted();
     // SDK commands already include vault commands/skills (the SDK scans
     // .claude/commands/ and .claude/skills/ internally). No file scan needed.
     let commands = context.runtimeCommands;
@@ -90,7 +91,7 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
       if (allowCachedRuntimeCommands && this.runtimeCommands.length > 0) {
         commands = this.runtimeCommands;
       } else {
-        const probedCommands = await this.ensureProbed();
+        const probedCommands = await this.ensureProbed(context.signal);
         commands = allowCachedRuntimeCommands && this.runtimeCommands.length > 0
           ? this.runtimeCommands
           : probedCommands;
@@ -102,13 +103,25 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
     if (runtimeEntries.length > 0) {
       return runtimeEntries;
     }
-    return this.listVaultEntries();
+    return this.listVaultEntries(context.signal);
   }
 
   /** Probe the SDK for commands. Deduplicates concurrent calls. */
-  private async ensureProbed(): Promise<SlashCommand[]> {
+  private async ensureProbed(signal?: AbortSignal): Promise<SlashCommand[]> {
+    signal?.throwIfAborted();
     if (this.probedCommands) return this.probedCommands;
     if (!this.probe) return [];
+    if (signal) {
+      try {
+        const commands = await this.probe(signal);
+        signal.throwIfAborted();
+        this.probedCommands = commands.map(command => ({ ...command }));
+      } catch {
+        signal.throwIfAborted();
+        this.probedCommands = [];
+      }
+      return this.probedCommands;
+    }
     if (!this.probePromise) {
       this.probePromise = this.probe().then((commands) => {
         this.probedCommands = commands.map(command => ({ ...command }));
@@ -124,9 +137,12 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
     return await this.probePromise;
   }
 
-  async listVaultEntries(): Promise<ProviderCommandEntry[]> {
+  async listVaultEntries(signal?: AbortSignal): Promise<ProviderCommandEntry[]> {
+    signal?.throwIfAborted();
     const commands = await this.commandStorage.loadAll();
+    signal?.throwIfAborted();
     const skills = await this.skillStorage.loadAll();
+    signal?.throwIfAborted();
     return [...commands, ...skills].map(slashCommandToEntry);
   }
 

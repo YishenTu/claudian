@@ -24,6 +24,7 @@ import {
 } from '../../../utils/animationFrame';
 import { filterValidPaths, findConflictingPath, isDuplicatePath, isValidDirectoryPath, validateDirectoryPath } from '../../../utils/externalContext';
 import { expandHomePath, normalizePathForFilesystem } from '../../../utils/path';
+import { toggleServiceTier } from '../actions/toggleServiceTier';
 
 interface ElectronOpenDialogResult {
   canceled: boolean;
@@ -507,7 +508,9 @@ export class ServiceTierToggle {
     this.updateDisplay();
 
     this.buttonEl.addEventListener('click', () => {
-      runToolbarAction(() => this.toggle(), 'Failed to change service tier');
+      runToolbarAction(async () => {
+        await this.toggle();
+      }, 'Failed to change service tier');
     });
   }
 
@@ -537,16 +540,12 @@ export class ServiceTierToggle {
     this.container.setAttribute('title', 'Toggle on/off fast mode');
   }
 
-  private async toggle() {
-    const toggleConfig = this.getToggleConfig();
-    if (!toggleConfig) return;
-
-    const current = this.callbacks.getSettings().serviceTier;
-    const next = current === toggleConfig.activeValue
-      ? toggleConfig.inactiveValue
-      : toggleConfig.activeValue;
-    await this.callbacks.onServiceTierChange(next);
-    this.updateDisplay();
+  async toggle(): Promise<boolean> {
+    const toggled = await toggleServiceTier(this.callbacks);
+    if (toggled) {
+      this.updateDisplay();
+    }
+    return toggled;
   }
 }
 

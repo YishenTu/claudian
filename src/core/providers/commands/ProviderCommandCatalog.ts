@@ -12,6 +12,8 @@ export interface ProviderCommandDropdownConfig {
 
 export interface ProviderCommandListContext {
   includeBuiltIns: boolean;
+  /** Cancels provider-owned work when the requesting discovery is abandoned. */
+  signal?: AbortSignal;
   /** Request-scoped runtime snapshot. Undefined falls back to catalog-owned state. */
   runtimeCommands?: readonly SlashCommand[];
   /** Whether provider-global runtime state may satisfy a request without a snapshot. */

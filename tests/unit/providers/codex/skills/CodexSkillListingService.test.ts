@@ -226,4 +226,47 @@ describe('CodexSkillListingService', () => {
       forceReload: true,
     });
   });
+
+  it('stops an app-server skill listing when its caller aborts', async () => {
+    mockResolveLaunchSpec.mockReturnValue({
+      target: { method: 'host', platformFamily: 'unix', platformOs: 'linux' },
+      command: 'codex',
+      args: ['app-server', '--listen', 'stdio://'],
+      spawnCwd: '/workspace',
+      targetCwd: '/workspace',
+      env: {},
+      pathMapper: {
+        target: { method: 'host', platformFamily: 'unix', platformOs: 'linux' },
+        toTargetPath: jest.fn((value: string) => value),
+        toHostPath: jest.fn((value: string) => value),
+        mapTargetPathList: jest.fn(),
+        canRepresentHostPath: jest.fn(),
+      },
+    });
+    let rejectRequest!: (error: Error) => void;
+    mockTransportRequest.mockImplementation(() => new Promise((_resolve, reject) => {
+      rejectRequest = reject;
+    }));
+    mockTransportDispose.mockImplementation(() => rejectRequest?.(new Error('aborted')));
+    const service = new CodexSkillListingService({
+      settings: {},
+      getResolvedProviderCliPath: jest.fn(),
+      getActiveEnvironmentVariables: jest.fn(),
+      app: {
+        vault: {
+          adapter: { basePath: '/workspace' },
+        },
+      },
+    } as any);
+    const abortController = new AbortController();
+
+    const listing = service.listSkills({ signal: abortController.signal });
+    await Promise.resolve();
+    abortController.abort();
+
+    await expect(listing).rejects.toThrow('aborted');
+    expect(abortController.signal.aborted).toBe(true);
+    expect(mockTransportDispose).toHaveBeenCalled();
+    expect(mockProcessShutdown).toHaveBeenCalledTimes(1);
+  });
 });

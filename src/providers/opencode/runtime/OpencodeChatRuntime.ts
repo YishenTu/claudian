@@ -102,9 +102,9 @@ interface ActiveTurn {
 }
 
 interface SupportedCommandWaiter {
+  cleanup: () => void;
   reject: (error: Error) => void;
   resolve: (commands: SlashCommand[]) => void;
-  timeoutId: number;
 }
 
 class StreamChunkQueue {
@@ -635,23 +635,47 @@ export class OpencodeChatRuntime implements ChatRuntime {
     }
   }
 
-  discoverSupportedCommands(timeoutMs = 5_000): Promise<SlashCommand[]> {
+  discoverSupportedCommands(
+    timeoutMs = 5_000,
+    signal?: AbortSignal,
+  ): Promise<SlashCommand[]> {
+    signal?.throwIfAborted();
     if (this.supportedCommandsAdvertised && this.loadedSessionId === this.sessionId) {
       return Promise.resolve(this.cloneSupportedCommands());
     }
 
     return new Promise<SlashCommand[]>((resolve, reject) => {
-      const waiter: SupportedCommandWaiter = {
-        reject,
-        resolve,
-        timeoutId: window.setTimeout(() => {
+      let timeoutId: number | null = null;
+      let onAbort: (() => void) | null = null;
+      const cleanup = (): void => {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+        }
+        if (onAbort && signal) {
+          signal.removeEventListener('abort', onAbort);
+        }
+      };
+      const waiter: SupportedCommandWaiter = { cleanup, reject, resolve };
+      timeoutId = window.setTimeout(() => {
+        const index = this.supportedCommandWaiters.indexOf(waiter);
+        if (index >= 0) {
+          this.supportedCommandWaiters.splice(index, 1);
+        }
+        cleanup();
+        reject(new Error('Timed out waiting for OpenCode commands.'));
+      }, timeoutMs);
+
+      if (signal) {
+        onAbort = () => {
           const index = this.supportedCommandWaiters.indexOf(waiter);
           if (index >= 0) {
             this.supportedCommandWaiters.splice(index, 1);
           }
-          reject(new Error('Timed out waiting for OpenCode commands.'));
-        }, timeoutMs),
-      };
+          cleanup();
+          reject(new Error('OpenCode command discovery aborted.'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
       this.supportedCommandWaiters.push(waiter);
     });
   }
@@ -1587,7 +1611,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     const waiters = this.supportedCommandWaiters.splice(0);
     for (const waiter of waiters) {
-      window.clearTimeout(waiter.timeoutId);
+      waiter.cleanup();
       waiter.resolve(this.cloneSupportedCommands());
     }
 
@@ -1623,7 +1647,7 @@ export class OpencodeChatRuntime implements ChatRuntime {
   private rejectSupportedCommandWaiters(error: Error): void {
     const waiters = this.supportedCommandWaiters.splice(0);
     for (const waiter of waiters) {
-      window.clearTimeout(waiter.timeoutId);
+      waiter.cleanup();
       waiter.reject(error);
     }
   }

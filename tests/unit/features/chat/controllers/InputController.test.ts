@@ -1,6 +1,7 @@
 import { createMockEl } from '@test/helpers/mockElement';
 import { Notice } from 'obsidian';
 
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { encodeClaudeTurn } from '@/providers/claude/prompt/ClaudeTurnEncoder';
@@ -2210,6 +2211,131 @@ describe('InputController - Message Queue', () => {
       await controller.sendMessage();
 
       expect(mockNotice).toHaveBeenCalledWith('Fork not available.');
+      expect(inputEl.value).toBe('');
+    });
+  });
+
+  describe('Built-in commands - /fast', () => {
+    beforeEach(() => {
+      mockNotice.mockClear();
+    });
+
+    it('toggles fast mode on Codex tabs', async () => {
+      const toggleFastMode = jest.fn().mockResolvedValue(true);
+      const runtime = (deps as any).mockAgentService;
+      deps.getAgentService = () => ({
+        ...runtime,
+        providerId: 'codex',
+        getCapabilities: jest.fn().mockReturnValue({
+          ...runtime.getCapabilities(),
+          providerId: 'codex',
+        }),
+      } as any);
+      deps.toggleFastMode = toggleFastMode;
+      inputEl.value = '/fast';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(toggleFastMode).toHaveBeenCalledTimes(1);
+      expect(inputEl.value).toBe('');
+      expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
+    });
+
+    it('passes /fast through to non-Codex providers', async () => {
+      const toggleFastMode = jest.fn().mockResolvedValue(true);
+      deps.getTabProviderId = () => 'claude';
+      deps.toggleFastMode = toggleFastMode;
+      ((deps as any).mockAgentService.query as jest.Mock).mockReturnValue(
+        createMockStream([{ type: 'done' }]),
+      );
+      inputEl.value = '/fast';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(toggleFastMode).not.toHaveBeenCalled();
+      expect((deps as any).mockAgentService.query).toHaveBeenCalledTimes(1);
+      expect(deps.state.messages[0]?.content).toBe('/fast');
+      expect(mockNotice).not.toHaveBeenCalledWith('/fast is not supported by this provider.');
+    });
+
+    it('toggles /fast after switching from a stale Claude runtime to Codex history', async () => {
+      const toggleFastMode = jest.fn().mockResolvedValue(true);
+      const capabilitiesSpy = jest.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({
+        ...(deps as any).mockAgentService.getCapabilities(),
+        providerId: 'codex',
+      });
+      deps.state.currentConversationId = 'conv-codex';
+      deps.getTabProviderId = () => 'codex';
+      deps.toggleFastMode = toggleFastMode;
+      inputEl.value = '/fast';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(toggleFastMode).toHaveBeenCalledTimes(1);
+      expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
+      capabilitiesSpy.mockRestore();
+    });
+
+    it('passes /fast through after switching from a stale Codex runtime to Claude history', async () => {
+      const staleRuntime = (deps as any).mockAgentService;
+      staleRuntime.providerId = 'codex';
+      staleRuntime.getCapabilities.mockReturnValue({
+        ...staleRuntime.getCapabilities(),
+        providerId: 'codex',
+      });
+      deps.state.currentConversationId = 'conv-claude';
+      deps.getTabProviderId = () => 'claude';
+      deps.toggleFastMode = jest.fn().mockResolvedValue(true);
+      staleRuntime.query.mockReturnValue(createMockStream([{ type: 'done' }]));
+      inputEl.value = '/fast';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(deps.toggleFastMode).not.toHaveBeenCalled();
+      expect(staleRuntime.query).toHaveBeenCalledTimes(1);
+      expect(deps.state.messages[0]?.content).toBe('/fast');
+    });
+
+    it('reports when the selected Codex model has no fast tier', async () => {
+      const runtime = (deps as any).mockAgentService;
+      deps.getAgentService = () => ({
+        ...runtime,
+        providerId: 'codex',
+        getCapabilities: jest.fn().mockReturnValue({
+          ...runtime.getCapabilities(),
+          providerId: 'codex',
+        }),
+      } as any);
+      deps.toggleFastMode = jest.fn().mockResolvedValue(false);
+      inputEl.value = '/fast';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('Fast mode is not available for this model.');
+    });
+
+    it('reports settings persistence failures without rejecting the detached send', async () => {
+      const runtime = (deps as any).mockAgentService;
+      deps.getAgentService = () => ({
+        ...runtime,
+        providerId: 'codex',
+        getCapabilities: jest.fn().mockReturnValue({
+          ...runtime.getCapabilities(),
+          providerId: 'codex',
+        }),
+      } as any);
+      deps.toggleFastMode = jest.fn().mockRejectedValue(new Error('save failed'));
+      inputEl.value = '/fast';
+      controller = new InputController(deps);
+
+      await expect(controller.sendMessage()).resolves.toBeUndefined();
+
+      expect(mockNotice).toHaveBeenCalledWith('Failed to toggle fast mode.');
       expect(inputEl.value).toBe('');
     });
   });

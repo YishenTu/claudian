@@ -24,6 +24,7 @@ export class OpencodeRuntimeCommandLoader implements ProviderRuntimeCommandLoade
   async loadCommands(
     context: ProviderRuntimeCommandLoaderContext,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
+    context.signal?.throwIfAborted();
     const shouldWarmBlankSession = context.allowSessionCreation === true
       && !context.conversation?.sessionId;
     const shouldWarmPreSessionConversation = !!context.conversation
@@ -52,6 +53,16 @@ export class OpencodeRuntimeCommandLoader implements ProviderRuntimeCommandLoade
     const runtime = canReuseRuntime
       ? context.runtime!
       : new OpencodeChatRuntime(context.plugin);
+    let cleanedUp = false;
+    const cleanup = (): void => {
+      if (runtime === context.runtime || cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
+      runtime.cleanup();
+    };
+    const onAbort = (): void => cleanup();
+    context.signal?.addEventListener('abort', onAbort, { once: true });
 
     try {
       if (shouldWarmPreSessionConversation) {
@@ -72,11 +83,14 @@ export class OpencodeRuntimeCommandLoader implements ProviderRuntimeCommandLoade
         });
       }
 
-      const commandSnapshot = (runtime as OpencodeChatRuntime).discoverSupportedCommands(5_000);
+      const commandSnapshot = context.signal
+        ? (runtime as OpencodeChatRuntime).discoverSupportedCommands(5_000, context.signal)
+        : (runtime as OpencodeChatRuntime).discoverSupportedCommands(5_000);
       void commandSnapshot.catch(() => {});
       const ready = await runtime.ensureReady({
         allowSessionCreation: shouldWarmBlankSession || shouldWarmPreSessionConversation,
       });
+      context.signal?.throwIfAborted();
       if (!ready) {
         return {
           message: 'Could not load OpenCode commands.',
@@ -93,9 +107,8 @@ export class OpencodeRuntimeCommandLoader implements ProviderRuntimeCommandLoade
         status: 'error' as const,
       };
     } finally {
-      if (runtime !== context.runtime) {
-        runtime.cleanup();
-      }
+      context.signal?.removeEventListener('abort', onAbort);
+      cleanup();
     }
   }
 }

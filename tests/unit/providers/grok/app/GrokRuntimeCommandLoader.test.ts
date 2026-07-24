@@ -3,7 +3,7 @@ import type { SlashCommand } from '@/core/types';
 import { GrokRuntimeCommandLoader } from '@/providers/grok/app/GrokRuntimeCommandLoader';
 
 type TestGrokRuntime = ChatRuntime & {
-  discoverSupportedCommands(timeoutMs?: number): Promise<SlashCommand[]>;
+  discoverSupportedCommands(timeoutMs?: number, signal?: AbortSignal): Promise<SlashCommand[]>;
   getReadySupportedCommandsSnapshot(): SlashCommand[] | null;
 };
 
@@ -92,6 +92,52 @@ describe('GrokRuntimeCommandLoader', () => {
       });
     expect((runtime as any).discoverSupportedCommands).toHaveBeenCalledTimes(1);
     expect(runtime.getSupportedCommands).not.toHaveBeenCalled();
+  });
+
+  it('forwards cancellation to a live runtime without cleaning it up', async () => {
+    const abortController = new AbortController();
+    const runtime = createRuntime({
+      getReadySupportedCommandsSnapshot: jest.fn().mockReturnValue(null),
+    } as Partial<ChatRuntime>);
+    const context = createContext(runtime);
+    context.signal = abortController.signal;
+
+    await new GrokRuntimeCommandLoader().loadCommands(context);
+
+    expect((runtime as any).discoverSupportedCommands).toHaveBeenCalledWith(
+      5_000,
+      abortController.signal,
+    );
+    expect(runtime.cleanup).not.toHaveBeenCalled();
+  });
+
+  it('cleans up an isolated runtime when discovery is aborted', async () => {
+    const abortController = new AbortController();
+    const isolatedRuntime = createRuntime({
+      discoverSupportedCommands: jest.fn((
+        _timeoutMs: number,
+        signal?: AbortSignal,
+      ) => new Promise<SlashCommand[]>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+          once: true,
+        });
+      })),
+    } as Partial<ChatRuntime>);
+    const context = createContext();
+    context.signal = abortController.signal;
+
+    const discovery = new GrokRuntimeCommandLoader(
+      jest.fn().mockReturnValue(isolatedRuntime),
+    )
+      .loadCommands(context);
+    abortController.abort();
+
+    await expect(discovery).resolves.toEqual({
+      message: 'Could not load Grok skills and commands.',
+      retryable: true,
+      status: 'error',
+    });
+    expect(isolatedRuntime.cleanup).toHaveBeenCalledTimes(1);
   });
 
   it('loads exact protocol commands for a restored session without reloading that session', async () => {

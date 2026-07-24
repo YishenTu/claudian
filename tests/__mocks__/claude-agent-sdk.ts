@@ -119,6 +119,11 @@ let customMockMessages: any[] | null = null;
 let appendResultMessage = true;
 let lastOptions: Options | undefined;
 let mockSupportedCommands: Array<{ name: string; description: string; argumentHint?: string }> = [];
+let mockSupportedCommandsImplementation: (() => Promise<Array<{
+  name: string;
+  description: string;
+  argumentHint?: string;
+}>>) | null = null;
 let lastResponse: (AsyncGenerator<any> & {
   interrupt: jest.Mock;
   setModel: jest.Mock;
@@ -145,6 +150,7 @@ export function resetMockMessages() {
   appendResultMessage = true;
   lastOptions = undefined;
   mockSupportedCommands = [];
+  mockSupportedCommandsImplementation = null;
   lastResponse = null;
   shouldThrowOnIteration = false;
   throwAfterChunks = 0;
@@ -155,6 +161,16 @@ export function setMockSupportedCommands(
   commands: Array<{ name: string; description: string; argumentHint?: string }>
 ) {
   mockSupportedCommands = commands;
+}
+
+export function setMockSupportedCommandsImplementation(
+  implementation: () => Promise<Array<{
+    name: string;
+    description: string;
+    argumentHint?: string;
+  }>>,
+) {
+  mockSupportedCommandsImplementation = implementation;
 }
 
 /**
@@ -310,7 +326,11 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
   gen.setPermissionMode = jest.fn().mockResolvedValue(undefined);
   gen.applyFlagSettings = jest.fn().mockResolvedValue(undefined);
   gen.setMcpServers = jest.fn().mockResolvedValue({ added: [], removed: [], errors: {} });
-  gen.supportedCommands = jest.fn().mockResolvedValue(mockSupportedCommands);
+  gen.supportedCommands = jest.fn().mockImplementation(() => (
+    mockSupportedCommandsImplementation
+      ? mockSupportedCommandsImplementation()
+      : Promise.resolve(mockSupportedCommands)
+  ));
   lastResponse = gen;
 
   return gen;

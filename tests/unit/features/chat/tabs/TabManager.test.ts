@@ -1572,7 +1572,6 @@ describe('TabManager - SDK Commands', () => {
       supportsProviderCommands: providerId === 'opencode' || providerId === 'claude',
       reasoningControl: providerId === 'opencode' ? 'effort' : 'none',
     }));
-    const resetSdkSkillsCache = jest.fn();
     const plugin = createMockPlugin({
       getConversationById: jest.fn()
         .mockResolvedValueOnce({
@@ -1611,9 +1610,6 @@ describe('TabManager - SDK Commands', () => {
               externalContextSelector: {
                 getExternalContexts: jest.fn().mockReturnValue([]),
               },
-              slashCommandDropdown: {
-                resetSdkSkillsCache,
-              },
             },
           }
       ),
@@ -1621,6 +1617,10 @@ describe('TabManager - SDK Commands', () => {
 
     await manager.createTab();
     const tab = await manager.createTab('conv-opencode', 'tab-opencode', { activate: false });
+    const invalidateDiscovery = jest.spyOn(
+      (manager as any).providerCommandDiscoveryStores.get(tab!.id),
+      'invalidate'
+    );
 
     await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual(firstCommands);
     await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual(firstCommands);
@@ -1628,7 +1628,7 @@ describe('TabManager - SDK Commands', () => {
     manager.invalidateProviderCommandCaches('opencode');
     await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual(secondCommands);
     expect(runtimeCommandLoader.loadCommands).toHaveBeenCalledTimes(2);
-    expect(resetSdkSkillsCache).toHaveBeenCalledTimes(1);
+    expect(invalidateDiscovery).toHaveBeenCalledTimes(1);
   });
 
   it('should load commands on demand for an active blank OpenCode tab', async () => {
@@ -2012,7 +2012,6 @@ describe('TabManager - Provider Resource Generations', () => {
       cleanup: jest.fn(),
       isReady: jest.fn().mockReturnValue(true),
     };
-    const resetSdkSkillsCache = jest.fn();
     const catalog = { setRuntimeCommands: jest.fn() };
     ProviderWorkspaceRegistry.setServices('opencode', { commandCatalog: catalog as any });
     const manager = createManager({
@@ -2022,10 +2021,20 @@ describe('TabManager - Provider Resource Generations', () => {
         lifecycleState: 'bound_active',
         service: runtime,
         serviceInitialized: true,
-        ui: { slashCommandDropdown: { resetSdkSkillsCache } },
       }),
     });
     const tab = await manager.createTab();
+    const invalidateDiscovery = jest.spyOn(
+      (manager as any).providerCommandDiscoveryStores.get(tab!.id),
+      'invalidate'
+    );
+    const invalidatedRuntimeStates: boolean[] = [];
+    const discovery = (manager as any).providerCommandDiscoveryStores.get(tab!.id);
+    discovery.subscribe(() => {
+      if (discovery.getSnapshot().status === 'idle') {
+        invalidatedRuntimeStates.push(tab!.runtimeSupervisor.isInvalidated);
+      }
+    });
 
     manager.invalidateProviderResources(['opencode'], 7);
 
@@ -2033,7 +2042,8 @@ describe('TabManager - Provider Resource Generations', () => {
     expect(runtime.cancel).not.toHaveBeenCalled();
     expect(runtime.cleanup).not.toHaveBeenCalled();
     expect(catalog.setRuntimeCommands).toHaveBeenCalledWith([]);
-    expect(resetSdkSkillsCache).toHaveBeenCalledTimes(1);
+    expect(invalidateDiscovery).toHaveBeenCalledTimes(1);
+    expect(invalidatedRuntimeStates).toEqual([true]);
   });
 
   it('discards a warmup catalog write after a newer generation is published', async () => {
@@ -2069,7 +2079,78 @@ describe('TabManager - Provider Resource Generations', () => {
     await expect(pending).resolves.toEqual(commands);
 
     expect(catalog.setRuntimeCommands).not.toHaveBeenCalled();
-    expect((manager as any).providerCommandCache.has(tab!.id)).toBe(false);
+    expect((manager as any).providerRuntimeCommandCache.has(tab!.id)).toBe(false);
+  });
+
+  it('starts a fresh runtime warmup when discovery is retried after its outer timeout', async () => {
+    jest.useFakeTimers();
+    let resolveFirst!: (result: any) => void;
+    let firstSignal: AbortSignal | undefined;
+    try {
+      const firstWarmup = new Promise(resolve => {
+        resolveFirst = resolve;
+      });
+      const loader = {
+        getCacheFingerprint: jest.fn().mockReturnValue('opencode:retry'),
+        isAvailable: jest.fn().mockReturnValue(true),
+        loadCommands: jest.fn()
+          .mockImplementationOnce((context: { signal?: AbortSignal }) => {
+            firstSignal = context.signal;
+            return firstWarmup;
+          })
+          .mockResolvedValueOnce({ status: 'empty' }),
+      };
+      const catalog = {
+        listDropdownEntries: jest.fn().mockResolvedValue([]),
+        setRuntimeCommands: jest.fn(),
+      };
+      ProviderWorkspaceRegistry.setServices('opencode', {
+        commandCatalog: catalog as any,
+        runtimeCommandLoader: loader as any,
+        tabWarmupPolicy: { resolveMode: jest.fn().mockReturnValue('none') } as any,
+      });
+      const manager = createManager({
+        tabFactory: () => createMockTabData({
+          id: 'tab-opencode',
+          providerId: 'opencode',
+          draftModel: 'opencode:test',
+          lifecycleState: 'blank',
+          ui: { externalContextSelector: { getExternalContexts: jest.fn().mockReturnValue([]) } },
+        }),
+      });
+      const tab = await manager.createTab();
+      const discovery = (manager as any).providerCommandDiscoveryStores.get(tab!.id);
+
+      const firstDiscovery = discovery.load();
+      await flushMicrotasks(8);
+      expect(loader.loadCommands).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(8_000);
+      await expect(firstDiscovery).resolves.toEqual({
+        status: 'error',
+        message: 'Provider command discovery timed out',
+        retryable: true,
+      });
+      expect(firstSignal?.aborted).toBe(true);
+
+      const retry = discovery.retry();
+      await flushMicrotasks(8);
+      const loadCountAfterRetry = loader.loadCommands.mock.calls.length;
+      const secondSignal = loader.loadCommands.mock.calls[1]?.[0]?.signal as
+        | AbortSignal
+        | undefined;
+
+      resolveFirst({ status: 'error', message: 'Old request timed out', retryable: true });
+      await retry;
+
+      expect(loadCountAfterRetry).toBe(2);
+      expect(secondSignal).toBeDefined();
+      expect(secondSignal).not.toBe(firstSignal);
+      expect(secondSignal?.aborted).toBe(false);
+      expect(discovery.getSnapshot()).toEqual({ status: 'empty' });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('keeps secrets and conversation state out of command cache keys', async () => {
@@ -2110,7 +2191,7 @@ describe('TabManager - Provider Resource Generations', () => {
     const tab = await manager.createTab('private-conversation');
 
     await manager.getSdkCommands(tab!.id);
-    const cacheKey = (manager as any).providerCommandCache.get(tab!.id)?.key ?? '';
+    const cacheKey = (manager as any).providerRuntimeCommandCache.get(tab!.id)?.key ?? '';
 
     expect(cacheKey).toContain('opencode:safe');
     expect(cacheKey).not.toContain(secret);
@@ -2160,7 +2241,7 @@ describe('TabManager - Provider Resource Generations', () => {
     expect(loader.loadCommands).toHaveBeenLastCalledWith(expect.objectContaining({
       externalContextPaths: ['/context/b'],
     }));
-    const cacheKey = (manager as any).providerCommandCache.get(tab!.id)?.key ?? '';
+    const cacheKey = (manager as any).providerRuntimeCommandCache.get(tab!.id)?.key ?? '';
     expect(cacheKey).not.toContain('/context/a');
     expect(cacheKey).not.toContain('/context/b');
   });
@@ -2304,7 +2385,7 @@ describe('TabManager - Provider Command Catalog', () => {
 
     const options = mockInitializeTabUI.mock.calls[0][2];
     const catalogConfig = options.getProviderCatalogConfig();
-    const result = await catalogConfig.getEntries();
+    const result = await catalogConfig.discovery.load();
 
     expect(result.status).toBe('ready');
     expect(result.items).toHaveLength(1);
@@ -2400,7 +2481,7 @@ describe('TabManager - Provider Command Catalog', () => {
 
     const options = mockInitializeTabUI.mock.calls[0][2];
     const catalogConfig = options.getProviderCatalogConfig();
-    const result = await catalogConfig.getEntries();
+    const result = await catalogConfig.discovery.load();
 
     expect(catalogConfig).not.toBeNull();
     expect(catalogConfig.config.skillPrefix).toBe('$');
@@ -2410,16 +2491,18 @@ describe('TabManager - Provider Command Catalog', () => {
     expect(mockCatalog.listDropdownEntries).toHaveBeenCalledWith({
       includeBuiltIns: false,
       allowCachedRuntimeCommands: false,
+      signal: expect.any(AbortSignal),
     });
     expect(claudeCatalog.listDropdownEntries).not.toHaveBeenCalled();
   });
 
-  it('should refresh Claude runtime commands before listing catalog entries', async () => {
+  it('should use the Claude runtime command snapshot before listing catalog entries', async () => {
     const supportedCommands = [{ id: 'sdk:commit', name: 'commit', content: '', source: 'sdk' }];
     const readyService = {
       providerId: 'claude',
       isReady: jest.fn().mockReturnValue(true),
-      getSupportedCommands: jest.fn().mockResolvedValue(supportedCommands),
+      getSupportedCommands: jest.fn(),
+      getSupportedCommandsSnapshot: jest.fn().mockReturnValue(supportedCommands),
     };
     const claudeCatalog = {
       listDropdownEntries: jest.fn().mockResolvedValue([]),
@@ -2449,9 +2532,10 @@ describe('TabManager - Provider Command Catalog', () => {
 
     const options = mockInitializeTabUI.mock.calls[0][2];
     const catalogConfig = options.getProviderCatalogConfig();
-    await catalogConfig.getEntries();
+    await catalogConfig.discovery.load();
 
-    expect(readyService.getSupportedCommands).toHaveBeenCalledTimes(1);
+    expect(readyService.getSupportedCommandsSnapshot).toHaveBeenCalledTimes(1);
+    expect(readyService.getSupportedCommands).not.toHaveBeenCalled();
     expect(claudeCatalog.setRuntimeCommands).toHaveBeenCalledWith(supportedCommands);
     expect(claudeCatalog.listDropdownEntries).toHaveBeenCalledWith(expect.objectContaining({
       includeBuiltIns: false,
@@ -2459,11 +2543,76 @@ describe('TabManager - Provider Command Catalog', () => {
     }));
   });
 
+  it('uses the Claude catalog probe when a ready runtime has no command snapshot', async () => {
+    const probedEntry = {
+      id: 'sdk:probe',
+      providerId: 'claude',
+      kind: 'command',
+      name: 'probe',
+      description: 'Probed command',
+      content: '',
+      scope: 'runtime',
+      source: 'sdk',
+      isEditable: false,
+      isDeletable: false,
+      displayPrefix: '/',
+      insertPrefix: '/',
+    };
+    const readyService = {
+      providerId: 'claude',
+      isReady: jest.fn().mockReturnValue(true),
+      getSupportedCommands: jest.fn(),
+      getSupportedCommandsSnapshot: jest.fn().mockReturnValue(null),
+    };
+    const claudeCatalog = {
+      listDropdownEntries: jest.fn(async (context: {
+        runtimeCommands?: readonly unknown[];
+      }) => context.runtimeCommands === undefined ? [probedEntry] : []),
+      setRuntimeCommands: jest.fn(),
+      getDropdownConfig: jest.fn().mockReturnValue({
+        providerId: 'claude',
+        triggerChars: ['/'],
+        builtInPrefix: '/',
+        skillPrefix: '/',
+        commandPrefix: '/',
+      }),
+    };
+    ProviderWorkspaceRegistry.setServices('claude', {
+      commandCatalog: claudeCatalog as any,
+    });
+    const manager = createManager({
+      tabFactory: () => createMockTabData({
+        id: 'tab-claude',
+        providerId: 'claude',
+        service: readyService,
+      }),
+    });
+    const tab = await manager.createTab();
+    const discovery = (manager as any).providerCommandDiscoveryStores.get(tab!.id);
+
+    await expect(discovery.load()).resolves.toEqual({
+      items: [probedEntry],
+      status: 'ready',
+    });
+
+    expect(readyService.getSupportedCommandsSnapshot).toHaveBeenCalledTimes(1);
+    expect(readyService.getSupportedCommands).not.toHaveBeenCalled();
+    expect(claudeCatalog.listDropdownEntries).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowCachedRuntimeCommands: false,
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(claudeCatalog.listDropdownEntries.mock.calls[0]?.[0])
+      .not.toHaveProperty('runtimeCommands');
+  });
+
   it('should clear Claude runtime commands when revalidation returns no commands', async () => {
     const readyService = {
       providerId: 'claude',
       isReady: jest.fn().mockReturnValue(true),
-      getSupportedCommands: jest.fn().mockResolvedValue([]),
+      getSupportedCommands: jest.fn(),
+      getSupportedCommandsSnapshot: jest.fn().mockReturnValue([]),
     };
     const claudeCatalog = {
       listDropdownEntries: jest.fn().mockResolvedValue([]),
@@ -2492,6 +2641,8 @@ describe('TabManager - Provider Command Catalog', () => {
     const tab = await manager.createTab();
 
     await expect(manager.getSdkCommands(tab!.id)).resolves.toEqual([]);
+    expect(readyService.getSupportedCommandsSnapshot).toHaveBeenCalledTimes(1);
+    expect(readyService.getSupportedCommands).not.toHaveBeenCalled();
     expect(claudeCatalog.setRuntimeCommands).toHaveBeenCalledWith([]);
   });
 
@@ -2737,11 +2888,10 @@ describe('TabManager - Callback Wiring', () => {
       const callbacks: TabManagerCallbacks = { onTabConversationChanged };
 
       let capturedCallbacks: any;
-      const resetSdkSkillsCache = jest.fn();
       const tabData = createMockTabData({
         id: 'test-tab',
         conversationId: null,
-        ui: { externalContextSelector: null, slashCommandDropdown: { resetSdkSkillsCache } },
+        ui: { externalContextSelector: null },
       });
       mockCreateTab.mockImplementation((opts: any) => {
         capturedCallbacks = opts;
@@ -2750,7 +2900,11 @@ describe('TabManager - Callback Wiring', () => {
 
       const manager = new TabManager(createMockPlugin(), createMockMcpManager(), createMockEl(), createMockView(), callbacks);
       await manager.createTab();
-      (manager as any).providerCommandCache.set('test-tab', {
+      const invalidateDiscovery = jest.spyOn(
+        (manager as any).providerCommandDiscoveryStores.get('test-tab'),
+        'invalidate'
+      );
+      (manager as any).providerRuntimeCommandCache.set('test-tab', {
         key: 'claude|0|0|catalog|0',
         result: { status: 'empty' },
       });
@@ -2762,8 +2916,8 @@ describe('TabManager - Callback Wiring', () => {
       expect(tabData.conversationId).toBe('new-conv-id');
       expect(onTabConversationChanged).toHaveBeenCalledWith('test-tab', 'new-conv-id');
       expect((manager as any).tabCommandContextRevisions.get('test-tab')).toBe(1);
-      expect((manager as any).providerCommandCache.has('test-tab')).toBe(false);
-      expect(resetSdkSkillsCache).toHaveBeenCalledTimes(1);
+      expect((manager as any).providerRuntimeCommandCache.has('test-tab')).toBe(false);
+      expect(invalidateDiscovery).toHaveBeenCalledTimes(1);
     });
   });
 });

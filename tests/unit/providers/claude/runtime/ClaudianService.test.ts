@@ -900,6 +900,7 @@ describe('ClaudianService', () => {
       };
       (service as any).persistentQuery = mockQuery;
 
+      await (service as any).fetchAndCacheCommands(mockQuery);
       const commands = await service.getSupportedCommands();
 
       expect(mockQuery.supportedCommands).toHaveBeenCalled();
@@ -920,6 +921,7 @@ describe('ClaudianService', () => {
         content: '',
         source: 'sdk',
       });
+      expect(service.getSupportedCommandsSnapshot()).toEqual(commands);
     });
 
     it('should return empty array on SDK error', async () => {
@@ -928,9 +930,47 @@ describe('ClaudianService', () => {
       };
       (service as any).persistentQuery = mockQuery;
 
-      const commands = await service.getSupportedCommands();
+      const commands = await (service as any).fetchAndCacheCommands(mockQuery);
 
       expect(commands).toEqual([]);
+      expect(service.getSupportedCommandsSnapshot()).toBeNull();
+    });
+
+    it('should distinguish an authoritative empty command snapshot', async () => {
+      const mockQuery = {
+        supportedCommands: jest.fn().mockResolvedValue([]),
+      };
+      (service as any).persistentQuery = mockQuery;
+
+      await expect((service as any).fetchAndCacheCommands(mockQuery))
+        .resolves.toEqual([]);
+
+      expect(service.getSupportedCommandsSnapshot()).toEqual([]);
+      await expect(service.getSupportedCommands()).resolves.toEqual([]);
+      expect(mockQuery.supportedCommands).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not query or close an active runtime when command metadata is unavailable', async () => {
+      const supportedCommands = new Promise<Array<{
+        name: string;
+        description: string;
+        argumentHint: string;
+      }>>(() => undefined);
+      const mockQuery = {
+        interrupt: jest.fn().mockResolvedValue(undefined),
+        supportedCommands: jest.fn().mockReturnValue(supportedCommands),
+      };
+      (service as any).persistentQuery = mockQuery;
+      (service as any).queryAbortController = new AbortController();
+      const closeSpy = jest.spyOn(service, 'closePersistentQuery');
+
+      await expect(service.getSupportedCommands()).resolves.toEqual([]);
+
+      expect(service.getSupportedCommandsSnapshot()).toBeNull();
+      expect(mockQuery.supportedCommands).not.toHaveBeenCalled();
+      expect(closeSpy).not.toHaveBeenCalled();
+      expect(mockQuery.interrupt).not.toHaveBeenCalled();
+      expect((service as any).persistentQuery).toBe(mockQuery);
     });
 
     it('should ignore late supportedCommands results from a stale query', async () => {

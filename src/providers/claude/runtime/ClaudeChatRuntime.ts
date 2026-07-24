@@ -196,6 +196,7 @@ export class ClaudianService implements ChatRuntime {
 
   // SDK command cache — populated on system/init, cleared on persistent query close
   private cachedSdkCommands: SlashCommand[] = [];
+  private hasCachedSdkCommandSnapshot = false;
 
   private _asyncSubagentCompletionCallback: AsyncSubagentCompletionCallback | null = null;
 
@@ -748,6 +749,7 @@ export class ClaudianService implements ChatRuntime {
     this.authoritativeContextWindow = null;
     this.contextWindowDiscovery = null;
     this.cachedSdkCommands = [];
+    this.hasCachedSdkCommandSnapshot = false;
     this.streamTransformState.clearAll();
     this.usageTransformState.clear();
     this._autoTurnBuffer = [];
@@ -1855,25 +1857,27 @@ export class ClaudianService implements ChatRuntime {
 
   /**
    * Get supported commands (SDK skills).
-   * Returns cached commands populated on system/init. Falls back to a fresh
-   * supportedCommands() call if the cache is empty (e.g., dropdown opened
-   * before the first init event).
+   * Live query control requests are deliberately excluded: dropdown discovery
+   * must not interrupt or otherwise own the active Claude session.
    */
-  async getSupportedCommands(): Promise<SlashCommand[]> {
-    if (this.cachedSdkCommands.length > 0) {
-      return this.cachedSdkCommands;
-    }
-    if (!this.persistentQuery) {
-      return [];
-    }
-    return this.fetchAndCacheCommands(this.persistentQuery);
+  async getSupportedCommands(signal?: AbortSignal): Promise<SlashCommand[]> {
+    signal?.throwIfAborted();
+    return this.getSupportedCommandsSnapshot() ?? [];
+  }
+
+  getSupportedCommandsSnapshot(): SlashCommand[] | null {
+    return this.hasCachedSdkCommandSnapshot
+      ? this.cachedSdkCommands.map(command => ({ ...command }))
+      : null;
   }
 
   /**
    * Fetches commands from the SDK and caches them. Called on system/init
    * (fire-and-forget) and as a fallback from getSupportedCommands().
    */
-  private async fetchAndCacheCommands(query: Query | null): Promise<SlashCommand[]> {
+  private async fetchAndCacheCommands(
+    query: Query | null,
+  ): Promise<SlashCommand[]> {
     if (!query) return [];
     try {
       const sdkCommands: SDKSlashCommand[] = await query.supportedCommands();
@@ -1889,6 +1893,7 @@ export class ClaudianService implements ChatRuntime {
         return this.cachedSdkCommands;
       }
       this.cachedSdkCommands = mappedCommands;
+      this.hasCachedSdkCommandSnapshot = true;
       return this.cachedSdkCommands;
     } catch {
       return [];
