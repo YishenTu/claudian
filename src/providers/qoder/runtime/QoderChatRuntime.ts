@@ -27,10 +27,15 @@ import type {
   PreparedChatTurn,
   SessionUpdateResult,
 } from '../../../core/runtime/types';
+import {
+  TOOL_ASK_USER_QUESTION,
+  TOOL_EXIT_PLAN_MODE,
+} from '../../../core/tools/toolNames';
 import type {
   ChatMessage,
   Conversation,
   ExitPlanModeCallback,
+  ImageAttachment,
   SlashCommand,
   StreamChunk,
   UsageInfo,
@@ -44,13 +49,17 @@ import {
   parseQoderProviderState,
   type QoderProviderState,
 } from '../types';
-import { loadQoderQuery } from './loadQoderSdk';
+import { loadQoderQuery, loadQoderSdkModule } from './loadQoderSdk';
 import { QoderCliResolver } from './QoderCliResolver';
 import {
   buildQoderBaseOptions,
   closeQoderQuery,
   collectQoderCommands,
 } from './QoderSdkBridge';
+import {
+  resolveQoderContextUsage,
+  resolveQoderUsageContextWindow,
+} from './QoderUsage';
 
 interface ActiveTurn {
   abortController: AbortController;
@@ -116,9 +125,11 @@ export class QoderChatRuntime implements ChatRuntime {
   private activeTurn: ActiveTurn | null = null;
   private approvalCallback: ApprovalCallback | null = null;
   private approvalDismisser: (() => void) | null = null;
+  private askUserQuestionCallback: AskUserQuestionCallback | null = null;
   private currentConversationModel: string | null = null;
   private currentTurnMetadata: ChatTurnMetadata = {};
   private externalContextPaths: string[] = [];
+  private exitPlanModeCallback: ExitPlanModeCallback | null = null;
   private permissionModeSyncCallback: ((sdkMode: string) => void) | null = null;
   private pendingResumeCheckpoint: string | undefined;
   private readonly readyListeners = new Set<(ready: boolean) => void>();
@@ -230,6 +241,22 @@ export class QoderChatRuntime implements ChatRuntime {
         return;
       }
     }
+  }
+
+  async steer(turn: PreparedChatTurn): Promise<boolean> {
+    const activeTurn = this.activeTurn;
+    if (!activeTurn) {
+      return false;
+    }
+
+    const message = buildQoderUserMessage(
+      turn.prompt,
+      randomUUID(),
+      turn.request.images,
+      'now',
+    );
+    await activeTurn.query.streamInput(createQoderInputStream(message));
+    return true;
   }
 
   cancel(): void {
@@ -344,11 +371,11 @@ export class QoderChatRuntime implements ChatRuntime {
   }
 
   setAskUserQuestionCallback(callback: AskUserQuestionCallback | null): void {
-    void callback;
+    this.askUserQuestionCallback = callback;
   }
 
   setExitPlanModeCallback(callback: ExitPlanModeCallback | null): void {
-    void callback;
+    this.exitPlanModeCallback = callback;
   }
 
   setPermissionModeSyncCallback(callback: ((sdkMode: string) => void) | null): void {
@@ -395,8 +422,13 @@ export class QoderChatRuntime implements ChatRuntime {
     abortController: AbortController,
     queryOptions?: ChatRuntimeQueryOptions,
   ): Promise<Query> {
+    await this.materializePendingFork();
     const queryFactory = await loadQoderQuery();
-    const prompt = createSingleTurnInput(turn.prompt, userMessageId);
+    const prompt = createSingleTurnInput(
+      turn.prompt,
+      userMessageId,
+      turn.request.images,
+    );
     const settings = getQoderProviderSettings(this.plugin.settings);
     const model = queryOptions?.model ?? this.currentConversationModel;
     const permissionMode = resolveQoderPermissionMode(
@@ -419,15 +451,29 @@ export class QoderChatRuntime implements ChatRuntime {
         canUseTool: (toolName, input, options) => this.handlePermissionRequest(toolName, input, options),
         continue: Boolean(this.sessionId),
         ...(this.pendingResumeCheckpoint ? { resume: this.pendingResumeCheckpoint } : this.sessionId ? { resume: this.sessionId } : {}),
-        ...(this.turnDiscoveryState.forkSource
-          ? {
-            forkSession: true,
-            resume: this.turnDiscoveryState.forkSource.sessionId,
-          }
-          : {}),
         permissionMode,
       },
     });
+  }
+
+  private async materializePendingFork(): Promise<void> {
+    const forkSource = this.turnDiscoveryState.forkSource;
+    if (!forkSource) {
+      return;
+    }
+
+    const vaultPath = getVaultPath(this.plugin.app) ?? undefined;
+    const { forkSession } = await loadQoderSdkModule();
+    const forked = await forkSession(forkSource.sessionId, {
+      ...(vaultPath ? { dir: vaultPath } : {}),
+      upToMessageId: forkSource.resumeAt,
+    });
+    const { forkSource: _consumedForkSource, ...remainingState } = this.turnDiscoveryState;
+    this.sessionId = forked.sessionId;
+    this.turnDiscoveryState = {
+      ...remainingState,
+      sessionId: forked.sessionId,
+    };
   }
 
   /**
@@ -467,7 +513,7 @@ export class QoderChatRuntime implements ChatRuntime {
             this.handleSystemMessage(message, queue);
             break;
           case 'stream_event':
-            this.handleStreamEvent(message, queue, toolUses);
+            this.handleStreamEvent(message, queue, toolUses, emittedFinalMessageKinds);
             break;
           case 'assistant':
             this.handleAssistantMessage(message, queue, emittedFinalMessageKinds);
@@ -563,6 +609,7 @@ export class QoderChatRuntime implements ChatRuntime {
     message: Extract<SDKMessage, { type: 'stream_event' }>,
     queue: StreamChunkQueue,
     toolUses: Map<number, ToolUseAccumulator>,
+    emittedKinds: Set<string>,
   ): void {
     const event = message.event as Record<string, unknown>;
     const eventType = typeof event.type === 'string' ? event.type : '';
@@ -577,6 +624,15 @@ export class QoderChatRuntime implements ChatRuntime {
           inputChunks: [],
           name: typeof contentBlock.name === 'string' ? contentBlock.name : 'Tool',
         });
+      } else if (contentBlock?.type === 'text' && typeof contentBlock.text === 'string') {
+        emittedKinds.add('text');
+        queue.push({ type: 'text', content: contentBlock.text });
+      } else if (
+        contentBlock?.type === 'thinking'
+        && typeof contentBlock.thinking === 'string'
+      ) {
+        emittedKinds.add('thinking');
+        queue.push({ type: 'thinking', content: contentBlock.thinking });
       }
       return;
     }
@@ -587,10 +643,12 @@ export class QoderChatRuntime implements ChatRuntime {
         return;
       }
       if (delta.type === 'text_delta' && typeof delta.text === 'string') {
+        emittedKinds.add('text');
         queue.push({ type: 'text', content: delta.text });
         return;
       }
       if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+        emittedKinds.add('thinking');
         queue.push({ type: 'thinking', content: delta.thinking });
         return;
       }
@@ -606,6 +664,7 @@ export class QoderChatRuntime implements ChatRuntime {
         return;
       }
       toolUse.emitted = true;
+      emittedKinds.add(`tool_use:${toolUse.id}`);
       queue.push({
         type: 'tool_use',
         id: toolUse.id,
@@ -630,9 +689,13 @@ export class QoderChatRuntime implements ChatRuntime {
       } else if (record.type === 'thinking' && typeof record.thinking === 'string' && !emittedKinds.has('thinking')) {
         queue.push({ type: 'thinking', content: record.thinking });
       } else if (record.type === 'tool_use') {
+        const toolUseId = typeof record.id === 'string' ? record.id : randomUUID();
+        if (emittedKinds.has(`tool_use:${toolUseId}`)) {
+          continue;
+        }
         queue.push({
           type: 'tool_use',
-          id: typeof record.id === 'string' ? record.id : randomUUID(),
+          id: toolUseId,
           input: isRecord(record.input) ? record.input : {},
           name: typeof record.name === 'string' ? record.name : 'Tool',
         });
@@ -688,24 +751,30 @@ export class QoderChatRuntime implements ChatRuntime {
     const matchingModelUsage = modelUsageEntries.find(([modelId]) => (
       selectedModel.endsWith(modelId) || modelId === selectedModel
     ))?.[1] ?? modelUsageEntries[0]?.[1];
-    const contextWindow = matchingModelUsage?.contextWindow
-      ?? resolveQoderContextWindow(selectedModel, discoveredModels);
+    const contextWindow = resolveQoderUsageContextWindow(
+      matchingModelUsage?.contextWindow,
+      resolveQoderContextWindow(selectedModel, discoveredModels),
+    );
     const inputTokens = message.usage.input_tokens;
     const cacheCreationInputTokens = message.usage.cache_creation_input_tokens;
     const cacheReadInputTokens = message.usage.cache_read_input_tokens;
-    const contextTokens = inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
-    const percentage = typeof message.usage.context_usage_ratio === 'number'
-      ? Math.round(message.usage.context_usage_ratio * 100)
-      : contextWindow > 0
-        ? Math.min(100, Math.round((contextTokens / contextWindow) * 100))
-        : 0;
+    const reportedContextTokens = inputTokens
+      + cacheCreationInputTokens
+      + cacheReadInputTokens;
+    const { contextTokens, percentage } = resolveQoderContextUsage({
+      contextUsageRatio: message.usage.context_usage_ratio,
+      contextWindow,
+      reportedContextTokens,
+    });
 
     return {
       cacheCreationInputTokens,
       cacheReadInputTokens,
       contextTokens,
       contextWindow,
-      contextWindowIsAuthoritative: Boolean(matchingModelUsage?.contextWindow || model?.contextWindow),
+      contextWindowIsAuthoritative: Boolean(
+        matchingModelUsage?.contextWindow || model?.contextWindowIsAuthoritative,
+      ),
       inputTokens,
       model: (model?.displayName ?? selectedModel) || undefined,
       percentage,
@@ -736,6 +805,13 @@ export class QoderChatRuntime implements ChatRuntime {
     input: Record<string, unknown>,
     options: CanUseToolOptions,
   ): Promise<PermissionResult> {
+    if (toolName === TOOL_ASK_USER_QUESTION && this.askUserQuestionCallback) {
+      return this.handleAskUserQuestion(input, options);
+    }
+    if (toolName === TOOL_EXIT_PLAN_MODE && this.exitPlanModeCallback) {
+      return this.handleExitPlanMode(input, options);
+    }
+
     const approvalCallback = this.approvalCallback;
     if (!approvalCallback) {
       return { behavior: 'allow', toolUseID: options.toolUseID };
@@ -762,6 +838,96 @@ export class QoderChatRuntime implements ChatRuntime {
     return { behavior: 'deny', message: 'Denied by user.', toolUseID: options.toolUseID };
   }
 
+  private async handleAskUserQuestion(
+    input: Record<string, unknown>,
+    options: CanUseToolOptions,
+  ): Promise<PermissionResult> {
+    const question = typeof input.question === 'string' ? input.question : '';
+    const callbackInput = Array.isArray(input.questions)
+      ? input
+      : {
+        questions: [{
+          isOther: true,
+          ...(Array.isArray(input.options) ? { options: input.options } : {}),
+          question,
+        }],
+      };
+    try {
+      const answers = await this.askUserQuestionCallback?.(
+        callbackInput,
+        options.signal,
+      );
+      if (!answers) {
+        return {
+          behavior: 'deny',
+          interrupt: true,
+          message: 'User declined to answer.',
+          toolUseID: options.toolUseID,
+        };
+      }
+      const answer = answers[question] ?? Object.values(answers)[0];
+      return {
+        behavior: 'allow',
+        toolUseID: options.toolUseID,
+        updatedInput: {
+          ...input,
+          answer: Array.isArray(answer) ? answer.join(', ') : answer ?? '',
+        },
+      };
+    } catch (error) {
+      return {
+        behavior: 'deny',
+        interrupt: true,
+        message: `Failed to get user answer: ${formatError(error)}`,
+        toolUseID: options.toolUseID,
+      };
+    }
+  }
+
+  private async handleExitPlanMode(
+    input: Record<string, unknown>,
+    options: CanUseToolOptions,
+  ): Promise<PermissionResult> {
+    try {
+      const decision = await this.exitPlanModeCallback?.(input, options.signal);
+      if (!decision) {
+        return {
+          behavior: 'deny',
+          interrupt: true,
+          message: 'User cancelled.',
+          toolUseID: options.toolUseID,
+        };
+      }
+      if (decision.type === 'feedback') {
+        return {
+          behavior: 'deny',
+          message: decision.text,
+          toolUseID: options.toolUseID,
+        };
+      }
+      if (decision.type === 'abandon') {
+        return {
+          behavior: 'deny',
+          interrupt: true,
+          message: 'User abandoned the plan.',
+          toolUseID: options.toolUseID,
+        };
+      }
+      return {
+        behavior: 'allow',
+        toolUseID: options.toolUseID,
+        updatedInput: { ...input, confirm: true },
+      };
+    } catch (error) {
+      return {
+        behavior: 'deny',
+        interrupt: true,
+        message: `Failed to handle plan mode exit: ${formatError(error)}`,
+        toolUseID: options.toolUseID,
+      };
+    }
+  }
+
   private getCliResolver(): QoderCliResolver {
     return this.options.cliResolver ?? new QoderCliResolver();
   }
@@ -776,19 +942,55 @@ export class QoderChatRuntime implements ChatRuntime {
 function createSingleTurnInput(
   prompt: string,
   userMessageId: string,
+  images?: ImageAttachment[],
+): AsyncIterable<SDKUserMessage> {
+  return createQoderInputStream(
+    buildQoderUserMessage(prompt, userMessageId, images),
+  );
+}
+
+function createQoderInputStream(
+  message: SDKUserMessage,
 ): AsyncIterable<SDKUserMessage> {
   return {
     async *[Symbol.asyncIterator]() {
-      yield {
-        message: {
-          role: 'user',
-          content: [{ text: prompt, type: 'text' }],
-        },
-        parent_tool_use_id: null,
-        type: 'user',
-        uuid: userMessageId,
-      };
+      yield message;
     },
+  };
+}
+
+export function buildQoderUserMessage(
+  prompt: string,
+  userMessageId: string,
+  images?: ImageAttachment[],
+  priority?: SDKUserMessage['priority'],
+): SDKUserMessage {
+  const content: Array<{ type: string; [key: string]: unknown }> = [
+    { text: prompt, type: 'text' },
+  ];
+  for (const image of images ?? []) {
+    if (!image.data) {
+      continue;
+    }
+    content.push({
+      source: {
+        data: image.data,
+        media_type: image.mediaType,
+        type: 'base64',
+      },
+      type: 'image',
+    });
+  }
+
+  return {
+    message: {
+      role: 'user',
+      content,
+    },
+    parent_tool_use_id: null,
+    ...(priority ? { priority } : {}),
+    type: 'user',
+    uuid: userMessageId,
   };
 }
 
@@ -828,4 +1030,8 @@ function parseToolInput(raw: string): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error';
 }

@@ -1,7 +1,5 @@
 import {
-  DEFAULT_REASONING_VALUE,
   formatReasoningValueLabel,
-  resolvePreferredReasoningDefault,
 } from '../../../core/providers/reasoning';
 import type {
   ProviderChatUIConfig,
@@ -16,6 +14,7 @@ import {
   getQoderAvailableReasoningEfforts,
   isQoderModelSelectionId,
   resolveQoderContextWindow,
+  resolveQoderDefaultReasoningEffort,
 } from '../models';
 import { getQoderProviderSettings, updateQoderProviderSettings } from '../settings';
 
@@ -77,12 +76,11 @@ export const qoderChatUIConfig: ProviderChatUIConfig = {
     if (efforts.length === 0) {
       return '';
     }
-    const availableValues = efforts.map(effort => effort.value);
     const preferred = qoderSettings.preferredEffortByModel[rawId];
-    if (preferred && availableValues.includes(preferred)) {
-      return preferred;
-    }
-    return resolvePreferredReasoningDefault(availableValues, DEFAULT_REASONING_VALUE);
+    return resolveQoderDefaultReasoningEffort(
+      getSelectedQoderModel(model, settings),
+      preferred,
+    );
   },
 
   getContextWindowSize(model, customLimits = {}, settings = {}): number {
@@ -109,7 +107,15 @@ export const qoderChatUIConfig: ProviderChatUIConfig = {
     if (!isRecord(settings) || !isQoderModelSelectionId(model)) {
       return;
     }
-    settings.effortLevel = this.getDefaultReasoningValue(model, settings);
+    const availableValues = new Set(
+      this.getReasoningOptions(model, settings).map(option => option.value),
+    );
+    const current = typeof settings.effortLevel === 'string'
+      ? settings.effortLevel.trim()
+      : '';
+    settings.effortLevel = availableValues.has(current)
+      ? current
+      : this.getDefaultReasoningValue(model, settings);
   },
 
   applyReasoningSelection(model, value, settings): void {

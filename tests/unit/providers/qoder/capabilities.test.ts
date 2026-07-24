@@ -6,7 +6,7 @@ describe('QODER_PROVIDER_CAPABILITIES', () => {
       providerId: 'qoder',
       reasoningControl: 'effort',
       supportsFork: true,
-      supportsImageAttachments: false,
+      supportsImageAttachments: true,
       supportsInstructionMode: true,
       supportsMcpTools: true,
       supportsNativeHistory: true,
@@ -14,7 +14,7 @@ describe('QODER_PROVIDER_CAPABILITIES', () => {
       supportsPlanMode: true,
       supportsProviderCommands: true,
       supportsRewind: true,
-      supportsTurnSteer: false,
+      supportsTurnSteer: true,
     });
   });
 });

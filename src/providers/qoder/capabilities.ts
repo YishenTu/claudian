@@ -8,9 +8,9 @@ export const QODER_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Objec
   supportsRewind: true,
   supportsFork: true,
   supportsProviderCommands: true,
-  supportsImageAttachments: false,
+  supportsImageAttachments: true,
   supportsInstructionMode: true,
   supportsMcpTools: true,
-  supportsTurnSteer: false,
+  supportsTurnSteer: true,
   reasoningControl: 'effort',
 });

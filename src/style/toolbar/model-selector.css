@@ -77,6 +77,10 @@
   opacity: 0.7;
 }
 
+.claudian-model-option:not(.selected) .claudian-model-provider-icon * {
+  fill: currentColor;
+}
+
 .claudian-model-option {
   display: flex;
   align-items: center;

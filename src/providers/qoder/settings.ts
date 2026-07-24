@@ -9,6 +9,7 @@ import {
 import {
   decodeQoderModelId,
   encodeQoderModelId,
+  getQoderAvailableReasoningEfforts,
   normalizeQoderDiscoveredModels,
   type QoderDiscoveredModel,
 } from './models';
@@ -239,7 +240,10 @@ function normalizeQoderPreferredEfforts(
   }
 
   const supportedByModel = new Map(
-    discoveredModels.map(model => [model.rawId, new Set(model.reasoningEfforts.map(effort => effort.value))] as const),
+    discoveredModels.map(model => [
+      model.rawId,
+      new Set(getQoderAvailableReasoningEfforts(model).map(effort => effort.value)),
+    ] as const),
   );
   const normalized: Record<string, string> = {};
   for (const [rawId, effort] of Object.entries(value as Record<string, unknown>)) {

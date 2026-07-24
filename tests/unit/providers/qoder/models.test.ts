@@ -2,6 +2,7 @@ import {
   decodeQoderModelId,
   encodeQoderModelId,
   findQoderModel,
+  getQoderAvailableReasoningEfforts,
   isQoderModelSelectionId,
   normalizeQoderDiscoveredModels,
   QODER_CONTEXT_WINDOW_FALLBACK,
@@ -46,6 +47,7 @@ describe('Qoder model metadata', () => {
       },
     ])).toEqual([{
       contextWindow: QODER_CONTEXT_WINDOW_FALLBACK,
+      contextWindowIsAuthoritative: false,
       displayName: 'Claude Sonnet v2',
       isDefault: false,
       rawId: 'claude-sonnet',
@@ -62,6 +64,7 @@ describe('Qoder model metadata', () => {
       modelId: 'planner',
     }])).toEqual([{
       contextWindow: 128_000,
+      contextWindowIsAuthoritative: true,
       defaultEffort: 'high',
       displayName: 'planner',
       isDefault: false,
@@ -95,6 +98,61 @@ describe('Qoder model metadata', () => {
     ]);
   });
 
+  it('preserves normalized reasoning metadata when settings normalize it again', () => {
+    const discovered = normalizeQoderDiscoveredModels([{
+      defaultEffort: 'high',
+      efforts: ['xhigh', 'high', 'low', 'max', 'medium'],
+      isReasoning: true,
+      rawId: 'ultimate',
+      thinking_config: {
+        enabled: {
+          efforts: {
+            high: { description: 'High thinking intensity' },
+          },
+        },
+      },
+    }]);
+
+    expect(normalizeQoderDiscoveredModels(discovered)).toEqual(discovered);
+  });
+
+  it('offers the CLI reasoning levels when a routed model omits explicit efforts', () => {
+    const [model] = normalizeQoderDiscoveredModels([{
+      displayName: 'Auto',
+      rawId: 'auto',
+    }]);
+
+    expect(getQoderAvailableReasoningEfforts(model)).toEqual([
+      { label: 'Low', value: 'low' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'High', value: 'high' },
+      { label: 'Max', value: 'max' },
+    ]);
+    expect(getQoderAvailableReasoningEfforts(null)).toEqual([]);
+  });
+
+  it('does not invent reasoning controls for models without reasoning metadata', () => {
+    const [model] = normalizeQoderDiscoveredModels([{
+      displayName: 'Lite',
+      rawId: 'lite',
+    }]);
+
+    expect(getQoderAvailableReasoningEfforts(model)).toEqual([]);
+  });
+
+  it('preserves an authoritative context window across settings normalization', () => {
+    const discovered = normalizeQoderDiscoveredModels([{
+      defaultContextWindow: 180_000,
+      rawId: 'auto',
+    }]);
+
+    expect(normalizeQoderDiscoveredModels(discovered)).toEqual(discovered);
+    expect(discovered[0]).toMatchObject({
+      contextWindow: 180_000,
+      contextWindowIsAuthoritative: true,
+    });
+  });
+
   it('drops entries without a resolvable raw id', () => {
     expect(normalizeQoderDiscoveredModels([{ displayName: 'No id' }, 'nope', null])).toEqual([]);
     expect(normalizeQoderDiscoveredModels('not-an-array')).toEqual([]);
@@ -119,6 +177,15 @@ describe('Qoder model metadata', () => {
       reasoningEfforts: [{ label: 'Low', value: 'low' }],
     })).toBe('low');
     expect(resolveQoderDefaultReasoningEffort(null)).toBe('high');
+  });
+
+  it('uses a declared default with fallback reasoning levels', () => {
+    const [model] = normalizeQoderDiscoveredModels([{
+      defaultEffort: 'medium',
+      rawId: 'performance',
+    }]);
+
+    expect(resolveQoderDefaultReasoningEffort(model)).toBe('medium');
   });
 
   it('resolves context from metadata, custom limits, then the shared fallback', () => {

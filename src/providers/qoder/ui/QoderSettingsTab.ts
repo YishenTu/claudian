@@ -157,6 +157,9 @@ export const qoderSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName('Models').setHeading();
     renderQoderModelPicker(container, context, settingsBag);
 
+    new Setting(container).setName('Agent skills').setHeading();
+    context.renderAgentSkillSettings(container, 'qoder');
+
     new Setting(container).setName('Commands').setHeading();
     context.renderHiddenProviderCommandSetting(container, 'qoder', {
       name: 'Hidden Qoder commands and skills',

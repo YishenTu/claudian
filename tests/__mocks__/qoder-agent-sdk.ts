@@ -18,6 +18,8 @@ export const accessToken = jest.fn((token: string) => ({
 }));
 
 export const qodercliAuth = jest.fn(() => ({ type: 'qodercli' as const }));
+export const forkSession = jest.fn().mockResolvedValue({ sessionId: 'forked-session' });
+export const getSessionMessages = jest.fn().mockResolvedValue([]);
 
 export const mockQueryHandle = {
   initializationResult: jest.fn().mockResolvedValue({
@@ -27,6 +29,11 @@ export const mockQueryHandle = {
     plugins: [],
   }),
   getAvailableModels: jest.fn().mockResolvedValue([]),
+  getContextUsage: jest.fn().mockResolvedValue({
+    maxTokens: 0,
+    percentage: 0,
+    totalTokens: 0,
+  }),
   supportedCommands: jest.fn().mockResolvedValue([]),
   supportedAgents: jest.fn().mockResolvedValue([]),
   interrupt: jest.fn().mockResolvedValue(undefined),

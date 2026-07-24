@@ -25,7 +25,7 @@ describe('agent skill host invalidation', () => {
 
     expect(plugin.agentSkillResourceGeneration).toBe(1);
     expect(invalidateProviderResources).toHaveBeenCalledWith(
-      ['codex', 'grok', 'pi', 'opencode'],
+      ['codex', 'grok', 'qoder', 'pi', 'opencode'],
       1,
     );
     expect(refresh).toHaveBeenCalledTimes(1);

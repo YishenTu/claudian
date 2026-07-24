@@ -9,6 +9,7 @@ import { qoderSettingsReconciler } from './env/QoderSettingsReconciler';
 import { QoderConversationHistoryService } from './history/QoderConversationHistoryService';
 import { QoderChatRuntime } from './runtime/QoderChatRuntime';
 import { getQoderProviderSettings, updateQoderProviderSettings } from './settings';
+import { qoderSubagentAdapter } from './subagentAdapter';
 import { qoderChatUIConfig } from './ui/QoderChatUIConfig';
 
 export const qoderProviderRegistration: ProviderModule = {
@@ -33,6 +34,7 @@ export const qoderProviderRegistration: ProviderModule = {
       return false;
     },
   },
+  subagentAdapter: qoderSubagentAdapter,
   taskResultInterpreter: new QoderTaskResultInterpreter(),
   workspace: qoderWorkspaceRegistration,
 };

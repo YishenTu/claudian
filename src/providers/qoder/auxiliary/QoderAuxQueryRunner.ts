@@ -40,7 +40,7 @@ export class QoderAuxQueryRunner implements AuxQueryRunner {
           text = extractAssistantText(message.message.content) || text;
           config.onTextChunk?.(text);
         } else if (message.type === 'stream_event') {
-          const deltaText = extractStreamDeltaText(message.event);
+          const deltaText = extractQoderStreamDeltaText(message.event);
           if (deltaText) {
             text += deltaText;
             config.onTextChunk?.(text);
@@ -75,7 +75,7 @@ function extractAssistantText(content: unknown): string {
     .join('');
 }
 
-function extractStreamDeltaText(event: unknown): string {
+export function extractQoderStreamDeltaText(event: unknown): string {
   if (!event || typeof event !== 'object' || Array.isArray(event)) {
     return '';
   }
@@ -87,14 +87,8 @@ function extractStreamDeltaText(event: unknown): string {
   }
 
   const deltaRecord = delta as Record<string, unknown>;
-  if (typeof deltaRecord.text === 'string') {
+  if (deltaRecord.type === 'text_delta' && typeof deltaRecord.text === 'string') {
     return deltaRecord.text;
-  }
-  if (typeof deltaRecord.partial_json === 'string') {
-    return deltaRecord.partial_json;
-  }
-  if (typeof deltaRecord.thinking === 'string') {
-    return deltaRecord.thinking;
   }
   return '';
 }

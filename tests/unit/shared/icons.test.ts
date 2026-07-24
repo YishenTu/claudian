@@ -5,6 +5,7 @@ import {
   OPENAI_PROVIDER_ICON,
   OPENCODE_PROVIDER_ICON,
   PI_PROVIDER_ICON,
+  QODER_PROVIDER_ICON,
 } from '@/shared/icons';
 
 describe('createProviderIconSvg', () => {
@@ -52,5 +53,18 @@ describe('createProviderIconSvg', () => {
     expect(paths).toHaveLength(2);
     expect(paths[0].getAttribute('fill-rule')).toBe('evenodd');
     expect(paths.every(path => path.getAttribute('fill') === 'currentColor')).toBe(true);
+  });
+
+  it('renders the official Qoder mark with its two brand greens', () => {
+    const svg = createProviderIconSvg(QODER_PROVIDER_ICON, {
+      dataProvider: 'qoder',
+      parent: document.body,
+    });
+
+    expect(svg.getAttribute('viewBox')).toBe('0 0 56 56');
+    const paths = Array.from(svg.querySelectorAll('path'));
+    expect(paths).toHaveLength(2);
+    expect(paths.map(path => path.getAttribute('fill'))).toEqual(['#27BD51', '#2ADB5C']);
+    expect(paths[1].getAttribute('fill-rule')).toBe('evenodd');
   });
 });

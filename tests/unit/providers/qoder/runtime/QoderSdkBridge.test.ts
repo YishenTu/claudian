@@ -23,7 +23,7 @@ describe('buildQoderBaseOptions reasoning effort', () => {
     await loadQoderSdkModule();
   });
 
-  it('forwards reasoning effort through pull-mode resolveModel', () => {
+  it('forwards reasoning effort through pull-mode model parameters', () => {
     const options = buildQoderBaseOptions(createContext({
       model: 'qoder/reasoner',
       reasoningEffort: 'high',

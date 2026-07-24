@@ -13,6 +13,7 @@ export interface QoderReasoningEffort {
 
 export interface QoderDiscoveredModel {
   contextWindow: number;
+  contextWindowIsAuthoritative: boolean;
   defaultEffort?: string;
   description?: string;
   displayName: string;
@@ -25,6 +26,12 @@ export interface QoderDiscoveredModel {
 
 export const QODER_MODEL_PREFIX = 'qoder/';
 export const QODER_CONTEXT_WINDOW_FALLBACK = 200_000;
+export const QODER_REASONING_EFFORT_FALLBACKS: readonly QoderReasoningEffort[] = [
+  { label: 'Low', value: 'low' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'High', value: 'high' },
+  { label: 'Max', value: 'max' },
+];
 
 export function encodeQoderModelId(rawModelId: string): string {
   const normalized = rawModelId.trim();
@@ -81,14 +88,22 @@ export function findQoderModel(
 export function getQoderAvailableReasoningEfforts(
   model: QoderDiscoveredModel | null | undefined,
 ): readonly QoderReasoningEffort[] {
-  return model?.reasoningEfforts ?? [];
+  if (!model) {
+    return [];
+  }
+  if (model.reasoningEfforts.length > 0) {
+    return model.reasoningEfforts;
+  }
+  return model.rawId === 'auto' || model.supportsReasoning || Boolean(model.defaultEffort)
+    ? QODER_REASONING_EFFORT_FALLBACKS
+    : [];
 }
 
 export function resolveQoderDefaultReasoningEffort(
   model: QoderDiscoveredModel | null | undefined,
   preferredEffort?: string,
 ): string {
-  const availableValues = model?.reasoningEfforts.map(effort => effort.value) ?? [];
+  const availableValues = getQoderAvailableReasoningEfforts(model).map(effort => effort.value);
   const normalizedPreferred = preferredEffort?.trim();
   if (normalizedPreferred && availableValues.includes(normalizedPreferred)) {
     return normalizedPreferred;
@@ -136,25 +151,23 @@ function normalizeQoderDiscoveredModel(value: unknown): QoderDiscoveredModel | n
   ) || rawId;
   const description = readTrimmedString(record.description);
   const icon = readTrimmedString(record.icon);
-  const contextWindow = readPositiveNumber(
+  const nativeContextWindow = readPositiveNumber(
     record.defaultContextWindow ?? record.maxInputTokens,
-  ) ?? QODER_CONTEXT_WINDOW_FALLBACK;
-  const rawEfforts = Array.isArray(record.efforts) ? record.efforts : [];
+  );
+  const persistedContextWindow = readPositiveNumber(record.contextWindow);
+  const contextWindow = nativeContextWindow
+    ?? persistedContextWindow
+    ?? QODER_CONTEXT_WINDOW_FALLBACK;
+  const contextWindowIsAuthoritative = typeof record.contextWindowIsAuthoritative === 'boolean'
+    ? record.contextWindowIsAuthoritative
+    : nativeContextWindow !== undefined;
   const effortDescriptions = readEffortDescriptions(record.thinking_config);
-  const reasoningEfforts = rawEfforts
-    .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-    .map((value) => {
-      const description = effortDescriptions[value];
-      return {
-        ...(description ? { description } : {}),
-        label: formatReasoningValueLabel(value),
-        value,
-      };
-    });
+  const reasoningEfforts = normalizeReasoningEfforts(record, effortDescriptions);
   const defaultEffort = readTrimmedString(record.defaultEffort);
 
   return {
     contextWindow,
+    contextWindowIsAuthoritative,
     ...(defaultEffort ? { defaultEffort } : {}),
     ...(description ? { description } : {}),
     displayName,
@@ -162,12 +175,54 @@ function normalizeQoderDiscoveredModel(value: unknown): QoderDiscoveredModel | n
     isDefault: record.isDefault === true,
     rawId,
     reasoningEfforts,
-    supportsReasoning: record.isReasoning === true || reasoningEfforts.length > 0,
+    supportsReasoning: record.isReasoning === true
+      || record.supportsReasoning === true
+      || reasoningEfforts.length > 0,
   };
 }
 
 function readTrimmedString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeReasoningEfforts(
+  record: Record<string, unknown>,
+  effortDescriptions: Record<string, string>,
+): QoderReasoningEffort[] {
+  if (Array.isArray(record.efforts)) {
+    return record.efforts.flatMap((entry) => {
+      const value = readTrimmedString(entry);
+      if (!value) {
+        return [];
+      }
+      const description = effortDescriptions[value];
+      return [{
+        ...(description ? { description } : {}),
+        label: formatReasoningValueLabel(value),
+        value,
+      }];
+    });
+  }
+
+  if (!Array.isArray(record.reasoningEfforts)) {
+    return [];
+  }
+  return record.reasoningEfforts.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return [];
+    }
+    const normalized = entry as Record<string, unknown>;
+    const value = readTrimmedString(normalized.value);
+    if (!value) {
+      return [];
+    }
+    const description = readTrimmedString(normalized.description);
+    return [{
+      ...(description ? { description } : {}),
+      label: formatReasoningValueLabel(value),
+      value,
+    }];
+  });
 }
 
 /**

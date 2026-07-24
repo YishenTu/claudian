@@ -16,7 +16,7 @@ import { QoderAgentMentionProvider } from '../agents/QoderAgentMentionProvider';
 import { QoderCommandCatalog } from '../commands/QoderCommandCatalog';
 import { QoderCliResolver } from '../runtime/QoderCliResolver';
 import { collectQoderRuntimeSnapshot } from '../runtime/QoderSdkBridge';
-import { updateQoderProviderSettings } from '../settings';
+import { getQoderProviderSettings, updateQoderProviderSettings } from '../settings';
 import { qoderSettingsTabRenderer } from '../ui/QoderSettingsTab';
 import { QoderRuntimeCommandLoader } from './QoderRuntimeCommandLoader';
 
@@ -83,11 +83,14 @@ export async function createQoderWorkspaceServices(
         commandCatalog.setRuntimeCommands(next.commands);
         agentMentionProvider.setAgents(next.agents);
         await plugin.mutateSettings((settings) => {
+          const current = getQoderProviderSettings(settings);
           updateQoderProviderSettings(settings, {
             discoveredModels: next.models,
-            visibleModels: next.models
-              .filter(model => model.isDefault)
-              .map(model => `qoder/${model.rawId}`),
+            visibleModels: resolveQoderRefreshedVisibleModels(
+              current.discoveredModels,
+              current.visibleModels,
+              next.models,
+            ),
           });
         });
         return { changed: true };
@@ -108,4 +111,19 @@ export const qoderWorkspaceRegistration: ProviderWorkspaceRegistration<QoderWork
 
 export function getQoderWorkspaceServices(): QoderWorkspaceServices {
   return ProviderWorkspaceRegistry.requireServices('qoder') as QoderWorkspaceServices;
+}
+
+export function resolveQoderRefreshedVisibleModels(
+  previousModels: readonly { rawId: string }[],
+  previousVisibleModels: readonly string[],
+  nextModels: readonly { isDefault: boolean; rawId: string }[],
+): string[] {
+  const availableIds = new Set(nextModels.map(model => `qoder/${model.rawId}`));
+  const preserved = previousVisibleModels.filter(model => availableIds.has(model));
+  if (previousModels.length > 0 && preserved.length > 0) {
+    return preserved;
+  }
+  return nextModels
+    .filter(model => model.isDefault)
+    .map(model => `qoder/${model.rawId}`);
 }
