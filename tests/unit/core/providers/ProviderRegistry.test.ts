@@ -1,6 +1,10 @@
 import '@/providers';
 
-import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+import {
+  TEST_CODEX_CATALOG,
+  TEST_CODEX_MODEL,
+  TEST_CODEX_MODEL_LABEL,
+} from '@test/helpers/codexModels';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -190,6 +194,22 @@ describe('ProviderRegistry', () => {
       ProviderRegistry.getTitleGenerationModelOptions(enabledSettings)
         .some(option => option.value === TEST_CODEX_MODEL),
     ).toBe(true);
+  });
+
+  it('prefixes title generation model labels with their provider names', () => {
+    const options = ProviderRegistry.getTitleGenerationModelOptions({
+      providerConfigs: {
+        codex: {
+          discoveredModels: TEST_CODEX_CATALOG,
+          enabled: true,
+        },
+      },
+    });
+
+    expect(options.find(option => option.value === TEST_CODEX_MODEL)?.label)
+      .toBe(`Codex: ${TEST_CODEX_MODEL_LABEL}`);
+    expect(options.find(option => option.value === 'sonnet')?.label)
+      .toBe('Claude: Sonnet');
   });
 
   it('returns the display name from provider registration metadata', () => {

@@ -45,8 +45,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
             await context.plugin.mutateSettings((settings) => {
               ProviderSettingsCoordinator.applyProviderEnablement(settings, 'pi', value);
             });
-            context.refreshModelSelectors();
-            context.refreshTitleGenerationModelOptions();
+            context.notifyProviderModelOptionsChanged('pi');
           })
       );
 
@@ -89,7 +88,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
         });
         workspace?.cliResolver?.reset();
       });
-      context.refreshModelSelectors();
+      context.notifyProviderModelOptionsChanged('pi');
     };
 
     new Setting(container)
@@ -175,7 +174,7 @@ function renderPiModelPicker(
             visibleModels: normalizedVisibleModels,
           });
         });
-        context.plugin.notifyProviderChatOptionsChanged('pi');
+        context.notifyProviderModelOptionsChanged('pi');
       }
       return result.models.length > 0 ? 'loaded' : 'empty';
     },
@@ -185,7 +184,7 @@ function renderPiModelPicker(
       await context.plugin.mutateSettings((settings) => {
         updatePiProviderSettings(settings, { modelAliases });
       });
-      context.refreshModelSelectors();
+      context.notifyProviderModelOptionsChanged('pi');
     },
     async onSelectedIdsChange(visibleModels) {
       const current = getPiProviderSettings(settingsBag);
@@ -197,7 +196,7 @@ function renderPiModelPicker(
       await context.plugin.mutateSettings((settings) => {
         updatePiProviderSettings(settings, { visibleModels: normalized });
       });
-      context.refreshModelSelectors();
+      context.notifyProviderModelOptionsChanged('pi');
     },
     providerName: 'Pi',
     settingDescription: 'Choose which Pi models are available in the chat selector. Filter by provider or type to search. Pi chat is unavailable when no models are selected.',
