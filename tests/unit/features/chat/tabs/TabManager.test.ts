@@ -2533,7 +2533,9 @@ describe('TabManager - Provider Command Catalog', () => {
     const catalogConfig = options.getProviderCatalogConfig();
     await catalogConfig.discovery.load();
 
-    expect(readyService.getSupportedCommands).toHaveBeenCalledTimes(1);
+    expect(readyService.getSupportedCommands).toHaveBeenCalledWith(
+      expect.any(AbortSignal),
+    );
     expect(claudeCatalog.setRuntimeCommands).toHaveBeenCalledWith(supportedCommands);
     expect(claudeCatalog.listDropdownEntries).toHaveBeenCalledWith(expect.objectContaining({
       includeBuiltIns: false,

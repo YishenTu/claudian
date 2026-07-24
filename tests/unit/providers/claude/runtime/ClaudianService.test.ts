@@ -933,6 +933,30 @@ describe('ClaudianService', () => {
       expect(commands).toEqual([]);
     });
 
+    it('should close a stuck persistent query when command discovery is cancelled', async () => {
+      const supportedCommands = new Promise<Array<{
+        name: string;
+        description: string;
+        argumentHint: string;
+      }>>(() => undefined);
+      const mockQuery = {
+        interrupt: jest.fn().mockResolvedValue(undefined),
+        supportedCommands: jest.fn().mockReturnValue(supportedCommands),
+      };
+      (service as any).persistentQuery = mockQuery;
+      (service as any).queryAbortController = new AbortController();
+      const closeSpy = jest.spyOn(service, 'closePersistentQuery');
+      const abortController = new AbortController();
+
+      const commands = service.getSupportedCommands(abortController.signal);
+      abortController.abort();
+
+      await expect(commands).rejects.toMatchObject({ name: 'AbortError' });
+      expect(closeSpy).toHaveBeenCalledWith('command discovery aborted');
+      expect(mockQuery.interrupt).toHaveBeenCalledTimes(1);
+      expect((service as any).persistentQuery).toBeNull();
+    });
+
     it('should ignore late supportedCommands results from a stale query', async () => {
       let resolveStaleCommands: (commands: Array<{ name: string; description: string; argumentHint: string }>) => void;
       const staleCommandsPromise = new Promise<Array<{ name: string; description: string; argumentHint: string }>>((resolve) => {

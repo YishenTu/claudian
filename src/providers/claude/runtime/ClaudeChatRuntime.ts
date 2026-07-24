@@ -1859,24 +1859,45 @@ export class ClaudianService implements ChatRuntime {
    * supportedCommands() call if the cache is empty (e.g., dropdown opened
    * before the first init event).
    */
-  async getSupportedCommands(): Promise<SlashCommand[]> {
+  async getSupportedCommands(signal?: AbortSignal): Promise<SlashCommand[]> {
+    signal?.throwIfAborted();
     if (this.cachedSdkCommands.length > 0) {
       return this.cachedSdkCommands;
     }
     if (!this.persistentQuery) {
       return [];
     }
-    return this.fetchAndCacheCommands(this.persistentQuery);
+    return this.fetchAndCacheCommands(this.persistentQuery, signal);
   }
 
   /**
    * Fetches commands from the SDK and caches them. Called on system/init
    * (fire-and-forget) and as a fallback from getSupportedCommands().
    */
-  private async fetchAndCacheCommands(query: Query | null): Promise<SlashCommand[]> {
+  private async fetchAndCacheCommands(
+    query: Query | null,
+    signal?: AbortSignal,
+  ): Promise<SlashCommand[]> {
     if (!query) return [];
+    signal?.throwIfAborted();
+    let onAbort: (() => void) | null = null;
+    const aborted = signal
+      ? new Promise<never>((_resolve, reject) => {
+        onAbort = () => {
+          if (this.persistentQuery === query) {
+            this.closePersistentQuery('command discovery aborted');
+          }
+          reject(signal.reason ?? new Error('Claude command discovery aborted'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+      })
+      : null;
     try {
-      const sdkCommands: SDKSlashCommand[] = await query.supportedCommands();
+      const commandRequest = query.supportedCommands();
+      const sdkCommands: SDKSlashCommand[] = aborted
+        ? await Promise.race([commandRequest, aborted])
+        : await commandRequest;
+      signal?.throwIfAborted();
       const mappedCommands = sdkCommands.map((cmd) => ({
         id: `sdk:${cmd.name}`,
         name: cmd.name,
@@ -1891,7 +1912,12 @@ export class ClaudianService implements ChatRuntime {
       this.cachedSdkCommands = mappedCommands;
       return this.cachedSdkCommands;
     } catch {
+      signal?.throwIfAborted();
       return [];
+    } finally {
+      if (onAbort && signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
     }
   }
 

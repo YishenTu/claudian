@@ -934,7 +934,9 @@ export class TabManager implements TabManagerInterface {
     ) {
       hasRuntimeSnapshot = true;
       result = normalizeProviderCommandDiscoveryItems(
-        await targetService.getSupportedCommands(),
+        await (signal
+          ? targetService.getSupportedCommands(signal)
+          : targetService.getSupportedCommands()),
       );
       signal?.throwIfAborted();
     }
