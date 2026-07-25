@@ -1,0 +1,21 @@
+{"type":"metadata","timestamp":1700000000,"message":{"type":"Meta","payload":{"version":1}}}
+{"timestamp":1700000000,"message":{"type":"TurnBegin","payload":{"user_input":"Inspect the sample file."}}}
+{"timestamp":1700000001,"message":{"type":"ThinkPart","payload":{"think":"I will read it."}}}
+{"timestamp":1700000002,"message":{"type":"TextPart","payload":{"text":"Reading now. "}}}
+{"timestamp":1700000003,"message":{"type":"TextPart","payload":{"text":"One moment."}}}
+{"timestamp":1700000004,"message":{"type":"ToolCall","payload":{"id":"tool-1","function":{"name":"Read","arguments":"{\"path\":"}}}}
+{"timestamp":1700000005,"message":{"type":"ToolCallPart","payload":{"arguments_part":"\"notes/sample.md\"}"}}}
+{"timestamp":1700000006,"message":{"type":"ToolResult","payload":{"tool_call_id":"tool-1","return_value":{"output":"sample text","is_error":false}}}}
+{"timestamp":1700000007,"message":{"type":"ToolCall","payload":{"id":"tool-2","function":{"name":"Bash","arguments":"{\"command\":\"rm -rf /\"}"}}}}
+{"timestamp":1700000008,"message":{"type":"ToolResult","payload":{"tool_call_id":"tool-2","return_value":{"message":"permission denied","is_error":true}}}}
+{"timestamp":1700000009,"message":{"type":"TextPart","payload":{"text":"Done."}}}
+{"timestamp":1700000010,"message":{"type":"TurnEnd","payload":{}}}
+
+not json at all
+{"timestamp":"oops","message":{"type":"TextPart","payload":{"text":"dropped outside a turn"}}}
+{"timestamp":1700000011,"message":{"type":"UnknownType","payload":{"future":true}}}
+{"timestamp":1700000100,"message":{"type":"SteerInput","payload":{"user_input":[{"type":"text","text":"Stop now."},{"type":"text","text":"Really."}]}}}
+{"timestamp":1700000101,"message":{"type":"TextPart","payload":{"text":"Stopping."}}}
+{"timestamp":1700000102,"message":{"type":"StepInterrupted","payload":{}}}
+{"timestamp":1700000200,"message":{"type":"TurnBegin","payload":{"user_input":"Incomplete turn"}}}
+{"timestamp":1700000201,"message":{"type":"TextPart","payload":{"text":"Partial answer"}}}
