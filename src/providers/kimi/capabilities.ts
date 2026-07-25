@@ -4,7 +4,7 @@ export const KIMI_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object
   providerId: 'kimi',
   supportsPersistentRuntime: true,
   supportsNativeHistory: true,
-  supportsPlanMode: false,
+  supportsPlanMode: true,
   supportsRewind: false,
   supportsFork: false,
   supportsProviderCommands: true,
@@ -12,5 +12,5 @@ export const KIMI_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object
   supportsInstructionMode: false,
   supportsMcpTools: true,
   supportsTurnSteer: false,
-  reasoningControl: 'none',
+  reasoningControl: 'effort',
 });

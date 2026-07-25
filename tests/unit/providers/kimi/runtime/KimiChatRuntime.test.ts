@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { JsonRpcErrorResponse } from '@/providers/acp';
+import { getKimiDiscoveryState } from '@/providers/kimi/discoveryState';
 import { KimiChatRuntime } from '@/providers/kimi/runtime/KimiChatRuntime';
 
 function createMockPlugin(overrides: Record<string, unknown> = {}): any {
@@ -12,6 +13,7 @@ function createMockPlugin(overrides: Record<string, unknown> = {}): any {
     },
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/usr/local/bin/kimi'),
     manifest: { version: '0.0.0-test' },
+    notifyProviderChatOptionsChanged: jest.fn(),
     saveSettings: jest.fn().mockResolvedValue(undefined),
     settings: {
       model: '',
@@ -26,6 +28,59 @@ function createMockPlugin(overrides: Record<string, unknown> = {}): any {
     await plugin.saveSettings();
   });
   return plugin;
+}
+
+function modelConfigOption(currentValue: string): Record<string, unknown> {
+  return {
+    type: 'select',
+    category: 'model',
+    id: 'model',
+    name: 'Model',
+    currentValue,
+    options: [
+      { value: 'kimi-for-coding', name: 'Kimi Coding', description: 'Kimi coding model' },
+      { value: 'kimi-k2', name: 'K2' },
+    ],
+  };
+}
+
+function thinkingConfigOption(currentValue: string): Record<string, unknown> {
+  return {
+    type: 'select',
+    category: 'thought_level',
+    id: 'thinking',
+    name: 'Thinking',
+    currentValue,
+    options: [
+      { value: 'off', name: 'Off' },
+      { value: 'medium', name: 'Medium' },
+      { value: 'high', name: 'High' },
+    ],
+  };
+}
+
+function modeConfigOption(currentValue: string): Record<string, unknown> {
+  return {
+    type: 'select',
+    category: 'mode',
+    id: 'mode',
+    name: 'Mode',
+    currentValue,
+    options: [
+      { value: 'default', name: 'Default' },
+      { value: 'plan', name: 'Plan' },
+      { value: 'auto', name: 'Auto' },
+      { value: 'yolo', name: 'YOLO' },
+    ],
+  };
+}
+
+async function drainQuery(runtime: KimiChatRuntime, text = 'Hi'): Promise<unknown[]> {
+  const chunks: unknown[] = [];
+  for await (const chunk of runtime.query(runtime.prepareTurn({ text }))) {
+    chunks.push(chunk);
+  }
+  return chunks;
 }
 
 describe('KimiChatRuntime', () => {
@@ -68,10 +123,7 @@ describe('KimiChatRuntime', () => {
       }),
     };
 
-    const chunks: unknown[] = [];
-    for await (const chunk of runtime.query(runtime.prepareTurn({ text: 'Hi' }))) {
-      chunks.push(chunk);
-    }
+    const chunks = await drainQuery(runtime);
 
     expect(chunks).toContainEqual({ content: 'Hello from Kimi', type: 'text' });
     expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
@@ -93,23 +145,20 @@ describe('KimiChatRuntime', () => {
             sessionUpdate: 'tool_call',
             status: 'completed',
             title: 'Bash',
-            toolCallId: '1b3bd402-e93c-4c4e-a6aa/tool-1',
+            toolCallId: '3:tool-1',
           },
         });
         return { stopReason: 'end_turn' };
       }),
     };
 
-    const chunks: unknown[] = [];
-    for await (const chunk of runtime.query(runtime.prepareTurn({ text: 'Run ls' }))) {
-      chunks.push(chunk);
-    }
+    const chunks = await drainQuery(runtime, 'Run ls');
 
     expect(chunks).toContainEqual(expect.objectContaining({
       id: 'tool-1',
       type: 'tool_use',
     }));
-    expect(JSON.stringify(chunks)).not.toContain('1b3bd402');
+    expect(JSON.stringify(chunks)).not.toContain('3:tool-1');
   });
 
   it('ignores notifications from a superseded ACP connection generation', async () => {
@@ -141,8 +190,8 @@ describe('KimiChatRuntime', () => {
     runtime.setApprovalCallback(approvalCallback);
     const request = {
       options: [
-        { kind: 'allow_once', name: 'Approve', optionId: 'approve' },
-        { kind: 'allow_always', name: 'Approve for session', optionId: 'approve_for_session' },
+        { kind: 'allow_once', name: 'Approve once', optionId: 'approve_once' },
+        { kind: 'allow_always', name: 'Approve for this session', optionId: 'approve_always' },
         { kind: 'reject_once', name: 'Reject', optionId: 'reject' },
       ],
       sessionId: 'session-1',
@@ -155,7 +204,7 @@ describe('KimiChatRuntime', () => {
     };
 
     await expect((runtime as any).handlePermissionRequest(request)).resolves.toEqual({
-      outcome: { optionId: 'approve', outcome: 'selected' },
+      outcome: { optionId: 'approve_once', outcome: 'selected' },
     });
     expect(approvalCallback).toHaveBeenCalledWith(
       'Bash',
@@ -163,8 +212,8 @@ describe('KimiChatRuntime', () => {
       'Kimi wants to use Bash.',
       {
         decisionOptions: [
-          { decision: 'allow', label: 'Approve', value: 'approve' },
-          { decision: 'allow-always', label: 'Approve for session', value: 'approve_for_session' },
+          { decision: 'allow', label: 'Approve once', value: 'approve_once' },
+          { decision: 'allow-always', label: 'Approve for this session', value: 'approve_always' },
           { label: 'Reject', value: 'reject' },
         ],
       },
@@ -172,7 +221,7 @@ describe('KimiChatRuntime', () => {
 
     approvalCallback.mockResolvedValue('allow-always');
     await expect((runtime as any).handlePermissionRequest(request)).resolves.toEqual({
-      outcome: { optionId: 'approve_for_session', outcome: 'selected' },
+      outcome: { optionId: 'approve_always', outcome: 'selected' },
     });
 
     approvalCallback.mockResolvedValue('deny');
@@ -181,11 +230,53 @@ describe('KimiChatRuntime', () => {
     });
   });
 
+  it('surfaces plan_review options as distinct choices that round-trip their own ids', async () => {
+    const runtime = new KimiChatRuntime(createMockPlugin());
+    const approvalCallback = jest.fn().mockResolvedValue({ type: 'select-option', value: 'plan_opt_1' });
+    runtime.setApprovalCallback(approvalCallback);
+    const request = {
+      options: [
+        { kind: 'allow_once', name: 'Option A', optionId: 'plan_opt_0' },
+        { kind: 'allow_once', name: 'Option B', optionId: 'plan_opt_1' },
+        { kind: 'reject_once', name: 'Revise', optionId: 'plan_revise' },
+        { kind: 'reject_once', name: 'Reject and Exit', optionId: 'plan_reject_and_exit' },
+      ],
+      sessionId: 'session-1',
+      toolCall: {
+        content: [{ type: 'content', content: { type: 'text', text: '# Plan\n\nDo things.' } }],
+        title: 'ExitPlanMode',
+        toolCallId: '3:tool-9',
+      },
+    };
+
+    await expect((runtime as any).handlePermissionRequest(request)).resolves.toEqual({
+      outcome: { optionId: 'plan_opt_1', outcome: 'selected' },
+    });
+    expect(approvalCallback).toHaveBeenCalledWith(
+      'Exit Plan Mode',
+      {},
+      '# Plan\n\nDo things.',
+      {
+        decisionOptions: [
+          { label: 'Option A', value: 'plan_opt_0' },
+          { label: 'Option B', value: 'plan_opt_1' },
+          { label: 'Revise', value: 'plan_revise' },
+          { label: 'Reject and Exit', value: 'plan_reject_and_exit' },
+        ],
+      },
+    );
+
+    approvalCallback.mockResolvedValue('cancel');
+    await expect((runtime as any).handlePermissionRequest(request)).resolves.toEqual({
+      outcome: { outcome: 'cancelled' },
+    });
+  });
+
   it('cancels permission requests when no approval callback is installed', async () => {
     const runtime = new KimiChatRuntime(createMockPlugin());
 
     await expect((runtime as any).handlePermissionRequest({
-      options: [{ kind: 'allow_once', name: 'Approve', optionId: 'approve' }],
+      options: [{ kind: 'allow_once', name: 'Approve once', optionId: 'approve_once' }],
       sessionId: 'session-1',
       toolCall: { title: 'Read', toolCallId: 'tool-1' },
     })).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
@@ -207,10 +298,7 @@ describe('KimiChatRuntime', () => {
       )),
     };
 
-    const chunks: unknown[] = [];
-    for await (const chunk of runtime.query(runtime.prepareTurn({ text: 'Hi' }))) {
-      chunks.push(chunk);
-    }
+    const chunks = await drainQuery(runtime);
 
     expect(chunks).toEqual([
       {
@@ -231,10 +319,7 @@ describe('KimiChatRuntime', () => {
       ),
     };
 
-    const chunks: unknown[] = [];
-    for await (const chunk of runtime.query(runtime.prepareTurn({ text: 'Hi' }))) {
-      chunks.push(chunk);
-    }
+    const chunks = await drainQuery(runtime);
 
     expect(chunks).toEqual([
       {
@@ -290,5 +375,218 @@ describe('KimiChatRuntime', () => {
     const changePromise = restarted.discoverSupportedCommands(5_000);
     restarted.syncConversationState({ providerState: {}, sessionId: 'session-b' });
     await expect(changePromise).rejects.toThrow('Kimi command discovery context changed.');
+  });
+
+  it('mirrors discovered models, thinking options, and modes from session config options', async () => {
+    const plugin = createMockPlugin();
+    const runtime = new KimiChatRuntime(plugin);
+    const permissionModeSync = jest.fn();
+    runtime.setPermissionModeSyncCallback(permissionModeSync);
+
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [
+        modelConfigOption('kimi-k2'),
+        thinkingConfigOption('medium'),
+        modeConfigOption('plan'),
+      ],
+    });
+
+    expect(runtime.getDiscoveredModels()).toEqual([
+      { description: 'Kimi coding model', label: 'Kimi Coding', rawId: 'kimi-for-coding' },
+      { label: 'K2', rawId: 'kimi-k2' },
+    ]);
+    expect((runtime as any).currentSessionModelId).toBe('kimi-k2');
+    expect((runtime as any).currentSessionModeId).toBe('plan');
+    expect((runtime as any).currentThinkingConfigId).toBe('thinking');
+    expect((runtime as any).currentThinkingValue).toBe('medium');
+    expect(permissionModeSync).toHaveBeenCalledWith('plan');
+
+    const discovery = getKimiDiscoveryState(plugin.settings);
+    expect(discovery.thinkingOptionsByModel).toEqual({
+      'kimi-k2': [
+        { label: 'Off', value: 'off' },
+        { label: 'Medium', value: 'medium' },
+        { label: 'High', value: 'high' },
+      ],
+    });
+    expect(discovery.currentThinkingByModel).toEqual({ 'kimi-k2': 'medium' });
+    expect(plugin.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('kimi');
+  });
+
+  it('drops the thinking mirror when the session model stops advertising thought levels', async () => {
+    const plugin = createMockPlugin();
+    const runtime = new KimiChatRuntime(plugin);
+
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [modelConfigOption('kimi-k2'), thinkingConfigOption('medium')],
+    });
+    expect(getKimiDiscoveryState(plugin.settings).thinkingOptionsByModel).not.toEqual({});
+
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [modelConfigOption('kimi-k2')],
+    });
+
+    expect((runtime as any).currentThinkingConfigId).toBeNull();
+    expect((runtime as any).currentThinkingValue).toBeNull();
+    expect(getKimiDiscoveryState(plugin.settings).thinkingOptionsByModel).toEqual({});
+    expect(getKimiDiscoveryState(plugin.settings).currentThinkingByModel).toEqual({});
+  });
+
+  it('applies config_option_update notifications to the discovered session state', async () => {
+    const plugin = createMockPlugin();
+    const runtime = new KimiChatRuntime(plugin);
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-1' });
+    (runtime as any).loadedSessionId = 'session-1';
+
+    await (runtime as any).handleSessionNotification({
+      sessionId: 'session-1',
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: [
+          modelConfigOption('kimi-for-coding'),
+          thinkingConfigOption('high'),
+          modeConfigOption('default'),
+        ],
+      },
+    });
+
+    expect((runtime as any).currentSessionModelId).toBe('kimi-for-coding');
+    expect((runtime as any).currentThinkingValue).toBe('high');
+    expect(getKimiDiscoveryState(plugin.settings).thinkingOptionsByModel['kimi-for-coding'])
+      .toHaveLength(3);
+  });
+
+  it('switches the session model through session/set_config_option', async () => {
+    const plugin = createMockPlugin();
+    plugin.settings.model = 'kimi:kimi-k2';
+    const runtime = new KimiChatRuntime(plugin);
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-1' });
+    (runtime as any).loadedSessionId = 'session-1';
+    (runtime as any).ensureReady = jest.fn().mockResolvedValue(true);
+    const setConfigOption = jest.fn().mockResolvedValue({
+      configOptions: [modelConfigOption('kimi-k2'), thinkingConfigOption('medium')],
+    });
+    (runtime as any).connection = {
+      setConfigOption,
+      prompt: jest.fn(async () => ({ stopReason: 'end_turn' })),
+    };
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [modelConfigOption('kimi-for-coding'), thinkingConfigOption('medium')],
+    });
+
+    await drainQuery(runtime);
+
+    expect(setConfigOption).toHaveBeenCalledWith({
+      configId: 'model',
+      sessionId: 'session-1',
+      type: 'select',
+      value: 'kimi-k2',
+    });
+    expect((runtime as any).currentSessionModelId).toBe('kimi-k2');
+  });
+
+  it('switches the thinking effort through session/set_config_option', async () => {
+    const plugin = createMockPlugin();
+    const runtime = new KimiChatRuntime(plugin);
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-1' });
+    (runtime as any).loadedSessionId = 'session-1';
+    (runtime as any).ensureReady = jest.fn().mockResolvedValue(true);
+    const setConfigOption = jest.fn().mockResolvedValue({
+      configOptions: [modelConfigOption('kimi-for-coding'), thinkingConfigOption('high')],
+    });
+    (runtime as any).connection = {
+      setConfigOption,
+      prompt: jest.fn(async () => ({ stopReason: 'end_turn' })),
+    };
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [modelConfigOption('kimi-for-coding'), thinkingConfigOption('medium')],
+    });
+    (runtime as any).getProviderSettings = () => ({ effortLevel: 'high', model: '' });
+
+    await drainQuery(runtime);
+
+    expect(setConfigOption).toHaveBeenCalledWith({
+      configId: 'thinking',
+      sessionId: 'session-1',
+      type: 'select',
+      value: 'high',
+    });
+    expect((runtime as any).currentThinkingValue).toBe('high');
+  });
+
+  it('does not write an effort that the session never advertised', async () => {
+    const runtime = new KimiChatRuntime(createMockPlugin());
+    const setConfigOption = jest.fn();
+    (runtime as any).connection = { setConfigOption };
+    (runtime as any).currentThinkingConfigId = 'thinking';
+    (runtime as any).currentThinkingValues = new Set(['off', 'on']);
+    (runtime as any).currentThinkingValue = 'off';
+    (runtime as any).getProviderSettings = () => ({ effortLevel: 'xhigh', model: '' });
+
+    await (runtime as any).applySelectedEffort('session-1');
+
+    expect(setConfigOption).not.toHaveBeenCalled();
+  });
+
+  it('enters plan mode through session/set_mode when the permission mode is plan', async () => {
+    const plugin = createMockPlugin();
+    plugin.settings.permissionMode = 'plan';
+    const runtime = new KimiChatRuntime(plugin);
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-1' });
+    (runtime as any).loadedSessionId = 'session-1';
+    (runtime as any).ensureReady = jest.fn().mockResolvedValue(true);
+    const setMode = jest.fn().mockResolvedValue({});
+    (runtime as any).connection = {
+      setMode,
+      prompt: jest.fn(async () => ({ stopReason: 'end_turn' })),
+    };
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [modelConfigOption('kimi-for-coding'), modeConfigOption('default')],
+    });
+
+    await drainQuery(runtime);
+
+    expect(setMode).toHaveBeenCalledWith({ modeId: 'plan', sessionId: 'session-1' });
+    expect((runtime as any).currentSessionModeId).toBe('plan');
+  });
+
+  it('leaves plan mode through session/set_mode when the permission mode returns to normal', async () => {
+    const plugin = createMockPlugin();
+    plugin.settings.permissionMode = 'normal';
+    const runtime = new KimiChatRuntime(plugin);
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-1' });
+    (runtime as any).loadedSessionId = 'session-1';
+    (runtime as any).ensureReady = jest.fn().mockResolvedValue(true);
+    const setMode = jest.fn().mockResolvedValue({});
+    (runtime as any).connection = {
+      setMode,
+      prompt: jest.fn(async () => ({ stopReason: 'end_turn' })),
+    };
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [modelConfigOption('kimi-for-coding'), modeConfigOption('plan')],
+    });
+
+    await drainQuery(runtime);
+
+    expect(setMode).toHaveBeenCalledWith({ modeId: 'default', sessionId: 'session-1' });
+    expect((runtime as any).currentSessionModeId).toBe('default');
+  });
+
+  it('skips mode writes when the session never advertised modes', async () => {
+    const plugin = createMockPlugin();
+    plugin.settings.permissionMode = 'plan';
+    const runtime = new KimiChatRuntime(plugin);
+    runtime.syncConversationState({ providerState: {}, sessionId: 'session-1' });
+    (runtime as any).loadedSessionId = 'session-1';
+    (runtime as any).ensureReady = jest.fn().mockResolvedValue(true);
+    const setMode = jest.fn();
+    (runtime as any).connection = {
+      setMode,
+      prompt: jest.fn(async () => ({ stopReason: 'end_turn' })),
+    };
+
+    await drainQuery(runtime);
+
+    expect(setMode).not.toHaveBeenCalled();
   });
 });

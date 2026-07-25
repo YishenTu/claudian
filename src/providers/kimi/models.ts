@@ -4,8 +4,11 @@ export interface KimiDiscoveredModel {
   rawId: string;
 }
 
-// Kimi ACP advertises thinking as a model variant with this suffix on the base model id.
-export const KIMI_THINKING_MODEL_SUFFIX = ',thinking';
+export interface KimiThinkingOption {
+  description?: string;
+  label: string;
+  value: string;
+}
 
 const KIMI_MODEL_PREFIX = 'kimi:';
 
@@ -25,17 +28,6 @@ export function decodeKimiModelId(model: string): string | null {
 
   const rawModelId = model.slice(KIMI_MODEL_PREFIX.length).trim();
   return rawModelId || null;
-}
-
-export function isKimiThinkingModelId(rawModelId: string): boolean {
-  return rawModelId.trim().endsWith(KIMI_THINKING_MODEL_SUFFIX);
-}
-
-export function resolveKimiBaseModelRawId(rawModelId: string): string {
-  const normalized = rawModelId.trim();
-  return isKimiThinkingModelId(normalized)
-    ? normalized.slice(0, -KIMI_THINKING_MODEL_SUFFIX.length)
-    : normalized;
 }
 
 export function normalizeKimiDiscoveredModels(value: unknown): KimiDiscoveredModel[] {
@@ -70,4 +62,59 @@ export function normalizeKimiDiscoveredModels(value: unknown): KimiDiscoveredMod
   }
 
   return normalized;
+}
+
+export function normalizeKimiThinkingOptions(value: unknown): KimiThinkingOption[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalized: KimiThinkingOption[] = [];
+  const seen = new Set<string>();
+  for (const entry of value as unknown[]) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+
+    const optionValue = typeof record.value === 'string' ? record.value.trim() : '';
+    const label = typeof record.label === 'string' ? record.label.trim() : optionValue;
+    const description = typeof record.description === 'string'
+      ? record.description.trim()
+      : '';
+
+    if (!optionValue || seen.has(optionValue)) {
+      continue;
+    }
+
+    seen.add(optionValue);
+    normalized.push({
+      ...(description ? { description } : {}),
+      label: label || optionValue,
+      value: optionValue,
+    });
+  }
+
+  return normalized;
+}
+
+// Pick the effort the UI should show: the user's stored preference first, then the
+// session-reported level, then 'off' (the only level every non-always-thinking
+// picker carries), then the first advertised row.
+export function resolveKimiThinkingLevel(
+  options: KimiThinkingOption[],
+  preferredValue?: string | null,
+  currentValue?: string | null,
+): string {
+  const values = new Set(options.map((option) => option.value));
+  if (preferredValue && values.has(preferredValue)) {
+    return preferredValue;
+  }
+  if (currentValue && values.has(currentValue)) {
+    return currentValue;
+  }
+  if (values.has('off')) {
+    return 'off';
+  }
+  return options[0]?.value ?? '';
 }

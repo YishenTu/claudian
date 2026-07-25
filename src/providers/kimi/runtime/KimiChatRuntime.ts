@@ -48,6 +48,8 @@ import {
   type AcpWriteTextFileRequest,
   buildAcpUsageInfo,
   extractAcpSessionModelState,
+  extractAcpSessionModeState,
+  extractAcpSessionThoughtLevelState,
   JsonRpcErrorResponse,
   resolveAcpLoadSessionId,
 } from '../../acp';
@@ -56,6 +58,7 @@ import {
   mapAcpApprovalDecision,
 } from '../../acp/AcpPermissionAdapter';
 import { KIMI_PROVIDER_CAPABILITIES } from '../capabilities';
+import { getKimiDiscoveryState, updateKimiDiscoveryState } from '../discoveryState';
 import { resolveKimiSessionDirectory } from '../history/KimiHistoryPathResolver';
 import {
   decodeKimiModelId,
@@ -63,7 +66,12 @@ import {
   isKimiModelSelectionId,
   type KimiDiscoveredModel,
   normalizeKimiDiscoveredModels,
+  normalizeKimiThinkingOptions,
 } from '../models';
+import {
+  resolveKimiModeForPermissionMode,
+  resolvePermissionModeForKimiMode,
+} from '../modes';
 import { stripKimiToolCallPrefix } from '../normalization/kimiToolCallId';
 import { getKimiProviderSettings } from '../settings';
 import { getKimiState, type KimiProviderState } from '../types';
@@ -130,6 +138,7 @@ export class KimiChatRuntime implements ChatRuntime {
 
   private activeTurn: ActiveTurn | null = null;
   private approvalCallback: ApprovalCallback | null = null;
+  private availableModeIds = new Set<string>();
   private connection: AcpClientConnection | null = null;
   private connectionGeneration = 0;
   private conversationId: string | null = null;
@@ -137,11 +146,16 @@ export class KimiChatRuntime implements ChatRuntime {
   private contextUsage: AcpUsageUpdate | null = null;
   private currentLaunchCommand: string | null = null;
   private currentLaunchKey: string | null = null;
+  private currentSessionModeId: string | null = null;
   private currentSessionModelId: string | null = null;
   private currentConversationModel: string | null = null;
+  private currentThinkingConfigId: string | null = null;
+  private currentThinkingValue: string | null = null;
+  private currentThinkingValues = new Set<string>();
   private currentTurnMetadata: ChatTurnMetadata = {};
   private discoveredModels: KimiDiscoveredModel[] = [];
   private lastSessionError: unknown = null;
+  private lastSyncedPermissionMode: string | null = null;
   private loadedSessionId: string | null = null;
   private permissionModeSyncCallback: ((mode: string) => void) | null = null;
   private process: AcpSubprocess | null = null;
@@ -208,7 +222,7 @@ export class KimiChatRuntime implements ChatRuntime {
         new Error('Kimi command discovery context changed.'),
       );
       this.pendingSupportedCommands.clear();
-      this.currentSessionModelId = null;
+      this.resetSessionConfigState();
       this.sessionInvalidated = false;
       this.clearSupportedCommands();
     }
@@ -404,7 +418,9 @@ export class KimiChatRuntime implements ChatRuntime {
 
     const activeTurn = this.activeTurn;
     try {
+      await this.applySelectedMode(sessionId, conversationGeneration);
       await this.applySelectedModel(sessionId, queryOptions, conversationGeneration);
+      await this.applySelectedEffort(sessionId, conversationGeneration);
       if (!this.isConversationCurrent(conversationGeneration)) {
         throw new Error('Kimi conversation changed before the turn started.');
       }
@@ -748,7 +764,7 @@ export class KimiChatRuntime implements ChatRuntime {
     this.connectionGeneration += 1;
     this.setReady(false);
     this.settleActiveTurn();
-    this.currentSessionModelId = null;
+    this.resetSessionConfigState();
     if (!options?.preserveCommandWaiters) {
       this.rejectSupportedCommandWaiters(new Error('Kimi runtime stopped.'));
     }
@@ -847,6 +863,37 @@ export class KimiChatRuntime implements ChatRuntime {
       : undefined;
   }
 
+  private resolveSelectedModeId(): string {
+    const providerSettings = this.getProviderSettings();
+    return resolveKimiModeForPermissionMode(providerSettings.permissionMode);
+  }
+
+  private async applySelectedMode(
+    sessionId: string,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<void> {
+    if (!this.connection || this.availableModeIds.size === 0) {
+      return;
+    }
+
+    const selectedModeId = this.resolveSelectedModeId();
+    if (
+      !this.availableModeIds.has(selectedModeId)
+      || selectedModeId === this.currentSessionModeId
+    ) {
+      return;
+    }
+
+    await this.connection.setMode({
+      modeId: selectedModeId,
+      sessionId,
+    });
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      return;
+    }
+    this.currentSessionModeId = selectedModeId;
+  }
+
   private async applySelectedModel(
     sessionId: string,
     queryOptions?: ChatRuntimeQueryOptions,
@@ -861,35 +908,189 @@ export class KimiChatRuntime implements ChatRuntime {
       return;
     }
 
-    // `session/set_model` also persists the selection as kimi's default model in
-    // ~/.kimi/config.toml (kimi-side behavior; the CLI asserts the default config location).
-    await this.connection.setModel({
-      modelId: selectedRawModelId,
+    const response = await this.connection.setConfigOption({
+      configId: 'model',
       sessionId,
+      type: 'select',
+      value: selectedRawModelId,
     });
     if (!this.isConversationCurrent(conversationGeneration)) {
       return;
     }
     this.currentSessionModelId = selectedRawModelId;
+    await this.syncSessionConfigState({
+      configOptions: response.configOptions,
+    }, conversationGeneration);
   }
 
-  private syncSessionModelState(params: {
+  private resolveSelectedEffortValue(): string | null {
+    const providerSettings = this.getProviderSettings();
+    const selectedEffort = typeof providerSettings.effortLevel === 'string'
+      ? providerSettings.effortLevel.trim()
+      : '';
+    if (!selectedEffort) {
+      return null;
+    }
+
+    return this.currentThinkingValues.has(selectedEffort) ? selectedEffort : null;
+  }
+
+  private async applySelectedEffort(
+    sessionId: string,
+    conversationGeneration = this.conversationGeneration,
+  ): Promise<void> {
+    if (!this.connection || !this.currentThinkingConfigId) {
+      return;
+    }
+
+    const selectedEffort = this.resolveSelectedEffortValue();
+    if (!selectedEffort || selectedEffort === this.currentThinkingValue) {
+      return;
+    }
+
+    const response = await this.connection.setConfigOption({
+      configId: this.currentThinkingConfigId,
+      sessionId,
+      type: 'select',
+      value: selectedEffort,
+    });
+    if (!this.isConversationCurrent(conversationGeneration)) {
+      return;
+    }
+    this.currentThinkingValue = selectedEffort;
+    await this.syncSessionConfigState({
+      configOptions: response.configOptions,
+    }, conversationGeneration);
+  }
+
+  private async syncSessionConfigState(params: {
     configOptions?: AcpSessionConfigOption[] | null;
     models?: AcpSessionModelState | null;
-  }): void {
-    const acpState = extractAcpSessionModelState(params);
-    if (acpState.currentModelId) {
-      this.currentSessionModelId = acpState.currentModelId;
+  }, conversationGeneration?: number): Promise<void> {
+    if (
+      conversationGeneration !== undefined
+      && !this.isConversationCurrent(conversationGeneration)
+    ) {
+      return;
     }
-    if (acpState.availableModels.length > 0) {
+
+    const modelState = extractAcpSessionModelState(params);
+    if (modelState.currentModelId) {
+      this.currentSessionModelId = modelState.currentModelId;
+    }
+    if (modelState.availableModels.length > 0) {
       this.discoveredModels = normalizeKimiDiscoveredModels(
-        acpState.availableModels.map((model) => ({
+        modelState.availableModels.map((model) => ({
           ...(model.description ? { description: model.description } : {}),
           label: model.name,
           rawId: model.id,
         })),
       );
     }
+
+    const thoughtLevelState = extractAcpSessionThoughtLevelState(params);
+    const thinkingOptions = normalizeKimiThinkingOptions(
+      thoughtLevelState.availableLevels.map((level) => ({
+        ...(level.description ? { description: level.description } : {}),
+        label: level.name,
+        value: level.id,
+      })),
+    );
+    this.currentThinkingConfigId = thinkingOptions.length > 0
+      ? thoughtLevelState.configId
+      : null;
+    this.currentThinkingValue = thinkingOptions.length > 0
+      ? thoughtLevelState.currentLevel
+      : null;
+    this.currentThinkingValues = new Set(thinkingOptions.map((option) => option.value));
+
+    const modeState = extractAcpSessionModeState(params);
+    if (modeState.availableModes.length > 0) {
+      this.availableModeIds = new Set(modeState.availableModes.map((mode) => mode.id));
+    }
+    if (modeState.currentModeId) {
+      this.currentSessionModeId = modeState.currentModeId;
+      this.emitPermissionModeSync(modeState.currentModeId);
+    }
+
+    await this.mirrorThinkingDiscovery(
+      modelState.currentModelId,
+      thinkingOptions,
+      thoughtLevelState.currentLevel,
+      conversationGeneration,
+    );
+  }
+
+  // Thinking options are per-model and only advertised for thinking-capable models,
+  // so the mirror keys them by the session's current model id.
+  private async mirrorThinkingDiscovery(
+    currentRawModelId: string | null,
+    thinkingOptions: ReturnType<typeof normalizeKimiThinkingOptions>,
+    currentThinkingLevel: string | null,
+    conversationGeneration?: number,
+  ): Promise<void> {
+    if (!currentRawModelId) {
+      return;
+    }
+
+    const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
+    const discovery = getKimiDiscoveryState(settingsBag);
+    const thinkingOptionsByModel = { ...discovery.thinkingOptionsByModel };
+    const currentThinkingByModel = { ...discovery.currentThinkingByModel };
+    if (thinkingOptions.length > 0) {
+      thinkingOptionsByModel[currentRawModelId] = thinkingOptions;
+      if (currentThinkingLevel) {
+        currentThinkingByModel[currentRawModelId] = currentThinkingLevel;
+      } else {
+        delete currentThinkingByModel[currentRawModelId];
+      }
+    } else {
+      delete thinkingOptionsByModel[currentRawModelId];
+      delete currentThinkingByModel[currentRawModelId];
+    }
+
+    const changed = updateKimiDiscoveryState(settingsBag, {
+      currentThinkingByModel,
+      thinkingOptionsByModel,
+    });
+    if (
+      !changed
+      || (
+        conversationGeneration !== undefined
+        && !this.isConversationCurrent(conversationGeneration)
+      )
+    ) {
+      return;
+    }
+    this.plugin.notifyProviderChatOptionsChanged('kimi');
+  }
+
+  private emitPermissionModeSync(modeId: string): void {
+    const permissionMode = resolvePermissionModeForKimiMode(modeId);
+    if (
+      !permissionMode
+      || permissionMode === this.lastSyncedPermissionMode
+      || !this.permissionModeSyncCallback
+    ) {
+      return;
+    }
+
+    this.lastSyncedPermissionMode = permissionMode;
+    try {
+      this.permissionModeSyncCallback(permissionMode);
+    } catch {
+      // Non-critical UI sync callback.
+    }
+  }
+
+  private resetSessionConfigState(): void {
+    this.currentSessionModelId = null;
+    this.currentSessionModeId = null;
+    this.availableModeIds = new Set();
+    this.currentThinkingConfigId = null;
+    this.currentThinkingValue = null;
+    this.currentThinkingValues = new Set();
+    this.lastSyncedPermissionMode = null;
   }
 
   private settleActiveTurn(error?: Error): void {
@@ -931,10 +1132,10 @@ export class KimiChatRuntime implements ChatRuntime {
       this.sessionId = response.sessionId;
       this.sessionCwds.set(response.sessionId, cwd);
       this.publishPendingSupportedCommands(response.sessionId);
-      this.syncSessionModelState({
+      await this.syncSessionConfigState({
         configOptions: response.configOptions ?? null,
         models: response.models ?? null,
-      });
+      }, conversationGeneration);
       return response.sessionId;
     } catch (error) {
       this.lastSessionError = error;
@@ -970,10 +1171,10 @@ export class KimiChatRuntime implements ChatRuntime {
       this.loadedSessionId = loadedSessionId;
       this.sessionId = loadedSessionId;
       this.sessionCwds.set(loadedSessionId, cwd);
-      this.syncSessionModelState({
+      await this.syncSessionConfigState({
         configOptions: response?.configOptions ?? null,
         models: response?.models ?? null,
-      });
+      }, conversationGeneration);
       return true;
     } catch (error) {
       this.lastSessionError = error;
@@ -1016,6 +1217,19 @@ export class KimiChatRuntime implements ChatRuntime {
     }
     if (normalized.type === 'commands') {
       this.publishSupportedCommands(normalized.commands);
+      return;
+    }
+
+    if (normalized.type === 'config_options') {
+      await this.syncSessionConfigState({
+        configOptions: normalized.configOptions,
+      });
+      return;
+    }
+
+    if (normalized.type === 'current_mode') {
+      this.currentSessionModeId = normalized.currentModeId;
+      this.emitPermissionModeSync(normalized.currentModeId);
       return;
     }
 
@@ -1071,13 +1285,18 @@ export class KimiChatRuntime implements ChatRuntime {
       return { outcome: { outcome: 'cancelled' } };
     }
 
-    const presentation = buildKimiPermissionPresentation(request);
+    const isPlanReview = request.options.some((option) => isKimiPlanReviewOptionId(option.optionId));
+    const presentation = buildKimiPermissionPresentation(request, isPlanReview);
     const decision = await this.approvalCallback(
       presentation.toolName,
       presentation.input,
       presentation.description,
       {
-        decisionOptions: buildAcpApprovalDecisionOptions(request.options),
+        // Plan-review options are distinct choices (approve / revise / reject-and-exit),
+        // not allow/deny decisions, so each one round-trips its own option id.
+        decisionOptions: isPlanReview
+          ? request.options.map((option) => ({ label: option.name, value: option.optionId }))
+          : buildAcpApprovalDecisionOptions(request.options),
       },
     );
 
@@ -1184,7 +1403,7 @@ export class KimiChatRuntime implements ChatRuntime {
   private clearActiveSession(): void {
     this.sessionId = null;
     this.loadedSessionId = null;
-    this.currentSessionModelId = null;
+    this.resetSessionConfigState();
     this.clearSupportedCommands();
     this.pendingSupportedCommands.clear();
   }
@@ -1247,14 +1466,25 @@ function stripKimiToolCallIds(
   return update;
 }
 
-function buildKimiPermissionPresentation(request: AcpRequestPermissionRequest): {
+// Kimi 0.29.x surfaces ExitPlanMode-style approvals as `plan_review` permission
+// requests whose option ids live in the `plan_*` namespace.
+function isKimiPlanReviewOptionId(optionId: string): boolean {
+  return optionId.startsWith('plan_');
+}
+
+function buildKimiPermissionPresentation(
+  request: AcpRequestPermissionRequest,
+  isPlanReview: boolean,
+): {
   description: string;
   input: Record<string, unknown>;
   toolName: string;
 } {
   const title = request.toolCall.title?.trim() || 'tool';
   const separatorIndex = title.indexOf(':');
-  const toolName = (separatorIndex > 0 ? title.slice(0, separatorIndex) : title).trim() || 'tool';
+  const toolName = isPlanReview
+    ? 'Exit Plan Mode'
+    : (separatorIndex > 0 ? title.slice(0, separatorIndex) : title).trim() || 'tool';
 
   const contentText = (request.toolCall.content ?? [])
     .flatMap((entry) => {
@@ -1273,8 +1503,12 @@ function buildKimiPermissionPresentation(request: AcpRequestPermissionRequest): 
     ? request.toolCall.rawInput as Record<string, unknown>
     : {};
 
+  const fallbackDescription = isPlanReview
+    ? 'Kimi wants to exit plan mode and apply this plan.'
+    : `Kimi wants to use ${toolName}.`;
+
   return {
-    description: contentText || `Kimi wants to use ${toolName}.`,
+    description: contentText || fallbackDescription,
     input,
     toolName,
   };

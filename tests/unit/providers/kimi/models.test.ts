@@ -2,10 +2,9 @@ import {
   decodeKimiModelId,
   encodeKimiModelId,
   isKimiModelSelectionId,
-  isKimiThinkingModelId,
-  KIMI_THINKING_MODEL_SUFFIX,
   normalizeKimiDiscoveredModels,
-  resolveKimiBaseModelRawId,
+  normalizeKimiThinkingOptions,
+  resolveKimiThinkingLevel,
 } from '@/providers/kimi/models';
 
 describe('Kimi model identity', () => {
@@ -16,7 +15,7 @@ describe('Kimi model identity', () => {
     expect(encodeKimiModelId('   ')).toBe('');
     expect(decodeKimiModelId('kimi:kimi-for-coding')).toBe('kimi-for-coding');
     expect(decodeKimiModelId('kimi: kimi-for-coding ')).toBe('kimi-for-coding');
-    expect(decodeKimiModelId(encodeKimiModelId('kimi-k2,thinking'))).toBe('kimi-k2,thinking');
+    expect(decodeKimiModelId(encodeKimiModelId('kimi-k2'))).toBe('kimi-k2');
   });
 
   it('rejects other providers\' selection ids and malformed kimi ids', () => {
@@ -31,19 +30,6 @@ describe('Kimi model identity', () => {
   });
 });
 
-describe('Kimi thinking model variants', () => {
-  it('detects and strips the thinking suffix', () => {
-    expect(KIMI_THINKING_MODEL_SUFFIX).toBe(',thinking');
-    expect(isKimiThinkingModelId('kimi-k2,thinking')).toBe(true);
-    expect(isKimiThinkingModelId(' kimi-k2,thinking ')).toBe(true);
-    expect(isKimiThinkingModelId('kimi-k2')).toBe(false);
-    expect(isKimiThinkingModelId('kimi-k2,thinking-extra')).toBe(false);
-    expect(resolveKimiBaseModelRawId('kimi-k2,thinking')).toBe('kimi-k2');
-    expect(resolveKimiBaseModelRawId('kimi-k2')).toBe('kimi-k2');
-    expect(resolveKimiBaseModelRawId(' kimi-k2,thinking ')).toBe('kimi-k2');
-  });
-});
-
 describe('normalizeKimiDiscoveredModels', () => {
   it('trims, dedupes by raw id, and preserves first-seen order', () => {
     expect(normalizeKimiDiscoveredModels([
@@ -54,11 +40,11 @@ describe('normalizeKimiDiscoveredModels', () => {
       { rawId: '   ' },
       'not-a-record',
       null,
-      { label: 'K2 Thinking', rawId: 'kimi-k2,thinking', description: '' },
+      { label: 'K2 Latest', rawId: 'kimi-k2-latest', description: '' },
     ])).toEqual([
       { description: 'Fast', label: 'Kimi Coding', rawId: 'kimi-for-coding' },
       { label: 'kimi-k2', rawId: 'kimi-k2' },
-      { label: 'K2 Thinking', rawId: 'kimi-k2,thinking' },
+      { label: 'K2 Latest', rawId: 'kimi-k2-latest' },
     ]);
   });
 
@@ -67,5 +53,51 @@ describe('normalizeKimiDiscoveredModels', () => {
     expect(normalizeKimiDiscoveredModels(null)).toEqual([]);
     expect(normalizeKimiDiscoveredModels('kimi-for-coding')).toEqual([]);
     expect(normalizeKimiDiscoveredModels({ rawId: 'kimi-for-coding' })).toEqual([]);
+  });
+});
+
+describe('normalizeKimiThinkingOptions', () => {
+  it('trims, dedupes by value, and preserves first-seen order', () => {
+    expect(normalizeKimiThinkingOptions([
+      { label: ' Off ', value: ' off ', description: ' Disabled ' },
+      { label: 'Duplicate', value: 'off' },
+      { label: '', value: 'high' },
+      { label: 'No value' },
+      { value: '   ' },
+      'not-a-record',
+      null,
+      { label: 'Medium', value: 'medium', description: '' },
+    ])).toEqual([
+      { description: 'Disabled', label: 'Off', value: 'off' },
+      { label: 'high', value: 'high' },
+      { label: 'Medium', value: 'medium' },
+    ]);
+  });
+
+  it('returns an empty list for non-array input', () => {
+    expect(normalizeKimiThinkingOptions(undefined)).toEqual([]);
+    expect(normalizeKimiThinkingOptions(null)).toEqual([]);
+    expect(normalizeKimiThinkingOptions('off')).toEqual([]);
+    expect(normalizeKimiThinkingOptions({ value: 'off' })).toEqual([]);
+  });
+});
+
+describe('resolveKimiThinkingLevel', () => {
+  const options = normalizeKimiThinkingOptions([
+    { label: 'Off', value: 'off' },
+    { label: 'Low', value: 'low' },
+    { label: 'Medium', value: 'medium' },
+    { label: 'High', value: 'high' },
+  ]);
+
+  it('prefers the stored preference, then the session level, then off, then the first row', () => {
+    expect(resolveKimiThinkingLevel(options, 'high', 'low')).toBe('high');
+    expect(resolveKimiThinkingLevel(options, 'bogus', 'low')).toBe('low');
+    expect(resolveKimiThinkingLevel(options, null, 'medium')).toBe('medium');
+    expect(resolveKimiThinkingLevel(options)).toBe('off');
+    expect(resolveKimiThinkingLevel(
+      normalizeKimiThinkingOptions([{ label: 'On', value: 'on' }]),
+    )).toBe('on');
+    expect(resolveKimiThinkingLevel([])).toBe('');
   });
 });

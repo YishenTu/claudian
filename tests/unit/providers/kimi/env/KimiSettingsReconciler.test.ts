@@ -128,7 +128,7 @@ describe('KimiSettingsReconciler', () => {
   it('normalizes kimi:-scoped selections in every shared model slot', () => {
     const settings: Record<string, unknown> = {
       model: '  kimi:kimi-for-coding  ',
-      titleGenerationModel: ' kimi:kimi-k2,thinking ',
+      titleGenerationModel: ' kimi:kimi-k2-latest ',
       savedProviderModel: {
         claude: 'claude-sonnet-4-5',
         kimi: ' kimi:kimi-k2 ',
@@ -138,7 +138,7 @@ describe('KimiSettingsReconciler', () => {
     expect(kimiSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
     expect(settings).toEqual({
       model: 'kimi:kimi-for-coding',
-      titleGenerationModel: 'kimi:kimi-k2,thinking',
+      titleGenerationModel: 'kimi:kimi-k2-latest',
       savedProviderModel: {
         claude: 'claude-sonnet-4-5',
         kimi: 'kimi:kimi-k2',

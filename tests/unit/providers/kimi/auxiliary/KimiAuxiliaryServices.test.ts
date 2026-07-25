@@ -31,13 +31,13 @@ describe('KimiTitleGenerationService', () => {
   });
 
   it('decodes a kimi:-scoped titleGenerationModel for the auxiliary query', async () => {
-    const service = new KimiTitleGenerationService(makeHost('kimi:kimi-k2,thinking'));
+    const service = new KimiTitleGenerationService(makeHost('kimi:kimi-k2-latest'));
     const callback = jest.fn();
 
     await service.generateTitle('conversation-1', 'Summarize this note', callback);
 
     expect(query).toHaveBeenCalledWith(
-      expect.objectContaining({ model: 'kimi-k2,thinking' }),
+      expect.objectContaining({ model: 'kimi-k2-latest' }),
       expect.any(String),
     );
     expect(callback).toHaveBeenCalledWith('conversation-1', {

@@ -4,14 +4,14 @@ describe('KIMI_PROVIDER_CAPABILITIES', () => {
   it('exposes the locked Kimi v1 capability contract', () => {
     expect(KIMI_PROVIDER_CAPABILITIES).toEqual({
       providerId: 'kimi',
-      reasoningControl: 'none',
+      reasoningControl: 'effort',
       supportsFork: false,
       supportsImageAttachments: true,
       supportsInstructionMode: false,
       supportsMcpTools: true,
       supportsNativeHistory: true,
       supportsPersistentRuntime: true,
-      supportsPlanMode: false,
+      supportsPlanMode: true,
       supportsProviderCommands: true,
       supportsRewind: false,
       supportsTurnSteer: false,

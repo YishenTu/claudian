@@ -12,11 +12,12 @@
 
 - `kimi acp` takes no extra flags; launch is `kimi acp` with the vault as cwd plus the settings env projection.
 - One `kimi acp` process hosts multiple sessions. `session/new` uses the vault cwd; `session/load` replays kimi-native history. Live output comes from ACP session notifications; replay stays on the provider protocol.
-- Kimi prefixes tool call ids with `<turn-uuid>/` so re-emitted LLM ids stay unique across turns. `normalization/kimiToolCallId.ts` strips the prefix before the shared ACP normalizer sees the update; never reintroduce prefixed ids into feature code.
-- Permission requests offer exactly `approve`, `approve_for_session`, and `reject`. Map them through the shared `AcpPermissionAdapter`; do not invent per-tool rules.
+- Kimi prefixes tool call ids with `<turnId>:` (integer turn id) so re-emitted LLM ids stay unique across turns. `normalization/kimiToolCallId.ts` strips the numeric prefix before the shared ACP normalizer sees the update (raw `tool_*` ids may contain colons, so only a numeric first segment is stripped); never reintroduce prefixed ids into feature code.
+- Permission requests offer `approve_once`, `approve_always`, and `reject`. Map them through the shared `AcpPermissionAdapter`; do not invent per-tool rules. ExitPlanMode-style approvals arrive as `plan_review` requests whose option ids live in the `plan_*` namespace (`plan_opt_<i>` / `plan_approve` / `plan_revise` / `plan_reject_and_exit`); each option is a distinct choice that round-trips its own id rather than an allow/deny decision.
 - ACP error code `-32000` (AUTH_REQUIRED) means login is missing or expired. Surface the `terminal-auth` metadata command (fall back to `kimi login`) and let the user authenticate in a terminal; never call `authenticate` automatically or persist Kimi credentials.
-- `session/set_model` also persists the selection as kimi's default model in `~/.kimi/config.toml` (kimi-side behavior; the CLI asserts the default config location). Model switching from the UI has this global side effect by design.
-- No plan mode, steer, fork, or rewind. Thinking is exposed by kimi as a `,thinking` model variant, not a reasoning-effort control.
+- `session/new` and `session/load` return `configOptions` (no `models` state): a `model` select (bare aliases), a `thought_level` select (id `thinking`, present only for thinking-capable models, rows `off` + effort levels or legacy `off`/`on`), and a `mode` select (`default`/`plan`/`auto`/`yolo`). Writes go through `session/set_config_option` (model, thinking) and `session/set_mode` (mode); the server pushes `config_option_update` after every change. `session/set_model` exists but is not used here.
+- Mode is session-scoped and resets to `default` on every new/load. The shared permission-mode contract maps `normal`→`default`, `yolo`→`yolo`, `plan`→`plan`; kimi's `auto` has no shared equivalent and never syncs back into the toggle.
+- No steer, fork, or rewind.
 
 ## History and Storage
 
@@ -27,7 +28,8 @@
 ## Commands and Models
 
 - Runtime commands come from ACP `available_commands_update` and flow through `KimiCommandCatalog`; they are not editable or deletable from Claudian.
-- Models come from `session/new` / `session/load` responses via `KimiChatRuntime.getDiscoveredModels()`. The settings tab mirrors the last catalog into the symbol-keyed, non-persisted `discoveryState.ts` so `KimiChatUIConfig` can read it. Selection ids are `kimi:<raw-id>`.
+- Models come from the `configOptions` on `session/new` / `session/load` responses (and `config_option_update` notifications) via `KimiChatRuntime.getDiscoveredModels()`. The settings tab mirrors the last catalog into the symbol-keyed, non-persisted `discoveryState.ts` so `KimiChatUIConfig` can read it; the runtime also mirrors per-model thinking options and current levels there. Selection ids are `kimi:<raw-id>`.
+- Thinking is a reasoning-effort control (`reasoningControl: 'effort'`), not a model variant. The user's per-model effort choice persists in `preferredThinkingByModel`; the session write goes through `session/set_config_option` with the discovered thought-level config id.
 - `visibleModels: null` means the whole discovered catalog is visible; an explicit list restricts it.
 - Command discovery and model-catalog warmup create a real kimi session (`session/new`); there is no in-memory equivalent. History-backed conversations with messages but no session id must stay cold until the first send — warm those on an isolated runtime so the first turn still bootstraps history.
 

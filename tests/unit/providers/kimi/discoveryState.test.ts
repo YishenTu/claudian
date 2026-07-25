@@ -8,7 +8,11 @@ describe('Kimi discovery state', () => {
   it('starts empty and is not persisted as an enumerable settings key', () => {
     const settings: Record<string, unknown> = {};
 
-    expect(getKimiDiscoveryState(settings)).toEqual({ discoveredModels: [] });
+    expect(getKimiDiscoveryState(settings)).toEqual({
+      currentThinkingByModel: {},
+      discoveredModels: [],
+      thinkingOptionsByModel: {},
+    });
     expect(Object.keys(settings)).toEqual([]);
     expect(JSON.stringify(settings)).toBe('{}');
   });
@@ -17,7 +21,7 @@ describe('Kimi discovery state', () => {
     const settings: Record<string, unknown> = {};
     const discovered = [
       { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
-      { description: 'Thinking variant', label: 'K2 Thinking', rawId: 'kimi-k2,thinking' },
+      { description: 'Latest K2', label: 'K2 Latest', rawId: 'kimi-k2-latest' },
     ];
 
     expect(updateKimiDiscoveryState(settings, { discoveredModels: discovered })).toBe(true);
@@ -26,7 +30,7 @@ describe('Kimi discovery state', () => {
     expect(updateKimiDiscoveryState(settings, {
       discoveredModels: [
         { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
-        { description: 'Thinking variant', label: 'K2 Thinking', rawId: 'kimi-k2,thinking' },
+        { description: 'Latest K2', label: 'K2 Latest', rawId: 'kimi-k2-latest' },
       ],
     })).toBe(false);
 
@@ -38,6 +42,49 @@ describe('Kimi discovery state', () => {
     ]);
   });
 
+  it('mirrors thinking options and current levels per model', () => {
+    const settings: Record<string, unknown> = {};
+
+    expect(updateKimiDiscoveryState(settings, {
+      currentThinkingByModel: { 'kimi-k2': 'medium' },
+      thinkingOptionsByModel: {
+        'kimi-k2': [
+          { label: 'Off', value: 'off' },
+          { label: 'Medium', value: 'medium' },
+          { label: 'High', value: 'high' },
+        ],
+      },
+    })).toBe(true);
+    expect(getKimiDiscoveryState(settings)).toEqual({
+      currentThinkingByModel: { 'kimi-k2': 'medium' },
+      discoveredModels: [],
+      thinkingOptionsByModel: {
+        'kimi-k2': [
+          { label: 'Off', value: 'off' },
+          { label: 'Medium', value: 'medium' },
+          { label: 'High', value: 'high' },
+        ],
+      },
+    });
+
+    expect(updateKimiDiscoveryState(settings, {
+      currentThinkingByModel: { 'kimi-k2': 'medium' },
+      thinkingOptionsByModel: {
+        'kimi-k2': [
+          { label: 'Off', value: 'off' },
+          { label: 'Medium', value: 'medium' },
+          { label: 'High', value: 'high' },
+        ],
+      },
+    })).toBe(false);
+
+    expect(updateKimiDiscoveryState(settings, {
+      thinkingOptionsByModel: {},
+    })).toBe(true);
+    expect(getKimiDiscoveryState(settings).thinkingOptionsByModel).toEqual({});
+    expect(getKimiDiscoveryState(settings).currentThinkingByModel).toEqual({ 'kimi-k2': 'medium' });
+  });
+
   it('normalizes incoming snapshots through the shared model rules', () => {
     const settings: Record<string, unknown> = {};
 
@@ -47,26 +94,42 @@ describe('Kimi discovery state', () => {
         { label: 'Duplicate', rawId: 'one' },
         'garbage' as never,
       ],
+      thinkingOptionsByModel: {
+        ' one ': [
+          { label: ' Off ', value: ' off ' },
+          { label: 'Duplicate', value: 'off' },
+          'garbage' as never,
+        ],
+        'empty-options': [],
+      },
     });
 
     expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([
       { label: 'One', rawId: 'one' },
     ]);
+    expect(getKimiDiscoveryState(settings).thinkingOptionsByModel).toEqual({
+      one: [{ label: 'Off', value: 'off' }],
+    });
   });
 
   it('returns defensive copies that cannot mutate the mirrored catalog', () => {
     const settings: Record<string, unknown> = {};
     updateKimiDiscoveryState(settings, {
       discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+      thinkingOptionsByModel: { 'kimi-for-coding': [{ label: 'Off', value: 'off' }] },
     });
 
     const snapshot = getKimiDiscoveryState(settings);
     snapshot.discoveredModels[0].label = 'Mutated';
     snapshot.discoveredModels.push({ label: 'Injected', rawId: 'injected' });
+    snapshot.thinkingOptionsByModel['kimi-for-coding'][0].label = 'Mutated';
 
     expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([
       { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
     ]);
+    expect(getKimiDiscoveryState(settings).thinkingOptionsByModel).toEqual({
+      'kimi-for-coding': [{ label: 'Off', value: 'off' }],
+    });
   });
 
   it('clears the mirrored catalog exactly once', () => {
@@ -75,10 +138,16 @@ describe('Kimi discovery state', () => {
     expect(clearKimiDiscoveryState(settings)).toBe(false);
 
     updateKimiDiscoveryState(settings, {
+      currentThinkingByModel: { 'kimi-k2': 'high' },
       discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+      thinkingOptionsByModel: { 'kimi-k2': [{ label: 'High', value: 'high' }] },
     });
     expect(clearKimiDiscoveryState(settings)).toBe(true);
-    expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([]);
+    expect(getKimiDiscoveryState(settings)).toEqual({
+      currentThinkingByModel: {},
+      discoveredModels: [],
+      thinkingOptionsByModel: {},
+    });
     expect(clearKimiDiscoveryState(settings)).toBe(false);
   });
 });

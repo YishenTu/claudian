@@ -14,6 +14,7 @@ export interface KimiProviderConfig {
   environmentHash: string;
   environmentVariables: string;
   modelAliases: Record<string, string>;
+  preferredThinkingByModel: Record<string, string>;
   visibleModels: string[] | null;
 }
 
@@ -24,6 +25,7 @@ export const DEFAULT_KIMI_PROVIDER_CONFIG: Readonly<KimiProviderConfig> = Object
   environmentHash: '',
   environmentVariables: '',
   modelAliases: {},
+  preferredThinkingByModel: {},
   visibleModels: null,
 });
 
@@ -79,6 +81,23 @@ function normalizeKimiModelAliases(value: unknown): Record<string, string> {
   return normalized;
 }
 
+function normalizeKimiPreferredThinking(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const normalized: Record<string, string> = {};
+  for (const [rawId, level] of Object.entries(value)) {
+    const normalizedRawId = rawId.trim();
+    const normalizedLevel = typeof level === 'string' ? level.trim() : '';
+    if (!normalizedRawId || !normalizedLevel) {
+      continue;
+    }
+    normalized[normalizedRawId] = normalizedLevel;
+  }
+  return normalized;
+}
+
 function readTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -97,6 +116,7 @@ export function normalizeKimiStoredConfig(
       ? config.environmentVariables
       : DEFAULT_KIMI_PROVIDER_CONFIG.environmentVariables,
     modelAliases: normalizeKimiModelAliases(config.modelAliases),
+    preferredThinkingByModel: normalizeKimiPreferredThinking(config.preferredThinkingByModel),
     visibleModels: normalizeKimiVisibleModels(config.visibleModels),
   };
 }
@@ -158,6 +178,9 @@ export function updateKimiProviderSettings(
     modelAliases: updates.modelAliases !== undefined
       ? normalizeKimiModelAliases(updates.modelAliases)
       : current.modelAliases,
+    preferredThinkingByModel: updates.preferredThinkingByModel !== undefined
+      ? normalizeKimiPreferredThinking(updates.preferredThinkingByModel)
+      : current.preferredThinkingByModel,
     visibleModels: updates.visibleModels !== undefined
       ? normalizeKimiVisibleModels(updates.visibleModels)
       : current.visibleModels,

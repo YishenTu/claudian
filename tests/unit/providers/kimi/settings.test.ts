@@ -34,6 +34,7 @@ describe('Kimi settings', () => {
       environmentHash: '',
       environmentVariables: '',
       modelAliases: {},
+      preferredThinkingByModel: {},
       visibleModels: null,
     });
   });
@@ -61,6 +62,11 @@ describe('Kimi settings', () => {
         '': 'dropped',
         'kimi-k2': '   ',
       },
+      preferredThinkingByModel: {
+        ' kimi-k2 ': ' high ',
+        '': 'dropped',
+        'kimi-for-coding': '   ',
+      },
       visibleModels: [
         ' kimi-for-coding ',
         'kimi-for-coding',
@@ -75,6 +81,7 @@ describe('Kimi settings', () => {
       environmentHash: '',
       environmentVariables: '',
       modelAliases: { 'kimi-for-coding': 'Kimi' },
+      preferredThinkingByModel: { 'kimi-k2': 'high' },
       visibleModels: ['kimi-for-coding', 'kimi-k2'],
     });
   });

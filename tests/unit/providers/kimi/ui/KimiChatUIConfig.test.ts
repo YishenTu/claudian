@@ -2,6 +2,7 @@ import {
   getKimiDiscoveryState,
   updateKimiDiscoveryState,
 } from '@/providers/kimi/discoveryState';
+import { getKimiProviderSettings } from '@/providers/kimi/settings';
 import { kimiChatUIConfig } from '@/providers/kimi/ui/KimiChatUIConfig';
 import { KIMI_PROVIDER_ICON } from '@/shared/icons';
 
@@ -16,6 +17,13 @@ const discovered = [
   { label: 'K2', rawId: 'kimi-k2' },
 ];
 
+const k2ThinkingOptions = [
+  { label: 'Off', value: 'off' },
+  { label: 'Low', value: 'low' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'High', value: 'high' },
+];
+
 function makeSettings(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const settings: Record<string, unknown> = {
     providerConfigs: {
@@ -25,7 +33,11 @@ function makeSettings(overrides: Record<string, unknown> = {}): Record<string, u
     },
     ...overrides,
   };
-  updateKimiDiscoveryState(settings, { discoveredModels: discovered });
+  updateKimiDiscoveryState(settings, {
+    currentThinkingByModel: { 'kimi-k2': 'medium' },
+    discoveredModels: discovered,
+    thinkingOptionsByModel: { 'kimi-k2': k2ThinkingOptions },
+  });
   return settings;
 }
 
@@ -89,16 +101,63 @@ describe('KimiChatUIConfig', () => {
     expect(kimiChatUIConfig.getDefaultModel?.(makeSettings())).toBe('kimi:kimi-for-coding');
   });
 
-  it('exposes no reasoning or effort controls', () => {
+  it('exposes discovered thinking options as reasoning effort', () => {
     const settings = makeSettings();
 
-    expect(kimiChatUIConfig.isAdaptiveReasoningModel?.('kimi:kimi-k2,thinking', settings))
+    expect(kimiChatUIConfig.isAdaptiveReasoningModel?.('kimi:kimi-k2', settings)).toBe(true);
+    expect(kimiChatUIConfig.getReasoningOptions?.('kimi:kimi-k2', settings)).toEqual([
+      { description: undefined, label: 'Off', value: 'off' },
+      { description: undefined, label: 'Low', value: 'low' },
+      { description: undefined, label: 'Medium', value: 'medium' },
+      { description: undefined, label: 'High', value: 'high' },
+    ]);
+    expect(kimiChatUIConfig.getDefaultReasoningValue?.('kimi:kimi-k2', settings)).toBe('medium');
+  });
+
+  it('exposes no reasoning controls for models without discovered thinking options', () => {
+    const settings = makeSettings();
+
+    expect(kimiChatUIConfig.isAdaptiveReasoningModel?.('kimi:kimi-for-coding', settings))
       .toBe(false);
-    expect(kimiChatUIConfig.getReasoningOptions?.('kimi:kimi-k2,thinking', settings)).toEqual([]);
-    expect(kimiChatUIConfig.getDefaultReasoningValue?.('kimi:kimi-k2,thinking', settings)).toBe('');
+    expect(kimiChatUIConfig.getReasoningOptions?.('kimi:kimi-for-coding', settings)).toEqual([]);
+    expect(kimiChatUIConfig.getDefaultReasoningValue?.('kimi:kimi-for-coding', settings)).toBe('');
+    expect(kimiChatUIConfig.getDefaultReasoningValue?.('grok/grok-4', settings)).toBe('');
     expect(kimiChatUIConfig.getModeSelector?.(settings)).toBeNull();
-    expect(kimiChatUIConfig.getPermissionModeToggle?.()).toBeNull();
     expect(kimiChatUIConfig.getCustomModelIds?.({})).toEqual(new Set());
+  });
+
+  it('persists reasoning selections per model and drops unsupported values', () => {
+    const settings = makeSettings();
+
+    kimiChatUIConfig.applyReasoningSelection?.('kimi:kimi-k2', 'high', settings);
+    expect(getKimiProviderSettings(settings).preferredThinkingByModel).toEqual({
+      'kimi-k2': 'high',
+    });
+    expect(kimiChatUIConfig.getDefaultReasoningValue?.('kimi:kimi-k2', settings)).toBe('high');
+
+    kimiChatUIConfig.applyReasoningSelection?.('kimi:kimi-k2', 'bogus', settings);
+    expect(getKimiProviderSettings(settings).preferredThinkingByModel).toEqual({});
+
+    expect(() => kimiChatUIConfig.applyReasoningSelection?.('grok/grok-4', 'high', settings))
+      .not.toThrow();
+    expect(() => kimiChatUIConfig.applyReasoningSelection?.('kimi:kimi-k2', 'high', null))
+      .not.toThrow();
+  });
+
+  it('exposes the permission mode toggle with a plan affordance', () => {
+    expect(kimiChatUIConfig.getPermissionModeToggle?.()).toEqual({
+      inactiveValue: 'normal',
+      inactiveLabel: 'Default',
+      activeValue: 'yolo',
+      activeLabel: 'YOLO',
+      planValue: 'plan',
+      planLabel: 'Plan',
+    });
+
+    const settings: Record<string, unknown> = {};
+    kimiChatUIConfig.applyPermissionMode?.('plan', settings);
+    expect(settings.permissionMode).toBe('plan');
+    expect(() => kimiChatUIConfig.applyPermissionMode?.('plan', null)).not.toThrow();
   });
 
   it('resolves context windows from custom limits with a 200k fallback', () => {
@@ -108,22 +167,27 @@ describe('KimiChatUIConfig', () => {
     })).toBe(256_000);
   });
 
-  it('applies kimi model defaults and strips effort state only for kimi models', () => {
-    const settings: Record<string, unknown> = {
+  it('applies kimi model defaults and seeds effort only for thinking-capable models', () => {
+    const settings = makeSettings({
       effortLevel: 'high',
       model: 'grok/grok-4',
-    };
+    });
 
     kimiChatUIConfig.applyModelDefaults?.('kimi:kimi-k2', settings);
-    expect(settings).toEqual({ model: 'kimi:kimi-k2' });
+    expect(settings.model).toBe('kimi:kimi-k2');
+    expect(settings.effortLevel).toBe('medium');
+
+    kimiChatUIConfig.applyModelDefaults?.('kimi:kimi-for-coding', settings);
+    expect(settings.model).toBe('kimi:kimi-for-coding');
+    expect(settings).not.toHaveProperty('effortLevel');
 
     const untouched: Record<string, unknown> = { effortLevel: 'high', model: 'grok/grok-4' };
     kimiChatUIConfig.applyModelDefaults?.('grok/grok-4', untouched);
     expect(untouched).toEqual({ effortLevel: 'high', model: 'grok/grok-4' });
 
     expect(() => kimiChatUIConfig.applyModelDefaults?.('kimi:kimi-k2', null)).not.toThrow();
-    expect(kimiChatUIConfig.normalizeModelVariant?.('kimi:kimi-k2,thinking', {}))
-      .toBe('kimi:kimi-k2,thinking');
+    expect(kimiChatUIConfig.normalizeModelVariant?.('kimi:kimi-k2', {}))
+      .toBe('kimi:kimi-k2');
     expect(kimiChatUIConfig.isDefaultModel?.('kimi:kimi-k2')).toBe(true);
     expect(kimiChatUIConfig.isDefaultModel?.('grok/grok-4')).toBe(false);
   });

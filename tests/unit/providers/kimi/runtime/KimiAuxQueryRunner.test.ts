@@ -122,10 +122,10 @@ describe('KimiAuxQueryRunner', () => {
   it('passes kimi:-scoped and raw auxiliary models through --model', async () => {
     const runner = new KimiAuxQueryRunner(makeHost());
 
-    const scoped = runner.query({ model: 'kimi:kimi-k2,thinking', systemPrompt: 's' }, 'p');
+    const scoped = runner.query({ model: 'kimi:kimi-k2-latest', systemPrompt: 's' }, 'p');
     await flushPromises();
     expect(MockAcpSubprocess).toHaveBeenLastCalledWith(expect.objectContaining({
-      args: ['--print', '--output-format', 'text', '--final-message-only', '--model', 'kimi-k2,thinking'],
+      args: ['--print', '--output-format', 'text', '--final-message-only', '--model', 'kimi-k2-latest'],
     }));
     process.emitClose();
     await scoped;

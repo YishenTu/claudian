@@ -1,14 +1,28 @@
 import type {
   ProviderChatUIConfig,
+  ProviderPermissionModeToggleConfig,
   ProviderReasoningOption,
   ProviderUIOption,
 } from '../../../core/providers/types';
 import { KIMI_PROVIDER_ICON } from '../../../shared/icons';
 import { getKimiDiscoveryState } from '../discoveryState';
-import { encodeKimiModelId, isKimiModelSelectionId } from '../models';
-import { getKimiProviderSettings } from '../settings';
+import {
+  decodeKimiModelId,
+  encodeKimiModelId,
+  isKimiModelSelectionId,
+  resolveKimiThinkingLevel,
+} from '../models';
+import { getKimiProviderSettings, updateKimiProviderSettings } from '../settings';
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
+const KIMI_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
+  inactiveValue: 'normal',
+  inactiveLabel: 'Default',
+  activeValue: 'yolo',
+  activeLabel: 'YOLO',
+  planValue: 'plan',
+  planLabel: 'Plan',
+};
 
 export const kimiChatUIConfig: ProviderChatUIConfig = {
   getModelOptions(settings): ProviderUIOption[] {
@@ -45,16 +59,32 @@ export const kimiChatUIConfig: ProviderChatUIConfig = {
     return isKimiModelSelectionId(model);
   },
 
-  isAdaptiveReasoningModel(): boolean {
-    return false;
+  isAdaptiveReasoningModel(model: string, settings: Record<string, unknown>): boolean {
+    return getKimiThinkingOptions(model, settings).length > 0;
   },
 
-  getReasoningOptions(): ProviderReasoningOption[] {
-    return [];
+  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
+    return getKimiThinkingOptions(model, settings)
+      .map((option) => ({
+        description: option.description,
+        label: option.label,
+        value: option.value,
+      }));
   },
 
-  getDefaultReasoningValue(): string {
-    return '';
+  getDefaultReasoningValue(model: string, settings: Record<string, unknown>): string {
+    const rawModelId = decodeKimiModelId(model);
+    if (!rawModelId) {
+      return '';
+    }
+
+    const kimiSettings = getKimiProviderSettings(settings);
+    const discovery = getKimiDiscoveryState(settings);
+    return resolveKimiThinkingLevel(
+      discovery.thinkingOptionsByModel[rawModelId] ?? [],
+      kimiSettings.preferredThinkingByModel[rawModelId],
+      discovery.currentThinkingByModel[rawModelId],
+    );
   },
 
   getContextWindowSize(model: string, customLimits?: Record<string, number>): number {
@@ -75,7 +105,38 @@ export const kimiChatUIConfig: ProviderChatUIConfig = {
 
     const settingsBag = settings as Record<string, unknown>;
     settingsBag.model = model;
-    delete settingsBag.effortLevel;
+    const defaultEffort = this.getDefaultReasoningValue(model, settingsBag);
+    if (defaultEffort) {
+      settingsBag.effortLevel = defaultEffort;
+    } else {
+      delete settingsBag.effortLevel;
+    }
+  },
+
+  applyReasoningSelection(model: string, value: string, settings: unknown): void {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return;
+    }
+
+    const settingsBag = settings as Record<string, unknown>;
+    const rawModelId = decodeKimiModelId(model);
+    if (!rawModelId) {
+      return;
+    }
+
+    const kimiSettings = getKimiProviderSettings(settingsBag);
+    const supportedValues = new Set(
+      (getKimiDiscoveryState(settingsBag).thinkingOptionsByModel[rawModelId] ?? [])
+        .map((option) => option.value),
+    );
+    const preferredThinkingByModel = { ...kimiSettings.preferredThinkingByModel };
+    if (!value || !supportedValues.has(value)) {
+      delete preferredThinkingByModel[rawModelId];
+    } else {
+      preferredThinkingByModel[rawModelId] = value;
+    }
+
+    updateKimiProviderSettings(settingsBag, { preferredThinkingByModel });
   },
 
   normalizeModelVariant(model: string): string {
@@ -90,11 +151,31 @@ export const kimiChatUIConfig: ProviderChatUIConfig = {
     return null;
   },
 
-  getPermissionModeToggle(): null {
-    return null;
+  getPermissionModeToggle(): ProviderPermissionModeToggleConfig {
+    return KIMI_PERMISSION_MODE_TOGGLE;
+  },
+
+  applyPermissionMode(value: string, settings: unknown): void {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return;
+    }
+
+    (settings as Record<string, unknown>).permissionMode = value;
   },
 
   getProviderIcon() {
     return KIMI_PROVIDER_ICON;
   },
 };
+
+function getKimiThinkingOptions(
+  model: string,
+  settings: Record<string, unknown>,
+): ProviderReasoningOption[] {
+  const rawModelId = decodeKimiModelId(model);
+  if (!rawModelId) {
+    return [];
+  }
+
+  return getKimiDiscoveryState(settings).thinkingOptionsByModel[rawModelId] ?? [];
+}
