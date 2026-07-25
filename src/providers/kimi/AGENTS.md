@@ -20,8 +20,8 @@
 
 ## History and Storage
 
-- Sessions live under `~/.kimi/sessions/<md5(absolute work_dir)>/<session-uuid>/`; `KIMI_SHARE_DIR` relocates the `~/.kimi` root. `KimiHistoryPathResolver` owns the path rules and trusted-root checks.
-- Never mutate kimi-native files (`~/.kimi/sessions/**`, `~/.kimi/config.toml`, `~/.kimi/mcp.json`, `~/.kimi/kimi.json`). Deleting a Claudian conversation only removes `.claudian` session metadata.
+- Sessions live under `~/.kimi-code/sessions/wd_<slug>_<sha256(normalized cwd)[:12]>/session_<uuid>/`; `KIMI_CODE_HOME` relocates the `~/.kimi-code` root. The main agent wire log is `<sessionDir>/agents/main/wire.jsonl` (flat `{type, time, ...}` records, ms epochs); `state.json` holds the session title. `KimiHistoryPathResolver` owns the path rules and trusted-root checks.
+- Never mutate kimi-native files (`~/.kimi-code/sessions/**`). Deleting a Claudian conversation only removes `.claudian` session metadata.
 - Settings reconciliation is env projection only (`KIMI_*` / `MOONSHOT_*`); it never writes `~/.kimi/config.toml`. Kimi loads `~/.kimi/mcp.json` natively, so there is no `mcpServerManager`.
 
 ## Commands and Models

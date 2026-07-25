@@ -7,16 +7,17 @@ import type {
   ToolCallInfo,
 } from '../../../core/types';
 
+const DEFAULT_SESSION_TITLE = 'New Session';
+
 export interface ParsedKimiHistory {
   messages: ChatMessage[];
+  title?: string;
 }
 
 interface KimiWireRecord {
-  message: {
-    payload: Record<string, unknown>;
-    type: string;
-  };
-  timestamp: number;
+  payload: Record<string, unknown>;
+  time: number;
+  type: string;
 }
 
 interface StoredTool {
@@ -31,7 +32,6 @@ interface PendingTurn {
   assistantContent: string;
   blocks: ContentBlock[];
   isInterjection: boolean;
-  lastToolId: string | null;
   startedAt: number;
   tools: Map<string, StoredTool>;
   toolOrder: string[];
@@ -58,15 +58,12 @@ export function parseKimiHistoryContent(content: string, sessionId: string): Par
       continue;
     }
 
-    const messageType = record.message.type;
-    const payload = record.message.payload;
-
-    if (messageType === 'TurnBegin' || messageType === 'SteerInput') {
+    if (record.type === 'turn.prompt' || record.type === 'turn.steer') {
       if (pending) {
         commitPending(pending);
       }
-      pending = createPendingTurn(turnIndex, record.timestamp, messageType === 'SteerInput');
-      pending.userContent = extractUserInputText(payload.user_input);
+      pending = createPendingTurn(turnIndex, record.time, record.type === 'turn.steer');
+      pending.userContent = extractUserInputText(record.payload.input);
       continue;
     }
 
@@ -74,71 +71,20 @@ export function parseKimiHistoryContent(content: string, sessionId: string): Par
       continue;
     }
 
-    switch (messageType) {
-      case 'ThinkPart': {
-        const text = readString(payload.think);
-        if (text) {
-          appendContentBlock(pending.blocks, 'thinking', text);
-        }
-        break;
-      }
-      case 'TextPart': {
-        const text = readString(payload.text);
-        if (text) {
-          pending.assistantContent += text;
-          appendContentBlock(pending.blocks, 'text', text);
-        }
-        break;
-      }
-      case 'ToolCall': {
-        const id = readString(payload.id);
-        if (!id) {
-          break;
-        }
-        const fn = readRecord(payload.function);
-        const args = readString(fn?.arguments) ?? '';
-        if (!pending.tools.has(id)) {
-          pending.toolOrder.push(id);
-          pending.blocks.push({ toolId: id, type: 'tool_use' });
-        }
-        pending.tools.set(id, {
-          args,
-          id,
-          name: readString(fn?.name) ?? 'tool',
-          output: '',
-          status: 'running',
-        });
-        pending.lastToolId = id;
-        break;
-      }
-      case 'ToolCallPart': {
-        const argsPart = readString(payload.arguments_part);
-        if (argsPart && pending.lastToolId) {
-          const tool = pending.tools.get(pending.lastToolId);
-          if (tool) {
-            tool.args += argsPart;
-          }
-        }
-        break;
-      }
-      case 'ToolResult': {
-        const id = readString(payload.tool_call_id);
-        const tool = id ? pending.tools.get(id) : undefined;
-        if (!tool) {
-          break;
-        }
-        const returnValue = readRecord(payload.return_value);
-        tool.output = renderToolReturnValue(returnValue);
-        tool.status = returnValue?.is_error === true ? 'error' : 'completed';
-        break;
-      }
-      case 'TurnEnd':
-      case 'StepInterrupted': {
+    switch (record.type) {
+      case 'turn.cancel': {
         commitPending(pending);
         pending = null;
         break;
       }
+      case 'context.append_message': {
+        applyContextMessage(pending, readRecord(record.payload.message));
+        break;
+      }
       default:
+        // Loop events, usage, plan-mode, and config records are replayed by
+        // the CLI only to rebuild internal state; the context messages above
+        // are the authoritative chat history (see acp-adapter replayHistory).
         break;
     }
   }
@@ -152,25 +98,91 @@ export function parseKimiHistoryContent(content: string, sessionId: string): Par
 
 export async function loadKimiHistory(sessionDirectory: string): Promise<ParsedKimiHistory> {
   const sessionId = path.basename(sessionDirectory);
+  const title = await readSessionTitle(sessionDirectory);
   try {
-    const content = await fs.readFile(path.join(sessionDirectory, 'wire.jsonl'), 'utf8');
-    return parseKimiHistoryContent(content, sessionId);
+    const content = await fs.readFile(
+      path.join(sessionDirectory, 'agents', 'main', 'wire.jsonl'),
+      'utf8',
+    );
+    return { ...parseKimiHistoryContent(content, sessionId), ...(title ? { title } : {}) };
   } catch {
-    return { messages: [] };
+    return title ? { messages: [], title } : { messages: [] };
   }
+}
+
+// Session titles live in `<sessionDir>/state.json` (SessionMeta), not in the
+// wire log. The CLI's default title carries no information, so it is dropped.
+async function readSessionTitle(sessionDirectory: string): Promise<string | undefined> {
+  try {
+    const parsed = JSON.parse(
+      await fs.readFile(path.join(sessionDirectory, 'state.json'), 'utf8'),
+    ) as unknown;
+    const title = readString(readRecord(parsed)?.title);
+    return title && title !== DEFAULT_SESSION_TITLE ? title : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function applyContextMessage(
+  turn: PendingTurn,
+  message: Record<string, unknown> | null,
+): void {
+  if (!message) {
+    return;
+  }
+  const role = readString(message.role);
+  if (role === 'assistant') {
+    for (const part of readContentParts(message.content)) {
+      if (part.type === 'think') {
+        appendContentBlock(turn.blocks, 'thinking', part.text);
+      } else {
+        turn.assistantContent += part.text;
+        appendContentBlock(turn.blocks, 'text', part.text);
+      }
+    }
+    for (const toolCall of readToolCalls(message.tool_calls ?? message.toolCalls)) {
+      if (!turn.tools.has(toolCall.id)) {
+        turn.toolOrder.push(toolCall.id);
+        turn.blocks.push({ toolId: toolCall.id, type: 'tool_use' });
+      }
+      turn.tools.set(toolCall.id, {
+        args: toolCall.args,
+        id: toolCall.id,
+        name: toolCall.name,
+        output: turn.tools.get(toolCall.id)?.output ?? '',
+        status: turn.tools.get(toolCall.id)?.status ?? 'running',
+      });
+    }
+    return;
+  }
+  if (role === 'tool') {
+    const id = readString(message.tool_call_id ?? message.toolCallId);
+    const tool = id ? turn.tools.get(id) : undefined;
+    if (!tool) {
+      // Orphaned tool result (no call in this turn): skip like the CLI replay.
+      return;
+    }
+    tool.output = readContentParts(message.content)
+      .filter(part => part.type === 'text')
+      .map(part => part.text)
+      .join('\n');
+    tool.status = message.isError === true ? 'error' : 'completed';
+  }
+  // User-role context messages duplicate turn.prompt/turn.steer input (or
+  // carry injections); the turn records already captured the user text.
 }
 
 function createPendingTurn(
   turnIndex: number,
-  timestamp: number,
+  time: number,
   isInterjection = false,
 ): PendingTurn {
   return {
     assistantContent: '',
     blocks: [],
     isInterjection,
-    lastToolId: null,
-    startedAt: normalizeTimestamp(timestamp),
+    startedAt: time,
     tools: new Map(),
     toolOrder: [],
     turnIndex,
@@ -241,35 +253,54 @@ function extractUserInputText(value: unknown): string {
   if (typeof value === 'string') {
     return value;
   }
-  if (!Array.isArray(value)) {
-    return '';
-  }
-  return value.flatMap((part) => {
-    const record = readRecord(part);
-    const text = record ? readString(record.text) : undefined;
-    return text ? [text] : [];
-  }).join('\n');
+  return readContentParts(value)
+    .filter(part => part.type === 'text')
+    .map(part => part.text)
+    .join('\n');
 }
 
-function renderToolReturnValue(returnValue: Record<string, unknown> | null): string {
-  if (!returnValue) {
-    return '';
+function readContentParts(value: unknown): { text: string; type: 'text' | 'think' }[] {
+  if (!Array.isArray(value)) {
+    return [];
   }
-  const output = returnValue.output;
-  if (typeof output === 'string' && output) {
-    return output;
-  }
-  if (Array.isArray(output)) {
-    const text = output.flatMap((part) => {
-      const record = readRecord(part);
-      const value = record ? readString(record.text) : undefined;
-      return value ? [value] : [];
-    }).join('\n');
+  const parts: { text: string; type: 'text' | 'think' }[] = [];
+  for (const entry of value) {
+    const record = readRecord(entry);
+    if (!record) {
+      continue;
+    }
+    if (readString(record.type) === 'think') {
+      const think = readString(record.think);
+      if (think) {
+        parts.push({ text: think, type: 'think' });
+      }
+      continue;
+    }
+    const text = readString(record.text);
     if (text) {
-      return text;
+      parts.push({ text, type: 'text' });
     }
   }
-  return readString(returnValue.message) ?? '';
+  return parts;
+}
+
+function readToolCalls(value: unknown): { args: string; id: string; name: string }[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) => {
+    const record = readRecord(entry);
+    const id = readString(record?.id);
+    if (!record || !id) {
+      return [];
+    }
+    // Wire messages use the kosong function-call shape; the ACP replay uses a
+    // flattened name/arguments shape. Accept both.
+    const fn = readRecord(record.function);
+    const name = readString(fn?.name) ?? readString(record.name) ?? 'tool';
+    const args = readString(fn?.arguments) ?? readString(record.arguments) ?? '';
+    return [{ args, id, name }];
+  });
 }
 
 function parseToolArgs(args: string): Record<string, unknown> {
@@ -289,28 +320,19 @@ function parseRecord(line: string): KimiWireRecord | null {
     return null;
   }
   try {
-    const parsed = JSON.parse(line) as unknown;
-    const record = readRecord(parsed);
-    if (!record || record.type === 'metadata') {
-      return null;
-    }
-    const message = readRecord(record.message);
-    const payload = readRecord(message?.payload);
-    const type = readString(message?.type);
-    if (!message || !payload || !type) {
+    const record = readRecord(JSON.parse(line) as unknown);
+    const type = readString(record?.type);
+    if (!record || !type || type === 'metadata') {
       return null;
     }
     return {
-      message: { payload, type },
-      timestamp: typeof record.timestamp === 'number' ? record.timestamp : 0,
+      payload: record,
+      time: typeof record.time === 'number' && record.time > 0 ? record.time : 0,
+      type,
     };
   } catch {
     return null;
   }
-}
-
-function normalizeTimestamp(value: number): number {
-  return value > 0 && value < 1_000_000_000_000 ? value * 1_000 : value;
 }
 
 function sanitizeId(value: string): string {

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 
 import type { Conversation } from '@/core/types';
 import { KimiConversationHistoryService } from '@/providers/kimi/history/KimiConversationHistoryService';
-import { encodeKimiSessionCwd } from '@/providers/kimi/history/KimiHistoryPathResolver';
+import { encodeKimiWorkDirKey } from '@/providers/kimi/history/KimiHistoryPathResolver';
 
 describe('KimiConversationHistoryService', () => {
   let tempRoot: string;
@@ -18,17 +18,17 @@ describe('KimiConversationHistoryService', () => {
     vaultPath = path.join(tempRoot, 'vault');
     sessionDirectory = path.join(
       tempRoot,
-      '.kimi',
+      '.kimi-code',
       'sessions',
-      encodeKimiSessionCwd(vaultPath),
-      'session-fixture',
+      encodeKimiWorkDirKey(vaultPath),
+      'session_00000000-0000-0000-0000-000000000001',
     );
-    wirePath = path.join(sessionDirectory, 'wire.jsonl');
+    wirePath = path.join(sessionDirectory, 'agents', 'main', 'wire.jsonl');
     fixture = await fs.readFile(path.join(
       process.cwd(),
       'tests/unit/providers/kimi/fixtures/wire.jsonl',
     ), 'utf8');
-    await fs.mkdir(sessionDirectory, { recursive: true });
+    await fs.mkdir(path.dirname(wirePath), { recursive: true });
     await fs.writeFile(wirePath, fixture, 'utf8');
   });
 
@@ -36,14 +36,16 @@ describe('KimiConversationHistoryService', () => {
     await fs.rm(tempRoot, { force: true, recursive: true });
   });
 
+  const SESSION_ID = 'session_00000000-0000-0000-0000-000000000001';
+
   function createConversation(): Conversation {
     return {
       createdAt: 1,
       id: 'conversation-1',
       messages: [],
       providerId: 'kimi',
-      providerState: { sessionDirectory: path.join(tempRoot, 'outside', 'session-fixture') },
-      sessionId: 'session-fixture',
+      providerState: { sessionDirectory: path.join(tempRoot, 'outside', SESSION_ID) },
+      sessionId: SESSION_ID,
       title: 'Fixture',
       updatedAt: 1,
     };
@@ -71,6 +73,24 @@ describe('KimiConversationHistoryService', () => {
     expect(await fs.stat(sessionDirectory)).toBeTruthy();
   });
 
+  it('adopts the state.json title only when the conversation has none', async () => {
+    const service = new KimiConversationHistoryService();
+    const context = { environment: { HOME: tempRoot } };
+    await fs.writeFile(path.join(sessionDirectory, 'state.json'), JSON.stringify({
+      title: 'Native session title',
+    }), 'utf8');
+
+    const untitled = createConversation();
+    untitled.title = '';
+    await service.hydrateConversationHistory(untitled, vaultPath, context);
+    expect(untitled.title).toBe('Native session title');
+
+    const titled = createConversation();
+    (titled as { id: string }).id = 'conversation-2';
+    await service.hydrateConversationHistory(titled, vaultPath, context);
+    expect(titled.title).toBe('Fixture');
+  });
+
   it('rehydrates when the session binding changes even if messages exist', async () => {
     const service = new KimiConversationHistoryService();
     const conversation = createConversation();
@@ -81,11 +101,13 @@ describe('KimiConversationHistoryService', () => {
 
     await fs.writeFile(wirePath, [
       JSON.stringify({
-        message: { payload: { user_input: 'Only question' }, type: 'TurnBegin' },
-        timestamp: 42,
+        input: [{ type: 'text', text: 'Only question' }],
+        origin: { kind: 'user' },
+        time: 1_700_000_000_000,
+        type: 'turn.prompt',
       }),
     ].join('\n'), 'utf8');
-    conversation.sessionId = 'session-fixture';
+    conversation.sessionId = SESSION_ID;
     conversation.providerState = { sessionDirectory };
     (conversation as { id: string }).id = 'conversation-2';
 
@@ -115,7 +137,7 @@ describe('KimiConversationHistoryService', () => {
       environment: { HOME: tempRoot } });
     expect(conversation.messages).toEqual([]);
 
-    conversation.sessionId = 'session-fixture';
+    conversation.sessionId = SESSION_ID;
     await service.hydrateConversationHistory(conversation, vaultPath);
     expect(conversation.messages).toEqual([]);
   });
@@ -125,13 +147,13 @@ describe('KimiConversationHistoryService', () => {
     const conversation = createConversation();
 
     expect(service.isPendingForkConversation(conversation)).toBe(false);
-    expect(service.buildForkProviderState('session-fixture', 'assistant-1', {
+    expect(service.buildForkProviderState(SESSION_ID, 'assistant-1', {
       sessionDirectory,
     })).toEqual({});
-    expect(service.resolveSessionIdForConversation(conversation)).toBe('session-fixture');
+    expect(service.resolveSessionIdForConversation(conversation)).toBe(SESSION_ID);
     expect(service.resolveSessionIdForConversation(null)).toBeNull();
     expect(service.buildPersistedProviderState(conversation)).toEqual({
-      sessionDirectory: path.join(tempRoot, 'outside', 'session-fixture'),
+      sessionDirectory: path.join(tempRoot, 'outside', SESSION_ID),
     });
     conversation.providerState = undefined;
     expect(service.buildPersistedProviderState(conversation)).toBeUndefined();

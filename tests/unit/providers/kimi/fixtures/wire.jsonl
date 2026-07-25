@@ -1,21 +1,19 @@
-{"type":"metadata","timestamp":1700000000,"message":{"type":"Meta","payload":{"version":1}}}
-{"timestamp":1700000000,"message":{"type":"TurnBegin","payload":{"user_input":"Inspect the sample file."}}}
-{"timestamp":1700000001,"message":{"type":"ThinkPart","payload":{"think":"I will read it."}}}
-{"timestamp":1700000002,"message":{"type":"TextPart","payload":{"text":"Reading now. "}}}
-{"timestamp":1700000003,"message":{"type":"TextPart","payload":{"text":"One moment."}}}
-{"timestamp":1700000004,"message":{"type":"ToolCall","payload":{"id":"tool-1","function":{"name":"Read","arguments":"{\"path\":"}}}}
-{"timestamp":1700000005,"message":{"type":"ToolCallPart","payload":{"arguments_part":"\"notes/sample.md\"}"}}}
-{"timestamp":1700000006,"message":{"type":"ToolResult","payload":{"tool_call_id":"tool-1","return_value":{"output":"sample text","is_error":false}}}}
-{"timestamp":1700000007,"message":{"type":"ToolCall","payload":{"id":"tool-2","function":{"name":"Bash","arguments":"{\"command\":\"rm -rf /\"}"}}}}
-{"timestamp":1700000008,"message":{"type":"ToolResult","payload":{"tool_call_id":"tool-2","return_value":{"message":"permission denied","is_error":true}}}}
-{"timestamp":1700000009,"message":{"type":"TextPart","payload":{"text":"Done."}}}
-{"timestamp":1700000010,"message":{"type":"TurnEnd","payload":{}}}
+{"type":"metadata","protocol_version":"1.4","created_at":1700000000000}
+{"type":"context.append_message","time":1699999999000,"message":{"role":"assistant","content":[{"type":"text","text":"dropped outside a turn"}]}}
+{"type":"turn.prompt","time":1700000000000,"input":[{"type":"text","text":"Inspect the sample file."}],"origin":{"kind":"user"}}
+{"type":"context.append_loop_event","time":1700000000100,"event":{"type":"step.begin","uuid":"evt-1","turnId":"1","step":1}}
+{"type":"context.append_message","time":1700000001000,"message":{"role":"assistant","content":[{"type":"think","think":"I will read it."},{"type":"text","text":"Reading now. "},{"type":"text","text":"One moment."}],"tool_calls":[{"id":"tool_1","type":"function","function":{"name":"Read","arguments":"{\"path\":\"notes/sample.md\"}"}}]}}
+{"type":"context.append_loop_event","time":1700000001500,"event":{"type":"tool.call","uuid":"evt-2","turnId":"1","step":1,"stepUuid":"step-1","toolCallId":"tool_1","name":"Read","args":{"path":"notes/sample.md"}}}
+{"type":"context.append_message","time":1700000002000,"message":{"role":"tool","tool_call_id":"tool_1","content":[{"type":"text","text":"sample text"}]}}
+{"type":"context.append_message","time":1700000003000,"message":{"role":"assistant","content":[],"tool_calls":[{"id":"tool_2","type":"function","function":{"name":"Bash","arguments":"{\"command\":\"rm -rf /\"}"}}]}}
+{"type":"context.append_message","time":1700000004000,"message":{"role":"tool","tool_call_id":"tool_2","isError":true,"content":[{"type":"text","text":"permission denied"}]}}
+{"type":"context.append_message","time":1700000005000,"message":{"role":"assistant","content":[{"type":"text","text":"Done."}]}}
+{"type":"usage.record","time":1700000006000,"model":"kimi-for-coding","usage":{"input_tokens":10,"output_tokens":5}}
 
 not json at all
-{"timestamp":"oops","message":{"type":"TextPart","payload":{"text":"dropped outside a turn"}}}
-{"timestamp":1700000011,"message":{"type":"UnknownType","payload":{"future":true}}}
-{"timestamp":1700000100,"message":{"type":"SteerInput","payload":{"user_input":[{"type":"text","text":"Stop now."},{"type":"text","text":"Really."}]}}}
-{"timestamp":1700000101,"message":{"type":"TextPart","payload":{"text":"Stopping."}}}
-{"timestamp":1700000102,"message":{"type":"StepInterrupted","payload":{}}}
-{"timestamp":1700000200,"message":{"type":"TurnBegin","payload":{"user_input":"Incomplete turn"}}}
-{"timestamp":1700000201,"message":{"type":"TextPart","payload":{"text":"Partial answer"}}}
+{"time":"oops","message":{"type":"TextPart"}}
+{"type":"turn.steer","time":1700000100000,"input":[{"type":"text","text":"Stop now."},{"type":"text","text":"Really."}],"origin":{"kind":"user"}}
+{"type":"context.append_message","time":1700000101000,"message":{"role":"assistant","content":[{"type":"text","text":"Stopping."}]}}
+{"type":"turn.cancel","time":1700000102000,"turnId":2}
+{"type":"turn.prompt","time":1700000200000,"input":[{"type":"text","text":"Incomplete turn"}],"origin":{"kind":"user"}}
+{"type":"context.append_message","time":1700000201000,"message":{"role":"assistant","content":[{"type":"text","text":"Partial answer"}]}}

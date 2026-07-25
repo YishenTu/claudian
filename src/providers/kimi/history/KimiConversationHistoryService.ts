@@ -53,6 +53,9 @@ export class KimiConversationHistoryService implements ProviderConversationHisto
       return;
     }
     conversation.messages = parsed.messages;
+    if (parsed.title && !conversation.title.trim()) {
+      conversation.title = parsed.title;
+    }
     this.hydratedKeys.set(conversation.id, hydrationKey);
   }
 

@@ -36,20 +36,20 @@ describe('KimiHistoryStore', () => {
     expect(parsed.messages[1].contentBlocks).toEqual([
       { content: 'I will read it.', type: 'thinking' },
       { content: 'Reading now. One moment.', type: 'text' },
-      { toolId: 'tool-1', type: 'tool_use' },
-      { toolId: 'tool-2', type: 'tool_use' },
+      { toolId: 'tool_1', type: 'tool_use' },
+      { toolId: 'tool_2', type: 'tool_use' },
       { content: 'Done.', type: 'text' },
     ]);
     expect(parsed.messages[1].toolCalls).toEqual([
       {
-        id: 'tool-1',
+        id: 'tool_1',
         input: { path: 'notes/sample.md' },
         name: 'Read',
         result: 'sample text',
         status: 'completed',
       },
       {
-        id: 'tool-2',
+        id: 'tool_2',
         input: { command: 'rm -rf /' },
         name: 'Bash',
         result: 'permission denied',
@@ -85,35 +85,39 @@ describe('KimiHistoryStore', () => {
 
   it('pairs tool results by tool call id and ignores unknown results', () => {
     const records = [
-      { message: { payload: { user_input: 'Run tools' }, type: 'TurnBegin' }, timestamp: 10 },
       {
-        message: {
-          payload: { function: { name: 'Read' }, id: 'tool-known' },
-          type: 'ToolCall',
-        },
-        timestamp: 11,
+        type: 'turn.prompt',
+        time: 1_700_000_000_000,
+        input: [{ type: 'text', text: 'Run tools' }],
+        origin: { kind: 'user' },
       },
       {
+        type: 'context.append_message',
+        time: 1_700_000_000_100,
         message: {
-          payload: { return_value: { output: 'orphan' }, tool_call_id: 'tool-unknown' },
-          type: 'ToolResult',
+          role: 'assistant',
+          content: [],
+          tool_calls: [{ id: 'tool_known', type: 'function', function: { name: 'Read' } }],
         },
-        timestamp: 12,
       },
       {
+        type: 'context.append_message',
+        time: 1_700_000_000_200,
         message: {
-          payload: {
-            return_value: {
-              is_error: false,
-              output: [{ text: 'first' }, { text: 'second' }, { nope: true }],
-            },
-            tool_call_id: 'tool-known',
-          },
-          type: 'ToolResult',
+          role: 'tool',
+          tool_call_id: 'tool_unknown',
+          content: [{ type: 'text', text: 'orphan' }],
         },
-        timestamp: 13,
       },
-      { message: { payload: {}, type: 'TurnEnd' }, timestamp: 14 },
+      {
+        type: 'context.append_message',
+        time: 1_700_000_000_300,
+        message: {
+          role: 'tool',
+          tool_call_id: 'tool_known',
+          content: [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }, { nope: true }],
+        },
+      },
     ];
     const content = records.map(record => JSON.stringify(record)).join('\n');
 
@@ -121,7 +125,7 @@ describe('KimiHistoryStore', () => {
 
     expect(parsed.messages).toHaveLength(2);
     expect(parsed.messages[1].toolCalls).toEqual([{
-      id: 'tool-known',
+      id: 'tool_known',
       input: {},
       name: 'Read',
       result: 'first\nsecond',
@@ -129,12 +133,57 @@ describe('KimiHistoryStore', () => {
     }]);
   });
 
-  it('keeps epoch-millisecond timestamps untouched and drops empty turns', () => {
+  it('keeps tools running when no result was recorded before the turn ended', () => {
     const records = [
-      { message: { payload: {}, type: 'TurnBegin' }, timestamp: 1_700_000_000_000 },
-      { message: { payload: {}, type: 'TurnEnd' }, timestamp: 1_700_000_000_100 },
-      { message: { payload: { user_input: 'Hello' }, type: 'TurnBegin' }, timestamp: 1_700_000_000_200 },
-      { message: { payload: {}, type: 'TurnEnd' }, timestamp: 1_700_000_000_300 },
+      {
+        type: 'turn.prompt',
+        time: 1_700_000_000_000,
+        input: [{ type: 'text', text: 'Run' }],
+        origin: { kind: 'user' },
+      },
+      {
+        type: 'context.append_message',
+        time: 1_700_000_000_100,
+        message: {
+          role: 'assistant',
+          content: [],
+          tool_calls: [{
+            id: 'tool_open',
+            type: 'function',
+            function: { name: 'Bash', arguments: '{"command":"sleep 60"}' },
+          }],
+        },
+      },
+      { type: 'turn.cancel', time: 1_700_000_000_200, turnId: 1 },
+    ];
+    const content = records.map(record => JSON.stringify(record)).join('\n');
+
+    const parsed = parseKimiHistoryContent(content, 'session-open');
+
+    expect(parsed.messages).toHaveLength(2);
+    expect(parsed.messages[1].toolCalls).toEqual([{
+      id: 'tool_open',
+      input: { command: 'sleep 60' },
+      name: 'Bash',
+      status: 'running',
+    }]);
+  });
+
+  it('drops turns without user input and ignores records before the first prompt', () => {
+    const records = [
+      {
+        type: 'context.append_message',
+        time: 1_700_000_000_000,
+        message: { role: 'assistant', content: [{ type: 'text', text: 'orphan' }] },
+      },
+      { type: 'turn.prompt', time: 1_700_000_000_100, input: [], origin: { kind: 'user' } },
+      { type: 'turn.cancel', time: 1_700_000_000_200 },
+      {
+        type: 'turn.prompt',
+        time: 1_700_000_000_300,
+        input: [{ type: 'text', text: 'Hello' }],
+        origin: { kind: 'user' },
+      },
     ];
     const content = records.map(record => JSON.stringify(record)).join('\n');
 
@@ -143,14 +192,20 @@ describe('KimiHistoryStore', () => {
     expect(parsed.messages).toHaveLength(1);
     expect(parsed.messages[0]).toMatchObject({
       content: 'Hello',
+      id: 'kimi-session-empty-turn-0-user',
       role: 'user',
-      timestamp: 1_700_000_000_200,
+      timestamp: 1_700_000_000_300,
     });
   });
 
   it('sanitizes the session id when deriving message ids', () => {
     const records = [
-      { message: { payload: { user_input: 'Hi' }, type: 'TurnBegin' }, timestamp: 1 },
+      {
+        type: 'turn.prompt',
+        time: 1_700_000_000_000,
+        input: [{ type: 'text', text: 'Hi' }],
+        origin: { kind: 'user' },
+      },
     ];
     const content = records.map(record => JSON.stringify(record)).join('\n');
 
@@ -159,17 +214,30 @@ describe('KimiHistoryStore', () => {
     expect(parsed.messages[0].id).toBe('kimi-session-with-spaces-turn-0-user');
   });
 
-  it('loads wire.jsonl from a session directory and tolerates a missing file', async () => {
+  it('loads agents/main/wire.jsonl, reads the state.json title, and tolerates missing files', async () => {
     const content = fs.readFileSync(FIXTURE_PATH, 'utf8');
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kimi-history-store-'));
     const sessionDirectory = path.join(tempRoot, 'session-loaded');
-    fs.mkdirSync(sessionDirectory, { recursive: true });
-    fs.writeFileSync(path.join(sessionDirectory, 'wire.jsonl'), content, 'utf8');
+    fs.mkdirSync(path.join(sessionDirectory, 'agents', 'main'), { recursive: true });
+    fs.writeFileSync(path.join(sessionDirectory, 'agents', 'main', 'wire.jsonl'), content, 'utf8');
+    fs.writeFileSync(path.join(sessionDirectory, 'state.json'), JSON.stringify({
+      createdAt: '2025-01-01T00:00:00.000Z',
+      title: 'Inspect the sample file',
+      updatedAt: '2025-01-01T00:01:00.000Z',
+      workDir: '/vault',
+    }), 'utf8');
 
     try {
       const loaded = await loadKimiHistory(sessionDirectory);
       expect(loaded.messages).toHaveLength(6);
       expect(loaded.messages[0].id).toBe('kimi-session-loaded-turn-0-user');
+      expect(loaded.title).toBe('Inspect the sample file');
+
+      // The CLI's default title carries no information.
+      fs.writeFileSync(path.join(sessionDirectory, 'state.json'), JSON.stringify({
+        title: 'New Session',
+      }), 'utf8');
+      expect((await loadKimiHistory(sessionDirectory)).title).toBeUndefined();
 
       await expect(loadKimiHistory(path.join(tempRoot, 'missing'))).resolves.toEqual({
         messages: [],

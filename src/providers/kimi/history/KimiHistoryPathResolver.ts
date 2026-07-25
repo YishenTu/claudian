@@ -6,27 +6,58 @@ import * as path from 'node:path';
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import { isPathWithinRoot } from '../../../core/storage/pathContainment';
 
-const MAX_CWD_DIRECTORIES_TO_SCAN = 1_024;
+const MAX_BUCKET_DIRECTORIES_TO_SCAN = 1_024;
+const WORKDIR_HASH_LENGTH = 12;
+const MAX_WORKDIR_SLUG_LENGTH = 40;
 
-// kimi-cli stores sessions under `<share>/sessions/<md5(absolute work_dir)>/<session-id>/`.
-export function encodeKimiSessionCwd(cwd: string): string {
-  return createHash('md5').update(path.resolve(cwd), 'utf8').digest('hex');
+// Kimi Code stores sessions under
+// `<home>/sessions/wd_<slug>_<sha256(normalized cwd)[:12]>/<session-id>/`,
+// mirroring agent-core's session/store/workdir-key.ts.
+export function encodeKimiWorkDirKey(cwd: string): string {
+  const normalized = normalizeKimiWorkDir(cwd);
+  const slug = slugifyKimiWorkDirName(path.posix.basename(normalized));
+  const hash = createHash('sha256')
+    .update(normalized, 'utf8')
+    .digest('hex')
+    .slice(0, WORKDIR_HASH_LENGTH);
+  return `wd_${slug}_${hash}`;
 }
 
-export function resolveKimiShareDir(context: ProviderHistoryPathContext): string {
-  const configured = context.environment.KIMI_SHARE_DIR?.trim();
+// Exact port of agent-core's utils/workdir-slug.ts.
+export function slugifyKimiWorkDirName(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, MAX_WORKDIR_SLUG_LENGTH)
+    .replace(/^-+|-+$/g, '');
+  return slug === '' || slug === '.' || slug === '..' ? 'workspace' : slug;
+}
+
+// Port of agent-core's normalizeWorkDir: Windows-shaped paths resolve through
+// win32 and fold to forward slashes; everything else resolves like pathe
+// (posix resolution, backslashes normalized to slashes).
+function normalizeKimiWorkDir(workDir: string): string {
+  if (/^[A-Za-z]:[\\/]/.test(workDir) || /^[\\/]{2}[^\\/]+[\\/][^\\/]+/.test(workDir)) {
+    return path.win32.resolve(workDir).replaceAll('\\', '/');
+  }
+  return path.resolve(workDir).replaceAll('\\', '/');
+}
+
+export function resolveKimiHome(context: ProviderHistoryPathContext): string {
+  const configured = context.environment.KIMI_CODE_HOME?.trim();
   if (configured) {
     return path.isAbsolute(configured)
       ? path.resolve(configured)
       : path.resolve(resolveUserHome(context.environment, context.hostPlatform), configured);
   }
-  return path.resolve(resolveUserHome(context.environment, context.hostPlatform), '.kimi');
+  return path.resolve(resolveUserHome(context.environment, context.hostPlatform), '.kimi-code');
 }
 
 export function getTrustedKimiSessionRoots(
   context: ProviderHistoryPathContext,
 ): string[] {
-  return [path.resolve(resolveKimiShareDir(context), 'sessions')];
+  return [path.resolve(resolveKimiHome(context), 'sessions')];
 }
 
 export function resolveKimiSessionDirectory(
@@ -52,7 +83,7 @@ export function resolveKimiSessionDirectory(
 
   if (vaultPath && path.isAbsolute(vaultPath)) {
     for (const root of roots) {
-      const direct = path.join(root, encodeKimiSessionCwd(vaultPath), normalizedSessionId);
+      const direct = path.join(root, encodeKimiWorkDirKey(vaultPath), normalizedSessionId);
       if (isPathWithinRoot(direct, root) && isDirectory(direct)) {
         return direct;
       }
@@ -107,7 +138,7 @@ function findExactSessionDirectory(root: string, sessionId: string): string | nu
       continue;
     }
     scanned += 1;
-    if (scanned > MAX_CWD_DIRECTORIES_TO_SCAN) {
+    if (scanned > MAX_BUCKET_DIRECTORIES_TO_SCAN) {
       break;
     }
     const candidate = path.join(root, entry.name, sessionId);
