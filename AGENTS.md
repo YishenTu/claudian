@@ -113,7 +113,7 @@ Key runtime flow: features call `ProviderRegistry.createChatRuntime()`, then `Ch
 | `~/.codex/sessions/**/*.jsonl` | Codex-native transcripts |
 | `~/.grok/sessions/` | Grok-native sessions (read-only from Claudian) |
 | `~/.kimi-code/sessions/<wd_slug_hash>/session_<uuid>/` | Kimi-native sessions (read-only from Claudian; `KIMI_CODE_HOME` relocates the root) |
-| `~/.kimi/config.toml`, `~/.kimi/mcp.json` | Kimi-owned config and MCP servers; never written by Claudian |
+| `~/.kimi-code/config.toml`, `~/.kimi-code/mcp.json` | Kimi-owned config and MCP servers; never written by Claudian |
 | `~/.pi/agent/sessions/` | Pi user-level sessions |
 
 ## Code Style

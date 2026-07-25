@@ -3,7 +3,7 @@ import { findCliBinaryPath, resolveConfiguredCliPath } from '../../../utils/cliB
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { getKimiProviderSettings } from '../settings';
 
-const KIMI_BINARY_NAMES = ['kimi', 'kimi-cli'] as const;
+const KIMI_BINARY_NAMES = ['kimi'] as const;
 
 export class KimiCliResolver {
   private readonly cachedHostname = getHostnameKey();
@@ -66,10 +66,4 @@ export function findKimiCliBinary(additionalPath?: string): string | null {
     }
   }
   return null;
-}
-
-// `kimi --version` prints `kimi, version X.Y.Z` (some builds print the bare version).
-export function parseKimiCliVersion(output: string): string | null {
-  const match = output.match(/(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/);
-  return match ? match[1] : null;
 }

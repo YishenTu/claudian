@@ -189,36 +189,36 @@ describe('Kimi settings', () => {
 
     const next = updateKimiProviderSettings(settings, {
       environmentHash: '  abc123  ',
-      environmentVariables: 'KIMI_API_KEY=secret',
+      environmentVariables: 'KIMI_LOG_LEVEL=debug',
     });
 
     expect(next.environmentHash).toBe('abc123');
-    expect(next.environmentVariables).toBe('KIMI_API_KEY=secret');
+    expect(next.environmentVariables).toBe('KIMI_LOG_LEVEL=debug');
     expect(getKimiProviderSettings(settings)).toMatchObject({
       environmentHash: 'abc123',
-      environmentVariables: 'KIMI_API_KEY=secret',
+      environmentVariables: 'KIMI_LOG_LEVEL=debug',
     });
 
     const preserved = updateKimiProviderSettings(settings, { enabled: true });
     expect(preserved.environmentHash).toBe('abc123');
-    expect(preserved.environmentVariables).toBe('KIMI_API_KEY=secret');
+    expect(preserved.environmentVariables).toBe('KIMI_LOG_LEVEL=debug');
   });
 });
 
 describe('Kimi provider state', () => {
   it('parses and builds only an absolute native session directory hint', () => {
     expect(parseKimiProviderState({
-      sessionDirectory: ' /tmp/.kimi/sessions/vault/session-id ',
+      sessionDirectory: ' /tmp/.kimi-code/sessions/vault/session-id ',
       token: 'do-not-preserve',
     })).toEqual({
-      sessionDirectory: '/tmp/.kimi/sessions/vault/session-id',
+      sessionDirectory: '/tmp/.kimi-code/sessions/vault/session-id',
     });
     expect(parseKimiProviderState({ sessionDirectory: '../outside' })).toEqual({});
     expect(parseKimiProviderState({ sessionDirectory: 'relative/path' })).toEqual({});
     expect(parseKimiProviderState(null)).toEqual({});
     expect(parseKimiProviderState('session-id')).toEqual({});
-    expect(buildKimiProviderState('/tmp/.kimi/sessions/vault/session-id')).toEqual({
-      sessionDirectory: '/tmp/.kimi/sessions/vault/session-id',
+    expect(buildKimiProviderState('/tmp/.kimi-code/sessions/vault/session-id')).toEqual({
+      sessionDirectory: '/tmp/.kimi-code/sessions/vault/session-id',
     });
     expect(buildKimiProviderState('../outside')).toBeUndefined();
     expect(buildKimiProviderState(null)).toBeUndefined();
@@ -226,9 +226,9 @@ describe('Kimi provider state', () => {
 
   it('persists only the sanitized session directory field', () => {
     expect(buildPersistedKimiProviderState({
-      sessionDirectory: ' /tmp/.kimi/sessions/vault/session-id ',
+      sessionDirectory: ' /tmp/.kimi-code/sessions/vault/session-id ',
     })).toEqual({
-      sessionDirectory: '/tmp/.kimi/sessions/vault/session-id',
+      sessionDirectory: '/tmp/.kimi-code/sessions/vault/session-id',
     });
     expect(buildPersistedKimiProviderState({})).toBeUndefined();
     expect(buildPersistedKimiProviderState({ sessionDirectory: 'not-absolute' })).toBeUndefined();

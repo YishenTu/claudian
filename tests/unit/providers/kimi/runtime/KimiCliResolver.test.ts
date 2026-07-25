@@ -4,7 +4,6 @@ import * as path from 'path';
 import {
   findKimiCliBinary,
   KimiCliResolver,
-  parseKimiCliVersion,
 } from '@/providers/kimi/runtime/KimiCliResolver';
 
 jest.mock('fs');
@@ -15,22 +14,6 @@ jest.mock('@/utils/env', () => ({
 }));
 
 const mockedStat = fs.statSync as jest.Mock;
-
-describe('parseKimiCliVersion', () => {
-  it('parses the prefixed and bare kimi --version formats', () => {
-    expect(parseKimiCliVersion('kimi, version 1.49.0')).toBe('1.49.0');
-    expect(parseKimiCliVersion('0.29.0')).toBe('0.29.0');
-    expect(parseKimiCliVersion('kimi, version 1.49.0-rc.1')).toBe('1.49.0-rc.1');
-    expect(parseKimiCliVersion('kimi, version 1.49.0+build.5\n')).toBe('1.49.0+build.5');
-  });
-
-  it('rejects malformed output', () => {
-    expect(parseKimiCliVersion('')).toBeNull();
-    expect(parseKimiCliVersion('kimi')).toBeNull();
-    expect(parseKimiCliVersion('version 1.49')).toBeNull();
-    expect(parseKimiCliVersion('not a version string')).toBeNull();
-  });
-});
 
 describe('KimiCliResolver', () => {
   beforeEach(() => {
@@ -52,7 +35,7 @@ describe('KimiCliResolver', () => {
     }, '/legacy/kimi', '')).toBe('/current/kimi');
   });
 
-  it('falls back through the legacy path and PATH binaries named kimi then kimi-cli', () => {
+  it('falls back through the legacy path and the PATH binary named kimi', () => {
     mockedStat.mockImplementation((filePath: string) => {
       if (filePath === '/legacy/kimi') {
         return { isFile: () => true };
@@ -62,22 +45,13 @@ describe('KimiCliResolver', () => {
     expect(new KimiCliResolver().resolve({}, '/legacy/kimi', '')).toBe('/legacy/kimi');
 
     const kimiBinary = path.join('/provider/bin', 'kimi');
-    const kimiCliBinary = path.join('/provider/bin', 'kimi-cli');
     mockedStat.mockImplementation((filePath: string) => {
-      if (filePath === kimiBinary || filePath === kimiCliBinary) {
+      if (filePath === kimiBinary) {
         return { isFile: () => true };
       }
       throw new Error(`ENOENT: ${filePath}`);
     });
     expect(new KimiCliResolver().resolve({}, '', 'PATH=/provider/bin')).toBe(kimiBinary);
-
-    mockedStat.mockImplementation((filePath: string) => {
-      if (filePath === kimiCliBinary) {
-        return { isFile: () => true };
-      }
-      throw new Error(`ENOENT: ${filePath}`);
-    });
-    expect(new KimiCliResolver().resolve({}, '', 'PATH=/provider/bin')).toBe(kimiCliBinary);
   });
 
   it('returns null when no configured path or PATH binary exists', () => {

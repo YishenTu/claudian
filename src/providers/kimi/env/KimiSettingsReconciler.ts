@@ -6,7 +6,7 @@ import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { decodeKimiModelId, encodeKimiModelId } from '../models';
 import { getKimiProviderSettings, updateKimiProviderSettings } from '../settings';
 
-export const KIMI_ENVIRONMENT_KEY_PATTERNS: RegExp[] = [/^KIMI_/i, /^MOONSHOT_/i];
+export const KIMI_ENVIRONMENT_KEY_PATTERNS: RegExp[] = [/^KIMI_/i];
 
 export function computeKimiEnvironmentHash(settings: Record<string, unknown>): string {
   const providerSettings = getKimiProviderSettings(settings);
@@ -20,7 +20,7 @@ export function computeKimiEnvironmentHash(settings: Record<string, unknown>): s
   return createHash('sha256').update(constructionInputs, 'utf8').digest('hex');
 }
 
-// Env projection only: kimi owns ~/.kimi/config.toml, so reconciliation never writes it.
+// Env projection only: kimi owns ~/.kimi-code/config.toml, so reconciliation never writes it.
 export const kimiSettingsReconciler: ProviderSettingsReconciler = {
   environmentSessionPolicy: 'reload',
 

@@ -23,7 +23,7 @@
 
 - Sessions live under `~/.kimi-code/sessions/wd_<slug>_<sha256(normalized cwd)[:12]>/session_<uuid>/`; `KIMI_CODE_HOME` relocates the `~/.kimi-code` root. The main agent wire log is `<sessionDir>/agents/main/wire.jsonl` (flat `{type, time, ...}` records, ms epochs); `state.json` holds the session title. `KimiHistoryPathResolver` owns the path rules and trusted-root checks.
 - Never mutate kimi-native files (`~/.kimi-code/sessions/**`). Deleting a Claudian conversation only removes `.claudian` session metadata.
-- Settings reconciliation is env projection only (`KIMI_*` / `MOONSHOT_*`); it never writes `~/.kimi/config.toml`. Kimi loads `~/.kimi/mcp.json` natively, so there is no `mcpServerManager`.
+- Settings reconciliation is env projection only (`KIMI_*`); it never writes `~/.kimi-code/config.toml`. Kimi loads `~/.kimi-code/mcp.json` natively, so there is no `mcpServerManager`.
 
 ## Commands and Models
 
@@ -35,6 +35,6 @@
 
 ## Gotchas
 
-- `KimiAuxQueryRunner` owns one-shot `kimi --print --output-format text --final-message-only` subprocesses, independent from the chat runtime. Print mode auto-approves tools and auto-dismisses AskUserQuestion.
-- `kimi --version` prints `kimi, version X.Y.Z` (some builds print the bare version); `KimiCliResolver` also accepts the `kimi-cli` binary name.
+- `KimiAuxQueryRunner` owns one-shot `kimi --prompt <prompt> --output-format text` subprocesses, independent from the chat runtime. Prompt mode forces auto permission and auto-approves tools; text output carries only the assistant text on stdout.
+- Kimi Code ships a single `kimi` binary (npm `@moonshot-ai/kimi-code`); `KimiCliResolver` resolves only that name.
 - Kimi ACP does not expose subagent events, so there is no `subagentAdapter` and no agent-mention provider (kimi has no vault agent directory convention).

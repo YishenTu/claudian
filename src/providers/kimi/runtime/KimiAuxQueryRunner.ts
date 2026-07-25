@@ -5,9 +5,9 @@ import { AcpSubprocess } from '../../acp';
 import { decodeKimiModelId, isKimiModelSelectionId } from '../models';
 import { buildKimiRuntimeEnv } from './KimiRuntimeEnvironment';
 
-// One-shot `kimi --print` runs for auxiliary services (title generation, instruction
-// refinement, inline edit). Print mode auto-approves tool calls and auto-dismisses
-// AskUserQuestion, so each query is a self-contained subprocess.
+// One-shot `kimi --prompt` runs for auxiliary services (title generation, instruction
+// refinement, inline edit). Prompt mode forces auto permission and auto-approves
+// tool calls, so each query is a self-contained subprocess.
 export class KimiAuxQueryRunner implements AuxQueryRunner {
   private activeProcess: AcpSubprocess | null = null;
 
@@ -25,16 +25,18 @@ export class KimiAuxQueryRunner implements AuxQueryRunner {
     const settings = this.plugin.settings as unknown as Record<string, unknown>;
     const runtimeEnv = buildKimiRuntimeEnv(settings, resolvedCliPath);
 
-    const args = ['--print', '--output-format', 'text', '--final-message-only'];
+    // `kimi --prompt` has no system-prompt flag; the instruction text travels with
+    // the prompt. `--output-format text` (the prompt-mode default) writes only the
+    // assistant text to stdout.
+    const fullPrompt = config.systemPrompt.trim()
+      ? `${config.systemPrompt}\n\n${prompt}`
+      : prompt;
+
+    const args = ['--prompt', fullPrompt, '--output-format', 'text'];
     const model = this.resolveModel(config.model);
     if (model) {
       args.push('--model', model);
     }
-
-    // `kimi --print` has no system-prompt flag; the instruction text travels with the prompt.
-    const fullPrompt = config.systemPrompt.trim()
-      ? `${config.systemPrompt}\n\n${prompt}`
-      : prompt;
 
     const subprocess = new AcpSubprocess({
       args,
@@ -59,8 +61,6 @@ export class KimiAuxQueryRunner implements AuxQueryRunner {
         stdout += typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
         config.onTextChunk?.(stdout);
       });
-      subprocess.stdin.write(fullPrompt);
-      subprocess.stdin.end();
 
       const closeError = await closed;
       if (config.abortController?.signal.aborted) {

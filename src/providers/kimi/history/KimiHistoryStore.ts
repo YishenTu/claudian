@@ -9,7 +9,7 @@ import type {
 
 const DEFAULT_SESSION_TITLE = 'New Session';
 
-export interface ParsedKimiHistory {
+interface ParsedKimiHistory {
   messages: ChatMessage[];
   title?: string;
 }

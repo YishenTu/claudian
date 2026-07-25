@@ -81,7 +81,7 @@ describe('KimiAuxQueryRunner', () => {
     MockAcpSubprocess.mockImplementation(() => process as unknown as AcpSubprocess);
   });
 
-  it('runs kimi --print with text output and aggregates stdout', async () => {
+  it('runs kimi --prompt with text output and aggregates stdout', async () => {
     const runner = new KimiAuxQueryRunner(makeHost());
     const onTextChunk = jest.fn();
 
@@ -96,19 +96,17 @@ describe('KimiAuxQueryRunner', () => {
 
     await expect(query).resolves.toBe('Kimi title');
     expect(MockAcpSubprocess).toHaveBeenCalledWith({
-      args: ['--print', '--output-format', 'text', '--final-message-only'],
+      args: ['--prompt', 'Title prompt\n\nGenerate a title', '--output-format', 'text'],
       command: '/opt/kimi/bin/kimi',
       cwd: '/tmp/kimi-aux-vault',
       env: expect.objectContaining({ KIMI_PROFILE: 'test' }),
     });
     expect(process.start).toHaveBeenCalledTimes(1);
-    expect(process.stdin.write).toHaveBeenCalledWith('Title prompt\n\nGenerate a title');
-    expect(process.stdin.end).toHaveBeenCalledTimes(1);
     expect(onTextChunk).toHaveBeenNthCalledWith(1, 'Kimi');
     expect(onTextChunk).toHaveBeenNthCalledWith(2, 'Kimi title');
   });
 
-  it('sends the bare prompt when no system prompt is supplied', async () => {
+  it('passes the bare prompt when no system prompt is supplied', async () => {
     const runner = new KimiAuxQueryRunner(makeHost());
 
     const query = runner.query({ systemPrompt: '   ' }, 'Plain prompt');
@@ -116,7 +114,9 @@ describe('KimiAuxQueryRunner', () => {
     process.emitClose();
 
     await expect(query).resolves.toBe('');
-    expect(process.stdin.write).toHaveBeenCalledWith('Plain prompt');
+    expect(MockAcpSubprocess).toHaveBeenCalledWith(expect.objectContaining({
+      args: ['--prompt', 'Plain prompt', '--output-format', 'text'],
+    }));
   });
 
   it('passes kimi:-scoped and raw auxiliary models through --model', async () => {
@@ -125,7 +125,7 @@ describe('KimiAuxQueryRunner', () => {
     const scoped = runner.query({ model: 'kimi:kimi-k2-latest', systemPrompt: 's' }, 'p');
     await flushPromises();
     expect(MockAcpSubprocess).toHaveBeenLastCalledWith(expect.objectContaining({
-      args: ['--print', '--output-format', 'text', '--final-message-only', '--model', 'kimi-k2-latest'],
+      args: ['--prompt', 's\n\np', '--output-format', 'text', '--model', 'kimi-k2-latest'],
     }));
     process.emitClose();
     await scoped;
@@ -133,7 +133,7 @@ describe('KimiAuxQueryRunner', () => {
     const raw = runner.query({ model: 'kimi-k2', systemPrompt: 's' }, 'p');
     await flushPromises();
     expect(MockAcpSubprocess).toHaveBeenLastCalledWith(expect.objectContaining({
-      args: ['--print', '--output-format', 'text', '--final-message-only', '--model', 'kimi-k2'],
+      args: ['--prompt', 's\n\np', '--output-format', 'text', '--model', 'kimi-k2'],
     }));
     process.emitClose();
     await raw;
@@ -141,7 +141,7 @@ describe('KimiAuxQueryRunner', () => {
     const unset = runner.query({ model: undefined, systemPrompt: 's' }, 'p');
     await flushPromises();
     expect(MockAcpSubprocess).toHaveBeenLastCalledWith(expect.objectContaining({
-      args: ['--print', '--output-format', 'text', '--final-message-only'],
+      args: ['--prompt', 's\n\np', '--output-format', 'text'],
     }));
     process.emitClose();
     await unset;

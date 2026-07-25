@@ -80,7 +80,7 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
         .then((resolved) => {
           detectionSetting.setDesc(resolved
             ? `Using ${resolved}`
-            : 'The `kimi` binary was not found on PATH. Install kimi-cli or set a CLI path above.');
+            : 'The `kimi` binary was not found on PATH. Install Kimi Code or set a CLI path above.');
         });
     };
 
@@ -109,7 +109,7 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
     cliPathSetting.addText((text) => {
       text
         .setPlaceholder(process.platform === 'win32'
-          ? 'C:\\Users\\you\\AppData\\Roaming\\Python\\Scripts\\kimi.exe'
+          ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\kimi.cmd'
           : '/usr/local/bin/kimi')
         .setValue(currentValue)
         .onChange(async (value) => {
@@ -141,8 +141,8 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
       scope: 'provider:kimi',
       heading: 'Environment',
       name: 'Environment variables',
-      desc: 'Extra environment variables passed to Kimi. Kimi owns ~/.kimi/config.toml and ~/.kimi/mcp.json; Claudian never writes them.',
-      placeholder: 'KIMI_API_KEY=your-api-key\nKIMI_SHARE_DIR=/path/to/kimi-share',
+      desc: 'Extra environment variables passed to Kimi. Kimi owns ~/.kimi-code/config.toml and ~/.kimi-code/mcp.json; Claudian never writes them.',
+      placeholder: 'KIMI_LOG_LEVEL=debug\nKIMI_CODE_HOME=/path/to/kimi-home',
       renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, KIMI_PROVIDER_ID),
     });
   },

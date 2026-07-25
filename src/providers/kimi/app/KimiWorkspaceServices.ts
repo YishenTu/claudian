@@ -20,7 +20,7 @@ const kimiTabWarmupPolicy: ProviderTabWarmupPolicy = {
   },
 };
 
-export async function createKimiWorkspaceServices(): Promise<KimiWorkspaceServices> {
+async function createKimiWorkspaceServices(): Promise<KimiWorkspaceServices> {
   return {
     cliResolver: new KimiCliResolver(),
     commandCatalog: new KimiCommandCatalog(),

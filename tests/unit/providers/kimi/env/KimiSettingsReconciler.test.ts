@@ -13,17 +13,15 @@ jest.mock('@/utils/env', () => ({
 }));
 
 describe('KimiSettingsReconciler', () => {
-  it('owns only KIMI_ and MOONSHOT_ environment keys', () => {
+  it('owns only KIMI_ environment keys', () => {
     expect(KIMI_ENVIRONMENT_KEY_PATTERNS.map(pattern => ({
       flags: pattern.flags,
       source: pattern.source,
     }))).toEqual([
       { flags: 'i', source: '^KIMI_' },
-      { flags: 'i', source: '^MOONSHOT_' },
     ]);
-    expect(KIMI_ENVIRONMENT_KEY_PATTERNS.some(pattern => pattern.test('KIMI_API_KEY'))).toBe(true);
-    expect(KIMI_ENVIRONMENT_KEY_PATTERNS.some(pattern => pattern.test('kimi_share_dir'))).toBe(true);
-    expect(KIMI_ENVIRONMENT_KEY_PATTERNS.some(pattern => pattern.test('MOONSHOT_API_KEY'))).toBe(true);
+    expect(KIMI_ENVIRONMENT_KEY_PATTERNS.some(pattern => pattern.test('KIMI_MODEL_NAME'))).toBe(true);
+    expect(KIMI_ENVIRONMENT_KEY_PATTERNS.some(pattern => pattern.test('kimi_code_home'))).toBe(true);
     expect(KIMI_ENVIRONMENT_KEY_PATTERNS.some(pattern => pattern.test('OPENAI_API_KEY'))).toBe(false);
     expect(KIMI_ENVIRONMENT_KEY_PATTERNS.some(pattern => pattern.test('GROK_HOME'))).toBe(false);
   });
@@ -33,7 +31,7 @@ describe('KimiSettingsReconciler', () => {
       providerConfigs: {
         kimi: {
           cliPathsByHost: { 'current-host': '/bin/kimi' },
-          environmentVariables: 'KIMI_API_KEY=super-secret\nMOONSHOT_API_KEY=other-secret',
+          environmentVariables: 'KIMI_MODEL_API_KEY=super-secret\nKIMI_LOG_LEVEL=debug',
         },
       },
     });
@@ -41,7 +39,7 @@ describe('KimiSettingsReconciler', () => {
       providerConfigs: {
         kimi: {
           cliPathsByHost: { 'current-host': '/bin/kimi' },
-          environmentVariables: 'MOONSHOT_API_KEY=other-secret\nKIMI_API_KEY=super-secret',
+          environmentVariables: 'KIMI_LOG_LEVEL=debug\nKIMI_MODEL_API_KEY=super-secret',
         },
       },
     });
@@ -49,14 +47,14 @@ describe('KimiSettingsReconciler', () => {
     expect(first).toMatch(/^[a-f0-9]{64}$/);
     expect(first).toBe(reordered);
     expect(first).not.toContain('super-secret');
-    expect(first).not.toContain('other-secret');
+    expect(first).not.toContain('debug');
   });
 
   it('declares reload and preserves all conversation bindings', () => {
     const kimiConversation = {
       messages: [],
       providerId: 'kimi',
-      providerState: { sessionDirectory: '/tmp/.kimi/sessions/vault/session-1' },
+      providerState: { sessionDirectory: '/tmp/.kimi-code/sessions/vault/session-1' },
       sessionId: 'session-1',
     } as unknown as Conversation;
 
@@ -64,7 +62,7 @@ describe('KimiSettingsReconciler', () => {
     expect(kimiSettingsReconciler.invalidateConversationSessions([kimiConversation]))
       .toEqual([]);
     expect(kimiConversation).toEqual(expect.objectContaining({
-      providerState: { sessionDirectory: '/tmp/.kimi/sessions/vault/session-1' },
+      providerState: { sessionDirectory: '/tmp/.kimi-code/sessions/vault/session-1' },
       sessionId: 'session-1',
     }));
   });
@@ -92,7 +90,7 @@ describe('KimiSettingsReconciler', () => {
         kimi: {
           enabled: true,
           environmentHash: 'stale-hash',
-          environmentVariables: 'KIMI_API_KEY=new-secret',
+          environmentVariables: 'KIMI_MODEL_API_KEY=new-secret',
         },
       },
     };
@@ -114,7 +112,7 @@ describe('KimiSettingsReconciler', () => {
       providerConfigs: {
         kimi: {
           enabled: true,
-          environmentVariables: 'KIMI_SHARE_DIR=/tmp/kimi',
+          environmentVariables: 'KIMI_CODE_HOME=/tmp/kimi-code',
         },
       },
     };

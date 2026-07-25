@@ -34,10 +34,7 @@ describe('Kimi provider registration', () => {
     expect(kimiProviderRegistration.capabilities).toBe(KIMI_PROVIDER_CAPABILITIES);
     expect(kimiProviderRegistration.environmentKeyPatterns).toBe(KIMI_ENVIRONMENT_KEY_PATTERNS);
     expect(kimiProviderRegistration.environmentKeyPatterns?.some(
-      pattern => pattern.test('KIMI_API_KEY'),
-    )).toBe(true);
-    expect(kimiProviderRegistration.environmentKeyPatterns?.some(
-      pattern => pattern.test('MOONSHOT_API_KEY'),
+      pattern => pattern.test('KIMI_MODEL_NAME'),
     )).toBe(true);
     expect(kimiProviderRegistration.environmentKeyPatterns?.some(
       pattern => pattern.test('OPENAI_API_KEY'),
