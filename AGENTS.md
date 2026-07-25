@@ -4,11 +4,12 @@
 
 Claudian is an Obsidian plugin (desktop only, Obsidian v1.7.2+) that embeds provider-backed coding agents in a sidebar chat and an inline-edit flow. The vault becomes the agent's working directory, so file reads/writes, search, bash commands, and multi-step workflows run against the user's notes.
 
-Claude is the default provider. Codex, Grok, OpenCode, and Pi are optional providers that plug into the same conversation model through `Conversation.providerId` and opaque provider-owned `providerState`. Each provider adapts a different protocol:
+Claude is the default provider. Codex, Grok, Kimi, OpenCode, and Pi are optional providers that plug into the same conversation model through `Conversation.providerId` and opaque provider-owned `providerState`. Each provider adapts a different protocol:
 
 - **Claude** — `@anthropic-ai/claude-agent-sdk` with Claude Code CLI compatibility
 - **Codex** — OpenAI Codex via `codex app-server` over stdio JSON-RPC 2.0
 - **Grok** — Grok Build via Agent Client Protocol (ACP) over a `grok agent --no-leader stdio` subprocess
+- **Kimi** — ACP over a `kimi acp` subprocess
 - **OpenCode** — ACP over an `opencode acp` subprocess
 - **Pi** — RPC over a `pi --mode rpc` subprocess
 
@@ -28,6 +29,7 @@ The repository is TypeScript bundled with esbuild into a single `main.js` (CJS, 
   - `src/providers/claude/AGENTS.md`
   - `src/providers/codex/AGENTS.md`
   - `src/providers/grok/AGENTS.md`
+  - `src/providers/kimi/AGENTS.md`
   - `src/providers/opencode/AGENTS.md`
   - `src/providers/pi/AGENTS.md`
   - `src/style/AGENTS.md`
@@ -89,7 +91,7 @@ Key runtime flow: features call `ProviderRegistry.createChatRuntime()`, then `Ch
 - Model, permission, plan-mode, command, MCP, skill, and subagent behavior is provider-specific unless the core contract explicitly makes it shared.
 - `Conversation.providerState` is opaque to feature code. Provider-specific fields belong behind typed provider helpers in the owning provider directory.
 - When provider behavior is uncertain, inspect real runtime output first. Put throwaway scripts, traces, and handoff notes in `.context/`.
-- Shared skill management for Codex, Grok, Pi, and OpenCode owns only `.agents/skills`; composer discovery remains exclusively provider-protocol-driven. Claude stays on `.claude/skills` and `.claude/commands`, and legacy provider roots are never migrated automatically.
+- Shared skill management for Codex, Grok, Kimi, Pi, and OpenCode owns only `.agents/skills`; composer discovery remains exclusively provider-protocol-driven. Claude stays on `.claude/skills` and `.claude/commands`, and legacy provider roots are never migrated automatically.
 
 ## Storage
 
@@ -102,7 +104,7 @@ Key runtime flow: features call `ProviderRegistry.createChatRuntime()`, then `Ch
 | `.claude/commands/**/*.md` | Claude slash commands |
 | `.claude/skills/*/SKILL.md` | Claude skills |
 | `.claude/agents/*.md` | Claude vault agents |
-| `.agents/skills/*/SKILL.md` | Claudian-managed shared vault skills for Codex, Grok, Pi, and OpenCode |
+| `.agents/skills/*/SKILL.md` | Claudian-managed shared vault skills for Codex, Grok, Kimi, Pi, and OpenCode |
 | `.codex/skills/*/SKILL.md` | Legacy/provider-native Codex skills; never managed or migrated by Claudian |
 | `.codex/agents/*.toml` | Codex vault subagent definitions |
 | `.opencode/agent`, `.opencode/agents` | OpenCode agent definitions |
@@ -110,6 +112,8 @@ Key runtime flow: features call `ProviderRegistry.createChatRuntime()`, then `Ch
 | `~/.claude/projects/{vault}/*.jsonl` | Claude-native transcripts |
 | `~/.codex/sessions/**/*.jsonl` | Codex-native transcripts |
 | `~/.grok/sessions/` | Grok-native sessions (read-only from Claudian) |
+| `~/.kimi/sessions/<md5(vault)>/<uuid>/` | Kimi-native sessions (read-only from Claudian; `KIMI_SHARE_DIR` relocates the root) |
+| `~/.kimi/config.toml`, `~/.kimi/mcp.json` | Kimi-owned config and MCP servers; never written by Claudian |
 | `~/.pi/agent/sessions/` | Pi user-level sessions |
 
 ## Code Style

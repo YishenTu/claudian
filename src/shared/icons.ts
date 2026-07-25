@@ -115,6 +115,11 @@ export const GROK_PROVIDER_ICON: ProviderIconSvg = {
   path: 'M3.25 3h4.18l4.8 6.64L17.88 3h3.17l-7.36 8.65L20.44 21h-4.18l-5.16-7.14L5.02 21H1.85l7.79-9.16L3.25 3Zm3.03 1.7 10.85 14.6h1.28L7.56 4.7H6.28Z',
 };
 
+export const KIMI_PROVIDER_ICON: ProviderIconSvg = {
+  viewBox: '0 0 24 24',
+  path: 'M5 3h2.5v6.9L13.7 3h3.2l-6.9 7.6 7.5 10.4h-3.1l-6-7-.9 1v6H5V3Z',
+};
+
 export interface CreateProviderIconSvgOptions {
   className?: string;
   dataProvider?: string;

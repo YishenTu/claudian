@@ -6,6 +6,7 @@ describe('built-in ProviderModule catalog', () => {
       'claude',
       'codex',
       'grok',
+      'kimi',
       'opencode',
       'pi',
     ]);

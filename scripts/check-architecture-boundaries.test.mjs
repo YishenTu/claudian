@@ -28,7 +28,7 @@ function findMatches(roots, pattern) {
 const sourceRoot = path.join(process.cwd(), 'src');
 
 test('core is independent from main, features, and concrete providers', () => {
-  const pattern = /from\s+['"][^'"]*(?:main['"]|features\/|providers\/(?:claude|codex|opencode|pi))/;
+  const pattern = /from\s+['"][^'"]*(?:main['"]|features\/|providers\/(?:claude|codex|kimi|opencode|pi))/;
   assert.deepEqual(findMatches([path.join(sourceRoot, 'core')], pattern), []);
 });
 
@@ -43,7 +43,7 @@ test('features are independent from the composition root and app adapters', () =
 });
 
 test('features and shared UI are independent from concrete providers', () => {
-  const pattern = /from\s+['"][^'"]*providers\/(?:claude|codex|opencode|pi)/;
+  const pattern = /from\s+['"][^'"]*providers\/(?:claude|codex|kimi|opencode|pi)/;
   assert.deepEqual(findMatches([
     path.join(sourceRoot, 'features'),
     path.join(sourceRoot, 'shared'),
@@ -62,7 +62,7 @@ test('runtime command discovery cannot import shared skill management', () => {
   const roots = [
     path.join(sourceRoot, 'features', 'chat'),
     path.join(sourceRoot, 'shared', 'components'),
-    ...['claude', 'codex', 'grok', 'opencode', 'pi'].flatMap(provider => [
+    ...['claude', 'codex', 'grok', 'kimi', 'opencode', 'pi'].flatMap(provider => [
       path.join(sourceRoot, 'providers', provider, 'app'),
       path.join(sourceRoot, 'providers', provider, 'commands'),
     ]).filter(fs.existsSync),

@@ -90,6 +90,10 @@
   border-color: var(--claudian-brand-grok, #ffffff);
 }
 
+.claudian-tab-badge-streaming[data-provider="kimi"] {
+  border-color: var(--claudian-brand-kimi, #5B8DEF);
+}
+
 .claudian-tab-badge-attention {
   border-color: var(--text-error);
 }
