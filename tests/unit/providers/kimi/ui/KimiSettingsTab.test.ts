@@ -73,6 +73,22 @@ jest.mock('@/shared/settings/McpSettingsManager', () => ({
   }),
 }));
 
+const mockKimiAgentSettingsCalls: Array<{
+  containerEl: unknown;
+  deps: { storage: unknown; onChanged?: () => Promise<void> | void };
+}> = [];
+
+jest.mock('@/providers/kimi/ui/KimiAgentSettings', () => ({
+  KimiAgentSettings: jest.fn().mockImplementation((
+    containerEl: unknown,
+    deps: { storage: unknown; onChanged?: () => Promise<void> | void },
+  ) => {
+    mockKimiAgentSettingsCalls.push({ containerEl, deps });
+  }),
+  findKimiAgentNameConflict: jest.fn(),
+  resolveKimiModelPreference: jest.fn(),
+}));
+
 function createMockContext(): any {
   const plugin: any = {
     app: {},
@@ -146,5 +162,60 @@ describe('KimiSettingsTab MCP section', () => {
     kimiSettingsTabRenderer.render(createMockEl() as unknown as HTMLElement, context);
 
     expect(mockMcpSettingsManagerCalls).toHaveLength(0);
+  });
+});
+
+describe('KimiSettingsTab subagents section', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    createdSettings.length = 0;
+    mockKimiAgentSettingsCalls.length = 0;
+  });
+
+  afterEach(() => {
+    ProviderWorkspaceRegistry.setServices('kimi', null as never);
+  });
+
+  it('renders the agent management section against the vault agent storage', () => {
+    const agentStorage = { loadAll: jest.fn(), save: jest.fn(), delete: jest.fn() };
+    ProviderWorkspaceRegistry.setServices('kimi', {
+      agentStorage,
+      cliResolver: { resolveFromSettings: jest.fn().mockResolvedValue(null), reset: jest.fn() },
+      refreshAgentMentions: jest.fn().mockResolvedValue(undefined),
+      refreshModelCatalog: jest.fn().mockResolvedValue({ changed: false }),
+    } as never);
+    const context = createMockContext();
+
+    kimiSettingsTabRenderer.render(createMockEl() as unknown as HTMLElement, context);
+
+    expect(createdSettings.some((setting) => setting.heading && setting.name === 'Subagents'))
+      .toBe(true);
+    expect(mockKimiAgentSettingsCalls).toHaveLength(1);
+    expect(mockKimiAgentSettingsCalls[0].deps.storage).toBe(agentStorage);
+  });
+
+  it('refreshes agent mentions after agent mutations', async () => {
+    const refreshAgentMentions = jest.fn().mockResolvedValue(undefined);
+    ProviderWorkspaceRegistry.setServices('kimi', {
+      agentStorage: { loadAll: jest.fn(), save: jest.fn(), delete: jest.fn() },
+      cliResolver: { resolveFromSettings: jest.fn().mockResolvedValue(null), reset: jest.fn() },
+      refreshAgentMentions,
+      refreshModelCatalog: jest.fn().mockResolvedValue({ changed: false }),
+    } as never);
+    const context = createMockContext();
+
+    kimiSettingsTabRenderer.render(createMockEl() as unknown as HTMLElement, context);
+    await mockKimiAgentSettingsCalls[0].deps.onChanged?.();
+
+    expect(refreshAgentMentions).toHaveBeenCalled();
+  });
+
+  it('omits the subagents section when workspace services are unavailable', () => {
+    ProviderWorkspaceRegistry.setServices('kimi', null as never);
+    const context = createMockContext();
+
+    kimiSettingsTabRenderer.render(createMockEl() as unknown as HTMLElement, context);
+
+    expect(mockKimiAgentSettingsCalls).toHaveLength(0);
   });
 });

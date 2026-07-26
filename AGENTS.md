@@ -107,7 +107,8 @@ Key runtime flow: features call `ProviderRegistry.createChatRuntime()`, then `Ch
 | `.agents/skills/*/SKILL.md` | Claudian-managed shared vault skills for Codex, Grok, Kimi, Pi, and OpenCode |
 | `.codex/skills/*/SKILL.md` | Legacy/provider-native Codex skills; never managed or migrated by Claudian |
 | `.codex/agents/*.toml` | Codex vault subagent definitions |
-| `.kimi-code/agents/*.md`, `.agents/agents/*.md` | Kimi vault agent definitions (read-only from Claudian; surfaced for @-mentions) |
+| `.kimi-code/agents/*.md` | Kimi vault agent definitions (managed by Claudian's Kimi agent settings) |
+| `.agents/agents/*.md` | Kimi generic vault agent definitions (read-only from Claudian; surfaced for @-mentions) |
 | `.kimi-code/mcp.json` | Claudian-managed MCP servers for Kimi (merged with hand-written entries; read natively by the kimi CLI) |
 | `.opencode/agent`, `.opencode/agents` | OpenCode agent definitions |
 | `.pi/agent/sessions/` | Pi vault-local sessions |

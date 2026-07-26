@@ -21,6 +21,7 @@ import { KimiRuntimeCommandLoader } from './KimiRuntimeCommandLoader';
 
 export interface KimiWorkspaceServices extends ProviderWorkspaceServices {
   agentMentionProvider: KimiAgentMentionProvider;
+  agentStorage: KimiAgentStorage;
   commandCatalog: ProviderCommandCatalog;
   mcpServerManager: McpServerManager;
   mcpStorage: KimiMcpStorage;
@@ -39,12 +40,14 @@ export async function createKimiWorkspaceServices(
   plugin: ProviderHost,
   vaultAdapter: VaultFileAdapter,
 ): Promise<KimiWorkspaceServices> {
-  const agentMentionProvider = new KimiAgentMentionProvider(new KimiAgentStorage(vaultAdapter));
+  const agentStorage = new KimiAgentStorage(vaultAdapter);
+  const agentMentionProvider = new KimiAgentMentionProvider(agentStorage);
   const mcpStorage = new KimiMcpStorage(vaultAdapter);
   const mcpServerManager = new McpServerManager(mcpStorage);
 
   return {
     agentMentionProvider,
+    agentStorage,
     cliResolver: new KimiCliResolver(),
     commandCatalog: new KimiCommandCatalog(),
     mcpServerManager,

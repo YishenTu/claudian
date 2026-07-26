@@ -22,6 +22,7 @@ import { maybeGetKimiWorkspaceServices } from '../app/KimiWorkspaceServices';
 import { clearKimiDiscoveryState, getKimiDiscoveryState } from '../discoveryState';
 import type { KimiDiscoveredModel } from '../models';
 import { getKimiProviderSettings, updateKimiProviderSettings } from '../settings';
+import { KimiAgentSettings } from './KimiAgentSettings';
 
 const KIMI_PROVIDER_ID = 'kimi' as const;
 
@@ -143,6 +144,18 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
     context.renderAgentSkillSettings(container, KIMI_PROVIDER_ID);
+
+    if (workspace?.agentStorage) {
+      new Setting(container).setName(t('settings.subagents.name')).setHeading();
+      const agentsContainer = container.createDiv({ cls: 'claudian-agents-container' });
+      new KimiAgentSettings(agentsContainer, {
+        app: context.plugin.app,
+        storage: workspace.agentStorage,
+        onChanged: async () => {
+          await workspace.refreshAgentMentions?.();
+        },
+      });
+    }
 
     new Setting(container).setName('Commands').setHeading();
     context.renderHiddenProviderCommandSetting(container, KIMI_PROVIDER_ID, {

@@ -470,6 +470,10 @@ export class KimiChatRuntime implements ChatRuntime {
       if (response.userMessageId) {
         this.currentTurnMetadata.userMessageId = response.userMessageId;
       }
+      // kimi 0.29.x sends no usage over ACP (prompt responses carry only
+      // stopReason) and persists no token counters to state.json or wire.jsonl
+      // (verified against the CLI source and a live session), so this stays
+      // null and the usage meter stays empty. Kept for protocol parity.
       this.promptUsage = response.usage ?? null;
 
       const usage = buildAcpUsageInfo({
@@ -1381,6 +1385,8 @@ export class KimiChatRuntime implements ChatRuntime {
         return;
       }
       case 'usage': {
+        // Dead in practice: kimi emits no `usage_update` notifications (see the
+        // note at the prompt-response usage handling above).
         this.contextUsage = normalized.usage;
         const usage = buildAcpUsageInfo({
           contextWindow: normalized.usage,
