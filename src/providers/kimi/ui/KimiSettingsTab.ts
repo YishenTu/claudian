@@ -10,6 +10,7 @@ import type {
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { McpSettingsManager } from '../../../shared/settings/McpSettingsManager';
 import {
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
@@ -150,13 +151,34 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
       placeholder: 'compact\ninit',
     });
 
+    if (workspace?.mcpStorage) {
+      new Setting(container).setName(t('settings.mcpServers.name')).setHeading();
+
+      const mcpDesc = container.createDiv({ cls: 'claudian-mcp-settings-desc' });
+      mcpDesc.createEl('p', {
+        text: 'Manage vault-level MCP server configurations stored in .kimi-code/mcp.json. Kimi reads this file natively at session start; the user-level ~/.kimi-code/mcp.json is never touched.',
+        cls: 'setting-item-description',
+      });
+
+      const mcpContainer = container.createDiv({ cls: 'claudian-mcp-container' });
+      new McpSettingsManager(mcpContainer, {
+        app: context.plugin.app,
+        mcpStorage: workspace.mcpStorage,
+        broadcastMcpReload: async () => {
+          await context.plugin.broadcastToAllViewRuntimes?.(
+            (service) => service.reloadMcpServers(),
+          );
+        },
+      });
+    }
+
     renderEnvironmentSettingsSection({
       container,
       plugin: context.plugin,
       scope: 'provider:kimi',
       heading: 'Environment',
       name: 'Environment variables',
-      desc: 'Extra environment variables passed to Kimi. Kimi owns ~/.kimi-code/config.toml and ~/.kimi-code/mcp.json; Claudian never writes them.',
+      desc: 'Extra environment variables passed to Kimi. Kimi owns ~/.kimi-code/config.toml and the user-level ~/.kimi-code/mcp.json; Claudian never writes them.',
       placeholder: 'KIMI_LOG_LEVEL=debug\nKIMI_CODE_HOME=/path/to/kimi-home',
       renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, KIMI_PROVIDER_ID),
     });

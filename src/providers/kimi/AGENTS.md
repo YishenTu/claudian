@@ -23,7 +23,12 @@
 
 - Sessions live under `~/.kimi-code/sessions/wd_<slug>_<sha256(normalized cwd)[:12]>/session_<uuid>/`; `KIMI_CODE_HOME` relocates the `~/.kimi-code` root. The main agent wire log is `<sessionDir>/agents/main/wire.jsonl` (flat `{type, time, ...}` records, ms epochs); `state.json` holds the session title. `KimiHistoryPathResolver` owns the path rules and trusted-root checks.
 - Never mutate kimi-native files (`~/.kimi-code/sessions/**`). Deleting a Claudian conversation only removes `.claudian` session metadata.
-- Settings reconciliation is env projection only (`KIMI_*`); it never writes `~/.kimi-code/config.toml`. Kimi loads `~/.kimi-code/mcp.json` natively, so there is no `mcpServerManager`.
+- Settings reconciliation is env projection only (`KIMI_*`); it never writes `~/.kimi-code/config.toml`. The user-level `~/.kimi-code/mcp.json` is strictly read-only.
+- Claudian manages the vault-level `.kimi-code/mcp.json` via `storage/KimiMcpStorage.ts` + the shared `McpServerManager` (registered as the `mcpServerManager` workspace service, with the shared MCP settings UI in the Kimi tab). Verified against kimi-code (`agent/mcp/config-loader.ts`): kimi natively merges `~/.kimi-code/mcp.json`, project-root `.mcp.json`, then `<cwd>/.kimi-code/mcp.json` at process start, so no ACP passthrough exists or is needed; `KimiChatRuntime.reloadMcpServers` restarts the process so changes apply on the next turn. Entry translation: kimi `transport` ↔ shared `type`; `enabled`/`disabledTools` are kimi-native fields; `contextSaving`/`description` live in the `_claudian.servers` namespace; unknown top-level keys and kimi-native entry fields (executor, cwd, timeouts, `bearerTokenEnvVar`) are preserved on save, with stale variant-specific keys dropped on transport flips.
+
+## Agents and Mentions
+
+- Vault agent Markdown files (`.kimi-code/agents/`, `.agents/agents/`; kimi's `agentFile` format: kebab-case `name` falling back to the file name, required `description`, non-empty prompt body) are scanned read-only by `agents/KimiAgentStorage.ts` and surfaced through the `agentMentionProvider` workspace service for @-mentions. Brand-directory entries win name conflicts. Mentions inject plain `@<name> (agent)` prompt text, which works unchanged over ACP. Claudian does not create or edit kimi agent files.
 
 ## Commands and Models
 
@@ -37,5 +42,5 @@
 
 - `KimiAuxQueryRunner` owns one-shot `kimi --prompt <prompt> --output-format text` subprocesses, independent from the chat runtime. Prompt mode forces auto permission and auto-approves tools; text output carries only the assistant text on stdout.
 - Kimi Code ships a single `kimi` binary (npm `@moonshot-ai/kimi-code`); `KimiCliResolver` resolves only that name.
-- Kimi ACP does not expose subagent events, so there is no `subagentAdapter` and no agent-mention provider (kimi has no vault agent directory convention).
+- Kimi ACP does not expose subagent events, so there is no `subagentAdapter`; agent @-mentions come from vault agent files instead (see "Agents and Mentions").
 - Model metadata the ACP catalog does not expose (display names, `max_context_size`, `capabilities` such as `image_in`) is read — never written — from `<kimi home>/config.toml` `[models."<alias>"]` entries by `app/KimiModelMetadata.ts` (mtime-cached, tolerant of a missing/corrupt file, re-read on catalog refresh). `KimiChatUIConfig` uses it for context windows (metadata wins over custom limits, then the 200k fallback), label fallback when ACP provided none, and per-model image gating via the optional `supportsImageInputForModel` chat-UI-config hook; without metadata the provider-level defaults apply.

@@ -253,7 +253,15 @@ export class KimiChatRuntime implements ChatRuntime {
     }
   }
 
-  async reloadMcpServers(): Promise<void> {}
+  // Kimi reads .kimi-code/mcp.json at process start, so reload restarts the
+  // process; the next ensureReady re-creates sessions from native history. A
+  // running turn keeps its process to avoid breaking the stream.
+  async reloadMcpServers(): Promise<void> {
+    if (this.activeTurn) {
+      return;
+    }
+    await this.shutdownProcess({ preserveCommandWaiters: true });
+  }
 
   async ensureReady(options?: ChatRuntimeEnsureReadyOptions): Promise<boolean> {
     if (this.disposed) {

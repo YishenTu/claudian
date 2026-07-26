@@ -107,13 +107,15 @@ Key runtime flow: features call `ProviderRegistry.createChatRuntime()`, then `Ch
 | `.agents/skills/*/SKILL.md` | Claudian-managed shared vault skills for Codex, Grok, Kimi, Pi, and OpenCode |
 | `.codex/skills/*/SKILL.md` | Legacy/provider-native Codex skills; never managed or migrated by Claudian |
 | `.codex/agents/*.toml` | Codex vault subagent definitions |
+| `.kimi-code/agents/*.md`, `.agents/agents/*.md` | Kimi vault agent definitions (read-only from Claudian; surfaced for @-mentions) |
+| `.kimi-code/mcp.json` | Claudian-managed MCP servers for Kimi (merged with hand-written entries; read natively by the kimi CLI) |
 | `.opencode/agent`, `.opencode/agents` | OpenCode agent definitions |
 | `.pi/agent/sessions/` | Pi vault-local sessions |
 | `~/.claude/projects/{vault}/*.jsonl` | Claude-native transcripts |
 | `~/.codex/sessions/**/*.jsonl` | Codex-native transcripts |
 | `~/.grok/sessions/` | Grok-native sessions (read-only from Claudian) |
 | `~/.kimi-code/sessions/<wd_slug_hash>/session_<uuid>/` | Kimi-native sessions (read-only from Claudian; `KIMI_CODE_HOME` relocates the root) |
-| `~/.kimi-code/config.toml`, `~/.kimi-code/mcp.json` | Kimi-owned config and MCP servers; never written by Claudian |
+| `~/.kimi-code/config.toml`, `~/.kimi-code/mcp.json` | Kimi-owned user-level config and MCP servers; never written by Claudian |
 | `~/.pi/agent/sessions/` | Pi user-level sessions |
 
 ## Code Style
