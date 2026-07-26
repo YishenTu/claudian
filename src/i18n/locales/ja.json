@@ -457,6 +457,12 @@
       "noAgents": "Vault に Codex サブエージェントがありません。+ をクリックして作成してください。"
     },
     "kimi": {
+      "subagents": {
+        "modelCliDefault": "CLI デフォルト",
+        "modelDesc": "サブエージェントが使用するモデル。「継承」は現在のチャットモデル、「セカンダリ」は kimi 設定のセカンダリモデル、「CLI デフォルト」は kimi に委ねます（設定されていればセカンダリ）。",
+        "modelPrimary": "チャットモデルを継承",
+        "modelSecondary": "セカンダリモデル"
+      },
       "cliPath": {
         "name": "Kimi CLI パス",
         "desc": "このコンピューター上の Kimi CLI の絶対パス（任意）。空のままにすると PATH 上の `kimi` を使用します。",

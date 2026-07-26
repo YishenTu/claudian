@@ -488,6 +488,12 @@
       "noAgents": "No Codex subagents in vault. Click + to create one."
     },
     "kimi": {
+      "subagents": {
+        "modelCliDefault": "CLI default",
+        "modelDesc": "Model the subagent runs on. Inherit uses the current chat model; Secondary uses the secondary model from the kimi config; CLI default lets kimi decide (secondary when configured).",
+        "modelPrimary": "Inherit chat model",
+        "modelSecondary": "Secondary model"
+      },
       "cliPath": {
         "name": "Kimi CLI path",
         "desc": "Optional absolute path to the Kimi CLI for this computer. Leave empty to use `kimi` from PATH.",

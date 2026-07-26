@@ -7,6 +7,7 @@ import {
   type KimiAgentDefinition,
 } from '@/providers/kimi/agents/KimiAgentStorage';
 import {
+  buildKimiAgentSavePayload,
   findKimiAgentNameConflict,
   KimiAgentSettings,
   resolveKimiModelPreference,
@@ -51,10 +52,71 @@ function flushRender(): Promise<void> {
 
 describe('resolveKimiModelPreference', () => {
   it('maps the dropdown values onto model_preference', () => {
+    expect(resolveKimiModelPreference('cli-default')).toBeUndefined();
     expect(resolveKimiModelPreference('inherit')).toBeUndefined();
     expect(resolveKimiModelPreference('primary')).toBe('primary');
     expect(resolveKimiModelPreference('secondary')).toBe('secondary');
     expect(resolveKimiModelPreference('anything-else')).toBeUndefined();
+  });
+});
+
+describe('buildKimiAgentSavePayload', () => {
+  it('omits model_preference for the CLI default choice and writes symbolic choices', () => {
+    expect(buildKimiAgentSavePayload({
+      description: 'd',
+      existing: null,
+      modelChoice: 'cli-default',
+      name: 'a',
+      prompt: 'p',
+    }).modelPreference).toBeUndefined();
+    expect(buildKimiAgentSavePayload({
+      description: 'd',
+      existing: null,
+      modelChoice: 'primary',
+      name: 'a',
+      prompt: 'p',
+    }).modelPreference).toBe('primary');
+  });
+
+  it('preserves existing tool lists and extra frontmatter that the modal does not edit', () => {
+    const existing = makeAgent({
+      disallowedTools: ['Bash'],
+      extraFrontmatter: { whenToUse: 'on reviews' },
+      tools: ['Read', 'Grep'],
+    });
+
+    const payload = buildKimiAgentSavePayload({
+      description: 'Updated.',
+      existing,
+      modelChoice: 'secondary',
+      name: 'code-reviewer',
+      prompt: 'Review carefully.',
+    });
+
+    expect(payload).toEqual({
+      description: 'Updated.',
+      disallowedTools: ['Bash'],
+      extraFrontmatter: { whenToUse: 'on reviews' },
+      filePath: existing.filePath,
+      modelPreference: 'secondary',
+      name: 'code-reviewer',
+      prompt: 'Review carefully.',
+      tools: ['Read', 'Grep'],
+    });
+  });
+
+  it('starts a new agent without tool lists', () => {
+    const payload = buildKimiAgentSavePayload({
+      description: 'd',
+      existing: null,
+      modelChoice: 'primary',
+      name: 'fresh',
+      prompt: 'p',
+    });
+
+    expect(payload.tools).toBeUndefined();
+    expect(payload.disallowedTools).toBeUndefined();
+    expect(payload.filePath).toBe('');
   });
 });
 

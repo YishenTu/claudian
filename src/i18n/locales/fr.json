@@ -457,6 +457,12 @@
       "noAgents": "Aucun sous-agent Codex dans le vault. Cliquez sur + pour en créer un."
     },
     "kimi": {
+      "subagents": {
+        "modelCliDefault": "Défaut CLI",
+        "modelDesc": "Modèle exécuté par le sous-agent. Hériter utilise le modèle de chat actuel ; Secondaire utilise le modèle secondaire de la configuration kimi ; Défaut CLI laisse kimi décider (secondaire si configuré).",
+        "modelPrimary": "Hériter du modèle de chat",
+        "modelSecondary": "Modèle secondaire"
+      },
       "cliPath": {
         "name": "Chemin de la CLI Kimi",
         "desc": "Chemin absolu facultatif vers la CLI Kimi sur cet ordinateur. Laissez vide pour utiliser `kimi` depuis PATH.",

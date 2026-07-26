@@ -457,6 +457,12 @@
       "noAgents": "Vault 中没有 Codex 子代理。点击 + 创建一个。"
     },
     "kimi": {
+      "subagents": {
+        "modelCliDefault": "CLI 默认",
+        "modelDesc": "子代理使用的模型。继承 = 跟随对话框当前模型；次级 = 使用 kimi 配置中的次级模型；CLI 默认 = 由 kimi 决定（已配置次级模型时使用次级）。",
+        "modelPrimary": "继承对话模型",
+        "modelSecondary": "次级模型"
+      },
       "cliPath": {
         "name": "Kimi CLI 路径",
         "desc": "此电脑上 Kimi CLI 的可选绝对路径。留空则使用 PATH 中的 `kimi`。",

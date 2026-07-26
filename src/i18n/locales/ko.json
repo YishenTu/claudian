@@ -457,6 +457,12 @@
       "noAgents": "Vault에 Codex 하위 에이전트가 없습니다. +를 클릭해 만드세요."
     },
     "kimi": {
+      "subagents": {
+        "modelCliDefault": "CLI 기본값",
+        "modelDesc": "하위 에이전트가 사용하는 모델. '상속'은 현재 채팅 모델, '보조'는 kimi 설정의 보조 모델, 'CLI 기본값'은 kimi가 결정합니다(보조 모델이 설정된 경우 보조 모델).",
+        "modelPrimary": "채팅 모델 상속",
+        "modelSecondary": "보조 모델"
+      },
       "cliPath": {
         "name": "Kimi CLI 경로",
         "desc": "이 컴퓨터의 Kimi CLI 절대 경로(선택 사항). 비워 두면 PATH의 `kimi`를 사용합니다.",

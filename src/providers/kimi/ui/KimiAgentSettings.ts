@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
 import { t } from '../../../i18n/i18n';
+import type { TranslationKey } from '../../../i18n/types';
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import {
   KIMI_BRAND_AGENTS_PATH,
@@ -10,12 +11,44 @@ import {
   validateKimiAgentName,
 } from '../agents/KimiAgentStorage';
 
-const MODEL_PREFERENCE_OPTIONS = ['inherit', 'primary', 'secondary'] as const;
+// kimi agent files only accept the symbolic primary/secondary model preference;
+// omitting the field lets the CLI decide (secondary when configured). There is
+// no per-agent concrete model or effort field — see kimi-code agentFileCatalog.
+const MODEL_CHOICE_OPTIONS = ['primary', 'secondary', 'cli-default'] as const;
+type KimiModelChoice = (typeof MODEL_CHOICE_OPTIONS)[number];
+
+const MODEL_CHOICE_LABEL_KEYS: Record<KimiModelChoice, TranslationKey> = {
+  'cli-default': 'settings.kimi.subagents.modelCliDefault',
+  primary: 'settings.kimi.subagents.modelPrimary',
+  secondary: 'settings.kimi.subagents.modelSecondary',
+};
 
 export function resolveKimiModelPreference(
   value: string,
 ): KimiAgentDefinition['modelPreference'] {
   return value === 'primary' || value === 'secondary' ? value : undefined;
+}
+
+// Tool lists are not editable in the modal for now, so an edit must carry the
+// file's existing tools/disallowedTools through unchanged.
+export function buildKimiAgentSavePayload(params: {
+  description: string;
+  existing: KimiAgentDefinition | null;
+  modelChoice: string;
+  name: string;
+  prompt: string;
+}): KimiAgentDefinition {
+  const { description, existing, modelChoice, name, prompt } = params;
+  return {
+    description,
+    disallowedTools: existing?.disallowedTools,
+    extraFrontmatter: existing?.extraFrontmatter,
+    filePath: existing?.filePath ?? '',
+    modelPreference: resolveKimiModelPreference(modelChoice),
+    name,
+    prompt,
+    tools: existing?.tools,
+  };
 }
 
 export function findKimiAgentNameConflict(
@@ -50,9 +83,11 @@ class KimiAgentModal extends Modal {
 
     let nameInput!: HTMLInputElement;
     let descriptionInput!: HTMLInputElement;
-    let modelValue: string = this.existing?.modelPreference ?? 'inherit';
-    let toolsInput!: HTMLInputElement;
-    let disallowedToolsInput!: HTMLInputElement;
+    // New agents default to primary (inherit the chat model); existing files
+    // without a preference show the honest CLI-default state.
+    let modelValue: KimiModelChoice = this.existing
+      ? this.existing.modelPreference ?? 'cli-default'
+      : 'primary';
 
     new Setting(contentEl)
       .setName(t('settings.subagents.modal.name'))
@@ -77,42 +112,22 @@ class KimiAgentModal extends Modal {
       text: t('settings.subagents.modal.advancedOptions'),
       cls: 'claudian-sp-advanced-summary',
     });
-    if (
-      this.existing?.modelPreference
-      || this.existing?.tools?.length
-      || this.existing?.disallowedTools?.length
-    ) {
+    if (this.existing?.modelPreference) {
       details.open = true;
     }
 
     new Setting(details)
       .setName(t('settings.subagents.modal.model'))
-      .setDesc(t('settings.subagents.modal.modelDesc'))
+      .setDesc(t('settings.kimi.subagents.modelDesc'))
       .addDropdown((dropdown) => {
-        for (const option of MODEL_PREFERENCE_OPTIONS) {
-          dropdown.addOption(option, option === 'inherit' ? 'Inherit' : option);
+        for (const option of MODEL_CHOICE_OPTIONS) {
+          dropdown.addOption(option, t(MODEL_CHOICE_LABEL_KEYS[option]));
         }
         dropdown
           .setValue(modelValue)
           .onChange((value) => {
-            modelValue = value;
+            modelValue = value as KimiModelChoice;
           });
-      });
-
-    new Setting(details)
-      .setName(t('settings.subagents.modal.tools'))
-      .setDesc(t('settings.subagents.modal.toolsDesc'))
-      .addText((text) => {
-        toolsInput = text.inputEl;
-        text.setValue(this.existing?.tools?.join(', ') ?? '');
-      });
-
-    new Setting(details)
-      .setName(t('settings.subagents.modal.disallowedTools'))
-      .setDesc(t('settings.subagents.modal.disallowedToolsDesc'))
-      .addText((text) => {
-        disallowedToolsInput = text.inputEl;
-        text.setValue(this.existing?.disallowedTools?.join(', ') ?? '');
       });
 
     new Setting(contentEl)
@@ -171,25 +186,14 @@ class KimiAgentModal extends Modal {
           return;
         }
 
-        const parseList = (input: HTMLInputElement): string[] | undefined => {
-          const value = input.value.trim();
-          if (!value) {
-            return undefined;
-          }
-          return value.split(',').map((entry) => entry.trim()).filter(Boolean);
-        };
-
         try {
-          await this.onSave({
+          await this.onSave(buildKimiAgentSavePayload({
             description,
-            disallowedTools: parseList(disallowedToolsInput),
-            extraFrontmatter: this.existing?.extraFrontmatter,
-            filePath: this.existing?.filePath ?? '',
-            modelPreference: resolveKimiModelPreference(modelValue),
+            existing: this.existing,
+            modelChoice: modelValue,
             name,
             prompt,
-            tools: parseList(toolsInput),
-          });
+          }));
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown error';
           new Notice(t('settings.subagents.saveFailed', { message }));
