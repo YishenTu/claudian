@@ -1,11 +1,18 @@
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ProviderModelCatalogRefreshResult } from '../../../core/providers/types';
-import { sameKimiDiscoveredModels, updateKimiDiscoveryState } from '../discoveryState';
+import {
+  getKimiDiscoveryState,
+  sameKimiCurrentThinkingByModel,
+  sameKimiDiscoveredModels,
+  sameKimiThinkingOptionsByModel,
+  updateKimiDiscoveryState,
+} from '../discoveryState';
 import { KimiChatRuntime } from '../runtime/KimiChatRuntime';
 import { getKimiProviderSettings, updateKimiProviderSettings } from '../settings';
 
 // Kimi only advertises its catalog on a live ACP session, so refresh boots an
-// isolated runtime. Failures keep the previously mirrored/persisted catalog.
+// isolated runtime, then probes every discovered model's thought_level select on
+// the warmup session. Failures keep the previously mirrored/persisted catalog.
 export async function refreshKimiModelCatalog(
   plugin: ProviderHost,
 ): Promise<ProviderModelCatalogRefreshResult> {
@@ -25,14 +32,60 @@ export async function refreshKimiModelCatalog(
       return { changed: false, diagnostics: 'Kimi returned no available models' };
     }
 
-    const mirrorChanged = updateKimiDiscoveryState(settingsBag, { discoveredModels });
-    const persistedChanged = !sameKimiDiscoveredModels(
-      getKimiProviderSettings(settingsBag).discoveredModels,
+    const probe = await runtime.probeThinkingOptionsForModels(
+      discoveredModels.map((model) => model.rawId),
+    );
+
+    // Merge the batch into the mirror: probed models replace their entry, models
+    // that advertise no thought_level lose theirs, failed probes stay untouched.
+    const discovery = getKimiDiscoveryState(settingsBag);
+    const thinkingOptionsByModel = { ...discovery.thinkingOptionsByModel };
+    const currentThinkingByModel = { ...discovery.currentThinkingByModel };
+    for (const [rawId, options] of Object.entries(probe.thinkingOptionsByModel)) {
+      thinkingOptionsByModel[rawId] = options;
+      const currentLevel = probe.currentThinkingByModel[rawId];
+      if (currentLevel) {
+        currentThinkingByModel[rawId] = currentLevel;
+      } else {
+        delete currentThinkingByModel[rawId];
+      }
+    }
+    for (const rawId of probe.noThinkingRawIds) {
+      delete thinkingOptionsByModel[rawId];
+      delete currentThinkingByModel[rawId];
+    }
+
+    const mirrorChanged = updateKimiDiscoveryState(settingsBag, {
+      currentThinkingByModel,
+      discoveredModels,
+      thinkingOptionsByModel,
+    });
+
+    const mirrored = getKimiDiscoveryState(settingsBag);
+    const persisted = getKimiProviderSettings(settingsBag);
+    const shouldPersistModels = !sameKimiDiscoveredModels(
+      persisted.discoveredModels,
       discoveredModels,
     );
+    const shouldPersistThinking = !sameKimiThinkingOptionsByModel(
+      persisted.thinkingOptionsByModel,
+      mirrored.thinkingOptionsByModel,
+    ) || !sameKimiCurrentThinkingByModel(
+      persisted.currentThinkingByModel,
+      mirrored.currentThinkingByModel,
+    );
+    const persistedChanged = shouldPersistModels || shouldPersistThinking;
     if (persistedChanged) {
       await plugin.mutateSettings((settings) => {
-        updateKimiProviderSettings(settings, { discoveredModels });
+        updateKimiProviderSettings(settings, {
+          ...(shouldPersistModels ? { discoveredModels } : {}),
+          ...(shouldPersistThinking
+            ? {
+              currentThinkingByModel: mirrored.currentThinkingByModel,
+              thinkingOptionsByModel: mirrored.thinkingOptionsByModel,
+            }
+            : {}),
+        });
       });
     }
     const changed = mirrorChanged || persistedChanged;
@@ -42,6 +95,9 @@ export async function refreshKimiModelCatalog(
     return {
       changed,
       ...(persistedChanged ? { persistedSettingsChanged: true } : {}),
+      ...(probe.failedRawIds.length > 0
+        ? { diagnostics: `Could not probe thinking options for: ${probe.failedRawIds.join(', ')}` }
+        : {}),
     };
   } catch (error) {
     return {

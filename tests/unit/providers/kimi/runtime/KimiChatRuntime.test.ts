@@ -76,6 +76,34 @@ function modeConfigOption(currentValue: string): Record<string, unknown> {
   };
 }
 
+// Fixtures from a live kimi acp probe (CLI 0.29.0): the coding models advertise
+// a single 'on' thought level, the K3 models advertise low/high/max.
+function codingThoughtLevelConfigOption(): Record<string, unknown> {
+  return {
+    type: 'select',
+    category: 'thought_level',
+    id: 'thinking',
+    name: 'Thinking',
+    currentValue: 'on',
+    options: [{ value: 'on', name: 'On' }],
+  };
+}
+
+function k3ThoughtLevelConfigOption(): Record<string, unknown> {
+  return {
+    type: 'select',
+    category: 'thought_level',
+    id: 'thinking',
+    name: 'Thinking',
+    currentValue: 'high',
+    options: [
+      { value: 'low', name: 'Low' },
+      { value: 'high', name: 'High' },
+      { value: 'max', name: 'Max' },
+    ],
+  };
+}
+
 async function drainQuery(runtime: KimiChatRuntime, text = 'Hi'): Promise<unknown[]> {
   const chunks: unknown[] = [];
   for await (const chunk of runtime.query(runtime.prepareTurn({ text }))) {
@@ -449,6 +477,102 @@ describe('KimiChatRuntime', () => {
 
     expect(getKimiDiscoveryState(plugin.settings).discoveredModels).toEqual(before);
     expect(getKimiProviderSettings(plugin.settings).discoveredModels).toEqual(before);
+  });
+
+  it('probes thinking options for every model in one batch without touching settings', async () => {
+    const plugin = createMockPlugin();
+    const runtime = new KimiChatRuntime(plugin);
+    (runtime as any).sessionId = 'session-1';
+    const setConfigOption = jest.fn(async ({ value }: { value: string }) => ({
+      configOptions: [
+        modelConfigOption(value),
+        value.startsWith('kimi-code/k3')
+          ? k3ThoughtLevelConfigOption()
+          : codingThoughtLevelConfigOption(),
+      ],
+    }));
+    (runtime as any).connection = { setConfigOption };
+
+    const probe = await runtime.probeThinkingOptionsForModels([
+      'kimi-code/kimi-for-coding',
+      'kimi-code/kimi-for-coding-highspeed',
+      'kimi-code/k3',
+      'kimi-code/k3-256k',
+    ]);
+
+    expect(setConfigOption).toHaveBeenCalledTimes(4);
+    expect(setConfigOption).toHaveBeenCalledWith({
+      configId: 'model',
+      sessionId: 'session-1',
+      type: 'select',
+      value: 'kimi-code/k3-256k',
+    });
+    expect(probe.failedRawIds).toEqual([]);
+    expect(probe.noThinkingRawIds).toEqual([]);
+    expect(probe.thinkingOptionsByModel).toEqual({
+      'kimi-code/kimi-for-coding': [{ label: 'On', value: 'on' }],
+      'kimi-code/kimi-for-coding-highspeed': [{ label: 'On', value: 'on' }],
+      'kimi-code/k3': [
+        { label: 'Low', value: 'low' },
+        { label: 'High', value: 'high' },
+        { label: 'Max', value: 'max' },
+      ],
+      'kimi-code/k3-256k': [
+        { label: 'Low', value: 'low' },
+        { label: 'High', value: 'high' },
+        { label: 'Max', value: 'max' },
+      ],
+    });
+    expect(probe.currentThinkingByModel).toEqual({
+      'kimi-code/kimi-for-coding': 'on',
+      'kimi-code/kimi-for-coding-highspeed': 'on',
+      'kimi-code/k3': 'high',
+      'kimi-code/k3-256k': 'high',
+    });
+    // Pure accumulation: no mirror update, no persistence.
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+    expect(getKimiDiscoveryState(plugin.settings).thinkingOptionsByModel).toEqual({});
+  });
+
+  it('tolerates per-model probe failures and reports models without thought levels', async () => {
+    const plugin = createMockPlugin();
+    const runtime = new KimiChatRuntime(plugin);
+    (runtime as any).sessionId = 'session-1';
+    const setConfigOption = jest.fn(async ({ value }: { value: string }) => {
+      if (value === 'kimi-code/kimi-for-coding-highspeed') {
+        throw new Error('set_config_option failed');
+      }
+      return {
+        configOptions: [
+          modelConfigOption(value),
+          ...(value === 'kimi-code/k3' ? [] : [codingThoughtLevelConfigOption()]),
+        ],
+      };
+    });
+    (runtime as any).connection = { setConfigOption };
+
+    const probe = await runtime.probeThinkingOptionsForModels([
+      'kimi-code/kimi-for-coding',
+      'kimi-code/kimi-for-coding-highspeed',
+      'kimi-code/k3',
+    ]);
+
+    expect(probe.failedRawIds).toEqual(['kimi-code/kimi-for-coding-highspeed']);
+    expect(probe.noThinkingRawIds).toEqual(['kimi-code/k3']);
+    expect(probe.thinkingOptionsByModel).toEqual({
+      'kimi-code/kimi-for-coding': [{ label: 'On', value: 'on' }],
+    });
+    expect(probe.currentThinkingByModel).toEqual({ 'kimi-code/kimi-for-coding': 'on' });
+  });
+
+  it('fails the whole batch probe when no session is active', async () => {
+    const plugin = createMockPlugin();
+    const runtime = new KimiChatRuntime(plugin);
+
+    const probe = await runtime.probeThinkingOptionsForModels(['kimi-code/k3', ' ']);
+
+    expect(probe.failedRawIds).toEqual(['kimi-code/k3']);
+    expect(probe.thinkingOptionsByModel).toEqual({});
   });
 
   it('mirrors and persists thinking options and current levels per model', async () => {

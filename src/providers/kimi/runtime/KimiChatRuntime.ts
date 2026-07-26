@@ -71,6 +71,7 @@ import {
   encodeKimiModelId,
   isKimiModelSelectionId,
   type KimiDiscoveredModel,
+  type KimiThinkingOption,
   normalizeKimiDiscoveredModels,
   normalizeKimiThinkingOptions,
 } from '../models';
@@ -94,6 +95,15 @@ interface SupportedCommandWaiter {
   cleanup: () => void;
   reject: (error: Error) => void;
   resolve: (commands: SlashCommand[]) => void;
+}
+
+export interface KimiThinkingProbeResult {
+  currentThinkingByModel: Record<string, string>;
+  /** Models whose set_config_option probe failed; their stored entries stay untouched. */
+  failedRawIds: string[];
+  /** Models successfully probed that advertise no thought_level option. */
+  noThinkingRawIds: string[];
+  thinkingOptionsByModel: Record<string, KimiThinkingOption[]>;
 }
 
 class StreamChunkQueue {
@@ -160,6 +170,7 @@ export class KimiChatRuntime implements ChatRuntime {
   private currentThinkingValues = new Set<string>();
   private currentTurnMetadata: ChatTurnMetadata = {};
   private discoveredModels: KimiDiscoveredModel[] = [];
+  private discoveryMirroringSuspended = false;
   private lastSessionError: unknown = null;
   private lastSyncedPermissionMode: string | null = null;
   private loadedSessionId: string | null = null;
@@ -853,6 +864,63 @@ export class KimiChatRuntime implements ChatRuntime {
     return this.discoveredModels.map((model) => ({ ...model }));
   }
 
+  // Switches the warmup session through each model and parses the thought_level
+  // select from every response. Discovery mirroring stays suspended so the
+  // config_option_update notifications triggered by each switch do not mirror or
+  // persist per model; callers accumulate and write through once at the end.
+  async probeThinkingOptionsForModels(rawIds: string[]): Promise<KimiThinkingProbeResult> {
+    const result: KimiThinkingProbeResult = {
+      currentThinkingByModel: {},
+      failedRawIds: [],
+      noThinkingRawIds: [],
+      thinkingOptionsByModel: {},
+    };
+    const connection = this.connection;
+    const sessionId = this.sessionId;
+    const normalizedRawIds = rawIds.map((rawId) => rawId.trim()).filter(Boolean);
+    if (!connection || !sessionId) {
+      result.failedRawIds.push(...normalizedRawIds);
+      return result;
+    }
+
+    this.discoveryMirroringSuspended = true;
+    try {
+      for (const rawId of normalizedRawIds) {
+        try {
+          const response = await connection.setConfigOption({
+            configId: 'model',
+            sessionId,
+            type: 'select',
+            value: rawId,
+          });
+          const thoughtLevelState = extractAcpSessionThoughtLevelState({
+            configOptions: response.configOptions,
+          });
+          const options = normalizeKimiThinkingOptions(
+            thoughtLevelState.availableLevels.map((level) => ({
+              ...(level.description ? { description: level.description } : {}),
+              label: level.name,
+              value: level.id,
+            })),
+          );
+          if (options.length === 0) {
+            result.noThinkingRawIds.push(rawId);
+            continue;
+          }
+          result.thinkingOptionsByModel[rawId] = options;
+          if (thoughtLevelState.currentLevel) {
+            result.currentThinkingByModel[rawId] = thoughtLevelState.currentLevel;
+          }
+        } catch {
+          result.failedRawIds.push(rawId);
+        }
+      }
+    } finally {
+      this.discoveryMirroringSuspended = false;
+    }
+    return result;
+  }
+
   private setCurrentConversationModel(model: unknown): void {
     const selectedModel = typeof model === 'string' ? model.trim() : '';
     this.currentConversationModel = selectedModel || null;
@@ -1038,6 +1106,10 @@ export class KimiChatRuntime implements ChatRuntime {
     currentThinkingLevel: string | null,
     conversationGeneration?: number,
   ): Promise<void> {
+    if (this.discoveryMirroringSuspended) {
+      return;
+    }
+
     const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
     const discoveredModels = this.discoveredModels;
     // Read first so a cold mirror seeds from the persisted config before the
