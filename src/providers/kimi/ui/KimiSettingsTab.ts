@@ -39,14 +39,14 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
       }
       const result = await workspace.refreshModelCatalog();
       if (result.diagnostics) {
-        new Notice(`Kimi model discovery failed: ${result.diagnostics}`);
+        new Notice(t('settings.kimi.models.refreshFailed', { diagnostics: result.diagnostics }));
         return 'failed';
       }
       context.notifyProviderModelOptionsChanged(KIMI_PROVIDER_ID);
       return getKimiDiscoveryState(settingsBag).discoveredModels.length > 0 ? 'loaded' : 'empty';
     };
 
-    new Setting(container).setName('Setup').setHeading();
+    new Setting(container).setName(t('settings.setup')).setHeading();
 
     new Setting(container)
       .setName(t('settings.providerEnablement.name', { provider: 'Kimi' }))
@@ -66,8 +66,8 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
       );
 
     const cliPathSetting = new Setting(container)
-      .setName('CLI path')
-      .setDesc('Optional absolute path to the Kimi CLI for this computer. Leave empty to use `kimi` from PATH.');
+      .setName(t('settings.kimi.cliPath.name'))
+      .setDesc(t('settings.kimi.cliPath.desc'));
 
     const validationEl = container.createDiv({
       cls: 'claudian-cli-path-validation claudian-setting-validation claudian-setting-validation-error claudian-hidden',
@@ -90,14 +90,14 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
       return true;
     };
 
-    const detectionSetting = new Setting(container).setName('Detected CLI');
+    const detectionSetting = new Setting(container).setName(t('settings.kimi.detectedCli.name'));
     const updateDetectionStatus = (): void => {
-      detectionSetting.setDesc('Detecting the CLI...');
+      detectionSetting.setDesc(t('settings.kimi.detectedCli.detecting'));
       void Promise.resolve(workspace?.cliResolver?.resolveFromSettings(settingsBag) ?? null)
         .then((resolved) => {
           detectionSetting.setDesc(resolved
-            ? `Using ${resolved}`
-            : 'The `kimi` binary was not found on PATH. Install Kimi Code or set a CLI path above.');
+            ? t('settings.kimi.detectedCli.using', { path: resolved })
+            : t('settings.kimi.detectedCli.notFound'));
         });
     };
 
@@ -139,7 +139,7 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     updateDetectionStatus();
 
-    new Setting(container).setName('Models').setHeading();
+    new Setting(container).setName(t('settings.models')).setHeading();
     renderKimiModelPicker(container, context, settingsBag, refreshModelCatalog);
 
     new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
@@ -157,10 +157,10 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
       });
     }
 
-    new Setting(container).setName('Commands').setHeading();
+    new Setting(container).setName(t('settings.kimi.commands.heading')).setHeading();
     context.renderHiddenProviderCommandSetting(container, KIMI_PROVIDER_ID, {
-      name: 'Hidden commands and skills',
-      desc: 'Hide specific Kimi commands and skills from the dropdown. Enter names without the leading slash, one per line.',
+      name: t('settings.kimi.commands.hiddenName'),
+      desc: t('settings.kimi.commands.hiddenDesc'),
       placeholder: 'compact\ninit',
     });
 
@@ -169,7 +169,7 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
       const mcpDesc = container.createDiv({ cls: 'claudian-mcp-settings-desc' });
       mcpDesc.createEl('p', {
-        text: 'Manage vault-level MCP server configurations stored in .kimi-code/mcp.json. Kimi reads this file natively at session start; the user-level ~/.kimi-code/mcp.json is never touched.',
+        text: t('settings.kimi.mcp.desc'),
         cls: 'setting-item-description',
       });
 
@@ -189,9 +189,9 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
       container,
       plugin: context.plugin,
       scope: 'provider:kimi',
-      heading: 'Environment',
-      name: 'Environment variables',
-      desc: 'Extra environment variables passed to Kimi. Kimi owns ~/.kimi-code/config.toml and the user-level ~/.kimi-code/mcp.json; Claudian never writes them.',
+      heading: t('settings.environment'),
+      name: t('settings.kimi.environment.name'),
+      desc: t('settings.kimi.environment.desc'),
       placeholder: 'KIMI_LOG_LEVEL=debug\nKIMI_CODE_HOME=/path/to/kimi-home',
       renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, KIMI_PROVIDER_ID),
     });
@@ -218,12 +218,12 @@ function renderKimiModelPicker(
 
   renderProviderModelPicker({
     container,
-    emptyCatalogText: 'Start Kimi once to load its model catalog. Claudian will then let you pick visible models.',
-    failedCatalogText: 'Could not load the Kimi model catalog. Check the CLI path and login state, then try again.',
+    emptyCatalogText: t('settings.kimi.models.emptyCatalog'),
+    failedCatalogText: t('settings.kimi.models.failedCatalog'),
     getState,
     loadCatalog: async () => loadCatalog(),
     loadCatalogOnRender: true,
-    loadingCatalogText: 'Loading Kimi model catalog...',
+    loadingCatalogText: t('settings.kimi.models.loadingCatalog'),
     modifier: 'kimi',
     async onAliasesChange(modelAliases) {
       await context.plugin.mutateSettings((settings) => {
@@ -251,7 +251,7 @@ function renderKimiModelPicker(
       context.notifyProviderModelOptionsChanged(KIMI_PROVIDER_ID);
     },
     providerName: 'Kimi',
-    settingDescription: 'Choose which Kimi models are available in the chat selector. Filter or type to search. Kimi uses its configured default model when no models are selected.',
+    settingDescription: t('settings.kimi.models.desc'),
   });
 }
 
@@ -274,7 +274,7 @@ function buildKimiPickerModels(
       id: rawId,
       isAvailable: false,
       name: rawId,
-      unavailableMessage: 'Not currently reported by Kimi',
+      unavailableMessage: t('settings.kimi.models.notReported'),
     });
   }
   return models;
@@ -304,22 +304,22 @@ function validateCliPath(value: string): string | null {
 
   const expandedPath = expandHomePath(trimmed);
   if (!path.posix.isAbsolute(expandedPath) && !path.win32.isAbsolute(expandedPath)) {
-    return 'Path must be absolute';
+    return t('settings.kimi.cliPath.validation.notAbsolute');
   }
   try {
     if (!fs.existsSync(expandedPath)) {
-      return 'Path does not exist';
+      return t('settings.cliPath.validation.notExist');
     }
     if (!fs.statSync(expandedPath).isFile()) {
-      return 'Path must point to a file';
+      return t('settings.cliPath.validation.isDirectory');
     }
     if (process.platform !== 'win32') {
       fs.accessSync(expandedPath, fs.constants.X_OK);
     }
   } catch {
     return process.platform === 'win32'
-      ? 'Path is not accessible'
-      : 'Path must be executable';
+      ? t('settings.kimi.cliPath.validation.notAccessible')
+      : t('settings.kimi.cliPath.validation.notExecutable');
   }
   return null;
 }

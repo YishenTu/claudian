@@ -69,6 +69,13 @@
       "expandOutput": "Expandir a saída do comando",
       "running": "Executando...",
       "copyFailed": "Falha ao copiar para a área de transferência"
+    },
+    "modelList": {
+      "refresh": "Atualizar lista de modelos",
+      "updated": "Lista de modelos atualizada",
+      "upToDate": "A lista de modelos está atualizada",
+      "refreshFailed": "Falha ao atualizar a lista de modelos",
+      "refreshFailedWithDiagnostics": "Falha ao atualizar a lista de modelos: {diagnostics}"
     }
   },
   "settings": {
@@ -448,6 +455,43 @@
       },
       "header": "Subagentes Codex",
       "noAgents": "Não há subagentes Codex no vault. Clique em + para criar um."
+    },
+    "kimi": {
+      "cliPath": {
+        "name": "Caminho da CLI do Kimi",
+        "desc": "Caminho absoluto opcional para a CLI do Kimi neste computador. Deixe vazio para usar `kimi` do PATH.",
+        "validation": {
+          "notAbsolute": "O caminho deve ser absoluto",
+          "notAccessible": "O caminho não está acessível",
+          "notExecutable": "O caminho deve ser executável"
+        }
+      },
+      "detectedCli": {
+        "name": "CLI detectada",
+        "detecting": "Detectando a CLI...",
+        "using": "Usando {path}",
+        "notFound": "O binário `kimi` não foi encontrado no PATH. Instale o Kimi Code ou defina um caminho de CLI acima."
+      },
+      "models": {
+        "emptyCatalog": "Inicie o Kimi uma vez para carregar seu catálogo de modelos. Em seguida, o Claudian permitirá escolher os modelos visíveis.",
+        "failedCatalog": "Não foi possível carregar o catálogo de modelos do Kimi. Verifique o caminho da CLI e o estado de login e tente novamente.",
+        "loadingCatalog": "Carregando o catálogo de modelos do Kimi...",
+        "desc": "Escolha quais modelos do Kimi ficam disponíveis no seletor do chat. Filtre ou digite para pesquisar. O Kimi usa seu modelo padrão configurado quando nenhum modelo está selecionado.",
+        "notReported": "Não reportado atualmente pelo Kimi",
+        "refreshFailed": "Falha ao detectar modelos do Kimi: {diagnostics}"
+      },
+      "commands": {
+        "heading": "Comandos",
+        "hiddenName": "Comandos e habilidades ocultos",
+        "hiddenDesc": "Oculte comandos e habilidades específicos do Kimi no menu suspenso. Digite os nomes sem a barra inicial, um por linha."
+      },
+      "mcp": {
+        "desc": "Gerencie as configurações de servidores MCP no nível do vault armazenadas em .kimi-code/mcp.json. O Kimi lê este arquivo nativamente no início da sessão; o ~/.kimi-code/mcp.json do usuário nunca é alterado."
+      },
+      "environment": {
+        "name": "Variáveis de ambiente",
+        "desc": "Variáveis de ambiente extras passadas ao Kimi. O Kimi é dono de ~/.kimi-code/config.toml e do ~/.kimi-code/mcp.json do usuário; o Claudian nunca os escreve."
+      }
     }
   }
 }

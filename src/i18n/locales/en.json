@@ -69,6 +69,13 @@
       "expandOutput": "Expand command output",
       "running": "Running...",
       "copyFailed": "Failed to copy to clipboard"
+    },
+    "modelList": {
+      "refresh": "Refresh model list",
+      "updated": "Model list updated",
+      "upToDate": "Model list is up to date",
+      "refreshFailed": "Failed to refresh model list",
+      "refreshFailedWithDiagnostics": "Failed to refresh model list: {diagnostics}"
     }
   },
   "settings": {
@@ -479,6 +486,43 @@
       },
       "header": "Codex Subagents",
       "noAgents": "No Codex subagents in vault. Click + to create one."
+    },
+    "kimi": {
+      "cliPath": {
+        "name": "Kimi CLI path",
+        "desc": "Optional absolute path to the Kimi CLI for this computer. Leave empty to use `kimi` from PATH.",
+        "validation": {
+          "notAbsolute": "Path must be absolute",
+          "notAccessible": "Path is not accessible",
+          "notExecutable": "Path must be executable"
+        }
+      },
+      "detectedCli": {
+        "name": "Detected CLI",
+        "detecting": "Detecting the CLI...",
+        "using": "Using {path}",
+        "notFound": "The `kimi` binary was not found on PATH. Install Kimi Code or set a CLI path above."
+      },
+      "models": {
+        "emptyCatalog": "Start Kimi once to load its model catalog. Claudian will then let you pick visible models.",
+        "failedCatalog": "Could not load the Kimi model catalog. Check the CLI path and login state, then try again.",
+        "loadingCatalog": "Loading Kimi model catalog...",
+        "desc": "Choose which Kimi models are available in the chat selector. Filter or type to search. Kimi uses its configured default model when no models are selected.",
+        "notReported": "Not currently reported by Kimi",
+        "refreshFailed": "Kimi model discovery failed: {diagnostics}"
+      },
+      "commands": {
+        "heading": "Commands",
+        "hiddenName": "Hidden commands and skills",
+        "hiddenDesc": "Hide specific Kimi commands and skills from the dropdown. Enter names without the leading slash, one per line."
+      },
+      "mcp": {
+        "desc": "Manage vault-level MCP server configurations stored in .kimi-code/mcp.json. Kimi reads this file natively at session start; the user-level ~/.kimi-code/mcp.json is never touched."
+      },
+      "environment": {
+        "name": "Environment variables",
+        "desc": "Extra environment variables passed to Kimi. Kimi owns ~/.kimi-code/config.toml and the user-level ~/.kimi-code/mcp.json; Claudian never writes them."
+      }
     }
   }
 }

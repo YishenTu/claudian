@@ -69,6 +69,13 @@
       "expandOutput": "展開指令輸出",
       "running": "執行中...",
       "copyFailed": "複製到剪貼簿失敗"
+    },
+    "modelList": {
+      "refresh": "重新整理模型列表",
+      "updated": "模型列表已更新",
+      "upToDate": "模型列表已是最新",
+      "refreshFailed": "重新整理模型列表失敗",
+      "refreshFailedWithDiagnostics": "重新整理模型列表失敗：{diagnostics}"
     }
   },
   "settings": {
@@ -448,6 +455,43 @@
       },
       "header": "Codex 子代理",
       "noAgents": "Vault 中沒有 Codex 子代理。點擊 + 建立一個。"
+    },
+    "kimi": {
+      "cliPath": {
+        "name": "Kimi CLI 路徑",
+        "desc": "此電腦上 Kimi CLI 的選用絕對路徑。留空則使用 PATH 中的 `kimi`。",
+        "validation": {
+          "notAbsolute": "路徑必須是絕對路徑",
+          "notAccessible": "路徑無法存取",
+          "notExecutable": "路徑必須可執行"
+        }
+      },
+      "detectedCli": {
+        "name": "偵測到的 CLI",
+        "detecting": "正在偵測 CLI...",
+        "using": "正在使用 {path}",
+        "notFound": "未在 PATH 中找到 `kimi` 執行檔。請安裝 Kimi Code 或在上方設定 CLI 路徑。"
+      },
+      "models": {
+        "emptyCatalog": "先啟動一次 Kimi 以載入其模型目錄，之後 Claudian 將讓你選擇可見模型。",
+        "failedCatalog": "無法載入 Kimi 模型目錄。請檢查 CLI 路徑和登入狀態，然後重試。",
+        "loadingCatalog": "正在載入 Kimi 模型目錄...",
+        "desc": "選擇在聊天選擇器中可用的 Kimi 模型。可篩選或輸入搜尋。未選擇模型時，Kimi 使用其設定的預設模型。",
+        "notReported": "Kimi 目前未回報",
+        "refreshFailed": "Kimi 模型探索失敗：{diagnostics}"
+      },
+      "commands": {
+        "heading": "命令",
+        "hiddenName": "隱藏的命令和技能",
+        "hiddenDesc": "在下拉列表中隱藏特定的 Kimi 命令和技能。輸入不帶前導斜線的名稱，每行一個。"
+      },
+      "mcp": {
+        "desc": "管理儲存在 .kimi-code/mcp.json 中的 vault 層級 MCP 伺服器設定。Kimi 會在工作階段啟動時原生讀取此檔案；使用者層級 ~/.kimi-code/mcp.json 絕不會被修改。"
+      },
+      "environment": {
+        "name": "環境變數",
+        "desc": "傳遞給 Kimi 的額外環境變數。Kimi 擁有 ~/.kimi-code/config.toml 和使用者層級 ~/.kimi-code/mcp.json；Claudian 絕不會寫入它們。"
+      }
     }
   }
 }

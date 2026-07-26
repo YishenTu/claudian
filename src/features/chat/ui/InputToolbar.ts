@@ -17,6 +17,7 @@ import type {
   ManagedMcpServer,
   UsageInfo,
 } from '../../../core/types';
+import { t } from '../../../i18n/i18n';
 import { appendCheckIcon, appendMcpIcon, createProviderIconSvg } from '../../../shared/icons';
 import {
   cancelScheduledAnimationFrame,
@@ -183,10 +184,10 @@ export class ModelSelector {
     if (!(this.callbacks.canRefreshModelCatalog?.() ?? false)) return;
 
     const actionEl = this.dropdownEl.createDiv({ cls: 'claudian-model-refresh' });
-    actionEl.setAttribute('title', 'Refresh model list');
+    actionEl.setAttribute('title', t('chat.modelList.refresh'));
     const iconEl = actionEl.createSpan({ cls: 'claudian-model-refresh-icon' });
     setIcon(iconEl, 'refresh-cw');
-    actionEl.createSpan({ text: 'Refresh model list' });
+    actionEl.createSpan({ text: t('chat.modelList.refresh') });
 
     actionEl.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -205,12 +206,16 @@ export class ModelSelector {
       try {
         const result = await refresh();
         if (result.diagnostics) {
-          new Notice(`Failed to refresh model list: ${result.diagnostics}`);
+          new Notice(t('chat.modelList.refreshFailedWithDiagnostics', {
+            diagnostics: result.diagnostics,
+          }));
         } else {
-          new Notice(result.changed ? 'Model list updated' : 'Model list is up to date');
+          new Notice(result.changed
+            ? t('chat.modelList.updated')
+            : t('chat.modelList.upToDate'));
         }
       } catch {
-        new Notice('Failed to refresh model list');
+        new Notice(t('chat.modelList.refreshFailed'));
       } finally {
         this.refreshInFlight = false;
         actionEl.removeClass('busy');

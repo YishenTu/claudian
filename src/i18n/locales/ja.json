@@ -69,6 +69,13 @@
       "expandOutput": "コマンド出力を展開",
       "running": "実行中...",
       "copyFailed": "クリップボードへのコピーに失敗しました"
+    },
+    "modelList": {
+      "refresh": "モデルリストを更新",
+      "updated": "モデルリストを更新しました",
+      "upToDate": "モデルリストは最新です",
+      "refreshFailed": "モデルリストの更新に失敗しました",
+      "refreshFailedWithDiagnostics": "モデルリストの更新に失敗しました: {diagnostics}"
     }
   },
   "settings": {
@@ -448,6 +455,43 @@
       },
       "header": "Codex サブエージェント",
       "noAgents": "Vault に Codex サブエージェントがありません。+ をクリックして作成してください。"
+    },
+    "kimi": {
+      "cliPath": {
+        "name": "Kimi CLI パス",
+        "desc": "このコンピューター上の Kimi CLI の絶対パス（任意）。空のままにすると PATH 上の `kimi` を使用します。",
+        "validation": {
+          "notAbsolute": "絶対パスを指定してください",
+          "notAccessible": "パスにアクセスできません",
+          "notExecutable": "パスは実行可能である必要があります"
+        }
+      },
+      "detectedCli": {
+        "name": "検出された CLI",
+        "detecting": "CLI を検出しています...",
+        "using": "{path} を使用中",
+        "notFound": "`kimi` バイナリが PATH に見つかりません。Kimi Code をインストールするか、上で CLI パスを設定してください。"
+      },
+      "models": {
+        "emptyCatalog": "まず Kimi を一度起動してモデルカタログを読み込んでください。その後、Claudian で表示するモデルを選択できます。",
+        "failedCatalog": "Kimi モデルカタログを読み込めませんでした。CLI パスとログイン状態を確認してから再試行してください。",
+        "loadingCatalog": "Kimi モデルカタログを読み込んでいます...",
+        "desc": "チャットセレクターで利用する Kimi モデルを選択します。フィルターや入力で検索できます。モデルが選択されていない場合、Kimi は設定済みのデフォルトモデルを使用します。",
+        "notReported": "現在 Kimi から報告されていません",
+        "refreshFailed": "Kimi モデルの検出に失敗しました: {diagnostics}"
+      },
+      "commands": {
+        "heading": "コマンド",
+        "hiddenName": "非表示のコマンドとスキル",
+        "hiddenDesc": "特定の Kimi コマンドとスキルをドロップダウンから非表示にします。先頭のスラッシュを除いた名前を 1 行に 1 つ入力してください。"
+      },
+      "mcp": {
+        "desc": ".kimi-code/mcp.json に保存された Vault レベルの MCP サーバー設定を管理します。Kimi はセッション開始時にこのファイルをネイティブに読み込みます。ユーザーレベルの ~/.kimi-code/mcp.json は一切変更されません。"
+      },
+      "environment": {
+        "name": "環境変数",
+        "desc": "Kimi に渡す追加の環境変数。~/.kimi-code/config.toml とユーザーレベルの ~/.kimi-code/mcp.json は Kimi が所有しており、Claudian が書き込むことはありません。"
+      }
     }
   }
 }

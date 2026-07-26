@@ -17,6 +17,7 @@ import {
   ServiceTierToggle,
   ThinkingBudgetSelector,
 } from '@/features/chat/ui/InputToolbar';
+import { t } from '@/i18n/i18n';
 
 jest.mock('obsidian', () => ({
   Notice: jest.fn(),
@@ -463,7 +464,7 @@ describe('ModelSelector model catalog refresh', () => {
 
     const action = parentEl.querySelector('.claudian-model-refresh');
     expect(action).not.toBeNull();
-    expect(action?.getAttribute('title')).toBe('Refresh model list');
+    expect(action?.getAttribute('title')).toBe(t('chat.modelList.refresh'));
   });
 
   it('should call onRefreshModelCatalog and notice when the list changed', async () => {
@@ -474,7 +475,7 @@ describe('ModelSelector model catalog refresh', () => {
     await flushAsync();
 
     expect(callbacks.onRefreshModelCatalog).toHaveBeenCalledTimes(1);
-    expect(Notice).toHaveBeenCalledWith('Model list updated');
+    expect(Notice).toHaveBeenCalledWith(t('chat.modelList.updated'));
   });
 
   it('should notice when the list is already up to date', async () => {
@@ -486,7 +487,7 @@ describe('ModelSelector model catalog refresh', () => {
       ?.dispatchEvent('click', { stopPropagation: () => {} });
     await flushAsync();
 
-    expect(Notice).toHaveBeenCalledWith('Model list is up to date');
+    expect(Notice).toHaveBeenCalledWith(t('chat.modelList.upToDate'));
   });
 
   it('should deduplicate concurrent clicks while a refresh is in flight', async () => {
@@ -524,7 +525,9 @@ describe('ModelSelector model catalog refresh', () => {
       ?.dispatchEvent('click', { stopPropagation: () => {} });
     await flushAsync();
 
-    expect(Notice).toHaveBeenCalledWith('Failed to refresh model list: CLI not found');
+    expect(Notice).toHaveBeenCalledWith(
+      t('chat.modelList.refreshFailedWithDiagnostics', { diagnostics: 'CLI not found' }),
+    );
     const options = parentEl.querySelector('.claudian-model-dropdown')?.children ?? [];
     const labels = options
       .filter((o: any) => o.hasClass('claudian-model-option'))
@@ -542,7 +545,7 @@ describe('ModelSelector model catalog refresh', () => {
     action?.dispatchEvent('click', { stopPropagation: () => {} });
     await flushAsync();
 
-    expect(Notice).toHaveBeenCalledWith('Failed to refresh model list');
+    expect(Notice).toHaveBeenCalledWith(t('chat.modelList.refreshFailed'));
     const options = parentEl.querySelector('.claudian-model-dropdown')?.children ?? [];
     expect(options.filter((o: any) => o.hasClass('claudian-model-option')).length).toBe(3);
 

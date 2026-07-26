@@ -69,6 +69,13 @@
       "expandOutput": "명령 출력 펼치기",
       "running": "실행 중...",
       "copyFailed": "클립보드에 복사하지 못했습니다"
+    },
+    "modelList": {
+      "refresh": "모델 목록 새로고침",
+      "updated": "모델 목록이 업데이트되었습니다",
+      "upToDate": "모델 목록이 최신입니다",
+      "refreshFailed": "모델 목록을 새로고침하지 못했습니다",
+      "refreshFailedWithDiagnostics": "모델 목록을 새로고침하지 못했습니다: {diagnostics}"
     }
   },
   "settings": {
@@ -448,6 +455,43 @@
       },
       "header": "Codex 하위 에이전트",
       "noAgents": "Vault에 Codex 하위 에이전트가 없습니다. +를 클릭해 만드세요."
+    },
+    "kimi": {
+      "cliPath": {
+        "name": "Kimi CLI 경로",
+        "desc": "이 컴퓨터의 Kimi CLI 절대 경로(선택 사항). 비워 두면 PATH의 `kimi`를 사용합니다.",
+        "validation": {
+          "notAbsolute": "절대 경로여야 합니다",
+          "notAccessible": "경로에 접근할 수 없습니다",
+          "notExecutable": "경로가 실행 가능해야 합니다"
+        }
+      },
+      "detectedCli": {
+        "name": "감지된 CLI",
+        "detecting": "CLI 감지 중...",
+        "using": "{path} 사용 중",
+        "notFound": "PATH에서 `kimi` 바이너리를 찾을 수 없습니다. Kimi Code를 설치하거나 위에서 CLI 경로를 설정하세요."
+      },
+      "models": {
+        "emptyCatalog": "Kimi를 한 번 시작하여 모델 카탈로그를 불러오세요. 그러면 Claudian에서 표시할 모델을 선택할 수 있습니다.",
+        "failedCatalog": "Kimi 모델 카탈로그를 불러올 수 없습니다. CLI 경로와 로그인 상태를 확인한 후 다시 시도하세요.",
+        "loadingCatalog": "Kimi 모델 카탈로그를 불러오는 중...",
+        "desc": "채팅 선택기에서 사용할 Kimi 모델을 선택하세요. 필터링하거나 입력하여 검색할 수 있습니다. 선택된 모델이 없으면 Kimi는 구성된 기본 모델을 사용합니다.",
+        "notReported": "현재 Kimi가 보고하지 않음",
+        "refreshFailed": "Kimi 모델 검색 실패: {diagnostics}"
+      },
+      "commands": {
+        "heading": "명령",
+        "hiddenName": "숨겨진 명령 및 스킬",
+        "hiddenDesc": "드롭다운에서 특정 Kimi 명령과 스킬을 숨깁니다. 앞의 슬래시 없이 이름을 한 줄에 하나씩 입력하세요."
+      },
+      "mcp": {
+        "desc": ".kimi-code/mcp.json에 저장된 vault 수준 MCP 서버 구성을 관리합니다. Kimi는 세션 시작 시 이 파일을 기본으로 읽으며, 사용자 수준 ~/.kimi-code/mcp.json은 절대 변경되지 않습니다."
+      },
+      "environment": {
+        "name": "환경 변수",
+        "desc": "Kimi에 전달되는 추가 환경 변수. Kimi는 ~/.kimi-code/config.toml과 사용자 수준 ~/.kimi-code/mcp.json을 소유하며 Claudian은 이를 절대 쓰지 않습니다."
+      }
     }
   }
 }

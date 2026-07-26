@@ -69,6 +69,13 @@
       "expandOutput": "Befehlsausgabe ausklappen",
       "running": "Wird ausgeführt...",
       "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
+    },
+    "modelList": {
+      "refresh": "Modellliste aktualisieren",
+      "updated": "Modellliste aktualisiert",
+      "upToDate": "Modellliste ist aktuell",
+      "refreshFailed": "Modellliste konnte nicht aktualisiert werden",
+      "refreshFailedWithDiagnostics": "Modellliste konnte nicht aktualisiert werden: {diagnostics}"
     }
   },
   "settings": {
@@ -448,6 +455,43 @@
       },
       "header": "Codex-Sub-Agenten",
       "noAgents": "Keine Codex-Sub-Agenten im Vault. Klicke auf +, um einen zu erstellen."
+    },
+    "kimi": {
+      "cliPath": {
+        "name": "Kimi-CLI-Pfad",
+        "desc": "Optionaler absoluter Pfad zur Kimi-CLI auf diesem Computer. Leer lassen, um `kimi` aus PATH zu verwenden.",
+        "validation": {
+          "notAbsolute": "Der Pfad muss absolut sein",
+          "notAccessible": "Der Pfad ist nicht zugänglich",
+          "notExecutable": "Der Pfad muss ausführbar sein"
+        }
+      },
+      "detectedCli": {
+        "name": "Erkannte CLI",
+        "detecting": "CLI wird erkannt...",
+        "using": "Verwende {path}",
+        "notFound": "Die `kimi`-Binärdatei wurde nicht in PATH gefunden. Installiere Kimi Code oder lege oben einen CLI-Pfad fest."
+      },
+      "models": {
+        "emptyCatalog": "Starte Kimi einmal, um den Modellkatalog zu laden. Danach kannst du in Claudian sichtbare Modelle auswählen.",
+        "failedCatalog": "Der Kimi-Modellkatalog konnte nicht geladen werden. Prüfe den CLI-Pfad und den Anmeldestatus und versuche es erneut.",
+        "loadingCatalog": "Kimi-Modellkatalog wird geladen...",
+        "desc": "Wähle, welche Kimi-Modelle im Chat-Selektor verfügbar sind. Filtere oder tippe zum Suchen. Ohne Auswahl verwendet Kimi sein konfiguriertes Standardmodell.",
+        "notReported": "Derzeit nicht von Kimi gemeldet",
+        "refreshFailed": "Kimi-Modellerkennung fehlgeschlagen: {diagnostics}"
+      },
+      "commands": {
+        "heading": "Befehle",
+        "hiddenName": "Ausgeblendete Befehle und Fähigkeiten",
+        "hiddenDesc": "Blende bestimmte Kimi-Befehle und -Fähigkeiten im Dropdown aus. Gib Namen ohne führenden Schrägstrich ein, einen pro Zeile."
+      },
+      "mcp": {
+        "desc": "Verwalte MCP-Serverkonfigurationen auf Vault-Ebene in .kimi-code/mcp.json. Kimi liest diese Datei beim Sitzungsstart nativ; die benutzerbezogene ~/.kimi-code/mcp.json wird nie verändert."
+      },
+      "environment": {
+        "name": "Umgebungsvariablen",
+        "desc": "Zusätzliche Umgebungsvariablen für Kimi. Kimi besitzt ~/.kimi-code/config.toml und die benutzerbezogene ~/.kimi-code/mcp.json; Claudian schreibt niemals in sie."
+      }
     }
   }
 }
