@@ -77,6 +77,14 @@ export class ClaudianProviderHost implements ProviderHost {
     return this.plugin.getResolvedProviderCliPath(providerId, context);
   }
 
+  getMemoryInjectionText(): Promise<string | null> {
+    return this.plugin.getMemoryInjectionText();
+  }
+
+  getConsciousnessInjectionText(): Promise<string | null> {
+    return this.plugin.getConsciousnessInjectionText();
+  }
+
   refreshModelSelectors(): void {
     for (const view of this.plugin.getAllViews()) {
       view.refreshModelSelector();

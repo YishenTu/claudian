@@ -57,6 +57,24 @@ describe('OpencodeRuntimeCommandLoader', () => {
     expect(ensureReadySpy).not.toHaveBeenCalled();
   });
 
+  it('keeps command warmup non-fatal when OpenCode startup fails', async () => {
+    const ensureReadySpy = jest.spyOn(OpencodeChatRuntime.prototype, 'ensureReady')
+      .mockRejectedValue(new Error('OpenCode CLI was not found'));
+    const cleanupSpy = jest.spyOn(OpencodeChatRuntime.prototype, 'cleanup').mockImplementation(() => {});
+    const loader = new OpencodeRuntimeCommandLoader();
+
+    await expect(loader.loadCommands({
+      allowSessionCreation: true,
+      conversation: null,
+      externalContextPaths: [],
+      plugin: createMockPlugin(),
+      runtime: null,
+    })).resolves.toEqual([]);
+
+    expect(ensureReadySpy).toHaveBeenCalledWith({ allowSessionCreation: true });
+    expect(cleanupSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('warms pre-session conversations that already have messages', async () => {
     const commands = [{ id: 'acp:review', name: 'review', content: '' }];
     const syncSpy = jest.spyOn(OpencodeChatRuntime.prototype, 'syncConversationState').mockImplementation(() => {});

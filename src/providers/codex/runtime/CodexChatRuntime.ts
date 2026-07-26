@@ -296,7 +296,10 @@ export class CodexChatRuntime implements ChatRuntime {
   ): Promise<boolean> {
     this.assertLifecycleCurrent(generation);
     const promptSettings = this.getSystemPromptSettings();
-    const promptKey = computeSystemPromptKey(promptSettings);
+    const memoryAppendix = await this.plugin.getMemoryInjectionText();
+    const consciousnessAppendix = await this.plugin.getConsciousnessInjectionText();
+    const combinedAppendix = [memoryAppendix, consciousnessAppendix].filter(Boolean).join('\n\n') || undefined;
+    const promptKey = computeSystemPromptKey(promptSettings, { memoryAppendix: combinedAppendix });
     const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, this.providerId);
     const clientConfigKey = [promptKey, JSON.stringify({
       command: launchSpec.command,
@@ -348,7 +351,10 @@ export class CodexChatRuntime implements ChatRuntime {
     const providerSettings = this.getProviderSettings();
     const model = this.resolveModel(queryOptions, providerSettings);
     const promptSettings = this.getSystemPromptSettings();
-    const promptText = buildSystemPrompt(promptSettings);
+    const memoryAppendix = await this.plugin.getMemoryInjectionText();
+    const consciousnessAppendix = await this.plugin.getConsciousnessInjectionText();
+    const combinedAppendix = [memoryAppendix, consciousnessAppendix].filter(Boolean).join('\n\n') || undefined;
+    const promptText = buildSystemPrompt(promptSettings, { memoryAppendix: combinedAppendix });
 
     const enqueueChunk = (chunk: StreamChunk): void => {
       this.chunkBuffer.push(chunk);

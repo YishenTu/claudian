@@ -95,6 +95,8 @@ function createPlugin(): any {
       },
     },
     getResolvedProviderCliPath: jest.fn(() => 'pi'),
+    getMemoryInjectionText: jest.fn().mockResolvedValue(null),
+    getConsciousnessInjectionText: jest.fn().mockResolvedValue(null),
     settings: {
       mediaFolder: 'media',
       providerConfigs: {

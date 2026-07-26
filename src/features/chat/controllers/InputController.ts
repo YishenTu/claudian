@@ -28,6 +28,7 @@ import type {
 } from '../../../core/runtime/types';
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision, StreamChunk } from '../../../core/types';
+import { t } from '../../../i18n/i18n';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import { VaultRetrievalModal } from '../../../shared/modals/VaultRetrievalModal';
@@ -210,6 +211,100 @@ export class InputController {
     return false;
   }
 
+  /**
+   * Extract memories from user message and save them to the memory store.
+   * Also handles forget/remove requests and list requests.
+   * This is a fire-and-forget operation that doesn't block the main flow.
+   */
+  private async extractAndSaveMemories(message: string): Promise<void> {
+    try {
+      const { plugin } = this.deps;
+      if (!plugin.settings.memoryEnabled) {
+        return;
+      }
+
+      const memoryStore = plugin.getMemoryStore();
+
+      // Check for list request
+      if (plugin.memoryExtractor.isListRequest(message)) {
+        const entries = await memoryStore.load();
+        if (entries.length === 0) {
+          new Notice(t('settings.memory.alreadyEmpty'));
+        } else {
+          new Notice(t('settings.memory.listCount').replace('{count}', String(entries.length)));
+        }
+        return;
+      }
+
+      // Check for forget/remove request
+      const forgetTerm = plugin.memoryExtractor.extractForgetRequest(message);
+      if (forgetTerm) {
+        const removedCount = await memoryStore.remove(forgetTerm);
+        if (removedCount > 0) {
+          // Log activity
+          if (plugin.settings.consciousnessEnabled) {
+            const engine = plugin.getConsciousnessEngine();
+            await engine.logActivity('memory-remove', `Removed ${removedCount} memory(ies) matching "${forgetTerm}"`);
+          }
+          new Notice(removedCount === 1
+            ? t('settings.memory.removed')
+            : t('settings.memory.removedMultiple').replace('{count}', String(removedCount)));
+        }
+        return;
+      }
+
+      // Otherwise, extract and save new memories
+      const existingEntries = await memoryStore.load();
+
+      // First try explicit extraction (trigger words like "记住...")
+      const explicitResult = plugin.memoryExtractor.extract(message, existingEntries);
+
+      // Then try implicit extraction (auto-detect important info) when auto-memory is enabled
+      let implicitResult = { entries: [] as typeof explicitResult.entries };
+      if (plugin.settings.consciousnessAutoMemory) {
+        implicitResult = plugin.memoryExtractor.extractImplicit(message, [
+          ...existingEntries,
+          ...explicitResult.entries,
+        ]);
+      }
+
+      // Combine results
+      const allEntries = [...explicitResult.entries, ...implicitResult.entries];
+      if (allEntries.length === 0) {
+        return;
+      }
+
+      for (const entry of allEntries) {
+        await memoryStore.add({
+          category: entry.category,
+          content: entry.content,
+          source: entry.source,
+        });
+      }
+
+      // Log activity
+      if (plugin.settings.consciousnessEnabled) {
+        const engine = plugin.getConsciousnessEngine();
+        const implicitCount = implicitResult.entries.length;
+        const explicitCount = explicitResult.entries.length;
+        const logMsg = implicitCount > 0
+          ? `Added ${allEntries.length} memory(ies) (${explicitCount} explicit, ${implicitCount} implicit)`
+          : `Added ${allEntries.length} memory(ies)`;
+        await engine.logActivity('memory-add', logMsg);
+      }
+
+      // Notify user that memories were saved (only for explicit memories to avoid noise)
+      if (explicitResult.entries.length > 0) {
+        const count = explicitResult.entries.length;
+        new Notice(count === 1
+          ? t('settings.memory.saved')
+          : t('settings.memory.savedMultiple').replace('{count}', String(count)));
+      }
+    } catch {
+      // Silently ignore memory extraction errors - don't affect main flow
+    }
+  }
+
   // ============================================
   // Message Sending
   // ============================================
@@ -347,6 +442,9 @@ export class InputController {
     state.addMessage(userMsg);
     state.hasPendingConversationSave = true;
     renderer.addMessage(userMsg);
+
+    // Extract and save memories from user message (async, non-blocking)
+    void this.extractAndSaveMemories(content);
 
     try {
       await this.triggerTitleGeneration();
@@ -552,6 +650,14 @@ export class InputController {
         await streamController.finalizeCurrentThinkingBlock(finalAssistantMsg);
         await streamController.finalizeCurrentTextBlock(finalAssistantMsg);
         this.deps.getSubagentManager().resetStreamingState();
+
+        // Save short-term memory if consciousness is enabled
+        if (plugin.settings.consciousnessEnabled && plugin.settings.consciousnessAutoMemory) {
+          const userContent = displayContent.slice(0, 200);
+          const assistantContent = finalAssistantMsg.content?.slice(0, 200) || '';
+          const summary = `User: ${userContent}\nAssistant: ${assistantContent}`;
+          void plugin.getConsciousnessEngine().saveShortTermMemory(summary).catch(() => {});
+        }
 
         // Auto-hide completed todo panel on response end
         // Panel reappears only when new TodoWrite tool is called

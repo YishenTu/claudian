@@ -95,6 +95,48 @@
       "name": "媒體資料夾",
       "desc": "存放附件/圖片的資料夾。當筆記使用 ![[image.jpg]] 時，Claude 會在此查找。留空使用儲存庫根目錄。"
     },
+    "memory": {
+      "heading": "記憶",
+      "enabled": {
+        "name": "啟用記憶",
+        "desc": "自動從對話中儲存使用者偏好和上下文"
+      },
+      "filePath": {
+        "name": "記憶檔案路徑",
+        "desc": "記憶檔案的路徑（相對於儲存庫根目錄）"
+      },
+      "maxChars": {
+        "name": "最大注入字元數",
+        "desc": "注入到系統提示詞的最大字元數"
+      },
+      "manage": {
+        "name": "管理記憶",
+        "desc": "檢視或清除已儲存的記憶"
+      },
+      "viewBtn": "檢視記憶",
+      "clearBtn": "清除全部",
+      "noFile": "記憶檔案不存在。傳送包含「記住...」的訊息來建立它。",
+      "alreadyEmpty": "沒有記憶可清除",
+      "cleared": "已清除所有記憶",
+      "saved": "記憶已儲存",
+      "savedMultiple": "已儲存 {count} 條記憶",
+      "removed": "記憶已刪除",
+      "removedMultiple": "已刪除 {count} 條記憶",
+      "listCount": "你已儲存 {count} 條記憶"
+    },
+    "consciousness": {
+      "heading": "意識",
+      "enabled": {
+        "name": "意識模式",
+        "desc": "啟用跨工作階段記憶與技能進化能力"
+      },
+      "autoMemory": {
+        "name": "自動記憶",
+        "desc": "自動維護使用者畫像與長期記憶"
+      },
+      "viewBtn": "檢視意識檔案",
+      "clearBtn": "重設全部"
+    },
     "systemPrompt": {
       "name": "自訂系統提示詞",
       "desc": "附加到預設系統提示詞的額外指令"

@@ -58,6 +58,11 @@ export class OpencodeRuntimeCommandLoader implements ProviderRuntimeCommandLoade
       }
 
       return await runtime.getSupportedCommands();
+    } catch {
+      // Command discovery is opportunistic. A missing or unavailable CLI must
+      // not prevent the chat view from opening; the first real turn will
+      // surface the provider error through the chat stream.
+      return [];
     } finally {
       if (runtime !== context.runtime) {
         runtime.cleanup();

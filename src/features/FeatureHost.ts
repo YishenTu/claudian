@@ -1,6 +1,7 @@
 import type { App } from 'obsidian';
 
 import type { SharedAppStorage } from '../core/bootstrap/storage';
+import type { ConsciousnessEngine, MemoryExtractor, MemoryStore } from '../core/memory';
 import type { ProviderHost } from '../core/providers/ProviderHost';
 import type { AppTabManagerState, ProviderId } from '../core/providers/types';
 import type { VaultRetrievalService } from '../core/retrieval/VaultRetrievalService';
@@ -31,6 +32,13 @@ export interface FeatureHost {
   readonly settings: ClaudianSettings;
   readonly storage: SharedAppStorage;
   readonly vaultRetrievalService?: VaultRetrievalService;
+  readonly memoryExtractor: MemoryExtractor;
+
+  /** Get the memory store for saving/loading user memories. */
+  getMemoryStore(): MemoryStore;
+
+  /** Get the consciousness engine for awareness features. */
+  getConsciousnessEngine(): ConsciousnessEngine;
 
   mutateSettings(
     mutation: (settings: ClaudianSettings) => void | Promise<void>,

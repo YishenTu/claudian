@@ -174,6 +174,8 @@ function createMockPlugin(overrides: Record<string, unknown> = {}): any {
       'OPENAI_API_KEY=test-key\nOPENAI_BASE_URL=https://example.test/v1',
     ),
     getResolvedProviderCliPath: jest.fn().mockReturnValue('/usr/local/bin/codex'),
+    getMemoryInjectionText: jest.fn().mockResolvedValue(null),
+    getConsciousnessInjectionText: jest.fn().mockResolvedValue(null),
     app: {
       vault: {
         adapter: { basePath: '/test/vault' },

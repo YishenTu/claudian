@@ -95,6 +95,48 @@
       "name": "Medienordner",
       "desc": "Ordner mit Anhängen/Bildern. Wenn Notizen ![[image.jpg]] verwenden, sucht Claude hier. Leer lassen für Vault-Stammverzeichnis."
     },
+    "memory": {
+      "heading": "Speicher",
+      "enabled": {
+        "name": "Speicher aktivieren",
+        "desc": "Benutzereinstellungen und Kontext automatisch aus Gesprächen speichern"
+      },
+      "filePath": {
+        "name": "Speicherdateipfad",
+        "desc": "Pfad zur Speicherdatei (relativ zum Vault-Stammverzeichnis)"
+      },
+      "maxChars": {
+        "name": "Maximale Injektionszeichen",
+        "desc": "Maximale Zeichenanzahl für die System-Prompt-Injektion"
+      },
+      "manage": {
+        "name": "Speicher verwalten",
+        "desc": "Gespeicherte Erinnerungen anzeigen oder löschen"
+      },
+      "viewBtn": "Erinnerungen anzeigen",
+      "clearBtn": "Alle löschen",
+      "noFile": "Speicherdatei nicht gefunden. Senden Sie eine Nachricht mit 'remember...', um sie zu erstellen.",
+      "alreadyEmpty": "Keine Erinnerungen zum Löschen",
+      "cleared": "Alle Erinnerungen gelöscht",
+      "saved": "Erinnerung gespeichert",
+      "savedMultiple": "{count} Erinnerungen gespeichert",
+      "removed": "Erinnerung entfernt",
+      "removedMultiple": "{count} Erinnerungen entfernt",
+      "listCount": "Sie haben {count} Erinnerungen gespeichert"
+    },
+    "consciousness": {
+      "heading": "Bewusstsein",
+      "enabled": {
+        "name": "Bewusstseinsmodus",
+        "desc": "Sitzungsübergreifendes Gedächtnis und Fähigkeitsentwicklung aktivieren"
+      },
+      "autoMemory": {
+        "name": "Auto-Speicher",
+        "desc": "Benutzerprofil und Langzeitgedächtnis automatisch pflegen"
+      },
+      "viewBtn": "Bewusstseinsdateien anzeigen",
+      "clearBtn": "Alle zurücksetzen"
+    },
     "systemPrompt": {
       "name": "Benutzerdefinierter System-Prompt",
       "desc": "Zusätzliche Anweisungen, die an den Standard-System-Prompt angehängt werden"

@@ -333,16 +333,25 @@ export class OpencodeChatRuntime implements ChatRuntime {
 
     const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
     const targetSessionId = this.sessionId;
-    const resolvedCliPath = await this.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
+    const resolvedCliPath = await this.plugin.getResolvedProviderCliPath('opencode');
+    if (!resolvedCliPath) {
+      throw new Error(
+        'OpenCode CLI was not found. Install OpenCode and ensure the `opencode` command is available, or set a valid CLI path in Claudian Plus settings.',
+      );
+    }
     const runtimeEnv = this.buildRuntimeEnv(
       resolvedCliPath,
       this.currentDatabasePath,
     );
     const promptSettings = this.getSystemPromptSettings(cwd);
+    const memoryAppendix = await this.plugin.getMemoryInjectionText();
+    const consciousnessAppendix = await this.plugin.getConsciousnessInjectionText();
+    const combinedAppendix = [memoryAppendix, consciousnessAppendix].filter(Boolean).join('\n\n') || undefined;
     const artifacts = await prepareOpencodeLaunchArtifacts({
       runtimeEnv,
       settings: promptSettings,
       workspaceRoot: cwd,
+      memoryAppendix: combinedAppendix,
     });
     if (!this.isReadinessCurrent(lifecycleGeneration, conversationGeneration)) {
       return false;
@@ -436,8 +445,20 @@ export class OpencodeChatRuntime implements ChatRuntime {
     let shouldBootstrapHistory = previousMessages.length > 0
       && (!expectedSessionId || this.sessionInvalidated);
 
-    if (!(await this.ensureReady())) {
-      yield { type: 'error', content: 'Failed to start OpenCode. Check the CLI path and login state.' };
+    let ready: boolean;
+    try {
+      ready = await this.ensureReady();
+    } catch (error) {
+      yield { type: 'error', content: this.formatRuntimeError(error) };
+      yield { type: 'done' };
+      return;
+    }
+
+    if (!ready) {
+      const message = getOpencodeProviderSettings(this.plugin.settings).enabled
+        ? 'Failed to start OpenCode. Check the CLI path and login state.'
+        : 'OpenCode is disabled. Enable OpenCode in Claudian Plus settings before starting a chat.';
+      yield { type: 'error', content: message };
       yield { type: 'done' };
       return;
     }

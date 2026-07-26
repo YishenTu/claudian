@@ -150,6 +150,15 @@ export interface ClaudianSettings {
   // Provider command visibility
   hiddenProviderCommands: HiddenProviderCommands;
 
+  // Memory system
+  memoryEnabled: boolean;
+  memoryFilePath: string;
+  memoryMaxInjectionChars: number;
+
+  // Consciousness system (QoderWork-inspired)
+  consciousnessEnabled: boolean;
+  consciousnessAutoMemory: boolean;
+
   // Allow provider-specific extension fields
   [key: string]: unknown;
 }

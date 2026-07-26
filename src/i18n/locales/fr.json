@@ -95,6 +95,48 @@
       "name": "Dossier des médias",
       "desc": "Dossier contenant les pièces jointes/images. Lorsque les notes utilisent ![[image.jpg]], Claude cherchera ici. Laisser vide pour la racine du coffre."
     },
+    "memory": {
+      "heading": "Mémoire",
+      "enabled": {
+        "name": "Activer la mémoire",
+        "desc": "Enregistrer automatiquement les préférences et le contexte de l'utilisateur"
+      },
+      "filePath": {
+        "name": "Chemin du fichier de mémoire",
+        "desc": "Chemin vers le fichier de mémoire (relatif à la racine du coffre)"
+      },
+      "maxChars": {
+        "name": "Caractères d'injection maximum",
+        "desc": "Nombre maximum de caractères à injecter dans le prompt système"
+      },
+      "manage": {
+        "name": "Gérer les mémoires",
+        "desc": "Voir ou effacer les mémoires enregistrées"
+      },
+      "viewBtn": "Voir les mémoires",
+      "clearBtn": "Tout effacer",
+      "noFile": "Fichier de mémoire introuvable. Envoyez un message avec 'remember...' pour le créer.",
+      "alreadyEmpty": "Aucune mémoire à effacer",
+      "cleared": "Toutes les mémoires effacées",
+      "saved": "Mémoire enregistrée",
+      "savedMultiple": "{count} mémoires enregistrées",
+      "removed": "Mémoire supprimée",
+      "removedMultiple": "{count} mémoires supprimées",
+      "listCount": "Vous avez {count} mémoires enregistrées"
+    },
+    "consciousness": {
+      "heading": "Conscience",
+      "enabled": {
+        "name": "Mode conscience",
+        "desc": "Activer la mémoire entre sessions et l'évolution des compétences"
+      },
+      "autoMemory": {
+        "name": "Mémoire automatique",
+        "desc": "Maintenir automatiquement le profil utilisateur et la mémoire à long terme"
+      },
+      "viewBtn": "Voir les fichiers de conscience",
+      "clearBtn": "Tout réinitialiser"
+    },
     "systemPrompt": {
       "name": "Prompt système personnalisé",
       "desc": "Instructions supplémentaires ajoutées au prompt système par défaut"

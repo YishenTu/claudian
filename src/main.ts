@@ -17,6 +17,7 @@ import type { ConditionalSettingsMutation } from './app/settings/SettingsCoordin
 import { SettingsCoordinator, type SettingsMutation } from './app/settings/SettingsCoordinator';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SharedAppStorage } from './core/bootstrap/storage';
+import { ConsciousnessEngine, MemoryExtractor, MemoryStore, VaultKnowledgeEngine, wrapMemoryInjection } from './core/memory';
 import {
   getEnvironmentVariablesForScope as getScopedEnvironmentVariables,
   getRuntimeEnvironmentText,
@@ -109,6 +110,10 @@ export default class ClaudianPlugin extends Plugin {
   storage!: SharedAppStorage;
   readonly providerHost = new ClaudianProviderHost(this);
   readonly vaultRetrievalService = new VaultRetrievalService(this.app);
+  readonly memoryExtractor = new MemoryExtractor();
+  private _memoryStore: MemoryStore | null = null;
+  private _consciousnessEngine: ConsciousnessEngine | null = null;
+  private _vaultKnowledgeEngine: VaultKnowledgeEngine | null = null;
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
   private conversationRepository!: ConversationRepository;
   private lastKnownTabManagerState: AppTabManagerState | null = null;
@@ -130,6 +135,13 @@ export default class ClaudianPlugin extends Plugin {
         () => this.loadSettings({ deferNonRestoredSessionMetadata: true }),
       );
       // Provider workspace services are initialized lazily on first use.
+
+      // Initialize consciousness engine if enabled
+      if (this.settings.consciousnessEnabled) {
+        void this.getConsciousnessEngine().initialize().catch(() => {
+          // Silently ignore initialization errors
+        });
+      }
 
       this.registerView(
         VIEW_TYPE_CLAUDIAN,
@@ -255,6 +267,41 @@ export default class ClaudianPlugin extends Plugin {
         callback: async () => {
           const copied = await StartupProfiler.copyToClipboard();
           new Notice(copied ? 'Startup diagnostics copied to clipboard.' : 'Failed to copy startup diagnostics.');
+        },
+      });
+
+      this.addCommand({
+        id: 'open-memory-file',
+        name: 'Open memory file',
+        callback: async () => {
+          const memoryPath = this.settings.memoryFilePath;
+          const file = this.app.vault.getAbstractFileByPath(memoryPath);
+          if (file) {
+            await this.app.workspace.openLinkText(memoryPath, '', false);
+          } else {
+            new Notice('Memory file not found. Send a message with "remember..." to create it.');
+          }
+        },
+      });
+
+      this.addCommand({
+        id: 'scan-vault-knowledge',
+        name: 'Scan vault knowledge',
+        callback: async () => {
+          if (!this.settings.consciousnessEnabled) {
+            new Notice('Consciousness mode is disabled. Enable it in settings first.');
+            return;
+          }
+          new Notice('Scanning vault knowledge...');
+          try {
+            const engine = this.getVaultKnowledgeEngine();
+            const index = await engine.scanVault((current, total) => {
+              // Progress callback - could be used for a progress bar
+            });
+            new Notice(`Vault knowledge scanned: ${index.noteCount} notes, ${index.totalWords.toLocaleString()} words`);
+          } catch (error) {
+            new Notice(`Failed to scan vault: ${error}`);
+          }
         },
       });
 
@@ -942,6 +989,91 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     return cliResolver.resolveFromSettings(this.settings, context);
+  }
+
+  /** Get or create the MemoryStore instance. */
+  getMemoryStore(): MemoryStore {
+    if (!this._memoryStore) {
+      this._memoryStore = new MemoryStore(this.storage.getAdapter(), {
+        filePath: this.settings.memoryFilePath,
+        maxInjectionChars: this.settings.memoryMaxInjectionChars,
+      });
+    }
+    return this._memoryStore;
+  }
+
+  /** Get the memory injection text for system prompt, or null if disabled/empty. */
+  async getMemoryInjectionText(): Promise<string | null> {
+    if (!this.settings.memoryEnabled) {
+      return null;
+    }
+
+    const store = this.getMemoryStore();
+    // Sync options in case settings changed
+    store.updateOptions({
+      filePath: this.settings.memoryFilePath,
+      maxInjectionChars: this.settings.memoryMaxInjectionChars,
+    });
+
+    const injectionText = await store.buildInjectionText();
+    if (!injectionText) {
+      return null;
+    }
+
+    return wrapMemoryInjection(injectionText);
+  }
+
+  /** Get or create the ConsciousnessEngine instance. */
+  getConsciousnessEngine(): ConsciousnessEngine {
+    if (!this._consciousnessEngine) {
+      this._consciousnessEngine = new ConsciousnessEngine(this.storage.getAdapter(), {
+        enabled: this.settings.consciousnessEnabled,
+        autoMemoryEnabled: this.settings.consciousnessAutoMemory,
+      });
+    }
+    return this._consciousnessEngine;
+  }
+
+  /** Get or create the VaultKnowledgeEngine instance. */
+  getVaultKnowledgeEngine(): VaultKnowledgeEngine {
+    if (!this._vaultKnowledgeEngine) {
+      this._vaultKnowledgeEngine = new VaultKnowledgeEngine(
+        this.app,
+        this.storage.getAdapter(),
+        { enabled: this.settings.consciousnessEnabled },
+      );
+    }
+    return this._vaultKnowledgeEngine;
+  }
+
+  /** Get the consciousness injection text for system prompt, or null if disabled. */
+  async getConsciousnessInjectionText(): Promise<string | null> {
+    if (!this.settings.consciousnessEnabled) {
+      return null;
+    }
+
+    const parts: string[] = [];
+
+    // Add user memory and profile
+    const engine = this.getConsciousnessEngine();
+    engine.updateConfig({
+      enabled: this.settings.consciousnessEnabled,
+      autoMemoryEnabled: this.settings.consciousnessAutoMemory,
+    });
+
+    const memories = await this.getMemoryStore().load();
+    const consciousnessInjection = await engine.buildConsciousnessInjection(memories);
+    if (consciousnessInjection) {
+      parts.push(consciousnessInjection);
+    }
+
+    // Add vault knowledge summary
+    const vaultKnowledge = await this.getVaultKnowledgeEngine().getKnowledgeSummary();
+    if (vaultKnowledge) {
+      parts.push(vaultKnowledge);
+    }
+
+    return parts.length > 0 ? parts.join('\n\n') : null;
   }
 
   private reconcileModelWithEnvironment(

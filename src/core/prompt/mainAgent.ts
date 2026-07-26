@@ -7,6 +7,7 @@ export interface SystemPromptSettings {
 
 export interface SystemPromptBuildOptions {
   appendices?: string[];
+  memoryAppendix?: string;
 }
 
 function getPathRules(vaultPath?: string): string {
@@ -180,6 +181,12 @@ export function buildSystemPrompt(
   let prompt = getBaseSystemPrompt(settings.vaultPath, settings.userName);
 
   prompt += getImageInstructions(settings.mediaFolder || '');
+
+  // Inject long-term memory before custom instructions
+  if (options.memoryAppendix?.trim()) {
+    prompt += `\n\n${options.memoryAppendix.trim()}`;
+  }
+
   prompt += getAppendixSections(options.appendices);
 
   if (settings.customPrompt?.trim()) {
@@ -207,6 +214,11 @@ export function computeSystemPromptKey(
 
   if (appendixKey) {
     parts.push(appendixKey);
+  }
+
+  // Include memory appendix in key so providers restart when memory changes
+  if (options.memoryAppendix?.trim()) {
+    parts.push(`mem:${options.memoryAppendix.trim()}`);
   }
 
   return parts.join('::');

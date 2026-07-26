@@ -95,6 +95,48 @@
       "name": "Pasta de mídia",
       "desc": "Pasta contendo anexos/imagens. Quando notas usam ![[image.jpg]], Claude procurará aqui. Deixe vazio para a raiz do repositório."
     },
+    "memory": {
+      "heading": "Memória",
+      "enabled": {
+        "name": "Ativar memória",
+        "desc": "Salvar automaticamente preferências e contexto do usuário das conversas"
+      },
+      "filePath": {
+        "name": "Caminho do arquivo de memória",
+        "desc": "Caminho para o arquivo de memória (relativo à raiz do repositório)"
+      },
+      "maxChars": {
+        "name": "Máximo de caracteres de injeção",
+        "desc": "Máximo de caracteres para injetar no prompt do sistema"
+      },
+      "manage": {
+        "name": "Gerenciar memórias",
+        "desc": "Ver ou limpar memórias salvas"
+      },
+      "viewBtn": "Ver memórias",
+      "clearBtn": "Limpar tudo",
+      "noFile": "Arquivo de memória não encontrado. Envie uma mensagem com 'remember...' para criá-lo.",
+      "alreadyEmpty": "Nenhuma memória para limpar",
+      "cleared": "Todas as memórias limpas",
+      "saved": "Memória salva",
+      "savedMultiple": "{count} memórias salvas",
+      "removed": "Memória removida",
+      "removedMultiple": "{count} memórias removidas",
+      "listCount": "Você tem {count} memórias salvas"
+    },
+    "consciousness": {
+      "heading": "Consciência",
+      "enabled": {
+        "name": "Modo consciência",
+        "desc": "Ativar memória entre sessões e evolução de habilidades"
+      },
+      "autoMemory": {
+        "name": "Memória automática",
+        "desc": "Manter automaticamente perfil de usuário e memória de longo prazo"
+      },
+      "viewBtn": "Ver arquivos de consciência",
+      "clearBtn": "Redefinir tudo"
+    },
     "systemPrompt": {
       "name": "Prompt de sistema personalizado",
       "desc": "Instruções adicionais anexadas ao prompt de sistema padrão"

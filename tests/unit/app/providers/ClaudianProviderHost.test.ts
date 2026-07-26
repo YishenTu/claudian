@@ -16,6 +16,8 @@ function createPlugin(overrides: Record<string, unknown> = {}): ClaudianPlugin {
     applyEnvironmentVariables: jest.fn(async () => undefined),
     applyEnvironmentVariablesBatch: jest.fn(async () => undefined),
     getResolvedProviderCliPath: jest.fn(() => '/usr/bin/provider'),
+    getMemoryInjectionText: jest.fn(async () => null),
+    getConsciousnessInjectionText: jest.fn(async () => null),
     getAllViews: jest.fn(() => []),
     getView: jest.fn(() => null),
     ...overrides,

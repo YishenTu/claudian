@@ -95,6 +95,48 @@
       "name": "Media folder",
       "desc": "Folder containing attachments/images. When notes use ![[image.jpg]], Claude will look here. Leave empty for vault root."
     },
+    "memory": {
+      "heading": "Memory",
+      "enabled": {
+        "name": "Enable memory",
+        "desc": "Automatically save user preferences and context from conversations"
+      },
+      "filePath": {
+        "name": "Memory file path",
+        "desc": "Path to the memory file (relative to vault root)"
+      },
+      "maxChars": {
+        "name": "Max injection characters",
+        "desc": "Maximum characters to inject into system prompt"
+      },
+      "manage": {
+        "name": "Manage memories",
+        "desc": "View or clear saved memories"
+      },
+      "viewBtn": "View Memories",
+      "clearBtn": "Clear All",
+      "noFile": "Memory file not found. Send a message with 'remember...' to create it.",
+      "alreadyEmpty": "No memories to clear",
+      "cleared": "All memories cleared",
+      "saved": "Memory saved",
+      "savedMultiple": "{count} memories saved",
+      "removed": "Memory removed",
+      "removedMultiple": "{count} memories removed",
+      "listCount": "You have {count} memories saved"
+    },
+    "consciousness": {
+      "heading": "Consciousness",
+      "enabled": {
+        "name": "Consciousness mode",
+        "desc": "Enable cross-session memory and skill evolution capabilities"
+      },
+      "autoMemory": {
+        "name": "Auto memory",
+        "desc": "Automatically maintain user profile and long-term memory with periodic reflection"
+      },
+      "viewBtn": "View Awareness Files",
+      "clearBtn": "Reset All"
+    },
     "systemPrompt": {
       "name": "Custom system prompt",
       "desc": "Additional instructions appended to the default system prompt"

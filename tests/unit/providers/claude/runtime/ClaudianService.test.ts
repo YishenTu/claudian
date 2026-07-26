@@ -63,6 +63,8 @@ describe('ClaudianService', () => {
         titleGenerationModel: 'claude-3-5-haiku',
       },
       getResolvedProviderCliPath: jest.fn().mockReturnValue('/usr/local/bin/claude'),
+      getMemoryInjectionText: jest.fn().mockResolvedValue(null),
+      getConsciousnessInjectionText: jest.fn().mockResolvedValue(null),
       getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
       pluginManager: {
         getPluginsKey: jest.fn().mockReturnValue(''),
@@ -428,7 +430,7 @@ describe('ClaudianService', () => {
       startPersistentQuerySpy.mockImplementation(async (...args: unknown[]) => {
         const [vaultPath, cliPath, , externalContextPaths] = args as [string, string, string?, string[]?];
         (service as any).persistentQuery = { interrupt: jest.fn().mockResolvedValue(undefined) };
-        (service as any).currentConfig = (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
+        (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
       });
 
       // First call starts the query
@@ -449,7 +451,7 @@ describe('ClaudianService', () => {
       startPersistentQuerySpy.mockImplementation(async (...args: unknown[]) => {
         const [vaultPath, cliPath, , externalContextPaths] = args as [string, string, string?, string[]?];
         (service as any).persistentQuery = { interrupt: jest.fn().mockResolvedValue(undefined) };
-        (service as any).currentConfig = (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
+        (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
       });
 
       // First call starts with no external paths (Case 1: not running)
@@ -489,7 +491,7 @@ describe('ClaudianService', () => {
       startPersistentQuerySpy.mockImplementation(async (...args: unknown[]) => {
         const [vaultPath, cliPath, , externalContextPaths] = args as [string, string, string?, string[]?];
         (service as any).persistentQuery = { interrupt: jest.fn().mockResolvedValue(undefined) };
-        (service as any).currentConfig = (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
+        (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
       });
 
       // Start the query first
@@ -531,7 +533,7 @@ describe('ClaudianService', () => {
       startPersistentQuerySpy.mockImplementation(async (...args: unknown[]) => {
         const [vaultPath, cliPath, , externalContextPaths] = args as [string, string, string?, string[]?];
         (service as any).persistentQuery = { interrupt: jest.fn().mockResolvedValue(undefined) };
-        (service as any).currentConfig = (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
+        (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
       });
 
       // Start the query first (Case 1: not running)
@@ -1753,7 +1755,7 @@ describe('ClaudianService', () => {
         };
         (service as any).persistentQuery = mockPersistentQuery;
         (service as any).vaultPath = vaultPath;
-        (service as any).currentConfig = (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
+        (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
       });
 
       await service.ensureReady({ externalContextPaths: [] });
@@ -1775,7 +1777,7 @@ describe('ClaudianService', () => {
 
     it('should ignore legacy thinking budget changes', async () => {
       (mockPlugin as any).settings.model = 'custom-model';
-      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+      (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(
         '/mock/vault/path',
         '/usr/local/bin/claude',
         [],
@@ -1811,7 +1813,7 @@ describe('ClaudianService', () => {
     it('should keep effort active when switching from custom to built-in model ids', async () => {
       (mockPlugin as any).settings.model = 'custom-model';
       (mockPlugin as any).settings.thinkingBudget = 'high';
-      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+      (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(
         '/mock/vault/path',
         '/usr/local/bin/claude',
         [],
@@ -1835,7 +1837,7 @@ describe('ClaudianService', () => {
       (mockPlugin as any).settings.model = 'sonnet';
       (mockPlugin as any).settings.thinkingBudget = 'high';
       (mockPlugin as any).settings.effortLevel = 'max';
-      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+      (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(
         '/mock/vault/path',
         '/usr/local/bin/claude',
         [],
@@ -1865,7 +1867,7 @@ describe('ClaudianService', () => {
     it('should update permission mode when claudeSafeMode changes within normal mode', async () => {
       (mockPlugin as any).settings.permissionMode = 'normal';
       (mockPlugin as any).settings.claudeSafeMode = 'acceptEdits';
-      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+      (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(
         '/mock/vault/path',
         '/usr/local/bin/claude',
         [],
@@ -1884,7 +1886,7 @@ describe('ClaudianService', () => {
     it('should update permission mode when claudeSafeMode switches back to acceptEdits', async () => {
       (mockPlugin as any).settings.permissionMode = 'normal';
       (mockPlugin as any).settings.claudeSafeMode = 'default';
-      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+      (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(
         '/mock/vault/path',
         '/usr/local/bin/claude',
         [],
@@ -1903,7 +1905,7 @@ describe('ClaudianService', () => {
     it('should restart before applying auto mode when auto opt-in was not enabled', async () => {
       (mockPlugin as any).settings.permissionMode = 'normal';
       (mockPlugin as any).settings.claudeSafeMode = 'acceptEdits';
-      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+      (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(
         '/mock/vault/path',
         '/usr/local/bin/claude',
         [],
@@ -1925,7 +1927,7 @@ describe('ClaudianService', () => {
     it('should update permission mode to auto dynamically when auto opt-in is already enabled', async () => {
       (mockPlugin as any).settings.permissionMode = 'yolo';
       (mockPlugin as any).settings.claudeSafeMode = 'auto';
-      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+      (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(
         '/mock/vault/path',
         '/usr/local/bin/claude',
         [],
@@ -1992,7 +1994,7 @@ describe('ClaudianService', () => {
 
     it('should not dynamically update legacy thinking budget', async () => {
       (mockPlugin as any).settings.model = 'custom-model';
-      (service as any).currentConfig = (service as any).buildPersistentQueryConfig(
+      (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(
         '/mock/vault/path',
         '/usr/local/bin/claude',
         [],
@@ -2090,7 +2092,7 @@ describe('ClaudianService', () => {
         const messageChannel = new MessageChannel();
         (service as any).messageChannel = messageChannel;
         (service as any).persistentQuery = sdkMock.query({ prompt: messageChannel, options: { cwd: vaultPath, pathToClaudeCodeExecutable: cliPath } as any });
-        (service as any).currentConfig = (service as any).buildPersistentQueryConfig(vaultPath, cliPath, []);
+        (service as any).currentConfig = await (service as any).buildPersistentQueryConfig(vaultPath, cliPath, []);
         (service as any).startResponseConsumer();
       });
 

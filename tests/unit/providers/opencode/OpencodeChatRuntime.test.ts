@@ -15,6 +15,8 @@ function createMockPlugin(overrides: Record<string, unknown> = {}): any {
     manifest: { version: '0.0.0-test' },
     getAllViews: jest.fn().mockReturnValue([]),
     getResolvedProviderCliPath: jest.fn().mockReturnValue('/usr/local/bin/opencode'),
+    getMemoryInjectionText: jest.fn().mockResolvedValue(null),
+    getConsciousnessInjectionText: jest.fn().mockResolvedValue(null),
     saveSettings: jest.fn().mockResolvedValue(undefined),
     app: {
       vault: {
@@ -76,6 +78,61 @@ describe('OpencodeChatRuntime', () => {
         content: '',
         source: 'sdk',
       },
+    ]);
+  });
+
+  it('surfaces OpenCode startup errors as stream chunks instead of rejecting the turn', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    jest.spyOn(runtime, 'ensureReady').mockRejectedValue(new Error('spawn opencode ENOENT'));
+
+    const chunks: unknown[] = [];
+    for await (const chunk of runtime.query(runtime.prepareTurn({ text: 'Hello' }))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      { type: 'error', content: 'spawn opencode ENOENT' },
+      { type: 'done' },
+    ]);
+  });
+
+  it('reports a missing OpenCode CLI before preparing launch artifacts', async () => {
+    const plugin = createMockPlugin({
+      settings: { providerConfigs: { opencode: { enabled: true } } },
+      getResolvedProviderCliPath: jest.fn().mockResolvedValue(null),
+    });
+    const runtime = new OpencodeChatRuntime(plugin);
+    const prepareArtifacts = jest.spyOn(launchArtifacts, 'prepareOpencodeLaunchArtifacts');
+
+    const chunks: unknown[] = [];
+    for await (const chunk of runtime.query(runtime.prepareTurn({ text: 'Hello' }))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      {
+        type: 'error',
+        content: expect.stringContaining('OpenCode CLI was not found'),
+      },
+      { type: 'done' },
+    ]);
+    expect(prepareArtifacts).not.toHaveBeenCalled();
+  });
+
+  it('explains when OpenCode is disabled instead of reporting a startup failure', async () => {
+    const runtime = new OpencodeChatRuntime(createMockPlugin());
+    const chunks: unknown[] = [];
+
+    for await (const chunk of runtime.query(runtime.prepareTurn({ text: 'Hello' }))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      {
+        type: 'error',
+        content: 'OpenCode is disabled. Enable OpenCode in Claudian Plus settings before starting a chat.',
+      },
+      { type: 'done' },
     ]);
   });
 

@@ -317,6 +317,21 @@ export class ClaudianSettingsStorage {
       ...legacyNormalized,
     };
 
+    // Normalize memory settings: fallback to defaults for invalid values
+    if (typeof merged.memoryFilePath !== 'string' || !merged.memoryFilePath.trim()) {
+      merged.memoryFilePath = DEFAULT_CLAUDIAN_SETTINGS.memoryFilePath;
+    }
+    if (
+      typeof merged.memoryMaxInjectionChars !== 'number'
+      || !Number.isFinite(merged.memoryMaxInjectionChars)
+      || merged.memoryMaxInjectionChars < 100
+    ) {
+      merged.memoryMaxInjectionChars = DEFAULT_CLAUDIAN_SETTINGS.memoryMaxInjectionChars;
+    }
+    if (typeof merged.memoryEnabled !== 'boolean') {
+      merged.memoryEnabled = DEFAULT_CLAUDIAN_SETTINGS.memoryEnabled;
+    }
+
     let didNormalizeProviderSettings = false;
     for (const { adapter } of getProviderSettingsAdapters()) {
       didNormalizeProviderSettings = adapter.normalizeStored(

@@ -95,6 +95,48 @@
       "name": "미디어 폴더",
       "desc": "첨부 파일/이미지를 저장할 폴더. 노트가 ![[image.jpg]]를 사용할 때 Claude가 여기서 찾습니다. 비워두면 저장소 루트 사용."
     },
+    "memory": {
+      "heading": "메모리",
+      "enabled": {
+        "name": "메모리 활성화",
+        "desc": "대화에서 사용자 환경설정과 컨텍스트를 자동으로 저장"
+      },
+      "filePath": {
+        "name": "메모리 파일 경로",
+        "desc": "메모리 파일 경로 (저장소 루트 기준 상대 경로)"
+      },
+      "maxChars": {
+        "name": "최대 주입 문자 수",
+        "desc": "시스템 프롬프트에 주입할 최대 문자 수"
+      },
+      "manage": {
+        "name": "메모리 관리",
+        "desc": "저장된 메모리 보기 또는 삭제"
+      },
+      "viewBtn": "메모리 보기",
+      "clearBtn": "모두 삭제",
+      "noFile": "메모리 파일을 찾을 수 없습니다. 'remember...'가 포함된 메시지를 보내서 생성하세요.",
+      "alreadyEmpty": "삭제할 메모리가 없습니다",
+      "cleared": "모든 메모리가 삭제되었습니다",
+      "saved": "메모리가 저장되었습니다",
+      "savedMultiple": "{count}개의 메모리가 저장되었습니다",
+      "removed": "메모리가 삭제되었습니다",
+      "removedMultiple": "{count}개의 메모리가 삭제되었습니다",
+      "listCount": "{count}개의 메모리가 저장되어 있습니다"
+    },
+    "consciousness": {
+      "heading": "의식",
+      "enabled": {
+        "name": "의식 모드",
+        "desc": "세션 간 메모리 및 스킬 진화 활성화"
+      },
+      "autoMemory": {
+        "name": "자동 메모리",
+        "desc": "사용자 프로필과 장기 메모리를 자동으로 유지"
+      },
+      "viewBtn": "의식 파일 보기",
+      "clearBtn": "모두 재설정"
+    },
     "systemPrompt": {
       "name": "커스텀 시스템 프롬프트",
       "desc": "기본 시스템 프롬프트에 추가되는 추가 지침"

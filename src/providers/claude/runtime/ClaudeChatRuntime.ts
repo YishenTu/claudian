@@ -596,7 +596,7 @@ export class ClaudianService implements ChatRuntime {
     const cliPath = await this.plugin.getResolvedProviderCliPath('claude');
     if (!cliPath) return false;
 
-    const newConfig = this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
+    const newConfig = await this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
     if (this.needsRestart(newConfig)) {
       // Close FIRST, then try to start new one (allows fallback if CLI unavailable)
       this.closePersistentQuery('config changed', { preserveHandlers: options?.preserveHandlers });
@@ -648,11 +648,11 @@ export class ClaudianService implements ChatRuntime {
 
     this.queryAbortController = new AbortController();
 
-    const config = this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
+    const config = await this.buildPersistentQueryConfig(vaultPath, cliPath, externalContextPaths);
     this.currentConfig = config;
 
     const resumeAtMessageId = this.pendingResumeAt;
-    const options = this.buildPersistentQueryOptions(
+    const options = await this.buildPersistentQueryOptions(
       vaultPath,
       cliPath,
       resumeSessionId,
@@ -774,13 +774,13 @@ export class ClaudianService implements ChatRuntime {
   /**
    * Builds configuration object for tracking changes.
    */
-  private buildPersistentQueryConfig(
+  private async buildPersistentQueryConfig(
     vaultPath: string,
     cliPath: string,
     externalContextPaths?: string[]
-  ): PersistentQueryConfig {
+  ): Promise<PersistentQueryConfig> {
     return QueryOptionsBuilder.buildPersistentQueryConfig(
-      this.buildQueryOptionsContext(vaultPath, cliPath),
+      await this.buildQueryOptionsContext(vaultPath, cliPath),
       externalContextPaths
     );
   }
@@ -799,9 +799,12 @@ export class ClaudianService implements ChatRuntime {
     return settings;
   }
 
-  private buildQueryOptionsContext(vaultPath: string, cliPath: string): QueryOptionsContext {
+  private async buildQueryOptionsContext(vaultPath: string, cliPath: string): Promise<QueryOptionsContext> {
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables(this.providerId));
     const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
+    const memoryAppendix = await this.plugin.getMemoryInjectionText();
+    const consciousnessAppendix = await this.plugin.getConsciousnessInjectionText();
+    const combinedAppendix = [memoryAppendix, consciousnessAppendix].filter(Boolean).join('\n\n') || undefined;
 
     return {
       vaultPath,
@@ -811,6 +814,7 @@ export class ClaudianService implements ChatRuntime {
       enhancedPath,
       mcpManager: this.mcpManager,
       pluginManager: this.requirePluginManager(),
+      memoryAppendix: combinedAppendix,
     };
   }
 
@@ -841,14 +845,14 @@ export class ClaudianService implements ChatRuntime {
   /**
    * Builds SDK options for the persistent query.
    */
-  private buildPersistentQueryOptions(
+  private async buildPersistentQueryOptions(
     vaultPath: string,
     cliPath: string,
     resumeSessionId?: string,
     resumeAtMessageId?: string,
     externalContextPaths?: string[]
-  ): Options {
-    const baseContext = this.buildQueryOptionsContext(vaultPath, cliPath);
+  ): Promise<Options> {
+    const baseContext = await this.buildQueryOptionsContext(vaultPath, cliPath);
 
     const ctx: PersistentQueryContext = {
       ...baseContext,
@@ -1703,7 +1707,7 @@ export class ClaudianService implements ChatRuntime {
     this.vaultPath = cwd;
 
     const queryPrompt = this.buildPromptWithImages(prompt, images);
-    const baseContext = this.buildQueryOptionsContext(cwd, cliPath);
+    const baseContext = await this.buildQueryOptionsContext(cwd, cliPath);
     const externalContextPaths = queryOptions?.externalContextPaths || [];
     const hasEditorContext = prompt.includes('<editor_selection');
 

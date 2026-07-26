@@ -41,6 +41,8 @@ function createMockPlugin(settings: Record<string, unknown> = {}) {
     },
     manifest: { version: '0.0.0-test' },
     getResolvedProviderCliPath: jest.fn().mockReturnValue('/usr/local/bin/opencode'),
+    getMemoryInjectionText: jest.fn().mockResolvedValue(null),
+    getConsciousnessInjectionText: jest.fn().mockResolvedValue(null),
     app: {
       vault: {
         adapter: {

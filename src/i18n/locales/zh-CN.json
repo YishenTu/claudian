@@ -95,6 +95,48 @@
       "name": "媒体文件夹",
       "desc": "存放附件/图片的文件夹。当笔记使用 ![[image.jpg]] 时，Claude 会在此查找。留空使用仓库根目录。"
     },
+    "memory": {
+      "heading": "记忆",
+      "enabled": {
+        "name": "启用记忆",
+        "desc": "自动从对话中保存用户偏好和上下文"
+      },
+      "filePath": {
+        "name": "记忆文件路径",
+        "desc": "记忆文件的路径（相对于仓库根目录）"
+      },
+      "maxChars": {
+        "name": "最大注入字符数",
+        "desc": "注入到系统提示词的最大字符数"
+      },
+      "manage": {
+        "name": "管理记忆",
+        "desc": "查看或清除已保存的记忆"
+      },
+      "viewBtn": "查看记忆",
+      "clearBtn": "清除全部",
+      "noFile": "记忆文件不存在。发送包含“记住...”的消息来创建它。",
+      "alreadyEmpty": "没有记忆可清除",
+      "cleared": "已清除所有记忆",
+      "saved": "记忆已保存",
+      "savedMultiple": "已保存 {count} 条记忆",
+      "removed": "记忆已删除",
+      "removedMultiple": "已删除 {count} 条记忆",
+      "listCount": "你已保存 {count} 条记忆"
+    },
+    "consciousness": {
+      "heading": "意识",
+      "enabled": {
+        "name": "意识模式",
+        "desc": "启用跨会话记忆与技能进化能力"
+      },
+      "autoMemory": {
+        "name": "自动记忆",
+        "desc": "自动维护用户画像与长期记忆，并定期触发记忆反思"
+      },
+      "viewBtn": "查看意识文件",
+      "clearBtn": "重置全部"
+    },
     "systemPrompt": {
       "name": "自定义系统提示词",
       "desc": "附加到默认系统提示词的额外指令"

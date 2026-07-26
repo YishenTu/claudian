@@ -60,6 +60,7 @@ export interface PrepareOpencodeLaunchArtifactsParams {
   artifactsSubdir?: string;
   defaultAgentId?: string;
   managedAgents?: readonly OpencodeManagedAgentConfig[];
+  memoryAppendix?: string;
   runtimeEnv: NodeJS.ProcessEnv;
   settings?: SystemPromptSettings;
   systemPromptKey?: string;
@@ -79,12 +80,12 @@ export async function prepareOpencodeLaunchArtifacts(
   const systemPromptPath = path.join(artifactsDir, 'system.md');
   const configPath = path.join(artifactsDir, 'config.json');
   const systemPrompt = normalizeSystemPrompt(
-    params.systemPromptText ?? buildSystemPrompt(requireSettings(params)),
+    params.systemPromptText ?? buildSystemPrompt(requireSettings(params), { memoryAppendix: params.memoryAppendix }),
   );
   const promptKey = params.systemPromptKey
     ?? (params.systemPromptText !== undefined
       ? params.systemPromptText
-      : computeSystemPromptKey(requireSettings(params)));
+      : computeSystemPromptKey(requireSettings(params), { memoryAppendix: params.memoryAppendix }));
   const baseConfig = await loadOpencodeBaseConfig(
     params.runtimeEnv.OPENCODE_CONFIG,
     params.workspaceRoot,

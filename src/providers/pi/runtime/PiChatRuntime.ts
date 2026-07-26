@@ -305,7 +305,10 @@ export class PiChatRuntime implements ChatRuntime {
 
     const hasSessionTarget = Boolean(this.sessionId || this.sessionFile);
     const promptSettings = this.getSystemPromptSettings(cwd);
-    const systemPrompt = buildSystemPrompt(promptSettings);
+    const memoryAppendix = await this.plugin.getMemoryInjectionText();
+    const consciousnessAppendix = await this.plugin.getConsciousnessInjectionText();
+    const combinedAppendix = [memoryAppendix, consciousnessAppendix].filter(Boolean).join('\n\n') || undefined;
+    const systemPrompt = buildSystemPrompt(promptSettings, { memoryAppendix: combinedAppendix });
     const noSession = !allowSessionCreation && !hasSessionTarget;
     const launchSpec = buildPiLaunchSpec({
       command: resolvedCliPath,
@@ -323,7 +326,7 @@ export class PiChatRuntime implements ChatRuntime {
       cwd,
       envText: runtimeEnvText,
       noSession,
-      promptKey: computeSystemPromptKey(promptSettings),
+      promptKey: computeSystemPromptKey(promptSettings, { memoryAppendix: memoryAppendix ?? undefined }),
       systemPrompt,
       toolMode: settings.toolMode,
     });
