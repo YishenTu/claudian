@@ -1,4 +1,5 @@
 import type { ChatTurnRequest, PreparedChatTurn } from '../../../core/runtime/types';
+import { appendCurrentNote } from '../../../utils/context';
 
 function isCompactCommand(text: string): boolean {
   return /^\/compact(\s|$)/i.test(text);
@@ -17,12 +18,11 @@ export function encodeCodexTurn(request: ChatTurnRequest): PreparedChatTurn {
     };
   }
 
-  const sections: string[] = [];
-  sections.push(request.text);
-
-  if (request.currentNotePath) {
-    sections.push(`\n[Current note: ${request.currentNotePath}]`);
-  }
+  const sections: string[] = [
+    request.currentNotePath
+      ? appendCurrentNote(request.text, request.currentNotePath)
+      : request.text,
+  ];
 
   if (request.editorSelection?.selectedText) {
     sections.push(
