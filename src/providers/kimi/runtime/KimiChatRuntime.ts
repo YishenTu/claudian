@@ -58,7 +58,7 @@ import {
   mapAcpApprovalDecision,
 } from '../../acp/AcpPermissionAdapter';
 import { KIMI_PROVIDER_CAPABILITIES } from '../capabilities';
-import { getKimiDiscoveryState, updateKimiDiscoveryState } from '../discoveryState';
+import { getKimiDiscoveryState, sameKimiDiscoveredModels, updateKimiDiscoveryState } from '../discoveryState';
 import { resolveKimiSessionDirectory } from '../history/KimiHistoryPathResolver';
 import {
   decodeKimiModelId,
@@ -73,7 +73,7 @@ import {
   resolvePermissionModeForKimiMode,
 } from '../modes';
 import { stripKimiToolCallPrefix } from '../normalization/kimiToolCallId';
-import { getKimiProviderSettings } from '../settings';
+import { getKimiProviderSettings, updateKimiProviderSettings } from '../settings';
 import { getKimiState, type KimiProviderState } from '../types';
 import { buildKimiPromptBlocks, buildKimiPromptText } from './buildKimiPrompt';
 import { buildKimiRuntimeEnv } from './KimiRuntimeEnvironment';
@@ -1022,37 +1022,58 @@ export class KimiChatRuntime implements ChatRuntime {
   }
 
   // Thinking options are per-model and only advertised for thinking-capable models,
-  // so the mirror keys them by the session's current model id.
+  // so the mirror keys them by the session's current model id. The discovered
+  // catalog is mirrored whenever non-empty and written through to the persisted
+  // provider config so the model dropdown survives a plugin reload.
   private async mirrorThinkingDiscovery(
     currentRawModelId: string | null,
     thinkingOptions: ReturnType<typeof normalizeKimiThinkingOptions>,
     currentThinkingLevel: string | null,
     conversationGeneration?: number,
   ): Promise<void> {
-    if (!currentRawModelId) {
-      return;
-    }
-
     const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
-    const discovery = getKimiDiscoveryState(settingsBag);
-    const thinkingOptionsByModel = { ...discovery.thinkingOptionsByModel };
-    const currentThinkingByModel = { ...discovery.currentThinkingByModel };
-    if (thinkingOptions.length > 0) {
-      thinkingOptionsByModel[currentRawModelId] = thinkingOptions;
-      if (currentThinkingLevel) {
-        currentThinkingByModel[currentRawModelId] = currentThinkingLevel;
+    const discoveredModels = this.discoveredModels;
+    const updates: {
+      currentThinkingByModel?: Record<string, unknown>;
+      discoveredModels?: unknown;
+      thinkingOptionsByModel?: Record<string, unknown>;
+    } = {
+      ...(discoveredModels.length > 0 ? { discoveredModels } : {}),
+    };
+
+    if (currentRawModelId) {
+      const discovery = getKimiDiscoveryState(settingsBag);
+      const thinkingOptionsByModel = { ...discovery.thinkingOptionsByModel };
+      const currentThinkingByModel = { ...discovery.currentThinkingByModel };
+      if (thinkingOptions.length > 0) {
+        thinkingOptionsByModel[currentRawModelId] = thinkingOptions;
+        if (currentThinkingLevel) {
+          currentThinkingByModel[currentRawModelId] = currentThinkingLevel;
+        } else {
+          delete currentThinkingByModel[currentRawModelId];
+        }
       } else {
+        delete thinkingOptionsByModel[currentRawModelId];
         delete currentThinkingByModel[currentRawModelId];
       }
-    } else {
-      delete thinkingOptionsByModel[currentRawModelId];
-      delete currentThinkingByModel[currentRawModelId];
+      updates.currentThinkingByModel = currentThinkingByModel;
+      updates.thinkingOptionsByModel = thinkingOptionsByModel;
     }
 
-    const changed = updateKimiDiscoveryState(settingsBag, {
-      currentThinkingByModel,
-      thinkingOptionsByModel,
-    });
+    const changed = updateKimiDiscoveryState(settingsBag, updates);
+
+    if (
+      discoveredModels.length > 0
+      && !sameKimiDiscoveredModels(
+        getKimiProviderSettings(settingsBag).discoveredModels,
+        discoveredModels,
+      )
+    ) {
+      await this.plugin.mutateSettings((settings) => {
+        updateKimiProviderSettings(settings, { discoveredModels });
+      });
+    }
+
     if (
       !changed
       || (

@@ -1034,6 +1034,14 @@ function initializeInputToolbar(
     getCapabilities: () => getTabCapabilities(tab, plugin),
     getSettings: () => getTabSettingsSnapshot(tab, plugin),
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
+    canRefreshModelCatalog: () => typeof ProviderWorkspaceRegistry
+      .getServices(getTabProviderId(tab, plugin))?.refreshModelCatalog === 'function',
+    onRefreshModelCatalog: async () => {
+      const providerId = getTabProviderId(tab, plugin);
+      const result = await ProviderWorkspaceRegistry.refreshModelCatalog(providerId);
+      plugin.providerHost.notifyProviderChatOptionsChanged(providerId);
+      return result;
+    },
     onModelChange: async (model: string) => {
       // For blank tabs, update draft model and derive provider
       if (tab.lifecycleState === 'blank') {

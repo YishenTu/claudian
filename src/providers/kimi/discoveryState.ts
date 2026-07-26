@@ -5,9 +5,10 @@ import {
   normalizeKimiThinkingOptions,
 } from './models';
 
-// ACP session model/thinking discovery is runtime-owned; this symbol-keyed,
-// non-persisted state mirrors the last catalog into the settings bag so UI
-// configs can read it.
+// ACP session model/thinking discovery is runtime-owned; this symbol-keyed
+// state mirrors the last catalog into the settings bag so UI configs can read
+// it. The model catalog additionally persists in the provider config, and the
+// mirror is seeded from that persisted copy after a plugin reload.
 const KIMI_DISCOVERY_STATE = Symbol('kimiDiscoveryState');
 
 interface KimiDiscoveryState {
@@ -72,7 +73,7 @@ export function updateKimiDiscoveryState(
     : state.currentThinkingByModel;
 
   if (
-    sameDiscoveredModels(state.discoveredModels, nextDiscoveredModels)
+    sameKimiDiscoveredModels(state.discoveredModels, nextDiscoveredModels)
     && sameThinkingOptionsByModel(state.thinkingOptionsByModel, nextThinkingOptionsByModel)
     && sameStringMap(state.currentThinkingByModel, nextCurrentThinkingByModel)
   ) {
@@ -88,6 +89,21 @@ export function updateKimiDiscoveryState(
   );
   state.currentThinkingByModel = { ...nextCurrentThinkingByModel };
   return true;
+}
+
+export function seedKimiDiscoveryStateFromConfig(
+  settings: Record<string, unknown>,
+  config: Record<string, unknown>,
+): boolean {
+  const state = ensureDiscoveryState(settings);
+  if (state.discoveredModels.length > 0) {
+    return false;
+  }
+  const persisted = normalizeKimiDiscoveredModels(config.discoveredModels);
+  if (persisted.length === 0) {
+    return false;
+  }
+  return updateKimiDiscoveryState(settings, { discoveredModels: persisted });
 }
 
 export function clearKimiDiscoveryState(settings: Record<string, unknown>): boolean {
@@ -136,7 +152,7 @@ function normalizeCurrentThinkingByModel(
   return normalized;
 }
 
-function sameDiscoveredModels(
+export function sameKimiDiscoveredModels(
   left: KimiDiscoveredModel[],
   right: KimiDiscoveredModel[],
 ): boolean {

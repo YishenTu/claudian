@@ -3,6 +3,7 @@ import {
   TEST_CODEX_MODEL_LABEL,
 } from '@test/helpers/codexModels';
 import { createMockEl } from '@test/helpers/mockElement';
+import { Notice } from 'obsidian';
 
 import type { UsageInfo } from '@/core/types';
 import {
@@ -417,6 +418,137 @@ describe('ModelSelector', () => {
     expect(options.find((o: any) => o.children[0]?.textContent === 'Opus')).toBeUndefined();
     expect(options.find((o: any) => o.children[0]?.textContent === 'Sonnet')).toBeUndefined();
     expect(parentEl.querySelector('.claudian-model-label')?.textContent).toBe('Opus 1M');
+  });
+});
+
+describe('ModelSelector model catalog refresh', () => {
+  let parentEl: any;
+
+  function flushAsync(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  function createRefreshSelector(overrides: Record<string, any> = {}) {
+    parentEl = createMockEl();
+    const callbacks: any = createMockCallbacks({
+      canRefreshModelCatalog: jest.fn().mockReturnValue(true),
+      onRefreshModelCatalog: jest.fn().mockResolvedValue({ changed: true }),
+      ...overrides,
+    });
+    const selector = new ModelSelector(parentEl, callbacks);
+    return { callbacks, selector };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should hide the refresh action when the provider has no refresh hook', () => {
+    parentEl = createMockEl();
+    new ModelSelector(parentEl, createMockCallbacks());
+
+    expect(parentEl.querySelector('.claudian-model-refresh')).toBeNull();
+  });
+
+  it('should hide the refresh action when the hook is currently unavailable', () => {
+    createRefreshSelector({
+      canRefreshModelCatalog: jest.fn().mockReturnValue(false),
+    });
+
+    expect(parentEl.querySelector('.claudian-model-refresh')).toBeNull();
+  });
+
+  it('should render the refresh action when the provider exposes the hook', () => {
+    createRefreshSelector();
+
+    const action = parentEl.querySelector('.claudian-model-refresh');
+    expect(action).not.toBeNull();
+    expect(action?.getAttribute('title')).toBe('Refresh model list');
+  });
+
+  it('should call onRefreshModelCatalog and notice when the list changed', async () => {
+    const { callbacks } = createRefreshSelector();
+
+    parentEl.querySelector('.claudian-model-refresh')
+      ?.dispatchEvent('click', { stopPropagation: () => {} });
+    await flushAsync();
+
+    expect(callbacks.onRefreshModelCatalog).toHaveBeenCalledTimes(1);
+    expect(Notice).toHaveBeenCalledWith('Model list updated');
+  });
+
+  it('should notice when the list is already up to date', async () => {
+    createRefreshSelector({
+      onRefreshModelCatalog: jest.fn().mockResolvedValue({ changed: false }),
+    });
+
+    parentEl.querySelector('.claudian-model-refresh')
+      ?.dispatchEvent('click', { stopPropagation: () => {} });
+    await flushAsync();
+
+    expect(Notice).toHaveBeenCalledWith('Model list is up to date');
+  });
+
+  it('should deduplicate concurrent clicks while a refresh is in flight', async () => {
+    let resolveRefresh!: (value: { changed: boolean }) => void;
+    const pending = new Promise<{ changed: boolean }>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    const { callbacks } = createRefreshSelector({
+      onRefreshModelCatalog: jest.fn().mockReturnValue(pending),
+    });
+
+    const action = parentEl.querySelector('.claudian-model-refresh');
+    action?.dispatchEvent('click', { stopPropagation: () => {} });
+    action?.dispatchEvent('click', { stopPropagation: () => {} });
+
+    expect(callbacks.onRefreshModelCatalog).toHaveBeenCalledTimes(1);
+    expect(action?.hasClass('busy')).toBe(true);
+
+    resolveRefresh({ changed: true });
+    await flushAsync();
+
+    action?.dispatchEvent('click', { stopPropagation: () => {} });
+    expect(callbacks.onRefreshModelCatalog).toHaveBeenCalledTimes(2);
+  });
+
+  it('should notice diagnostics and keep existing options on refresh failure', async () => {
+    const { callbacks } = createRefreshSelector({
+      onRefreshModelCatalog: jest.fn().mockResolvedValue({
+        changed: false,
+        diagnostics: 'CLI not found',
+      }),
+    });
+
+    parentEl.querySelector('.claudian-model-refresh')
+      ?.dispatchEvent('click', { stopPropagation: () => {} });
+    await flushAsync();
+
+    expect(Notice).toHaveBeenCalledWith('Failed to refresh model list: CLI not found');
+    const options = parentEl.querySelector('.claudian-model-dropdown')?.children ?? [];
+    const labels = options
+      .filter((o: any) => o.hasClass('claudian-model-option'))
+      .map((o: any) => o.children[0]?.textContent);
+    expect(labels).toEqual(['Opus', 'Sonnet', 'Haiku']);
+    expect(callbacks.onRefreshModelCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('should notice and allow retry when the refresh throws', async () => {
+    const { callbacks } = createRefreshSelector({
+      onRefreshModelCatalog: jest.fn().mockRejectedValue(new Error('boom')),
+    });
+
+    const action = parentEl.querySelector('.claudian-model-refresh');
+    action?.dispatchEvent('click', { stopPropagation: () => {} });
+    await flushAsync();
+
+    expect(Notice).toHaveBeenCalledWith('Failed to refresh model list');
+    const options = parentEl.querySelector('.claudian-model-dropdown')?.children ?? [];
+    expect(options.filter((o: any) => o.hasClass('claudian-model-option')).length).toBe(3);
+
+    action?.dispatchEvent('click', { stopPropagation: () => {} });
+    await flushAsync();
+    expect(callbacks.onRefreshModelCatalog).toHaveBeenCalledTimes(2);
   });
 });
 

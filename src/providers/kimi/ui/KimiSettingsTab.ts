@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { Setting } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
@@ -18,9 +18,8 @@ import {
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { maybeGetKimiWorkspaceServices } from '../app/KimiWorkspaceServices';
-import { clearKimiDiscoveryState, getKimiDiscoveryState, updateKimiDiscoveryState } from '../discoveryState';
+import { clearKimiDiscoveryState, getKimiDiscoveryState } from '../discoveryState';
 import type { KimiDiscoveredModel } from '../models';
-import { KimiChatRuntime } from '../runtime/KimiChatRuntime';
 import { getKimiProviderSettings, updateKimiProviderSettings } from '../settings';
 
 const KIMI_PROVIDER_ID = 'kimi' as const;
@@ -31,6 +30,19 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const kimiSettings = getKimiProviderSettings(settingsBag);
     const hostnameKey = getHostnameKey();
     const workspace = maybeGetKimiWorkspaceServices();
+
+    const refreshModelCatalog = async (): Promise<'empty' | 'failed' | 'loaded'> => {
+      if (!workspace?.refreshModelCatalog) {
+        return 'failed';
+      }
+      const result = await workspace.refreshModelCatalog();
+      if (result.diagnostics) {
+        new Notice(`Kimi model discovery failed: ${result.diagnostics}`);
+        return 'failed';
+      }
+      context.notifyProviderModelOptionsChanged(KIMI_PROVIDER_ID);
+      return getKimiDiscoveryState(settingsBag).discoveredModels.length > 0 ? 'loaded' : 'empty';
+    };
 
     new Setting(container).setName('Setup').setHeading();
 
@@ -44,6 +56,9 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
             await context.plugin.mutateSettings((settings) => {
               ProviderSettingsCoordinator.applyProviderEnablement(settings, KIMI_PROVIDER_ID, value);
             });
+            if (value) {
+              await refreshModelCatalog();
+            }
             context.notifyProviderModelOptionsChanged(KIMI_PROVIDER_ID);
           })
       );
@@ -123,7 +138,7 @@ export const kimiSettingsTabRenderer: ProviderSettingsTabRenderer = {
     updateDetectionStatus();
 
     new Setting(container).setName('Models').setHeading();
-    renderKimiModelPicker(container, context, settingsBag);
+    renderKimiModelPicker(container, context, settingsBag, refreshModelCatalog);
 
     new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
     context.renderAgentSkillSettings(container, KIMI_PROVIDER_ID);
@@ -152,6 +167,7 @@ function renderKimiModelPicker(
   container: HTMLElement,
   context: ProviderSettingsTabRendererContext,
   settingsBag: Record<string, unknown>,
+  loadCatalog: () => Promise<'empty' | 'failed' | 'loaded'>,
 ): void {
   const getState = (): ProviderModelPickerState => {
     const current = getKimiProviderSettings(settingsBag);
@@ -170,25 +186,7 @@ function renderKimiModelPicker(
     emptyCatalogText: 'Start Kimi once to load its model catalog. Claudian will then let you pick visible models.',
     failedCatalogText: 'Could not load the Kimi model catalog. Check the CLI path and login state, then try again.',
     getState,
-    async loadCatalog() {
-      const runtime = new KimiChatRuntime(context.plugin);
-      try {
-        const loaded = await runtime.ensureReady({ allowSessionCreation: true });
-        if (!loaded) {
-          return 'failed';
-        }
-        const discoveredModels = runtime.getDiscoveredModels();
-        await context.plugin.mutateSettings((settings) => {
-          updateKimiDiscoveryState(settings, { discoveredModels });
-        });
-        context.notifyProviderModelOptionsChanged(KIMI_PROVIDER_ID);
-        return discoveredModels.length > 0 ? 'loaded' : 'empty';
-      } catch {
-        return 'failed';
-      } finally {
-        runtime.cleanup();
-      }
-    },
+    loadCatalog: async () => loadCatalog(),
     loadCatalogOnRender: true,
     loadingCatalogText: 'Loading Kimi model catalog...',
     modifier: 'kimi',

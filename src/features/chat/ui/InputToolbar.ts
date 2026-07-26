@@ -6,6 +6,7 @@ import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import type {
   ProviderCapabilities,
   ProviderChatUIConfig,
+  ProviderModelCatalogRefreshResult,
   ProviderModeSelectorConfig,
   ProviderPermissionModeToggleConfig,
   ProviderReasoningOption,
@@ -63,6 +64,10 @@ export interface ToolbarCallbacks {
   getEnvironmentVariables?: () => string;
   getUIConfig: () => ProviderChatUIConfig;
   getCapabilities: () => ProviderCapabilities;
+  /** Whether the current provider exposes a model catalog refresh hook. */
+  canRefreshModelCatalog?: () => boolean;
+  /** Runs the provider-owned model catalog refresh and returns its result. */
+  onRefreshModelCatalog?: () => Promise<ProviderModelCatalogRefreshResult>;
 }
 
 export class ModelSelector {
@@ -70,6 +75,7 @@ export class ModelSelector {
   private buttonEl: HTMLElement | null = null;
   private dropdownEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
+  private refreshInFlight = false;
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
     this.container = parentEl.createDiv({ cls: 'claudian-model-selector' });
@@ -167,6 +173,49 @@ export class ModelSelector {
         }, 'Failed to change model');
       });
     }
+
+    this.renderRefreshAction();
+  }
+
+  /** Appends the provider-neutral model catalog refresh row when the provider exposes the hook. */
+  private renderRefreshAction() {
+    if (!this.dropdownEl) return;
+    if (!(this.callbacks.canRefreshModelCatalog?.() ?? false)) return;
+
+    const actionEl = this.dropdownEl.createDiv({ cls: 'claudian-model-refresh' });
+    actionEl.setAttribute('title', 'Refresh model list');
+    const iconEl = actionEl.createSpan({ cls: 'claudian-model-refresh-icon' });
+    setIcon(iconEl, 'refresh-cw');
+    actionEl.createSpan({ text: 'Refresh model list' });
+
+    actionEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.runRefresh(actionEl);
+    });
+  }
+
+  private runRefresh(actionEl: HTMLElement) {
+    if (this.refreshInFlight) return;
+    const refresh = this.callbacks.onRefreshModelCatalog;
+    if (!refresh) return;
+
+    this.refreshInFlight = true;
+    actionEl.addClass('busy');
+    void (async () => {
+      try {
+        const result = await refresh();
+        if (result.diagnostics) {
+          new Notice(`Failed to refresh model list: ${result.diagnostics}`);
+        } else {
+          new Notice(result.changed ? 'Model list updated' : 'Model list is up to date');
+        }
+      } catch {
+        new Notice('Failed to refresh model list');
+      } finally {
+        this.refreshInFlight = false;
+        actionEl.removeClass('busy');
+      }
+    })();
   }
 }
 

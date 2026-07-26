@@ -1,6 +1,7 @@
 import {
   clearKimiDiscoveryState,
   getKimiDiscoveryState,
+  seedKimiDiscoveryStateFromConfig,
   updateKimiDiscoveryState,
 } from '@/providers/kimi/discoveryState';
 
@@ -130,6 +131,28 @@ describe('Kimi discovery state', () => {
     expect(getKimiDiscoveryState(settings).thinkingOptionsByModel).toEqual({
       'kimi-for-coding': [{ label: 'Off', value: 'off' }],
     });
+  });
+
+  it('seeds an empty mirror from a persisted config snapshot exactly once', () => {
+    const settings: Record<string, unknown> = {};
+
+    expect(seedKimiDiscoveryStateFromConfig(settings, {
+      discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+    })).toBe(true);
+    expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([
+      { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
+    ]);
+
+    expect(seedKimiDiscoveryStateFromConfig(settings, {
+      discoveredModels: [{ label: 'Other', rawId: 'other' }],
+    })).toBe(false);
+    expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([
+      { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
+    ]);
+
+    const empty: Record<string, unknown> = {};
+    expect(seedKimiDiscoveryStateFromConfig(empty, {})).toBe(false);
+    expect(getKimiDiscoveryState(empty).discoveredModels).toEqual([]);
   });
 
   it('clears the mirrored catalog exactly once', () => {

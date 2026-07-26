@@ -8,6 +8,10 @@ jest.mock('../../../../src/utils/env', () => ({
 }));
 
 import {
+  getKimiDiscoveryState,
+  updateKimiDiscoveryState,
+} from '@/providers/kimi/discoveryState';
+import {
   DEFAULT_KIMI_PROVIDER_CONFIG,
   getKimiProviderSettings,
   normalizeKimiStoredConfig,
@@ -30,6 +34,7 @@ describe('Kimi settings', () => {
     expect(DEFAULT_KIMI_PROVIDER_CONFIG).toEqual({
       cliPath: '',
       cliPathsByHost: {},
+      discoveredModels: [],
       enabled: false,
       environmentHash: '',
       environmentVariables: '',
@@ -47,6 +52,7 @@ describe('Kimi settings', () => {
       environmentHash: null,
       environmentVariables: 7,
       modelAliases: 'not-a-map',
+      discoveredModels: 'not-a-list',
       visibleModels: 'kimi-for-coding',
     })).toEqual(DEFAULT_KIMI_PROVIDER_CONFIG);
 
@@ -77,6 +83,7 @@ describe('Kimi settings', () => {
     })).toEqual({
       cliPath: '/opt/kimi',
       cliPathsByHost: { 'device:current': '/current/kimi' },
+      discoveredModels: [],
       enabled: false,
       environmentHash: '',
       environmentVariables: '',
@@ -202,6 +209,63 @@ describe('Kimi settings', () => {
     const preserved = updateKimiProviderSettings(settings, { enabled: true });
     expect(preserved.environmentHash).toBe('abc123');
     expect(preserved.environmentVariables).toBe('KIMI_LOG_LEVEL=debug');
+  });
+
+  it('persists the discovered model catalog and mirrors it in memory', () => {
+    const settings: Record<string, unknown> = {};
+    const discovered = [
+      { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
+      { description: 'Latest K2', label: 'K2 Latest', rawId: 'kimi-k2-latest' },
+    ];
+
+    const next = updateKimiProviderSettings(settings, { discoveredModels: discovered });
+
+    expect(next.discoveredModels).toEqual(discovered);
+    expect(getKimiProviderSettings(settings).discoveredModels).toEqual(discovered);
+    expect(getKimiDiscoveryState(settings).discoveredModels).toEqual(discovered);
+    const stored = (settings.providerConfigs as Record<string, Record<string, unknown>>).kimi;
+    expect(stored.discoveredModels).toEqual(discovered);
+
+    const preserved = updateKimiProviderSettings(settings, { enabled: true });
+    expect(preserved.discoveredModels).toEqual(discovered);
+  });
+
+  it('seeds the in-memory discovery mirror from the persisted catalog', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        kimi: {
+          discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+        },
+      },
+    };
+
+    expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([]);
+
+    expect(getKimiProviderSettings(settings).discoveredModels).toEqual([
+      { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
+    ]);
+    expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([
+      { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
+    ]);
+  });
+
+  it('does not overwrite a fresher in-memory catalog when seeding', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        kimi: {
+          discoveredModels: [{ label: 'Old', rawId: 'old-model' }],
+        },
+      },
+    };
+    updateKimiDiscoveryState(settings, {
+      discoveredModels: [{ label: 'New', rawId: 'new-model' }],
+    });
+
+    getKimiProviderSettings(settings);
+
+    expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([
+      { label: 'New', rawId: 'new-model' },
+    ]);
   });
 });
 

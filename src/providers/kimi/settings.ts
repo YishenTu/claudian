@@ -6,10 +6,19 @@ import {
   getLegacyHostnameKey,
   migrateLegacyHostnameKeyedMap,
 } from '../../utils/env';
+import {
+  seedKimiDiscoveryStateFromConfig,
+  updateKimiDiscoveryState,
+} from './discoveryState';
+import {
+  type KimiDiscoveredModel,
+  normalizeKimiDiscoveredModels,
+} from './models';
 
 export interface KimiProviderConfig {
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
+  discoveredModels: KimiDiscoveredModel[];
   enabled: boolean;
   environmentHash: string;
   environmentVariables: string;
@@ -21,6 +30,7 @@ export interface KimiProviderConfig {
 export const DEFAULT_KIMI_PROVIDER_CONFIG: Readonly<KimiProviderConfig> = Object.freeze({
   cliPath: '',
   cliPathsByHost: {},
+  discoveredModels: [],
   enabled: false,
   environmentHash: '',
   environmentVariables: '',
@@ -108,6 +118,7 @@ export function normalizeKimiStoredConfig(
   return {
     cliPath: readTrimmedString(config.cliPath) || DEFAULT_KIMI_PROVIDER_CONFIG.cliPath,
     cliPathsByHost: normalizeHostnameCliPaths(config.cliPathsByHost),
+    discoveredModels: normalizeKimiDiscoveredModels(config.discoveredModels),
     enabled: typeof config.enabled === 'boolean'
       ? config.enabled
       : DEFAULT_KIMI_PROVIDER_CONFIG.enabled,
@@ -133,6 +144,7 @@ export function getKimiProviderSettings(
       getLegacyHostnameKey(),
     )
     : normalized.cliPathsByHost;
+  seedKimiDiscoveryStateFromConfig(settings, config);
 
   return {
     ...normalized,
@@ -167,9 +179,16 @@ export function updateKimiProviderSettings(
     cliPath = DEFAULT_KIMI_PROVIDER_CONFIG.cliPath;
   }
 
+  if (updates.discoveredModels !== undefined) {
+    updateKimiDiscoveryState(settings, { discoveredModels: updates.discoveredModels });
+  }
+
   const next: KimiProviderConfig = {
     cliPath,
     cliPathsByHost,
+    discoveredModels: updates.discoveredModels !== undefined
+      ? normalizeKimiDiscoveredModels(updates.discoveredModels)
+      : current.discoveredModels,
     enabled: updates.enabled ?? current.enabled,
     environmentHash: updates.environmentHash !== undefined
       ? readTrimmedString(updates.environmentHash)

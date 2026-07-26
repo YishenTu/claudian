@@ -3,6 +3,7 @@ import '@/providers';
 import { JsonRpcErrorResponse } from '@/providers/acp';
 import { getKimiDiscoveryState } from '@/providers/kimi/discoveryState';
 import { KimiChatRuntime } from '@/providers/kimi/runtime/KimiChatRuntime';
+import { getKimiProviderSettings } from '@/providers/kimi/settings';
 
 function createMockPlugin(overrides: Record<string, unknown> = {}): any {
   const plugin: any = {
@@ -411,6 +412,43 @@ describe('KimiChatRuntime', () => {
     });
     expect(discovery.currentThinkingByModel).toEqual({ 'kimi-k2': 'medium' });
     expect(plugin.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('kimi');
+  });
+
+  it('mirrors and persists the discovered model catalog from session config options', async () => {
+    const plugin = createMockPlugin();
+    const runtime = new KimiChatRuntime(plugin);
+
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [modelConfigOption('kimi-k2')],
+    });
+
+    const expected = [
+      { description: 'Kimi coding model', label: 'Kimi Coding', rawId: 'kimi-for-coding' },
+      { label: 'K2', rawId: 'kimi-k2' },
+    ];
+    expect(getKimiDiscoveryState(plugin.settings).discoveredModels).toEqual(expected);
+    expect(getKimiProviderSettings(plugin.settings).discoveredModels).toEqual(expected);
+    const stored = (plugin.settings.providerConfigs as Record<string, Record<string, unknown>>).kimi;
+    expect(stored.discoveredModels).toEqual(expected);
+    expect(plugin.saveSettings).toHaveBeenCalled();
+  });
+
+  it('keeps the mirrored catalog when a session reports no models', async () => {
+    const plugin = createMockPlugin();
+    const runtime = new KimiChatRuntime(plugin);
+
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [modelConfigOption('kimi-k2')],
+    });
+    const before = getKimiDiscoveryState(plugin.settings).discoveredModels;
+    expect(before).not.toEqual([]);
+
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [thinkingConfigOption('medium')],
+    });
+
+    expect(getKimiDiscoveryState(plugin.settings).discoveredModels).toEqual(before);
+    expect(getKimiProviderSettings(plugin.settings).discoveredModels).toEqual(before);
   });
 
   it('drops the thinking mirror when the session model stops advertising thought levels', async () => {
