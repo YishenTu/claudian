@@ -42,6 +42,12 @@ jest.mock('@/providers/kimi/runtime/KimiChatRuntime', () => ({
   }),
 }));
 
+const mockRefreshKimiModelMetadata = jest.fn();
+
+jest.mock('@/providers/kimi/app/KimiModelMetadata', () => ({
+  refreshKimiModelMetadata: mockRefreshKimiModelMetadata,
+}));
+
 import { refreshKimiModelCatalog } from '@/providers/kimi/app/KimiModelCatalogRefresh';
 import { getKimiDiscoveryState } from '@/providers/kimi/discoveryState';
 import { getKimiProviderSettings } from '@/providers/kimi/settings';
@@ -115,6 +121,7 @@ describe('refreshKimiModelCatalog', () => {
     expect(getKimiDiscoveryState(plugin.settings).discoveredModels).toEqual(CATALOG);
     expect(getKimiProviderSettings(plugin.settings).discoveredModels).toEqual(CATALOG);
     expect(plugin.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('kimi');
+    expect(mockRefreshKimiModelMetadata).toHaveBeenCalledTimes(1);
     expect(mockCreatedRuntimes[0].ensureReady).toHaveBeenCalledWith({ allowSessionCreation: true });
     expect(mockCreatedRuntimes[0].cleanup).toHaveBeenCalled();
   });
@@ -256,5 +263,6 @@ describe('refreshKimiModelCatalog', () => {
 
     expect(result).toEqual({ changed: false });
     expect(mockCreatedRuntimes).toHaveLength(0);
+    expect(mockRefreshKimiModelMetadata).not.toHaveBeenCalled();
   });
 });

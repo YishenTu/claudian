@@ -7,7 +7,7 @@ describe('KIMI_PROVIDER_CAPABILITIES', () => {
       reasoningControl: 'effort',
       supportsFork: false,
       supportsImageAttachments: true,
-      supportsInstructionMode: false,
+      supportsInstructionMode: true,
       supportsMcpTools: true,
       supportsNativeHistory: true,
       supportsPersistentRuntime: true,

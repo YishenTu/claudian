@@ -308,6 +308,12 @@ export interface ProviderChatUIConfig {
     settings?: Record<string, unknown>,
   ): number;
 
+  /**
+   * Whether the model accepts image attachments. When absent, the provider-level
+   * `supportsImageAttachments` capability decides for every model.
+   */
+  supportsImageInputForModel?(model: string, settings: Record<string, unknown>): boolean;
+
   /** Whether this is a built-in (default) model vs custom/env model. */
   isDefaultModel(model: string): boolean;
 

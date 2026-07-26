@@ -1,4 +1,5 @@
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { KimiInstructionRefineService } from '@/providers/kimi/auxiliary/KimiInstructionRefineService';
 import { KimiTaskResultInterpreter } from '@/providers/kimi/auxiliary/KimiTaskResultInterpreter';
 import { KimiTitleGenerationService } from '@/providers/kimi/auxiliary/KimiTitleGenerationService';
 import { KimiAuxQueryRunner } from '@/providers/kimi/runtime/KimiAuxQueryRunner';
@@ -69,6 +70,43 @@ describe('KimiTitleGenerationService', () => {
       expect.objectContaining({ model: undefined }),
       expect.any(String),
     );
+  });
+});
+
+describe('KimiInstructionRefineService', () => {
+  let query: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    query = jest.fn().mockResolvedValue('<instruction>- Be concise.</instruction>');
+    MockKimiAuxQueryRunner.mockImplementation(() => ({
+      query,
+      reset: jest.fn(),
+    } as unknown as KimiAuxQueryRunner));
+  });
+
+  it('routes instruction refinement through the Kimi aux query runner', async () => {
+    const service = new KimiInstructionRefineService(makeHost());
+
+    const result = await service.refineInstruction('be concise', '');
+
+    expect(MockKimiAuxQueryRunner).toHaveBeenCalledWith(expect.objectContaining({
+      settings: expect.objectContaining({ providerConfigs: { kimi: { enabled: true } } }),
+    }));
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({ systemPrompt: expect.stringContaining('Prompt Engineer') }),
+      expect.stringContaining('be concise'),
+    );
+    expect(result).toEqual({ success: true, refinedInstruction: '- Be concise.' });
+  });
+
+  it('surfaces aux query failures as refine errors', async () => {
+    query.mockRejectedValue(new Error('kimi exited'));
+    const service = new KimiInstructionRefineService(makeHost());
+
+    const result = await service.refineInstruction('be concise', '');
+
+    expect(result).toEqual({ success: false, error: 'kimi exited' });
   });
 });
 

@@ -453,7 +453,13 @@ function applyProviderUIGating(tab: TabData, plugin: FeatureHost): void {
     ProviderWorkspaceRegistry.getAgentMentionProvider(capabilities.providerId),
   );
 
-  tab.ui.imageContextManager?.setEnabled(capabilities.supportsImageAttachments);
+  const selectedModel = getTabSelectedModel(tab, plugin);
+  const imageInputEnabled = capabilities.supportsImageAttachments
+    && (selectedModel
+      ? uiConfig.supportsImageInputForModel?.(selectedModel, getTabSettingsSnapshot(tab, plugin))
+        ?? true
+      : true);
+  tab.ui.imageContextManager?.setEnabled(imageInputEnabled);
   tab.ui.contextUsageMeter?.update(tab.state.usage);
 }
 

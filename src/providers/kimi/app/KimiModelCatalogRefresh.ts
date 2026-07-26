@@ -9,6 +9,7 @@ import {
 } from '../discoveryState';
 import { KimiChatRuntime } from '../runtime/KimiChatRuntime';
 import { getKimiProviderSettings, updateKimiProviderSettings } from '../settings';
+import { refreshKimiModelMetadata } from './KimiModelMetadata';
 
 // Kimi only advertises its catalog on a live ACP session, so refresh boots an
 // isolated runtime, then probes every discovered model's thought_level select on
@@ -35,6 +36,10 @@ export async function refreshKimiModelCatalog(
     const probe = await runtime.probeThinkingOptionsForModels(
       discoveredModels.map((model) => model.rawId),
     );
+
+    // The server-side catalog may have changed config.toml; re-read it so
+    // context windows, labels, and image gating stay current.
+    refreshKimiModelMetadata(settingsBag);
 
     // Merge the batch into the mirror: probed models replace their entry, models
     // that advertise no thought_level lose theirs, failed probes stay untouched.

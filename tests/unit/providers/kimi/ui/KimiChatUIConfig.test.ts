@@ -6,6 +6,18 @@ import { getKimiProviderSettings } from '@/providers/kimi/settings';
 import { kimiChatUIConfig } from '@/providers/kimi/ui/KimiChatUIConfig';
 import { KIMI_PROVIDER_ICON } from '@/shared/icons';
 
+const mockModelMetadata: Record<string, {
+  capabilities: string[];
+  displayName?: string;
+  maxContextSize?: number;
+}> = {};
+
+jest.mock('@/providers/kimi/app/KimiModelMetadata', () => ({
+  getKimiModelMetadata: jest.fn(() => mockModelMetadata),
+  refreshKimiModelMetadata: jest.fn(() => mockModelMetadata),
+  resetKimiModelMetadataCache: jest.fn(),
+}));
+
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => 'device:current',
@@ -42,6 +54,12 @@ function makeSettings(overrides: Record<string, unknown> = {}): Record<string, u
 }
 
 describe('KimiChatUIConfig', () => {
+  beforeEach(() => {
+    for (const key of Object.keys(mockModelMetadata)) {
+      delete mockModelMetadata[key];
+    }
+  });
+
   it('owns only kimi:-scoped selection ids', () => {
     expect(kimiChatUIConfig.ownsModel('kimi:kimi-for-coding', {})).toBe(true);
     expect(kimiChatUIConfig.ownsModel('kimi:', {})).toBe(false);
@@ -188,6 +206,52 @@ describe('KimiChatUIConfig', () => {
     expect(kimiChatUIConfig.getContextWindowSize?.('kimi:kimi-k2', {
       'kimi:kimi-k2': 256_000,
     })).toBe(256_000);
+  });
+
+  it('resolves context windows from config.toml metadata ahead of custom limits', () => {
+    const settings = makeSettings();
+    mockModelMetadata['kimi-k2'] = { capabilities: [], maxContextSize: 262_144 };
+
+    expect(kimiChatUIConfig.getContextWindowSize?.('kimi:kimi-k2', {}, settings)).toBe(262_144);
+    // Provider-owned metadata wins over custom limits, matching grok's precedence.
+    expect(kimiChatUIConfig.getContextWindowSize?.('kimi:kimi-k2', {
+      'kimi:kimi-k2': 128_000,
+    }, settings)).toBe(262_144);
+    expect(kimiChatUIConfig.getContextWindowSize?.('kimi:kimi-for-coding', {
+      'kimi:kimi-for-coding': 128_000,
+    }, settings)).toBe(128_000);
+    // Without a settings bag there is no metadata lookup.
+    expect(kimiChatUIConfig.getContextWindowSize?.('kimi:kimi-k2')).toBe(200_000);
+  });
+
+  it('falls back to config.toml display names only when ACP provided no label', () => {
+    const settings = makeSettings();
+    (settings.providerConfigs as Record<string, Record<string, unknown>>).kimi.visibleModels = [
+      'kimi-k2',
+      'kimi-k3-256k',
+    ];
+    mockModelMetadata['kimi-k2'] = { capabilities: [], displayName: 'K2 From Config' };
+    mockModelMetadata['kimi-k3-256k'] = { capabilities: [], displayName: 'K3-256k' };
+
+    expect(kimiChatUIConfig.getModelOptions(settings)).toEqual([
+      // ACP-discovered label wins over the config.toml display name.
+      { description: 'ACP runtime', label: 'K2', value: 'kimi:kimi-k2' },
+      // No ACP entry for this model: the config.toml display name applies.
+      { description: 'Configured model', label: 'K3-256k', value: 'kimi:kimi-k3-256k' },
+    ]);
+  });
+
+  it('gates image input per model from config.toml capabilities', () => {
+    const settings = makeSettings();
+    mockModelMetadata['kimi-k2'] = { capabilities: ['thinking', 'image_in'] };
+    mockModelMetadata['kimi-for-coding'] = { capabilities: ['thinking', 'tool_use'] };
+
+    expect(kimiChatUIConfig.supportsImageInputForModel?.('kimi:kimi-k2', settings)).toBe(true);
+    expect(kimiChatUIConfig.supportsImageInputForModel?.('kimi:kimi-for-coding', settings))
+      .toBe(false);
+    // Unknown models and foreign ids keep the provider-level default (enabled).
+    expect(kimiChatUIConfig.supportsImageInputForModel?.('kimi:kimi-k3', settings)).toBe(true);
+    expect(kimiChatUIConfig.supportsImageInputForModel?.('grok/grok-4', settings)).toBe(true);
   });
 
   it('applies kimi model defaults and seeds effort only for thinking-capable models', () => {

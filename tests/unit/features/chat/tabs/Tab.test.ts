@@ -937,6 +937,107 @@ describe('Tab - Service Initialization', () => {
       expect(getCapabilitiesSpy).toHaveBeenCalledWith('codex');
     });
 
+    it('gates image attachments per model through the chat UI config hook', () => {
+      jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+      const supportsImageInputForModel = jest.fn().mockReturnValue(false);
+      jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+        getModelOptions: jest.fn().mockReturnValue([]),
+        ownsModel: jest.fn().mockReturnValue(false),
+        isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
+        getReasoningOptions: jest.fn().mockReturnValue([]),
+        getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
+        getContextWindowSize: jest.fn().mockReturnValue(200000),
+        isDefaultModel: jest.fn().mockReturnValue(true),
+        applyModelDefaults: jest.fn(),
+        normalizeModelVariant: jest.fn((model: string) => model),
+        getCustomModelIds: jest.fn().mockReturnValue(new Set()),
+        supportsImageInputForModel,
+      } as any);
+      jest.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: false,
+        supportsRewind: false,
+        supportsFork: false,
+        supportsProviderCommands: false,
+        supportsImageAttachments: true,
+        supportsInstructionMode: false,
+        supportsMcpTools: false,
+        reasoningControl: 'none',
+      });
+
+      const conversation = {
+        id: 'conv-codex',
+        providerId: 'codex',
+        selectedModel: 'gpt-5-codex',
+        title: 'Codex Conversation',
+        messages: [],
+        sessionId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      } as any;
+      const options = createMockOptions({ conversation });
+      (options.plugin as any).getConversationSync = jest.fn().mockReturnValue(conversation);
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(supportsImageInputForModel).toHaveBeenCalled();
+      expect(mockImageContextManager.setEnabled).toHaveBeenLastCalledWith(false);
+    });
+
+    it('keeps image attachments enabled when the provider has no per-model hook', () => {
+      jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);
+      jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter').mockReturnValue({} as any);
+      jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+        getModelOptions: jest.fn().mockReturnValue([]),
+        ownsModel: jest.fn().mockReturnValue(false),
+        isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
+        getReasoningOptions: jest.fn().mockReturnValue([]),
+        getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
+        getContextWindowSize: jest.fn().mockReturnValue(200000),
+        isDefaultModel: jest.fn().mockReturnValue(true),
+        applyModelDefaults: jest.fn(),
+        normalizeModelVariant: jest.fn((model: string) => model),
+        getCustomModelIds: jest.fn().mockReturnValue(new Set()),
+      } as any);
+      jest.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({
+        providerId: 'codex',
+        supportsPersistentRuntime: true,
+        supportsNativeHistory: true,
+        supportsPlanMode: false,
+        supportsRewind: false,
+        supportsFork: false,
+        supportsProviderCommands: false,
+        supportsImageAttachments: true,
+        supportsInstructionMode: false,
+        supportsMcpTools: false,
+        reasoningControl: 'none',
+      });
+
+      const conversation = {
+        id: 'conv-codex',
+        providerId: 'codex',
+        selectedModel: 'gpt-5-codex',
+        title: 'Codex Conversation',
+        messages: [],
+        sessionId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      } as any;
+      const options = createMockOptions({ conversation });
+      (options.plugin as any).getConversationSync = jest.fn().mockReturnValue(conversation);
+      const tab = createTab(options);
+
+      initializeTabUI(tab, options.plugin);
+
+      expect(mockImageContextManager.setEnabled).toHaveBeenLastCalledWith(true);
+    });
+
     it('resolves the agent mention service through the provider-specific lookup', () => {
       jest.spyOn(ProviderRegistry, 'createInstructionRefineService').mockReturnValue({ cancel: jest.fn(), resetConversation: jest.fn() } as any);
       jest.spyOn(ProviderRegistry, 'createTitleGenerationService').mockReturnValue({ cancel: jest.fn() } as any);

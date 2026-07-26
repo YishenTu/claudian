@@ -9,7 +9,7 @@ export const KIMI_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object
   supportsFork: false,
   supportsProviderCommands: true,
   supportsImageAttachments: true,
-  supportsInstructionMode: false,
+  supportsInstructionMode: true,
   supportsMcpTools: true,
   supportsTurnSteer: false,
   reasoningControl: 'effort',

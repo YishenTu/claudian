@@ -5,6 +5,7 @@ import type {
   ProviderUIOption,
 } from '../../../core/providers/types';
 import { KIMI_PROVIDER_ICON } from '../../../shared/icons';
+import { getKimiModelMetadata } from '../app/KimiModelMetadata';
 import { getKimiDiscoveryState } from '../discoveryState';
 import {
   decodeKimiModelId,
@@ -30,6 +31,7 @@ export const kimiChatUIConfig: ProviderChatUIConfig = {
     const discovered = new Map(
       getKimiDiscoveryState(settings).discoveredModels.map((model) => [model.rawId, model] as const),
     );
+    const metadata = getKimiModelMetadata(settings);
     const visibleRawIds = kimiSettings.visibleModels ?? [...discovered.keys()];
     const options: ProviderUIOption[] = [];
     const seenValues = new Set<string>();
@@ -43,7 +45,7 @@ export const kimiChatUIConfig: ProviderChatUIConfig = {
       const model = discovered.get(rawId);
       options.push({
         description: model?.description ?? (model ? 'ACP runtime' : 'Configured model'),
-        label: kimiSettings.modelAliases[rawId] ?? model?.label ?? rawId,
+        label: kimiSettings.modelAliases[rawId] ?? model?.label ?? metadata[rawId]?.displayName ?? rawId,
         value,
       });
     }
@@ -87,8 +89,27 @@ export const kimiChatUIConfig: ProviderChatUIConfig = {
     );
   },
 
-  getContextWindowSize(model: string, customLimits?: Record<string, number>): number {
-    return customLimits?.[model] ?? DEFAULT_CONTEXT_WINDOW;
+  getContextWindowSize(
+    model: string,
+    customLimits?: Record<string, number>,
+    settings?: Record<string, unknown>,
+  ): number {
+    const rawModelId = decodeKimiModelId(model);
+    const metadata = rawModelId && settings
+      ? getKimiModelMetadata(settings)[rawModelId]
+      : undefined;
+    // Provider-owned metadata wins over custom limits, matching grok's precedence.
+    return metadata?.maxContextSize ?? customLimits?.[model] ?? DEFAULT_CONTEXT_WINDOW;
+  },
+
+  supportsImageInputForModel(model: string, settings: Record<string, unknown>): boolean {
+    const rawModelId = decodeKimiModelId(model);
+    if (!rawModelId) {
+      return true;
+    }
+    const metadata = getKimiModelMetadata(settings)[rawModelId];
+    // Without config.toml metadata, keep the provider-level default (enabled).
+    return metadata ? metadata.capabilities.includes('image_in') : true;
   },
 
   isDefaultModel(model: string): boolean {
