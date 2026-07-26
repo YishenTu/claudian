@@ -451,6 +451,31 @@ describe('KimiChatRuntime', () => {
     expect(getKimiProviderSettings(plugin.settings).discoveredModels).toEqual(before);
   });
 
+  it('mirrors and persists thinking options and current levels per model', async () => {
+    const plugin = createMockPlugin();
+    const runtime = new KimiChatRuntime(plugin);
+
+    await (runtime as any).syncSessionConfigState({
+      configOptions: [modelConfigOption('kimi-k2'), thinkingConfigOption('medium')],
+    });
+
+    const expectedOptions = [
+      { label: 'Off', value: 'off' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'High', value: 'high' },
+    ];
+    expect(getKimiProviderSettings(plugin.settings).thinkingOptionsByModel).toEqual({
+      'kimi-k2': expectedOptions,
+    });
+    expect(getKimiProviderSettings(plugin.settings).currentThinkingByModel).toEqual({
+      'kimi-k2': 'medium',
+    });
+    const stored = (plugin.settings.providerConfigs as Record<string, Record<string, unknown>>).kimi;
+    expect(stored.thinkingOptionsByModel).toEqual({ 'kimi-k2': expectedOptions });
+    expect(stored.currentThinkingByModel).toEqual({ 'kimi-k2': 'medium' });
+    expect(plugin.saveSettings).toHaveBeenCalled();
+  });
+
   it('drops the thinking mirror when the session model stops advertising thought levels', async () => {
     const plugin = createMockPlugin();
     const runtime = new KimiChatRuntime(plugin);
@@ -468,6 +493,8 @@ describe('KimiChatRuntime', () => {
     expect((runtime as any).currentThinkingValue).toBeNull();
     expect(getKimiDiscoveryState(plugin.settings).thinkingOptionsByModel).toEqual({});
     expect(getKimiDiscoveryState(plugin.settings).currentThinkingByModel).toEqual({});
+    expect(getKimiProviderSettings(plugin.settings).thinkingOptionsByModel).toEqual({});
+    expect(getKimiProviderSettings(plugin.settings).currentThinkingByModel).toEqual({});
   });
 
   it('applies config_option_update notifications to the discovered session state', async () => {

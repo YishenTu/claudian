@@ -34,12 +34,14 @@ describe('Kimi settings', () => {
     expect(DEFAULT_KIMI_PROVIDER_CONFIG).toEqual({
       cliPath: '',
       cliPathsByHost: {},
+      currentThinkingByModel: {},
       discoveredModels: [],
       enabled: false,
       environmentHash: '',
       environmentVariables: '',
       modelAliases: {},
       preferredThinkingByModel: {},
+      thinkingOptionsByModel: {},
       visibleModels: null,
     });
   });
@@ -48,11 +50,13 @@ describe('Kimi settings', () => {
     expect(normalizeKimiStoredConfig({
       cliPath: 42,
       cliPathsByHost: ['/not/a/map'],
+      currentThinkingByModel: 'not-a-map',
       enabled: 'yes',
       environmentHash: null,
       environmentVariables: 7,
       modelAliases: 'not-a-map',
       discoveredModels: 'not-a-list',
+      thinkingOptionsByModel: 'not-a-map',
       visibleModels: 'kimi-for-coding',
     })).toEqual(DEFAULT_KIMI_PROVIDER_CONFIG);
 
@@ -62,6 +66,11 @@ describe('Kimi settings', () => {
         'device:current': ' /current/kimi ',
         'device:blank': '   ',
         'device:invalid': 9,
+      },
+      currentThinkingByModel: {
+        ' kimi-k2 ': ' high ',
+        '': 'dropped',
+        'kimi-for-coding': '   ',
       },
       modelAliases: {
         ' kimi-for-coding ': ' Kimi ',
@@ -73,6 +82,14 @@ describe('Kimi settings', () => {
         '': 'dropped',
         'kimi-for-coding': '   ',
       },
+      thinkingOptionsByModel: {
+        ' kimi-k2 ': [
+          { label: ' Off ', value: ' off ' },
+          { label: 'Duplicate', value: 'off' },
+          'garbage',
+        ],
+        'empty-options': [],
+      },
       visibleModels: [
         ' kimi-for-coding ',
         'kimi-for-coding',
@@ -83,12 +100,14 @@ describe('Kimi settings', () => {
     })).toEqual({
       cliPath: '/opt/kimi',
       cliPathsByHost: { 'device:current': '/current/kimi' },
+      currentThinkingByModel: { 'kimi-k2': 'high' },
       discoveredModels: [],
       enabled: false,
       environmentHash: '',
       environmentVariables: '',
       modelAliases: { 'kimi-for-coding': 'Kimi' },
       preferredThinkingByModel: { 'kimi-k2': 'high' },
+      thinkingOptionsByModel: { 'kimi-k2': [{ label: 'Off', value: 'off' }] },
       visibleModels: ['kimi-for-coding', 'kimi-k2'],
     });
   });
@@ -230,21 +249,56 @@ describe('Kimi settings', () => {
     expect(preserved.discoveredModels).toEqual(discovered);
   });
 
+  it('persists thinking options and current levels per model', () => {
+    const settings: Record<string, unknown> = {};
+    const thinkingOptionsByModel = {
+      'kimi-k2': [
+        { label: 'Off', value: 'off' },
+        { label: 'High', value: 'high' },
+      ],
+    };
+
+    const next = updateKimiProviderSettings(settings, {
+      currentThinkingByModel: { 'kimi-k2': 'high' },
+      thinkingOptionsByModel,
+    });
+
+    expect(next.thinkingOptionsByModel).toEqual(thinkingOptionsByModel);
+    expect(next.currentThinkingByModel).toEqual({ 'kimi-k2': 'high' });
+    expect(getKimiProviderSettings(settings).thinkingOptionsByModel).toEqual(thinkingOptionsByModel);
+    expect(getKimiDiscoveryState(settings).thinkingOptionsByModel).toEqual(thinkingOptionsByModel);
+    expect(getKimiDiscoveryState(settings).currentThinkingByModel).toEqual({ 'kimi-k2': 'high' });
+    const stored = (settings.providerConfigs as Record<string, Record<string, unknown>>).kimi;
+    expect(stored.thinkingOptionsByModel).toEqual(thinkingOptionsByModel);
+    expect(stored.currentThinkingByModel).toEqual({ 'kimi-k2': 'high' });
+    expect(JSON.parse(JSON.stringify(settings.providerConfigs))).toEqual(settings.providerConfigs);
+
+    const cleared = updateKimiProviderSettings(settings, {
+      currentThinkingByModel: {},
+      thinkingOptionsByModel: {},
+    });
+    expect(cleared.thinkingOptionsByModel).toEqual({});
+    expect(getKimiProviderSettings(settings).thinkingOptionsByModel).toEqual({});
+  });
+
   it('seeds the in-memory discovery mirror from the persisted catalog', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         kimi: {
+          currentThinkingByModel: { 'kimi-for-coding': 'high' },
           discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+          thinkingOptionsByModel: { 'kimi-for-coding': [{ label: 'High', value: 'high' }] },
         },
       },
     };
 
-    expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([]);
-
+    // The mirror self-heals from the persisted config on first read.
+    expect(getKimiDiscoveryState(settings)).toEqual({
+      currentThinkingByModel: { 'kimi-for-coding': 'high' },
+      discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+      thinkingOptionsByModel: { 'kimi-for-coding': [{ label: 'High', value: 'high' }] },
+    });
     expect(getKimiProviderSettings(settings).discoveredModels).toEqual([
-      { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
-    ]);
-    expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([
       { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
     ]);
   });
@@ -254,11 +308,13 @@ describe('Kimi settings', () => {
       providerConfigs: {
         kimi: {
           discoveredModels: [{ label: 'Old', rawId: 'old-model' }],
+          thinkingOptionsByModel: { 'old-model': [{ label: 'Off', value: 'off' }] },
         },
       },
     };
     updateKimiDiscoveryState(settings, {
       discoveredModels: [{ label: 'New', rawId: 'new-model' }],
+      thinkingOptionsByModel: { 'new-model': [{ label: 'High', value: 'high' }] },
     });
 
     getKimiProviderSettings(settings);
@@ -266,6 +322,9 @@ describe('Kimi settings', () => {
     expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([
       { label: 'New', rawId: 'new-model' },
     ]);
+    expect(getKimiDiscoveryState(settings).thinkingOptionsByModel).toEqual({
+      'new-model': [{ label: 'High', value: 'high' }],
+    });
   });
 });
 

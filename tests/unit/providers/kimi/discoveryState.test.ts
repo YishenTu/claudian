@@ -133,18 +133,23 @@ describe('Kimi discovery state', () => {
     });
   });
 
-  it('seeds an empty mirror from a persisted config snapshot exactly once', () => {
+  it('seeds a cold mirror from a persisted config snapshot exactly once', () => {
     const settings: Record<string, unknown> = {};
 
     expect(seedKimiDiscoveryStateFromConfig(settings, {
+      currentThinkingByModel: { 'kimi-for-coding': 'high' },
       discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+      thinkingOptionsByModel: { 'kimi-for-coding': [{ label: 'High', value: 'high' }] },
     })).toBe(true);
-    expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([
-      { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
-    ]);
+    expect(getKimiDiscoveryState(settings)).toEqual({
+      currentThinkingByModel: { 'kimi-for-coding': 'high' },
+      discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+      thinkingOptionsByModel: { 'kimi-for-coding': [{ label: 'High', value: 'high' }] },
+    });
 
     expect(seedKimiDiscoveryStateFromConfig(settings, {
       discoveredModels: [{ label: 'Other', rawId: 'other' }],
+      thinkingOptionsByModel: { other: [{ label: 'Low', value: 'low' }] },
     })).toBe(false);
     expect(getKimiDiscoveryState(settings).discoveredModels).toEqual([
       { label: 'Kimi Coding', rawId: 'kimi-for-coding' },
@@ -153,6 +158,68 @@ describe('Kimi discovery state', () => {
     const empty: Record<string, unknown> = {};
     expect(seedKimiDiscoveryStateFromConfig(empty, {})).toBe(false);
     expect(getKimiDiscoveryState(empty).discoveredModels).toEqual([]);
+  });
+
+  it('lazily seeds a cold mirror from the persisted provider config on read', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        kimi: {
+          currentThinkingByModel: { 'kimi-for-coding': 'high' },
+          discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+          thinkingOptionsByModel: { 'kimi-for-coding': [{ label: 'High', value: 'high' }] },
+        },
+      },
+    };
+
+    expect(getKimiDiscoveryState(settings)).toEqual({
+      currentThinkingByModel: { 'kimi-for-coding': 'high' },
+      discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+      thinkingOptionsByModel: { 'kimi-for-coding': [{ label: 'High', value: 'high' }] },
+    });
+  });
+
+  it('re-seeds from the persisted config after the mirror is cleared', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        kimi: {
+          discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+          thinkingOptionsByModel: { 'kimi-for-coding': [{ label: 'High', value: 'high' }] },
+        },
+      },
+    };
+
+    getKimiDiscoveryState(settings);
+    expect(clearKimiDiscoveryState(settings)).toBe(true);
+
+    expect(getKimiDiscoveryState(settings)).toEqual({
+      currentThinkingByModel: {},
+      discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+      thinkingOptionsByModel: { 'kimi-for-coding': [{ label: 'High', value: 'high' }] },
+    });
+  });
+
+  it('does not re-seed a warm mirror whose session state was intentionally cleared', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        kimi: {
+          discoveredModels: [{ label: 'Kimi Coding', rawId: 'kimi-for-coding' }],
+          thinkingOptionsByModel: { 'kimi-for-coding': [{ label: 'High', value: 'high' }] },
+        },
+      },
+    };
+    updateKimiDiscoveryState(settings, {
+      discoveredModels: [{ label: 'K2', rawId: 'kimi-k2' }],
+      thinkingOptionsByModel: { 'kimi-k2': [{ label: 'Off', value: 'off' }] },
+    });
+
+    // The model stops advertising thought levels: the mirror drops its entry.
+    updateKimiDiscoveryState(settings, { thinkingOptionsByModel: {} });
+
+    expect(getKimiDiscoveryState(settings)).toEqual({
+      currentThinkingByModel: {},
+      discoveredModels: [{ label: 'K2', rawId: 'kimi-k2' }],
+      thinkingOptionsByModel: {},
+    });
   });
 
   it('clears the mirrored catalog exactly once', () => {

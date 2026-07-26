@@ -7,35 +7,42 @@ import {
   migrateLegacyHostnameKeyedMap,
 } from '../../utils/env';
 import {
+  normalizeKimiCurrentThinkingByModel,
+  normalizeKimiThinkingOptionsByModel,
   seedKimiDiscoveryStateFromConfig,
   updateKimiDiscoveryState,
 } from './discoveryState';
 import {
   type KimiDiscoveredModel,
+  type KimiThinkingOption,
   normalizeKimiDiscoveredModels,
 } from './models';
 
 export interface KimiProviderConfig {
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
+  currentThinkingByModel: Record<string, string>;
   discoveredModels: KimiDiscoveredModel[];
   enabled: boolean;
   environmentHash: string;
   environmentVariables: string;
   modelAliases: Record<string, string>;
   preferredThinkingByModel: Record<string, string>;
+  thinkingOptionsByModel: Record<string, KimiThinkingOption[]>;
   visibleModels: string[] | null;
 }
 
 export const DEFAULT_KIMI_PROVIDER_CONFIG: Readonly<KimiProviderConfig> = Object.freeze({
   cliPath: '',
   cliPathsByHost: {},
+  currentThinkingByModel: {},
   discoveredModels: [],
   enabled: false,
   environmentHash: '',
   environmentVariables: '',
   modelAliases: {},
   preferredThinkingByModel: {},
+  thinkingOptionsByModel: {},
   visibleModels: null,
 });
 
@@ -118,6 +125,7 @@ export function normalizeKimiStoredConfig(
   return {
     cliPath: readTrimmedString(config.cliPath) || DEFAULT_KIMI_PROVIDER_CONFIG.cliPath,
     cliPathsByHost: normalizeHostnameCliPaths(config.cliPathsByHost),
+    currentThinkingByModel: normalizeKimiCurrentThinkingByModel(config.currentThinkingByModel),
     discoveredModels: normalizeKimiDiscoveredModels(config.discoveredModels),
     enabled: typeof config.enabled === 'boolean'
       ? config.enabled
@@ -128,6 +136,7 @@ export function normalizeKimiStoredConfig(
       : DEFAULT_KIMI_PROVIDER_CONFIG.environmentVariables,
     modelAliases: normalizeKimiModelAliases(config.modelAliases),
     preferredThinkingByModel: normalizeKimiPreferredThinking(config.preferredThinkingByModel),
+    thinkingOptionsByModel: normalizeKimiThinkingOptionsByModel(config.thinkingOptionsByModel),
     visibleModels: normalizeKimiVisibleModels(config.visibleModels),
   };
 }
@@ -182,10 +191,19 @@ export function updateKimiProviderSettings(
   if (updates.discoveredModels !== undefined) {
     updateKimiDiscoveryState(settings, { discoveredModels: updates.discoveredModels });
   }
+  if (updates.thinkingOptionsByModel !== undefined) {
+    updateKimiDiscoveryState(settings, { thinkingOptionsByModel: updates.thinkingOptionsByModel });
+  }
+  if (updates.currentThinkingByModel !== undefined) {
+    updateKimiDiscoveryState(settings, { currentThinkingByModel: updates.currentThinkingByModel });
+  }
 
   const next: KimiProviderConfig = {
     cliPath,
     cliPathsByHost,
+    currentThinkingByModel: updates.currentThinkingByModel !== undefined
+      ? normalizeKimiCurrentThinkingByModel(updates.currentThinkingByModel)
+      : current.currentThinkingByModel,
     discoveredModels: updates.discoveredModels !== undefined
       ? normalizeKimiDiscoveredModels(updates.discoveredModels)
       : current.discoveredModels,
@@ -200,6 +218,9 @@ export function updateKimiProviderSettings(
     preferredThinkingByModel: updates.preferredThinkingByModel !== undefined
       ? normalizeKimiPreferredThinking(updates.preferredThinkingByModel)
       : current.preferredThinkingByModel,
+    thinkingOptionsByModel: updates.thinkingOptionsByModel !== undefined
+      ? normalizeKimiThinkingOptionsByModel(updates.thinkingOptionsByModel)
+      : current.thinkingOptionsByModel,
     visibleModels: updates.visibleModels !== undefined
       ? normalizeKimiVisibleModels(updates.visibleModels)
       : current.visibleModels,

@@ -114,6 +114,29 @@ describe('KimiChatUIConfig', () => {
     expect(kimiChatUIConfig.getDefaultReasoningValue?.('kimi:kimi-k2', settings)).toBe('medium');
   });
 
+  it('renders the effort selector from the persisted catalog after a reload', () => {
+    // No updateKimiDiscoveryState call: the in-memory mirror starts cold, as
+    // after a plugin reload, and must heal from the persisted provider config.
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        kimi: {
+          currentThinkingByModel: { 'kimi-k2': 'medium' },
+          discoveredModels: discovered,
+          thinkingOptionsByModel: { 'kimi-k2': k2ThinkingOptions },
+        },
+      },
+    };
+
+    expect(kimiChatUIConfig.isAdaptiveReasoningModel?.('kimi:kimi-k2', settings)).toBe(true);
+    expect(kimiChatUIConfig.getReasoningOptions?.('kimi:kimi-k2', settings)).toEqual([
+      { description: undefined, label: 'Off', value: 'off' },
+      { description: undefined, label: 'Low', value: 'low' },
+      { description: undefined, label: 'Medium', value: 'medium' },
+      { description: undefined, label: 'High', value: 'high' },
+    ]);
+    expect(kimiChatUIConfig.getDefaultReasoningValue?.('kimi:kimi-k2', settings)).toBe('medium');
+  });
+
   it('exposes no reasoning controls for models without discovered thinking options', () => {
     const settings = makeSettings();
 

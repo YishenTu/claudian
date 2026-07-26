@@ -1,3 +1,4 @@
+import { getProviderConfig } from '../../core/providers/providerConfig';
 import {
   type KimiDiscoveredModel,
   type KimiThinkingOption,
@@ -7,8 +8,8 @@ import {
 
 // ACP session model/thinking discovery is runtime-owned; this symbol-keyed
 // state mirrors the last catalog into the settings bag so UI configs can read
-// it. The model catalog additionally persists in the provider config, and the
-// mirror is seeded from that persisted copy after a plugin reload.
+// it. The catalog and per-model thinking state additionally persist in the
+// provider config, and a cold mirror is seeded from that persisted copy.
 const KIMI_DISCOVERY_STATE = Symbol('kimiDiscoveryState');
 
 interface KimiDiscoveryState {
@@ -39,8 +40,17 @@ function ensureDiscoveryState(settings: Record<string, unknown>): KimiDiscoveryS
   return next;
 }
 
+function isColdDiscoveryState(state: KimiDiscoveryState): boolean {
+  return state.discoveredModels.length === 0
+    && Object.keys(state.thinkingOptionsByModel).length === 0
+    && Object.keys(state.currentThinkingByModel).length === 0;
+}
+
 export function getKimiDiscoveryState(settings: Record<string, unknown>): KimiDiscoveryState {
   const state = ensureDiscoveryState(settings);
+  if (isColdDiscoveryState(state)) {
+    seedKimiDiscoveryStateFromConfig(settings, getProviderConfig(settings, 'kimi'));
+  }
   return {
     currentThinkingByModel: { ...state.currentThinkingByModel },
     discoveredModels: state.discoveredModels.map((model) => ({ ...model })),
@@ -66,16 +76,16 @@ export function updateKimiDiscoveryState(
     ? normalizeKimiDiscoveredModels(updates.discoveredModels)
     : state.discoveredModels;
   const nextThinkingOptionsByModel = updates.thinkingOptionsByModel !== undefined
-    ? normalizeThinkingOptionsByModel(updates.thinkingOptionsByModel)
+    ? normalizeKimiThinkingOptionsByModel(updates.thinkingOptionsByModel)
     : state.thinkingOptionsByModel;
   const nextCurrentThinkingByModel = updates.currentThinkingByModel !== undefined
-    ? normalizeCurrentThinkingByModel(updates.currentThinkingByModel)
+    ? normalizeKimiCurrentThinkingByModel(updates.currentThinkingByModel)
     : state.currentThinkingByModel;
 
   if (
     sameKimiDiscoveredModels(state.discoveredModels, nextDiscoveredModels)
-    && sameThinkingOptionsByModel(state.thinkingOptionsByModel, nextThinkingOptionsByModel)
-    && sameStringMap(state.currentThinkingByModel, nextCurrentThinkingByModel)
+    && sameKimiThinkingOptionsByModel(state.thinkingOptionsByModel, nextThinkingOptionsByModel)
+    && sameKimiCurrentThinkingByModel(state.currentThinkingByModel, nextCurrentThinkingByModel)
   ) {
     return false;
   }
@@ -91,28 +101,37 @@ export function updateKimiDiscoveryState(
   return true;
 }
 
+// Seeds only a fully cold mirror: once any field holds data, the mirror is
+// fresher than the persisted copy (e.g. a session dropped its thinking rows)
+// and must win.
 export function seedKimiDiscoveryStateFromConfig(
   settings: Record<string, unknown>,
   config: Record<string, unknown>,
 ): boolean {
   const state = ensureDiscoveryState(settings);
-  if (state.discoveredModels.length > 0) {
+  if (!isColdDiscoveryState(state)) {
     return false;
   }
-  const persisted = normalizeKimiDiscoveredModels(config.discoveredModels);
-  if (persisted.length === 0) {
+  const discoveredModels = normalizeKimiDiscoveredModels(config.discoveredModels);
+  const thinkingOptionsByModel = normalizeKimiThinkingOptionsByModel(config.thinkingOptionsByModel);
+  const currentThinkingByModel = normalizeKimiCurrentThinkingByModel(config.currentThinkingByModel);
+  if (
+    discoveredModels.length === 0
+    && Object.keys(thinkingOptionsByModel).length === 0
+    && Object.keys(currentThinkingByModel).length === 0
+  ) {
     return false;
   }
-  return updateKimiDiscoveryState(settings, { discoveredModels: persisted });
+  return updateKimiDiscoveryState(settings, {
+    currentThinkingByModel,
+    discoveredModels,
+    thinkingOptionsByModel,
+  });
 }
 
 export function clearKimiDiscoveryState(settings: Record<string, unknown>): boolean {
   const state = ensureDiscoveryState(settings);
-  if (
-    state.discoveredModels.length === 0
-    && Object.keys(state.thinkingOptionsByModel).length === 0
-    && Object.keys(state.currentThinkingByModel).length === 0
-  ) {
+  if (isColdDiscoveryState(state)) {
     return false;
   }
 
@@ -122,9 +141,13 @@ export function clearKimiDiscoveryState(settings: Record<string, unknown>): bool
   return true;
 }
 
-function normalizeThinkingOptionsByModel(
-  value: Record<string, unknown>,
+export function normalizeKimiThinkingOptionsByModel(
+  value: unknown,
 ): Record<string, KimiThinkingOption[]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
   const normalized: Record<string, KimiThinkingOption[]> = {};
   for (const [key, entry] of Object.entries(value)) {
     const rawId = key.trim();
@@ -137,9 +160,13 @@ function normalizeThinkingOptionsByModel(
   return normalized;
 }
 
-function normalizeCurrentThinkingByModel(
-  value: Record<string, unknown>,
+export function normalizeKimiCurrentThinkingByModel(
+  value: unknown,
 ): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
   const normalized: Record<string, string> = {};
   for (const [key, entry] of Object.entries(value)) {
     const rawId = key.trim();
@@ -165,7 +192,7 @@ export function sameKimiDiscoveredModels(
     });
 }
 
-function sameThinkingOptionsByModel(
+export function sameKimiThinkingOptionsByModel(
   left: Record<string, KimiThinkingOption[]>,
   right: Record<string, KimiThinkingOption[]>,
 ): boolean {
@@ -186,7 +213,7 @@ function sameThinkingOptionsByModel(
     });
 }
 
-function sameStringMap(
+export function sameKimiCurrentThinkingByModel(
   left: Record<string, string>,
   right: Record<string, string>,
 ): boolean {
