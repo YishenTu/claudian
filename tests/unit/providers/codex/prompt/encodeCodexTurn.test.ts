@@ -20,7 +20,9 @@ describe('encodeCodexTurn', () => {
     };
     const result = encodeCodexTurn(request);
 
-    expect(result.prompt).toContain('[Current note: notes/todo.md]');
+    expect(result.prompt).toBe(
+      'Fix this\n\n<linked_note>\nnotes/todo.md\n</linked_note>'
+    );
     expect(result.persistedContent).toBe('Fix this');
   });
 
@@ -93,7 +95,7 @@ describe('encodeCodexTurn', () => {
     const result = encodeCodexTurn(request);
 
     expect(result.prompt).toContain('Do something');
-    expect(result.prompt).toContain('[Current note: note.md]');
+    expect(result.prompt).toContain('<linked_note>\nnote.md\n</linked_note>');
     expect(result.prompt).toContain('[Editor selection');
     expect(result.prompt).toContain('[Browser selection');
     expect(result.prompt).toContain('[Canvas selection');
@@ -159,7 +161,7 @@ describe('encodeCodexTurn', () => {
 
       expect(result.isCompact).toBe(true);
       expect(result.prompt).toBe('/compact');
-      expect(result.prompt).not.toContain('[Current note');
+      expect(result.prompt).not.toContain('<linked_note>');
       expect(result.prompt).not.toContain('[Editor selection');
       expect(result.prompt).not.toContain('[Browser selection');
       expect(result.prompt).not.toContain('[Canvas selection');
