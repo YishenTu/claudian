@@ -18,7 +18,6 @@ import {
   updateKimiProviderSettings,
 } from '@/providers/kimi/settings';
 import {
-  buildKimiProviderState,
   buildPersistedKimiProviderState,
   parseKimiProviderState,
 } from '@/providers/kimi/types';
@@ -340,11 +339,13 @@ describe('Kimi provider state', () => {
     expect(parseKimiProviderState({ sessionDirectory: 'relative/path' })).toEqual({});
     expect(parseKimiProviderState(null)).toEqual({});
     expect(parseKimiProviderState('session-id')).toEqual({});
-    expect(buildKimiProviderState('/tmp/.kimi-code/sessions/vault/session-id')).toEqual({
+    expect(buildPersistedKimiProviderState({
+      sessionDirectory: '/tmp/.kimi-code/sessions/vault/session-id',
+    })).toEqual({
       sessionDirectory: '/tmp/.kimi-code/sessions/vault/session-id',
     });
-    expect(buildKimiProviderState('../outside')).toBeUndefined();
-    expect(buildKimiProviderState(null)).toBeUndefined();
+    expect(buildPersistedKimiProviderState({ sessionDirectory: '../outside' })).toBeUndefined();
+    expect(buildPersistedKimiProviderState({})).toBeUndefined();
   });
 
   it('persists only the sanitized session directory field', () => {

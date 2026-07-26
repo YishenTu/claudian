@@ -79,7 +79,7 @@ export function updateKimiDiscoveryState(
     ? normalizeKimiThinkingOptionsByModel(updates.thinkingOptionsByModel)
     : state.thinkingOptionsByModel;
   const nextCurrentThinkingByModel = updates.currentThinkingByModel !== undefined
-    ? normalizeKimiCurrentThinkingByModel(updates.currentThinkingByModel)
+    ? normalizeKimiModelKeyedStrings(updates.currentThinkingByModel)
     : state.currentThinkingByModel;
 
   if (
@@ -114,7 +114,7 @@ export function seedKimiDiscoveryStateFromConfig(
   }
   const discoveredModels = normalizeKimiDiscoveredModels(config.discoveredModels);
   const thinkingOptionsByModel = normalizeKimiThinkingOptionsByModel(config.thinkingOptionsByModel);
-  const currentThinkingByModel = normalizeKimiCurrentThinkingByModel(config.currentThinkingByModel);
+  const currentThinkingByModel = normalizeKimiModelKeyedStrings(config.currentThinkingByModel);
   if (
     discoveredModels.length === 0
     && Object.keys(thinkingOptionsByModel).length === 0
@@ -160,7 +160,7 @@ export function normalizeKimiThinkingOptionsByModel(
   return normalized;
 }
 
-export function normalizeKimiCurrentThinkingByModel(
+export function normalizeKimiModelKeyedStrings(
   value: unknown,
 ): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

@@ -3,8 +3,6 @@ import { findCliBinaryPath, resolveConfiguredCliPath } from '../../../utils/cliB
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { getKimiProviderSettings } from '../settings';
 
-const KIMI_BINARY_NAMES = ['kimi'] as const;
-
 export class KimiCliResolver {
   private readonly cachedHostname = getHostnameKey();
   private lastCliPath = '';
@@ -59,11 +57,5 @@ export class KimiCliResolver {
 }
 
 export function findKimiCliBinary(additionalPath?: string): string | null {
-  for (const binaryName of KIMI_BINARY_NAMES) {
-    const found = findCliBinaryPath(binaryName, additionalPath);
-    if (found) {
-      return found;
-    }
-  }
-  return null;
+  return findCliBinaryPath('kimi', additionalPath);
 }

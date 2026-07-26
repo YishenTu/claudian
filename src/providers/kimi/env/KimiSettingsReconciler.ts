@@ -4,12 +4,18 @@ import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvir
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { decodeKimiModelId, encodeKimiModelId } from '../models';
-import { getKimiProviderSettings, updateKimiProviderSettings } from '../settings';
+import {
+  getKimiProviderSettings,
+  type KimiProviderConfig,
+  updateKimiProviderSettings,
+} from '../settings';
 
 export const KIMI_ENVIRONMENT_KEY_PATTERNS: RegExp[] = [/^KIMI_/i];
 
-export function computeKimiEnvironmentHash(settings: Record<string, unknown>): string {
-  const providerSettings = getKimiProviderSettings(settings);
+export function computeKimiEnvironmentHash(
+  settings: Record<string, unknown>,
+  providerSettings: KimiProviderConfig = getKimiProviderSettings(settings),
+): string {
   const currentHostPath = providerSettings.cliPathsByHost[getHostnameKey()] ?? '';
   const cliPath = currentHostPath.trim() || providerSettings.cliPath.trim();
   const environment = Object.entries(parseEnvironmentVariables(
@@ -27,12 +33,13 @@ export const kimiSettingsReconciler: ProviderSettingsReconciler = {
   invalidateConversationSessions: () => [],
 
   reconcileModelWithEnvironment(settings) {
-    if (!getKimiProviderSettings(settings).enabled) {
+    const providerSettings = getKimiProviderSettings(settings);
+    if (!providerSettings.enabled) {
       return { changed: false, invalidatedConversations: [] };
     }
 
-    const environmentHash = computeKimiEnvironmentHash(settings);
-    if (getKimiProviderSettings(settings).environmentHash === environmentHash) {
+    const environmentHash = computeKimiEnvironmentHash(settings, providerSettings);
+    if (providerSettings.environmentHash === environmentHash) {
       return { changed: false, invalidatedConversations: [] };
     }
 

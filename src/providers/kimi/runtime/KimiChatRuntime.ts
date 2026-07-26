@@ -81,7 +81,7 @@ import {
 } from '../modes';
 import { stripKimiToolCallPrefix } from '../normalization/kimiToolCallId';
 import { getKimiProviderSettings, updateKimiProviderSettings } from '../settings';
-import { getKimiState, type KimiProviderState } from '../types';
+import { type KimiProviderState, parseKimiProviderState } from '../types';
 import { buildKimiPromptBlocks, buildKimiPromptText } from './buildKimiPrompt';
 import { buildKimiRuntimeEnv } from './KimiRuntimeEnvironment';
 
@@ -383,6 +383,7 @@ export class KimiChatRuntime implements ChatRuntime {
       this.setCurrentConversationModel(queryOptions.model);
     }
     const conversationGeneration = this.conversationGeneration;
+    const turnSettings = this.getProviderSettings();
     const previousMessages = conversationHistory ?? [];
     const expectedSessionId = this.sessionId;
     let shouldBootstrapHistory = previousMessages.length > 0
@@ -443,9 +444,9 @@ export class KimiChatRuntime implements ChatRuntime {
 
     const activeTurn = this.activeTurn;
     try {
-      await this.applySelectedMode(sessionId, conversationGeneration);
-      await this.applySelectedModel(sessionId, queryOptions, conversationGeneration);
-      await this.applySelectedEffort(sessionId, conversationGeneration);
+      await this.applySelectedMode(sessionId, conversationGeneration, turnSettings);
+      await this.applySelectedModel(sessionId, queryOptions, conversationGeneration, turnSettings);
+      await this.applySelectedEffort(sessionId, conversationGeneration, turnSettings);
       if (!this.isConversationCurrent(conversationGeneration)) {
         throw new Error('Kimi conversation changed before the turn started.');
       }
@@ -478,7 +479,7 @@ export class KimiChatRuntime implements ChatRuntime {
 
       const usage = buildAcpUsageInfo({
         contextWindow: this.contextUsage,
-        model: this.getActiveDisplayModel(queryOptions),
+        model: this.getActiveDisplayModel(queryOptions, turnSettings),
         promptUsage: this.promptUsage,
       });
       if (usage) {
@@ -558,10 +559,6 @@ export class KimiChatRuntime implements ChatRuntime {
       if (!ready) {
         return [];
       }
-    }
-
-    if (!this.sessionId) {
-      return [];
     }
 
     if (!this.sessionId || this.loadedSessionId !== this.sessionId) {
@@ -676,7 +673,7 @@ export class KimiChatRuntime implements ChatRuntime {
     sessionInvalidated: boolean;
   }): SessionUpdateResult {
     const existingState = params.conversation
-      ? getKimiState(params.conversation.providerState)
+      ? parseKimiProviderState(params.conversation.providerState)
       : null;
     const sessionDirectory = this.resolveSessionDirectoryHint(
       existingState?.sessionDirectory ?? null,
@@ -809,6 +806,8 @@ export class KimiChatRuntime implements ChatRuntime {
     this.transport?.dispose();
     this.transport = null;
 
+    this.sessionCwds.clear();
+
     if (this.process) {
       await this.process.shutdown().catch(() => {});
       this.process = null;
@@ -853,8 +852,10 @@ export class KimiChatRuntime implements ChatRuntime {
     return settings;
   }
 
-  private resolveSelectedRawModelId(queryOptions?: ChatRuntimeQueryOptions): string | null {
-    const providerSettings = this.getProviderSettings();
+  private resolveSelectedRawModelId(
+    queryOptions?: ChatRuntimeQueryOptions,
+    providerSettings = this.getProviderSettings(),
+  ): string | null {
     const selectedModel = typeof queryOptions?.model === 'string'
       ? queryOptions.model
       : typeof providerSettings.model === 'string'
@@ -938,8 +939,11 @@ export class KimiChatRuntime implements ChatRuntime {
     this.currentConversationModel = selectedModel || null;
   }
 
-  private getActiveDisplayModel(queryOptions?: ChatRuntimeQueryOptions): string | undefined {
-    const selectedRawModelId = this.resolveSelectedRawModelId(queryOptions);
+  private getActiveDisplayModel(
+    queryOptions?: ChatRuntimeQueryOptions,
+    providerSettings?: Record<string, unknown>,
+  ): string | undefined {
+    const selectedRawModelId = this.resolveSelectedRawModelId(queryOptions, providerSettings);
     if (selectedRawModelId) {
       return encodeKimiModelId(selectedRawModelId);
     }
@@ -949,20 +953,22 @@ export class KimiChatRuntime implements ChatRuntime {
       : undefined;
   }
 
-  private resolveSelectedModeId(): string {
-    const providerSettings = this.getProviderSettings();
+  private resolveSelectedModeId(
+    providerSettings = this.getProviderSettings(),
+  ): string {
     return resolveKimiModeForPermissionMode(providerSettings.permissionMode);
   }
 
   private async applySelectedMode(
     sessionId: string,
     conversationGeneration = this.conversationGeneration,
+    providerSettings?: Record<string, unknown>,
   ): Promise<void> {
     if (!this.connection || this.availableModeIds.size === 0) {
       return;
     }
 
-    const selectedModeId = this.resolveSelectedModeId();
+    const selectedModeId = this.resolveSelectedModeId(providerSettings);
     if (
       !this.availableModeIds.has(selectedModeId)
       || selectedModeId === this.currentSessionModeId
@@ -984,12 +990,13 @@ export class KimiChatRuntime implements ChatRuntime {
     sessionId: string,
     queryOptions?: ChatRuntimeQueryOptions,
     conversationGeneration = this.conversationGeneration,
+    providerSettings?: Record<string, unknown>,
   ): Promise<void> {
     if (!this.connection) {
       return;
     }
 
-    const selectedRawModelId = this.resolveSelectedRawModelId(queryOptions);
+    const selectedRawModelId = this.resolveSelectedRawModelId(queryOptions, providerSettings);
     if (!selectedRawModelId || selectedRawModelId === this.currentSessionModelId) {
       return;
     }
@@ -1009,8 +1016,9 @@ export class KimiChatRuntime implements ChatRuntime {
     }, conversationGeneration);
   }
 
-  private resolveSelectedEffortValue(): string | null {
-    const providerSettings = this.getProviderSettings();
+  private resolveSelectedEffortValue(
+    providerSettings = this.getProviderSettings(),
+  ): string | null {
     const selectedEffort = typeof providerSettings.effortLevel === 'string'
       ? providerSettings.effortLevel.trim()
       : '';
@@ -1024,12 +1032,13 @@ export class KimiChatRuntime implements ChatRuntime {
   private async applySelectedEffort(
     sessionId: string,
     conversationGeneration = this.conversationGeneration,
+    providerSettings?: Record<string, unknown>,
   ): Promise<void> {
     if (!this.connection || !this.currentThinkingConfigId) {
       return;
     }
 
-    const selectedEffort = this.resolveSelectedEffortValue();
+    const selectedEffort = this.resolveSelectedEffortValue(providerSettings);
     if (!selectedEffort || selectedEffort === this.currentThinkingValue) {
       return;
     }
@@ -1125,56 +1134,51 @@ export class KimiChatRuntime implements ChatRuntime {
     const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
     const discoveredModels = this.discoveredModels;
     // Read first so a cold mirror seeds from the persisted config before the
-    // session snapshot merges on top of it.
+    // session snapshot merges on top of it. The inputs are already normalized,
+    // so the post-update mirror is derived locally instead of a second read.
     const discovery = getKimiDiscoveryState(settingsBag);
-    const updates: {
-      currentThinkingByModel?: Record<string, unknown>;
-      discoveredModels?: unknown;
-      thinkingOptionsByModel?: Record<string, unknown>;
-    } = {
-      ...(discoveredModels.length > 0 ? { discoveredModels } : {}),
-    };
 
-    if (currentRawModelId) {
-      const thinkingOptionsByModel = { ...discovery.thinkingOptionsByModel };
-      const currentThinkingByModel = { ...discovery.currentThinkingByModel };
+    let thinkingOptionsByModel = discovery.thinkingOptionsByModel;
+    let currentThinkingByModel = discovery.currentThinkingByModel;
+    const rawModelId = currentRawModelId?.trim() ?? '';
+    if (rawModelId) {
+      thinkingOptionsByModel = { ...thinkingOptionsByModel };
+      currentThinkingByModel = { ...currentThinkingByModel };
+      const thinkingLevel = currentThinkingLevel?.trim() ?? '';
       if (thinkingOptions.length > 0) {
-        thinkingOptionsByModel[currentRawModelId] = thinkingOptions;
-        if (currentThinkingLevel) {
-          currentThinkingByModel[currentRawModelId] = currentThinkingLevel;
+        thinkingOptionsByModel[rawModelId] = thinkingOptions;
+        if (thinkingLevel) {
+          currentThinkingByModel[rawModelId] = thinkingLevel;
         } else {
-          delete currentThinkingByModel[currentRawModelId];
+          delete currentThinkingByModel[rawModelId];
         }
       } else {
-        delete thinkingOptionsByModel[currentRawModelId];
-        delete currentThinkingByModel[currentRawModelId];
+        delete thinkingOptionsByModel[rawModelId];
+        delete currentThinkingByModel[rawModelId];
       }
-      updates.currentThinkingByModel = currentThinkingByModel;
-      updates.thinkingOptionsByModel = thinkingOptionsByModel;
     }
 
-    const changed = updateKimiDiscoveryState(settingsBag, updates);
+    const changed = updateKimiDiscoveryState(settingsBag, {
+      ...(discoveredModels.length > 0 ? { discoveredModels } : {}),
+      ...(rawModelId ? { currentThinkingByModel, thinkingOptionsByModel } : {}),
+    });
 
-    const mirrored = getKimiDiscoveryState(settingsBag);
     const persisted = getKimiProviderSettings(settingsBag);
     const shouldPersistModels = discoveredModels.length > 0
       && !sameKimiDiscoveredModels(persisted.discoveredModels, discoveredModels);
     const shouldPersistThinking = !sameKimiThinkingOptionsByModel(
       persisted.thinkingOptionsByModel,
-      mirrored.thinkingOptionsByModel,
+      thinkingOptionsByModel,
     ) || !sameKimiCurrentThinkingByModel(
       persisted.currentThinkingByModel,
-      mirrored.currentThinkingByModel,
+      currentThinkingByModel,
     );
     if (shouldPersistModels || shouldPersistThinking) {
       await this.plugin.mutateSettings((settings) => {
         updateKimiProviderSettings(settings, {
           ...(shouldPersistModels ? { discoveredModels } : {}),
           ...(shouldPersistThinking
-            ? {
-              currentThinkingByModel: mirrored.currentThinkingByModel,
-              thinkingOptionsByModel: mirrored.thinkingOptionsByModel,
-            }
+            ? { currentThinkingByModel, thinkingOptionsByModel }
             : {}),
         });
       });
@@ -1586,11 +1590,9 @@ function extractKimiAuthCommand(data: unknown): string | null {
 function stripKimiToolCallIds(
   update: AcpSessionNotification['update'],
 ): AcpSessionNotification['update'] {
-  if (update.sessionUpdate === 'tool_call') {
-    return { ...update, toolCallId: stripKimiToolCallPrefix(update.toolCallId) };
-  }
-  if (update.sessionUpdate === 'tool_call_update') {
-    return { ...update, toolCallId: stripKimiToolCallPrefix(update.toolCallId) };
+  if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
+    const toolCallId = stripKimiToolCallPrefix(update.toolCallId);
+    return toolCallId === update.toolCallId ? update : { ...update, toolCallId };
   }
   return update;
 }

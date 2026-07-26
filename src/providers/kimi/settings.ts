@@ -7,7 +7,7 @@ import {
   migrateLegacyHostnameKeyedMap,
 } from '../../utils/env';
 import {
-  normalizeKimiCurrentThinkingByModel,
+  normalizeKimiModelKeyedStrings,
   normalizeKimiThinkingOptionsByModel,
   seedKimiDiscoveryStateFromConfig,
   updateKimiDiscoveryState,
@@ -81,40 +81,6 @@ function normalizeKimiVisibleModels(value: unknown): string[] | null {
   return normalized;
 }
 
-function normalizeKimiModelAliases(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const normalized: Record<string, string> = {};
-  for (const [rawId, alias] of Object.entries(value)) {
-    const normalizedRawId = rawId.trim();
-    const normalizedAlias = typeof alias === 'string' ? alias.trim() : '';
-    if (!normalizedRawId || !normalizedAlias) {
-      continue;
-    }
-    normalized[normalizedRawId] = normalizedAlias;
-  }
-  return normalized;
-}
-
-function normalizeKimiPreferredThinking(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const normalized: Record<string, string> = {};
-  for (const [rawId, level] of Object.entries(value)) {
-    const normalizedRawId = rawId.trim();
-    const normalizedLevel = typeof level === 'string' ? level.trim() : '';
-    if (!normalizedRawId || !normalizedLevel) {
-      continue;
-    }
-    normalized[normalizedRawId] = normalizedLevel;
-  }
-  return normalized;
-}
-
 function readTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -125,7 +91,7 @@ export function normalizeKimiStoredConfig(
   return {
     cliPath: readTrimmedString(config.cliPath) || DEFAULT_KIMI_PROVIDER_CONFIG.cliPath,
     cliPathsByHost: normalizeHostnameCliPaths(config.cliPathsByHost),
-    currentThinkingByModel: normalizeKimiCurrentThinkingByModel(config.currentThinkingByModel),
+    currentThinkingByModel: normalizeKimiModelKeyedStrings(config.currentThinkingByModel),
     discoveredModels: normalizeKimiDiscoveredModels(config.discoveredModels),
     enabled: typeof config.enabled === 'boolean'
       ? config.enabled
@@ -134,8 +100,8 @@ export function normalizeKimiStoredConfig(
     environmentVariables: typeof config.environmentVariables === 'string'
       ? config.environmentVariables
       : DEFAULT_KIMI_PROVIDER_CONFIG.environmentVariables,
-    modelAliases: normalizeKimiModelAliases(config.modelAliases),
-    preferredThinkingByModel: normalizeKimiPreferredThinking(config.preferredThinkingByModel),
+    modelAliases: normalizeKimiModelKeyedStrings(config.modelAliases),
+    preferredThinkingByModel: normalizeKimiModelKeyedStrings(config.preferredThinkingByModel),
     thinkingOptionsByModel: normalizeKimiThinkingOptionsByModel(config.thinkingOptionsByModel),
     visibleModels: normalizeKimiVisibleModels(config.visibleModels),
   };
@@ -202,7 +168,7 @@ export function updateKimiProviderSettings(
     cliPath,
     cliPathsByHost,
     currentThinkingByModel: updates.currentThinkingByModel !== undefined
-      ? normalizeKimiCurrentThinkingByModel(updates.currentThinkingByModel)
+      ? normalizeKimiModelKeyedStrings(updates.currentThinkingByModel)
       : current.currentThinkingByModel,
     discoveredModels: updates.discoveredModels !== undefined
       ? normalizeKimiDiscoveredModels(updates.discoveredModels)
@@ -213,10 +179,10 @@ export function updateKimiProviderSettings(
       : current.environmentHash,
     environmentVariables: updates.environmentVariables ?? current.environmentVariables,
     modelAliases: updates.modelAliases !== undefined
-      ? normalizeKimiModelAliases(updates.modelAliases)
+      ? normalizeKimiModelKeyedStrings(updates.modelAliases)
       : current.modelAliases,
     preferredThinkingByModel: updates.preferredThinkingByModel !== undefined
-      ? normalizeKimiPreferredThinking(updates.preferredThinkingByModel)
+      ? normalizeKimiModelKeyedStrings(updates.preferredThinkingByModel)
       : current.preferredThinkingByModel,
     thinkingOptionsByModel: updates.thinkingOptionsByModel !== undefined
       ? normalizeKimiThinkingOptionsByModel(updates.thinkingOptionsByModel)

@@ -4,12 +4,6 @@ export interface KimiProviderState {
   sessionDirectory?: string;
 }
 
-export function getKimiState(
-  providerState?: Record<string, unknown>,
-): KimiProviderState {
-  return parseKimiProviderState(providerState);
-}
-
 export function parseKimiProviderState(value: unknown): KimiProviderState {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -18,12 +12,6 @@ export function parseKimiProviderState(value: unknown): KimiProviderState {
   const record = value as Record<string, unknown>;
   const sessionDirectory = parseAbsolutePath(record.sessionDirectory);
   return sessionDirectory ? { sessionDirectory } : {};
-}
-
-export function buildKimiProviderState(
-  sessionDirectory?: string | null,
-): KimiProviderState | undefined {
-  return buildPersistedKimiProviderState({ sessionDirectory: sessionDirectory ?? undefined });
 }
 
 export function buildPersistedKimiProviderState(
