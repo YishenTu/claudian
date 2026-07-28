@@ -41,11 +41,14 @@ jest.mock('@/features/chat/rendering/SubagentRenderer', () => ({
 
 jest.mock('@/features/chat/rendering/ThinkingBlockRenderer', () => ({
   appendThinkingContent: jest.fn(),
-  createThinkingBlock: jest.fn().mockImplementation(() => ({
-    container: {},
+  createThinkingBlock: jest.fn().mockImplementation((_parentEl, options) => ({
+    wrapperEl: {},
     contentEl: {},
+    labelEl: {},
     content: '',
     startTime: Date.now(),
+    isExpanded: false,
+    onToggle: options?.onToggle,
   })),
   finalizeThinkingBlock: jest.fn().mockReturnValue(0),
 }));
@@ -283,6 +286,65 @@ describe('StreamController - Text Content', () => {
       );
     });
 
+    it('should throttle successive streaming text renders', async () => {
+      deps.state.currentTextEl = createMockEl();
+
+      await controller.appendText('First');
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+
+      await controller.appendText(' second');
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(150);
+      await Promise.resolve();
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(2);
+      expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(
+        deps.state.currentTextEl,
+        'First second'
+      );
+    });
+
+    it('should catch up with the latest text when a hidden tab becomes active', async () => {
+      deps.state.currentTextEl = createMockEl();
+      controller.setTabActive(false);
+
+      await controller.appendText('Hidden ');
+      await controller.appendText('content');
+      jest.advanceTimersByTime(500);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).not.toHaveBeenCalled();
+
+      controller.setTabActive(true);
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        deps.state.currentTextEl,
+        'Hidden content'
+      );
+    });
+
+    it('should force the final text render while its viewport is hidden', async () => {
+      const msg = createTestMessage();
+      deps.state.currentTextEl = createMockEl();
+      controller.setViewportVisible(false);
+
+      await controller.appendText('Final hidden content');
+      await controller.finalizeCurrentTextBlock(msg);
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        expect.anything(),
+        'Final hidden content'
+      );
+    });
+
     it('should defer math rendering during live text renders', async () => {
       deps.state.currentTextEl = createMockEl();
 
@@ -348,7 +410,7 @@ describe('StreamController - Text Content', () => {
       });
     });
 
-    it('should render original math once when finalizing a deferred text block', async () => {
+    it('should coalesce a pending deferred render into the final math render', async () => {
       const msg = createTestMessage();
 
       await controller.appendText('Final $x^2$');
@@ -357,14 +419,9 @@ describe('StreamController - Text Content', () => {
       expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
         1,
         expect.anything(),
-        'Final $x^2$',
-        { deferMath: true }
-      );
-      expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
-        2,
-        expect.anything(),
         'Final $x^2$'
       );
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
       expect(deps.renderer.addTextCopyButton).toHaveBeenCalledWith(
         expect.anything(),
         'Final $x^2$'
@@ -1606,6 +1663,7 @@ describe('StreamController - Text Content', () => {
         labelEl: createMockEl(),
         content: '',
         startTime: Date.now(),
+        isExpanded: true,
       });
 
       await controller.handleStreamChunk({ type: 'thinking', content: 'Let ' }, msg);
@@ -1630,6 +1688,7 @@ describe('StreamController - Text Content', () => {
         labelEl: createMockEl(),
         content: '',
         startTime: Date.now(),
+        isExpanded: true,
       });
 
       await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning $x^2$' }, msg);
@@ -1644,7 +1703,7 @@ describe('StreamController - Text Content', () => {
       );
     });
 
-    it('should render original math once when finalizing a deferred thinking block', async () => {
+    it('should render original math once when finalizing a collapsed thinking block', async () => {
       const { createThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
       const msg = createTestMessage();
       const contentEl = createMockEl();
@@ -1654,9 +1713,39 @@ describe('StreamController - Text Content', () => {
         labelEl: createMockEl(),
         content: '',
         startTime: Date.now(),
+        isExpanded: false,
       });
 
       await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning $x^2$' }, msg);
+      await controller.finalizeCurrentThinkingBlock(msg);
+
+      expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
+        1,
+        contentEl,
+        'Reasoning $x^2$'
+      );
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+      expect(msg.contentBlocks).toContainEqual(
+        expect.objectContaining({ type: 'thinking', content: 'Reasoning $x^2$' })
+      );
+    });
+
+    it('should replace deferred math when finalizing an expanded thinking block', async () => {
+      const { createThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
+      const msg = createTestMessage();
+      const contentEl = createMockEl();
+      createThinkingBlock.mockReturnValueOnce({
+        wrapperEl: createMockEl(),
+        contentEl,
+        labelEl: createMockEl(),
+        content: '',
+        startTime: Date.now(),
+        isExpanded: true,
+      });
+
+      await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning $x^2$' }, msg);
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
       await controller.finalizeCurrentThinkingBlock(msg);
 
       expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
@@ -1670,8 +1759,66 @@ describe('StreamController - Text Content', () => {
         contentEl,
         'Reasoning $x^2$'
       );
-      expect(msg.contentBlocks).toContainEqual(
-        expect.objectContaining({ type: 'thinking', content: 'Reasoning $x^2$' })
+    });
+
+    it('should skip live renders while thinking is collapsed', async () => {
+      const { createThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
+      const msg = createTestMessage();
+      const contentEl = createMockEl();
+      createThinkingBlock.mockReturnValueOnce({
+        wrapperEl: createMockEl(),
+        contentEl,
+        labelEl: createMockEl(),
+        content: '',
+        startTime: Date.now(),
+        isExpanded: false,
+      });
+
+      await controller.handleStreamChunk({ type: 'thinking', content: 'Hidden ' }, msg);
+      await controller.handleStreamChunk({ type: 'thinking', content: 'reasoning' }, msg);
+      jest.advanceTimersByTime(500);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).not.toHaveBeenCalled();
+
+      await controller.finalizeCurrentThinkingBlock(msg);
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(contentEl, 'Hidden reasoning');
+    });
+
+    it('should render accumulated thinking through the coordinator when expanded', async () => {
+      const { createThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
+      const msg = createTestMessage();
+      const contentEl = createMockEl();
+      const thinkingState: Record<string, any> = {
+        wrapperEl: createMockEl(),
+        contentEl,
+        labelEl: createMockEl(),
+        content: '',
+        startTime: Date.now(),
+        isExpanded: false,
+      };
+      let onToggle: ((isExpanded: boolean) => void) | undefined;
+      createThinkingBlock.mockImplementationOnce((_parentEl: HTMLElement, options: any) => {
+        onToggle = options.onToggle;
+        return thinkingState;
+      });
+
+      await controller.handleStreamChunk({ type: 'thinking', content: 'Deferred reasoning' }, msg);
+      jest.advanceTimersByTime(500);
+      await Promise.resolve();
+      expect(deps.renderer.renderContent).not.toHaveBeenCalled();
+
+      thinkingState.isExpanded = true;
+      onToggle?.(true);
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        contentEl,
+        'Deferred reasoning'
       );
     });
 

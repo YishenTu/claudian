@@ -23,7 +23,7 @@ describe('ThinkingBlockRenderer', () => {
     it('should show timer label', () => {
       const parentEl = createMockEl();
 
-      const state = createThinkingBlock(parentEl, mockRenderContent);
+      const state = createThinkingBlock(parentEl);
 
       expect(state.labelEl.textContent).toContain('Thinking');
     });
@@ -31,7 +31,7 @@ describe('ThinkingBlockRenderer', () => {
     it('should clean up timer on finalize', () => {
       const parentEl = createMockEl();
 
-      const state = createThinkingBlock(parentEl, mockRenderContent);
+      const state = createThinkingBlock(parentEl);
 
       expect(state.timerInterval).not.toBeNull();
 
@@ -39,13 +39,28 @@ describe('ThinkingBlockRenderer', () => {
 
       expect(state.timerInterval).toBeNull();
     });
+
+    it('reports expansion state without rendering content itself', () => {
+      const parentEl = createMockEl();
+      const onToggle = jest.fn();
+      const state = createThinkingBlock(parentEl, { onToggle });
+      const header = (state.wrapperEl as any)._children[0];
+      const clickHandlers = header._eventListeners.get('click') || [];
+
+      clickHandlers[0]();
+      clickHandlers[0]();
+
+      expect(onToggle).toHaveBeenNthCalledWith(1, true);
+      expect(onToggle).toHaveBeenNthCalledWith(2, false);
+      expect(mockRenderContent).not.toHaveBeenCalled();
+    });
   });
 
   describe('finalizeThinkingBlock', () => {
     it('should collapse the block when finalized', () => {
       const parentEl = createMockEl();
 
-      const state = createThinkingBlock(parentEl, mockRenderContent);
+      const state = createThinkingBlock(parentEl);
 
       // Manually expand first
       state.wrapperEl.addClass('expanded');
@@ -60,7 +75,7 @@ describe('ThinkingBlockRenderer', () => {
     it('should update label with final duration', () => {
       const parentEl = createMockEl();
 
-      const state = createThinkingBlock(parentEl, mockRenderContent);
+      const state = createThinkingBlock(parentEl);
 
       // Advance time by 5 seconds
       jest.advanceTimersByTime(5000);
@@ -74,7 +89,7 @@ describe('ThinkingBlockRenderer', () => {
     it('should sync isExpanded state so toggle works correctly after finalize', () => {
       const parentEl = createMockEl();
 
-      const state = createThinkingBlock(parentEl, mockRenderContent);
+      const state = createThinkingBlock(parentEl);
       const header = (state.wrapperEl as any)._children[0];
 
       // Expand the block
@@ -98,7 +113,7 @@ describe('ThinkingBlockRenderer', () => {
     it('should update aria-expanded on finalize', () => {
       const parentEl = createMockEl();
 
-      const state = createThinkingBlock(parentEl, mockRenderContent);
+      const state = createThinkingBlock(parentEl);
       const header = (state.wrapperEl as any)._children[0];
 
       // Expand first

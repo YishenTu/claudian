@@ -12,9 +12,13 @@ export interface ThinkingBlockState {
   isExpanded: boolean;
 }
 
+export interface ThinkingBlockOptions {
+  onToggle?: (isExpanded: boolean) => void;
+}
+
 export function createThinkingBlock(
   parentEl: HTMLElement,
-  renderContent: RenderContentFn
+  options: ThinkingBlockOptions = {},
 ): ThinkingBlockState {
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-thinking-block' });
 
@@ -50,8 +54,9 @@ export function createThinkingBlock(
     isExpanded: false,
   };
 
-  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
-  setupCollapsible(wrapperEl, header, contentEl, state);
+  setupCollapsible(wrapperEl, header, contentEl, state, {
+    onToggle: options.onToggle,
+  });
 
   return state;
 }

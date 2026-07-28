@@ -216,7 +216,12 @@ let mockMessageRenderer: { scrollToBottomIfNeeded: jest.Mock; setAsyncSubagentCl
 let mockSelectionController: ReturnType<typeof createMockSelectionController>;
 let mockBrowserSelectionController: ReturnType<typeof createMockBrowserSelectionController>;
 let mockCanvasSelectionController: ReturnType<typeof createMockCanvasSelectionController>;
-let mockStreamController: { onAsyncSubagentStateChange: jest.Mock };
+let mockStreamController: {
+  onAsyncSubagentStateChange: jest.Mock;
+  setTabActive: jest.Mock;
+  setViewportVisible: jest.Mock;
+  dispose: jest.Mock;
+};
 let mockConversationController: { save: jest.Mock; rewind: jest.Mock };
 let mockInputController: ReturnType<typeof createMockInputController>;
 let mockNavigationController: { initialize: jest.Mock; dispose: jest.Mock };
@@ -353,7 +358,12 @@ jest.mock('@/features/chat/controllers/CanvasSelectionController', () => ({
 
 jest.mock('@/features/chat/controllers/StreamController', () => ({
   StreamController: jest.fn().mockImplementation(() => {
-    mockStreamController = { onAsyncSubagentStateChange: jest.fn() };
+    mockStreamController = {
+      onAsyncSubagentStateChange: jest.fn(),
+      setTabActive: jest.fn(),
+      setViewportVisible: jest.fn(),
+      dispose: jest.fn(),
+    };
     return mockStreamController;
   }),
 }));
@@ -1425,10 +1435,13 @@ describe('Tab - Activation/Deactivation', () => {
     it('should show tab content', () => {
       const options = createMockOptions();
       const tab = createTab(options);
+      const setTabActive = jest.fn();
+      tab.controllers.streamController = { setTabActive } as any;
 
       activateTab(tab);
 
       expect(tab.dom.contentEl.style.display).toBe('flex');
+      expect(setTabActive).toHaveBeenCalledWith(true);
     });
   });
 
@@ -1436,12 +1449,15 @@ describe('Tab - Activation/Deactivation', () => {
     it('should hide tab content', () => {
       const options = createMockOptions();
       const tab = createTab(options);
+      const setTabActive = jest.fn();
+      tab.controllers.streamController = { setTabActive } as any;
 
       // First activate, then deactivate
       activateTab(tab);
       deactivateTab(tab);
 
       expect(tab.dom.contentEl.style.display).toBe('none');
+      expect(setTabActive).toHaveBeenLastCalledWith(false);
     });
   });
 });
@@ -2258,6 +2274,38 @@ describe('Tab - Controller Initialization', () => {
       initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
 
       expect(tab.controllers.streamController).toBeDefined();
+    });
+
+    it('should forward viewport visibility changes from IntersectionObserver', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      const mockComponent = {} as any;
+      const observe = jest.fn();
+      const disconnect = jest.fn();
+      let visibilityCallback: IntersectionObserverCallback | undefined;
+      (tab.dom.messagesEl.ownerDocument.defaultView as any).IntersectionObserver = jest.fn(
+        (callback: IntersectionObserverCallback) => {
+          visibilityCallback = callback;
+          return { observe, disconnect };
+        },
+      );
+
+      initializeTabUI(tab, options.plugin);
+      initializeTabControllers(tab, options.plugin, mockComponent, options.mcpManager);
+      visibilityCallback?.([
+        {
+          target: tab.dom.messagesEl,
+          isIntersecting: false,
+        } as unknown as IntersectionObserverEntry,
+      ], {} as IntersectionObserver);
+
+      expect(observe).toHaveBeenCalledWith(tab.dom.messagesEl);
+      expect(mockStreamController.setViewportVisible).toHaveBeenCalledWith(false);
+
+      for (const cleanup of tab.dom.eventCleanups) {
+        cleanup();
+      }
+      expect(disconnect).toHaveBeenCalled();
     });
 
     it('should create ConversationController', () => {

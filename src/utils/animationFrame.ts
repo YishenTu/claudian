@@ -33,6 +33,24 @@ export function scheduleAnimationFrame(
   };
 }
 
+export function scheduleDelayedFrame(
+  callback: () => void,
+  delayMs: number,
+  ownerWindow: Window | null = getRendererWindow(),
+): ScheduledAnimationFrame {
+  const targetWindow = ownerWindow ?? getRendererWindow();
+  if (!targetWindow) {
+    callback();
+    return { kind: 'timeout', id: 0, ownerWindow: null };
+  }
+
+  return {
+    kind: 'timeout',
+    id: targetWindow.setTimeout(callback, delayMs),
+    ownerWindow: targetWindow,
+  };
+}
+
 export function cancelScheduledAnimationFrame(frame: ScheduledAnimationFrame): void {
   const targetWindow = frame.ownerWindow ?? getRendererWindow();
   if (!targetWindow) return;
