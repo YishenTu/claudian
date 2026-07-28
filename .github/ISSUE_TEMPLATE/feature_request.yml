@@ -1,0 +1,68 @@
+name: Feature request
+description: Describe an unmet use case or a focused improvement
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are welcome. Start with the problem or unmet use case; a proposed implementation is optional.
+
+        Pull requests that add a new provider are not accepted. Provider-related use cases may still be discussed, but opening an issue does not imply that the provider will be added.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find the same request.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or unmet use case
+      description: What are you unable to do today, who does this affect, and why does it matter?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the behavior or result you would like, without assuming a particular implementation.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Affected provider
+      description: Select the closest match.
+      options:
+        - Not provider-specific
+        - Claude
+        - Codex
+        - Grok
+        - OpenCode
+        - Pi
+        - Other or new provider
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: If you have an approach in mind, explain it and any tradeoffs you see.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: How do you handle this today, and what limitations does that workaround have?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add examples, screenshots, links, or environment details that clarify the request. Remove sensitive information first.
