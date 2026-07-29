@@ -1,3 +1,7 @@
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
 import * as http from 'http';
 import type { AddressInfo } from 'net';
 
@@ -159,6 +163,33 @@ describe('createNodeFetch', () => {
     await expect(
       nodeFetch(getUrl(), { method: 'GET', signal: controller.signal }),
     ).rejects.toThrow();
+  });
+
+  it('should stop a hanging MCP HTTP discovery probe at the SDK request timeout', async () => {
+    const { server: hangingServer, getUrl: hangingUrl, received: hangingReceived } = createTestServer(
+      () => {
+        // Accept the discovery request without ever sending a response.
+      },
+    );
+    serversToClose.push(hangingServer);
+
+    const client = new Client(
+      { name: 'claudian-timeout-test', version: '1.0.0' },
+      { versionNegotiation: { mode: 'auto' } },
+    );
+    const transport = new StreamableHTTPClientTransport(
+      new URL(hangingUrl()),
+      { fetch: nodeFetch },
+    );
+    const startedAt = Date.now();
+
+    try {
+      await expect(client.connect(transport, { timeout: 100 })).rejects.toThrow();
+      expect(Date.now() - startedAt).toBeLessThan(2_000);
+      expect(hangingReceived).toHaveLength(1);
+    } finally {
+      await client.close();
+    }
   });
 
   it('should accept URL object as input', async () => {

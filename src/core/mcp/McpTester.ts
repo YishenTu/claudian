@@ -1,7 +1,10 @@
-import { Client } from '@modelcontextprotocol/sdk/client';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport';
+import {
+  Client,
+  SSEClientTransport,
+  StreamableHTTPClientTransport,
+  type Transport,
+} from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import * as http from 'http';
 import * as https from 'https';
 
@@ -9,6 +12,8 @@ import { getEnhancedPath } from '../../utils/env';
 import { parseCommand } from '../../utils/mcp';
 import type { ManagedMcpServer } from '../types';
 import { getMcpServerType } from '../types';
+
+const MCP_TEST_TIMEOUT_MS = 10_000;
 
 export interface McpTool {
   name: string;
@@ -27,20 +32,6 @@ export interface McpTestResult {
 interface UrlServerConfig {
   url: string;
   headers?: Record<string, string>;
-}
-
-type StreamableHttpTransportOptions = ConstructorParameters<typeof StreamableHTTPClientTransport>[1];
-type LegacySseTransportConstructor = new (
-  url: URL,
-  options?: StreamableHttpTransportOptions,
-) => Transport;
-
-function createLegacySseTransport(url: URL, options: StreamableHttpTransportOptions): Transport {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- Legacy SSE MCP servers still need the SDK's deprecated compatibility transport.
-  const module = require('@modelcontextprotocol/sdk/client/sse') as {
-    SSEClientTransport: LegacySseTransportConstructor;
-  };
-  return new module.SSEClientTransport(url, options);
 }
 
 /**
@@ -253,7 +244,7 @@ export async function testMcpServer(server: ManagedMcpServer): Promise<McpTestRe
         requestInit: config.headers ? { headers: config.headers } : undefined,
       };
       transport = type === 'sse'
-        ? createLegacySseTransport(url, options)
+        ? new SSEClientTransport(url, options)
         : new StreamableHTTPClientTransport(url, options);
     }
   } catch (error) {
@@ -264,12 +255,18 @@ export async function testMcpServer(server: ManagedMcpServer): Promise<McpTestRe
     };
   }
 
-  const client = new Client({ name: 'claudian-tester', version: '1.0.0' });
+  const clientInfo = { name: 'claudian-tester', version: '1.0.0' };
+  const client = type === 'http'
+    ? new Client(clientInfo, { versionNegotiation: { mode: 'auto' } })
+    : new Client(clientInfo);
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 10000);
+  const timeout = window.setTimeout(() => controller.abort(), MCP_TEST_TIMEOUT_MS);
 
   try {
-    await client.connect(transport, { signal: controller.signal });
+    await client.connect(transport, {
+      signal: controller.signal,
+      timeout: MCP_TEST_TIMEOUT_MS,
+    });
 
     const serverVersion = client.getServerVersion();
     let tools: McpTool[] = [];
@@ -292,7 +289,11 @@ export async function testMcpServer(server: ManagedMcpServer): Promise<McpTestRe
     };
   } catch (error) {
     if (controller.signal.aborted) {
-      return { success: false, tools: [], error: 'Connection timeout (10s)' };
+      return {
+        success: false,
+        tools: [],
+        error: `Connection timeout (${MCP_TEST_TIMEOUT_MS / 1000}s)`,
+      };
     }
     return {
       success: false,

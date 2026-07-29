@@ -1,7 +1,9 @@
-import { Client } from '@modelcontextprotocol/sdk/client';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp';
+import {
+  Client,
+  SSEClientTransport,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 import { parseClipboardConfig, tryParseClipboardConfig } from '@/core/mcp/McpConfigParser';
 import { McpServerManager } from '@/core/mcp/McpServerManager';
@@ -25,20 +27,14 @@ import {
   splitCommandString,
 } from '@/utils/mcp';
 
-jest.mock('@modelcontextprotocol/sdk/client', () => ({
+jest.mock('@modelcontextprotocol/client', () => ({
   Client: jest.fn(),
-}));
-
-jest.mock('@modelcontextprotocol/sdk/client/stdio', () => ({
-  StdioClientTransport: jest.fn(),
-}));
-
-jest.mock('@modelcontextprotocol/sdk/client/sse', () => ({
   SSEClientTransport: jest.fn(),
+  StreamableHTTPClientTransport: jest.fn(),
 }));
 
-jest.mock('@modelcontextprotocol/sdk/client/streamableHttp', () => ({
-  StreamableHTTPClientTransport: jest.fn(),
+jest.mock('@modelcontextprotocol/client/stdio', () => ({
+  StdioClientTransport: jest.fn(),
 }));
 
 function createMemoryStorage(initialFile?: Record<string, unknown>): {

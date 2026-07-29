@@ -2,7 +2,7 @@ import { testMcpServer } from '@/core/mcp/McpTester';
 import type { ManagedMcpServer } from '@/core/types';
 
 // Mock the MCP SDK transports and client
-jest.mock('@modelcontextprotocol/sdk/client', () => ({
+jest.mock('@modelcontextprotocol/client', () => ({
   Client: jest.fn().mockImplementation(() => ({
     connect: jest.fn(),
     getServerVersion: jest.fn().mockReturnValue({ name: 'test-server', version: '1.0.0' }),
@@ -14,18 +14,12 @@ jest.mock('@modelcontextprotocol/sdk/client', () => ({
     }),
     close: jest.fn(),
   })),
-}));
-
-jest.mock('@modelcontextprotocol/sdk/client/sse', () => ({
   SSEClientTransport: jest.fn(),
-}));
-
-jest.mock('@modelcontextprotocol/sdk/client/stdio', () => ({
-  StdioClientTransport: jest.fn(),
-}));
-
-jest.mock('@modelcontextprotocol/sdk/client/streamableHttp', () => ({
   StreamableHTTPClientTransport: jest.fn(),
+}));
+
+jest.mock('@modelcontextprotocol/client/stdio', () => ({
+  StdioClientTransport: jest.fn(),
 }));
 
 jest.mock('@/utils/env', () => ({
@@ -47,6 +41,7 @@ describe('testMcpServer', () => {
 
   describe('stdio server', () => {
     it('should connect and return tools for a valid stdio server', async () => {
+      const { Client } = jest.requireMock('@modelcontextprotocol/client');
       const server: ManagedMcpServer = {
         name: 'test',
         config: { command: 'node server.js', args: ['--port', '3000'] },
@@ -63,6 +58,7 @@ describe('testMcpServer', () => {
       expect(result.tools[0].name).toBe('tool1');
       expect(result.tools[0].description).toBe('A test tool');
       expect(result.tools[1].name).toBe('tool2');
+      expect(Client).toHaveBeenCalledWith({ name: 'claudian-tester', version: '1.0.0' });
     });
 
     it('should return error for missing command', async () => {
@@ -86,7 +82,7 @@ describe('testMcpServer', () => {
 
   describe('sse server', () => {
     it('should connect to an SSE server', async () => {
-      const { SSEClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/sse');
+      const { Client, SSEClientTransport } = jest.requireMock('@modelcontextprotocol/client');
       const server: ManagedMcpServer = {
         name: 'sse-test',
         config: { type: 'sse' as const, url: 'https://example.com/sse' },
@@ -104,12 +100,13 @@ describe('testMcpServer', () => {
           fetch: expect.any(Function),
         }),
       );
+      expect(Client).toHaveBeenCalledWith({ name: 'claudian-tester', version: '1.0.0' });
     });
   });
 
   describe('http server', () => {
     it('should connect to an HTTP server', async () => {
-      const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/streamableHttp');
+      const { Client, StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/client');
       const server: ManagedMcpServer = {
         name: 'http-test',
         config: { type: 'http' as const, url: 'https://example.com/api' },
@@ -126,10 +123,21 @@ describe('testMcpServer', () => {
           fetch: expect.any(Function),
         }),
       );
+      expect(Client).toHaveBeenCalledWith(
+        { name: 'claudian-tester', version: '1.0.0' },
+        { versionNegotiation: { mode: 'auto' } },
+      );
+      expect(Client.mock.results[0].value.connect).toHaveBeenCalledWith(
+        expect.anything(),
+        {
+          signal: expect.any(AbortSignal),
+          timeout: 10000,
+        },
+      );
     });
 
     it('should pass headers when configured', async () => {
-      const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/streamableHttp');
+      const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/client');
       const server: ManagedMcpServer = {
         name: 'http-auth',
         config: {
@@ -156,7 +164,7 @@ describe('testMcpServer', () => {
 
   describe('error handling', () => {
     it('should return error when transport creation fails', async () => {
-      const { SSEClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/sse');
+      const { SSEClientTransport } = jest.requireMock('@modelcontextprotocol/client');
       SSEClientTransport.mockImplementationOnce(() => {
         throw new Error('Transport init failed');
       });
@@ -176,7 +184,7 @@ describe('testMcpServer', () => {
     });
 
     it('should return generic error for non-Error transport failures', async () => {
-      const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/sdk/client/streamableHttp');
+      const { StreamableHTTPClientTransport } = jest.requireMock('@modelcontextprotocol/client');
       StreamableHTTPClientTransport.mockImplementationOnce(() => {
         throw 'string error';
       });
@@ -195,7 +203,7 @@ describe('testMcpServer', () => {
     });
 
     it('should return error when connection fails', async () => {
-      const { Client } = jest.requireMock('@modelcontextprotocol/sdk/client');
+      const { Client } = jest.requireMock('@modelcontextprotocol/client');
       Client.mockImplementationOnce(() => ({
         connect: jest.fn().mockRejectedValue(new Error('Connection refused')),
         close: jest.fn(),
@@ -215,7 +223,7 @@ describe('testMcpServer', () => {
     });
 
     it('should return unknown error for non-Error connection failures', async () => {
-      const { Client } = jest.requireMock('@modelcontextprotocol/sdk/client');
+      const { Client } = jest.requireMock('@modelcontextprotocol/client');
       Client.mockImplementationOnce(() => ({
         connect: jest.fn().mockRejectedValue(42),
         close: jest.fn(),
@@ -235,7 +243,7 @@ describe('testMcpServer', () => {
     });
 
     it('should handle listTools failure gracefully (partial success)', async () => {
-      const { Client } = jest.requireMock('@modelcontextprotocol/sdk/client');
+      const { Client } = jest.requireMock('@modelcontextprotocol/client');
       Client.mockImplementationOnce(() => ({
         connect: jest.fn(),
         getServerVersion: jest.fn().mockReturnValue({ name: 'partial', version: '0.1' }),
@@ -258,7 +266,7 @@ describe('testMcpServer', () => {
     });
 
     it('should handle close errors silently', async () => {
-      const { Client } = jest.requireMock('@modelcontextprotocol/sdk/client');
+      const { Client } = jest.requireMock('@modelcontextprotocol/client');
       Client.mockImplementationOnce(() => ({
         connect: jest.fn(),
         getServerVersion: jest.fn().mockReturnValue(null),
