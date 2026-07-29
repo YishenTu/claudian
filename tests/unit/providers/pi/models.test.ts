@@ -1,8 +1,10 @@
 import {
+  clampPiThinkingLevel,
   decodePiModelId,
   encodePiModelId,
   getPiSupportedThinkingLevels,
   normalizePiDiscoveredModels,
+  normalizePiThinkingLevel,
 } from '@/providers/pi/models';
 
 describe('Pi model helpers', () => {
@@ -23,6 +25,7 @@ describe('Pi model helpers', () => {
   });
 
   it('normalizes thinking levels with Pi reasoning rules', () => {
+    expect(normalizePiThinkingLevel(' MAX ')).toBe('max');
     expect(getPiSupportedThinkingLevels({ reasoning: false })).toEqual(['off']);
     expect(getPiSupportedThinkingLevels({ reasoning: true })).toEqual([
       'off',
@@ -33,8 +36,8 @@ describe('Pi model helpers', () => {
     ]);
     expect(getPiSupportedThinkingLevels({
       reasoning: true,
-      thinkingLevels: ['low', null, 'xhigh', 'invalid', 'low'],
-    })).toEqual(['low', 'xhigh']);
+      thinkingLevels: ['max', 'low', null, 'xhigh', 'invalid', 'low'],
+    })).toEqual(['low', 'xhigh', 'max']);
     expect(getPiSupportedThinkingLevels({
       reasoning: {
         levels: ['minimal', 'high'],
@@ -44,10 +47,36 @@ describe('Pi model helpers', () => {
       reasoning: true,
       thinkingLevelMap: {
         high: null,
+        max: 'max',
         minimal: 'low',
         xhigh: 'xhigh',
       },
-    })).toEqual(['off', 'minimal', 'low', 'medium', 'xhigh']);
+    })).toEqual(['off', 'minimal', 'low', 'medium', 'xhigh', 'max']);
+    expect(getPiSupportedThinkingLevels({
+      reasoning: true,
+      thinkingLevelMap: {
+        off: null,
+        minimal: null,
+        low: 'low',
+        medium: null,
+        high: 'high',
+        xhigh: null,
+        max: 'max',
+      },
+    })).toEqual(['low', 'high', 'max']);
+  });
+
+  it('clamps supported thinking levels with Pi ladder semantics', () => {
+    expect(clampPiThinkingLevel(
+      'max',
+      ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+    )).toBe('max');
+    expect(clampPiThinkingLevel(
+      'max',
+      ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+    )).toBe('xhigh');
+    expect(clampPiThinkingLevel('max', ['off', 'high'])).toBe('high');
+    expect(clampPiThinkingLevel('medium', ['low', 'high', 'max'])).toBe('high');
   });
 
   it('normalizes discovered model records', () => {

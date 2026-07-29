@@ -127,27 +127,11 @@ export function normalizePiPreferredThinkingByModel(
   value: unknown,
   discoveredModels: PiDiscoveredModel[] = [],
 ): Record<string, PiThinkingLevel> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const normalized: Record<string, PiThinkingLevel> = {};
-  for (const [encodedId, thinkingLevel] of Object.entries(value as Record<string, unknown>)) {
-    const normalizedEncodedId = normalizePiEncodedId(encodedId, discoveredModels);
-    const normalizedThinkingLevel = normalizePiThinkingLevel(thinkingLevel);
-    if (!normalizedEncodedId || !normalizedThinkingLevel) {
-      continue;
-    }
-
-    const discoveredModel = discoveredModels.find(model => model.encodedId === normalizedEncodedId);
-    if (discoveredModel && !discoveredModel.thinkingLevels.includes(normalizedThinkingLevel)) {
-      continue;
-    }
-
-    normalized[normalizedEncodedId] = normalizedThinkingLevel;
-  }
-
-  return normalized;
+  return normalizePiPreferredThinkingEntries(
+    value,
+    discoveredModels,
+    encodedId => normalizePiEncodedId(encodedId, discoveredModels),
+  );
 }
 
 export function getPiProviderSettings(settings: Record<string, unknown>): PiProviderSettings {
@@ -316,28 +300,38 @@ function normalizePiPreferredThinkingForPersistableIds(
   discoveredModels: PiDiscoveredModel[],
   persistableIds: Set<string>,
 ): Record<string, PiThinkingLevel> {
+  return normalizePiPreferredThinkingEntries(
+    value,
+    discoveredModels,
+    encodedId => normalizePiPersistableEncodedId(
+      encodedId,
+      discoveredModels,
+      persistableIds,
+    ),
+  );
+}
+
+function normalizePiPreferredThinkingEntries(
+  value: unknown,
+  discoveredModels: PiDiscoveredModel[],
+  normalizeEncodedId: (encodedId: string) => string,
+): Record<string, PiThinkingLevel> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }
 
   const normalized: Record<string, PiThinkingLevel> = {};
   for (const [encodedId, thinkingLevel] of Object.entries(value as Record<string, unknown>)) {
-    const normalizedEncodedId = normalizePiPersistableEncodedId(
-      encodedId,
-      discoveredModels,
-      persistableIds,
-    );
+    const normalizedEncodedId = normalizeEncodedId(encodedId);
     const normalizedThinkingLevel = normalizePiThinkingLevel(thinkingLevel);
     if (!normalizedEncodedId || !normalizedThinkingLevel) {
       continue;
     }
 
     const discoveredModel = discoveredModels.find(model => model.encodedId === normalizedEncodedId);
-    if (discoveredModel && !discoveredModel.thinkingLevels.includes(normalizedThinkingLevel)) {
-      continue;
-    }
-
-    normalized[normalizedEncodedId] = normalizedThinkingLevel;
+    normalized[normalizedEncodedId] = discoveredModel
+      ? clampPiThinkingLevel(normalizedThinkingLevel, discoveredModel.thinkingLevels)
+      : normalizedThinkingLevel;
   }
 
   return normalized;

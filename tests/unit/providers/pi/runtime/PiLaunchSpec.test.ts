@@ -58,6 +58,22 @@ describe('PiLaunchSpec', () => {
     ]);
   });
 
+  it('passes max thinking through to Pi', () => {
+    expect(buildPiLaunchSpec({
+      command: 'pi',
+      cwd: '/vault',
+      noSession: true,
+      settings: baseSettings,
+      thinkingLevel: 'max',
+    }).args).toEqual([
+      '--mode',
+      'rpc',
+      '--no-session',
+      '--thinking',
+      'max',
+    ]);
+  });
+
   it('uses no-tools for passive auxiliary launches', () => {
     expect(buildPiLaunchSpec({
       command: 'pi',

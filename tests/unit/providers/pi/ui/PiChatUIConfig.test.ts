@@ -12,7 +12,7 @@ const settings: Record<string, unknown> = {
           label: 'Claude Sonnet 4',
           provider: 'anthropic',
           reasoning: true,
-          thinkingLevels: ['off', 'medium', 'high', 'xhigh'],
+          thinkingLevels: ['off', 'medium', 'high', 'xhigh', 'max'],
         },
         {
           encodedId: 'pi:openai/gpt-5',
@@ -98,6 +98,7 @@ describe('PiChatUIConfig', () => {
       { label: 'Medium', value: 'medium' },
       { label: 'High', value: 'high' },
       { label: 'xHigh', value: 'xhigh' },
+      { label: 'Max', value: 'max' },
     ]);
     expect(piChatUIConfig.getDefaultReasoningValue('pi:anthropic/claude-sonnet-4', settings)).toBe('high');
   });

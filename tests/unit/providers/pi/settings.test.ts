@@ -81,7 +81,7 @@ describe('Pi settings normalization', () => {
     ], discoveredModels)).toEqual(['pi:anthropic/claude-sonnet-4']);
   });
 
-  it('normalizes aliases and preferred thinking', () => {
+  it('normalizes aliases and clamps preferred thinking to model capabilities', () => {
     expect(normalizePiModelAliases({
       'pi:anthropic/claude-sonnet-4': '  Sonnet  ',
       'pi:missing/model': 'Missing',
@@ -89,9 +89,31 @@ describe('Pi settings normalization', () => {
       'pi:anthropic/claude-sonnet-4': 'Sonnet',
     });
     expect(normalizePiPreferredThinkingByModel({
-      'pi:anthropic/claude-sonnet-4': 'high',
+      'pi:anthropic/claude-sonnet-4': 'max',
       'pi:openai/gpt-5': 'xhigh',
     }, discoveredModels)).toEqual({
+      'pi:anthropic/claude-sonnet-4': 'high',
+      'pi:openai/gpt-5': 'medium',
+    });
+  });
+
+  it('clamps max preferences to xhigh before high', () => {
+    expect(normalizePiPreferredThinkingByModel({
+      'pi:anthropic/claude-opus-4-7': 'max',
+      'pi:anthropic/claude-sonnet-4': 'max',
+    }, [
+      {
+        encodedId: 'pi:anthropic/claude-opus-4-7',
+        id: 'claude-opus-4-7',
+        input: ['text'],
+        label: 'Claude Opus 4.7',
+        provider: 'anthropic',
+        reasoning: true,
+        thinkingLevels: ['off', 'low', 'medium', 'high', 'xhigh'],
+      },
+      discoveredModels[0],
+    ])).toEqual({
+      'pi:anthropic/claude-opus-4-7': 'xhigh',
       'pi:anthropic/claude-sonnet-4': 'high',
     });
   });
