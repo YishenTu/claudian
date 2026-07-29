@@ -304,6 +304,15 @@
   margin-bottom: 6px;
 }
 
+.claudian-ask-approval-warning {
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-on-accent);
+  background: var(--text-error);
+}
+
 .claudian-ask-approval-desc {
   padding: 8px 10px;
   background: var(--background-primary-alt);
