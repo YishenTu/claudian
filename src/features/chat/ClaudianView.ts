@@ -464,6 +464,7 @@ export class ClaudianView extends ItemView {
       return;
     }
     this.updateTabBarVisibility();
+    tab.dom.inputEl.focus();
   }
 
   private updateTabBar(): void {
@@ -815,6 +816,11 @@ export class ClaudianView extends ItemView {
   /** Gets the currently active tab. */
   getActiveTab(): TabData | null {
     return this.tabManager?.getActiveTab() ?? null;
+  }
+
+  /** Focuses the active tab's composer. */
+  focusActiveInput(): void {
+    this.tabManager?.getActiveTab()?.dom.inputEl.focus();
   }
 
   /** Appends text to the active composer without sending it. */

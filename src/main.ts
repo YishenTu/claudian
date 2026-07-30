@@ -367,6 +367,7 @@ export default class ClaudianPlugin extends Plugin {
     // A cold-open view creates its initial tab during restore. Avoid stacking
     // an extra blank tab on top when there was no prior layout to restore.
     if (restoredTabCount === 0) {
+      view.focusActiveInput();
       return;
     }
 

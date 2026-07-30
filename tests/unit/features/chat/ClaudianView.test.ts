@@ -143,6 +143,23 @@ function createViewHarness(options: {
 }
 
 describe('ClaudianView tab controls', () => {
+  it('focuses the composer after creating a new tab', async () => {
+    const inputEl = createMockEl('textarea') as unknown as HTMLTextAreaElement;
+    inputEl.focus = jest.fn();
+    const tab = { dom: { inputEl } };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.plugin = { settings: {} };
+    view.tabManager = {
+      createTab: jest.fn().mockResolvedValue(tab),
+    };
+    view.updateTabBarVisibility = jest.fn();
+
+    await view.createNewTab();
+
+    expect(inputEl.focus).toHaveBeenCalledTimes(1);
+  });
+
   it('hides the new-tab button when the tab manager is at capacity', () => {
     const { newTabButtonEl, view } = createViewHarness({ canCreateTab: false });
 
@@ -441,6 +458,14 @@ describe('ClaudianView composer input', () => {
 
     return { inputEl, inputHandler, view };
   }
+
+  it('focuses the active composer', () => {
+    const { inputEl, view } = createComposerHarness('');
+
+    view.focusActiveInput();
+
+    expect(inputEl.focus).toHaveBeenCalledTimes(1);
+  });
 
   it('appends text after existing composer content', () => {
     const { inputEl, inputHandler, view } = createComposerHarness('Review this note');

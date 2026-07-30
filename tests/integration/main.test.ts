@@ -2211,8 +2211,10 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
 
       const createNewTab = jest.fn().mockResolvedValue(undefined);
+      const focusActiveInput = jest.fn();
       const mockView = {
         createNewTab,
+        focusActiveInput,
       };
 
       let viewOpened = false;
@@ -2232,6 +2234,7 @@ describe('ClaudianPlugin', () => {
 
       expect(plugin.activateView).toHaveBeenCalledTimes(1);
       expect(createNewTab).not.toHaveBeenCalled();
+      expect(focusActiveInput).toHaveBeenCalledTimes(1);
     });
 
     it('creates a new tab after reopening a persisted tab layout', async () => {
