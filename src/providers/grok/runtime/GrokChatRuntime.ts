@@ -61,6 +61,8 @@ import {
 import {
   decodeGrokModelId,
   encodeGrokModelId,
+  findGrokModel,
+  getGrokAvailableReasoningEfforts,
   type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,
   normalizeGrokReasoningMetadata,
@@ -1964,9 +1966,21 @@ export class GrokChatRuntime implements ChatRuntime {
 
   private resolveSelectedEffort(rawModelId: string): string | null {
     const settings = this.getProviderSettings();
+    const grokSettings = getGrokProviderSettings(settings);
     const direct = typeof settings.effortLevel === 'string' ? settings.effortLevel.trim() : '';
-    const preferred = getGrokProviderSettings(settings).preferredReasoningByModel[rawModelId];
-    return direct || preferred || null;
+    const preferred = grokSettings.preferredReasoningByModel[rawModelId] ?? '';
+    // `effortLevel` is shared across providers, so it can still hold another
+    // provider's value when Grok has no saved projection yet. Grok rejects the
+    // whole turn when the advertised effort list does not contain it.
+    const advertised = getGrokAvailableReasoningEfforts(
+      findGrokModel(grokSettings.currentCatalog?.models ?? [], rawModelId),
+    ).map(effort => effort.value);
+    if (advertised.length === 0) {
+      return direct || preferred || null;
+    }
+    if (advertised.includes(direct)) return direct;
+    if (advertised.includes(preferred)) return preferred;
+    return null;
   }
 
   private setCurrentConversationModel(model: unknown): void {

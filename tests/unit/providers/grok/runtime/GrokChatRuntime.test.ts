@@ -264,6 +264,43 @@ function createHost(overrides: Record<string, unknown> = {}): ProviderHost {
   } as unknown as ProviderHost;
 }
 
+function createCatalogHost(params: {
+  effortLevel: string;
+  preferredReasoningByModel?: Record<string, string>;
+}): ProviderHost {
+  return createHost({
+    settings: {
+      effortLevel: params.effortLevel,
+      providerConfigs: {
+        grok: {
+          catalogsByHost: {
+            [getHostnameKey()]: {
+              defaultModelId: 'grok-4.5',
+              fingerprint: 'catalog-fixture',
+              models: [{
+                displayName: 'Grok 4.5',
+                rawId: 'grok-4.5',
+                reasoningEfforts: [
+                  { label: 'High Effort', value: 'high' },
+                  { label: 'Medium Effort', value: 'medium' },
+                  { label: 'Low Effort', value: 'low' },
+                ],
+                reasoningMetadataResolved: true,
+                supportsReasoning: true,
+              }],
+              refreshedAt: 1,
+            },
+          },
+          enabled: true,
+          ...(params.preferredReasoningByModel
+            ? { preferredReasoningByModel: params.preferredReasoningByModel }
+            : {}),
+        },
+      },
+    },
+  });
+}
+
 function createHarness(params: {
   handlers?: ConstructorParameters<typeof FakeGrokProcess>[1];
   host?: ProviderHost;
@@ -734,6 +771,56 @@ describe('GrokChatRuntime', () => {
       sessionId: 'session-new',
       modelId: 'grok-4.5',
       _meta: { reasoningEffort: 'medium' },
+    });
+  });
+
+  it('drops a shared effort level the selected model does not advertise', async () => {
+    const harness = createHarness({
+      host: createCatalogHost({ effortLevel: 'max' }),
+    });
+
+    await collect(harness.runtime, 'First');
+
+    const setModel = harness.process.requests.filter(request => request.method === 'session/set_model');
+    expect(setModel).toHaveLength(1);
+    expect(setModel[0].params).toEqual({
+      sessionId: 'session-new',
+      modelId: 'grok-4.5',
+    });
+  });
+
+  it('falls back to the per-model reasoning preference when the shared level is unsupported', async () => {
+    const harness = createHarness({
+      host: createCatalogHost({
+        effortLevel: 'max',
+        preferredReasoningByModel: { 'grok-4.5': 'low' },
+      }),
+    });
+
+    await collect(harness.runtime, 'First');
+
+    const setModel = harness.process.requests.filter(request => request.method === 'session/set_model');
+    expect(setModel).toHaveLength(1);
+    expect(setModel[0].params).toEqual({
+      sessionId: 'session-new',
+      modelId: 'grok-4.5',
+      _meta: { reasoningEffort: 'low' },
+    });
+  });
+
+  it('keeps a shared effort level the selected model advertises', async () => {
+    const harness = createHarness({
+      host: createCatalogHost({ effortLevel: 'low' }),
+    });
+
+    await collect(harness.runtime, 'First');
+
+    const setModel = harness.process.requests.filter(request => request.method === 'session/set_model');
+    expect(setModel).toHaveLength(1);
+    expect(setModel[0].params).toEqual({
+      sessionId: 'session-new',
+      modelId: 'grok-4.5',
+      _meta: { reasoningEffort: 'low' },
     });
   });
 
