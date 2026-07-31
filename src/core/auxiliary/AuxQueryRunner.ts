@@ -8,4 +8,6 @@ export interface AuxQueryConfig {
 export interface AuxQueryRunner {
   query(config: AuxQueryConfig, prompt: string): Promise<string>;
   reset(): void;
+  /** Reports whether the last successful query established resumable provider state. */
+  canContinue?(): boolean;
 }

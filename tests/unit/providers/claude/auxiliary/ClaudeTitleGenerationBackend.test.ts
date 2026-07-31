@@ -7,13 +7,18 @@ import {
   setMockMessages,
 } from '@test/__mocks__/claude-agent-sdk';
 
-import { type TitleGenerationResult, TitleGenerationService } from '@/providers/claude/auxiliary/ClaudeTitleGenerationService';
+import { TitleGenerationService } from '@/core/auxiliary/TitleGenerationService';
+import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
+import type { TitleGenerationResult } from '@/core/providers/types';
+import { ClaudeTitleGenerationBackend } from '@/providers/claude/auxiliary/ClaudeTitleGenerationBackend';
 function createMockPlugin(settings = {}) {
   return {
     settings: {
       model: 'sonnet',
       titleGenerationModel: '',
+      titleGenerationLocale: '',
       thinkingBudget: 'off',
+      locale: 'en',
       ...settings,
     },
     app: {
@@ -28,7 +33,14 @@ function createMockPlugin(settings = {}) {
   } as any;
 }
 
-describe('TitleGenerationService', () => {
+function createTitleGenerationService(plugin: any): TitleGenerationService {
+  return new TitleGenerationService({
+    createBackend: () => new ClaudeTitleGenerationBackend(plugin),
+    resolveLocale: () => resolveTitleGenerationLocale(plugin.settings),
+  });
+}
+
+describe('ClaudeTitleGenerationBackend', () => {
   let service: TitleGenerationService;
   let mockPlugin: any;
 
@@ -36,7 +48,7 @@ describe('TitleGenerationService', () => {
     jest.clearAllMocks();
     resetMockMessages();
     mockPlugin = createMockPlugin();
-    service = new TitleGenerationService(mockPlugin);
+    service = createTitleGenerationService(mockPlugin);
   });
 
   describe('generateTitle', () => {
@@ -83,6 +95,43 @@ describe('TitleGenerationService', () => {
       const options = getLastOptions();
       expect(options?.tools).toEqual([]);
       expect(options?.permissionMode).toBe('bypassPermissions');
+    });
+
+    it('should default the title language to the selected interface language', async () => {
+      mockPlugin.settings.locale = 'ja';
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'text', text: 'React プロジェクトを設定' }],
+          },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.generateTitle('conv-123', 'React を設定するには？', jest.fn());
+
+      expect(getLastOptions()?.systemPrompt).toContain('Write the title in Japanese');
+    });
+
+    it('should let the title language override the interface language', async () => {
+      mockPlugin.settings.locale = 'en';
+      mockPlugin.settings.titleGenerationLocale = 'ja';
+      setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'test-session' },
+        {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'text', text: 'React プロジェクトを設定' }],
+          },
+        },
+        { type: 'result' },
+      ]);
+
+      await service.generateTitle('conv-123', 'How do I set up React?', jest.fn());
+
+      expect(getLastOptions()?.systemPrompt).toContain('Write the title in Japanese');
     });
 
     it('should use titleGenerationModel setting when set', async () => {

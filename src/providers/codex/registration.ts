@@ -1,13 +1,12 @@
 import type { ProviderModule } from '../../core/providers/types';
 import { codexWorkspaceRegistration } from './app/CodexWorkspaceServices';
-import { CodexInlineEditService } from './auxiliary/CodexInlineEditService';
-import { CodexInstructionRefineService } from './auxiliary/CodexInstructionRefineService';
 import { CodexTaskResultInterpreter } from './auxiliary/CodexTaskResultInterpreter';
-import { CodexTitleGenerationService } from './auxiliary/CodexTitleGenerationService';
+import { CodexTitleGenerationBackend } from './auxiliary/CodexTitleGenerationBackend';
 import { CODEX_PROVIDER_CAPABILITIES } from './capabilities';
 import { codexSettingsReconciler } from './env/CodexSettingsReconciler';
 import { CodexConversationHistoryService } from './history/CodexConversationHistoryService';
 import { codexSubagentLifecycleAdapter } from './normalization/codexSubagentNormalization';
+import { CodexAuxQueryRunner } from './runtime/CodexAuxQueryRunner';
 import { CodexChatRuntime } from './runtime/CodexChatRuntime';
 import {
   getCodexProviderSettings,
@@ -44,9 +43,9 @@ export const codexProviderRegistration: ProviderModule = {
     },
   },
   createRuntime: ({ plugin }) => new CodexChatRuntime(plugin),
-  createTitleGenerationService: (plugin) => new CodexTitleGenerationService(plugin),
-  createInstructionRefineService: (plugin) => new CodexInstructionRefineService(plugin),
-  createInlineEditService: (plugin) => new CodexInlineEditService(plugin),
+  createTitleGenerationBackend: (plugin) => new CodexTitleGenerationBackend(plugin),
+  createInstructionRefineBackend: (plugin) => new CodexAuxQueryRunner(plugin),
+  createInlineEditBackend: (plugin) => new CodexAuxQueryRunner(plugin),
   historyService: new CodexConversationHistoryService(),
   taskResultInterpreter: new CodexTaskResultInterpreter(),
   subagentAdapter: codexSubagentLifecycleAdapter,

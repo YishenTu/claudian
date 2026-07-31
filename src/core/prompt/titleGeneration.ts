@@ -1,7 +1,10 @@
+import { DEFAULT_LOCALE, getLocaleInfo } from '../../i18n/constants';
+import type { Locale } from '../../i18n/types';
+
 const MAX_TITLE_INPUT_LENGTH = 500;
 const MAX_TITLE_LENGTH = 50;
 
-export const TITLE_GENERATION_SYSTEM_PROMPT = `You are a specialist in summarizing user intent.
+const TITLE_GENERATION_SYSTEM_PROMPT_BASE = `You are a specialist in summarizing user intent.
 
 **Task**: Generate a **concise, descriptive title** (max 50 chars) summarizing the user's task/request.
 
@@ -9,9 +12,35 @@ export const TITLE_GENERATION_SYSTEM_PROMPT = `You are a specialist in summarizi
 1.  **Format**: Sentence case. No periods/quotes.
 2.  **Structure**: Start with a **strong verb** (e.g., Create, Fix, Debug, Explain, Analyze).
 3.  **Forbidden**: "Conversation with...", "Help me...", "Question about...", "I need...".
-4.  **Tech Context**: Detect and include the primary language/framework if code is present (e.g., "Debug Python script", "Refactor React hook").
+4.  **Tech Context**: Detect and include the primary programming language/framework if code is present (e.g., "Debug Python script", "Refactor React hook").`;
+
+interface TitleGenerationLocaleSettings {
+  locale?: string;
+  titleGenerationLocale?: string;
+}
+
+export function resolveTitleGenerationLocale(
+  settings: TitleGenerationLocaleSettings,
+): Locale {
+  const titleLocale = getLocaleInfo(settings.titleGenerationLocale ?? '');
+  if (titleLocale) {
+    return titleLocale.code;
+  }
+
+  return getLocaleInfo(settings.locale ?? '')?.code ?? DEFAULT_LOCALE;
+}
+
+export function buildTitleGenerationSystemPrompt(locale: string = DEFAULT_LOCALE): string {
+  const localeInfo = getLocaleInfo(locale) ?? getLocaleInfo(DEFAULT_LOCALE);
+  const language = localeInfo?.englishName ?? 'English';
+
+  return `${TITLE_GENERATION_SYSTEM_PROMPT_BASE}
+5.  **Language**: Write the title in ${language}. Apply the format and structure rules naturally for that language.
 
 **Output**: Return ONLY the raw title text.`;
+}
+
+export const TITLE_GENERATION_SYSTEM_PROMPT = buildTitleGenerationSystemPrompt();
 
 export function buildTitleGenerationPrompt(userMessage: string): string {
   const truncated = userMessage.length > MAX_TITLE_INPUT_LENGTH

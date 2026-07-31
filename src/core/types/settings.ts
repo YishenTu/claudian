@@ -102,6 +102,7 @@ export interface ClaudianSettings {
   effortLevel: string;
   serviceTier: string;
   enableAutoTitleGeneration: boolean;
+  titleGenerationLocale: string;
   titleGenerationModel: string;
 
   // Content settings

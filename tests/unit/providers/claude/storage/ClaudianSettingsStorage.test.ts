@@ -65,6 +65,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.thinkingBudget).toBe(DEFAULT_SETTINGS.thinkingBudget);
       expect(result.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
       expect(result.requireCommandOrControlEnterToSend).toBe(false);
+      expect(result.titleGenerationLocale).toBe('');
       expect(mockAdapter.read).not.toHaveBeenCalled();
     });
 

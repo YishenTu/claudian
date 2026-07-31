@@ -13,6 +13,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   effortLevel: DEFAULT_REASONING_VALUE,
   serviceTier: 'default',
   enableAutoTitleGeneration: true,
+  titleGenerationLocale: '',
   titleGenerationModel: '',
 
   excludedTags: [],

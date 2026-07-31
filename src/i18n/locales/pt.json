@@ -105,6 +105,11 @@
       "name": "Gerar automaticamente títulos de conversa",
       "desc": "Gera automaticamente títulos de conversa após a primeira mensagem do usuário."
     },
+    "titleLanguage": {
+      "name": "Idioma de geração de títulos",
+      "desc": "Idioma usado para títulos de conversa gerados automaticamente.",
+      "followInterface": "Igual ao idioma da interface"
+    },
     "titleModel": {
       "name": "Modelo de geração de título",
       "desc": "Modelo usado para gerar automaticamente títulos de conversa.",

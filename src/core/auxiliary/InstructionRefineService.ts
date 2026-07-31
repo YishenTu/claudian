@@ -1,12 +1,12 @@
 import { buildRefineSystemPrompt, parseInstructionRefineResponse } from '../prompt/instructionRefine';
 import type {
-  InstructionRefineService,
+  InstructionRefineService as InstructionRefineServiceContract,
   RefineProgressCallback,
 } from '../providers/types';
 import type { InstructionRefineResult } from '../types';
 import type { AuxQueryRunner } from './AuxQueryRunner';
 
-export class QueryBackedInstructionRefineService implements InstructionRefineService {
+export class InstructionRefineService implements InstructionRefineServiceContract {
   private abortController: AbortController | null = null;
   private existingInstructions = '';
   private hasConversation = false;
@@ -38,7 +38,7 @@ export class QueryBackedInstructionRefineService implements InstructionRefineSer
     message: string,
     onProgress?: RefineProgressCallback,
   ): Promise<InstructionRefineResult> {
-    if (!this.hasConversation) {
+    if (!this.hasConversation || this.runner.canContinue?.() === false) {
       return { success: false, error: 'No active conversation to continue' };
     }
     return this.sendMessage(message, onProgress);
@@ -64,7 +64,7 @@ export class QueryBackedInstructionRefineService implements InstructionRefineSer
           : undefined,
         systemPrompt: buildRefineSystemPrompt(this.existingInstructions),
       }, prompt);
-      this.hasConversation = true;
+      this.hasConversation = this.runner.canContinue?.() ?? true;
       return parseInstructionRefineResponse(text);
     } catch (error) {
       return {

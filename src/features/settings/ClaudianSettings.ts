@@ -386,6 +386,23 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     if (this.plugin.settings.enableAutoTitleGeneration) {
       new Setting(container)
+        .setName(t('settings.titleLanguage.name'))
+        .setDesc(t('settings.titleLanguage.desc'))
+        .addDropdown((dropdown) => {
+          dropdown.addOption('', t('settings.titleLanguage.followInterface'));
+          for (const locale of getAvailableLocales()) {
+            dropdown.addOption(locale, getLocaleDisplayName(locale));
+          }
+          dropdown
+            .setValue(this.plugin.settings.titleGenerationLocale || '')
+            .onChange(async (value) => {
+              await this.plugin.mutateSettings((settings) => {
+                settings.titleGenerationLocale = value;
+              });
+            });
+        });
+
+      new Setting(container)
         .setName(t('settings.titleModel.name'))
         .setDesc(t('settings.titleModel.desc'))
         .addDropdown((dropdown) => {

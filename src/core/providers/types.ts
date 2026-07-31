@@ -1,4 +1,5 @@
 import type { CursorContext } from '../../utils/editor';
+import type { AuxQueryRunner } from '../auxiliary/AuxQueryRunner';
 import type { SharedAppStorage } from '../bootstrap/storage';
 import type { McpServerManager } from '../mcp/McpServerManager';
 import type { ChatRuntime } from '../runtime/ChatRuntime';
@@ -64,9 +65,9 @@ export interface ProviderRegistration {
   chatUIConfig: ProviderChatUIConfig;
   settingsReconciler: ProviderSettingsReconciler;
   createRuntime: (options: Omit<CreateChatRuntimeOptions, 'providerId'>) => ChatRuntime;
-  createTitleGenerationService: (plugin: ProviderHost) => TitleGenerationService;
-  createInstructionRefineService: (plugin: ProviderHost) => InstructionRefineService;
-  createInlineEditService: (plugin: ProviderHost) => InlineEditService;
+  createTitleGenerationBackend: (plugin: ProviderHost) => TitleGenerationBackend;
+  createInstructionRefineBackend: (plugin: ProviderHost) => AuxQueryRunner;
+  createInlineEditBackend: (plugin: ProviderHost) => AuxQueryRunner;
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
   subagentAdapter?: ProviderSubagentAdapter;
@@ -631,6 +632,19 @@ export type TitleGenerationCallback = (
   conversationId: string,
   result: TitleGenerationResult
 ) => Promise<void>;
+
+/** Provider-owned transport request for one title-generation query. */
+export interface TitleGenerationBackendRequest {
+  abortController: AbortController;
+  systemPrompt: string;
+  userPrompt: string;
+}
+
+/** One-shot provider backend; shared core code owns the title-generation workflow. */
+export interface TitleGenerationBackend {
+  query(request: TitleGenerationBackendRequest): Promise<string>;
+  dispose(): void;
+}
 
 export interface TitleGenerationService {
   generateTitle(

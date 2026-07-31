@@ -105,6 +105,11 @@
       "name": "Konversationstitel automatisch generieren",
       "desc": "Generiert automatisch Konversationstitel nach der ersten Nutzernachricht."
     },
+    "titleLanguage": {
+      "name": "Sprache der Titelgenerierung",
+      "desc": "Sprache für automatisch generierte Konversationstitel.",
+      "followInterface": "Wie Oberflächensprache"
+    },
     "titleModel": {
       "name": "Titel-Generierungsmodell",
       "desc": "Modell zur automatischen Generierung von Konversationstiteln.",

@@ -1,12 +1,11 @@
 import type { ProviderModule } from '../../core/providers/types';
 import { piWorkspaceRegistration } from './app/PiWorkspaceServices';
-import { PiInlineEditService } from './auxiliary/PiInlineEditService';
-import { PiInstructionRefineService } from './auxiliary/PiInstructionRefineService';
 import { PiTaskResultInterpreter } from './auxiliary/PiTaskResultInterpreter';
-import { PiTitleGenerationService } from './auxiliary/PiTitleGenerationService';
+import { PiTitleGenerationBackend } from './auxiliary/PiTitleGenerationBackend';
 import { PI_PROVIDER_CAPABILITIES } from './capabilities';
 import { piSettingsReconciler } from './env/PiSettingsReconciler';
 import { PiConversationHistoryService } from './history/PiConversationHistoryService';
+import { PiAuxQueryRunner } from './runtime/PiAuxQueryRunner';
 import { PiChatRuntime } from './runtime/PiChatRuntime';
 import { getPiProviderSettings, updatePiProviderSettings } from './settings';
 import { ObsidianPiExtensionUiRenderer } from './ui/ObsidianPiExtensionUiRenderer';
@@ -17,12 +16,14 @@ export const piProviderRegistration: ProviderModule = {
   blankTabOrder: 11,
   capabilities: PI_PROVIDER_CAPABILITIES,
   chatUIConfig: piChatUIConfig,
-  createInlineEditService: (plugin) => new PiInlineEditService(plugin),
-  createInstructionRefineService: (plugin) => new PiInstructionRefineService(plugin),
+  createInlineEditBackend: (plugin) => new PiAuxQueryRunner(plugin, { profile: 'readonly' }),
+  createInstructionRefineBackend: (plugin) => new PiAuxQueryRunner(plugin, {
+    profile: 'passive',
+  }),
   createRuntime: ({ plugin }) => new PiChatRuntime(plugin, {
     extensionUiRenderer: new ObsidianPiExtensionUiRenderer(plugin.app),
   }),
-  createTitleGenerationService: (plugin) => new PiTitleGenerationService(plugin),
+  createTitleGenerationBackend: (plugin) => new PiTitleGenerationBackend(plugin),
   displayName: 'Pi',
   environmentKeyPatterns: [/^PI_/i],
   historyService: new PiConversationHistoryService(),

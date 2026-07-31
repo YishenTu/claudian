@@ -1,3 +1,7 @@
+import { InlineEditService as SharedInlineEditService } from '../auxiliary/InlineEditService';
+import { InstructionRefineService as SharedInstructionRefineService } from '../auxiliary/InstructionRefineService';
+import { TitleGenerationService as SharedTitleGenerationService } from '../auxiliary/TitleGenerationService';
+import { resolveTitleGenerationLocale } from '../prompt/titleGeneration';
 import type { ChatRuntime } from '../runtime/ChatRuntime';
 import { decodeProviderModelSelectionId } from './modelSelection';
 import type { ProviderHost } from './ProviderHost';
@@ -54,7 +58,11 @@ export class ProviderRegistry {
     if (!providerId) {
       return new RoutedTitleGenerationService(plugin);
     }
-    return this.getProviderRegistration(providerId).createTitleGenerationService(plugin);
+    const registration = this.getProviderRegistration(providerId);
+    return new SharedTitleGenerationService({
+      createBackend: () => registration.createTitleGenerationBackend(plugin),
+      resolveLocale: () => resolveTitleGenerationLocale(plugin.settings),
+    });
   }
 
   static resolveTitleGenerationProviderId(settings: Record<string, unknown>): ProviderId {
@@ -73,11 +81,15 @@ export class ProviderRegistry {
   }
 
   static createInstructionRefineService(plugin: ProviderHost, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): InstructionRefineService {
-    return this.getProviderRegistration(providerId).createInstructionRefineService(plugin);
+    return new SharedInstructionRefineService(
+      this.getProviderRegistration(providerId).createInstructionRefineBackend(plugin),
+    );
   }
 
   static createInlineEditService(plugin: ProviderHost, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): InlineEditService {
-    return this.getProviderRegistration(providerId).createInlineEditService(plugin);
+    return new SharedInlineEditService(
+      this.getProviderRegistration(providerId).createInlineEditBackend(plugin),
+    );
   }
 
   static getConversationHistoryService(

@@ -1,16 +1,8 @@
-import { CodexInstructionRefineService } from '@/providers/codex/auxiliary/CodexInstructionRefineService';
-import { CodexAuxQueryRunner } from '@/providers/codex/runtime/CodexAuxQueryRunner';
+import type { AuxQueryRunner } from '@/core/auxiliary/AuxQueryRunner';
+import { InstructionRefineService } from '@/core/auxiliary/InstructionRefineService';
 
-jest.mock('@/providers/codex/runtime/CodexAuxQueryRunner');
-
-const MockRunner = CodexAuxQueryRunner as jest.MockedClass<typeof CodexAuxQueryRunner>;
-
-function createMockPlugin() {
-  return { settings: {} } as never;
-}
-
-describe('CodexInstructionRefineService', () => {
-  let service: CodexInstructionRefineService;
+describe('InstructionRefineService', () => {
+  let service: InstructionRefineService;
   let mockQuery: jest.Mock;
   let mockReset: jest.Mock;
 
@@ -18,12 +10,12 @@ describe('CodexInstructionRefineService', () => {
     jest.clearAllMocks();
     mockQuery = jest.fn();
     mockReset = jest.fn();
-    MockRunner.mockImplementation(() => ({
+    const backend = {
       query: mockQuery,
       reset: mockReset,
-    }) as unknown as CodexAuxQueryRunner);
+    } as AuxQueryRunner;
 
-    service = new CodexInstructionRefineService(createMockPlugin());
+    service = new InstructionRefineService(backend);
   });
 
   it('should parse refined instruction from response', async () => {
@@ -77,5 +69,21 @@ describe('CodexInstructionRefineService', () => {
     expect(mockQuery).toHaveBeenCalledWith(expect.objectContaining({
       model: 'gpt-5.4',
     }), 'Please refine this instruction: "use ts"');
+  });
+
+  it('does not allow continuation when the backend has no resumable conversation', async () => {
+    const backend = {
+      canContinue: jest.fn(() => false),
+      query: jest.fn().mockResolvedValue('What language?'),
+      reset: jest.fn(),
+    } as AuxQueryRunner;
+    service = new InstructionRefineService(backend);
+
+    await service.refineInstruction('use typed language', '');
+
+    await expect(service.continueConversation('TypeScript')).resolves.toEqual({
+      error: 'No active conversation to continue',
+      success: false,
+    });
   });
 });

@@ -1,29 +1,30 @@
 import {
   buildTitleGenerationPrompt,
+  buildTitleGenerationSystemPrompt,
   parseTitleGenerationResponse,
-  TITLE_GENERATION_SYSTEM_PROMPT,
 } from '../prompt/titleGeneration';
 import type {
+  TitleGenerationBackend,
   TitleGenerationCallback,
   TitleGenerationResult,
-  TitleGenerationService,
+  TitleGenerationService as TitleGenerationServiceContract,
 } from '../providers/types';
-import type { AuxQueryRunner } from './AuxQueryRunner';
 
 interface ActiveGeneration {
   abortController: AbortController;
-  runner: AuxQueryRunner;
+  backend: TitleGenerationBackend;
+  disposed: boolean;
 }
 
-export interface QueryBackedTitleGenerationServiceOptions {
-  createRunner: () => AuxQueryRunner;
-  resolveModel?: () => string | undefined;
+export interface TitleGenerationServiceOptions {
+  createBackend: () => TitleGenerationBackend;
+  resolveLocale?: () => string | undefined;
 }
 
-export class QueryBackedTitleGenerationService implements TitleGenerationService {
+export class TitleGenerationService implements TitleGenerationServiceContract {
   private readonly activeGenerations = new Map<string, ActiveGeneration>();
 
-  constructor(private readonly options: QueryBackedTitleGenerationServiceOptions) {}
+  constructor(private readonly options: TitleGenerationServiceOptions) {}
 
   async generateTitle(
     conversationId: string,
@@ -33,20 +34,20 @@ export class QueryBackedTitleGenerationService implements TitleGenerationService
     const existing = this.activeGenerations.get(conversationId);
     if (existing) {
       existing.abortController.abort();
-      existing.runner.reset();
+      this.disposeGeneration(existing);
     }
 
     const abortController = new AbortController();
-    const runner = this.options.createRunner();
-    const generation = { abortController, runner };
+    const backend = this.options.createBackend();
+    const generation = { abortController, backend, disposed: false };
     this.activeGenerations.set(conversationId, generation);
 
     try {
-      const text = await runner.query({
+      const text = await backend.query({
         abortController,
-        model: this.options.resolveModel?.(),
-        systemPrompt: TITLE_GENERATION_SYSTEM_PROMPT,
-      }, buildTitleGenerationPrompt(userMessage));
+        systemPrompt: buildTitleGenerationSystemPrompt(this.options.resolveLocale?.()),
+        userPrompt: buildTitleGenerationPrompt(userMessage),
+      });
       const title = parseTitleGenerationResponse(text);
       await this.safeCallback(
         callback,
@@ -61,7 +62,7 @@ export class QueryBackedTitleGenerationService implements TitleGenerationService
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     } finally {
-      runner.reset();
+      this.disposeGeneration(generation);
       if (this.activeGenerations.get(conversationId) === generation) {
         this.activeGenerations.delete(conversationId);
       }
@@ -71,9 +72,17 @@ export class QueryBackedTitleGenerationService implements TitleGenerationService
   cancel(): void {
     for (const active of this.activeGenerations.values()) {
       active.abortController.abort();
-      active.runner.reset();
+      this.disposeGeneration(active);
     }
     this.activeGenerations.clear();
+  }
+
+  private disposeGeneration(generation: ActiveGeneration): void {
+    if (generation.disposed) {
+      return;
+    }
+    generation.disposed = true;
+    generation.backend.dispose();
   }
 
   private async safeCallback(

@@ -120,9 +120,9 @@ describe('Grok provider registration', () => {
       modelCatalogCoordinator,
     });
     expect(runtime).not.toHaveProperty('commandCatalog');
-    expect(grokProviderRegistration.createTitleGenerationService(plugin)).toBeDefined();
-    expect(grokProviderRegistration.createInstructionRefineService(plugin)).toBeDefined();
-    expect(grokProviderRegistration.createInlineEditService(plugin)).toBeDefined();
+    expect(grokProviderRegistration.createTitleGenerationBackend(plugin)).toBeDefined();
+    expect(grokProviderRegistration.createInstructionRefineBackend(plugin)).toBeDefined();
+    expect(grokProviderRegistration.createInlineEditBackend(plugin)).toBeDefined();
     runtime.cleanup();
   });
 
@@ -130,8 +130,8 @@ describe('Grok provider registration', () => {
     const plugin = createPlugin();
     ProviderWorkspaceRegistry.setServices('grok', undefined);
 
-    expect(() => grokProviderRegistration.createInstructionRefineService(plugin)).not.toThrow();
-    expect(() => grokProviderRegistration.createInlineEditService(plugin)).not.toThrow();
+    expect(() => grokProviderRegistration.createInstructionRefineBackend(plugin)).not.toThrow();
+    expect(() => grokProviderRegistration.createInlineEditBackend(plugin)).not.toThrow();
     expect(ProviderWorkspaceRegistry.getIfInitialized('grok')).toBeNull();
   });
 
@@ -147,7 +147,7 @@ describe('Grok provider registration', () => {
     });
     ProviderWorkspaceRegistry.register('grok', { initialize });
 
-    const blankTabService = grokProviderRegistration.createInstructionRefineService(plugin);
+    const blankTabService = ProviderRegistry.createInstructionRefineService(plugin, 'grok');
     const routedTitleService = ProviderRegistry.createTitleGenerationService(plugin);
     const callback = jest.fn();
     const refine = blankTabService.refineInstruction('cold refine', 'Existing');
@@ -191,7 +191,7 @@ describe('Grok provider registration', () => {
       }),
       reset: jest.fn(),
     } as unknown as GrokAuxQueryRunner));
-    const service = grokProviderRegistration.createInstructionRefineService(plugin);
+    const service = ProviderRegistry.createInstructionRefineService(plugin, 'grok');
     const query = service.refineInstruction('cold refine', 'Existing');
     await new Promise(resolve => setImmediate(resolve));
 
@@ -221,7 +221,7 @@ describe('Grok provider registration', () => {
     const initialize = jest.fn(async () => ({ auxiliaryLifecycle: lifecycle }) as any);
     ProviderWorkspaceRegistry.register('grok', { initialize });
 
-    const service = grokProviderRegistration.createInlineEditService(plugin);
+    const service = ProviderRegistry.createInlineEditService(plugin, 'grok');
     expect(initialize).not.toHaveBeenCalled();
     await expect(service.editText({
       instruction: 'Improve this',

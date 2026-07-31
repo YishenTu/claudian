@@ -4,14 +4,13 @@ import {
   grokWorkspaceRegistration,
   resolveGrokAuxiliaryLifecycle,
 } from './app/GrokWorkspaceServices';
-import { GrokInlineEditService } from './auxiliary/GrokInlineEditService';
-import { GrokInstructionRefineService } from './auxiliary/GrokInstructionRefineService';
 import { GrokTaskResultInterpreter } from './auxiliary/GrokTaskResultInterpreter';
-import { GrokTitleGenerationService } from './auxiliary/GrokTitleGenerationService';
+import { GrokTitleGenerationBackend } from './auxiliary/GrokTitleGenerationBackend';
 import { GROK_PROVIDER_CAPABILITIES } from './capabilities';
 import { grokSettingsReconciler } from './env/GrokSettingsReconciler';
 import { GrokConversationHistoryService } from './history/GrokConversationHistoryService';
 import { grokSubagentLifecycleAdapter } from './normalization/grokSubagentNormalization';
+import { GrokAuxQueryRunner } from './runtime/GrokAuxQueryRunner';
 import { GrokChatRuntime } from './runtime/GrokChatRuntime';
 import { getGrokProviderSettings, updateGrokProviderSettings } from './settings';
 import { grokChatUIConfig } from './ui/GrokChatUIConfig';
@@ -21,11 +20,11 @@ export const grokProviderRegistration: ProviderModule = {
   blankTabOrder: 12,
   capabilities: GROK_PROVIDER_CAPABILITIES,
   chatUIConfig: grokChatUIConfig,
-  createInlineEditService: plugin => new GrokInlineEditService(
+  createInlineEditBackend: plugin => new GrokAuxQueryRunner(
     plugin,
     { resolveLifecycle: () => resolveGrokAuxiliaryLifecycle(plugin) },
   ),
-  createInstructionRefineService: plugin => new GrokInstructionRefineService(
+  createInstructionRefineBackend: plugin => new GrokAuxQueryRunner(
     plugin,
     { resolveLifecycle: () => resolveGrokAuxiliaryLifecycle(plugin) },
   ),
@@ -38,7 +37,7 @@ export const grokProviderRegistration: ProviderModule = {
       modelCatalogCoordinator: workspace.modelCatalogCoordinator,
     });
   },
-  createTitleGenerationService: plugin => new GrokTitleGenerationService(
+  createTitleGenerationBackend: plugin => new GrokTitleGenerationBackend(
     plugin,
     { resolveLifecycle: () => resolveGrokAuxiliaryLifecycle(plugin) },
   ),

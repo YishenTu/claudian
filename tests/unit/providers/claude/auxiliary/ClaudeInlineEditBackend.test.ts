@@ -11,14 +11,14 @@ import * as fs from 'fs';
 // Mock fs module
 jest.mock('fs');
 
-// Now import after all mocks are set up
+import { InlineEditService } from '@/core/auxiliary/InlineEditService';
 import { buildInlineEditPrompt, parseInlineEditResponse } from '@/core/prompt/inlineEdit';
+import type { InlineEditRequest } from '@/core/providers/types';
 import { getPathFromToolInput } from '@/core/tools/toolInput';
-import type { InlineEditRequest } from '@/providers/claude/auxiliary/ClaudeInlineEditService';
 import {
+  ClaudeInlineEditBackend,
   createReadOnlyHook,
-  InlineEditService,
-} from '@/providers/claude/auxiliary/ClaudeInlineEditService';
+} from '@/providers/claude/auxiliary/ClaudeInlineEditBackend';
 import { buildCursorContext } from '@/utils/editor';
 
 // Create a mock plugin
@@ -46,7 +46,11 @@ function createMockPlugin(settings = {}) {
 const callHook = async (hook: any, input: any, ...rest: any[]): Promise<any> =>
   hook(input, ...rest);
 
-describe('InlineEditService', () => {
+function createInlineEditService(plugin: any): InlineEditService {
+  return new InlineEditService(new ClaudeInlineEditBackend(plugin));
+}
+
+describe('ClaudeInlineEditBackend', () => {
   let service: InlineEditService;
   let mockPlugin: any;
 
@@ -54,7 +58,7 @@ describe('InlineEditService', () => {
     jest.clearAllMocks();
     resetMockMessages();
     mockPlugin = createMockPlugin();
-    service = new InlineEditService(mockPlugin);
+    service = createInlineEditService(mockPlugin);
   });
 
 
@@ -262,7 +266,7 @@ describe('InlineEditService', () => {
 
     it('should return error when vault path cannot be determined', async () => {
       mockPlugin.app.vault.adapter.basePath = undefined;
-      service = new InlineEditService(mockPlugin);
+      service = createInlineEditService(mockPlugin);
 
       const result = await service.editText({
         mode: 'selection',
@@ -342,7 +346,7 @@ describe('InlineEditService', () => {
 
     it('should set settingSources to project only when loadUserClaudeSettings is false', async () => {
       mockPlugin.settings.loadUserClaudeSettings = false;
-      service = new InlineEditService(mockPlugin);
+      service = createInlineEditService(mockPlugin);
 
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
@@ -366,7 +370,7 @@ describe('InlineEditService', () => {
 
     it('should set settingSources to include user when loadUserClaudeSettings is true', async () => {
       mockPlugin.settings.loadUserClaudeSettings = true;
-      service = new InlineEditService(mockPlugin);
+      service = createInlineEditService(mockPlugin);
 
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
@@ -390,7 +394,7 @@ describe('InlineEditService', () => {
 
     it('should set adaptive thinking for Claude models', async () => {
       mockPlugin.settings.model = 'sonnet';
-      service = new InlineEditService(mockPlugin);
+      service = createInlineEditService(mockPlugin);
 
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },
@@ -415,7 +419,7 @@ describe('InlineEditService', () => {
 
     it('should use the model override when provided', async () => {
       mockPlugin.settings.model = 'sonnet';
-      service = new InlineEditService(mockPlugin);
+      service = createInlineEditService(mockPlugin);
       service.setModelOverride('opus');
 
       setMockMessages([
@@ -441,7 +445,7 @@ describe('InlineEditService', () => {
       mockPlugin.settings.model = 'custom-model';
       mockPlugin.settings.thinkingBudget = 'medium';
       mockPlugin.settings.effortLevel = 'medium';
-      service = new InlineEditService(mockPlugin);
+      service = createInlineEditService(mockPlugin);
 
       setMockMessages([
         { type: 'system', subtype: 'init', session_id: 'test-session' },

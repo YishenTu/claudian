@@ -1,9 +1,11 @@
+import { InlineEditService } from '@/core/auxiliary/InlineEditService';
+import { InstructionRefineService } from '@/core/auxiliary/InstructionRefineService';
+import { TitleGenerationService } from '@/core/auxiliary/TitleGenerationService';
+import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { GrokAuxiliaryLifecycleCoordinator } from '@/providers/grok/auxiliary/GrokAuxiliaryLifecycleCoordinator';
-import { GrokInlineEditService } from '@/providers/grok/auxiliary/GrokInlineEditService';
-import { GrokInstructionRefineService } from '@/providers/grok/auxiliary/GrokInstructionRefineService';
 import { GrokTaskResultInterpreter } from '@/providers/grok/auxiliary/GrokTaskResultInterpreter';
-import { GrokTitleGenerationService } from '@/providers/grok/auxiliary/GrokTitleGenerationService';
+import { GrokTitleGenerationBackend } from '@/providers/grok/auxiliary/GrokTitleGenerationBackend';
 import { GrokAuxQueryRunner } from '@/providers/grok/runtime/GrokAuxQueryRunner';
 
 jest.mock('@/providers/grok/runtime/GrokAuxQueryRunner');
@@ -12,7 +14,11 @@ const MockRunner = GrokAuxQueryRunner as jest.MockedClass<typeof GrokAuxQueryRun
 
 function makeHost(titleGenerationModel = 'grok/custom-title'): ProviderHost {
   return {
-    settings: { titleGenerationModel },
+    settings: {
+      locale: 'en',
+      titleGenerationLocale: 'ja',
+      titleGenerationModel,
+    },
   } as unknown as ProviderHost;
 }
 
@@ -38,6 +44,30 @@ function makePendingRunner() {
   return { releaseShutdown, runner };
 }
 
+function makeTitleGenerationService(
+  host: ProviderHost,
+  lifecycleOptions: ConstructorParameters<typeof GrokTitleGenerationBackend>[1] = {},
+): TitleGenerationService {
+  return new TitleGenerationService({
+    createBackend: () => new GrokTitleGenerationBackend(host, lifecycleOptions),
+    resolveLocale: () => resolveTitleGenerationLocale(host.settings),
+  });
+}
+
+function makeInstructionRefineService(
+  host: ProviderHost,
+  lifecycleOptions: ConstructorParameters<typeof GrokAuxQueryRunner>[1] = {},
+): InstructionRefineService {
+  return new InstructionRefineService(new GrokAuxQueryRunner(host, lifecycleOptions));
+}
+
+function makeInlineEditService(
+  host: ProviderHost,
+  lifecycleOptions: ConstructorParameters<typeof GrokAuxQueryRunner>[1] = {},
+): InlineEditService {
+  return new InlineEditService(new GrokAuxQueryRunner(host, lifecycleOptions));
+}
+
 describe('Grok auxiliary services', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -46,14 +76,14 @@ describe('Grok auxiliary services', () => {
   it('generates a title with the selected Grok model and releases its one-shot runner', async () => {
     const runner = makeRunner(jest.fn(async () => 'Refine Grok adapter'));
     MockRunner.mockImplementation(() => runner as unknown as GrokAuxQueryRunner);
-    const service = new GrokTitleGenerationService(makeHost());
+    const service = makeTitleGenerationService(makeHost());
     const callback = jest.fn();
 
     await service.generateTitle('conversation-1', 'Please improve the Grok adapter', callback);
 
     expect(runner.query).toHaveBeenCalledWith(expect.objectContaining({
       model: 'grok/custom-title',
-      systemPrompt: expect.stringContaining('Generate a **concise, descriptive title**'),
+      systemPrompt: expect.stringContaining('Write the title in Japanese'),
     }), expect.stringContaining('Please improve the Grok adapter'));
     expect(callback).toHaveBeenCalledWith('conversation-1', {
       success: true,
@@ -65,7 +95,7 @@ describe('Grok auxiliary services', () => {
   it('uses native default title generation when the configured model belongs elsewhere', async () => {
     const runner = makeRunner(jest.fn(async () => 'Use native Grok model'));
     MockRunner.mockImplementation(() => runner as unknown as GrokAuxQueryRunner);
-    const service = new GrokTitleGenerationService(makeHost('codex/gpt-5'));
+    const service = makeTitleGenerationService(makeHost('codex/gpt-5'));
 
     await service.generateTitle('conversation-1', 'Use the default', jest.fn());
 
@@ -78,7 +108,7 @@ describe('Grok auxiliary services', () => {
     const lifecycle = new GrokAuxiliaryLifecycleCoordinator();
     const { releaseShutdown, runner } = makePendingRunner();
     MockRunner.mockImplementation(() => runner as unknown as GrokAuxQueryRunner);
-    const service = new GrokTitleGenerationService(makeHost(), { lifecycle });
+    const service = makeTitleGenerationService(makeHost(), { lifecycle });
     const callback = jest.fn();
     const generation = service.generateTitle('conversation-1', 'Pending title', callback);
     await Promise.resolve();
@@ -106,7 +136,7 @@ describe('Grok auxiliary services', () => {
       .mockResolvedValueOnce('<instruction>Use Rust.</instruction>');
     const runner = makeRunner(query);
     MockRunner.mockImplementation(() => runner as unknown as GrokAuxQueryRunner);
-    const service = new GrokInstructionRefineService(makeHost());
+    const service = makeInstructionRefineService(makeHost());
 
     await expect(service.refineInstruction('use ts', 'Keep code concise.')).resolves.toEqual({
       refinedInstruction: 'Use TypeScript.',
@@ -142,7 +172,7 @@ describe('Grok auxiliary services', () => {
       return shutdown;
     });
     MockRunner.mockImplementation(() => runner as unknown as GrokAuxQueryRunner);
-    const service = new GrokInstructionRefineService(makeHost(), { lifecycle });
+    const service = makeInstructionRefineService(makeHost(), { lifecycle });
     await service.refineInstruction('initial', 'existing');
     const active = service.continueConversation('pending');
     await Promise.resolve();
@@ -165,7 +195,7 @@ describe('Grok auxiliary services', () => {
       .mockResolvedValueOnce('<replacement>Final text</replacement>');
     const runner = makeRunner(query);
     MockRunner.mockImplementation(() => runner as unknown as GrokAuxQueryRunner);
-    const service = new GrokInlineEditService(makeHost());
+    const service = makeInlineEditService(makeHost());
 
     await expect(service.editText({
       contextFiles: ['notes/context.md'],
@@ -206,7 +236,7 @@ describe('Grok auxiliary services', () => {
       return shutdown;
     });
     MockRunner.mockImplementation(() => runner as unknown as GrokAuxQueryRunner);
-    const service = new GrokInlineEditService(makeHost(), { lifecycle });
+    const service = makeInlineEditService(makeHost(), { lifecycle });
     await service.editText({
       instruction: 'initial',
       mode: 'selection',

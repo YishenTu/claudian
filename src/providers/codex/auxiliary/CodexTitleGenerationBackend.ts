@@ -1,14 +1,14 @@
-import { QueryBackedTitleGenerationService } from '../../../core/auxiliary/QueryBackedTitleGenerationService';
+import { AuxQueryTitleGenerationBackend } from '../../../core/auxiliary/AuxQueryTitleGenerationBackend';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { toCodexRuntimeModelId } from '../modelSelection';
 import { CodexAuxQueryRunner } from '../runtime/CodexAuxQueryRunner';
 import { codexChatUIConfig } from '../ui/CodexChatUIConfig';
 
-export class CodexTitleGenerationService extends QueryBackedTitleGenerationService {
+export class CodexTitleGenerationBackend extends AuxQueryTitleGenerationBackend {
   constructor(plugin: ProviderHost) {
-    super({
-      createRunner: () => new CodexAuxQueryRunner(plugin),
-      resolveModel: () => {
+    super(
+      new CodexAuxQueryRunner(plugin),
+      () => {
         const settings = plugin.settings as unknown as Record<string, unknown>;
         const titleModel = typeof settings.titleGenerationModel === 'string'
           ? settings.titleGenerationModel
@@ -17,6 +17,6 @@ export class CodexTitleGenerationService extends QueryBackedTitleGenerationServi
           ? toCodexRuntimeModelId(titleModel)
           : undefined;
       },
-    });
+    );
   }
 }

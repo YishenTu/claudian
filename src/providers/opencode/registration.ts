@@ -1,12 +1,11 @@
 import type { ProviderModule } from '../../core/providers/types';
 import { opencodeWorkspaceRegistration } from './app/OpencodeWorkspaceServices';
-import { OpencodeInlineEditService } from './auxiliary/OpencodeInlineEditService';
-import { OpencodeInstructionRefineService } from './auxiliary/OpencodeInstructionRefineService';
 import { OpencodeTaskResultInterpreter } from './auxiliary/OpencodeTaskResultInterpreter';
-import { OpencodeTitleGenerationService } from './auxiliary/OpencodeTitleGenerationService';
+import { OpencodeTitleGenerationBackend } from './auxiliary/OpencodeTitleGenerationBackend';
 import { OPENCODE_PROVIDER_CAPABILITIES } from './capabilities';
 import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
+import { OpencodeAuxQueryRunner } from './runtime/OpencodeAuxQueryRunner';
 import { OpencodeChatRuntime } from './runtime/OpencodeChatRuntime';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from './settings';
 import { opencodeSubagentAdapter } from './subagentAdapter';
@@ -17,10 +16,17 @@ export const opencodeProviderRegistration: ProviderModule = {
   blankTabOrder: 10,
   capabilities: OPENCODE_PROVIDER_CAPABILITIES,
   chatUIConfig: opencodeChatUIConfig,
-  createInlineEditService: (plugin) => new OpencodeInlineEditService(plugin),
-  createInstructionRefineService: (plugin) => new OpencodeInstructionRefineService(plugin),
+  createInlineEditBackend: (plugin) => new OpencodeAuxQueryRunner(plugin, {
+    agentProfile: 'readonly',
+    artifactPurpose: 'inline',
+    allowReadTextFile: true,
+  }),
+  createInstructionRefineBackend: (plugin) => new OpencodeAuxQueryRunner(plugin, {
+    agentProfile: 'passive',
+    artifactPurpose: 'instructions',
+  }),
   createRuntime: ({ plugin }) => new OpencodeChatRuntime(plugin),
-  createTitleGenerationService: (plugin) => new OpencodeTitleGenerationService(plugin),
+  createTitleGenerationBackend: (plugin) => new OpencodeTitleGenerationBackend(plugin),
   displayName: 'OpenCode',
   environmentKeyPatterns: [/^OPENCODE_/i],
   historyService: new OpencodeConversationHistoryService(),

@@ -1,17 +1,17 @@
-import { QueryBackedTitleGenerationService } from '../../../core/auxiliary/QueryBackedTitleGenerationService';
+import { AuxQueryTitleGenerationBackend } from '../../../core/auxiliary/AuxQueryTitleGenerationBackend';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { decodeOpencodeModelId } from '../models';
 import { OpencodeAuxQueryRunner } from '../runtime/OpencodeAuxQueryRunner';
 import { opencodeChatUIConfig } from '../ui/OpencodeChatUIConfig';
 
-export class OpencodeTitleGenerationService extends QueryBackedTitleGenerationService {
+export class OpencodeTitleGenerationBackend extends AuxQueryTitleGenerationBackend {
   constructor(plugin: ProviderHost) {
-    super({
-      createRunner: () => new OpencodeAuxQueryRunner(plugin, {
+    super(
+      new OpencodeAuxQueryRunner(plugin, {
         agentProfile: 'passive',
         artifactPurpose: 'title-gen',
       }),
-      resolveModel: () => {
+      () => {
         const settings = plugin.settings as unknown as Record<string, unknown>;
         const titleModel = typeof settings.titleGenerationModel === 'string'
           ? settings.titleGenerationModel
@@ -22,6 +22,6 @@ export class OpencodeTitleGenerationService extends QueryBackedTitleGenerationSe
 
         return decodeOpencodeModelId(titleModel) ?? undefined;
       },
-    });
+    );
   }
 }

@@ -7,11 +7,11 @@ import {
 import type {
   InlineEditRequest,
   InlineEditResult,
-  InlineEditService,
+  InlineEditService as InlineEditServiceContract,
 } from '../providers/types';
 import type { AuxQueryRunner } from './AuxQueryRunner';
 
-export class QueryBackedInlineEditService implements InlineEditService {
+export class InlineEditService implements InlineEditServiceContract {
   private abortController: AbortController | null = null;
   private hasConversation = false;
   private modelOverride: string | undefined;
@@ -34,7 +34,7 @@ export class QueryBackedInlineEditService implements InlineEditService {
   }
 
   async continueConversation(message: string, contextFiles?: string[]): Promise<InlineEditResult> {
-    if (!this.hasConversation) {
+    if (!this.hasConversation || this.runner.canContinue?.() === false) {
       return { success: false, error: 'No active conversation to continue' };
     }
 
@@ -59,7 +59,7 @@ export class QueryBackedInlineEditService implements InlineEditService {
         model: this.modelOverride,
         systemPrompt: getInlineEditSystemPrompt(),
       }, prompt);
-      this.hasConversation = true;
+      this.hasConversation = this.runner.canContinue?.() ?? true;
       return parseInlineEditResponse(text);
     } catch (error) {
       return {

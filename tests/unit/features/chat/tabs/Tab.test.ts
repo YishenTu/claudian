@@ -401,16 +401,18 @@ jest.mock('@/features/chat/services/SubagentManager', () => ({
   })),
 }));
 
-jest.mock('@/providers/claude/auxiliary/ClaudeInstructionRefineService', () => ({
-  InstructionRefineService: jest.fn().mockImplementation(() => ({
-    cancel: jest.fn(),
-    resetConversation: jest.fn(),
+jest.mock('@/providers/claude/auxiliary/ClaudeInstructionRefineBackend', () => ({
+  ClaudeInstructionRefineBackend: jest.fn().mockImplementation(() => ({
+    canContinue: jest.fn().mockReturnValue(false),
+    query: jest.fn(),
+    reset: jest.fn(),
   })),
 }));
 
-jest.mock('@/providers/claude/auxiliary/ClaudeTitleGenerationService', () => ({
-  TitleGenerationService: jest.fn().mockImplementation(() => ({
-    cancel: jest.fn(),
+jest.mock('@/providers/claude/auxiliary/ClaudeTitleGenerationBackend', () => ({
+  ClaudeTitleGenerationBackend: jest.fn().mockImplementation(() => ({
+    dispose: jest.fn(),
+    query: jest.fn(),
   })),
 }));
 

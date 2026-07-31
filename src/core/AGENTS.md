@@ -40,7 +40,9 @@ for await (const chunk of runtime.query(preparedTurn, history)) {
 }
 ```
 
-Title generation is provider-routed by the global `titleGenerationModel` setting and is independent from the active chat tab provider.
+Title generation is provider-routed by the global `titleGenerationModel` setting and is independent from the active chat tab provider. Core owns the shared prompt, parsing, cancellation, and callback workflow; provider registrations supply one-shot `TitleGenerationBackend` transports.
+
+Instruction refinement and inline edit follow the same boundary for multi-turn work: core owns conversation orchestration and response parsing, while provider registrations supply stateful auxiliary backends for native session continuation, tools, and lifecycle behavior.
 
 Workspace services are resolved through `ProviderWorkspaceRegistry`:
 

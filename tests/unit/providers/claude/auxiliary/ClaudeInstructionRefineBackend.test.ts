@@ -7,8 +7,8 @@ import {
   setMockMessages,
 } from '@test/__mocks__/claude-agent-sdk';
 
-// Import after mocks are set up
-import { InstructionRefineService } from '@/providers/claude/auxiliary/ClaudeInstructionRefineService';
+import { InstructionRefineService } from '@/core/auxiliary/InstructionRefineService';
+import { ClaudeInstructionRefineBackend } from '@/providers/claude/auxiliary/ClaudeInstructionRefineBackend';
 
 function createMockPlugin(settings = {}) {
   return {
@@ -30,7 +30,11 @@ function createMockPlugin(settings = {}) {
   } as any;
 }
 
-describe('InstructionRefineService', () => {
+function createInstructionRefineService(plugin: any): InstructionRefineService {
+  return new InstructionRefineService(new ClaudeInstructionRefineBackend(plugin));
+}
+
+describe('ClaudeInstructionRefineBackend', () => {
   let service: InstructionRefineService;
   let mockPlugin: any;
 
@@ -38,7 +42,7 @@ describe('InstructionRefineService', () => {
     jest.clearAllMocks();
     resetMockMessages();
     mockPlugin = createMockPlugin();
-    service = new InstructionRefineService(mockPlugin);
+    service = createInstructionRefineService(mockPlugin);
   });
 
   describe('refineInstruction', () => {

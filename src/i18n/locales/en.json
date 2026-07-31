@@ -105,6 +105,11 @@
       "name": "Auto-generate conversation titles",
       "desc": "Automatically generate conversation titles after the first user message is sent."
     },
+    "titleLanguage": {
+      "name": "Title generation language",
+      "desc": "Language used for auto-generated conversation titles.",
+      "followInterface": "Same as interface language"
+    },
     "titleModel": {
       "name": "Title generation model",
       "desc": "Model used for auto-generating conversation titles.",
