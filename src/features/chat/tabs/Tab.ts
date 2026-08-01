@@ -2382,7 +2382,7 @@ export async function updatePlanModeUI(
         snapshot,
       );
     });
-    if (options.syncExecution) {
+    if (options.syncExecution && tab.lifecycleState !== 'blank') {
       try {
         await tab.executionCoordinator?.setMode(getTabPermissionMode(tab, plugin));
       } catch (error) {

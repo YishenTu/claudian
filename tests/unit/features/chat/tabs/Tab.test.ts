@@ -801,12 +801,27 @@ describe('Tab provider execution ownership', () => {
 
   it('synchronizes explicit mode changes through the coordinator', async () => {
     const plugin = createPlugin();
-    const tab = createTab({ plugin, containerEl: createMockEl() as any });
+    const tab = createTab({
+      plugin,
+      containerEl: createMockEl() as any,
+      conversation: createConversation(),
+    });
     const coordinator = coordinatorInstances[0];
 
     await updatePlanModeUI(tab, plugin, 'plan', { syncExecution: true });
 
     expect(plugin.settings.permissionMode).toBe('plan');
     expect(coordinator.setMode).toHaveBeenCalledWith('plan');
+  });
+
+  it('keeps plan mode as draft state when a blank tab has no execution conversation', async () => {
+    const plugin = createPlugin();
+    const tab = createTab({ plugin, containerEl: createMockEl() as any });
+    const coordinator = coordinatorInstances[0];
+
+    await updatePlanModeUI(tab, plugin, 'plan', { syncExecution: true });
+
+    expect(plugin.settings.permissionMode).toBe('plan');
+    expect(coordinator.setMode).not.toHaveBeenCalled();
   });
 });
