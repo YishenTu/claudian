@@ -28,6 +28,7 @@ import {
   type AcpSessionNotification,
   AcpSubprocess,
   type AcpWriteTextFileRequest,
+  JsonRpcErrorResponse,
   resolveAcpLoadSessionId,
 } from '@/providers/acp';
 import { getEnhancedPath } from '@/utils/env';
@@ -76,6 +77,47 @@ export interface OpencodeAcpSessionKernel {
   > & Partial<Pick<AcpPromptResponse, 'stopReason'>>>;
   cancel(sessionId: string): void;
   dispose(): Promise<void>;
+}
+
+export class OpencodeSessionMissingError extends Error {
+  readonly name = 'OpencodeSessionMissingError';
+
+  constructor(
+    readonly sessionId: string,
+    readonly providerError: unknown,
+  ) {
+    super(providerError instanceof Error
+      ? providerError.message
+      : 'OpenCode session is missing');
+  }
+}
+
+export function classifyOpencodeSessionLoadError(
+  error: unknown,
+  attemptedSessionId: string,
+): unknown {
+  if (
+    !(error instanceof JsonRpcErrorResponse)
+    || (error.method !== 'session/load' && error.method !== 'loadSession')
+  ) {
+    return error;
+  }
+
+  let data: string;
+  try {
+    data = JSON.stringify(error.data ?? '');
+  } catch {
+    data = '';
+  }
+  const evidence = `${error.message} ${data}`.toLowerCase();
+  const explicitlyMissing = (
+    /session(?:[_\s-]+)(?:not(?:[_\s-]+)found|missing|unknown)/u.test(evidence)
+    || /(?:missing|unknown|not\s+found)[^\n]*session/u.test(evidence)
+    || /session[^\n]*does\s+not\s+exist/u.test(evidence)
+  );
+  return explicitlyMissing
+    ? new OpencodeSessionMissingError(attemptedSessionId, error)
+    : error;
 }
 
 const AUX_AGENT_IDS: Record<Exclude<OpencodeExecutionProfile, 'managed'>, string> = {
@@ -238,11 +280,16 @@ export class DefaultOpencodeAcpSessionKernel
     const connection = this.requireConnection();
     const cwd = this.options.config.vaultWorkingDirectory;
     if (resumeSessionId) {
-      const response = await connection.loadSession({
-        cwd,
-        mcpServers: [],
-        sessionId: resumeSessionId,
-      });
+      let response;
+      try {
+        response = await connection.loadSession({
+          cwd,
+          mcpServers: [],
+          sessionId: resumeSessionId,
+        });
+      } catch (error) {
+        throw classifyOpencodeSessionLoadError(error, resumeSessionId);
+      }
       return {
         configOptions: response.configOptions,
         databasePath: this.databasePath,

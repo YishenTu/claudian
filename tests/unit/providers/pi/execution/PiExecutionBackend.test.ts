@@ -53,6 +53,10 @@ class FakeKernel implements PiExecutionKernel {
     this.callbacks.onExtensionChunk(chunk);
   }
 
+  emitExtensionRequest(request: Record<string, unknown>): void {
+    this.callbacks.onExtensionRequest(request);
+  }
+
   getStderrSnapshot(): string {
     return this.stderr;
   }
@@ -189,6 +193,24 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<voi
     await new Promise(resolve => setTimeout(resolve, 5));
   }
   throw new Error('Timed out waiting for Pi execution test condition');
+}
+
+function createConversationHistory(prefix: string) {
+  return [
+    { id: `${prefix}-user`, role: 'user' as const, content: `${prefix} question`, timestamp: 1 },
+    { id: `${prefix}-assistant`, role: 'assistant' as const, content: `${prefix} answer`, timestamp: 2 },
+  ];
+}
+
+function completeTurn(kernel: FakeKernel): void {
+  kernel.emit({ type: 'agent_start' });
+  kernel.emit({ type: 'agent_end' });
+}
+
+function getPromptMessages(kernel: FakeKernel): string[] {
+  return kernel.requests
+    .filter(({ type }) => type === 'prompt')
+    .map(({ payload }) => String(payload.message));
 }
 
 function createHarness(
@@ -532,28 +554,353 @@ describe('PiExecutionBackend', () => {
   });
 
   it('launches resumed persistent sessions with their native session file', async () => {
+    const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-resume-session-'));
+    const sessionFile = path.join(sessionDir, 'pi-session-1.jsonl');
+    await fs.writeFile(sessionFile, '{"type":"session","id":"pi-session-1"}\n');
     const harness = createHarness(createConfig({
       resumeSeed: {
         providerSessionId: 'pi-session-1',
         providerState: {
           customState: 'preserved',
-          sessionFile: '/tmp/pi-session.jsonl',
+          sessionFile,
           sessionId: 'pi-session-1',
         },
       },
+      vaultWorkingDirectory: sessionDir,
     }));
-    const run = harness.session.execute(createRequest());
+    harness.host.settings.providerConfigs.pi.environmentVariables =
+      `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
+    const run = harness.session.execute(createRequest({
+      conversationHistory: [
+        { id: 'history-user', role: 'user', content: 'already native question', timestamp: 1 },
+        { id: 'history-assistant', role: 'assistant', content: 'already native answer', timestamp: 2 },
+      ],
+    }));
     const eventsPromise = collect(run.events);
     await flush();
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
     await eventsPromise;
 
-    expect(harness.kernels[0].launchSpec.args).toContain('/tmp/pi-session.jsonl');
+    expect(harness.kernels[0].launchSpec.args).toContain(sessionFile);
+    expect(harness.kernels[0].requests).toContainEqual({
+      payload: { message: 'Hello Pi' },
+      type: 'prompt',
+    });
     expect(harness.session.getSnapshot().providerState).toMatchObject({
       customState: 'preserved',
       sessionId: 'pi-session-1',
     });
+    await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  it('projects a missing persisted session path before Pi can create a fresh session there', async () => {
+    const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-missing-path-'));
+    const missingSessionFile = path.join(sessionDir, 'missing.jsonl');
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerState: {
+          futureResumeCursor: { token: 'keep-me' },
+          sessionFile: missingSessionFile,
+        },
+      },
+      vaultWorkingDirectory: sessionDir,
+    }), kernel => {
+      kernel.start.mockImplementation(() => kernel.close());
+    });
+    harness.host.settings.providerConfigs.pi.environmentVariables =
+      `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
+
+    const events = await collect(harness.session.execute(createRequest()).events);
+
+    expect(events.at(-1)).toMatchObject({
+      category: 'provider-session-missing',
+      missingProviderSessionId: missingSessionFile,
+      type: 'execution_error',
+    });
+    expect(harness.kernels).toHaveLength(0);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      providerState: { futureResumeCursor: { token: 'keep-me' } },
+      providerStateDeletes: ['sessionFile'],
+    });
+    await expect(fs.stat(missingSessionFile)).rejects.toMatchObject({ code: 'ENOENT' });
+    await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  it('falls back from a stale path and projects Pi exact missing-id startup output', async () => {
+    const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-missing-id-'));
+    const missingSessionFile = path.join(sessionDir, 'missing.jsonl');
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerSessionId: 'missing-session-id',
+        providerState: {
+          futureResumeCursor: { token: 'keep-me' },
+          sessionFile: missingSessionFile,
+          sessionId: 'missing-session-id',
+        },
+      },
+      vaultWorkingDirectory: sessionDir,
+    }), kernel => {
+      kernel.start.mockImplementation(() => {
+        kernel.stderr = "No session found matching 'missing-session-id'";
+        kernel.close();
+      });
+    });
+    harness.host.settings.providerConfigs.pi.environmentVariables =
+      `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
+
+    const events = await collect(harness.session.execute(createRequest()).events);
+
+    expect(harness.kernels[0].launchSpec.args).toEqual(expect.arrayContaining([
+      '--session',
+      'missing-session-id',
+    ]));
+    expect(harness.kernels[0].launchSpec.args).not.toContain(missingSessionFile);
+    expect(events.at(-1)).toMatchObject({
+      category: 'provider-session-missing',
+      missingProviderSessionId: 'missing-session-id',
+      type: 'execution_error',
+    });
+    expect(harness.session.getSnapshot()).toMatchObject({
+      providerSessionId: 'missing-session-id',
+      providerState: {
+        futureResumeCursor: { token: 'keep-me' },
+        sessionId: 'missing-session-id',
+      },
+      providerStateDeletes: ['sessionFile'],
+    });
+    await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  it.each([
+    ['provider state', (target: string) => ({
+      providerState: { futureResumeCursor: { token: 'keep-me' }, sessionId: target },
+    })],
+    ['top-level resume seed', (target: string) => ({
+      providerSessionId: target,
+      providerState: { futureResumeCursor: { token: 'keep-me' } },
+    })],
+  ] as const)('rejects an out-of-root path stored as a path-only %s session id', async (
+    _source,
+    createResumeSeed,
+  ) => {
+    const trustedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-path-id-trusted-'));
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-path-id-outside-'));
+    const outsideSessionFile = path.join(outsideDir, 'legacy.jsonl');
+    await fs.writeFile(outsideSessionFile, '{"type":"session","id":"legacy"}\n');
+    const harness = createHarness(createConfig({
+      resumeSeed: createResumeSeed(outsideSessionFile),
+      vaultWorkingDirectory: trustedDir,
+    }), kernel => {
+      kernel.start.mockImplementation(() => kernel.close());
+    });
+    harness.host.settings.providerConfigs.pi.environmentVariables =
+      `PI_CODING_AGENT_SESSION_DIR=${trustedDir}`;
+
+    const events = await collect(harness.session.execute(createRequest()).events);
+
+    expect(events.at(-1)).toMatchObject({
+      category: 'provider-session-missing',
+      missingProviderSessionId: outsideSessionFile,
+      type: 'execution_error',
+    });
+    expect(harness.kernels).toHaveLength(0);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      providerState: { futureResumeCursor: { token: 'keep-me' } },
+      providerStateDeletes: ['sessionId'],
+    });
+    expect(harness.session.getSnapshot()).not.toHaveProperty('providerSessionId');
+    await fs.rm(trustedDir, { force: true, recursive: true });
+    await fs.rm(outsideDir, { force: true, recursive: true });
+  });
+
+  it('normalizes a trusted path-only legacy session id before kernel startup', async () => {
+    const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-path-id-normalize-'));
+    const sessionFile = path.join(sessionDir, 'legacy.jsonl');
+    await fs.writeFile(sessionFile, '{"type":"session","id":"legacy"}\n');
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerSessionId: sessionFile,
+        providerState: {
+          futureResumeCursor: { token: 'keep-me' },
+          sessionId: sessionFile,
+        },
+      },
+      vaultWorkingDirectory: sessionDir,
+    }), undefined, async <T>(type: string): Promise<T> => {
+      if (type === 'set_model') throw new Error('stop after startup validation');
+      return {} as T;
+    });
+    harness.host.settings.providerConfigs.pi.environmentVariables =
+      `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
+
+    await collect(harness.session.execute(createRequest()).events);
+
+    expect(harness.kernels).toHaveLength(1);
+    expect(harness.kernels[0].launchSpec.args).toEqual(expect.arrayContaining([
+      '--session',
+      sessionFile,
+    ]));
+    expect(harness.session.getSnapshot()).toMatchObject({
+      providerState: {
+        futureResumeCursor: { token: 'keep-me' },
+        sessionFile,
+      },
+      providerStateDeletes: ['sessionId'],
+    });
+    expect(harness.session.getSnapshot()).not.toHaveProperty('providerSessionId');
+    await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  it('replays canonical history only while bootstrapping native context', async () => {
+    const harness = createHarness();
+    const conversationHistory = createConversationHistory('prior');
+
+    for (const [index, text] of ['First follow up', 'Second follow up'].entries()) {
+      const run = harness.session.execute(createRequest({
+        conversationHistory,
+        input: [{ text, type: 'text' }],
+      }));
+      const eventsPromise = collect(run.events);
+      await waitFor(() => harness.kernels.flatMap(kernel => kernel.requests).filter(
+        ({ type }) => type === 'prompt',
+      ).length === index + 1);
+      const kernel = [...harness.kernels].reverse().find(candidate => (
+        candidate.requests.some(({ type }) => type === 'prompt')
+      ));
+      if (!kernel) throw new Error('Pi prompt kernel was not created');
+      completeTurn(kernel);
+      await eventsPromise;
+    }
+
+    const prompts = harness.kernels.flatMap(getPromptMessages);
+    expect(prompts[0]).toContain('prior question');
+    expect(prompts[0]).toContain('prior answer');
+    expect(prompts[1]).toBe('Second follow up');
+  });
+
+  it.each([
+    ['model configuration', 'set_model', false],
+    ['startup extension UI', 'set_model', true],
+    ['prompt dispatch', 'prompt', false],
+  ] as const)('retains history replay after pre-handoff %s failure', async (
+    _label,
+    failureType,
+    emitStartupUi,
+  ) => {
+    let rejectRequest = true;
+    const requestHandler = async <T>(type: string): Promise<T> => {
+      if (type === failureType && rejectRequest) {
+        rejectRequest = false;
+        throw new Error(`${failureType} failed`);
+      }
+      const responses: Record<string, unknown> = {
+        get_commands: { commands: [] },
+        get_session_stats: {},
+        get_state: {},
+        prompt: { accepted: true },
+        set_model: {},
+        set_thinking_level: {},
+      };
+      return responses[type] as T;
+    };
+    const harness = createHarness(
+      createConfig(),
+      emitStartupUi
+        ? kernel => kernel.start.mockImplementation(() => {
+          kernel.emitExtensionRequest({
+            id: 'startup-extension',
+            method: 'select',
+            type: 'extension_ui_request',
+          });
+        })
+        : undefined,
+      requestHandler,
+    );
+    const conversationHistory = createConversationHistory('pre-handoff');
+
+    const failedEvents = await collect(harness.session.execute(createRequest({
+      conversationHistory,
+    })).events);
+    expect(failedEvents).not.toContainEqual(expect.objectContaining({
+      accepted: true,
+      type: 'turn_started',
+    }));
+
+    const retry = harness.session.execute(createRequest({
+      conversationHistory,
+      input: [{ text: 'Retry after pre-handoff failure', type: 'text' }],
+    }));
+    const retryEvents = collect(retry.events);
+    const expectedPromptCount = failureType === 'prompt' ? 2 : 1;
+    await waitFor(() => (
+      getPromptMessages(harness.kernels[0]).length === expectedPromptCount
+    ));
+    completeTurn(harness.kernels[0]);
+    await retryEvents;
+
+    expect(getPromptMessages(harness.kernels[0]).at(-1)).toEqual(
+      expect.stringContaining('pre-handoff question'),
+    );
+  });
+
+  it.each([
+    ['cancellation', 'cancel'],
+    ['kernel close', 'close'],
+  ] as const)('replays history after accepted no-state %s', async (_label, teardown) => {
+    const harness = createHarness();
+    harness.responses.set('get_state', {});
+    const conversationHistory = createConversationHistory('restart prior');
+    const firstRun = harness.session.execute(createRequest({ conversationHistory }));
+    const firstEvents = collect(firstRun.events);
+    await waitFor(() => harness.kernels.length === 1);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    if (teardown === 'cancel') {
+      firstRun.cancel();
+    } else {
+      harness.kernels[0].close(new Error('kernel lost after acceptance'));
+    }
+    await firstEvents;
+
+    const retry = harness.session.execute(createRequest({
+      conversationHistory,
+      input: [{ text: 'Retry after kernel close', type: 'text' }],
+    }));
+    const retryEvents = collect(retry.events);
+    await waitFor(() => harness.kernels.length === 2);
+    await waitFor(() => getPromptMessages(harness.kernels[1]).length === 1);
+    completeTurn(harness.kernels[1]);
+    await retryEvents;
+
+    expect(getPromptMessages(harness.kernels[1])[0]).toEqual(expect.stringContaining(
+      'restart prior question',
+    ));
+  });
+
+  it('replays history when configuration replaces an accepted no-state kernel', async () => {
+    const harness = createHarness();
+    harness.responses.set('get_state', {});
+    const conversationHistory = createConversationHistory('replacement prior');
+    const firstRun = harness.session.execute(createRequest({ conversationHistory }));
+    const firstEvents = collect(firstRun.events);
+    await waitFor(() => harness.kernels.length === 1);
+    completeTurn(harness.kernels[0]);
+    await firstEvents;
+
+    const replacementRun = harness.session.execute(createRequest({
+      conversationHistory,
+      input: [{ text: 'Continue with passive tools', type: 'text' }],
+      toolPolicy: { kind: 'passive' },
+    }));
+    const replacementEvents = collect(replacementRun.events);
+    await waitFor(() => harness.kernels.length === 2);
+    await waitFor(() => getPromptMessages(harness.kernels[1]).length === 1);
+    completeTurn(harness.kernels[1]);
+    await replacementEvents;
+
+    expect(getPromptMessages(harness.kernels[1])[0]).toEqual(expect.stringContaining(
+      'replacement prior question',
+    ));
   });
 
   it('keeps no-session ephemeral continuation in the same process', async () => {
@@ -574,19 +921,25 @@ describe('PiExecutionBackend', () => {
       },
     }));
 
+    const conversationHistory = createConversationHistory('ephemeral prior');
     for (const text of ['First', 'Clarification']) {
       const run = harness.session.execute(createRequest({
+        conversationHistory,
         input: [{ text, type: 'text' }],
-    }));
-    const eventsPromise = collect(run.events);
-    await waitFor(() => harness.kernels.length === 1);
-    harness.kernels[0].emit({ type: 'agent_start' });
-      harness.kernels[0].emit({ type: 'agent_end' });
+      }));
+      const eventsPromise = collect(run.events);
+      await waitFor(() => harness.kernels.length === 1);
+      completeTurn(harness.kernels[0]);
       await eventsPromise;
     }
 
     expect(harness.kernels).toHaveLength(1);
     expect(harness.kernels[0].launchSpec.args).toContain('--no-session');
+    const prompts = getPromptMessages(harness.kernels[0]);
+    expect(prompts[0]).toEqual(expect.stringContaining(
+      'ephemeral prior question',
+    ));
+    expect(prompts[1]).toBe('Clarification');
     const snapshot = harness.session.getSnapshot();
     expect(snapshot).not.toHaveProperty('providerSessionId');
     expect(snapshot.providerState).toEqual({ futureState: { retained: true } });

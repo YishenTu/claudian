@@ -56,7 +56,9 @@ interface ActiveRequestedRun {
   readonly queryToken: number;
   sequence: number;
   accepted: boolean;
+  nativeFork: boolean;
   nativeHandedOff: boolean;
+  historyReplayGeneration: number | null;
   nativeUserMessageId?: string;
   nativeAssistantId?: string;
   planCompleted: boolean;
@@ -93,6 +95,8 @@ ClaudeExecutionStrategySink {
   private providerSessionId: string | null;
   private resumeAt: string | undefined;
   private pendingFork: boolean;
+  private replayHistoryOnNextTurn: boolean;
+  private replayHistoryGeneration: number;
   private status: ProviderSessionStatus = 'idle';
   private revision = 0;
   private snapshotInvalidation: ProviderSessionInvalidation | null = null;
@@ -123,21 +127,21 @@ ClaudeExecutionStrategySink {
       ...(config.resumeSeed?.providerState ?? {}),
     };
     const forkSource = getValidForkSource(state.forkSource);
-    const seedSessionId = config.resumeSeed?.providerSessionId
+    const establishedSessionId = config.resumeSeed?.providerSessionId
       ?? (typeof state.providerSessionId === 'string'
         ? state.providerSessionId
-        : undefined)
-      ?? forkSource?.sessionId;
+        : undefined);
+    this.pendingFork = Boolean(forkSource && !establishedSessionId);
+    const seedSessionId = establishedSessionId ?? forkSource?.sessionId;
     this.initialProviderSessionId = seedSessionId ?? null;
-    this.providerSessionId = this.initialProviderSessionId;
+    this.providerSessionId = this.pendingFork
+      ? null
+      : this.initialProviderSessionId;
     this.providerState = state;
+    this.replayHistoryOnNextTurn = state.historyReplayPending === true;
+    this.replayHistoryGeneration = this.replayHistoryOnNextTurn ? 1 : 0;
     this.resumeAt = config.resumeSeed?.resumeCheckpoint
       ?? forkSource?.resumeAt;
-    this.pendingFork = Boolean(
-      forkSource
-      && !config.resumeSeed?.providerSessionId
-      && typeof state.providerSessionId !== 'string',
-    );
     this.currentPermissionMode = normalizePermissionMode(
       host.settings.permissionMode,
     );
@@ -189,7 +193,9 @@ ClaudeExecutionStrategySink {
       queryToken,
       sequence: 0,
       accepted: false,
+      nativeFork: false,
       nativeHandedOff: false,
+      historyReplayGeneration: null,
       planCompleted: false,
       terminal: false,
     };
@@ -401,7 +407,7 @@ ClaudeExecutionStrategySink {
   }
 
   getProviderSessionId(): string | null {
-    return this.providerSessionId;
+    return this.getNativeResumeSessionId();
   }
 
   setPendingNativeUserMessageId(
@@ -443,10 +449,6 @@ ClaudeExecutionStrategySink {
     }
 
     const active = this.activeRun;
-    if (active) {
-      this.ensureRequestedAccepted(active);
-    }
-
     const normalizedEvents = this.eventNormalizer.normalize(
       message,
       active ? 'requested' : 'background',
@@ -455,6 +457,12 @@ ClaudeExecutionStrategySink {
         customContextLimits: this.host.settings.customContextLimits,
       },
     );
+    if (
+      active?.nativeHandedOff
+      && isRequestedTurnEvidence(message)
+    ) {
+      this.ensureRequestedAccepted(active);
+    }
     for (const normalized of normalizedEvents) {
       if (normalized.type === 'session_init') {
         const event = normalized.event;
@@ -667,19 +675,27 @@ ClaudeExecutionStrategySink {
           ?? request.configuration.permissionMode
           ?? this.host.settings.permissionMode,
       );
+      const nativeResume = this.getNativeResume();
+      active.nativeFork = nativeResume.fork === true;
+      const replayConversationHistory = this.shouldReplayConversationHistory(
+        request,
+      );
+      active.historyReplayGeneration = replayConversationHistory
+        && this.replayHistoryOnNextTurn
+        ? this.replayHistoryGeneration
+        : null;
       const encoded = await this.encoder.encode(
         request,
         this.config,
         active.abortController,
         this.interactionHandler.canUseTool,
-        this.getNativeResume(),
+        nativeResume,
+        replayConversationHistory,
       );
       if (this.activeRun !== active || active.terminal) return;
       this.lastEncodedRequest = encoded;
       this.lastAllowedTools = encoded.allowedTools;
       await this.strategy.startTurn(encoded, active.queryToken);
-      this.resumeAt = undefined;
-      this.pendingFork = false;
     } catch (error) {
       if (this.activeRun === active && !active.terminal) {
         if (active.abortController.signal.aborted) {
@@ -695,13 +711,30 @@ ClaudeExecutionStrategySink {
     if (this.config.nativePersistence === 'disabled-if-supported') {
       return {};
     }
+    const nativeResumeSessionId = this.getNativeResumeSessionId();
     return {
-      ...(this.providerSessionId
-        ? { sessionId: this.providerSessionId }
+      ...(nativeResumeSessionId
+        ? { sessionId: nativeResumeSessionId }
         : {}),
       ...(this.resumeAt ? { resumeAt: this.resumeAt } : {}),
       ...(this.pendingFork ? { fork: true } : {}),
     };
+  }
+
+  private getNativeResumeSessionId(): string | null {
+    return this.providerSessionId
+      ?? (this.pendingFork ? this.initialProviderSessionId : null);
+  }
+
+  private shouldReplayConversationHistory(
+    request: ProviderExecutionRequest,
+  ): boolean {
+    if (!request.conversationHistory?.length) return false;
+    if (this.config.nativePersistence === 'disabled-if-supported') {
+      return true;
+    }
+    return !this.getNativeResumeSessionId()
+      || this.replayHistoryOnNextTurn;
   }
 
   private captureProviderSession(sessionId: string): void {
@@ -709,15 +742,18 @@ ClaudeExecutionStrategySink {
     if (this.config.nativePersistence === 'disabled-if-supported') {
       return;
     }
-    const previousProviderSessionId =
-      typeof this.providerState.providerSessionId === 'string'
-        ? this.providerState.providerSessionId
-        : this.initialProviderSessionId;
+    const liveProviderSessionId = this.providerSessionId;
+    const previousProviderSessionId = liveProviderSessionId
+      ?? this.initialProviderSessionId;
+    const nativeFork = this.activeRun?.nativeFork ?? this.pendingFork;
     if (
       previousProviderSessionId
       && previousProviderSessionId !== sessionId
-      && !this.pendingFork
+      && !nativeFork
     ) {
+      if (liveProviderSessionId) {
+        this.markHistoryReplayPending();
+      }
       const priorIds = Array.isArray(
         this.providerState.previousProviderSessionIds,
       )
@@ -731,12 +767,33 @@ ClaudeExecutionStrategySink {
     }
     this.providerSessionId = sessionId;
     this.setProviderStateValue('providerSessionId', sessionId);
+    this.resumeAt = undefined;
+    this.pendingFork = false;
     if (Object.prototype.hasOwnProperty.call(
       this.providerState,
       'forkSource',
     )) {
       this.deleteProviderStateValue('forkSource');
     }
+  }
+
+  private markHistoryReplayPending(): void {
+    this.replayHistoryOnNextTurn = true;
+    this.replayHistoryGeneration += 1;
+    this.setProviderStateValue('historyReplayPending', true);
+  }
+
+  private clearHistoryReplayPending(expectedGeneration: number): void {
+    if (
+      !this.replayHistoryOnNextTurn
+      || this.replayHistoryGeneration !== expectedGeneration
+    ) {
+      return;
+    }
+    this.replayHistoryOnNextTurn = false;
+    this.deleteProviderStateValue('historyReplayPending');
+    this.bumpRevision();
+    this.emitStateForCurrentTurn();
   }
 
   private getOutputTarget(): ActiveRequestedRun | BackgroundTurn | null {
@@ -763,6 +820,9 @@ ClaudeExecutionStrategySink {
 
   private getInteractionTurnId(): string | null {
     if (this.activeRun) {
+      if (!this.activeRun.nativeHandedOff) {
+        return null;
+      }
       this.ensureRequestedAccepted(this.activeRun);
       return this.activeRun.turnId;
     }
@@ -781,6 +841,11 @@ ClaudeExecutionStrategySink {
       type: 'user_message_started',
       nativeUserMessageId: active.nativeUserMessageId,
     });
+    const historyReplayGeneration = active.historyReplayGeneration;
+    active.historyReplayGeneration = null;
+    if (historyReplayGeneration !== null) {
+      this.clearHistoryReplayPending(historyReplayGeneration);
+    }
   }
 
   private emitTurnOutput(
@@ -1047,6 +1112,7 @@ ClaudeExecutionStrategySink {
       abortController,
       this.interactionHandler.canUseTool,
       this.getNativeResume(),
+      false,
     );
     this.lastEncodedRequest = encoded;
     this.lastAllowedTools = encoded.allowedTools;
@@ -1055,6 +1121,13 @@ ClaudeExecutionStrategySink {
 }
 
 type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
+
+function isRequestedTurnEvidence(message: SDKMessage): boolean {
+  return message.type === 'user'
+    || message.type === 'assistant'
+    || message.type === 'stream_event'
+    || message.type === 'result';
+}
 
 class AsyncEventStream<T> implements AsyncIterable<T> {
   private readonly values: T[] = [];

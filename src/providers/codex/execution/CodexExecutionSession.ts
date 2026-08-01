@@ -279,6 +279,7 @@ export class CodexExecutionSession
   private workspaceDependencyToolVersion: number | null;
   private pendingFork: CodexProviderState['forkSource'];
   private pendingForkTarget: CodexPendingForkTarget | undefined;
+  private nativeConversationContextEstablished: boolean;
   private readonly providerStateDeletes = new Set<string>();
   private snapshot: ProviderSessionSnapshot;
 
@@ -296,6 +297,10 @@ export class CodexExecutionSession
       ?? codexState.threadId
       ?? config.resumeSeed?.providerSessionId
       ?? null;
+    this.nativeConversationContextEstablished = typeof codexState
+      .nativeConversationContextEstablished === 'boolean'
+      ? codexState.nativeConversationContextEstablished
+      : this.threadId !== null || this.pendingFork !== undefined;
     this.sessionFilePath = this.pendingForkTarget?.sessionFilePath
       ?? codexState.sessionFilePath
       ?? null;
@@ -457,12 +462,26 @@ export class CodexExecutionSession
         return;
       }
 
+      if (
+        isCompactRequest(request)
+        && !this.nativeConversationContextEstablished
+      ) {
+        this.finishError(
+          run,
+          'configuration',
+          'Codex cannot compact before its native context is restored. Send a normal prompt first.',
+          true,
+        );
+        return;
+      }
+
       await this.ensureProcess(generation);
       if (!this.isRunCurrent(run, generation)) return;
 
       const policy = this.resolvePolicy(request, settings);
       const baseInstructions = this.resolveBaseInstructions(request);
       const nativePersistence = this.resolveNativePersistence();
+      const replayConversationHistory = !this.nativeConversationContextEstablished;
       const thread = await this.ensureThread(
         run,
         request,
@@ -474,14 +493,24 @@ export class CodexExecutionSession
         generation,
       );
       if (!this.isRunCurrent(run, generation)) return;
+      if (thread.forkCheckpoint) {
+        this.nativeConversationContextEstablished = true;
+      }
 
       run.nativeThreadId = thread.threadId;
+      const threadIdentityChanged = this.threadId !== thread.threadId
+        || (
+          thread.sessionFilePath !== null
+          && this.sessionFilePath !== thread.sessionFilePath
+        );
       this.threadId = thread.threadId;
       if (thread.sessionFilePath) {
         this.sessionFilePath = thread.sessionFilePath;
       }
-      this.updateSnapshot('executing');
-      this.emitSnapshot(run);
+      if (threadIdentityChanged || this.snapshot.status !== 'executing') {
+        this.updateSnapshot('executing');
+        this.emitSnapshot(run);
+      }
 
       this.notificationRouter = new CodexNotificationRouter(
         chunk => this.handleStreamChunk(run, chunk),
@@ -509,7 +538,11 @@ export class CodexExecutionSession
         return;
       }
 
-      const turnInput = this.buildTurnPrompt(request, thread.forkCheckpoint);
+      const turnInput = this.buildTurnPrompt(
+        request,
+        thread.forkCheckpoint,
+        replayConversationHistory,
+      );
       const bundle = this.buildInputBundle(request, turnInput);
       this.activeInputBundles.add(bundle);
       const effort = normalizeString(request.configuration.reasoning)
@@ -540,6 +573,7 @@ export class CodexExecutionSession
         sandboxPolicy: this.buildTurnSandboxPolicy(request, policy),
         collaborationMode,
       });
+      this.markNativeConversationContextEstablished(run);
       if (!this.isRunCurrent(run, generation)) return;
       this.observeNativeTurn(thread.threadId, result.turn.id);
     } catch (error) {
@@ -748,6 +782,7 @@ export class CodexExecutionSession
     if (run.nativeTurnId && run.nativeTurnId !== nativeTurnId) {
       return false;
     }
+    this.markNativeConversationContextEstablished(run);
     if (!run.nativeTurnId) {
       run.nativeTurnId = nativeTurnId;
       this.serverRequestRouter.setActiveTurn({
@@ -765,6 +800,14 @@ export class CodexExecutionSession
       this.flushPendingTurnNotifications(run);
     }
     return true;
+  }
+
+  private markNativeConversationContextEstablished(
+    run: CodexExecutionRun,
+  ): void {
+    if (this.nativeConversationContextEstablished) return;
+    this.nativeConversationContextEstablished = true;
+    this.publishNativeOwnershipSnapshot(run);
   }
 
   private currentRunToolPolicy: ProviderToolPolicy | null = null;
@@ -938,9 +981,13 @@ export class CodexExecutionSession
     )
       ? CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION
       : null;
+    const sessionFilePath = this.toHostSessionPath(result.thread.path);
+    this.threadId = result.thread.id;
+    this.sessionFilePath = sessionFilePath;
+    this.publishNativeOwnershipSnapshot(run);
     return {
       threadId: result.thread.id,
-      sessionFilePath: this.toHostSessionPath(result.thread.path),
+      sessionFilePath,
     };
   }
 
@@ -1388,6 +1435,31 @@ export class CodexExecutionSession
     }
   }
 
+  private publishNativeOwnershipSnapshot(run: CodexExecutionRun): void {
+    const currentSnapshot = this.snapshot;
+    const isCurrentExecution = (
+      this.activeRun === run
+      && !run.isTerminal
+      && !run.isCancellationRequested
+      && !this.disposed
+      && currentSnapshot.status !== 'invalidated'
+      && currentSnapshot.status !== 'disposed'
+      && currentSnapshot.status !== 'cancelling'
+    );
+    if (isCurrentExecution) {
+      this.updateSnapshot('executing');
+    } else if (currentSnapshot.status === 'invalidated') {
+      this.updateSnapshot('invalidated', currentSnapshot.invalidation);
+    } else {
+      this.updateSnapshot(currentSnapshot.status);
+    }
+    if (this.activeRun === run && !run.isTerminal) {
+      this.emitSnapshot(run);
+    } else {
+      this.emitSessionState();
+    }
+  }
+
   private updateSnapshot(
     status: ProviderSessionStatus,
     invalidation?: ProviderSessionInvalidation,
@@ -1404,7 +1476,13 @@ export class CodexExecutionSession
   ): ProviderSessionSnapshot {
     const providerState = {
       ...this.seedState,
-      ...(this.threadId ? { threadId: this.threadId } : {}),
+      ...(this.threadId
+        ? {
+            threadId: this.threadId,
+            nativeConversationContextEstablished:
+              this.nativeConversationContextEstablished,
+          }
+        : {}),
       ...(this.sessionFilePath
         ? { sessionFilePath: this.sessionFilePath }
         : {}),
@@ -1594,6 +1672,7 @@ export class CodexExecutionSession
   private buildTurnPrompt(
     request: ProviderExecutionRequest,
     forkCheckpoint?: string,
+    replayConversationHistory = false,
   ): string {
     let prompt = request.input
       .filter(block => block.type === 'text')
@@ -1633,7 +1712,7 @@ export class CodexExecutionSession
       }
       return prompt;
     }
-    if (!this.config.resumeSeed?.providerSessionId && !this.seedState.threadId) {
+    if (replayConversationHistory) {
       const historyContext = buildContextFromHistory(history as ChatMessage[]);
       return buildPromptWithHistoryContext(
         historyContext || null,

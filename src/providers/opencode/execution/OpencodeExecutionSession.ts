@@ -30,12 +30,14 @@ import {
 import { createOpencodeToolStreamAdapter } from '../normalization/opencodeToolNormalization';
 import { buildOpencodePromptBlocks } from '../runtime/buildOpencodePrompt';
 import { getOpencodeProviderSettings } from '../settings';
+import { getOpencodeState } from '../types';
 import {
   DefaultOpencodeAcpSessionKernel,
   type OpencodeAcpSessionKernel,
   type OpencodeAcpSessionKernelOptions,
   type OpencodeExecutionProfile,
   type OpencodeNativeSessionInfo,
+  OpencodeSessionMissingError,
 } from './OpencodeAcpSessionKernel';
 
 export type OpencodeAcpSessionKernelFactory = (
@@ -96,6 +98,8 @@ class OpencodeExecutionRun implements ProviderExecutionRun {
   readonly queue: AsyncEventQueue<ProviderExecutionEvent>;
   terminal = false;
   accepted = false;
+  acceptingLiveOutput = false;
+  cancellationRequested = false;
   lastSequence = 0;
   abortCleanup: (() => void) | null = null;
 
@@ -142,6 +146,7 @@ class OpencodeExecutionRun implements ProviderExecutionRun {
   finish(event: ProviderExecutionEvent): void {
     if (this.terminal) return;
     this.terminal = true;
+    this.acceptingLiveOutput = false;
     this.abortCleanup?.();
     this.abortCleanup = null;
     this.queue.push(event);
@@ -158,10 +163,13 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
   private activeRun: OpencodeExecutionRun | null = null;
   private kernel: OpencodeAcpSessionKernel | null = null;
   private kernelGeneration = 0;
+  private kernelConfigurationKey: string | null = null;
   private kernelDisposalPromise: Promise<void> | null = null;
   private nativeInfo: OpencodeNativeSessionInfo | null = null;
   private nativeSessionId: string | null;
+  private nativeConversationContextEstablished: boolean;
   private databasePath: string | null;
+  private readonly seedProviderState: Readonly<Record<string, unknown>>;
   private snapshot: ProviderSessionSnapshot;
   private disposePromise: Promise<void> | null = null;
   private disposed = false;
@@ -176,8 +184,13 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     this.createKernel = options.createKernel
       ?? ((kernelOptions) => new DefaultOpencodeAcpSessionKernel(kernelOptions));
     this.nativeSessionId = config.resumeSeed?.providerSessionId ?? null;
-    const databasePath = config.resumeSeed?.providerState?.databasePath;
-    this.databasePath = typeof databasePath === 'string' ? databasePath : null;
+    const providerState = getOpencodeState(config.resumeSeed?.providerState);
+    this.seedProviderState = Object.freeze({ ...providerState });
+    this.databasePath = providerState.databasePath ?? null;
+    this.nativeConversationContextEstablished = typeof providerState
+      .nativeConversationContextEstablished === 'boolean'
+      ? providerState.nativeConversationContextEstablished
+      : this.nativeSessionId !== null;
     this.snapshot = this.createSnapshot('idle');
   }
 
@@ -224,6 +237,8 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     this.lifecycleGeneration += 1;
     const run = this.activeRun;
     if (run && !run.terminal) {
+      run.cancellationRequested = true;
+      run.acceptingLiveOutput = false;
       run.finish({
         reason: 'session-disposed',
         scope: run.scope(),
@@ -250,9 +265,19 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
         await pendingDisposal;
         if (!this.isRunCurrent(run, generation)) return;
       }
+      const kernelConfigurationKey = buildKernelConfigurationKey(request);
       let kernel = this.kernel;
       let native = this.nativeInfo;
-      let bootstrapHistory = false;
+      if (
+        kernel
+        && native
+        && this.kernelConfigurationKey !== kernelConfigurationKey
+      ) {
+        await this.disposeKernel();
+        if (!this.isRunCurrent(run, generation)) return;
+        kernel = null;
+        native = null;
+      }
       if (!kernel || !native) {
         const kernelGeneration = ++this.kernelGeneration;
         kernel = this.createKernel({
@@ -283,16 +308,17 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
           profile: resolveProfile(request),
           systemInstructions: request.configuration.systemInstructions,
         });
+        if (this.kernel === kernel) {
+          this.kernelConfigurationKey = kernelConfigurationKey;
+        }
         if (!this.isRunCurrent(run, generation)) return;
         phase = 'open';
         resumeAttempt = this.nativeSessionId;
         native = await kernel.openSession(resumeAttempt ?? undefined);
+        this.captureNativeSessionOwnership(native, run);
         if (!this.isRunCurrent(run, generation)) return;
         phase = 'run';
-        bootstrapHistory = resumeAttempt === null;
         this.nativeInfo = native;
-        this.applyNativeSession(native, 'executing');
-        this.emitRunSnapshot(run);
         await projectOpencodeMetadata(this.plugin, native);
       } else {
         this.snapshot = this.createSnapshot('executing');
@@ -301,10 +327,16 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       await this.applyConfiguration(kernel, native, request);
       if (!this.isRunCurrent(run, generation)) return;
 
+      this.getRunNormalizer(run).reset();
+      run.acceptingLiveOutput = true;
       const response = await kernel.prompt({
-        prompt: buildPromptBlocks(request, bootstrapHistory),
+        prompt: buildPromptBlocks(
+          request,
+          !this.nativeConversationContextEstablished,
+        ),
         sessionId: native.sessionId,
       });
+      this.markNativeConversationContextEstablished(run);
       if (!this.isRunCurrent(run, generation)) return;
       run.accept(response.userMessageId ?? undefined);
       this.snapshot = this.createSnapshot('idle');
@@ -321,7 +353,10 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       this.activeRun = null;
     } catch (error) {
       if (!this.isRunCurrent(run, generation)) return;
-      const missing = phase === 'open' && resumeAttempt !== null;
+      const missing = phase === 'open'
+        && resumeAttempt !== null
+        && error instanceof OpencodeSessionMissingError
+        && error.sessionId === resumeAttempt;
       this.snapshot = this.createInvalidatedSnapshot(
         missing ? 'provider-session-missing' : 'provider-error',
         true,
@@ -354,6 +389,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     ) {
       return;
     }
+    const acceptingLiveOutput = run.acceptingLiveOutput;
     const normalizer = this.getRunNormalizer(run);
     let result;
     try {
@@ -392,7 +428,12 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       );
       if (mode) this.emitSessionMode(mode);
     }
-    if (result.events.length > 0) {
+    if (
+      acceptingLiveOutput
+      && result.events.length > 0
+      && this.isRunCurrent(run, generation)
+    ) {
+      this.markNativeConversationContextEstablished(run);
       run.accept();
       for (const event of result.events) {
         run.emit({
@@ -507,6 +548,8 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
 
   private cancelRun(run: OpencodeExecutionRun): void {
     if (!this.isRunCurrent(run, this.lifecycleGeneration)) return;
+    run.cancellationRequested = true;
+    run.acceptingLiveOutput = false;
     const generation = ++this.lifecycleGeneration;
     if (this.nativeSessionId) {
       try {
@@ -571,13 +614,43 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     void this.disposeKernel();
   }
 
-  private applyNativeSession(
+  private captureNativeSessionOwnership(
     native: OpencodeNativeSessionInfo,
-    status: 'executing' | 'idle',
+    run: OpencodeExecutionRun,
   ): void {
+    if (this.disposed) return;
     this.nativeSessionId = native.sessionId;
     this.databasePath = native.databasePath;
-    this.snapshot = this.createSnapshot(status);
+    this.publishNativeOwnershipSnapshot(run);
+  }
+
+  private markNativeConversationContextEstablished(
+    run: OpencodeExecutionRun,
+  ): void {
+    if (this.disposed || this.nativeConversationContextEstablished) return;
+    this.nativeConversationContextEstablished = true;
+    this.publishNativeOwnershipSnapshot(run);
+  }
+
+  private publishNativeOwnershipSnapshot(run: OpencodeExecutionRun): void {
+    const currentSnapshot = this.snapshot;
+    const isCurrentExecution = (
+      this.activeRun === run
+      && !run.terminal
+      && !run.cancellationRequested
+      && !this.disposed
+      && currentSnapshot.status !== 'invalidated'
+      && currentSnapshot.status !== 'disposed'
+    );
+    this.snapshot = this.refreshSnapshot(
+      isCurrentExecution ? 'executing' : currentSnapshot.status,
+      currentSnapshot.invalidation,
+    );
+    if (isCurrentExecution) {
+      this.emitRunSnapshot(run);
+    } else {
+      this.emitSessionSnapshot();
+    }
   }
 
   private resolveDatabasePath(): string | undefined {
@@ -610,6 +683,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     const kernel = this.kernel;
     this.kernel = null;
     this.nativeInfo = null;
+    this.kernelConfigurationKey = null;
     this.kernelGeneration += 1;
     if (!kernel) return;
 
@@ -691,16 +765,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
   private createSnapshot(
     status: Exclude<ProviderSessionStatus, 'invalidated'>,
   ): ProviderSessionSnapshot {
-    const previousRevision = this.snapshot?.revision ?? -1;
-    return Object.freeze({
-      ...(this.nativeSessionId ? { providerSessionId: this.nativeSessionId } : {}),
-      ...(this.databasePath
-        ? { providerState: Object.freeze({ databasePath: this.databasePath }) }
-        : {}),
-      providerId: this.providerId,
-      revision: previousRevision + 1,
-      status,
-    });
+    return this.refreshSnapshot(status);
   }
 
   private createInvalidatedSnapshot(
@@ -709,16 +774,51 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     error: unknown,
   ): ProviderSessionSnapshot {
     const message = formatError(error);
-    return Object.freeze({
-      ...(this.nativeSessionId ? { providerSessionId: this.nativeSessionId } : {}),
-      ...(this.databasePath
-        ? { providerState: Object.freeze({ databasePath: this.databasePath }) }
-        : {}),
-      invalidation: Object.freeze({ message, reason, recoverable }),
-      providerId: this.providerId,
-      revision: this.snapshot.revision + 1,
-      status: 'invalidated',
+    return this.refreshSnapshot('invalidated', {
+      message,
+      reason,
+      recoverable,
     });
+  }
+
+  private refreshSnapshot(
+    status: ProviderSessionStatus,
+    invalidation?: ProviderSessionSnapshot['invalidation'],
+  ): ProviderSessionSnapshot {
+    const previousRevision = this.snapshot?.revision ?? -1;
+    const providerState = {
+      ...this.seedProviderState,
+      ...(this.databasePath ? { databasePath: this.databasePath } : {}),
+      ...(
+        this.nativeSessionId
+        || typeof this.seedProviderState.nativeConversationContextEstablished
+          === 'boolean'
+          ? {
+              nativeConversationContextEstablished:
+                this.nativeConversationContextEstablished,
+            }
+          : {}
+      ),
+    };
+    const base = {
+      ...(this.nativeSessionId ? { providerSessionId: this.nativeSessionId } : {}),
+      ...(Object.keys(providerState).length > 0
+        ? { providerState: Object.freeze(providerState) }
+        : {}),
+      providerId: this.providerId,
+      revision: previousRevision + 1,
+    } as const;
+    if (status === 'invalidated') {
+      if (!invalidation) {
+        throw new Error('Invalidated OpenCode snapshots require a reason.');
+      }
+      return Object.freeze({
+        ...base,
+        invalidation: Object.freeze({ ...invalidation }),
+        status,
+      });
+    }
+    return Object.freeze({ ...base, status });
   }
 }
 
@@ -729,6 +829,17 @@ function resolveProfile(request: ProviderExecutionRequest): OpencodeExecutionPro
   ) return 'passive';
   if (request.toolPolicy.kind === 'read-only') return 'readonly';
   return 'managed';
+}
+
+function buildKernelConfigurationKey(
+  request: ProviderExecutionRequest,
+): string {
+  const instructions = request.configuration.systemInstructions;
+  return JSON.stringify([
+    resolveProfile(request),
+    instructions.kind,
+    instructions.kind === 'explicit' ? instructions.instructions : null,
+  ]);
 }
 
 function buildPromptBlocks(

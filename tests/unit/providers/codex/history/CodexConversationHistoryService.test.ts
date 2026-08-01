@@ -6,8 +6,21 @@ const fs = jest.requireActual<typeof fsType>('fs');
 const os = jest.requireActual<typeof osType>('os');
 const path = jest.requireActual<typeof pathType>('path');
 
+import type { ProviderConversationHistoryService } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
+
+async function resolveMissingConversationSession(
+  service: CodexConversationHistoryService,
+  conversation: Conversation,
+  missingProviderSessionId?: string,
+): Promise<'delete' | 'reset' | 'preserve' | 'unimplemented'> {
+  const resolver = (service as ProviderConversationHistoryService)
+    .resolveMissingConversationSession;
+  return resolver
+    ? resolver.call(service, conversation, null, missingProviderSessionId)
+    : 'unimplemented';
+}
 
 describe('CodexConversationHistoryService', () => {
   let homeDirSpy: jest.SpyInstance<string, []>;
@@ -82,6 +95,66 @@ describe('CodexConversationHistoryService', () => {
       content: 'Here is the summary.',
     });
     expect((conversation.providerState as Record<string, unknown>).sessionFilePath).toBe(transcriptPath);
+  });
+
+  it('marks native context established after recovering a non-empty owned transcript', async () => {
+    const threadId = 'thread-crash-recovery';
+    const sessionsDir = path.join(tempHome, '.codex', 'sessions', '2026', '03', '27');
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    const transcriptPath = path.join(
+      sessionsDir,
+      `rollout-2026-03-27T00-00-00-${threadId}.jsonl`,
+    );
+    fs.writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Committed before crash.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-03-27T00:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'Native response.' }],
+          },
+        }),
+      ].join('\n'),
+      'utf-8',
+    );
+    const conversation: Conversation = {
+      id: 'conv-crash-recovery',
+      providerId: 'codex',
+      title: 'Crash recovery',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      sessionId: threadId,
+      providerState: {
+        threadId,
+        sessionFilePath: transcriptPath,
+        nativeConversationContextEstablished: false,
+        futureProviderState: { token: 'preserve' },
+      },
+      messages: [],
+    };
+
+    await new CodexConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+    );
+
+    expect(conversation.messages).toHaveLength(2);
+    expect(conversation.providerState).toEqual(expect.objectContaining({
+      nativeConversationContextEstablished: true,
+      futureProviderState: { token: 'preserve' },
+    }));
   });
 
   it('rehydrates when the same conversation id is restored with empty messages', async () => {
@@ -471,6 +544,91 @@ describe('CodexConversationHistoryService', () => {
       };
 
       expect(service.resolveSessionIdForConversation(conversation)).toBe('my-thread');
+    });
+  });
+
+  describe('resolveMissingConversationSession', () => {
+    it('resets only the exact stale live thread identity and preserves replay evidence', async () => {
+      const conversation: Conversation = {
+        id: 'conv-missing-thread',
+        providerId: 'codex',
+        title: 'Missing thread',
+        createdAt: 1,
+        updatedAt: 1,
+        sessionId: 'thread-missing',
+        resumeAtMessageId: 'fork-checkpoint',
+        providerState: {
+          threadId: 'thread-missing',
+          nativeConversationContextEstablished: true,
+          pendingForkTarget: {
+            threadId: 'thread-missing',
+            sessionFilePath: '/codex/sessions/thread-missing.jsonl',
+          },
+          sessionFilePath: '/codex/sessions/thread-missing.jsonl',
+          transcriptRootPath: '/codex/sessions',
+          forkSource: {
+            sessionId: 'thread-source',
+            resumeAt: 'fork-checkpoint',
+          },
+          forkSourceSessionFilePath: '/codex/sessions/thread-source.jsonl',
+          forkSourceTranscriptRootPath: '/codex/sessions',
+          workspaceDependencyToolVersion: 1,
+          futureProviderState: { token: 'keep-me' },
+        },
+        messages: [],
+      };
+
+      await expect(resolveMissingConversationSession(
+        new CodexConversationHistoryService(),
+        conversation,
+        'thread-missing',
+      )).resolves.toBe('reset');
+
+      expect(conversation.sessionId).toBeNull();
+      expect(conversation.resumeAtMessageId).toBe('fork-checkpoint');
+      expect(conversation.providerState).toEqual({
+        sessionFilePath: '/codex/sessions/thread-missing.jsonl',
+        transcriptRootPath: '/codex/sessions',
+        forkSource: {
+          sessionId: 'thread-source',
+          resumeAt: 'fork-checkpoint',
+        },
+        forkSourceSessionFilePath: '/codex/sessions/thread-source.jsonl',
+        forkSourceTranscriptRootPath: '/codex/sessions',
+        workspaceDependencyToolVersion: 1,
+        futureProviderState: { token: 'keep-me' },
+      });
+    });
+
+    it.each([
+      ['another reported thread', 'thread-newer'],
+      ['no reported thread', undefined],
+    ])('preserves current state for %s', async (_case, missingSessionId) => {
+      const providerState = {
+        threadId: 'thread-current',
+        nativeConversationContextEstablished: true,
+        sessionFilePath: '/codex/sessions/thread-current.jsonl',
+        futureProviderState: { token: 'keep-me' },
+      };
+      const conversation: Conversation = {
+        id: 'conv-current-thread',
+        providerId: 'codex',
+        title: 'Current thread',
+        createdAt: 1,
+        updatedAt: 1,
+        sessionId: 'thread-current',
+        providerState,
+        messages: [],
+      };
+
+      await expect(resolveMissingConversationSession(
+        new CodexConversationHistoryService(),
+        conversation,
+        missingSessionId,
+      )).resolves.toBe('preserve');
+
+      expect(conversation.sessionId).toBe('thread-current');
+      expect(conversation.providerState).toBe(providerState);
     });
   });
 

@@ -125,6 +125,45 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       ?? null;
   }
 
+  async resolveMissingConversationSession(
+    conversation: Conversation,
+    _vaultPath: string | null,
+    missingProviderSessionId?: string,
+  ): Promise<'delete' | 'reset' | 'preserve'> {
+    const state = getPiState(conversation.providerState);
+    const currentTarget = state.sessionFile
+      ?? state.sessionId
+      ?? conversation.sessionId
+      ?? null;
+    if (
+      !missingProviderSessionId
+      || !currentTarget
+      || missingProviderSessionId !== currentTarget
+    ) {
+      return 'preserve';
+    }
+
+    const providerState = { ...(conversation.providerState ?? {}) };
+    if (state.sessionFile === currentTarget) delete providerState.sessionFile;
+    if (state.sessionId === currentTarget) delete providerState.sessionId;
+    if (conversation.sessionId === currentTarget) conversation.sessionId = null;
+
+    const remainingState = getPiState(providerState);
+    if (
+      !remainingState.sessionFile
+      && !remainingState.sessionId
+      && !conversation.sessionId
+    ) {
+      delete providerState.leafEntryId;
+      delete providerState.parentSession;
+    }
+    conversation.providerState = Object.keys(providerState).length > 0
+      ? providerState
+      : undefined;
+    this.hydratedKeys.delete(conversation.id);
+    return 'reset';
+  }
+
   isPendingForkConversation(_conversation: Conversation): boolean {
     const state = getPiState(_conversation.providerState);
     return !!state.forkSource && !state.sessionId && !state.sessionFile && !_conversation.sessionId;

@@ -660,7 +660,22 @@ export class ChatExecutionCoordinator {
         terminalSinkFailure?.error ?? terminal,
       );
     }
-    if (terminalSinkFailure) throw terminalSinkFailure.error;
+    const unacceptedMissingSession = isUnacceptedMissingSession(terminal, accepted);
+    const missingSessionTerminal = terminal?.type === 'execution_error'
+      && terminal.category === 'provider-session-missing';
+    if (unacceptedMissingSession) {
+      try {
+        await this.discardPreSendRecord(
+          active.binding.conversation.conversationId,
+          active.inputRecordId,
+        );
+      } catch (error) {
+        throw new ChatExecutionPreHandoffError(error);
+      }
+    }
+    if (terminalSinkFailure && !missingSessionTerminal) {
+      throw terminalSinkFailure.error;
+    }
 
     if (active.terminationOverride) {
       return createInterruptedResult(active.terminationOverride, accepted);
@@ -691,28 +706,50 @@ export class ChatExecutionCoordinator {
       };
     }
     if (terminal.category === 'provider-session-missing') {
-      const resolution = await this.deps.resolveMissingProviderSession(
-        active.binding.conversation.conversationId,
-        terminal.missingProviderSessionId,
-      );
+      let resolution: MissingProviderSessionResolution;
+      try {
+        resolution = await this.deps.resolveMissingProviderSession(
+          active.binding.conversation.conversationId,
+          terminal.missingProviderSessionId,
+        );
+      } catch (error) {
+        if (unacceptedMissingSession) {
+          throw new ChatExecutionPreHandoffError(error);
+        }
+        throw error;
+      }
       if (
         this.conversation?.conversationId
           !== active.binding.conversation.conversationId
       ) {
+        if (terminalSinkFailure) throw terminalSinkFailure.error;
         return createInterruptedResult('invalidated', accepted);
       }
-      if (this.sessionBinding === active.binding) {
-        await this.releaseSessionBinding();
+      try {
+        if (this.sessionBinding === active.binding) {
+          await this.releaseSessionBinding();
+        }
+        if (resolution === 'deleted' || resolution === 'not_found') {
+          this.conversation = null;
+        } else if (resolution === 'reset' && this.conversation) {
+          this.conversation = {
+            ...this.conversation,
+            resumeSeed: undefined,
+          };
+        }
+        this.stale = resolution !== 'deleted' && resolution !== 'not_found';
+      } catch (error) {
+        if (unacceptedMissingSession) {
+          throw new ChatExecutionPreHandoffError(error);
+        }
+        throw error;
       }
-      if (resolution === 'deleted' || resolution === 'not_found') {
-        this.conversation = null;
-      } else if (resolution === 'reset' && this.conversation) {
-        this.conversation = {
-          ...this.conversation,
-          resumeSeed: undefined,
-        };
+      if (terminalSinkFailure) {
+        if (unacceptedMissingSession) {
+          throw new ChatExecutionPreHandoffError(terminalSinkFailure.error);
+        }
+        throw terminalSinkFailure.error;
       }
-      this.stale = resolution !== 'deleted' && resolution !== 'not_found';
       return {
         status: 'missing-session',
         accepted,
@@ -1113,6 +1150,20 @@ function isDefinitePreHandoffRejection(
     !accepted
     && terminal?.type === 'execution_error'
     && terminal.category === 'configuration'
+  );
+}
+
+function isUnacceptedMissingSession(
+  terminal: Extract<
+    ProviderExecutionEvent,
+    { type: 'turn_completed' | 'cancelled' | 'execution_error' }
+  > | undefined,
+  accepted: boolean,
+): boolean {
+  return (
+    !accepted
+    && terminal?.type === 'execution_error'
+    && terminal.category === 'provider-session-missing'
   );
 }
 

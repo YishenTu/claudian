@@ -26,6 +26,7 @@ import {
   type ChatExecutionPersistence,
   ChatExecutionPreHandoffError,
   type ChatTurnSubmission,
+  type MissingProviderSessionResolution,
 } from '@/features/chat/execution/ChatExecutionCoordinator';
 
 class EventQueue<T> implements AsyncIterable<T> {
@@ -260,7 +261,10 @@ function createHarness(options: {
   const requestedEvents: ProviderExecutionEvent[] = [];
   const sessionEvents: ProviderSessionEvent[] = [];
   const sessionEventContexts: ChatExecutionEventContext[] = [];
-  const missingSession = jest.fn(async () => 'reset' as const);
+  const missingSession = jest.fn<
+    Promise<MissingProviderSessionResolution>,
+    [string, string?]
+  >(async () => 'reset');
   let nextId = 0;
   const coordinator = new ChatExecutionCoordinator({
     lifecycleRegistry: registry,
@@ -1704,6 +1708,154 @@ describe('ChatExecutionCoordinator', () => {
       status: 'missing-session',
       missingSessionResolution: 'reset',
     });
+    expect(harness.missingSession).toHaveBeenCalledWith(
+      'conversation-1',
+      'missing-native',
+    );
+    expect(harness.repository.discardStagedConversationInput).toHaveBeenCalledWith(
+      'conversation-1',
+      'input-1',
+    );
+    expect(session.disposeCalls).toBe(1);
+
+    await harness.coordinator.prepare();
+    const backend = harness.backends.get('claude')!;
+    expect(backend.sessions).toHaveLength(2);
+    expect(backend.configs[1]?.resumeSeed).toBeUndefined();
+  });
+
+  it('clears the conversation binding after missing-session deletion', async () => {
+    const harness = createHarness();
+    harness.missingSession.mockResolvedValueOnce('deleted');
+    const { session, run, resultPromise } = await beginExecution(harness);
+    run.events.push({
+      type: 'execution_error',
+      scope: requestedScope(session, run, 1),
+      category: 'provider-session-missing',
+      message: 'missing',
+      recoverable: true,
+      missingProviderSessionId: 'missing-native',
+    });
+    run.events.end();
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: 'missing-session',
+      accepted: false,
+      missingSessionResolution: 'deleted',
+    });
+    expect(harness.repository.discardStagedConversationInput).toHaveBeenCalledWith(
+      'conversation-1',
+      'input-1',
+    );
+    expect(session.disposeCalls).toBe(1);
+    await expect(harness.coordinator.prepare()).rejects.toThrow(
+      'No conversation is bound for chat execution',
+    );
+  });
+
+  it('does not apply a late missing-session reset to a replacement binding', async () => {
+    const harness = createHarness();
+    const resolution = deferred<'reset'>();
+    harness.missingSession.mockReturnValueOnce(resolution.promise);
+    const { session, run, resultPromise } = await beginExecution(harness);
+    run.events.push({
+      type: 'execution_error',
+      scope: requestedScope(session, run, 1),
+      category: 'provider-session-missing',
+      message: 'missing',
+      recoverable: true,
+      missingProviderSessionId: 'missing-native',
+    });
+    run.events.end();
+    for (
+      let attempt = 0;
+      attempt < 20 && harness.missingSession.mock.calls.length === 0;
+      attempt += 1
+    ) {
+      await Promise.resolve();
+    }
+
+    await harness.coordinator.bindConversation({
+      conversationId: 'conversation-2',
+      providerId: 'codex',
+      resumeSeed: { providerSessionId: 'codex-native' },
+    });
+    resolution.resolve('reset');
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: 'invalidated',
+      accepted: false,
+    });
+    await harness.coordinator.prepare();
+    expect(harness.backends.get('codex')!.configs[0]?.resumeSeed).toEqual({
+      providerSessionId: 'codex-native',
+    });
+    expect(harness.backends.get('claude')!.sessions).toHaveLength(1);
+    expect(session.disposeCalls).toBe(1);
+  });
+
+  it('retains accepted input when the provider reports its session missing', async () => {
+    const harness = createHarness();
+    const { session, run, resultPromise } = await beginExecution(
+      harness,
+      createSubmission({ inputRecordId: 'accepted-missing-input' }),
+    );
+    run.events.push({
+      type: 'turn_started',
+      scope: requestedScope(session, run, 1),
+      accepted: true,
+    });
+    run.events.push({
+      type: 'execution_error',
+      scope: requestedScope(session, run, 2),
+      category: 'provider-session-missing',
+      message: 'missing after handoff',
+      recoverable: true,
+      missingProviderSessionId: 'missing-native',
+    });
+    run.events.end();
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: 'missing-session',
+      accepted: true,
+    });
+    expect(harness.repository.acceptConversationInput).toHaveBeenCalledWith(
+      'conversation-1',
+      'accepted-missing-input',
+      { providerUserMessageId: undefined },
+    );
+    expect(harness.repository.discardStagedConversationInput).not.toHaveBeenCalled();
+  });
+
+  it('recovers an unaccepted missing session before surfacing a retryable terminal sink failure', async () => {
+    const sinkError = new Error('missing-session sink failed');
+    const harness = createHarness({
+      onRequestedEvent: async (event) => {
+        if (event.type === 'execution_error') throw sinkError;
+      },
+    });
+    const { session, run, resultPromise } = await beginExecution(
+      harness,
+      createSubmission({ inputRecordId: 'missing-sink-input' }),
+    );
+    run.events.push({
+      type: 'execution_error',
+      scope: requestedScope(session, run, 1),
+      category: 'provider-session-missing',
+      message: 'missing',
+      recoverable: true,
+      missingProviderSessionId: 'missing-native',
+    });
+    run.events.end();
+
+    await expect(resultPromise).rejects.toMatchObject({
+      name: 'ChatExecutionPreHandoffError',
+      cause: sinkError,
+    });
+    expect(harness.repository.discardStagedConversationInput).toHaveBeenCalledWith(
+      'conversation-1',
+      'missing-sink-input',
+    );
     expect(harness.missingSession).toHaveBeenCalledWith(
       'conversation-1',
       'missing-native',

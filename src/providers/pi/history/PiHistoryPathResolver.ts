@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
@@ -40,8 +41,19 @@ function getTrustedRoots(
 function isLogicalSessionId(value: string | null | undefined): value is string {
   return typeof value === 'string'
     && value.trim().length > 0
-    && !path.isAbsolute(value)
-    && !/[\\/]/.test(value);
+    && !isPiSessionPathReference(value);
+}
+
+export function isPiSessionPathReference(
+  value: string | null | undefined,
+): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && (
+    trimmed.includes('/')
+    || trimmed.includes('\\')
+    || trimmed.endsWith('.jsonl')
+  );
 }
 
 export function resolvePiSessionFileHint(
@@ -56,8 +68,19 @@ export function resolvePiSessionFileHint(
   }
 
   const roots = getTrustedRoots(vaultPath, context);
-  if (persistedPath && roots.some(root => isPathWithinRoot(persistedPath, root))) {
-    return persistedPath;
+  const pathReference = persistedPath?.trim()
+    || (isPiSessionPathReference(logicalSessionId)
+      ? logicalSessionId.trim()
+      : null);
+  const resolvedPathReference = pathReference
+    ? path.resolve(vaultPath ?? process.cwd(), pathReference)
+    : null;
+  if (
+    resolvedPathReference
+    && roots.some(root => isPathWithinRoot(resolvedPathReference, root))
+    && isFile(resolvedPathReference)
+  ) {
+    return resolvedPathReference;
   }
   if (!isLogicalSessionId(logicalSessionId)) {
     return null;
@@ -65,9 +88,17 @@ export function resolvePiSessionFileHint(
 
   for (const root of roots) {
     const resolved = findPiSessionFileInRoot(logicalSessionId, root);
-    if (resolved && isPathWithinRoot(resolved, root)) {
+    if (resolved && isPathWithinRoot(resolved, root) && isFile(resolved)) {
       return resolved;
     }
   }
   return null;
+}
+
+function isFile(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
 }

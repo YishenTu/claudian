@@ -123,6 +123,67 @@ describe('OpencodeConversationHistoryService', () => {
     });
   });
 
+  describe('resolveMissingConversationSession', () => {
+    it('clears a confirmed stale resume ID while preserving provider-owned state', async () => {
+      const conversation = createConversation('missing-session', '/tmp/opencode.db');
+      conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
+      const service = new OpencodeConversationHistoryService();
+
+      await expect(service.resolveMissingConversationSession(
+        conversation,
+        null,
+        'missing-session',
+      )).resolves.toBe('reset');
+
+      expect(conversation.sessionId).toBeNull();
+      expect(conversation.providerState).toEqual({
+        databasePath: '/tmp/opencode.db',
+        futureResumeCursor: { token: 'cursor-1' },
+        nativeConversationContextEstablished: false,
+      });
+    });
+
+    it('preserves a newer resume ID when the failure identifies another session', async () => {
+      const conversation = createConversation('current-session', '/tmp/opencode.db');
+      conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
+      const service = new OpencodeConversationHistoryService();
+
+      await expect(service.resolveMissingConversationSession(
+        conversation,
+        null,
+        'stale-session',
+      )).resolves.toBe('preserve');
+
+      expect(conversation.sessionId).toBe('current-session');
+      expect(conversation.providerState).toEqual({
+        databasePath: '/tmp/opencode.db',
+        futureResumeCursor: { token: 'cursor-1' },
+      });
+    });
+  });
+
+  it('marks native context established when read-only hydration proves history exists', async () => {
+    const dbPath = path.join(tmpRoot, 'opencode.db');
+    seedDatabase(dbPath, 'session-established', 'Accepted prompt');
+    const conversation = createConversation('session-established', dbPath);
+    conversation.providerState = {
+      ...conversation.providerState,
+      futureResumeCursor: { token: 'cursor-1' },
+      nativeConversationContextEstablished: false,
+    };
+
+    await new OpencodeConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+    );
+
+    expect(conversation.providerState).toEqual({
+      databasePath: dbPath,
+      futureResumeCursor: { token: 'cursor-1' },
+      nativeConversationContextEstablished: true,
+    });
+  });
+
   it('accepts an explicitly configured local database path', async () => {
     const sessionId = 'session-configured-path';
     const configuredPath = path.join(tmpRoot, 'custom', 'opencode-custom.db');

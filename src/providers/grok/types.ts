@@ -3,6 +3,7 @@ import * as path from 'path';
 export interface GrokProviderState {
   forkSource?: GrokForkSource;
   forkSourceSessionDirectory?: string;
+  nativeConversationContextEstablished?: boolean;
   sessionDirectory?: string;
 }
 
@@ -19,10 +20,17 @@ export function parseGrokProviderState(value: unknown): GrokProviderState {
   const record = value as Record<string, unknown>;
   const forkSource = parseForkSource(record.forkSource);
   const forkSourceSessionDirectory = parseAbsolutePath(record.forkSourceSessionDirectory);
+  const nativeConversationContextEstablished = typeof record.nativeConversationContextEstablished
+    === 'boolean'
+    ? record.nativeConversationContextEstablished
+    : undefined;
   const sessionDirectory = parseAbsolutePath(record.sessionDirectory);
   return {
     ...(forkSource ? { forkSource } : {}),
     ...(forkSourceSessionDirectory ? { forkSourceSessionDirectory } : {}),
+    ...(nativeConversationContextEstablished !== undefined
+      ? { nativeConversationContextEstablished }
+      : {}),
     ...(sessionDirectory ? { sessionDirectory } : {}),
   };
 }

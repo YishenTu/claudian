@@ -3,6 +3,7 @@ import type {
   ProviderExecutionRequest,
   ProviderInteractionPort,
   ProviderSessionConfig,
+  ProviderSessionEvent,
 } from '@/core/execution';
 import type { SlashCommand } from '@/core/types';
 
@@ -60,6 +61,7 @@ import {
   type OpencodeAcpSessionKernel,
   type OpencodeAcpSessionKernelOptions,
   type OpencodeNativeSessionInfo,
+  OpencodeSessionMissingError,
 } from '@/providers/opencode/execution/OpencodeAcpSessionKernel';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 
@@ -83,8 +85,13 @@ class FakeKernel implements OpencodeAcpSessionKernel {
   readonly prompts: unknown[] = [];
   cancelCalls = 0;
   disposeCalls = 0;
+  configError: unknown = null;
+  openSessionError: unknown = null;
+  onOpenSession: (() => void) | null = null;
+  onSetConfigOption: (() => void) | null = null;
   promptResult = { userMessageId: 'native-user' };
   private resolvePrompt: ((value: typeof this.promptResult) => void) | null = null;
+  private deferredOpenSession: Deferred<OpencodeNativeSessionInfo> | null = null;
   private deferredDisposal: Deferred<void> | null = null;
   sessionInfo: OpencodeNativeSessionInfo = {
     sessionId: 'native-session',
@@ -131,6 +138,9 @@ class FakeKernel implements OpencodeAcpSessionKernel {
 
   async openSession(resumeSessionId?: string): Promise<OpencodeNativeSessionInfo> {
     this.openedResumeIds.push(resumeSessionId);
+    this.onOpenSession?.();
+    if (this.openSessionError) throw this.openSessionError;
+    if (this.deferredOpenSession) return this.deferredOpenSession.promise;
     return this.sessionInfo;
   }
 
@@ -138,6 +148,8 @@ class FakeKernel implements OpencodeAcpSessionKernel {
     configOptions?: OpencodeNativeSessionInfo['configOptions'];
   }> {
     this.configCalls.push(request);
+    this.onSetConfigOption?.();
+    if (this.configError) throw this.configError;
     return { configOptions: this.sessionInfo.configOptions };
   }
 
@@ -165,6 +177,12 @@ class FakeKernel implements OpencodeAcpSessionKernel {
   deferDisposal(): Deferred<void> {
     const deferred = createDeferred<void>();
     this.deferredDisposal = deferred;
+    return deferred;
+  }
+
+  deferOpenSession(): Deferred<OpencodeNativeSessionInfo> {
+    const deferred = createDeferred<OpencodeNativeSessionInfo>();
+    this.deferredOpenSession = deferred;
     return deferred;
   }
 
@@ -471,7 +489,10 @@ describe('OpencodeExecutionBackend', () => {
       value: expect.objectContaining({
         snapshot: expect.objectContaining({
           providerSessionId: 'native-session',
-          providerState: { databasePath: '/native/opencode.db' },
+          providerState: {
+            databasePath: '/native/opencode.db',
+            nativeConversationContextEstablished: false,
+          },
           status: 'executing',
         }),
         type: 'session_state_changed',
@@ -525,6 +546,206 @@ describe('OpencodeExecutionBackend', () => {
     expect(JSON.stringify(harness.kernels[0].prompts[0])).not.toContain(
       'do-not-replay',
     );
+  });
+
+  it('classifies only explicit matching load failures as missing sessions', async () => {
+    const generic = createHarness(createConfig({
+      resumeSeed: {
+        providerSessionId: 'valid-session',
+        providerState: { databasePath: '/persisted/opencode.db' },
+      },
+    }));
+    const genericRun = generic.session.execute(createRequest());
+    generic.kernels[0].openSessionError = new Error('Authentication expired');
+
+    await expect(collect(genericRun.events)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: 'provider',
+          type: 'execution_error',
+        }),
+      ]),
+    );
+    expect(generic.session.getSnapshot()).toMatchObject({
+      providerSessionId: 'valid-session',
+    });
+
+    const missing = createHarness(createConfig({
+      resumeSeed: {
+        providerSessionId: 'missing-session',
+        providerState: { databasePath: '/persisted/opencode.db' },
+      },
+    }));
+    const missingRun = missing.session.execute(createRequest());
+    missing.kernels[0].openSessionError = new OpencodeSessionMissingError(
+      'missing-session',
+      new Error('Session not found'),
+    );
+
+    await expect(collect(missingRun.events)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: 'provider-session-missing',
+          missingProviderSessionId: 'missing-session',
+          type: 'execution_error',
+        }),
+      ]),
+    );
+  });
+
+  it('persists cold replay intent across a pre-prompt configuration failure', async () => {
+    const first = createHarness();
+    const firstRun = first.session.execute(createRequest());
+    first.kernels[0].configError = new Error('Configuration failed');
+    await collect(firstRun.events);
+
+    const failedSnapshot = first.session.getSnapshot();
+    expect(failedSnapshot).toMatchObject({
+      providerSessionId: 'native-session',
+      providerState: {
+        databasePath: '/native/opencode.db',
+        nativeConversationContextEstablished: false,
+      },
+      status: 'invalidated',
+    });
+    await first.session.dispose();
+
+    const replacement = createHarness(createConfig({
+      resumeSeed: {
+        providerSessionId: failedSnapshot.providerSessionId!,
+        providerState: {
+          ...failedSnapshot.providerState,
+          futureResumeCursor: { token: 'cursor-1' },
+        },
+      },
+    }));
+    const history = [
+      { id: 'u1', role: 'user' as const, content: 'replay-once', timestamp: 1 },
+      { id: 'a1', role: 'assistant' as const, content: 'prior-answer', timestamp: 2 },
+    ];
+    const recoveryRun = replacement.session.execute(createRequest({
+      conversationHistory: history,
+    }));
+    await waitForPrompt(replacement.kernels[0]);
+    expect(replacement.kernels[0].openedResumeIds).toEqual(['native-session']);
+    expect(JSON.stringify(replacement.kernels[0].prompts[0])).toContain('replay-once');
+    replacement.kernels[0].completePrompt();
+    await collect(recoveryRun.events);
+
+    expect(replacement.session.getSnapshot()).toMatchObject({
+      providerState: {
+        futureResumeCursor: { token: 'cursor-1' },
+        nativeConversationContextEstablished: true,
+      },
+    });
+
+    const continuedRun = replacement.session.execute(createRequest({
+      conversationHistory: history,
+    }));
+    await waitForPrompt(replacement.kernels[0], 2);
+    expect(JSON.stringify(replacement.kernels[0].prompts[1])).not.toContain(
+      'replay-once',
+    );
+    replacement.kernels[0].completePrompt();
+    await collect(continuedRun.events);
+  });
+
+  it('quarantines load and configuration replay until prompt dispatch', async () => {
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerSessionId: 'resume-session',
+        providerState: { databasePath: '/persisted/opencode.db' },
+      },
+    }));
+    const run = harness.session.execute(createRequest());
+    const kernel = harness.kernels[0];
+    kernel.sessionInfo = {
+      ...kernel.sessionInfo,
+      sessionId: 'resume-session',
+    };
+    kernel.onOpenSession = () => {
+      kernel.notify({
+        availableCommands: [{ name: 'review' }],
+        sessionUpdate: 'available_commands_update',
+      }, 'resume-session');
+      kernel.notify({
+        content: { text: 'historic-load-output', type: 'text' },
+        sessionUpdate: 'agent_message_chunk',
+      }, 'resume-session');
+    };
+    kernel.onSetConfigOption = () => {
+      kernel.notify({
+        content: { text: 'historic-config-output', type: 'text' },
+        sessionUpdate: 'agent_message_chunk',
+      }, 'resume-session');
+    };
+
+    await waitForPrompt(kernel);
+    kernel.notify({
+      content: { text: 'live-output', type: 'text' },
+      sessionUpdate: 'agent_message_chunk',
+    }, 'resume-session');
+    kernel.completePrompt();
+    const events = await collect(run.events);
+
+    expect(harness.commandCatalog.setCommandSnapshot).toHaveBeenCalledWith([
+      expect.objectContaining({ name: 'review' }),
+    ]);
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: 'live-output', type: 'text_delta' }),
+    ]));
+    expect(events).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: 'historic-load-output' }),
+    ]));
+    expect(events).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: 'historic-config-output' }),
+    ]));
+  });
+
+  it('reconnects when connect-scoped profile or instructions change', async () => {
+    const harness = createHarness();
+    const execute = async (
+      instructions: string,
+      toolPolicy: ProviderExecutionRequest['toolPolicy'],
+      expectedKernelCount: number,
+    ): Promise<void> => {
+      const base = createRequest();
+      const run = harness.session.execute(createRequest({
+        configuration: {
+          ...base.configuration,
+          systemInstructions: { instructions, kind: 'explicit' },
+        },
+        toolPolicy,
+      }));
+      await waitForCondition(() => harness.kernels.length === expectedKernelCount);
+      const kernel = harness.kernels[expectedKernelCount - 1];
+      await waitForPrompt(kernel);
+      kernel.completePrompt();
+      await collect(run.events);
+    };
+
+    await execute('instructions-a', { kind: 'provider-default' }, 1);
+    await execute('instructions-b', { kind: 'provider-default' }, 2);
+    await execute('instructions-b', { kind: 'read-only' }, 3);
+
+    expect(harness.kernels.map(kernel => kernel.connectCalls[0])).toEqual([
+      expect.objectContaining({
+        profile: 'managed',
+        systemInstructions: { instructions: 'instructions-a', kind: 'explicit' },
+      }),
+      expect.objectContaining({
+        profile: 'managed',
+        systemInstructions: { instructions: 'instructions-b', kind: 'explicit' },
+      }),
+      expect.objectContaining({
+        profile: 'readonly',
+        systemInstructions: { instructions: 'instructions-b', kind: 'explicit' },
+      }),
+    ]);
+    expect(harness.kernels.slice(1).map(kernel => kernel.openedResumeIds)).toEqual([
+      ['native-session'],
+      ['native-session'],
+    ]);
   });
 
   it.each([
@@ -797,6 +1018,84 @@ describe('OpencodeExecutionBackend', () => {
     harness.kernels[1].completePrompt();
     await expect(collect(second.events)).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'text_delta', text: 'again' }),
+    ]));
+  });
+
+  it('publishes a late native-session ownership ack after cancellation', async () => {
+    const harness = createHarness();
+    const sessionEvents: ProviderSessionEvent[] = [];
+    harness.session.onEvent((event) => {
+      sessionEvents.push(event);
+    });
+    const run = harness.session.execute(createRequest());
+    const kernel = harness.kernels[0];
+    const nativeSession = kernel.deferOpenSession();
+    await waitForCondition(() => kernel.openedResumeIds.length === 1);
+
+    run.cancel();
+    await collect(run.events);
+    nativeSession.resolve(kernel.sessionInfo);
+    await waitForCondition(() => (
+      harness.session.getSnapshot().providerSessionId === 'native-session'
+    ));
+
+    expect(harness.session.getSnapshot()).toMatchObject({
+      providerSessionId: 'native-session',
+      providerState: {
+        nativeConversationContextEstablished: false,
+      },
+      status: 'invalidated',
+    });
+    expect(sessionEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          providerSessionId: 'native-session',
+          status: 'invalidated',
+        }),
+        type: 'session_state_changed',
+      }),
+    ]));
+  });
+
+  it('publishes a late prompt ack as established context after cancellation', async () => {
+    const harness = createHarness();
+    const sessionEvents: ProviderSessionEvent[] = [];
+    harness.session.onEvent((event) => {
+      sessionEvents.push(event);
+    });
+    const run = harness.session.execute(createRequest({
+      conversationHistory: [
+        { content: 'cold-history', id: 'u1', role: 'user', timestamp: 1 },
+      ],
+    }));
+    const kernel = harness.kernels[0];
+    await waitForPrompt(kernel);
+
+    run.cancel();
+    await collect(run.events);
+    kernel.completePrompt();
+    await waitForCondition(() => (
+      harness.session.getSnapshot().providerState
+        ?.nativeConversationContextEstablished === true
+    ));
+
+    expect(harness.session.getSnapshot()).toMatchObject({
+      providerSessionId: 'native-session',
+      providerState: {
+        nativeConversationContextEstablished: true,
+      },
+      status: 'invalidated',
+    });
+    expect(sessionEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          providerState: expect.objectContaining({
+            nativeConversationContextEstablished: true,
+          }),
+          status: 'invalidated',
+        }),
+        type: 'session_state_changed',
+      }),
     ]));
   });
 

@@ -99,6 +99,7 @@ export class ClaudeExecutionRequestEncoder {
     abortController: AbortController,
     canUseTool: Options['canUseTool'],
     resume: ClaudeNativeResume,
+    replayConversationHistory: boolean,
   ): Promise<ClaudeEncodedExecutionRequest> {
     await this.deps.mcpManager.ensureLoaded();
     const cliPath = await this.deps.host.getResolvedProviderCliPath('claude');
@@ -128,7 +129,7 @@ export class ClaudeExecutionRequestEncoder {
       settings.permissionMode,
       claudeSettings.safeMode,
     );
-    const encodedPrompt = this.encodePrompt(request);
+    const encodedPrompt = this.encodePrompt(request, replayConversationHistory);
     const mcpMentions = this.deps.mcpManager.extractMentions(encodedPrompt);
     const prompt = this.deps.mcpManager.transformMentions(encodedPrompt);
     const enabledMcpServers = new Set([
@@ -266,7 +267,10 @@ export class ClaudeExecutionRequestEncoder {
     return settings;
   }
 
-  private encodePrompt(request: ProviderExecutionRequest): string {
+  private encodePrompt(
+    request: ProviderExecutionRequest,
+    replayConversationHistory: boolean,
+  ): string {
     let prompt = request.input
       .filter((block) => block.type === 'text')
       .map((block) => block.text)
@@ -292,7 +296,9 @@ export class ClaudeExecutionRequestEncoder {
       prompt = appendCanvasContext(prompt, context.canvasSelection);
     }
 
-    const history = request.conversationHistory;
+    const history = replayConversationHistory
+      ? request.conversationHistory
+      : undefined;
     if (!history || history.length === 0) {
       return prompt;
     }

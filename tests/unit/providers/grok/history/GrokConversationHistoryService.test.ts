@@ -104,6 +104,28 @@ describe('GrokConversationHistoryService', () => {
     expect(await fs.readFile(updatesPath, 'utf8')).toBe('');
   });
 
+  it('reconciles a pending context marker when native history proves handoff', async () => {
+    const service = new GrokConversationHistoryService();
+    const conversation = createConversation();
+    conversation.providerState = {
+      futureResumeCursor: { token: 'cursor-1' },
+      nativeConversationContextEstablished: false,
+      sessionDirectory,
+    };
+
+    await service.hydrateConversationHistory(conversation, vaultPath, {
+      environment: { HOME: tempRoot },
+    });
+
+    expect(conversation.messages.length).toBeGreaterThan(0);
+    expect(conversation.providerState).toEqual({
+      futureResumeCursor: { token: 'cursor-1' },
+      nativeConversationContextEstablished: true,
+      sessionDirectory,
+    });
+    await expect(fs.readFile(updatesPath, 'utf8')).resolves.toBe(fixture);
+  });
+
   it('sanitizes known fields while preserving unknown provider state', () => {
     const service = new GrokConversationHistoryService();
     const conversation = createConversation();
@@ -129,6 +151,55 @@ describe('GrokConversationHistoryService', () => {
 
     expect(conversation.messages).toEqual([]);
     expect(conversation.providerState).toBeUndefined();
+  });
+
+  describe('resolveMissingConversationSession', () => {
+    it('clears a confirmed stale native binding while preserving unknown state', async () => {
+      const conversation = createConversation();
+      conversation.providerState = {
+        forkSource: { resumeAt: 'assistant-old', sessionId: 'source-old' },
+        forkSourceSessionDirectory: '/tmp/grok/source-old',
+        futureResumeCursor: { token: 'cursor-1' },
+        nativeConversationContextEstablished: true,
+        sessionDirectory,
+      };
+      const service = new GrokConversationHistoryService();
+
+      await expect(service.resolveMissingConversationSession(
+        conversation,
+        vaultPath,
+        'session-fixture',
+      )).resolves.toBe('reset');
+
+      expect(conversation.sessionId).toBeNull();
+      expect(conversation.providerState).toEqual({
+        futureResumeCursor: { token: 'cursor-1' },
+      });
+      await expect(fs.readFile(updatesPath, 'utf8')).resolves.toBe(fixture);
+    });
+
+    it('preserves a newer native binding when the failure identifies another session', async () => {
+      const conversation = createConversation();
+      conversation.providerState = {
+        futureResumeCursor: { token: 'cursor-1' },
+        nativeConversationContextEstablished: true,
+        sessionDirectory,
+      };
+      const service = new GrokConversationHistoryService();
+
+      await expect(service.resolveMissingConversationSession(
+        conversation,
+        vaultPath,
+        'stale-session',
+      )).resolves.toBe('preserve');
+
+      expect(conversation.sessionId).toBe('session-fixture');
+      expect(conversation.providerState).toEqual({
+        futureResumeCursor: { token: 'cursor-1' },
+        nativeConversationContextEstablished: true,
+        sessionDirectory,
+      });
+    });
   });
 
   it('hydrates only from the configured home when the default home has the same session id', async () => {

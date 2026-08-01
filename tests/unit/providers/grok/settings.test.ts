@@ -253,6 +253,19 @@ describe('Grok settings', () => {
 });
 
 describe('Grok provider state', () => {
+  it('preserves the provider-owned native-context handoff marker', () => {
+    expect(parseGrokProviderState({
+      nativeConversationContextEstablished: false,
+    })).toEqual({
+      nativeConversationContextEstablished: false,
+    });
+    expect(buildPersistedGrokProviderState({
+      nativeConversationContextEstablished: true,
+    })).toEqual({
+      nativeConversationContextEstablished: true,
+    });
+  });
+
   it('parses and builds only an absolute native session directory hint', () => {
     expect(parseGrokProviderState({
       sessionDirectory: ' /tmp/.grok/sessions/vault/session-id ',

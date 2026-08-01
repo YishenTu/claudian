@@ -39,6 +39,31 @@ describe('OpenCode provider state', () => {
     });
   });
 
+  it.each([true, false])(
+    'normalizes the durable native-context marker: %p',
+    (nativeConversationContextEstablished) => {
+      expect(getOpencodeState({
+        futureResumeCursor: { token: 'cursor-1' },
+        nativeConversationContextEstablished,
+      })).toEqual({
+        futureResumeCursor: { token: 'cursor-1' },
+        nativeConversationContextEstablished,
+      });
+    },
+  );
+
+  it.each([null, 'true', 1, {}])(
+    'drops a malformed native-context marker: %p',
+    (nativeConversationContextEstablished) => {
+      expect(getOpencodeState({
+        futureResumeCursor: { token: 'cursor-1' },
+        nativeConversationContextEstablished,
+      })).toEqual({
+        futureResumeCursor: { token: 'cursor-1' },
+      });
+    },
+  );
+
   it.each([undefined, null, [], 'invalid', 42])(
     'treats a non-record provider state as empty: %p',
     (providerState) => {

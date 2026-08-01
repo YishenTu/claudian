@@ -208,9 +208,9 @@ describe('ClaudeExecutionBackend', () => {
     )))).toHaveProperty('size', 1);
     expect(events.map(({ type }) => type)).toEqual([
       'session_state_changed',
+      'session_state_changed',
       'turn_started',
       'user_message_started',
-      'session_state_changed',
       'assistant_message_started',
       'text_delta',
       'session_state_changed',
@@ -556,6 +556,366 @@ describe('ClaudeExecutionBackend', () => {
     expect(query?.setMcpServers).toHaveBeenCalledWith({
       selected: { command: 'server' },
     });
+  });
+
+  it('replays canonical history only while bootstrapping a native session', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const { services, mcpManager } = createServices();
+    const session = new ClaudeExecutionBackend(createHost(), services)
+      .createSession(createConfig());
+    const conversationHistory = [
+      { id: 'history-user', role: 'user' as const, content: 'prior question', timestamp: 1 },
+      { id: 'history-assistant', role: 'assistant' as const, content: 'prior answer', timestamp: 2 },
+    ];
+
+    await collectEvents(session.execute(createRequest({
+      conversationHistory,
+    })).events);
+    await collectEvents(session.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'Follow up' }],
+    })).events);
+
+    const prompts = mcpManager.extractMentions.mock.calls.map(([prompt]) => String(prompt));
+    expect(prompts[0]).toContain('prior question');
+    expect(prompts[0]).toContain('prior answer');
+    expect(prompts[1]).toBe('Follow up');
+  });
+
+  it('replays canonical history once after confirmed SDK session amnesia', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'replacement-session' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const { services, mcpManager } = createServices();
+    const session = new ClaudeExecutionBackend(createHost(), services)
+      .createSession(createConfig({
+        resumeSeed: {
+          providerSessionId: 'expected-session',
+          providerState: { providerSessionId: 'expected-session' },
+        },
+      }));
+    const conversationHistory = [
+      { id: 'history-user', role: 'user' as const, content: 'recover this question', timestamp: 1 },
+      { id: 'history-assistant', role: 'assistant' as const, content: 'recover this answer', timestamp: 2 },
+    ];
+
+    await collectEvents(session.execute(createRequest({
+      conversationHistory,
+    })).events);
+    await collectEvents(session.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'After amnesia' }],
+    })).events);
+    await collectEvents(session.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'After recovery' }],
+    })).events);
+
+    const prompts = mcpManager.extractMentions.mock.calls.map(([prompt]) => String(prompt));
+    expect(prompts[0]).toBe('Hello');
+    expect(prompts[1]).toContain('recover this question');
+    expect(prompts[2]).toBe('After recovery');
+  });
+
+  it('retains amnesia recovery history when cancellation wins before native handoff', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'replacement-session' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const { services, mcpManager } = createServices();
+    const session = new ClaudeExecutionBackend(createHost(), services)
+      .createSession(createConfig({
+        resumeSeed: {
+          providerSessionId: 'expected-session',
+          providerState: { providerSessionId: 'expected-session' },
+        },
+      }));
+    const conversationHistory = [
+      { id: 'history-user', role: 'user' as const, content: 'cancel recovery question', timestamp: 1 },
+      { id: 'history-assistant', role: 'assistant' as const, content: 'cancel recovery answer', timestamp: 2 },
+    ];
+    await collectEvents(session.execute(createRequest({ conversationHistory })).events);
+
+    const encodingBarrier = createDeferred<void>();
+    mcpManager.ensureLoaded.mockImplementationOnce(() => encodingBarrier.promise);
+    const cancelledRun = session.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'Cancelled recovery' }],
+    }));
+    const cancelledEvents = collectEvents(cancelledRun.events);
+    await Promise.resolve();
+    cancelledRun.cancel();
+    encodingBarrier.resolve();
+    await cancelledEvents;
+
+    await collectEvents(session.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'Retry recovery' }],
+    })).events);
+
+    const prompts = mcpManager.extractMentions.mock.calls.map(([prompt]) => String(prompt));
+    expect(prompts.at(-1)).toContain('cancel recovery question');
+  });
+
+  it('retains amnesia recovery history when an enqueued turn fails before acceptance', async () => {
+    const failureBarrier = createDeferred<null>();
+    const failedQuery = createFailingPersistentQuery(
+      [failureBarrier.promise],
+      new Error('Authentication failed before acceptance'),
+    );
+    const retryQuery = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'replacement-session' },
+      { type: 'result', subtype: 'success' },
+    ]]);
+    const failedFactory = jest.fn(() => failedQuery);
+    jest.spyOn(
+      await import('@/providers/claude/loadClaudeAgentSdk'),
+      'loadClaudeAgentQuery',
+    )
+      .mockResolvedValueOnce(failedFactory as never)
+      .mockResolvedValueOnce((() => retryQuery) as never);
+    const { services, mcpManager } = createServices();
+    const session = new ClaudeExecutionBackend(createHost(), services)
+      .createSession(createConfig({
+        resumeSeed: {
+          providerSessionId: 'replacement-session',
+          providerState: {
+            historyReplayPending: true,
+            providerSessionId: 'replacement-session',
+          },
+        },
+      }));
+    const conversationHistory = [
+      { id: 'history-user', role: 'user' as const, content: 'retry this question', timestamp: 1 },
+      { id: 'history-assistant', role: 'assistant' as const, content: 'retry this answer', timestamp: 2 },
+    ];
+
+    const failedEventsPromise = collectEvents(session.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'Failed recovery' }],
+    })).events);
+    await waitFor(() => failedFactory.mock.calls.length === 1);
+    await new Promise(resolve => setImmediate(resolve));
+    failureBarrier.resolve(null);
+    const failedEvents = await failedEventsPromise;
+    expect(failedEvents.at(-1)).toEqual(expect.objectContaining({
+      category: 'authentication',
+      type: 'execution_error',
+    }));
+    expect(failedEvents).not.toContainEqual(expect.objectContaining({
+      type: 'turn_started',
+    }));
+
+    await collectEvents(session.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'Retry recovery' }],
+    })).events);
+
+    const prompts = mcpManager.extractMentions.mock.calls.map(([prompt]) => String(prompt));
+    expect(prompts.at(-1)).toContain('retry this question');
+  });
+
+  it('does not accept startup init before the user message is enqueued', async () => {
+    const queryEndBarrier = createDeferred<null>();
+    const query = createScriptedPersistentQuery([[
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 'replacement-session',
+        agents: ['general-purpose'],
+      },
+      queryEndBarrier.promise,
+    ]]);
+    let initializationInteraction: Promise<unknown> | undefined;
+    const queryFactory = jest.fn((params: {
+      options?: sdkModule.Options;
+    }) => {
+      initializationInteraction = params.options?.canUseTool?.(
+        'Bash',
+        { command: 'pwd' },
+        {
+          signal: new AbortController().signal,
+          toolUseID: 'startup-tool',
+          requestId: 'startup-request',
+        },
+      );
+      return query;
+    });
+    jest.spyOn(
+      await import('@/providers/claude/loadClaudeAgentSdk'),
+      'loadClaudeAgentQuery',
+    ).mockResolvedValueOnce(queryFactory as never);
+    const { services } = createServices();
+    const requestAbortController = new AbortController();
+    services.agentManager.setBuiltinAgentNames = jest.fn(() => {
+      requestAbortController.abort();
+    });
+    const session = new ClaudeExecutionBackend(createHost(), services)
+      .createSession(createConfig({
+        resumeSeed: {
+          providerSessionId: 'replacement-session',
+          providerState: {
+            historyReplayPending: true,
+            providerSessionId: 'replacement-session',
+          },
+        },
+      }));
+
+    const eventsPromise = collectEvents(session.execute(createRequest({
+      conversationHistory: [
+        { id: 'history-user', role: 'user', content: 'startup history question', timestamp: 1 },
+        { id: 'history-assistant', role: 'assistant', content: 'startup history answer', timestamp: 2 },
+      ],
+      signal: requestAbortController.signal,
+    })).events);
+    const events = await eventsPromise;
+    const interaction = await initializationInteraction;
+
+    expect(events.at(-1)?.type).toBe('cancelled');
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'turn_started',
+    }));
+    expect(session.getSnapshot().providerState).toEqual(
+      expect.objectContaining({ historyReplayPending: true }),
+    );
+    expect(interaction).toEqual(expect.objectContaining({
+      behavior: 'deny',
+      interrupt: true,
+    }));
+
+    queryEndBarrier.resolve(null);
+    await query.finished;
+    await session.dispose();
+  });
+
+  it('retains a pending fork when an enqueued turn fails before session init', async () => {
+    const failureBarrier = createDeferred<null>();
+    const failedQuery = createFailingPersistentQuery(
+      [failureBarrier.promise],
+      new Error('Authentication failed before fork init'),
+    );
+    const retryQuery = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'forked-session' },
+      { type: 'result', subtype: 'success' },
+    ]]);
+    const firstFactory = jest.fn(() => failedQuery);
+    const retryFactory = jest.fn(() => retryQuery);
+    jest.spyOn(
+      await import('@/providers/claude/loadClaudeAgentSdk'),
+      'loadClaudeAgentQuery',
+    )
+      .mockResolvedValueOnce(firstFactory as never)
+      .mockResolvedValueOnce(retryFactory as never);
+    const { services, mcpManager } = createServices();
+    const session = new ClaudeExecutionBackend(createHost(), services)
+      .createSession(createConfig({
+        resumeSeed: {
+          providerState: {
+            forkSource: {
+              sessionId: 'source-session',
+              resumeAt: 'assistant-checkpoint',
+            },
+          },
+        },
+      }));
+
+    const failedEventsPromise = collectEvents(
+      session.execute(createRequest()).events,
+    );
+    await waitFor(() => firstFactory.mock.calls.length === 1);
+    await new Promise(resolve => setImmediate(resolve));
+    failureBarrier.resolve(null);
+    await failedEventsPromise;
+    const pendingForkSnapshot = session.getSnapshot();
+    expect(pendingForkSnapshot.providerSessionId).toBeUndefined();
+    expect(pendingForkSnapshot.providerState).toEqual(expect.objectContaining({
+      forkSource: {
+        sessionId: 'source-session',
+        resumeAt: 'assistant-checkpoint',
+      },
+    }));
+    await session.dispose();
+
+    const replacement = new ClaudeExecutionBackend(createHost(), services)
+      .createSession(createConfig({
+        resumeSeed: {
+          ...(pendingForkSnapshot.providerSessionId
+            ? { providerSessionId: pendingForkSnapshot.providerSessionId }
+            : {}),
+          providerState: pendingForkSnapshot.providerState,
+        },
+      }));
+    await collectEvents(replacement.execute(createRequest({
+      conversationHistory: [
+        { id: 'history-user', role: 'user', content: 'fork source question', timestamp: 1 },
+        { id: 'history-assistant', role: 'assistant', content: 'fork source answer', timestamp: 2 },
+      ],
+      input: [{ type: 'text', text: 'Retry the fork' }],
+    })).events);
+
+    expect(retryFactory).toHaveBeenCalledWith(expect.objectContaining({
+      options: expect.objectContaining({
+        forkSession: true,
+        resume: 'source-session',
+        resumeSessionAt: 'assistant-checkpoint',
+      }),
+    }));
+    expect(mcpManager.extractMentions.mock.calls.at(-1)?.[0]).toBe(
+      'Retry the fork',
+    );
+  });
+
+  it('persists amnesia recovery intent across execution-session recreation', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'replacement-session' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const { services, mcpManager } = createServices();
+    const backend = new ClaudeExecutionBackend(createHost(), services);
+    const session = backend.createSession(createConfig({
+      resumeSeed: {
+        providerSessionId: 'expected-session',
+        providerState: { providerSessionId: 'expected-session' },
+      },
+    }));
+    const conversationHistory = [
+      { id: 'history-user', role: 'user' as const, content: 'durable recovery question', timestamp: 1 },
+      { id: 'history-assistant', role: 'assistant' as const, content: 'durable recovery answer', timestamp: 2 },
+    ];
+
+    await collectEvents(session.execute(createRequest({ conversationHistory })).events);
+    const amnesiacSnapshot = session.getSnapshot();
+    expect(amnesiacSnapshot.providerState).toEqual(expect.objectContaining({
+      historyReplayPending: true,
+      providerSessionId: 'replacement-session',
+    }));
+    await session.dispose();
+
+    const replacement = backend.createSession(createConfig({
+      resumeSeed: {
+        providerSessionId: amnesiacSnapshot.providerSessionId,
+        providerState: { ...amnesiacSnapshot.providerState },
+      },
+    }));
+    await collectEvents(replacement.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'Recover after recreation' }],
+    })).events);
+    await collectEvents(replacement.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'Continue after recovery' }],
+    })).events);
+
+    const prompts = mcpManager.extractMentions.mock.calls.map(([prompt]) => String(prompt));
+    expect(prompts.at(-2)).toContain('durable recovery question');
+    expect(prompts.at(-1)).toBe('Continue after recovery');
+    expect(replacement.getSnapshot().providerState).not.toHaveProperty(
+      'historyReplayPending',
+    );
   });
 
   it('invalidates a missing native session and reports the missing ID as a terminal event', async () => {

@@ -1313,6 +1313,48 @@ describe('InputController coordinator execution', () => {
     expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
   });
 
+  it('keeps an accepted missing-session turn non-retryable while resetting recovery state', async () => {
+    const fixture = createFixture();
+    fixture.input.value = 'already handed off';
+    fixture.coordinator.execute.mockResolvedValueOnce({
+      accepted: true,
+      missingSessionResolution: 'reset',
+      planCompleted: false,
+      status: 'missing-session',
+    });
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.input.value).toBe('');
+    expect(fixture.state.messages).toHaveLength(2);
+    expect(fixture.state.isStreaming).toBe(false);
+    expect(fixture.deps.renderer.removeMessage).not.toHaveBeenCalled();
+    expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledWith(
+      'The provider session no longer exists. Claudian preserved the recoverable history; send again to rebuild the session.',
+    );
+  });
+
+  it('does not restore accepted input after missing-session deletion recovery', async () => {
+    const fixture = createFixture();
+    fixture.input.value = 'accepted before deletion';
+    fixture.coordinator.execute.mockResolvedValueOnce({
+      accepted: true,
+      missingSessionResolution: 'deleted',
+      planCompleted: false,
+      status: 'missing-session',
+    });
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.input.value).toBe('');
+    expect(fixture.deps.renderer.removeMessage).not.toHaveBeenCalled();
+    expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledWith(
+      'The provider session no longer exists. Its Claudian record was removed; send again to start a new session.',
+    );
+  });
+
   it('keeps pending input intact when execution preparation fails', async () => {
     const fixture = createFixture({
       ensureExecutionInitialized: jest.fn().mockResolvedValue(false),

@@ -139,6 +139,11 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
   rewindCalls: unknown[] = [];
   shutdownCalls = 0;
   loadResponse: Awaited<ReturnType<GrokExecutionNativeConnection['loadSession']>> | null = null;
+  loadImplementation: (
+    request: AcpLoadSessionRequest,
+  ) => ReturnType<GrokExecutionNativeConnection['loadSession']> = async request => (
+    this.loadResponse ?? { sessionId: request.sessionId }
+  );
   private notification: ((value: AcpSessionNotification, source: 'extension' | 'standard') => void)
     | null = null;
   private retainedNotification: ((
@@ -159,6 +164,7 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
     parentSessionId: request.sourceSessionId,
   });
   interjectImplementation: () => Promise<void> = async () => {};
+  modelImplementation: (request: AcpSetSessionModelRequest) => Promise<void> = async () => {};
   promptImplementation: () => Promise<{ stopReason: string }> = async () => ({
     stopReason: 'end_turn',
   });
@@ -200,7 +206,7 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
     request: AcpLoadSessionRequest,
   ): ReturnType<GrokExecutionNativeConnection['loadSession']> {
     this.loadRequests.push(request);
-    return this.loadResponse ?? { sessionId: request.sessionId };
+    return this.loadImplementation(request);
   }
 
   async newSession(request: AcpNewSessionRequest): Promise<{ sessionId: string }> {
@@ -244,6 +250,7 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
 
   async setModel(request: AcpSetSessionModelRequest): Promise<void> {
     this.modelRequests.push(request);
+    await this.modelImplementation(request);
   }
 
   async shutdown(): Promise<void> {
@@ -344,6 +351,208 @@ describe('GrokExecutionBackend', () => {
     });
   });
 
+  it('loads once per native connection and quarantines session replay from live output', async () => {
+    const native = new FakeNativeConnection();
+    native.loadImplementation = async request => {
+      native.emit({
+        content: { text: 'historical replay', type: 'text' },
+        sessionUpdate: 'agent_message_chunk',
+      });
+      return { sessionId: request.sessionId };
+    };
+    native.promptImplementation = async () => {
+      native.emit({
+        content: { text: 'live answer', type: 'text' },
+        sessionUpdate: 'agent_message_chunk',
+      });
+      return { stopReason: 'end_turn' };
+    };
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    const firstEvents = await collect(session.execute(executionRequest('first')).events);
+    const secondEvents = await collect(session.execute(executionRequest('second')).events);
+
+    expect(native.loadRequests).toHaveLength(1);
+    expect(firstEvents.filter(event => event.type === 'text_delta')).toEqual([
+      expect.objectContaining({ text: 'live answer' }),
+    ]);
+    expect(secondEvents.filter(event => event.type === 'text_delta')).toEqual([
+      expect.objectContaining({ text: 'live answer' }),
+    ]);
+  });
+
+  it('keeps one loaded connection for dynamic model and mode changes', async () => {
+    const native = new FakeNativeConnection();
+    const nativeFactory: GrokExecutionNativeFactory = {
+      create: jest.fn(() => native),
+    };
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory },
+    ).createSession(sessionConfig);
+    const firstRequest = executionRequest('first');
+    const secondRequest: ProviderExecutionRequest = {
+      ...executionRequest('second'),
+      configuration: {
+        ...firstRequest.configuration,
+        mode: 'default',
+        model: 'grok/grok-3',
+      },
+    };
+
+    await collect(session.execute(firstRequest).events);
+    await collect(session.execute(secondRequest).events);
+
+    expect(nativeFactory.create).toHaveBeenCalledTimes(1);
+    expect(native.loadRequests).toHaveLength(1);
+    expect(native.modelRequests.map(request => request.modelId)).toEqual([
+      'grok-4',
+      'grok-3',
+    ]);
+    expect(native.modeRequests.map(request => request.modeId)).toEqual([
+      'plan',
+      'default',
+    ]);
+  });
+
+  it('reconnects and loads once when load-scoped session metadata changes', async () => {
+    const firstNative = new FakeNativeConnection();
+    const secondNative = new FakeNativeConnection();
+    const nativeFactory: GrokExecutionNativeFactory = {
+      create: jest.fn()
+        .mockReturnValueOnce(firstNative)
+        .mockReturnValueOnce(secondNative),
+    };
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory },
+    ).createSession(sessionConfig);
+    const firstRequest = executionRequest('first');
+    const secondRequest: ProviderExecutionRequest = {
+      ...executionRequest('second'),
+      configuration: {
+        ...firstRequest.configuration,
+        systemInstructions: { kind: 'explicit', instructions: 'Use the replacement policy.' },
+      },
+    };
+
+    await collect(session.execute(firstRequest).events);
+    await collect(session.execute(secondRequest).events);
+
+    expect(nativeFactory.create).toHaveBeenCalledTimes(2);
+    expect(firstNative.loadRequests).toHaveLength(1);
+    expect(firstNative.shutdownCalls).toBe(1);
+    expect(secondNative.loadRequests).toEqual([
+      expect.objectContaining({
+        _meta: expect.objectContaining({
+          systemPromptOverride: 'Use the replacement policy.',
+        }),
+        sessionId: 'session-existing',
+      }),
+    ]);
+  });
+
+  it('bootstraps canonical history only when creating a new native session', async () => {
+    const native = new FakeNativeConnection();
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory: { create: () => native } },
+    ).createSession({
+      ...sessionConfig,
+      resumeSeed: undefined,
+    });
+    const request = {
+      ...executionRequest('current'),
+      conversationHistory: [
+        { content: 'prior question', id: 'user-prior', role: 'user' as const, timestamp: 1 },
+        { content: 'prior answer', id: 'assistant-prior', role: 'assistant' as const, timestamp: 2 },
+      ],
+    };
+
+    await collect(session.execute(request).events);
+    await collect(session.execute(request).events);
+
+    expect(native.newRequests).toHaveLength(1);
+    expect(native.promptRequests[0]?.prompt).toEqual([
+      expect.objectContaining({
+        text: expect.stringContaining('prior question'),
+        type: 'text',
+      }),
+    ]);
+    expect(JSON.stringify(native.promptRequests[0]?.prompt)).toContain('prior answer');
+    expect(JSON.stringify(native.promptRequests[1]?.prompt)).not.toContain('prior question');
+    expect(JSON.stringify(native.promptRequests[1]?.prompt)).not.toContain('prior answer');
+  });
+
+  it('persists pending cold-history replay across execution-session recreation', async () => {
+    const firstNative = new FakeNativeConnection();
+    firstNative.modelImplementation = async () => {
+      throw new Error('model configuration failed before prompt handoff');
+    };
+    const backend = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory: { create: () => firstNative } },
+    );
+    const firstSession = backend.createSession({
+      ...sessionConfig,
+      resumeSeed: undefined,
+    });
+    const request = {
+      ...executionRequest('current'),
+      conversationHistory: [
+        { content: 'durable prior', id: 'user-prior', role: 'user' as const, timestamp: 1 },
+      ],
+    };
+
+    await collect(firstSession.execute(request).events);
+    const pendingSnapshot = firstSession.getSnapshot();
+
+    expect(pendingSnapshot).toMatchObject({
+      providerSessionId: 'session-new',
+      providerState: { nativeConversationContextEstablished: false },
+    });
+    await firstSession.dispose();
+
+    const secondNative = new FakeNativeConnection();
+    const secondSession = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory: { create: () => secondNative } },
+    ).createSession({
+      ...sessionConfig,
+      resumeSeed: {
+        providerSessionId: pendingSnapshot.providerSessionId,
+        providerState: pendingSnapshot.providerState,
+      },
+    });
+
+    await collect(secondSession.execute(request).events);
+
+    expect(JSON.stringify(secondNative.promptRequests[0]?.prompt)).toContain('durable prior');
+    expect(secondSession.getSnapshot()).toMatchObject({
+      providerState: { nativeConversationContextEstablished: true },
+    });
+  });
+
+  it('does not bootstrap canonical history when loading native context', async () => {
+    const native = new FakeNativeConnection();
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    await collect(session.execute({
+      ...executionRequest('current'),
+      conversationHistory: [
+        { content: 'native-owned prior', id: 'user-prior', role: 'user', timestamp: 1 },
+      ],
+    }).events);
+
+    expect(JSON.stringify(native.promptRequests[0]?.prompt)).not.toContain('native-owned prior');
+  });
+
   it.each(['normal', 'yolo'] as const)(
     'exits native Plan mode for a persistent feature-shaped %s request',
     async (permissionMode) => {
@@ -360,7 +569,8 @@ describe('GrokExecutionBackend', () => {
         { modeId: 'plan', sessionId: 'session-existing' },
         { modeId: 'default', sessionId: 'session-existing' },
       ]);
-      expect(native.loadRequests[1]?._meta).toMatchObject({
+      expect(native.loadRequests).toHaveLength(permissionMode === 'yolo' ? 2 : 1);
+      expect(native.loadRequests.at(-1)?._meta).toMatchObject({
         yoloMode: permissionMode === 'yolo',
       });
     },
@@ -403,6 +613,15 @@ describe('GrokExecutionBackend', () => {
       expect.objectContaining({
         snapshot: expect.objectContaining({
           providerSessionId: 'session-new',
+          status: 'executing',
+        }),
+      }),
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          providerSessionId: 'session-new',
+          providerState: expect.objectContaining({
+            nativeConversationContextEstablished: true,
+          }),
           status: 'executing',
         }),
       }),
@@ -491,6 +710,30 @@ describe('GrokExecutionBackend', () => {
     });
     expect(firstEvents.at(-1)?.type).toBe('cancelled');
     expect(secondEvents.at(-1)?.type).toBe('turn_completed');
+  });
+
+  it('quarantines native output as soon as cancellation begins', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    while (native.promptRequests.length === 0) await Promise.resolve();
+
+    run.cancel();
+    native.emit({
+      content: { text: 'late during cancel delivery', type: 'text' },
+      sessionUpdate: 'agent_message_chunk',
+    });
+    const events = await collect(run.events);
+
+    expect(events.some(event => event.type === 'text_delta')).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      reason: 'cancelled',
+      type: 'cancelled',
+    });
   });
 
   it('emits only cancelled when quarantine shutdown rejects the pending native prompt', async () => {
@@ -962,6 +1205,7 @@ describe('GrokExecutionBackend', () => {
       .resolves.toMatchObject({ canRewind: true });
 
     expect(session.getSnapshot().providerState).toEqual({
+      nativeConversationContextEstablished: true,
       sessionDirectory: '/trusted/grok/sessions/session-new',
     });
     expect(mockLoadGrokPromptIndexAfterAssistant).toHaveBeenNthCalledWith(
@@ -1420,6 +1664,25 @@ describe('GrokExecutionBackend', () => {
     });
     expect(events.at(-1)).toMatchObject({
       category: 'transport',
+      type: 'execution_error',
+    });
+  });
+
+  it('identifies the stale native session when load reports it missing', async () => {
+    const native = new FakeNativeConnection();
+    native.loadImplementation = async () => {
+      throw new Error('session not found');
+    };
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    const events = await collect(session.execute(executionRequest()).events);
+
+    expect(events.at(-1)).toMatchObject({
+      category: 'provider-session-missing',
+      missingProviderSessionId: 'session-existing',
       type: 'execution_error',
     });
   });

@@ -2494,7 +2494,7 @@ describe('ClaudianPlugin', () => {
 
       await expect(plugin.handleMissingProviderSession(
         conv.id,
-        'unverified-provider-session',
+        'different-reported-session',
       )).resolves.toBe('preserved');
       expect(plugin.getConversationSync(conv.id)).toBe(conv);
     });

@@ -11,7 +11,10 @@ import {
   loadOpencodeSessionMessages,
 } from './OpencodeHistoryStore';
 
-const OPENCODE_PROVIDER_STATE_KEYS = ['databasePath'] as const;
+const OPENCODE_PROVIDER_STATE_KEYS = [
+  'databasePath',
+  'nativeConversationContextEstablished',
+] as const;
 
 export class OpencodeConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedKeys = new Map<string, string>();
@@ -45,6 +48,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       conversation.messages.length > 0
       && this.hydratedKeys.get(conversation.id) === hydrationKey
     ) {
+      this.markNativeConversationContextEstablished(conversation);
       return;
     }
 
@@ -64,6 +68,29 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     }
 
     this.hydratedKeys.set(conversation.id, hydrationKey);
+    this.markNativeConversationContextEstablished(conversation);
+  }
+
+  async resolveMissingConversationSession(
+    conversation: Conversation,
+    _vaultPath: string | null,
+    missingProviderSessionId?: string,
+  ): Promise<'delete' | 'reset' | 'preserve'> {
+    if (
+      !conversation.sessionId
+      || !missingProviderSessionId
+      || conversation.sessionId !== missingProviderSessionId
+    ) {
+      return 'preserve';
+    }
+
+    conversation.sessionId = null;
+    conversation.providerState = {
+      ...conversation.providerState,
+      nativeConversationContextEstablished: false,
+    };
+    this.hydratedKeys.delete(conversation.id);
+    return 'reset';
   }
 
   resolveSessionIdForConversation(conversation: Conversation | null): string | null {
@@ -88,6 +115,12 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const state = getOpencodeState(conversation.providerState);
     const providerState: OpencodeProviderState = {
       ...(state.databasePath ? { databasePath: state.databasePath } : {}),
+      ...(typeof state.nativeConversationContextEstablished === 'boolean'
+        ? {
+            nativeConversationContextEstablished:
+              state.nativeConversationContextEstablished,
+          }
+        : {}),
     };
 
     return mergePersistedProviderState(
@@ -95,5 +128,16 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       OPENCODE_PROVIDER_STATE_KEYS,
       providerState,
     );
+  }
+
+  private markNativeConversationContextEstablished(
+    conversation: Conversation,
+  ): void {
+    const state = getOpencodeState(conversation.providerState);
+    if (state.nativeConversationContextEstablished !== false) return;
+    conversation.providerState = {
+      ...conversation.providerState,
+      nativeConversationContextEstablished: true,
+    };
   }
 }

@@ -7,6 +7,7 @@ export interface CodexPendingForkTarget {
 
 export interface CodexProviderState {
   threadId?: string;
+  nativeConversationContextEstablished?: boolean;
   sessionFilePath?: string;
   transcriptRootPath?: string;
   forkSourceSessionFilePath?: string;

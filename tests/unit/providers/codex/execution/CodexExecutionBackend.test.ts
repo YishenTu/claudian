@@ -5,6 +5,7 @@ import type {
   ProviderExecutionRequest,
   ProviderInteractionPort,
   ProviderSessionConfig,
+  ProviderSessionEvent,
 } from '@/core/execution';
 import { isSteerableExecutionSession } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -580,6 +581,450 @@ describe('CodexExecutionBackend', () => {
       mockTransportRequest.mock.calls.filter(call => call[0] === 'turn/start'),
     ).toHaveLength(2);
 
+    await session.dispose();
+  });
+
+  it('replays canonical history only when starting a thread without native context', async () => {
+    let turnIndex = 0;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult('thread-history');
+      if (method === 'turn/start') {
+        turnIndex += 1;
+        const turnId = `turn-history-${turnIndex}`;
+        queueMicrotask(() => completeTurn('thread-history', turnId));
+        return createTurnResult(turnId);
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const conversationHistory = [
+      { id: 'history-user', role: 'user' as const, content: 'prior question', timestamp: 1 },
+      { id: 'history-assistant', role: 'assistant' as const, content: 'prior answer', timestamp: 2 },
+    ];
+
+    const firstEvents = await collectEvents(session.execute(createRequest(
+      new AbortController().signal,
+      { conversationHistory },
+    )).events);
+    const initialOwnershipEvent = firstEvents.find(event =>
+      event.type === 'session_state_changed'
+      && event.snapshot.providerSessionId === 'thread-history'
+    );
+    expect(initialOwnershipEvent).toMatchObject({
+      snapshot: { status: 'executing' },
+      type: 'session_state_changed',
+    });
+    await collectEvents(session.execute(createRequest(
+      new AbortController().signal,
+      {
+        conversationHistory,
+        input: [{ type: 'text', text: 'Follow up' }],
+      },
+    )).events);
+
+    const turnRequests = mockTransportRequest.mock.calls
+      .filter(([method]) => method === 'turn/start')
+      .map(([, params]) => JSON.stringify(params.input));
+    expect(turnRequests[0]).toContain('prior question');
+    expect(turnRequests[0]).toContain('prior answer');
+    expect(turnRequests[1]).not.toContain('prior question');
+    expect(turnRequests[1]).toContain('Follow up');
+
+    await session.dispose();
+  });
+
+  it('retains cold-start history replay until the first turn is handed off', async () => {
+    let turnAttempt = 0;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start' || method === 'thread/resume') {
+        return createThreadResult('thread-retry');
+      }
+      if (method === 'turn/start') {
+        turnAttempt += 1;
+        if (turnAttempt === 1) throw new Error('turn rejected before handoff');
+        queueMicrotask(() => completeTurn('thread-retry', 'turn-retry'));
+        return createTurnResult('turn-retry');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const conversationHistory = [
+      { id: 'history-user', role: 'user' as const, content: 'retry prior question', timestamp: 1 },
+      { id: 'history-assistant', role: 'assistant' as const, content: 'retry prior answer', timestamp: 2 },
+    ];
+
+    await collectEvents(session.execute(createRequest(
+      new AbortController().signal,
+      { conversationHistory },
+    )).events);
+    const preHandoffSnapshot = session.getSnapshot();
+    expect(preHandoffSnapshot.providerState).toEqual(expect.objectContaining({
+      nativeConversationContextEstablished: false,
+      threadId: 'thread-retry',
+    }));
+    await session.dispose();
+
+    const replacement = new CodexExecutionBackend(createPlugin()).createSession(
+      createSessionConfig({
+        resumeSeed: {
+          providerSessionId: preHandoffSnapshot.providerSessionId,
+          providerState: { ...preHandoffSnapshot.providerState },
+        },
+      }),
+    );
+    await collectEvents(replacement.execute(createRequest(
+      new AbortController().signal,
+      { conversationHistory },
+    )).events);
+
+    const turnRequests = mockTransportRequest.mock.calls
+      .filter(([method]) => method === 'turn/start')
+      .map(([, params]) => JSON.stringify(params.input));
+    expect(turnRequests).toHaveLength(2);
+    expect(turnRequests[0]).toContain('retry prior question');
+    expect(turnRequests[1]).toContain('retry prior question');
+
+    await replacement.dispose();
+  });
+
+  it('establishes native context when notification ordering proves early handoff', async () => {
+    let turnAttempt = 0;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult('thread-early-handoff');
+      if (method === 'turn/start') {
+        turnAttempt += 1;
+        if (turnAttempt === 1) {
+          emitNotification('turn/started', {
+            threadId: 'thread-early-handoff',
+            turn: createTurnResult('turn-early-handoff-1').turn,
+          });
+          throw new Error('turn/start acknowledgement lost');
+        }
+        queueMicrotask(() => completeTurn(
+          'thread-early-handoff',
+          'turn-early-handoff-2',
+        ));
+        return createTurnResult('turn-early-handoff-2');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const conversationHistory = [
+      { id: 'history-user', role: 'user' as const, content: 'early prior question', timestamp: 1 },
+      { id: 'history-assistant', role: 'assistant' as const, content: 'early prior answer', timestamp: 2 },
+    ];
+
+    const firstEvents = await collectEvents(session.execute(createRequest(
+      new AbortController().signal,
+      { conversationHistory },
+    )).events);
+    expect(firstEvents).toContainEqual(expect.objectContaining({
+      accepted: true,
+      type: 'turn_started',
+    }));
+    expect(session.getSnapshot().providerState).toEqual(expect.objectContaining({
+      nativeConversationContextEstablished: true,
+    }));
+    await collectEvents(session.execute(createRequest(
+      new AbortController().signal,
+      { conversationHistory },
+    )).events);
+
+    const turnRequests = mockTransportRequest.mock.calls
+      .filter(([method]) => method === 'turn/start')
+      .map(([, params]) => JSON.stringify(params.input));
+    expect(turnRequests[0]).toContain('early prior question');
+    expect(turnRequests[1]).not.toContain('early prior question');
+
+    await session.dispose();
+  });
+
+  it('persists native context when cancellation races a turn-start acknowledgement', async () => {
+    const controller = new AbortController();
+    let turnAttempt = 0;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') {
+        return createThreadResult('thread-cancelled-ack');
+      }
+      if (method === 'thread/resume') {
+        return createThreadResult('thread-cancelled-ack');
+      }
+      if (method === 'turn/start') {
+        turnAttempt += 1;
+        if (turnAttempt === 1) {
+          controller.abort();
+          return createTurnResult('turn-cancelled-ack');
+        }
+        queueMicrotask(() => completeTurn(
+          'thread-cancelled-ack',
+          'turn-after-cancelled-ack',
+        ));
+        return createTurnResult('turn-after-cancelled-ack');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const conversationHistory = [
+      { id: 'history-user', role: 'user' as const, content: 'cancel prior question', timestamp: 1 },
+      { id: 'history-assistant', role: 'assistant' as const, content: 'cancel prior answer', timestamp: 2 },
+    ];
+
+    const cancelledEvents = await collectEvents(session.execute(createRequest(
+      controller.signal,
+      { conversationHistory },
+    )).events);
+    expect(cancelledEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          providerState: expect.objectContaining({
+            nativeConversationContextEstablished: true,
+          }),
+        }),
+        type: 'session_state_changed',
+      }),
+    ]));
+    const cancelledSnapshot = session.getSnapshot();
+    expect(cancelledSnapshot.providerState).toEqual(expect.objectContaining({
+      nativeConversationContextEstablished: true,
+    }));
+    await session.dispose();
+
+    const replacement = new CodexExecutionBackend(createPlugin()).createSession(
+      createSessionConfig({
+        resumeSeed: {
+          providerSessionId: cancelledSnapshot.providerSessionId,
+          providerState: { ...cancelledSnapshot.providerState },
+        },
+      }),
+    );
+    await collectEvents(replacement.execute(createRequest(
+      new AbortController().signal,
+      { conversationHistory },
+    )).events);
+
+    const turnRequests = mockTransportRequest.mock.calls
+      .filter(([method]) => method === 'turn/start')
+      .map(([, params]) => JSON.stringify(params.input));
+    expect(turnRequests).toHaveLength(2);
+    expect(turnRequests[0]).toContain('cancel prior question');
+    expect(turnRequests[1]).not.toContain('cancel prior question');
+
+    await replacement.dispose();
+  });
+
+  it('publishes a late turn-start acknowledgement without resurrecting cancelled status', async () => {
+    const turnStart = createDeferred<ReturnType<typeof createTurnResult>>();
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') {
+        return createThreadResult('thread-late-turn-ack');
+      }
+      if (method === 'turn/start') return turnStart.promise;
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const sessionEvents: ProviderSessionEvent[] = [];
+    const unsubscribe = session.onEvent(event => sessionEvents.push(event));
+    const run = session.execute(createRequest());
+    const runEvents = collectEvents(run.events);
+    await waitForCondition(() => mockTransportRequest.mock.calls.some(
+      ([method]) => method === 'turn/start',
+    ));
+
+    run.cancel();
+    expect((await runEvents).at(-1)).toMatchObject({ type: 'cancelled' });
+    expect(session.getSnapshot().status).toBe('idle');
+
+    turnStart.resolve(createTurnResult('turn-late-ack'));
+    await flushMicrotasks();
+
+    expect(session.getSnapshot()).toMatchObject({
+      providerState: {
+        nativeConversationContextEstablished: true,
+      },
+      status: 'idle',
+    });
+    expect(sessionEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: expect.objectContaining({ kind: 'session' }),
+        snapshot: expect.objectContaining({
+          providerState: expect.objectContaining({
+            nativeConversationContextEstablished: true,
+          }),
+          status: 'idle',
+        }),
+        type: 'session_state_changed',
+      }),
+    ]));
+
+    unsubscribe();
+    await session.dispose();
+  });
+
+  it('persists a new thread identity when cancellation races its acknowledgement', async () => {
+    const controller = new AbortController();
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') {
+        controller.abort();
+        return createThreadResult('thread-cancelled-start');
+      }
+      if (method === 'thread/resume') {
+        return createThreadResult('thread-cancelled-start');
+      }
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn(
+          'thread-cancelled-start',
+          'turn-after-cancelled-start',
+        ));
+        return createTurnResult('turn-after-cancelled-start');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+
+    const cancelledEvents = await collectEvents(session.execute(createRequest(
+      controller.signal,
+    )).events);
+    expect(cancelledEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          providerSessionId: 'thread-cancelled-start',
+          providerState: expect.objectContaining({
+            nativeConversationContextEstablished: false,
+            threadId: 'thread-cancelled-start',
+          }),
+        }),
+        type: 'session_state_changed',
+      }),
+    ]));
+    const cancelledSnapshot = session.getSnapshot();
+    expect(cancelledSnapshot.providerSessionId).toBe('thread-cancelled-start');
+    await session.dispose();
+
+    const replacement = new CodexExecutionBackend(createPlugin()).createSession(
+      createSessionConfig({
+        resumeSeed: {
+          providerSessionId: cancelledSnapshot.providerSessionId,
+          providerState: { ...cancelledSnapshot.providerState },
+        },
+      }),
+    );
+    await collectEvents(replacement.execute(createRequest()).events);
+
+    expect(mockTransportRequest.mock.calls.filter(
+      ([method]) => method === 'thread/start',
+    )).toHaveLength(1);
+    expect(mockTransportRequest.mock.calls.filter(
+      ([method]) => method === 'thread/resume',
+    )).toHaveLength(1);
+
+    await replacement.dispose();
+  });
+
+  it('publishes a late thread-start acknowledgement without resurrecting cancelled status', async () => {
+    const threadStart = createDeferred<ReturnType<typeof createThreadResult>>();
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return threadStart.promise;
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const sessionEvents: ProviderSessionEvent[] = [];
+    const unsubscribe = session.onEvent(event => sessionEvents.push(event));
+    const run = session.execute(createRequest());
+    const runEvents = collectEvents(run.events);
+    await waitForCondition(() => mockTransportRequest.mock.calls.some(
+      ([method]) => method === 'thread/start',
+    ));
+
+    run.cancel();
+    expect((await runEvents).at(-1)).toMatchObject({ type: 'cancelled' });
+    expect(session.getSnapshot().status).toBe('idle');
+
+    threadStart.resolve(createThreadResult('thread-late-start-ack'));
+    await flushMicrotasks();
+
+    expect(session.getSnapshot()).toMatchObject({
+      providerSessionId: 'thread-late-start-ack',
+      providerState: {
+        nativeConversationContextEstablished: false,
+        threadId: 'thread-late-start-ack',
+      },
+      status: 'idle',
+    });
+    expect(sessionEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: expect.objectContaining({ kind: 'session' }),
+        snapshot: expect.objectContaining({
+          providerSessionId: 'thread-late-start-ack',
+          status: 'idle',
+        }),
+        type: 'session_state_changed',
+      }),
+    ]));
+
+    unsubscribe();
     await session.dispose();
   });
 
@@ -1707,7 +2152,7 @@ describe('CodexExecutionBackend', () => {
           platformOs: 'macos',
         };
       }
-      if (method === 'thread/start') return createThreadResult('thread-compact');
+      if (method === 'thread/resume') return createThreadResult('thread-compact');
       if (method === 'thread/compact/start') {
         queueMicrotask(() => {
           emitNotification('turn/started', {
@@ -1720,8 +2165,17 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = new CodexExecutionBackend(createPlugin())
-      .createSession(createSessionConfig());
+    const session = new CodexExecutionBackend(createPlugin()).createSession(
+      createSessionConfig({
+        resumeSeed: {
+          providerSessionId: 'thread-compact',
+          providerState: {
+            threadId: 'thread-compact',
+            nativeConversationContextEstablished: true,
+          },
+        },
+      }),
+    );
     const events = await collectEvents(session.execute(createRequest(
       new AbortController().signal,
       { input: [{ type: 'text', text: '/compact' }] },
@@ -1740,6 +2194,63 @@ describe('CodexExecutionBackend', () => {
       accepted: true,
       nativeTurnId: 'turn-compact',
     }));
+
+    await session.dispose();
+  });
+
+  it('rejects compact before handoff while canonical history still needs recovery', async () => {
+    const session = new CodexExecutionBackend(createPlugin()).createSession(
+      createSessionConfig({
+        resumeSeed: {
+          providerSessionId: 'thread-recovery',
+          providerState: {
+            threadId: 'thread-recovery',
+            nativeConversationContextEstablished: false,
+          },
+        },
+      }),
+    );
+    const events = await collectEvents(session.execute(createRequest(
+      new AbortController().signal,
+      {
+        input: [{ type: 'text', text: '/compact' }],
+        conversationHistory: [
+          {
+            id: 'history-user',
+            role: 'user',
+            content: 'Prior question that still needs recovery.',
+            timestamp: 1,
+          },
+          {
+            id: 'history-assistant',
+            role: 'assistant',
+            content: 'Prior answer that still needs recovery.',
+            timestamp: 2,
+          },
+        ],
+      },
+    )).events);
+
+    expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
+    expect(mockProcessStart).not.toHaveBeenCalled();
+    expect(mockTransportRequest).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'execution_error',
+      category: 'configuration',
+      recoverable: true,
+      message: expect.stringContaining('native context'),
+    }));
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'turn_started',
+    }));
+    expect(session.getSnapshot()).toMatchObject({
+      providerSessionId: 'thread-recovery',
+      status: 'idle',
+      providerState: {
+        threadId: 'thread-recovery',
+        nativeConversationContextEstablished: false,
+      },
+    });
 
     await session.dispose();
   });

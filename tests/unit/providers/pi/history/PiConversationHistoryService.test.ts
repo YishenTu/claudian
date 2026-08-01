@@ -319,4 +319,115 @@ describe('PiConversationHistoryService', () => {
       sessionId: 's1',
     });
   });
+
+  describe('resolveMissingConversationSession', () => {
+    it('removes only the exact stale path before falling back to its logical session id', async () => {
+      const conversation = createConversation('/trusted/missing.jsonl');
+      conversation.sessionId = '/trusted/missing.jsonl';
+      conversation.providerState = {
+        futureResumeCursor: { token: 'keep-me' },
+        leafEntryId: 'assistant-1',
+        parentSession: '/trusted/parent.jsonl',
+        sessionFile: '/trusted/missing.jsonl',
+        sessionId: 's1',
+      };
+      const service = new PiConversationHistoryService();
+
+      await expect(service.resolveMissingConversationSession?.(
+        conversation,
+        '/vault',
+        '/trusted/missing.jsonl',
+      )).resolves.toBe('reset');
+
+      expect(conversation.sessionId).toBeNull();
+      expect(conversation.providerState).toEqual({
+        futureResumeCursor: { token: 'keep-me' },
+        leafEntryId: 'assistant-1',
+        parentSession: '/trusted/parent.jsonl',
+        sessionId: 's1',
+      });
+      expect(service.resolveSessionIdForConversation(conversation)).toBe('s1');
+    });
+
+    it('does not restore a stale path after reset and persistence reconstruction', async () => {
+      const missingPath = '/trusted/missing.jsonl';
+      const conversation = createConversation(missingPath);
+      conversation.providerState = {
+        futureResumeCursor: { token: 'keep-me' },
+        leafEntryId: 'assistant-1',
+        parentSession: '/trusted/parent.jsonl',
+        sessionFile: missingPath,
+        sessionId: missingPath,
+      };
+      conversation.sessionId = missingPath;
+      const service = new PiConversationHistoryService();
+
+      await expect(service.resolveMissingConversationSession?.(
+        conversation,
+        '/vault',
+        missingPath,
+      )).resolves.toBe('reset');
+
+      const recreatedConversation: Conversation = {
+        ...conversation,
+        providerState: service.buildPersistedProviderState?.(conversation),
+      };
+      expect(recreatedConversation.sessionId).toBeNull();
+      expect(recreatedConversation.providerState).toEqual({
+        futureResumeCursor: { token: 'keep-me' },
+      });
+      expect(
+        new PiConversationHistoryService().resolveSessionIdForConversation(
+          recreatedConversation,
+        ),
+      ).toBeNull();
+    });
+
+    it('clears an exact stale logical binding while preserving unknown state and native files', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-missing-reset-'));
+      const nativeFile = path.join(dir, 'unrelated.jsonl');
+      const nativeContent = '{"type":"session","id":"other"}\n';
+      await fs.writeFile(nativeFile, nativeContent);
+      const conversation = createConversation('/trusted/absent.jsonl');
+      conversation.providerState = {
+        futureResumeCursor: { token: 'keep-me' },
+        leafEntryId: 'assistant-1',
+        parentSession: '/trusted/parent.jsonl',
+        sessionId: 's1',
+      };
+      const service = new PiConversationHistoryService();
+
+      await expect(service.resolveMissingConversationSession?.(
+        conversation,
+        '/vault',
+        's1',
+      )).resolves.toBe('reset');
+
+      expect(conversation.sessionId).toBeNull();
+      expect(conversation.providerState).toEqual({
+        futureResumeCursor: { token: 'keep-me' },
+      });
+      await expect(fs.readFile(nativeFile, 'utf8')).resolves.toBe(nativeContent);
+    });
+
+    it('preserves a newer binding when the reported target is not current', async () => {
+      const conversation = createConversation('/trusted/current.jsonl');
+      conversation.providerState = {
+        futureResumeCursor: { token: 'keep-me' },
+        sessionFile: '/trusted/current.jsonl',
+        sessionId: 'current-id',
+      };
+      const providerState = conversation.providerState;
+      const service = new PiConversationHistoryService();
+
+      await expect(service.resolveMissingConversationSession?.(
+        conversation,
+        '/vault',
+        'stale-id',
+      )).resolves.toBe('preserve');
+
+      expect(conversation.sessionId).toBe('s1');
+      expect(conversation.providerState).toBe(providerState);
+    });
+  });
 });

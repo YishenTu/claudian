@@ -5,6 +5,7 @@ import type { SubagentInfo } from '../../../core/types/tools';
 export interface ClaudeProviderState {
   providerSessionId?: string;
   previousProviderSessionIds?: string[];
+  historyReplayPending?: boolean;
   forkSource?: ForkSource;
   subagentData?: Record<string, SubagentInfo>;
 }

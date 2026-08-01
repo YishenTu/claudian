@@ -480,10 +480,12 @@ export class InputController {
       } else if (result.status === 'invalidated') {
         wasInvalidated = true;
       } else if (result.status === 'missing-session') {
-        const retryMessage = this.createQueuedMessage(displayContent, {
-          ...turnRequest,
-          images: imagesForMessage ?? turnRequest.images,
-        });
+        const retryMessage = result.accepted
+          ? null
+          : this.createQueuedMessage(displayContent, {
+            ...turnRequest,
+            images: imagesForMessage ?? turnRequest.images,
+          });
         const pendingMessagesToRestore = state.queuedMessage
           ? this.cloneQueuedMessage(state.queuedMessage)
           : null;
@@ -493,9 +495,12 @@ export class InputController {
           this.restoreMessageToInput(composerDraftToRestore, { mergeWithComposer: true });
           this.restoreMessageToInput(pendingMessagesToRestore, { mergeWithComposer: true });
           this.restoreMessageToInput(retryMessage, { mergeWithComposer: true });
-        } else {
+        } else if (retryMessage) {
           this.restoreMessageToInput(retryMessage, { mergeWithComposer: true });
           this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
+        }
+        if (result.accepted) {
+          this.finishAcceptedMissingSession(streamGeneration);
         }
         const notice = resolution === 'deleted'
             ? 'The provider session no longer exists. Its Claudian record was removed; send again to start a new session.'
@@ -1413,7 +1418,7 @@ export class InputController {
     messagesBeforeTurn: ChatMessage[],
     hadPendingConversationSave: boolean,
   ): void {
-    const { state, renderer, streamController } = this.deps;
+    const { state, renderer } = this.deps;
     const retainedMessageIds = new Set(messagesBeforeTurn.map(message => message.id));
     for (const message of state.messages) {
       if (!retainedMessageIds.has(message.id)) {
@@ -1423,6 +1428,20 @@ export class InputController {
 
     state.messages = messagesBeforeTurn;
     state.hasPendingConversationSave = hadPendingConversationSave;
+    this.resetTurnStreamingState();
+
+    if (messagesBeforeTurn.length === 0) {
+      this.deps.getWelcomeEl()?.removeClass('claudian-hidden');
+    }
+  }
+
+  private finishAcceptedMissingSession(streamGeneration: number): void {
+    if (this.deps.state.streamGeneration !== streamGeneration) return;
+    this.resetTurnStreamingState();
+  }
+
+  private resetTurnStreamingState(): void {
+    const { state, streamController } = this.deps;
     streamController.hideThinkingIndicator();
     state.isStreaming = false;
     state.cancelRequested = false;
@@ -1432,10 +1451,6 @@ export class InputController {
     state.currentThinkingState = null;
     state.responseStartTime = null;
     this.deps.getSubagentManager().resetStreamingState();
-
-    if (messagesBeforeTurn.length === 0) {
-      this.deps.getWelcomeEl()?.removeClass('claudian-hidden');
-    }
   }
 
   // ============================================

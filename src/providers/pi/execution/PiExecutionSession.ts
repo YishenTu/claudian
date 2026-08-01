@@ -42,6 +42,10 @@ import {
 } from '../../../utils/session';
 import type { PiWorkspaceServices } from '../app/PiWorkspaceServices';
 import {
+  isPiSessionPathReference,
+  resolvePiSessionFileHint,
+} from '../history/PiHistoryPathResolver';
+import {
   type CreatedPiForkSessionFile,
   type createPiForkSessionFile,
   findPiSessionFile,
@@ -115,6 +119,7 @@ interface ActiveRun {
   readonly turnId: string;
   accepted: boolean;
   assistantStarted: boolean;
+  nativeRequestDispatched: boolean;
   nativeAssistantId?: string;
   nativeUserMessageId?: string;
   sequence: number;
@@ -152,9 +157,11 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   private lifecycleError: Error | null = null;
   private normalizationState: PiEventNormalizationState =
     createPiEventNormalizationState();
+  private nativeConversationContextEstablished: boolean;
   private providerSessionId: string | null;
   private providerState: Record<string, unknown>;
   private readonly providerStateDeletes = new Set<string>();
+  private resumeSeedNeedsValidation: boolean;
   private revision = 0;
   private readonly runFlights = new Set<Promise<void>>();
   private readonly sessionListeners = new Set<
@@ -183,12 +190,17 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.providerSessionId = nativePersistenceDisabled
       ? null
       : providerSessionId;
+    this.nativeConversationContextEstablished = !nativePersistenceDisabled
+      && Boolean(state.sessionId || state.sessionFile || providerSessionId);
     this.providerState = {
       ...rawState,
       ...(!nativePersistenceDisabled && providerSessionId
         ? { sessionId: providerSessionId }
         : {}),
     };
+    this.resumeSeedNeedsValidation = !nativePersistenceDisabled
+      && !state.forkSource
+      && Boolean(state.sessionFile || providerSessionId);
     if (nativePersistenceDisabled) {
       this.removeNativeProviderState();
     }
@@ -258,7 +270,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     ) {
       return false;
     }
-    const prompt = encodePrompt(request);
+    const prompt = encodePrompt(request, false);
     await kernel.request('steer', {
       ...(prompt.images.length > 0 ? { images: prompt.images } : {}),
       message: prompt.text,
@@ -353,6 +365,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       turnId: randomUUID(),
       accepted: false,
       assistantStarted: false,
+      nativeRequestDispatched: false,
       sequence: 0,
       terminal: false,
       terminalSignal: createDeferred<void>(),
@@ -374,6 +387,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       const previousLeafId = getPiState(this.providerState).leafEntryId ?? null;
       const compactInstructions = getCompactInstructions(encoded.prompt);
       if (compactInstructions !== null) {
+        active.nativeRequestDispatched = true;
         await this.kernel.request(
           'compact',
           { customInstructions: compactInstructions },
@@ -383,6 +397,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         this.ensureAccepted(active);
         this.emitRequested(active, { type: 'context_compacted' });
       } else {
+        active.nativeRequestDispatched = true;
         const promptRequest = this.kernel.request(
           'prompt',
           {
@@ -470,14 +485,16 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     );
     await this.materializePendingFork(active);
     const envText = getRuntimeEnvironmentText(this.host.settings, 'pi');
+    const env = {
+      ...process.env,
+      ...parseEnvironmentVariables(envText),
+    };
+    this.validateResumeSeed(env);
     const toolProfile = resolveToolProfile(request.toolPolicy, settings);
     const launchSpec = buildPiLaunchSpec({
       command: await this.host.getResolvedProviderCliPath('pi') ?? 'pi',
       cwd: this.config.vaultWorkingDirectory,
-      env: {
-        ...process.env,
-        ...parseEnvironmentVariables(envText),
-      },
+      env,
       envText,
       noSession: this.shouldDisableNativePersistence(),
       noTools: toolProfile.noTools,
@@ -493,7 +510,18 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         this.config.vaultWorkingDirectory,
       ),
     });
-    const prompt = encodePrompt(request);
+    const state = getPiState(this.providerState);
+    const hasNativeSession = Boolean(state.sessionId || state.sessionFile);
+    const hasAcceptedCompatibleLiveContext = Boolean(
+      this.nativeConversationContextEstablished
+      && !hasNativeSession
+      && this.kernel
+      && this.launchKey === launchSpec.launchKey,
+    );
+    const prompt = encodePrompt(
+      request,
+      !hasNativeSession && !hasAcceptedCompatibleLiveContext,
+    );
     return {
       images: prompt.images,
       launchSpec,
@@ -501,6 +529,64 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       prompt: prompt.text,
       thinkingLevel,
     };
+  }
+
+  private validateResumeSeed(environment: NodeJS.ProcessEnv): void {
+    if (!this.resumeSeedNeedsValidation) return;
+    this.resumeSeedNeedsValidation = false;
+    const state = getPiState(this.providerState);
+    const currentTarget = state.sessionFile ?? state.sessionId;
+    if (!currentTarget) return;
+
+    const resolvedSessionFile = resolvePiSessionFileHint(
+      state.sessionFile,
+      state.sessionId,
+      this.config.vaultWorkingDirectory,
+      { environment },
+    );
+    if (resolvedSessionFile) {
+      let changed = false;
+      if (resolvedSessionFile !== state.sessionFile) {
+        this.setProviderStateValue('sessionFile', resolvedSessionFile);
+        changed = true;
+      }
+      if (isPiSessionPathReference(state.sessionId)) {
+        this.deleteProviderStateValue('sessionId');
+        if (this.providerSessionId === state.sessionId) {
+          this.providerSessionId = null;
+        }
+        changed = true;
+      }
+      if (changed) this.bumpRevision();
+      return;
+    }
+
+    const pathTarget = state.sessionFile
+      ?? (isPiSessionPathReference(state.sessionId) ? state.sessionId : null);
+    if (pathTarget) {
+      const pathSessionId = isPiSessionPathReference(state.sessionId)
+        ? state.sessionId
+        : null;
+      if (state.sessionFile === pathTarget) {
+        this.deleteProviderStateValue('sessionFile');
+      }
+      if (pathSessionId) {
+        this.deleteProviderStateValue('sessionId');
+      }
+      if (
+        this.providerSessionId === pathTarget
+        || (pathSessionId !== null && this.providerSessionId === pathSessionId)
+      ) {
+        this.providerSessionId = null;
+      }
+      this.bumpRevision();
+      const remainingSessionId = getPiState(this.providerState).sessionId;
+      if (remainingSessionId && !isPiSessionPathReference(remainingSessionId)) {
+        return;
+      }
+      this.nativeConversationContextEstablished = false;
+      throw new PiProviderSessionMissingError(pathTarget);
+    }
   }
 
   private async ensureKernel(
@@ -732,8 +818,15 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     error?: Error,
   ): void {
     if (!this.isCurrentKernel(kernel, generation) || this.disposed) return;
+    const missingProviderSessionId = getPiMissingSessionTarget(
+      kernel.launchSpec,
+      kernel.getStderrSnapshot(),
+    );
     this.kernel = null;
     this.launchKey = null;
+    if (!this.hasNativeSessionState()) {
+      this.nativeConversationContextEstablished = false;
+    }
     const active = this.activeRun;
     if (active && !active.terminal) {
       active.terminalSignal.reject(
@@ -742,7 +835,10 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.finishError(
         active,
         error ?? new Error('Pi subprocess exited.'),
-        'process-exited',
+        missingProviderSessionId
+          ? 'provider-session-missing'
+          : 'process-exited',
+        missingProviderSessionId ?? undefined,
       );
     } else {
       this.setInvalidated({
@@ -772,7 +868,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   private ensureAccepted(active: ActiveRun): void {
-    if (!this.isActive(active) || active.accepted) return;
+    if (!this.isActive(active) || !active.nativeRequestDispatched) return;
+    this.nativeConversationContextEstablished = true;
+    if (active.accepted) return;
     active.accepted = true;
     this.emitRequested(active, {
       accepted: true,
@@ -983,12 +1081,23 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     active: ActiveRun,
     error: unknown,
     category?: ProviderExecutionErrorCategory,
+    missingProviderSessionId?: string,
   ): void {
     if (active.terminal) return;
     active.terminalSignal.reject(
       error instanceof Error ? error : new Error('Pi execution failed.'),
     );
-    const details = classifyError(error, category, this.kernel?.getStderrSnapshot());
+    const confirmedMissingProviderSessionId = missingProviderSessionId
+      ?? (error instanceof PiProviderSessionMissingError
+        ? error.providerSessionId
+        : undefined);
+    const details = classifyError(
+      error,
+      category ?? (confirmedMissingProviderSessionId
+        ? 'provider-session-missing'
+        : undefined),
+      this.kernel?.getStderrSnapshot(),
+    );
     if (details.category === 'configuration') {
       this.setStatus('idle');
     } else {
@@ -996,6 +1105,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         message: details.message,
         reason: details.category === 'process-exited'
           ? 'process-exited'
+          : details.category === 'provider-session-missing'
+            ? 'provider-session-missing'
           : details.category === 'transport'
             ? 'transport-closed'
             : 'provider-error',
@@ -1005,6 +1116,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.emitRequestedState(active);
     this.finishRequested(active, {
       ...details,
+      ...(confirmedMissingProviderSessionId
+        ? { missingProviderSessionId: confirmedMissingProviderSessionId }
+        : {}),
       type: 'execution_error',
     });
   }
@@ -1095,6 +1209,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.kernel = null;
     this.launchKey = null;
     this.kernelGeneration += 1;
+    if (!this.hasNativeSessionState()) {
+      this.nativeConversationContextEstablished = false;
+    }
     if (!kernel) return Promise.resolve();
     const shutdown = kernel.shutdown().finally(() => {
       if (this.shutdownPromise === shutdown) {
@@ -1103,6 +1220,11 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     });
     this.shutdownPromise = shutdown;
     return shutdown;
+  }
+
+  private hasNativeSessionState(): boolean {
+    const state = getPiState(this.providerState);
+    return Boolean(state.sessionId || state.sessionFile);
   }
 
   private async shutdownAcquiredKernel(
@@ -1216,6 +1338,13 @@ class PiConfigurationError extends Error {}
 
 class PiExecutionCancelledError extends Error {}
 
+class PiProviderSessionMissingError extends Error {
+  constructor(readonly providerSessionId: string) {
+    super(`Pi session is unavailable: ${providerSessionId}`);
+    this.name = 'PiProviderSessionMissingError';
+  }
+}
+
 class PiForkRollbackError extends Error {
   constructor(readonly cleanupError: Error) {
     super(cleanupError.message);
@@ -1326,7 +1455,10 @@ function resolveSystemPrompt(
   });
 }
 
-function encodePrompt(request: ProviderExecutionRequest): {
+function encodePrompt(
+  request: ProviderExecutionRequest,
+  replayConversationHistory: boolean,
+): {
   images: PiPromptImage[];
   text: string;
 } {
@@ -1347,7 +1479,7 @@ function encodePrompt(request: ProviderExecutionRequest): {
   if (context?.externalContextPaths?.length) {
     text = appendContextFiles(text, [...context.externalContextPaths]);
   }
-  if (request.conversationHistory?.length) {
+  if (replayConversationHistory && request.conversationHistory?.length) {
     const history = [...request.conversationHistory] as ChatMessage[];
     const historyContext = buildContextFromHistory(history);
     text = buildPromptWithHistoryContext(
@@ -1433,6 +1565,22 @@ function classifyError(
     message,
     recoverable: resolvedCategory !== 'configuration',
   };
+}
+
+function getPiMissingSessionTarget(
+  launchSpec: PiLaunchSpec,
+  stderr: string,
+): string | null {
+  const sessionFlagIndex = launchSpec.args.indexOf('--session');
+  const target = launchSpec.args[sessionFlagIndex + 1]?.trim();
+  if (
+    sessionFlagIndex < 0
+    || !target
+    || !stderr.includes(`No session found matching '${target}'`)
+  ) {
+    return null;
+  }
+  return target;
 }
 
 function extractStateRecord(response: unknown): Record<string, unknown> {

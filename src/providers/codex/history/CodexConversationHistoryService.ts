@@ -121,6 +121,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
         conversation.messages = messages;
         this.hydratedConversationPaths.set(conversation.id, `fork::${state.threadId}`);
+        this.markNativeConversationContextEstablished(conversation);
         return;
       }
     }
@@ -152,6 +153,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
       conversation.messages.length > 0
       && this.hydratedConversationPaths.get(conversation.id) === hydrationKey
     ) {
+      this.markNativeConversationContextEstablished(conversation);
       return;
     }
 
@@ -178,6 +180,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
     conversation.messages = sdkMessages;
     this.hydratedConversationPaths.set(conversation.id, hydrationKey);
+    this.markNativeConversationContextEstablished(conversation);
   }
 
   resolveSessionIdForConversation(conversation: Conversation | null): string | null {
@@ -186,9 +189,57 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     return state.threadId ?? conversation.sessionId ?? state.forkSource?.sessionId ?? null;
   }
 
+  async resolveMissingConversationSession(
+    conversation: Conversation,
+    _vaultPath: string | null,
+    missingProviderSessionId?: string,
+  ): Promise<'delete' | 'reset' | 'preserve'> {
+    const state = getCodexState(conversation.providerState);
+    const currentSessionId = state.pendingForkTarget?.threadId
+      ?? state.threadId
+      ?? conversation.sessionId
+      ?? null;
+    const liveSessionIds = [
+      state.pendingForkTarget?.threadId,
+      state.threadId,
+      conversation.sessionId,
+    ]
+      .filter((value): value is string => Boolean(value));
+    if (
+      !missingProviderSessionId
+      || !currentSessionId
+      || missingProviderSessionId !== currentSessionId
+      || liveSessionIds.some(sessionId => sessionId !== currentSessionId)
+    ) {
+      return 'preserve';
+    }
+
+    const providerState = { ...(conversation.providerState ?? {}) };
+    delete providerState.threadId;
+    delete providerState.nativeConversationContextEstablished;
+    delete providerState.pendingForkTarget;
+    conversation.sessionId = null;
+    conversation.providerState = Object.keys(providerState).length > 0
+      ? providerState
+      : undefined;
+    this.hydratedConversationPaths.delete(conversation.id);
+    return 'reset';
+  }
+
   isPendingForkConversation(conversation: Conversation): boolean {
     const state = getCodexState(conversation.providerState);
     return !!state.forkSource && !state.threadId && !conversation.sessionId;
+  }
+
+  private markNativeConversationContextEstablished(
+    conversation: Conversation,
+  ): void {
+    const state = getCodexState(conversation.providerState);
+    if (state.nativeConversationContextEstablished !== false) return;
+    conversation.providerState = {
+      ...conversation.providerState,
+      nativeConversationContextEstablished: true,
+    };
   }
 
   buildForkProviderState(

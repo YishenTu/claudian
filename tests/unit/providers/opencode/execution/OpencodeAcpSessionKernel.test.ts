@@ -9,8 +9,13 @@ import {
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import type { AcpRequestPermissionRequest } from '@/providers/acp';
 import {
+  type AcpRequestPermissionRequest,
+  JsonRpcErrorResponse,
+} from '@/providers/acp';
+import {
+  classifyOpencodeSessionLoadError,
+  OpencodeSessionMissingError,
   presentOpencodePermission,
   resolveOpencodeReadPath,
 } from '@/providers/opencode/execution/OpencodeAcpSessionKernel';
@@ -135,5 +140,31 @@ describe('OpencodeAcpSessionKernel permission presentation', () => {
       description: 'OpenCode wants to modify this file.',
       toolName: 'edit',
     });
+  });
+});
+
+describe('OpenCode session/load errors', () => {
+  it('wraps explicit missing-session protocol evidence with the attempted ID', () => {
+    const classified = classifyOpencodeSessionLoadError(
+      new JsonRpcErrorResponse(
+        'session/load',
+        -32000,
+        'Session not found',
+        { kind: 'session_not_found' },
+      ),
+      'attempted-session',
+    );
+
+    expect(classified).toBeInstanceOf(OpencodeSessionMissingError);
+    expect(classified).toMatchObject({ sessionId: 'attempted-session' });
+  });
+
+  it.each([
+    new Error('Session not found'),
+    new JsonRpcErrorResponse('session/load', -32000, 'Authentication required'),
+    new JsonRpcErrorResponse('session/load', -32000, 'Invalid configuration'),
+    new JsonRpcErrorResponse('session/prompt', -32000, 'Session not found'),
+  ])('preserves non-missing or uncorrelated failures: %p', (error) => {
+    expect(classifyOpencodeSessionLoadError(error, 'valid-session')).toBe(error);
   });
 });
