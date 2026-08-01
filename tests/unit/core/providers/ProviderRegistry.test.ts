@@ -153,6 +153,12 @@ describe('ProviderRegistry', () => {
     })).toEqual(['codex', 'claude']);
     expect(ProviderRegistry.getEnabledProviderIds({
       providerConfigs: {
+        claude: { enabled: false },
+        codex: { enabled: true },
+      },
+    })).toEqual(['codex']);
+    expect(ProviderRegistry.getEnabledProviderIds({
+      providerConfigs: {
         codex: { enabled: true },
         opencode: { enabled: true },
       },
@@ -193,6 +199,20 @@ describe('ProviderRegistry', () => {
       ProviderRegistry.getTitleGenerationModelOptions(enabledSettings)
         .some(option => option.value === TEST_CODEX_MODEL),
     ).toBe(true);
+
+    const claudeDisabledSettings = {
+      providerConfigs: {
+        claude: { enabled: false },
+        codex: {
+          discoveredModels: TEST_CODEX_CATALOG,
+          enabled: true,
+        },
+      },
+    };
+    expect(
+      ProviderRegistry.getTitleGenerationModelOptions(claudeDisabledSettings)
+        .some(option => option.value === 'sonnet'),
+    ).toBe(false);
   });
 
   it('prefixes title generation model labels with their provider names', () => {
@@ -246,6 +266,34 @@ describe('ProviderRegistry', () => {
       success: true,
       title: 'claude title',
     });
+  });
+
+  it('routes automatic title generation away from Claude when Claude is disabled', async () => {
+    const providerCalls: ProviderId[] = [];
+    const originalCreate = ProviderRegistry.createTitleGenerationService.bind(ProviderRegistry);
+    jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
+      .mockImplementation((plugin: any, providerId?: ProviderId) => {
+        if (!providerId) {
+          return originalCreate(plugin);
+        }
+        providerCalls.push(providerId);
+        return createMockTitleService(providerId);
+      });
+
+    const service = ProviderRegistry.createTitleGenerationService({
+      settings: {
+        settingsProvider: 'codex',
+        titleGenerationModel: '',
+        providerConfigs: {
+          claude: { enabled: false },
+          codex: { enabled: true },
+        },
+      },
+    } as any);
+
+    await service.generateTitle('conv-1', 'hello', jest.fn());
+
+    expect(providerCalls).toEqual(['codex']);
   });
 
   it('routes explicit title model selections to the owning provider', async () => {

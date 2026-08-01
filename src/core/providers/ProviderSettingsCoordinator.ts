@@ -246,14 +246,36 @@ export class ProviderSettingsCoordinator {
     return true;
   }
 
+  static canApplyProviderEnablement(
+    settings: Record<string, unknown>,
+    providerId: ProviderId,
+    enabled: boolean,
+  ): boolean {
+    return enabled
+      || !ProviderRegistry.isEnabled(providerId, settings)
+      || ProviderRegistry.getEnabledProviderIds(settings).length > 1;
+  }
+
   static applyProviderEnablement(
     settings: Record<string, unknown>,
     providerId: ProviderId,
     enabled: boolean,
-  ): void {
+  ): boolean {
+    if (!this.canApplyProviderEnablement(settings, providerId, enabled)) {
+      return false;
+    }
+
+    const previousProviderId = getSettingsProviderId(settings);
+    if (!enabled && previousProviderId === providerId) {
+      this.persistProjectedProviderState(settings, providerId);
+    }
+
     ProviderRegistry.setEnabled(providerId, settings, enabled);
-    this.normalizeProviderSelection(settings);
+    if (this.normalizeProviderSelection(settings)) {
+      this.projectActiveProviderState(settings);
+    }
     this.reconcileTitleGenerationModelSelection(settings);
+    return true;
   }
 
   static getProviderSettingsSnapshot<T extends Record<string, unknown>>(

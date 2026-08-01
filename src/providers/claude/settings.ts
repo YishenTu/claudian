@@ -16,6 +16,7 @@ export type ClaudeSafeMode = typeof CLAUDE_SAFE_MODES[number];
 export type ClaudeSettingSource = 'user' | 'project' | 'local';
 
 export interface ClaudeProviderSettings {
+  enabled: boolean;
   safeMode: ClaudeSafeMode;
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
@@ -31,6 +32,7 @@ export interface ClaudeProviderSettings {
 }
 
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
+  enabled: true,
   safeMode: 'acceptEdits',
   cliPath: '',
   cliPathsByHost: {},
@@ -89,6 +91,8 @@ export function getClaudeProviderSettings(
     : normalizedCliPathsByHost;
 
   return {
+    enabled: (config.enabled as boolean | undefined)
+      ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.enabled,
     safeMode: normalizeClaudeSafeMode(config.safeMode)
       ?? normalizeClaudeSafeMode(settings.claudeSafeMode)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.safeMode,

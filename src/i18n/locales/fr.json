@@ -320,6 +320,7 @@
     "providerEnablement": {
       "name": "Activer {provider}",
       "desc": "Rendre les modèles {provider} activés disponibles pour les nouvelles conversations. Les sessions existantes sont conservées après la désactivation.",
+      "lastProviderWarning": "Au moins un fournisseur doit rester activé pour que Claudian fonctionne.",
       "noModelsWarning": "Aucun modèle {provider} n’est activé. Dans la section Modèles ci-dessous, activez au moins un modèle."
     },
     "codex": {

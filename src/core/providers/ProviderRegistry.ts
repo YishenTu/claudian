@@ -89,7 +89,9 @@ export class ProviderRegistry {
       : '';
 
     if (!titleModel) {
-      return DEFAULT_CHAT_PROVIDER_ID;
+      return this.isEnabled(DEFAULT_CHAT_PROVIDER_ID, settings)
+        ? DEFAULT_CHAT_PROVIDER_ID
+        : this.resolveSettingsProviderId(settings);
     }
 
     return this.resolveProviderForModel(titleModel, settings, {

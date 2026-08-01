@@ -25,9 +25,11 @@ const mockCreatedAgentSettings: Array<{
 jest.mock('fs');
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
+    canApplyProviderEnablement: jest.fn(() => true),
     applyProviderEnablement: jest.fn((settings: Record<string, unknown>, providerId: string, enabled: boolean) => {
       const providerConfigs = settings.providerConfigs as Record<string, { enabled: boolean }>;
       providerConfigs[providerId].enabled = enabled;
+      return true;
     }),
   },
 }));

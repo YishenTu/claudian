@@ -7,9 +7,11 @@ const mockNotices: string[] = [];
 
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
+    canApplyProviderEnablement: jest.fn(() => true),
     applyProviderEnablement: jest.fn((settings: Record<string, unknown>, providerId: string, enabled: boolean) => {
       const providerConfigs = settings.providerConfigs as Record<string, { enabled: boolean }>;
       providerConfigs[providerId].enabled = enabled;
+      return true;
     }),
   },
 }));
@@ -441,6 +443,27 @@ describe('PiSettingsTab', () => {
 
     expect(context.plugin.runProviderExecutionTransition).toHaveBeenCalledTimes(1);
     expect(mockDiscoverModels).not.toHaveBeenCalled();
+  });
+
+  it('resynchronizes the Pi toggle when disabling the final provider is rejected', async () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: { pi: { enabled: true } },
+    };
+    const context = render(settings);
+    const toggle = findSetting('Enable Pi').toggleComponents[0];
+    const coordinator = jest.requireMock('@/core/providers/ProviderSettingsCoordinator')
+      .ProviderSettingsCoordinator;
+    coordinator.canApplyProviderEnablement.mockImplementationOnce(() => false);
+    toggle.setValue.mockClear();
+
+    await toggle.onChangeCallback?.(false);
+
+    expect(toggle.setValue).toHaveBeenLastCalledWith(true);
+    expect(context.plugin.runProviderExecutionTransition).not.toHaveBeenCalled();
+    expect(coordinator.applyProviderEnablement).not.toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
+
+    await toggle.onChangeCallback?.(true);
   });
 
   it('restores the Pi enablement toggle when the execution transition fails', async () => {

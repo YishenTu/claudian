@@ -9,7 +9,10 @@ import type {
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
+import {
+  renderLastEnabledProviderWarning,
+  renderProviderModelEnablementWarning,
+} from '../../../shared/settings/ProviderModelEnablementWarning';
 import {
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
@@ -43,23 +46,40 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
         toggle
           .setValue(piSettings.enabled)
           .onChange(async (value) => {
+            if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
+              settingsBag,
+              'pi',
+              value,
+            )) {
+              lastProviderWarning.showFor();
+              toggle.setValue(getPiProviderSettings(settingsBag).enabled);
+              return;
+            }
+
+            let accepted = true;
             try {
               await context.plugin.runProviderExecutionTransition(['pi'], async () => {
                 await context.plugin.mutateSettings((settings) => {
-                  ProviderSettingsCoordinator.applyProviderEnablement(
+                  accepted = ProviderSettingsCoordinator.applyProviderEnablement(
                     settings,
                     'pi',
                     value,
                   );
                 });
               });
-            } catch (error) {
+              if (accepted) {
+                lastProviderWarning.hide();
+              } else {
+                lastProviderWarning.showFor();
+              }
+              modelWarning.context.notifyProviderModelOptionsChanged('pi');
+            } finally {
               toggle.setValue(getPiProviderSettings(settingsBag).enabled);
-              throw error;
             }
-            modelWarning.context.notifyProviderModelOptionsChanged('pi');
           })
       );
+
+    const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
     const modelWarning = renderProviderModelEnablementWarning(container, context, {
       getHasEnabledModels: () => getPiProviderSettings(settingsBag).visibleModels.length > 0,

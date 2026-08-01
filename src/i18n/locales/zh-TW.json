@@ -320,6 +320,7 @@
     "providerEnablement": {
       "name": "啟用 {provider}",
       "desc": "讓已啟用的 {provider} 模型可用於新對話。停用後，現有工作階段仍會保留。",
+      "lastProviderWarning": "至少需要啟用一個提供者，Claudian 才能正常運作。",
       "noModelsWarning": "未啟用任何 {provider} 模型。請前往下方的「模型」區段並至少啟用一個模型。"
     },
     "codex": {

@@ -320,6 +320,7 @@
     "providerEnablement": {
       "name": "{provider} を有効化",
       "desc": "有効にした {provider} モデルを新しい会話で使用できるようにします。無効にしても既存のセッションは保持されます。",
+      "lastProviderWarning": "Claudian を使用するには、少なくとも 1 つのプロバイダーを有効にする必要があります。",
       "noModelsWarning": "有効な {provider} モデルがありません。下の「モデル」で少なくとも1つのモデルを有効にしてください。"
     },
     "codex": {

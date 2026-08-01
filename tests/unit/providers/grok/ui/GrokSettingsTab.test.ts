@@ -66,8 +66,10 @@ jest.mock('obsidian', () => {
 });
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
+    canApplyProviderEnablement: jest.fn(() => true),
     applyProviderEnablement: jest.fn((settings: Record<string, any>, providerId: string, enabled: boolean) => {
       settings.providerConfigs[providerId].enabled = enabled;
+      return true;
     }),
   },
 }));
@@ -348,6 +350,26 @@ describe('GrokSettingsTab', () => {
     );
     expect(mockRefreshModelCatalog).not.toHaveBeenCalled();
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('grok');
+  });
+
+  it('resynchronizes the Grok toggle when disabling the final provider is rejected', async () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+    grokSettingsTabRenderer.render(createContainer(), context);
+    const toggle = findSetting('Enable Grok').toggleComponents[0];
+    const coordinator = jest.requireMock('@/core/providers/ProviderSettingsCoordinator')
+      .ProviderSettingsCoordinator;
+    coordinator.canApplyProviderEnablement.mockImplementationOnce(() => false);
+    toggle.value = false;
+
+    await toggle.onChangeCallback?.(false);
+
+    expect(toggle.value).toBe(true);
+    expect(plugin.runProviderExecutionTransition).not.toHaveBeenCalled();
+    expect(coordinator.applyProviderEnablement).not.toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
+
+    await toggle.onChangeCallback?.(true);
   });
 
   it('resynchronizes the Grok toggle when the enablement transition fails', async () => {

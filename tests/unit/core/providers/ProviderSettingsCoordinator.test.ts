@@ -167,6 +167,50 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('applyProviderEnablement', () => {
+    it('preflights the sole enabled provider without mutating settings', () => {
+      const settings: Record<string, unknown> = {
+        providerConfigs: {
+          claude: { ...DEFAULT_CLAUDE_PROVIDER_SETTINGS, enabled: true },
+          codex: { enabled: false },
+        },
+      };
+
+      expect(ProviderSettingsCoordinator.canApplyProviderEnablement(
+        settings,
+        'claude',
+        false,
+      )).toBe(false);
+      expect(ProviderSettingsCoordinator.canApplyProviderEnablement(
+        settings,
+        'claude',
+        true,
+      )).toBe(true);
+      expect(ProviderRegistry.isEnabled('claude', settings)).toBe(true);
+    });
+
+    it('keeps the sole enabled provider enabled', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'claude',
+        model: 'sonnet',
+        titleGenerationModel: '',
+        providerConfigs: {
+          claude: { ...DEFAULT_CLAUDE_PROVIDER_SETTINGS, enabled: true },
+          codex: { enabled: false },
+        },
+      };
+
+      const accepted = ProviderSettingsCoordinator.applyProviderEnablement(
+        settings,
+        'claude',
+        false,
+      );
+
+      expect(accepted).toBe(false);
+      expect(ProviderRegistry.isEnabled('claude', settings)).toBe(true);
+      expect(ProviderRegistry.getEnabledProviderIds(settings)).toEqual(['claude']);
+      expect(settings.settingsProvider).toBe('claude');
+    });
+
     it('atomically disables a provider and clears dependent shared selections', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',
@@ -183,6 +227,40 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(ProviderRegistry.isEnabled('codex', settings)).toBe(false);
       expect(settings.settingsProvider).toBe('claude');
+      expect(settings.titleGenerationModel).toBe('');
+    });
+
+    it('disables Claude and selects another enabled provider', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'claude',
+        model: 'sonnet',
+        effortLevel: 'high',
+        serviceTier: 'default',
+        thinkingBudget: 'off',
+        titleGenerationModel: 'sonnet',
+        savedProviderModel: { codex: TEST_CODEX_MODEL },
+        savedProviderEffort: { codex: 'medium' },
+        savedProviderServiceTier: { codex: 'default' },
+        savedProviderThinkingBudget: { codex: 'off' },
+        providerConfigs: {
+          claude: { ...DEFAULT_CLAUDE_PROVIDER_SETTINGS, enabled: true },
+          codex: {
+            discoveredModels: TEST_CODEX_CATALOG,
+            enabled: true,
+          },
+        },
+      };
+
+      const accepted = ProviderSettingsCoordinator.applyProviderEnablement(
+        settings,
+        'claude',
+        false,
+      );
+
+      expect(accepted).toBe(true);
+      expect(ProviderRegistry.isEnabled('claude', settings)).toBe(false);
+      expect(settings.settingsProvider).toBe('codex');
+      expect(settings.model).toBe(TEST_CODEX_MODEL);
       expect(settings.titleGenerationModel).toBe('');
     });
   });

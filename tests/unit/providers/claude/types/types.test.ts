@@ -63,6 +63,11 @@ describe('types.ts', () => {
       expect(getClaudeProviderSettings(DEFAULT_SETTINGS).customModels).toBe('');
     });
 
+    it('should enable Claude by default for backward compatibility', () => {
+      expect(getClaudeProviderSettings(DEFAULT_SETTINGS).enabled).toBe(true);
+      expect(getClaudeProviderSettings({ providerConfigs: { claude: {} } }).enabled).toBe(true);
+    });
+
     it('should have lastCustomModel as empty string by default', () => {
       expect(DEFAULT_SETTINGS.lastCustomModel).toBe('');
     });

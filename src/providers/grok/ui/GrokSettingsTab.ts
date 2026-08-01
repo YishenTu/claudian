@@ -12,7 +12,10 @@ import type {
 import type { ClaudianSettings } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
+import {
+  renderLastEnabledProviderWarning,
+  renderProviderModelEnablementWarning,
+} from '../../../shared/settings/ProviderModelEnablementWarning';
 import {
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
@@ -59,23 +62,40 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       .addToggle(toggle => toggle
         .setValue(initialSettings.enabled)
         .onChange(async (enabled) => {
+          if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
+            settingsBag,
+            GROK_PROVIDER_ID,
+            enabled,
+          )) {
+            lastProviderWarning.showFor();
+            toggle.setValue(getGrokProviderSettings(settingsBag).enabled);
+            return;
+          }
+
+          let accepted = true;
           try {
             await context.plugin.runProviderExecutionTransition(
               [GROK_PROVIDER_ID],
               async () => context.plugin.mutateSettings((settings) => {
-                ProviderSettingsCoordinator.applyProviderEnablement(
+                accepted = ProviderSettingsCoordinator.applyProviderEnablement(
                   settings,
                   GROK_PROVIDER_ID,
                   enabled,
                 );
               }),
             );
-          } catch (error) {
+            if (accepted) {
+              lastProviderWarning.hide();
+            } else {
+              lastProviderWarning.showFor();
+            }
+            modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
+          } finally {
             toggle.setValue(getGrokProviderSettings(settingsBag).enabled);
-            throw error;
           }
-          modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
         }));
+
+    const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
     const modelWarning = renderProviderModelEnablementWarning(container, context, {
       getHasEnabledModels: () => {

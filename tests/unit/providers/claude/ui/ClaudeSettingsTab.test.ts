@@ -16,6 +16,16 @@ const mockVaultCommandRepository = {};
 jest.mock('fs');
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
+    canApplyProviderEnablement: jest.fn(() => true),
+    applyProviderEnablement: jest.fn((
+      settings: Record<string, unknown>,
+      providerId: string,
+      enabled: boolean,
+    ) => {
+      const providerConfigs = settings.providerConfigs as Record<string, { enabled: boolean }>;
+      providerConfigs[providerId].enabled = enabled;
+      return true;
+    }),
     reconcileTitleGenerationModelSelection: jest.fn((settings: Record<string, unknown>) => {
       const titleGenerationModel = settings.titleGenerationModel;
       const customModels = (
@@ -425,6 +435,66 @@ describe('ClaudeSettingsTab', () => {
 
     expect(cliPathInput.placeholder).toContain('cli-wrapper.cjs');
     expect(cliPathInput.placeholder).not.toContain('cli.js');
+  });
+
+  it('persists Claude enablement inside its execution transition and refreshes model options', async () => {
+    let transitionActive = false;
+    const plugin = createPlugin();
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => {
+      expect(providerIds).toEqual(['claude']);
+      transitionActive = true;
+      try {
+        return await mutation();
+      } finally {
+        transitionActive = false;
+      }
+    });
+    plugin.mutateSettings.mockImplementation(async (
+      mutation: (settings: any) => void | Promise<void>,
+    ) => {
+      expect(transitionActive).toBe(true);
+      await mutation(plugin.settings);
+      await plugin.saveSettings();
+    });
+    const context = createContext(plugin);
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+    const toggle = findSetting('settings.providerEnablement.name').toggleComponents[0];
+    await toggle.onChangeCallback?.(false);
+
+    expect(plugin.settings.providerConfigs.claude.enabled).toBe(false);
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('claude');
+  });
+
+  it('warns when disabling Claude would leave no enabled provider', async () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+    const container = createContainer();
+    const coordinator = jest.requireMock('@/core/providers/ProviderSettingsCoordinator')
+      .ProviderSettingsCoordinator;
+    coordinator.canApplyProviderEnablement.mockImplementationOnce(() => false);
+
+    claudeSettingsTabRenderer.render(container, context);
+    const warningCallIndex = container.createDiv.mock.calls.findIndex(
+      ([options]: [{ text?: string }?]) => options?.text
+        === 'settings.providerEnablement.lastProviderWarning',
+    );
+    const warningEl = container.createDiv.mock.results[warningCallIndex]?.value;
+    const toggle = findSetting('settings.providerEnablement.name').toggleComponents[0];
+
+    await toggle.onChangeCallback?.(false);
+
+    expect(warningCallIndex).toBeGreaterThanOrEqual(0);
+    expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', false);
+    expect(plugin.settings.providerConfigs.claude.enabled).toBe(true);
+    expect(plugin.runProviderExecutionTransition).not.toHaveBeenCalled();
+    expect(coordinator.applyProviderEnablement).not.toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
+
+    await toggle.onChangeCallback?.(true);
   });
 
   it('persists and applies a CLI path inside the Claude execution transition', async () => {

@@ -62,6 +62,7 @@ function createSession() {
     'note.md',
     () => [],
     resolve,
+    { providerId: 'claude' },
   );
   Object.assign(session as any, {
     editedText: 'world',

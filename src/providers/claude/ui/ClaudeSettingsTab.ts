@@ -6,6 +6,7 @@ import type { ProviderSettingsTabRenderer } from '../../../core/providers/types'
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import { McpSettingsManager } from '../../../shared/settings/McpSettingsManager';
+import { renderLastEnabledProviderWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
@@ -46,6 +47,48 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     // --- Setup ---
 
     new Setting(container).setName(t('settings.setup')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.providerEnablement.name', { provider: 'Claude' }))
+      .setDesc(t('settings.providerEnablement.desc', { provider: 'Claude' }))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(claudeSettings.enabled)
+          .onChange(async (value) => {
+            if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
+              settingsBag,
+              'claude',
+              value,
+            )) {
+              lastProviderWarning.showFor();
+              toggle.setValue(getClaudeProviderSettings(settingsBag).enabled);
+              return;
+            }
+
+            let accepted = true;
+            try {
+              await context.plugin.runProviderExecutionTransition(['claude'], async () => {
+                await context.plugin.mutateSettings((settings) => {
+                  accepted = ProviderSettingsCoordinator.applyProviderEnablement(
+                    settings,
+                    'claude',
+                    value,
+                  );
+                });
+              });
+              if (accepted) {
+                lastProviderWarning.hide();
+              } else {
+                lastProviderWarning.showFor();
+              }
+              context.notifyProviderModelOptionsChanged('claude');
+            } finally {
+              toggle.setValue(getClaudeProviderSettings(settingsBag).enabled);
+            }
+          })
+      );
+
+    const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
     const hostnameKey = getHostnameKey();
     const platformDesc = process.platform === 'win32'

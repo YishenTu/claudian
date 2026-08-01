@@ -107,6 +107,97 @@ describe('InlineEditModal - openAndWait', () => {
     );
   });
 
+  it('uses an enabled settings provider when no chat tab is open', async () => {
+    const editor = {} as any;
+    const app = {} as any;
+    const plugin = {
+      settings: {
+        settingsProvider: 'claude',
+        providerConfigs: {
+          claude: { enabled: false },
+          codex: { enabled: true },
+        },
+      },
+      getView: jest.fn().mockReturnValue(null),
+    } as any;
+    plugin.providerHost = plugin;
+    const view = { editor } as any;
+    const editContext: InlineEditContext = {
+      mode: 'cursor',
+      cursorContext: {
+        beforeCursor: '',
+        afterCursor: '',
+        isInbetween: true,
+        line: 0,
+        column: 0,
+      },
+    };
+
+    jest.spyOn(editorUtils, 'getEditorView').mockReturnValue({} as any);
+    jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
+      .mockRejectedValue(new Error('stop after provider resolution'));
+
+    const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
+
+    await expect(modal.openAndWait()).resolves.toEqual({ decision: 'reject' });
+    expect(ProviderWorkspaceRegistry.ensureInitialized).toHaveBeenCalledWith(
+      plugin,
+      'codex',
+      'inline-edit',
+    );
+  });
+
+  it('uses an enabled settings provider when the active conversation provider is disabled', async () => {
+    const editor = {} as any;
+    const app = {} as any;
+    const plugin = {
+      settings: {
+        settingsProvider: 'codex',
+        providerConfigs: {
+          claude: { enabled: false },
+          codex: { enabled: true },
+        },
+      },
+      getConversationSync: jest.fn().mockReturnValue({
+        id: 'claude-conversation',
+        providerId: 'claude',
+        selectedModel: 'sonnet',
+      }),
+      getView: jest.fn().mockReturnValue({
+        getActiveTab: jest.fn().mockReturnValue({
+          conversationId: 'claude-conversation',
+          providerId: 'claude',
+          selectedModel: 'sonnet',
+        }),
+      }),
+    } as any;
+    plugin.providerHost = plugin;
+    const view = { editor } as any;
+    const editContext: InlineEditContext = {
+      mode: 'cursor',
+      cursorContext: {
+        beforeCursor: '',
+        afterCursor: '',
+        isInbetween: true,
+        line: 0,
+        column: 0,
+      },
+    };
+
+    jest.spyOn(editorUtils, 'getEditorView').mockReturnValue({} as any);
+    jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
+      .mockRejectedValue(new Error('stop after provider resolution'));
+
+    const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
+
+    await expect(modal.openAndWait()).resolves.toEqual({ decision: 'reject' });
+    expect(ProviderWorkspaceRegistry.ensureInitialized).toHaveBeenCalledWith(
+      plugin,
+      'codex',
+      'inline-edit',
+    );
+  });
+
   it('wires mention getCachedVaultFolders through VaultFolderCache.getFolders', async () => {
     const originalDocument = (global as any).document;
     (global as any).document = {
@@ -231,6 +322,9 @@ describe('InlineEditModal - openAndWait', () => {
           hiddenProviderCommands: {
             claude: ['commit'],
             codex: ['analyze'],
+          },
+          providerConfigs: {
+            codex: { enabled: true },
           },
         },
         getConversationSync: jest.fn().mockReturnValue(null),
@@ -359,6 +453,7 @@ describe('InlineEditModal - openAndWait', () => {
           },
           providerConfigs: {
             opencode: {
+              enabled: true,
               visibleModels: ['anthropic/claude-sonnet-4'],
             },
           },
@@ -480,6 +575,9 @@ describe('InlineEditModal - openAndWait', () => {
           hiddenProviderCommands: {
             claude: [],
             opencode: [],
+          },
+          providerConfigs: {
+            opencode: { enabled: true },
           },
         },
         getConversationSync: jest.fn().mockReturnValue(conversation),

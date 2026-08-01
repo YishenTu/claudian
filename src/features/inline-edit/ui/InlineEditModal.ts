@@ -10,7 +10,7 @@ import { ProviderCommandDiscoveryStore } from '../../../core/providers/commands/
 import { resolveConversationModel } from '../../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
-import { DEFAULT_CHAT_PROVIDER_ID, type InlineEditMode, type InlineEditService, type ProviderId } from '../../../core/providers/types';
+import { type InlineEditMode, type InlineEditService, type ProviderId } from '../../../core/providers/types';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
@@ -280,10 +280,12 @@ function resolveInlineEditProviderContext(plugin: InlineEditHost): InlineEditPro
   const conversation = activeTab?.conversationId
     ? plugin.getConversationSync(activeTab.conversationId)
     : null;
-  const providerId = conversation?.providerId
-    ?? activeTab?.providerId
-    ?? DEFAULT_CHAT_PROVIDER_ID;
-  const modelOverride = conversation
+  const activeProviderId = conversation?.providerId ?? activeTab?.providerId;
+  const providerId = activeProviderId
+    && ProviderRegistry.isEnabled(activeProviderId, plugin.settings)
+    ? activeProviderId
+    : ProviderRegistry.resolveSettingsProviderId(plugin.settings);
+  const modelOverride = conversation?.providerId === providerId
     ? resolveConversationModel(plugin.settings, providerId, conversation).model
     : activeTab?.providerId === providerId
     ? activeTab.draftModel

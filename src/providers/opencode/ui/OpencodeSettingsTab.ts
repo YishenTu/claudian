@@ -8,7 +8,10 @@ import type {
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
+import {
+  renderLastEnabledProviderWarning,
+  renderProviderModelEnablementWarning,
+} from '../../../shared/settings/ProviderModelEnablementWarning';
 import {
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
@@ -50,18 +53,40 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         toggle
           .setValue(opencodeSettings.enabled)
           .onChange(async (value) => {
+            if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
+              settingsBag,
+              'opencode',
+              value,
+            )) {
+              lastProviderWarning.showFor();
+              toggle.setValue(getOpencodeProviderSettings(settingsBag).enabled);
+              return;
+            }
+
+            let accepted = true;
             try {
               await context.plugin.runProviderExecutionTransition(['opencode'], async () => {
                 await context.plugin.mutateSettings((settings) => {
-                  ProviderSettingsCoordinator.applyProviderEnablement(settings, 'opencode', value);
+                  accepted = ProviderSettingsCoordinator.applyProviderEnablement(
+                    settings,
+                    'opencode',
+                    value,
+                  );
                 });
               });
+              if (accepted) {
+                lastProviderWarning.hide();
+              } else {
+                lastProviderWarning.showFor();
+              }
               modelWarning.context.notifyProviderModelOptionsChanged('opencode');
             } finally {
               toggle.setValue(getOpencodeProviderSettings(settingsBag).enabled);
             }
           })
       );
+
+    const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
     const modelWarning = renderProviderModelEnablementWarning(container, context, {
       getHasEnabledModels: () => getOpencodeProviderSettings(settingsBag).visibleModels.length > 0,

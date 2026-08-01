@@ -14,9 +14,11 @@ const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
 jest.mock('fs');
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
+    canApplyProviderEnablement: jest.fn(() => true),
     applyProviderEnablement: jest.fn((settings: Record<string, unknown>, _providerId: string, enabled: boolean) => {
       const providerConfigs = settings.providerConfigs as { codex: { enabled: boolean } };
       providerConfigs.codex.enabled = enabled;
+      return true;
     }),
     reconcileTitleGenerationModelSelection: jest.fn((settings: Record<string, unknown>) => {
       const titleGenerationModel = settings.titleGenerationModel;

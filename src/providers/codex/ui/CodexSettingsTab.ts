@@ -5,7 +5,10 @@ import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSet
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
+import {
+  renderLastEnabledProviderWarning,
+  renderProviderModelEnablementWarning,
+} from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
@@ -45,18 +48,40 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         toggle
           .setValue(codexSettings.enabled)
           .onChange(async (value) => {
+            if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
+              settingsBag,
+              'codex',
+              value,
+            )) {
+              lastProviderWarning.showFor();
+              toggle.setValue(getCodexProviderSettings(settingsBag).enabled);
+              return;
+            }
+
+            let accepted = true;
             try {
               await context.plugin.runProviderExecutionTransition(['codex'], async () => {
                 await context.plugin.mutateSettings((settings) => {
-                  ProviderSettingsCoordinator.applyProviderEnablement(settings, 'codex', value);
+                  accepted = ProviderSettingsCoordinator.applyProviderEnablement(
+                    settings,
+                    'codex',
+                    value,
+                  );
                 });
               });
+              if (accepted) {
+                lastProviderWarning.hide();
+              } else {
+                lastProviderWarning.showFor();
+              }
               modelWarning.context.notifyProviderModelOptionsChanged('codex');
             } finally {
               toggle.setValue(getCodexProviderSettings(settingsBag).enabled);
             }
           })
       );
+
+    const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
     const modelWarning = renderProviderModelEnablementWarning(container, context, {
       getHasEnabledModels: () => getCodexModelOptions(settingsBag).length > 0,

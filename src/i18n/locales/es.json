@@ -320,6 +320,7 @@
     "providerEnablement": {
       "name": "Activar {provider}",
       "desc": "Hacer que los modelos de {provider} activados estén disponibles para conversaciones nuevas. Las sesiones existentes se conservan al desactivar el proveedor.",
+      "lastProviderWarning": "Debe haber al menos un proveedor habilitado para que Claudian funcione.",
       "noModelsWarning": "No hay modelos de {provider} activados. Ve a Modelos más abajo y activa al menos uno."
     },
     "codex": {
