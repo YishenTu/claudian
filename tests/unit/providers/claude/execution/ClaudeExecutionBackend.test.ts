@@ -1,6 +1,7 @@
 import '@/providers';
 
 import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
+import { createProviderRecoveryTestHarness } from '@test/unit/features/chat/execution/ProviderRecoveryTestHarness';
 
 import type {
   ProviderExecutionEvent,
@@ -12,8 +13,11 @@ import type {
 } from '@/core/execution';
 import type { McpServerManager } from '@/core/mcp/McpServerManager';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { Conversation } from '@/core/types';
 import type { ClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
+import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
+import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 
 const sdkMock = sdkModule as unknown as {
   getLastOptions: () => sdkModule.Options | undefined;
@@ -954,39 +958,85 @@ describe('ClaudeExecutionBackend', () => {
       invalidation: expect.objectContaining({
         reason: 'provider-session-missing',
       }),
+      providerSessionId: 'missing-session',
       providerState: {
+        providerSessionId: 'missing-session',
         unknownFutureField: { keep: true },
       },
-      providerStateDeletes: ['providerSessionId'],
     }));
-    expect(snapshot).not.toHaveProperty('providerSessionId');
+    expect(snapshot.providerStateDeletes).toBeUndefined();
     expect(events).toContainEqual(expect.objectContaining({
       type: 'session_state_changed',
       snapshot: expect.objectContaining({
         status: 'invalidated',
-        providerStateDeletes: ['providerSessionId'],
+        providerSessionId: 'missing-session',
       }),
     }));
 
-    const persistedProviderState = applyProviderStateProjection(
+    expect(applyProviderStateProjection(
       initialProviderState,
       snapshot,
+    )).toEqual(initialProviderState);
+  });
+
+  it('resets a missing native session through the coordinator before retrying', async () => {
+    const query = createThrowingPersistentQuery(
+      new Error('No conversation found with session ID: missing-session'),
     );
-    sdkMock.setMockMessages([
-      { type: 'system', subtype: 'init', session_id: 'new-session' },
-      { type: 'result', subtype: 'success' },
-    ], { appendResult: false });
-    const replacement = backend.createSession(createConfig({
-      resumeSeed: { providerState: persistedProviderState },
-    }));
-
-    await collectEvents(replacement.execute(createRequest()).events);
-
-    expect(sdkMock.getLastOptions()).not.toHaveProperty('resume');
-    expect(replacement.getSnapshot().providerState).toEqual({
-      unknownFutureField: { keep: true },
-      providerSessionId: 'new-session',
+    jest.spyOn(
+      await import('@/providers/claude/loadClaudeAgentSdk'),
+      'loadClaudeAgentQuery',
+    ).mockResolvedValueOnce((() => query) as never);
+    jest.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
+      ['previous-session', { availability: 'unknown' }],
+      ['missing-session', { availability: 'missing' }],
+    ]));
+    const { services } = createServices();
+    const backend = new ClaudeExecutionBackend(createHost(), services);
+    const conversation: Conversation = {
+      id: 'claude-recovery',
+      providerId: 'claude',
+      title: 'Claude recovery',
+      createdAt: 1,
+      updatedAt: 1,
+      sessionId: 'missing-session',
+      messages: [],
+      providerState: {
+        previousProviderSessionIds: ['previous-session'],
+        providerSessionId: 'missing-session',
+      },
+    };
+    const historyService = new ClaudeConversationHistoryService();
+    const harness = createProviderRecoveryTestHarness({
+      backend,
+      conversation,
+      vaultWorkingDirectory: '/vault',
+      configuration: createRequest().configuration,
+      resolveMissingProviderSession: async (current, missingSessionId) => {
+        const resolution = await historyService.resolveMissingConversationSession(
+          current,
+          '/vault',
+          missingSessionId,
+        );
+        return resolution === 'delete' ? 'deleted' : resolution === 'preserve'
+          ? 'preserved'
+          : 'reset';
+      },
     });
+
+    await expect(harness.execute()).resolves.toMatchObject({
+      missingSessionResolution: 'reset',
+      status: 'missing-session',
+    });
+    expect(conversation.sessionId).toBeNull();
+    expect(conversation.providerState).toEqual({
+      previousProviderSessionIds: ['previous-session'],
+    });
+
+    await harness.coordinator.prepare();
+    expect(harness.createSessionSpy).toHaveBeenCalledTimes(2);
+    expect(harness.createSessionSpy.mock.calls[1]?.[0].resumeSeed).toBeUndefined();
+    await harness.coordinator.dispose();
   });
 
   it('retains a provider-session deletion until a later native init sets the key again', async () => {

@@ -2,6 +2,8 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { createProviderRecoveryTestHarness } from '@test/unit/features/chat/execution/ProviderRecoveryTestHarness';
+
 import type {
   ProviderExecutionEvent,
   ProviderExecutionRequest,
@@ -13,6 +15,7 @@ import {
   isSteerableExecutionSession,
   ProviderExecutionLifecycleRegistry,
 } from '@/core/execution';
+import type { Conversation } from '@/core/types';
 import { createPiWorkspaceServices } from '@/providers/pi/app/PiWorkspaceServices';
 import {
   PiCommandMetadataProbe,
@@ -20,6 +23,7 @@ import {
   type PiExecutionKernel,
   type PiExecutionKernelCallbacks,
 } from '@/providers/pi/execution';
+import { PiConversationHistoryService } from '@/providers/pi/history/PiConversationHistoryService';
 import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpec';
 
 class FakeKernel implements PiExecutionKernel {
@@ -594,7 +598,7 @@ describe('PiExecutionBackend', () => {
     await fs.rm(sessionDir, { force: true, recursive: true });
   });
 
-  it('projects a missing persisted session path before Pi can create a fresh session there', async () => {
+  it('retains a missing persisted session path until recovery resolves it', async () => {
     const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-missing-path-'));
     const missingSessionFile = path.join(sessionDir, 'missing.jsonl');
     const harness = createHarness(createConfig({
@@ -620,10 +624,68 @@ describe('PiExecutionBackend', () => {
     });
     expect(harness.kernels).toHaveLength(0);
     expect(harness.session.getSnapshot()).toMatchObject({
-      providerState: { futureResumeCursor: { token: 'keep-me' } },
-      providerStateDeletes: ['sessionFile'],
+      providerState: {
+        futureResumeCursor: { token: 'keep-me' },
+        sessionFile: missingSessionFile,
+      },
     });
+    expect(harness.session.getSnapshot().providerStateDeletes).toBeUndefined();
     await expect(fs.stat(missingSessionFile)).rejects.toMatchObject({ code: 'ENOENT' });
+    await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  it('resets a missing persisted path through the coordinator before retrying', async () => {
+    const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-coordinator-missing-'));
+    const missingSessionFile = path.join(sessionDir, 'missing.jsonl');
+    const harness = createHarness(createConfig({
+      vaultWorkingDirectory: sessionDir,
+    }));
+    harness.host.settings.providerConfigs.pi.environmentVariables =
+      `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
+    const conversation: Conversation = {
+      id: 'pi-recovery',
+      providerId: 'pi',
+      title: 'Pi recovery',
+      createdAt: 1,
+      updatedAt: 1,
+      sessionId: missingSessionFile,
+      messages: [],
+      providerState: {
+        futureResumeCursor: { token: 'keep-me' },
+        sessionFile: missingSessionFile,
+      },
+    };
+    const historyService = new PiConversationHistoryService();
+    const recovery = createProviderRecoveryTestHarness({
+      backend: harness.backend,
+      conversation,
+      vaultWorkingDirectory: sessionDir,
+      configuration: createRequest().configuration,
+      resolveMissingProviderSession: async (current, missingSessionId) => {
+        const resolution = await historyService.resolveMissingConversationSession(
+          current,
+          sessionDir,
+          missingSessionId,
+        );
+        return resolution === 'delete' ? 'deleted' : resolution === 'preserve'
+          ? 'preserved'
+          : 'reset';
+      },
+    });
+
+    await expect(recovery.execute()).resolves.toMatchObject({
+      missingSessionResolution: 'reset',
+      status: 'missing-session',
+    });
+    expect(conversation.sessionId).toBeNull();
+    expect(conversation.providerState).toEqual({
+      futureResumeCursor: { token: 'keep-me' },
+    });
+
+    await recovery.coordinator.prepare();
+    expect(recovery.createSessionSpy).toHaveBeenCalledTimes(2);
+    expect(recovery.createSessionSpy.mock.calls[1]?.[0].resumeSeed).toBeUndefined();
+    await recovery.coordinator.dispose();
     await fs.rm(sessionDir, { force: true, recursive: true });
   });
 
@@ -706,10 +768,13 @@ describe('PiExecutionBackend', () => {
     });
     expect(harness.kernels).toHaveLength(0);
     expect(harness.session.getSnapshot()).toMatchObject({
-      providerState: { futureResumeCursor: { token: 'keep-me' } },
-      providerStateDeletes: ['sessionId'],
+      providerSessionId: outsideSessionFile,
+      providerState: {
+        futureResumeCursor: { token: 'keep-me' },
+        sessionId: outsideSessionFile,
+      },
     });
-    expect(harness.session.getSnapshot()).not.toHaveProperty('providerSessionId');
+    expect(harness.session.getSnapshot().providerStateDeletes).toBeUndefined();
     await fs.rm(trustedDir, { force: true, recursive: true });
     await fs.rm(outsideDir, { force: true, recursive: true });
   });

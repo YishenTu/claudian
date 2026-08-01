@@ -577,7 +577,9 @@ ClaudeExecutionStrategySink {
       return;
     }
     const details = classifyClaudeError(error, this.providerSessionId);
-    this.clearProviderSession();
+    if (details.category !== 'provider-session-missing') {
+      this.clearProviderSession();
+    }
     this.setInvalidated({
       reason: details.category === 'provider-session-missing'
         ? 'provider-session-missing'
@@ -984,7 +986,9 @@ ClaudeExecutionStrategySink {
     ) {
       this.setStatus('idle');
     } else {
-      this.clearProviderSession();
+      if (details.category !== 'provider-session-missing') {
+        this.clearProviderSession();
+      }
       this.setInvalidated({
         reason: details.category === 'provider-session-missing'
           ? 'provider-session-missing'

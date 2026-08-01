@@ -564,24 +564,18 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const pathTarget = state.sessionFile
       ?? (isPiSessionPathReference(state.sessionId) ? state.sessionId : null);
     if (pathTarget) {
-      const pathSessionId = isPiSessionPathReference(state.sessionId)
+      const fallbackSessionId = state.sessionId
+        && !isPiSessionPathReference(state.sessionId)
         ? state.sessionId
         : null;
-      if (state.sessionFile === pathTarget) {
-        this.deleteProviderStateValue('sessionFile');
-      }
-      if (pathSessionId) {
-        this.deleteProviderStateValue('sessionId');
-      }
-      if (
-        this.providerSessionId === pathTarget
-        || (pathSessionId !== null && this.providerSessionId === pathSessionId)
-      ) {
-        this.providerSessionId = null;
-      }
-      this.bumpRevision();
-      const remainingSessionId = getPiState(this.providerState).sessionId;
-      if (remainingSessionId && !isPiSessionPathReference(remainingSessionId)) {
+      if (fallbackSessionId) {
+        if (state.sessionFile === pathTarget) {
+          this.deleteProviderStateValue('sessionFile');
+        }
+        if (this.providerSessionId === pathTarget) {
+          this.providerSessionId = fallbackSessionId;
+        }
+        this.bumpRevision();
         return;
       }
       this.nativeConversationContextEstablished = false;
