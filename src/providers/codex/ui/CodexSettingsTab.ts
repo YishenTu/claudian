@@ -5,6 +5,7 @@ import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSet
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
 import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
@@ -350,15 +351,13 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     // --- MCP Servers ---
 
-    new Setting(container).setName(t('settings.mcpServers.name')).setHeading();
-    const mcpNotice = container.createDiv({ cls: 'claudian-mcp-settings-desc' });
-    const mcpDesc = mcpNotice.createEl('p', { cls: 'setting-item-description' });
-    mcpDesc.appendText(t('settings.codex.mcp.descBeforeCommand'));
-    mcpDesc.createEl('code').appendText('codex mcp');
-    mcpDesc.appendText(t('settings.codex.mcp.descAfterCommand'));
-    mcpDesc.createEl('a', {
-      text: t('settings.codex.mcp.learnMore'),
-      href: 'https://developers.openai.com/codex/mcp',
+    renderNativeMcpSettingsSection(container, {
+      descriptionAfterCommand: t('settings.codex.mcp.descAfterCommand'),
+      descriptionBeforeCommand: t('settings.codex.mcp.descBeforeCommand'),
+      documentationLabel: t('settings.codex.mcp.learnMore'),
+      documentationUrl: 'https://developers.openai.com/codex/mcp',
+      heading: t('settings.mcpServers.name'),
+      setupCommand: 'codex mcp',
     });
 
     // --- Environment ---

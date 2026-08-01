@@ -125,11 +125,12 @@ interface MockSetting {
 interface MockElement {
   children: MockElement[];
   cls?: string;
+  href?: string;
   tag?: string;
   text?: string;
   appendText(value: string): void;
   createDiv(options?: { cls?: string; text?: string }): MockElement;
-  createEl(tag: string, options?: { cls?: string; text?: string }): MockElement;
+  createEl(tag: string, options?: { cls?: string; href?: string; text?: string }): MockElement;
   setText(value: string): void;
   toggleClass(cls: string, force: boolean): void;
 }
@@ -181,10 +182,14 @@ function createToggleComponent(): MockToggleComponent {
   return component;
 }
 
-function createElement(tag?: string, options?: { cls?: string; text?: string }): MockElement {
+function createElement(
+  tag?: string,
+  options?: { cls?: string; href?: string; text?: string },
+): MockElement {
   const element: MockElement = {
     children: [],
     cls: options?.cls,
+    href: options?.href,
     tag,
     text: options?.text,
     appendText(value) {
@@ -569,7 +574,27 @@ describe('GrokSettingsTab', () => {
       .not.toHaveProperty('reasoningMetadataResolved');
   });
 
-  it('renders only hidden runtime commands and the Grok environment scope', () => {
+  it('directs MCP setup to the native Grok CLI', () => {
+    const plugin = createPlugin();
+    grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
+
+    expect(findSetting('MCP Servers').heading).toBe(true);
+    const notice = createdElements.find(element => element.cls === 'claudian-mcp-settings-desc');
+    const description = notice?.children[0];
+    expect(description?.text).toBe(
+      'Grok Build manages MCP servers through its own CLI. Configure them with  and they will be available in Claudian. ',
+    );
+    expect(description?.children).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tag: 'code', text: 'grok mcp add' }),
+      expect.objectContaining({
+        href: 'https://docs.x.ai/build/features/mcp-servers',
+        tag: 'a',
+        text: 'Learn more',
+      }),
+    ]));
+  });
+
+  it('renders only native skills, hidden runtime commands, MCP guidance, and the Grok environment scope', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
     const container = createContainer();
@@ -590,7 +615,6 @@ describe('GrokSettingsTab', () => {
     }));
     expect(createdSettings.map(setting => setting.name)).not.toEqual(expect.arrayContaining([
       'Agents',
-      'MCP servers',
       'Skills',
       'Subagents',
     ]));

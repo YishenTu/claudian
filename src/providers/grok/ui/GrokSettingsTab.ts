@@ -12,6 +12,7 @@ import type {
 import type { ClaudianSettings } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
 import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
@@ -208,6 +209,15 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       name: 'Hidden Grok commands',
       desc: 'Hide runtime commands advertised by Grok from the command dropdown. Enter names without the leading slash, one per line.',
       placeholder: 'compact\nreview',
+    });
+
+    renderNativeMcpSettingsSection(container, {
+      descriptionAfterCommand: ' and they will be available in Claudian. ',
+      descriptionBeforeCommand: 'Grok Build manages MCP servers through its own CLI. Configure them with ',
+      documentationLabel: 'Learn more',
+      documentationUrl: 'https://docs.x.ai/build/features/mcp-servers',
+      heading: t('settings.mcpServers.name'),
+      setupCommand: 'grok mcp add',
     });
 
     renderEnvironmentSettingsSection({
