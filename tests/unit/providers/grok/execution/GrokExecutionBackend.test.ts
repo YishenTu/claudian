@@ -552,6 +552,64 @@ describe('GrokExecutionBackend', () => {
     ], undefined, expect.any(String));
   });
 
+  it('continues the turn when selected-model metadata persistence fails', async () => {
+    const native = new FakeNativeConnection();
+    native.modelImplementation = async () => ({
+      _meta: {
+        model: {
+          reasoningEffort: 'high',
+          supportsReasoningEffort: true,
+          'x.ai/sessionConfig': {
+            options: [
+              { category: 'mode', id: 'high', label: 'High', selected: true },
+            ],
+          },
+        },
+      },
+    });
+    const host = createGrok45Host();
+    persistGrok45Catalog(host);
+    const mergeLiveModels = jest.fn(async () => {
+      throw new Error('settings persistence failed');
+    });
+    const session = new GrokExecutionBackend(host, {
+      modelCatalogCoordinator: { mergeLiveModels },
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+
+    const events = await collect(session.execute(grok45Request('high')).events);
+
+    expect(mergeLiveModels).toHaveBeenCalledTimes(1);
+    expect(native.promptRequests).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+  });
+
+  it('continues the turn when session-model metadata persistence fails', async () => {
+    const native = new FakeNativeConnection();
+    native.loadResponse = {
+      models: {
+        availableModels: [{ modelId: 'grok-4.5', name: 'Grok 4.5' }],
+        currentModelId: 'grok-4.5',
+      },
+      sessionId: 'session-existing',
+    };
+    const host = createGrok45Host();
+    persistGrok45Catalog(host);
+    const mergeLiveModels = jest.fn(async () => {
+      throw new Error('settings persistence failed');
+    });
+    const session = new GrokExecutionBackend(host, {
+      modelCatalogCoordinator: { mergeLiveModels },
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+
+    const events = await collect(session.execute(grok45Request('high')).events);
+
+    expect(mergeLiveModels).toHaveBeenCalledTimes(1);
+    expect(native.promptRequests).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+  });
+
   it('persists live model updates and fences notifications from a quarantined native', async () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});
@@ -618,7 +676,7 @@ describe('GrokExecutionBackend', () => {
     }]);
   });
 
-  it('uses a valid per-model preference when the request has no projected effort', async () => {
+  it('omits a saved per-model preference when the request has no projected effort', async () => {
     const native = new FakeNativeConnection();
     const host = createGrok45Host();
     persistGrok45Catalog(host);
@@ -635,7 +693,6 @@ describe('GrokExecutionBackend', () => {
     await collect(session.execute({ ...request, configuration }).events);
 
     expect(native.modelRequests).toEqual([{
-      _meta: { reasoningEffort: 'low' },
       modelId: 'grok-4.5',
       sessionId: 'session-existing',
     }]);

@@ -48,6 +48,7 @@ import {
   decodeGrokModelId,
   findGrokModel,
   getGrokAvailableReasoningEfforts,
+  type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,
 } from '../models';
 import {
@@ -674,7 +675,7 @@ RewindableExecutionSession {
       this.throwIfCancellationRequested(active);
       const model = normalizeGrokSetModelMetadata(rawModel, response._meta);
       if (model) {
-        await this.options.modelCatalogCoordinator?.mergeLiveModels(
+        await this.mergeModelMetadataBestEffort(
           [model],
           undefined,
           this.getNativeOwner(native).modelContextKey,
@@ -702,6 +703,7 @@ RewindableExecutionSession {
     const advertisedValues = getGrokAvailableReasoningEfforts(model)
       .map(effort => effort.value);
     const requested = requestedReasoning?.trim() ?? '';
+    if (!requested) return null;
     if (advertisedValues.includes(requested)) return requested;
 
     const preferred = settings.preferredReasoningByModel[rawModelId]?.trim() ?? '';
@@ -1039,7 +1041,7 @@ RewindableExecutionSession {
   ): Promise<void> {
     const { currentModelId, models } = normalizeGrokSessionModelMetadata(response);
     if (models.length > 0) {
-      await this.options.modelCatalogCoordinator?.mergeLiveModels(
+      await this.mergeModelMetadataBestEffort(
         models,
         currentModelId ?? undefined,
         sourceContextKey,
@@ -1054,7 +1056,7 @@ RewindableExecutionSession {
     if (!this.isCurrentNativeOwner(owner)) return;
     const update = normalizeGrokModelUpdateMetadata(state);
     if (!update || !this.isCurrentNativeOwner(owner)) return;
-    await this.options.modelCatalogCoordinator?.mergeLiveModels(
+    await this.mergeModelMetadataBestEffort(
       update.models,
       update.currentModelId ?? undefined,
       owner.modelContextKey,
@@ -1078,11 +1080,27 @@ RewindableExecutionSession {
       supportsReasoning: false,
     })));
     if (models.length > 0) {
-      await this.options.modelCatalogCoordinator?.mergeLiveModels(
+      await this.mergeModelMetadataBestEffort(
         models,
         modelOption.currentValue,
         owner.modelContextKey,
       );
+    }
+  }
+
+  private async mergeModelMetadataBestEffort(
+    models: GrokDiscoveredModel[],
+    defaultModelId: string | undefined,
+    sourceContextKey: string,
+  ): Promise<void> {
+    try {
+      await this.options.modelCatalogCoordinator?.mergeLiveModels(
+        models,
+        defaultModelId,
+        sourceContextKey,
+      );
+    } catch {
+      // Catalog synchronization is best-effort and cannot disrupt execution.
     }
   }
 
