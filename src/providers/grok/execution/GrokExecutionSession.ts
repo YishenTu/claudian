@@ -42,8 +42,10 @@ import {
   resolveGrokSessionCwd,
   resolveGrokSessionDirectory,
 } from '../history/GrokHistoryPathResolver';
-import { decodeGrokModelId } from '../models';
 import {
+  decodeGrokModelId,
+  findGrokModel,
+  getGrokAvailableReasoningEfforts,
   normalizeGrokDiscoveredModels,
 } from '../models';
 import {
@@ -56,6 +58,7 @@ import { waitForGrokCancelDelivery } from '../runtime/GrokCancelDelivery';
 import type { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
 import { buildGrokRuntimeEnv } from '../runtime/GrokRuntimeEnvironment';
 import { GrokSessionNotificationMirrorDeduplicator } from '../runtime/GrokSessionNotificationMirrorDeduplicator';
+import { getGrokProviderSettings } from '../settings';
 import { parseGrokProviderState } from '../types';
 import type {
   GrokExecutionNativeConnection,
@@ -638,9 +641,15 @@ RewindableExecutionSession {
       ? decodeGrokModelId(request.configuration.model)
       : null;
     if (rawModel) {
+      // The request can predate model discovery, so validate again after
+      // ensureSession has published the live model catalog.
+      const reasoningEffort = this.resolveReasoningEffort(
+        rawModel,
+        request.configuration.reasoning,
+      );
       await native.setModel({
-        ...(request.configuration.reasoning
-          ? { _meta: { reasoningEffort: request.configuration.reasoning } }
+        ...(reasoningEffort
+          ? { _meta: { reasoningEffort } }
           : {}),
         modelId: rawModel,
         sessionId,
@@ -655,6 +664,25 @@ RewindableExecutionSession {
       });
       this.throwIfCancellationRequested(active);
     }
+  }
+
+  private resolveReasoningEffort(
+    rawModelId: string,
+    requestedReasoning: string | undefined,
+  ): string | null {
+    const requested = requestedReasoning?.trim() ?? '';
+    if (!requested) return null;
+
+    const settings = getGrokProviderSettings(this.plugin.settings);
+    const advertisedValues = getGrokAvailableReasoningEfforts(
+      findGrokModel(settings.currentCatalog?.models ?? [], rawModelId),
+    ).map(effort => effort.value);
+    if (advertisedValues.length === 0 || advertisedValues.includes(requested)) {
+      return requested;
+    }
+
+    const preferred = settings.preferredReasoningByModel[rawModelId]?.trim() ?? '';
+    return advertisedValues.includes(preferred) ? preferred : null;
   }
 
   private handleNotification(

@@ -37,6 +37,11 @@ import {
   type GrokExecutionNativeCreateOptions,
   type GrokExecutionNativeFactory,
 } from '@/providers/grok/execution/GrokExecutionBackend';
+import type { GrokDiscoveredModel } from '@/providers/grok/models';
+import {
+  updateCurrentGrokCatalog,
+  updateGrokProviderSettings,
+} from '@/providers/grok/settings';
 
 const interactionPort: ProviderInteractionPort = {
   askUserQuestion: jest.fn(),
@@ -81,6 +86,55 @@ function executionRequest(text = 'hello'): ProviderExecutionRequest {
     signal: new AbortController().signal,
     toolPolicy: { kind: 'provider-default' },
   };
+}
+
+function grok45Request(reasoning: string): ProviderExecutionRequest {
+  const request = executionRequest();
+  return {
+    ...request,
+    configuration: {
+      ...request.configuration,
+      model: 'grok/grok-4.5',
+      reasoning,
+    },
+  };
+}
+
+function createGrok45Host(): ProviderHost {
+  return {
+    settings: {
+      model: 'grok/grok-4.5',
+      providerConfigs: {
+        grok: {
+          enabled: true,
+          preferredReasoningByModel: {},
+        },
+      },
+      savedProviderModel: { grok: 'grok/grok-4.5' },
+    },
+  } as unknown as ProviderHost;
+}
+
+function persistGrok45Catalog(
+  host: ProviderHost,
+  models: GrokDiscoveredModel[] = [{
+    displayName: 'Grok 4.5',
+    rawId: 'grok-4.5',
+    reasoningMetadataResolved: true,
+    reasoningEfforts: [
+      { label: 'High', value: 'high' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'Low', value: 'low' },
+    ],
+    supportsReasoning: true,
+  }],
+): void {
+  updateCurrentGrokCatalog(host.settings, {
+    defaultModelId: 'grok-4.5',
+    fingerprint: 'catalog-fixture',
+    models,
+    refreshedAt: 1,
+  });
 }
 
 function featurePermissionRequest(
@@ -349,6 +403,89 @@ describe('GrokExecutionBackend', () => {
       providerSessionId: 'session-existing',
       status: 'idle',
     });
+  });
+
+  it('drops an unsupported reasoning effort after cold-session model discovery', async () => {
+    const native = new FakeNativeConnection();
+    native.loadResponse = {
+      models: {
+        availableModels: [{ modelId: 'grok-4.5', name: 'Grok 4.5' }],
+        currentModelId: 'grok-4.5',
+      },
+      sessionId: 'session-existing',
+    };
+    const host = createGrok45Host();
+    const mergeLiveModels = jest.fn(async (models: GrokDiscoveredModel[]) => {
+      persistGrok45Catalog(host, models);
+      return { changed: true };
+    });
+    const session = new GrokExecutionBackend(host, {
+      modelCatalogCoordinator: { mergeLiveModels },
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+
+    await collect(session.execute(grok45Request('max')).events);
+
+    expect(mergeLiveModels).toHaveBeenCalledTimes(1);
+    expect(native.modelRequests).toEqual([{
+      modelId: 'grok-4.5',
+      sessionId: 'session-existing',
+    }]);
+  });
+
+  it('keeps the requested reasoning effort when the selected model metadata is unknown', async () => {
+    const native = new FakeNativeConnection();
+    const session = new GrokExecutionBackend(
+      createGrok45Host(),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    await collect(session.execute(grok45Request('max')).events);
+
+    expect(native.modelRequests).toEqual([{
+      _meta: { reasoningEffort: 'max' },
+      modelId: 'grok-4.5',
+      sessionId: 'session-existing',
+    }]);
+  });
+
+  it('uses a valid per-model preference when the requested reasoning effort is unsupported', async () => {
+    const native = new FakeNativeConnection();
+    const host = createGrok45Host();
+    persistGrok45Catalog(host);
+    updateGrokProviderSettings(host.settings, {
+      preferredReasoningByModel: { 'grok-4.5': 'low' },
+    });
+    const session = new GrokExecutionBackend(
+      host,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    await collect(session.execute(grok45Request('max')).events);
+
+    expect(native.modelRequests).toEqual([{
+      _meta: { reasoningEffort: 'low' },
+      modelId: 'grok-4.5',
+      sessionId: 'session-existing',
+    }]);
+  });
+
+  it('keeps a requested reasoning effort the selected model advertises', async () => {
+    const native = new FakeNativeConnection();
+    const host = createGrok45Host();
+    persistGrok45Catalog(host);
+    const session = new GrokExecutionBackend(
+      host,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    await collect(session.execute(grok45Request('low')).events);
+
+    expect(native.modelRequests).toEqual([{
+      _meta: { reasoningEffort: 'low' },
+      modelId: 'grok-4.5',
+      sessionId: 'session-existing',
+    }]);
   });
 
   it('loads once per native connection and quarantines session replay from live output', async () => {
