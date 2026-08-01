@@ -1,12 +1,12 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer, Menu, Notice, setIcon } from 'obsidian';
 
+import type { ChatRewindMode } from '../../../core/execution';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
   type ProviderCapabilities,
   type ProviderSubagentLifecycleAdapter,
 } from '../../../core/providers/types';
-import type { ChatRewindMode } from '../../../core/runtime/types';
 import {
   isWriteEditTool,
   TOOL_APPLY_PATCH,
@@ -80,7 +80,6 @@ export class MessageRenderer {
     this.forkCallback = forkCallback;
     this.getCapabilities = getCapabilities ?? (() => ({
       providerId: DEFAULT_CHAT_PROVIDER_ID,
-      supportsPersistentRuntime: false,
       supportsNativeHistory: false,
       supportsPlanMode: false,
       supportsRewind: false,

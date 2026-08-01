@@ -14,6 +14,18 @@ interface PendingRequest {
 type NotificationHandler = (params: unknown) => void;
 type ServerRequestHandler = (requestId: string | number, params: unknown) => Promise<unknown>;
 
+export class CodexRpcResponseError extends Error {
+  readonly code: number;
+  readonly data: unknown;
+
+  constructor(error: JsonRpcError) {
+    super(error.message);
+    this.name = 'CodexRpcResponseError';
+    this.code = error.code;
+    this.data = error.data;
+  }
+}
+
 export class CodexRpcTransport {
   private nextId = 1;
   private pending = new Map<number, PendingRequest>();
@@ -132,7 +144,7 @@ export class CodexRpcTransport {
 
     if (msg.error) {
       const err = msg.error as JsonRpcError;
-      pending.reject(new Error(err.message));
+      pending.reject(new CodexRpcResponseError(err));
     } else {
       pending.resolve(msg.result);
     }

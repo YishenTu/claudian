@@ -4,7 +4,6 @@ import type { ProviderCommandDropdownConfig } from '../../../core/providers/comm
 import type { ProviderCommandDiscoveryController } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers/types';
-import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import type { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import type { CanvasSelectionController } from '../controllers/CanvasSelectionController';
@@ -13,6 +12,7 @@ import type { InputController } from '../controllers/InputController';
 import type { NavigationController } from '../controllers/NavigationController';
 import type { SelectionController } from '../controllers/SelectionController';
 import type { StreamController } from '../controllers/StreamController';
+import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
@@ -33,7 +33,6 @@ import type {
 import type { InstructionModeManager } from '../ui/InstructionModeManager';
 import type { NavigationSidebar } from '../ui/NavigationSidebar';
 import type { StatusPanel } from '../ui/StatusPanel';
-import type { RuntimeSupervisor } from './RuntimeSupervisor';
 import type { TabSession } from './TabSession';
 
 /**
@@ -213,23 +212,14 @@ export interface TabData {
   /** Conversation ID bound to this tab (null for new/empty tabs). */
   conversationId: string | null;
 
-  /** Per-tab chat runtime instance for independent streaming. */
-  service: ChatRuntime | null;
-
-  /** Named owner of the per-tab runtime reference. */
-  runtimeSupervisor: RuntimeSupervisor;
-
-  /** Tab-manager hook for generation-guarded provider command subscriptions. */
-  onRuntimeInstalled?: (runtime: ChatRuntime) => void;
+  /** Per-tab owner of provider execution and session lifecycle. */
+  executionCoordinator: ChatExecutionCoordinator | null;
 
   /** Tab-manager hook for mutations that change the serialized tab state. */
   onPersistedStateChanged?: () => void;
 
   /** Tab-manager-owned provider discovery callback retained across UI/runtime refreshes. */
   providerCatalogResolver: ProviderCatalogResolver | null;
-
-  /** Whether the service has been initialized (lazy start). */
-  serviceInitialized: boolean;
 
   /** Per-tab chat state. */
   state: ChatState;
@@ -250,7 +240,10 @@ export interface TabData {
   renderer: MessageRenderer | null;
 }
 
-export type TabProviderContext = Pick<TabData, 'conversationId' | 'service' | 'providerId' | 'lifecycleState' | 'draftModel'>;
+export type TabProviderContext = Pick<
+  TabData,
+  'conversationId' | 'providerId' | 'lifecycleState' | 'draftModel'
+>;
 
 /**
  * Persisted tab state for restoration on plugin reload.

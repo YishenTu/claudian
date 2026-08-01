@@ -180,13 +180,6 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     this.hydratedConversationPaths.set(conversation.id, hydrationKey);
   }
 
-  async deleteConversationSession(
-    _conversation: Conversation,
-    _vaultPath: string | null,
-  ): Promise<void> {
-    // Never delete ~/.codex transcripts
-  }
-
   resolveSessionIdForConversation(conversation: Conversation | null): string | null {
     if (!conversation) return null;
     const state = getCodexState(conversation.providerState);

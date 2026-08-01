@@ -1,12 +1,12 @@
 import type { CursorContext } from '../../utils/editor';
-import type { AuxQueryRunner } from '../auxiliary/AuxQueryRunner';
 import type { SharedAppStorage } from '../bootstrap/storage';
+import type { ProviderExecutionBackend } from '../execution';
 import type { McpServerManager } from '../mcp/McpServerManager';
-import type { ChatRuntime } from '../runtime/ChatRuntime';
 import type { HomeFileAdapter } from '../storage/HomeFileAdapter';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   AgentDefinition,
+  AuxiliaryContinuityReset,
   Conversation,
   InstructionRefineResult,
   ManagedMcpServer,
@@ -26,7 +26,6 @@ export type { ProviderId } from '../types/provider';
 
 export interface ProviderCapabilities {
   providerId: ProviderId;
-  supportsPersistentRuntime: boolean;
   supportsNativeHistory: boolean;
   supportsPlanMode: boolean;
   supportsRewind: boolean;
@@ -41,11 +40,6 @@ export interface ProviderCapabilities {
 }
 
 export const DEFAULT_CHAT_PROVIDER_ID = 'claude' as const satisfies ProviderId;
-
-export interface CreateChatRuntimeOptions {
-  plugin: ProviderHost;
-  providerId?: ProviderId;
-}
 
 /**
  * Chat-facing provider registration.
@@ -64,10 +58,9 @@ export interface ProviderRegistration {
   environmentKeyPatterns?: RegExp[];
   chatUIConfig: ProviderChatUIConfig;
   settingsReconciler: ProviderSettingsReconciler;
-  createRuntime: (options: Omit<CreateChatRuntimeOptions, 'providerId'>) => ChatRuntime;
-  createTitleGenerationBackend: (plugin: ProviderHost) => TitleGenerationBackend;
-  createInstructionRefineBackend: (plugin: ProviderHost) => AuxQueryRunner;
-  createInlineEditBackend: (plugin: ProviderHost) => AuxQueryRunner;
+  createExecutionBackend: (plugin: ProviderHost) => ProviderExecutionBackend;
+  createSubagentHistoryService?: (plugin: ProviderHost) => ProviderSubagentHistoryService;
+  resolveTitleGenerationModel?: (plugin: ProviderHost) => string | undefined;
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
   subagentAdapter?: ProviderSubagentAdapter;
@@ -131,15 +124,6 @@ export interface SessionMetadataScanResult {
   complete: boolean;
   /** Files that were read successfully but did not contain valid session metadata. */
   invalidMetadataCount: number;
-}
-
-export interface AppSessionStorage {
-  scanMetadata(options?: SessionMetadataListOptions): Promise<SessionMetadataScanResult>;
-  listMetadata(options?: SessionMetadataListOptions): Promise<SessionMetadata[]>;
-  loadMetadata(id: string): Promise<SessionMetadata | null>;
-  saveMetadata(meta: SessionMetadata): Promise<void>;
-  deleteMetadata(id: string): Promise<void>;
-  toSessionMetadata(conv: Conversation): SessionMetadata;
 }
 
 // ---------------------------------------------------------------------------
@@ -382,19 +366,17 @@ export interface ProviderCliResolver {
   reset(): void;
 }
 
-export interface ProviderRuntimeCommandLoaderContext {
-  // Shared command discovery may need a short-lived provider session; the tab
-  // manager decides when that is allowed for the active tab.
-  allowSessionCreation?: boolean;
+export interface ProviderCommandLoaderContext {
+  allowIsolatedMetadataCreation: boolean;
   conversation: Conversation | null;
   externalContextPaths: string[];
   plugin: ProviderHost;
-  runtime: ChatRuntime | null;
+  readyCommandSnapshot?: readonly SlashCommand[];
   /** Cancels provider-owned discovery work when its consumer is invalidated. */
   signal?: AbortSignal;
 }
 
-export interface ProviderRuntimeCommandLoader {
+export interface ProviderCommandLoader {
   /**
    * Returns a provider-owned, non-secret identity for inputs that affect command discovery.
    * Raw settings, environment values, session state, and external paths must not be included.
@@ -402,21 +384,20 @@ export interface ProviderRuntimeCommandLoader {
   getCacheFingerprint(settings: Record<string, unknown>): string;
   isAvailable(settings: Record<string, unknown>): boolean;
   loadCommands(
-    context: ProviderRuntimeCommandLoaderContext,
+    context: ProviderCommandLoaderContext,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>>;
 }
 
-// `commands` warms provider-owned command discovery without fully priming the
-// bound tab runtime. `runtime` primes the real tab runtime itself.
-export type ProviderTabWarmupMode = 'none' | 'commands' | 'runtime';
+export type ProviderTabWarmupMode = 'none' | 'commands' | 'execution';
 
 export type ProviderTabWarmupLifecycleState = 'blank' | 'bound_cold' | 'bound_active' | 'closing';
 
 export interface ProviderTabWarmupContext {
+  coordinatorState: 'absent' | 'idle' | 'active' | 'stale';
   conversation: Conversation | null;
   externalContextPaths: string[];
+  hasResumableNativeSeed: boolean;
   plugin: ProviderHost;
-  runtime: ChatRuntime | null;
   tab: {
     conversationId: string | null;
     draftModel: string | null;
@@ -429,16 +410,12 @@ export interface ProviderTabWarmupPolicy {
   resolveMode(context: ProviderTabWarmupContext): ProviderTabWarmupMode;
 }
 
-export interface ProviderEnvironmentTransition {
-  release(): Promise<void>;
-}
-
 export interface ProviderWorkspaceServices {
   commandCatalog?: ProviderCommandCatalog | null;
   vaultCommandRepository?: ProviderVaultEntryRepository | null;
   agentMentionProvider?: AgentMentionProvider | null;
   cliResolver?: ProviderCliResolver | null;
-  runtimeCommandLoader?: ProviderRuntimeCommandLoader | null;
+  commandLoader?: ProviderCommandLoader | null;
   tabWarmupPolicy?: ProviderTabWarmupPolicy | null;
   mcpServerManager?: McpServerManager | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
@@ -446,7 +423,6 @@ export interface ProviderWorkspaceServices {
   refreshModelCatalog?(
     context?: ProviderTransitionOwnerContext,
   ): Promise<ProviderModelCatalogRefreshResult>;
-  beginAuxiliaryServicesEnvironmentChange?(): Promise<ProviderEnvironmentTransition>;
   prepareSettings?(): Promise<void>;
   dispose?(): Promise<void> | void;
 }
@@ -521,11 +497,6 @@ export interface ProviderConversationHistoryService {
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<void>;
-  deleteConversationSession(
-    conversation: Conversation,
-    vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
-  ): Promise<void>;
   resolveSessionIdForConversation(conversation: Conversation | null): string | null;
   isPendingForkConversation(conversation: Conversation): boolean;
   /** Builds opaque provider state for a forked conversation. */
@@ -536,6 +507,18 @@ export interface ProviderConversationHistoryService {
   ): Record<string, unknown>;
   /** Adds provider-owned persisted metadata to Conversation.providerState before session save. */
   buildPersistedProviderState?(conversation: Conversation): Record<string, unknown> | undefined;
+}
+
+export interface ProviderSubagentHistoryRequest {
+  providerSessionId: string;
+  subagentId: string;
+  vaultPath: string;
+}
+
+/** Provider-owned transcript recovery kept separate from live execution. */
+export interface ProviderSubagentHistoryService {
+  loadToolCalls(request: ProviderSubagentHistoryRequest): Promise<ToolCallInfo[]>;
+  loadFinalResult(request: ProviderSubagentHistoryRequest): Promise<string | null>;
 }
 
 export interface ProviderHistoryPathContext {
@@ -633,19 +616,6 @@ export type TitleGenerationCallback = (
   result: TitleGenerationResult
 ) => Promise<void>;
 
-/** Provider-owned transport request for one title-generation query. */
-export interface TitleGenerationBackendRequest {
-  abortController: AbortController;
-  systemPrompt: string;
-  userPrompt: string;
-}
-
-/** One-shot provider backend; shared core code owns the title-generation workflow. */
-export interface TitleGenerationBackend {
-  query(request: TitleGenerationBackendRequest): Promise<string>;
-  dispose(): void;
-}
-
 export interface TitleGenerationService {
   generateTitle(
     conversationId: string,
@@ -698,13 +668,16 @@ export interface InlineEditCursorRequest {
 
 export type InlineEditRequest = InlineEditSelectionRequest | InlineEditCursorRequest;
 
-export interface InlineEditResult {
+export interface InlineEditOutcome {
   success: boolean;
+  resetRequired?: false;
   editedText?: string;
   insertedText?: string;
   clarification?: string;
   error?: string;
 }
+
+export type InlineEditResult = InlineEditOutcome | AuxiliaryContinuityReset;
 
 export interface InlineEditService {
   setModelOverride?(model?: string): void;

@@ -172,7 +172,6 @@ function createMockCallbacks(overrides: Record<string, any> = {}) {
     getUIConfig: jest.fn().mockReturnValue(createMockUIConfig()),
     getCapabilities: jest.fn().mockReturnValue({
       providerId: 'claude',
-      supportsPersistentRuntime: true,
       supportsNativeHistory: true,
       supportsPlanMode: true,
       supportsRewind: true,

@@ -179,23 +179,6 @@ export async function getSDKSessionAvailability(
   return (await locateSDKSession(vaultPath, sessionId, context)).availability;
 }
 
-export async function deleteSDKSession(
-  vaultPath: string,
-  sessionId: string,
-  context?: ClaudeConfigDirContext,
-): Promise<void> {
-  try {
-    const sessionPath = getSDKSessionPath(vaultPath, sessionId, context);
-    if (!existsSync(sessionPath)) {
-      return;
-    }
-
-    await fs.unlink(sessionPath);
-  } catch {
-    // Best-effort deletion
-  }
-}
-
 export async function readSDKSession(
   vaultPath: string,
   sessionId: string,

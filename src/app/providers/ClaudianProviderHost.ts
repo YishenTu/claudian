@@ -1,6 +1,5 @@
 import type { ProviderHost } from '../../core/providers/ProviderHost';
 import type { ProviderCliResolutionContext, ProviderId } from '../../core/providers/types';
-import type { ChatRuntime } from '../../core/runtime/ChatRuntime';
 import type { EnvironmentScope } from '../../core/types/settings';
 import type ClaudianPlugin from '../../main';
 
@@ -10,6 +9,10 @@ export class ClaudianProviderHost implements ProviderHost {
 
   get app() {
     return this.plugin.app;
+  }
+
+  get executionLifecycleRegistry() {
+    return this.plugin.executionLifecycleRegistry;
   }
 
   get settings() {
@@ -77,43 +80,16 @@ export class ClaudianProviderHost implements ProviderHost {
     return this.plugin.getResolvedProviderCliPath(providerId, context);
   }
 
+  runProviderExecutionTransition<T>(
+    providerIds: ProviderId[],
+    mutation: () => Promise<T>,
+  ): Promise<T> {
+    return this.plugin.runProviderExecutionTransition(providerIds, mutation);
+  }
+
   notifyProviderChatOptionsChanged(providerId: ProviderId): void {
     for (const view of this.plugin.getAllViews()) {
       view.refreshModelSelector(providerId);
     }
-  }
-
-  async broadcastToActiveViewRuntimes(
-    action: (runtime: ChatRuntime) => Promise<void> | void,
-  ): Promise<void> {
-    await this.plugin.getView()?.getTabManager()?.broadcastToAllTabs(
-      (runtime) => Promise.resolve(action(runtime)),
-    );
-  }
-
-  async broadcastToAllViewRuntimes(
-    action: (runtime: ChatRuntime) => Promise<void> | void,
-  ): Promise<void> {
-    for (const view of this.plugin.getAllViews()) {
-      await view.getTabManager()?.broadcastToAllTabs(
-        (runtime) => Promise.resolve(action(runtime)),
-      );
-    }
-  }
-
-  async recycleProviderRuntimes(providerId: ProviderId): Promise<void> {
-    for (const view of this.plugin.getAllViews()) {
-      const tabManager = view.getTabManager();
-      await tabManager?.recycleProviderRuntimes(providerId);
-      view.invalidateProviderCommandCaches?.([providerId]);
-      view.refreshModelSelector?.();
-    }
-  }
-
-  mutateProviderSettingsAndRecycleRuntimes(
-    providerId: ProviderId,
-    mutation: (settings: typeof this.plugin.settings) => void | Promise<void>,
-  ): Promise<void> {
-    return this.plugin.mutateProviderSettingsAndRecycleRuntimes(providerId, mutation);
   }
 }

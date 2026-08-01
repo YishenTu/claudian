@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 
 import type { SharedAppStorage } from '../bootstrap/storage';
-import type { ChatRuntime } from '../runtime/ChatRuntime';
+import type { ProviderExecutionLifecycleRegistry } from '../execution';
 import type { ClaudianSettings } from '../types';
 import type { EnvironmentScope } from '../types/settings';
 import type { ProviderCliResolutionContext, ProviderId } from './types';
@@ -15,6 +15,7 @@ import type { ProviderCliResolutionContext, ProviderId } from './types';
  */
 export interface ProviderHost {
   readonly app: App;
+  readonly executionLifecycleRegistry: ProviderExecutionLifecycleRegistry;
   readonly settings: ClaudianSettings;
   readonly storage: SharedAppStorage;
   readonly manifest?: { version?: string };
@@ -40,17 +41,10 @@ export interface ProviderHost {
     providerId: ProviderId,
     context?: ProviderCliResolutionContext,
   ): Promise<string | null>;
+  runProviderExecutionTransition<T>(
+    providerIds: ProviderId[],
+    mutation: () => Promise<T>,
+  ): Promise<T>;
 
   notifyProviderChatOptionsChanged(providerId: ProviderId): void;
-  broadcastToActiveViewRuntimes?(
-    action: (runtime: ChatRuntime) => Promise<void> | void,
-  ): Promise<void>;
-  broadcastToAllViewRuntimes?(
-    action: (runtime: ChatRuntime) => Promise<void> | void,
-  ): Promise<void>;
-  recycleProviderRuntimes?(providerId: ProviderId): Promise<void>;
-  mutateProviderSettingsAndRecycleRuntimes?(
-    providerId: ProviderId,
-    mutation: (settings: ClaudianSettings) => void | Promise<void>,
-  ): Promise<void>;
 }

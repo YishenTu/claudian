@@ -1,4 +1,9 @@
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  Options,
+  Query,
+  SDKMessage,
+  SDKUserMessage,
+} from '@anthropic-ai/claude-agent-sdk';
 
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
@@ -40,15 +45,38 @@ export interface ColdStartQueryConfig {
   onTextChunk?: (accumulatedText: string) => void;
 }
 
+/**
+ * Provider-execution path. The caller has already resolved the complete
+ * native options and prompt, while this helper retains cold-start query
+ * ownership and iteration semantics.
+ */
+export interface PreparedColdStartQueryConfig {
+  options: Options;
+  prompt: string | AsyncIterable<SDKUserMessage>;
+  onQuery?: (query: Query) => void;
+  onMessage?: (message: SDKMessage) => void | Promise<void>;
+  stopAfterResult?: boolean;
+}
+
 export interface ColdStartQueryResult {
   text: string;
   sessionId: string | null;
 }
 
-export async function runColdStartQuery(
+export function runColdStartQuery(
   config: ColdStartQueryConfig,
   prompt: string,
+): Promise<ColdStartQueryResult>;
+export function runColdStartQuery(
+  config: PreparedColdStartQueryConfig,
+): Promise<ColdStartQueryResult>;
+export async function runColdStartQuery(
+  config: ColdStartQueryConfig | PreparedColdStartQueryConfig,
+  prompt?: string,
 ): Promise<ColdStartQueryResult> {
+  if (isPreparedColdStartQueryConfig(config)) {
+    return await runPreparedColdStartQuery(config);
+  }
   const vaultPath = getVaultPath(config.plugin.app);
   if (!vaultPath) {
     throw new Error('Could not determine vault path');
@@ -127,7 +155,7 @@ export async function runColdStartQuery(
   if (config.abortController?.signal.aborted) {
     throw new Error('Cancelled');
   }
-  const response = agentQuery({ prompt, options });
+  const response = agentQuery({ prompt: prompt ?? '', options });
   let responseText = '';
   let sessionId: string | null = null;
 
@@ -153,4 +181,47 @@ export async function runColdStartQuery(
   }
 
   return { text: responseText, sessionId };
+}
+
+async function runPreparedColdStartQuery(
+  execution: PreparedColdStartQueryConfig,
+): Promise<ColdStartQueryResult> {
+  const agentQuery = await loadClaudeAgentQuery();
+  execution.options.abortController?.signal.throwIfAborted();
+  const response = agentQuery({
+    prompt: execution.prompt,
+    options: execution.options,
+  });
+  execution.onQuery?.(response);
+  let responseText = '';
+  let sessionId: string | null = null;
+
+  for await (const message of response) {
+    await execution.onMessage?.(message);
+    if (
+      message.type === 'system'
+      && message.subtype === 'init'
+      && message.session_id
+    ) {
+      sessionId = message.session_id;
+    }
+    const text = extractAssistantText(message);
+    if (text) {
+      responseText += text;
+    }
+    if (execution.stopAfterResult && message.type === 'result') {
+      break;
+    }
+  }
+
+  return {
+    text: responseText,
+    sessionId,
+  };
+}
+
+function isPreparedColdStartQueryConfig(
+  config: ColdStartQueryConfig | PreparedColdStartQueryConfig,
+): config is PreparedColdStartQueryConfig {
+  return 'options' in config && 'prompt' in config;
 }

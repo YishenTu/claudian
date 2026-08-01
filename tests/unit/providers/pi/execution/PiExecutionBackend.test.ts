@@ -1,0 +1,1444 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import type {
+  ProviderExecutionEvent,
+  ProviderExecutionRequest,
+  ProviderExecutionRun,
+  ProviderInteractionPort,
+  ProviderSessionConfig,
+} from '@/core/execution';
+import {
+  isSteerableExecutionSession,
+  ProviderExecutionLifecycleRegistry,
+} from '@/core/execution';
+import { createPiWorkspaceServices } from '@/providers/pi/app/PiWorkspaceServices';
+import {
+  PiCommandMetadataProbe,
+  PiExecutionBackend,
+  type PiExecutionKernel,
+  type PiExecutionKernelCallbacks,
+} from '@/providers/pi/execution';
+import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpec';
+
+class FakeKernel implements PiExecutionKernel {
+  readonly requests: Array<{ payload: Record<string, unknown>; type: string }> = [];
+  readonly sent: Array<Record<string, unknown>> = [];
+  readonly shutdown = jest.fn(async () => undefined);
+  readonly start = jest.fn();
+  stderr = '';
+
+  constructor(
+    readonly launchSpec: PiLaunchSpec,
+    private readonly callbacks: PiExecutionKernelCallbacks,
+    private readonly responses: Map<string, unknown>,
+    private readonly requestHandler?: <T>(
+      type: string,
+      payload: Record<string, unknown>,
+      timeoutMs?: number,
+      signal?: AbortSignal,
+    ) => Promise<T>,
+  ) {}
+
+  emit(event: Record<string, unknown>): void {
+    this.callbacks.onEvent(event);
+  }
+
+  close(error = new Error('Pi process exited')): void {
+    this.callbacks.onClose(error);
+  }
+
+  emitExtensionChunk(chunk: any): void {
+    this.callbacks.onExtensionChunk(chunk);
+  }
+
+  getStderrSnapshot(): string {
+    return this.stderr;
+  }
+
+  async request<T>(
+    type: string,
+    payload: Record<string, unknown> = {},
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    this.requests.push({ payload, type });
+    if (this.requestHandler) {
+      return this.requestHandler<T>(type, payload, timeoutMs, signal);
+    }
+    return this.responses.get(type) as T;
+  }
+
+  send(record: Record<string, unknown>): void {
+    this.sent.push(record);
+  }
+}
+
+function createHost(): any {
+  return {
+    app: { vault: { adapter: { basePath: '/vault' } } },
+    executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
+    getResolvedProviderCliPath: jest.fn(async () => '/bin/pi'),
+    settings: {
+      effortLevel: 'off',
+      mediaFolder: 'media',
+      model: 'pi:anthropic/claude-sonnet-4',
+      providerConfigs: {
+        pi: {
+          discoveredModels: [{
+            encodedId: 'pi:anthropic/claude-sonnet-4',
+            id: 'claude-sonnet-4',
+            input: ['text', 'image'],
+            label: 'Claude Sonnet 4',
+            provider: 'anthropic',
+            reasoning: true,
+            thinkingLevels: ['off', 'high'],
+          }],
+          enabled: true,
+          toolMode: 'all',
+          visibleModels: ['pi:anthropic/claude-sonnet-4'],
+        },
+      },
+      systemPrompt: '',
+      userName: '',
+    },
+  };
+}
+
+function createConfig(
+  overrides: Partial<ProviderSessionConfig> = {},
+): ProviderSessionConfig {
+  return {
+    interactionPort: createInteractionPort(),
+    lifecycle: 'persistent',
+    nativePersistence: 'enabled',
+    vaultWorkingDirectory: '/vault',
+    ...overrides,
+  };
+}
+
+function createInteractionPort(): ProviderInteractionPort {
+  return {
+    askUserQuestion: jest.fn(),
+    dismissInteraction: jest.fn(),
+    requestApproval: jest.fn(),
+    requestPlanDecision: jest.fn(),
+  };
+}
+
+function createRequest(
+  overrides: Partial<ProviderExecutionRequest> = {},
+): ProviderExecutionRequest {
+  return {
+    configuration: {
+      model: 'pi:anthropic/claude-sonnet-4',
+      reasoning: 'high',
+      systemInstructions: { kind: 'provider-default' },
+    },
+    input: [{ text: 'Hello Pi', type: 'text' }],
+    signal: new AbortController().signal,
+    toolPolicy: { kind: 'provider-default' },
+    ...overrides,
+  };
+}
+
+async function collect(
+  events: AsyncIterable<ProviderExecutionEvent>,
+): Promise<ProviderExecutionEvent[]> {
+  const collected: ProviderExecutionEvent[] = [];
+  for await (const event of events) {
+    collected.push(event);
+  }
+  return collected;
+}
+
+async function flush(): Promise<void> {
+  await new Promise(resolve => setImmediate(resolve));
+}
+
+function createDeferred(): {
+  promise: Promise<undefined>;
+  resolve: () => void;
+} {
+  let resolve!: () => void;
+  const promise = new Promise<undefined>((settle) => {
+    resolve = () => settle(undefined);
+  });
+  return { promise, resolve };
+}
+
+function createRejectableDeferred<T>(): {
+  promise: Promise<T>;
+  reject: (error: Error) => void;
+  resolve: (value: T) => void;
+} {
+  let reject!: (error: Error) => void;
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle, fail) => {
+    reject = fail;
+    resolve = settle;
+  });
+  return { promise, reject, resolve };
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  throw new Error('Timed out waiting for Pi execution test condition');
+}
+
+function createHarness(
+  config = createConfig(),
+  onKernelCreated?: (kernel: FakeKernel, index: number) => void,
+  requestHandler?: <T>(
+    type: string,
+    payload: Record<string, unknown>,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ) => Promise<T>,
+  forkLifecycleOptions: Record<string, unknown> = {},
+) {
+  const host = createHost();
+  const kernels: FakeKernel[] = [];
+  const responses = new Map<string, unknown>([
+    ['get_commands', {
+      commands: [{ description: 'Compact context', name: 'compact', source: 'runtime' }],
+    }],
+    ['get_session_stats', {
+      contextWindow: 200_000,
+      inputTokens: 10,
+      outputTokens: 5,
+    }],
+    ['get_state', {
+      leafEntryId: 'assistant-1',
+      parentSession: 'parent-session',
+      sessionFile: '/tmp/pi-session.jsonl',
+      sessionId: 'pi-session-1',
+    }],
+    ['prompt', { accepted: true }],
+    ['set_model', {}],
+    ['set_thinking_level', {}],
+    ['steer', { accepted: true }],
+  ]);
+  const commandCatalog = {
+    getDropdownConfig: jest.fn(),
+    listDropdownEntries: jest.fn(async () => []),
+    refresh: jest.fn(async () => undefined),
+    setCommandSnapshot: jest.fn(),
+  };
+  const backend = new PiExecutionBackend(
+    host,
+    { commandCatalog },
+    {
+      createKernel: (spec, callbacks) => {
+        const kernel = new FakeKernel(spec, callbacks, responses, requestHandler);
+        kernels.push(kernel);
+        onKernelCreated?.(kernel, kernels.length - 1);
+        return kernel;
+      },
+      ...forkLifecycleOptions,
+    },
+  );
+  return {
+    backend,
+    commandCatalog,
+    config,
+    host,
+    kernels,
+    responses,
+    session: backend.createSession(config),
+  };
+}
+
+describe('PiExecutionBackend', () => {
+  it('uses an isolated no-session kernel for command metadata probes', async () => {
+    const responses = new Map<string, unknown>([
+      ['get_commands', {
+        commands: [
+          { name: 'skill-one', source: 'skill' },
+          { name: 'skill-one', source: 'skill' },
+        ],
+      }],
+    ]);
+    let renderer: unknown = 'unset';
+    let kernel: FakeKernel | null = null;
+    const probe = new PiCommandMetadataProbe(
+      createHost(),
+      (spec, callbacks, suppliedRenderer) => {
+        renderer = suppliedRenderer;
+        kernel = new FakeKernel(spec, callbacks, responses);
+        return kernel;
+      },
+    );
+
+    await expect(probe.load('/vault')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'pi:skill:skill-one',
+        kind: 'skill',
+        name: 'skill-one',
+      }),
+    ]);
+    expect(renderer).toBeNull();
+    expect(kernel!.launchSpec.args).toContain('--no-session');
+    expect(kernel!.shutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('quiesces an in-flight command probe before a configured CLI transition', async () => {
+    const host = createHost();
+    let cliPath = '/bin/pi-a';
+    let staleRequestStarted = false;
+    host.getResolvedProviderCliPath.mockImplementation(async () => cliPath);
+    const kernels: FakeKernel[] = [];
+    const probe = new PiCommandMetadataProbe(
+      host,
+      (spec, callbacks) => {
+        const kernel = new FakeKernel(
+          spec,
+          callbacks,
+          new Map(),
+          async <T>(
+            _type: string,
+            _payload: Record<string, unknown> = {},
+            _timeoutMs?: number,
+            signal?: AbortSignal,
+          ): Promise<T> => {
+            if (spec.command === '/bin/pi-b') {
+              return {
+                commands: [{ name: 'fresh-command', source: 'runtime' }],
+              } as T;
+            }
+            staleRequestStarted = true;
+            return await new Promise<T>((_resolve, reject) => {
+              signal?.addEventListener('abort', () => {
+                reject(new Error('metadata probe aborted'));
+              }, { once: true });
+            });
+          },
+        );
+        kernels.push(kernel);
+        return kernel;
+      },
+    );
+    const quiesce = jest.spyOn(probe, 'quiesceForEnvironmentChange');
+    const services = await createPiWorkspaceServices(host, {
+      commandMetadataProbe: probe,
+    });
+    const context = {
+      allowIsolatedMetadataCreation: true,
+      conversation: null,
+      externalContextPaths: [],
+      plugin: host,
+    };
+
+    const staleLoad = services.commandLoader!.loadCommands(context);
+    await waitFor(() => staleRequestStarted);
+    await host.executionLifecycleRegistry.runTransition(['pi'], async () => {
+      expect(kernels[0].shutdown).toHaveBeenCalledTimes(1);
+      cliPath = '/bin/pi-b';
+    });
+
+    await expect(staleLoad).resolves.toMatchObject({ status: 'error' });
+    await expect(services.commandLoader!.loadCommands(context)).resolves.toMatchObject({
+      items: [expect.objectContaining({ name: 'fresh-command' })],
+      status: 'ready',
+    });
+    expect(kernels.map(kernel => kernel.launchSpec.command)).toEqual([
+      '/bin/pi-a',
+      '/bin/pi-b',
+    ]);
+    expect(quiesce).toHaveBeenCalledTimes(2);
+
+    await services.dispose!();
+    expect(quiesce).toHaveBeenCalledTimes(3);
+    await host.executionLifecycleRegistry.runTransition(['pi'], async () => undefined);
+    expect(quiesce).toHaveBeenCalledTimes(3);
+    await host.executionLifecycleRegistry.dispose();
+  });
+
+  it('fences command metadata started during a transition and reopens on the new CLI', async () => {
+    const host = createHost();
+    let cliPath = '/bin/pi-a';
+    host.getResolvedProviderCliPath.mockImplementation(async () => cliPath);
+    const kernels: FakeKernel[] = [];
+    const probe = new PiCommandMetadataProbe(host, (spec, callbacks) => {
+      const kernel = new FakeKernel(
+        spec,
+        callbacks,
+        new Map([['get_commands', {
+          commands: [{ name: `from-${spec.command}`, source: 'runtime' }],
+        }]]),
+      );
+      kernels.push(kernel);
+      return kernel;
+    });
+    const services = await createPiWorkspaceServices(host, {
+      commandMetadataProbe: probe,
+    });
+    const context = {
+      allowIsolatedMetadataCreation: true,
+      conversation: null,
+      externalContextPaths: [],
+      plugin: host,
+    };
+    const mutationEntered = createDeferred();
+    const releaseMutation = createDeferred();
+    const transition = host.executionLifecycleRegistry.runTransition(['pi'], async () => {
+      mutationEntered.resolve();
+      await releaseMutation.promise;
+      cliPath = '/bin/pi-b';
+    });
+    await mutationEntered.promise;
+
+    const controller = new AbortController();
+    const abortedLoad = services.commandLoader!.loadCommands({
+      ...context,
+      signal: controller.signal,
+    });
+    const waitingLoad = services.commandLoader!.loadCommands(context);
+    await flush();
+    expect(kernels).toHaveLength(0);
+
+    controller.abort();
+    await expect(abortedLoad).resolves.toMatchObject({ status: 'error' });
+    expect(kernels).toHaveLength(0);
+
+    releaseMutation.resolve();
+    await transition;
+    await expect(waitingLoad).resolves.toMatchObject({
+      items: [expect.objectContaining({ name: 'from-/bin/pi-b' })],
+      status: 'ready',
+    });
+    expect(kernels.map(kernel => kernel.launchSpec.command)).toEqual(['/bin/pi-b']);
+
+    await services.dispose!();
+    await host.executionLifecycleRegistry.dispose();
+  });
+
+  it('does not strand a command metadata waiter when the workspace is disposed while fenced', async () => {
+    const host = createHost();
+    const kernels: FakeKernel[] = [];
+    const probe = new PiCommandMetadataProbe(host, (spec, callbacks) => {
+      const kernel = new FakeKernel(spec, callbacks, new Map());
+      kernels.push(kernel);
+      return kernel;
+    });
+    const services = await createPiWorkspaceServices(host, {
+      commandMetadataProbe: probe,
+    });
+    const mutationEntered = createDeferred();
+    const releaseMutation = createDeferred();
+    const transition = host.executionLifecycleRegistry.runTransition(['pi'], async () => {
+      mutationEntered.resolve();
+      await releaseMutation.promise;
+    });
+    await mutationEntered.promise;
+
+    const load = services.commandLoader!.loadCommands({
+      allowIsolatedMetadataCreation: true,
+      conversation: null,
+      externalContextPaths: [],
+      plugin: host,
+    });
+    await flush();
+    expect(kernels).toHaveLength(0);
+
+    await services.dispose!();
+    await expect(load).resolves.toMatchObject({ status: 'error' });
+    expect(kernels).toHaveLength(0);
+
+    releaseMutation.resolve();
+    await transition;
+    await host.executionLifecycleRegistry.dispose();
+  });
+
+  it('normalizes an acknowledged persistent turn and refreshes native state', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest({
+      input: [
+        { text: 'Hello Pi', type: 'text' },
+        {
+          image: {
+            data: 'base64-data',
+            id: 'image-1',
+            mediaType: 'image/png',
+            name: 'diagram.png',
+            size: 11,
+            source: 'file',
+          },
+          type: 'image',
+        },
+      ],
+    }));
+    const eventsPromise = collect(run.events);
+    await flush();
+
+    const kernel = harness.kernels[0];
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({
+      assistantMessageEvent: { text_delta: 'Hello' },
+      type: 'message_update',
+    });
+    kernel.emit({
+      toolCall: { arguments: { path: 'note.md' }, id: 'tool-1', name: 'read' },
+      type: 'tool_execution_start',
+    });
+    kernel.emit({
+      id: 'tool-1',
+      result: { content: 'note' },
+      type: 'tool_execution_end',
+    });
+    kernel.emit({ type: 'agent_end' });
+
+    const events = await eventsPromise;
+    expect(events.map(event => event.type)).toEqual([
+      'session_state_changed',
+      'turn_started',
+      'user_message_started',
+      'assistant_message_started',
+      'text_delta',
+      'tool_started',
+      'tool_completed',
+      'usage_updated',
+      'session_state_changed',
+      'turn_completed',
+    ]);
+    expect(kernel.requests).toContainEqual({
+      payload: {
+        images: [{ data: 'base64-data', mimeType: 'image/png', type: 'image' }],
+        message: 'Hello Pi',
+      },
+      type: 'prompt',
+    });
+    expect(harness.session.getSnapshot()).toMatchObject({
+      providerId: 'pi',
+      providerSessionId: 'pi-session-1',
+      providerState: {
+        leafEntryId: 'assistant-1',
+        parentSession: 'parent-session',
+        sessionFile: '/tmp/pi-session.jsonl',
+        sessionId: 'pi-session-1',
+      },
+      status: 'idle',
+    });
+    expect(harness.session.getSnapshot().providerStateDeletes).toBeUndefined();
+    expect(harness.commandCatalog.setCommandSnapshot).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 'pi:runtime:compact', name: 'compact' }),
+    ]);
+    expect(new Set(events.map(event => event.scope.sequence)).size).toBe(events.length);
+  });
+
+  it('launches resumed persistent sessions with their native session file', async () => {
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerSessionId: 'pi-session-1',
+        providerState: {
+          customState: 'preserved',
+          sessionFile: '/tmp/pi-session.jsonl',
+          sessionId: 'pi-session-1',
+        },
+      },
+    }));
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await flush();
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await eventsPromise;
+
+    expect(harness.kernels[0].launchSpec.args).toContain('/tmp/pi-session.jsonl');
+    expect(harness.session.getSnapshot().providerState).toMatchObject({
+      customState: 'preserved',
+      sessionId: 'pi-session-1',
+    });
+  });
+
+  it('keeps no-session ephemeral continuation in the same process', async () => {
+    const harness = createHarness(createConfig({
+      lifecycle: 'ephemeral',
+      nativePersistence: 'disabled-if-supported',
+      resumeSeed: {
+        providerSessionId: 'old-session',
+        providerState: {
+          forkSource: { resumeAt: 'assistant-old', sessionId: 'old-session' },
+          forkSourceSessionFile: '/tmp/old-source.jsonl',
+          futureState: { retained: true },
+          leafEntryId: 'assistant-old',
+          parentSession: '/tmp/parent.jsonl',
+          sessionFile: '/tmp/old-session.jsonl',
+          sessionId: 'old-session',
+        },
+      },
+    }));
+
+    for (const text of ['First', 'Clarification']) {
+      const run = harness.session.execute(createRequest({
+        input: [{ text, type: 'text' }],
+    }));
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+    harness.kernels[0].emit({ type: 'agent_start' });
+      harness.kernels[0].emit({ type: 'agent_end' });
+      await eventsPromise;
+    }
+
+    expect(harness.kernels).toHaveLength(1);
+    expect(harness.kernels[0].launchSpec.args).toContain('--no-session');
+    const snapshot = harness.session.getSnapshot();
+    expect(snapshot).not.toHaveProperty('providerSessionId');
+    expect(snapshot.providerState).toEqual({ futureState: { retained: true } });
+    expect(snapshot.providerStateDeletes).toEqual([
+      'sessionId',
+      'sessionFile',
+      'leafEntryId',
+      'parentSession',
+      'forkSource',
+      'forkSourceSessionFile',
+    ]);
+    expect(Object.isFrozen(snapshot.providerStateDeletes)).toBe(true);
+  });
+
+  it.each([
+    ['passive', '--no-tools'],
+    ['read-only', 'read,grep,find,ls'],
+  ] as const)('maps %s tool policy into the launch profile', async (kind, expected) => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest({
+      toolPolicy: { kind },
+    }));
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await eventsPromise;
+
+    expect(harness.kernels[0].launchSpec.args).toContain(expected);
+  });
+
+  it('maps an explicit allow-list exactly and falls back to provider model settings', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest({
+      configuration: {
+        reasoning: 'high',
+        systemInstructions: { kind: 'provider-default' },
+      },
+      toolPolicy: {
+        kind: 'allow-list',
+        names: ['read', 'grep'],
+      },
+    }));
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await eventsPromise;
+
+    expect(harness.kernels[0].launchSpec.args).toEqual(expect.arrayContaining([
+      '--tools',
+      'read,grep',
+    ]));
+    expect(harness.kernels[0].requests).toContainEqual({
+      payload: {
+        modelId: 'claude-sonnet-4',
+        provider: 'anthropic',
+      },
+      type: 'set_model',
+    });
+  });
+
+  it('supports native steer with prompt images', async () => {
+    const harness = createHarness();
+    const session = harness.session;
+    expect(isSteerableExecutionSession(session)).toBe(true);
+    if (!isSteerableExecutionSession(session)) {
+      throw new Error('Pi session must expose steer');
+    }
+    const run = session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await flush();
+
+    const steered = await session.steer(createRequest({
+      input: [
+        { text: 'Correction', type: 'text' },
+        {
+          image: {
+            data: 'steer-image',
+            id: 'image-2',
+            mediaType: 'image/jpeg',
+            name: 'photo.jpg',
+            size: 11,
+            source: 'file',
+          },
+          type: 'image',
+        },
+      ],
+    }));
+    expect(steered).toBe(true);
+    expect(harness.kernels[0].requests).toContainEqual({
+      payload: {
+        images: [{ data: 'steer-image', mimeType: 'image/jpeg', type: 'image' }],
+        message: 'Correction',
+      },
+      type: 'steer',
+    });
+
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await eventsPromise;
+  });
+
+  it('returns false when steer cannot reach native handoff', async () => {
+    const idleHarness = createHarness();
+    const idleSession = idleHarness.session;
+    if (!isSteerableExecutionSession(idleSession)) {
+      throw new Error('Pi session must expose steer');
+    }
+
+    await expect(idleSession.steer(createRequest())).resolves.toBe(false);
+    await idleSession.dispose();
+    await expect(idleSession.steer(createRequest())).resolves.toBe(false);
+
+    const activeHarness = createHarness();
+    const activeSession = activeHarness.session;
+    if (!isSteerableExecutionSession(activeSession)) {
+      throw new Error('Pi session must expose steer');
+    }
+    const run = activeSession.execute(createRequest());
+    const eventsPromise = collect(run.events);
+
+    await expect(activeSession.steer(createRequest())).resolves.toBe(false);
+    await waitFor(() => activeHarness.kernels.length === 1);
+    const requestAbort = new AbortController();
+    requestAbort.abort();
+    await expect(activeSession.steer(createRequest({
+      signal: requestAbort.signal,
+    }))).resolves.toBe(false);
+
+    run.cancel();
+    await eventsPromise;
+  });
+
+  it('rejects an ambiguous native steer failure after lifecycle disposal', async () => {
+    const nativeSteer = createRejectableDeferred<unknown>();
+    const harness = createHarness(
+      createConfig(),
+      undefined,
+      async <T>(type: string): Promise<T> => {
+        if (type === 'steer') return nativeSteer.promise as Promise<T>;
+        return {} as T;
+      },
+    );
+    const lease = harness.host.executionLifecycleRegistry.acquire(
+      harness.backend,
+      harness.config,
+      'chat',
+    );
+    const session = lease.session;
+    if (!isSteerableExecutionSession(session)) {
+      throw new Error('Pi session must expose steer');
+    }
+    const run = session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+
+    const steerPromise = session.steer(createRequest());
+    await waitFor(() => harness.kernels[0].requests.some(
+      request => request.type === 'steer',
+    ));
+    const transitionPromise = harness.host.executionLifecycleRegistry.runTransition(
+      ['pi'],
+      async () => undefined,
+    );
+    await waitFor(() => session.getStatus() === 'disposed');
+    nativeSteer.reject(new Error('Pi steer response was lost during disposal'));
+
+    await expect(steerPromise).rejects.toThrow(
+      'Pi steer response was lost during disposal',
+    );
+    await transitionPromise;
+    await eventsPromise;
+    await harness.host.executionLifecycleRegistry.dispose();
+  });
+
+  it('returns true when native steer acceptance arrives after the active run is stale', async () => {
+    const nativeSteer = createRejectableDeferred<unknown>();
+    const harness = createHarness(
+      createConfig(),
+      undefined,
+      async <T>(type: string): Promise<T> => {
+        if (type === 'steer') return nativeSteer.promise as Promise<T>;
+        return {} as T;
+      },
+    );
+    const session = harness.session;
+    if (!isSteerableExecutionSession(session)) {
+      throw new Error('Pi session must expose steer');
+    }
+    const run = session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+
+    const steerPromise = session.steer(createRequest());
+    await waitFor(() => harness.kernels[0].requests.some(
+      request => request.type === 'steer',
+    ));
+    run.cancel();
+    nativeSteer.resolve({ accepted: true });
+
+    await expect(steerPromise).resolves.toBe(true);
+    await eventsPromise;
+  });
+
+  it('cancels once, shuts down the process, and fences late events', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await flush();
+    harness.kernels[0].emit({ type: 'agent_start' });
+
+    run.cancel();
+    harness.kernels[0].emit({
+      assistantMessageEvent: { text_delta: 'late' },
+      type: 'message_update',
+    });
+    const events = await eventsPromise;
+    await flush();
+
+    expect(events.filter(event => event.type === 'cancelled')).toHaveLength(1);
+    expect(events).not.toContainEqual(expect.objectContaining({
+      text: 'late',
+      type: 'text_delta',
+    }));
+    expect(harness.kernels[0].sent).toContainEqual({ type: 'abort' });
+    expect(harness.kernels[0].shutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not launch a replacement kernel after cancellation during restart shutdown', async () => {
+    const harness = createHarness();
+    const firstRun = harness.session.execute(createRequest());
+    const firstEventsPromise = collect(firstRun.events);
+    await waitFor(() => harness.kernels.length === 1);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await firstEventsPromise;
+
+    const oldKernel = harness.kernels[0];
+    const shutdown = createDeferred();
+    oldKernel.shutdown.mockImplementation(() => shutdown.promise);
+    const restartRun = harness.session.execute(createRequest({
+      toolPolicy: { kind: 'passive' },
+    }));
+    const restartEventsPromise = collect(restartRun.events);
+    await waitFor(() => oldKernel.shutdown.mock.calls.length === 1);
+
+    restartRun.cancel();
+    await expect(restartEventsPromise).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'cancelled' }),
+    ]));
+    shutdown.resolve();
+    await flush();
+
+    expect(harness.kernels).toHaveLength(1);
+    expect(oldKernel.start).toHaveBeenCalledTimes(1);
+    expect(oldKernel.shutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not launch a replacement kernel after disposal during restart shutdown', async () => {
+    const harness = createHarness();
+    const firstRun = harness.session.execute(createRequest());
+    const firstEventsPromise = collect(firstRun.events);
+    await waitFor(() => harness.kernels.length === 1);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await firstEventsPromise;
+
+    const oldKernel = harness.kernels[0];
+    const shutdown = createDeferred();
+    oldKernel.shutdown.mockImplementation(() => shutdown.promise);
+    const restartRun = harness.session.execute(createRequest({
+      toolPolicy: { kind: 'passive' },
+    }));
+    const restartEventsPromise = collect(restartRun.events);
+    await waitFor(() => oldKernel.shutdown.mock.calls.length === 1);
+
+    const disposePromise = harness.session.dispose();
+    shutdown.resolve();
+    await disposePromise;
+    await restartEventsPromise;
+    await flush();
+
+    expect(harness.kernels).toHaveLength(1);
+    expect(oldKernel.start).toHaveBeenCalledTimes(1);
+    expect(oldKernel.shutdown).toHaveBeenCalledTimes(1);
+    expect(harness.session.getStatus()).toBe('disposed');
+  });
+
+  it('shuts down a replacement kernel when cancellation occurs during startup', async () => {
+    const restartRunHolder: { run?: ProviderExecutionRun } = {};
+    const harness = createHarness(createConfig(), (kernel, index) => {
+      if (index === 1) {
+        kernel.start.mockImplementation(() => restartRunHolder.run?.cancel());
+      }
+    });
+    const firstRun = harness.session.execute(createRequest());
+    const firstEventsPromise = collect(firstRun.events);
+    await waitFor(() => harness.kernels.length === 1);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await firstEventsPromise;
+
+    const restartRun = harness.session.execute(createRequest({
+      toolPolicy: { kind: 'passive' },
+    }));
+    restartRunHolder.run = restartRun;
+    const events = await collect(restartRun.events);
+    await waitFor(() => harness.kernels.length === 2);
+    await flush();
+
+    expect(events.at(-1)).toMatchObject({ type: 'cancelled' });
+    expect(harness.kernels[1].start).toHaveBeenCalledTimes(1);
+    expect(harness.kernels[1].shutdown).toHaveBeenCalledTimes(1);
+    expect(harness.kernels[1].requests).toEqual([]);
+  });
+
+  it('rejects overlapping execution and cancels when iteration ends early', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    expect(() => harness.session.execute(createRequest())).toThrow(
+      'Pi execution session already has an active run',
+    );
+    const iterator = run.events[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: 'session_state_changed' },
+    });
+    await waitFor(() => harness.kernels.length === 1);
+    await iterator.return?.();
+    await flush();
+
+    expect(harness.kernels[0].sent).toContainEqual({ type: 'abort' });
+    expect(harness.kernels[0].shutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('terminates with process-exited and invalidates on subprocess death', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await flush();
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].close(new Error('exit code 1'));
+
+    const events = await eventsPromise;
+    expect(events.at(-1)).toMatchObject({
+      category: 'process-exited',
+      message: 'exit code 1',
+      type: 'execution_error',
+    });
+    expect(harness.session.getSnapshot()).toMatchObject({
+      invalidation: { reason: 'process-exited' },
+      status: 'invalidated',
+    });
+  });
+
+  it.each(['cancel', 'dispose'] as const)(
+    'retains and rolls back a deferred fork creation when %s wins before commit',
+    async (teardown) => {
+      const createdFork = {
+        leafEntryId: 'assistant-1',
+        parentSession: '/tmp/source.jsonl',
+        sessionFile: '/tmp/new-fork.jsonl',
+        sessionId: 'new-fork',
+      };
+      const creation = createRejectableDeferred<typeof createdFork>();
+      const rollback = createDeferred();
+      const createForkSessionFile = jest.fn(() => creation.promise);
+      const rollbackForkSessionFile = jest.fn(() => rollback.promise);
+      const harness = createHarness(createConfig({
+        resumeSeed: {
+          providerState: {
+            forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+            forkSourceSessionFile: '/tmp/source.jsonl',
+            futureState: { retained: true },
+          },
+        },
+      }), undefined, undefined, {
+        createForkSessionFile,
+        rollbackForkSessionFile,
+      });
+      const run = harness.session.execute(createRequest());
+      const eventsPromise = collect(run.events);
+      await waitFor(() => createForkSessionFile.mock.calls.length === 1, 100);
+
+      if (teardown === 'cancel') run.cancel();
+      const disposePromise = harness.session.dispose();
+      const revisionBeforeCreationSettles = harness.session.getSnapshot().revision;
+      let disposeSettled = false;
+      void disposePromise.then(() => {
+        disposeSettled = true;
+      }, () => {
+        disposeSettled = true;
+      });
+
+      creation.resolve(createdFork);
+      await waitFor(() => rollbackForkSessionFile.mock.calls.length === 1, 100);
+      await flush();
+
+      expect(disposeSettled).toBe(false);
+      expect(harness.kernels).toHaveLength(0);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        providerState: {
+          forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+          forkSourceSessionFile: '/tmp/source.jsonl',
+          futureState: { retained: true },
+        },
+        revision: revisionBeforeCreationSettles,
+      });
+      expect(harness.session.getSnapshot().providerStateDeletes).toBeUndefined();
+      expect(rollbackForkSessionFile).toHaveBeenCalledWith(createdFork);
+
+      rollback.resolve();
+      await disposePromise;
+      const events = await eventsPromise;
+
+      expect(rollbackForkSessionFile).toHaveBeenCalledTimes(1);
+      expect(events.filter(event => (
+        event.type === 'cancelled'
+        || event.type === 'execution_error'
+        || event.type === 'turn_completed'
+      ))).toEqual([expect.objectContaining({ type: 'cancelled' })]);
+      expect(harness.session.getSnapshot()).toMatchObject({
+        providerState: {
+          forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+          forkSourceSessionFile: '/tmp/source.jsonl',
+          futureState: { retained: true },
+        },
+        status: 'disposed',
+      });
+    },
+  );
+
+  it.each(['cancel', 'dispose'] as const)(
+    'rolls back exactly once when %s occurs after fork creation but before state commit',
+    async (teardown) => {
+      const createdFork = {
+        leafEntryId: 'assistant-1',
+        parentSession: '/tmp/source.jsonl',
+        sessionFile: '/tmp/new-fork.jsonl',
+        sessionId: 'new-fork',
+      };
+      const rollback = createDeferred();
+      const rollbackForkSessionFile = jest.fn(() => rollback.promise);
+      let disposePromise: Promise<void> | undefined;
+      const runHolder: { run?: ProviderExecutionRun } = {};
+      const harnessHolder: { harness?: ReturnType<typeof createHarness> } = {};
+      const createForkSessionFile = jest.fn(async () => {
+        await Promise.resolve();
+        if (teardown === 'cancel') runHolder.run?.cancel();
+        else disposePromise = harnessHolder.harness?.session.dispose();
+        return createdFork;
+      });
+      const harness = createHarness(createConfig({
+        resumeSeed: {
+          providerState: {
+            forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+            forkSourceSessionFile: '/tmp/source.jsonl',
+          },
+        },
+      }), undefined, undefined, {
+        createForkSessionFile,
+        rollbackForkSessionFile,
+      });
+      harnessHolder.harness = harness;
+      const run = harness.session.execute(createRequest());
+      runHolder.run = run;
+      const eventsPromise = collect(run.events);
+
+      await waitFor(() => rollbackForkSessionFile.mock.calls.length === 1, 100);
+      disposePromise ??= harness.session.dispose();
+      let disposeSettled = false;
+      void disposePromise.then(() => {
+        disposeSettled = true;
+      }, () => {
+        disposeSettled = true;
+      });
+      await flush();
+
+      expect(disposeSettled).toBe(false);
+      expect(harness.kernels).toHaveLength(0);
+      expect(harness.session.getSnapshot().providerState).toMatchObject({
+        forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+        forkSourceSessionFile: '/tmp/source.jsonl',
+      });
+      expect(harness.session.getSnapshot().providerStateDeletes).toBeUndefined();
+
+      rollback.resolve();
+      await disposePromise;
+      await eventsPromise;
+
+      expect(rollbackForkSessionFile).toHaveBeenCalledTimes(1);
+      expect(harness.session.getSnapshot().providerState).toMatchObject({
+        forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+        forkSourceSessionFile: '/tmp/source.jsonl',
+      });
+    },
+  );
+
+  it('lets an immediate retry wait for rollback and materialize its own fresh fork target', async () => {
+    const firstTarget = {
+      leafEntryId: 'assistant-1',
+      parentSession: '/tmp/source.jsonl',
+      sessionFile: '/tmp/fork-a.jsonl',
+      sessionId: 'fork-a',
+    };
+    const retryTarget = {
+      ...firstTarget,
+      sessionFile: '/tmp/fork-b.jsonl',
+      sessionId: 'fork-b',
+    };
+    const firstCreation = createRejectableDeferred<typeof firstTarget>();
+    const rollback = createDeferred();
+    const createForkSessionFile = jest.fn()
+      .mockImplementationOnce(() => firstCreation.promise)
+      .mockResolvedValueOnce(retryTarget);
+    const rollbackForkSessionFile = jest.fn(() => rollback.promise);
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerState: {
+          forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+          forkSourceSessionFile: '/tmp/source.jsonl',
+        },
+      },
+    }), undefined, undefined, {
+      createForkSessionFile,
+      rollbackForkSessionFile,
+    });
+    const firstRun = harness.session.execute(createRequest({
+      input: [{ text: 'A', type: 'text' }],
+    }));
+    const firstEventsPromise = collect(firstRun.events);
+    await waitFor(() => createForkSessionFile.mock.calls.length === 1, 100);
+
+    firstRun.cancel();
+    const firstEvents = await firstEventsPromise;
+    const retryEventsPromise = collect(harness.session.execute(createRequest({
+      input: [{ text: 'B', type: 'text' }],
+    })).events);
+    let retrySettled = false;
+    void retryEventsPromise.then(() => {
+      retrySettled = true;
+    });
+    firstCreation.resolve(firstTarget);
+    await waitFor(() => rollbackForkSessionFile.mock.calls.length === 1, 100);
+    await flush();
+
+    expect(retrySettled).toBe(false);
+    expect(createForkSessionFile).toHaveBeenCalledTimes(1);
+    expect(harness.kernels).toHaveLength(0);
+
+    rollback.resolve();
+    await waitFor(() => createForkSessionFile.mock.calls.length === 2, 100);
+    await waitFor(() => harness.kernels.length === 1, 100);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    const retryEvents = await retryEventsPromise;
+
+    expect(firstEvents.filter(event => (
+      event.type === 'cancelled'
+      || event.type === 'execution_error'
+      || event.type === 'turn_completed'
+    ))).toEqual([expect.objectContaining({ type: 'cancelled' })]);
+    expect(retryEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
+    expect(createForkSessionFile.mock.calls).toEqual([
+      ['/tmp/source.jsonl', 'assistant-1', { targetCwd: '/vault' }],
+      ['/tmp/source.jsonl', 'assistant-1', { targetCwd: '/vault' }],
+    ]);
+    expect(rollbackForkSessionFile).toHaveBeenCalledTimes(1);
+    const sessionTargetIndex = harness.kernels[0].launchSpec.args.indexOf('--session') + 1;
+    expect(harness.kernels[0].launchSpec.args[sessionTargetIndex]).toBe('/tmp/fork-b.jsonl');
+    await harness.session.dispose();
+  });
+
+  it('terminates an immediate retry when prior rollback fails and blocks further execution', async () => {
+    const firstTarget = {
+      leafEntryId: 'assistant-1',
+      parentSession: '/tmp/source.jsonl',
+      sessionFile: '/tmp/fork-a.jsonl',
+      sessionId: 'fork-a',
+    };
+    const firstCreation = createRejectableDeferred<typeof firstTarget>();
+    const createForkSessionFile = jest.fn(() => firstCreation.promise);
+    const rollbackForkSessionFile = jest.fn(async () => {
+      throw new Error('fork rollback failed');
+    });
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerState: {
+          forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+          forkSourceSessionFile: '/tmp/source.jsonl',
+        },
+      },
+    }), undefined, undefined, {
+      createForkSessionFile,
+      rollbackForkSessionFile,
+    });
+    const firstRun = harness.session.execute(createRequest({
+      input: [{ text: 'A', type: 'text' }],
+    }));
+    const firstEventsPromise = collect(firstRun.events);
+    await waitFor(() => createForkSessionFile.mock.calls.length === 1, 100);
+
+    firstRun.cancel();
+    const firstEvents = await firstEventsPromise;
+    const retryEventsPromise = collect(harness.session.execute(createRequest({
+      input: [{ text: 'B', type: 'text' }],
+    })).events);
+    let retrySettled = false;
+    void retryEventsPromise.then(() => {
+      retrySettled = true;
+    });
+    firstCreation.resolve(firstTarget);
+    await waitFor(() => rollbackForkSessionFile.mock.calls.length === 1, 100);
+    await flush();
+
+    expect(retrySettled).toBe(true);
+    const retryEvents = await retryEventsPromise;
+    expect(firstEvents.filter(event => (
+      event.type === 'cancelled'
+      || event.type === 'execution_error'
+      || event.type === 'turn_completed'
+    ))).toEqual([expect.objectContaining({ type: 'cancelled' })]);
+    expect(retryEvents.filter(event => (
+      event.type === 'cancelled'
+      || event.type === 'execution_error'
+      || event.type === 'turn_completed'
+    ))).toEqual([
+      expect.objectContaining({
+        category: 'provider',
+        recoverable: false,
+        type: 'execution_error',
+      }),
+    ]);
+    expect(retryEvents.at(-2)).toMatchObject({
+      snapshot: expect.objectContaining({
+        invalidation: expect.objectContaining({ recoverable: false }),
+        status: 'invalidated',
+      }),
+      type: 'session_state_changed',
+    });
+    expect(harness.session.getStatus()).toBe('invalidated');
+    expect(() => harness.session.execute(createRequest())).toThrow(
+      'cleanup failed and requires disposal',
+    );
+    await expect(harness.session.dispose()).rejects.toThrow('fork rollback failed');
+    expect(harness.session.getStatus()).toBe('disposed');
+    expect(createForkSessionFile).toHaveBeenCalledTimes(1);
+    expect(rollbackForkSessionFile).toHaveBeenCalledTimes(1);
+    expect(harness.kernels).toHaveLength(0);
+  });
+
+  it('retries the preserved fork seed after an ordinary prior creation failure', async () => {
+    const retryTarget = {
+      leafEntryId: 'assistant-1',
+      parentSession: '/tmp/source.jsonl',
+      sessionFile: '/tmp/fork-b.jsonl',
+      sessionId: 'fork-b',
+    };
+    const firstCreation = createRejectableDeferred<typeof retryTarget>();
+    const createForkSessionFile = jest.fn()
+      .mockImplementationOnce(() => firstCreation.promise)
+      .mockResolvedValueOnce(retryTarget);
+    const rollbackForkSessionFile = jest.fn(async () => undefined);
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerState: {
+          forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+          forkSourceSessionFile: '/tmp/source.jsonl',
+        },
+      },
+    }), undefined, undefined, {
+      createForkSessionFile,
+      rollbackForkSessionFile,
+    });
+    const firstRun = harness.session.execute(createRequest({
+      input: [{ text: 'A', type: 'text' }],
+    }));
+    const firstEventsPromise = collect(firstRun.events);
+    await waitFor(() => createForkSessionFile.mock.calls.length === 1, 100);
+
+    firstRun.cancel();
+    await firstEventsPromise;
+    const retryEventsPromise = collect(harness.session.execute(createRequest({
+      input: [{ text: 'B', type: 'text' }],
+    })).events);
+    firstCreation.reject(new Error('source read failed before target creation'));
+    await flush();
+
+    expect(createForkSessionFile).toHaveBeenCalledTimes(2);
+    await waitFor(() => harness.kernels.length === 1, 100);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    const retryEvents = await retryEventsPromise;
+
+    expect(retryEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
+    expect(rollbackForkSessionFile).not.toHaveBeenCalled();
+    expect(harness.session.getStatus()).toBe('idle');
+    await harness.session.dispose();
+  });
+
+  it('keeps cancellation primary while lifecycle disposal surfaces rollback failure', async () => {
+    const createdFork = {
+      leafEntryId: 'assistant-1',
+      parentSession: '/tmp/source.jsonl',
+      sessionFile: '/tmp/new-fork.jsonl',
+      sessionId: 'new-fork',
+    };
+    let disposePromise: Promise<void> | undefined;
+    const harnessHolder: { harness?: ReturnType<typeof createHarness> } = {};
+    const rollbackForkSessionFile = jest.fn(async () => {
+      throw new Error('fork rollback failed');
+    });
+    const createForkSessionFile = jest.fn(async () => {
+      await Promise.resolve();
+      disposePromise = harnessHolder.harness?.session.dispose();
+      return createdFork;
+    });
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerState: {
+          forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+          forkSourceSessionFile: '/tmp/source.jsonl',
+        },
+      },
+    }), undefined, undefined, {
+      createForkSessionFile,
+      rollbackForkSessionFile,
+    });
+    harnessHolder.harness = harness;
+    const events = await collect(harness.session.execute(createRequest()).events);
+
+    expect(events.filter(event => (
+      event.type === 'cancelled'
+      || event.type === 'execution_error'
+      || event.type === 'turn_completed'
+    ))).toEqual([expect.objectContaining({ type: 'cancelled' })]);
+    await expect(disposePromise).rejects.toThrow('fork rollback failed');
+    expect(rollbackForkSessionFile).toHaveBeenCalledTimes(1);
+    expect(harness.session.getSnapshot()).toMatchObject({
+      providerState: {
+        forkSource: { resumeAt: 'assistant-1', sessionId: 'source' },
+        forkSourceSessionFile: '/tmp/source.jsonl',
+      },
+      status: 'disposed',
+    });
+  });
+
+  it('materializes a file fork before launching Pi', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-execution-fork-'));
+    const sourceFile = path.join(tempDir, 'source.jsonl');
+    await fs.writeFile(sourceFile, [
+      JSON.stringify({ cwd: '/source', id: 'source-session', type: 'session', version: 3 }),
+      JSON.stringify({
+        id: 'user-1',
+        message: { content: 'Question', role: 'user' },
+        parentId: null,
+        type: 'message',
+      }),
+      JSON.stringify({
+        id: 'assistant-1',
+        message: { content: 'Answer', role: 'assistant' },
+        parentId: 'user-1',
+        type: 'message',
+      }),
+    ].join('\n'));
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerState: {
+          forkSource: {
+            resumeAt: 'assistant-1',
+            sessionId: 'source-session',
+          },
+          forkSourceSessionFile: sourceFile,
+          futureState: { retained: true },
+        },
+      },
+      vaultWorkingDirectory: tempDir,
+    }));
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await eventsPromise;
+
+    const sessionTargetIndex = harness.kernels[0].launchSpec.args.indexOf('--session') + 1;
+    const forkFile = harness.kernels[0].launchSpec.args[sessionTargetIndex];
+    expect(forkFile).not.toBe(sourceFile);
+    expect(path.dirname(forkFile)).toBe(tempDir);
+    expect(await fs.readFile(forkFile, 'utf8')).toContain(
+      `"parentSession":"${sourceFile}"`,
+    );
+    const snapshot = harness.session.getSnapshot();
+    expect(snapshot.providerState).toMatchObject({
+      futureState: { retained: true },
+      sessionFile: '/tmp/pi-session.jsonl',
+    });
+    expect(snapshot.providerState).not.toHaveProperty('forkSource');
+    expect(snapshot.providerState).not.toHaveProperty('forkSourceSessionFile');
+    expect(snapshot.providerStateDeletes).toEqual([
+      'forkSource',
+      'forkSourceSessionFile',
+    ]);
+
+    const continuedRun = harness.session.execute(createRequest({
+      input: [{ text: 'Continue after fork', type: 'text' }],
+    }));
+    const continuedEventsPromise = collect(continuedRun.events);
+    await waitFor(() => harness.kernels.length === 2);
+    harness.kernels[1].emit({ type: 'agent_start' });
+    harness.kernels[1].emit({ type: 'agent_end' });
+    await continuedEventsPromise;
+    expect(harness.session.getSnapshot().providerStateDeletes).toEqual([
+      'forkSource',
+      'forkSourceSessionFile',
+    ]);
+    await fs.rm(tempDir, { force: true, recursive: true });
+  });
+
+  it('cancels extension UI when no renderer is available to an auxiliary session', async () => {
+    const harness = createHarness(createConfig({
+      lifecycle: 'ephemeral',
+      nativePersistence: 'disabled-if-supported',
+    }));
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await flush();
+    harness.kernels[0].emit({
+      id: 'extension-1',
+      method: 'select',
+      type: 'extension_ui_request',
+    });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await eventsPromise;
+
+    expect(harness.kernels[0].sent).toContainEqual({
+      cancelled: true,
+      id: 'extension-1',
+      type: 'extension_ui_response',
+    });
+  });
+
+  it('does not rebuild continuity after disposal by a forced transition', async () => {
+    const harness = createHarness(createConfig({
+      lifecycle: 'ephemeral',
+      nativePersistence: 'disabled-if-supported',
+    }));
+    await harness.session.dispose();
+
+    expect(() => harness.session.execute(createRequest())).toThrow(
+      'Pi execution session is disposed',
+    );
+    expect(harness.kernels).toHaveLength(0);
+  });
+});

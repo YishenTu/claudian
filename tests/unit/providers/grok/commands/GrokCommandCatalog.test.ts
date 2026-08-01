@@ -3,7 +3,7 @@ import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog
 describe('GrokCommandCatalog', () => {
   it('preserves provider-advertised names, order, and case exactly', async () => {
     const catalog = new GrokCommandCatalog();
-    catalog.setRuntimeCommands([
+    catalog.setCommandSnapshot([
       { id: 'first', name: 'local:review', description: 'Review changes', content: '', source: 'sdk' },
       { id: 'duplicate', name: 'REVIEW', description: 'Duplicate', content: '', source: 'sdk' },
       { id: 'help', name: 'help', argumentHint: '[topic]', content: '', source: 'sdk' },
@@ -18,7 +18,7 @@ describe('GrokCommandCatalog', () => {
 
   it('exposes runtime-only non-editable command entries and slash dropdown behavior', async () => {
     const catalog = new GrokCommandCatalog();
-    catalog.setRuntimeCommands([
+    catalog.setCommandSnapshot([
       { id: 'acp:compact', name: 'compact', description: 'Compact context', content: '' },
     ]);
 

@@ -5,10 +5,9 @@ import { ProviderInitializationBoundary } from './ProviderInitializationBoundary
 import type {
   AgentMentionProvider,
   ProviderCliResolver,
-  ProviderEnvironmentTransition,
+  ProviderCommandLoader,
   ProviderId,
   ProviderModelCatalogRefreshResult,
-  ProviderRuntimeCommandLoader,
   ProviderSettingsTabRenderer,
   ProviderTabWarmupPolicy,
   ProviderTransitionOwnerContext,
@@ -123,18 +122,12 @@ export class ProviderWorkspaceRegistry {
     return await this.getServices(providerId)?.refreshModelCatalog?.(context) ?? { changed: false };
   }
 
-  static async beginAuxiliaryServicesEnvironmentChange(
-    providerIds: ProviderId[],
-  ): Promise<ProviderEnvironmentTransition> {
-    return this.boundary.beginEnvironmentChange(providerIds);
-  }
-
   static getCliResolver(providerId: ProviderId): ProviderCliResolver | null {
     return this.getServices(providerId)?.cliResolver ?? null;
   }
 
-  static getRuntimeCommandLoader(providerId: ProviderId): ProviderRuntimeCommandLoader | null {
-    return this.getServices(providerId)?.runtimeCommandLoader ?? null;
+  static getCommandLoader(providerId: ProviderId): ProviderCommandLoader | null {
+    return this.getServices(providerId)?.commandLoader ?? null;
   }
 
   static getTabWarmupPolicy(providerId: ProviderId): ProviderTabWarmupPolicy | null {

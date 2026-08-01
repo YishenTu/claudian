@@ -4,7 +4,6 @@ import { isAbsolute, sep } from 'path';
 
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { ProviderTaskResultInterpreter } from '../../../core/providers/types';
-import type { AsyncSubagentCompletion } from '../../../core/runtime/types';
 import { TOOL_SUBAGENT } from '../../../core/tools/toolNames';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type {
@@ -27,6 +26,15 @@ import {
 import type { PendingToolCall } from '../state/types';
 
 export type SubagentStateChangeCallback = (subagent: SubagentInfo) => void;
+
+export interface AsyncSubagentCompletion {
+  type: 'async_subagent_completion';
+  providerSessionId: string;
+  taskId: string;
+  toolUseId?: string;
+  status: 'completed' | 'error';
+  result?: string;
+}
 
 interface AsyncSubagentRecord {
   info: SubagentInfo;

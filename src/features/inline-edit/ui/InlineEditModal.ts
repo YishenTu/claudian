@@ -281,13 +281,10 @@ function resolveInlineEditProviderContext(plugin: InlineEditHost): InlineEditPro
     ? plugin.getConversationSync(activeTab.conversationId)
     : null;
   const providerId = conversation?.providerId
-    ?? activeTab?.service?.providerId
     ?? activeTab?.providerId
     ?? DEFAULT_CHAT_PROVIDER_ID;
   const modelOverride = conversation
     ? resolveConversationModel(plugin.settings, providerId, conversation).model
-    : activeTab?.service?.providerId === providerId
-    ? activeTab.service.getAuxiliaryModel?.()
     : activeTab?.providerId === providerId
     ? activeTab.draftModel
     : null;
@@ -753,6 +750,10 @@ export class InlineEditSession {
         this.handleError('No response from agent');
       }
     } else {
+      if (result.resetRequired) {
+        this.isConversing = false;
+        this.inlineEditService.resetConversation();
+      }
       this.handleError(result.error || 'Error - try again');
     }
   }

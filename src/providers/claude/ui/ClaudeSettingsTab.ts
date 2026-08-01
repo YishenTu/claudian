@@ -112,11 +112,12 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         delete cliPathsByHost[hostnameKey];
       }
 
-      await context.plugin.mutateSettings((settings) => {
-        updateClaudeProviderSettings(settings, { cliPathsByHost: { ...cliPathsByHost } });
+      await context.plugin.runProviderExecutionTransition(['claude'], async () => {
+        await context.plugin.mutateSettings((settings) => {
+          updateClaudeProviderSettings(settings, { cliPathsByHost: { ...cliPathsByHost } });
+        });
+        claudeWorkspace.cliResolver.reset();
       });
-      claudeWorkspace.cliResolver.reset();
-      await context.plugin.recycleProviderRuntimes?.('claude');
       return true;
     };
 
@@ -269,9 +270,9 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       app: context.plugin.app,
       mcpStorage: claudeWorkspace.mcpStorage,
       broadcastMcpReload: async () => {
-        await context.plugin.broadcastToAllViewRuntimes?.(
-          (service) => service.reloadMcpServers(),
-        );
+        await context.plugin.runProviderExecutionTransition(['claude'], async () => {
+          await claudeWorkspace.mcpManager.loadServers();
+        });
       },
     });
 
@@ -290,9 +291,9 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       pluginManager: claudeWorkspace.pluginManager,
       agentManager: claudeWorkspace.agentManager,
       restartTabs: async () => {
-        await context.plugin.broadcastToActiveViewRuntimes?.(
-          async (service) => { await service.ensureReady({ force: true }); },
-        );
+        await context.plugin.runProviderExecutionTransition(['claude'], async () => {
+          await claudeWorkspace.agentManager.loadAgents();
+        });
       },
     });
 

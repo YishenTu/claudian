@@ -3,7 +3,7 @@ import { OpencodeCommandCatalog } from '@/providers/opencode/commands/OpencodeCo
 describe('OpencodeCommandCatalog', () => {
   it('maps runtime commands into slash dropdown entries', async () => {
     const catalog = new OpencodeCommandCatalog();
-    catalog.setRuntimeCommands([
+    catalog.setCommandSnapshot([
       {
         id: 'acp:review',
         name: 'review',
@@ -92,7 +92,7 @@ describe('OpencodeCommandCatalog', () => {
 
   it('preserves ACP names and ordering', async () => {
     const catalog = new OpencodeCommandCatalog();
-    catalog.setRuntimeCommands([
+    catalog.setCommandSnapshot([
       { content: '', id: 'one', name: 'local:shared-review', source: 'sdk' },
       { content: '', id: 'two', name: 'shared-review', source: 'sdk' },
     ]);

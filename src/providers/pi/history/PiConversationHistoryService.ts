@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 
+import { mergePersistedProviderState } from '../../../core/providers/providerState';
 import type {
   ProviderConversationHistoryService,
   ProviderHistoryPathContext,
@@ -8,6 +9,15 @@ import type { Conversation } from '../../../core/types';
 import { buildPersistedPiState, getPiState } from '../types';
 import { resolvePiSessionFileHint } from './PiHistoryPathResolver';
 import { parsePiSessionContent } from './PiHistoryStore';
+
+const PI_PROVIDER_STATE_KEYS = [
+  'forkSource',
+  'forkSourceSessionFile',
+  'leafEntryId',
+  'parentSession',
+  'sessionFile',
+  'sessionId',
+] as const;
 
 export class PiConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedKeys = new Map<string, string>();
@@ -106,13 +116,6 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     }
   }
 
-  async deleteConversationSession(
-    _conversation: Conversation,
-    _vaultPath: string | null,
-  ): Promise<void> {
-    // Never mutate Pi native history.
-  }
-
   resolveSessionIdForConversation(conversation: Conversation | null): string | null {
     const state = getPiState(conversation?.providerState);
     return state.sessionFile
@@ -143,7 +146,13 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   buildPersistedProviderState(
     conversation: Conversation,
   ): Record<string, unknown> | undefined {
-    return buildPersistedPiState(getPiState(conversation.providerState)) as Record<string, unknown> | undefined;
+    return mergePersistedProviderState(
+      conversation.providerState,
+      PI_PROVIDER_STATE_KEYS,
+      buildPersistedPiState(
+        getPiState(conversation.providerState),
+      ) as Record<string, unknown> | undefined,
+    );
   }
 
   private replaceResolvedPath(
@@ -162,6 +171,10 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     } else {
       delete nextState[field];
     }
-    conversation.providerState = buildPersistedPiState(nextState) as Record<string, unknown> | undefined;
+    conversation.providerState = mergePersistedProviderState(
+      conversation.providerState,
+      PI_PROVIDER_STATE_KEYS,
+      buildPersistedPiState(nextState) as Record<string, unknown> | undefined,
+    );
   }
 }

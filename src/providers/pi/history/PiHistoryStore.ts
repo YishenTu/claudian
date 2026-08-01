@@ -46,6 +46,17 @@ export interface CreatedPiForkSessionFile {
   sessionId: string;
 }
 
+interface PiForkRollbackOwnership {
+  flight: Promise<void> | null;
+  readonly parentSession: string;
+  readonly sessionFile: string;
+}
+
+const rollbackEligibleForkTargets = new WeakMap<
+  CreatedPiForkSessionFile,
+  PiForkRollbackOwnership
+>();
+
 export function parsePiSessionContent(
   content: string,
   options: ParsePiSessionContentOptions = {},
@@ -268,12 +279,37 @@ export async function createPiForkSessionFile(
   await fsp.mkdir(sessionDir, { recursive: true });
   await fsp.writeFile(sessionFile, `${lines.join('\n')}\n`, { flag: 'wx' });
 
-  return {
+  const created = {
     leafEntryId: resumeAt,
     parentSession: sourceSessionFile,
     sessionFile,
     sessionId,
   };
+  rollbackEligibleForkTargets.set(created, {
+    flight: null,
+    parentSession: sourceSessionFile,
+    sessionFile,
+  });
+  return created;
+}
+
+export async function rollbackCreatedPiForkSessionFile(
+  created: CreatedPiForkSessionFile,
+): Promise<void> {
+  const ownership = rollbackEligibleForkTargets.get(created);
+  if (!ownership) {
+    throw new Error('Pi fork rollback target is not owned by this process.');
+  }
+  if (!ownership.flight) {
+    ownership.flight = (async () => {
+      if (path.resolve(ownership.sessionFile) === path.resolve(ownership.parentSession)) {
+        throw new Error('Pi fork rollback cannot remove the source session.');
+      }
+      await fsp.unlink(ownership.sessionFile);
+      rollbackEligibleForkTargets.delete(created);
+    })();
+  }
+  return ownership.flight;
 }
 
 export function findPiSessionFile(

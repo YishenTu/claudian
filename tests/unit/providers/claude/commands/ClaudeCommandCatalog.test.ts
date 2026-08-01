@@ -52,7 +52,7 @@ describe('ClaudeCommandCatalog', () => {
         { id: 'sdk:commit', name: 'commit', description: 'Create git commit', content: '', source: 'sdk' },
         { id: 'sdk:review', name: 'review', description: 'Review code', content: '', source: 'sdk' },
       ];
-      catalog.setRuntimeCommands(sdkCommands);
+      catalog.setCommandSnapshot(sdkCommands);
 
       const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
 
@@ -86,7 +86,7 @@ describe('ClaudeCommandCatalog', () => {
       const skills = new SkillStorage(adapter);
       const catalog = new ClaudeCommandCatalog(commands, skills);
 
-      catalog.setRuntimeCommands([
+      catalog.setCommandSnapshot([
         { id: 'sdk:commit', name: 'commit', description: 'Commit', content: '', source: 'sdk' },
         { id: 'sdk:init', name: 'init', description: 'Init', content: '', source: 'sdk' },
         { id: 'sdk:debug', name: 'debug', description: 'Debug', content: '', source: 'sdk' },
@@ -151,7 +151,7 @@ Deploy the app`,
       const probe = jest.fn().mockResolvedValue([]);
       const catalog = new ClaudeCommandCatalog(commands, skills, probe);
 
-      catalog.setRuntimeCommands([
+      catalog.setCommandSnapshot([
         { id: 'sdk:commit', name: 'commit', description: 'Commit', content: '', source: 'sdk' },
       ]);
 
@@ -168,13 +168,13 @@ Deploy the app`,
         { id: 'sdk:cold', name: 'cold', description: 'Cold tab command', content: '', source: 'sdk' },
       ]);
       const catalog = new ClaudeCommandCatalog(commands, skills, probe);
-      catalog.setRuntimeCommands([
+      catalog.setCommandSnapshot([
         { id: 'sdk:active', name: 'active', description: 'Active tab command', content: '', source: 'sdk' },
       ]);
 
       const entries = await catalog.listDropdownEntries({
         includeBuiltIns: false,
-        allowCachedRuntimeCommands: false,
+        allowCachedCommandSnapshot: false,
       });
 
       expect(probe).toHaveBeenCalledTimes(1);
@@ -198,6 +198,107 @@ Deploy the app`,
       expect(probe).toHaveBeenCalledTimes(1);
       expect(a).toHaveLength(1);
       expect(b).toHaveLength(1);
+    });
+
+    it('aborts and awaits an owned probe while fencing its old-environment result', async () => {
+      const adapter = createMockAdapter({});
+      const commands = new SlashCommandStorage(adapter);
+      const skills = new SkillStorage(adapter);
+      let releaseOldProbe!: (commands: SlashCommand[]) => void;
+      let oldProbeSignal: AbortSignal | undefined;
+      const probe = jest.fn()
+        .mockImplementationOnce((signal?: AbortSignal) => {
+          oldProbeSignal = signal;
+          return new Promise<SlashCommand[]>((resolve) => {
+            releaseOldProbe = resolve;
+          });
+        })
+        .mockResolvedValueOnce([
+          { id: 'sdk:fresh', name: 'fresh', description: 'Fresh', content: '', source: 'sdk' },
+        ]);
+      const catalog = new ClaudeCommandCatalog(commands, skills, probe);
+
+      const oldRequest = catalog.listDropdownEntries({ includeBuiltIns: false });
+      await Promise.resolve();
+
+      let quiesced = false;
+      const quiescence = catalog.quiesceForEnvironmentChange().then(() => {
+        quiesced = true;
+      });
+
+      expect(oldProbeSignal?.aborted).toBe(true);
+      await Promise.resolve();
+      expect(quiesced).toBe(false);
+
+      await expect(catalog.listDropdownEntries({
+        includeBuiltIns: false,
+        signal: new AbortController().signal,
+      })).resolves.toEqual([]);
+      expect(probe).toHaveBeenCalledTimes(1);
+
+      releaseOldProbe([
+        { id: 'sdk:old', name: 'old', description: 'Old', content: '', source: 'sdk' },
+      ]);
+      await expect(oldRequest).resolves.toEqual([]);
+      await quiescence;
+
+      await expect(
+        catalog.listDropdownEntries({ includeBuiltIns: false }),
+      ).resolves.toEqual([
+        expect.objectContaining({ name: 'fresh' }),
+      ]);
+      expect(probe).toHaveBeenCalledTimes(2);
+    });
+
+    it('clears cached probed commands when the provider environment changes', async () => {
+      const adapter = createMockAdapter({});
+      const commands = new SlashCommandStorage(adapter);
+      const skills = new SkillStorage(adapter);
+      const probe = jest.fn()
+        .mockResolvedValueOnce([
+          { id: 'sdk:old', name: 'old', description: 'Old', content: '', source: 'sdk' },
+        ])
+        .mockResolvedValueOnce([
+          { id: 'sdk:fresh', name: 'fresh', description: 'Fresh', content: '', source: 'sdk' },
+        ]);
+      const catalog = new ClaudeCommandCatalog(commands, skills, probe);
+
+      await expect(
+        catalog.listDropdownEntries({ includeBuiltIns: false }),
+      ).resolves.toEqual([
+        expect.objectContaining({ name: 'old' }),
+      ]);
+
+      await catalog.quiesceForEnvironmentChange();
+
+      await expect(
+        catalog.listDropdownEntries({ includeBuiltIns: false }),
+      ).resolves.toEqual([
+        expect.objectContaining({ name: 'fresh' }),
+      ]);
+      expect(probe).toHaveBeenCalledTimes(2);
+    });
+
+    it('clears a live command snapshot when the provider environment changes', async () => {
+      const adapter = createMockAdapter({});
+      const commands = new SlashCommandStorage(adapter);
+      const skills = new SkillStorage(adapter);
+      const probe = jest.fn().mockResolvedValue([
+        { id: 'sdk:fresh', name: 'fresh', description: 'Fresh', content: '', source: 'sdk' },
+      ]);
+      const catalog = new ClaudeCommandCatalog(commands, skills, probe);
+      catalog.setCommandSnapshot([
+        { id: 'sdk:old', name: 'old', description: 'Old', content: '', source: 'sdk' },
+      ]);
+
+      await catalog.quiesceForEnvironmentChange();
+
+      await expect(
+        catalog.listDropdownEntries({ includeBuiltIns: false }),
+      ).resolves.toEqual([
+        expect.objectContaining({ name: 'fresh' }),
+      ]);
+      expect(probe).toHaveBeenCalledTimes(1);
     });
 
     it('cancels a request-scoped probe and starts fresh work on retry', async () => {
@@ -237,8 +338,11 @@ Deploy the app`,
       await expect(retry).resolves.toEqual([
         expect.objectContaining({ name: 'fresh' }),
       ]);
-      expect(probe).toHaveBeenNthCalledWith(1, firstController.signal);
-      expect(probe).toHaveBeenNthCalledWith(2, secondController.signal);
+      expect(probe).toHaveBeenCalledTimes(2);
+      expect(probe.mock.calls[0][0]).not.toBe(firstController.signal);
+      expect(probe.mock.calls[0][0]).toMatchObject({ aborted: true });
+      expect(probe.mock.calls[1][0]).not.toBe(secondController.signal);
+      expect(probe.mock.calls[1][0]).toMatchObject({ aborted: false });
     });
 
     it('does not overwrite runtime commands with stale probe results', async () => {
@@ -254,7 +358,7 @@ Deploy the app`,
       const entriesPromise = catalog.listDropdownEntries({ includeBuiltIns: false });
 
       // Runtime provides fresh data while probe is in-flight
-      catalog.setRuntimeCommands([
+      catalog.setCommandSnapshot([
         { id: 'sdk:review', name: 'review', description: 'Review', content: '', source: 'sdk' },
       ]);
 
@@ -288,7 +392,7 @@ Deploy the app`,
       const catalog = new ClaudeCommandCatalog(commands, skills);
 
       // Set SDK commands to verify they're excluded from vault entries
-      catalog.setRuntimeCommands([
+      catalog.setCommandSnapshot([
         { id: 'sdk:commit', name: 'commit', description: 'Commit', content: '', source: 'sdk' },
       ]);
 

@@ -1,5 +1,5 @@
 import type { ProviderId } from '../../../core/providers/types';
-import { RuntimeSupervisor } from './RuntimeSupervisor';
+import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
 import type { TabLifecycleState } from './types';
 
 export interface TabSessionState {
@@ -11,10 +11,10 @@ export interface TabSessionState {
 }
 
 export class TabSession {
-  readonly runtimeSupervisor = new RuntimeSupervisor();
   activeTurn: Promise<void> | null = null;
   private backgroundWork: Promise<void> = Promise.resolve();
   private backgroundWorkPauseDepth = 0;
+  private coordinator: ChatExecutionCoordinator | null = null;
 
   constructor(private readonly state: TabSessionState) {}
 
@@ -27,6 +27,17 @@ export class TabSession {
   set conversationId(value: string | null) { this.state.conversationId = value; }
   get draftModel(): string | null { return this.state.draftModel; }
   set draftModel(value: string | null) { this.state.draftModel = value; }
+  get executionCoordinator(): ChatExecutionCoordinator | null { return this.coordinator; }
+
+  setExecutionCoordinator(coordinator: ChatExecutionCoordinator | null): void {
+    this.coordinator = coordinator;
+  }
+
+  async disposeExecutionCoordinator(): Promise<void> {
+    const coordinator = this.coordinator;
+    this.coordinator = null;
+    await coordinator?.dispose();
+  }
 
   enqueueBackgroundWork(work: () => Promise<void>): Promise<void> | null {
     if (this.backgroundWorkPauseDepth > 0) return null;

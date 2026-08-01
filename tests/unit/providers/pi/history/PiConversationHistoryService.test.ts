@@ -57,6 +57,7 @@ describe('PiConversationHistoryService', () => {
       type: 'entry',
     }));
     const conversation = createConversation(outsideFile);
+    conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
     await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
@@ -65,7 +66,11 @@ describe('PiConversationHistoryService', () => {
     );
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted']);
-    expect(conversation.providerState).toEqual({ sessionFile: trustedFile, sessionId: 's1' });
+    expect(conversation.providerState).toEqual({
+      futureResumeCursor: { token: 'cursor-1' },
+      sessionFile: trustedFile,
+      sessionId: 's1',
+    });
   });
 
   it('hydrates trusted file-only Pi sessions without a logical session id', async () => {
@@ -293,11 +298,12 @@ describe('PiConversationHistoryService', () => {
     expect(conversation.messages).toEqual([]);
   });
 
-  it('sanitizes persisted provider state', () => {
+  it('sanitizes known fields while preserving unknown provider state', () => {
     const service = new PiConversationHistoryService();
     const conversation = createConversation('/tmp/session.jsonl');
     conversation.providerState = {
       empty: '',
+      futureResumeCursor: { token: 'cursor-1' },
       leafEntryId: 'leaf-1',
       parentSession: '/tmp/source.jsonl',
       sessionFile: '/tmp/session.jsonl',
@@ -305,6 +311,8 @@ describe('PiConversationHistoryService', () => {
     };
 
     expect(service.buildPersistedProviderState?.(conversation)).toEqual({
+      empty: '',
+      futureResumeCursor: { token: 'cursor-1' },
       leafEntryId: 'leaf-1',
       parentSession: '/tmp/source.jsonl',
       sessionFile: '/tmp/session.jsonl',

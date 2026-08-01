@@ -1,14 +1,32 @@
-import type { ChatTurnRequest } from '../../../core/runtime/types';
-import type { ChatMessage } from '../../../core/types';
-import { appendBrowserContext } from '../../../utils/browser';
-import { appendCanvasContext } from '../../../utils/canvas';
+import type { ChatMessage, ImageAttachment } from '../../../core/types';
+import {
+  appendBrowserContext,
+  type BrowserSelectionContext,
+} from '../../../utils/browser';
+import {
+  appendCanvasContext,
+  type CanvasSelectionContext,
+} from '../../../utils/canvas';
 import { appendCurrentNote } from '../../../utils/context';
-import { appendEditorContext } from '../../../utils/editor';
+import {
+  appendEditorContext,
+  type EditorSelectionContext,
+} from '../../../utils/editor';
 import { buildContextFromHistory, buildPromptWithHistoryContext } from '../../../utils/session';
 import type { AcpContentBlock } from '../../acp';
 
+export interface OpencodePromptRequest {
+  text: string;
+  images?: ImageAttachment[];
+  currentNotePath?: string;
+  editorSelection?: EditorSelectionContext | null;
+  browserSelection?: BrowserSelectionContext | null;
+  canvasSelection?: CanvasSelectionContext | null;
+  externalContextPaths?: string[];
+}
+
 export function buildOpencodePromptText(
-  request: ChatTurnRequest,
+  request: OpencodePromptRequest,
   conversationHistory: ChatMessage[] = [],
 ): string {
   let prompt = request.text;
@@ -43,7 +61,7 @@ export function buildOpencodePromptText(
 }
 
 export function buildOpencodePromptBlocks(
-  request: ChatTurnRequest,
+  request: OpencodePromptRequest,
   conversationHistory: ChatMessage[] = [],
 ): AcpContentBlock[] {
   const blocks: AcpContentBlock[] = [

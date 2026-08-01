@@ -38,6 +38,7 @@ export interface GrokCatalogEnsureResult extends GrokCatalogResult {
 }
 
 export class GrokModelCatalogCoordinator {
+  private readonly activeMetadataOperations = new Set<Promise<unknown>>();
   private abortController: AbortController | null = null;
   private disposed = false;
   private inFlightRefresh: {
@@ -57,6 +58,8 @@ export class GrokModelCatalogCoordinator {
   private readonly pendingLiveRevisions = new Set<number>();
   private refreshGeneration = 0;
   private state: GrokCatalogState = 'idle';
+  private transitionActive = false;
+  private readonly transitionWaiters = new Set<() => void>();
 
   constructor(
     private readonly plugin: ProviderHost,
@@ -71,7 +74,20 @@ export class GrokModelCatalogCoordinator {
     return this.state;
   }
 
-  async getStatus(
+  getStatus(
+    context?: ProviderTransitionOwnerContext,
+  ): Promise<'fresh' | 'missing' | 'stale'> {
+    if (this.disposed) {
+      return Promise.resolve(this.getCachedCatalog() ? 'stale' : 'missing');
+    }
+    return this.runMetadataOperation(
+      () => this.getStatusUnfenced(context),
+      context?.providerTransitionOwner === true,
+      () => this.getCachedCatalog() ? 'stale' : 'missing',
+    );
+  }
+
+  private async getStatusUnfenced(
     context?: ProviderTransitionOwnerContext,
   ): Promise<'fresh' | 'missing' | 'stale'> {
     const catalog = this.getCachedCatalog();
@@ -85,20 +101,30 @@ export class GrokModelCatalogCoordinator {
     return Date.now() - catalog.refreshedAt > CATALOG_TTL_MS ? 'stale' : 'fresh';
   }
 
-  async ensureFresh(
+  ensureFresh(
     _reason: string,
     options: { force?: boolean } = {},
   ): Promise<GrokCatalogEnsureResult> {
     if (this.disposed || !getGrokProviderSettings(this.plugin.settings).enabled) {
-      return this.skippedResult();
+      return Promise.resolve(this.skippedResult());
     }
+    return this.runMetadataOperation(
+      () => this.ensureFreshUnfenced(options),
+      false,
+      () => this.skippedResult(),
+    );
+  }
+
+  private async ensureFreshUnfenced(
+    options: { force?: boolean },
+  ): Promise<GrokCatalogEnsureResult> {
     if (options.force) {
-      return this.refresh();
+      return this.refreshUnfenced();
     }
 
     let status: 'fresh' | 'missing' | 'stale';
     try {
-      status = await this.getStatus();
+      status = await this.getStatusUnfenced();
     } catch {
       status = this.getCachedCatalog() ? 'stale' : 'missing';
     }
@@ -106,17 +132,33 @@ export class GrokModelCatalogCoordinator {
       return this.completedResult();
     }
     if (status === 'missing') {
-      return this.refresh();
+      return this.refreshUnfenced();
     }
 
     return {
       ...this.completedResult(),
-      backgroundRefresh: this.refresh(),
+      backgroundRefresh: this.refreshUnfenced(),
     };
   }
 
-  async refresh(context?: ProviderTransitionOwnerContext): Promise<GrokCatalogResult> {
+  refresh(context?: ProviderTransitionOwnerContext): Promise<GrokCatalogResult> {
     if (this.disposed || !getGrokProviderSettings(this.plugin.settings).enabled) {
+      return Promise.resolve(this.skippedResult());
+    }
+    return this.runMetadataOperation(
+      () => this.refreshUnfenced(context),
+      context?.providerTransitionOwner === true,
+      () => this.skippedResult(),
+    );
+  }
+
+  private async refreshUnfenced(
+    context?: ProviderTransitionOwnerContext,
+  ): Promise<GrokCatalogResult> {
+    if (
+      this.transitionActive
+      && context?.providerTransitionOwner !== true
+    ) {
       return this.skippedResult();
     }
     const contextKey = this.getContextKey();
@@ -154,14 +196,30 @@ export class GrokModelCatalogCoordinator {
     };
   }
 
-  async mergeLiveModels(
+  mergeLiveModels(
     liveModels: GrokDiscoveredModel[],
     defaultModelId?: string,
     sourceContextKey?: string,
   ): Promise<ProviderModelCatalogRefreshResult> {
     if (this.disposed) {
-      return { changed: false };
+      return Promise.resolve({ changed: false });
     }
+    return this.runMetadataOperation(
+      () => this.mergeLiveModelsUnfenced(
+        liveModels,
+        defaultModelId,
+        sourceContextKey,
+      ),
+      false,
+      () => ({ changed: false }),
+    );
+  }
+
+  private async mergeLiveModelsUnfenced(
+    liveModels: GrokDiscoveredModel[],
+    defaultModelId?: string,
+    sourceContextKey?: string,
+  ): Promise<ProviderModelCatalogRefreshResult> {
     const contextKey = this.getContextKey();
     if (sourceContextKey && sourceContextKey !== contextKey) {
       return { changed: false };
@@ -218,9 +276,77 @@ export class GrokModelCatalogCoordinator {
     this.abortController?.abort();
   }
 
+  beginEnvironmentTransition(): void {
+    if (!this.disposed) this.transitionActive = true;
+  }
+
+  endEnvironmentTransition(): void {
+    if (this.disposed) return;
+    this.transitionActive = false;
+    this.releaseTransitionWaiters();
+  }
+
+  async quiesceForEnvironmentChange(): Promise<void> {
+    const flight = this.inFlightRefresh;
+    const activeOperations = [...this.activeMetadataOperations];
+    this.refreshGeneration += 1;
+    this.abortController?.abort();
+    if (flight) {
+      await flight.promise.catch(() => undefined);
+      if (this.inFlightRefresh === flight) this.inFlightRefresh = null;
+    }
+    await Promise.all(activeOperations.map(operation => operation.catch(() => undefined)));
+    this.liveContextKey = null;
+    this.liveDefaultModelId = null;
+    this.liveDefaultRevision = 0;
+    this.liveModelsById.clear();
+    this.pendingLiveRevisions.clear();
+    this.state = 'idle';
+  }
+
   dispose(): void {
     this.disposed = true;
+    this.transitionActive = false;
+    this.releaseTransitionWaiters();
     this.cancel();
+  }
+
+  private runMetadataOperation<T>(
+    operation: () => Promise<T>,
+    transitionOwner: boolean,
+    disposedResult: () => T,
+  ): Promise<T> {
+    if (this.disposed) return Promise.resolve(disposedResult());
+    if (this.transitionActive && !transitionOwner) {
+      return this.waitForTransition().then(() =>
+        this.runMetadataOperation(operation, transitionOwner, disposedResult));
+    }
+
+    let promise: Promise<T>;
+    try {
+      promise = operation();
+    } catch (error) {
+      promise = Promise.reject(error);
+    }
+    this.activeMetadataOperations.add(promise);
+    void promise.then(
+      () => this.activeMetadataOperations.delete(promise),
+      () => this.activeMetadataOperations.delete(promise),
+    );
+    return promise;
+  }
+
+  private waitForTransition(): Promise<void> {
+    if (this.disposed || !this.transitionActive) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      this.transitionWaiters.add(resolve);
+    });
+  }
+
+  private releaseTransitionWaiters(): void {
+    const waiters = [...this.transitionWaiters];
+    this.transitionWaiters.clear();
+    for (const resolve of waiters) resolve();
   }
 
   private async runRefresh(

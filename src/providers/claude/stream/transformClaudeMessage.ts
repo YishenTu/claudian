@@ -1,6 +1,5 @@
 import type { SDKMessage, SDKResultError } from '@anthropic-ai/claude-agent-sdk';
 
-import type { AsyncSubagentCompletion } from '../../../core/runtime/types';
 import type { SDKToolUseResult, StreamChunk, UsageInfo } from '../../../core/types';
 import {
   CLAUDE_MODEL_TIER_PATTERN,
@@ -16,7 +15,7 @@ import { createTransformStreamState, type TransformStreamState } from './toolInp
 
 type ToolUseFields = { id: string; name: string; input: Record<string, unknown> };
 type ToolResultFields = { id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult };
-type AsyncSubagentCompletionStatus = AsyncSubagentCompletion['status'];
+type AsyncSubagentCompletionStatus = ClaudeAsyncSubagentCompletionEvent['status'];
 
 export { createTransformStreamState };
 

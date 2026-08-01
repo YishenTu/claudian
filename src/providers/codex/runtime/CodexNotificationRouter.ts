@@ -1,4 +1,3 @@
-import type { ChatTurnMetadata } from '../../../core/runtime/types';
 import type { StreamChunk, UsageInfo } from '../../../core/types';
 import { extractCodexUserVisibleText, joinCodexUserTextParts } from '../codexUserText';
 import {
@@ -39,7 +38,10 @@ import type {
 } from './codexAppServerTypes';
 
 type ChunkEmitter = (chunk: StreamChunk) => void;
-type TurnMetadataListener = (update: Partial<ChatTurnMetadata>) => void;
+type TurnMetadataListener = (update: {
+  assistantMessageId?: string;
+  planCompleted?: boolean;
+}) => void;
 
 interface RawToolResult {
   content: string;

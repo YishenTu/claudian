@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import {
   getOpencodeProviderSettings,
   OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES,
@@ -9,15 +10,10 @@ import { opencodeSettingsTabRenderer } from '@/providers/opencode/ui/OpencodeSet
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
-const mockBroadcastToProviderTabs = jest.fn().mockResolvedValue(undefined);
 const mockRefreshAgentMentions = jest.fn().mockResolvedValue(undefined);
-const mockInvalidateProviderCommandCaches = jest.fn();
-const mockRefreshModelSelector = jest.fn();
 const mockCliResolverReset = jest.fn();
-const mockRuntimeEnsureReady = jest.fn().mockResolvedValue(false);
-const mockRuntimeSyncConversationState = jest.fn();
-const mockRuntimeCleanup = jest.fn();
-const mockRuntimeWarmModelMetadata = jest.fn().mockResolvedValue(false);
+const mockMetadataLoadCatalog = jest.fn().mockResolvedValue(false);
+const mockMetadataWarmModel = jest.fn().mockResolvedValue(false);
 const mockAgentStorage = {};
 const mockCreatedAgentSettings: Array<{
   app: unknown;
@@ -110,30 +106,12 @@ jest.mock('@/providers/opencode/app/OpencodeWorkspaceServices', () => ({
     cliResolver: {
       reset: mockCliResolverReset,
     },
+    metadataService: {
+      loadCatalog: mockMetadataLoadCatalog,
+      warmModelMetadata: mockMetadataWarmModel,
+    },
     refreshAgentMentions: mockRefreshAgentMentions,
   })),
-}));
-
-jest.mock('@/providers/opencode/runtime/OpencodeChatRuntime', () => ({
-  OpencodeChatRuntime: class MockOpencodeChatRuntime {
-    constructor(readonly plugin: any) {}
-
-    syncConversationState(...args: unknown[]) {
-      return mockRuntimeSyncConversationState(...args);
-    }
-
-    ensureReady(...args: unknown[]) {
-      return mockRuntimeEnsureReady(this.plugin, ...args);
-    }
-
-    warmModelMetadata(...args: unknown[]) {
-      return mockRuntimeWarmModelMetadata(this.plugin, ...args);
-    }
-
-    cleanup() {
-      return mockRuntimeCleanup();
-    }
-  },
 }));
 
 jest.mock('@/utils/env', () => ({
@@ -365,21 +343,6 @@ function createContainer(): any {
 }
 
 function createPlugin(overrides: Record<string, unknown> = {}): any {
-  const viewA = {
-    getTabManager: jest.fn(() => ({
-      broadcastToProviderTabs: mockBroadcastToProviderTabs,
-    })),
-    invalidateProviderCommandCaches: mockInvalidateProviderCommandCaches,
-    refreshModelSelector: mockRefreshModelSelector,
-  };
-  const viewB = {
-    getTabManager: jest.fn(() => ({
-      broadcastToProviderTabs: mockBroadcastToProviderTabs,
-    })),
-    invalidateProviderCommandCaches: mockInvalidateProviderCommandCaches,
-    refreshModelSelector: mockRefreshModelSelector,
-  };
-
   const plugin: any = {
     settings: {
       providerConfigs: {
@@ -399,19 +362,11 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       ...overrides,
     },
     saveSettings: mockSaveSettings,
-    getView: jest.fn(() => viewA),
-    getAllViews: jest.fn(() => [viewA, viewB]),
   };
-  plugin.recycleProviderRuntimes = jest.fn(async (providerId: string) => {
-    for (const view of plugin.getAllViews()) {
-      await view.getTabManager()?.broadcastToProviderTabs(
-        providerId,
-        (runtime: { cleanup(): void }) => Promise.resolve(runtime.cleanup()),
-      );
-      view.invalidateProviderCommandCaches([providerId]);
-      view.refreshModelSelector();
-    }
-  });
+  plugin.runProviderExecutionTransition = jest.fn(async (
+    _providerIds: string[],
+    mutation: () => Promise<unknown>,
+  ) => mutation());
   plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
     await mutation(plugin.settings);
     await plugin.saveSettings();
@@ -427,6 +382,30 @@ function createContext(plugin: any) {
     notifyProviderModelOptionsChanged: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
+}
+
+function acquireSettingsLease(
+  registry: ProviderExecutionLifecycleRegistry,
+): jest.Mock {
+  const dispose = jest.fn().mockResolvedValue(undefined);
+  registry.acquire({
+    providerId: 'opencode',
+    createSession: () => ({
+      providerId: 'opencode',
+      sessionInstanceId: 'opencode-settings-session',
+      execute: jest.fn(),
+      cancel: jest.fn(),
+      getSnapshot: jest.fn().mockReturnValue({
+        providerId: 'opencode',
+        revision: 0,
+        status: 'idle',
+      }),
+      getStatus: jest.fn().mockReturnValue('idle'),
+      onEvent: jest.fn().mockReturnValue(() => undefined),
+      dispose,
+    }),
+  } as any, {} as any, 'chat');
+  return dispose;
 }
 
 async function flushPromises(): Promise<void> {
@@ -459,8 +438,8 @@ describe('OpencodeSettingsTab', () => {
     createdDomElements.length = 0;
     mockCreatedAgentSettings.length = 0;
     jest.clearAllMocks();
-    mockRuntimeEnsureReady.mockResolvedValue(false);
-    mockRuntimeWarmModelMetadata.mockResolvedValue(false);
+    mockMetadataLoadCatalog.mockResolvedValue(false);
+    mockMetadataWarmModel.mockResolvedValue(false);
     mockedExistsSync.mockReturnValue(false);
     mockedStatSync.mockReturnValue({ isFile: () => true } as fs.Stats);
   });
@@ -479,9 +458,110 @@ describe('OpencodeSettingsTab', () => {
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('opencode');
   });
 
-  it('stores the CLI path per host and resets active runtime state across all views', async () => {
-    mockedExistsSync.mockImplementation((filePath: fs.PathLike) => String(filePath) === '/custom/opencode');
+  it('commits enablement inside the OpenCode transition without launching metadata probes', async () => {
+    const registry = new ProviderExecutionLifecycleRegistry();
+    const dispose = acquireSettingsLease(registry);
     const plugin = createPlugin();
+    plugin.settings.providerConfigs.opencode.enabled = false;
+    let transitionActive = false;
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => registry.runTransition(providerIds as ['opencode'], async () => {
+      transitionActive = true;
+      try {
+        return await mutation();
+      } finally {
+        transitionActive = false;
+      }
+    }));
+    plugin.mutateSettings.mockImplementation(async (
+      mutation: (settings: Record<string, unknown>) => void | Promise<void>,
+    ) => {
+      expect(transitionActive).toBe(true);
+      await mutation(plugin.settings);
+      await plugin.saveSettings();
+    });
+    const context = createContext(plugin);
+
+    opencodeSettingsTabRenderer.render(createContainer(), context);
+    const toggle = findSetting('Enable OpenCode').toggleComponents[0];
+    await flushPromises();
+    mockMetadataLoadCatalog.mockClear();
+    mockMetadataWarmModel.mockClear();
+    await toggle.onChangeCallback?.(true);
+
+    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
+      ['opencode'],
+      expect.any(Function),
+    );
+    expect(plugin.settings.providerConfigs.opencode.enabled).toBe(true);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(registry.getProviderGeneration('opencode')).toBe(1);
+    expect(mockMetadataLoadCatalog).not.toHaveBeenCalled();
+    expect(mockMetadataWarmModel).not.toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('opencode');
+    await registry.dispose();
+  });
+
+  it.each([
+    ['before mutation', false],
+    ['after mutation', true],
+  ] as const)(
+    'resynchronizes the enable toggle when the transition fails %s',
+    async (_phase, mutateBeforeFailure) => {
+      const plugin = createPlugin();
+      plugin.runProviderExecutionTransition.mockImplementation(async (
+        _providerIds: string[],
+        mutation: () => Promise<unknown>,
+      ) => {
+        if (mutateBeforeFailure) await mutation();
+        throw new Error('enablement transition failed');
+      });
+      const context = createContext(plugin);
+
+      opencodeSettingsTabRenderer.render(createContainer(), context);
+      const toggle = findSetting('Enable OpenCode').toggleComponents[0];
+      toggle.value = false;
+      toggle.setValue.mockClear();
+
+      await expect(toggle.onChangeCallback?.(false)).rejects.toThrow(
+        'enablement transition failed',
+      );
+
+      const persistedEnabled = plugin.settings.providerConfigs.opencode.enabled;
+      expect(persistedEnabled).toBe(mutateBeforeFailure ? false : true);
+      expect(toggle.setValue).toHaveBeenCalledWith(persistedEnabled);
+      expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
+    },
+  );
+
+  it('stores the CLI path and resets provider state inside an execution transition', async () => {
+    mockedExistsSync.mockImplementation((filePath: fs.PathLike) => String(filePath) === '/custom/opencode');
+    let transitionActive = false;
+    const plugin = createPlugin();
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => {
+      expect(providerIds).toEqual(['opencode']);
+      transitionActive = true;
+      try {
+        return await mutation();
+      } finally {
+        transitionActive = false;
+      }
+    });
+    plugin.mutateSettings.mockImplementation(async (
+      mutation: (settings: any) => void | Promise<void>,
+    ) => {
+      expect(transitionActive).toBe(true);
+      await mutation(plugin.settings);
+      await plugin.saveSettings();
+    });
+    mockCliResolverReset.mockImplementation(() => {
+      expect(transitionActive).toBe(true);
+    });
 
     opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
@@ -493,13 +573,10 @@ describe('OpencodeSettingsTab', () => {
     });
     expect(mockSaveSettings).toHaveBeenCalledTimes(1);
     expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
-    expect(mockBroadcastToProviderTabs).toHaveBeenCalledTimes(2);
-    expect(mockBroadcastToProviderTabs).toHaveBeenCalledWith(
-      'opencode',
+    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
+      ['opencode'],
       expect.any(Function),
     );
-    expect(mockInvalidateProviderCommandCaches).toHaveBeenCalledTimes(2);
-    expect(mockRefreshModelSelector).toHaveBeenCalledTimes(2);
   });
 
   it('renders the shared skill manager and keeps hidden runtime commands separate', () => {
@@ -523,7 +600,7 @@ describe('OpencodeSettingsTab', () => {
     );
   });
 
-  it('renders vault subagent settings and refreshes runtime state when they change', async () => {
+  it('refreshes vault subagent state inside an execution transition', async () => {
     const plugin = createPlugin();
 
     opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
@@ -541,14 +618,10 @@ describe('OpencodeSettingsTab', () => {
     await mockCreatedAgentSettings[0].onChanged?.();
 
     expect(mockRefreshAgentMentions).toHaveBeenCalledTimes(1);
-    expect(mockBroadcastToProviderTabs).toHaveBeenCalledTimes(2);
-    expect(mockBroadcastToProviderTabs).toHaveBeenCalledWith(
-      'opencode',
+    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
+      ['opencode'],
       expect.any(Function),
     );
-    expect(mockInvalidateProviderCommandCaches).toHaveBeenCalledTimes(2);
-    expect(mockInvalidateProviderCommandCaches).toHaveBeenCalledWith(['opencode']);
-    expect(mockRefreshModelSelector).toHaveBeenCalledTimes(2);
   });
 
   it('passes the default Exa env var into the environment section copy', () => {
@@ -563,12 +636,6 @@ describe('OpencodeSettingsTab', () => {
   });
 
   it('loads the OpenCode model catalog when the model browser is expanded', async () => {
-    mockRuntimeEnsureReady.mockImplementation(async (plugin: any) => {
-      plugin.settings.providerConfigs.opencode.discoveredModels = [
-        { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
-      ];
-      return true;
-    });
     const plugin = createPlugin({
       providerConfigs: {
         opencode: {
@@ -585,6 +652,12 @@ describe('OpencodeSettingsTab', () => {
         },
       },
     });
+    mockMetadataLoadCatalog.mockImplementation(async () => {
+      plugin.settings.providerConfigs.opencode.discoveredModels = [
+        { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
+      ];
+      return true;
+    });
     const context = createContext(plugin);
 
     opencodeSettingsTabRenderer.render(createContainer(), context);
@@ -594,25 +667,11 @@ describe('OpencodeSettingsTab', () => {
     await catalogEl.dispatchMockEvent('toggle');
     await flushPromises();
 
-    expect(mockRuntimeSyncConversationState).toHaveBeenCalledWith({
-      providerState: { databasePath: ':memory:' },
-      sessionId: null,
-    });
-    expect(mockRuntimeEnsureReady).toHaveBeenCalledWith(
-      plugin,
-      { allowSessionCreation: true },
-    );
-    expect(mockRuntimeCleanup).toHaveBeenCalledTimes(1);
+    expect(mockMetadataLoadCatalog).toHaveBeenCalledTimes(1);
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(1);
   });
 
   it('loads the OpenCode model catalog immediately when a fresh picker starts expanded', async () => {
-    mockRuntimeEnsureReady.mockImplementation(async (plugin: any) => {
-      plugin.settings.providerConfigs.opencode.discoveredModels = [
-        { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
-      ];
-      return true;
-    });
     const plugin = createPlugin({
       providerConfigs: {
         opencode: {
@@ -629,31 +688,23 @@ describe('OpencodeSettingsTab', () => {
         },
       },
     });
+    mockMetadataLoadCatalog.mockImplementation(async () => {
+      plugin.settings.providerConfigs.opencode.discoveredModels = [
+        { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
+      ];
+      return true;
+    });
     const context = createContext(plugin);
 
     opencodeSettingsTabRenderer.render(createContainer(), context);
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(mockRuntimeSyncConversationState).toHaveBeenCalledWith({
-      providerState: { databasePath: ':memory:' },
-      sessionId: null,
-    });
-    expect(mockRuntimeEnsureReady).toHaveBeenCalledWith(
-      plugin,
-      { allowSessionCreation: true },
-    );
-    expect(mockRuntimeCleanup).toHaveBeenCalledTimes(1);
+    expect(mockMetadataLoadCatalog).toHaveBeenCalledTimes(1);
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(1);
   });
 
   it('loads the OpenCode catalog when saved models start with the browser collapsed', async () => {
-    mockRuntimeEnsureReady.mockImplementation(async (plugin: any) => {
-      plugin.settings.providerConfigs.opencode.discoveredModels = [
-        { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
-      ];
-      return true;
-    });
     const plugin = createPlugin({
       providerConfigs: {
         opencode: {
@@ -670,21 +721,24 @@ describe('OpencodeSettingsTab', () => {
         },
       },
     });
+    mockMetadataLoadCatalog.mockImplementation(async () => {
+      plugin.settings.providerConfigs.opencode.discoveredModels = [
+        { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
+      ];
+      return true;
+    });
     const context = createContext(plugin);
 
     opencodeSettingsTabRenderer.render(createContainer(), context);
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(mockRuntimeEnsureReady).toHaveBeenCalledWith(
-      plugin,
-      { allowSessionCreation: true },
-    );
+    expect(mockMetadataLoadCatalog).toHaveBeenCalledTimes(1);
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(1);
   });
 
   it('warms and persists thinking metadata when a model is added to the visible list', async () => {
-    mockRuntimeWarmModelMetadata.mockResolvedValue(true);
+    mockMetadataWarmModel.mockResolvedValue(true);
     const plugin = createPlugin({
       providerConfigs: {
         opencode: {
@@ -719,8 +773,7 @@ describe('OpencodeSettingsTab', () => {
     expect(plugin.settings.providerConfigs.opencode.visibleModels).toEqual([
       'deepseek/deepseek-v4-pro',
     ]);
-    expect(mockRuntimeWarmModelMetadata).toHaveBeenCalledWith(
-      plugin,
+    expect(mockMetadataWarmModel).toHaveBeenCalledWith(
       'opencode:deepseek/deepseek-v4-pro',
     );
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('opencode');

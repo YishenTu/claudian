@@ -1,12 +1,13 @@
 import * as fs from 'fs';
 
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/settings';
 import { codexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
-const mockRecycleProviderRuntimes = jest.fn().mockResolvedValue(undefined);
+const mockCodexCliResolverReset = jest.fn();
 const mockRenderCodexModelPicker = jest.fn();
 const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
 
@@ -109,6 +110,7 @@ jest.mock('@/providers/codex/app/CodexWorkspaceServices', () => ({
     subagentStorage: {},
     refreshAgentMentions: jest.fn(),
     refreshModelCatalog: mockRefreshModelCatalog,
+    cliResolver: { reset: mockCodexCliResolverReset },
   })),
 }));
 
@@ -350,7 +352,10 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       ...overrides,
     },
     saveSettings: mockSaveSettings,
-    recycleProviderRuntimes: mockRecycleProviderRuntimes,
+    runProviderExecutionTransition: jest.fn(async (
+      _providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => mutation()),
     app: {
       vault: {
         adapter: {
@@ -374,6 +379,30 @@ function createContext(plugin: any) {
     notifyProviderModelOptionsChanged: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
+}
+
+function acquireSettingsLease(
+  registry: ProviderExecutionLifecycleRegistry,
+): jest.Mock {
+  const dispose = jest.fn().mockResolvedValue(undefined);
+  registry.acquire({
+    providerId: 'codex',
+    createSession: () => ({
+      providerId: 'codex',
+      sessionInstanceId: 'codex-settings-session',
+      execute: jest.fn(),
+      cancel: jest.fn(),
+      getSnapshot: jest.fn().mockReturnValue({
+        providerId: 'codex',
+        revision: 0,
+        status: 'idle',
+      }),
+      getStatus: jest.fn().mockReturnValue('idle'),
+      onEvent: jest.fn().mockReturnValue(() => undefined),
+      dispose,
+    }),
+  } as any, {} as any, 'chat');
+  return dispose;
 }
 
 function findSetting(name: string) {
@@ -439,6 +468,86 @@ describe('CodexSettingsTab', () => {
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
   });
 
+  it('commits enablement inside the Codex transition without launching metadata discovery', async () => {
+    const registry = new ProviderExecutionLifecycleRegistry();
+    const dispose = acquireSettingsLease(registry);
+    const plugin = createPlugin({
+      providerConfigs: {
+        codex: {
+          ...DEFAULT_CODEX_PROVIDER_SETTINGS,
+          enabled: false,
+        },
+      },
+    });
+    let transitionActive = false;
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => registry.runTransition(providerIds as ['codex'], async () => {
+      transitionActive = true;
+      try {
+        return await mutation();
+      } finally {
+        transitionActive = false;
+      }
+    }));
+    plugin.mutateSettings.mockImplementation(async (
+      mutation: (settings: Record<string, unknown>) => void | Promise<void>,
+    ) => {
+      expect(transitionActive).toBe(true);
+      await mutation(plugin.settings);
+      await plugin.saveSettings();
+    });
+    const context = createContext(plugin);
+
+    codexSettingsTabRenderer.render(createContainer(), context);
+    const toggle = findSetting('Enable Codex').toggleComponents[0];
+    await toggle.onChangeCallback?.(true);
+
+    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
+      ['codex'],
+      expect.any(Function),
+    );
+    expect(plugin.settings.providerConfigs.codex.enabled).toBe(true);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(registry.getProviderGeneration('codex')).toBe(1);
+    expect(mockRefreshModelCatalog).not.toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
+    await registry.dispose();
+  });
+
+  it.each([
+    ['before mutation', false],
+    ['after mutation', true],
+  ] as const)(
+    'resynchronizes the enable toggle when the transition fails %s',
+    async (_phase, mutateBeforeFailure) => {
+      const plugin = createPlugin();
+      plugin.runProviderExecutionTransition.mockImplementation(async (
+        _providerIds: string[],
+        mutation: () => Promise<unknown>,
+      ) => {
+        if (mutateBeforeFailure) await mutation();
+        throw new Error('enablement transition failed');
+      });
+      const context = createContext(plugin);
+
+      codexSettingsTabRenderer.render(createContainer(), context);
+      const toggle = findSetting('Enable Codex').toggleComponents[0];
+      toggle.value = false;
+      toggle.setValue.mockClear();
+
+      await expect(toggle.onChangeCallback?.(false)).rejects.toThrow(
+        'enablement transition failed',
+      );
+
+      const persistedEnabled = plugin.settings.providerConfigs.codex.enabled;
+      expect(persistedEnabled).toBe(mutateBeforeFailure ? false : true);
+      expect(toggle.setValue).toHaveBeenCalledWith(persistedEnabled);
+      expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
+    },
+  );
+
   it('renders the app-server model visibility picker', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const plugin = createPlugin();
@@ -502,12 +611,30 @@ describe('CodexSettingsTab', () => {
 
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBeUndefined();
     expect(mockSaveSettings).toHaveBeenCalledTimes(0);
-    expect(mockRecycleProviderRuntimes).toHaveBeenCalledTimes(0);
   });
 
   it('accepts a Linux-side CLI command when installation method is WSL', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const plugin = createPlugin();
+    let transitionActive = false;
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      _providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => {
+      transitionActive = true;
+      try {
+        return await mutation();
+      } finally {
+        transitionActive = false;
+      }
+    });
+    plugin.mutateSettings.mockImplementation(async (
+      mutation: (settings: Record<string, unknown>) => void | Promise<void>,
+    ) => {
+      expect(transitionActive).toBe(true);
+      await mutation(plugin.settings);
+      await plugin.saveSettings();
+    });
 
     codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
@@ -522,7 +649,11 @@ describe('CodexSettingsTab', () => {
     });
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe('codex');
     expect(mockSaveSettings).toHaveBeenCalled();
-    expect(mockRecycleProviderRuntimes).toHaveBeenCalledWith('codex');
+    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
+      ['codex'],
+      expect.any(Function),
+    );
+    expect(mockCodexCliResolverReset).toHaveBeenCalledTimes(2);
     expect(mockRefreshModelCatalog).toHaveBeenCalledTimes(1);
   });
 
@@ -554,7 +685,6 @@ describe('CodexSettingsTab', () => {
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe(
       'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe',
     );
-    expect(mockRecycleProviderRuntimes).toHaveBeenCalledTimes(0);
   });
 
   it('does not render the legacy custom models textarea', () => {

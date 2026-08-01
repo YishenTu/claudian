@@ -1,14 +1,14 @@
 # Chat Feature
 
-`src/features/chat/` owns the main sidebar chat interface. It assembles tabs, controllers, renderers, and provider-backed services around the shared `ChatRuntime` contract.
+`src/features/chat/` owns the main sidebar chat interface. It assembles tabs, controllers, renderers, and provider-backed services around provider-neutral execution contracts.
 
 ## Provider Boundary
 
-- Feature code depends on `ChatRuntime`, `ProviderCapabilities`, provider-neutral `Conversation`, and provider-neutral `StreamChunk` values.
-- `InputController` builds `ChatTurnRequest`; providers own prompt encoding through `prepareTurn()`.
-- Do not read provider-specific fields from `Conversation.providerState` in feature code. Use runtime methods, provider history services, or typed provider helpers.
+- Feature code depends on execution sessions, `ProviderCapabilities`, provider-neutral `Conversation`, and provider-neutral execution events.
+- `InputController` builds canonical execution requests; providers own native prompt encoding.
+- Do not read provider-specific fields from `Conversation.providerState` in feature code. Use execution snapshots, provider history services, or typed provider helpers.
 - Resolve provider-owned services through registries:
-  - `ProviderRegistry`: runtime, title generation, instruction refinement, inline edit, task-result interpretation.
+  - `ProviderRegistry`: execution backends, title generation, instruction refinement, inline edit, task-result interpretation.
   - `ProviderWorkspaceRegistry`: command catalogs, agent mentions, MCP managers, CLI resolution, settings tabs.
 
 ## State Flow
@@ -16,14 +16,14 @@
 ```text
 User input
   -> InputController
-  -> ensure runtime for active provider
-  -> ChatRuntime.prepareTurn()
-  -> ChatRuntime.query()
+  -> ensure coordinator for active provider
+  -> build canonical execution request
+  -> execute provider session
   -> StreamController
   -> renderers + ChatState persistence
 ```
 
-Tabs stay cold until the first send. Keep runtime warmup explicit and provider-owned so command discovery does not accidentally create real sessions for history-backed conversations.
+Tabs stay cold until the first send. Keep metadata warmup explicit and provider-owned so command discovery does not accidentally create real execution sessions for history-backed conversations.
 
 ## Main Parts
 
@@ -38,7 +38,7 @@ Tabs stay cold until the first send. Keep runtime warmup explicit and provider-o
 
 ## Gotchas
 
-- `ClaudianView.onClose()` must abort active tabs and dispose runtimes.
+- `ClaudianView.onClose()` must abort active tabs and dispose execution coordinators.
 - `ChatState` is per-tab. `TabManager` coordinates tab-level operations such as forks and provider-aware command catalogs.
 - Title generation runs concurrently per conversation and routes by the global title-generation model, not the active chat tab provider.
 - `/compact` is provider-specific:
@@ -49,5 +49,5 @@ Tabs stay cold until the first send. Keep runtime warmup explicit and provider-o
   - Claude uses provider/runtime events for enter and exit.
   - Codex uses `collaborationMode` plus post-stream metadata.
   - OpenCode maps managed modes to shared permission modes.
-- Bang-bash mode bypasses provider runtimes and executes a local shell command directly. It is available only when the enabled provider exposes it in `ProviderChatUIConfig`.
-- Forking is provider-owned under the hood. Use runtime and provider history contracts instead of reconstructing provider session IDs in feature code.
+- Bang-bash mode bypasses provider execution and runs a local shell command directly. It is available only when the enabled provider exposes it in `ProviderChatUIConfig`.
+- Forking is provider-owned under the hood. Use execution and provider history contracts instead of reconstructing provider session IDs in feature code.

@@ -19,7 +19,6 @@ import {
   parseSDKMessageToChat,
 } from './sdkMessageParsing';
 import {
-  deleteSDKSession,
   encodeVaultPathForSDK,
   getSDKProjectsPath,
   getSDKSessionAvailability,
@@ -47,7 +46,6 @@ export type {
 } from './sdkHistoryTypes';
 export {
   collectAsyncSubagentResults,
-  deleteSDKSession,
   encodeVaultPathForSDK,
   extractXmlTag,
   filterActiveBranch,

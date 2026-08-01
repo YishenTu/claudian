@@ -9,14 +9,24 @@ import type {
   InlineEditResult,
   InlineEditService as InlineEditServiceContract,
 } from '../providers/types';
-import type { AuxQueryRunner } from './AuxQueryRunner';
+import type { AuxiliaryExecutionContext } from './AuxiliaryExecutionContext';
+import { AuxiliarySessionController } from './AuxiliarySessionController';
+
+const CONTINUITY_RESET_MESSAGE =
+  'The provider environment changed. Start a new inline edit.';
 
 export class InlineEditService implements InlineEditServiceContract {
-  private abortController: AbortController | null = null;
+  private readonly controller: AuxiliarySessionController;
   private hasConversation = false;
   private modelOverride: string | undefined;
 
-  constructor(private readonly runner: AuxQueryRunner) {}
+  constructor(context: AuxiliaryExecutionContext) {
+    this.controller = new AuxiliarySessionController(
+      context,
+      'inline-edit',
+      { kind: 'read-only' },
+    );
+  }
 
   setModelOverride(model?: string): void {
     const trimmed = model?.trim();
@@ -24,50 +34,65 @@ export class InlineEditService implements InlineEditServiceContract {
   }
 
   resetConversation(): void {
-    this.runner.reset();
     this.hasConversation = false;
+    this.controller.reset();
   }
 
   async editText(request: InlineEditRequest): Promise<InlineEditResult> {
-    this.resetConversation();
+    this.hasConversation = false;
+    try {
+      await this.controller.startRoot();
+    } catch (error) {
+      return toFailure(error);
+    }
     return this.sendMessage(buildInlineEditPrompt(request));
   }
 
-  async continueConversation(message: string, contextFiles?: string[]): Promise<InlineEditResult> {
-    if (!this.hasConversation || this.runner.canContinue?.() === false) {
+  async continueConversation(
+    message: string,
+    contextFiles?: string[],
+  ): Promise<InlineEditResult> {
+    if (this.controller.requiresReset) {
+      return {
+        error: CONTINUITY_RESET_MESSAGE,
+        resetRequired: true,
+        success: false,
+      };
+    }
+    if (!this.hasConversation || !this.controller.hasSession) {
       return { success: false, error: 'No active conversation to continue' };
     }
-
-    let prompt = message;
-    if (contextFiles && contextFiles.length > 0) {
-      prompt = appendContextFiles(message, contextFiles);
-    }
+    const prompt = contextFiles?.length
+      ? appendContextFiles(message, contextFiles)
+      : message;
     return this.sendMessage(prompt);
   }
 
   cancel(): void {
-    this.abortController?.abort();
-    this.abortController = null;
+    this.hasConversation = false;
+    this.controller.cancel();
   }
 
   private async sendMessage(prompt: string): Promise<InlineEditResult> {
-    this.abortController = new AbortController();
-
     try {
-      const text = await this.runner.query({
-        abortController: this.abortController,
+      const text = await this.controller.execute({
         model: this.modelOverride,
+        prompt,
         systemPrompt: getInlineEditSystemPrompt(),
-      }, prompt);
-      this.hasConversation = this.runner.canContinue?.() ?? true;
+      });
+      this.hasConversation = true;
       return parseInlineEditResponse(text);
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    } finally {
-      this.abortController = null;
+      this.hasConversation = false;
+      await this.controller.dispose();
+      return toFailure(error);
     }
   }
+}
+
+function toFailure(error: unknown): InlineEditResult {
+  return {
+    success: false,
+    error: error instanceof Error ? error.message : 'Unknown error',
+  };
 }

@@ -93,7 +93,7 @@ describe('ClaudianView model refresh routing', () => {
     const codexTab = createModelRefreshTab('codex');
     const grokTab = createModelRefreshTab('grok');
     const blankGrokTab = createBlankModelRefreshTab('grok');
-    const primeProviderRuntime = jest.fn();
+    const primeProviderExecution = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
     view.plugin = {
       getConversationSync: jest.fn().mockReturnValue(null),
@@ -102,7 +102,7 @@ describe('ClaudianView model refresh routing', () => {
     };
     view.tabManager = {
       getAllTabs: jest.fn().mockReturnValue([codexTab, grokTab, blankGrokTab]),
-      primeProviderRuntime,
+      primeProviderExecution,
       reconcileProviderAvailability: jest.fn(),
     };
 
@@ -115,7 +115,7 @@ describe('ClaudianView model refresh routing', () => {
     expect(blankGrokTab.ui.modelSelector.updateDisplay).toHaveBeenCalled();
     expect(blankGrokTab.ui.modelSelector.renderOptions).toHaveBeenCalled();
     expect(view.tabManager.reconcileProviderAvailability).toHaveBeenCalledTimes(1);
-    expect(primeProviderRuntime).not.toHaveBeenCalled();
+    expect(primeProviderExecution).not.toHaveBeenCalled();
   });
 });
 

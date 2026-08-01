@@ -9,6 +9,7 @@ import {
   type PiSessionEntry,
   resolvePiActivePath,
   resolvePiEntryPath,
+  rollbackCreatedPiForkSessionFile,
 } from '@/providers/pi/history/PiHistoryStore';
 
 describe('PiHistoryStore', () => {
@@ -500,6 +501,33 @@ describe('PiHistoryStore', () => {
       { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: 'First' } },
       { id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: 'Done' } },
     ]);
+  });
+
+  it('rolls back only the exact newly created fork target and joins duplicate cleanup', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-fork-rollback-'));
+    const sourceFile = path.join(dir, 'source.jsonl');
+    await fs.writeFile(sourceFile, [
+      JSON.stringify({ id: 'source', type: 'session', version: 3 }),
+      JSON.stringify({ id: 'a1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+    ].join('\n'));
+    const forked = await createPiForkSessionFile(sourceFile, 'a1', {
+      sessionId: 'fork-session',
+    });
+    const createdTarget = forked.sessionFile;
+
+    forked.sessionFile = sourceFile;
+    forked.parentSession = createdTarget;
+    await Promise.all([
+      rollbackCreatedPiForkSessionFile(forked),
+      rollbackCreatedPiForkSessionFile(forked),
+    ]);
+
+    await expect(fs.access(sourceFile)).resolves.toBeUndefined();
+    await expect(fs.access(createdTarget)).rejects.toThrow();
+    await expect(rollbackCreatedPiForkSessionFile(forked)).rejects.toThrow(
+      'not owned by this process',
+    );
+    await fs.rm(dir, { force: true, recursive: true });
   });
 
   it('includes active id-less tool results when creating linear Pi fork files', async () => {

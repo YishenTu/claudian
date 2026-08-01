@@ -4,7 +4,6 @@ import type {
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import type { ChatRuntimeEnsureReadyOptions } from '../../../core/runtime/types';
 import type { ImageAttachment, StreamChunk } from '../../../core/types';
 import type { PermissionMode } from '../../../core/types/settings';
 import type { ClaudeModel, EffortLevel } from '../types/models';
@@ -41,16 +40,6 @@ export interface PendingAttachmentMessage {
 }
 
 export type PendingMessage = PendingTextMessage | PendingAttachmentMessage;
-
-export interface ClosePersistentQueryOptions {
-  preserveHandlers?: boolean;
-}
-
-export interface ClaudeEnsureReadyOptions extends ChatRuntimeEnsureReadyOptions {
-  externalContextPaths?: string[];
-  preserveHandlers?: boolean;
-  sessionId?: string;
-}
 
 export interface ResponseHandler {
   readonly id: string;

@@ -52,7 +52,6 @@ function createMockComponent() {
 function mockCapabilities(providerId: 'claude' | 'codex' | 'grok' = 'claude') {
   return () => ({
     providerId,
-    supportsPersistentRuntime: true,
     supportsNativeHistory: providerId === 'claude',
     supportsPlanMode: true,
     supportsRewind: true,

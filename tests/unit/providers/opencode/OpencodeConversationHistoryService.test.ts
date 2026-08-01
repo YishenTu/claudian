@@ -96,6 +96,7 @@ describe('OpencodeConversationHistoryService', () => {
     seedDatabase(trustedPath, sessionId, 'Trusted prompt');
     seedDatabase(outsidePath, sessionId, 'Outside prompt');
     const conversation = createConversation(sessionId, outsidePath);
+    conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
     await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
@@ -104,7 +105,22 @@ describe('OpencodeConversationHistoryService', () => {
     );
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted prompt']);
-    expect(conversation.providerState).toEqual({ databasePath: trustedPath });
+    expect(conversation.providerState).toEqual({
+      databasePath: trustedPath,
+      futureResumeCursor: { token: 'cursor-1' },
+    });
+  });
+
+  it('sanitizes known fields while preserving unknown provider state', () => {
+    const conversation = createConversation('session-1', '/tmp/opencode.db');
+    conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
+
+    expect(
+      new OpencodeConversationHistoryService().buildPersistedProviderState(conversation),
+    ).toEqual({
+      databasePath: '/tmp/opencode.db',
+      futureResumeCursor: { token: 'cursor-1' },
+    });
   });
 
   it('accepts an explicitly configured local database path', async () => {

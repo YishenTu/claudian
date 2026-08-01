@@ -5,10 +5,6 @@ describe('CODEX_PROVIDER_CAPABILITIES', () => {
     expect(CODEX_PROVIDER_CAPABILITIES.providerId).toBe('codex');
   });
 
-  it('should support persistent runtime', () => {
-    expect(CODEX_PROVIDER_CAPABILITIES.supportsPersistentRuntime).toBe(true);
-  });
-
   it('should support native history', () => {
     expect(CODEX_PROVIDER_CAPABILITIES.supportsNativeHistory).toBe(true);
   });

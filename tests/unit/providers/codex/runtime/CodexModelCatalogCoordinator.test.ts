@@ -138,6 +138,13 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   return { promise, resolve };
 }
 
+async function waitForCondition(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20 && !condition(); attempt += 1) {
+    await Promise.resolve();
+  }
+  expect(condition()).toBe(true);
+}
+
 function deferConditionalMutations(host: ProviderHost, count: number): {
   execute(index: number): Promise<boolean | void>;
   queued: Promise<void>;
@@ -535,6 +542,92 @@ describe('CodexModelCatalogCoordinator', () => {
 
     const result = await refreshPromise;
     expect(result.diagnostics).toMatch(/cancelled/i);
+  });
+
+  it('aborts and awaits a held refresh while invalidating its environment cache', async () => {
+    const cachedModel = makeModel('cached-model');
+    const oldDiscovery = deferred<CodexModelDiscoveryResult>();
+    let discoverySignal: AbortSignal | undefined;
+    const discovery: CodexModelDiscoveryServiceLike = {
+      discoverModels: jest.fn((signal?: AbortSignal) => {
+        discoverySignal = signal;
+        return oldDiscovery.promise;
+      }),
+    };
+    const host = createFakeHost({ discoveredModels: [cachedModel] });
+    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
+    const refresh = coordinator.refresh();
+    await waitForCondition(() => discoverySignal !== undefined);
+
+    const quiesce = coordinator.quiesceForEnvironmentChange();
+    let quiesceSettled = false;
+    void quiesce.then(() => { quiesceSettled = true; });
+    await Promise.resolve();
+
+    expect(discoverySignal).toBeDefined();
+    expect(discoverySignal!.aborted).toBe(true);
+    expect(quiesceSettled).toBe(false);
+
+    oldDiscovery.resolve({
+      kind: 'completed',
+      models: [makeModel('old-environment-model')],
+    });
+    await quiesce;
+    await refresh;
+
+    expect(coordinator.getState()).toBe('idle');
+    await expect(coordinator.getStatus()).resolves.toBe('missing');
+    expect(getCodexProviderSettings(host.settings).discoveredModels).toEqual([cachedModel]);
+    expect(host.mutateSettingsConditionally).not.toHaveBeenCalled();
+  });
+
+  it('blocks model discovery during an environment transition and uses the new state after it', async () => {
+    const host = createFakeHost();
+    const observedEnvironments: string[] = [];
+    const discovery: CodexModelDiscoveryServiceLike = {
+      discoverModels: jest.fn(async () => {
+        observedEnvironments.push(host.getActiveEnvironmentVariables('codex'));
+        return {
+          kind: 'completed' as const,
+          models: [makeModel('new-environment-model')],
+        };
+      }),
+    };
+    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
+    coordinator.beginEnvironmentTransition();
+    await coordinator.quiesceForEnvironmentChange();
+
+    const refresh = coordinator.refresh();
+    try {
+      await Promise.resolve();
+      expect(discovery.discoverModels).not.toHaveBeenCalled();
+
+      (host.getActiveEnvironmentVariables as jest.Mock).mockReturnValue('NEW_API_KEY=updated');
+      coordinator.endEnvironmentTransition();
+      await expect(refresh).resolves.toMatchObject({ kind: 'completed' });
+    } finally {
+      coordinator.endEnvironmentTransition();
+      await Promise.allSettled([refresh]);
+      await coordinator.dispose();
+    }
+
+    expect(observedEnvironments).toEqual(['NEW_API_KEY=updated']);
+  });
+
+  it('releases transition-blocked model requests as skipped on disposal', async () => {
+    const host = createFakeHost();
+    const discovery = createDiscovery({
+      kind: 'completed',
+      models: [makeModel('should-not-start')],
+    });
+    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
+    coordinator.beginEnvironmentTransition();
+
+    const refresh = coordinator.refresh();
+    await coordinator.dispose();
+
+    await expect(refresh).resolves.toMatchObject({ kind: 'skipped' });
+    expect(discovery.discoverModels).not.toHaveBeenCalled();
   });
 
   it('does not refresh after disposal', async () => {

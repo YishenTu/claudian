@@ -1,7 +1,7 @@
 /**
  * Shared Codex tool normalization layer.
  *
- * Used by both CodexChatRuntime (live streaming) and CodexHistoryStore (history reload)
+ * Used by both live execution normalization and CodexHistoryStore (history reload)
  * to ensure tool identity parity between live and restored conversations.
  */
 

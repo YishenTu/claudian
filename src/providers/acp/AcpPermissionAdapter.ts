@@ -1,4 +1,4 @@
-import type { ApprovalDecisionOption } from '../../core/runtime/types';
+import type { ProviderApprovalDecisionOption } from '../../core/execution';
 import type { ApprovalDecision } from '../../core/types';
 import type {
   AcpPermissionOption,
@@ -36,7 +36,7 @@ export function mapAcpApprovalDecision(
 
 export function buildAcpApprovalDecisionOptions(
   options: readonly AcpPermissionOption[],
-): ApprovalDecisionOption[] {
+): ProviderApprovalDecisionOption[] {
   return options.map((option) => ({
     ...(option.kind === 'allow_once'
       ? { decision: 'allow' as const }

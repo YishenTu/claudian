@@ -1,13 +1,14 @@
 import type { ProviderModule } from '../../core/providers/types';
-import { codexWorkspaceRegistration } from './app/CodexWorkspaceServices';
+import {
+  codexWorkspaceRegistration,
+} from './app/CodexWorkspaceServices';
 import { CodexTaskResultInterpreter } from './auxiliary/CodexTaskResultInterpreter';
-import { CodexTitleGenerationBackend } from './auxiliary/CodexTitleGenerationBackend';
 import { CODEX_PROVIDER_CAPABILITIES } from './capabilities';
 import { codexSettingsReconciler } from './env/CodexSettingsReconciler';
+import { CodexExecutionBackend } from './execution/CodexExecutionBackend';
 import { CodexConversationHistoryService } from './history/CodexConversationHistoryService';
+import { toCodexRuntimeModelId } from './modelSelection';
 import { codexSubagentLifecycleAdapter } from './normalization/codexSubagentNormalization';
-import { CodexAuxQueryRunner } from './runtime/CodexAuxQueryRunner';
-import { CodexChatRuntime } from './runtime/CodexChatRuntime';
 import {
   getCodexProviderSettings,
   normalizeCodexStoredConfig,
@@ -42,10 +43,16 @@ export const codexProviderRegistration: ProviderModule = {
       return normalization.changed;
     },
   },
-  createRuntime: ({ plugin }) => new CodexChatRuntime(plugin),
-  createTitleGenerationBackend: (plugin) => new CodexTitleGenerationBackend(plugin),
-  createInstructionRefineBackend: (plugin) => new CodexAuxQueryRunner(plugin),
-  createInlineEditBackend: (plugin) => new CodexAuxQueryRunner(plugin),
+  createExecutionBackend: (plugin) => new CodexExecutionBackend(plugin),
+  resolveTitleGenerationModel: (plugin) => {
+    const settings = plugin.settings as unknown as Record<string, unknown>;
+    const titleModel = typeof settings.titleGenerationModel === 'string'
+      ? settings.titleGenerationModel
+      : '';
+    return codexChatUIConfig.ownsModel(titleModel, settings)
+      ? toCodexRuntimeModelId(titleModel)
+      : undefined;
+  },
   historyService: new CodexConversationHistoryService(),
   taskResultInterpreter: new CodexTaskResultInterpreter(),
   subagentAdapter: codexSubagentLifecycleAdapter,

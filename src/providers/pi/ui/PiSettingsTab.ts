@@ -42,9 +42,20 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
         toggle
           .setValue(piSettings.enabled)
           .onChange(async (value) => {
-            await context.plugin.mutateSettings((settings) => {
-              ProviderSettingsCoordinator.applyProviderEnablement(settings, 'pi', value);
-            });
+            try {
+              await context.plugin.runProviderExecutionTransition(['pi'], async () => {
+                await context.plugin.mutateSettings((settings) => {
+                  ProviderSettingsCoordinator.applyProviderEnablement(
+                    settings,
+                    'pi',
+                    value,
+                  );
+                });
+              });
+            } catch (error) {
+              toggle.setValue(getPiProviderSettings(settingsBag).enabled);
+              throw error;
+            }
             context.notifyProviderModelOptionsChanged('pi');
           })
       );
@@ -53,6 +64,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
       cls: 'claudian-cli-path-validation claudian-setting-validation claudian-setting-validation-error claudian-hidden',
     });
     const cliPathsByHost = { ...piSettings.cliPathsByHost };
+    let currentCliPath = piSettings.cliPathsByHost[hostnameKey] || '';
     let cliPathInputEl: HTMLInputElement | null = null;
 
     const updateCliPathValidation = (value: string, inputEl?: HTMLInputElement): boolean => {
@@ -69,25 +81,49 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
       return true;
     };
 
+    const resynchronizeCliPathState = (): void => {
+      const persistedSettings = getPiProviderSettings(settingsBag);
+      for (const hostKey of Object.keys(cliPathsByHost)) {
+        delete cliPathsByHost[hostKey];
+      }
+      Object.assign(cliPathsByHost, persistedSettings.cliPathsByHost);
+      currentCliPath = persistedSettings.cliPathsByHost[hostnameKey] || '';
+      if (cliPathInputEl) {
+        cliPathInputEl.value = currentCliPath;
+        updateCliPathValidation(currentCliPath, cliPathInputEl);
+      }
+    };
+
     const persistCliPath = async (value: string): Promise<void> => {
       if (!updateCliPathValidation(value, cliPathInputEl ?? undefined)) {
         return;
       }
 
       const trimmed = value.trim();
+      if (trimmed === currentCliPath.trim()) {
+        return;
+      }
       if (trimmed) {
         cliPathsByHost[hostnameKey] = trimmed;
       } else {
         delete cliPathsByHost[hostnameKey];
       }
 
-      await context.plugin.mutateSettings((settings) => {
-        updatePiProviderSettings(settings, {
-          cliPathsByHost: { ...cliPathsByHost },
-          discoveredModels: [],
+      try {
+        await context.plugin.runProviderExecutionTransition(['pi'], async () => {
+          await context.plugin.mutateSettings((settings) => {
+            updatePiProviderSettings(settings, {
+              cliPathsByHost: { ...cliPathsByHost },
+              discoveredModels: [],
+            });
+          });
+          workspace?.cliResolver?.reset();
         });
-        workspace?.cliResolver?.reset();
-      });
+      } catch (error) {
+        resynchronizeCliPathState();
+        throw error;
+      }
+      currentCliPath = trimmed;
       context.notifyProviderModelOptionsChanged('pi');
     };
 
@@ -95,17 +131,16 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
       .setName('CLI path')
       .setDesc('Optional absolute path to the Pi CLI for this computer. Leave empty to use `pi` from PATH.')
       .addText((text) => {
-        const currentValue = piSettings.cliPathsByHost[hostnameKey] || '';
         text
           .setPlaceholder(process.platform === 'win32'
             ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\pi.cmd'
             : '/usr/local/bin/pi')
-          .setValue(currentValue)
-          .onChange((value) => {
-            void persistCliPath(value);
+          .setValue(currentCliPath)
+          .onChange(async (value) => {
+            await persistCliPath(value);
           });
         cliPathInputEl = text.inputEl;
-        updateCliPathValidation(currentValue, text.inputEl);
+        updateCliPathValidation(currentCliPath, text.inputEl);
       });
 
     new Setting(container).setName('Models').setHeading();

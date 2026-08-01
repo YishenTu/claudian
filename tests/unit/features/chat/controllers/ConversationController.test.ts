@@ -11,7 +11,7 @@ jest.mock('@/shared/modals/ConfirmModal', () => ({
 
 const mockNotice = Notice as jest.Mock;
 
-function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): ConversationControllerDeps {
+function createMockDeps(overrides: Record<string, unknown> = {}): ConversationControllerDeps {
   const state = new ChatState();
   const inputEl = { value: '', focus: jest.fn() } as unknown as HTMLTextAreaElement;
   const historyDropdown = createMockEl();
@@ -93,8 +93,9 @@ function createMockDeps(overrides: Partial<ConversationControllerDeps> = {}): Co
     getStatusPanel: () => ({
       remount: jest.fn(),
     }) as any,
+    getExecutionCoordinator: () => null,
     ...overrides,
-  };
+  } as ConversationControllerDeps;
 }
 
 describe('ConversationController', () => {
@@ -423,15 +424,10 @@ describe('ConversationController', () => {
       );
     });
 
-    it('should preserve the active runtime provider when lazily creating a conversation', async () => {
+    it('should preserve the active provider and selected model when lazily creating a conversation', async () => {
       deps = createMockDeps({
-        getAgentService: () => ({
-          providerId: 'codex',
-          getSessionId: jest.fn().mockReturnValue('session-codex'),
-          consumeSessionInvalidation: jest.fn().mockReturnValue(false),
-          buildSessionUpdates: jest.fn().mockReturnValue({ updates: {} }),
-          syncConversationState: jest.fn(),
-        }) as any,
+        getProviderId: () => 'codex',
+        getSelectedModel: () => 'gpt-5.1-codex',
       });
       controller = new ConversationController(deps);
       deps.state.currentConversationId = null;
@@ -451,7 +447,7 @@ describe('ConversationController', () => {
 
       expect(deps.plugin.createConversation).toHaveBeenCalledWith({
         providerId: 'codex',
-        sessionId: 'session-codex',
+        selectedModel: 'gpt-5.1-codex',
       });
     });
 
@@ -1410,8 +1406,10 @@ describe('ConversationController - Callbacks', () => {
   });
 
   it('should call onConversationSwitched callback', async () => {
-    const onConversationSwitched = jest.fn();
     const deps = createMockDeps();
+    const onConversationSwitched = jest.fn(() => {
+      expect(deps.state.isSwitchingConversation).toBe(false);
+    });
     deps.state.currentConversationId = 'old-conv';
     const controller = new ConversationController(deps, { onConversationSwitched });
 
@@ -1734,7 +1732,7 @@ describe('ConversationController - MCP Server Persistence', () => {
     });
 
     it('should ensure the tab service matches the switched conversation provider', async () => {
-      const ensureServiceForConversation = jest.fn().mockResolvedValue(undefined);
+      const ensureExecutionForConversation = jest.fn().mockResolvedValue(undefined);
       const switchedConversation = {
         id: 'new-conv',
         providerId: 'codex',
@@ -1746,7 +1744,7 @@ describe('ConversationController - MCP Server Persistence', () => {
       };
 
       deps = createMockDeps({
-        ensureServiceForConversation,
+        ensureExecutionForConversation,
         plugin: {
           ...createMockDeps().plugin,
           switchConversation: jest.fn().mockResolvedValue(switchedConversation),
@@ -1757,7 +1755,7 @@ describe('ConversationController - MCP Server Persistence', () => {
 
       await controller.switchTo('new-conv');
 
-      expect(ensureServiceForConversation).toHaveBeenCalledWith(switchedConversation);
+      expect(ensureExecutionForConversation).toHaveBeenCalledWith(switchedConversation);
     });
   });
 
@@ -2111,332 +2109,6 @@ describe('ConversationController - Persistent External Context Paths', () => {
   });
 });
 
-function createMockBuildSessionUpdates(mockService: any) {
-  return jest.fn().mockImplementation(({ conversation, sessionInvalidated }: any) => {
-    const sessionId = mockService.getSessionId();
-    const legacyMessages = conversation?.messages ?? [];
-    const hasSession = !!sessionId;
-    const legacyCutoffAt = hasSession && !conversation?.providerSessionId
-      ? legacyMessages[legacyMessages.length - 1]?.timestamp
-      : conversation?.legacyCutoffAt;
-    const oldSdkSessionId = conversation?.providerSessionId;
-    const sessionChanged = hasSession && sessionId && oldSdkSessionId && sessionId !== oldSdkSessionId;
-    const previousProviderSessionIds = sessionChanged
-      ? [...new Set([...(conversation?.previousProviderSessionIds || []), oldSdkSessionId])]
-      : conversation?.previousProviderSessionIds;
-    const isForkSourceOnly = !!conversation?.forkSource &&
-      !conversation?.providerSessionId &&
-      sessionId === conversation.forkSource.sessionId;
-    let resolvedSessionId: string | null;
-    if (sessionInvalidated) {
-      resolvedSessionId = null;
-    } else if (isForkSourceOnly) {
-      resolvedSessionId = conversation?.sessionId ?? null;
-    } else {
-      resolvedSessionId = sessionId ?? conversation?.sessionId ?? null;
-    }
-    const updates: any = {
-      sessionId: resolvedSessionId,
-      providerSessionId: hasSession && sessionId && !isForkSourceOnly ? sessionId : conversation?.providerSessionId,
-      previousProviderSessionIds,
-      legacyCutoffAt,
-    };
-    if (conversation?.forkSource && sessionId && sessionId !== conversation.forkSource.sessionId) {
-      updates.forkSource = undefined;
-    }
-    return { updates };
-  });
-}
-
-describe('ConversationController - Previous SDK Session IDs', () => {
-  let controller: ConversationController;
-  let deps: ConversationControllerDeps;
-  let mockAgentService: any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockAgentService = {
-      getSessionId: jest.fn().mockReturnValue(null),
-      setSessionId: jest.fn(),
-      consumeSessionInvalidation: jest.fn().mockReturnValue(false),
-      buildSessionUpdates: null as any,
-    };
-    mockAgentService.buildSessionUpdates = createMockBuildSessionUpdates(mockAgentService);
-    deps = createMockDeps({
-      getAgentService: () => mockAgentService,
-    });
-    controller = new ConversationController(deps);
-  });
-
-  describe('save - session change detection', () => {
-    it('should accumulate old providerSessionId when SDK creates new session', async () => {
-      deps.state.currentConversationId = 'conv-1';
-      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
-
-      // Existing conversation has providerSessionId 'session-A'
-      (deps.plugin.getConversationSync as jest.Mock).mockReturnValue({
-        id: 'conv-1',
-        messages: [],
-        providerSessionId: 'session-A',
-        previousProviderSessionIds: undefined,
-      });
-
-      // Agent service reports new session 'session-B' (resume failed, new session created)
-      mockAgentService.getSessionId.mockReturnValue('session-B');
-
-      await controller.save();
-
-      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-        'conv-1',
-        expect.objectContaining({
-          providerSessionId: 'session-B',
-          previousProviderSessionIds: ['session-A'],
-        })
-      );
-    });
-
-    it('should preserve existing previousProviderSessionIds when session changes again', async () => {
-      deps.state.currentConversationId = 'conv-1';
-      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
-
-      // Conversation already has previous sessions [A], current is B
-      (deps.plugin.getConversationSync as jest.Mock).mockReturnValue({
-        id: 'conv-1',
-        messages: [],
-        providerSessionId: 'session-B',
-        previousProviderSessionIds: ['session-A'],
-      });
-
-      // Agent service reports new session 'session-C'
-      mockAgentService.getSessionId.mockReturnValue('session-C');
-
-      await controller.save();
-
-      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-        'conv-1',
-        expect.objectContaining({
-          providerSessionId: 'session-C',
-          previousProviderSessionIds: ['session-A', 'session-B'],
-        })
-      );
-    });
-
-    it('should not modify previousProviderSessionIds when session has not changed', async () => {
-      deps.state.currentConversationId = 'conv-1';
-      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
-
-      (deps.plugin.getConversationSync as jest.Mock).mockReturnValue({
-        id: 'conv-1',
-        messages: [],
-        providerSessionId: 'session-A',
-        previousProviderSessionIds: undefined,
-      });
-
-      mockAgentService.getSessionId.mockReturnValue('session-A');
-
-      await controller.save();
-
-      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-        'conv-1',
-        expect.objectContaining({
-          providerSessionId: 'session-A',
-          previousProviderSessionIds: undefined,
-        })
-      );
-    });
-
-    it('should deduplicate session IDs to prevent duplicates from race conditions', async () => {
-      deps.state.currentConversationId = 'conv-1';
-      deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
-
-      // Simulate a race condition where session-A is already in previousProviderSessionIds
-      // but providerSessionId is still session-A (should not duplicate)
-      (deps.plugin.getConversationSync as jest.Mock).mockReturnValue({
-        id: 'conv-1',
-        messages: [],
-        providerSessionId: 'session-A',
-        previousProviderSessionIds: ['session-A'], // Already contains A (from prior bug/race)
-      });
-
-      // Agent reports new session-B
-      mockAgentService.getSessionId.mockReturnValue('session-B');
-
-      await controller.save();
-
-      // Should deduplicate: [A, A] -> [A]
-      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-        'conv-1',
-        expect.objectContaining({
-          providerSessionId: 'session-B',
-          previousProviderSessionIds: ['session-A'], // Deduplicated, not ['session-A', 'session-A']
-        })
-      );
-    });
-  });
-});
-
-describe('ConversationController - Fork Session ID Isolation', () => {
-  let controller: ConversationController;
-  let deps: ConversationControllerDeps;
-  let mockAgentService: any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockAgentService = {
-      getSessionId: jest.fn().mockReturnValue(null),
-      setSessionId: jest.fn(),
-      consumeSessionInvalidation: jest.fn().mockReturnValue(false),
-      buildSessionUpdates: null as any,
-    };
-    mockAgentService.buildSessionUpdates = createMockBuildSessionUpdates(mockAgentService);
-    deps = createMockDeps({
-      getAgentService: () => mockAgentService,
-    });
-    controller = new ConversationController(deps);
-  });
-
-  it('should not persist fork source session ID as conversation own sessionId/providerSessionId', async () => {
-    deps.state.currentConversationId = 'fork-conv';
-    deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
-
-    // Fork conversation: has forkSource but no own providerSessionId yet
-    (deps.plugin.getConversationSync as jest.Mock).mockReturnValue({
-      id: 'fork-conv',
-      messages: [],
-      sessionId: null,
-      providerSessionId: undefined,
-      forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
-    });
-
-    // Agent service has the fork source ID set for resume purposes
-    mockAgentService.getSessionId.mockReturnValue('source-session-abc');
-
-    await controller.save();
-
-    expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-      'fork-conv',
-      expect.objectContaining({
-        sessionId: null,
-        providerSessionId: undefined,
-      })
-    );
-  });
-
-  it('should persist new session ID after SDK captures a different session for fork', async () => {
-    deps.state.currentConversationId = 'fork-conv';
-    deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
-
-    (deps.plugin.getConversationSync as jest.Mock).mockReturnValue({
-      id: 'fork-conv',
-      messages: [],
-      sessionId: null,
-      providerSessionId: undefined,
-      forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
-    });
-
-    // SDK captured a new session (different from fork source)
-    mockAgentService.getSessionId.mockReturnValue('new-session-xyz');
-
-    await controller.save();
-
-    expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-      'fork-conv',
-      expect.objectContaining({
-        sessionId: 'new-session-xyz',
-        providerSessionId: 'new-session-xyz',
-        forkSource: undefined,
-      })
-    );
-  });
-
-  it('should allow normal session ID persistence when fork metadata is already cleared', async () => {
-    deps.state.currentConversationId = 'fork-conv';
-    deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
-
-    // Fork conversation after fork metadata was cleared (has its own providerSessionId)
-    (deps.plugin.getConversationSync as jest.Mock).mockReturnValue({
-      id: 'fork-conv',
-      messages: [],
-      sessionId: 'new-session-xyz',
-      providerSessionId: 'new-session-xyz',
-      forkSource: undefined,
-    });
-
-    mockAgentService.getSessionId.mockReturnValue('new-session-xyz');
-
-    await controller.save();
-
-    expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-      'fork-conv',
-      expect.objectContaining({
-        sessionId: 'new-session-xyz',
-        providerSessionId: 'new-session-xyz',
-      })
-    );
-  });
-});
-
-describe('ConversationController - switchTo fork path', () => {
-  let controller: ConversationController;
-  let deps: ConversationControllerDeps;
-  let mockAgentService: any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockAgentService = {
-      getSessionId: jest.fn().mockReturnValue(null),
-      syncConversationState: jest.fn(),
-      consumeSessionInvalidation: jest.fn().mockReturnValue(false),
-      buildSessionUpdates: null as any,
-    };
-    mockAgentService.buildSessionUpdates = createMockBuildSessionUpdates(mockAgentService);
-    deps = createMockDeps({
-      getAgentService: () => mockAgentService,
-    });
-    controller = new ConversationController(deps);
-  });
-
-  it('should sync conversation state for pending fork conversations', async () => {
-    deps.state.currentConversationId = 'old-conv';
-
-    const forkConversation = {
-      id: 'fork-conv',
-      messages: [{ id: '1', role: 'user', content: 'forked msg', timestamp: Date.now() }],
-      sessionId: null,
-      providerSessionId: undefined,
-      forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
-    };
-    (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(forkConversation);
-
-    await controller.switchTo('fork-conv');
-
-    expect(mockAgentService.syncConversationState).toHaveBeenCalledWith(
-      forkConversation,
-      expect.any(Array),
-    );
-  });
-
-  it('should resolve to own sessionId when fork already has its own session', async () => {
-    deps.state.currentConversationId = 'old-conv';
-
-    const forkConversation = {
-      id: 'fork-conv',
-      messages: [{ id: '1', role: 'user', content: 'forked msg', timestamp: Date.now() }],
-      sessionId: 'own-session-xyz',
-      providerSessionId: 'own-session-xyz',
-      forkSource: { sessionId: 'source-session-abc', resumeAt: 'assistant-uuid-1' },
-    };
-    (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(forkConversation);
-
-    await controller.switchTo('fork-conv');
-
-    expect(mockAgentService.syncConversationState).toHaveBeenCalledWith(
-      forkConversation,
-      expect.any(Array),
-    );
-  });
-});
-
 describe('ConversationController - restoreExternalContextPaths null selector', () => {
   it('should return early when external context selector is null', async () => {
     const deps = createMockDeps({
@@ -2564,21 +2236,16 @@ describe('ConversationController - regenerateTitle callback branches', () => {
 describe('ConversationController - Rewind', () => {
   let controller: ConversationController;
   let deps: ConversationControllerDeps;
-  let mockAgentService: any;
+  let mockCoordinator: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockAgentService = {
-      getSessionId: jest.fn().mockReturnValue(null),
-      setSessionId: jest.fn(),
-      consumeSessionInvalidation: jest.fn().mockReturnValue(false),
+    mockCoordinator = {
+      previewRewind: jest.fn().mockResolvedValue({ canRewind: true }),
       rewind: jest.fn().mockResolvedValue({ canRewind: true, filesChanged: ['a.ts'] }),
-      getCapabilities: jest.fn().mockReturnValue({ supportsRewind: true }),
-      buildSessionUpdates: null as any,
     };
-    mockAgentService.buildSessionUpdates = createMockBuildSessionUpdates(mockAgentService);
     deps = createMockDeps({
-      getAgentService: () => mockAgentService,
+      getExecutionCoordinator: () => mockCoordinator,
     });
     controller = new ConversationController(deps);
   });
@@ -2595,20 +2262,19 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m3');
 
-    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'code-and-conversation');
+    expect(mockCoordinator.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'code-and-conversation');
   });
 
-  it('should initialize a cold conversation runtime before previewing rewind', async () => {
-    let agentService: typeof mockAgentService | null = null;
-    const ensureServiceInitialized = jest.fn().mockImplementation(async () => {
-      agentService = mockAgentService;
+  it('should initialize a cold conversation execution before previewing rewind', async () => {
+    let coordinator: typeof mockCoordinator | null = null;
+    const ensureExecutionInitialized = jest.fn().mockImplementation(async () => {
+      coordinator = mockCoordinator;
       return true;
     });
-    mockAgentService.previewRewind = jest.fn().mockResolvedValue({ canRewind: true });
     deps = createMockDeps({
-      getAgentService: () => agentService,
-      ensureServiceInitialized,
-    } as any);
+      getExecutionCoordinator: () => coordinator,
+      ensureExecutionInitialized,
+    });
     controller = new ConversationController(deps);
     deps.state.currentConversationId = 'conv-1';
     deps.state.messages = [
@@ -2619,18 +2285,18 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m2');
 
-    expect(ensureServiceInitialized).toHaveBeenCalledTimes(1);
-    expect(mockAgentService.previewRewind).toHaveBeenCalledWith(
+    expect(ensureExecutionInitialized).toHaveBeenCalledTimes(1);
+    expect(mockCoordinator.previewRewind).toHaveBeenCalledWith(
       'user-uuid',
       'prev-a',
       'code-and-conversation',
     );
-    expect(mockAgentService.rewind).toHaveBeenCalled();
+    expect(mockCoordinator.rewind).toHaveBeenCalled();
   });
 
   it('should reject a second rewind while the first preview is pending', async () => {
     const previewResolvers: Array<(value: { canRewind: true }) => void> = [];
-    mockAgentService.previewRewind = jest.fn().mockImplementation(() => (
+    mockCoordinator.previewRewind = jest.fn().mockImplementation(() => (
       new Promise(resolve => { previewResolvers.push(resolve); })
     ));
     deps.state.currentConversationId = 'conv-1';
@@ -2644,12 +2310,12 @@ describe('ConversationController - Rewind', () => {
     await Promise.resolve();
     const secondRewind = controller.rewind('m2');
     await Promise.resolve();
-    const previewCallCountBeforeResolution = mockAgentService.previewRewind.mock.calls.length;
+    const previewCallCountBeforeResolution = mockCoordinator.previewRewind.mock.calls.length;
     previewResolvers.forEach(resolve => resolve({ canRewind: true }));
     await Promise.all([firstRewind, secondRewind]);
 
     expect(previewCallCountBeforeResolution).toBe(1);
-    expect(mockAgentService.rewind).toHaveBeenCalledTimes(1);
+    expect(mockCoordinator.rewind).toHaveBeenCalledTimes(1);
     expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('rewind to finish'));
   });
 
@@ -2663,7 +2329,7 @@ describe('ConversationController - Rewind', () => {
     await controller.rewind('nonexistent');
 
     expect(mockNotice).toHaveBeenCalled();
-    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockCoordinator.rewind).not.toHaveBeenCalled();
   });
 
   it('should show Notice when streaming', async () => {
@@ -2677,7 +2343,7 @@ describe('ConversationController - Rewind', () => {
     await controller.rewind('m2');
 
     expect(mockNotice).toHaveBeenCalled();
-    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockCoordinator.rewind).not.toHaveBeenCalled();
   });
 
   it('should show Notice when user message has no userMessageId', async () => {
@@ -2690,7 +2356,7 @@ describe('ConversationController - Rewind', () => {
     await controller.rewind('m2');
 
     expect(mockNotice).toHaveBeenCalled();
-    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockCoordinator.rewind).not.toHaveBeenCalled();
   });
 
   it('should allow rewind when no previous assistant with uuid exists', async () => {
@@ -2701,7 +2367,7 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m1');
 
-    expect(mockAgentService.rewind).toHaveBeenCalledWith('u1', undefined, 'code-and-conversation');
+    expect(mockCoordinator.rewind).toHaveBeenCalledWith('u1', undefined, 'code-and-conversation');
   });
 
   it('should show Notice when no response assistant with uuid exists', async () => {
@@ -2713,23 +2379,23 @@ describe('ConversationController - Rewind', () => {
     await controller.rewind('m2');
 
     expect(mockNotice).toHaveBeenCalled();
-    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockCoordinator.rewind).not.toHaveBeenCalled();
   });
 
-  it('should show i18n Notice on SDK rewind exception', async () => {
+  it('should show i18n Notice on coordinator rewind exception', async () => {
     deps.state.currentConversationId = 'conv-1';
     deps.state.messages = [
       { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'a1' },
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'u1' },
       { id: 'm3', role: 'assistant', content: '', timestamp: 3, assistantMessageId: 'a2' },
     ];
-    mockAgentService.rewind.mockRejectedValue(new Error('SDK error'));
+    mockCoordinator.rewind.mockRejectedValue(new Error('Coordinator error'));
 
     await controller.rewind('m2');
 
     expect(mockNotice).toHaveBeenCalled();
     const msg = mockNotice.mock.calls[0][0] as string;
-    expect(msg).toContain('SDK error');
+    expect(msg).toContain('Coordinator error');
     expect(deps.state.isRewinding).toBe(false);
   });
 
@@ -2740,7 +2406,7 @@ describe('ConversationController - Rewind', () => {
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'u1' },
       { id: 'm3', role: 'assistant', content: '', timestamp: 3, assistantMessageId: 'a2' },
     ];
-    mockAgentService.rewind.mockResolvedValue({ canRewind: false, error: 'No checkpoints' });
+    mockCoordinator.rewind.mockResolvedValue({ canRewind: false, error: 'No checkpoints' });
 
     await controller.rewind('m2');
 
@@ -2762,7 +2428,7 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m2');
 
-    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'code-and-conversation');
+    expect(mockCoordinator.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'code-and-conversation');
     expect(truncateSpy).toHaveBeenCalledWith('m2');
     expect(deps.state.usage).toBeNull();
     expect(deps.renderer.renderMessages).toHaveBeenCalledWith(
@@ -2789,9 +2455,9 @@ describe('ConversationController - Rewind', () => {
   it('should restore the rewound message through the composer owner', async () => {
     const restoreMessageToComposer = jest.fn();
     deps = createMockDeps({
-      getAgentService: () => mockAgentService,
+      getExecutionCoordinator: () => mockCoordinator,
       restoreMessageToComposer,
-    } as any);
+    });
     controller = new ConversationController(deps);
     const images = [{ id: 'image-1', name: 'reference.png' }];
     deps.state.currentConversationId = 'conv-1';
@@ -2833,8 +2499,7 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m1');
 
-    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', undefined, 'code-and-conversation');
-    expect(mockAgentService.buildSessionUpdates).not.toHaveBeenCalled();
+    expect(mockCoordinator.rewind).toHaveBeenCalledWith('user-uuid', undefined, 'code-and-conversation');
     expect(deps.state.messages).toEqual([]);
     expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
       'conv-1',
@@ -2863,7 +2528,7 @@ describe('ConversationController - Rewind', () => {
       'Rewind conversation to this point? File changes will be kept.',
       'Rewind',
     );
-    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'conversation');
+    expect(mockCoordinator.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'conversation');
     expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
       'conv-1',
       expect.objectContaining({ resumeAtMessageId: 'prev-a' })
@@ -2897,7 +2562,7 @@ describe('ConversationController - Rewind', () => {
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
       { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
     ];
-    mockAgentService.previewRewind = jest.fn().mockResolvedValue({
+    mockCoordinator.previewRewind = jest.fn().mockResolvedValue({
       canRewind: true,
       conflicts: [{ conflictType: 'modified_externally', path: 'notes/conflicted.md' }],
       filesChanged: ['notes/conflicted.md'],
@@ -2905,7 +2570,7 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m2');
 
-    expect(mockAgentService.previewRewind).toHaveBeenCalledWith(
+    expect(mockCoordinator.previewRewind).toHaveBeenCalledWith(
       'user-uuid',
       'prev-a',
       'code-and-conversation',
@@ -2916,7 +2581,7 @@ describe('ConversationController - Rewind', () => {
       'Rewind',
     );
     expect((confirm as jest.Mock).mock.calls[0][1]).toContain('overwritten');
-    expect(mockAgentService.rewind).toHaveBeenCalled();
+    expect(mockCoordinator.rewind).toHaveBeenCalled();
   });
 
   it('should abort when provider rewind preview rejects the checkpoint', async () => {
@@ -2926,7 +2591,7 @@ describe('ConversationController - Rewind', () => {
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
       { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
     ];
-    mockAgentService.previewRewind = jest.fn().mockResolvedValue({
+    mockCoordinator.previewRewind = jest.fn().mockResolvedValue({
       canRewind: false,
       error: 'Checkpoint is no longer available',
     });
@@ -2934,18 +2599,17 @@ describe('ConversationController - Rewind', () => {
     await controller.rewind('m2');
 
     expect(confirm).not.toHaveBeenCalled();
-    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockCoordinator.rewind).not.toHaveBeenCalled();
     expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('Checkpoint is no longer available'));
   });
 
-  it('should preserve a provider-native session when rewinding before the first prompt', async () => {
+  it('should leave provider-native session persistence to the coordinator', async () => {
     deps.state.currentConversationId = 'conv-1';
     deps.state.messages = [
       { id: 'm1', role: 'user', content: 'first prompt', timestamp: 1, userMessageId: 'user-uuid' },
       { id: 'm2', role: 'assistant', content: 'resp', timestamp: 2, assistantMessageId: 'resp-a' },
     ];
-    mockAgentService.getSessionId.mockReturnValue('native-session');
-    mockAgentService.rewind.mockResolvedValue({
+    mockCoordinator.rewind.mockResolvedValue({
       canRewind: true,
       filesChanged: [],
       sessionStrategy: 'preserve-provider-session',
@@ -2960,19 +2624,13 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m1');
 
-    expect(mockAgentService.buildSessionUpdates).toHaveBeenCalled();
-    expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-      'conv-1',
-      expect.objectContaining({
-        messages: [],
-        resumeAtMessageId: undefined,
-        sessionId: 'native-session',
-      }),
-    );
-    expect(deps.plugin.updateConversation).not.toHaveBeenCalledWith(
-      'conv-1',
-      expect.objectContaining({ sessionId: null }),
-    );
+    const updates = (deps.plugin.updateConversation as jest.Mock).mock.calls[0][1];
+    expect(updates).toEqual(expect.objectContaining({
+      messages: [],
+      resumeAtMessageId: undefined,
+    }));
+    expect(updates).not.toHaveProperty('sessionId');
+    expect(updates).not.toHaveProperty('providerState');
   });
 
   it('should abort when confirmation is declined', async () => {
@@ -2986,7 +2644,7 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m2');
 
-    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockCoordinator.rewind).not.toHaveBeenCalled();
     expect(mockNotice).not.toHaveBeenCalled();
   });
 
@@ -3004,7 +2662,7 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m2');
 
-    expect(mockAgentService.rewind).not.toHaveBeenCalled();
+    expect(mockCoordinator.rewind).not.toHaveBeenCalled();
     expect(mockNotice).toHaveBeenCalled();
   });
 
@@ -3020,7 +2678,7 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m2');
 
-    expect(mockAgentService.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'code-and-conversation');
+    expect(mockCoordinator.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'code-and-conversation');
     const msg = mockNotice.mock.calls[0][0] as string;
     expect(msg).toContain('Save failed');
   });

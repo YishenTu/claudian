@@ -22,18 +22,12 @@ describe('ProviderRegistry', () => {
       mcpManager: {} as any,
       mcpServerManager: {} as any,
     } as any);
+    jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
+      .mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
-  });
-
-  it('creates a runtime with the default provider id', () => {
-    const runtime = ProviderRegistry.createChatRuntime({
-      plugin: {} as any,
-    });
-
-    expect(runtime.providerId).toBe('claude');
   });
 
   it('returns capabilities for the default provider', () => {
@@ -49,6 +43,19 @@ describe('ProviderRegistry', () => {
 
     const taskInterpreter = ProviderRegistry.getTaskResultInterpreter();
     expect(taskInterpreter).toHaveProperty('resolveTerminalStatus');
+  });
+
+  it('creates transcript-backed subagent history only for providers that own it', () => {
+    const host = {} as any;
+
+    expect(ProviderRegistry.createSubagentHistoryService(host, 'claude')).toMatchObject({
+      loadFinalResult: expect.any(Function),
+      loadToolCalls: expect.any(Function),
+    });
+    expect(ProviderRegistry.createSubagentHistoryService(host, 'codex')).toBeNull();
+    expect(ProviderRegistry.createSubagentHistoryService(host, 'grok')).toBeNull();
+    expect(ProviderRegistry.createSubagentHistoryService(host, 'opencode')).toBeNull();
+    expect(ProviderRegistry.createSubagentHistoryService(host, 'pi')).toBeNull();
   });
 
   it('returns a settings reconciler for the default provider', () => {
@@ -67,14 +74,6 @@ describe('ProviderRegistry', () => {
     expect(() => ProviderRegistry.getCapabilities(
       'nonexistent' as any,
     )).toThrow('Provider "nonexistent" is not registered.');
-  });
-
-  it('creates a Codex runtime', () => {
-    const runtime = ProviderRegistry.createChatRuntime({
-      providerId: 'codex',
-      plugin: {} as any,
-    });
-    expect(runtime.providerId).toBe('codex');
   });
 
   it('returns Codex capabilities', () => {

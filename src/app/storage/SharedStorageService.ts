@@ -1,6 +1,7 @@
 import type { Plugin } from 'obsidian';
 import { Notice } from 'obsidian';
 
+import { ConversationPersistenceStore } from '../../core/bootstrap/ConversationPersistenceStore';
 import { SessionStorage } from '../../core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from '../../core/bootstrap/storage';
 import { normalizeTabManagerState } from '../../core/bootstrap/tabManagerState';
@@ -15,6 +16,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export class SharedStorageService implements SharedAppStorage {
   readonly claudianSettings: ClaudianSettingsStorage;
   readonly sessions: SessionStorage;
+  readonly conversationPersistence: ConversationPersistenceStore;
 
   private adapter: VaultFileAdapter;
   private plugin: Plugin;
@@ -24,6 +26,7 @@ export class SharedStorageService implements SharedAppStorage {
     this.adapter = new VaultFileAdapter(plugin.app);
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
     this.sessions = new SessionStorage(this.adapter);
+    this.conversationPersistence = new ConversationPersistenceStore(this.adapter);
   }
 
   async initialize(): Promise<{ claudian: Record<string, unknown> }> {

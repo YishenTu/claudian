@@ -16,7 +16,10 @@ import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { AgentManager } from '../agents/AgentManager';
-import { ClaudeCommandCatalog } from '../commands/ClaudeCommandCatalog';
+import {
+  ClaudeCommandCatalog,
+  type CommandProbe,
+} from '../commands/ClaudeCommandCatalog';
 import { probeRuntimeCommands } from '../commands/probeRuntimeCommands';
 import { resolveClaudeConfigDir } from '../config/ClaudeConfigDir';
 import { PluginManager } from '../plugins/PluginManager';
@@ -35,11 +38,17 @@ export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
   commandCatalog: ProviderCommandCatalog;
   vaultCommandRepository: ProviderVaultEntryRepository;
   agentMentionProvider: AppAgentManager;
+  dispose(): Promise<void>;
+}
+
+export interface ClaudeWorkspaceServicesOptions {
+  readonly commandProbe?: CommandProbe;
 }
 
 export async function createClaudeWorkspaceServices(
   plugin: ProviderHost,
   adapter: VaultFileAdapter,
+  options: ClaudeWorkspaceServicesOptions = {},
 ): Promise<ClaudeWorkspaceServices> {
   const claudeStorage = new StorageService(plugin, adapter);
 
@@ -68,8 +77,14 @@ export async function createClaudeWorkspaceServices(
   const commandCatalog = new ClaudeCommandCatalog(
     claudeStorage.commands,
     claudeStorage.skills,
-    signal => probeRuntimeCommands(plugin, signal),
+    options.commandProbe ?? (signal => probeRuntimeCommands(plugin, signal)),
   );
+  const unregisterTransitionHook = plugin.executionLifecycleRegistry
+    .registerTransitionHook('claude', {
+      beforeTransition: () => commandCatalog.beginEnvironmentTransition(),
+      afterTransition: () => commandCatalog.endEnvironmentTransition(),
+    });
+  let disposePromise: Promise<void> | null = null;
 
   return {
     claudeStorage,
@@ -94,6 +109,12 @@ export async function createClaudeWorkspaceServices(
         pluginManager.loadPlugins(),
       ]);
       await agentManager.loadAgents();
+    },
+    dispose() {
+      if (disposePromise) return disposePromise;
+      unregisterTransitionHook();
+      disposePromise = commandCatalog.dispose();
+      return disposePromise;
     },
   };
 }

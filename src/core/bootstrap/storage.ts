@@ -1,5 +1,6 @@
-import type { AppSessionStorage, AppTabManagerState } from '../providers/types';
+import type { AppTabManagerState } from '../providers/types';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
+import type { SessionMetadataReader } from './SessionStorage';
 
 /**
  * Minimal shared app storage contract.
@@ -15,6 +16,7 @@ export interface SharedAppStorage {
   saveClaudianSettings(settings: Record<string, unknown>): Promise<void>;
   setTabManagerState(state: AppTabManagerState): Promise<void>;
   getTabManagerState(): Promise<AppTabManagerState | null>;
-  sessions: AppSessionStorage;
+  /** Read-only startup metadata access; conversation writers stay repository-private. */
+  sessions: SessionMetadataReader;
   getAdapter(): VaultFileAdapter;
 }

@@ -3,16 +3,15 @@ import type { App } from 'obsidian';
 import type { SharedAppStorage } from '../core/bootstrap/storage';
 import type { ProviderHost } from '../core/providers/ProviderHost';
 import type { AppTabManagerState, ProviderId } from '../core/providers/types';
-import type { ChatRuntime } from '../core/runtime/ChatRuntime';
 import type { ClaudianSettings, Conversation, ConversationMeta } from '../core/types';
+import type { ChatExecutionPersistence } from './chat/execution/ChatExecutionCoordinator';
 import type { TabData, TabId, TabManagerViewHost } from './chat/tabs/types';
 
 export interface FeatureTabManagerHost {
   getAllTabs(): TabData[];
   getTab(tabId: TabId): TabData | null;
   switchToTab(tabId: TabId): Promise<void>;
-  broadcastToAllTabs(action: (runtime: ChatRuntime) => Promise<void>): Promise<void>;
-  recycleProviderRuntimes(providerIds: ProviderId | ProviderId[]): Promise<void>;
+  primeProviderExecution(providerIds?: ProviderId | ProviderId[]): void;
   invalidateProviderResources(providerIds: ProviderId | ProviderId[], generation: number): void;
 }
 
@@ -28,6 +27,7 @@ export interface FeatureViewHost extends TabManagerViewHost {
 /** Application capabilities consumed by user-facing features. */
 export interface FeatureHost {
   readonly app: App;
+  readonly executionPersistence: ChatExecutionPersistence;
   readonly providerHost: ProviderHost;
   readonly settings: ClaudianSettings;
   readonly storage: SharedAppStorage;
@@ -45,10 +45,7 @@ export interface FeatureHost {
     selectedModel?: string;
   }): Promise<Conversation>;
   switchConversation(id: string): Promise<Conversation | null>;
-  deleteConversation(
-    id: string,
-    options?: { deleteProviderSession?: boolean },
-  ): Promise<void>;
+  deleteConversation(id: string): Promise<void>;
   handleMissingProviderSession(
     id: string,
     missingProviderSessionId?: string,

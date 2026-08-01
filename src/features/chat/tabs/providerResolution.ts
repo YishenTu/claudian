@@ -22,7 +22,7 @@ function getStoredConversationProviderId(
     );
   }
 
-  return tab.service?.providerId ?? tab.providerId;
+  return tab.providerId;
 }
 
 export function getTabProviderId(

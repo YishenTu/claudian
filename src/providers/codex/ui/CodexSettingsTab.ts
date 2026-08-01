@@ -43,13 +43,16 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         toggle
           .setValue(codexSettings.enabled)
           .onChange(async (value) => {
-            await context.plugin.mutateSettings((settings) => {
-              ProviderSettingsCoordinator.applyProviderEnablement(settings, 'codex', value);
-            });
-            if (value) {
-              await refreshCodexModelCatalog();
+            try {
+              await context.plugin.runProviderExecutionTransition(['codex'], async () => {
+                await context.plugin.mutateSettings((settings) => {
+                  ProviderSettingsCoordinator.applyProviderEnablement(settings, 'codex', value);
+                });
+              });
+              context.notifyProviderModelOptionsChanged('codex');
+            } finally {
+              toggle.setValue(getCodexProviderSettings(settingsBag).enabled);
             }
-            context.notifyProviderModelOptionsChanged('codex');
           })
       );
 
@@ -64,8 +67,11 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
             .setValue(installationMethod)
             .onChange(async (value) => {
               installationMethod = value === 'wsl' ? 'wsl' : 'native-windows';
-              await context.plugin.mutateSettings((settings) => {
-                updateCodexProviderSettings(settings, { installationMethod });
+              await context.plugin.runProviderExecutionTransition(['codex'], async () => {
+                await context.plugin.mutateSettings((settings) => {
+                  updateCodexProviderSettings(settings, { installationMethod });
+                });
+                codexWorkspace.cliResolver.reset();
               });
               refreshInstallationMethodUI();
               await refreshCodexModelCatalog();
@@ -178,10 +184,12 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         delete cliPathsByHost[hostnameKey];
       }
 
-      await context.plugin.mutateSettings((settings) => {
-        updateCodexProviderSettings(settings, { cliPathsByHost: { ...cliPathsByHost } });
+      await context.plugin.runProviderExecutionTransition(['codex'], async () => {
+        await context.plugin.mutateSettings((settings) => {
+          updateCodexProviderSettings(settings, { cliPathsByHost: { ...cliPathsByHost } });
+        });
+        codexWorkspace.cliResolver.reset();
       });
-      await context.plugin.recycleProviderRuntimes?.('codex');
       return true;
     };
 
@@ -211,8 +219,11 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
           .setPlaceholder('Ubuntu')
           .setValue(codexSettings.wslDistroOverride)
           .onChange(async (value) => {
-            await context.plugin.mutateSettings((settings) => {
-              updateCodexProviderSettings(settings, { wslDistroOverride: value });
+            await context.plugin.runProviderExecutionTransition(['codex'], async () => {
+              await context.plugin.mutateSettings((settings) => {
+                updateCodexProviderSettings(settings, { wslDistroOverride: value });
+              });
+              codexWorkspace.cliResolver.reset();
             });
           });
 

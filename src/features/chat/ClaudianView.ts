@@ -127,7 +127,7 @@ export class ClaudianView extends ItemView {
         ? resolveConversationModel(this.plugin.settings, providerId, conversation).model
         : tab.lifecycleState === 'blank'
         ? tab.draftModel
-        : tab.service?.getAuxiliaryModel?.() ?? null;
+        : null;
       const providerSettings = getProviderSettingsSnapshotWithModel(
         this.plugin.settings,
         providerId,
@@ -160,7 +160,7 @@ export class ClaudianView extends ItemView {
     }
 
     if (!changedProviderId) {
-      this.tabManager?.primeProviderRuntime();
+      this.tabManager?.primeProviderExecution();
     }
   }
 
@@ -676,7 +676,7 @@ export class ClaudianView extends ItemView {
         ).permissionMode as string;
         if (current === 'plan') {
           const restoreMode = activeTab.state.prePlanPermissionMode ?? 'normal';
-          void updatePlanModeUI(activeTab, this.plugin, restoreMode, { syncRuntime: true })
+          void updatePlanModeUI(activeTab, this.plugin, restoreMode, { syncExecution: true })
             .finally(() => {
               const activeMode = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
                 this.plugin.settings,
@@ -691,7 +691,7 @@ export class ClaudianView extends ItemView {
             });
         } else {
           activeTab.state.prePlanPermissionMode = current;
-          void updatePlanModeUI(activeTab, this.plugin, 'plan', { syncRuntime: true }).catch((error: unknown) => {
+          void updatePlanModeUI(activeTab, this.plugin, 'plan', { syncExecution: true }).catch((error: unknown) => {
             const activeMode = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
               this.plugin.settings,
               providerId,

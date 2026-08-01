@@ -14,15 +14,15 @@ export interface ProviderCommandListContext {
   includeBuiltIns: boolean;
   /** Cancels provider-owned work when the requesting discovery is abandoned. */
   signal?: AbortSignal;
-  /** Request-scoped runtime snapshot. Undefined falls back to catalog-owned state. */
-  runtimeCommands?: readonly SlashCommand[];
-  /** Whether provider-global runtime state may satisfy a request without a snapshot. */
-  allowCachedRuntimeCommands?: boolean;
+  /** Request-scoped provider command snapshot. Undefined falls back to catalog-owned state. */
+  commandSnapshot?: readonly SlashCommand[];
+  /** Whether provider-global command state may satisfy a request without a snapshot. */
+  allowCachedCommandSnapshot?: boolean;
 }
 
 export interface ProviderCommandCatalog {
   listDropdownEntries(context: ProviderCommandListContext): Promise<ProviderCommandEntry[]>;
-  setRuntimeCommands(commands: SlashCommand[]): void;
+  setCommandSnapshot(commands: SlashCommand[]): void;
   getDropdownConfig(): ProviderCommandDropdownConfig;
   refresh(): Promise<void>;
 }

@@ -251,6 +251,60 @@ describe('GrokModelCatalogCoordinator', () => {
     expect(service.discoverCatalog).toHaveBeenCalledTimes(1);
   });
 
+  it('aborts and drains an in-flight refresh before clearing transition state', async () => {
+    let resolveDiscovery!: (result: GrokModelCatalogDiscoveryResult) => void;
+    let discoverySignal: AbortSignal | undefined;
+    const pending = new Promise<GrokModelCatalogDiscoveryResult>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    const service: GrokModelCatalogServiceLike = {
+      discoverCatalog: jest.fn(async (signal) => {
+        discoverySignal = signal;
+        return pending;
+      }),
+      getCatalogFingerprint: jest.fn(async () => 'fingerprint-current'),
+    };
+    const coordinator = new GrokModelCatalogCoordinator(makeHost(), service);
+    const refresh = coordinator.refresh();
+    while (!discoverySignal) await Promise.resolve();
+    let quiesced = false;
+
+    const transition = coordinator.quiesceForEnvironmentChange().then(() => {
+      quiesced = true;
+    });
+    await Promise.resolve();
+
+    expect(discoverySignal.aborted).toBe(true);
+    expect(quiesced).toBe(false);
+    resolveDiscovery(completedResult());
+    await Promise.all([refresh, transition]);
+    expect(coordinator.getState()).toBe('idle');
+  });
+
+  it('admits only transition-owner refreshes while fenced and releases waiters on disposal', async () => {
+    const service = makeService(completedResult());
+    const coordinator = new GrokModelCatalogCoordinator(makeHost(), service);
+    coordinator.beginEnvironmentTransition();
+
+    const ordinaryRefresh = coordinator.refresh();
+    await Promise.resolve();
+    expect(service.discoverCatalog).not.toHaveBeenCalled();
+
+    await expect(coordinator.refresh({ providerTransitionOwner: true })).resolves.toMatchObject({
+      kind: 'completed',
+    });
+    expect(service.discoverCatalog).toHaveBeenCalledTimes(1);
+
+    coordinator.endEnvironmentTransition();
+    await ordinaryRefresh;
+    expect(service.discoverCatalog).toHaveBeenCalledTimes(2);
+
+    coordinator.beginEnvironmentTransition();
+    const fencedMerge = coordinator.mergeLiveModels([makeModel('never-persisted')]);
+    coordinator.dispose();
+    await expect(fencedMerge).resolves.toEqual({ changed: false });
+  });
+
   it('ignores an abort-insensitive non-owner discovery completing after its owner replacement', async () => {
     let resolveOld!: (result: GrokModelCatalogDiscoveryResult) => void;
     let resolveOwner!: (result: GrokModelCatalogDiscoveryResult) => void;

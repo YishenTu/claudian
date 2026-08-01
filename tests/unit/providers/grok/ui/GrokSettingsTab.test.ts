@@ -73,7 +73,7 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
 }));
 jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
   ProviderWorkspaceRegistry: {
-    getServices: (_providerId: string) => mockGetServices(),
+    requireServices: (_providerId: string) => mockGetServices(),
   },
 }));
 jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
@@ -240,31 +240,15 @@ function makeCatalog() {
 }
 
 function createPlugin(): any {
-  const resetSession = jest.fn();
-  const runtime = { cleanup: jest.fn(), resetSession };
-  const conversation = {
-    providerId: 'grok',
-    providerState: { sessionDirectory: '/tmp/.grok/sessions/vault/session-1' },
-    sessionId: 'session-1',
-  };
   const plugin: any = {
-    conversation,
     getEnvironmentVariablesForScope: jest.fn(() => ''),
     mutateSettings: jest.fn(async (mutation: (settings: Record<string, unknown>) => void | Promise<void>) => {
       await mutation(plugin.settings);
     }),
-    mutateProviderSettingsAndRecycleRuntimes: jest.fn(async (
-      _providerId: string,
-      mutation: (settings: Record<string, unknown>) => void | Promise<void>,
-    ) => {
-      await plugin.mutateSettings(mutation);
-      mockCliResolverReset();
-      await plugin.recycleProviderRuntimes('grok');
-    }),
-    recycleProviderRuntimes: jest.fn(async () => {
-      runtime.cleanup();
-    }),
-    runtime,
+    runProviderExecutionTransition: jest.fn(async (
+      _providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => mutation()),
     settings: {
       providerConfigs: {
         grok: {
@@ -327,8 +311,27 @@ describe('GrokSettingsTab', () => {
     mockedAccessSync.mockImplementation(() => undefined);
   });
 
-  it('enables Grok and refreshes the workspace-owned catalog without spawning from the UI', async () => {
+  it('commits Grok enablement inside a transition without creating metadata', async () => {
     const plugin = createPlugin();
+    plugin.settings.providerConfigs.grok.enabled = false;
+    let transitionActive = false;
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      _providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => {
+      transitionActive = true;
+      try {
+        return await mutation();
+      } finally {
+        transitionActive = false;
+      }
+    });
+    plugin.mutateSettings.mockImplementation(async (
+      mutation: (settings: Record<string, unknown>) => void | Promise<void>,
+    ) => {
+      expect(transitionActive).toBe(true);
+      await mutation(plugin.settings);
+    });
     const context = createContext(plugin);
     grokSettingsTabRenderer.render(createContainer(), context);
 
@@ -339,8 +342,29 @@ describe('GrokSettingsTab', () => {
     await enableSetting.toggleComponents[0].onChangeCallback?.(true);
 
     expect(plugin.settings.providerConfigs.grok.enabled).toBe(true);
-    expect(mockRefreshModelCatalog).toHaveBeenCalledTimes(1);
+    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
+      ['grok'],
+      expect.any(Function),
+    );
+    expect(mockRefreshModelCatalog).not.toHaveBeenCalled();
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('grok');
+  });
+
+  it('resynchronizes the Grok toggle when the enablement transition fails', async () => {
+    const plugin = createPlugin();
+    const transitionError = new Error('transition failed');
+    plugin.runProviderExecutionTransition.mockRejectedValueOnce(transitionError);
+    const context = createContext(plugin);
+    grokSettingsTabRenderer.render(createContainer(), context);
+    const toggle = findSetting('Enable Grok').toggleComponents[0];
+
+    await expect(toggle.onChangeCallback?.(false)).rejects.toBe(transitionError);
+
+    expect(toggle.value).toBe(true);
+    expect(plugin.settings.providerConfigs.grok.enabled).toBe(true);
+    expect(plugin.mutateSettings).not.toHaveBeenCalled();
+    expect(mockRefreshModelCatalog).not.toHaveBeenCalled();
+    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
   });
 
   it('validates an executable CLI file before persisting it', async () => {
@@ -363,7 +387,7 @@ describe('GrokSettingsTab', () => {
   it('restores CLI path closure and input state after a pre-commit write failure', async () => {
     const plugin = createPlugin();
     const writeError = new Error('write failed');
-    plugin.mutateProviderSettingsAndRecycleRuntimes.mockRejectedValueOnce(writeError);
+    plugin.mutateSettings.mockRejectedValueOnce(writeError);
     grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
     const input = findSetting('CLI path').textComponents[0];
 
@@ -376,8 +400,8 @@ describe('GrokSettingsTab', () => {
     input.inputEl.value = '/opt/grok';
     await expect(input.onChangeCallback?.('/opt/grok')).resolves.toBeUndefined();
 
-    expect(plugin.mutateProviderSettingsAndRecycleRuntimes).toHaveBeenCalledTimes(2);
-    expect(plugin.mutateSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledTimes(2);
+    expect(plugin.mutateSettings).toHaveBeenCalledTimes(2);
     expect(getGrokProviderSettings(plugin.settings).cliPathsByHost).toEqual({
       'device:current': '/opt/grok',
     });
@@ -386,7 +410,9 @@ describe('GrokSettingsTab', () => {
   it('keeps a committed CLI path after recycle failure and allows reverting it', async () => {
     const plugin = createPlugin();
     const recycleError = new Error('recycle failed');
-    plugin.recycleProviderRuntimes.mockRejectedValueOnce(recycleError);
+    mockCliResolverReset.mockImplementationOnce(() => {
+      throw recycleError;
+    });
     grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
     const input = findSetting('CLI path').textComponents[0];
 
@@ -401,9 +427,9 @@ describe('GrokSettingsTab', () => {
     input.inputEl.value = '';
     await expect(input.onChangeCallback?.('')).resolves.toBeUndefined();
 
-    expect(plugin.mutateProviderSettingsAndRecycleRuntimes).toHaveBeenCalledTimes(2);
+    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledTimes(2);
     expect(plugin.mutateSettings).toHaveBeenCalledTimes(2);
-    expect(plugin.recycleProviderRuntimes).toHaveBeenCalledTimes(2);
+    expect(mockCliResolverReset).toHaveBeenCalledTimes(2);
     expect(getGrokProviderSettings(plugin.settings).cliPathsByHost).toEqual({});
   });
 
@@ -417,26 +443,36 @@ describe('GrokSettingsTab', () => {
     expect(mockedExistsSync).not.toHaveBeenCalled();
   });
 
-  it('clears only the current catalog, resets resolution, and recycles without resetting the session', async () => {
+  it('clears the current catalog and resolver inside a provider execution transition', async () => {
     const plugin = createPlugin();
+    let transitionActive = false;
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      _providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => {
+      transitionActive = true;
+      try {
+        return await mutation();
+      } finally {
+        transitionActive = false;
+      }
+    });
+    plugin.mutateSettings.mockImplementation(async (
+      mutation: (settings: Record<string, unknown>) => void | Promise<void>,
+    ) => {
+      expect(transitionActive).toBe(true);
+      await mutation(plugin.settings);
+    });
     grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
 
     await findSetting('CLI path').textComponents[0].onChangeCallback?.('/opt/grok');
 
     expect(getGrokProviderSettings(plugin.settings).currentCatalog).toBeNull();
     expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
-    expect(plugin.mutateProviderSettingsAndRecycleRuntimes).toHaveBeenCalledWith(
-      'grok',
+    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
+      ['grok'],
       expect.any(Function),
     );
-    expect(plugin.recycleProviderRuntimes).toHaveBeenCalledWith('grok');
-    expect(plugin.runtime.cleanup).toHaveBeenCalledTimes(1);
-    expect(plugin.runtime.resetSession).not.toHaveBeenCalled();
-    expect(plugin.conversation).toEqual({
-      providerId: 'grok',
-      providerState: { sessionDirectory: '/tmp/.grok/sessions/vault/session-1' },
-      sessionId: 'session-1',
-    });
   });
 
   it('omits authentication and BYOK documentation sections', () => {

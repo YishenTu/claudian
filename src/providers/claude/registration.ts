@@ -1,16 +1,16 @@
 import { getProviderConfig } from '../../core/providers/providerConfig';
 import type { ProviderModule } from '../../core/providers/types';
+import { parseEnvironmentVariables } from '../../utils/env';
 import {
   claudeWorkspaceRegistration,
   getClaudeWorkspaceServices,
 } from './app/ClaudeWorkspaceServices';
-import { ClaudeInlineEditBackend } from './auxiliary/ClaudeInlineEditBackend';
-import { ClaudeInstructionRefineBackend } from './auxiliary/ClaudeInstructionRefineBackend';
-import { ClaudeTitleGenerationBackend } from './auxiliary/ClaudeTitleGenerationBackend';
 import { CLAUDE_PROVIDER_CAPABILITIES } from './capabilities';
 import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
+import { ClaudeExecutionBackend } from './execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from './history/ClaudeConversationHistoryService';
-import { ClaudianService as ClaudeChatRuntime } from './runtime/ClaudeChatRuntime';
+import { ClaudeSubagentHistoryService } from './history/ClaudeSubagentHistoryService';
+import { toClaudeRuntimeModelId } from './modelSelection';
 import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpreter';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
 import { claudeSubagentAdapter } from './subagentAdapter';
@@ -48,21 +48,21 @@ export const claudeProviderRegistration: ProviderModule = {
       return removedLegacy1MSettings;
     },
   },
-  createRuntime: ({ plugin }) => {
+  createExecutionBackend: (plugin) => {
     const workspace = getClaudeWorkspaceServices();
-    if (!workspace?.mcpManager) {
-      throw new Error('Claude workspace services are not initialized.');
-    }
-
-    return new ClaudeChatRuntime(plugin, {
-      mcpManager: workspace.mcpManager,
-      pluginManager: workspace.pluginManager,
-      agentManager: workspace.agentManager,
-    });
+    return new ClaudeExecutionBackend(plugin, workspace);
   },
-  createTitleGenerationBackend: (plugin) => new ClaudeTitleGenerationBackend(plugin),
-  createInstructionRefineBackend: (plugin) => new ClaudeInstructionRefineBackend(plugin),
-  createInlineEditBackend: (plugin) => new ClaudeInlineEditBackend(plugin),
+  createSubagentHistoryService: plugin => new ClaudeSubagentHistoryService(plugin),
+  resolveTitleGenerationModel: (plugin) => {
+    const titleModel = plugin.settings.titleGenerationModel;
+    if (titleModel && claudeChatUIConfig.ownsModel(titleModel, plugin.settings)) {
+      return toClaudeRuntimeModelId(titleModel);
+    }
+    const envVars = parseEnvironmentVariables(
+      plugin.getActiveEnvironmentVariables('claude'),
+    );
+    return envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL || 'claude-haiku-4-5';
+  },
   historyService: new ClaudeConversationHistoryService(),
   taskResultInterpreter: new ClaudeTaskResultInterpreter(),
   subagentAdapter: claudeSubagentAdapter,

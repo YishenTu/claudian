@@ -27,6 +27,54 @@ export interface ImageAttachment {
   source: 'file' | 'paste' | 'drop';
 }
 
+export interface ExecutionInputCurrentNoteSnapshot {
+  path: string;
+  content?: string;
+}
+
+export interface ExecutionInputCursorSnapshot {
+  beforeCursor: string;
+  afterCursor: string;
+  isInbetween: boolean;
+  line: number;
+  column: number;
+}
+
+export interface ExecutionInputEditorSnapshot {
+  notePath: string;
+  mode: 'selection' | 'cursor' | 'none';
+  selectedText?: string;
+  cursorContext?: ExecutionInputCursorSnapshot;
+  lineCount?: number;
+  startLine?: number;
+}
+
+export interface ExecutionInputBrowserSnapshot {
+  source: string;
+  selectedText: string;
+  title?: string;
+  url?: string;
+}
+
+export interface ExecutionInputCanvasSnapshot {
+  canvasPath: string;
+  nodeIds: string[];
+}
+
+export interface ExecutionInputContextSnapshot {
+  currentNote?: ExecutionInputCurrentNoteSnapshot;
+  editorSelection?: ExecutionInputEditorSnapshot | null;
+  browserSelection?: ExecutionInputBrowserSnapshot | null;
+  canvasSelection?: ExecutionInputCanvasSnapshot | null;
+}
+
+/** Canonical feature-owned input, before provider-native prompt formatting. */
+export interface ExecutionInputSnapshot {
+  schemaVersion: 1;
+  canonicalText: string;
+  context?: ExecutionInputContextSnapshot;
+}
+
 /** Content block for preserving streaming order in messages. */
 export type ContentBlock =
   | { type: 'text'; content: string }
@@ -47,6 +95,8 @@ export interface ChatMessage {
   contentBlocks?: ContentBlock[];
   currentNote?: string;
   images?: ImageAttachment[];
+  /** Canonical submitted input correlated from Claudian-owned persistence. */
+  executionInput?: ExecutionInputSnapshot;
   /** True if this message represents a user interrupt (from SDK storage). */
   isInterrupt?: boolean;
   /** True if this message is rebuilt context sent to SDK on session reset (should be hidden). */
@@ -59,6 +109,12 @@ export interface ChatMessage {
   userMessageId?: string;
   /** Provider-native assistant message identifier used for rewind/fork checkpoints. */
   assistantMessageId?: string;
+}
+
+export function isCanonicalUserMessage(message: ChatMessage): boolean {
+  return message.role === 'user'
+    && !message.isInterrupt
+    && !message.isRebuiltContext;
 }
 
 /** Persisted conversation with messages and session state. */

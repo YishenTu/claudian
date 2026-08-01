@@ -1,7 +1,10 @@
 import { Readable, Writable } from 'stream';
 
 import type { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
-import { CodexRpcTransport } from '@/providers/codex/runtime/CodexRpcTransport';
+import {
+  CodexRpcResponseError,
+  CodexRpcTransport,
+} from '@/providers/codex/runtime/CodexRpcTransport';
 
 function createMockServerProcess(): CodexAppServerProcess & {
   _stdout: Readable;
@@ -77,9 +80,23 @@ describe('CodexRpcTransport', () => {
       const promise = transport.request('thread/start', {});
 
       const sent = JSON.parse(proc._written[0]);
-      proc._pushLine({ jsonrpc: '2.0', id: sent.id, error: { code: -32600, message: 'Invalid request' } });
+      proc._pushLine({
+        jsonrpc: '2.0',
+        id: sent.id,
+        error: {
+          code: -32600,
+          message: 'Invalid request',
+          data: { reason: 'not-active' },
+        },
+      });
 
-      await expect(promise).rejects.toThrow('Invalid request');
+      await expect(promise).rejects.toEqual(expect.objectContaining({
+        name: 'CodexRpcResponseError',
+        code: -32600,
+        data: { reason: 'not-active' },
+        message: 'Invalid request',
+      }));
+      await expect(promise).rejects.toBeInstanceOf(CodexRpcResponseError);
     });
 
     it('correlates multiple concurrent requests correctly', async () => {

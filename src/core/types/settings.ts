@@ -62,13 +62,29 @@ export const CHAT_VIEW_PLACEMENTS = [
 /** Workspace location used when opening the Claudian chat view. */
 export type ChatViewPlacement = typeof CHAT_VIEW_PLACEMENTS[number];
 
-/** Result from instruction refinement agent query. */
-export interface InstructionRefineResult {
+/** Forced provider transition invalidated a parked auxiliary continuation. */
+export interface AuxiliaryContinuityReset {
+  success: false;
+  resetRequired: true;
+  error: string;
+  refinedInstruction?: never;
+  editedText?: never;
+  insertedText?: never;
+  clarification?: never;
+}
+
+/** Ordinary result from an instruction refinement agent query. */
+export interface InstructionRefineOutcome {
   success: boolean;
+  resetRequired?: false;
   refinedInstruction?: string;  // The refined instruction text
   clarification?: string;       // Agent's clarifying question (if any)
   error?: string;               // Error message (if failed)
 }
+
+export type InstructionRefineResult =
+  | InstructionRefineOutcome
+  | AuxiliaryContinuityReset;
 
 /** Permission mode for tool execution. */
 export type PermissionMode = 'yolo' | 'plan' | 'normal';

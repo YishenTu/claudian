@@ -54,7 +54,7 @@ function listedSkillToProviderEntry(skill: SkillMetadata): ProviderCommandEntry 
 export class CodexSkillCatalog implements ProviderCommandCatalog {
   constructor(private listProvider: CodexSkillListProvider) {}
 
-  setRuntimeCommands(_commands: SlashCommand[]): void {
+  setCommandSnapshot(_commands: SlashCommand[]): void {
     // Codex dropdown entries come from app-server metadata; runtime commands are ignored.
   }
 

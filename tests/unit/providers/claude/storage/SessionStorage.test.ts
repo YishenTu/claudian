@@ -1,5 +1,6 @@
 import '@/providers';
 
+import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderId } from '@/core/providers/types';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
@@ -13,6 +14,20 @@ import {
 describe('SessionStorage', () => {
   let mockAdapter: jest.Mocked<VaultFileAdapter>;
   let storage: SessionStorage;
+
+  function toSessionMetadata(conversation: Conversation): SessionMetadata {
+    const repository = new ConversationRepository({
+      getSettings: () => ({}),
+      getVaultPath: () => '/vault',
+      persistence: {} as never,
+      onConversationDeleted: jest.fn(),
+    });
+    return (
+      repository as unknown as {
+        toSessionMetadata(value: Conversation): SessionMetadata;
+      }
+    ).toSessionMetadata(conversation);
+  }
 
   beforeEach(() => {
     mockAdapter = {
@@ -46,66 +61,6 @@ describe('SessionStorage', () => {
     );
   });
 
-  describe('saveMetadata', () => {
-    it('serializes metadata to JSON and writes to file', async () => {
-      const metadata: SessionMetadata = {
-        id: 'session-456',
-        title: 'Test Session',
-        createdAt: 1700000000,
-        updatedAt: 1700001000,
-        lastResponseAt: 1700000900,
-        currentNote: 'notes/test.md',
-        titleGenerationStatus: 'success',
-      };
-
-      await storage.saveMetadata(metadata);
-
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        '.claudian/sessions/session-456.meta.json',
-        expect.any(String)
-      );
-
-      const writtenContent = mockAdapter.write.mock.calls[0][1];
-      const parsed = JSON.parse(writtenContent);
-
-      expect(parsed.id).toBe('session-456');
-      expect(parsed.title).toBe('Test Session');
-      expect(parsed.lastResponseAt).toBe(1700000900);
-      expect(parsed.titleGenerationStatus).toBe('success');
-    });
-
-    it('preserves all optional fields', async () => {
-      const usage: UsageInfo = {
-        model: 'claude-sonnet-4-5',
-        inputTokens: 1000,
-        cacheCreationInputTokens: 500,
-        cacheReadInputTokens: 200,
-        contextWindow: 200000,
-        contextTokens: 1700,
-        percentage: 1,
-      };
-
-      const metadata: SessionMetadata = {
-        id: 'session-full',
-        title: 'Full Test',
-        createdAt: 1700000000,
-        updatedAt: 1700001000,
-        externalContextPaths: ['/path/to/external'],
-        enabledMcpServers: ['server1', 'server2'],
-        usage,
-      };
-
-      await storage.saveMetadata(metadata);
-
-      const writtenContent = mockAdapter.write.mock.calls[0][1];
-      const parsed = JSON.parse(writtenContent);
-
-      expect(parsed.externalContextPaths).toEqual(['/path/to/external']);
-      expect(parsed.enabledMcpServers).toEqual(['server1', 'server2']);
-      expect(parsed.usage).toEqual(usage);
-    });
-  });
-
   describe('loadMetadata', () => {
     it('returns null if file does not exist', async () => {
       mockAdapter.exists.mockResolvedValue(false);
@@ -115,7 +70,7 @@ describe('SessionStorage', () => {
       expect(result).toBeNull();
     });
 
-    it('loads legacy metadata and migrates it to .claudian', async () => {
+    it('loads legacy metadata without migrating during the read', async () => {
       const metadata = {
         id: 'session-legacy',
         title: 'Legacy Session',
@@ -131,13 +86,8 @@ describe('SessionStorage', () => {
       const result = await storage.loadMetadata('session-legacy');
 
       expect(result).toEqual(metadata);
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        '.claudian/sessions/session-legacy.meta.json',
-        expect.any(String),
-      );
-      expect(mockAdapter.delete).toHaveBeenCalledWith(
-        '.claude/sessions/session-legacy.meta.json',
-      );
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+      expect(mockAdapter.delete).not.toHaveBeenCalled();
     });
 
     it('keeps valid legacy metadata visible when migration fails', async () => {
@@ -183,7 +133,9 @@ describe('SessionStorage', () => {
         titleGenerationStatus: 'pending',
       };
 
-      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        !path.endsWith('.deleted.json')
+      ));
       mockAdapter.read.mockResolvedValue(JSON.stringify(metadata));
 
       const result = await storage.loadMetadata('session-abc');
@@ -200,7 +152,9 @@ describe('SessionStorage', () => {
         updatedAt: 1700001000,
       };
 
-      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        !path.endsWith('.deleted.json')
+      ));
       mockAdapter.read.mockResolvedValue(JSON.stringify(metadata));
 
       const result = await storage.loadMetadata('session-codex');
@@ -209,7 +163,9 @@ describe('SessionStorage', () => {
     });
 
     it('returns null on parse error', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        !path.endsWith('.deleted.json')
+      ));
       mockAdapter.read.mockResolvedValue('invalid json');
 
       const result = await storage.loadMetadata('session-bad');
@@ -218,7 +174,9 @@ describe('SessionStorage', () => {
     });
 
     it('returns null on read error', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        !path.endsWith('.deleted.json')
+      ));
       mockAdapter.read.mockRejectedValue(new Error('Read error'));
 
       const result = await storage.loadMetadata('session-error');
@@ -281,74 +239,6 @@ describe('SessionStorage', () => {
 
       expect(metas).toHaveLength(1);
       expect(metas[0].providerId).toBe('claude');
-    });
-  });
-
-  describe('toSessionMetadata - round trip', () => {
-    it('round-trips providerState through save and load', async () => {
-      const conversation: Conversation = {
-        id: 'conv-roundtrip',
-        providerId: 'claude' as ProviderId,
-        title: 'Round Trip Test',
-        createdAt: 1700000000,
-        updatedAt: 1700001000,
-        sessionId: 'sdk-session',
-        providerState: {
-          providerSessionId: 'active-session',
-          forkSource: { sessionId: 'parent', resumeAt: 'uuid-456' },
-        },
-        messages: [],
-      };
-
-      const metadata = storage.toSessionMetadata(conversation);
-      await storage.saveMetadata(metadata);
-
-      // Simulate loading back what was saved
-      const writtenContent = mockAdapter.write.mock.calls[0][1];
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(writtenContent);
-
-      const loaded = await storage.loadMetadata('conv-roundtrip');
-
-      expect(loaded!.providerId).toBe('claude');
-      expect((loaded!.providerState as any)?.providerSessionId).toBe('active-session');
-      expect((loaded!.providerState as any)?.forkSource).toEqual({
-        sessionId: 'parent',
-        resumeAt: 'uuid-456',
-      });
-    });
-
-    it('round-trips non-Claude providerId', async () => {
-      const conversation: Conversation = {
-        id: 'conv-codex-rt',
-        providerId: 'codex' as ProviderId,
-        title: 'Codex Round Trip',
-        createdAt: 1700000000,
-        updatedAt: 1700001000,
-        sessionId: 'codex-session',
-        providerState: { codexSpecific: 'data' },
-        messages: [],
-      };
-
-      const metadata = storage.toSessionMetadata(conversation);
-      await storage.saveMetadata(metadata);
-
-      const writtenContent = mockAdapter.write.mock.calls[0][1];
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(writtenContent);
-
-      const loaded = await storage.loadMetadata('conv-codex-rt');
-
-      expect(loaded!.providerId).toBe('codex');
-      expect((loaded!.providerState as any)?.codexSpecific).toBe('data');
-    });
-  });
-
-  describe('deleteMetadata', () => {
-    it('deletes the meta.json file', async () => {
-      await storage.deleteMetadata('session-del');
-
-      expect(mockAdapter.delete).toHaveBeenCalledWith('.claudian/sessions/session-del.meta.json');
     });
   });
 
@@ -479,7 +369,7 @@ describe('SessionStorage', () => {
       });
     });
 
-    it('keeps valid legacy metadata visible when best-effort migration fails', async () => {
+    it('keeps valid legacy metadata visible without migration writes', async () => {
       mockAdapter.listFiles.mockImplementation(async (path: string) => (
         path === LEGACY_SESSIONS_PATH
           ? [`${LEGACY_SESSIONS_PATH}/legacy.meta.json`]
@@ -496,6 +386,7 @@ describe('SessionStorage', () => {
       await expect(storage.listMetadata()).resolves.toEqual([
         expect.objectContaining({ id: 'legacy', title: 'Legacy session' }),
       ]);
+      expect(mockAdapter.write).not.toHaveBeenCalled();
       expect(mockAdapter.delete).not.toHaveBeenCalled();
     });
 
@@ -688,7 +579,7 @@ describe('SessionStorage', () => {
         ],
       };
 
-      const metadata = storage.toSessionMetadata(conversation);
+      const metadata = toSessionMetadata(conversation);
 
       expect((metadata.providerState as any)?.subagentData).toBeDefined();
       expect((metadata.providerState as any)?.subagentData['task-1']).toEqual(expect.objectContaining({
@@ -712,7 +603,7 @@ describe('SessionStorage', () => {
         ],
       };
 
-      const metadata = storage.toSessionMetadata(conversation);
+      const metadata = toSessionMetadata(conversation);
 
       expect((metadata.providerState as any)?.subagentData).toBeUndefined();
     });
@@ -744,7 +635,7 @@ describe('SessionStorage', () => {
         ],
       };
 
-      const metadata = storage.toSessionMetadata(conversation);
+      const metadata = toSessionMetadata(conversation);
 
       expect((metadata.providerState as any)?.subagentData).toBeUndefined();
     });
@@ -763,7 +654,7 @@ describe('SessionStorage', () => {
         resumeAtMessageId: 'assistant-uuid-123',
       };
 
-      const metadata = storage.toSessionMetadata(conversation);
+      const metadata = toSessionMetadata(conversation);
 
       expect(metadata.resumeAtMessageId).toBe('assistant-uuid-123');
     });
@@ -779,7 +670,7 @@ describe('SessionStorage', () => {
         messages: [],
       };
 
-      const metadata = storage.toSessionMetadata(conversation);
+      const metadata = toSessionMetadata(conversation);
 
       expect(metadata.resumeAtMessageId).toBeUndefined();
     });
@@ -800,7 +691,7 @@ describe('SessionStorage', () => {
         providerState: { untrustedPath: '/outside/root/session.jsonl' },
       };
 
-      expect(storage.toSessionMetadata(conversation).providerState).toBeUndefined();
+      expect(toSessionMetadata(conversation).providerState).toBeUndefined();
       sanitizer.mockRestore();
     });
 
@@ -834,7 +725,7 @@ describe('SessionStorage', () => {
         titleGenerationStatus: 'success',
       };
 
-      const metadata = storage.toSessionMetadata(conversation);
+      const metadata = toSessionMetadata(conversation);
 
       expect(metadata.id).toBe('conv-convert');
       expect(metadata.title).toBe('Convert Test');
@@ -865,7 +756,7 @@ describe('SessionStorage', () => {
         providerState: { forkSource: { sessionId: 'source-session-abc', resumeAt: 'asst-uuid-xyz' } },
       };
 
-      const metadata = storage.toSessionMetadata(conversation);
+      const metadata = toSessionMetadata(conversation);
 
       expect((metadata.providerState as any)?.forkSource).toEqual({
         sessionId: 'source-session-abc',
@@ -884,7 +775,7 @@ describe('SessionStorage', () => {
         messages: [],
       };
 
-      const metadata = storage.toSessionMetadata(conversation);
+      const metadata = toSessionMetadata(conversation);
 
       expect((metadata.providerState as any)?.forkSource).toBeUndefined();
     });

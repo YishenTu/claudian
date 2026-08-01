@@ -1,6 +1,11 @@
 import { TFile } from 'obsidian';
 
+import type {
+  ProviderBackgroundOutputEvent,
+  ProviderExecutionEvent,
+} from '../../../core/execution';
 import { resolveConversationModel } from '../../../core/providers/conversationModel';
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
@@ -8,8 +13,6 @@ import {
   type ProviderSubagentAdapter,
   type ProviderSubagentLifecycleAdapter,
 } from '../../../core/providers/types';
-import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
-import type { AsyncSubagentCompletion } from '../../../core/runtime/types';
 import { parseTodoInput } from '../../../core/tools/todo';
 import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import {
@@ -74,6 +77,7 @@ import {
   updateWriteEditWithDiff,
 } from '../rendering/WriteEditRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
+import type { AsyncSubagentCompletion } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { FileContextManager } from '../ui/FileContext';
 import { StreamingRenderCoordinator } from './StreamingRenderCoordinator';
@@ -86,10 +90,22 @@ export interface StreamControllerDeps {
   getMessagesEl: () => HTMLElement;
   getFileContextManager: () => FileContextManager | null;
   updateQueueIndicator: () => void;
-  /** Get the agent service from the tab. */
-  getAgentService?: () => ChatRuntime | null;
+  getProviderId?: () => ProviderId;
+  getProviderSessionId?: () => string | null;
+  loadSubagentToolCalls?: (
+    request: SubagentHistoryRecoveryRequest,
+  ) => Promise<ToolCallInfo[] | undefined>;
+  loadSubagentFinalResult?: (
+    request: SubagentHistoryRecoveryRequest,
+  ) => Promise<string | null | undefined>;
   enqueueBackgroundWork?: (work: () => Promise<void>) => Promise<void> | null;
   persistConversation?: () => Promise<void>;
+}
+
+export interface SubagentHistoryRecoveryRequest {
+  readonly providerId: ProviderId;
+  readonly providerSessionId: string;
+  readonly subagentId: string;
 }
 
 interface StreamingContentSnapshot {
@@ -101,7 +117,11 @@ interface StreamingContentSnapshot {
 const STREAMING_RENDER_MIN_INTERVAL_MS = 150;
 
 export class StreamController {
-  private static readonly ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS = [200, 600, 1500] as const;
+  private static readonly ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS = [
+    200,
+    600,
+    1500,
+  ] as const;
 
   private deps: StreamControllerDeps;
   private readonly textRenderCoordinator: StreamingRenderCoordinator<StreamingContentSnapshot>;
@@ -151,7 +171,7 @@ export class StreamController {
   }
 
   private getActiveProviderId(): ProviderId {
-    return this.deps.getAgentService?.()?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
+    return this.deps.getProviderId?.() ?? DEFAULT_CHAT_PROVIDER_ID;
   }
 
   private getSubagentAdapter(toolName?: string): ProviderSubagentAdapter | null {
@@ -267,7 +287,7 @@ export class StreamController {
 
       case 'usage': {
         // Skip usage updates from other sessions or when flagged (during session reset)
-        const currentSessionId = this.deps.getAgentService?.()?.getSessionId() ?? null;
+        const currentSessionId = this.deps.getProviderSessionId?.() ?? null;
         const chunkSessionId = chunk.sessionId ?? null;
         if (
           (chunkSessionId && currentSessionId && chunkSessionId !== currentSessionId) ||
@@ -474,17 +494,7 @@ export class StreamController {
       ).model;
     }
 
-    const service = this.deps.getAgentService?.();
-    const serviceModel = service?.getAuxiliaryModel?.();
-    if (serviceModel) {
-      return serviceModel;
-    }
-
-    const providerId = service?.providerId;
-    if (!providerId) {
-      return undefined;
-    }
-
+    const providerId = this.getActiveProviderId();
     const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
       this.deps.plugin.settings,
       providerId,
@@ -510,7 +520,9 @@ export class StreamController {
     const filePath = input.file_path as string | undefined;
     if (!filePath) return;
 
-    const planPathPrefix = this.deps.getAgentService?.()?.getCapabilities().planPathPrefix;
+    const planPathPrefix = ProviderRegistry.getCapabilities(
+      this.getActiveProviderId(),
+    ).planPathPrefix;
     if (planPathPrefix && filePath.replace(/\\/g, '/').includes(planPathPrefix)) {
       this.deps.state.planFilePath = filePath;
     }
@@ -1369,7 +1381,9 @@ export class StreamController {
     }
 
     subagentManager.handleTaskToolResult(chunk.id, chunk.content, chunk.isError, chunk.toolUseResult);
-    await this.hydrateAsyncSubagentToolCalls(subagentManager.getByTaskId(chunk.id));
+    await this.hydrateAsyncSubagentHistory(
+      subagentManager.getByTaskId(chunk.id),
+    );
     return true;
   }
 
@@ -1387,7 +1401,7 @@ export class StreamController {
       chunk.toolUseResult
     );
 
-    await this.hydrateAsyncSubagentToolCalls(handled);
+    await this.hydrateAsyncSubagentHistory(handled);
 
     return isLinked || handled !== undefined;
   }
@@ -1396,62 +1410,95 @@ export class StreamController {
     completion: AsyncSubagentCompletion,
   ): Promise<boolean> {
     const handled = this.deps.subagentManager.handleAsyncSubagentCompletion(completion);
-
-    await this.hydrateAsyncSubagentToolCalls(handled, completion.providerSessionId);
+    await this.hydrateAsyncSubagentHistory(
+      handled,
+      completion.providerSessionId,
+    );
     if (handled) {
       this.showThinkingIndicator();
     }
     return handled !== undefined;
   }
 
-  private async hydrateAsyncSubagentToolCalls(
+  private async hydrateAsyncSubagentHistory(
     subagent: SubagentInfo | undefined,
     providerSessionId?: string,
   ): Promise<void> {
-    if (!subagent) return;
-    if (subagent.mode !== 'async') return;
-    if (!subagent.agentId) return;
+    if (!this.canRecoverAsyncSubagent(subagent)) return;
+    if (
+      !this.deps.loadSubagentToolCalls
+      && !this.deps.loadSubagentFinalResult
+    ) return;
 
-    const asyncStatus = subagent.asyncStatus ?? subagent.status;
-    if (asyncStatus !== 'completed' && asyncStatus !== 'error') return;
+    const providerId = this.getActiveProviderId();
+    const ownerSessionId = providerSessionId
+      ?? this.deps.getProviderSessionId?.()
+      ?? null;
+    if (
+      !ownerSessionId
+      || !this.ownsAsyncSubagent(
+        subagent,
+        providerId,
+        ownerSessionId,
+      )
+    ) return;
 
-    const runtime = this.deps.getAgentService?.();
-    if (!runtime) return;
-    const ownerSessionId = providerSessionId ?? runtime.getSessionId();
-    if (!ownerSessionId || !this.ownsAsyncSubagent(subagent, runtime, ownerSessionId)) return;
-
-    const { hasHydrated, finalResultHydrated, isCurrent } = await this.tryHydrateAsyncSubagent(
+    const result = await this.tryHydrateAsyncSubagent(
       subagent,
-      runtime,
+      providerId,
       ownerSessionId,
-      true
+      true,
     );
-    if (!isCurrent) return;
-
-    if (hasHydrated) {
+    if (!result.isCurrent) return;
+    if (result.hasHydrated) {
       this.deps.subagentManager.refreshAsyncSubagent(subagent);
     }
-
-    if (!finalResultHydrated) {
-      this.scheduleAsyncSubagentResultRetry(subagent, runtime, ownerSessionId, 0);
+    if (!result.finalResultHydrated) {
+      this.scheduleAsyncSubagentResultRetry(
+        subagent,
+        providerId,
+        ownerSessionId,
+        0,
+      );
     }
   }
 
   private async tryHydrateAsyncSubagent(
     subagent: SubagentInfo,
-    runtime: ChatRuntime,
+    providerId: ProviderId,
     providerSessionId: string,
-    hydrateToolCalls: boolean
-  ): Promise<{ hasHydrated: boolean; finalResultHydrated: boolean; isCurrent: boolean }> {
+    hydrateToolCalls: boolean,
+  ): Promise<{
+    finalResultHydrated: boolean;
+    hasHydrated: boolean;
+    isCurrent: boolean;
+  }> {
+    const request: SubagentHistoryRecoveryRequest = {
+      providerId,
+      providerSessionId,
+      subagentId: subagent.agentId ?? '',
+    };
     let hasHydrated = false;
-    let finalResultHydrated = false;
 
-    if (hydrateToolCalls && !subagent.toolCalls?.length) {
-      const recoveredToolCalls = await runtime.loadSubagentToolCalls?.(
-        subagent.agentId || ''
-      ) ?? [];
-      if (!this.ownsAsyncSubagent(subagent, runtime, providerSessionId)) {
-        return { hasHydrated: false, finalResultHydrated: false, isCurrent: false };
+    if (
+      hydrateToolCalls
+      && !subagent.toolCalls?.length
+      && this.deps.loadSubagentToolCalls
+    ) {
+      const recoveredToolCalls = await this.deps.loadSubagentToolCalls(request);
+      if (!this.ownsAsyncSubagent(subagent, providerId, providerSessionId)) {
+        return {
+          finalResultHydrated: false,
+          hasHydrated: false,
+          isCurrent: false,
+        };
+      }
+      if (recoveredToolCalls === undefined) {
+        return {
+          finalResultHydrated: true,
+          hasHydrated: false,
+          isCurrent: true,
+        };
       }
       if (recoveredToolCalls.length > 0) {
         subagent.toolCalls = recoveredToolCalls.map((toolCall) => ({
@@ -1462,47 +1509,64 @@ export class StreamController {
       }
     }
 
-    const recoveredFinalResult = await runtime.loadSubagentFinalResult?.(
-      subagent.agentId || ''
-    ) ?? null;
-    if (!this.ownsAsyncSubagent(subagent, runtime, providerSessionId)) {
-      return { hasHydrated: false, finalResultHydrated: false, isCurrent: false };
+    if (!this.deps.loadSubagentFinalResult) {
+      return { finalResultHydrated: true, hasHydrated, isCurrent: true };
     }
-    if (recoveredFinalResult && recoveredFinalResult.trim().length > 0) {
-      finalResultHydrated = true;
-      if (recoveredFinalResult !== subagent.result) {
-        subagent.result = recoveredFinalResult;
-        hasHydrated = true;
-      }
+    const recoveredFinalResult = await this.deps.loadSubagentFinalResult(request);
+    if (!this.ownsAsyncSubagent(subagent, providerId, providerSessionId)) {
+      return {
+        finalResultHydrated: false,
+        hasHydrated: false,
+        isCurrent: false,
+      };
     }
+    if (recoveredFinalResult === undefined) {
+      return { finalResultHydrated: true, hasHydrated, isCurrent: true };
+    }
+    const finalResultHydrated = Boolean(recoveredFinalResult?.trim());
+    if (finalResultHydrated && recoveredFinalResult !== subagent.result) {
+      subagent.result = recoveredFinalResult ?? undefined;
+      hasHydrated = true;
+    }
+    return { finalResultHydrated, hasHydrated, isCurrent: true };
+  }
 
-    return { hasHydrated, finalResultHydrated, isCurrent: true };
+  private canRecoverAsyncSubagent(
+    subagent: SubagentInfo | undefined,
+  ): subagent is SubagentInfo & { agentId: string } {
+    if (!subagent || subagent.mode !== 'async' || !subagent.agentId) return false;
+    const status = subagent.asyncStatus ?? subagent.status;
+    return status === 'completed' || status === 'error';
   }
 
   private ownsAsyncSubagent(
     subagent: SubagentInfo,
-    runtime: ChatRuntime,
+    providerId: ProviderId,
     providerSessionId: string,
   ): boolean {
-    return this.deps.getAgentService?.() === runtime
-      && runtime.getSessionId() === providerSessionId
+    return this.getActiveProviderId() === providerId
+      && this.deps.getProviderSessionId?.() === providerSessionId
       && this.deps.subagentManager.getByTaskId(subagent.id) === subagent;
   }
 
   private scheduleAsyncSubagentResultRetry(
     subagent: SubagentInfo,
-    runtime: ChatRuntime,
+    providerId: ProviderId,
     providerSessionId: string,
-    attempt: number
+    attempt: number,
   ): void {
-    if (!subagent.agentId) return;
-    if (attempt >= StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS.length) return;
+    if (
+      !subagent.agentId
+      || attempt >= StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS.length
+    ) return;
 
     const delay = StreamController.ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS[attempt];
-    window.setTimeout(() => {
+    const ownerWindow = this.deps.getMessagesEl().ownerDocument.defaultView
+      ?? window;
+    ownerWindow.setTimeout(() => {
       const work = () => this.retryAsyncSubagentResult(
         subagent,
-        runtime,
+        providerId,
         providerSessionId,
         attempt,
       );
@@ -1515,31 +1579,30 @@ export class StreamController {
 
   private async retryAsyncSubagentResult(
     subagent: SubagentInfo,
-    runtime: ChatRuntime,
+    providerId: ProviderId,
     providerSessionId: string,
-    attempt: number
+    attempt: number,
   ): Promise<void> {
-    if (!subagent.agentId) return;
-    if (!this.ownsAsyncSubagent(subagent, runtime, providerSessionId)) return;
-    const asyncStatus = subagent.asyncStatus ?? subagent.status;
-    if (asyncStatus !== 'completed' && asyncStatus !== 'error') return;
+    if (
+      !this.canRecoverAsyncSubagent(subagent)
+      || !this.ownsAsyncSubagent(subagent, providerId, providerSessionId)
+    ) return;
 
-    const { hasHydrated, finalResultHydrated, isCurrent } = await this.tryHydrateAsyncSubagent(
+    const result = await this.tryHydrateAsyncSubagent(
       subagent,
-      runtime,
+      providerId,
       providerSessionId,
-      false
+      false,
     );
-    if (!isCurrent) return;
-    if (hasHydrated) {
+    if (!result.isCurrent) return;
+    if (result.hasHydrated) {
       this.deps.subagentManager.refreshAsyncSubagent(subagent);
       await this.deps.persistConversation?.();
     }
-
-    if (!finalResultHydrated) {
+    if (!result.finalResultHydrated) {
       this.scheduleAsyncSubagentResultRetry(
         subagent,
-        runtime,
+        providerId,
         providerSessionId,
         attempt + 1,
       );
@@ -1886,6 +1949,64 @@ export class StreamController {
     this.thinkingRenderCoordinator.dispose();
     this.cancelPendingToolOutputRenders();
     this.cancelPendingScroll();
+  }
+}
+
+export function providerOutputEventToStreamChunk(
+  event: ProviderExecutionEvent | ProviderBackgroundOutputEvent,
+): StreamChunk | null {
+  switch (event.type) {
+    case 'text_delta':
+      return { content: event.text, type: 'text' };
+    case 'thinking_delta':
+      return { content: event.text, type: 'thinking' };
+    case 'tool_started':
+      return event.toolScope.kind === 'subagent'
+        ? {
+          id: event.toolCallId,
+          input: { ...event.input },
+          name: event.name,
+          subagentId: event.toolScope.subagentId,
+          type: 'subagent_tool_use',
+        }
+        : {
+          id: event.toolCallId,
+          input: { ...event.input },
+          name: event.name,
+          ...(event.providerPayload ? { providerPayload: event.providerPayload } : {}),
+          type: 'tool_use',
+        };
+    case 'tool_output':
+      return { content: event.content, id: event.toolCallId, type: 'tool_output' };
+    case 'tool_completed':
+      return event.toolScope.kind === 'subagent'
+        ? {
+          content: event.content ?? '',
+          id: event.toolCallId,
+          ...(event.isError !== undefined ? { isError: event.isError } : {}),
+          subagentId: event.toolScope.subagentId,
+          ...(event.toolUseResult ? { toolUseResult: event.toolUseResult } : {}),
+          type: 'subagent_tool_result',
+        }
+        : {
+          content: event.content ?? '',
+          id: event.toolCallId,
+          ...(event.isError !== undefined ? { isError: event.isError } : {}),
+          ...(event.toolUseResult ? { toolUseResult: event.toolUseResult } : {}),
+          type: 'tool_result',
+        };
+    case 'usage_updated':
+      return { type: 'usage', usage: event.usage };
+    case 'context_compacted':
+      return { type: 'context_compacted' };
+    case 'notice':
+      return {
+        content: event.message,
+        ...(event.level ? { level: event.level } : {}),
+        type: 'notice',
+      };
+    default:
+      return null;
   }
 }
 

@@ -57,6 +57,10 @@ export type AcpNormalizedUpdate =
   | {
     type: 'usage';
     usage: AcpUsageUpdate;
+  }
+  | {
+    type: 'unknown';
+    update: unknown;
   };
 
 export interface AcpToolCallSnapshot {
@@ -80,6 +84,17 @@ export class AcpSessionUpdateNormalizer {
   reset(): void {
     this.seenMessages.clear();
     this.toolCalls.clear();
+  }
+
+  normalizeUnknown(update: unknown): AcpNormalizedUpdate {
+    if (
+      !isPlainObject(update)
+      || typeof update.sessionUpdate !== 'string'
+      || !KNOWN_SESSION_UPDATES.has(update.sessionUpdate)
+    ) {
+      return { type: 'unknown', update };
+    }
+    return this.normalize(update as unknown as AcpSessionUpdate);
   }
 
   normalize(update: AcpSessionUpdate): AcpNormalizedUpdate {
@@ -257,6 +272,20 @@ export class AcpSessionUpdateNormalizer {
     return true;
   }
 }
+
+const KNOWN_SESSION_UPDATES = new Set([
+  'agent_message_chunk',
+  'agent_thought_chunk',
+  'available_commands_update',
+  'config_option_update',
+  'current_mode_update',
+  'plan',
+  'session_info_update',
+  'tool_call',
+  'tool_call_update',
+  'usage_update',
+  'user_message_chunk',
+]);
 
 export function normalizeAcpAvailableCommands(
   commands: readonly AcpAvailableCommand[],

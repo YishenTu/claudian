@@ -7,16 +7,15 @@ import type {
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
-import { GrokAuxiliaryLifecycleCoordinator } from '../auxiliary/GrokAuxiliaryLifecycleCoordinator';
 import { GrokCommandCatalog } from '../commands/GrokCommandCatalog';
 import { GrokCliResolver } from '../runtime/GrokCliResolver';
 import { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
 import { GrokModelCatalogService } from '../runtime/GrokModelCatalogService';
 import { grokSettingsTabRenderer } from '../ui/GrokSettingsTab';
-import { GrokRuntimeCommandLoader } from './GrokRuntimeCommandLoader';
+import { GrokCommandLoader } from './GrokCommandLoader';
+import { GrokCommandMetadataProbe } from './GrokCommandMetadataProbe';
 
 export interface GrokWorkspaceServices extends ProviderWorkspaceServices {
-  auxiliaryLifecycle: GrokAuxiliaryLifecycleCoordinator;
   cliResolver: GrokCliResolver;
   commandCatalog: ProviderCommandCatalog;
   modelCatalogCoordinator: GrokModelCatalogCoordinator;
@@ -27,40 +26,68 @@ export interface GrokWorkspaceServices extends ProviderWorkspaceServices {
   dispose(): Promise<void>;
 }
 
+export interface GrokWorkspaceServicesOptions {
+  readonly commandMetadataProbe?: GrokCommandMetadataProbe;
+}
+
 const grokTabWarmupPolicy: ProviderTabWarmupPolicy = {
   resolveMode() {
-    return 'none';
+    return 'commands';
   },
 };
 
 export async function createGrokWorkspaceServices(
   plugin: ProviderHost,
+  options: GrokWorkspaceServicesOptions = {},
 ): Promise<GrokWorkspaceServices> {
   const modelCatalogService = new GrokModelCatalogService(plugin);
-  const auxiliaryLifecycle = new GrokAuxiliaryLifecycleCoordinator();
   const modelCatalogCoordinator = new GrokModelCatalogCoordinator(
     plugin,
     modelCatalogService,
   );
+  const commandMetadataProbe = options.commandMetadataProbe
+    ?? new GrokCommandMetadataProbe(plugin);
+  const unregisterTransitionHook =
+    plugin.executionLifecycleRegistry.registerTransitionHook('grok', {
+      beforeTransition: async () => {
+        modelCatalogCoordinator.beginEnvironmentTransition();
+        commandMetadataProbe.beginEnvironmentTransition();
+        await Promise.all([
+          modelCatalogCoordinator.quiesceForEnvironmentChange(),
+          commandMetadataProbe.quiesceForEnvironmentChange(),
+        ]);
+      },
+      afterTransition: async () => {
+        try {
+          await Promise.all([
+            modelCatalogCoordinator.quiesceForEnvironmentChange(),
+            commandMetadataProbe.quiesceForEnvironmentChange(),
+          ]);
+        } finally {
+          modelCatalogCoordinator.endEnvironmentTransition();
+          commandMetadataProbe.endEnvironmentTransition();
+        }
+      },
+    });
 
   return {
-    auxiliaryLifecycle,
     cliResolver: new GrokCliResolver(),
     commandCatalog: new GrokCommandCatalog(),
     modelCatalogCoordinator,
-    runtimeCommandLoader: new GrokRuntimeCommandLoader(),
+    commandLoader: new GrokCommandLoader(commandMetadataProbe),
     settingsTabRenderer: grokSettingsTabRenderer,
     tabWarmupPolicy: grokTabWarmupPolicy,
     refreshModelCatalog: context => modelCatalogCoordinator.refreshModelCatalog(context),
-    beginAuxiliaryServicesEnvironmentChange: () => (
-      auxiliaryLifecycle.beginEnvironmentChange()
-    ),
     async prepareSettings() {
       await modelCatalogCoordinator.ensureFresh('settings');
     },
     async dispose() {
-      await auxiliaryLifecycle.dispose();
+      unregisterTransitionHook();
       modelCatalogCoordinator.dispose();
+      await Promise.all([
+        modelCatalogCoordinator.quiesceForEnvironmentChange(),
+        commandMetadataProbe.dispose(),
+      ]);
     },
   };
 }
@@ -71,11 +98,4 @@ export const grokWorkspaceRegistration: ProviderWorkspaceRegistration<GrokWorksp
 
 export function getGrokWorkspaceServices(): GrokWorkspaceServices {
   return ProviderWorkspaceRegistry.requireServices('grok') as GrokWorkspaceServices;
-}
-
-export async function resolveGrokAuxiliaryLifecycle(
-  plugin: ProviderHost,
-): Promise<GrokAuxiliaryLifecycleCoordinator> {
-  await ProviderWorkspaceRegistry.ensureInitialized(plugin, 'grok', 'auxiliary-query');
-  return getGrokWorkspaceServices().auxiliaryLifecycle;
 }

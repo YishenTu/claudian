@@ -1,6 +1,5 @@
 import type { EditorView } from '@codemirror/view';
 
-import type { ChatRuntimeQueryOptions, ChatTurnRequest } from '../../../core/runtime/types';
 import type { TodoItem } from '../../../core/tools/todo';
 import type {
   ChatMessage,
@@ -14,6 +13,17 @@ import type { CanvasSelectionContext } from '../../../utils/canvas';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import type { ThinkingBlockState } from '../rendering/ThinkingBlockRenderer';
 import type { WriteEditState } from '../rendering/WriteEditRenderer';
+
+export interface ChatTurnRequest {
+  text: string;
+  images?: ImageAttachment[];
+  currentNotePath?: string;
+  editorSelection?: EditorSelectionContext | null;
+  browserSelection?: BrowserSelectionContext | null;
+  canvasSelection?: CanvasSelectionContext | null;
+  externalContextPaths?: string[];
+  enabledMcpServers?: Set<string>;
+}
 
 /** Queued message waiting to be sent after current streaming completes. */
 export interface QueuedMessage {
@@ -123,9 +133,6 @@ export interface ChatStateCallbacks {
   onAttentionChanged?: (needsAttention: boolean) => void;
   onAutoScrollChanged?: (enabled: boolean) => void;
 }
-
-/** Options for query execution. */
-export type QueryOptions = ChatRuntimeQueryOptions;
 
 // Re-export types that are used across the chat feature
 export type {

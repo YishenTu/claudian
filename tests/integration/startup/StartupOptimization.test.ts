@@ -1,7 +1,8 @@
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { StartupProfiler } from '@/core/performance/StartupProfiler';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type { ProviderWorkspaceServices } from '@/core/providers/types';
+import type { ProviderId, ProviderWorkspaceServices } from '@/core/providers/types';
 import type { CodexDiscoveredModel } from '@/providers/codex/models';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import type {
@@ -25,6 +26,7 @@ function makeModel(model: string, displayName = model): CodexDiscoveredModel {
 }
 
 function createFakeHost(): ProviderHost {
+  const executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   return {
     app: {
       vault: { adapter: { basePath: '/vault' } },
@@ -32,6 +34,7 @@ function createFakeHost(): ProviderHost {
         onLayoutReady: jest.fn(),
       },
     },
+    executionLifecycleRegistry,
     settings: {
       providerConfigs: {
         codex: {
@@ -47,6 +50,12 @@ function createFakeHost(): ProviderHost {
     getResolvedProviderCliPath: jest.fn(() => '/usr/bin/codex'),
     getActiveEnvironmentVariables: jest.fn(() => 'OPENAI_API_KEY=test'),
     mutateSettingsConditionally: jest.fn(async () => false),
+    runProviderExecutionTransition: <T>(
+      providerIds: ProviderId[],
+      mutation: () => Promise<T>,
+    ) => (
+      executionLifecycleRegistry.runTransition(providerIds, mutation)
+    ),
   } as unknown as ProviderHost;
 }
 

@@ -1,12 +1,13 @@
 import type { ProviderModule } from '../../core/providers/types';
-import { piWorkspaceRegistration } from './app/PiWorkspaceServices';
+import {
+  getPiWorkspaceServices,
+  piWorkspaceRegistration,
+} from './app/PiWorkspaceServices';
 import { PiTaskResultInterpreter } from './auxiliary/PiTaskResultInterpreter';
-import { PiTitleGenerationBackend } from './auxiliary/PiTitleGenerationBackend';
 import { PI_PROVIDER_CAPABILITIES } from './capabilities';
 import { piSettingsReconciler } from './env/PiSettingsReconciler';
+import { PiExecutionBackend } from './execution/PiExecutionBackend';
 import { PiConversationHistoryService } from './history/PiConversationHistoryService';
-import { PiAuxQueryRunner } from './runtime/PiAuxQueryRunner';
-import { PiChatRuntime } from './runtime/PiChatRuntime';
 import { getPiProviderSettings, updatePiProviderSettings } from './settings';
 import { ObsidianPiExtensionUiRenderer } from './ui/ObsidianPiExtensionUiRenderer';
 import { piChatUIConfig } from './ui/PiChatUIConfig';
@@ -16,14 +17,18 @@ export const piProviderRegistration: ProviderModule = {
   blankTabOrder: 11,
   capabilities: PI_PROVIDER_CAPABILITIES,
   chatUIConfig: piChatUIConfig,
-  createInlineEditBackend: (plugin) => new PiAuxQueryRunner(plugin, { profile: 'readonly' }),
-  createInstructionRefineBackend: (plugin) => new PiAuxQueryRunner(plugin, {
-    profile: 'passive',
-  }),
-  createRuntime: ({ plugin }) => new PiChatRuntime(plugin, {
-    extensionUiRenderer: new ObsidianPiExtensionUiRenderer(plugin.app),
-  }),
-  createTitleGenerationBackend: (plugin) => new PiTitleGenerationBackend(plugin),
+  createExecutionBackend: (plugin) => new PiExecutionBackend(
+    plugin,
+    getPiWorkspaceServices(),
+    { extensionUiRenderer: new ObsidianPiExtensionUiRenderer(plugin.app) },
+  ),
+  resolveTitleGenerationModel: (plugin) => {
+    const settings = plugin.settings as unknown as Record<string, unknown>;
+    const titleModel = typeof settings.titleGenerationModel === 'string'
+      ? settings.titleGenerationModel
+      : '';
+    return piChatUIConfig.ownsModel(titleModel, settings) ? titleModel : undefined;
+  },
   displayName: 'Pi',
   environmentKeyPatterns: [/^PI_/i],
   historyService: new PiConversationHistoryService(),

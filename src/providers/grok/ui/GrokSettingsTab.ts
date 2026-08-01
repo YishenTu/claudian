@@ -8,7 +8,6 @@ import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorks
 import type {
   ProviderSettingsTabRenderer,
   ProviderSettingsTabRendererContext,
-  ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import type { ClaudianSettings } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
@@ -20,6 +19,7 @@ import {
 } from '../../../shared/settings/ProviderModelPicker';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
+import type { GrokWorkspaceServices } from '../app/GrokWorkspaceServices';
 import type { GrokDiscoveredModel } from '../models';
 import {
   clearCurrentGrokCatalog,
@@ -39,9 +39,6 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const workspace = getGrokWorkspaceServices();
 
     const refreshModelCatalog = async (): Promise<'empty' | 'failed' | 'loaded'> => {
-      if (!workspace?.refreshModelCatalog) {
-        return 'failed';
-      }
       const result = await workspace.refreshModelCatalog();
       if (result.diagnostics) {
         new Notice(`Grok model discovery failed: ${result.diagnostics}`);
@@ -61,15 +58,20 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       .addToggle(toggle => toggle
         .setValue(initialSettings.enabled)
         .onChange(async (enabled) => {
-          await context.plugin.mutateSettings((settings) => {
-            ProviderSettingsCoordinator.applyProviderEnablement(
-              settings,
-              GROK_PROVIDER_ID,
-              enabled,
+          try {
+            await context.plugin.runProviderExecutionTransition(
+              [GROK_PROVIDER_ID],
+              async () => context.plugin.mutateSettings((settings) => {
+                ProviderSettingsCoordinator.applyProviderEnablement(
+                  settings,
+                  GROK_PROVIDER_ID,
+                  enabled,
+                );
+              }),
             );
-          });
-          if (enabled) {
-            await refreshModelCatalog();
+          } catch (error) {
+            toggle.setValue(getGrokProviderSettings(settingsBag).enabled);
+            throw error;
           }
           context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
         }));
@@ -137,16 +139,13 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         clearCurrentGrokCatalog(settings);
       };
       try {
-        if (context.plugin.mutateProviderSettingsAndRecycleRuntimes) {
-          await context.plugin.mutateProviderSettingsAndRecycleRuntimes(
-            GROK_PROVIDER_ID,
-            mutation,
-          );
-        } else {
-          await context.plugin.mutateSettings(mutation);
-          workspace?.cliResolver?.reset();
-          await context.plugin.recycleProviderRuntimes?.(GROK_PROVIDER_ID);
-        }
+        await context.plugin.runProviderExecutionTransition(
+          [GROK_PROVIDER_ID],
+          async () => {
+            await context.plugin.mutateSettings(mutation);
+            workspace.cliResolver.reset();
+          },
+        );
       } catch (error) {
         resynchronizeCliPathState();
         throw error;
@@ -318,6 +317,6 @@ function validateCliPath(value: string): string | null {
   return null;
 }
 
-function getGrokWorkspaceServices(): ProviderWorkspaceServices | null {
-  return ProviderWorkspaceRegistry.getServices(GROK_PROVIDER_ID);
+function getGrokWorkspaceServices(): GrokWorkspaceServices {
+  return ProviderWorkspaceRegistry.requireServices(GROK_PROVIDER_ID) as GrokWorkspaceServices;
 }

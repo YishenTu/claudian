@@ -5,6 +5,8 @@ import type {
   ProviderUIOption,
 } from '../../../core/providers/types';
 import { OPENCODE_PROVIDER_ICON } from '../../../shared/icons';
+import { maybeGetOpencodeWorkspaceServices } from '../app/OpencodeWorkspaceServices';
+import { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
 import {
   buildOpencodeBaseModels,
   decodeOpencodeModelId,
@@ -18,11 +20,9 @@ import {
   resolveOpencodeModeForPermissionMode,
   resolvePermissionModeForManagedOpencodeMode,
 } from '../modes';
-import { OpencodeChatRuntime } from '../runtime/OpencodeChatRuntime';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '../settings';
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
-const OPENCODE_METADATA_WARMUP_DB = ':memory:';
 const OPENCODE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveValue: 'normal',
   inactiveLabel: 'Safe',
@@ -138,17 +138,15 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
       return;
     }
 
-    const runtime = new OpencodeChatRuntime(context.plugin);
+    const workspaceService = maybeGetOpencodeWorkspaceServices()?.metadataService;
+    const metadataService = workspaceService
+      ?? new OpencodeMetadataService(context.plugin);
     try {
-      runtime.syncConversationState({
-        providerState: { databasePath: OPENCODE_METADATA_WARMUP_DB },
-        sessionId: null,
-      });
-      await runtime.warmModelMetadata(model);
+      await metadataService.warmModelMetadata(model);
     } catch {
       // Metadata warmup is opportunistic; the first real turn can still discover it.
     } finally {
-      runtime.cleanup();
+      if (!workspaceService) await metadataService.dispose();
     }
   },
 

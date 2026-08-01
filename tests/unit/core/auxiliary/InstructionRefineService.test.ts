@@ -1,89 +1,110 @@
-import type { AuxQueryRunner } from '@/core/auxiliary/AuxQueryRunner';
 import { InstructionRefineService } from '@/core/auxiliary/InstructionRefineService';
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
+
+import {
+  FakeAuxiliaryBackend,
+  waitFor,
+} from './AuxiliaryExecutionTestHarness';
+
+function createService() {
+  const backend = new FakeAuxiliaryBackend();
+  const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
+  const service = new InstructionRefineService({
+    backend,
+    interactionPort: {
+      askUserQuestion: jest.fn(),
+      dismissInteraction: jest.fn(),
+      requestApproval: jest.fn(),
+      requestPlanDecision: jest.fn(),
+    },
+    lifecycleRegistry,
+    vaultWorkingDirectory: '/vault',
+  });
+  return { backend, lifecycleRegistry, service };
+}
 
 describe('InstructionRefineService', () => {
-  let service: InstructionRefineService;
-  let mockQuery: jest.Mock;
-  let mockReset: jest.Mock;
+  it('uses one passive ephemeral session for refinement and clarification', async () => {
+    const { backend, service } = createService();
+    service.setModelOverride('model-1');
+    const progress = jest.fn();
+    const first = service.refineInstruction('use ts', 'Existing', progress);
+    await waitFor(() => backend.sessions[0]?.requests.length === 1);
+    backend.sessions[0].emitText('Which language?');
+    backend.sessions[0].complete();
+    await expect(first).resolves.toMatchObject({
+      clarification: 'Which language?',
+      success: true,
+    });
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockQuery = jest.fn();
-    mockReset = jest.fn();
-    const backend = {
-      query: mockQuery,
-      reset: mockReset,
-    } as AuxQueryRunner;
+    const second = service.continueConversation('TypeScript');
+    await waitFor(() => backend.sessions[0]?.requests.length === 2);
+    backend.sessions[0].emitText('<instruction>Use TypeScript</instruction>');
+    backend.sessions[0].complete();
+    await expect(second).resolves.toMatchObject({
+      refinedInstruction: 'Use TypeScript',
+      success: true,
+    });
 
-    service = new InstructionRefineService(backend);
+    expect(backend.sessions).toHaveLength(1);
+    expect(backend.configs[0]).toMatchObject({
+      lifecycle: 'ephemeral',
+      nativePersistence: 'provider-default',
+    });
+    expect(backend.sessions[0].requests[0]).toMatchObject({
+      configuration: {
+        model: 'model-1',
+        systemInstructions: {
+          instructions: expect.stringContaining('Existing'),
+          kind: 'explicit',
+        },
+      },
+      toolPolicy: { kind: 'passive' },
+    });
+    expect(progress).toHaveBeenCalledWith(expect.objectContaining({
+      clarification: 'Which language?',
+    }));
   });
 
-  it('should parse refined instruction from response', async () => {
-    mockQuery.mockResolvedValue('<instruction>Use TypeScript</instruction>');
-    const result = await service.refineInstruction('use ts', '');
-    expect(result.success).toBe(true);
-    expect(result.refinedInstruction).toBe('Use TypeScript');
-  });
+  it('returns a typed continuity reset after a forced transition', async () => {
+    const { backend, lifecycleRegistry, service } = createService();
+    const first = service.refineInstruction('use ts', '');
+    await waitFor(() => backend.sessions[0]?.requests.length === 1);
+    backend.sessions[0].emitText('Which language?');
+    backend.sessions[0].complete();
+    await first;
 
-  it('should return clarification when no instruction tags', async () => {
-    mockQuery.mockResolvedValue('Could you be more specific?');
-    const result = await service.refineInstruction('do stuff', '');
-    expect(result.success).toBe(true);
-    expect(result.clarification).toBe('Could you be more specific?');
-  });
+    await lifecycleRegistry.runTransition(['claude'], async () => undefined);
 
-  it('should return error for continueConversation without active thread', async () => {
-    const result = await service.continueConversation('follow up');
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('No active conversation to continue');
-  });
-
-  it('should allow continueConversation after refineInstruction', async () => {
-    mockQuery.mockResolvedValue('What language?');
-    await service.refineInstruction('use typed language', '');
-
-    mockQuery.mockResolvedValue('<instruction>Use TypeScript for all code</instruction>');
-    const result = await service.continueConversation('TypeScript');
-    expect(result.success).toBe(true);
-    expect(result.refinedInstruction).toBe('Use TypeScript for all code');
-  });
-
-  it('should reset runner on resetConversation', () => {
-    service.resetConversation();
-    expect(mockReset).toHaveBeenCalled();
-  });
-
-  it('should return error on query failure', async () => {
-    mockQuery.mockRejectedValue(new Error('Connection failed'));
-    const result = await service.refineInstruction('test', '');
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('Connection failed');
-  });
-
-  it('passes a model override through to the aux runner', async () => {
-    mockQuery.mockResolvedValue('<instruction>Use TypeScript</instruction>');
-
-    service.setModelOverride('gpt-5.4');
-    await service.refineInstruction('use ts', '');
-
-    expect(mockQuery).toHaveBeenCalledWith(expect.objectContaining({
-      model: 'gpt-5.4',
-    }), 'Please refine this instruction: "use ts"');
-  });
-
-  it('does not allow continuation when the backend has no resumable conversation', async () => {
-    const backend = {
-      canContinue: jest.fn(() => false),
-      query: jest.fn().mockResolvedValue('What language?'),
-      reset: jest.fn(),
-    } as AuxQueryRunner;
-    service = new InstructionRefineService(backend);
-
-    await service.refineInstruction('use typed language', '');
-
-    await expect(service.continueConversation('TypeScript')).resolves.toEqual({
-      error: 'No active conversation to continue',
+    await expect(service.continueConversation('TypeScript')).resolves.toMatchObject({
+      error: expect.any(String),
+      resetRequired: true,
       success: false,
     });
+
+    const restarted = service.refineInstruction('use rust', '');
+    await waitFor(() => backend.sessions.length === 2);
+    expect(backend.sessions).toHaveLength(2);
+    expect(backend.configs).toEqual([
+      expect.objectContaining({ nativePersistence: 'provider-default' }),
+      expect.objectContaining({ nativePersistence: 'provider-default' }),
+    ]);
+    backend.sessions[1].emitText('<instruction>Use Rust</instruction>');
+    backend.sessions[1].complete();
+    await expect(restarted).resolves.toMatchObject({ success: true });
+  });
+
+  it('cancels and releases only its own parked session', async () => {
+    const { backend, service } = createService();
+    const pending = service.refineInstruction('use ts', '');
+    await waitFor(() => backend.sessions[0]?.requests.length === 1);
+    service.cancel();
+
+    await expect(pending).resolves.toEqual({
+      error: 'Cancelled',
+      success: false,
+    });
+    expect(backend.sessions[0].cancelCalls).toBeGreaterThan(0);
+    expect(backend.sessions[0].disposeCalls).toBe(1);
   });
 });

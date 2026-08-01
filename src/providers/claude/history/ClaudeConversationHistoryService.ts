@@ -20,7 +20,6 @@ import {
   getClaudeState,
 } from '../types/providerState';
 import {
-  deleteSDKSession,
   encodeVaultPathForSDK,
   getSDKProjectsPath,
   loadSDKSessionMessages,
@@ -728,25 +727,4 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     }
   }
 
-  async deleteConversationSession(
-    conversation: Conversation,
-    vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
-  ): Promise<void> {
-    this.pendingSessionLocationsByConversation.delete(conversation.id);
-    this.relocatedSessionPathsByConversation.delete(conversation.id);
-    this.hydratedConversationIds.delete(conversation.id);
-    this.historyCacheKeysByConversation.delete(conversation.id);
-    const state = getClaudeState(conversation.providerState);
-    const sessionId = state.providerSessionId ?? conversation.sessionId;
-    if (!vaultPath || !sessionId) {
-      return;
-    }
-
-    if (pathContext) {
-      await deleteSDKSession(vaultPath, sessionId, pathContext);
-    } else {
-      await deleteSDKSession(vaultPath, sessionId);
-    }
-  }
 }

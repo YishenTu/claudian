@@ -4,21 +4,21 @@ import {
   parseTitleGenerationResponse,
 } from '../prompt/titleGeneration';
 import type {
-  TitleGenerationBackend,
   TitleGenerationCallback,
   TitleGenerationResult,
   TitleGenerationService as TitleGenerationServiceContract,
 } from '../providers/types';
+import type { AuxiliaryExecutionContext } from './AuxiliaryExecutionContext';
+import { AuxiliarySessionController } from './AuxiliarySessionController';
 
 interface ActiveGeneration {
-  abortController: AbortController;
-  backend: TitleGenerationBackend;
-  disposed: boolean;
+  readonly controller: AuxiliarySessionController;
 }
 
-export interface TitleGenerationServiceOptions {
-  createBackend: () => TitleGenerationBackend;
-  resolveLocale?: () => string | undefined;
+export interface TitleGenerationServiceOptions
+extends AuxiliaryExecutionContext {
+  readonly resolveLocale?: () => string | undefined;
+  readonly resolveModel?: () => string | undefined;
 }
 
 export class TitleGenerationService implements TitleGenerationServiceContract {
@@ -31,22 +31,25 @@ export class TitleGenerationService implements TitleGenerationServiceContract {
     userMessage: string,
     callback: TitleGenerationCallback,
   ): Promise<void> {
-    const existing = this.activeGenerations.get(conversationId);
-    if (existing) {
-      existing.abortController.abort();
-      this.disposeGeneration(existing);
-    }
+    const previous = this.activeGenerations.get(conversationId);
+    previous?.controller.cancel();
 
-    const abortController = new AbortController();
-    const backend = this.options.createBackend();
-    const generation = { abortController, backend, disposed: false };
+    const controller = new AuxiliarySessionController(
+      this.options,
+      'title',
+      { kind: 'passive' },
+    );
+    const generation = { controller };
     this.activeGenerations.set(conversationId, generation);
 
     try {
-      const text = await backend.query({
-        abortController,
-        systemPrompt: buildTitleGenerationSystemPrompt(this.options.resolveLocale?.()),
-        userPrompt: buildTitleGenerationPrompt(userMessage),
+      await controller.startRoot();
+      const text = await controller.execute({
+        model: this.options.resolveModel?.(),
+        prompt: buildTitleGenerationPrompt(userMessage),
+        systemPrompt: buildTitleGenerationSystemPrompt(
+          this.options.resolveLocale?.(),
+        ),
       });
       const title = parseTitleGenerationResponse(text);
       await this.safeCallback(
@@ -62,7 +65,7 @@ export class TitleGenerationService implements TitleGenerationServiceContract {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     } finally {
-      this.disposeGeneration(generation);
+      await controller.dispose();
       if (this.activeGenerations.get(conversationId) === generation) {
         this.activeGenerations.delete(conversationId);
       }
@@ -71,18 +74,9 @@ export class TitleGenerationService implements TitleGenerationServiceContract {
 
   cancel(): void {
     for (const active of this.activeGenerations.values()) {
-      active.abortController.abort();
-      this.disposeGeneration(active);
+      active.controller.cancel();
     }
     this.activeGenerations.clear();
-  }
-
-  private disposeGeneration(generation: ActiveGeneration): void {
-    if (generation.disposed) {
-      return;
-    }
-    generation.disposed = true;
-    generation.backend.dispose();
   }
 
   private async safeCallback(
@@ -93,7 +87,7 @@ export class TitleGenerationService implements TitleGenerationServiceContract {
     try {
       await callback(conversationId, result);
     } catch {
-      // Ignore callback failures to match existing service behavior.
+      // Callback failures cannot leak the one-shot execution lease.
     }
   }
 }

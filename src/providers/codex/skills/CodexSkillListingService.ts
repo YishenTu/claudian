@@ -1,4 +1,5 @@
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import { CodexMetadataTransitionGate } from '../metadata/CodexMetadataTransitionGate';
 import { CodexAppServerProcess } from '../runtime/CodexAppServerProcess';
 import {
   initializeCodexAppServerTransport,
@@ -23,9 +24,16 @@ export interface CodexSkillListProvider {
 interface CodexSkillListingServiceOptions {
   ttlMs?: number;
   now?: () => number;
+  transitionGate?: CodexMetadataTransitionGate;
 }
 
 const DEFAULT_SKILL_LIST_TTL_MS = 5_000;
+
+interface ActiveSkillFetch {
+  readonly completion: Promise<void>;
+  readonly controller: AbortController;
+  resolveCompletion(): void;
+}
 
 const SKILL_SCOPE_PRIORITY: Record<SkillScope, number> = {
   repo: 0,
@@ -99,9 +107,13 @@ export class CodexSkillListingService implements CodexSkillListProvider {
   private cache: SkillMetadata[] | null = null;
   private cacheExpiresAt = 0;
   private pending: { generation: number; promise: Promise<SkillMetadata[]> } | null = null;
+  private readonly activeFetches = new Set<ActiveSkillFetch>();
   private generation = 0;
   private readonly ttlMs: number;
   private readonly now: () => number;
+  private disposed = false;
+  private disposePromise: Promise<void> | null = null;
+  private readonly transitionGate: CodexMetadataTransitionGate;
 
   constructor(
     private readonly plugin: ProviderHost,
@@ -109,12 +121,20 @@ export class CodexSkillListingService implements CodexSkillListProvider {
   ) {
     this.ttlMs = options.ttlMs ?? DEFAULT_SKILL_LIST_TTL_MS;
     this.now = options.now ?? (() => Date.now());
+    this.transitionGate = options.transitionGate ?? new CodexMetadataTransitionGate();
   }
 
   async listSkills(options?: {
     forceReload?: boolean;
     signal?: AbortSignal;
   }): Promise<SkillMetadata[]> {
+    if (
+      this.transitionGate.isUnavailable()
+      && !await this.transitionGate.waitUntilAvailable(options?.signal)
+    ) {
+      return [];
+    }
+    if (this.disposed) return [];
     options?.signal?.throwIfAborted();
     if (options?.forceReload) {
       const generation = ++this.generation;
@@ -146,9 +166,20 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     generation: number,
     signal?: AbortSignal,
   ): Promise<SkillMetadata[]> {
-    const fetch = signal
-      ? this.fetchSkills(forceReload, signal)
-      : this.fetchSkills(forceReload);
+    const controller = new AbortController();
+    const onAbort = (): void => controller.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) controller.abort();
+    let resolveCompletion!: () => void;
+    const entry: ActiveSkillFetch = {
+      completion: new Promise<void>((resolve) => {
+        resolveCompletion = resolve;
+      }),
+      controller,
+      resolveCompletion: () => resolveCompletion(),
+    };
+    this.activeFetches.add(entry);
+    const fetch = this.fetchSkills(forceReload, controller.signal);
     const promise = fetch
       .then((skills) => {
         if (generation === this.generation) {
@@ -157,6 +188,9 @@ export class CodexSkillListingService implements CodexSkillListProvider {
         return skills;
       })
       .finally(() => {
+        signal?.removeEventListener('abort', onAbort);
+        this.activeFetches.delete(entry);
+        entry.resolveCompletion();
         if (this.pending?.promise === promise) {
           this.pending = null;
         }
@@ -172,6 +206,29 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     this.cache = null;
     this.cacheExpiresAt = 0;
     this.pending = null;
+  }
+
+  beginEnvironmentTransition(): void {
+    this.transitionGate.beginTransition();
+  }
+
+  endEnvironmentTransition(): void {
+    this.transitionGate.endTransition();
+  }
+
+  async quiesceForEnvironmentChange(): Promise<void> {
+    this.invalidate();
+    const active = [...this.activeFetches];
+    for (const entry of active) entry.controller.abort();
+    await Promise.all(active.map(entry => entry.completion));
+  }
+
+  dispose(): Promise<void> {
+    if (this.disposePromise) return this.disposePromise;
+    this.disposed = true;
+    this.transitionGate.dispose();
+    this.disposePromise = this.quiesceForEnvironmentChange();
+    return this.disposePromise;
   }
 
   private async fetchSkills(

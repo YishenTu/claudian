@@ -4,6 +4,7 @@ import type ClaudianPlugin from '@/main';
 function createPlugin(overrides: Record<string, unknown> = {}): ClaudianPlugin {
   return {
     app: {},
+    executionLifecycleRegistry: {},
     settings: {},
     storage: {},
     manifest: { version: '1.2.3' },
@@ -16,6 +17,9 @@ function createPlugin(overrides: Record<string, unknown> = {}): ClaudianPlugin {
     applyEnvironmentVariables: jest.fn(async () => undefined),
     applyEnvironmentVariablesBatch: jest.fn(async () => undefined),
     getResolvedProviderCliPath: jest.fn(() => '/usr/bin/provider'),
+    runProviderExecutionTransition: jest.fn(
+      async (_providerIds: string[], mutation: () => Promise<unknown>) => mutation(),
+    ),
     getAllViews: jest.fn(() => []),
     getView: jest.fn(() => null),
     ...overrides,
@@ -61,33 +65,27 @@ describe('ClaudianProviderHost', () => {
     expect(secondRefresh).toHaveBeenCalledWith('codex');
   });
 
-  it('delivers provider runtime recycling to views in their existing order', async () => {
-    const trace: string[] = [];
-    const createView = (id: string) => ({
-      getTabManager: () => ({
-        recycleProviderRuntimes: async (providerId: string) => {
-          trace.push(`${id}:recycle:${providerId}`);
-        },
-      }),
-      invalidateProviderCommandCaches: (providerIds: string[]) => {
-        trace.push(`${id}:invalidate:${providerIds.join(',')}`);
-      },
-      refreshModelSelector: () => { trace.push(`${id}:refresh`); },
-    });
+  it('delegates execution transitions through the application lifecycle registry', async () => {
+    const executionLifecycleRegistry = {};
+    const mutation = jest.fn(async () => 'result');
+    const runProviderExecutionTransition = jest.fn(
+      async (_providerIds: string[], callback: () => Promise<string>) => callback(),
+    );
     const plugin = createPlugin({
-      getAllViews: jest.fn(() => [createView('first'), createView('second')]),
+      executionLifecycleRegistry,
+      runProviderExecutionTransition,
     });
     const host = new ClaudianProviderHost(plugin);
 
-    await host.recycleProviderRuntimes('opencode');
+    expect(host.executionLifecycleRegistry).toBe(executionLifecycleRegistry);
+    await expect(
+      host.runProviderExecutionTransition(['opencode', 'claude'], mutation),
+    ).resolves.toBe('result');
 
-    expect(trace).toEqual([
-      'first:recycle:opencode',
-      'first:invalidate:opencode',
-      'first:refresh',
-      'second:recycle:opencode',
-      'second:invalidate:opencode',
-      'second:refresh',
-    ]);
+    expect(runProviderExecutionTransition).toHaveBeenCalledWith(
+      ['opencode', 'claude'],
+      mutation,
+    );
   });
+
 });

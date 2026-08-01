@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
+import type { ConversationPersistence } from '@/core/bootstrap/ConversationPersistenceStore';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { Conversation } from '@/core/types';
 
@@ -17,19 +18,39 @@ function createConversation(id = 'conversation-1'): Conversation {
 }
 
 function createRepository(conversation = createConversation()) {
-  const sessions = {
+  const persistence: jest.Mocked<ConversationPersistence> = {
+    metadataReader: {
+      load: jest.fn().mockResolvedValue(null),
+      scan: jest.fn().mockResolvedValue({
+        records: [],
+        complete: true,
+        invalidMetadataCount: 0,
+      }),
+      loadMetadata: jest.fn().mockResolvedValue(null),
+      scanMetadata: jest.fn().mockResolvedValue({
+        metadata: [],
+        complete: true,
+        invalidMetadataCount: 0,
+      }),
+      listMetadata: jest.fn().mockResolvedValue([]),
+    },
+    loadInputLedger: jest.fn().mockResolvedValue({ status: 'missing' }),
+    saveInputLedger: jest.fn().mockResolvedValue(undefined),
     saveMetadata: jest.fn().mockResolvedValue(undefined),
-    deleteMetadata: jest.fn().mockResolvedValue(undefined),
-    toSessionMetadata: jest.fn((value) => value),
+    deleteCurrentMetadata: jest.fn().mockResolvedValue(undefined),
+    deleteLegacyMetadata: jest.fn().mockResolvedValue(undefined),
+    deleteInputLedger: jest.fn().mockResolvedValue(undefined),
+    isDeleted: jest.fn().mockResolvedValue(false),
+    markDeleted: jest.fn().mockResolvedValue(undefined),
   };
   const repository = new ConversationRepository({
     getSettings: () => ({}),
     getVaultPath: () => '/vault',
-    sessions: sessions as any,
+    persistence,
     onConversationDeleted: jest.fn().mockResolvedValue(undefined),
   });
   repository.replaceAll([conversation]);
-  return { repository, sessions };
+  return { repository, persistence };
 }
 
 describe('ConversationRepository hydration', () => {
@@ -102,19 +123,19 @@ describe('ConversationRepository hydration', () => {
       hydrateConversationHistory,
     } as any);
     const conversation = createConversation();
-    const { repository, sessions } = createRepository(conversation);
+    const { repository, persistence } = createRepository(conversation);
 
     const hydration = repository.ensureHydrated(conversation.id);
     await Promise.resolve();
     await Promise.resolve();
-    const deletion = repository.delete(conversation.id, { deleteProviderSession: false });
+    const deletion = repository.delete(conversation.id);
 
     releaseHydration();
 
     await expect(hydration).resolves.toBeNull();
     await expect(deletion).resolves.toBeUndefined();
     expect(repository.getCachedConversation(conversation.id)).toBeNull();
-    expect(sessions.deleteMetadata).toHaveBeenCalledWith(conversation.id);
+    expect(persistence.deleteCurrentMetadata).toHaveBeenCalledWith(conversation.id);
   });
 
   it('does not return an already hydrated conversation deleted while model reconciliation is in flight', async () => {
@@ -128,7 +149,7 @@ describe('ConversationRepository hydration', () => {
     });
     const conversation = createConversation();
     conversation.messages = [{ id: 'message-1', role: 'user', content: 'kept', timestamp: 1 }];
-    const { repository, sessions } = createRepository(conversation);
+    const { repository, persistence } = createRepository(conversation);
     jest.spyOn(repository as any, 'ensureSelectedModel').mockImplementation(async () => {
       markReconciliationStarted();
       await reconciliationRelease;
@@ -136,13 +157,13 @@ describe('ConversationRepository hydration', () => {
 
     const hydration = repository.ensureHydrated(conversation.id);
     await reconciliationStarted;
-    const deletion = repository.delete(conversation.id, { deleteProviderSession: false });
+    const deletion = repository.delete(conversation.id);
     releaseReconciliation();
 
     await expect(hydration).resolves.toBeNull();
     await expect(deletion).resolves.toBeUndefined();
     expect(repository.getCachedConversation(conversation.id)).toBeNull();
-    expect(sessions.deleteMetadata).toHaveBeenCalledWith(conversation.id);
+    expect(persistence.deleteCurrentMetadata).toHaveBeenCalledWith(conversation.id);
   });
 
   it('restarts hydration when provider session identity changes in flight', async () => {
@@ -195,7 +216,7 @@ describe('ConversationRepository hydration', () => {
   it('does not resurrect a deleted conversation from a late background metadata batch', async () => {
     const conversation = createConversation('deleted');
     const { repository } = createRepository(conversation);
-    await repository.delete(conversation.id, { deleteProviderSession: false });
+    await repository.delete(conversation.id);
 
     const merged = repository.mergeMetadataConversations([
       createConversation(conversation.id),
@@ -203,5 +224,90 @@ describe('ConversationRepository hydration', () => {
 
     expect(merged).toEqual([]);
     expect(repository.getCachedConversation(conversation.id)).toBeNull();
+  });
+
+  it('discards an exact unresolved metadata shell and invalidates its in-flight hydration', async () => {
+    let markHydrationStarted!: () => void;
+    let releaseHydration!: () => void;
+    const hydrationStarted = new Promise<void>((resolve) => {
+      markHydrationStarted = resolve;
+    });
+    const hydrationRelease = new Promise<void>((resolve) => {
+      releaseHydration = resolve;
+    });
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hydrateConversationHistory: async () => {
+        markHydrationStarted();
+        await hydrationRelease;
+      },
+    } as any);
+    const shell = createConversation('unresolved');
+    const { repository, persistence } = createRepository(shell);
+    repository.registerExecutionBinding(shell.id, 'binding-1', 1);
+
+    const hydration = repository.ensureHydrated(shell.id);
+    await hydrationStarted;
+    repository.discardUnresolvedMetadataShells([shell]);
+    releaseHydration();
+
+    await expect(hydration).resolves.toBeNull();
+    await expect(repository.persistExecutionSnapshot(
+      shell.id,
+      'binding-1',
+      1,
+      {
+        providerId: 'claude',
+        revision: 1,
+        status: 'idle',
+        providerSessionId: 'provider-session-1',
+      },
+    )).resolves.toBe(false);
+    expect(repository.getCachedConversation(shell.id)).toBeNull();
+    expect(persistence.saveMetadata).not.toHaveBeenCalled();
+    expect(persistence.markDeleted).not.toHaveBeenCalled();
+    expect(persistence.deleteCurrentMetadata).not.toHaveBeenCalled();
+    expect(persistence.deleteLegacyMetadata).not.toHaveBeenCalled();
+    expect(persistence.deleteInputLedger).not.toHaveBeenCalled();
+  });
+
+  it('allows a discarded unresolved shell ID to be published again', () => {
+    const shell = createConversation('temporarily-unresolved');
+    const { repository, persistence } = createRepository(shell);
+
+    repository.discardUnresolvedMetadataShells([shell]);
+    const replacement = createConversation(shell.id);
+    const merged = repository.mergeMetadataConversations([replacement]);
+
+    expect(merged).toEqual([replacement]);
+    expect(repository.getCachedConversation(shell.id)).toBe(replacement);
+    expect(persistence.isDeleted).not.toHaveBeenCalled();
+    expect(persistence.markDeleted).not.toHaveBeenCalled();
+  });
+
+  it('does not discard or invalidate a replacement object with the same conversation ID', async () => {
+    const unresolvedShell = createConversation('replaced');
+    const { repository, persistence } = createRepository(unresolvedShell);
+    const replacement = createConversation(unresolvedShell.id);
+    repository.replaceAll([replacement]);
+    repository.registerExecutionBinding(replacement.id, 'replacement-binding', 2);
+
+    repository.discardUnresolvedMetadataShells([unresolvedShell]);
+
+    expect(repository.getCachedConversation(replacement.id)).toBe(replacement);
+    await expect(repository.persistExecutionSnapshot(
+      replacement.id,
+      'replacement-binding',
+      2,
+      {
+        providerId: 'claude',
+        revision: 1,
+        status: 'idle',
+        providerSessionId: 'replacement-provider-session',
+      },
+    )).resolves.toBe(true);
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: replacement.id,
+      sessionId: 'replacement-provider-session',
+    }));
   });
 });

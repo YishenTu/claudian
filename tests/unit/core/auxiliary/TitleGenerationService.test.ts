@@ -1,67 +1,123 @@
 import { TitleGenerationService } from '@/core/auxiliary/TitleGenerationService';
-import type {
-  TitleGenerationBackend,
-  TitleGenerationBackendRequest,
-} from '@/core/providers/types';
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 
-function createBackend(response = 'Generated title'): jest.Mocked<TitleGenerationBackend> {
-  return {
-    dispose: jest.fn(),
-    query: jest.fn().mockResolvedValue(response),
-  };
+import {
+  FakeAuxiliaryBackend,
+  waitFor,
+} from './AuxiliaryExecutionTestHarness';
+
+function createService() {
+  const backend = new FakeAuxiliaryBackend();
+  const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
+  const service = new TitleGenerationService({
+    backend,
+    interactionPort: {
+      askUserQuestion: jest.fn(),
+      dismissInteraction: jest.fn(),
+      requestApproval: jest.fn(),
+      requestPlanDecision: jest.fn(),
+    },
+    lifecycleRegistry,
+    resolveLocale: () => 'ja',
+    resolveModel: () => 'title-model',
+    vaultWorkingDirectory: '/vault',
+  });
+  return { backend, lifecycleRegistry, service };
 }
 
 describe('TitleGenerationService', () => {
-  it('resolves the title language for each generation', async () => {
-    let locale = 'ja';
-    const backends = [createBackend(), createBackend()];
-    const service = new TitleGenerationService({
-      createBackend: jest.fn()
-        .mockReturnValueOnce(backends[0])
-        .mockReturnValueOnce(backends[1]),
-      resolveLocale: () => locale,
+  it('uses independent one-shot passive sessions and preserves prompt parsing', async () => {
+    const { backend, service } = createService();
+    const firstCallback = jest.fn();
+    const secondCallback = jest.fn();
+    const first = service.generateTitle('conversation-1', 'First request', firstCallback);
+    const second = service.generateTitle('conversation-2', 'Second request', secondCallback);
+    await waitFor(() => backend.sessions.length === 2
+      && backend.sessions.every(session => session.requests.length === 1));
+
+    expect(backend.sessions).toHaveLength(2);
+    for (const session of backend.sessions) {
+      expect(session.requests[0]).toMatchObject({
+        configuration: {
+          model: 'title-model',
+          systemInstructions: {
+            instructions: expect.stringContaining('Write the title in Japanese'),
+            kind: 'explicit',
+          },
+        },
+        toolPolicy: { kind: 'passive' },
+      });
+    }
+    expect(backend.configs).toEqual([
+      expect.objectContaining({
+        lifecycle: 'ephemeral',
+        nativePersistence: 'disabled-if-supported',
+      }),
+      expect.objectContaining({
+        lifecycle: 'ephemeral',
+        nativePersistence: 'disabled-if-supported',
+      }),
+    ]);
+
+    backend.sessions[0].emitText('First title');
+    backend.sessions[0].complete();
+    backend.sessions[1].emitText('Second title');
+    backend.sessions[1].complete();
+    await Promise.all([first, second]);
+
+    expect(firstCallback).toHaveBeenCalledWith('conversation-1', {
+      success: true,
+      title: 'First title',
     });
-
-    await service.generateTitle('conversation-1', 'First request', jest.fn());
-    locale = 'fr';
-    await service.generateTitle('conversation-2', 'Second request', jest.fn());
-
-    expect(backends[0].query).toHaveBeenCalledWith(expect.objectContaining({
-      systemPrompt: expect.stringContaining('Write the title in Japanese'),
-      userPrompt: expect.any(String),
-    }));
-    expect(backends[1].query).toHaveBeenCalledWith(expect.objectContaining({
-      systemPrompt: expect.stringContaining('Write the title in French'),
-      userPrompt: expect.any(String),
-    }));
-    expect(backends[0].dispose).toHaveBeenCalledTimes(1);
-    expect(backends[1].dispose).toHaveBeenCalledTimes(1);
+    expect(secondCallback).toHaveBeenCalledWith('conversation-2', {
+      success: true,
+      title: 'Second title',
+    });
+    expect(backend.sessions.map(session => session.disposeCalls)).toEqual([1, 1]);
   });
 
-  it('aborts and disposes active backends when cancelled', async () => {
-    let request: TitleGenerationBackendRequest | undefined;
-    const backend = createBackend();
-    backend.query.mockImplementation(async (nextRequest) => {
-      request = nextRequest;
-      return new Promise<string>((_resolve, reject) => {
-        nextRequest.abortController.signal.addEventListener('abort', () => {
-          reject(new Error('Cancelled'));
-        });
-      });
-    });
-    const service = new TitleGenerationService({
-      createBackend: () => backend,
-      resolveLocale: () => 'en',
-    });
+  it('cancels only the matching active generation and releases its lease', async () => {
+    const { backend, service } = createService();
     const callback = jest.fn();
     const generation = service.generateTitle('conversation-1', 'Request', callback);
-    await Promise.resolve();
+    await waitFor(() => backend.sessions[0]?.requests.length === 1);
 
     service.cancel();
     await generation;
 
-    expect(request?.abortController.signal.aborted).toBe(true);
-    expect(backend.dispose).toHaveBeenCalledTimes(1);
+    expect(backend.sessions[0].cancelCalls).toBeGreaterThan(0);
+    expect(backend.sessions[0].disposeCalls).toBe(1);
+    expect(callback).toHaveBeenCalledWith('conversation-1', {
+      error: 'Cancelled',
+      success: false,
+    });
+  });
+
+  it('completes an in-flight title call when a provider transition invalidates it', async () => {
+    const { backend, lifecycleRegistry, service } = createService();
+    const callback = jest.fn();
+    const generation = service.generateTitle('conversation-1', 'Request', callback);
+    await waitFor(() => backend.sessions[0]?.requests.length === 1);
+
+    await lifecycleRegistry.runTransition(['claude'], async () => undefined);
+    await generation;
+
+    expect(callback).toHaveBeenCalledWith('conversation-1', {
+      error: 'Cancelled',
+      success: false,
+    });
+    expect(backend.sessions[0].disposeCalls).toBe(1);
+  });
+
+  it('does not acquire a session when cancelled during asynchronous startup', async () => {
+    const { backend, service } = createService();
+    const callback = jest.fn();
+
+    const generation = service.generateTitle('conversation-1', 'Request', callback);
+    service.cancel();
+    await generation;
+
+    expect(backend.sessions).toHaveLength(0);
     expect(callback).toHaveBeenCalledWith('conversation-1', {
       error: 'Cancelled',
       success: false,

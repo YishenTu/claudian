@@ -23,7 +23,9 @@ import {
   SettingsPostCommitError,
 } from './app/settings/SettingsCoordinator';
 import { SharedStorageService } from './app/storage/SharedStorageService';
+import type { SessionMetadataReadResult } from './core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from './core/bootstrap/storage';
+import { ProviderExecutionLifecycleRegistry } from './core/execution';
 import {
   getEnvironmentVariablesForScope as getScopedEnvironmentVariables,
   getRuntimeEnvironmentText,
@@ -52,6 +54,7 @@ import {
 } from './core/types';
 import type { ChatViewPlacement, EnvironmentScope } from './core/types/settings';
 import { ClaudianView } from './features/chat/ClaudianView';
+import type { ChatExecutionPersistence } from './features/chat/execution/ChatExecutionCoordinator';
 import { registerFileMenu } from './features/chat/fileMenu';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
@@ -114,6 +117,7 @@ function hasSamePendingProviderSessionInvalidations(
 export default class ClaudianPlugin extends Plugin {
   settings!: ClaudianSettings;
   storage!: SharedAppStorage;
+  readonly executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   readonly providerHost = new ClaudianProviderHost(this);
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
   private conversationRepository!: ConversationRepository;
@@ -128,6 +132,10 @@ export default class ClaudianPlugin extends Plugin {
   private sessionMetadataLoadTimer: number | null = null;
   private remainingSessionMetadataLoad: Promise<void> | null = null;
   private isUnloading = false;
+
+  get executionPersistence(): ChatExecutionPersistence {
+    return this.conversationRepository;
+  }
 
   async onload() {
     StartupProfiler.startOnload();
@@ -281,6 +289,7 @@ export default class ClaudianPlugin extends Plugin {
     }
     StartupProfiler.freeze();
     void this.persistOpenTabStates().catch(() => undefined);
+    void this.executionLifecycleRegistry.dispose();
     void ProviderWorkspaceRegistry.disposeInitialized();
   }
 
@@ -376,8 +385,9 @@ export default class ClaudianPlugin extends Plugin {
 
   async loadSettings(options: { deferNonRestoredSessionMetadata?: boolean } = {}) {
     this.hasLoadedAllSessionMetadata = false;
-    this.storage = new SharedStorageService(this);
-    const { claudian } = await this.storage.initialize();
+    const sharedStorage = new SharedStorageService(this);
+    this.storage = sharedStorage;
+    const { claudian } = await sharedStorage.initialize();
     this.lastKnownTabManagerState = await this.storage.getTabManagerState();
 
     this.settings = {
@@ -396,7 +406,7 @@ export default class ClaudianPlugin extends Plugin {
     this.conversationRepository = new ConversationRepository({
       getSettings: () => this.settings,
       getVaultPath: () => getVaultPath(this.app),
-      sessions: this.storage.sessions,
+      persistence: sharedStorage.conversationPersistence,
       onConversationDeleted: (conversationId) => this.resetDeletedConversationTabs(conversationId),
     });
 
@@ -436,24 +446,23 @@ export default class ClaudianPlugin extends Plugin {
       deferRemainingMetadata ? 'restored-session-metadata-load' : 'session-metadata-load',
       async () => deferRemainingMetadata
         ? {
-          metadata: await this.loadRestoredSessionMetadata(),
+          records: await this.loadRestoredSessionMetadata(),
           complete: false,
           invalidMetadataCount: 0,
         }
-        : this.storage.sessions.scanMetadata(),
+        : this.loadSessionMetadataWithSources(),
     );
-    const initialMetadata = initialMetadataScan.metadata;
-    StartupProfiler.recordCount('restored-session-metadata-count', initialMetadata.length);
-    StartupProfiler.recordCount('session-metadata-count', initialMetadata.length);
+    const initialEntries = initialMetadataScan.records.map(({ metadata, source }) => ({
+      conversation: this.createConversationMetadataShell(metadata),
+      source,
+    }));
+    StartupProfiler.recordCount('restored-session-metadata-count', initialEntries.length);
+    StartupProfiler.recordCount('session-metadata-count', initialEntries.length);
     StartupProfiler.recordCount(
       'invalid-session-metadata-count',
       initialMetadataScan.invalidMetadataCount,
     );
-    this.conversationRepository.replaceAll(initialMetadata.map(meta => (
-      this.createConversationMetadataShell(meta)
-    )).sort(
-      (a, b) => (b.lastResponseAt ?? b.updatedAt) - (a.lastResponseAt ?? a.updatedAt)
-    ));
+    await this.conversationRepository.adoptMetadataConversations(initialEntries);
     setLocale(this.settings.locale as Locale);
 
     const backfilledConversations = this.conversationRepository.backfillResponseTimestamps();
@@ -490,17 +499,15 @@ export default class ClaudianPlugin extends Plugin {
       ...reconciliation.invalidatedConversations,
       ...pendingInvalidatedConversations,
     ]);
-    for (const conv of conversationsToSave) {
-      await this.storage.sessions.saveMetadata(
-        this.storage.sessions.toSessionMetadata(conv)
-      );
-    }
+    await this.conversationRepository.persistConversations(
+      Array.from(conversationsToSave),
+    );
     await this.completePendingSessionInvalidations(completedInvalidationGenerations);
     this.hasLoadedAllSessionMetadata = initialMetadataScan.complete;
     this.pendingSessionMetadataScan = deferRemainingMetadata;
   }
 
-  private async loadRestoredSessionMetadata(): Promise<SessionMetadata[]> {
+  private async loadRestoredSessionMetadata(): Promise<SessionMetadataReadResult[]> {
     const restoredConversationIds = Array.from(new Set(
       (this.lastKnownTabManagerState?.openTabs ?? [])
         .map(({ conversationId }) => conversationId)
@@ -509,7 +516,33 @@ export default class ClaudianPlugin extends Plugin {
     const metadata = await Promise.all(
       restoredConversationIds.map(id => this.storage.sessions.loadMetadata(id)),
     );
-    return metadata.filter((item): item is SessionMetadata => item !== null);
+    return this.resolveMetadataSources(
+      metadata.filter((item): item is SessionMetadata => item !== null),
+    );
+  }
+
+  private async loadSessionMetadataWithSources(): Promise<{
+    records: SessionMetadataReadResult[];
+    complete: boolean;
+    invalidMetadataCount: number;
+  }> {
+    const scan = await this.storage.sessions.scanMetadata();
+    return {
+      records: await this.resolveMetadataSources(scan.metadata),
+      complete: scan.complete,
+      invalidMetadataCount: scan.invalidMetadataCount,
+    };
+  }
+
+  private async resolveMetadataSources(
+    metadata: SessionMetadata[],
+  ): Promise<SessionMetadataReadResult[]> {
+    const records = await Promise.all(
+      metadata.map(({ id }) => this.storage.sessions.load(id)),
+    );
+    return records.filter(
+      (record): record is SessionMetadataReadResult => record !== null,
+    );
   }
 
   private scheduleRemainingSessionMetadataLoad(): void {
@@ -565,7 +598,9 @@ export default class ClaudianPlugin extends Plugin {
       const publishBatch = (metadata: SessionMetadata[]): void => {
         if (this.isUnloading || metadata.length === 0) return;
 
-        const shells = metadata.map(meta => this.createConversationMetadataShell(meta));
+        const shells = metadata.map((item) => (
+          this.createConversationMetadataShell(item)
+        ));
         const invalidatedShells = ProviderSettingsCoordinator.invalidateConversationSessions(
           shells,
           Array.from(this.pendingEnvironmentInvalidationGenerations.keys()),
@@ -582,31 +617,52 @@ export default class ClaudianPlugin extends Plugin {
           view.notifyConversationListChanged();
         }
       };
-      const scan = await this.storage.sessions.scanMetadata({ onBatch: publishBatch });
+      const scan = await this.storage.sessions.scanMetadata({
+        onBatch: publishBatch,
+      });
       if (this.isUnloading) {
         return;
       }
 
-      const allMetadata = scan.metadata;
-      StartupProfiler.recordCount('session-metadata-count', allMetadata.length);
+      StartupProfiler.recordCount('session-metadata-count', scan.metadata.length);
       StartupProfiler.recordCount(
         'invalid-session-metadata-count',
         scan.invalidMetadataCount,
       );
-      // Custom storage implementations may not support incremental publication yet.
-      publishBatch(allMetadata);
+      const scannedShells = scan.metadata
+        .map(({ id }) => this.conversationRepository.getCachedConversation(id))
+        .filter((shell): shell is Conversation => shell !== null);
+      const records = await this.resolveMetadataSources(scan.metadata);
+      const resolvedIds = new Set(records.map(({ metadata }) => metadata.id));
+      const unresolvedShells = scannedShells.filter(
+        ({ id }) => !resolvedIds.has(id),
+      );
+      this.conversationRepository.discardUnresolvedMetadataShells(
+        unresolvedShells,
+      );
+      if (unresolvedShells.length > 0) {
+        for (const view of this.getAllViews()) {
+          view.notifyConversationListChanged();
+        }
+      }
+      publishBatch(records.map(({ metadata }) => metadata));
+      await this.conversationRepository.adoptMetadataConversations(
+        records.map(({ metadata, source }) => ({
+          conversation: this.createConversationMetadataShell(metadata),
+          source,
+        })),
+      );
       const currentAddedConversations = addedConversations.filter((conversation) => (
         this.conversationRepository.getCachedConversation(conversation.id) === conversation
       ));
       StartupProfiler.recordCount('background-session-metadata-count', currentAddedConversations.length);
-      for (const conversation of invalidatedConversations) {
-        if (this.conversationRepository.getCachedConversation(conversation.id) !== conversation) {
-          continue;
-        }
-        await this.storage.sessions.saveMetadata(
-          this.storage.sessions.toSessionMetadata(conversation),
-        );
-      }
+      await this.conversationRepository.persistConversations(
+        invalidatedConversations.filter(
+          (conversation) =>
+            this.conversationRepository.getCachedConversation(conversation.id)
+            === conversation,
+        ),
+      );
       if (scan.complete) {
         this.hasLoadedAllSessionMetadata = true;
         if (!this.isUnloading) {
@@ -798,39 +854,6 @@ export default class ClaudianPlugin extends Plugin {
     await this.settingsCoordinator.mutateConditionally(mutation);
   }
 
-  async mutateProviderSettingsAndRecycleRuntimes(
-    providerId: ProviderId,
-    mutation: SettingsMutation<ClaudianSettings>,
-  ): Promise<void> {
-    const transition = await ProviderWorkspaceRegistry
-      .beginAuxiliaryServicesEnvironmentChange([providerId]);
-    const errors: unknown[] = [];
-    try {
-      await this.quiesceEnvironmentAffectedRuntimes([providerId]);
-      await this.mutateSettings(mutation, () => {
-        ProviderWorkspaceRegistry.getCliResolver(providerId)?.reset();
-      });
-      for (const view of this.getAllViews()) {
-        await view.getTabManager()?.recycleProviderRuntimes(providerId);
-        view.invalidateProviderCommandCaches?.([providerId]);
-        view.refreshModelSelector?.();
-      }
-    } catch (error) {
-      errors.push(error);
-    }
-    try {
-      await transition.release();
-    } catch (error) {
-      errors.push(error);
-    }
-    if (errors.length === 1) {
-      throw errors[0];
-    }
-    if (errors.length > 1) {
-      throw new AggregateError(errors, `Failed to update ${providerId} runtime settings.`);
-    }
-  }
-
   /** Updates and persists environment variables, restarting processes to apply changes. */
   async applyEnvironmentVariables(scope: EnvironmentScope, envText: string): Promise<void> {
     await this.applyEnvironmentVariablesBatch([{ scope, envText }]);
@@ -864,224 +887,134 @@ export default class ClaudianPlugin extends Plugin {
         : [scope]
     ));
     const providersToQuiesce = this.getAffectedEnvironmentProviders(changedScopes);
-    let auxiliaryTransition: Awaited<ReturnType<
-      typeof ProviderWorkspaceRegistry.beginAuxiliaryServicesEnvironmentChange
-    >> | null = null;
-    let affectedProviderIds: ProviderId[] = [];
-    let sessionInvalidationProviderIds: ProviderId[] = [];
-    let invalidationGenerations = new Map<ProviderId, number>();
-    let invalidationPublished = false;
-    let settingsCommitted = false;
-    const errors: unknown[] = [];
-    try {
-      if (providersToQuiesce.length > 0) {
-        auxiliaryTransition = await ProviderWorkspaceRegistry
-          .beginAuxiliaryServicesEnvironmentChange(providersToQuiesce);
-        await this.quiesceEnvironmentAffectedRuntimes(providersToQuiesce);
-      }
-      await this.mutateSettings((settings) => {
-        const settingsBag = settings as unknown as Record<string, unknown>;
-        const changedScopes: EnvironmentScope[] = [];
-        for (const [scope, envText] of nextEnvironmentByScope) {
-          const currentValue = getScopedEnvironmentVariables(settingsBag, scope);
-          if (currentValue !== envText) {
-            changedScopes.push(scope);
-          }
-          setEnvironmentVariablesForScope(settingsBag, scope, envText);
-        }
-        affectedProviderIds = this.getAffectedEnvironmentProviders(changedScopes);
-        ProviderSettingsCoordinator.handleEnvironmentChange(settingsBag, affectedProviderIds);
-        const reconciliation = this.reconcileModelWithEnvironment(
-          affectedProviderIds,
-          false,
-        );
-        sessionInvalidationProviderIds = reconciliation.sessionInvalidationProviderIds;
-        invalidationGenerations = this.stagePendingSessionInvalidations(
-          settings,
-          sessionInvalidationProviderIds,
-        );
-      }, () => {
-        this.commitPendingSessionInvalidations(invalidationGenerations);
-        this.blockEnvironmentInvalidationCompletion(invalidationGenerations);
-        ProviderSettingsCoordinator.invalidateConversationSessions(
-          this.conversationRepository.getAll(),
-          sessionInvalidationProviderIds,
-        );
-        invalidationPublished = true;
-      });
-      settingsCommitted = true;
-    } catch (error) {
-      if (error instanceof SettingsPostCommitError) {
-        settingsCommitted = true;
-        errors.push(error.cause);
-      } else {
-        errors.push(error);
-      }
-    }
-
-    const modelCatalogDiagnostics: string[] = [];
-    if (settingsCommitted && affectedProviderIds.length > 0) {
+    await this.runProviderExecutionTransition(providersToQuiesce, async () => {
+      let affectedProviderIds: ProviderId[] = [];
+      let sessionInvalidationProviderIds: ProviderId[] = [];
+      let invalidationGenerations = new Map<ProviderId, number>();
+      let invalidationPublished = false;
+      let settingsCommitted = false;
+      const errors: unknown[] = [];
       try {
-        for (const providerId of affectedProviderIds) {
-          if (ProviderRegistry.isEnabled(providerId, this.settings)) {
-            const transitionOwner = { providerTransitionOwner: true } as const;
-            const result = await ProviderWorkspaceRegistry.refreshModelCatalog(
-              providerId,
-              transitionOwner,
-            );
-            if (result.diagnostics) {
-              modelCatalogDiagnostics.push(
-                `${ProviderRegistry.getProviderDisplayName(providerId)}: ${result.diagnostics}`,
+        await this.mutateSettings((settings) => {
+          const settingsBag = settings as unknown as Record<string, unknown>;
+          const changedScopes: EnvironmentScope[] = [];
+          for (const [scope, envText] of nextEnvironmentByScope) {
+            const currentValue = getScopedEnvironmentVariables(settingsBag, scope);
+            if (currentValue !== envText) {
+              changedScopes.push(scope);
+            }
+            setEnvironmentVariablesForScope(settingsBag, scope, envText);
+          }
+          affectedProviderIds = this.getAffectedEnvironmentProviders(changedScopes);
+          ProviderSettingsCoordinator.handleEnvironmentChange(settingsBag, affectedProviderIds);
+          const reconciliation = this.reconcileModelWithEnvironment(
+            affectedProviderIds,
+            false,
+          );
+          sessionInvalidationProviderIds = reconciliation.sessionInvalidationProviderIds;
+          invalidationGenerations = this.stagePendingSessionInvalidations(
+            settings,
+            sessionInvalidationProviderIds,
+          );
+        }, () => {
+          this.commitPendingSessionInvalidations(invalidationGenerations);
+          this.blockEnvironmentInvalidationCompletion(invalidationGenerations);
+          ProviderSettingsCoordinator.invalidateConversationSessions(
+            this.conversationRepository.getAll(),
+            sessionInvalidationProviderIds,
+          );
+          invalidationPublished = true;
+        });
+        settingsCommitted = true;
+      } catch (error) {
+        if (error instanceof SettingsPostCommitError) {
+          settingsCommitted = true;
+          errors.push(error.cause);
+        } else {
+          errors.push(error);
+        }
+      }
+
+      const modelCatalogDiagnostics: string[] = [];
+      if (settingsCommitted && affectedProviderIds.length > 0) {
+        try {
+          for (const providerId of affectedProviderIds) {
+            if (ProviderRegistry.isEnabled(providerId, this.settings)) {
+              const transitionOwner = { providerTransitionOwner: true } as const;
+              const result = await ProviderWorkspaceRegistry.refreshModelCatalog(
+                providerId,
+                transitionOwner,
+              );
+              if (result.diagnostics) {
+                modelCatalogDiagnostics.push(
+                  `${ProviderRegistry.getProviderDisplayName(providerId)}: ${result.diagnostics}`,
+                );
+              }
+              await ProviderWorkspaceRegistry.refreshAgentMentions(
+                providerId,
+                transitionOwner,
               );
             }
-            await ProviderWorkspaceRegistry.refreshAgentMentions(
-              providerId,
-              transitionOwner,
-            );
           }
-        }
-      } catch (error) {
-        errors.push(error);
-      }
-
-      if (invalidationPublished && invalidationGenerations.size > 0) {
-        let invalidationMetadataPersisted = false;
-        try {
-          const invalidatedProviderIds = new Set(invalidationGenerations.keys());
-          const conversationsToPersist = this.conversationRepository.getAll().filter(
-            conversation => invalidatedProviderIds.has(conversation.providerId),
-          );
-          for (const conv of conversationsToPersist) {
-            if (this.conversationRepository.getCachedConversation(conv.id) !== conv) {
-              continue;
-            }
-            await this.storage.sessions.saveMetadata(
-              this.storage.sessions.toSessionMetadata(conv)
-            );
-          }
-          invalidationMetadataPersisted = true;
         } catch (error) {
           errors.push(error);
         }
-        if (invalidationMetadataPersisted) {
-          this.releaseEnvironmentInvalidationCompletion(invalidationGenerations);
-          if (this.hasLoadedAllSessionMetadata && !this.isUnloading) {
-            try {
-              await this.completePendingSessionInvalidations(invalidationGenerations);
-            } catch (error) {
-              errors.push(error);
+
+        if (invalidationPublished && invalidationGenerations.size > 0) {
+          let invalidationMetadataPersisted = false;
+          try {
+            const invalidatedProviderIds = new Set(invalidationGenerations.keys());
+            const conversationsToPersist = this.conversationRepository.getAll().filter(
+              conversation => invalidatedProviderIds.has(conversation.providerId),
+            );
+            await this.conversationRepository.persistConversations(
+              conversationsToPersist.filter(
+                (conversation) =>
+                  this.conversationRepository.getCachedConversation(conversation.id)
+                  === conversation,
+              ),
+            );
+            invalidationMetadataPersisted = true;
+          } catch (error) {
+            errors.push(error);
+          }
+          if (invalidationMetadataPersisted) {
+            this.releaseEnvironmentInvalidationCompletion(invalidationGenerations);
+            if (this.hasLoadedAllSessionMetadata && !this.isUnloading) {
+              try {
+                await this.completePendingSessionInvalidations(invalidationGenerations);
+              } catch (error) {
+                errors.push(error);
+              }
             }
           }
         }
-      }
 
-      try {
-        const openViews = this.getAllViews();
-        let failedTabs = 0;
-        for (const openView of openViews) {
-          failedTabs += await this.restartEnvironmentAffectedRuntimes(
-            openView,
-            affectedProviderIds,
-            sessionInvalidationProviderIds,
-          );
-          openView.invalidateProviderCommandCaches(affectedProviderIds);
-          openView.refreshModelSelector();
+        try {
+          for (const openView of this.getAllViews()) {
+            openView.invalidateProviderCommandCaches(affectedProviderIds);
+            openView.refreshModelSelector();
+          }
+        } catch (error) {
+          errors.push(error);
         }
-        if (failedTabs > 0) {
-          new Notice(`Environment changes applied, but ${failedTabs} affected tab(s) failed to restart.`);
-        }
-      } catch (error) {
-        errors.push(error);
-      }
 
-      const noticeText = sessionInvalidationProviderIds.length > 0
-        ? 'Environment variables applied. Sessions will be rebuilt on next message.'
-        : 'Environment variables applied.';
-      new Notice(noticeText);
-      if (modelCatalogDiagnostics.length > 0) {
-        new Notice(`Model catalog refresh failed:\n${modelCatalogDiagnostics.join('\n')}`);
-      }
-    }
-
-    try {
-      await auxiliaryTransition?.release();
-    } catch (error) {
-      errors.push(error);
-    }
-    if (errors.length === 1) {
-      throw errors[0];
-    }
-    if (errors.length > 1) {
-      throw new AggregateError(errors, 'Environment change recovery failed.');
-    }
-  }
-
-  private async restartEnvironmentAffectedRuntimes(
-    view: ClaudianView,
-    affectedProviderIds: ProviderId[],
-    sessionInvalidationProviderIds: ProviderId[],
-  ): Promise<number> {
-    const tabManager = view.getTabManager();
-    if (!tabManager) return 0;
-
-    const affectedTabs = tabManager.getAllTabs().filter((tab) => (
-      affectedProviderIds.includes(tab.providerId ?? DEFAULT_CHAT_PROVIDER_ID)
-    ));
-    const syncTabRuntimeState = (tab: (typeof affectedTabs)[number]): void => {
-      if (!tab.service || !tab.serviceInitialized) return;
-
-      const conversation = tab.conversationId
-        ? this.getConversationSync(tab.conversationId)
-        : null;
-      const hasConversationContext = (conversation?.messages.length ?? 0) > 0;
-      const externalContextPaths = tab.ui.externalContextSelector?.getExternalContexts()
-        ?? (hasConversationContext
-          ? conversation?.externalContextPaths ?? []
-          : this.settings.persistentExternalContextPaths ?? []);
-
-      tab.service.syncConversationState(conversation, externalContextPaths);
-    };
-
-    let failedTabs = 0;
-    for (const tab of affectedTabs) {
-      if (!tab.service || !tab.serviceInitialized) continue;
-      try {
-        syncTabRuntimeState(tab);
-        const providerId = tab.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
-        if (sessionInvalidationProviderIds.includes(providerId)) {
-          tab.service.resetSession();
-          await tab.service.ensureReady({ providerTransitionOwner: true });
-        } else {
-          await tab.service.ensureReady({
-            allowSessionCreation: false,
-            force: true,
-            providerTransitionOwner: true,
-          });
-        }
-      } catch {
-        failedTabs++;
-      }
-    }
-    return failedTabs;
-  }
-
-  private async quiesceEnvironmentAffectedRuntimes(
-    affectedProviderIds: ProviderId[],
-  ): Promise<void> {
-    const activeTurnFinalizations: Promise<void>[] = [];
-    for (const view of this.getAllViews()) {
-      const tabManager = view.getTabManager();
-      if (!tabManager) continue;
-      for (const tab of tabManager.getAllTabs()) {
-        const providerId = tab.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
-        if (!affectedProviderIds.includes(providerId)) continue;
-        const inputController = tab.controllers?.inputController;
-        if (inputController) {
-          activeTurnFinalizations.push(inputController.cancelStreamingAndWait());
+        const noticeText = sessionInvalidationProviderIds.length > 0
+          ? 'Environment variables applied. Sessions will be rebuilt on next message.'
+          : 'Environment variables applied.';
+        new Notice(noticeText);
+        if (modelCatalogDiagnostics.length > 0) {
+          new Notice(`Model catalog refresh failed:\n${modelCatalogDiagnostics.join('\n')}`);
         }
       }
-    }
-    await Promise.all(activeTurnFinalizations);
+
+      if (errors.length === 1) {
+        throw errors[0];
+      }
+      if (errors.length > 1) {
+        throw new AggregateError(errors, 'Environment change recovery failed.');
+      }
+    });
   }
 
   /** Returns the runtime environment variables (fixed at plugin load). */
@@ -1172,24 +1105,37 @@ export default class ClaudianPlugin extends Plugin {
     return this.conversationRepository.switchTo(id);
   }
 
-  async deleteConversation(
-    id: string,
-    options: { deleteProviderSession?: boolean } = {},
-  ): Promise<void> {
-    await this.conversationRepository.delete(id, options);
+  async deleteConversation(id: string): Promise<void> {
+    await this.conversationRepository.delete(id);
+  }
+
+  runProviderExecutionTransition<T>(
+    providerIds: ProviderId[],
+    mutation: () => Promise<T>,
+  ): Promise<T> {
+    return this.executionLifecycleRegistry.runTransition(providerIds, mutation);
   }
 
   private async resetDeletedConversationTabs(id: string): Promise<void> {
+    const errors: unknown[] = [];
     for (const view of this.getAllViews()) {
       const tabManager = view.getTabManager();
       if (!tabManager) continue;
 
       for (const tab of tabManager.getAllTabs()) {
         if (tab.conversationId === id) {
-          tab.controllers.inputController?.cancelStreaming();
-          await tab.controllers.conversationController?.createNew({ force: true });
+          try {
+            tab.controllers.inputController?.cancelStreaming();
+            await tab.controllers.conversationController?.createNew({ force: true });
+          } catch (error) {
+            errors.push(error);
+          }
         }
       }
+    }
+    if (errors.length > 0) {
+      const first = errors[0];
+      throw first instanceof Error ? first : new Error(String(first));
     }
   }
 

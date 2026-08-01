@@ -5,10 +5,6 @@ describe('OPENCODE_PROVIDER_CAPABILITIES', () => {
     expect(OPENCODE_PROVIDER_CAPABILITIES.providerId).toBe('opencode');
   });
 
-  it('should support persistent runtime', () => {
-    expect(OPENCODE_PROVIDER_CAPABILITIES.supportsPersistentRuntime).toBe(true);
-  });
-
   it('should support native history', () => {
     expect(OPENCODE_PROVIDER_CAPABILITIES.supportsNativeHistory).toBe(true);
   });

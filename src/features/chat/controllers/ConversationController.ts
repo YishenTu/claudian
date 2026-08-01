@@ -1,13 +1,16 @@
 import { Menu, Notice, setIcon } from 'obsidian';
 
+import type {
+  ChatRewindConflict,
+  ChatRewindMode,
+} from '../../../core/execution';
 import type { TitleGenerationService } from '../../../core/providers/types';
-import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
-import type { ChatRewindConflict, ChatRewindMode } from '../../../core/runtime/types';
-import type { ChatMessage, Conversation } from '../../../core/types';
+import type { ChatMessage, Conversation, ProviderId } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { confirm } from '../../../shared/modals/ConfirmModal';
 import { extractUserDisplayContent } from '../../../utils/context';
 import type { FeatureHost } from '../../FeatureHost';
+import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement, renderWelcomeContent } from '../rendering/WelcomeRenderer';
@@ -28,7 +31,7 @@ function runConversationAction(action: () => Promise<void>, failureMessage: stri
 const DEFAULT_HISTORY_PAGE_SIZE = 100;
 const MAX_REWIND_CONFLICT_PATHS = 5;
 
-function buildRewindConflictConfirmation(conflicts: ChatRewindConflict[]): string {
+function buildRewindConflictConfirmation(conflicts: readonly ChatRewindConflict[]): string {
   const visiblePaths = conflicts
     .slice(0, MAX_REWIND_CONFLICT_PATHS)
     .map(conflict => `- ${conflict.path}`);
@@ -64,10 +67,11 @@ export interface ConversationControllerDeps {
   clearQueuedMessage: () => void;
   getTitleGenerationService: () => TitleGenerationService | null;
   getStatusPanel: () => StatusPanel | null;
-  getAgentService?: () => ChatRuntime | null;
-  ensureServiceInitialized?: () => Promise<boolean>;
+  getExecutionCoordinator: () => ChatExecutionCoordinator | null;
+  ensureExecutionInitialized?: () => Promise<boolean>;
+  getProviderId?: () => ProviderId;
   getSelectedModel?: () => string | null;
-  ensureServiceForConversation?: (conversation: Conversation | null) => Promise<void>;
+  ensureExecutionForConversation?: (conversation: Conversation | null) => Promise<void>;
   dismissPendingInlinePrompts?: () => void;
   awaitBackgroundWork?: () => Promise<void>;
   /** True once the owning tab has begun teardown. */
@@ -108,8 +112,8 @@ export class ConversationController {
     this.callbacks = callbacks;
   }
 
-  private getAgentService(): ChatRuntime | null {
-    return this.deps.getAgentService?.() ?? null;
+  private getExecutionCoordinator(): ChatExecutionCoordinator | null {
+    return this.deps.getExecutionCoordinator();
   }
 
   // ============================================
@@ -139,7 +143,7 @@ export class ConversationController {
       if (force && state.isStreaming) {
         state.cancelRequested = true;
         state.bumpStreamGeneration();
-        this.getAgentService()?.cancel();
+        this.getExecutionCoordinator()?.cancel();
       }
 
       if (this.deps.awaitBackgroundWork) {
@@ -176,12 +180,7 @@ export class ConversationController {
       state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
       state.hasPendingConversationSave = false;
 
-      // Reset agent service session (no session ID for entry point)
-      // Pass persistent paths to prevent stale external contexts
-      this.getAgentService()?.syncConversationState(
-        null,
-        plugin.settings.persistentExternalContextPaths || []
-      );
+      await this.getExecutionCoordinator()?.bindConversation(null);
 
       const messagesEl = this.deps.getMessagesEl();
       messagesEl.empty();
@@ -237,11 +236,7 @@ export class ConversationController {
       state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
       state.hasPendingConversationSave = false;
 
-      // Pass persistent paths to prevent stale external contexts
-      this.getAgentService()?.syncConversationState(
-        null,
-        plugin.settings.persistentExternalContextPaths || []
-      );
+      await this.getExecutionCoordinator()?.bindConversation(null);
 
       const fileCtx = this.deps.getFileContextManager();
       fileCtx?.resetForNewConversation();
@@ -265,7 +260,7 @@ export class ConversationController {
       return;
     }
 
-    await this.deps.ensureServiceForConversation?.(conversation);
+    await this.deps.ensureExecutionForConversation?.(conversation);
     this.restoreConversation(conversation, { autoAttachFile: true });
     this.updateWelcomeVisibility();
 
@@ -302,7 +297,7 @@ export class ConversationController {
         return;
       }
 
-      await this.deps.ensureServiceForConversation?.(conversation);
+      await this.deps.ensureExecutionForConversation?.(conversation);
       if (this.deps.isDisposed?.()) return;
 
       this.deps.getInputEl().value = '';
@@ -312,11 +307,10 @@ export class ConversationController {
 
       this.deps.getHistoryDropdown()?.removeClass('visible');
       this.updateWelcomeVisibility();
-
-      this.callbacks.onConversationSwitched?.();
     } finally {
       state.isSwitchingConversation = false;
     }
+    this.callbacks.onConversationSwitched?.();
   }
 
   async rewind(
@@ -368,10 +362,10 @@ export class ConversationController {
 
     state.isRewinding = true;
     try {
-      if (this.deps.ensureServiceInitialized) {
+      if (this.deps.ensureExecutionInitialized) {
         let initialized = false;
         try {
-          initialized = await this.deps.ensureServiceInitialized();
+          initialized = await this.deps.ensureExecutionInitialized();
         } catch (e) {
           new Notice(t('chat.rewind.failed', {
             error: e instanceof Error ? e.message : 'Failed to initialize agent service',
@@ -385,13 +379,9 @@ export class ConversationController {
         }
       }
 
-      const agentService = this.getAgentService();
-      if (!agentService) {
-        new Notice(t('chat.rewind.failed', { error: 'Agent service not available' }));
-        return;
-      }
-      if (!agentService.getCapabilities().supportsRewind) {
-        new Notice(t('chat.rewind.failed', { error: 'Rewind is not supported by this provider.' }));
+      const coordinator = this.getExecutionCoordinator();
+      if (!coordinator) {
+        new Notice(t('chat.rewind.failed', { error: 'Agent execution not available' }));
         return;
       }
       if (!isTargetCurrent()) {
@@ -402,10 +392,10 @@ export class ConversationController {
       let confirmationMessage = mode === 'conversation'
         ? t('chat.rewind.confirmMessageConversationOnly')
         : t('chat.rewind.confirmMessage');
-      if (mode === 'code-and-conversation' && agentService.previewRewind) {
+      if (mode === 'code-and-conversation') {
         let preview;
         try {
-          preview = await agentService.previewRewind(
+          preview = await coordinator.previewRewind(
             userMsg.userMessageId,
             prevAssistantUuid,
             mode,
@@ -427,7 +417,7 @@ export class ConversationController {
           new Notice(t('chat.rewind.unavailableStreaming'));
           return;
         }
-        if (!isTargetCurrent() || this.getAgentService() !== agentService) {
+        if (!isTargetCurrent() || this.getExecutionCoordinator() !== coordinator) {
           new Notice(t('chat.rewind.failed', { error: 'Conversation changed while rewinding.' }));
           return;
         }
@@ -444,14 +434,18 @@ export class ConversationController {
         new Notice(t('chat.rewind.unavailableStreaming'));
         return;
       }
-      if (!isTargetCurrent() || this.getAgentService() !== agentService) {
+      if (!isTargetCurrent() || this.getExecutionCoordinator() !== coordinator) {
         new Notice(t('chat.rewind.failed', { error: 'Conversation changed while rewinding.' }));
         return;
       }
 
       let result;
       try {
-        result = await agentService.rewind(userMsg.userMessageId, prevAssistantUuid, mode);
+        result = await coordinator.rewind(
+          userMsg.userMessageId,
+          prevAssistantUuid,
+          mode,
+        );
       } catch (e) {
         new Notice(t('chat.rewind.failed', { error: e instanceof Error ? e.message : 'Unknown error' }));
         return;
@@ -460,7 +454,7 @@ export class ConversationController {
         new Notice(t('chat.rewind.cannot', { error: result.error ?? 'Unknown error' }));
         return;
       }
-      if (!isTargetCurrent() || this.getAgentService() !== agentService) {
+      if (!isTargetCurrent() || this.getExecutionCoordinator() !== coordinator) {
         new Notice(t('chat.rewind.failed', { error: 'Conversation changed while rewinding.' }));
         return;
       }
@@ -538,17 +532,12 @@ export class ConversationController {
       return;
     }
 
-    const agentService = this.getAgentService();
-    const sessionInvalidated = agentService?.consumeSessionInvalidation?.() ?? false;
-
     // Entry point with messages - create conversation lazily
     // New conversations always use SDK-native storage.
     if (!state.currentConversationId && state.messages.length > 0) {
-      const initialSessionId = agentService?.getSessionId() ?? undefined;
       const selectedModel = this.deps.getSelectedModel?.() ?? undefined;
       const conversation = await plugin.createConversation({
-        providerId: agentService?.providerId,
-        sessionId: initialSessionId,
+        providerId: this.deps.getProviderId?.(),
         ...(selectedModel ? { selectedModel } : {}),
       });
       state.currentConversationId = conversation.id;
@@ -561,14 +550,7 @@ export class ConversationController {
     const mcpServerSelector = this.deps.getMcpServerSelector();
     const enabledMcpServers = mcpServerSelector ? Array.from(mcpServerSelector.getEnabledServers()) : [];
 
-    const conversation = plugin.getConversationSync(state.currentConversationId!);
-
-    const { updates: sessionUpdates } = agentService && !options?.resetProviderSession
-      ? agentService.buildSessionUpdates({ conversation, sessionInvalidated })
-      : { updates: {} };
-
     const updates: Partial<Conversation> = {
-      ...sessionUpdates,
       messages: state.messages,
       currentNote: currentNote,
       externalContextPaths: externalContextPaths.length > 0 ? externalContextPaths : undefined,
@@ -615,12 +597,6 @@ export class ConversationController {
 
     // Determine external context paths for this session
     // Empty session: use persistent paths; session with messages: use saved paths
-    const externalContextPaths = hasMessages
-      ? conversation.externalContextPaths || []
-      : plugin.settings.persistentExternalContextPaths || [];
-
-    this.getAgentService()?.syncConversationState(conversation, externalContextPaths);
-
     const fileCtx = this.deps.getFileContextManager();
     fileCtx?.resetForLoadedConversation(hasMessages);
 

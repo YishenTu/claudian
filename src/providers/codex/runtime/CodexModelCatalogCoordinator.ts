@@ -16,12 +16,13 @@ import type {
   ProviderModelCatalogRefreshResult,
   ProviderTransitionOwnerContext,
 } from '../../../core/providers/types';
+import { CodexMetadataTransitionGate } from '../metadata/CodexMetadataTransitionGate';
+import type { CodexDiscoveredModel } from '../models';
 import {
   getCodexProviderSettings,
   normalizeCodexVisibleModels,
   updateCodexProviderSettings,
 } from '../settings';
-import type { CodexDiscoveredModel } from './../models';
 import {
   computeCodexCatalogFingerprint,
 } from './CodexModelCatalogFingerprint';
@@ -58,11 +59,14 @@ export class CodexModelCatalogCoordinator {
   } | null = null;
   private abortController: AbortController | null = null;
   private disposed = false;
+  private disposePromise: Promise<void> | null = null;
+  private environmentCacheInvalidated = false;
   private refreshGeneration = 0;
 
   constructor(
     private readonly plugin: ProviderHost,
     private readonly discovery: CodexModelDiscoveryServiceLike,
+    private readonly transitionGate = new CodexMetadataTransitionGate(),
   ) {}
 
   getCachedCatalog(): CodexDiscoveredModel[] {
@@ -76,12 +80,30 @@ export class CodexModelCatalogCoordinator {
   async getStatus(
     context?: ProviderTransitionOwnerContext,
   ): Promise<'missing' | 'stale' | 'fresh'> {
+    if (
+      context?.providerTransitionOwner !== true
+      && this.transitionGate.isUnavailable()
+      && !await this.transitionGate.waitUntilAvailable()
+    ) {
+      return 'missing';
+    }
+    const generation = this.refreshGeneration;
     const settings = getCodexProviderSettings(this.plugin.settings);
-    if (settings.discoveredModels.length === 0 || !settings.catalogFingerprint) {
+    if (
+      this.environmentCacheInvalidated
+      || settings.discoveredModels.length === 0
+      || !settings.catalogFingerprint
+    ) {
       return 'missing';
     }
 
     const currentFingerprint = await computeCodexCatalogFingerprint(this.plugin, context);
+    if (
+      this.environmentCacheInvalidated
+      || generation !== this.refreshGeneration
+    ) {
+      return 'missing';
+    }
     if (currentFingerprint !== settings.catalogFingerprint) {
       return 'stale';
     }
@@ -98,6 +120,12 @@ export class CodexModelCatalogCoordinator {
     _reason: string,
     options: { force?: boolean } = {},
   ): Promise<CodexCatalogEnsureResult> {
+    if (
+      this.transitionGate.isUnavailable()
+      && !await this.transitionGate.waitUntilAvailable()
+    ) {
+      return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
+    }
     if (this.disposed) {
       return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
     }
@@ -137,6 +165,13 @@ export class CodexModelCatalogCoordinator {
   }
 
   async refresh(context?: ProviderTransitionOwnerContext): Promise<CodexCatalogResult> {
+    if (
+      context?.providerTransitionOwner !== true
+      && this.transitionGate.isUnavailable()
+      && !await this.transitionGate.waitUntilAvailable()
+    ) {
+      return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
+    }
     if (this.disposed) {
       return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
     }
@@ -206,9 +241,34 @@ export class CodexModelCatalogCoordinator {
     this.abortController?.abort();
   }
 
-  dispose(): void {
+  beginEnvironmentTransition(): void {
+    this.transitionGate.beginTransition();
+  }
+
+  endEnvironmentTransition(): void {
+    this.transitionGate.endTransition();
+  }
+
+  async quiesceForEnvironmentChange(): Promise<void> {
+    const flight = this.inFlightRefresh;
+    this.environmentCacheInvalidated = true;
+    this.refreshGeneration += 1;
+    this.abortController?.abort();
+    if (flight) {
+      await flight.promise.catch(() => undefined);
+      if (this.inFlightRefresh === flight) {
+        this.inFlightRefresh = null;
+      }
+    }
+    this.state = 'idle';
+  }
+
+  dispose(): Promise<void> {
+    if (this.disposePromise) return this.disposePromise;
     this.disposed = true;
-    this.cancel();
+    this.transitionGate.dispose();
+    this.disposePromise = this.quiesceForEnvironmentChange();
+    return this.disposePromise;
   }
 
   private async runRefresh(
@@ -282,6 +342,7 @@ export class CodexModelCatalogCoordinator {
         };
       }
       this.state = 'ready';
+      this.environmentCacheInvalidated = false;
       if (persistedResult.changed) {
         this.plugin.notifyProviderChatOptionsChanged('codex');
       }

@@ -50,7 +50,6 @@ function createMockCallbacks() {
     }),
     getCapabilities: jest.fn().mockReturnValue({
       providerId: 'claude',
-      supportsPersistentRuntime: true,
       supportsNativeHistory: true,
       supportsPlanMode: true,
       supportsRewind: true,

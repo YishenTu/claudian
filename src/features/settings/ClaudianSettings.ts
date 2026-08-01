@@ -754,16 +754,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
   }
 
   private async restartServiceForPromptChange(): Promise<void> {
-    const view = this.plugin.getView();
-    const tabManager = view?.getTabManager();
-    if (!tabManager) return;
-
     try {
-      await tabManager.broadcastToAllTabs(
-        async (service) => { await service.ensureReady({ force: true }); }
+      await this.plugin.providerHost.runProviderExecutionTransition(
+        ProviderRegistry.getRegisteredProviderIds(),
+        async () => undefined,
       );
     } catch {
-      // Changes will apply on the next conversation if the restart fails.
+      // Changes will apply when the next provider execution starts.
     }
   }
 }

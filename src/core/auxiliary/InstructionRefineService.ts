@@ -1,18 +1,32 @@
-import { buildRefineSystemPrompt, parseInstructionRefineResponse } from '../prompt/instructionRefine';
+import {
+  buildRefineSystemPrompt,
+  parseInstructionRefineResponse,
+} from '../prompt/instructionRefine';
 import type {
   InstructionRefineService as InstructionRefineServiceContract,
   RefineProgressCallback,
 } from '../providers/types';
 import type { InstructionRefineResult } from '../types';
-import type { AuxQueryRunner } from './AuxQueryRunner';
+import type { AuxiliaryExecutionContext } from './AuxiliaryExecutionContext';
+import { AuxiliarySessionController } from './AuxiliarySessionController';
 
-export class InstructionRefineService implements InstructionRefineServiceContract {
-  private abortController: AbortController | null = null;
+const CONTINUITY_RESET_MESSAGE =
+  'The provider environment changed. Start a new instruction refinement.';
+
+export class InstructionRefineService
+implements InstructionRefineServiceContract {
+  private readonly controller: AuxiliarySessionController;
   private existingInstructions = '';
   private hasConversation = false;
   private modelOverride: string | undefined;
 
-  constructor(private readonly runner: AuxQueryRunner) {}
+  constructor(context: AuxiliaryExecutionContext) {
+    this.controller = new AuxiliarySessionController(
+      context,
+      'instruction',
+      { kind: 'passive' },
+    );
+  }
 
   setModelOverride(model?: string): void {
     const trimmed = model?.trim();
@@ -20,8 +34,8 @@ export class InstructionRefineService implements InstructionRefineServiceContrac
   }
 
   resetConversation(): void {
-    this.runner.reset();
     this.hasConversation = false;
+    this.controller.reset();
   }
 
   async refineInstruction(
@@ -29,50 +43,69 @@ export class InstructionRefineService implements InstructionRefineServiceContrac
     existingInstructions: string,
     onProgress?: RefineProgressCallback,
   ): Promise<InstructionRefineResult> {
-    this.resetConversation();
+    this.hasConversation = false;
     this.existingInstructions = existingInstructions;
-    return this.sendMessage(`Please refine this instruction: "${rawInstruction}"`, onProgress);
+    try {
+      await this.controller.startRoot();
+    } catch (error) {
+      return toFailure(error);
+    }
+    return this.sendMessage(
+      `Please refine this instruction: "${rawInstruction}"`,
+      onProgress,
+    );
   }
 
   async continueConversation(
     message: string,
     onProgress?: RefineProgressCallback,
   ): Promise<InstructionRefineResult> {
-    if (!this.hasConversation || this.runner.canContinue?.() === false) {
+    if (this.controller.requiresReset) {
+      return {
+        error: CONTINUITY_RESET_MESSAGE,
+        resetRequired: true,
+        success: false,
+      };
+    }
+    if (!this.hasConversation || !this.controller.hasSession) {
       return { success: false, error: 'No active conversation to continue' };
     }
     return this.sendMessage(message, onProgress);
   }
 
   cancel(): void {
-    this.abortController?.abort();
-    this.abortController = null;
+    this.hasConversation = false;
+    this.controller.cancel();
   }
 
   private async sendMessage(
     prompt: string,
     onProgress?: RefineProgressCallback,
   ): Promise<InstructionRefineResult> {
-    this.abortController = new AbortController();
-
     try {
-      const text = await this.runner.query({
-        abortController: this.abortController,
+      const text = await this.controller.execute({
         model: this.modelOverride,
-        onTextChunk: onProgress
-          ? (accumulatedText: string) => onProgress(parseInstructionRefineResponse(accumulatedText))
+        onProgress: onProgress
+          ? accumulated => onProgress(
+            parseInstructionRefineResponse(accumulated),
+          )
           : undefined,
+        prompt,
         systemPrompt: buildRefineSystemPrompt(this.existingInstructions),
-      }, prompt);
-      this.hasConversation = this.runner.canContinue?.() ?? true;
+      });
+      this.hasConversation = true;
       return parseInstructionRefineResponse(text);
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    } finally {
-      this.abortController = null;
+      this.hasConversation = false;
+      await this.controller.dispose();
+      return toFailure(error);
     }
   }
+}
+
+function toFailure(error: unknown): InstructionRefineResult {
+  return {
+    success: false,
+    error: error instanceof Error ? error.message : 'Unknown error',
+  };
 }

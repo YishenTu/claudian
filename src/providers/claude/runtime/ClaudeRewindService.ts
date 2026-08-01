@@ -3,7 +3,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { ChatRewindMode, ChatRewindResult } from '../../../core/runtime/types';
+import type { ChatRewindMode, ChatRewindResult } from '../../../core/execution';
 
 interface BackupEntryFile {
   originalPath: string;

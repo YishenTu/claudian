@@ -84,21 +84,38 @@ describe('GrokConversationHistoryService', () => {
     ].map(record => JSON.stringify(record)).join('\n');
   }
 
-  it('hydrates idempotently, repairs path hints, and never mutates native history', async () => {
+  it('hydrates idempotently and repairs path hints without mutating native history', async () => {
     const service = new GrokConversationHistoryService();
     const conversation = createConversation();
+    conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
     const context = { environment: { HOME: tempRoot } };
 
     await service.hydrateConversationHistory(conversation, vaultPath, context);
     expect(conversation.messages).toHaveLength(4);
-    expect(conversation.providerState).toEqual({ sessionDirectory });
+    expect(conversation.providerState).toEqual({
+      futureResumeCursor: { token: 'cursor-1' },
+      sessionDirectory,
+    });
 
     await fs.writeFile(updatesPath, '', 'utf8');
     await service.hydrateConversationHistory(conversation, vaultPath, context);
     expect(conversation.messages).toHaveLength(4);
 
-    await service.deleteConversationSession(conversation, vaultPath, context);
     expect(await fs.readFile(updatesPath, 'utf8')).toBe('');
+  });
+
+  it('sanitizes known fields while preserving unknown provider state', () => {
+    const service = new GrokConversationHistoryService();
+    const conversation = createConversation();
+    conversation.providerState = {
+      futureResumeCursor: { token: 'cursor-1' },
+      sessionDirectory,
+    };
+
+    expect(service.buildPersistedProviderState(conversation)).toEqual({
+      futureResumeCursor: { token: 'cursor-1' },
+      sessionDirectory,
+    });
   });
 
   it('leaves messages unchanged and discards untrusted hints when history is unavailable', async () => {

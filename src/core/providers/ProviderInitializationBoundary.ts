@@ -7,22 +7,13 @@
 
 import type { ProviderHost } from './ProviderHost';
 import type {
-  ProviderEnvironmentTransition,
   ProviderId,
   ProviderWorkspaceInitContext,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from './types';
 
-interface ProviderTransitionGate {
-  holds: number;
-  opened: Promise<void>;
-  open(): void;
-}
-
 interface ProviderInitializationAttempt {
-  invalidated: Promise<void>;
-  invalidate(): void;
   promise: Promise<void>;
 }
 
@@ -30,7 +21,6 @@ export class ProviderInitializationBoundary {
   private registrations: Partial<Record<ProviderId, ProviderWorkspaceRegistration>> = {};
   private services: Partial<Record<ProviderId, ProviderWorkspaceServices>> = {};
   private initAttempts: Partial<Record<ProviderId, ProviderInitializationAttempt>> = {};
-  private transitionGates: Partial<Record<ProviderId, ProviderTransitionGate>> = {};
   private generation = 0;
 
   getRegisteredProviderIds(): ProviderId[] {
@@ -45,7 +35,6 @@ export class ProviderInitializationBoundary {
       this.services[providerId] = services;
     } else {
       delete this.services[providerId];
-      this.initAttempts[providerId]?.invalidate();
       delete this.initAttempts[providerId];
     }
   }
@@ -63,22 +52,21 @@ export class ProviderInitializationBoundary {
     _reason: string,
   ): Promise<void> {
     if (this.services[providerId]) {
-      await this.waitForProviderTransitions(providerId);
       return;
     }
 
     const existing = this.initAttempts[providerId];
     if (existing) {
       await existing.promise;
-      await this.waitForProviderTransitions(providerId);
       return;
     }
 
-    const promise = this.runInitialize(plugin, providerId, this.generation);
-    let invalidate!: () => void;
+    const generation = this.generation;
+    const promise = plugin.runProviderExecutionTransition(
+      [providerId],
+      () => this.runInitialize(plugin, providerId, generation),
+    );
     const attempt: ProviderInitializationAttempt = {
-      invalidated: new Promise<void>(resolve => { invalidate = resolve; }),
-      invalidate,
       promise,
     };
     this.initAttempts[providerId] = attempt;
@@ -87,63 +75,8 @@ export class ProviderInitializationBoundary {
     } finally {
       if (this.initAttempts[providerId] === attempt) {
         delete this.initAttempts[providerId];
-        attempt.invalidate();
       }
     }
-    await this.waitForProviderTransitions(providerId);
-  }
-
-  async beginEnvironmentChange(
-    providerIds: ProviderId[],
-  ): Promise<ProviderEnvironmentTransition> {
-    const orderedProviderIds = [...new Set(providerIds)].sort();
-    const releaseGates = orderedProviderIds.map(providerId => (
-      this.holdProviderTransitions(providerId)
-    ));
-    const providerTransitions: ProviderEnvironmentTransition[] = [];
-
-    try {
-      for (const providerId of orderedProviderIds) {
-        const initialization = this.initAttempts[providerId];
-        if (initialization) {
-          await Promise.race([
-            initialization.promise.then(() => undefined, () => undefined),
-            initialization.invalidated,
-          ]);
-        }
-        const transition = await this.services[providerId]
-          ?.beginAuxiliaryServicesEnvironmentChange?.();
-        if (transition) {
-          providerTransitions.push(transition);
-        }
-      }
-    } catch (error) {
-      await Promise.allSettled(
-        providerTransitions.reverse().map(transition => transition.release()),
-      );
-      releaseGates.reverse().forEach(release => release());
-      throw error;
-    }
-
-    let released = false;
-    return {
-      async release() {
-        if (released) {
-          return;
-        }
-        released = true;
-        const results = await Promise.allSettled(
-          providerTransitions.reverse().map(transition => transition.release()),
-        );
-        releaseGates.reverse().forEach(release => release());
-        const failure = results.find(
-          (result): result is PromiseRejectedResult => result.status === 'rejected',
-        );
-        if (failure) {
-          throw failure.reason;
-        }
-      },
-    };
   }
 
   getIfInitialized(providerId: ProviderId): ProviderWorkspaceServices | null {
@@ -161,44 +94,8 @@ export class ProviderInitializationBoundary {
       }
       delete this.services[providerId];
     }
-    for (const attempt of Object.values(this.initAttempts)) {
-      attempt?.invalidate();
-    }
     this.initAttempts = {};
     await Promise.allSettled(promises);
-  }
-
-  private holdProviderTransitions(providerId: ProviderId): () => void {
-    let gate = this.transitionGates[providerId];
-    if (!gate) {
-      let open!: () => void;
-      gate = {
-        holds: 0,
-        opened: new Promise<void>(resolve => { open = resolve; }),
-        open,
-      };
-      this.transitionGates[providerId] = gate;
-    }
-    gate.holds += 1;
-
-    let released = false;
-    return () => {
-      if (released) {
-        return;
-      }
-      released = true;
-      gate.holds -= 1;
-      if (gate.holds === 0 && this.transitionGates[providerId] === gate) {
-        delete this.transitionGates[providerId];
-        gate.open();
-      }
-    };
-  }
-
-  private async waitForProviderTransitions(providerId: ProviderId): Promise<void> {
-    while (this.transitionGates[providerId]) {
-      await this.transitionGates[providerId]?.opened;
-    }
   }
 
   private async runInitialize(

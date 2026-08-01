@@ -160,4 +160,29 @@ describe('InlineEditSession', () => {
       'Inline edit was not applied because the source document or selection changed.',
     );
   });
+
+  it('leaves clarification mode after provider continuity is invalidated', async () => {
+    const { service, session } = createSession();
+    service.continueConversation.mockResolvedValue({
+      error: 'The provider environment changed. Start a new inline edit.',
+      resetRequired: true,
+      success: false,
+    });
+    const inputEl = Object.assign(createMockEl('input'), {
+      disabled: false,
+      focus: jest.fn(),
+      placeholder: '',
+      value: 'continue',
+    });
+    Object.assign(session as any, {
+      inputEl,
+      isConversing: true,
+      spinnerEl: createMockEl(),
+    });
+
+    await (session as any).generate();
+
+    expect((session as any).isConversing).toBe(false);
+    expect(inputEl.placeholder).toContain('provider environment changed');
+  });
 });

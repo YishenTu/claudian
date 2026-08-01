@@ -42,10 +42,23 @@ function createDeferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
+function createInertInlineEditService() {
+  return {
+    cancel: jest.fn(),
+    continueConversation: jest.fn(),
+    editText: jest.fn(),
+    resetConversation: jest.fn(),
+    setModelOverride: jest.fn(),
+  };
+}
+
 describe('InlineEditModal - openAndWait', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue(undefined);
+    jest
+      .spyOn(ProviderRegistry, 'createInlineEditService')
+      .mockReturnValue(createInertInlineEditService() as any);
   });
 
   afterEach(() => {

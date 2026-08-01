@@ -1,6 +1,11 @@
 import type { Component } from 'obsidian';
 import { Notice, Platform } from 'obsidian';
 
+import type {
+  ProviderBackgroundOutputEvent,
+  ProviderInteractionPort,
+  ProviderSessionEvent,
+} from '../../../core/execution';
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import { normalizeProviderCommandDiscoveryItems } from '../../../core/providers/commands/ProviderCommandDiscoveryResult';
 import { ProviderCommandDiscoveryStore } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
@@ -23,10 +28,14 @@ import type {
 import {
   DEFAULT_CHAT_PROVIDER_ID,
 } from '../../../core/providers/types';
-import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
-import type { AutoTurnResult } from '../../../core/runtime/types';
 import { TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
-import type { ChatMessage, ClaudianSettings, Conversation, StreamChunk } from '../../../core/types';
+import {
+  type ChatMessage,
+  type ClaudianSettings,
+  type Conversation,
+  isCanonicalUserMessage,
+  type StreamChunk,
+} from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { getEnhancedPath } from '../../../utils/env';
@@ -39,7 +48,14 @@ import { ConversationController } from '../controllers/ConversationController';
 import { InputController } from '../controllers/InputController';
 import { NavigationController } from '../controllers/NavigationController';
 import { SelectionController } from '../controllers/SelectionController';
-import { StreamController } from '../controllers/StreamController';
+import {
+  providerOutputEventToStreamChunk,
+  StreamController,
+} from '../controllers/StreamController';
+import {
+  ChatExecutionCoordinator,
+  type ChatExecutionEventContext,
+} from '../execution/ChatExecutionCoordinator';
 import { MessageRenderer } from '../rendering/MessageRenderer';
 import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement } from '../rendering/WelcomeRenderer';
@@ -78,6 +94,18 @@ type TabProviderSettings = Record<string, unknown> & {
   permissionMode: string;
   customContextLimits?: Record<string, number>;
 };
+
+interface BackgroundTurnRenderResult {
+  chunks: StreamChunk[];
+  metadata: {
+    assistantMessageId?: string;
+  };
+}
+
+const backgroundTurnBuffers = new WeakMap<
+  TabData,
+  Map<string, Map<string, ProviderBackgroundOutputEvent[]>>
+>();
 
 function getSharedSelectionFocusScopeEls(component: Component): HTMLElement[] {
   const host = component as Partial<TabManagerViewHost>;
@@ -138,7 +166,6 @@ export interface TabCreateOptions {
   onTitleChanged?: (title: string) => void;
   onAttentionChanged?: (needsAttention: boolean) => void;
   onConversationIdChanged?: (conversationId: string | null) => void;
-  onRuntimeInstalled?: (runtime: ChatRuntime) => void;
   onPersistedStateChanged?: () => void;
 }
 
@@ -150,10 +177,6 @@ function getTabCapabilities(
   conversation?: Conversation | null,
 ): ProviderCapabilities {
   const providerId = getTabProviderId(tab, plugin, conversation);
-  if (tab.service?.providerId === providerId) {
-    return tab.service.getCapabilities();
-  }
-
   return ProviderRegistry.getCapabilities(providerId);
 }
 
@@ -203,7 +226,6 @@ function getTabSelectedModel(
   const providerId = getTabProviderId(tab, plugin);
   if (tab.lifecycleState === 'blank') {
     return normalizeProviderModelSelection(providerId, plugin.settings, tab.draftModel)
-      ?? tab.service?.getAuxiliaryModel?.()
       ?? tab.draftModel
       ?? null;
   }
@@ -213,7 +235,7 @@ function getTabSelectedModel(
     return resolveConversationModel(plugin.settings, providerId, conversation).model;
   }
 
-  return tab.service?.getAuxiliaryModel?.() ?? null;
+  return null;
 }
 
 function getTabPermissionMode(
@@ -470,10 +492,12 @@ function syncTabProviderServices(
 ): void {
   tab.services.instructionRefineService?.cancel();
   tab.services.instructionRefineService?.resetConversation();
-  tab.services.instructionRefineService = ProviderRegistry.createInstructionRefineService(
-    plugin.providerHost,
-    tab.providerId,
-  );
+  tab.services.instructionRefineService = ProviderWorkspaceRegistry.getIfInitialized(tab.providerId)
+    ? ProviderRegistry.createInstructionRefineService(
+      plugin.providerHost,
+      tab.providerId,
+    )
+    : null;
   tab.services.subagentManager.setTaskResultInterpreter?.(
     ProviderRegistry.getTaskResultInterpreter(tab.providerId)
   );
@@ -487,12 +511,8 @@ function ensureTitleGenerationService(tab: TabData, plugin: FeatureHost): void {
   }
 }
 
-function cleanupTabRuntime(tab: TabData): void {
-  if (tab.service && typeof tab.service.cleanup === 'function') {
-    tab.service.cleanup();
-  }
-  tab.service = null;
-  tab.serviceInitialized = false;
+async function cleanupTabExecution(tab: TabData): Promise<void> {
+  await tab.session.disposeExecutionCoordinator();
 }
 
 function resolveBlankTabFallback(
@@ -565,16 +585,6 @@ export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost)
 
   tab.providerId = nextProviderId;
 
-  // Clean up stale service if provider changed
-  if (
-    tab.service
-    && tab.service.providerId !== nextProviderId
-  ) {
-    tab.service.cleanup();
-    tab.service = null;
-    tab.serviceInitialized = false;
-  }
-
   syncTabProviderServices(tab, plugin);
   syncSlashCommandDropdownForProvider(tab, plugin);
   invalidateTabProviderCommands(tab);
@@ -636,8 +646,6 @@ export function createTab(options: TabCreateOptions): TabData {
     providerId: initialProviderId,
     conversationId: conversation?.id ?? null,
   });
-  const runtimeSupervisor = session.runtimeSupervisor;
-
   const tab: TabData = {
     session,
     get id() {
@@ -668,17 +676,14 @@ export function createTab(options: TabCreateOptions): TabData {
     set conversationId(value) {
       session.conversationId = value;
     },
-    get service() {
-      return runtimeSupervisor.current;
+    get executionCoordinator() {
+      return session.executionCoordinator;
     },
-    set service(runtime) {
-      runtimeSupervisor.setCurrent(runtime);
+    set executionCoordinator(coordinator) {
+      session.setExecutionCoordinator(coordinator);
     },
-    runtimeSupervisor,
-    onRuntimeInstalled: options.onRuntimeInstalled,
     onPersistedStateChanged: options.onPersistedStateChanged,
     providerCatalogResolver: null,
-    serviceInitialized: false,
     state,
     controllers: {
       selectionController: null,
@@ -716,7 +721,254 @@ export function createTab(options: TabCreateOptions): TabData {
     renderer: null,
   };
 
+  tab.executionCoordinator = createTabExecutionCoordinator(tab, plugin);
   return tab;
+}
+
+function createConversationExecutionBinding(conversation: Conversation) {
+  return {
+    conversationId: conversation.id,
+    providerId: conversation.providerId,
+    resumeSeed: {
+      ...(conversation.sessionId ? { providerSessionId: conversation.sessionId } : {}),
+      ...(conversation.providerState ? { providerState: conversation.providerState } : {}),
+      ...(conversation.resumeAtMessageId
+        ? { resumeCheckpoint: conversation.resumeAtMessageId }
+        : {}),
+    },
+  };
+}
+
+function createTabExecutionCoordinator(
+  tab: TabData,
+  plugin: FeatureHost,
+): ChatExecutionCoordinator {
+  const interactionKinds = new Map<
+    string,
+    'approval' | 'question' | 'plan-decision'
+  >();
+  const interactionPort: ProviderInteractionPort = {
+    requestApproval: async (request) => {
+      interactionKinds.set(request.interactionId, request.kind);
+      const decision = await tab.controllers.inputController?.handleApprovalRequest(
+        request.toolName,
+        { ...request.input },
+        request.description,
+        {
+          ...(request.decisionReason ? { decisionReason: request.decisionReason } : {}),
+          ...(request.blockedPath ? { blockedPath: request.blockedPath } : {}),
+          ...(request.decisionOptions
+            ? { decisionOptions: request.decisionOptions.map(option => ({ ...option })) }
+            : {}),
+          ...(request.additionalPermissions !== undefined
+            ? { additionalPermissions: request.additionalPermissions }
+            : {}),
+        },
+      ) ?? 'cancel';
+      interactionKinds.delete(request.interactionId);
+      return { interactionId: request.interactionId, decision };
+    },
+    askUserQuestion: async (request, signal) => {
+      interactionKinds.set(request.interactionId, request.kind);
+      const answers = await tab.controllers.inputController?.handleAskUserQuestion(
+        { ...request.input },
+        signal,
+      ) ?? null;
+      interactionKinds.delete(request.interactionId);
+      return { interactionId: request.interactionId, answers };
+    },
+    requestPlanDecision: async (request, signal) => {
+      interactionKinds.set(request.interactionId, request.kind);
+      const decision = await tab.controllers.inputController?.handleExitPlanMode(
+        { ...request.input },
+        signal,
+        request.presentation,
+      ) ?? null;
+      interactionKinds.delete(request.interactionId);
+      if (decision !== null && decision.type !== 'feedback') {
+        await restorePrePlanMode(tab, plugin);
+        if (decision.type === 'approve-new-session') {
+          tab.state.pendingNewSessionPlan = decision.planContent;
+          tab.state.cancelRequested = true;
+        }
+      }
+      return { interactionId: request.interactionId, decision };
+    },
+    dismissInteraction: (interactionId) => {
+      const kind = interactionKinds.get(interactionId);
+      if (kind) {
+        tab.controllers.inputController?.dismissProviderInteraction(kind);
+        interactionKinds.delete(interactionId);
+      }
+    },
+  };
+  return new ChatExecutionCoordinator({
+    lifecycleRegistry: plugin.providerHost.executionLifecycleRegistry,
+    resolveBackend: providerId => ProviderRegistry.createExecutionBackend(
+      plugin.providerHost,
+      providerId,
+    ),
+    persistence: plugin.executionPersistence,
+    interactionPort,
+    vaultWorkingDirectory: getVaultPath(plugin.app) ?? '.',
+    createId: generateMessageId,
+    onRequestedEvent: event => tab.controllers.inputController?.handleExecutionEvent(event),
+    onSessionEvent: (event, context) => enqueueTabSessionEvent(
+      tab,
+      plugin,
+      event,
+      context,
+    ),
+    resolveMissingProviderSession: (conversationId, missingProviderSessionId) =>
+      plugin.handleMissingProviderSession(conversationId, missingProviderSessionId),
+    onError: error => {
+      new Notice(error instanceof Error ? error.message : 'Provider execution failed.');
+    },
+  });
+}
+
+async function restorePrePlanMode(tab: TabData, plugin: FeatureHost): Promise<void> {
+  if (getTabPermissionMode(tab, plugin) !== 'plan') return;
+  const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
+  try {
+    await updatePlanModeUI(tab, plugin, restoreMode);
+  } finally {
+    if (getTabPermissionMode(tab, plugin) !== 'plan') {
+      tab.state.prePlanPermissionMode = null;
+    }
+  }
+}
+
+async function handleTabSessionEvent(
+  tab: TabData,
+  plugin: FeatureHost,
+  event: ProviderSessionEvent,
+  context: ChatExecutionEventContext,
+  isCurrent: () => boolean,
+): Promise<void> {
+  if (!isCurrent()) return;
+  if (event.type === 'mode_changed') {
+    await updatePlanModeUI(tab, plugin, normalizeProviderMode(event.mode));
+    if (!isCurrent()) return;
+    return;
+  }
+  if (event.type === 'async_subagent_completed') {
+    const providerSessionId = event.providerSessionId
+      ?? tab.executionCoordinator?.snapshot?.providerSessionId;
+    if (!providerSessionId) return;
+    const applied = await tab.controllers.streamController?.handleAsyncSubagentCompletion({
+      type: 'async_subagent_completion',
+      providerSessionId,
+      taskId: event.subagentId,
+      status: event.status,
+      ...(event.result !== undefined ? { result: event.result } : {}),
+    });
+    if (applied && isCurrent()) {
+      await tab.controllers.conversationController?.save(false);
+    }
+    return;
+  }
+  if (event.type === 'session_error') {
+    new Notice(event.message);
+    return;
+  }
+  if (event.scope.kind !== 'background') return;
+
+  const turns = getBackgroundTurnBuffers(tab, context.bindingId);
+  if (event.type === 'background_turn_started') {
+    turns.set(event.scope.turnId, []);
+    return;
+  }
+  if (event.type === 'background_turn_completed') {
+    const events = turns.get(event.scope.turnId) ?? [];
+    turns.delete(event.scope.turnId);
+    deleteBackgroundTurnBuffersIfEmpty(tab, context.bindingId, turns);
+    const chunks = events
+      .map(providerOutputEventToStreamChunk)
+      .filter((chunk): chunk is StreamChunk => chunk !== null);
+    const rendered = await renderAutoTriggeredTurn(tab, {
+      chunks,
+      metadata: {
+        ...(event.nativeAssistantId
+          ? { assistantMessageId: event.nativeAssistantId }
+          : {}),
+      },
+    }, isCurrent);
+    if (rendered && isCurrent()) {
+      await tab.controllers.conversationController?.save(false);
+    }
+    return;
+  }
+  turns.get(event.scope.turnId)?.push(event as ProviderBackgroundOutputEvent);
+}
+
+function enqueueTabSessionEvent(
+  tab: TabData,
+  plugin: FeatureHost,
+  event: ProviderSessionEvent,
+  context: ChatExecutionEventContext,
+): Promise<void> | undefined {
+  const coordinator = tab.executionCoordinator;
+  const isCurrent = () => (
+    tab.executionCoordinator === coordinator
+    && coordinator?.isEventContextCurrent(context) === true
+  );
+  if (!isCurrent()) {
+    discardBackgroundTurnBuffers(tab, context.bindingId);
+    return undefined;
+  }
+
+  const pending = enqueueTabBackgroundWork(tab, async () => {
+    if (!isCurrent()) {
+      discardBackgroundTurnBuffers(tab, context.bindingId);
+      return;
+    }
+    await handleTabSessionEvent(tab, plugin, event, context, isCurrent);
+  });
+  if (!pending) {
+    discardBackgroundTurnBuffers(tab, context.bindingId);
+  }
+  return pending ?? undefined;
+}
+
+function getBackgroundTurnBuffers(
+  tab: TabData,
+  bindingId: string,
+): Map<string, ProviderBackgroundOutputEvent[]> {
+  let bindings = backgroundTurnBuffers.get(tab);
+  if (!bindings) {
+    bindings = new Map();
+    backgroundTurnBuffers.set(tab, bindings);
+  }
+  let turns = bindings.get(bindingId);
+  if (!turns) {
+    turns = new Map();
+    bindings.set(bindingId, turns);
+  }
+  return turns;
+}
+
+function deleteBackgroundTurnBuffersIfEmpty(
+  tab: TabData,
+  bindingId: string,
+  turns: Map<string, ProviderBackgroundOutputEvent[]>,
+): void {
+  if (turns.size > 0) return;
+  const bindings = backgroundTurnBuffers.get(tab);
+  bindings?.delete(bindingId);
+  if (bindings?.size === 0) backgroundTurnBuffers.delete(tab);
+}
+
+function discardBackgroundTurnBuffers(tab: TabData, bindingId: string): void {
+  const bindings = backgroundTurnBuffers.get(tab);
+  bindings?.delete(bindingId);
+  if (bindings?.size === 0) backgroundTurnBuffers.delete(tab);
+}
+
+function normalizeProviderMode(mode: string): string {
+  if (mode === 'bypassPermissions' || mode === 'yolo') return 'yolo';
+  if (mode === 'plan') return 'plan';
+  return 'normal';
 }
 
 /**
@@ -759,26 +1011,20 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
 }
 
 /**
- * Initializes the tab's chat runtime for provider-backed tab actions.
- *
- * This is the ONLY place a runtime is created. Called from:
- * - the shared ensureServiceInitialized() callback used by send and rewind
- *
- * Session sync is passive (state update only). The provider process starts
- * only when the selected action explicitly calls into the runtime.
+ * Binds and prepares the tab's provider execution session.
  */
-export async function initializeTabService(
+export async function initializeTabExecution(
   tab: TabData,
   plugin: FeatureHost,
   conversationOverride?: Conversation | null,
 ): Promise<void>;
-export async function initializeTabService(
+export async function initializeTabExecution(
   tab: TabData,
   plugin: FeatureHost,
   _legacyArg: unknown,
   conversationOverride?: Conversation | null,
 ): Promise<void>;
-export async function initializeTabService(
+export async function initializeTabExecution(
   tab: TabData,
   plugin: FeatureHost,
   argOrOverride?: unknown,
@@ -802,81 +1048,36 @@ export async function initializeTabService(
     return;
   }
   const providerId = getTabProviderId(tab, plugin, conversation);
-  await ProviderWorkspaceRegistry.ensureInitialized(plugin.providerHost, providerId, 'tab-runtime');
+  await ProviderWorkspaceRegistry.ensureInitialized(plugin.providerHost, providerId, 'tab-execution');
   if (isClosingLifecycleState(tab.lifecycleState)) {
     return;
   }
   refreshTabWorkspaceServices(tab, plugin);
-  const selectedModel = conversation
-    ? resolveConversationModel(plugin.settings, providerId, conversation).model
-    : getTabSelectedModel(tab, plugin);
-
-  if (
-    tab.serviceInitialized
-    && tab.service?.providerId === providerId
-    && !tab.runtimeSupervisor.isInvalidated
-  ) {
-    return;
+  syncTabProviderServices(tab, plugin);
+  if (!tab.executionCoordinator) {
+    tab.executionCoordinator = createTabExecutionCoordinator(tab, plugin);
   }
-
-  let service: ChatRuntime | null = null;
-  let unsubscribeReadyState: (() => void) | null = null;
-  const previousService = tab.service;
-
-  try {
-    if (typeof previousService?.cleanup === 'function') {
-      previousService.cleanup();
-    }
-    tab.service = null;
-    tab.serviceInitialized = false;
-
-    const runtime = ProviderRegistry.createChatRuntime({
-      plugin: plugin.providerHost,
+  await tab.executionCoordinator.bindConversation(conversation
+    ? {
+      conversationId: conversation.id,
       providerId,
-    });
-    service = runtime;
-    unsubscribeReadyState = runtime.onReadyStateChange(() => {});
-    tab.dom.eventCleanups.push(() => unsubscribeReadyState?.());
-
-    // Passive sync: set session state without starting the runtime process.
-    // The runtime starts on demand when query() is called.
-    const hasMessages = conversation ? conversation.messages.length > 0 : false;
-    const externalContextPaths = conversation && hasMessages
-      ? conversation.externalContextPaths || []
-      : (plugin.settings.persistentExternalContextPaths || []);
-    const runtimeConversationState = conversation
-      ?? (selectedModel ? { sessionId: null, selectedModel } : null);
-    runtime.syncConversationState(runtimeConversationState, externalContextPaths);
-
-    // Re-check after async operations — tab may have been closed during init
-    if (isClosingLifecycleState(tab.lifecycleState)) {
-      unsubscribeReadyState?.();
-      service?.cleanup();
-      return;
+      resumeSeed: {
+        ...(conversation.sessionId ? { providerSessionId: conversation.sessionId } : {}),
+        ...(conversation.providerState ? { providerState: conversation.providerState } : {}),
+        ...(conversation.resumeAtMessageId
+          ? { resumeCheckpoint: conversation.resumeAtMessageId }
+          : {}),
+      },
     }
-
-
-    tab.providerId = providerId;
-    tab.service = service;
-    tab.runtimeSupervisor.setCurrent(service, plugin.getAgentSkillResourceGeneration?.() ?? 0);
-    tab.serviceInitialized = true;
-    tab.onRuntimeInstalled?.(service);
-
-    // Update lifecycle state
-    if (tab.lifecycleState === 'blank') {
-      tab.draftModel = null;
-    }
-    tab.lifecycleState = 'bound_active';
-  } catch (error) {
-    // Clean up partial state on failure
-    unsubscribeReadyState?.();
-    service?.cleanup();
-    tab.service = null;
-    tab.serviceInitialized = false;
-
-    // Re-throw to let caller handle (e.g., show error to user)
-    throw error;
+    : null);
+  if (conversation) {
+    await tab.executionCoordinator.prepare();
   }
+  if (isClosingLifecycleState(tab.lifecycleState)) return;
+
+  tab.providerId = providerId;
+  if (tab.lifecycleState === 'blank') tab.draftModel = null;
+  tab.lifecycleState = conversation ? 'bound_active' : 'blank';
 }
 
 function isConversationLike(value: unknown): value is Conversation {
@@ -1045,9 +1246,6 @@ function initializeInputToolbar(
           plugin.settings,
         );
         const didProviderChange = newProvider !== previousProvider;
-        if (tab.service) {
-          cleanupTabRuntime(tab);
-        }
         tab.providerId = newProvider;
         if (didProviderChange) {
           syncTabProviderServices(tab, plugin);
@@ -1107,15 +1305,6 @@ function initializeInputToolbar(
         await plugin.updateConversation(tab.conversationId, {
           selectedModel: normalizedModel,
         });
-        const updatedConversation = plugin.getConversationSync(tab.conversationId);
-        if (updatedConversation && tab.service?.providerId === boundProvider) {
-          const hasMessages = updatedConversation.messages.length > 0;
-          const externalContextPaths = tab.ui.externalContextSelector?.getExternalContexts()
-            ?? (hasMessages
-              ? updatedConversation.externalContextPaths ?? []
-              : plugin.settings.persistentExternalContextPaths ?? []);
-          tab.service.syncConversationState(updatedConversation, externalContextPaths);
-        }
       }
 
       await uiConfig.prepareModelMetadata?.(
@@ -1299,7 +1488,7 @@ export interface ForkContext {
   sourceSelectedModel?: string;
   resumeAt: string;
   sourceTitle?: string;
-  /** 1-based index used for fork title suffix (counts only non-interrupt user messages). */
+  /** 1-based index used for fork title suffix (counts only canonical user messages). */
   forkAtUserMessage?: number;
   currentNote?: string;
 }
@@ -1313,11 +1502,6 @@ function deepCloneMessages(messages: ChatMessage[]): ChatMessage[] {
 
 function isClosingLifecycleState(state: TabData['lifecycleState']): boolean {
   return state === 'closing';
-}
-
-function countUserMessagesForForkTitle(messages: ChatMessage[]): number {
-  // Keep fork numbering stable by excluding non-semantic user messages.
-  return messages.filter(m => m.role === 'user' && !m.isInterrupt && !m.isRebuiltContext).length;
 }
 
 interface ForkSource {
@@ -1334,18 +1518,22 @@ interface ForkSource {
  * Prefers the live service session ID; falls back to persisted conversation metadata.
  * Shows a notice and returns null when no session can be resolved.
  */
-function resolveForkSource(tab: TabData, plugin: FeatureHost): ForkSource | null {
+async function resolveForkSource(
+  tab: TabData,
+  plugin: FeatureHost,
+  assistantCheckpointId: string,
+): Promise<ForkSource | null> {
   const conversation = tab.conversationId
     ? plugin.getConversationSync(tab.conversationId)
     : null;
 
-  // Delegate session ID resolution to the runtime when available;
-  // fall back to persisted conversation metadata when no runtime is active.
-  const sourceSessionId = tab.service
-    ? tab.service.resolveSessionIdForFork(conversation ?? null)
-    : ProviderRegistry
-      .getConversationHistoryService(conversation?.providerId ?? tab.providerId)
-      .resolveSessionIdForConversation(conversation);
+  const fallback = async (): Promise<string | null> => ProviderRegistry
+    .getConversationHistoryService(conversation?.providerId ?? tab.providerId)
+    .resolveSessionIdForConversation(conversation);
+  const coordinatedSource = tab.executionCoordinator
+    ? await tab.executionCoordinator.resolveForkSource(assistantCheckpointId, fallback)
+    : null;
+  const sourceSessionId = coordinatedSource?.sessionId ?? await fallback();
 
   if (!sourceSessionId) {
     new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoSession') }));
@@ -1406,7 +1594,7 @@ async function handleForkRequest(
     return;
   }
 
-  const source = resolveForkSource(tab, plugin);
+  const source = await resolveForkSource(tab, plugin, rewindCtx.prevAssistantUuid);
   if (!source) return;
 
   await forkRequestCallback({
@@ -1417,7 +1605,7 @@ async function handleForkRequest(
     sourceSelectedModel: source.sourceSelectedModel,
     resumeAt: rewindCtx.prevAssistantUuid,
     sourceTitle: source.sourceTitle,
-    forkAtUserMessage: countUserMessagesForForkTitle(msgs.slice(0, userIdx + 1)),
+    forkAtUserMessage: msgs.slice(0, userIdx + 1).filter(isCanonicalUserMessage).length,
     currentNote: source.currentNote,
   });
 }
@@ -1462,7 +1650,7 @@ async function handleForkAll(
     return;
   }
 
-  const source = resolveForkSource(tab, plugin);
+  const source = await resolveForkSource(tab, plugin, lastAssistantUuid);
   if (!source) return;
 
   await forkRequestCallback({
@@ -1473,7 +1661,7 @@ async function handleForkAll(
     sourceSelectedModel: source.sourceSelectedModel,
     resumeAt: lastAssistantUuid,
     sourceTitle: source.sourceTitle,
-    forkAtUserMessage: countUserMessagesForForkTitle(msgs) + 1,
+    forkAtUserMessage: msgs.filter(isCanonicalUserMessage).length + 1,
     currentNote: source.currentNote,
   });
 }
@@ -1515,11 +1703,11 @@ export function initializeTabControllers(
     (() => ProviderCatalogInfo) | undefined;
 
   const { dom, state, services, ui } = tab;
-  const ensureServiceInitialized = async (): Promise<boolean> => {
+  const ensureExecutionInitialized = async (): Promise<boolean> => {
     if (
-      tab.serviceInitialized
-      && tab.lifecycleState === 'bound_active'
-      && !tab.runtimeSupervisor.isInvalidated
+      tab.lifecycleState === 'bound_active'
+      && (tab.executionCoordinator?.state === 'idle'
+        || tab.executionCoordinator?.state === 'active')
     ) {
       return true;
     }
@@ -1529,17 +1717,16 @@ export function initializeTabControllers(
         tab.providerId = getEnabledProviderForModel(tab.draftModel, plugin.settings);
       }
 
-      await initializeTabService(tab, plugin);
+      await initializeTabExecution(tab, plugin);
       if (isClosingLifecycleState(tab.lifecycleState)) {
         return false;
       }
-      setupServiceCallbacks(tab, plugin);
 
       refreshTabProviderUI(tab, plugin);
       applyProviderUIGating(tab, plugin);
       return true;
     } catch (error) {
-      new Notice(error instanceof Error ? error.message : 'Failed to initialize chat service');
+      new Notice(error instanceof Error ? error.message : 'Failed to initialize chat execution');
       return false;
     }
   };
@@ -1585,7 +1772,36 @@ export function initializeTabControllers(
     getMessagesEl: () => dom.messagesEl,
     getFileContextManager: () => ui.fileContextManager,
     updateQueueIndicator: () => tab.controllers.inputController?.updateQueueIndicator(),
-    getAgentService: () => tab.service,
+    getProviderId: () => getTabProviderId(tab, plugin),
+    getProviderSessionId: () => tab.executionCoordinator?.snapshot?.providerSessionId ?? null,
+    loadSubagentToolCalls: async (request) => {
+      const vaultPath = getVaultPath(plugin.app);
+      if (!vaultPath) return undefined;
+      const service = ProviderRegistry.createSubagentHistoryService(
+        plugin.providerHost,
+        request.providerId,
+      );
+      if (!service) return undefined;
+      return service.loadToolCalls({
+        providerSessionId: request.providerSessionId,
+        subagentId: request.subagentId,
+        vaultPath,
+      });
+    },
+    loadSubagentFinalResult: async (request) => {
+      const vaultPath = getVaultPath(plugin.app);
+      if (!vaultPath) return undefined;
+      const service = ProviderRegistry.createSubagentHistoryService(
+        plugin.providerHost,
+        request.providerId,
+      );
+      if (!service) return undefined;
+      return service.loadFinalResult({
+        providerSessionId: request.providerSessionId,
+        subagentId: request.subagentId,
+        vaultPath,
+      });
+    },
     enqueueBackgroundWork: (work) => enqueueTabBackgroundWork(tab, work),
     persistConversation: async () => {
       if (tab.state.currentConversationId) {
@@ -1638,13 +1854,14 @@ export function initializeTabControllers(
       clearQueuedMessage: () => tab.controllers.inputController?.clearQueuedMessage(),
       getTitleGenerationService: () => services.titleGenerationService,
       getStatusPanel: () => ui.statusPanel,
-      getAgentService: () => tab.service, // Use tab's service instead of plugin's
-      ensureServiceInitialized,
+      getExecutionCoordinator: () => tab.executionCoordinator,
+      ensureExecutionInitialized,
+      getProviderId: () => getTabProviderId(tab, plugin),
       getSelectedModel: () => getTabSelectedModel(tab, plugin),
       dismissPendingInlinePrompts: () => tab.controllers.inputController?.dismissPendingApproval(),
       awaitBackgroundWork: () => tab.session.awaitBackgroundWork(),
       isDisposed: () => tab.lifecycleState === 'closing',
-      ensureServiceForConversation: async (conversation) => {
+      ensureExecutionForConversation: async (conversation) => {
         const nextProviderId = getTabProviderId(tab, plugin, conversation);
         const providerChanged = tab.providerId !== nextProviderId;
         tab.providerId = nextProviderId;
@@ -1653,20 +1870,14 @@ export function initializeTabControllers(
           syncTabProviderServices(tab, plugin);
         }
 
-        // Bind session state only — runtime starts on the next provider-backed action
         tab.conversationId = conversation?.id ?? null;
         tab.draftModel = null;
         tab.lifecycleState = conversation ? 'bound_cold' : 'blank';
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig, conversation);
 
-        // If the runtime already exists for the right provider, sync it passively
-        if (tab.service && tab.service.providerId === nextProviderId && conversation) {
-          const hasMessages = conversation.messages.length > 0;
-          const externalContextPaths = hasMessages
-            ? conversation.externalContextPaths || []
-            : (plugin.settings.persistentExternalContextPaths || []);
-          tab.service.syncConversationState(conversation, externalContextPaths);
-        }
+        await tab.executionCoordinator?.bindConversation(conversation
+          ? createConversationExecutionBinding(conversation)
+          : null);
 
         refreshTabProviderUI(tab, plugin);
         applyProviderUIGating(tab, plugin);
@@ -1674,10 +1885,8 @@ export function initializeTabControllers(
     },
     {
       onNewConversation: () => {
-        // Reset to blank state and drop the bound runtime so the next send
-        // reinitializes against the currently selected blank-tab provider.
         const previousProviderId = tab.providerId;
-        cleanupTabRuntime(tab);
+        void tab.executionCoordinator?.bindConversation(null);
         tab.lifecycleState = 'blank';
         tab.draftModel = resolveBlankTabModel(plugin, previousProviderId);
         tab.conversationId = null;
@@ -1690,8 +1899,14 @@ export function initializeTabControllers(
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
         tab.onPersistedStateChanged?.();
       },
-      onConversationLoaded: () => invalidateTabProviderCommands(tab, getProviderCatalogConfig),
-      onConversationSwitched: () => invalidateTabProviderCommands(tab, getProviderCatalogConfig),
+      onConversationLoaded: () => {
+        invalidateTabProviderCommands(tab, getProviderCatalogConfig);
+        tab.controllers.inputController?.onConversationActivated();
+      },
+      onConversationSwitched: () => {
+        invalidateTabProviderCommands(tab, getProviderCatalogConfig);
+        tab.controllers.inputController?.onConversationActivated();
+      },
     }
   );
 
@@ -1721,11 +1936,11 @@ export function initializeTabControllers(
       autoResizeTextarea(dom.inputEl);
     },
     getAuxiliaryModel: () => getTabSelectedModel(tab, plugin),
-    getAgentService: () => tab.service,
+    getExecutionCoordinator: () => tab.executionCoordinator,
     getSubagentManager: () => services.subagentManager,
     getTabProviderId: () => getTabProviderId(tab, plugin),
     turnOwner: tab.session,
-    ensureServiceInitialized,
+    ensureExecutionInitialized,
     openConversation,
     onForkAll: forkRequestCallback
       ? () => handleForkAll(tab, plugin, forkRequestCallback)
@@ -1922,41 +2137,9 @@ async function cancelAndAwaitActiveTurn(tab: TabData): Promise<boolean> {
 
   tab.state.cancelRequested = true;
   tab.state.bumpStreamGeneration();
-  tab.service?.cancel();
+  await tab.executionCoordinator?.cancel();
   await activeTurn.catch(() => undefined);
   return true;
-}
-
-export async function recycleTabRuntime(tab: TabData): Promise<void> {
-  const wasSwitchingConversation = tab.state.isSwitchingConversation;
-  tab.state.isSwitchingConversation = true;
-  tab.session.pauseBackgroundWork();
-  try {
-    const invalidatedActiveTurn = await cancelAndAwaitActiveTurn(tab);
-    await tab.session.awaitBackgroundWork();
-
-    if (invalidatedActiveTurn) {
-      cleanupThinkingBlock(tab.state.currentThinkingState);
-      tab.controllers.streamController?.resetStreamingState();
-      tab.state.resetStreamingState();
-    }
-
-    tab.services.subagentManager.orphanAllActive();
-    if (tab.state.currentConversationId) {
-      await tab.controllers.conversationController?.save(false);
-    }
-    tab.services.subagentManager.clear();
-
-    tab.runtimeSupervisor.cleanup();
-    tab.service = null;
-    tab.serviceInitialized = false;
-    if (tab.lifecycleState === 'bound_active') {
-      tab.lifecycleState = tab.conversationId ? 'bound_cold' : 'blank';
-    }
-  } finally {
-    tab.session.resumeBackgroundWork();
-    tab.state.isSwitchingConversation = wasSwitchingConversation;
-  }
 }
 
 /**
@@ -1980,8 +2163,7 @@ export async function destroyTab(tab: TabData): Promise<void> {
     }
   }
   tab.services.subagentManager.clear();
-  tab.runtimeSupervisor.cleanup();
-  tab.service = null;
+  await cleanupTabExecution(tab);
 
   tab.controllers.selectionController?.stop();
   tab.controllers.selectionController?.clear();
@@ -2038,12 +2220,6 @@ export function getTabTitle(tab: TabData, plugin: FeatureHost): string {
   return 'New Chat';
 }
 
-interface TabBackgroundWorkOwner {
-  service: ChatRuntime;
-  conversationId: string;
-  providerSessionId: string | null;
-}
-
 function canAcceptTabBackgroundWork(tab: TabData): boolean {
   return tab.lifecycleState !== 'closing'
     && !tab.state.isCreatingConversation
@@ -2056,135 +2232,6 @@ function enqueueTabBackgroundWork(
 ): Promise<void> | null {
   if (!canAcceptTabBackgroundWork(tab)) return null;
   return tab.session.enqueueBackgroundWork(work);
-}
-
-function ownsTabBackgroundWork(
-  tab: TabData,
-  owner: TabBackgroundWorkOwner,
-): boolean {
-  return tab.service === owner.service
-    && owner.service.getSessionId() === owner.providerSessionId
-    && tab.state.currentConversationId === owner.conversationId
-    && tab.conversationId === owner.conversationId;
-}
-
-function enqueueOwnedTabBackgroundWork(
-  tab: TabData,
-  service: ChatRuntime,
-  work: (owner: TabBackgroundWorkOwner) => Promise<void>,
-): Promise<void> | undefined {
-  const conversationId = tab.state.currentConversationId;
-  if (
-    !canAcceptTabBackgroundWork(tab)
-    || tab.service !== service
-    || !conversationId
-    || tab.conversationId !== conversationId
-  ) {
-    return undefined;
-  }
-
-  const owner: TabBackgroundWorkOwner = {
-    service,
-    conversationId,
-    providerSessionId: service.getSessionId(),
-  };
-  const pending = tab.session.enqueueBackgroundWork(async () => {
-    if (!ownsTabBackgroundWork(tab, owner)) return;
-    await work(owner);
-  });
-  return pending ?? undefined;
-}
-
-/** Shared between Tab.ts and TabManager.ts to avoid duplication. */
-export function setupServiceCallbacks(tab: TabData, plugin: FeatureHost): void {
-  if (tab.service && tab.controllers.inputController) {
-    tab.service.setApprovalCallback(
-      async (toolName, input, description, options) =>
-        await tab.controllers.inputController?.handleApprovalRequest(toolName, input, description, options)
-        ?? 'cancel'
-    );
-    tab.service.setApprovalDismisser(
-      () => tab.controllers.inputController?.dismissPendingApprovalPrompt()
-    );
-    tab.service.setAskUserQuestionCallback(
-      async (input, signal) =>
-        await tab.controllers.inputController?.handleAskUserQuestion(input, signal)
-        ?? null
-    );
-    tab.service.setExitPlanModeCallback(
-      async (input, signal, presentation) => {
-        const decision = await tab.controllers.inputController?.handleExitPlanMode(
-          input,
-          signal,
-          presentation,
-        ) ?? null;
-        // Restore the base mode only when the provider leaves or abandons plan mode.
-        if (decision !== null && decision.type !== 'feedback') {
-          // Only restore permission mode if still in plan mode — user may have toggled out via Shift+Tab
-          if (getTabPermissionMode(tab, plugin) === 'plan') {
-            const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
-            try {
-              await updatePlanModeUI(tab, plugin, restoreMode);
-            } finally {
-              if (getTabPermissionMode(tab, plugin) !== 'plan') {
-                tab.state.prePlanPermissionMode = null;
-              }
-            }
-          }
-          if (decision.type === 'approve-new-session') {
-            tab.state.pendingNewSessionPlan = decision.planContent;
-            tab.state.cancelRequested = true;
-          }
-        }
-        return decision;
-      }
-    );
-    const callbackService = tab.service;
-    callbackService.setAsyncSubagentCompletionCallback?.((completion) => {
-      if (callbackService.getSessionId() !== completion.providerSessionId) return;
-      return enqueueOwnedTabBackgroundWork(tab, callbackService, async (owner) => {
-        const streamController = tab.controllers.streamController;
-        const conversationController = tab.controllers.conversationController;
-        if (!streamController || !conversationController) return;
-
-        const applied = await streamController.handleAsyncSubagentCompletion(completion);
-        if (applied && ownsTabBackgroundWork(tab, owner)) {
-          await conversationController.save(false);
-        }
-      });
-    });
-    callbackService.setAutoTurnCallback((result: AutoTurnResult) =>
-      enqueueOwnedTabBackgroundWork(tab, callbackService, async (owner) => {
-        const rendered = await renderAutoTriggeredTurn(tab, result);
-        if (rendered && ownsTabBackgroundWork(tab, owner)) {
-          await tab.controllers.conversationController?.save(false);
-        }
-      })
-    );
-    tab.service.setPermissionModeSyncCallback((sdkMode) => {
-      const mode = sdkMode === 'bypassPermissions' || sdkMode === 'yolo'
-        ? 'yolo'
-        : sdkMode === 'plan'
-        ? 'plan'
-        : 'normal';
-      const currentMode = getTabPermissionMode(tab, plugin);
-
-      if (currentMode !== mode) {
-        let capturedPrePlanMode = false;
-        // Save pre-plan mode when entering plan (for Shift+Tab toggle restore)
-        if (mode === 'plan' && tab.state.prePlanPermissionMode === null) {
-          tab.state.prePlanPermissionMode = currentMode;
-          capturedPrePlanMode = true;
-        }
-        void updatePlanModeUI(tab, plugin, mode).catch((error: unknown) => {
-          if (capturedPrePlanMode && getTabPermissionMode(tab, plugin) !== 'plan') {
-            tab.state.prePlanPermissionMode = null;
-          }
-          new Notice(error instanceof Error ? error.message : 'Failed to change permission mode.');
-        });
-      }
-    });
-  }
 }
 
 function generateMessageId(): string {
@@ -2224,8 +2271,12 @@ function hasVisibleAutoTurnMessageContent(msg: ChatMessage): boolean {
   ) ?? false;
 }
 
-async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Promise<boolean> {
-  if (!tab.dom.contentEl.isConnected) {
+async function renderAutoTriggeredTurn(
+  tab: TabData,
+  result: BackgroundTurnRenderResult,
+  isCurrent: () => boolean,
+): Promise<boolean> {
+  if (!isCurrent() || !tab.dom.contentEl.isConnected) {
     return false;
   }
 
@@ -2273,18 +2324,26 @@ async function renderAutoTriggeredTurn(tab: TabData, result: AutoTurnResult): Pr
 
   try {
     for (const chunk of chunks) {
+      if (!isCurrent()) return false;
       await tab.controllers.streamController?.handleStreamChunk(chunk, assistantMsg);
+      if (!isCurrent()) return false;
     }
 
-    if (hasVisibleContent && !hasVisibleAutoTurnMessageContent(assistantMsg)) {
+    if (
+      isCurrent()
+      && hasVisibleContent
+      && !hasVisibleAutoTurnMessageContent(assistantMsg)
+    ) {
       const placeholder = '(background task completed)';
       assistantMsg.content = placeholder;
       await tab.controllers.streamController?.appendText(placeholder);
     }
 
-    if (hasVisibleContent) {
+    if (isCurrent() && hasVisibleContent) {
       await tab.controllers.streamController?.finalizeCurrentThinkingBlock(assistantMsg);
+      if (!isCurrent()) return false;
       await tab.controllers.streamController?.finalizeCurrentTextBlock(assistantMsg);
+      if (!isCurrent()) return false;
     }
   } finally {
     if (hasVisibleContent) {
@@ -2304,7 +2363,7 @@ export async function updatePlanModeUI(
   tab: TabData,
   plugin: FeatureHost,
   mode: string,
-  options: { syncRuntime?: boolean } = {},
+  options: { syncExecution?: boolean } = {},
 ): Promise<void> {
   const providerId = getTabProviderId(tab, plugin);
   const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
@@ -2323,9 +2382,9 @@ export async function updatePlanModeUI(
         snapshot,
       );
     });
-    if (options.syncRuntime) {
+    if (options.syncExecution) {
       try {
-        await tab.service?.setSessionMode?.(getTabPermissionMode(tab, plugin));
+        await tab.executionCoordinator?.setMode(getTabPermissionMode(tab, plugin));
       } catch (error) {
         await plugin.mutateSettings((settings) => {
           const snapshot = getWritableTabSettingsSnapshot(tab, plugin, settings);

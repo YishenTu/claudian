@@ -1,6 +1,6 @@
 # Claude Provider
 
-`src/providers/claude/` wraps `@anthropic-ai/claude-agent-sdk` behind `ChatRuntime` and layers Claude Code CLI compatibility around it.
+`src/providers/claude/` implements provider-neutral execution contracts over `@anthropic-ai/claude-agent-sdk` and layers Claude Code CLI compatibility around it.
 
 ## Ownership
 

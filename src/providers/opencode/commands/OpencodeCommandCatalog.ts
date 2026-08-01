@@ -32,15 +32,15 @@ function slashCommandToEntry(command: SlashCommand): ProviderCommandEntry {
 }
 
 export class OpencodeCommandCatalog implements ProviderCommandCatalog {
-  private runtimeCommands: SlashCommand[] = [];
+  private commandSnapshot: SlashCommand[] = [];
 
-  setRuntimeCommands(commands: SlashCommand[]): void {
-    this.runtimeCommands = commands.map((command) => ({ ...command }));
+  setCommandSnapshot(commands: SlashCommand[]): void {
+    this.commandSnapshot = commands.map((command) => ({ ...command }));
   }
 
   async listDropdownEntries(context: ProviderCommandListContext): Promise<ProviderCommandEntry[]> {
-    const commands = context.runtimeCommands
-      ?? (context.allowCachedRuntimeCommands === false ? [] : this.runtimeCommands);
+    const commands = context.commandSnapshot
+      ?? (context.allowCachedCommandSnapshot === false ? [] : this.commandSnapshot);
     return commands.map(slashCommandToEntry);
   }
 

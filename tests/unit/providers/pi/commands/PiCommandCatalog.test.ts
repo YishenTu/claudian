@@ -3,7 +3,7 @@ import { PiCommandCatalog } from '@/providers/pi/commands/PiCommandCatalog';
 describe('PiCommandCatalog', () => {
   it('maps runtime commands into slash dropdown entries without changing order', async () => {
     const catalog = new PiCommandCatalog();
-    catalog.setRuntimeCommands([
+    catalog.setCommandSnapshot([
       {
         argumentHint: '<topic>',
         content: '',
@@ -75,7 +75,7 @@ describe('PiCommandCatalog', () => {
 
   it('preserves provider-advertised names and order', async () => {
     const catalog = new PiCommandCatalog();
-    catalog.setRuntimeCommands([
+    catalog.setCommandSnapshot([
       { content: '', id: 'one', name: 'skill:shared-review', source: 'sdk' },
       { content: '', id: 'two', name: 'scope:qualified', source: 'sdk' },
     ]);

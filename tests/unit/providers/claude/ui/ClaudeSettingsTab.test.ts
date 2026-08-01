@@ -6,6 +6,11 @@ import { claudeSettingsTabRenderer } from '@/providers/claude/ui/ClaudeSettingsT
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockSlashCommandSettings = jest.fn();
+const mockMcpSettingsManager = jest.fn();
+const mockPluginSettingsManager = jest.fn();
+const mockCliResolverReset = jest.fn();
+const mockMcpManagerLoadServers = jest.fn().mockResolvedValue(undefined);
+const mockAgentManagerLoadAgents = jest.fn().mockResolvedValue(undefined);
 const mockVaultCommandRepository = {};
 
 jest.mock('fs');
@@ -93,19 +98,24 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
 }));
 
 jest.mock('@/shared/settings/McpSettingsManager', () => ({
-  McpSettingsManager: jest.fn(),
+  McpSettingsManager: jest.fn((...args: unknown[]) => mockMcpSettingsManager(...args)),
 }));
 
 jest.mock('@/providers/claude/app/ClaudeWorkspaceServices', () => ({
   getClaudeWorkspaceServices: jest.fn(() => ({
     cliResolver: {
-      reset: jest.fn(),
+      reset: mockCliResolverReset,
     },
     commandCatalog: {},
     vaultCommandRepository: mockVaultCommandRepository,
-    agentManager: {},
+    agentManager: {
+      loadAgents: mockAgentManagerLoadAgents,
+    },
     agentStorage: {},
     mcpStorage: {},
+    mcpManager: {
+      loadServers: mockMcpManagerLoadServers,
+    },
     pluginManager: {},
   })),
 }));
@@ -115,7 +125,7 @@ jest.mock('@/providers/claude/ui/AgentSettings', () => ({
 }));
 
 jest.mock('@/providers/claude/ui/PluginSettingsManager', () => ({
-  PluginSettingsManager: jest.fn(),
+  PluginSettingsManager: jest.fn((...args: unknown[]) => mockPluginSettingsManager(...args)),
 }));
 
 jest.mock('@/providers/claude/ui/SlashCommandSettings', () => ({
@@ -356,12 +366,10 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
     },
     saveSettings: mockSaveSettings,
     normalizeModelVariantSettings: jest.fn(() => false),
-    recycleProviderRuntimes: jest.fn().mockResolvedValue(undefined),
-    getView: jest.fn(() => ({
-      getTabManager: jest.fn(() => ({
-        broadcastToAllTabs: jest.fn().mockResolvedValue(undefined),
-      })),
-    })),
+    runProviderExecutionTransition: jest.fn(async (
+      _providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => mutation()),
     app: {
       vault: {
         adapter: {
@@ -417,6 +425,106 @@ describe('ClaudeSettingsTab', () => {
 
     expect(cliPathInput.placeholder).toContain('cli-wrapper.cjs');
     expect(cliPathInput.placeholder).not.toContain('cli.js');
+  });
+
+  it('persists and applies a CLI path inside the Claude execution transition', async () => {
+    mockedExistsSync.mockImplementation((filePath: fs.PathLike) => (
+      String(filePath) === '/custom/claude'
+    ));
+    let transitionActive = false;
+    const plugin = createPlugin();
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => {
+      expect(providerIds).toEqual(['claude']);
+      transitionActive = true;
+      try {
+        return await mutation();
+      } finally {
+        transitionActive = false;
+      }
+    });
+    plugin.mutateSettings.mockImplementation(async (
+      mutation: (settings: any) => void | Promise<void>,
+    ) => {
+      expect(transitionActive).toBe(true);
+      await mutation(plugin.settings);
+      await plugin.saveSettings();
+    });
+    mockCliResolverReset.mockImplementation(() => {
+      expect(transitionActive).toBe(true);
+    });
+
+    claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    await findSetting('settings.cliPath.name')
+      .textComponents[0]
+      .onChangeCallback?.('/custom/claude');
+
+    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
+      ['claude'],
+      expect.any(Function),
+    );
+    expect(plugin.settings.providerConfigs.claude.cliPathsByHost).toEqual({
+      'host-a': '/custom/claude',
+    });
+    expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads Claude MCP state inside the execution transition', async () => {
+    let transitionActive = false;
+    const plugin = createPlugin();
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => {
+      expect(providerIds).toEqual(['claude']);
+      transitionActive = true;
+      try {
+        return await mutation();
+      } finally {
+        transitionActive = false;
+      }
+    });
+    mockMcpManagerLoadServers.mockImplementation(async () => {
+      expect(transitionActive).toBe(true);
+    });
+
+    claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    const dependencies = mockMcpSettingsManager.mock.calls[0]?.[1] as {
+      broadcastMcpReload(): Promise<void>;
+    };
+    await dependencies.broadcastMcpReload();
+
+    expect(mockMcpManagerLoadServers).toHaveBeenCalledTimes(1);
+  });
+
+  it('invalidates Claude plugin and agent configuration inside the execution transition', async () => {
+    let transitionActive = false;
+    const plugin = createPlugin();
+    plugin.runProviderExecutionTransition.mockImplementation(async (
+      providerIds: string[],
+      mutation: () => Promise<unknown>,
+    ) => {
+      expect(providerIds).toEqual(['claude']);
+      transitionActive = true;
+      try {
+        return await mutation();
+      } finally {
+        transitionActive = false;
+      }
+    });
+    mockAgentManagerLoadAgents.mockImplementation(async () => {
+      expect(transitionActive).toBe(true);
+    });
+
+    claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    const dependencies = mockPluginSettingsManager.mock.calls[0]?.[1] as {
+      restartTabs(): Promise<void>;
+    };
+    await dependencies.restartTabs();
+
+    expect(mockAgentManagerLoadAgents).toHaveBeenCalledTimes(1);
   });
 
   it('does not render obsolete Opus and Sonnet 1M toggles', () => {
