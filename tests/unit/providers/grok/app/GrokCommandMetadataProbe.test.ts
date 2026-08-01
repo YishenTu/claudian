@@ -35,7 +35,9 @@ class FakeMetadataNative implements GrokExecutionNativeConnection {
   onNotification(): () => void { return () => undefined; }
   async prompt(): Promise<never> { throw new Error('unused'); }
   async setMode(): Promise<void> {}
-  async setModel(): Promise<void> {}
+  async setModel(): Promise<Record<string, never>> {
+    return {};
+  }
 
   async listCommands(_cwd: string, signal?: AbortSignal): Promise<any[]> {
     this.listStarted.resolve();

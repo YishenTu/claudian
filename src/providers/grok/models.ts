@@ -113,10 +113,7 @@ export function getGrokAvailableReasoningEfforts(
   if (!model) {
     return [];
   }
-  if (
-    model.reasoningMetadataResolved === true
-    && model.reasoningEfforts.length > 0
-  ) {
+  if (model.reasoningMetadataResolved === true) {
     return model.reasoningEfforts;
   }
   return GROK_FALLBACK_REASONING_EFFORTS;

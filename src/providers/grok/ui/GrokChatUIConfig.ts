@@ -1,8 +1,3 @@
-import {
-  DEFAULT_REASONING_VALUE,
-  formatReasoningValueLabel,
-  resolvePreferredReasoningDefault,
-} from '../../../core/providers/reasoning';
 import type {
   ProviderChatUIConfig,
   ProviderPermissionModeToggleConfig,
@@ -17,6 +12,7 @@ import {
   getGrokAvailableReasoningEfforts,
   isGrokModelSelectionId,
   resolveGrokContextWindow,
+  resolveGrokDefaultReasoningEffort,
 } from '../models';
 import { getGrokProviderSettings, updateGrokProviderSettings } from '../settings';
 
@@ -72,7 +68,7 @@ export const grokChatUIConfig: ProviderChatUIConfig = {
       getExplicitlySelectedGrokModel(model, settings),
     ).map(option => ({
       ...(option.description ? { description: option.description } : {}),
-      label: formatReasoningValueLabel(option.value),
+      label: option.label,
       value: option.value,
     }));
   },
@@ -83,18 +79,15 @@ export const grokChatUIConfig: ProviderChatUIConfig = {
     if (!rawId) {
       return '';
     }
-    const efforts = getGrokAvailableReasoningEfforts(
-      getExplicitlySelectedGrokModel(model, settings),
-    );
+    const selectedModel = getExplicitlySelectedGrokModel(model, settings);
+    const efforts = getGrokAvailableReasoningEfforts(selectedModel);
     if (efforts.length === 0) {
       return '';
     }
-    const availableValues = efforts.map(effort => effort.value);
-    const preferred = grokSettings.preferredReasoningByModel[rawId];
-    if (preferred && availableValues.includes(preferred)) {
-      return preferred;
-    }
-    return resolvePreferredReasoningDefault(availableValues, DEFAULT_REASONING_VALUE);
+    return resolveGrokDefaultReasoningEffort(
+      selectedModel ? { ...selectedModel, reasoningEfforts: [...efforts] } : null,
+      grokSettings.preferredReasoningByModel[rawId],
+    );
   },
 
   getContextWindowSize(model, customLimits = {}, settings = {}): number {

@@ -18,6 +18,7 @@ import type {
   GrokExecutionNativeConnection,
   GrokExecutionNativeCreateOptions,
 } from './GrokExecutionBackend';
+import { parseGrokModelUpdateState } from './GrokSessionModelMetadata';
 
 const GROK_EXTENSION_REQUEST_METHODS = [
   'x.ai/ask_user_question',
@@ -31,11 +32,19 @@ const GROK_EXTENSION_NOTIFICATION_METHODS = [
   '_x.ai/yolo_mode_changed',
 ] as const;
 
+const GROK_MODEL_UPDATE_NOTIFICATION_METHODS = [
+  'x.ai/models/update',
+  '_x.ai/models/update',
+] as const;
+
 export class GrokExecutionNativeConnectionImpl
 implements GrokExecutionNativeConnection {
   private readonly connection: AcpClientConnection;
   private readonly listeners = new Set<Parameters<GrokExecutionNativeConnection['onNotification']>[0]>();
   private readonly modeListeners = new Set<(mode: 'normal' | 'yolo') => void>();
+  private readonly modelListeners = new Set<
+    Parameters<NonNullable<GrokExecutionNativeConnection['onModelsChanged']>>[0]
+  >();
   private readonly process: AcpSubprocess;
   private readonly transport: AcpJsonRpcTransport;
   private readonly unsubscribers: Array<() => void> = [];
@@ -82,6 +91,13 @@ implements GrokExecutionNativeConnection {
         if (!isRecord(params) || typeof params.yolo_mode !== 'boolean') return;
         const mode = params.yolo_mode ? 'yolo' : 'normal';
         for (const listener of this.modeListeners) listener(mode);
+      }));
+    }
+    for (const method of GROK_MODEL_UPDATE_NOTIFICATION_METHODS) {
+      this.unsubscribers.push(this.transport.onNotification(method, params => {
+        const models = parseGrokModelUpdateState(params);
+        if (!models) return;
+        for (const listener of this.modelListeners) listener(models);
       }));
     }
   }
@@ -148,6 +164,13 @@ implements GrokExecutionNativeConnection {
     return () => this.modeListeners.delete(listener);
   }
 
+  onModelsChanged(
+    listener: Parameters<NonNullable<GrokExecutionNativeConnection['onModelsChanged']>>[0],
+  ): () => void {
+    this.modelListeners.add(listener);
+    return () => this.modelListeners.delete(listener);
+  }
+
   prompt: GrokExecutionNativeConnection['prompt'] = request => (
     this.connection.prompt(request)
   );
@@ -168,6 +191,7 @@ implements GrokExecutionNativeConnection {
     while (this.unsubscribers.length > 0) this.unsubscribers.pop()?.();
     this.listeners.clear();
     this.modeListeners.clear();
+    this.modelListeners.clear();
     this.connection.dispose();
     this.transport.dispose();
     await this.process.shutdown();

@@ -14,8 +14,10 @@ import type {
   AcpPromptResponse,
   AcpRequestPermissionRequest,
   AcpRequestPermissionResponse,
+  AcpSessionModelState,
   AcpSessionNotification,
   AcpSetSessionModelRequest,
+  AcpSetSessionModelResponse,
   AcpSetSessionModeRequest,
 } from '../../acp';
 import type { GrokCommandCatalog } from '../commands/GrokCommandCatalog';
@@ -56,6 +58,7 @@ export interface GrokExecutionNativeConnection {
     ) => void,
   ): () => void;
   onModeChanged?(listener: (mode: 'normal' | 'yolo') => void): () => void;
+  onModelsChanged?(listener: (models: AcpSessionModelState) => void): () => void;
   prompt(request: AcpPromptRequest): Promise<AcpPromptResponse>;
   rewind?(request: {
     force: boolean;
@@ -70,7 +73,7 @@ export interface GrokExecutionNativeConnection {
     success: boolean;
   }>;
   setMode(request: AcpSetSessionModeRequest): Promise<unknown>;
-  setModel(request: AcpSetSessionModelRequest): Promise<unknown>;
+  setModel(request: AcpSetSessionModelRequest): Promise<AcpSetSessionModelResponse>;
   shutdown(): Promise<void>;
 }
 

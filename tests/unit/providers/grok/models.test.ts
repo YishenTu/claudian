@@ -2,6 +2,7 @@ import {
   decodeGrokModelId,
   encodeGrokModelId,
   findGrokModel,
+  getGrokAvailableReasoningEfforts,
   GROK_CONTEXT_WINDOW_FALLBACK,
   isGrokModelSelectionId,
   mergeGrokDiscoveredModels,
@@ -146,6 +147,25 @@ describe('Grok model metadata', () => {
       reasoningMetadataResolved: true,
       supportsReasoning: false,
     });
+  });
+
+  it('uses fallback efforts only until ACP reasoning metadata is resolved', () => {
+    const unresolved = {
+      displayName: 'Unresolved',
+      rawId: 'unresolved',
+      reasoningEfforts: [],
+      supportsReasoning: false,
+    };
+    const resolvedEmpty = {
+      ...unresolved,
+      displayName: 'Resolved',
+      rawId: 'resolved',
+      reasoningMetadataResolved: true,
+    };
+
+    expect(getGrokAvailableReasoningEfforts(unresolved).map(effort => effort.value))
+      .toEqual(['low', 'medium', 'high']);
+    expect(getGrokAvailableReasoningEfforts(resolvedEmpty)).toEqual([]);
   });
 
   it('resolves preferred, declared, high, and first reasoning defaults in order', () => {

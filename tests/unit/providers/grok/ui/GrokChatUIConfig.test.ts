@@ -143,9 +143,9 @@ describe('GrokChatUIConfig', () => {
     expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/grok-4', settings)).toBe(true);
     expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/kimi-coding', settings)).toBe(false);
     expect(grokChatUIConfig.getReasoningOptions('grok/grok-4', settings)).toEqual([
-      { description: 'Fastest', label: 'Minimal', value: 'minimal' },
-      { label: 'High', value: 'high' },
-      { label: 'xHigh', value: 'xhigh' },
+      { description: 'Fastest', label: 'Minimal Effort', value: 'minimal' },
+      { label: 'High Effort', value: 'high' },
+      { label: 'Extra High Effort', value: 'xhigh' },
     ]);
     expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-4', settings)).toBe('high');
 
@@ -161,6 +161,67 @@ describe('GrokChatUIConfig', () => {
     settings.effortLevel = 'medium';
     grokChatUIConfig.applyModelProjectionDefaults?.('grok/grok-4', settings);
     expect(settings.effortLevel).toBe('xhigh');
+  });
+
+  it('uses the provider-advertised reasoning default without a saved preference', () => {
+    const catalogWithAdvertisedDefault = {
+      ...catalog,
+      models: catalog.models.map(model => model.rawId === 'grok-4'
+        ? {
+          ...model,
+          reasoningEfforts: [
+            ...model.reasoningEfforts,
+            { label: 'Medium Effort', value: 'medium' },
+          ],
+        }
+        : model),
+    };
+    const settings = makeSettings({
+      providerConfigs: {
+        grok: {
+          catalogsByHost: { 'device:current': catalogWithAdvertisedDefault },
+          preferredReasoningByModel: {},
+          visibleModels: ['grok-4'],
+        },
+      },
+    });
+
+    expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-4', settings)).toBe('medium');
+  });
+
+  it('adopts and persists a future provider-advertised effort value', () => {
+    const futureCatalog = {
+      ...catalog,
+      models: [{
+        defaultReasoningEffort: 'max',
+        displayName: 'Grok Future',
+        rawId: 'grok-future',
+        reasoningEfforts: [
+          { label: 'High', value: 'high' },
+          { label: 'Maximum', value: 'max' },
+        ],
+        reasoningMetadataResolved: true,
+        supportsReasoning: true,
+      }],
+    };
+    const settings = makeSettings({
+      providerConfigs: {
+        grok: {
+          catalogsByHost: { 'device:current': futureCatalog },
+          preferredReasoningByModel: {},
+          visibleModels: ['grok-future'],
+        },
+      },
+    });
+
+    expect(grokChatUIConfig.getReasoningOptions('grok/grok-future', settings))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ label: 'Maximum', value: 'max' }),
+      ]));
+    expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-future', settings)).toBe('max');
+    grokChatUIConfig.applyReasoningSelection?.('grok/grok-future', 'max', settings);
+    expect(getGrokProviderSettings(settings).preferredReasoningByModel)
+      .toEqual({ 'grok-future': 'max' });
   });
 
   it('uses and persists the standard fallback for models without reasoning metadata', () => {
@@ -209,7 +270,7 @@ describe('GrokChatUIConfig', () => {
     expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-4.5', settings)).toBe('high');
   });
 
-  it('keeps the standard fallback when ACP resolves no effort choices', () => {
+  it('removes reasoning choices when ACP resolves an empty effort list', () => {
     const resolvedCatalog = {
       ...catalog,
       models: catalog.models.map(model => model.rawId === 'kimi-coding'
@@ -225,13 +286,9 @@ describe('GrokChatUIConfig', () => {
       },
     });
 
-    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/kimi-coding', settings)).toBe(true);
-    expect(grokChatUIConfig.getReasoningOptions('grok/kimi-coding', settings)).toEqual([
-      { label: 'Low', value: 'low' },
-      { label: 'Medium', value: 'medium' },
-      { label: 'High', value: 'high' },
-    ]);
-    expect(grokChatUIConfig.getDefaultReasoningValue('grok/kimi-coding', settings)).toBe('high');
+    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/kimi-coding', settings)).toBe(false);
+    expect(grokChatUIConfig.getReasoningOptions('grok/kimi-coding', settings)).toEqual([]);
+    expect(grokChatUIConfig.getDefaultReasoningValue('grok/kimi-coding', settings)).toBe('');
   });
 
   it('preserves explicit model preferences across projection updates', () => {

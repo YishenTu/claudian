@@ -148,6 +148,45 @@ describe('Grok settings', () => {
     expect(JSON.stringify(snapshot)).not.toContain('secret');
   });
 
+  it('round-trips future provider-advertised effort metadata and preferences', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        grok: {
+          catalogsByHost: {
+            'device:current': {
+              defaultModelId: 'grok-future',
+              fingerprint: 'future-catalog',
+              models: [{
+                defaultReasoningEffort: 'max',
+                displayName: 'Grok Future',
+                rawId: 'grok-future',
+                reasoningEfforts: [
+                  { label: 'High', value: 'high' },
+                  { label: 'Maximum', value: 'max' },
+                ],
+                reasoningMetadataResolved: true,
+                supportsReasoning: true,
+              }],
+              refreshedAt: 123,
+            },
+          },
+          preferredReasoningByModel: { 'grok-future': 'max' },
+          visibleModels: ['grok-future'],
+        },
+      },
+    };
+
+    const grok = getGrokProviderSettings(settings);
+    expect(grok.currentCatalog?.models[0]).toEqual(expect.objectContaining({
+      defaultReasoningEffort: 'max',
+      reasoningEfforts: expect.arrayContaining([
+        expect.objectContaining({ value: 'max' }),
+      ]),
+      reasoningMetadataResolved: true,
+    }));
+    expect(grok.preferredReasoningByModel).toEqual({ 'grok-future': 'max' });
+  });
+
   it('normalizes catalog-scoped preferences while retaining a selected stale model', () => {
     const settings = getGrokProviderSettings({
       model: 'grok/legacy-model',
