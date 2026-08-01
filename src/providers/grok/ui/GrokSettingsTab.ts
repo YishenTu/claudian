@@ -12,6 +12,7 @@ import type {
 import type { ClaudianSettings } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import {
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
@@ -44,7 +45,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         new Notice(`Grok model discovery failed: ${result.diagnostics}`);
         return 'failed';
       }
-      context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
+      modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
       return (getGrokProviderSettings(settingsBag).currentCatalog?.models.length ?? 0) > 0
         ? 'loaded'
         : 'empty';
@@ -73,8 +74,18 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
             toggle.setValue(getGrokProviderSettings(settingsBag).enabled);
             throw error;
           }
-          context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
+          modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
         }));
+
+    const modelWarning = renderProviderModelEnablementWarning(container, context, {
+      getHasEnabledModels: () => {
+        const current = getGrokProviderSettings(settingsBag);
+        return (current.visibleModels ?? current.currentCatalog?.models ?? []).length > 0;
+      },
+      getIsEnabled: () => getGrokProviderSettings(settingsBag).enabled,
+      providerId: GROK_PROVIDER_ID,
+      providerName: 'Grok',
+    });
 
     const cliPathSetting = new Setting(container)
       .setName('CLI path')
@@ -151,7 +162,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         throw error;
       }
       currentCliPath = trimmed;
-      context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
+      modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
     };
 
     cliPathSetting.addText(text => {
@@ -167,7 +178,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
     });
 
     new Setting(container).setName('Models').setHeading();
-    renderGrokModelPicker(container, context, settingsBag, refreshModelCatalog);
+    renderGrokModelPicker(container, modelWarning.context, settingsBag, refreshModelCatalog);
 
     new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
     context.renderAgentSkillSettings(container, GROK_PROVIDER_ID);
@@ -242,7 +253,6 @@ function renderGrokModelPicker(
     },
     providerName: 'Grok',
     searchPlaceholder: 'Filter by model name, description, or alias ID...',
-    settingDescription: 'Choose which discovered Grok models are available in Claudian. Grok is unavailable when no models are selected.',
   });
 }
 

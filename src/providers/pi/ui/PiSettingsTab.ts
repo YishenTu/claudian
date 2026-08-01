@@ -9,6 +9,7 @@ import type {
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import {
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
@@ -56,9 +57,16 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
               toggle.setValue(getPiProviderSettings(settingsBag).enabled);
               throw error;
             }
-            context.notifyProviderModelOptionsChanged('pi');
+            modelWarning.context.notifyProviderModelOptionsChanged('pi');
           })
       );
+
+    const modelWarning = renderProviderModelEnablementWarning(container, context, {
+      getHasEnabledModels: () => getPiProviderSettings(settingsBag).visibleModels.length > 0,
+      getIsEnabled: () => getPiProviderSettings(settingsBag).enabled,
+      providerId: 'pi',
+      providerName: 'Pi',
+    });
 
     const validationEl = container.createDiv({
       cls: 'claudian-cli-path-validation claudian-setting-validation claudian-setting-validation-error claudian-hidden',
@@ -144,7 +152,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
       });
 
     new Setting(container).setName('Models').setHeading();
-    renderPiModelPicker(container, context, settingsBag);
+    renderPiModelPicker(container, modelWarning.context, settingsBag);
 
     new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
     context.renderAgentSkillSettings(container, 'pi');
@@ -234,7 +242,6 @@ function renderPiModelPicker(
       context.notifyProviderModelOptionsChanged('pi');
     },
     providerName: 'Pi',
-    settingDescription: 'Choose which Pi models are available in the chat selector. Filter by provider or type to search. Pi chat is unavailable when no models are selected.',
   });
 }
 

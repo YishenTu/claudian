@@ -1,6 +1,7 @@
 import { Setting } from 'obsidian';
 
 const ALL_PROVIDERS_KEY = 'all';
+const VISIBLE_MODELS_DESCRIPTION = 'Choose which models are available in the chat selector. Select at least one model to use this provider.';
 
 export interface ProviderModelPickerModel {
   aliasPlaceholder?: string;
@@ -42,15 +43,15 @@ export interface ProviderModelPickerOptions {
   onSelectedIdsChange(selectedIds: string[]): Promise<void>;
   providerName: string;
   searchPlaceholder?: string;
-  settingDescription: string;
 }
 
 export function renderProviderModelPicker(
   options: ProviderModelPickerOptions,
 ): ProviderModelPickerController {
-  new Setting(options.container)
+  const visibleModelsSetting = new Setting(options.container)
     .setName('Visible models')
-    .setDesc(options.settingDescription);
+    .setDesc(VISIBLE_MODELS_DESCRIPTION);
+  visibleModelsSetting.settingEl.addClass('claudian-provider-model-picker-setting');
 
   const pickerEl = options.container.createDiv({
     cls: `claudian-provider-model-picker claudian-provider-model-picker--${options.modifier}`,
@@ -226,7 +227,14 @@ export function renderProviderModelPicker(
       });
 
       const rowControlsEl = rowEl.createDiv({ cls: 'claudian-provider-model-picker-selected-controls' });
-      const aliasInput = rowControlsEl.createEl('input', {
+      const aliasFieldEl = rowControlsEl.createEl('label', {
+        cls: 'claudian-provider-model-picker-selected-alias-field',
+      });
+      aliasFieldEl.createSpan({
+        cls: 'claudian-provider-model-picker-selected-alias-label',
+        text: 'Alias (optional)',
+      });
+      const aliasInput = aliasFieldEl.createEl('input', {
         cls: 'claudian-provider-model-picker-selected-alias',
         type: 'text',
       });

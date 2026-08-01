@@ -4,6 +4,8 @@ import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { renderCodexModelPicker } from '@/providers/codex/ui/CodexModelPicker';
 
 const settingNames: string[] = [];
+const settingDescriptions: string[] = [];
+const settingClasses: string[] = [];
 const elements: FakeElement[] = [];
 const mockNormalizeAllModelVariants = jest.fn();
 
@@ -16,6 +18,10 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
 jest.mock('obsidian', () => ({
   Notice: jest.fn(),
   Setting: class MockSetting {
+    settingEl = {
+      addClass: (value: string) => settingClasses.push(value),
+    };
+
     constructor(_container: unknown) {}
 
     setName(name: string) {
@@ -23,7 +29,8 @@ jest.mock('obsidian', () => ({
       return this;
     }
 
-    setDesc(_description: string) {
+    setDesc(description: string) {
+      settingDescriptions.push(description);
       return this;
     }
   },
@@ -173,6 +180,8 @@ async function flushPromises(): Promise<void> {
 describe('CodexModelPicker', () => {
   beforeEach(() => {
     settingNames.length = 0;
+    settingDescriptions.length = 0;
+    settingClasses.length = 0;
     elements.length = 0;
     jest.clearAllMocks();
   });
@@ -186,10 +195,25 @@ describe('CodexModelPicker', () => {
     } as any);
 
     expect(settingNames).toContain('Visible models');
+    expect(settingDescriptions).toContain(
+      'Choose which models are available in the chat selector. Select at least one model to use this provider.',
+    );
+    expect(settingClasses).toContain('claudian-provider-model-picker-setting');
     expect(elements.filter(element => element.attrs.type === 'checkbox').map(element => element.checked))
       .toEqual([true, true]);
-    expect(elements.filter(element => element.tag === 'label').map(element => element.title))
+    expect(elements.filter(element => element.tag === 'label' && element.title).map(element => element.title))
       .toEqual(['gpt-5.4-mini', 'gpt-5.5']);
+
+    const aliasField = findElement(element =>
+      element.classes.has('claudian-provider-model-picker-selected-alias-field')
+    );
+    expect(aliasField.tag).toBe('label');
+    expect(aliasField.children.find(element =>
+      element.classes.has('claudian-provider-model-picker-selected-alias-label')
+    )?.text).toBe('Alias (optional)');
+    expect(aliasField.children.some(element =>
+      element.classes.has('claudian-provider-model-picker-selected-alias')
+    )).toBe(true);
 
     findElement(element => element.attrs['aria-label'] === 'Clear all selected Codex models')
       .trigger('click');

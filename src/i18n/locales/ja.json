@@ -319,7 +319,8 @@
     },
     "providerEnablement": {
       "name": "{provider} を有効化",
-      "desc": "有効にした {provider} モデルを新しい会話で使用できるようにします。無効にしても既存のセッションは保持されます。"
+      "desc": "有効にした {provider} モデルを新しい会話で使用できるようにします。無効にしても既存のセッションは保持されます。",
+      "noModelsWarning": "有効な {provider} モデルがありません。下の「モデル」で少なくとも1つのモデルを有効にしてください。"
     },
     "codex": {
       "installationMethod": {

@@ -319,7 +319,8 @@
     },
     "providerEnablement": {
       "name": "启用 {provider}",
-      "desc": "让已启用的 {provider} 模型可用于新对话。禁用后，现有会话仍会保留。"
+      "desc": "让已启用的 {provider} 模型可用于新对话。禁用后，现有会话仍会保留。",
+      "noModelsWarning": "未启用任何 {provider} 模型。请前往下方的“模型”部分并至少启用一个模型。"
     },
     "codex": {
       "installationMethod": {
