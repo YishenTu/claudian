@@ -360,6 +360,10 @@
         "detailed": "Ausführlich",
         "off": "Aus"
       },
+      "ultraEffort": {
+        "name": "Ultra-Denktiefe aktivieren",
+        "desc": "Ultra in der Auswahl für Codex-Modelle anzeigen, die es unterstützen. Ultra nutzt maximale Denktiefe mit automatischer Aufgabendelegation."
+      },
       "skills": {
         "name": "Codex-Fähigkeiten",
         "desc": "Manage shared vault-level skills stored only in .agents/skills/.",

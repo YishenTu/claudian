@@ -360,6 +360,10 @@
         "detailed": "詳細",
         "off": "オフ"
       },
+      "ultraEffort": {
+        "name": "Ultra 推論レベルを有効化",
+        "desc": "Ultra をサポートする Codex モデルの推論レベル選択に表示します。Ultra は最大限の推論とタスクの自動委任を使用します。"
+      },
       "skills": {
         "name": "Codex スキル",
         "desc": "Manage shared vault-level skills stored only in .agents/skills/.",

@@ -37,6 +37,44 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.effortLevel).toBe('low');
     });
 
+    it('preserves an opted-in ultra effort across Codex provider and conversation projections', () => {
+      const ultraModel = {
+        ...TEST_CODEX_CATALOG[0],
+        model: 'gpt-5.6-sol',
+        supportedReasoningEfforts: [
+          { value: 'max', description: 'Maximum reasoning' },
+          { value: 'ultra', description: 'Automatic task delegation' },
+        ],
+        defaultReasoningEffort: 'max',
+      };
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'claude',
+        model: 'haiku',
+        effortLevel: 'high',
+        serviceTier: 'default',
+        savedProviderModel: { codex: ultraModel.model },
+        savedProviderEffort: { codex: 'ultra' },
+        savedProviderServiceTier: { codex: 'default' },
+        providerConfigs: {
+          codex: {
+            enabled: true,
+            enableUltraEffort: true,
+            discoveredModels: [ultraModel],
+          },
+        },
+      };
+
+      const conversationSnapshot = getProviderSettingsSnapshotWithModel(
+        settings,
+        'codex',
+        ultraModel.model,
+      );
+      ProviderSettingsCoordinator.projectProviderState(settings, 'codex');
+
+      expect(conversationSnapshot.effortLevel).toBe('ultra');
+      expect(settings.effortLevel).toBe('ultra');
+    });
+
     it('uses a Pi conversation model preference before normalizing against the saved provider model', () => {
       const deepSeekModel = 'pi:deepseek/deepseek-reasoner';
       const gptModel = 'pi:openai/gpt-5';

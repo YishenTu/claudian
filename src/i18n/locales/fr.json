@@ -360,6 +360,10 @@
         "detailed": "Détaillée",
         "off": "Désactivé"
       },
+      "ultraEffort": {
+        "name": "Activer l’effort ultra",
+        "desc": "Affiche Ultra dans le sélecteur d’effort pour les modèles Codex compatibles. Ultra utilise le raisonnement maximal avec délégation automatique des tâches."
+      },
       "skills": {
         "name": "Compétences Codex",
         "desc": "Manage shared vault-level skills stored only in .agents/skills/.",

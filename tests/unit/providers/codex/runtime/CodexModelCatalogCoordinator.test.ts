@@ -183,7 +183,7 @@ describe('CodexModelCatalogCoordinator', () => {
 
   it('does not expose environment secrets in the catalog fingerprint', () => {
     expect(FAKE_FINGERPRINT).not.toContain('secret');
-    expect(FAKE_FINGERPRINT).toMatch(/^1:[a-f0-9]{64}$/);
+    expect(FAKE_FINGERPRINT).toMatch(/^2:[a-f0-9]{64}$/);
   });
 
   it('returns cached models immediately when cache is fresh', async () => {

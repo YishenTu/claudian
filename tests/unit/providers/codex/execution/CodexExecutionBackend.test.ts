@@ -2094,7 +2094,7 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('uses request-scoped mode and reasoning configuration on a later turn', async () => {
+  it('forwards request-scoped ultra effort and mode configuration on a later turn', async () => {
     let turnIndex = 0;
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
@@ -2123,7 +2123,7 @@ describe('CodexExecutionBackend', () => {
         configuration: {
           systemInstructions: { kind: 'explicit', instructions: 'Plan.' },
           model: TEST_CODEX_MODEL,
-          reasoning: 'low',
+          reasoning: 'ultra',
           serviceTier: 'priority',
           permissionMode: 'yolo',
         },
@@ -2133,7 +2133,10 @@ describe('CodexExecutionBackend', () => {
     const secondTurnParams = mockTransportRequest.mock.calls
       .filter(call => call[0] === 'turn/start')[1][1];
     expect(secondTurnParams).toEqual(expect.objectContaining({
-      effort: 'low',
+      effort: 'ultra',
+      collaborationMode: expect.objectContaining({
+        settings: expect.objectContaining({ reasoning_effort: 'ultra' }),
+      }),
       serviceTier: 'priority',
       approvalPolicy: 'never',
       sandboxPolicy: { type: 'dangerFullAccess' },

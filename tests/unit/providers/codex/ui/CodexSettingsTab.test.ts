@@ -464,6 +464,23 @@ describe('CodexSettingsTab', () => {
     expect(headings.indexOf('Models')).toBeLessThan(headings.indexOf('Safety'));
   });
 
+  it('renders a default-off ultra effort toggle and publishes changes to chat consumers', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    codexSettingsTabRenderer.render(createContainer(), context);
+
+    const setting = findSetting('Enable ultra effort');
+    const toggle = setting.toggleComponents[0];
+    expect(toggle.value).toBe(false);
+
+    await toggle.onChangeCallback?.(true);
+
+    expect(plugin.settings.providerConfigs.codex.enableUltraEffort).toBe(true);
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
+  });
+
   it('refreshes title model options after Codex enablement changes', async () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const plugin = createPlugin();

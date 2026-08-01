@@ -360,6 +360,10 @@
         "detailed": "Подробно",
         "off": "Выкл."
       },
+      "ultraEffort": {
+        "name": "Включить уровень Ultra",
+        "desc": "Показывать Ultra в выборе усилия для моделей Codex, которые его поддерживают. Ultra использует максимальное рассуждение с автоматическим делегированием задач."
+      },
       "skills": {
         "name": "Навыки Codex",
         "desc": "Manage shared vault-level skills stored only in .agents/skills/.",

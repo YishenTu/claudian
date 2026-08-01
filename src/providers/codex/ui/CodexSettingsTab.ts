@@ -276,6 +276,18 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     renderCodexModelPicker(container, modelWarning.context, codexWorkspace);
 
+    new Setting(container)
+      .setName(t('settings.codex.ultraEffort.name'))
+      .setDesc(t('settings.codex.ultraEffort.desc'))
+      .addToggle(toggle => toggle
+        .setValue(codexSettings.enableUltraEffort)
+        .onChange(async (value) => {
+          await context.plugin.mutateSettings((settings) => {
+            updateCodexProviderSettings(settings, { enableUltraEffort: value });
+          });
+          context.notifyProviderModelOptionsChanged('codex');
+        }));
+
     const SUMMARY_OPTIONS: { value: string; label: string }[] = [
       { value: 'auto', label: t('settings.codex.reasoningSummary.auto') },
       { value: 'concise', label: t('settings.codex.reasoningSummary.concise') },

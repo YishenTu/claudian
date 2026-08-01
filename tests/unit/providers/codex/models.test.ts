@@ -45,7 +45,7 @@ describe('Codex models', () => {
     },
   ];
 
-  it('normalizes app-server model metadata while excluding ultra', () => {
+  it('normalizes all app-server reasoning efforts without changing model capabilities', () => {
     expect(normalizeCodexDiscoveredModels(rawModels)).toEqual([
       {
         model: 'gpt-5.6-sol',
@@ -54,6 +54,7 @@ describe('Codex models', () => {
         supportedReasoningEfforts: [
           { value: 'low', description: 'Fast responses' },
           { value: 'max', description: 'Maximum reasoning' },
+          { value: 'ultra', description: 'Automatic task delegation' },
         ],
         defaultReasoningEffort: 'low',
         serviceTiers: [
@@ -80,7 +81,7 @@ describe('Codex models', () => {
     ]);
   });
 
-  it('keeps a model when its excluded app-server default is ultra', () => {
+  it('preserves an app-server default of ultra in the discovered catalog', () => {
     expect(normalizeCodexDiscoveredModels([{
       ...rawModels[0],
       defaultReasoningEffort: 'ultra',
@@ -92,10 +93,11 @@ describe('Codex models', () => {
     }])).toEqual([
       expect.objectContaining({
         model: 'gpt-5.6-sol',
-        defaultReasoningEffort: 'high',
+        defaultReasoningEffort: 'ultra',
         supportedReasoningEfforts: [
           { value: 'low', description: 'Fast responses' },
           { value: 'high', description: 'Deep reasoning' },
+          { value: 'ultra', description: 'Automatic task delegation' },
         ],
       }),
     ]);

@@ -31,6 +31,7 @@ export interface CodexProviderConfig {
   discoveredModels: CodexDiscoveredModel[];
   modelAliases: Record<string, string>;
   visibleModels: string[] | null;
+  enableUltraEffort: boolean;
   reasoningSummary: CodexReasoningSummary;
   environmentVariables: string;
   environmentHash: string;
@@ -98,6 +99,7 @@ export interface CodexProviderSettings {
   discoveredModels: CodexProviderConfig['discoveredModels'];
   modelAliases: CodexProviderConfig['modelAliases'];
   visibleModels: CodexProviderConfig['visibleModels'];
+  enableUltraEffort: CodexProviderConfig['enableUltraEffort'];
   reasoningSummary: CodexProviderConfig['reasoningSummary'];
   environmentVariables: CodexProviderConfig['environmentVariables'];
   environmentHash: CodexProviderConfig['environmentHash'];
@@ -118,6 +120,7 @@ export const DEFAULT_CODEX_PROVIDER_CONFIG: Readonly<CodexProviderConfig> = Obje
   discoveredModels: [],
   modelAliases: {},
   visibleModels: null,
+  enableUltraEffort: false,
   reasoningSummary: 'detailed',
   environmentVariables: '',
   environmentHash: '',
@@ -152,9 +155,10 @@ export function applyCodexModelDefaults(
   model: string,
   settings: Record<string, unknown>,
 ): void {
-  const modelMetadata = findCodexModel(getCodexProviderSettings(settings).discoveredModels, model);
+  const codexSettings = getCodexProviderSettings(settings);
+  const modelMetadata = findCodexModel(codexSettings.discoveredModels, model);
   settings.effortLevel = modelMetadata
-    ? getCodexDefaultReasoningEffort(modelMetadata)
+    ? getCodexDefaultReasoningEffort(modelMetadata, codexSettings.enableUltraEffort)
     : DEFAULT_REASONING_VALUE;
   if (shouldDisableCodexReasoningSummary(model)) {
     updateCodexProviderSettings(settings, { reasoningSummary: 'none' });
@@ -322,14 +326,20 @@ function retargetRemovedCodexSelections(
   const nextSavedModel = maybeRetarget(savedCodexModel);
   if (nextSavedModel) {
     ensureCodexProjectionMap(settings, 'savedProviderModel').codex = nextSavedModel;
-    ensureCodexProjectionMap(settings, 'savedProviderEffort').codex = getCodexDefaultReasoningEffort(fallbackModel);
+    ensureCodexProjectionMap(settings, 'savedProviderEffort').codex = getCodexDefaultReasoningEffort(
+      fallbackModel,
+      next.enableUltraEffort,
+    );
     ensureCodexProjectionMap(settings, 'savedProviderServiceTier').codex = fallbackServiceTier;
   }
 
   const nextTopLevelModel = maybeRetarget(settings.model);
   if (nextTopLevelModel) {
     settings.model = nextTopLevelModel;
-    settings.effortLevel = getCodexDefaultReasoningEffort(fallbackModel);
+    settings.effortLevel = getCodexDefaultReasoningEffort(
+      fallbackModel,
+      next.enableUltraEffort,
+    );
     settings.serviceTier = fallbackServiceTier;
   }
 
@@ -399,6 +409,7 @@ function getCodexStoredConfig(
       getCodexAliasModelIds(visibleModels, discoveredModels),
     ),
     visibleModels,
+    enableUltraEffort: config.enableUltraEffort === true,
     reasoningSummary: (config.reasoningSummary as CodexReasoningSummary | undefined)
       ?? (settings.codexReasoningSummary as CodexReasoningSummary | undefined)
       ?? DEFAULT_CODEX_PROVIDER_CONFIG.reasoningSummary,
@@ -606,6 +617,7 @@ export function updateCodexProviderSettings(
     discoveredModels: next.discoveredModels,
     modelAliases: next.modelAliases,
     visibleModels: next.visibleModels,
+    enableUltraEffort: next.enableUltraEffort,
     reasoningSummary: next.reasoningSummary,
     environmentVariables: next.environmentVariables,
     environmentHash: next.environmentHash,

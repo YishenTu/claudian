@@ -372,6 +372,98 @@ describe('CodexChatUIConfig', () => {
       expect(codexChatUIConfig.getDefaultReasoningValue('gpt-5.6-sol', settings)).toBe('low');
     });
 
+    it('exposes ultra only when it is enabled and advertised by the selected model', () => {
+      const discoveredModels = [
+        {
+          model: 'gpt-5.6-sol',
+          displayName: 'GPT-5.6-Sol',
+          description: 'Latest',
+          supportedReasoningEfforts: [
+            { value: 'max', description: 'Maximum reasoning' },
+            { value: 'ultra', description: 'Automatic task delegation' },
+          ],
+          defaultReasoningEffort: 'max',
+          serviceTiers: [],
+          defaultServiceTier: null,
+          inputModalities: ['text', 'image'],
+          isDefault: true,
+        },
+        {
+          model: 'gpt-5.6-luna',
+          displayName: 'GPT-5.6-Luna',
+          description: 'Fast',
+          supportedReasoningEfforts: [
+            { value: 'max', description: 'Maximum reasoning' },
+          ],
+          defaultReasoningEffort: 'max',
+          serviceTiers: [],
+          defaultServiceTier: null,
+          inputModalities: ['text', 'image'],
+          isDefault: false,
+        },
+      ];
+      const disabledSettings = {
+        providerConfigs: { codex: { discoveredModels } },
+      };
+      const enabledSettings = {
+        providerConfigs: { codex: { discoveredModels, enableUltraEffort: true } },
+      };
+
+      expect(codexChatUIConfig.getReasoningOptions('gpt-5.6-sol', disabledSettings))
+        .toEqual([{ value: 'max', label: 'Max', description: 'Maximum reasoning' }]);
+      expect(codexChatUIConfig.getReasoningOptions('gpt-5.6-sol', enabledSettings))
+        .toEqual([
+          { value: 'max', label: 'Max', description: 'Maximum reasoning' },
+          { value: 'ultra', label: 'Ultra', description: 'Automatic task delegation' },
+        ]);
+      expect(codexChatUIConfig.getReasoningOptions('gpt-5.6-luna', enabledSettings))
+        .toEqual([{ value: 'max', label: 'Max', description: 'Maximum reasoning' }]);
+    });
+
+    it('uses an advertised ultra default only while ultra effort is enabled', () => {
+      const discoveredModels = [{
+        model: 'gpt-5.6-sol',
+        displayName: 'GPT-5.6-Sol',
+        description: 'Latest',
+        supportedReasoningEfforts: [
+          { value: 'max', description: 'Maximum reasoning' },
+          { value: 'ultra', description: 'Automatic task delegation' },
+        ],
+        defaultReasoningEffort: 'ultra',
+        serviceTiers: [],
+        defaultServiceTier: null,
+        inputModalities: ['text', 'image'],
+        isDefault: true,
+      }];
+
+      expect(codexChatUIConfig.getDefaultReasoningValue('gpt-5.6-sol', {
+        providerConfigs: { codex: { discoveredModels } },
+      })).toBe('max');
+      expect(codexChatUIConfig.getDefaultReasoningValue('gpt-5.6-sol', {
+        providerConfigs: { codex: { discoveredModels, enableUltraEffort: true } },
+      })).toBe('ultra');
+    });
+
+    it('does not retain an ultra default when ultra is the only advertised effort and is disabled', () => {
+      const discoveredModels = [{
+        model: 'gpt-ultra-only',
+        displayName: 'GPT Ultra Only',
+        description: 'Ultra only',
+        supportedReasoningEfforts: [
+          { value: 'ultra', description: 'Automatic task delegation' },
+        ],
+        defaultReasoningEffort: 'ultra',
+        serviceTiers: [],
+        defaultServiceTier: null,
+        inputModalities: ['text'],
+        isDefault: true,
+      }];
+      const settings = { providerConfigs: { codex: { discoveredModels } } };
+
+      expect(codexChatUIConfig.getReasoningOptions('gpt-ultra-only', settings)).toEqual([]);
+      expect(codexChatUIConfig.getDefaultReasoningValue('gpt-ultra-only', settings)).toBe('high');
+    });
+
     it('prefers high over the app-server default when the model supports it', () => {
       const settings = withDiscoveredModels({ model: TEST_CODEX_MODEL });
       const config = settings.providerConfigs as { codex: { discoveredModels: any[] } };

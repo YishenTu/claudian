@@ -360,6 +360,10 @@
         "detailed": "Detailed",
         "off": "Off"
       },
+      "ultraEffort": {
+        "name": "Enable ultra effort",
+        "desc": "Allow Ultra in the effort selector for Codex models that advertise support. Ultra uses maximum reasoning with automatic task delegation."
+      },
       "skills": {
         "name": "Codex skills",
         "desc": "Manage shared vault-level skills stored only in .agents/skills/.",

@@ -360,6 +360,10 @@
         "detailed": "详细",
         "off": "关闭"
       },
+      "ultraEffort": {
+        "name": "启用 Ultra 推理强度",
+        "desc": "在支持 Ultra 的 Codex 模型的推理强度选择器中显示此选项。Ultra 使用最高推理强度并自动委派任务。"
+      },
       "skills": {
         "name": "Codex 技能",
         "desc": "Manage shared vault-level skills stored only in .agents/skills/.",

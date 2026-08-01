@@ -34,12 +34,13 @@ describe('codex settings', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
-  it('defaults installationMethod to native-windows and leaves wslDistroOverride empty', () => {
+  it('defaults installationMethod to native-windows, ultra effort off, and leaves wslDistroOverride empty', () => {
     const settings = getCodexProviderSettings({});
 
     expect(settings.customModels).toBe('');
     expect(settings.modelAliases).toEqual({});
     expect(settings.visibleModels).toBeNull();
+    expect(settings.enableUltraEffort).toBe(false);
     expect(settings.installationMethod).toBe('native-windows');
     expect(settings.wslDistroOverride).toBe('');
     expect(settings.installationMethod).toBe(DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod);
@@ -139,6 +140,7 @@ describe('codex settings', () => {
       defaultReasoningEffort: 'low',
       supportedReasoningEfforts: [
         { value: 'low', description: 'Fast' },
+        { value: 'ultra', description: 'Automatic task delegation' },
       ],
     });
 
@@ -147,6 +149,21 @@ describe('codex settings', () => {
       providerConfigs: {
         codex: {
           discoveredModels,
+        },
+      },
+    });
+  });
+
+  it('persists ultra effort as an explicit Codex opt-in', () => {
+    const settingsBag: Record<string, unknown> = {};
+
+    updateCodexProviderSettings(settingsBag, { enableUltraEffort: true });
+
+    expect(getCodexProviderSettings(settingsBag).enableUltraEffort).toBe(true);
+    expect(settingsBag).toMatchObject({
+      providerConfigs: {
+        codex: {
+          enableUltraEffort: true,
         },
       },
     });

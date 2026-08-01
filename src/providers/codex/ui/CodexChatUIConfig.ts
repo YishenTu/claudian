@@ -15,6 +15,7 @@ import {
   findCodexModel,
   getCodexDefaultReasoningEffort,
   getCodexFastServiceTier,
+  getCodexReasoningEffortOptions,
   getDefaultCodexModel,
 } from '../models';
 import {
@@ -90,15 +91,16 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
   },
 
   getReasoningOptions(modelId: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
+    const codexSettings = getCodexProviderSettings(settings);
     const model = findCodexModel(
-      getCodexProviderSettings(settings).discoveredModels,
+      codexSettings.discoveredModels,
       modelId,
     );
     if (!model) {
       return [...EFFORT_LEVELS];
     }
 
-    return model.supportedReasoningEfforts.map(option => ({
+    return getCodexReasoningEffortOptions(model, codexSettings.enableUltraEffort).map(option => ({
       value: option.value,
       label: formatReasoningValueLabel(option.value),
       ...(option.description ? { description: option.description } : {}),
@@ -106,11 +108,14 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
   },
 
   getDefaultReasoningValue(modelId: string, settings: Record<string, unknown>): string {
+    const codexSettings = getCodexProviderSettings(settings);
     const model = findCodexModel(
-      getCodexProviderSettings(settings).discoveredModels,
+      codexSettings.discoveredModels,
       modelId,
     );
-    return model ? getCodexDefaultReasoningEffort(model) : DEFAULT_REASONING_VALUE;
+    return model
+      ? getCodexDefaultReasoningEffort(model, codexSettings.enableUltraEffort)
+      : DEFAULT_REASONING_VALUE;
   },
 
   getContextWindowSize(): number {

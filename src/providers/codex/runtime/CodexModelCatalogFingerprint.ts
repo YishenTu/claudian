@@ -16,7 +16,7 @@ import { computeCodexEnvHash } from '../env/CodexSettingsReconciler';
 import { getCodexProviderSettings } from '../settings';
 import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';
 
-const CATALOG_FINGERPRINT_VERSION = '1';
+const CATALOG_FINGERPRINT_VERSION = '2';
 
 export interface CodexCatalogFingerprintInputs {
   resolvedCliCommand: string | null;
