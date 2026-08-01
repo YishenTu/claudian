@@ -3,12 +3,16 @@ import { Notice } from 'obsidian';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRendererContext } from '../../../core/providers/types';
 import {
+  type ProviderModelPickerController,
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
   renderProviderModelPicker,
 } from '../../../shared/settings/ProviderModelPicker';
 import type { CodexWorkspaceServices } from '../app/CodexWorkspaceServices';
-import { getCodexModelsInPickerOrder } from '../models';
+import {
+  getCodexModelsInPickerOrder,
+  isCodexModelAvailable,
+} from '../models';
 import {
   createCodexVisibleModelFilter,
   getCodexProviderSettings,
@@ -27,7 +31,7 @@ export function renderCodexModelPicker(
   container: HTMLElement,
   context: ProviderSettingsTabRendererContext,
   workspace: CodexWorkspaceServices,
-): void {
+): ProviderModelPickerController {
   const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
 
   const getState = (): ProviderModelPickerState => {
@@ -47,13 +51,22 @@ export function renderCodexModelPicker(
       }
     }
 
-    const models: ProviderModelPickerModel[] = pickerOrderedModels.map(model => ({
-      ...(model.isDefault ? { catalogBadge: 'Default' } : {}),
-      description: model.description,
-      id: model.model,
-      isAvailable: true,
-      name: model.displayName,
-    }));
+    const models: ProviderModelPickerModel[] = pickerOrderedModels.map((model) => {
+      const isAvailable = isCodexModelAvailable(model, current.enableUltraEffort);
+      return {
+        ...(model.isDefault ? { catalogBadge: 'Default' } : {}),
+        description: model.description,
+        id: model.model,
+        isAvailable,
+        name: model.displayName,
+        ...(!isAvailable
+          ? {
+            unavailableMessage: 'Requires Ultra effort to be enabled',
+            unavailableTitle: 'This model only supports Ultra effort',
+          }
+          : {}),
+      };
+    });
     const discoveredIds = new Set(models.map(model => model.id));
     for (const modelId of visibleModelIds) {
       if (!discoveredIds.has(modelId)) {
@@ -136,4 +149,5 @@ export function renderCodexModelPicker(
     searchPlaceholder: 'Filter by model name, description, or ID...',
   });
   refreshPicker = picker.refresh.bind(picker);
+  return picker;
 }

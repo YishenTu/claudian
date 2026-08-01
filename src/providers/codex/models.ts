@@ -28,6 +28,14 @@ export interface CodexDiscoveredModel {
   isDefault: boolean;
 }
 
+export const CODEX_FALLBACK_REASONING_EFFORT_VALUES = [
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const;
+
 const DEFAULT_INPUT_MODALITIES: Array<'text' | 'image'> = ['text', 'image'];
 const ULTRA_REASONING_EFFORT = 'ultra';
 
@@ -189,9 +197,12 @@ export function getCodexModelsInPickerOrder(
 export function getCodexDefaultReasoningEffort(
   model: CodexDiscoveredModel,
   enableUltraEffort: boolean,
-): string {
+): string | null {
   const supportedReasoningEfforts = getCodexReasoningEffortOptions(model, enableUltraEffort);
   const supportedValues = supportedReasoningEfforts.map(option => option.value);
+  if (supportedValues.length === 0) {
+    return null;
+  }
   const fallbackValue = supportedValues.includes(model.defaultReasoningEffort)
     ? model.defaultReasoningEffort
     : DEFAULT_REASONING_VALUE;
@@ -210,6 +221,33 @@ export function getCodexReasoningEffortOptions(
     : model.supportedReasoningEfforts.filter(
       option => option.value.toLowerCase() !== ULTRA_REASONING_EFFORT,
     );
+}
+
+export function isCodexModelAvailable(
+  model: CodexDiscoveredModel,
+  enableUltraEffort: boolean,
+): boolean {
+  return getCodexReasoningEffortOptions(model, enableUltraEffort).length > 0;
+}
+
+export function resolveCodexReasoningEffort(
+  model: CodexDiscoveredModel | null,
+  enableUltraEffort: boolean,
+  requestedEffort: string | null,
+): string | null {
+  if (!model) {
+    const fallbackValues: readonly string[] = CODEX_FALLBACK_REASONING_EFFORT_VALUES;
+    return requestedEffort && fallbackValues.includes(requestedEffort)
+      ? requestedEffort
+      : resolvePreferredReasoningDefault(fallbackValues, DEFAULT_REASONING_VALUE);
+  }
+
+  const supportedValues = getCodexReasoningEffortOptions(model, enableUltraEffort)
+    .map(option => option.value);
+  if (requestedEffort && supportedValues.includes(requestedEffort)) {
+    return requestedEffort;
+  }
+  return getCodexDefaultReasoningEffort(model, enableUltraEffort);
 }
 
 export function getCodexFastServiceTier(

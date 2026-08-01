@@ -224,6 +224,33 @@ describe('CodexModelPicker', () => {
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
   });
 
+  it('marks an ultra-only model unavailable while ultra effort is disabled', () => {
+    const plugin = createPlugin();
+    plugin.settings.providerConfigs.codex = {
+      discoveredModels: [{
+        ...TEST_CODEX_CATALOG[0],
+        model: 'gpt-ultra-only',
+        displayName: 'GPT Ultra Only',
+        supportedReasoningEfforts: [
+          { value: 'ultra', description: 'Automatic task delegation' },
+        ],
+        defaultReasoningEffort: 'ultra',
+      }],
+      enableUltraEffort: false,
+      modelAliases: {},
+      visibleModels: null,
+    };
+
+    renderCodexModelPicker(createElement() as any, createContext(plugin), {} as any);
+
+    expect(findElement(element =>
+      element.classes.has('claudian-provider-model-picker-row-badge')
+    ).text).toBe('Unavailable');
+    expect(findElement(element =>
+      element.classes.has('claudian-provider-model-picker-selected-unavailable')
+    ).text).toBe('Requires Ultra effort to be enabled');
+  });
+
   it('registers void-returning DOM event callbacks for asynchronous actions', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);

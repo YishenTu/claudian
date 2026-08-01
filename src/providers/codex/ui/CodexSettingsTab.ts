@@ -274,7 +274,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName(t('settings.models')).setHeading();
 
-    renderCodexModelPicker(container, modelWarning.context, codexWorkspace);
+    const modelPicker = renderCodexModelPicker(container, modelWarning.context, codexWorkspace);
 
     new Setting(container)
       .setName(t('settings.codex.ultraEffort.name'))
@@ -284,7 +284,9 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         .onChange(async (value) => {
           await context.plugin.mutateSettings((settings) => {
             updateCodexProviderSettings(settings, { enableUltraEffort: value });
+            ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
           });
+          modelPicker.refresh();
           context.notifyProviderModelOptionsChanged('codex');
         }));
 

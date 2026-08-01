@@ -159,6 +159,7 @@ export function applyCodexModelDefaults(
   const modelMetadata = findCodexModel(codexSettings.discoveredModels, model);
   settings.effortLevel = modelMetadata
     ? getCodexDefaultReasoningEffort(modelMetadata, codexSettings.enableUltraEffort)
+      ?? DEFAULT_REASONING_VALUE
     : DEFAULT_REASONING_VALUE;
   if (shouldDisableCodexReasoningSummary(model)) {
     updateCodexProviderSettings(settings, { reasoningSummary: 'none' });
@@ -329,7 +330,7 @@ function retargetRemovedCodexSelections(
     ensureCodexProjectionMap(settings, 'savedProviderEffort').codex = getCodexDefaultReasoningEffort(
       fallbackModel,
       next.enableUltraEffort,
-    );
+    ) ?? DEFAULT_REASONING_VALUE;
     ensureCodexProjectionMap(settings, 'savedProviderServiceTier').codex = fallbackServiceTier;
   }
 
@@ -339,7 +340,7 @@ function retargetRemovedCodexSelections(
     settings.effortLevel = getCodexDefaultReasoningEffort(
       fallbackModel,
       next.enableUltraEffort,
-    );
+    ) ?? DEFAULT_REASONING_VALUE;
     settings.serviceTier = fallbackServiceTier;
   }
 

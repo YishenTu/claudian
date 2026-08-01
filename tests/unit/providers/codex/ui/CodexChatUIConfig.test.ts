@@ -444,7 +444,7 @@ describe('CodexChatUIConfig', () => {
       })).toBe('ultra');
     });
 
-    it('does not retain an ultra default when ultra is the only advertised effort and is disabled', () => {
+    it('makes an ultra-only model unavailable while ultra effort is disabled', () => {
       const discoveredModels = [{
         model: 'gpt-ultra-only',
         displayName: 'GPT Ultra Only',
@@ -458,10 +458,35 @@ describe('CodexChatUIConfig', () => {
         inputModalities: ['text'],
         isDefault: true,
       }];
-      const settings = { providerConfigs: { codex: { discoveredModels } } };
+      const settings = {
+        providerConfigs: {
+          codex: {
+            customModels: 'gpt-ultra-only',
+            discoveredModels,
+            environmentVariables: 'OPENAI_MODEL=openai-codex/gpt-ultra-only',
+            visibleModels: ['gpt-ultra-only'],
+          },
+        },
+      };
 
       expect(codexChatUIConfig.getReasoningOptions('gpt-ultra-only', settings)).toEqual([]);
-      expect(codexChatUIConfig.getDefaultReasoningValue('gpt-ultra-only', settings)).toBe('high');
+      expect(codexChatUIConfig.getModelOptions(settings)).toEqual([]);
+      expect(codexChatUIConfig.getDefaultModel?.(settings)).toBeNull();
+      expect(codexChatUIConfig.getModelOptions({
+        providerConfigs: {
+          codex: {
+            discoveredModels,
+            enableUltraEffort: true,
+            visibleModels: ['gpt-ultra-only'],
+          },
+        },
+      })).toEqual([
+        {
+          value: 'gpt-ultra-only',
+          label: 'GPT Ultra Only',
+          description: 'Ultra only',
+        },
+      ]);
     });
 
     it('prefers high over the app-server default when the model supports it', () => {

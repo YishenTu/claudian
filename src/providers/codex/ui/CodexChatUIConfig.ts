@@ -12,11 +12,13 @@ import type {
 import { OPENAI_PROVIDER_ICON } from '../../../shared/icons';
 import { getCodexModelOptions } from '../modelOptions';
 import {
+  CODEX_FALLBACK_REASONING_EFFORT_VALUES,
   findCodexModel,
   getCodexDefaultReasoningEffort,
   getCodexFastServiceTier,
   getCodexReasoningEffortOptions,
   getDefaultCodexModel,
+  isCodexModelAvailable,
 } from '../models';
 import {
   isCodexModelSelectionId,
@@ -30,11 +32,7 @@ import {
 } from '../settings';
 
 const EFFORT_LEVELS: ProviderReasoningOption[] = [
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
+  ...CODEX_FALLBACK_REASONING_EFFORT_VALUES,
 ].map(value => ({ value, label: formatReasoningValueLabel(value) }));
 
 const CODEX_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
@@ -57,7 +55,10 @@ function getVisibleDiscoveredModels(settings: Record<string, unknown>) {
     codexSettings.visibleModels,
     codexSettings.discoveredModels,
   ));
-  return codexSettings.discoveredModels.filter(model => visibleModelIds.has(model.model));
+  return codexSettings.discoveredModels.filter(model =>
+    visibleModelIds.has(model.model)
+    && isCodexModelAvailable(model, codexSettings.enableUltraEffort)
+  );
 }
 
 export const codexChatUIConfig: ProviderChatUIConfig = {
@@ -115,6 +116,7 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
     );
     return model
       ? getCodexDefaultReasoningEffort(model, codexSettings.enableUltraEffort)
+        ?? DEFAULT_REASONING_VALUE
       : DEFAULT_REASONING_VALUE;
   },
 

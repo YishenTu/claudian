@@ -35,7 +35,10 @@ import {
   findCodexSessionFile,
 } from '../history/CodexHistoryStore';
 import { getCodexModelOptions } from '../modelOptions';
-import { findCodexModel } from '../models';
+import {
+  findCodexModel,
+  resolveCodexReasoningEffort,
+} from '../models';
 import { toCodexRuntimeModelId } from '../modelSelection';
 import { CodexAppServerProcess } from '../runtime/CodexAppServerProcess';
 import {
@@ -448,6 +451,7 @@ export class CodexExecutionSession
         );
         return;
       }
+      const effort = this.resolveReasoningEffort(request, settings, model);
 
       if (
         request.toolPolicy.kind === 'allow-list'
@@ -545,9 +549,6 @@ export class CodexExecutionSession
       );
       const bundle = this.buildInputBundle(request, turnInput);
       this.activeInputBundles.add(bundle);
-      const effort = normalizeString(request.configuration.reasoning)
-        ?? normalizeString(settings.effortLevel)
-        ?? 'medium';
       const serviceTier = resolveCodexServiceTier(
         request.configuration.serviceTier ?? settings.serviceTier,
         model,
@@ -1563,6 +1564,25 @@ export class CodexExecutionSession
       option => toCodexRuntimeModelId(option.value) === runtimeModel,
     );
     return enabled ? runtimeModel : null;
+  }
+
+  private resolveReasoningEffort(
+    request: ProviderExecutionRequest,
+    settings: Record<string, unknown>,
+    model: string,
+  ): string {
+    const codexSettings = getCodexProviderSettings(settings);
+    const modelMetadata = findCodexModel(codexSettings.discoveredModels, model);
+    const effort = resolveCodexReasoningEffort(
+      modelMetadata,
+      codexSettings.enableUltraEffort,
+      normalizeString(request.configuration.reasoning)
+        ?? normalizeString(settings.effortLevel),
+    );
+    if (!effort) {
+      throw new Error(`Codex model "${model}" has no enabled reasoning efforts.`);
+    }
+    return effort;
   }
 
   private resolveBaseInstructions(request: ProviderExecutionRequest): string {

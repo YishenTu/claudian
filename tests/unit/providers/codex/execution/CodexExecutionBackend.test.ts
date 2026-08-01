@@ -2114,8 +2114,22 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = new CodexExecutionBackend(createPlugin())
-      .createSession(createSessionConfig());
+    const plugin = createPlugin();
+    const codexConfig = (
+      plugin.settings.providerConfigs as Record<string, Record<string, unknown>>
+    ).codex;
+    codexConfig.enableUltraEffort = true;
+    codexConfig.discoveredModels = [
+      {
+        ...(codexConfig.discoveredModels as Array<Record<string, unknown>>)[0],
+        supportedReasoningEfforts: [
+          { value: 'high', description: 'Deep reasoning' },
+          { value: 'ultra', description: 'Automatic task delegation' },
+        ],
+        defaultReasoningEffort: 'high',
+      },
+    ];
+    const session = new CodexExecutionBackend(plugin).createSession(createSessionConfig());
     await collectEvents(session.execute(createRequest()).events);
     await collectEvents(session.execute(createRequest(
       new AbortController().signal,
@@ -2140,6 +2154,94 @@ describe('CodexExecutionBackend', () => {
       serviceTier: 'priority',
       approvalPolicy: 'never',
       sandboxPolicy: { type: 'dangerFullAccess' },
+    }));
+
+    await session.dispose();
+  });
+
+  it('validates saved ultra effort against the setting and auxiliary request model', async () => {
+    let turnIndex = 0;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult('thread-auxiliary-effort');
+      if (method === 'turn/start') {
+        turnIndex += 1;
+        const turnId = `turn-auxiliary-effort-${turnIndex}`;
+        queueMicrotask(() => completeTurn('thread-auxiliary-effort', turnId));
+        return createTurnResult(turnId);
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const plugin = createPlugin();
+    const settings = plugin.settings as Record<string, unknown>;
+    const providerConfigs = settings.providerConfigs as Record<string, Record<string, unknown>>;
+    const currentCodexConfig = providerConfigs.codex;
+    const currentModels = currentCodexConfig.discoveredModels as Array<Record<string, unknown>>;
+    settings.savedProviderEffort = { codex: 'ultra' };
+    providerConfigs.codex = {
+      ...currentCodexConfig,
+      enableUltraEffort: false,
+      discoveredModels: [
+        {
+          ...currentModels[0],
+          supportedReasoningEfforts: [
+            { value: 'high', description: 'Deep reasoning' },
+            { value: 'ultra', description: 'Automatic task delegation' },
+          ],
+          defaultReasoningEffort: 'high',
+        },
+        {
+          ...currentModels[0],
+          model: 'gpt-5.6-luna',
+          displayName: 'GPT-5.6-Luna',
+          supportedReasoningEfforts: [
+            { value: 'low', description: 'Fast responses' },
+            { value: 'medium', description: 'Balanced' },
+          ],
+          defaultReasoningEffort: 'medium',
+          isDefault: false,
+        },
+      ],
+    };
+    const session = new CodexExecutionBackend(plugin).createSession(createSessionConfig());
+    const createAuxiliaryRequest = (model: string): ProviderExecutionRequest => createRequest(
+      new AbortController().signal,
+      {
+        configuration: {
+          model,
+          permissionMode: 'normal',
+          systemInstructions: { kind: 'explicit', instructions: 'Be concise.' },
+        },
+      },
+    );
+
+    await collectEvents(session.execute(createAuxiliaryRequest(TEST_CODEX_MODEL)).events);
+    providerConfigs.codex.enableUltraEffort = true;
+    await collectEvents(session.execute(createAuxiliaryRequest('gpt-5.6-luna')).events);
+
+    const turnParams = mockTransportRequest.mock.calls
+      .filter(call => call[0] === 'turn/start')
+      .map(call => call[1]);
+    expect(turnParams[0]).toEqual(expect.objectContaining({
+      model: TEST_CODEX_MODEL,
+      effort: 'high',
+      collaborationMode: expect.objectContaining({
+        settings: expect.objectContaining({ reasoning_effort: 'high' }),
+      }),
+    }));
+    expect(turnParams[1]).toEqual(expect.objectContaining({
+      model: 'gpt-5.6-luna',
+      effort: 'medium',
+      collaborationMode: expect.objectContaining({
+        settings: expect.objectContaining({ reasoning_effort: 'medium' }),
+      }),
     }));
 
     await session.dispose();
