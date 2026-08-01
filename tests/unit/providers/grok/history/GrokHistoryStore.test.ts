@@ -701,6 +701,103 @@ describe('GrokHistoryStore', () => {
     });
   });
 
+  it('rehydrates current tool names, answers, and file diffs for shared renderers', () => {
+    const sessionId = 'session-current-tools';
+    const question = 'How should the audit continue?';
+    const answer = 'Fix the provider-owned normalization.';
+    const updates = [
+      {
+        content: { text: 'Fix the audited tool displays.', type: 'text' },
+        sessionUpdate: 'user_message_chunk',
+      },
+      {
+        rawInput: { content: 'first line\nsecond line', file_path: 'notes/audit.md' },
+        status: 'in_progress',
+        title: 'write',
+        toolCallId: 'tool-write',
+        sessionUpdate: 'tool_call',
+      },
+      {
+        content: [
+          {
+            newText: 'first line\nsecond line',
+            oldText: 'previous first\nprevious second',
+            path: 'notes/audit.md',
+            type: 'diff',
+          },
+          { content: { text: 'Wrote notes/audit.md', type: 'text' }, type: 'content' },
+        ],
+        rawOutput: { type: 'WriteResult' },
+        status: 'completed',
+        toolCallId: 'tool-write',
+        sessionUpdate: 'tool_call_update',
+      },
+      {
+        rawInput: {
+          questions: [{
+            multiSelect: false,
+            options: [{ description: '', label: 'Fix it' }],
+            question,
+          }],
+        },
+        status: 'in_progress',
+        title: 'ask_user_question',
+        toolCallId: 'tool-question',
+        sessionUpdate: 'tool_call',
+      },
+      {
+        content: [{ content: { text: answer, type: 'text' }, type: 'content' }],
+        rawOutput: { UserAnswered: { message: answer }, type: 'UserAnswered' },
+        status: 'completed',
+        toolCallId: 'tool-question',
+        sessionUpdate: 'tool_call_update',
+      },
+      {
+        rawInput: { plan: 'Apply the audited fixes.' },
+        status: 'in_progress',
+        title: 'exit_plan_mode',
+        toolCallId: 'tool-plan',
+        sessionUpdate: 'tool_call',
+      },
+      {
+        status: 'completed',
+        title: 'Plan mode exited',
+        toolCallId: 'tool-plan',
+        sessionUpdate: 'tool_call_update',
+      },
+      { sessionUpdate: 'turn_completed' },
+    ];
+    const content = updates.map((update, index) => JSON.stringify({
+      method: '_x.ai/session/update',
+      params: { sessionId, update },
+      timestamp: 1_000 + index,
+    })).join('\n');
+
+    const toolCalls = parseGrokHistoryContent(content, sessionId).messages[1].toolCalls ?? [];
+    const write = toolCalls.find(toolCall => toolCall.id === 'tool-write');
+    const ask = toolCalls.find(toolCall => toolCall.id === 'tool-question');
+    const exitPlan = toolCalls.find(toolCall => toolCall.id === 'tool-plan');
+
+    expect(write).toMatchObject({
+      diffData: {
+        filePath: 'notes/audit.md',
+        stats: { added: 2, removed: 2 },
+      },
+      name: 'Write',
+      status: 'completed',
+    });
+    expect(ask).toMatchObject({
+      name: 'AskUserQuestion',
+      resolvedAnswers: { [question]: answer },
+      status: 'completed',
+    });
+    expect(exitPlan).toMatchObject({
+      name: 'ExitPlanMode',
+      providerPayload: { rawName: 'exit_plan_mode' },
+      status: 'completed',
+    });
+  });
+
   it('finalizes a stable prior turn when the next user message supplies the missing boundary', () => {
     const records = [
       {

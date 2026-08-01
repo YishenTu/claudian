@@ -5,6 +5,8 @@ import {
   TOOL_GREP,
   TOOL_LS,
   TOOL_READ,
+  TOOL_WEB_FETCH,
+  TOOL_WEB_SEARCH,
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
 
@@ -15,6 +17,8 @@ const PI_BUILT_IN_TOOL_NAMES: Record<string, string> = {
   grep: TOOL_GREP,
   ls: TOOL_LS,
   read: TOOL_READ,
+  web_fetch: TOOL_WEB_FETCH,
+  web_search: TOOL_WEB_SEARCH,
   write: TOOL_WRITE,
 };
 

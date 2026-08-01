@@ -91,6 +91,51 @@ describe('AcpSessionUpdateNormalizer', () => {
     });
   });
 
+  it('preserves native diff content through a status-only completion', () => {
+    const normalizer = new AcpSessionUpdateNormalizer();
+
+    normalizer.normalize({
+      rawInput: { content: 'new text', file_path: 'src/write.ts' },
+      sessionUpdate: 'tool_call',
+      title: 'write',
+      toolCallId: 'tool-write',
+    });
+    normalizer.normalize({
+      content: [{
+        newText: 'new text',
+        oldText: 'old text',
+        path: 'src/write.ts',
+        type: 'diff',
+      }],
+      sessionUpdate: 'tool_call_update',
+      status: 'in_progress',
+      toolCallId: 'tool-write',
+    });
+    const completed = normalizer.normalize({
+      sessionUpdate: 'tool_call_update',
+      status: 'completed',
+      toolCallId: 'tool-write',
+    });
+
+    expect(completed).toMatchObject({
+      streamChunks: [{
+        toolUseResult: {
+          filePath: 'src/write.ts',
+          newText: 'new text',
+          oldText: 'old text',
+        },
+        type: 'tool_result',
+      }],
+      toolState: {
+        toolUseResult: {
+          filePath: 'src/write.ts',
+          newText: 'new text',
+          oldText: 'old text',
+        },
+      },
+    });
+  });
+
   it('retains raw tool payloads while preferring concise rendered content', () => {
     const normalizer = new AcpSessionUpdateNormalizer();
     const rawInput = ['opaque', { nested: true }];

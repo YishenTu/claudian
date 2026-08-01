@@ -77,6 +77,42 @@ describe('AcpToolStreamAdapter', () => {
     }]);
   });
 
+  it('merges native ACP diff data with provider-owned result metadata', () => {
+    const adapter = createAdapter();
+    adapter.normalizeToolCall({
+      rawInput: { content: 'new text', file_path: 'src/write.ts' },
+      title: 'write',
+      toolCallId: 'tool-write',
+    }, [{ id: 'tool-write', input: {}, name: 'write', type: 'tool_use' }]);
+
+    expect(adapter.normalizeToolCallUpdate({
+      status: 'completed',
+      toolCallId: 'tool-write',
+    }, [{
+      content: 'Diff: src/write.ts',
+      id: 'tool-write',
+      toolUseResult: {
+        filePath: 'src/write.ts',
+        newText: 'new text',
+        oldText: 'old text',
+      },
+      type: 'tool_result',
+    }])).toEqual([{
+      content: 'Diff: src/write.ts',
+      id: 'tool-write',
+      toolUseResult: {
+        filePath: 'src/write.ts',
+        newText: 'new text',
+        oldText: 'old text',
+        providerPayload: {
+          rawInput: { content: 'new text', file_path: 'src/write.ts' },
+          rawName: 'write',
+        },
+      },
+      type: 'tool_result',
+    }]);
+  });
+
   it('emits a title-only normalized-name refinement and ignores a no-name update', () => {
     const adapter = createAdapter();
     expect(adapter.normalizeToolCall({ title: 'tool', toolCallId: 'tool-1' }, [

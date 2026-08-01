@@ -6,6 +6,7 @@ export * from './AcpPermissionAdapter';
 export * from './AcpSessionConfig';
 export * from './AcpSessionUpdateNormalizer';
 export * from './AcpSubprocess';
+export * from './AcpToolResultNormalization';
 export * from './AcpToolStreamAdapter';
 export * from './buildAcpUsageInfo';
 export * from './methodNames';

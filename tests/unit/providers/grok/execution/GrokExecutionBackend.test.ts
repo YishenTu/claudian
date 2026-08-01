@@ -1408,6 +1408,54 @@ describe('GrokExecutionBackend', () => {
     }));
   });
 
+  it('preserves native overwrite diffs in live Grok tool results', async () => {
+    const native = new FakeNativeConnection();
+    const rawInput = { content: 'new text', file_path: 'src/write.ts' };
+    const rawOutput = { type: 'WriteResult' };
+    native.promptImplementation = async () => {
+      native.emit({
+        rawInput,
+        sessionUpdate: 'tool_call',
+        title: 'write',
+        toolCallId: 'tool-write',
+      });
+      native.emit({
+        content: [{
+          newText: 'new text',
+          oldText: 'old text',
+          path: 'src/write.ts',
+          type: 'diff',
+        }],
+        rawOutput,
+        sessionUpdate: 'tool_call_update',
+        status: 'completed',
+        toolCallId: 'tool-write',
+      });
+      return { stopReason: 'end_turn' };
+    };
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    const events = await collect(session.execute(executionRequest()).events);
+
+    expect(events).toContainEqual(expect.objectContaining({
+      toolCallId: 'tool-write',
+      toolUseResult: {
+        filePath: 'src/write.ts',
+        newText: 'new text',
+        oldText: 'old text',
+        providerPayload: {
+          rawInput,
+          rawName: 'write',
+          rawOutput,
+        },
+      },
+      type: 'tool_completed',
+    }));
+  });
+
   it('uses native interjection and rewind without creating an unrelated session', async () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});

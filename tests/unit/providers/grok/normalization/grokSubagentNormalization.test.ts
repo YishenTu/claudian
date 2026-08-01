@@ -111,6 +111,54 @@ describe('grokSubagentNormalization', () => {
     }));
   });
 
+  it('extracts the current background task id from native spawn text', () => {
+    const taskId = '019f7eca-4926-7b60-8d02-81f5933a8834';
+    const spawn = toolCall({
+      id: 'spawn-current',
+      name: 'spawn_subagent',
+      input: {
+        description: 'Inspect current history',
+        prompt: 'Audit the provider records.',
+        run_in_background: true,
+        task_id: null,
+      },
+      providerPayload: {
+        rawName: 'spawn_subagent',
+        rawOutput: {
+          text: [
+            `subagent_id: ${taskId}`,
+            `Use get_command_or_subagent_output with task_ids=["${taskId}"] to wait.`,
+          ].join('\n'),
+          type: 'Text',
+        },
+      },
+      result: `subagent_id: ${taskId}`,
+      status: 'completed',
+    });
+    const output = toolCall({
+      id: 'output-current',
+      name: 'get_command_or_subagent_output',
+      input: { task_ids: [taskId], timeout_ms: 10_000 },
+      providerPayload: {
+        rawName: 'get_command_or_subagent_output',
+        rawOutput: { Result: 'Audit complete.', type: 'Text' },
+      },
+      result: 'Audit complete.',
+      status: 'completed',
+    });
+
+    expect(extractGrokSpawnResult(spawn.result, spawn)).toEqual({ agentId: taskId });
+    expect(buildGrokSubagentInfo(spawn, [spawn, output])).toEqual(expect.objectContaining({
+      agentId: taskId,
+      asyncStatus: 'completed',
+      result: 'Audit complete.',
+      status: 'completed',
+    }));
+
+    const taskIds = new Map([[taskId, 'spawn-current']]);
+    expect(grokSubagentLifecycleAdapter.isToolCallFullyOwned(output, taskIds)).toBe(true);
+  });
+
   it('completes a background spawn from a raw-output-only task id', () => {
     const spawn = toolCall({
       id: 'spawn-output-only',

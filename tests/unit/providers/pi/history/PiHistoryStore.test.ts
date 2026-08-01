@@ -173,6 +173,67 @@ describe('PiHistoryStore', () => {
     expect(messages[0].contentBlocks).toEqual([{ toolId: 'tool-1', type: 'tool_use' }]);
   });
 
+  it('rehydrates Pi web extension tools with shared renderer names', () => {
+    const content = [
+      JSON.stringify({
+        id: 'assistant-web',
+        type: 'message',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              arguments: { count: 5, query: 'provider protocol' },
+              id: 'web-search-1',
+              name: 'web_search',
+              type: 'toolCall',
+            },
+            {
+              arguments: { url: 'https://example.com/reference' },
+              id: 'web-fetch-1',
+              name: 'web_fetch',
+              type: 'toolCall',
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        message: {
+          content: [{ text: 'Search result', type: 'text' }],
+          isError: false,
+          role: 'toolResult',
+          toolCallId: 'web-search-1',
+          toolName: 'web_search',
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        message: {
+          content: [{ text: 'Fetched page', type: 'text' }],
+          isError: false,
+          role: 'toolResult',
+          toolCallId: 'web-fetch-1',
+          toolName: 'web_fetch',
+        },
+      }),
+    ].join('\n');
+
+    const toolCalls = parsePiSessionContent(content)[0].toolCalls ?? [];
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        input: { count: 5, query: 'provider protocol' },
+        name: 'WebSearch',
+        result: 'Search result',
+      }),
+      expect.objectContaining({
+        input: { url: 'https://example.com/reference' },
+        name: 'WebFetch',
+        result: 'Fetched page',
+      }),
+    ]);
+  });
+
   it('merges Pi assistant continuations split by tool results into one chat message', () => {
     const content = [
       JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'Hide scrollbars' } }),

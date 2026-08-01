@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
+import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
 import type {
   ChatMessage,
   ContentBlock,
@@ -8,10 +9,13 @@ import type {
   ImageMediaType,
   ToolCallInfo,
 } from '../../../core/types';
+import type { SDKToolUseResult } from '../../../core/types/diff';
+import { extractDiffData } from '../../../utils/diff';
+import { extractAcpDiffToolUseResult } from '../../acp/AcpToolResultNormalization';
 import {
-  buildGrokToolProviderPayload,
   type GrokRawToolNameResolution,
   normalizeGrokToolCall,
+  normalizeGrokToolUseResult,
   resolveGrokRawToolName,
 } from '../normalization/grokToolNormalization';
 
@@ -50,6 +54,7 @@ interface StoredTool {
   rawNameProvenance: GrokRawToolNameResolution['provenance'];
   rawOutput: unknown;
   status: ToolCallInfo['status'];
+  toolUseResult?: SDKToolUseResult;
 }
 
 interface PendingTurn {
@@ -397,6 +402,8 @@ function reconcileToolUpdate(turn: PendingTurn, update: Record<string, unknown>)
     title: rawName,
   }, rawNameResolution);
   const status = normalizeToolStatus(readString(update.status), current?.status);
+  const nativeToolUseResult = extractAcpDiffToolUseResult(update.content)
+    ?? current?.toolUseResult;
   const output = renderedContent || (update.rawOutput === undefined
     ? current?.output || normalized.output
     : normalized.output || current?.output) || '';
@@ -415,6 +422,7 @@ function reconcileToolUpdate(turn: PendingTurn, update: Record<string, unknown>)
     rawNameProvenance: rawNameResolution.provenance,
     rawOutput,
     status,
+    ...(nativeToolUseResult ? { toolUseResult: nativeToolUseResult } : {}),
   });
 }
 
@@ -448,18 +456,32 @@ function finalizeTurn(
     if (!tool) {
       return [];
     }
-    return [{
+    const providerToolUseResult = normalizeGrokToolUseResult(
+      tool.rawName,
+      tool.input,
+      tool.rawOutput,
+      tool.rawInput,
+    );
+    const toolUseResult: SDKToolUseResult = {
+      ...tool.toolUseResult,
+      ...providerToolUseResult,
+    };
+    const toolCall: ToolCallInfo = {
       id: tool.id,
       input: tool.input,
       name: tool.name,
-      providerPayload: buildGrokToolProviderPayload({
-        rawInput: tool.rawInput,
-        rawName: tool.rawName,
-        rawOutput: tool.rawOutput,
-      }),
+      providerPayload: providerToolUseResult.providerPayload,
       ...(tool.output ? { result: tool.output } : {}),
       status: tool.status,
-    } satisfies ToolCallInfo];
+    };
+    if (toolCall.name === TOOL_ASK_USER_QUESTION && providerToolUseResult.answers) {
+      toolCall.resolvedAnswers = providerToolUseResult.answers;
+    }
+    if (toolCall.status === 'completed' && isWriteEditTool(toolCall.name)) {
+      const diffData = extractDiffData(toolUseResult, toolCall);
+      if (diffData) toolCall.diffData = diffData;
+    }
+    return [toolCall];
   });
   const assistant: ChatMessage = {
     assistantMessageId: assistantId,

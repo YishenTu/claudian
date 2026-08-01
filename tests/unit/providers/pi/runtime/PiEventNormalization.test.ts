@@ -81,6 +81,34 @@ describe('Pi event normalization', () => {
     }]);
   });
 
+  it('maps Pi web extension tools to shared renderer names', () => {
+    const state = createPiEventNormalizationState();
+
+    expect(normalizePiRpcEvent({
+      args: { count: 5, query: 'provider protocol' },
+      toolCallId: 'web-search-1',
+      toolName: 'web_search',
+      type: 'tool_execution_start',
+    }, state)).toEqual([{
+      id: 'web-search-1',
+      input: { count: 5, query: 'provider protocol' },
+      name: 'WebSearch',
+      type: 'tool_use',
+    }]);
+
+    expect(normalizePiRpcEvent({
+      args: { url: 'https://example.com/reference' },
+      toolCallId: 'web-fetch-1',
+      toolName: 'web_fetch',
+      type: 'tool_execution_start',
+    }, state)).toEqual([{
+      id: 'web-fetch-1',
+      input: { url: 'https://example.com/reference' },
+      name: 'WebFetch',
+      type: 'tool_use',
+    }]);
+  });
+
   it('preserves Pi write/edit result payloads for diff extraction', () => {
     const state = createPiEventNormalizationState();
 

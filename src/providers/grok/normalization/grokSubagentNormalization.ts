@@ -50,8 +50,24 @@ function getRawOutput(toolCall: ToolCallInfo | undefined, raw: string | undefine
 }
 
 function extractTaskId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value.match(/\b(?:task|subagent|agent)_id\s*[:=]\s*["']?([a-zA-Z0-9._:-]+)/i)?.[1];
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const id = extractTaskId(item);
+      if (id) return id;
+    }
+    return undefined;
+  }
   if (!isRecord(value)) return undefined;
-  return firstString(value, ['task_id', 'subagent_id', 'agent_id', 'id']);
+  const direct = firstString(value, ['task_id', 'subagent_id', 'agent_id', 'id']);
+  if (direct) return direct;
+  for (const key of ['text', 'output', 'message', 'result', 'Result'] as const) {
+    const id = extractTaskId(value[key]);
+    if (id) return id;
+  }
+  return undefined;
 }
 
 function extractText(value: unknown): string | undefined {

@@ -152,6 +152,15 @@ export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo):
         return { filePath: resultFilePath, diffLines, stats: countLineChanges(diffLines) };
       }
     }
+
+    const replacements = getEditPairs(result);
+    if (replacements.length > 0) {
+      const resultFilePath = (typeof result.filePath === 'string' ? result.filePath : null)
+        || (typeof result.path === 'string' ? result.path : null)
+        || filePath;
+      const diffLines = buildReplacementDiffLines(replacements);
+      return { filePath: resultFilePath, diffLines, stats: countLineChanges(diffLines) };
+    }
   }
 
   return diffFromToolInput(toolCall, filePath);
@@ -251,15 +260,19 @@ function buildReplacementDiffLines(pairs: ReplacementPair[]): DiffLine[] {
   let newLineNum = 1;
 
   for (const pair of pairs) {
-    for (const line of pair.oldText.split('\n')) {
+    for (const line of splitReplacementLines(pair.oldText)) {
       diffLines.push({ type: 'delete', text: line, oldLineNum: oldLineNum++ });
     }
-    for (const line of pair.newText.split('\n')) {
+    for (const line of splitReplacementLines(pair.newText)) {
       diffLines.push({ type: 'insert', text: line, newLineNum: newLineNum++ });
     }
   }
 
   return diffLines;
+}
+
+function splitReplacementLines(text: string): string[] {
+  return text === '' ? [] : text.split('\n');
 }
 
 function buildApplyPatchFileDiff(current: {

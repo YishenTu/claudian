@@ -1,6 +1,7 @@
 import {
   normalizeGrokToolCall,
   normalizeGrokToolName,
+  normalizeGrokToolUseResult,
   resolveGrokRawToolName,
 } from '@/providers/grok/normalization/grokToolNormalization';
 
@@ -26,6 +27,8 @@ describe('grokToolNormalization', () => {
     ['ask_user_question', 'AskUserQuestion'],
     ['skill', 'Skill'],
     ['search_tool', 'ToolSearch'],
+    ['enter_plan_mode', 'EnterPlanMode'],
+    ['exit_plan_mode', 'ExitPlanMode'],
   ])('maps %s to the approved renderer %s', (rawName, expected) => {
     expect(normalizeGrokToolName(rawName)).toBe(expected);
   });
@@ -142,25 +145,61 @@ describe('grokToolNormalization', () => {
     })).toEqual(current);
   });
 
-  it('replaces a kind fallback with late unknown titles and retains their provenance', () => {
+  it('accepts the first title after a kind fallback and keeps it stable', () => {
     const kindFallback = resolveGrokRawToolName(undefined, { kind: 'execute' });
     expect(kindFallback).toEqual({ provenance: 'kind', rawName: 'execute' });
 
     const firstTitle = resolveGrokRawToolName(kindFallback, { title: 'future_tool' });
     expect(firstTitle).toEqual({ provenance: 'title', rawName: 'future_tool' });
     expect(resolveGrokRawToolName(firstTitle, {})).toEqual(firstTitle);
-    expect(resolveGrokRawToolName(firstTitle, { title: 'future_tool_v2' })).toEqual({
-      provenance: 'title',
-      rawName: 'future_tool_v2',
-    });
+    expect(resolveGrokRawToolName(firstTitle, { title: 'Future tool complete' }))
+      .toEqual(firstTitle);
   });
 
-  it('allows a recognized raw title update but rejects a later human presentation label', () => {
+  it('keeps the first recognized raw title when later updates change presentation text', () => {
     const initial = resolveGrokRawToolName(undefined, { title: 'read_file' });
     const updated = resolveGrokRawToolName(initial, { title: 'run_terminal_command' });
-    expect(updated).toEqual({ provenance: 'title', rawName: 'run_terminal_command' });
+    expect(updated).toEqual(initial);
     expect(resolveGrokRawToolName(updated, {
       title: 'Execute the verification command',
     })).toEqual(updated);
+  });
+
+  it('normalizes native free-form answers for the shared question renderer', () => {
+    const input = {
+      questions: [{
+        multiSelect: false,
+        options: [{ description: '', label: 'Proceed' }],
+        question: 'How should we continue?',
+      }],
+    };
+    const rawOutput = {
+      UserAnswered: { message: 'Use the durable implementation.' },
+      type: 'UserAnswered',
+    };
+
+    expect(normalizeGrokToolUseResult(
+      'ask_user_question',
+      input,
+      rawOutput,
+      input,
+    )).toEqual({
+      answers: { 'How should we continue?': 'Use the durable implementation.' },
+      providerPayload: {
+        rawInput: input,
+        rawName: 'ask_user_question',
+        rawOutput,
+      },
+    });
+
+    const jsonAnswer = '{"preference":"keep this as the answer"}';
+    expect(normalizeGrokToolUseResult(
+      'ask_user_question',
+      input,
+      { UserAnswered: { message: jsonAnswer } },
+      input,
+    ).answers).toEqual({
+      'How should we continue?': jsonAnswer,
+    });
   });
 });

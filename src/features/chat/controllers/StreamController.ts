@@ -763,12 +763,17 @@ export class StreamController {
 
     const adapter = this.getSubagentAdapter(existingToolCall.name);
     if (!adapter || adapter.protocol !== 'lifecycle') return false;
+    const resolvedToolCall: ToolCallInfo = {
+      ...existingToolCall,
+      result: normalizedContent,
+      status: chunk.isError ? 'error' : 'completed',
+    };
     const linkedSpawnIds = adapter.resolveSpawnToolIds(
-      existingToolCall,
+      resolvedToolCall,
       this.lifecycleAgentIdToSpawnId,
     );
     const isFullyOwned = adapter.isToolCallFullyOwned(
-      existingToolCall,
+      resolvedToolCall,
       this.lifecycleAgentIdToSpawnId,
     );
     if (adapter.isHiddenTool(existingToolCall.name) && isFullyOwned) {
@@ -828,7 +833,7 @@ export class StreamController {
           );
         }
       }
-      return isFullyOwned;
+      return adapter.isHiddenTool(existingToolCall.name) && isFullyOwned;
     }
 
     if (adapter.isCloseTool(existingToolCall.name)) {
@@ -986,7 +991,11 @@ export class StreamController {
       // blocked detection — their status is determined solely by isError
       if (chunk.isError) {
         existingToolCall.status = 'error';
-      } else if (!skipsBlockedDetection(existingToolCall.name) && isBlocked) {
+      } else if (
+        lifecycleAdapter?.protocol !== 'lifecycle'
+        && !skipsBlockedDetection(existingToolCall.name)
+        && isBlocked
+      ) {
         existingToolCall.status = 'blocked';
       } else {
         existingToolCall.status = 'completed';

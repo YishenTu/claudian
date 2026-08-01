@@ -1,4 +1,6 @@
 import type { SlashCommand, StreamChunk } from '../../core/types';
+import type { SDKToolUseResult } from '../../core/types/diff';
+import { extractAcpDiffToolUseResult } from './AcpToolResultNormalization';
 import type {
   AcpAvailableCommand,
   AcpContentBlock,
@@ -70,6 +72,7 @@ export interface AcpToolCallSnapshot {
   rawInput?: unknown;
   rawOutput?: unknown;
   status?: AcpToolCallStatus | null;
+  toolUseResult?: SDKToolUseResult;
 }
 
 type MessageRole = 'assistant' | 'thinking' | 'user';
@@ -166,6 +169,7 @@ export class AcpSessionUpdateNormalizer {
   }
 
   private normalizeToolCall(toolCall: AcpToolCall): Extract<AcpNormalizedUpdate, { type: 'tool_call' }> {
+    const toolUseResult = extractAcpDiffToolUseResult(toolCall.content);
     const toolState: AcpToolCallSnapshot = {
       input: normalizeToolInput(toolCall.rawInput),
       name: normalizeToolName(toolCall.title, toolCall.kind),
@@ -173,6 +177,7 @@ export class AcpSessionUpdateNormalizer {
       rawInput: toolCall.rawInput,
       rawOutput: toolCall.rawOutput,
       status: toolCall.status,
+      ...(toolUseResult ? { toolUseResult } : {}),
     };
     this.toolCalls.set(toolCall.toolCallId, toolState);
 
@@ -188,6 +193,7 @@ export class AcpSessionUpdateNormalizer {
         content: toolState.output || defaultToolResultText(toolState.status),
         id: toolCall.toolCallId,
         isError: toolState.status === 'failed',
+        ...(toolState.toolUseResult ? { toolUseResult: toolState.toolUseResult } : {}),
         type: 'tool_result',
       });
     }
@@ -218,6 +224,13 @@ export class AcpSessionUpdateNormalizer {
     if (toolCallUpdate.rawOutput !== undefined) {
       current.rawOutput = toolCallUpdate.rawOutput;
     }
+    const toolUseResult = extractAcpDiffToolUseResult(toolCallUpdate.content);
+    if (toolUseResult) {
+      current.toolUseResult = {
+        ...current.toolUseResult,
+        ...toolUseResult,
+      };
+    }
 
     const nextOutput = renderToolPayload(toolCallUpdate.content ?? undefined, toolCallUpdate.rawOutput)
       || current.output;
@@ -242,6 +255,7 @@ export class AcpSessionUpdateNormalizer {
         content: current.output || defaultToolResultText(current.status),
         id: toolCallUpdate.toolCallId,
         isError: current.status === 'failed',
+        ...(current.toolUseResult ? { toolUseResult: current.toolUseResult } : {}),
         type: 'tool_result',
       });
     }

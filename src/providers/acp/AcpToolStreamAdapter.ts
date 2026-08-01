@@ -159,12 +159,13 @@ export class AcpToolStreamAdapter {
           ...this.buildProviderPayloadFields(state),
         };
       case 'tool_result': {
-        const toolUseResult = this.adapter.normalizeToolUseResult(
+        const providerToolUseResult = this.adapter.normalizeToolUseResult(
           state.rawName,
           state.input,
           state.rawOutput,
           state.rawInput,
         );
+        const toolUseResult = mergeToolUseResults(chunk.toolUseResult, providerToolUseResult);
         return toolUseResult
           ? { ...chunk, toolUseResult }
           : chunk;
@@ -186,6 +187,15 @@ export class AcpToolStreamAdapter {
     const providerPayload = normalizeToolProviderPayload(result?.providerPayload);
     return providerPayload ? { providerPayload } : {};
   }
+}
+
+function mergeToolUseResults(
+  nativeResult: SDKToolUseResult | undefined,
+  providerResult: SDKToolUseResult | undefined,
+): SDKToolUseResult | undefined {
+  if (!nativeResult) return providerResult;
+  if (!providerResult) return nativeResult;
+  return { ...nativeResult, ...providerResult };
 }
 
 function normalizeRawToolInput(rawInput: unknown): Record<string, unknown> {

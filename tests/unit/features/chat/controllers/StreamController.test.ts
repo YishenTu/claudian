@@ -2997,6 +2997,104 @@ describe('StreamController - Text Content', () => {
         false,
       );
     });
+
+    it('updates current task-name agents from list_agents after global wait timeouts', async () => {
+      const { createSubagentBlock, finalizeSubagentBlock } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
+      const { updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+      deps.getProviderId = () => 'codex';
+
+      const subagentState = {
+        info: { id: 'spawn-current', description: 'provider_review', prompt: '', status: 'running', toolCalls: [] },
+        labelEl: { setText: jest.fn() },
+      };
+      createSubagentBlock.mockReturnValueOnce(subagentState);
+
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'spawn-current',
+        name: TOOL_SPAWN_AGENT,
+        input: { message: 'Review the provider integration.', task_name: 'provider_review' },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'spawn-current',
+        content: '{"task_name":"provider_review"}',
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'wait-current',
+        name: TOOL_WAIT_AGENT,
+        input: { timeout_ms: 10_000 },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'wait-current',
+        content: '{"message":"Agents are still running.","timed_out":true}',
+      }, msg);
+
+      expect(finalizeSubagentBlock).not.toHaveBeenCalled();
+
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'list-current',
+        name: 'list_agents',
+        input: {},
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'list-current',
+        content: JSON.stringify({
+          agents: [{
+            agent_name: 'provider_review',
+            agent_status: { completed: 'Provider integration is sound.' },
+          }],
+        }),
+      }, msg);
+
+      expect(finalizeSubagentBlock).toHaveBeenCalledWith(
+        subagentState,
+        'Provider integration is sound.',
+        false,
+      );
+      expect(updateToolCallResult).toHaveBeenCalledWith(
+        'list-current',
+        expect.objectContaining({
+          name: 'list_agents',
+          status: 'completed',
+        }),
+        deps.state.toolCallElements,
+      );
+    });
+
+    it('does not infer list_agents status from nested agent result prose', async () => {
+      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
+      (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
+      const msg = createTestMessage();
+      deps.getProviderId = () => 'codex';
+      msg.toolCalls = [{
+        id: 'list-current',
+        input: {},
+        name: 'list_agents',
+        status: 'running',
+      }];
+
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'list-current',
+        content: JSON.stringify({
+          agents: [{
+            agent_name: '/root/reviewer',
+            agent_status: {
+              completed: 'The approval-denied path is handled correctly.',
+            },
+          }],
+        }),
+      }, msg);
+
+      expect(msg.toolCalls[0].status).toBe('completed');
+    });
   });
 
   describe('Grok subagent lifecycle', () => {

@@ -1,9 +1,12 @@
+import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import {
   TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
   TOOL_EDIT,
+  TOOL_ENTER_PLAN_MODE,
+  TOOL_EXIT_PLAN_MODE,
   TOOL_GREP,
   TOOL_KILL_SHELL,
   TOOL_LS,
@@ -16,6 +19,8 @@ import {
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
+import type { AskUserAnswers } from '../../../core/types';
+import type { SDKToolUseResult } from '../../../core/types/diff';
 import type { AcpToolRawNameProvenance } from '../../acp/AcpToolStreamAdapter';
 import { GROK_SUBAGENT_LIFECYCLE_TOOL_NAMES } from './grokLifecycleToolNames';
 
@@ -23,6 +28,8 @@ const GROK_TOOL_NAME_MAP: Readonly<Record<string, string>> = {
   apply_patch: TOOL_APPLY_PATCH,
   ask_user_question: TOOL_ASK_USER_QUESTION,
   edit_notebook: TOOL_NOTEBOOK_EDIT,
+  enter_plan_mode: TOOL_ENTER_PLAN_MODE,
+  exit_plan_mode: TOOL_EXIT_PLAN_MODE,
   get_terminal_command_output: TOOL_BASH_OUTPUT,
   grep: TOOL_GREP,
   hashline_edit: TOOL_EDIT,
@@ -57,6 +64,11 @@ export interface GrokToolProviderPayload {
   rawOutput?: unknown;
 }
 
+export interface GrokNormalizedToolUseResult extends SDKToolUseResult {
+  answers?: AskUserAnswers;
+  providerPayload: GrokToolProviderPayload;
+}
+
 export interface GrokRawToolNameResolution {
   provenance: AcpToolRawNameProvenance;
   rawName: string;
@@ -77,6 +89,9 @@ export function resolveGrokRawToolName(
 ): GrokRawToolNameResolution {
   const title = update.title?.trim();
   const normalizedTitle = title?.toLowerCase();
+  if (currentRawName?.provenance === 'title') {
+    return currentRawName;
+  }
   if (
     normalizedTitle
     && (
@@ -86,13 +101,7 @@ export function resolveGrokRawToolName(
   ) {
     return { provenance: 'title', rawName: normalizedTitle };
   }
-  if (
-    title
-    && (
-      currentRawName?.provenance !== 'title'
-      || !isKnownGrokRawToolName(currentRawName.rawName)
-    )
-  ) {
+  if (title) {
     return { provenance: 'title', rawName: title };
   }
   if (currentRawName) {
@@ -122,17 +131,6 @@ export function normalizeGrokToolCall(value: {
   };
 }
 
-function isKnownGrokRawToolName(rawName: string | undefined): boolean {
-  const normalized = rawName?.trim().toLowerCase();
-  return Boolean(
-    normalized
-    && (
-      normalized in GROK_TOOL_NAME_MAP
-      || GROK_SUBAGENT_LIFECYCLE_TOOL_NAMES.has(normalized)
-    )
-  );
-}
-
 export function buildGrokToolProviderPayload(value: {
   rawInput?: unknown;
   rawName: string;
@@ -143,6 +141,65 @@ export function buildGrokToolProviderPayload(value: {
     rawName: value.rawName,
     ...(value.rawOutput !== undefined ? { rawOutput: value.rawOutput } : {}),
   };
+}
+
+export function normalizeGrokToolUseResult(
+  rawName: string,
+  input: Record<string, unknown>,
+  rawOutput: unknown,
+  rawInput?: unknown,
+): GrokNormalizedToolUseResult {
+  const providerPayload = buildGrokToolProviderPayload({
+    rawInput,
+    rawName,
+    rawOutput,
+  });
+  const answers = normalizeGrokQuestionAnswers(rawName, input, rawOutput);
+  return {
+    ...(answers ? { answers } : {}),
+    providerPayload,
+  };
+}
+
+function normalizeGrokQuestionAnswers(
+  rawName: string,
+  input: Record<string, unknown>,
+  rawOutput: unknown,
+): AskUserAnswers | undefined {
+  if (normalizeGrokToolName(rawName) !== TOOL_ASK_USER_QUESTION || !isRecord(rawOutput)) {
+    return undefined;
+  }
+  const userAnswered = isRecord(rawOutput.UserAnswered)
+    ? rawOutput.UserAnswered
+    : isRecord(rawOutput.userAnswered)
+      ? rawOutput.userAnswered
+      : null;
+  const message = userAnswered && typeof userAnswered.message === 'string'
+    ? userAnswered.message.trim()
+    : '';
+  if (!message) return undefined;
+
+  const questions = Array.isArray(input.questions)
+    ? input.questions.filter(isRecord)
+    : [];
+  const parsed = extractResolvedAnswersFromResultText(message);
+  if (parsed && questions.length !== 1) return parsed;
+  if (questions.length !== 1) {
+    return undefined;
+  }
+
+  const question = questions[0];
+  const questionText = typeof question.question === 'string' ? question.question : '';
+  if (!questionText) return undefined;
+  const questionId = typeof question.id === 'string' ? question.id : '';
+  if (parsed && (parsed[questionText] !== undefined || (questionId && parsed[questionId] !== undefined))) {
+    return parsed;
+  }
+  const answers: AskUserAnswers = { [questionText]: message };
+  if (questionId) {
+    answers[questionId] = message;
+  }
+  return answers;
 }
 
 function normalizeToolInput(rawName: string, value: unknown): Record<string, unknown> {

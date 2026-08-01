@@ -1,7 +1,8 @@
-import { TOOL_SPAWN_AGENT, TOOL_WAIT_AGENT } from '@/core/tools/toolNames';
+import { TOOL_SPAWN_AGENT, TOOL_WAIT, TOOL_WAIT_AGENT } from '@/core/tools/toolNames';
 import type { ToolCallInfo } from '@/core/types';
 import {
   buildCodexSubagentInfo,
+  codexSubagentLifecycleAdapter,
   extractCodexSpawnResult,
   extractCodexWaitResult,
 } from '@/providers/codex/normalization/codexSubagentNormalization';
@@ -77,5 +78,98 @@ describe('codexSubagentNormalization', () => {
         result: undefined,
       })
     );
+  });
+
+  it('uses current task-name and list-agents results to resolve completion', () => {
+    const spawnTool: ToolCallInfo = {
+      id: 'spawn-current',
+      name: TOOL_SPAWN_AGENT,
+      input: {
+        message: 'Review the provider integration.',
+        task_name: 'provider_review',
+      },
+      status: 'completed',
+      result: '{"task_name":"provider_review"}',
+    };
+    const timedOutWait: ToolCallInfo = {
+      id: 'wait-current',
+      name: TOOL_WAIT_AGENT,
+      input: { timeout_ms: 10_000 },
+      status: 'completed',
+      result: '{"message":"No agent completed before the timeout.","timed_out":true}',
+    };
+    const listAgents: ToolCallInfo = {
+      id: 'list-current',
+      name: 'list_agents',
+      input: {},
+      status: 'completed',
+      result: JSON.stringify({
+        agents: [{
+          agent_name: 'provider_review',
+          agent_status: { completed: 'Provider integration is sound.' },
+        }],
+      }),
+    };
+
+    expect(extractCodexSpawnResult(spawnTool.result, spawnTool)).toEqual({
+      agentId: 'provider_review',
+    });
+    expect(buildCodexSubagentInfo(
+      spawnTool,
+      [spawnTool, timedOutWait, listAgents],
+    )).toEqual(expect.objectContaining({
+      agentId: 'provider_review',
+      result: 'Provider integration is sound.',
+      status: 'completed',
+    }));
+  });
+
+  it('treats a current global wait timeout as polling, not agent failure', () => {
+    const spawnTool: ToolCallInfo = {
+      id: 'spawn-current',
+      name: TOOL_SPAWN_AGENT,
+      input: { message: 'Keep working.', task_name: 'background_work' },
+      status: 'completed',
+      result: '{"task_name":"background_work"}',
+    };
+    const waitTool: ToolCallInfo = {
+      id: 'wait-current',
+      name: TOOL_WAIT_AGENT,
+      input: { timeout_ms: 10_000 },
+      status: 'completed',
+      result: '{"message":"Agents are still running.","timed_out":true}',
+    };
+
+    expect(buildCodexSubagentInfo(spawnTool, [spawnTool, waitTool])).toEqual(
+      expect.objectContaining({ status: 'running', result: undefined }),
+    );
+
+    const agentIdToSpawnId = new Map([['background_work', 'spawn-current']]);
+    expect(codexSubagentLifecycleAdapter.isWaitTool('list_agents')).toBe(true);
+    expect(codexSubagentLifecycleAdapter.isHiddenTool('list_agents')).toBe(false);
+    expect(codexSubagentLifecycleAdapter.resolveSpawnToolIds(
+      waitTool,
+      agentIdToSpawnId,
+    )).toEqual(['spawn-current']);
+    expect(codexSubagentLifecycleAdapter.isToolCallFullyOwned(
+      waitTool,
+      agentIdToSpawnId,
+    )).toBe(true);
+
+    const executionCellWait: ToolCallInfo = {
+      id: 'wait-execution-cell',
+      name: TOOL_WAIT,
+      input: { cell_id: 'cell-1', yield_time_ms: 10_000 },
+      status: 'completed',
+      result: 'Cell completed.',
+    };
+    expect(codexSubagentLifecycleAdapter.resolveSpawnToolIds(
+      executionCellWait,
+      agentIdToSpawnId,
+    )).toEqual([]);
+    expect(codexSubagentLifecycleAdapter.isToolCallFullyOwned(
+      executionCellWait,
+      agentIdToSpawnId,
+    )).toBe(false);
   });
 });

@@ -53,6 +53,61 @@ describe('extractDiffData', () => {
     expect(result!.stats).toEqual({ added: 1, removed: 1 });
   });
 
+  it('returns replacement diff data from ACP old and new text', () => {
+    const toolCall = makeToolCall('Write', {
+      content: 'new first\nnew second',
+      file_path: 'src/acp.ts',
+    });
+
+    const result = extractDiffData({
+      filePath: 'src/acp.ts',
+      newText: 'new first\nnew second',
+      oldText: 'old first\nold second',
+    }, toolCall);
+
+    expect(result).toMatchObject({
+      filePath: 'src/acp.ts',
+      stats: { added: 2, removed: 2 },
+    });
+    expect(result?.diffLines.map(line => [line.type, line.text])).toEqual([
+      ['delete', 'old first'],
+      ['delete', 'old second'],
+      ['insert', 'new first'],
+      ['insert', 'new second'],
+    ]);
+  });
+
+  it('treats empty ACP replacement sides as zero lines', () => {
+    const createCall = makeToolCall('Write', {
+      content: 'created',
+      file_path: 'src/created.ts',
+    });
+    const deleteCall = makeToolCall('Write', {
+      content: '',
+      file_path: 'src/cleared.ts',
+    });
+
+    const created = extractDiffData({
+      filePath: 'src/created.ts',
+      newText: 'created',
+      oldText: '',
+    }, createCall);
+    const cleared = extractDiffData({
+      filePath: 'src/cleared.ts',
+      newText: '',
+      oldText: 'removed',
+    }, deleteCall);
+
+    expect(created?.stats).toEqual({ added: 1, removed: 0 });
+    expect(created?.diffLines).toEqual([
+      { newLineNum: 1, text: 'created', type: 'insert' },
+    ]);
+    expect(cleared?.stats).toEqual({ added: 0, removed: 1 });
+    expect(cleared?.diffLines).toEqual([
+      { oldLineNum: 1, text: 'removed', type: 'delete' },
+    ]);
+  });
+
   it('uses SDK filePath when present in toolUseResult', () => {
     const toolCall = makeToolCall('Write', { file_path: 'input/path.ts' });
     const toolUseResult = {
