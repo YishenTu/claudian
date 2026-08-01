@@ -33,7 +33,7 @@ jest.mock('@/features/chat/execution/ChatExecutionCoordinator', () => ({
   ChatExecutionCoordinator: jest.fn().mockImplementation((deps) => {
     const coordinator: MockCoordinator = {
       bindConversation: jest.fn().mockResolvedValue(undefined),
-      cancel: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn(),
       dispose: jest.fn().mockResolvedValue(undefined),
       isEventContextCurrent: jest.fn().mockReturnValue(true),
       prepare: jest.fn().mockResolvedValue(undefined),
@@ -691,6 +691,22 @@ describe('Tab provider execution ownership', () => {
 
     expect(coordinator.dispose).toHaveBeenCalledTimes(1);
     expect(tab.executionCoordinator).toBeNull();
+  });
+
+  it('cancels and awaits an active turn before disposing coordinator ownership', async () => {
+    const plugin = createPlugin();
+    const tab = createTab({ plugin, containerEl: createMockEl() as any });
+    const coordinator = coordinatorInstances[0];
+    let resolveTurn!: () => void;
+    tab.session.activeTurn = new Promise<void>((resolve) => {
+      resolveTurn = resolve;
+    });
+    coordinator.cancel.mockImplementation(() => resolveTurn());
+
+    await destroyTab(tab);
+
+    expect(coordinator.cancel).toHaveBeenCalledTimes(1);
+    expect(coordinator.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('numbers a fork from canonical user turns while retaining non-canonical history', async () => {

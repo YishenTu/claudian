@@ -1,6 +1,7 @@
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { SlashCommand } from '../../../core/types';
+import { toAbortError } from '../../../utils/abort';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { buildPiLaunchSpec } from '../runtime/PiLaunchSpec';
 import { getPiProviderSettings } from '../settings';
@@ -44,7 +45,12 @@ export class PiCommandMetadataProbe {
     if (this.disposed) {
       return Promise.reject(new Error('Pi command metadata probe is disposed.'));
     }
-    if (signal?.aborted) return Promise.reject(getAbortReason(signal));
+    if (signal?.aborted) {
+      return Promise.reject(toAbortError(
+        signal,
+        'Pi command metadata probe aborted',
+      ));
+    }
     if (this.transitionActive) {
       return this.waitForTransition(signal).then(() =>
         this.load(vaultWorkingDirectory, signal));
@@ -145,12 +151,17 @@ export class PiCommandMetadataProbe {
       return Promise.reject(new Error('Pi command metadata probe is disposed.'));
     }
     if (!this.transitionActive) return Promise.resolve();
-    if (signal?.aborted) return Promise.reject(getAbortReason(signal));
+    if (signal?.aborted) {
+      return Promise.reject(toAbortError(
+        signal,
+        'Pi command metadata probe aborted',
+      ));
+    }
 
     return new Promise<void>((resolve, reject) => {
       const onAbort = (): void => {
         if (!this.transitionWaiters.delete(waiter)) return;
-        reject(getAbortReason(signal!));
+        reject(toAbortError(signal!, 'Pi command metadata probe aborted'));
       };
       const waiter: TransitionWaiter = {
         reject,
@@ -195,10 +206,6 @@ export class PiCommandMetadataProbe {
     entry.shutdownFlight = kernel.shutdown().catch(() => undefined);
     return entry.shutdownFlight;
   }
-}
-
-function getAbortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException('The operation was aborted.', 'AbortError');
 }
 
 export function normalizePiRuntimeCommands(response: unknown): SlashCommand[] {

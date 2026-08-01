@@ -1,3 +1,5 @@
+import { throwIfAborted, toAbortError } from '../../../utils/abort';
+
 export class CodexMetadataTransitionGate {
   private transitionDepth = 0;
   private transitionPromise: Promise<void> | null = null;
@@ -25,7 +27,7 @@ export class CodexMetadataTransitionGate {
   }
 
   async waitUntilAvailable(signal?: AbortSignal): Promise<boolean> {
-    signal?.throwIfAborted();
+    throwIfAborted(signal, 'Codex metadata transition wait aborted');
     while (!this.disposed && this.transitionPromise) {
       await this.waitForTransition(this.transitionPromise, signal);
     }
@@ -49,7 +51,10 @@ export class CodexMetadataTransitionGate {
     }
 
     await new Promise<void>((resolve, reject) => {
-      const onAbort = (): void => reject(signal.reason);
+      const onAbort = (): void => reject(toAbortError(
+        signal,
+        'Codex metadata transition wait aborted',
+      ));
       signal.addEventListener('abort', onAbort, { once: true });
       void transition.then(resolve).finally(() => {
         signal.removeEventListener('abort', onAbort);

@@ -162,6 +162,22 @@ describe('ProviderExecutionLifecycleRegistry', () => {
     await registry.dispose();
   });
 
+  it('normalizes a synchronous non-Error session disposal failure', async () => {
+    const registry = new ProviderExecutionLifecycleRegistry();
+    const backend = new TestBackend('claude');
+    const lease = registry.acquire(backend, createSessionConfig(), 'chat');
+    const failure = { code: 'dispose-failed' };
+    jest.spyOn(lease.session, 'dispose').mockImplementation(() => {
+      throw failure;
+    });
+
+    await expect(lease.release()).rejects.toMatchObject({
+      cause: failure,
+      message: 'Provider execution session disposal failed',
+    });
+    await registry.dispose();
+  });
+
   it('waits for a manually-started in-progress release before a transition mutation', async () => {
     const barrier = deferred();
     const registry = new ProviderExecutionLifecycleRegistry();

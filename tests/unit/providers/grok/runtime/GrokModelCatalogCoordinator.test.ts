@@ -305,6 +305,37 @@ describe('GrokModelCatalogCoordinator', () => {
     await expect(fencedMerge).resolves.toEqual({ changed: false });
   });
 
+  it('normalizes a synchronous non-Error metadata operation failure', async () => {
+    const coordinator = new GrokModelCatalogCoordinator(
+      makeHost(),
+      makeService(completedResult()),
+    );
+    const failure = { code: 'metadata-failed' };
+    const runMetadataOperation = (
+      coordinator as unknown as {
+        runMetadataOperation<T>(
+          operation: () => Promise<T>,
+          transitionOwner: boolean,
+          disposedResult: () => T,
+        ): Promise<T>;
+      }
+    ).runMetadataOperation.bind(coordinator);
+
+    const operation = runMetadataOperation(
+      () => {
+        throw failure;
+      },
+      false,
+      () => undefined,
+    );
+
+    await expect(operation).rejects.toMatchObject({
+      cause: failure,
+      message: 'Grok metadata operation failed',
+    });
+    coordinator.dispose();
+  });
+
   it('ignores an abort-insensitive non-owner discovery completing after its owner replacement', async () => {
     let resolveOld!: (result: GrokModelCatalogDiscoveryResult) => void;
     let resolveOwner!: (result: GrokModelCatalogDiscoveryResult) => void;

@@ -1,6 +1,5 @@
 import {
   Client,
-  SSEClientTransport,
   StreamableHTTPClientTransport,
   type Transport,
 } from '@modelcontextprotocol/client';
@@ -12,6 +11,7 @@ import { getEnhancedPath } from '../../utils/env';
 import { parseCommand } from '../../utils/mcp';
 import type { ManagedMcpServer } from '../types';
 import { getMcpServerType } from '../types';
+import { createLegacySseTransport } from './LegacySseTransport';
 
 const MCP_TEST_TIMEOUT_MS = 10_000;
 
@@ -244,7 +244,7 @@ export async function testMcpServer(server: ManagedMcpServer): Promise<McpTestRe
         requestInit: config.headers ? { headers: config.headers } : undefined,
       };
       transport = type === 'sse'
-        ? new SSEClientTransport(url, options)
+        ? createLegacySseTransport(url, options)
         : new StreamableHTTPClientTransport(url, options);
     }
   } catch (error) {

@@ -3,6 +3,7 @@ import type {
   ProviderModelCatalogRefreshResult,
   ProviderTransitionOwnerContext,
 } from '../../../core/providers/types';
+import { toError } from '../../../utils/error';
 import { computeGrokEnvironmentHash } from '../env/GrokSettingsReconciler';
 import {
   clearGrokReasoningMetadata,
@@ -326,7 +327,7 @@ export class GrokModelCatalogCoordinator {
     try {
       promise = operation();
     } catch (error) {
-      promise = Promise.reject(error);
+      promise = Promise.reject(toError(error, 'Grok metadata operation failed'));
     }
     this.activeMetadataOperations.add(promise);
     void promise.then(

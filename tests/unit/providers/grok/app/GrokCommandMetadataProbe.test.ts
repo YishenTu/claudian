@@ -125,4 +125,28 @@ describe('GrokCommandMetadataProbe', () => {
     await expect(disposed).rejects.toThrow('disposed');
     expect(nativeFactory.create).not.toHaveBeenCalled();
   });
+
+  it('normalizes a non-Error abort reason while waiting behind a transition fence', async () => {
+    const nativeFactory: GrokExecutionNativeFactory = {
+      create: jest.fn(() => new FakeMetadataNative('unused', false)),
+    };
+    const plugin = {
+      app: { vault: { adapter: { basePath: '/tmp/grok-vault' } } },
+      getResolvedProviderCliPath: jest.fn(async () => '/configured/grok'),
+      manifest: { version: 'test' },
+      settings: {},
+    } as unknown as ProviderHost;
+    const probe = new GrokCommandMetadataProbe(plugin, nativeFactory);
+    const controller = new AbortController();
+    probe.beginEnvironmentTransition();
+
+    const load = probe.load(controller.signal);
+    controller.abort('caller cancelled');
+
+    await expect(load).rejects.toMatchObject({
+      cause: 'caller cancelled',
+      message: 'Grok command metadata probe aborted',
+    });
+    await probe.dispose();
+  });
 });

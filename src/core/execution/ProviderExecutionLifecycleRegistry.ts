@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+import { toError } from '../../utils/error';
 import type { ProviderId } from '../types/provider';
 import type {
   ProviderExecutionBackend,
@@ -155,7 +156,10 @@ class ProviderExecutionSessionLeaseImpl
     try {
       disposal = this.session.dispose();
     } catch (error) {
-      disposal = Promise.reject(error);
+      disposal = Promise.reject(toError(
+        error,
+        'Provider execution session disposal failed',
+      ));
     }
     this.releasePromise = disposal.finally(() => {
       this.state.leases.delete(this);

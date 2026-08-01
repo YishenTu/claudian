@@ -2137,7 +2137,7 @@ async function cancelAndAwaitActiveTurn(tab: TabData): Promise<boolean> {
 
   tab.state.cancelRequested = true;
   tab.state.bumpStreamGeneration();
-  await tab.executionCoordinator?.cancel();
+  tab.executionCoordinator?.cancel();
   await activeTurn.catch(() => undefined);
   return true;
 }
