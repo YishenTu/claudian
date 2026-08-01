@@ -32,6 +32,10 @@ export function parseTodoInput(input: Record<string, unknown>): TodoItem[] | nul
     return null;
   }
 
+  if (input.todos.length === 0) {
+    return [];
+  }
+
   const validTodos: TodoItem[] = [];
   for (const item of input.todos) {
     if (isValidTodoItem(item)) {

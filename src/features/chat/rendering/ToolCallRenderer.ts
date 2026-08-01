@@ -735,7 +735,7 @@ function getCurrentTask(input: Record<string, unknown>): TodoItem | undefined {
 
 function areAllTodosCompleted(input: Record<string, unknown>): boolean {
   const todos = getTodos(input);
-  if (!todos || todos.length === 0) return false;
+  if (!todos) return false;
   return todos.every(t => t.status === 'completed');
 }
 

@@ -26,6 +26,10 @@ describe('TodoListRenderer', () => {
       expect(parseTodoInput({ todos: 'not an array' })).toBeNull();
     });
 
+    it('should preserve an explicit empty todo snapshot', () => {
+      expect(parseTodoInput({ todos: [] })).toEqual([]);
+    });
+
     it('should filter out invalid todo items', () => {
       const input = {
         todos: [

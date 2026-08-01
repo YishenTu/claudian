@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
+import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
 import { filterActiveBranch } from './sdkBranchFilter';
@@ -140,16 +141,22 @@ export async function loadSDKSessionMessages(
 
   const chatMessages: ChatMessage[] = [];
   let pendingAssistant: ChatMessage | null = null;
+  const taskToolNormalizer = new ClaudeTaskToolNormalizer();
 
   // Merge consecutive assistant messages until an actual user message appears
   for (const sdkMsg of filteredEntries) {
-    if (isSystemInjectedMessage(sdkMsg)) continue;
+    const systemInjected = isSystemInjectedMessage(sdkMsg);
+    if (sdkMsg.type === 'user' && !systemInjected) {
+      taskToolNormalizer.reset();
+    }
+    if (systemInjected) continue;
 
     // Skip synthetic assistant messages (e.g., "No response requested." after /compact)
     if (sdkMsg.type === 'assistant' && sdkMsg.message?.model === '<synthetic>') continue;
 
     const chatMsg = parseSDKMessageToChat(sdkMsg, toolResults);
     if (!chatMsg) continue;
+    normalizeTaskToolCalls(chatMsg, taskToolNormalizer, toolUseResults);
 
     if (chatMsg.role === 'assistant') {
       // context_compacted must not merge with previous assistant (it's a standalone separator)
@@ -237,4 +244,36 @@ export async function loadSDKSessionMessages(
   chatMessages.sort((a, b) => a.timestamp - b.timestamp);
 
   return { messages: chatMessages, skippedLines: result.skippedLines };
+}
+
+function normalizeTaskToolCalls(
+  message: ChatMessage,
+  normalizer: ClaudeTaskToolNormalizer,
+  toolUseResults: Map<string, unknown>,
+): void {
+  if (message.role !== 'assistant' || !message.toolCalls) return;
+
+  for (const toolCall of message.toolCalls) {
+    const normalizedUse = normalizer.normalizeToolUse(
+      toolCall.id,
+      toolCall.name,
+      toolCall.input,
+    );
+    if (!normalizedUse) continue;
+
+    const rawOutput = toolUseResults.get(toolCall.id);
+    const normalizedResult = toolCall.status === 'running'
+      ? null
+      : normalizer.normalizeToolResult(toolCall.id, rawOutput, {
+        fallbackContent: toolCall.result,
+        isError: toolCall.status === 'error' || toolCall.status === 'blocked',
+      });
+    const normalized = normalizedResult ?? normalizedUse;
+    toolCall.name = normalized.name;
+    toolCall.input = normalized.input;
+    toolCall.providerPayload = {
+      ...toolCall.providerPayload,
+      ...normalized.providerPayload,
+    };
+  }
 }

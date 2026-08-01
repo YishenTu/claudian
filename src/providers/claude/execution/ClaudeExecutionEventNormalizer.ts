@@ -14,6 +14,7 @@ import type {
   ToolExecutionScope,
 } from '../../../core/execution';
 import type { StreamChunk } from '../../../core/types';
+import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import {
   isAsyncSubagentCompletion,
   isContextWindowEvent,
@@ -88,6 +89,7 @@ interface ToolIdentity {
 
 interface NormalizationState {
   readonly streamState: ReturnType<typeof createTransformStreamState>;
+  readonly taskToolNormalizer: ClaudeTaskToolNormalizer;
   readonly usageState: ReturnType<typeof createTransformUsageState>;
   readonly toolScopes: Map<string, ToolIdentity>;
   assistantStarted: boolean;
@@ -137,7 +139,9 @@ export class ClaudeExecutionEventNormalizer {
         continue;
       }
       if (isStreamChunk(event)) {
-        this.normalizeStreamChunk(message, event, state, normalized);
+        for (const chunk of normalizeTaskToolChunk(event, state.taskToolNormalizer)) {
+          this.normalizeStreamChunk(message, chunk, state, normalized);
+        }
       }
     }
 
@@ -156,6 +160,7 @@ export class ClaudeExecutionEventNormalizer {
   reset(channel: ClaudeExecutionEventChannel): void {
     const state = this.states[channel];
     state.streamState.clearAll();
+    state.taskToolNormalizer.reset();
     state.usageState.clear();
     state.toolScopes.clear();
     state.assistantStarted = false;
@@ -238,12 +243,53 @@ export class ClaudeExecutionEventNormalizer {
 function createNormalizationState(): NormalizationState {
   return {
     streamState: createTransformStreamState(),
+    taskToolNormalizer: new ClaudeTaskToolNormalizer(),
     usageState: createTransformUsageState(),
     toolScopes: new Map(),
     assistantStarted: false,
     sawStreamText: false,
     sawStreamThinking: false,
   };
+}
+
+function normalizeTaskToolChunk(
+  chunk: StreamChunk,
+  normalizer: ClaudeTaskToolNormalizer,
+): StreamChunk[] {
+  if (chunk.type === 'tool_use') {
+    const normalized = normalizer.normalizeToolUse(chunk.id, chunk.name, chunk.input);
+    if (!normalized) return [chunk];
+    return [{
+      ...chunk,
+      name: normalized.name,
+      input: normalized.input,
+      providerPayload: normalized.providerPayload,
+    }];
+  }
+
+  if (chunk.type === 'tool_result') {
+    const normalized = normalizer.normalizeToolResult(
+      chunk.id,
+      chunk.toolUseResult,
+      {
+        fallbackContent: chunk.content,
+        isError: chunk.isError,
+      },
+    );
+    if (!normalized) return [chunk];
+    return [
+      {
+        type: 'tool_use',
+        id: chunk.id,
+        name: normalized.name,
+        input: normalized.input,
+        providerPayload: normalized.providerPayload,
+      },
+      chunk,
+    ];
+  }
+
+  return [chunk];
 }
 
 function toOutputEvent(

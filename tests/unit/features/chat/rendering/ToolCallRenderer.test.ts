@@ -945,6 +945,23 @@ describe('ToolCallRenderer', () => {
       expect(statusEl?.hasClass('status-completed')).toBe(true);
     });
 
+    it('should mark an explicit empty todo snapshot as completed', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        id: 'todo-empty',
+        name: 'TodoWrite',
+        input: { todos: [] },
+        status: 'completed',
+      });
+      const toolCallElements = new Map<string, HTMLElement>();
+
+      renderToolCall(parentEl, toolCall, toolCallElements);
+      updateToolCallResult('todo-empty', toolCall, toolCallElements);
+
+      const statusEl = parentEl.querySelector('.claudian-tool-status');
+      expect(statusEl?.hasClass('status-completed')).toBe(true);
+    });
+
     it('should do nothing for non-existent tool id', () => {
       const toolCallElements = new Map<string, HTMLElement>();
       updateToolCallResult('nonexistent', createToolCall(), toolCallElements);

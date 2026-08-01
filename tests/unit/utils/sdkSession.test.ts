@@ -1114,6 +1114,39 @@ describe('sdkSession', () => {
       expect(result.messages[1].content).toContain('I found 10 results about cats.');
     });
 
+    it('hydrates Claude task mutations as TodoWrite snapshots', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockFsPromises.readFile.mockResolvedValue([
+        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Fix the issue"}}',
+        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"create-1","name":"TaskCreate","input":{"subject":"Inspect issue","activeForm":"Inspecting issue"}}]}}',
+        '{"type":"user","uuid":"r1","timestamp":"2024-01-15T10:02:00Z","toolUseResult":{"task":{"id":"1","subject":"Inspect issue"}},"message":{"content":[{"type":"tool_result","tool_use_id":"create-1","content":"Task #1 created successfully: Inspect issue"}]}}',
+        '{"type":"assistant","uuid":"a2","timestamp":"2024-01-15T10:03:00Z","message":{"content":[{"type":"tool_use","id":"create-2","name":"TaskCreate","input":{"subject":"Implement fix"}}]}}',
+        '{"type":"user","uuid":"r2","timestamp":"2024-01-15T10:04:00Z","toolUseResult":{"task":{"id":"2","subject":"Implement fix"}},"message":{"content":[{"type":"tool_result","tool_use_id":"create-2","content":"Task #2 created successfully: Implement fix"}]}}',
+        '{"type":"assistant","uuid":"a3","timestamp":"2024-01-15T10:05:00Z","message":{"content":[{"type":"tool_use","id":"update-1","name":"TaskUpdate","input":{"taskId":"1","status":"completed"}},{"type":"tool_use","id":"delete-2","name":"TaskUpdate","input":{"taskId":"2","status":"deleted"}}]}}',
+        '{"type":"user","uuid":"r3","timestamp":"2024-01-15T10:06:00Z","toolUseResult":{"success":true,"taskId":"1","updatedFields":["status"],"statusChange":{"from":"pending","to":"completed"}},"message":{"content":[{"type":"tool_result","tool_use_id":"update-1","content":"Updated task #1 status"}]}}',
+        '{"type":"user","uuid":"r4","timestamp":"2024-01-15T10:07:00Z","toolUseResult":{"success":true,"taskId":"2","updatedFields":["deleted"],"statusChange":{"from":"pending","to":"deleted"}},"message":{"content":[{"type":"tool_result","tool_use_id":"delete-2","content":"Updated task #2 deleted"}]}}',
+      ].join('\n'));
+
+      const result = await loadSDKSessionMessages('/Users/test/vault', 'session-task-tools');
+      const taskCalls = result.messages
+        .flatMap(message => message.toolCalls ?? [])
+        .filter(toolCall => toolCall.name === 'TodoWrite');
+
+      expect(taskCalls).toHaveLength(4);
+      expect(taskCalls[0].providerPayload).toMatchObject({
+        rawName: 'TaskCreate',
+        rawInput: { subject: 'Inspect issue', activeForm: 'Inspecting issue' },
+      });
+      expect(taskCalls.at(-1)?.input).toEqual({
+        todos: [{
+          id: '1',
+          content: 'Inspect issue',
+          activeForm: 'Inspecting issue',
+          status: 'completed',
+        }],
+      });
+    });
+
     it('hydrates AskUserQuestion answers from result text when toolUseResult has no answers', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockResolvedValue([

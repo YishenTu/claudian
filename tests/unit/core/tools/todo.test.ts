@@ -60,8 +60,8 @@ describe('parseTodoInput', () => {
     expect(parseTodoInput(input)).toBeNull();
   });
 
-  it('should return null for empty todos array', () => {
-    expect(parseTodoInput({ todos: [] })).toBeNull();
+  it('should preserve an explicit empty todos array', () => {
+    expect(parseTodoInput({ todos: [] })).toEqual([]);
   });
 
   it('should reject items with missing activeForm', () => {
