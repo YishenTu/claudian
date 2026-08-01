@@ -1,5 +1,11 @@
 /* Provider model picker */
 
+.claudian-settings .claudian-provider-model-picker-setting {
+  padding: 0 12px;
+  background: transparent;
+  border-radius: 0;
+}
+
 .claudian-provider-model-picker {
   display: flex;
   flex-direction: column;
@@ -11,6 +17,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px 12px;
+  padding: 0 12px;
   font-size: var(--font-ui-small);
   color: var(--text-muted);
 }
@@ -149,9 +156,21 @@
 
 .claudian-provider-model-picker-selected-controls {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.claudian-provider-model-picker-selected-alias-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.claudian-provider-model-picker-selected-alias-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1;
 }
 
 .claudian-provider-model-picker-selected-alias {

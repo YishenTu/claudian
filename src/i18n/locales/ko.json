@@ -319,7 +319,8 @@
     },
     "providerEnablement": {
       "name": "{provider} 활성화",
-      "desc": "활성화된 {provider} 모델을 새 대화에서 사용할 수 있게 합니다. 비활성화해도 기존 세션은 유지됩니다."
+      "desc": "활성화된 {provider} 모델을 새 대화에서 사용할 수 있게 합니다. 비활성화해도 기존 세션은 유지됩니다.",
+      "noModelsWarning": "활성화된 {provider} 모델이 없습니다. 아래 모델 섹션에서 하나 이상의 모델을 활성화하세요."
     },
     "codex": {
       "installationMethod": {

@@ -319,7 +319,8 @@
     },
     "providerEnablement": {
       "name": "Ativar {provider}",
-      "desc": "Disponibilizar os modelos {provider} ativados para novas conversas. As sessões existentes são preservadas quando o provedor é desativado."
+      "desc": "Disponibilizar os modelos {provider} ativados para novas conversas. As sessões existentes são preservadas quando o provedor é desativado.",
+      "noModelsWarning": "Nenhum modelo {provider} está ativado. Vá para Modelos abaixo e ative pelo menos um modelo."
     },
     "codex": {
       "installationMethod": {

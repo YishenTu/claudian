@@ -8,6 +8,7 @@ import type {
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import {
   type ProviderModelPickerModel,
   type ProviderModelPickerState,
@@ -54,9 +55,16 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
             await context.plugin.mutateSettings((settings) => {
               ProviderSettingsCoordinator.applyProviderEnablement(settings, 'opencode', value);
             });
-            context.notifyProviderModelOptionsChanged('opencode');
+            modelWarning.context.notifyProviderModelOptionsChanged('opencode');
           })
       );
+
+    const modelWarning = renderProviderModelEnablementWarning(container, context, {
+      getHasEnabledModels: () => getOpencodeProviderSettings(settingsBag).visibleModels.length > 0,
+      getIsEnabled: () => getOpencodeProviderSettings(settingsBag).enabled,
+      providerId: 'opencode',
+      providerName: 'OpenCode',
+    });
 
     const cliPathSetting = new Setting(container)
       .setName('CLI path')
@@ -123,7 +131,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     });
 
     new Setting(container).setName('Models').setHeading();
-    renderOpencodeModelPicker(container, context, settingsBag);
+    renderOpencodeModelPicker(container, modelWarning.context, settingsBag);
 
     new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
     context.renderAgentSkillSettings(container, 'opencode');
@@ -252,7 +260,6 @@ function renderOpencodeModelPicker(
       context.notifyProviderModelOptionsChanged('opencode');
     },
     providerName: 'OpenCode',
-    settingDescription: 'Choose which OpenCode models are available in the chat selector. Filter by provider or type to search. OpenCode chat is unavailable when no models are selected.',
   });
 }
 

@@ -5,9 +5,11 @@ import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSet
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
+import { getCodexModelOptions } from '../modelOptions';
 import { getDefaultCodexModel } from '../models';
 import { isWindowsStyleCliReference } from '../runtime/CodexBinaryLocator';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
@@ -49,9 +51,16 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
             if (value) {
               await refreshCodexModelCatalog();
             }
-            context.notifyProviderModelOptionsChanged('codex');
+            modelWarning.context.notifyProviderModelOptionsChanged('codex');
           })
       );
+
+    const modelWarning = renderProviderModelEnablementWarning(container, context, {
+      getHasEnabledModels: () => getCodexModelOptions(settingsBag).length > 0,
+      getIsEnabled: () => getCodexProviderSettings(settingsBag).enabled,
+      providerId: 'codex',
+      providerName: 'Codex',
+    });
 
     if (isWindowsHost) {
       new Setting(container)
@@ -224,33 +233,11 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     refreshInstallationMethodUI();
 
-    // --- Safety ---
-
-    new Setting(container).setName(t('settings.safety')).setHeading();
-
-    new Setting(container)
-      .setName(t('settings.codexSafeMode.name'))
-      .setDesc(t('settings.codexSafeMode.desc'))
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption('workspace-write', t('settings.codex.safeMode.workspaceWrite'))
-          .addOption('read-only', t('settings.codex.safeMode.readOnly'))
-          .setValue(codexSettings.safeMode)
-          .onChange(async (value) => {
-            await context.plugin.mutateSettings((settings) => {
-              updateCodexProviderSettings(
-                settings,
-                { safeMode: value as 'workspace-write' | 'read-only' },
-              );
-            });
-          });
-      });
-
     // --- Models ---
 
     new Setting(container).setName(t('settings.models')).setHeading();
 
-    renderCodexModelPicker(container, context, codexWorkspace);
+    renderCodexModelPicker(container, modelWarning.context, codexWorkspace);
 
     const SUMMARY_OPTIONS: { value: string; label: string }[] = [
       { value: 'auto', label: t('settings.codex.reasoningSummary.auto') },
@@ -275,6 +262,28 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
             );
           });
         });
+      });
+
+    // --- Safety ---
+
+    new Setting(container).setName(t('settings.safety')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.codexSafeMode.name'))
+      .setDesc(t('settings.codexSafeMode.desc'))
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('workspace-write', t('settings.codex.safeMode.workspaceWrite'))
+          .addOption('read-only', t('settings.codex.safeMode.readOnly'))
+          .setValue(codexSettings.safeMode)
+          .onChange(async (value) => {
+            await context.plugin.mutateSettings((settings) => {
+              updateCodexProviderSettings(
+                settings,
+                { safeMode: value as 'workspace-write' | 'read-only' },
+              );
+            });
+          });
       });
 
     // --- Skills ---

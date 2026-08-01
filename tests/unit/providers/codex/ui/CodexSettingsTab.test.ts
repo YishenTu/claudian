@@ -424,6 +424,15 @@ describe('CodexSettingsTab', () => {
     expect(findOptionalSetting('WSL distro override')).toBeUndefined();
   });
 
+  it('renders Models before Safety', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+    codexSettingsTabRenderer.render(createContainer(), createContext(createPlugin()));
+
+    const headings = createdSettings.filter(setting => setting.heading).map(setting => setting.name);
+    expect(headings.indexOf('Models')).toBeLessThan(headings.indexOf('Safety'));
+  });
+
   it('refreshes title model options after Codex enablement changes', async () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const plugin = createPlugin();
@@ -449,9 +458,41 @@ describe('CodexSettingsTab', () => {
 
     expect(mockRenderCodexModelPicker).toHaveBeenCalledWith(
       container,
-      context,
+      expect.objectContaining({ plugin }),
       expect.objectContaining({ commandCatalog: null }),
     );
+  });
+
+  it('warns when Codex is enabled without any enabled models', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const plugin = createPlugin({
+      providerConfigs: {
+        codex: {
+          ...DEFAULT_CODEX_PROVIDER_SETTINGS,
+          enabled: true,
+          visibleModels: [],
+        },
+      },
+    });
+    const context = createContext(plugin);
+    const container = createContainer();
+
+    codexSettingsTabRenderer.render(container, context);
+
+    const warningCallIndex = container.createDiv.mock.calls.findIndex(
+      ([options]: [{ text?: string }?]) => options?.text
+        === 'No Codex models are enabled. Go to Models below and enable at least one model.',
+    );
+    const warningEl = container.createDiv.mock.results[warningCallIndex]?.value;
+    expect(warningCallIndex).toBeGreaterThanOrEqual(0);
+    expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', false);
+
+    plugin.settings.providerConfigs.codex.customModels = 'gpt-custom';
+    const pickerContext = mockRenderCodexModelPicker.mock.calls[0][1];
+    pickerContext.notifyProviderModelOptionsChanged('codex');
+
+    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
+    expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', true);
   });
 
   it('renders the fixed-root shared skill manager', () => {

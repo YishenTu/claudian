@@ -319,7 +319,8 @@
     },
     "providerEnablement": {
       "name": "Enable {provider}",
-      "desc": "Make enabled {provider} models available for new conversations. Existing sessions are preserved when disabled."
+      "desc": "Make enabled {provider} models available for new conversations. Existing sessions are preserved when disabled.",
+      "noModelsWarning": "No {provider} models are enabled. Go to Models below and enable at least one model."
     },
     "codex": {
       "installationMethod": {

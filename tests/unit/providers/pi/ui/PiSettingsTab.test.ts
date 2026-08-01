@@ -59,6 +59,7 @@ class MockSetting {
   dropdownComponents: MockDropdownComponent[] = [];
   heading = false;
   name = '';
+  settingEl = { addClass: jest.fn() };
   textComponents: MockTextComponent[] = [];
   toggleComponents: MockToggleComponent[] = [];
 

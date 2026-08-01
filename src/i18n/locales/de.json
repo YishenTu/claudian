@@ -319,7 +319,8 @@
     },
     "providerEnablement": {
       "name": "{provider} aktivieren",
-      "desc": "Aktivierte {provider}-Modelle für neue Unterhaltungen verfügbar machen. Bestehende Sitzungen bleiben beim Deaktivieren erhalten."
+      "desc": "Aktivierte {provider}-Modelle für neue Unterhaltungen verfügbar machen. Bestehende Sitzungen bleiben beim Deaktivieren erhalten.",
+      "noModelsWarning": "Keine {provider}-Modelle sind aktiviert. Aktivieren Sie unten unter „Modelle“ mindestens ein Modell."
     },
     "codex": {
       "installationMethod": {

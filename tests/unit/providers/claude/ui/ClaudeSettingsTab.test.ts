@@ -429,6 +429,15 @@ describe('ClaudeSettingsTab', () => {
     expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableSonnet1M.name');
   });
 
+  it('renders Models before Safety', () => {
+    claudeSettingsTabRenderer.render(createContainer(), createContext(createPlugin()));
+
+    const headings = createdSettings.filter(setting => setting.heading).map(setting => setting.name);
+    expect(headings.indexOf('settings.models')).toBeLessThan(
+      headings.indexOf('settings.safety'),
+    );
+  });
+
   it('keeps Claude CRUD on its explicit vault repository without the shared manager', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);

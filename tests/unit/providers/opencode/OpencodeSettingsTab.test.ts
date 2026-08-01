@@ -40,6 +40,7 @@ jest.mock('obsidian', () => {
     public name = '';
     public desc = '';
     public heading = false;
+    public settingEl = { addClass: jest.fn() };
     public textComponents: MockTextComponent[] = [];
     public toggleComponents: MockToggleComponent[] = [];
 
