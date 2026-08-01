@@ -10,7 +10,7 @@ import type {
   McpStdioServerConfig,
 } from '../../core/types';
 import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../core/types';
-import { parseCommand } from '../../utils/mcp';
+import { formatCommand, parseCommand } from '../../utils/mcp';
 
 export class McpServerModal extends Modal {
   private existingServer: ManagedMcpServer | null;
@@ -57,11 +57,7 @@ export class McpServerModal extends Modal {
     const type = getMcpServerType(config);
     if (type === 'stdio') {
       const stdioConfig = config as McpStdioServerConfig;
-      if (stdioConfig.args && stdioConfig.args.length > 0) {
-        this.command = stdioConfig.command + ' ' + stdioConfig.args.join(' ');
-      } else {
-        this.command = stdioConfig.command;
-      }
+      this.command = formatCommand(stdioConfig.command, stdioConfig.args);
       this.env = this.envRecordToString(stdioConfig.env);
     } else {
       const urlConfig = config as McpSSEServerConfig | McpHttpServerConfig;

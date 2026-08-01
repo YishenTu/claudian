@@ -53,3 +53,33 @@ describe('McpSettingsManager persistence rollback', () => {
     expect(manager.servers).toEqual([]);
   });
 });
+
+describe('McpSettingsManager server previews', () => {
+  it('shows argument boundaries for stdio paths containing spaces', () => {
+    const manager = createManager() as unknown as {
+      getServerPreview: (
+        server: {
+          name: string;
+          config: { command: string; args: string[] };
+          enabled: boolean;
+          contextSaving: boolean;
+        },
+        type: 'stdio'
+      ) => string;
+    };
+    const iCloudPath =
+      '/Users/alice/Library/Mobile Documents/iCloud~md~obsidian/Documents/My Vault/server.js';
+
+    const preview = manager.getServerPreview(
+      {
+        name: 'icloud-server',
+        config: { command: 'node', args: [iCloudPath, '--verbose'] },
+        enabled: true,
+        contextSaving: false,
+      },
+      'stdio'
+    );
+
+    expect(preview).toBe(`node "${iCloudPath}" --verbose`);
+  });
+});

@@ -56,18 +56,57 @@ export function parseCommand(command: string, providedArgs?: string[]): { cmd: s
   return { cmd: parts[0], args: parts.slice(1) };
 }
 
+function quoteCommandPart(part: string): string {
+  if (part.length > 0 && !/[\s'"\\]/.test(part)) {
+    return part;
+  }
+
+  const escaped = part
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
+  return `"${escaped}"`;
+}
+
+/** Format structured command parts for display without losing argument boundaries. */
+export function formatCommand(command: string, args: string[] = []): string {
+  return [command, ...args]
+    .map(quoteCommandPart)
+    .join(' ');
+}
+
 export function splitCommandString(cmdStr: string): string[] {
   const parts: string[] = [];
   let current = '';
   let inQuote = false;
   let quoteChar = '';
+  let tokenStarted = false;
 
   for (let i = 0; i < cmdStr.length; i++) {
     const char = cmdStr[i];
 
+    if (char === '\\') {
+      const next = cmdStr[i + 1];
+      const isEscaped = next !== undefined && (
+        inQuote
+          ? quoteChar === '"' && (next === '"' || next === '\\')
+          : /\s/.test(next) || next === '"' || next === "'"
+      );
+
+      if (isEscaped) {
+        current += next;
+        tokenStarted = true;
+        i++;
+      } else {
+        current += char;
+        tokenStarted = true;
+      }
+      continue;
+    }
+
     if ((char === '"' || char === "'") && !inQuote) {
       inQuote = true;
       quoteChar = char;
+      tokenStarted = true;
       continue;
     }
 
@@ -78,17 +117,19 @@ export function splitCommandString(cmdStr: string): string[] {
     }
 
     if (/\s/.test(char) && !inQuote) {
-      if (current) {
+      if (tokenStarted) {
         parts.push(current);
         current = '';
+        tokenStarted = false;
       }
       continue;
     }
 
     current += char;
+    tokenStarted = true;
   }
 
-  if (current) {
+  if (tokenStarted) {
     parts.push(current);
   }
 

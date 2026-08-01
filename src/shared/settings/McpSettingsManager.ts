@@ -6,6 +6,7 @@ import type { AppMcpStorage } from '../../core/providers/types';
 import { isNotifiedMutationError } from '../../core/storage/NotifiedMutationError';
 import type { ManagedMcpServer, McpServerConfig, McpServerType } from '../../core/types';
 import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../core/types';
+import { formatCommand } from '../../utils/mcp';
 import { confirmDelete } from '../modals/ConfirmModal';
 import { McpServerModal } from './McpServerModal';
 import { McpTestModal } from './McpTestModal';
@@ -245,8 +246,7 @@ export class McpSettingsManager {
   private getServerPreview(server: ManagedMcpServer, type: McpServerType): string {
     if (type === 'stdio') {
       const config = server.config as { command: string; args?: string[] };
-      const args = config.args?.join(' ') || '';
-      return args ? `${config.command} ${args}` : config.command;
+      return formatCommand(config.command, config.args);
     } else {
       const config = server.config as { url: string };
       return config.url;

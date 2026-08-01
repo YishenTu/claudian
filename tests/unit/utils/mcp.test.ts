@@ -1,4 +1,10 @@
-import { extractMcpMentions, parseCommand, splitCommandString, transformMcpMentions } from '@/utils/mcp';
+import {
+  extractMcpMentions,
+  formatCommand,
+  parseCommand,
+  splitCommandString,
+  transformMcpMentions,
+} from '@/utils/mcp';
 
 describe('extractMcpMentions', () => {
   it('extracts valid MCP mentions', () => {
@@ -207,6 +213,61 @@ describe('splitCommandString', () => {
   it('handles adjacent quoted and unquoted content', () => {
     // Quotes are stripped, so "foo"bar becomes foobar
     expect(splitCommandString('"foo"bar')).toEqual(['foobar']);
+  });
+
+  it('preserves empty quoted arguments', () => {
+    expect(splitCommandString('cmd "" tail')).toEqual(['cmd', '', 'tail']);
+  });
+
+  it('handles escaped quotes and backslashes in quoted arguments', () => {
+    expect(splitCommandString('cmd "say \\"hello\\"" "C:\\\\MCP Server"')).toEqual([
+      'cmd',
+      'say "hello"',
+      'C:\\MCP Server',
+    ]);
+  });
+
+  it('preserves unquoted UNC path prefixes', () => {
+    expect(splitCommandString('cmd \\\\server\\share')).toEqual([
+      'cmd',
+      '\\\\server\\share',
+    ]);
+  });
+
+  it('preserves a trailing backslash inside single quotes', () => {
+    expect(splitCommandString("cmd 'C:\\MCP Server\\'")).toEqual([
+      'cmd',
+      'C:\\MCP Server\\',
+    ]);
+  });
+});
+
+describe('formatCommand', () => {
+  it('preserves an iCloud path as one argument through a UI round trip', () => {
+    const command = 'node';
+    const args = [
+      '/Users/alice/Library/Mobile Documents/iCloud~md~obsidian/Documents/My Vault/server.js',
+      '--verbose',
+    ];
+
+    const formatted = formatCommand(command, args);
+
+    expect(formatted).toBe(
+      'node "/Users/alice/Library/Mobile Documents/iCloud~md~obsidian/Documents/My Vault/server.js" --verbose',
+    );
+    expect(parseCommand(formatted)).toEqual({ cmd: command, args });
+  });
+
+  it('round-trips commands and arguments containing spaces, quotes, and backslashes', () => {
+    const command = '/Applications/Node Tools/node';
+    const args = [
+      '',
+      'say "hello"',
+      "it's ready",
+      'C:\\Users\\Alice\\MCP Server\\index.js',
+    ];
+
+    expect(parseCommand(formatCommand(command, args))).toEqual({ cmd: command, args });
   });
 });
 
