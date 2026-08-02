@@ -1,8 +1,8 @@
+import { NOOP_TASK_RESULT_INTERPRETER } from '../../core/providers/NoopTaskResultInterpreter';
 import type { ProviderModule } from '../../core/providers/types';
 import {
   codexWorkspaceRegistration,
 } from './app/CodexWorkspaceServices';
-import { CodexTaskResultInterpreter } from './auxiliary/CodexTaskResultInterpreter';
 import { CODEX_PROVIDER_CAPABILITIES } from './capabilities';
 import { codexSettingsReconciler } from './env/CodexSettingsReconciler';
 import { CodexExecutionBackend } from './execution/CodexExecutionBackend';
@@ -54,7 +54,7 @@ export const codexProviderRegistration: ProviderModule = {
       : undefined;
   },
   historyService: new CodexConversationHistoryService(),
-  taskResultInterpreter: new CodexTaskResultInterpreter(),
+  taskResultInterpreter: NOOP_TASK_RESULT_INTERPRETER,
   subagentAdapter: codexSubagentLifecycleAdapter,
   workspace: codexWorkspaceRegistration,
 };

@@ -37,5 +37,5 @@
 
 - Images are written to a temp directory, passed as local image paths, and cleaned up in `query()` `finally`.
 - `serverRequest/resolved` can auto-dismiss approval or ask-user UI without client input.
-- `CodexTaskResultInterpreter` is intentionally no-op because Claudian's Claude async-agent task system does not apply to Codex.
+- The shared no-op task-result interpreter is intentional because Claudian's Claude async-agent task system does not apply to Codex.
 - Codex is opt-in and must stay disabled by default.

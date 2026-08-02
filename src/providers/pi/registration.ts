@@ -1,9 +1,9 @@
+import { NOOP_TASK_RESULT_INTERPRETER } from '../../core/providers/NoopTaskResultInterpreter';
 import type { ProviderModule } from '../../core/providers/types';
 import {
   getPiWorkspaceServices,
   piWorkspaceRegistration,
 } from './app/PiWorkspaceServices';
-import { PiTaskResultInterpreter } from './auxiliary/PiTaskResultInterpreter';
 import { PI_PROVIDER_CAPABILITIES } from './capabilities';
 import { piSettingsReconciler } from './env/PiSettingsReconciler';
 import { PiExecutionBackend } from './execution/PiExecutionBackend';
@@ -42,6 +42,6 @@ export const piProviderRegistration: ProviderModule = {
       return false;
     },
   },
-  taskResultInterpreter: new PiTaskResultInterpreter(),
+  taskResultInterpreter: NOOP_TASK_RESULT_INTERPRETER,
   workspace: piWorkspaceRegistration,
 };

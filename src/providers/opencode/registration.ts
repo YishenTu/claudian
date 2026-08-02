@@ -1,9 +1,9 @@
+import { NOOP_TASK_RESULT_INTERPRETER } from '../../core/providers/NoopTaskResultInterpreter';
 import type { ProviderModule } from '../../core/providers/types';
 import {
   getOpencodeWorkspaceServices,
   opencodeWorkspaceRegistration,
 } from './app/OpencodeWorkspaceServices';
-import { OpencodeTaskResultInterpreter } from './auxiliary/OpencodeTaskResultInterpreter';
 import { OPENCODE_PROVIDER_CAPABILITIES } from './capabilities';
 import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeExecutionBackend } from './execution/OpencodeExecutionBackend';
@@ -46,7 +46,7 @@ export const opencodeProviderRegistration: ProviderModule = {
       return false;
     },
   },
-  taskResultInterpreter: new OpencodeTaskResultInterpreter(),
+  taskResultInterpreter: NOOP_TASK_RESULT_INTERPRETER,
   subagentAdapter: opencodeSubagentAdapter,
   workspace: opencodeWorkspaceRegistration,
 };

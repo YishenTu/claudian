@@ -1,9 +1,9 @@
+import { NOOP_TASK_RESULT_INTERPRETER } from '../../core/providers/NoopTaskResultInterpreter';
 import type { ProviderModule } from '../../core/providers/types';
 import {
   getGrokWorkspaceServices,
   grokWorkspaceRegistration,
 } from './app/GrokWorkspaceServices';
-import { GrokTaskResultInterpreter } from './auxiliary/GrokTaskResultInterpreter';
 import { GROK_PROVIDER_CAPABILITIES } from './capabilities';
 import { grokSettingsReconciler } from './env/GrokSettingsReconciler';
 import { GrokExecutionBackend } from './execution/GrokExecutionBackend';
@@ -45,6 +45,6 @@ export const grokProviderRegistration: ProviderModule = {
     },
   },
   subagentAdapter: grokSubagentLifecycleAdapter,
-  taskResultInterpreter: new GrokTaskResultInterpreter(),
+  taskResultInterpreter: NOOP_TASK_RESULT_INTERPRETER,
   workspace: grokWorkspaceRegistration,
 };
