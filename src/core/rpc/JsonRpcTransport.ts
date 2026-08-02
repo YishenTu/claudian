@@ -44,6 +44,10 @@ export interface JsonRpcRequestOptions {
   timeoutMs?: number;
 }
 
+export interface JsonRpcTransportOptions {
+  streamCloseGraceMs?: number;
+}
+
 export interface JsonRpcRequestHandlerContext {
   method: string;
   requestId: JsonRpcRequestId;
@@ -90,12 +94,14 @@ export class JsonRpcTransport {
   private readonly pending = new Map<number, PendingRequest>();
   private readline: Interface | null = null;
   private readonly requestHandlers = new Map<string, JsonRpcRequestHandler>();
+  private streamCloseTimer: number | null = null;
   private readonly streamUnsubscribers: Array<() => void> = [];
   private unregisterClose?: () => void;
 
   constructor(
     private readonly streams: JsonRpcMessageStreams,
     private readonly defaultTimeoutMs = DEFAULT_TIMEOUT_MS,
+    private readonly options: JsonRpcTransportOptions = {},
   ) {}
 
   get signal(): AbortSignal {
@@ -118,7 +124,7 @@ export class JsonRpcTransport {
       this.closeFromUnknown(error, 'JSON-RPC input error');
     });
     this.readline.on('close', () => {
-      this.closeFromUnknown(undefined, 'JSON-RPC input closed');
+      this.closeFromStream('JSON-RPC input closed');
     });
 
     this.streamUnsubscribers.push(
@@ -126,16 +132,16 @@ export class JsonRpcTransport {
         this.closeFromUnknown(error, 'JSON-RPC input error');
       }),
       subscribeStreamEvent(this.streams.input, 'end', () => {
-        this.closeFromUnknown(undefined, 'JSON-RPC input closed');
+        this.closeFromStream('JSON-RPC input closed');
       }),
       subscribeStreamEvent(this.streams.input, 'close', () => {
-        this.closeFromUnknown(undefined, 'JSON-RPC input closed');
+        this.closeFromStream('JSON-RPC input closed');
       }),
       subscribeStreamEvent(this.streams.output, 'error', (error?: unknown) => {
         this.closeFromUnknown(error, 'JSON-RPC output error');
       }),
       subscribeStreamEvent(this.streams.output, 'close', () => {
-        this.closeFromUnknown(undefined, 'JSON-RPC output closed');
+        this.closeFromStream('JSON-RPC output closed');
       }),
     );
 
@@ -269,6 +275,11 @@ export class JsonRpcTransport {
     this.disposed = true;
     this.abortController.abort();
 
+    if (this.streamCloseTimer !== null) {
+      window.clearTimeout(this.streamCloseTimer);
+      this.streamCloseTimer = null;
+    }
+
     this.unregisterClose?.();
     this.unregisterClose = undefined;
     while (this.streamUnsubscribers.length > 0) {
@@ -305,6 +316,22 @@ export class JsonRpcTransport {
     this.dispose(error instanceof Error
       ? error
       : new JsonRpcTransportClosedError(fallbackMessage));
+  }
+
+  private closeFromStream(message: string): void {
+    if (this.disposed || this.streamCloseTimer !== null) return;
+
+    const graceMs = this.options.streamCloseGraceMs ?? 0;
+    const error = new JsonRpcTransportClosedError(message);
+    if (!this.streams.onClose || graceMs <= 0) {
+      this.dispose(error);
+      return;
+    }
+
+    this.streamCloseTimer = window.setTimeout(() => {
+      this.streamCloseTimer = null;
+      this.dispose(error);
+    }, graceMs);
   }
 
   private handleLine(line: string): void {

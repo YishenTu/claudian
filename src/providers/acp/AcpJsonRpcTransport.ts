@@ -5,6 +5,7 @@ export type {
   JsonRpcRequestHandlerContext,
   JsonRpcRequestId,
   JsonRpcRequestOptions,
+  JsonRpcTransportOptions,
 } from '@/core/rpc/JsonRpcTransport';
 export {
   JsonRpcTransport as AcpJsonRpcTransport,

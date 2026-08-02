@@ -8,6 +8,7 @@ import type { CodexAppServerProcess } from './CodexAppServerProcess';
 import type { JsonRpcError } from './codexAppServerTypes';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const PROCESS_CLOSE_GRACE_MS = 3_000;
 
 type NotificationHandler = (params: unknown) => void;
 type ServerRequestHandler = (requestId: string | number, params: unknown) => Promise<unknown>;
@@ -47,7 +48,7 @@ export class CodexRpcTransport {
         return () => this.proc.offExit(exitHandler);
       },
       output: this.proc.stdin,
-    });
+    }, DEFAULT_TIMEOUT_MS, { streamCloseGraceMs: PROCESS_CLOSE_GRACE_MS });
     this.transport = transport;
 
     for (const [method, handler] of this.notificationHandlers) {

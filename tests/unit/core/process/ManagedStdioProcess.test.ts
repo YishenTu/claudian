@@ -113,7 +113,7 @@ describe('ManagedStdioProcess', () => {
     });
   });
 
-  it('observes process errors, early exit, and close as distinct lifecycle events', () => {
+  it('observes operational errors without treating them as process exit', () => {
     const managed = createManagedProcess();
     const onError = jest.fn();
     const onExit = jest.fn();
@@ -125,7 +125,7 @@ describe('ManagedStdioProcess', () => {
 
     const error = new Error('spawn failed');
     proc.emit('error', error);
-    expect(managed.isAlive()).toBe(false);
+    expect(managed.isAlive()).toBe(true);
     expect(onError).toHaveBeenCalledWith(error);
     expect(onClose).not.toHaveBeenCalled();
 
@@ -147,6 +147,23 @@ describe('ManagedStdioProcess', () => {
     expect(managed.getExitState()).toEqual({
       closed: true,
       code: 1,
+      error,
+      signal: null,
+    });
+  });
+
+  it('marks an asynchronously failed spawn as not alive', () => {
+    Object.assign(proc, { pid: undefined });
+    const managed = createManagedProcess();
+    managed.start();
+
+    const error = new Error('spawn ENOENT');
+    proc.emit('error', error);
+
+    expect(managed.isAlive()).toBe(false);
+    expect(managed.getExitState()).toEqual({
+      closed: false,
+      code: null,
       error,
       signal: null,
     });
@@ -205,6 +222,23 @@ describe('ManagedStdioProcess', () => {
     proc.emit('exit', 0, 'SIGTERM');
     await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
     expect(proc.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues SIGKILL escalation when signal delivery emits an error', async () => {
+    jest.useFakeTimers();
+    const managed = createManagedProcess();
+    managed.start();
+
+    const shutdown = managed.shutdown();
+    proc.emit('error', new Error('kill EPERM'));
+
+    expect(managed.isAlive()).toBe(true);
+    jest.advanceTimersByTime(3_000);
+    expect(proc.kill).toHaveBeenNthCalledWith(1, 'SIGTERM');
+    expect(proc.kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
+
+    proc.emit('exit', 0, 'SIGKILL');
+    await expect(shutdown).resolves.toBeUndefined();
   });
 
   it('escalates to SIGKILL and settles at the final shutdown deadline', async () => {

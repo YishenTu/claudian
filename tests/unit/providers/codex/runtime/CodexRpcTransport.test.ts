@@ -287,6 +287,26 @@ describe('CodexRpcTransport', () => {
 
       await expect(promise).rejects.toThrow('unknown variant priority');
     });
+
+    it('preserves late stderr when stdout ends before process close', async () => {
+      const exitCb = (proc.onExit as jest.Mock).mock.calls[0][0];
+      const promise = transport.request('initialize', {});
+      const outcome = promise.then(
+        () => null,
+        (error: Error) => error,
+      );
+
+      proc._stdout.push(null);
+      await new Promise(resolve => setImmediate(resolve));
+      (proc.getStderrSnapshot as jest.Mock).mockReturnValue(
+        'failed to load configuration: unknown variant priority',
+      );
+      exitCb(1, null);
+
+      await expect(outcome).resolves.toEqual(expect.objectContaining({
+        message: expect.stringContaining('unknown variant priority'),
+      }));
+    });
   });
 
   describe('request timeout', () => {

@@ -41,6 +41,7 @@ export class ManagedStdioProcess {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private resolvedSpawnSpec: WindowsCmdShimSpawnSpec | null = null;
   private shutdownPromise: Promise<void> | null = null;
+  private spawnConfirmed = false;
   private startAttempted = false;
   private stderrBuffer = '';
   private stderrDataListener: ((chunk: Buffer | string) => void) | null = null;
@@ -93,6 +94,7 @@ export class ManagedStdioProcess {
     }
 
     this.proc = proc;
+    this.spawnConfirmed = typeof proc.pid === 'number';
     this.alive = (
       (proc.exitCode === null || proc.exitCode === undefined)
       && (proc.signalCode === null || proc.signalCode === undefined)
@@ -104,6 +106,7 @@ export class ManagedStdioProcess {
       this.stderrBuffer = `${this.stderrBuffer}${text}`.slice(-limit);
     };
     proc.stderr.on('data', this.stderrDataListener);
+    proc.on('spawn', this.handleSpawn);
     proc.on('error', this.handleError);
     proc.on('exit', this.handleExit);
     proc.on('close', this.handleClose);
@@ -161,7 +164,6 @@ export class ManagedStdioProcess {
       let settled = false;
       let killTimer: number | null = null;
       let finalTimer: number | null = null;
-      let unsubscribeError: (() => void) | null = null;
       let unsubscribeExit: (() => void) | null = null;
       let unsubscribeClose: (() => void) | null = null;
 
@@ -170,13 +172,11 @@ export class ManagedStdioProcess {
         settled = true;
         if (killTimer !== null) window.clearTimeout(killTimer);
         if (finalTimer !== null) window.clearTimeout(finalTimer);
-        unsubscribeError?.();
         unsubscribeExit?.();
         unsubscribeClose?.();
         resolve();
       };
 
-      unsubscribeError = this.onError(finish);
       unsubscribeExit = this.onExit(finish);
       unsubscribeClose = this.onClose(finish);
 
@@ -200,7 +200,9 @@ export class ManagedStdioProcess {
   }
 
   private readonly handleError = (error: Error): void => {
-    this.alive = false;
+    if (!this.spawnConfirmed) {
+      this.alive = false;
+    }
     this.exitState = {
       closed: false,
       code: this.exitState?.code ?? null,
@@ -208,6 +210,10 @@ export class ManagedStdioProcess {
       signal: this.exitState?.signal ?? null,
     };
     this.notifyError(error);
+  };
+
+  private readonly handleSpawn = (): void => {
+    this.spawnConfirmed = true;
   };
 
   private readonly handleExit = (
@@ -267,6 +273,7 @@ export class ManagedStdioProcess {
 
   private cleanupProcessListeners(proc: ChildProcessWithoutNullStreams | null): void {
     if (!proc) return;
+    proc.off('spawn', this.handleSpawn);
     proc.off('error', this.handleError);
     proc.off('exit', this.handleExit);
     proc.off('close', this.handleClose);

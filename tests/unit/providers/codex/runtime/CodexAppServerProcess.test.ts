@@ -299,6 +299,7 @@ describe('CodexAppServerProcess', () => {
 
   describe('error handling', () => {
     it('marks process as not alive on spawn error', () => {
+      (mockProc as any).pid = undefined;
       const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 

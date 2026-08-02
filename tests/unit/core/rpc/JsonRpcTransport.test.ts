@@ -18,7 +18,10 @@ interface TransportHarness {
   unregisterClose: jest.Mock;
 }
 
-function createTransportHarness(defaultTimeoutMs = 30_000): TransportHarness {
+function createTransportHarness(
+  defaultTimeoutMs = 30_000,
+  streamCloseGraceMs = 0,
+): TransportHarness {
   const input = new PassThrough();
   const output = new PassThrough();
   const reader = createInterface({ input: output });
@@ -62,7 +65,7 @@ function createTransportHarness(defaultTimeoutMs = 30_000): TransportHarness {
         return unregisterClose;
       },
       output,
-    }, defaultTimeoutMs),
+    }, defaultTimeoutMs, { streamCloseGraceMs }),
     unregisterClose,
   };
 }
@@ -228,6 +231,55 @@ describe('JsonRpcTransport', () => {
 
     await expect(request).rejects.toThrow('provider exited with diagnostics');
     expect(harness.unregisterClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an authoritative owner-close error to supersede stream closure', async () => {
+    const deferred = createTransportHarness(30_000, 1_000);
+    try {
+      const request = deferred.transport.request('pending', {}, { timeoutMs: 0 });
+      const outcome = request.then(
+        () => null,
+        (error: Error) => error,
+      );
+      await deferred.nextOutbound();
+
+      deferred.input.end();
+      await new Promise(resolve => setImmediate(resolve));
+      expect(deferred.transport.isClosed).toBe(false);
+
+      deferred.closeProcess(new Error('provider exited with late diagnostics'));
+      await expect(outcome).resolves.toEqual(expect.objectContaining({
+        message: 'provider exited with late diagnostics',
+      }));
+    } finally {
+      deferred.transport.dispose();
+      deferred.close();
+    }
+  });
+
+  it('falls back to the stream-close error after the owner-close grace period', async () => {
+    jest.useFakeTimers();
+    const deferred = createTransportHarness(30_000, 1_000);
+    try {
+      const request = deferred.transport.request('pending', {}, { timeoutMs: 0 });
+      const outcome = request.then(
+        () => null,
+        (error: Error) => error,
+      );
+      await deferred.nextOutbound();
+
+      deferred.input.emit('end');
+      expect(deferred.transport.isClosed).toBe(false);
+      jest.advanceTimersByTime(1_000);
+
+      await expect(outcome).resolves.toEqual(expect.objectContaining({
+        message: 'JSON-RPC input closed',
+      }));
+      expect(deferred.transport.isClosed).toBe(true);
+    } finally {
+      deferred.transport.dispose();
+      deferred.close();
+    }
   });
 
   it('removes listeners and disposes exactly once', () => {
