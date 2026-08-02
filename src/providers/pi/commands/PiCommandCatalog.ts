@@ -1,10 +1,6 @@
-import type {
-  ProviderCommandCatalog,
-  ProviderCommandDropdownConfig,
-  ProviderCommandListContext,
-} from '../../../core/providers/commands/ProviderCommandCatalog';
-import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
-import type { SlashCommand } from '../../../core/types';
+import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
+import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
+import type { SlashCommand } from '@/core/types';
 
 function slashCommandToEntry(command: SlashCommand): ProviderCommandEntry {
   return {
@@ -31,28 +27,17 @@ function slashCommandToEntry(command: SlashCommand): ProviderCommandEntry {
   };
 }
 
-export class PiCommandCatalog implements ProviderCommandCatalog {
-  private commandSnapshot: SlashCommand[] = [];
-
-  setCommandSnapshot(commands: SlashCommand[]): void {
-    this.commandSnapshot = commands.map((command) => ({ ...command }));
+export class PiCommandCatalog extends RuntimeCommandCatalog {
+  constructor() {
+    super({
+      dropdownConfig: {
+        builtInPrefix: '/',
+        commandPrefix: '/',
+        providerId: 'pi',
+        skillPrefix: '/',
+        triggerChars: ['/'],
+      },
+      projectEntry: slashCommandToEntry,
+    });
   }
-
-  async listDropdownEntries(context: ProviderCommandListContext): Promise<ProviderCommandEntry[]> {
-    const commands = context.commandSnapshot
-      ?? (context.allowCachedCommandSnapshot === false ? [] : this.commandSnapshot);
-    return commands.map(slashCommandToEntry);
-  }
-
-  getDropdownConfig(): ProviderCommandDropdownConfig {
-    return {
-      builtInPrefix: '/',
-      commandPrefix: '/',
-      providerId: 'pi',
-      skillPrefix: '/',
-      triggerChars: ['/'],
-    };
-  }
-
-  async refresh(): Promise<void> {}
 }

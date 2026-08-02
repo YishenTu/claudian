@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 import type { ProviderInteractionPort } from '@/core/execution';
+import { OwnedProbeRegistry } from '@/core/providers/metadata/OwnedProbeRegistry';
+import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { SlashCommand } from '@/core/types';
 import { AcpSessionUpdateNormalizer } from '@/providers/acp';
@@ -41,27 +43,15 @@ export interface OpencodeMetadataServiceOptions {
   readonly createProbe?: () => OpencodeMetadataProbe;
 }
 
-interface ActiveProbe {
-  readonly completion: Promise<void>;
-  readonly controller: AbortController;
-  disposed: boolean;
-  readonly probe: OpencodeMetadataProbe;
-  resolveCompletion(): void;
-}
-
-interface TransitionWaiter {
-  readonly resolve: (available: boolean) => void;
-  readonly signal?: AbortSignal;
-  readonly onAbort?: () => void;
-}
-
 export class OpencodeMetadataService {
-  private readonly activeProbes = new Set<ActiveProbe>();
   private readonly createProbe: () => OpencodeMetadataProbe;
-  private readonly transitionWaiters = new Set<TransitionWaiter>();
+  private readonly probes: OwnedProbeRegistry<OpencodeMetadataProbe>;
+  private readonly transitionFence = new ProviderTransitionFence({
+    abortMessage: 'OpenCode metadata probe aborted',
+  });
   private readonly unregisterTransitionHook: () => void;
   private disposed = false;
-  private transitionActive = false;
+  private disposeFlight: Promise<void> | null = null;
 
   constructor(
     private readonly plugin: ProviderHost,
@@ -69,6 +59,11 @@ export class OpencodeMetadataService {
   ) {
     this.createProbe = options.createProbe
       ?? (() => new DefaultOpencodeMetadataProbe(plugin));
+    this.probes = new OwnedProbeRegistry({
+      abortMessage: 'OpenCode metadata probe aborted',
+      dispose: probe => probe.dispose(),
+      unavailableError: () => new Error('OpenCode metadata service is disposed.'),
+    });
     this.unregisterTransitionHook = plugin.executionLifecycleRegistry
       .registerTransitionHook('opencode', {
         beforeTransition: () => {
@@ -144,115 +139,50 @@ export class OpencodeMetadataService {
 
   async invalidate(): Promise<void> {
     this.options.commandCatalog?.setCommandSnapshot([]);
-    const active = [...this.activeProbes];
-    for (const entry of active) entry.controller.abort();
-    await Promise.all(active.map((entry) => this.disposeProbe(entry)));
-    await Promise.all(active.map((entry) => entry.completion));
+    await this.probes.quiesce();
   }
 
-  async dispose(): Promise<void> {
-    if (this.disposed) return;
+  dispose(): Promise<void> {
+    if (this.disposeFlight) return this.disposeFlight;
     this.disposed = true;
-    this.releaseTransitionWaiters(false);
+    this.transitionFence.dispose();
     this.unregisterTransitionHook();
-    await this.invalidate();
+    this.disposeFlight = (async () => {
+      await this.invalidate();
+      await this.probes.dispose();
+    })();
+    return this.disposeFlight;
   }
 
-  private runProbe<T>(
+  private async runProbe<T>(
     operation: (probe: OpencodeMetadataProbe, signal: AbortSignal) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T | null> {
-    if (this.disposed || signal?.aborted) return Promise.resolve(null);
-    if (this.transitionActive) {
-      return this.waitForTransition(signal).then(available => (
-        available ? this.runProbe(operation, signal) : null
-      ));
-    }
-    return this.runProbeUnfenced(operation, signal);
-  }
-
-  private async runProbeUnfenced<T>(
-    operation: (probe: OpencodeMetadataProbe, signal: AbortSignal) => Promise<T>,
-    signal?: AbortSignal,
-  ): Promise<T | null> {
-    let resolveCompletion!: () => void;
-    const entry: ActiveProbe = {
-      completion: new Promise((resolve) => {
-        resolveCompletion = resolve;
-      }),
-      controller: new AbortController(),
-      disposed: false,
-      probe: this.createProbe(),
-      resolveCompletion: () => resolveCompletion(),
-    };
-    const onAbort = () => {
-      entry.controller.abort();
-      void this.disposeProbe(entry);
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-    this.activeProbes.add(entry);
     try {
-      return await operation(entry.probe, entry.controller.signal);
+      if (this.disposed) return null;
+      if (this.transitionFence.isUnavailable()) {
+        const available = await this.transitionFence.waitUntilAvailable(signal);
+        if (!available) return null;
+      }
+      return await this.probes.run({
+        create: () => this.createProbe(),
+        query: operation,
+      }, signal);
     } catch {
       return null;
-    } finally {
-      signal?.removeEventListener('abort', onAbort);
-      this.activeProbes.delete(entry);
-      await this.disposeProbe(entry);
-      entry.resolveCompletion();
     }
   }
 
   private beginTransition(): void {
-    if (!this.disposed) this.transitionActive = true;
+    this.transitionFence.beginTransition();
   }
 
   private async completeTransition(): Promise<void> {
     try {
       await this.invalidate();
     } finally {
-      if (!this.disposed) {
-        this.transitionActive = false;
-        this.releaseTransitionWaiters(true);
-      }
+      this.transitionFence.endTransition();
     }
-  }
-
-  private waitForTransition(signal?: AbortSignal): Promise<boolean> {
-    if (this.disposed) return Promise.resolve(false);
-    if (!this.transitionActive) return Promise.resolve(true);
-    if (signal?.aborted) return Promise.resolve(false);
-
-    return new Promise<boolean>((resolve) => {
-      const onAbort = (): void => {
-        if (!this.transitionWaiters.delete(waiter)) return;
-        resolve(false);
-      };
-      const waiter: TransitionWaiter = {
-        resolve,
-        ...(signal ? { onAbort, signal } : {}),
-      };
-      this.transitionWaiters.add(waiter);
-      signal?.addEventListener('abort', onAbort, { once: true });
-      if (signal?.aborted) onAbort();
-    });
-  }
-
-  private releaseTransitionWaiters(available: boolean): void {
-    const waiters = [...this.transitionWaiters];
-    this.transitionWaiters.clear();
-    for (const waiter of waiters) {
-      if (waiter.signal && waiter.onAbort) {
-        waiter.signal.removeEventListener('abort', waiter.onAbort);
-      }
-      waiter.resolve(available);
-    }
-  }
-
-  private async disposeProbe(entry: ActiveProbe): Promise<void> {
-    if (entry.disposed) return;
-    entry.disposed = true;
-    await entry.probe.dispose().catch(() => undefined);
   }
 }
 

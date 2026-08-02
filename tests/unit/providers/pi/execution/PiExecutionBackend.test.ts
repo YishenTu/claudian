@@ -429,7 +429,7 @@ describe('PiExecutionBackend', () => {
     expect(kernels).toHaveLength(0);
 
     controller.abort();
-    await expect(abortedLoad).resolves.toMatchObject({ status: 'error' });
+    await expect(abortedLoad).rejects.toMatchObject({ name: 'AbortError' });
     expect(kernels).toHaveLength(0);
 
     releaseMutation.resolve();

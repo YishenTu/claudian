@@ -63,4 +63,36 @@ describe('GrokCommandLoader', () => {
     });
     expect(metadataProbe.load).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves caller cancellation after isolated discovery', async () => {
+    const controller = new AbortController();
+    const failure = new Error('caller cancelled');
+    const metadataProbe = {
+      load: jest.fn(async () => {
+        controller.abort(failure);
+        return [];
+      }),
+    };
+    const loader = new GrokCommandLoader(metadataProbe as any);
+
+    await expect(loader.loadCommands(createContext({
+      allowIsolatedMetadataCreation: true,
+      signal: controller.signal,
+    }))).rejects.toBe(failure);
+  });
+
+  it('maps native discovery failures to the Grok retryable error', async () => {
+    const metadataProbe = {
+      load: jest.fn(async () => { throw new Error('native failure'); }),
+    };
+    const loader = new GrokCommandLoader(metadataProbe as any);
+
+    await expect(loader.loadCommands(createContext({
+      allowIsolatedMetadataCreation: true,
+    }))).resolves.toEqual({
+      message: 'Could not load Grok skills and commands.',
+      retryable: true,
+      status: 'error',
+    });
+  });
 });

@@ -1,12 +1,11 @@
-import {
-  normalizeProviderCommandDiscoveryItems,
-  type ProviderCommandDiscoveryResult,
-} from '../../../core/providers/commands/ProviderCommandDiscoveryResult';
+import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
+import { loadRuntimeCommands } from '@/core/providers/commands/RuntimeCommandLoader';
 import type {
   ProviderCommandLoader as ProviderCommandLoaderContract,
   ProviderCommandLoaderContext,
-} from '../../../core/providers/types';
-import type { SlashCommand } from '../../../core/types';
+} from '@/core/providers/types';
+import type { SlashCommand } from '@/core/types';
+
 import { getGrokProviderSettings } from '../settings';
 import type { GrokCommandMetadataProbe } from './GrokCommandMetadataProbe';
 
@@ -31,27 +30,14 @@ export class GrokCommandLoader implements ProviderCommandLoaderContract {
   async loadCommands(
     context: ProviderCommandLoaderContext,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
-    context.signal?.throwIfAborted();
-    if (context.readyCommandSnapshot) {
-      return normalizeProviderCommandDiscoveryItems(context.readyCommandSnapshot);
-    }
-    if (!context.allowIsolatedMetadataCreation) {
-      return {
-        message: 'Grok command metadata has not been loaded for this tab.',
-        status: 'requires-session',
-      };
-    }
-
-    try {
-      return normalizeProviderCommandDiscoveryItems(
-        await this.metadataProbe.load(context.signal),
-      );
-    } catch {
-      return {
-        message: 'Could not load Grok skills and commands.',
-        retryable: true,
-        status: 'error',
-      };
-    }
+    return loadRuntimeCommands({
+      allowIsolatedMetadataCreation: context.allowIsolatedMetadataCreation,
+      discover: signal => this.metadataProbe.load(signal),
+      errorMessage: 'Could not load Grok skills and commands.',
+      projectItems: commands => commands,
+      readyCommandSnapshot: context.readyCommandSnapshot,
+      requiresSessionMessage: 'Grok command metadata has not been loaded for this tab.',
+      signal: context.signal,
+    });
   }
 }

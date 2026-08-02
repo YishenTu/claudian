@@ -45,6 +45,7 @@ describe('OpencodeCommandLoader', () => {
 
   it('loads commands through the metadata service when authorized', async () => {
     const metadataService = {
+      dispose: jest.fn(),
       discoverCommands: jest.fn().mockResolvedValue({
         commands: [{
           content: '',
@@ -65,5 +66,45 @@ describe('OpencodeCommandLoader', () => {
       status: 'ready',
     });
     expect(metadataService.discoverCommands).toHaveBeenCalledTimes(1);
+    expect(metadataService.dispose).not.toHaveBeenCalled();
+  });
+
+  it('disposes a loader-owned ephemeral service after discovery', async () => {
+    const metadataService = {
+      discoverCommands: jest.fn().mockResolvedValue({
+        commands: [],
+        loaded: true,
+      }),
+      dispose: jest.fn(async () => undefined),
+    };
+    const createMetadataService = jest.fn(() => metadataService as any);
+    const loader = new OpencodeCommandLoader(undefined, createMetadataService);
+    const context = createContext({ allowIsolatedMetadataCreation: true });
+
+    await expect(loader.loadCommands(context)).resolves.toEqual({ status: 'empty' });
+    expect(createMetadataService).toHaveBeenCalledWith(context.plugin);
+    expect(metadataService.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves caller cancellation while disposing an ephemeral service', async () => {
+    const controller = new AbortController();
+    const failure = new Error('caller cancelled');
+    const metadataService = {
+      discoverCommands: jest.fn(async () => {
+        controller.abort(failure);
+        return { commands: [], loaded: true };
+      }),
+      dispose: jest.fn(async () => undefined),
+    };
+    const loader = new OpencodeCommandLoader(
+      undefined,
+      () => metadataService as any,
+    );
+
+    await expect(loader.loadCommands(createContext({
+      allowIsolatedMetadataCreation: true,
+      signal: controller.signal,
+    }))).rejects.toBe(failure);
+    expect(metadataService.dispose).toHaveBeenCalledTimes(1);
   });
 });
