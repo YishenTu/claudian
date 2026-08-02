@@ -1,3 +1,8 @@
+import {
+  type CliPathFingerprintInputs,
+  createCliPathFingerprintInputs,
+  hasCliPathFingerprintInputs,
+} from '../../../core/providers/cli/CliPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import {
   createRuntimeInputFingerprint,
@@ -27,11 +32,13 @@ import {
 const ENV_HASH_PROVIDER_KEYS = ['ANTHROPIC_BASE_URL', 'PATH'];
 const ALL_FINGERPRINT_ENV_KEYS = [...CLAUDE_MODEL_ENV_KEYS, ...ENV_HASH_PROVIDER_KEYS];
 
-function getEffectiveConfiguredCliPath(settings: Record<string, unknown>): string {
+function getConfiguredCliPathInputs(
+  settings: Record<string, unknown>,
+): CliPathFingerprintInputs {
   const claudeSettings = getClaudeProviderSettings(settings);
-  return (
-    claudeSettings.cliPathsByHost[getHostnameKey()]?.trim()
-    || claudeSettings.cliPath.trim()
+  return createCliPathFingerprintInputs(
+    claudeSettings.cliPathsByHost[getHostnameKey()],
+    claudeSettings.cliPath,
   );
 }
 
@@ -40,14 +47,14 @@ function computeRuntimeFingerprint(
   environmentText: string = getRuntimeEnvironmentText(settings, 'claude'),
 ): string {
   return createRuntimeInputFingerprint({
-    additionalInputs: { cliPath: getEffectiveConfiguredCliPath(settings) },
+    additionalInputs: getConfiguredCliPathInputs(settings),
     environmentKeys: ALL_FINGERPRINT_ENV_KEYS,
     environmentText,
   });
 }
 
 function hasFingerprintInputs(settings: Record<string, unknown>, environmentText: string): boolean {
-  if (getEffectiveConfiguredCliPath(settings)) {
+  if (hasCliPathFingerprintInputs(getConfiguredCliPathInputs(settings))) {
     return true;
   }
 
@@ -64,7 +71,7 @@ function isCurrentLegacyFingerprint(
   if (
     !savedFingerprint
     || isVersionedRuntimeInputFingerprint(savedFingerprint)
-    || getEffectiveConfiguredCliPath(settings)
+    || hasCliPathFingerprintInputs(getConfiguredCliPathInputs(settings))
   ) {
     return false;
   }

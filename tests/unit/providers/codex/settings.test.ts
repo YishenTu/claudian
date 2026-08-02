@@ -64,6 +64,36 @@ describe('codex settings', () => {
     });
   });
 
+  it('canonically normalizes hostname installation method maps before enum handling', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const persisted = Object.create({ inherited: 'wsl' }) as Record<string, unknown>;
+    Object.defineProperty(persisted, ' legacy-host ', {
+      enumerable: true,
+      value: ' wsl ',
+    });
+    Object.defineProperty(persisted, 'malformed-host', {
+      enumerable: true,
+      value: 42,
+    });
+    Object.defineProperty(persisted, '__proto__', {
+      enumerable: true,
+      value: 'native-windows',
+    });
+
+    const methods = getCodexProviderSettings({
+      providerConfigs: {
+        codex: { installationMethodsByHost: persisted },
+      },
+    }).installationMethodsByHost;
+
+    expect(methods['host-a']).toBe('wsl');
+    expect(methods.__proto__).toBe('native-windows');
+    expect(Object.keys(methods).sort()).toEqual(['__proto__', 'host-a']);
+    expect(Object.getPrototypeOf(methods)).toBe(Object.prototype);
+    expect(Object.prototype.hasOwnProperty.call(methods, '__proto__')).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(methods, 'inherited')).toBe(false);
+  });
+
   it('treats a null visibility filter as all discovered models', () => {
     const discoveredModels = [
       { model: 'gpt-5.5' },

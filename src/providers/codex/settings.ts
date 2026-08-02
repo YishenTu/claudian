@@ -338,15 +338,15 @@ function retargetRemovedCodexSelections(
 }
 
 function normalizeInstallationMethodsByHost(value: unknown): HostnameInstallationMethods {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
+  const normalized = normalizeHostnameStringMap(value);
   const result: HostnameInstallationMethods = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof key === 'string' && key.trim()) {
-      result[key] = normalizeCodexInstallationMethod(entry);
-    }
+  for (const [key, entry] of Object.entries(normalized)) {
+    Object.defineProperty(result, key, {
+      configurable: true,
+      enumerable: true,
+      value: normalizeCodexInstallationMethod(entry),
+      writable: true,
+    });
   }
   return result;
 }

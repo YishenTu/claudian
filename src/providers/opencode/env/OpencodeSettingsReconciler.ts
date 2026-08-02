@@ -1,3 +1,8 @@
+import {
+  type CliPathFingerprintInputs,
+  createCliPathFingerprintInputs,
+  hasCliPathFingerprintInputs,
+} from '../../../core/providers/cli/CliPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
@@ -38,10 +43,10 @@ const OPENCODE_ENV_HASH_KEYS = [
 
 function computeOpencodeRuntimeFingerprint(
   environmentText: string,
-  cliPath: string,
+  cliPathInputs: CliPathFingerprintInputs,
 ): string {
   return createRuntimeInputFingerprint({
-    additionalInputs: { cliPath },
+    additionalInputs: cliPathInputs,
     environmentKeys: OPENCODE_ENV_HASH_KEYS,
     environmentText,
   });
@@ -79,16 +84,16 @@ export const opencodeSettingsReconciler: ProviderSettingsReconciler = {
   ): { changed: boolean; invalidatedConversations: Conversation[] } {
     const envText = getRuntimeEnvironmentText(settings, 'opencode');
     const opencodeSettings = getOpencodeProviderSettings(settings);
-    const cliPath = (
-      opencodeSettings.cliPathsByHost[getHostnameKey()]?.trim()
-      || opencodeSettings.cliPath.trim()
+    const cliPathInputs = createCliPathFingerprintInputs(
+      opencodeSettings.cliPathsByHost[getHostnameKey()],
+      opencodeSettings.cliPath,
     );
-    const currentHash = computeOpencodeRuntimeFingerprint(envText, cliPath);
+    const currentHash = computeOpencodeRuntimeFingerprint(envText, cliPathInputs);
     const savedHash = opencodeSettings.environmentHash;
 
     const environment = parseEnvironmentVariables(envText);
     const hasFingerprintInputs = Boolean(
-      cliPath
+      hasCliPathFingerprintInputs(cliPathInputs)
       || OPENCODE_ENV_HASH_KEYS.some(
         key => Object.prototype.hasOwnProperty.call(environment, key),
       )

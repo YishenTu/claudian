@@ -417,9 +417,22 @@ export function migrateLegacyHostnameKeyedMap<T extends string>(
     return entries;
   }
 
-  const migrated = { ...entries };
+  const migrated: Record<string, T> = {};
+  for (const [key, value] of Object.entries(entries)) {
+    Object.defineProperty(migrated, key, {
+      configurable: true,
+      enumerable: true,
+      value,
+      writable: true,
+    });
+  }
   if (!hasCurrentEntry) {
-    migrated[currentKey] = entries[legacyHostnameKey];
+    Object.defineProperty(migrated, currentKey, {
+      configurable: true,
+      enumerable: true,
+      value: entries[legacyHostnameKey],
+      writable: true,
+    });
   }
   delete migrated[legacyHostnameKey];
   return migrated;

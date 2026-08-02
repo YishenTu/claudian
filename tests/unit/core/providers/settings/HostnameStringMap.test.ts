@@ -43,17 +43,25 @@ describe('normalizeHostnameStringMap', () => {
   });
 
   it('composes with legacy-hostname migration without changing its precedence', () => {
-    const normalized = normalizeHostnameStringMap({
+    const persisted: Record<string, unknown> = {
       'legacy-host': '/legacy/provider',
       'device:current': '/current/provider',
+    };
+    Object.defineProperty(persisted, '__proto__', {
+      enumerable: true,
+      value: '/bin/prototype-name',
     });
-
-    expect(migrateLegacyHostnameKeyedMap(
+    const normalized = normalizeHostnameStringMap(persisted);
+    const migrated = migrateLegacyHostnameKeyedMap(
       normalized,
       'device:current',
       'legacy-host',
-    )).toEqual({
-      'device:current': '/current/provider',
-    });
+    );
+
+    expect(migrated['device:current']).toBe('/current/provider');
+    expect(migrated.__proto__).toBe('/bin/prototype-name');
+    expect(Object.keys(migrated).sort()).toEqual(['__proto__', 'device:current']);
+    expect(Object.getPrototypeOf(migrated)).toBe(Object.prototype);
+    expect(Object.prototype.hasOwnProperty.call(migrated, '__proto__')).toBe(true);
   });
 });

@@ -1,3 +1,7 @@
+import {
+  createCliPathFingerprintInputs,
+  hasCliPathFingerprintInputs,
+} from '../../../core/providers/cli/CliPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
@@ -43,12 +47,12 @@ export const codexSettingsReconciler: ProviderSettingsReconciler = {
   ): { changed: boolean; invalidatedConversations: Conversation[] } {
     const envText = getRuntimeEnvironmentText(settings, 'codex');
     const codexSettings = getCodexProviderSettings(settings);
-    const cliPath = (
-      codexSettings.cliPathsByHost[getHostnameKey()]?.trim()
-      || codexSettings.cliPath.trim()
+    const cliPathInputs = createCliPathFingerprintInputs(
+      codexSettings.cliPathsByHost[getHostnameKey()],
+      codexSettings.cliPath,
     );
     const currentHash = computeCodexEnvHash(envText, {
-      cliPath,
+      ...cliPathInputs,
       installationMethod: codexSettings.installationMethod,
       wslDistroOverride: codexSettings.wslDistroOverride,
     });
@@ -56,7 +60,7 @@ export const codexSettingsReconciler: ProviderSettingsReconciler = {
 
     const environment = parseEnvironmentVariables(envText);
     const hasFingerprintInputs = Boolean(
-      cliPath
+      hasCliPathFingerprintInputs(cliPathInputs)
       || codexSettings.installationMethod === 'wsl'
       || codexSettings.wslDistroOverride
       || ENV_HASH_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key))

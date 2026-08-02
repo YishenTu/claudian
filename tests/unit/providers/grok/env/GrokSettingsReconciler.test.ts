@@ -51,6 +51,22 @@ describe('GrokSettingsReconciler', () => {
     expect(first).not.toContain('/tmp/grok');
   });
 
+  it('fingerprints the legacy CLI fallback independently from the hostname candidate', () => {
+    const createSettings = (legacyCliPath: string): Record<string, unknown> => ({
+      providerConfigs: {
+        grok: {
+          cliPath: legacyCliPath,
+          cliPathsByHost: { 'current-host': '/missing/hostname-grok' },
+          environmentVariables: '',
+        },
+      },
+    });
+
+    expect(computeGrokEnvironmentHash(createSettings('/bin/grok-a'))).not.toBe(
+      computeGrokEnvironmentHash(createSettings('/bin/grok-b')),
+    );
+  });
+
   it('declares reload and preserves all conversation bindings', () => {
     const grokConversation = {
       messages: [],

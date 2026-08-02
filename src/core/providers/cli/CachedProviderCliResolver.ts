@@ -1,6 +1,7 @@
 import { findCliBinaryPath, resolveConfiguredCliPath } from '../../../utils/cliBinaryLocator';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { createRuntimeInputFingerprint } from '../settings/RuntimeInputFingerprint';
+import { createCliPathFingerprintInputs } from './CliPathFingerprintInputs';
 
 export interface ProviderCliSettingsProjection {
   cliPathsByHost?: Readonly<Record<string, string>>;
@@ -86,8 +87,7 @@ export class CachedProviderCliResolver {
     const additionalInputs: Record<string, string | undefined> = {
       binaryName: this.options.binaryName,
       environmentText: context.environmentText,
-      hostnamePath: context.hostnamePath,
-      legacyCliPath: context.legacyCliPath,
+      ...createCliPathFingerprintInputs(context.hostnamePath, context.legacyCliPath),
       providerId: this.options.providerId,
     };
     for (const [key, value] of Object.entries(context.resolutionInputs ?? {})) {

@@ -1,3 +1,8 @@
+import {
+  type CliPathFingerprintInputs,
+  createCliPathFingerprintInputs,
+  hasCliPathFingerprintInputs,
+} from '../../../core/providers/cli/CliPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
@@ -30,9 +35,12 @@ const PI_ENV_HASH_KEYS = [
   'PATH',
 ] as const;
 
-function computePiRuntimeFingerprint(environmentText: string, cliPath: string): string {
+function computePiRuntimeFingerprint(
+  environmentText: string,
+  cliPathInputs: CliPathFingerprintInputs,
+): string {
   return createRuntimeInputFingerprint({
-    additionalInputs: { cliPath },
+    additionalInputs: cliPathInputs,
     environmentKeys: PI_ENV_HASH_KEYS,
     environmentText,
   });
@@ -77,16 +85,16 @@ export const piSettingsReconciler: ProviderSettingsReconciler = {
   ): { changed: boolean; invalidatedConversations: Conversation[] } {
     const envText = getRuntimeEnvironmentText(settings, 'pi');
     const piSettings = getPiProviderSettings(settings);
-    const cliPath = (
-      piSettings.cliPathsByHost[getHostnameKey()]?.trim()
-      || piSettings.cliPath.trim()
+    const cliPathInputs = createCliPathFingerprintInputs(
+      piSettings.cliPathsByHost[getHostnameKey()],
+      piSettings.cliPath,
     );
-    const currentHash = computePiRuntimeFingerprint(envText, cliPath);
+    const currentHash = computePiRuntimeFingerprint(envText, cliPathInputs);
     const savedHash = piSettings.environmentHash;
 
     const environment = parseEnvironmentVariables(envText);
     const hasFingerprintInputs = Boolean(
-      cliPath
+      hasCliPathFingerprintInputs(cliPathInputs)
       || PI_ENV_HASH_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key))
     );
     if (!savedHash && !hasFingerprintInputs) {
