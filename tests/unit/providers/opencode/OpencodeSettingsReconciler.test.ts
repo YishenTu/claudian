@@ -1,3 +1,4 @@
+import { isVersionedRuntimeInputFingerprint } from '../../../../src/core/providers/settings/RuntimeInputFingerprint';
 import { getOpencodeDiscoveryState, updateOpencodeDiscoveryState } from '../../../../src/providers/opencode/discoveryState';
 import { opencodeSettingsReconciler } from '../../../../src/providers/opencode/env/OpencodeSettingsReconciler';
 
@@ -89,8 +90,8 @@ describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
     expect(result.invalidatedConversations).toHaveLength(1);
     expect(conversations[0].sessionId).toBeNull();
     expect(conversations[0].providerState).toBeUndefined();
-    expect((settings.providerConfigs as any).opencode.environmentHash).toBe(
-      'OPENCODE_CONFIG=/tmp/opencode.json|OPENCODE_DB=/new/opencode.db',
-    );
+    const fingerprint = (settings.providerConfigs as any).opencode.environmentHash;
+    expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
+    expect(fingerprint).not.toContain('/new/opencode.db');
   });
 });

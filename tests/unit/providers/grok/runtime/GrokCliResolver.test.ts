@@ -77,4 +77,22 @@ describe('GrokCliResolver', () => {
     expect(mockedStat.mock.calls.filter(([filePath]) => filePath === '/configured/grok'))
       .toHaveLength(2);
   });
+
+  it('caches null settings resolutions until reset', () => {
+    mockedStat.mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
+    const resolver = new GrokCliResolver();
+    const settings = { providerConfigs: { grok: {} } };
+
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
+    const firstCallCount = mockedStat.mock.calls.length;
+    expect(firstCallCount).toBeGreaterThan(0);
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
+    expect(mockedStat).toHaveBeenCalledTimes(firstCallCount);
+
+    resolver.reset();
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
+    expect(mockedStat.mock.calls.length).toBeGreaterThan(firstCallCount);
+  });
 });

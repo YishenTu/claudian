@@ -1,5 +1,6 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
+import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import {
   getHostnameKey,
@@ -48,20 +49,6 @@ export const DEFAULT_PI_PROVIDER_SETTINGS: Readonly<PersistedPiProviderSettings>
   toolMode: 'all',
   visibleModels: [],
 });
-
-function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const result: HostnameCliPaths = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === 'string' && entry.trim()) {
-      result[key] = entry.trim();
-    }
-  }
-  return result;
-}
 
 export function normalizePiVisibleModels(
   value: unknown,
@@ -136,7 +123,7 @@ export function normalizePiPreferredThinkingByModel(
 
 export function getPiProviderSettings(settings: Record<string, unknown>): PiProviderSettings {
   const config = getProviderConfig(settings, 'pi');
-  const normalizedCliPathsByHost = normalizeHostnameCliPaths(config.cliPathsByHost);
+  const normalizedCliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
   const cliPathsByHost = Object.keys(normalizedCliPathsByHost).length > 0
     ? migrateLegacyHostnameKeyedMap(
       normalizedCliPathsByHost,
@@ -206,7 +193,7 @@ export function updatePiProviderSettings(
     persistableIds,
   );
   const nextCliPathsByHost = 'cliPathsByHost' in updates
-    ? normalizeHostnameCliPaths(updates.cliPathsByHost)
+    ? normalizeHostnameStringMap(updates.cliPathsByHost)
     : { ...current.cliPathsByHost };
   let nextCliPath = 'cliPathsByHost' in updates
     ? (

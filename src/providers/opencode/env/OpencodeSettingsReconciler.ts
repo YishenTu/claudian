@@ -1,7 +1,8 @@
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
+import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
-import { parseEnvironmentVariables } from '../../../utils/env';
+import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { clearOpencodeDiscoveryState } from '../discoveryState';
 import { sameStringList, sameStringMap } from '../internal/compareCollections';
 import { ensureProviderProjectionMap } from '../internal/providerProjection';
@@ -32,15 +33,18 @@ const OPENCODE_ENV_HASH_KEYS = [
   'OPENCODE_DB',
   'OPENCODE_DISABLE_PROJECT_CONFIG',
   'XDG_DATA_HOME',
+  'PATH',
 ] as const;
 
-function computeOpencodeEnvHash(envText: string): string {
-  const envVars = parseEnvironmentVariables(envText || '');
-  return OPENCODE_ENV_HASH_KEYS
-    .filter((key) => envVars[key])
-    .map((key) => `${key}=${envVars[key]}`)
-    .sort()
-    .join('|');
+function computeOpencodeRuntimeFingerprint(
+  environmentText: string,
+  cliPath: string,
+): string {
+  return createRuntimeInputFingerprint({
+    additionalInputs: { cliPath },
+    environmentKeys: OPENCODE_ENV_HASH_KEYS,
+    environmentText,
+  });
 }
 
 function invalidateOpencodeConversationSessions(conversations: Conversation[]): Conversation[] {
@@ -74,9 +78,24 @@ export const opencodeSettingsReconciler: ProviderSettingsReconciler = {
     conversations: Conversation[],
   ): { changed: boolean; invalidatedConversations: Conversation[] } {
     const envText = getRuntimeEnvironmentText(settings, 'opencode');
-    const currentHash = computeOpencodeEnvHash(envText);
-    const savedHash = getOpencodeProviderSettings(settings).environmentHash;
+    const opencodeSettings = getOpencodeProviderSettings(settings);
+    const cliPath = (
+      opencodeSettings.cliPathsByHost[getHostnameKey()]?.trim()
+      || opencodeSettings.cliPath.trim()
+    );
+    const currentHash = computeOpencodeRuntimeFingerprint(envText, cliPath);
+    const savedHash = opencodeSettings.environmentHash;
 
+    const environment = parseEnvironmentVariables(envText);
+    const hasFingerprintInputs = Boolean(
+      cliPath
+      || OPENCODE_ENV_HASH_KEYS.some(
+        key => Object.prototype.hasOwnProperty.call(environment, key),
+      )
+    );
+    if (!savedHash && !hasFingerprintInputs) {
+      return { changed: false, invalidatedConversations: [] };
+    }
     if (currentHash === savedHash) {
       return { changed: false, invalidatedConversations: [] };
     }

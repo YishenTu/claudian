@@ -47,6 +47,23 @@ describe('codex settings', () => {
     expect(settings.wslDistroOverride).toBe(DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride);
   });
 
+  it('rejects arrays and filters mixed hostname string maps', () => {
+    expect(getCodexProviderSettings({
+      providerConfigs: {
+        codex: {
+          cliPathsByHost: ['/array/codex'],
+          wslDistroOverridesByHost: {
+            ' host-a ': ' Ubuntu ',
+            invalid: 42,
+          },
+        },
+      },
+    })).toMatchObject({
+      cliPathsByHost: {},
+      wslDistroOverridesByHost: { 'host-a': 'Ubuntu' },
+    });
+  });
+
   it('treats a null visibility filter as all discovered models', () => {
     const discoveredModels = [
       { model: 'gpt-5.5' },

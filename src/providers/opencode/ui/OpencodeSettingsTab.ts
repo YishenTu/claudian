@@ -8,7 +8,9 @@ import type {
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameCliPathSetting';
 import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
+import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
 import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
@@ -42,50 +44,43 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
   render(container, context) {
     const opencodeWorkspace = maybeGetOpencodeWorkspaceServices();
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
-    const opencodeSettings = getOpencodeProviderSettings(settingsBag);
     const hostnameKey = getHostnameKey();
 
     new Setting(container).setName('Setup').setHeading();
 
-    new Setting(container)
-      .setName(t('settings.providerEnablement.name', { provider: 'OpenCode' }))
-      .setDesc(t('settings.providerEnablement.desc', { provider: 'OpenCode' }))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(opencodeSettings.enabled)
-          .onChange(async (value) => {
-            if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
-              settingsBag,
+    renderProviderEnablementSetting({
+      container,
+      description: t('settings.providerEnablement.desc', { provider: 'OpenCode' }),
+      getValue: () => getOpencodeProviderSettings(settingsBag).enabled,
+      name: t('settings.providerEnablement.name', { provider: 'OpenCode' }),
+      onChange: async (value) => {
+        if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
+          settingsBag,
+          'opencode',
+          value,
+        )) {
+          lastProviderWarning.showFor();
+          return;
+        }
+
+        let accepted = true;
+        await context.plugin.runProviderExecutionTransition(['opencode'], async () => {
+          await context.plugin.mutateSettings((settings) => {
+            accepted = ProviderSettingsCoordinator.applyProviderEnablement(
+              settings,
               'opencode',
               value,
-            )) {
-              lastProviderWarning.showFor();
-              toggle.setValue(getOpencodeProviderSettings(settingsBag).enabled);
-              return;
-            }
-
-            let accepted = true;
-            try {
-              await context.plugin.runProviderExecutionTransition(['opencode'], async () => {
-                await context.plugin.mutateSettings((settings) => {
-                  accepted = ProviderSettingsCoordinator.applyProviderEnablement(
-                    settings,
-                    'opencode',
-                    value,
-                  );
-                });
-              });
-              if (accepted) {
-                lastProviderWarning.hide();
-              } else {
-                lastProviderWarning.showFor();
-              }
-              modelWarning.context.notifyProviderModelOptionsChanged('opencode');
-            } finally {
-              toggle.setValue(getOpencodeProviderSettings(settingsBag).enabled);
-            }
-          })
-      );
+            );
+          });
+        });
+        if (accepted) {
+          lastProviderWarning.hide();
+        } else {
+          lastProviderWarning.showFor();
+        }
+        modelWarning.context.notifyProviderModelOptionsChanged('opencode');
+      },
+    });
 
     const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
@@ -96,65 +91,33 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       providerName: 'OpenCode',
     });
 
-    const cliPathSetting = new Setting(container)
-      .setName('CLI path')
-      .setDesc('Optional absolute path to the OpenCode CLI for this computer. Leave empty to use `opencode` from PATH.');
+    renderHostnameCliPathSetting({
+      container,
+      description: 'Optional absolute path to the OpenCode CLI for this computer. Leave empty to use `opencode` from PATH.',
+      getValue: () => getOpencodeProviderSettings(settingsBag).cliPathsByHost[hostnameKey] || '',
+      name: 'CLI path',
+      onChange: async (value) => {
+        const cliPathsByHost = {
+          ...getOpencodeProviderSettings(settingsBag).cliPathsByHost,
+        };
+        if (value) {
+          cliPathsByHost[hostnameKey] = value;
+        } else {
+          delete cliPathsByHost[hostnameKey];
+        }
 
-    const validationEl = container.createDiv({
-      cls: 'claudian-cli-path-validation claudian-setting-validation claudian-setting-validation-error claudian-hidden',
-    });
-    const cliPathsByHost = { ...opencodeSettings.cliPathsByHost };
-    const currentValue = opencodeSettings.cliPathsByHost[hostnameKey] || '';
-    let cliPathInputEl: HTMLInputElement | null = null;
-
-    const updateCliPathValidation = (value: string, inputEl?: HTMLInputElement): boolean => {
-      const error = validateCliPath(value);
-      if (error) {
-        validationEl.setText(error);
-        validationEl.toggleClass('claudian-hidden', false);
-        inputEl?.toggleClass('claudian-input-error', true);
-        return false;
-      }
-
-      validationEl.toggleClass('claudian-hidden', true);
-      inputEl?.toggleClass('claudian-input-error', false);
-      return true;
-    };
-
-    const persistCliPath = async (value: string): Promise<boolean> => {
-      if (!updateCliPathValidation(value, cliPathInputEl ?? undefined)) {
-        return false;
-      }
-
-      const trimmed = value.trim();
-      if (trimmed) {
-        cliPathsByHost[hostnameKey] = trimmed;
-      } else {
-        delete cliPathsByHost[hostnameKey];
-      }
-
-      await context.plugin.runProviderExecutionTransition(['opencode'], async () => {
-        await context.plugin.mutateSettings((settings) => {
-          updateOpencodeProviderSettings(settings, { cliPathsByHost: { ...cliPathsByHost } });
-          clearOpencodeDiscoveryState(settings);
+        await context.plugin.runProviderExecutionTransition(['opencode'], async () => {
+          await context.plugin.mutateSettings((settings) => {
+            updateOpencodeProviderSettings(settings, { cliPathsByHost });
+            clearOpencodeDiscoveryState(settings);
+          });
+          opencodeWorkspace?.cliResolver?.reset();
         });
-        opencodeWorkspace?.cliResolver?.reset();
-      });
-      return true;
-    };
-
-    cliPathSetting.addText((text) => {
-      text
-        .setPlaceholder(process.platform === 'win32'
-          ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\opencode.cmd'
-          : '/usr/local/bin/opencode')
-        .setValue(currentValue)
-        .onChange(async (value) => {
-          await persistCliPath(value);
-        });
-      text.inputEl.addClass('claudian-settings-cli-path-input');
-      cliPathInputEl = text.inputEl;
-      updateCliPathValidation(currentValue, text.inputEl);
+      },
+      placeholder: process.platform === 'win32'
+        ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\opencode.cmd'
+        : '/usr/local/bin/opencode',
+      validate: validateCliPath,
     });
 
     new Setting(container).setName('Models').setHeading();

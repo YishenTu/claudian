@@ -1,6 +1,12 @@
 import type { Conversation } from '../types';
 import { toProviderRuntimeModelId } from './modelSelection';
 import { ProviderRegistry } from './ProviderRegistry';
+import {
+  ensureProviderProjectionMap,
+  normalizeProviderProjectionMap,
+  type ProviderProjectionKey,
+  type ProviderProjectionMap,
+} from './settings/ProviderProjectionMap';
 import type { ProviderChatUIConfig, ProviderId } from './types';
 
 export interface SettingsReconciliationResult {
@@ -22,39 +28,18 @@ const PROJECTION_KEYS = new Set([
   'permissionMode',
 ]);
 
-type ProviderProjectionMap = Partial<Record<string, string>>;
-
 function getSettingsProviderId(settings: Record<string, unknown>): ProviderId {
   return ProviderRegistry.resolveSettingsProviderId(settings);
-}
-
-function ensureProjectionMap(
-  settings: Record<string, unknown>,
-  key:
-  | 'savedProviderModel'
-  | 'savedProviderEffort'
-  | 'savedProviderServiceTier'
-  | 'savedProviderThinkingBudget'
-  | 'savedProviderPermissionMode',
-): ProviderProjectionMap {
-  const current = settings[key];
-  if (current && typeof current === 'object') {
-    return current;
-  }
-
-  const next: ProviderProjectionMap = {};
-  settings[key] = next;
-  return next;
 }
 
 function cloneProviderSettings(settings: Record<string, unknown>): Record<string, unknown> {
   return {
     ...settings,
-    savedProviderModel: { ...(settings.savedProviderModel as ProviderProjectionMap | undefined) },
-    savedProviderEffort: { ...(settings.savedProviderEffort as ProviderProjectionMap | undefined) },
-    savedProviderServiceTier: { ...(settings.savedProviderServiceTier as ProviderProjectionMap | undefined) },
-    savedProviderThinkingBudget: { ...(settings.savedProviderThinkingBudget as ProviderProjectionMap | undefined) },
-    savedProviderPermissionMode: { ...(settings.savedProviderPermissionMode as ProviderProjectionMap | undefined) },
+    savedProviderModel: normalizeProviderProjectionMap(settings.savedProviderModel),
+    savedProviderEffort: normalizeProviderProjectionMap(settings.savedProviderEffort),
+    savedProviderServiceTier: normalizeProviderProjectionMap(settings.savedProviderServiceTier),
+    savedProviderThinkingBudget: normalizeProviderProjectionMap(settings.savedProviderThinkingBudget),
+    savedProviderPermissionMode: normalizeProviderProjectionMap(settings.savedProviderPermissionMode),
   };
 }
 
@@ -306,11 +291,11 @@ export class ProviderSettingsCoordinator {
     settings: Record<string, unknown>,
     providerId: ProviderId = getSettingsProviderId(settings),
   ): void {
-    const savedModel = ensureProjectionMap(settings, 'savedProviderModel');
-    const savedEffort = ensureProjectionMap(settings, 'savedProviderEffort');
-    const savedServiceTier = ensureProjectionMap(settings, 'savedProviderServiceTier');
-    const savedBudget = ensureProjectionMap(settings, 'savedProviderThinkingBudget');
-    const savedPermissionMode = ensureProjectionMap(settings, 'savedProviderPermissionMode');
+    const savedModel = ensureProviderProjectionMap(settings, 'savedProviderModel');
+    const savedEffort = ensureProviderProjectionMap(settings, 'savedProviderEffort');
+    const savedServiceTier = ensureProviderProjectionMap(settings, 'savedProviderServiceTier');
+    const savedBudget = ensureProviderProjectionMap(settings, 'savedProviderThinkingBudget');
+    const savedPermissionMode = ensureProviderProjectionMap(settings, 'savedProviderPermissionMode');
     const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
     const normalizedModel = normalizeProviderModel(
       uiConfig,
@@ -350,11 +335,14 @@ export class ProviderSettingsCoordinator {
     providerId: ProviderId,
   ): void {
     const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
-    const savedModel = settings.savedProviderModel as ProviderProjectionMap | undefined;
-    const savedEffort = settings.savedProviderEffort as ProviderProjectionMap | undefined;
-    const savedServiceTier = settings.savedProviderServiceTier as ProviderProjectionMap | undefined;
-    const savedBudget = settings.savedProviderThinkingBudget as ProviderProjectionMap | undefined;
-    const savedPermissionMode = settings.savedProviderPermissionMode as ProviderProjectionMap | undefined;
+    const projection = (key: ProviderProjectionKey): ProviderProjectionMap => (
+      normalizeProviderProjectionMap(settings[key])
+    );
+    const savedModel = projection('savedProviderModel');
+    const savedEffort = projection('savedProviderEffort');
+    const savedServiceTier = projection('savedProviderServiceTier');
+    const savedBudget = projection('savedProviderThinkingBudget');
+    const savedPermissionMode = projection('savedProviderPermissionMode');
 
     const shouldPreferCurrentProjection = providerId === getSettingsProviderId(settings);
     const currentModelRaw = typeof settings.model === 'string' ? settings.model : '';

@@ -1,5 +1,6 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
+import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import {
   getHostnameKey,
@@ -59,20 +60,6 @@ export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<PersistedOpencodeProvi
   thinkingOptionsByModel: {},
   visibleModels: [],
 });
-
-function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const result: HostnameCliPaths = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === 'string' && entry.trim()) {
-      result[key] = entry.trim();
-    }
-  }
-  return result;
-}
 
 export function normalizeOpencodeVisibleModels(
   value: unknown,
@@ -157,7 +144,7 @@ export function getOpencodeProviderSettings(
   settings: Record<string, unknown>,
 ): OpencodeProviderSettings {
   const config = getProviderConfig(settings, 'opencode');
-  const normalizedCliPathsByHost = normalizeHostnameCliPaths(config.cliPathsByHost);
+  const normalizedCliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
   const cliPathsByHost = Object.keys(normalizedCliPathsByHost).length > 0
     ? migrateLegacyHostnameKeyedMap(
       normalizedCliPathsByHost,
@@ -242,7 +229,7 @@ export function updateOpencodeProviderSettings(
     nextVisibleModels,
   );
   const nextCliPathsByHost = 'cliPathsByHost' in updates
-    ? normalizeHostnameCliPaths(updates.cliPathsByHost)
+    ? normalizeHostnameStringMap(updates.cliPathsByHost)
     : { ...current.cliPathsByHost };
   let nextCliPath = 'cliPathsByHost' in updates
     ? (

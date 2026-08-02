@@ -1,6 +1,5 @@
-import { createHash } from 'crypto';
-
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
+import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import {
@@ -20,9 +19,11 @@ export function computeGrokEnvironmentHash(settings: Record<string, unknown>): s
   const environment = Object.entries(parseEnvironmentVariables(
     getRuntimeEnvironmentText(settings, 'grok'),
   )).sort(([left], [right]) => left.localeCompare(right));
-  const constructionInputs = JSON.stringify({ cliPath, environment });
-
-  return createHash('sha256').update(constructionInputs, 'utf8').digest('hex');
+  return createRuntimeInputFingerprint({
+    additionalInputs: { cliPath },
+    environmentKeys: environment.map(([key]) => key),
+    environmentText: getRuntimeEnvironmentText(settings, 'grok'),
+  });
 }
 
 export const grokSettingsReconciler: ProviderSettingsReconciler = {

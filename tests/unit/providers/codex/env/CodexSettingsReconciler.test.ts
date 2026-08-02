@@ -1,7 +1,11 @@
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 
+import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
-import { codexSettingsReconciler } from '@/providers/codex/env/CodexSettingsReconciler';
+import {
+  codexSettingsReconciler,
+  computeCodexEnvHash,
+} from '@/providers/codex/env/CodexSettingsReconciler';
 
 describe('codexSettingsReconciler', () => {
   it('invalidates both sessionId and providerState when the Codex env hash changes', () => {
@@ -19,6 +23,7 @@ describe('codexSettingsReconciler', () => {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
+          enabled: true,
           discoveredModels: TEST_CODEX_CATALOG,
           environmentVariables: `OPENAI_MODEL=${TEST_CODEX_MODEL}`,
           environmentHash: '',
@@ -39,6 +44,7 @@ describe('codexSettingsReconciler', () => {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
+          enabled: true,
           environmentVariables: 'OPENAI_MODEL=deepseek-v4-pro',
           environmentHash: '',
         },
@@ -66,6 +72,7 @@ describe('codexSettingsReconciler', () => {
       model: 'my-custom-model',
       providerConfigs: {
         codex: {
+          enabled: true,
           customModels: 'my-custom-model',
           environmentVariables: 'OPENAI_BASE_URL=https://api.example.com/v1',
           environmentHash: '',
@@ -80,9 +87,9 @@ describe('codexSettingsReconciler', () => {
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toBeUndefined();
     expect(settings.model).toBe('openai-codex/my-custom-model');
-    expect((settings.providerConfigs as any).codex.environmentHash).toBe(
-      'OPENAI_BASE_URL=https://api.example.com/v1',
-    );
+    const fingerprint = (settings.providerConfigs as any).codex.environmentHash;
+    expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
+    expect(fingerprint).not.toContain('https://api.example.com/v1');
   });
 
   it('restores a built-in model when a settings-defined custom model is removed', () => {
@@ -90,6 +97,7 @@ describe('codexSettingsReconciler', () => {
       model: 'my-custom-model',
       providerConfigs: {
         codex: {
+          enabled: true,
           customModels: '',
           discoveredModels: TEST_CODEX_CATALOG,
           environmentVariables: 'OPENAI_BASE_URL=https://api.example.com/v1',
@@ -102,8 +110,19 @@ describe('codexSettingsReconciler', () => {
 
     expect(result.changed).toBe(true);
     expect(settings.model).toBe(TEST_CODEX_MODEL);
-    expect((settings.providerConfigs as any).codex.environmentHash).toBe(
-      'OPENAI_BASE_URL=https://api.example.com/v1',
-    );
+    expect(isVersionedRuntimeInputFingerprint(
+      (settings.providerConfigs as any).codex.environmentHash,
+    )).toBe(true);
+  });
+
+  it('persists an opaque API-key-sensitive fingerprint without exposing the key', () => {
+    const secret = 'codex-test-secret-value';
+    const fingerprint = computeCodexEnvHash(`OPENAI_API_KEY=${secret}`);
+
+    expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
+    expect(fingerprint).not.toContain(secret);
+    expect(fingerprint).not.toContain(Buffer.from(secret, 'utf8').toString('base64'));
+    expect(fingerprint).not.toContain(Buffer.from(secret, 'utf8').toString('hex'));
+    expect(computeCodexEnvHash('OPENAI_API_KEY=other-test-secret')).not.toBe(fingerprint);
   });
 });

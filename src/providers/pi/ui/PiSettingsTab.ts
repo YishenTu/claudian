@@ -9,6 +9,8 @@ import type {
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameCliPathSetting';
+import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
 import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
@@ -33,51 +35,44 @@ import {
 export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
   render(container, context) {
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
-    const piSettings = getPiProviderSettings(settingsBag);
     const hostnameKey = getHostnameKey();
     const workspace = maybeGetPiWorkspaceServices();
 
     new Setting(container).setName('Setup').setHeading();
 
-    new Setting(container)
-      .setName(t('settings.providerEnablement.name', { provider: 'Pi' }))
-      .setDesc(t('settings.providerEnablement.desc', { provider: 'Pi' }))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(piSettings.enabled)
-          .onChange(async (value) => {
-            if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
-              settingsBag,
+    renderProviderEnablementSetting({
+      container,
+      description: t('settings.providerEnablement.desc', { provider: 'Pi' }),
+      getValue: () => getPiProviderSettings(settingsBag).enabled,
+      name: t('settings.providerEnablement.name', { provider: 'Pi' }),
+      onChange: async (value) => {
+        if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
+          settingsBag,
+          'pi',
+          value,
+        )) {
+          lastProviderWarning.showFor();
+          return;
+        }
+
+        let accepted = true;
+        await context.plugin.runProviderExecutionTransition(['pi'], async () => {
+          await context.plugin.mutateSettings((settings) => {
+            accepted = ProviderSettingsCoordinator.applyProviderEnablement(
+              settings,
               'pi',
               value,
-            )) {
-              lastProviderWarning.showFor();
-              toggle.setValue(getPiProviderSettings(settingsBag).enabled);
-              return;
-            }
-
-            let accepted = true;
-            try {
-              await context.plugin.runProviderExecutionTransition(['pi'], async () => {
-                await context.plugin.mutateSettings((settings) => {
-                  accepted = ProviderSettingsCoordinator.applyProviderEnablement(
-                    settings,
-                    'pi',
-                    value,
-                  );
-                });
-              });
-              if (accepted) {
-                lastProviderWarning.hide();
-              } else {
-                lastProviderWarning.showFor();
-              }
-              modelWarning.context.notifyProviderModelOptionsChanged('pi');
-            } finally {
-              toggle.setValue(getPiProviderSettings(settingsBag).enabled);
-            }
-          })
-      );
+            );
+          });
+        });
+        if (accepted) {
+          lastProviderWarning.hide();
+        } else {
+          lastProviderWarning.showFor();
+        }
+        modelWarning.context.notifyProviderModelOptionsChanged('pi');
+      },
+    });
 
     const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
@@ -88,88 +83,37 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
       providerName: 'Pi',
     });
 
-    const validationEl = container.createDiv({
-      cls: 'claudian-cli-path-validation claudian-setting-validation claudian-setting-validation-error claudian-hidden',
-    });
-    const cliPathsByHost = { ...piSettings.cliPathsByHost };
-    let currentCliPath = piSettings.cliPathsByHost[hostnameKey] || '';
-    let cliPathInputEl: HTMLInputElement | null = null;
+    renderHostnameCliPathSetting({
+      container,
+      description: 'Optional absolute path to the Pi CLI for this computer. Leave empty to use `pi` from PATH.',
+      getValue: () => getPiProviderSettings(settingsBag).cliPathsByHost[hostnameKey] || '',
+      name: 'CLI path',
+      onChange: async (value) => {
+        const cliPathsByHost = {
+          ...getPiProviderSettings(settingsBag).cliPathsByHost,
+        };
+        if (value) {
+          cliPathsByHost[hostnameKey] = value;
+        } else {
+          delete cliPathsByHost[hostnameKey];
+        }
 
-    const updateCliPathValidation = (value: string, inputEl?: HTMLInputElement): boolean => {
-      const error = validateCliPath(value);
-      if (error) {
-        validationEl.setText(error);
-        validationEl.toggleClass('claudian-hidden', false);
-        inputEl?.toggleClass('claudian-input-error', true);
-        return false;
-      }
-
-      validationEl.toggleClass('claudian-hidden', true);
-      inputEl?.toggleClass('claudian-input-error', false);
-      return true;
-    };
-
-    const resynchronizeCliPathState = (): void => {
-      const persistedSettings = getPiProviderSettings(settingsBag);
-      for (const hostKey of Object.keys(cliPathsByHost)) {
-        delete cliPathsByHost[hostKey];
-      }
-      Object.assign(cliPathsByHost, persistedSettings.cliPathsByHost);
-      currentCliPath = persistedSettings.cliPathsByHost[hostnameKey] || '';
-      if (cliPathInputEl) {
-        cliPathInputEl.value = currentCliPath;
-        updateCliPathValidation(currentCliPath, cliPathInputEl);
-      }
-    };
-
-    const persistCliPath = async (value: string): Promise<void> => {
-      if (!updateCliPathValidation(value, cliPathInputEl ?? undefined)) {
-        return;
-      }
-
-      const trimmed = value.trim();
-      if (trimmed === currentCliPath.trim()) {
-        return;
-      }
-      if (trimmed) {
-        cliPathsByHost[hostnameKey] = trimmed;
-      } else {
-        delete cliPathsByHost[hostnameKey];
-      }
-
-      try {
         await context.plugin.runProviderExecutionTransition(['pi'], async () => {
           await context.plugin.mutateSettings((settings) => {
             updatePiProviderSettings(settings, {
-              cliPathsByHost: { ...cliPathsByHost },
+              cliPathsByHost,
               discoveredModels: [],
             });
           });
           workspace?.cliResolver?.reset();
         });
-      } catch (error) {
-        resynchronizeCliPathState();
-        throw error;
-      }
-      currentCliPath = trimmed;
-      context.notifyProviderModelOptionsChanged('pi');
-    };
-
-    new Setting(container)
-      .setName('CLI path')
-      .setDesc('Optional absolute path to the Pi CLI for this computer. Leave empty to use `pi` from PATH.')
-      .addText((text) => {
-        text
-          .setPlaceholder(process.platform === 'win32'
-            ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\pi.cmd'
-            : '/usr/local/bin/pi')
-          .setValue(currentCliPath)
-          .onChange(async (value) => {
-            await persistCliPath(value);
-          });
-        cliPathInputEl = text.inputEl;
-        updateCliPathValidation(currentCliPath, text.inputEl);
-      });
+        context.notifyProviderModelOptionsChanged('pi');
+      },
+      placeholder: process.platform === 'win32'
+        ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\pi.cmd'
+        : '/usr/local/bin/pi',
+      validate: validateCliPath,
+    });
 
     new Setting(container).setName('Models').setHeading();
     renderPiModelPicker(container, modelWarning.context, settingsBag);

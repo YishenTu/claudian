@@ -5,7 +5,9 @@ import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSet
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameCliPathSetting';
 import { McpSettingsManager } from '../../../shared/settings/McpSettingsManager';
+import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
 import { renderLastEnabledProviderWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
@@ -48,45 +50,39 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName(t('settings.setup')).setHeading();
 
-    new Setting(container)
-      .setName(t('settings.providerEnablement.name', { provider: 'Claude' }))
-      .setDesc(t('settings.providerEnablement.desc', { provider: 'Claude' }))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(claudeSettings.enabled)
-          .onChange(async (value) => {
-            if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
-              settingsBag,
+    renderProviderEnablementSetting({
+      container,
+      description: t('settings.providerEnablement.desc', { provider: 'Claude' }),
+      getValue: () => getClaudeProviderSettings(settingsBag).enabled,
+      name: t('settings.providerEnablement.name', { provider: 'Claude' }),
+      onChange: async (value) => {
+        if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
+          settingsBag,
+          'claude',
+          value,
+        )) {
+          lastProviderWarning.showFor();
+          return;
+        }
+
+        let accepted = true;
+        await context.plugin.runProviderExecutionTransition(['claude'], async () => {
+          await context.plugin.mutateSettings((settings) => {
+            accepted = ProviderSettingsCoordinator.applyProviderEnablement(
+              settings,
               'claude',
               value,
-            )) {
-              lastProviderWarning.showFor();
-              toggle.setValue(getClaudeProviderSettings(settingsBag).enabled);
-              return;
-            }
-
-            let accepted = true;
-            try {
-              await context.plugin.runProviderExecutionTransition(['claude'], async () => {
-                await context.plugin.mutateSettings((settings) => {
-                  accepted = ProviderSettingsCoordinator.applyProviderEnablement(
-                    settings,
-                    'claude',
-                    value,
-                  );
-                });
-              });
-              if (accepted) {
-                lastProviderWarning.hide();
-              } else {
-                lastProviderWarning.showFor();
-              }
-              context.notifyProviderModelOptionsChanged('claude');
-            } finally {
-              toggle.setValue(getClaudeProviderSettings(settingsBag).enabled);
-            }
-          })
-      );
+            );
+          });
+        });
+        if (accepted) {
+          lastProviderWarning.hide();
+        } else {
+          lastProviderWarning.showFor();
+        }
+        context.notifyProviderModelOptionsChanged('claude');
+      },
+    });
 
     const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
@@ -95,14 +91,6 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       ? t('settings.cliPath.descWindows')
       : t('settings.cliPath.descUnix');
     const cliPathDescription = `${t('settings.cliPath.desc')} ${platformDesc}`;
-
-    const cliPathSetting = new Setting(container)
-      .setName(t('settings.cliPath.name'))
-      .setDesc(cliPathDescription);
-
-    const validationEl = container.createDiv({
-      cls: 'claudian-cli-path-validation claudian-setting-validation claudian-setting-validation-error claudian-hidden',
-    });
 
     const validatePath = (value: string): string | null => {
       const trimmed = value.trim();
@@ -120,65 +108,32 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       return null;
     };
 
-    const updateCliPathValidation = (value: string, inputEl?: HTMLInputElement): boolean => {
-      const error = validatePath(value);
-      if (error) {
-        validationEl.setText(error);
-        validationEl.toggleClass('claudian-hidden', false);
-        if (inputEl) {
-          inputEl.toggleClass('claudian-input-error', true);
+    renderHostnameCliPathSetting({
+      container,
+      description: cliPathDescription,
+      getValue: () => getClaudeProviderSettings(settingsBag).cliPathsByHost[hostnameKey] || '',
+      name: t('settings.cliPath.name'),
+      onChange: async (value) => {
+        const cliPathsByHost = {
+          ...getClaudeProviderSettings(settingsBag).cliPathsByHost,
+        };
+        if (value) {
+          cliPathsByHost[hostnameKey] = value;
+        } else {
+          delete cliPathsByHost[hostnameKey];
         }
-        return false;
-      }
 
-      validationEl.toggleClass('claudian-hidden', true);
-      if (inputEl) {
-        inputEl.toggleClass('claudian-input-error', false);
-      }
-      return true;
-    };
-
-    const currentValue = claudeSettings.cliPathsByHost[hostnameKey] || '';
-    const cliPathsByHost = { ...claudeSettings.cliPathsByHost };
-    let cliPathInputEl: HTMLInputElement | null = null;
-
-    const persistCliPath = async (value: string): Promise<boolean> => {
-      const isValid = updateCliPathValidation(value, cliPathInputEl ?? undefined);
-      if (!isValid) {
-        return false;
-      }
-
-      const trimmed = value.trim();
-      if (trimmed) {
-        cliPathsByHost[hostnameKey] = trimmed;
-      } else {
-        delete cliPathsByHost[hostnameKey];
-      }
-
-      await context.plugin.runProviderExecutionTransition(['claude'], async () => {
-        await context.plugin.mutateSettings((settings) => {
-          updateClaudeProviderSettings(settings, { cliPathsByHost: { ...cliPathsByHost } });
+        await context.plugin.runProviderExecutionTransition(['claude'], async () => {
+          await context.plugin.mutateSettings((settings) => {
+            updateClaudeProviderSettings(settings, { cliPathsByHost });
+          });
+          claudeWorkspace.cliResolver.reset();
         });
-        claudeWorkspace.cliResolver.reset();
-      });
-      return true;
-    };
-
-    cliPathSetting.addText((text) => {
-      const placeholder = process.platform === 'win32'
+      },
+      placeholder: process.platform === 'win32'
         ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli-wrapper.cjs'
-        : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs';
-
-      text
-        .setPlaceholder(placeholder)
-        .setValue(currentValue)
-        .onChange(async (value) => {
-          await persistCliPath(value);
-        });
-      text.inputEl.addClass('claudian-settings-cli-path-input');
-      cliPathInputEl = text.inputEl;
-
-      updateCliPathValidation(currentValue, text.inputEl);
+        : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs',
+      validate: validatePath,
     });
 
     // --- Models ---

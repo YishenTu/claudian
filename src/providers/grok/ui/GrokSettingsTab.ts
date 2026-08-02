@@ -12,7 +12,9 @@ import type {
 import type { ClaudianSettings } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
+import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameCliPathSetting';
 import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
+import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
 import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
@@ -39,7 +41,6 @@ const GROK_PROVIDER_ID = 'grok' as const;
 export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
   render(container, context) {
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
-    const initialSettings = getGrokProviderSettings(settingsBag);
     const hostnameKey = getHostnameKey();
     const workspace = getGrokWorkspaceServices();
 
@@ -57,44 +58,40 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName('Setup').setHeading();
 
-    new Setting(container)
-      .setName(t('settings.providerEnablement.name', { provider: 'Grok' }))
-      .setDesc(t('settings.providerEnablement.desc', { provider: 'Grok' }))
-      .addToggle(toggle => toggle
-        .setValue(initialSettings.enabled)
-        .onChange(async (enabled) => {
-          if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
-            settingsBag,
-            GROK_PROVIDER_ID,
-            enabled,
-          )) {
-            lastProviderWarning.showFor();
-            toggle.setValue(getGrokProviderSettings(settingsBag).enabled);
-            return;
-          }
+    renderProviderEnablementSetting({
+      container,
+      description: t('settings.providerEnablement.desc', { provider: 'Grok' }),
+      getValue: () => getGrokProviderSettings(settingsBag).enabled,
+      name: t('settings.providerEnablement.name', { provider: 'Grok' }),
+      onChange: async (enabled) => {
+        if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
+          settingsBag,
+          GROK_PROVIDER_ID,
+          enabled,
+        )) {
+          lastProviderWarning.showFor();
+          return;
+        }
 
-          let accepted = true;
-          try {
-            await context.plugin.runProviderExecutionTransition(
-              [GROK_PROVIDER_ID],
-              async () => context.plugin.mutateSettings((settings) => {
-                accepted = ProviderSettingsCoordinator.applyProviderEnablement(
-                  settings,
-                  GROK_PROVIDER_ID,
-                  enabled,
-                );
-              }),
+        let accepted = true;
+        await context.plugin.runProviderExecutionTransition(
+          [GROK_PROVIDER_ID],
+          async () => context.plugin.mutateSettings((settings) => {
+            accepted = ProviderSettingsCoordinator.applyProviderEnablement(
+              settings,
+              GROK_PROVIDER_ID,
+              enabled,
             );
-            if (accepted) {
-              lastProviderWarning.hide();
-            } else {
-              lastProviderWarning.showFor();
-            }
-            modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
-          } finally {
-            toggle.setValue(getGrokProviderSettings(settingsBag).enabled);
-          }
-        }));
+          }),
+        );
+        if (accepted) {
+          lastProviderWarning.hide();
+        } else {
+          lastProviderWarning.showFor();
+        }
+        modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
+      },
+    });
 
     const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
@@ -108,69 +105,30 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       providerName: 'Grok',
     });
 
-    const cliPathSetting = new Setting(container)
-      .setName('CLI path')
-      .setDesc('Optional absolute path to the Grok CLI for this computer. Leave empty to prefer known installs, then `grok` from PATH.');
-    const validationEl = container.createDiv({
-      cls: 'claudian-cli-path-validation claudian-setting-validation claudian-setting-validation-error claudian-hidden',
-    });
-    const cliPathsByHost = { ...initialSettings.cliPathsByHost };
-    const initialCliPath = initialSettings.cliPathsByHost[hostnameKey]
-      ?? initialSettings.cliPath
-      ?? '';
-    let currentCliPath = initialCliPath;
-    let cliPathInputEl: HTMLInputElement | null = null;
-
-    const updateCliPathValidation = (value: string, input?: HTMLInputElement): boolean => {
-      const error = validateCliPath(value);
-      if (error) {
-        validationEl.setText(error);
-        validationEl.toggleClass('claudian-hidden', false);
-        input?.toggleClass('claudian-input-error', true);
-        return false;
-      }
-      validationEl.toggleClass('claudian-hidden', true);
-      input?.toggleClass('claudian-input-error', false);
-      return true;
-    };
-
-    const resynchronizeCliPathState = (): void => {
-      const persistedSettings = getGrokProviderSettings(settingsBag);
-      for (const hostKey of Object.keys(cliPathsByHost)) {
-        delete cliPathsByHost[hostKey];
-      }
-      Object.assign(cliPathsByHost, persistedSettings.cliPathsByHost);
-      currentCliPath = persistedSettings.cliPathsByHost[hostnameKey]
-        ?? persistedSettings.cliPath
-        ?? '';
-      if (cliPathInputEl) {
-        cliPathInputEl.value = currentCliPath;
-        updateCliPathValidation(currentCliPath, cliPathInputEl);
-      }
-    };
-
-    const persistCliPath = async (value: string): Promise<void> => {
-      if (!updateCliPathValidation(value, cliPathInputEl ?? undefined)) {
-        return;
-      }
-      const trimmed = value.trim();
-      if (trimmed === currentCliPath.trim()) {
-        return;
-      }
-      if (trimmed) {
-        cliPathsByHost[hostnameKey] = trimmed;
-      } else {
-        delete cliPathsByHost[hostnameKey];
-      }
-
-      const mutation = (settings: ClaudianSettings): void => {
-        updateGrokProviderSettings(settings, {
-          cliPath: '',
-          cliPathsByHost: { ...cliPathsByHost },
-        });
-        clearCurrentGrokCatalog(settings);
-      };
-      try {
+    renderHostnameCliPathSetting({
+      container,
+      description: 'Optional absolute path to the Grok CLI for this computer. Leave empty to prefer known installs, then `grok` from PATH.',
+      getValue: () => {
+        const current = getGrokProviderSettings(settingsBag);
+        return current.cliPathsByHost[hostnameKey] ?? current.cliPath ?? '';
+      },
+      name: 'CLI path',
+      onChange: async (value) => {
+        const cliPathsByHost = {
+          ...getGrokProviderSettings(settingsBag).cliPathsByHost,
+        };
+        if (value) {
+          cliPathsByHost[hostnameKey] = value;
+        } else {
+          delete cliPathsByHost[hostnameKey];
+        }
+        const mutation = (settings: ClaudianSettings): void => {
+          updateGrokProviderSettings(settings, {
+            cliPath: '',
+            cliPathsByHost,
+          });
+          clearCurrentGrokCatalog(settings);
+        };
         await context.plugin.runProviderExecutionTransition(
           [GROK_PROVIDER_ID],
           async () => {
@@ -178,24 +136,12 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
             workspace.cliResolver.reset();
           },
         );
-      } catch (error) {
-        resynchronizeCliPathState();
-        throw error;
-      }
-      currentCliPath = trimmed;
-      modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
-    };
-
-    cliPathSetting.addText(text => {
-      text
-        .setPlaceholder(process.platform === 'win32'
-          ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\grok.cmd'
-          : '/usr/local/bin/grok')
-        .setValue(initialCliPath)
-        .onChange(persistCliPath);
-      text.inputEl.addClass('claudian-settings-cli-path-input');
-      cliPathInputEl = text.inputEl;
-      updateCliPathValidation(initialCliPath, text.inputEl);
+        modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
+      },
+      placeholder: process.platform === 'win32'
+        ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\grok.cmd'
+        : '/usr/local/bin/grok',
+      validate: validateCliPath,
     });
 
     new Setting(container).setName('Models').setHeading();

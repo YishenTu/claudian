@@ -1,3 +1,4 @@
+import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
 import { piSettingsReconciler } from '@/providers/pi/env/PiSettingsReconciler';
 
@@ -6,6 +7,7 @@ describe('piSettingsReconciler', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         pi: {
+          enabled: true,
           environmentHash: 'PI_CODING_AGENT_SESSION_DIR=/old',
           environmentVariables: 'PI_CODING_AGENT_SESSION_DIR=/new\nPI_OFFLINE=1',
         },
@@ -36,9 +38,9 @@ describe('piSettingsReconciler', () => {
     expect(piConversation.sessionId).toBeNull();
     expect(piConversation.providerState).toBeUndefined();
     expect(claudeConversation.sessionId).toBe('claude-session');
-    expect((settings.providerConfigs as any).pi.environmentHash).toBe(
-      'PI_CODING_AGENT_SESSION_DIR=/new|PI_OFFLINE=1',
-    );
+    const fingerprint = (settings.providerConfigs as any).pi.environmentHash;
+    expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
+    expect(fingerprint).not.toContain('/new');
   });
 
   it('normalizes malformed Pi model selections instead of preserving invalid ids', () => {

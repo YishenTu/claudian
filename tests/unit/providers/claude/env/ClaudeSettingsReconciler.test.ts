@@ -1,3 +1,4 @@
+import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
 import { claudeSettingsReconciler } from '@/providers/claude/env/ClaudeSettingsReconciler';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
@@ -32,9 +33,9 @@ describe('claudeSettingsReconciler', () => {
         previousProviderSessionIds: ['session-1'],
       });
       expect(settings.model).toBe('claude-code/claude-opus-4-6');
-      expect(getClaudeProviderSettings(settings).environmentHash).toBe(
-        'ANTHROPIC_BASE_URL=https://api.example.com',
-      );
+      const fingerprint = getClaudeProviderSettings(settings).environmentHash;
+      expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
+      expect(fingerprint).not.toContain('https://api.example.com');
     });
 
     it('falls back to the saved built-in model when a removed custom model is no longer valid', () => {
@@ -235,14 +236,9 @@ describe('claudeSettingsReconciler', () => {
       expect(conversation.sessionId).toBeNull();
       expect(settings.model).toBe('claude-code/gpt-4.1');
       expect(getClaudeProviderSettings(settings).lastModel).toBe('fable');
-      expect(getClaudeProviderSettings(settings).environmentHash).toBe(
-        [
-          'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
-          'ANTHROPIC_DEFAULT_HAIKU_MODEL=DeepSeek-V4-Pro',
-          'ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2[1M]',
-          'ANTHROPIC_DEFAULT_SONNET_MODEL=MiniMax-M3',
-        ].join('|'),
-      );
+      const fingerprint = getClaudeProviderSettings(settings).environmentHash;
+      expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
+      expect(fingerprint).not.toContain('gpt-4.1');
     });
 
     it('preserves the Fable tier when its environment mapping changes value', () => {
@@ -438,7 +434,6 @@ describe('claudeSettingsReconciler', () => {
         modelEnvironmentType: 'fable',
         titleModelEnvironmentType: 'fable',
       });
-
       claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
 
       expect(settings.model).toBe('claude-code/fable-new');
@@ -448,6 +443,9 @@ describe('claudeSettingsReconciler', () => {
         modelEnvironmentType: 'fable',
         titleModelEnvironmentType: 'fable',
       });
+      expect(isVersionedRuntimeInputFingerprint(
+        getClaudeProviderSettings(settings).environmentHash,
+      )).toBe(true);
     });
 
     it('preserves an environment-derived concrete Fable selection during reconciliation', () => {
@@ -472,6 +470,25 @@ describe('claudeSettingsReconciler', () => {
   });
 
   describe('normalizeModelVariantSettings', () => {
+    it('migrates a current legacy fingerprint without treating inputs as changed', () => {
+      const settings: Record<string, unknown> = {
+        model: 'sonnet',
+        providerConfigs: {
+          claude: {
+            environmentHash: 'ANTHROPIC_BASE_URL=https://same.example.com',
+            environmentVariables: 'ANTHROPIC_BASE_URL=https://same.example.com',
+          },
+        },
+      };
+
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
+      expect(isVersionedRuntimeInputFingerprint(
+        getClaudeProviderSettings(settings).environmentHash,
+      )).toBe(true);
+      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []))
+        .toEqual({ changed: false, invalidatedConversations: [] });
+    });
+
     it('does not infer environment provenance for pristine built-in defaults', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
@@ -517,9 +534,12 @@ describe('claudeSettingsReconciler', () => {
         },
       };
 
-      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(false);
+      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
       expect(settings.model).toBe('claude-code/gpt-4.1');
       expect(settings.titleGenerationModel).toBe('claude-code/gpt-4.1');
+      expect(isVersionedRuntimeInputFingerprint(
+        getClaudeProviderSettings(settings).environmentHash,
+      )).toBe(true);
     });
 
     it('prefers exact environment ownership over an unqualified legacy Fable alias', () => {

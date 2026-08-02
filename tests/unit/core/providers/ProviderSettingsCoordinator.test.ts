@@ -709,6 +709,33 @@ describe('ProviderSettingsCoordinator', () => {
       expect(snapshot.serviceTier).toBe('fast');
     });
 
+    it('rejects arrays as provider projection maps when creating a snapshot', () => {
+      const arrayProjection = Object.assign([], { codex: 'array-owned-value' });
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'claude',
+        model: 'haiku',
+        effortLevel: 'high',
+        serviceTier: 'default',
+        thinkingBudget: 'off',
+        providerConfigs: {
+          codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG },
+        },
+        savedProviderModel: arrayProjection,
+        savedProviderEffort: arrayProjection,
+        savedProviderServiceTier: arrayProjection,
+        savedProviderThinkingBudget: arrayProjection,
+        savedProviderPermissionMode: arrayProjection,
+      };
+
+      const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, 'codex');
+
+      expect(snapshot.savedProviderModel).toEqual({});
+      expect(snapshot.savedProviderEffort).toEqual({});
+      expect(snapshot.savedProviderServiceTier).toEqual({});
+      expect(snapshot.savedProviderThinkingBudget).toEqual({});
+      expect(snapshot.savedProviderPermissionMode).toEqual({});
+    });
+
     it('defaults to claude when settingsProvider is not set', () => {
       const settings: Record<string, unknown> = {
         model: 'old-model',

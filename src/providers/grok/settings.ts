@@ -1,6 +1,7 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { STANDARD_REASONING_VALUES } from '../../core/providers/reasoning';
+import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import {
   getHostnameKey,
@@ -80,7 +81,7 @@ export function getGrokProviderSettings(
   const currentHostKey = getHostnameKey();
   const legacyHostKey = getLegacyHostnameKey();
   const cliPathsByHost = migrateLegacyHostnameKeyedMap(
-    normalizeHostnameCliPaths(config.cliPathsByHost),
+    normalizeHostnameStringMap(config.cliPathsByHost),
     currentHostKey,
     legacyHostKey,
   );
@@ -143,7 +144,7 @@ export function updateGrokProviderSettings(
   const current = getGrokProviderSettings(settings);
   const currentHostKey = getHostnameKey();
   const cliPathsByHost = updates.cliPathsByHost !== undefined
-    ? normalizeHostnameCliPaths(updates.cliPathsByHost)
+    ? normalizeHostnameStringMap(updates.cliPathsByHost)
     : { ...current.cliPathsByHost };
   let cliPath = updates.cliPathsByHost !== undefined
     ? readTrimmedString(updates.cliPath)
@@ -382,22 +383,6 @@ function normalizeGrokCatalogsByHost(
     const normalizedSnapshot = normalizeGrokCatalogSnapshot(snapshot);
     if (normalizedHostKey && normalizedSnapshot) {
       normalized[normalizedHostKey] = normalizedSnapshot;
-    }
-  }
-  return normalized;
-}
-
-function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
-  if (!isRecord(value)) {
-    return {};
-  }
-
-  const normalized: HostnameCliPaths = {};
-  for (const [hostKey, cliPath] of Object.entries(value)) {
-    const normalizedHostKey = hostKey.trim();
-    const normalizedCliPath = readTrimmedString(cliPath);
-    if (normalizedHostKey && normalizedCliPath) {
-      normalized[normalizedHostKey] = normalizedCliPath;
     }
   }
   return normalized;

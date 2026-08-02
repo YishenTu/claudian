@@ -95,6 +95,26 @@ describe('Grok settings', () => {
     expect(settings.currentCatalog).toEqual(currentCatalog);
   });
 
+  it('rejects arrays and filters mixed hostname CLI maps', () => {
+    expect(getGrokProviderSettings({
+      providerConfigs: {
+        grok: {
+          cliPathsByHost: ['/array/grok'],
+        },
+      },
+    }).cliPathsByHost).toEqual({});
+    expect(getGrokProviderSettings({
+      providerConfigs: {
+        grok: {
+          cliPathsByHost: {
+            ' device:current ': ' /current/grok ',
+            invalid: 42,
+          },
+        },
+      },
+    }).cliPathsByHost).toEqual({ 'device:current': '/current/grok' });
+  });
+
   it('round-trips only the current host catalog without changing other hosts', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {

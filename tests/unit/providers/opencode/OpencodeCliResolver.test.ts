@@ -90,4 +90,22 @@ describe('OpencodeCliResolver', () => {
 
     expect(resolved).toBe(pathBinary);
   });
+
+  it('caches null settings resolutions until reset', () => {
+    mockedStat.mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
+    const resolver = new OpencodeCliResolver();
+    const settings = { providerConfigs: { opencode: {} } };
+
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
+    const firstCallCount = mockedStat.mock.calls.length;
+    expect(firstCallCount).toBeGreaterThan(0);
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
+    expect(mockedStat).toHaveBeenCalledTimes(firstCallCount);
+
+    resolver.reset();
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
+    expect(mockedStat.mock.calls.length).toBeGreaterThan(firstCallCount);
+  });
 });

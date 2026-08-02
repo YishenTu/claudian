@@ -47,6 +47,7 @@ describe('PiCliResolver', () => {
     mockedStat.mockImplementation(() => {
       throw new Error('ENOENT');
     });
+    resolver.reset();
     expect(resolver.resolve({ 'other-host': '/other/pi' }, '/legacy/pi')).toBeNull();
   });
 
@@ -101,5 +102,23 @@ describe('PiCliResolver', () => {
 
     expect(resolver.resolveFromSettings(secondSettings)).toBe('/current/pi');
     expect(mockedStat).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches null settings resolutions until reset', () => {
+    mockedStat.mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
+    const resolver = new PiCliResolver();
+    const settings = { providerConfigs: { pi: {} } };
+
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
+    const firstCallCount = mockedStat.mock.calls.length;
+    expect(firstCallCount).toBeGreaterThan(0);
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
+    expect(mockedStat).toHaveBeenCalledTimes(firstCallCount);
+
+    resolver.reset();
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
+    expect(mockedStat.mock.calls.length).toBeGreaterThan(firstCallCount);
   });
 });

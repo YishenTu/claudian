@@ -110,6 +110,19 @@ describe('OpenCode settings normalization', () => {
     });
   });
 
+  it('rejects arrays and filters mixed hostname CLI maps', () => {
+    expect(getOpencodeProviderSettings({
+      providerConfigs: { opencode: { cliPathsByHost: ['/array/opencode'] } },
+    }).cliPathsByHost).toEqual({});
+    expect(getOpencodeProviderSettings({
+      providerConfigs: {
+        opencode: {
+          cliPathsByHost: { ' host-a ': ' /host-a/opencode ', invalid: false },
+        },
+      },
+    }).cliPathsByHost).toEqual({ 'host-a': '/host-a/opencode' });
+  });
+
   it('normalizes model aliases to base model ids and trims values', () => {
     expect(normalizeOpencodeModelAliases({
       'anthropic/claude-sonnet-4/high': '  Sonnet  ',

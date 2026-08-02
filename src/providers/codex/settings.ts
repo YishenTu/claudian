@@ -1,6 +1,7 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
+import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import {
   getHostnameKey,
@@ -164,20 +165,6 @@ export function applyCodexModelDefaults(
   if (shouldDisableCodexReasoningSummary(model)) {
     updateCodexProviderSettings(settings, { reasoningSummary: 'none' });
   }
-}
-
-function normalizeHostnameCliPaths(value: unknown): HostnameCliPaths {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const result: HostnameCliPaths = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === 'string' && entry.trim()) {
-      result[key] = entry.trim();
-    }
-  }
-  return result;
 }
 
 export function normalizeCodexVisibleModels(
@@ -374,9 +361,9 @@ function getCodexStoredConfig(
   legacyHostnameKey: string,
 ): CodexProviderConfig {
   const config = getProviderConfig(settings, 'codex');
-  const normalizedCliPathsByHost = normalizeHostnameCliPaths(config.cliPathsByHost ?? settings.codexCliPathsByHost);
+  const normalizedCliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost ?? settings.codexCliPathsByHost);
   const normalizedInstallationMethodsByHost = normalizeInstallationMethodsByHost(config.installationMethodsByHost);
-  const normalizedWslDistroOverridesByHost = normalizeHostnameCliPaths(config.wslDistroOverridesByHost);
+  const normalizedWslDistroOverridesByHost = normalizeHostnameStringMap(config.wslDistroOverridesByHost);
   const cliPathsByHost = migrateLegacyHostnameKeyedMap(normalizedCliPathsByHost, hostnameKey, legacyHostnameKey);
   const installationMethodsByHost = migrateLegacyHostnameKeyedMap(
     normalizedInstallationMethodsByHost,
@@ -544,7 +531,7 @@ export function updateCodexProviderSettings(
     ? normalizeInstallationMethodsByHost(updates.installationMethodsByHost)
     : { ...current.installationMethodsByHost };
   const updatedWslDistroOverridesByHost = 'wslDistroOverridesByHost' in updates
-    ? normalizeHostnameCliPaths(updates.wslDistroOverridesByHost)
+    ? normalizeHostnameStringMap(updates.wslDistroOverridesByHost)
     : { ...current.wslDistroOverridesByHost };
   const installationMethodsByHost = persistInstallationSettings
     ? updatedInstallationMethodsByHost

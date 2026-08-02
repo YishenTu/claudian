@@ -72,6 +72,19 @@ describe('Pi settings normalization', () => {
     });
   });
 
+  it('rejects arrays and filters mixed hostname CLI maps', () => {
+    expect(getPiProviderSettings({
+      providerConfigs: { pi: { cliPathsByHost: ['/array/pi'] } },
+    }).cliPathsByHost).toEqual({});
+    expect(getPiProviderSettings({
+      providerConfigs: {
+        pi: {
+          cliPathsByHost: { ' host-a ': ' /host-a/pi ', invalid: null },
+        },
+      },
+    }).cliPathsByHost).toEqual({ 'host-a': '/host-a/pi' });
+  });
+
   it('normalizes visible models to valid encoded ids', () => {
     expect(normalizePiVisibleModels([
       'pi:anthropic/claude-sonnet-4',
