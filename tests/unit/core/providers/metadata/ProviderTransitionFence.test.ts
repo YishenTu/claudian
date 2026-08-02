@@ -24,6 +24,26 @@ describe('ProviderTransitionFence', () => {
     fence.endTransition();
   });
 
+  it('rechecks availability when another transition begins before a waiter resumes', async () => {
+    const fence = new ProviderTransitionFence();
+    fence.beginTransition();
+
+    let settled = false;
+    const availability = fence.waitUntilAvailable().then((value) => {
+      settled = true;
+      return value;
+    });
+    fence.endTransition();
+    fence.beginTransition();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    fence.endTransition();
+    await expect(availability).resolves.toBe(true);
+  });
+
   it('rejects an already-aborted waiter with the configured fallback', async () => {
     const fence = new ProviderTransitionFence({
       abortMessage: 'Metadata wait aborted',

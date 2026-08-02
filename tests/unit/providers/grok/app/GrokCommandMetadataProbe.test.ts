@@ -63,6 +63,39 @@ class FakeMetadataNative implements GrokExecutionNativeConnection {
 }
 
 describe('GrokCommandMetadataProbe', () => {
+  it('registers a load before a synchronously started transition quiesces', async () => {
+    const cliResolution = new Deferred<string | null>();
+    const nativeFactory: GrokExecutionNativeFactory = {
+      create: jest.fn(() => new FakeMetadataNative('stale', false)),
+    };
+    const plugin = {
+      app: { vault: { adapter: { basePath: '/tmp/grok-vault' } } },
+      getResolvedProviderCliPath: jest.fn(() => cliResolution.promise),
+      manifest: { version: 'test' },
+      settings: {},
+    } as unknown as ProviderHost;
+    const probe = new GrokCommandMetadataProbe(plugin, nativeFactory);
+
+    const load = probe.load();
+    probe.beginEnvironmentTransition();
+    let quiesced = false;
+    const quiescence = probe.quiesceForEnvironmentChange().then(() => {
+      quiesced = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(quiesced).toBe(false);
+    cliResolution.resolve('/configured/grok');
+    await expect(load).rejects.toThrow();
+    await quiescence;
+    expect(nativeFactory.create).not.toHaveBeenCalled();
+
+    probe.endEnvironmentTransition();
+    await probe.dispose();
+  });
+
   it('quiesces an in-flight configured-CLI probe before resolving the next CLI', async () => {
     let configuredCli = '/configured/grok-a';
     const first = new FakeMetadataNative('from-a', true);

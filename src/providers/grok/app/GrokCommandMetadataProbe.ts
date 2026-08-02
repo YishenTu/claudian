@@ -42,8 +42,10 @@ export class GrokCommandMetadataProbe {
   }
 
   async load(signal?: AbortSignal): Promise<SlashCommand[]> {
-    const available = await this.transitionFence.waitUntilAvailable(signal);
-    if (!available) throw new Error(DISPOSED_MESSAGE);
+    if (this.transitionFence.isUnavailable()) {
+      const available = await this.transitionFence.waitUntilAvailable(signal);
+      if (!available) throw new Error(DISPOSED_MESSAGE);
+    }
 
     return await this.probes.run({
       create: async (ownedSignal) => {

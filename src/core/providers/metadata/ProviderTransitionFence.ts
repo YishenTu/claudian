@@ -7,7 +7,7 @@ export interface ProviderTransitionFenceOptions {
 interface TransitionWaiter {
   readonly onAbort?: () => void;
   readonly reject: (error: unknown) => void;
-  readonly resolve: (available: boolean) => void;
+  readonly resolve: () => void;
   readonly signal?: AbortSignal;
 }
 
@@ -31,7 +31,7 @@ export class ProviderTransitionFence {
   endTransition(): void {
     if (this.disposed || this.transitionDepth === 0) return;
     this.transitionDepth -= 1;
-    if (this.transitionDepth === 0) this.releaseWaiters(true);
+    if (this.transitionDepth === 0) this.releaseWaiters();
   }
 
   isUnavailable(): boolean {
@@ -40,10 +40,22 @@ export class ProviderTransitionFence {
 
   async waitUntilAvailable(signal?: AbortSignal): Promise<boolean> {
     throwIfAborted(signal, this.abortMessage);
-    if (this.disposed) return false;
-    if (this.transitionDepth === 0) return true;
+    while (!this.disposed && this.transitionDepth > 0) {
+      await this.waitForTransition(signal);
+    }
+    return !this.disposed;
+  }
 
-    return await new Promise<boolean>((resolve, reject) => {
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.transitionDepth = 0;
+    this.releaseWaiters();
+  }
+
+  private waitForTransition(signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal, this.abortMessage);
+    return new Promise<void>((resolve, reject) => {
       const onAbort = (): void => {
         if (!this.waiters.delete(waiter)) return;
         this.removeAbortListener(waiter);
@@ -60,19 +72,12 @@ export class ProviderTransitionFence {
     });
   }
 
-  dispose(): void {
-    if (this.disposed) return;
-    this.disposed = true;
-    this.transitionDepth = 0;
-    this.releaseWaiters(false);
-  }
-
-  private releaseWaiters(available: boolean): void {
+  private releaseWaiters(): void {
     const waiters = [...this.waiters];
     this.waiters.clear();
     for (const waiter of waiters) {
       this.removeAbortListener(waiter);
-      waiter.resolve(available);
+      waiter.resolve();
     }
   }
 
