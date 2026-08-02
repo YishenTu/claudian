@@ -1,14 +1,7 @@
-import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 
-import {
-  resolveWindowsCmdShimSpawnSpec,
-  terminateSpawnedProcess,
-  type WindowsCmdShimSpawnSpec,
-} from '../../utils/windowsCmdShim';
+import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 
-const SIGKILL_TIMEOUT_MS = 3_000;
-const FINAL_SHUTDOWN_TIMEOUT_MS = 3_000;
 const STDERR_BUFFER_LIMIT = 8_000;
 
 export interface AcpSubprocessLaunchSpec {
@@ -24,57 +17,18 @@ export class AcpSubprocess {
   private closeError: Error | null = null;
   private readonly closeListeners = new Set<CloseListener>();
   private notifiedClose = false;
-  private proc: ChildProcessWithoutNullStreams | null = null;
-  private resolvedSpawnSpec: WindowsCmdShimSpawnSpec | null = null;
-  private stderrBuffer = '';
+  private readonly process: ManagedStdioProcess;
 
-  constructor(private readonly launchSpec: AcpSubprocessLaunchSpec) {}
-
-  get stdin(): Writable {
-    return this.requireProc().stdin;
-  }
-
-  get stdout(): Readable {
-    return this.requireProc().stdout;
-  }
-
-  get stderr(): Readable {
-    return this.requireProc().stderr;
-  }
-
-  private requireProc(): ChildProcessWithoutNullStreams {
-    if (!this.proc) {
-      throw new Error('ACP subprocess is not started');
-    }
-    return this.proc;
-  }
-
-  start(): void {
-    if (this.proc) {
-      return;
-    }
-
-    const resolvedSpawnSpec = resolveWindowsCmdShimSpawnSpec(this.launchSpec);
-    this.resolvedSpawnSpec = resolvedSpawnSpec;
-    const proc = spawn(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
-      cwd: this.launchSpec.cwd,
-      env: this.launchSpec.env,
-      stdio: 'pipe',
-      windowsHide: true,
-      ...(resolvedSpawnSpec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
+  constructor(launchSpec: AcpSubprocessLaunchSpec) {
+    this.process = new ManagedStdioProcess({
+      ...launchSpec,
+      stderrBufferLimit: STDERR_BUFFER_LIMIT,
     });
-
-    proc.stderr.on('data', (chunk: Buffer | string) => {
-      const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
-      this.stderrBuffer = `${this.stderrBuffer}${text}`.slice(-STDERR_BUFFER_LIMIT);
-    });
-
-    proc.on('error', (error) => {
+    this.process.onError((error) => {
       this.closeError = error;
       this.notifyClose(error);
     });
-
-    proc.on('exit', (code, signal) => {
+    this.process.onExit(({ code, signal }) => {
       const exitError = this.closeError ?? (
         code === 0 && signal === null
           ? undefined
@@ -82,16 +36,33 @@ export class AcpSubprocess {
       );
       this.notifyClose(exitError);
     });
+  }
 
-    this.proc = proc;
+  get stdin(): Writable {
+    this.assertStarted();
+    return this.process.stdin;
+  }
+
+  get stdout(): Readable {
+    this.assertStarted();
+    return this.process.stdout;
+  }
+
+  get stderr(): Readable {
+    this.assertStarted();
+    return this.process.stderr;
+  }
+
+  start(): void {
+    this.process.start();
   }
 
   isAlive(): boolean {
-    return this.proc !== null && this.proc.exitCode === null && !this.proc.killed;
+    return this.process.isAlive();
   }
 
   getStderrSnapshot(): string {
-    return this.stderrBuffer.trim();
+    return this.process.getStderrSnapshot();
   }
 
   onClose(listener: CloseListener): () => void {
@@ -101,60 +72,32 @@ export class AcpSubprocess {
     };
   }
 
-  async shutdown(): Promise<void> {
-    if (!this.proc || this.proc.exitCode !== null) {
-      return;
-    }
-
-    await new Promise<void>((resolve) => {
-      const proc = this.proc!;
-      let killTimer: number | null = null;
-      let finalTimer: number | null = null;
-      const onClose = () => {
-        cleanup();
-        resolve();
-      };
-      killTimer = window.setTimeout(() => {
-        this.killProc(proc, 'SIGKILL');
-        finalTimer = window.setTimeout(onClose, FINAL_SHUTDOWN_TIMEOUT_MS);
-      }, SIGKILL_TIMEOUT_MS);
-      const cleanup = () => {
-        if (killTimer !== null) window.clearTimeout(killTimer);
-        if (finalTimer !== null) window.clearTimeout(finalTimer);
-        proc.off('exit', onClose);
-      };
-
-      proc.once('exit', onClose);
-      this.killProc(proc, 'SIGTERM');
-    });
+  shutdown(): Promise<void> {
+    return this.process.shutdown();
   }
 
-  private killProc(proc: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): boolean {
-    return terminateSpawnedProcess(proc, signal, spawn, this.resolvedSpawnSpec);
+  private assertStarted(): void {
+    if (!this.process.isStarted()) {
+      throw new Error('ACP subprocess is not started');
+    }
   }
 
   private notifyClose(error?: Error): void {
-    if (this.notifiedClose) {
-      return;
-    }
-
+    if (this.notifiedClose) return;
     this.notifiedClose = true;
-    for (const listener of this.closeListeners) {
+    for (const listener of [...this.closeListeners]) {
       try {
         listener(error);
       } catch {
-        // Best-effort cleanup notification.
+        // Close observers cannot interrupt provider cleanup.
       }
     }
+    this.closeListeners.clear();
   }
 }
 
 function formatExit(code: number | null, signal: string | null): string {
-  if (signal) {
-    return `signal ${signal}`;
-  }
-  if (code === null) {
-    return 'unknown';
-  }
+  if (signal) return `signal ${signal}`;
+  if (code === null) return 'unknown';
   return `code ${code}`;
 }

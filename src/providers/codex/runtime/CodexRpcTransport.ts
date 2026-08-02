@@ -1,15 +1,13 @@
-import { createInterface } from 'readline';
+import {
+  JsonRpcErrorResponse,
+  type JsonRpcRequestId,
+  JsonRpcTransport,
+} from '@/core/rpc/JsonRpcTransport';
 
 import type { CodexAppServerProcess } from './CodexAppServerProcess';
 import type { JsonRpcError } from './codexAppServerTypes';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-
-interface PendingRequest {
-  resolve: (result: unknown) => void;
-  reject: (error: Error) => void;
-  timer: number | null;
-}
 
 type NotificationHandler = (params: unknown) => void;
 type ServerRequestHandler = (requestId: string | number, params: unknown) => Promise<unknown>;
@@ -27,170 +25,117 @@ export class CodexRpcResponseError extends Error {
 }
 
 export class CodexRpcTransport {
-  private nextId = 1;
-  private pending = new Map<number, PendingRequest>();
-  private notificationHandlers = new Map<string, NotificationHandler>();
-  private serverRequestHandlers = new Map<string, ServerRequestHandler>();
   private disposed = false;
+  private readonly notificationHandlers = new Map<string, NotificationHandler>();
+  private readonly notificationUnsubscribers = new Map<string, () => void>();
+  private readonly serverRequestHandlers = new Map<string, ServerRequestHandler>();
+  private readonly serverRequestUnsubscribers = new Map<string, () => void>();
+  private transport: JsonRpcTransport | null = null;
 
   constructor(private readonly proc: CodexAppServerProcess) {}
 
   start(): void {
-    const rl = createInterface({ input: this.proc.stdout });
-    rl.on('line', (line) => this.handleLine(line));
+    if (this.transport || this.disposed) return;
 
-    this.proc.onExit(() => {
-      this.rejectAllPending(new Error(this.buildProcessExitMessage()));
+    const transport = new JsonRpcTransport({
+      input: this.proc.stdout,
+      onClose: (listener) => {
+        const exitHandler = (): void => {
+          listener(new Error(this.buildProcessExitMessage()));
+        };
+        this.proc.onExit(exitHandler);
+        return () => this.proc.offExit(exitHandler);
+      },
+      output: this.proc.stdin,
     });
+    this.transport = transport;
+
+    for (const [method, handler] of this.notificationHandlers) {
+      this.registerNotificationHandler(transport, method, handler);
+    }
+    for (const [method, handler] of this.serverRequestHandlers) {
+      this.registerServerRequestHandler(transport, method, handler);
+    }
+    transport.start();
   }
 
-  request<T = unknown>(method: string, params: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
-    if (this.disposed) {
-      return Promise.reject(new Error('Transport disposed'));
+  async request<T = unknown>(
+    method: string,
+    params: unknown,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  ): Promise<T> {
+    if (this.disposed) throw new Error('Transport disposed');
+    this.start();
+
+    try {
+      return await this.transport!.request<T>(method, params, { timeoutMs });
+    } catch (error) {
+      if (error instanceof JsonRpcErrorResponse) {
+        throw new CodexRpcResponseError({
+          code: error.code,
+          data: error.data,
+          message: error.message,
+        });
+      }
+      throw error;
     }
-    const id = this.nextId++;
-    const msg = { jsonrpc: '2.0' as const, id, method, params };
-
-    return new Promise<T>((resolve, reject) => {
-      const timer = timeoutMs > 0
-        ? window.setTimeout(() => {
-          this.pending.delete(id);
-          reject(new Error(`Request timeout: ${method} (${timeoutMs}ms)`));
-        }, timeoutMs)
-        : null;
-
-      const resolvePending = (result: unknown): void => {
-        resolve(result as T);
-      };
-
-      this.pending.set(id, {
-        resolve: resolvePending,
-        reject,
-        timer,
-      });
-
-      this.sendRaw(msg);
-    });
   }
 
   notify(method: string, params?: unknown): void {
-    const msg: Record<string, unknown> = { jsonrpc: '2.0', method };
-    if (params !== undefined) msg.params = params;
-    this.sendRaw(msg);
+    if (this.disposed) return;
+    this.start();
+    this.transport!.notify(method, params);
   }
 
   onNotification(method: string, handler: NotificationHandler): void {
     this.notificationHandlers.set(method, handler);
+    if (this.transport) {
+      this.registerNotificationHandler(this.transport, method, handler);
+    }
   }
 
   onServerRequest(method: string, handler: ServerRequestHandler): void {
     this.serverRequestHandlers.set(method, handler);
+    if (this.transport) {
+      this.registerServerRequestHandler(this.transport, method, handler);
+    }
   }
 
   dispose(): void {
-    this.disposed = true;
-    this.rejectAllPending(new Error('Transport disposed'));
-  }
-
-  // -----------------------------------------------------------------------
-  // Private
-  // -----------------------------------------------------------------------
-
-  private sendRaw(msg: unknown): void {
     if (this.disposed) return;
-    this.proc.stdin.write(JSON.stringify(msg) + '\n');
+    this.disposed = true;
+    this.clearUnsubscribers(this.notificationUnsubscribers);
+    this.clearUnsubscribers(this.serverRequestUnsubscribers);
+    this.transport?.dispose(new Error('Transport disposed'));
+    this.transport = null;
+    this.notificationHandlers.clear();
+    this.serverRequestHandlers.clear();
   }
 
-  private handleLine(line: string): void {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line) as unknown;
-    } catch {
-      return; // malformed line
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return;
-    }
-    const msg = parsed as Record<string, unknown>;
-
-    const id = msg.id as string | number | undefined;
-    const method = msg.method as string | undefined;
-
-    // Server response to our request
-    if (typeof id === 'number' && !method) {
-      this.handleResponse(id, msg);
-      return;
-    }
-
-    // Server notification (no id, has method)
-    if (method && id === undefined) {
-      this.handleNotification(method, msg.params);
-      return;
-    }
-
-    // Server-initiated request (has both id and method)
-    if (method && id !== undefined) {
-      this.handleServerRequest(id, method, msg.params);
-      return;
-    }
+  private registerNotificationHandler(
+    transport: JsonRpcTransport,
+    method: string,
+    handler: NotificationHandler,
+  ): void {
+    this.notificationUnsubscribers.get(method)?.();
+    this.notificationUnsubscribers.set(method, transport.onNotification(method, handler));
   }
 
-  private handleResponse(id: number, msg: Record<string, unknown>): void {
-    const pending = this.pending.get(id);
-    if (!pending) return;
-
-    this.pending.delete(id);
-    if (pending.timer) window.clearTimeout(pending.timer);
-
-    if (msg.error) {
-      const err = msg.error as JsonRpcError;
-      pending.reject(new CodexRpcResponseError(err));
-    } else {
-      pending.resolve(msg.result);
-    }
+  private registerServerRequestHandler(
+    transport: JsonRpcTransport,
+    method: string,
+    handler: ServerRequestHandler,
+  ): void {
+    this.serverRequestUnsubscribers.get(method)?.();
+    this.serverRequestUnsubscribers.set(method, transport.onRequest(
+      method,
+      (params, context) => handler(context.requestId as Exclude<JsonRpcRequestId, null>, params),
+    ));
   }
 
-  private handleNotification(method: string, params: unknown): void {
-    const handler = this.notificationHandlers.get(method);
-    if (!handler) return;
-    try {
-      handler(params);
-    } catch {
-      // Notification failures are non-fatal to the transport.
-    }
-  }
-
-  private handleServerRequest(id: string | number, method: string, params: unknown): void {
-    const handler = this.serverRequestHandlers.get(method);
-    if (!handler) {
-      this.sendRaw({
-        jsonrpc: '2.0',
-        id,
-        error: { code: -32601, message: `Unhandled server request: ${method}` },
-      });
-      return;
-    }
-
-    Promise.resolve().then(() => handler(id, params)).then(
-      (result) => {
-        this.sendRaw({ jsonrpc: '2.0', id, result });
-      },
-      (err) => {
-        this.sendRaw({
-          jsonrpc: '2.0',
-          id,
-          error: { code: -32603, message: err instanceof Error ? err.message : 'Internal error' },
-        });
-      },
-    );
-  }
-
-  private rejectAllPending(error: Error): void {
-    for (const [, pending] of this.pending) {
-      if (pending.timer) window.clearTimeout(pending.timer);
-      pending.reject(error);
-    }
-    this.pending.clear();
+  private clearUnsubscribers(unsubscribers: Map<string, () => void>): void {
+    for (const unsubscribe of unsubscribers.values()) unsubscribe();
+    unsubscribers.clear();
   }
 
   private buildProcessExitMessage(): string {

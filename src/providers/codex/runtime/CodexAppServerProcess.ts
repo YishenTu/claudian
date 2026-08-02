@@ -1,86 +1,65 @@
-import { type ChildProcess, spawn } from 'child_process';
-import type { Readable, Writable } from 'stream';
+import type { Readable, Writable } from 'node:stream';
 
-import {
-  resolveWindowsCmdShimSpawnSpec,
-  terminateSpawnedProcess,
-  type WindowsCmdShimSpawnSpec,
-} from '../../../utils/windowsCmdShim';
+import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
+
 import type { CodexLaunchSpec } from './codexLaunchTypes';
 
-const SIGKILL_TIMEOUT_MS = 3_000;
-const FINAL_SHUTDOWN_TIMEOUT_MS = 3_000;
 const STDERR_BUFFER_LIMIT = 8_192;
 
 type ExitCallback = (code: number | null, signal: string | null) => void;
 
 export class CodexAppServerProcess {
-  private proc: ChildProcess | null = null;
-  private alive = false;
-  private exitCallbacks: ExitCallback[] = [];
-  private resolvedSpawnSpec: WindowsCmdShimSpawnSpec | null = null;
-  private stderrBuffer = '';
+  private readonly exitCallbacks: ExitCallback[] = [];
+  private readonly process: ManagedStdioProcess;
 
   constructor(
-    private readonly launchSpec: Pick<CodexLaunchSpec, 'command' | 'args' | 'spawnCwd' | 'env'>,
-  ) {}
-
-  start(): void {
-    const resolvedSpawnSpec = resolveWindowsCmdShimSpawnSpec(this.launchSpec);
-    this.resolvedSpawnSpec = resolvedSpawnSpec;
-
-    this.proc = spawn(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
+    launchSpec: Pick<CodexLaunchSpec, 'command' | 'args' | 'spawnCwd' | 'env'>,
+  ) {
+    this.process = new ManagedStdioProcess({
+      args: launchSpec.args,
+      command: launchSpec.command,
+      cwd: launchSpec.spawnCwd,
+      env: launchSpec.env,
+      stderrBufferLimit: STDERR_BUFFER_LIMIT,
       stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: this.launchSpec.spawnCwd,
-      env: this.launchSpec.env,
-      windowsHide: true,
-      ...(resolvedSpawnSpec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     });
-
-    this.alive = true;
-
-    this.proc.on('exit', () => {
-      this.alive = false;
-    });
-
-    this.proc.on('close', (code, signal) => {
-      this.alive = false;
-      for (const cb of this.exitCallbacks) {
-        cb(code, signal);
+    this.process.onClose(({ code, signal }) => {
+      for (const callback of [...this.exitCallbacks]) {
+        try {
+          callback(code, signal);
+        } catch {
+          // Exit observers cannot interrupt process cleanup.
+        }
       }
-    });
-
-    this.proc.on('error', () => {
-      this.alive = false;
-    });
-
-    this.proc.stderr?.on('data', (chunk: Buffer | string) => {
-      const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
-      this.stderrBuffer = `${this.stderrBuffer}${text}`.slice(-STDERR_BUFFER_LIMIT);
+      this.exitCallbacks.length = 0;
     });
   }
 
   get stdin(): Writable {
-    if (!this.proc?.stdin) throw new Error('Process not started');
-    return this.proc.stdin;
+    this.assertStarted();
+    return this.process.stdin;
   }
 
   get stdout(): Readable {
-    if (!this.proc?.stdout) throw new Error('Process not started');
-    return this.proc.stdout;
+    this.assertStarted();
+    return this.process.stdout;
   }
 
   get stderr(): Readable {
-    if (!this.proc?.stderr) throw new Error('Process not started');
-    return this.proc.stderr;
+    this.assertStarted();
+    return this.process.stderr;
+  }
+
+  start(): void {
+    this.process.start();
   }
 
   isAlive(): boolean {
-    return this.alive;
+    return this.process.isAlive();
   }
 
   getStderrSnapshot(): string {
-    return this.stderrBuffer.trim();
+    return this.process.getStderrSnapshot();
   }
 
   onExit(callback: ExitCallback): void {
@@ -88,45 +67,17 @@ export class CodexAppServerProcess {
   }
 
   offExit(callback: ExitCallback): void {
-    const idx = this.exitCallbacks.indexOf(callback);
-    if (idx !== -1) this.exitCallbacks.splice(idx, 1);
+    const index = this.exitCallbacks.indexOf(callback);
+    if (index !== -1) this.exitCallbacks.splice(index, 1);
   }
 
-  async shutdown(): Promise<void> {
-    if (!this.proc || !this.alive) return;
-
-    return new Promise<void>((resolve) => {
-      let killTimer: number | null = null;
-      let finalTimer: number | null = null;
-      const cleanup = () => {
-        if (killTimer !== null) window.clearTimeout(killTimer);
-        if (finalTimer !== null) window.clearTimeout(finalTimer);
-        this.proc?.off('exit', onExit);
-      };
-      const finish = () => {
-        cleanup();
-        resolve();
-      };
-      const onExit = () => {
-        finish();
-      };
-
-      this.proc!.once('exit', onExit);
-      this.killProc('SIGTERM');
-
-      killTimer = window.setTimeout(() => {
-        if (this.alive) {
-          this.killProc('SIGKILL');
-        }
-        finalTimer = window.setTimeout(finish, FINAL_SHUTDOWN_TIMEOUT_MS);
-      }, SIGKILL_TIMEOUT_MS);
-    });
+  shutdown(): Promise<void> {
+    return this.process.shutdown();
   }
 
-  private killProc(signal: NodeJS.Signals): boolean {
-    if (!this.proc) {
-      return false;
+  private assertStarted(): void {
+    if (!this.process.isStarted()) {
+      throw new Error('Process not started');
     }
-    return terminateSpawnedProcess(this.proc, signal, spawn, this.resolvedSpawnSpec);
   }
 }

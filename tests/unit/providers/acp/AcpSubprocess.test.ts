@@ -120,4 +120,22 @@ describe('AcpSubprocess', () => {
     expect(proc.kill).toHaveBeenCalledWith('SIGKILL');
     jest.useRealTimers();
   });
+
+  it('shares one shutdown sequence across repeated calls', async () => {
+    const subprocess = new AcpSubprocess({
+      args: ['acp', '--cwd=/vault'],
+      command: 'opencode',
+      cwd: '/vault',
+      env: {},
+    });
+    subprocess.start();
+
+    const first = subprocess.shutdown();
+    const second = subprocess.shutdown();
+    expect(proc.kill).toHaveBeenCalledTimes(1);
+
+    proc.exitCode = 0;
+    proc.emit('exit', 0, 'SIGTERM');
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+  });
 });

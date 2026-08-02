@@ -140,6 +140,28 @@ describe('AcpJsonRpcTransport', () => {
     });
   });
 
+  it('exposes the native request ID to server-request handlers', async () => {
+    harness.transport.start();
+    const handler = jest.fn().mockResolvedValue({ content: 'ok' });
+    harness.transport.onRequest('fs/read_text_file', handler);
+
+    harness.sendInbound({
+      id: 'native-acp-id',
+      jsonrpc: '2.0',
+      method: 'fs/read_text_file',
+      params: { path: '/tmp/file.ts' },
+    });
+
+    await expect(harness.nextOutbound()).resolves.toMatchObject({
+      id: 'native-acp-id',
+      result: { content: 'ok' },
+    });
+    expect(handler).toHaveBeenCalledWith(
+      { path: '/tmp/file.ts' },
+      { method: 'fs/read_text_file', requestId: 'native-acp-id' },
+    );
+  });
+
   it('rejects pending requests when disposed', async () => {
     const requestPromise = harness.transport.request('session/prompt', {
       prompt: [{ text: 'hi', type: 'text' }],

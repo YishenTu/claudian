@@ -27,6 +27,7 @@ function createMockServerProcess(): CodexAppServerProcess & {
     stderr: new Readable({ read() {} }),
     isAlive: jest.fn().mockReturnValue(true),
     onExit: jest.fn(),
+    offExit: jest.fn(),
     getStderrSnapshot: jest.fn().mockReturnValue(''),
     _stdout: stdout,
     _stdin: stdin,
@@ -248,6 +249,18 @@ describe('CodexRpcTransport', () => {
 
     await expect(transport.request('after/dispose', {}, 0)).rejects.toThrow('Transport disposed');
     expect(proc._written).toEqual([]);
+  });
+
+  it('starts once and unregisters its process exit listener during repeated disposal', () => {
+    transport.start();
+    expect(proc.onExit).toHaveBeenCalledTimes(1);
+
+    const exitHandler = (proc.onExit as jest.Mock).mock.calls[0][0];
+    transport.dispose();
+    transport.dispose();
+
+    expect(proc.offExit).toHaveBeenCalledTimes(1);
+    expect(proc.offExit).toHaveBeenCalledWith(exitHandler);
   });
 
   describe('cleanup on process exit', () => {
