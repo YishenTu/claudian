@@ -129,12 +129,10 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
           });
           clearCurrentGrokCatalog(settings);
         };
-        await context.plugin.runProviderExecutionTransition(
+        await context.plugin.applyProviderRuntimeSettings(
           [GROK_PROVIDER_ID],
-          async () => {
-            await context.plugin.mutateSettings(mutation);
-            workspace.cliResolver.reset();
-          },
+          mutation,
+          () => workspace.cliResolver.reset(),
         );
         modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
       },

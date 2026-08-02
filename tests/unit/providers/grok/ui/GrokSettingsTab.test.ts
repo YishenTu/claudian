@@ -269,6 +269,14 @@ function createPlugin(): any {
       },
     },
   };
+  plugin.applyProviderRuntimeSettings = jest.fn(async (
+    providerIds: string[],
+    mutation: (settings: Record<string, unknown>) => void | Promise<void>,
+    onApplied?: () => void | Promise<void>,
+  ) => plugin.runProviderExecutionTransition(providerIds, async () => {
+    await plugin.mutateSettings(mutation);
+    await onApplied?.();
+  }));
   return plugin;
 }
 
@@ -498,6 +506,11 @@ describe('GrokSettingsTab', () => {
     expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
       ['grok'],
+      expect.any(Function),
+    );
+    expect(plugin.applyProviderRuntimeSettings).toHaveBeenCalledWith(
+      ['grok'],
+      expect.any(Function),
       expect.any(Function),
     );
   });

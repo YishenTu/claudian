@@ -16,6 +16,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): ClaudianPlugin {
     getEnvironmentVariablesForScope: jest.fn(() => 'SHARED=value'),
     applyEnvironmentVariables: jest.fn(async () => undefined),
     applyEnvironmentVariablesBatch: jest.fn(async () => undefined),
+    applyProviderRuntimeSettings: jest.fn(async () => undefined),
     getResolvedProviderCliPath: jest.fn(() => '/usr/bin/provider'),
     runProviderExecutionTransition: jest.fn(
       async (_providerIds: string[], mutation: () => Promise<unknown>) => mutation(),
@@ -85,6 +86,22 @@ describe('ClaudianProviderHost', () => {
     expect(runProviderExecutionTransition).toHaveBeenCalledWith(
       ['opencode', 'claude'],
       mutation,
+    );
+  });
+
+  it('delegates atomic provider runtime settings changes', async () => {
+    const mutation = jest.fn();
+    const onApplied = jest.fn();
+    const applyProviderRuntimeSettings = jest.fn(async () => undefined);
+    const plugin = createPlugin({ applyProviderRuntimeSettings });
+    const host = new ClaudianProviderHost(plugin);
+
+    await host.applyProviderRuntimeSettings(['codex'], mutation, onApplied);
+
+    expect(applyProviderRuntimeSettings).toHaveBeenCalledWith(
+      ['codex'],
+      mutation,
+      onApplied,
     );
   });
 

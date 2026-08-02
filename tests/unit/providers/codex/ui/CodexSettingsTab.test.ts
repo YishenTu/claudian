@@ -381,6 +381,14 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
     await mutation(plugin.settings);
     await plugin.saveSettings();
   });
+  plugin.applyProviderRuntimeSettings = jest.fn(async (
+    providerIds: string[],
+    mutation: (settings: any) => void | Promise<void>,
+    onApplied?: () => void | Promise<void>,
+  ) => plugin.runProviderExecutionTransition(providerIds, async () => {
+    await plugin.mutateSettings(mutation);
+    await onApplied?.();
+  }));
   return plugin;
 }
 
@@ -728,6 +736,7 @@ describe('CodexSettingsTab', () => {
       ['codex'],
       expect.any(Function),
     );
+    expect(plugin.applyProviderRuntimeSettings).toHaveBeenCalledTimes(2);
     expect(mockCodexCliResolverReset).toHaveBeenCalledTimes(2);
     expect(mockRefreshModelCatalog).toHaveBeenCalledTimes(1);
   });

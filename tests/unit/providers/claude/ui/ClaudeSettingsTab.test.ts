@@ -392,6 +392,14 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
     await mutation(plugin.settings);
     await plugin.saveSettings();
   });
+  plugin.applyProviderRuntimeSettings = jest.fn(async (
+    providerIds: string[],
+    mutation: (settings: any) => void | Promise<void>,
+    onApplied?: () => void | Promise<void>,
+  ) => plugin.runProviderExecutionTransition(providerIds, async () => {
+    await plugin.mutateSettings(mutation);
+    await onApplied?.();
+  }));
   return plugin;
 }
 
@@ -533,6 +541,11 @@ describe('ClaudeSettingsTab', () => {
 
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
       ['claude'],
+      expect.any(Function),
+    );
+    expect(plugin.applyProviderRuntimeSettings).toHaveBeenCalledWith(
+      ['claude'],
+      expect.any(Function),
       expect.any(Function),
     );
     expect(plugin.settings.providerConfigs.claude.cliPathsByHost).toEqual({

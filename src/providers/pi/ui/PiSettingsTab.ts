@@ -98,15 +98,16 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
           delete cliPathsByHost[hostnameKey];
         }
 
-        await context.plugin.runProviderExecutionTransition(['pi'], async () => {
-          await context.plugin.mutateSettings((settings) => {
+        await context.plugin.applyProviderRuntimeSettings(
+          ['pi'],
+          (settings) => {
             updatePiProviderSettings(settings, {
               cliPathsByHost,
               discoveredModels: [],
             });
-          });
-          workspace?.cliResolver?.reset();
-        });
+          },
+          () => workspace?.cliResolver?.reset(),
+        );
         context.notifyProviderModelOptionsChanged('pi');
       },
       placeholder: process.platform === 'win32'

@@ -73,6 +73,14 @@ export class ClaudianProviderHost implements ProviderHost {
     return this.plugin.applyEnvironmentVariablesBatch(updates);
   }
 
+  applyProviderRuntimeSettings(
+    providerIds: ProviderId[],
+    mutation: (settings: typeof this.plugin.settings) => void | Promise<void>,
+    onApplied?: () => void | Promise<void>,
+  ): Promise<void> {
+    return this.plugin.applyProviderRuntimeSettings(providerIds, mutation, onApplied);
+  }
+
   async getResolvedProviderCliPath(
     providerId: ProviderId,
     context?: ProviderCliResolutionContext,

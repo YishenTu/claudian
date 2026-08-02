@@ -98,12 +98,13 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
             .setValue(installationMethod)
             .onChange(async (value) => {
               installationMethod = value === 'wsl' ? 'wsl' : 'native-windows';
-              await context.plugin.runProviderExecutionTransition(['codex'], async () => {
-                await context.plugin.mutateSettings((settings) => {
+              await context.plugin.applyProviderRuntimeSettings(
+                ['codex'],
+                (settings) => {
                   updateCodexProviderSettings(settings, { installationMethod });
-                });
-                codexWorkspace.cliResolver.reset();
-              });
+                },
+                () => codexWorkspace.cliResolver.reset(),
+              );
               refreshInstallationMethodUI();
               await refreshCodexModelCatalog();
             });
@@ -174,12 +175,13 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
           delete cliPathsByHost[hostnameKey];
         }
 
-        await context.plugin.runProviderExecutionTransition(['codex'], async () => {
-          await context.plugin.mutateSettings((settings) => {
+        await context.plugin.applyProviderRuntimeSettings(
+          ['codex'],
+          (settings) => {
             updateCodexProviderSettings(settings, { cliPathsByHost });
-          });
-          codexWorkspace.cliResolver.reset();
-        });
+          },
+          () => codexWorkspace.cliResolver.reset(),
+        );
       },
       placeholder: getCliPathCopy().placeholder,
       validate: validatePath,
@@ -209,12 +211,13 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
           .setPlaceholder('Ubuntu')
           .setValue(codexSettings.wslDistroOverride)
           .onChange(async (value) => {
-            await context.plugin.runProviderExecutionTransition(['codex'], async () => {
-              await context.plugin.mutateSettings((settings) => {
+            await context.plugin.applyProviderRuntimeSettings(
+              ['codex'],
+              (settings) => {
                 updateCodexProviderSettings(settings, { wslDistroOverride: value });
-              });
-              codexWorkspace.cliResolver.reset();
-            });
+              },
+              () => codexWorkspace.cliResolver.reset(),
+            );
           });
 
         text.inputEl.addClass('claudian-settings-cli-path-input');

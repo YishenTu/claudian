@@ -3,12 +3,17 @@ import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersi
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { SessionStorage } from '@/providers/claude/storage/SessionStorage';
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
+import {
+  getCodexProviderSettings,
+  updateCodexProviderSettings,
+} from '@/providers/codex/settings';
 import { computeGrokEnvironmentHash } from '@/providers/grok/env/GrokSettingsReconciler';
 import { GrokCliResolver } from '@/providers/grok/runtime/GrokCliResolver';
 import { GrokModelCatalogCoordinator } from '@/providers/grok/runtime/GrokModelCatalogCoordinator';
@@ -18,6 +23,7 @@ import {
   updateCurrentGrokCatalog,
   updateGrokProviderSettings,
 } from '@/providers/grok/settings';
+import { getHostnameKey } from '@/utils/env';
 
 // Mock fs for ClaudianService
 jest.mock('fs');
@@ -55,7 +61,7 @@ describe('ClaudianPlugin', () => {
   function mockMetadataSources(
     ...metadata: Array<{
       id: string;
-      providerId: 'claude';
+      providerId: 'claude' | 'codex';
       title: string;
       createdAt: number;
       updatedAt: number;
@@ -2039,6 +2045,166 @@ describe('ClaudianPlugin', () => {
         .toBe(initialGeneration + 1);
       expect(mockView.getTabManager).not.toHaveBeenCalled();
       expect(plugin.getConversationSync(conversation.id)?.sessionId).toBeNull();
+    });
+  });
+
+  describe('applyProviderRuntimeSettings', () => {
+    it('persists a CLI fingerprint and restart-safe session invalidation atomically', async () => {
+      const settingsPath = '.claudian/claudian-settings.json';
+      const deferredMetadata = {
+        id: 'runtime-settings-restart-session',
+        providerId: 'codex' as const,
+        title: 'Runtime settings restart session',
+        createdAt: 1,
+        updatedAt: 2,
+        sessionId: 'codex-thread-id',
+        providerState: { threadId: 'codex-thread-id' },
+      };
+      const files = installVaultFiles({
+        [settingsPath]: JSON.stringify({
+          model: '',
+          providerConfigs: {
+            codex: {
+              enabled: true,
+              environmentHash: '',
+              environmentVariables: '',
+            },
+          },
+          settingsProvider: 'codex',
+        }),
+      });
+
+      await plugin.onload();
+      (plugin as any).hasLoadedAllSessionMetadata = false;
+      const hostnameKey = getHostnameKey();
+      await plugin.applyProviderRuntimeSettings(['codex'], (settings) => {
+        updateCodexProviderSettings(settings, {
+          cliPathsByHost: { [hostnameKey]: '/custom/codex' },
+        });
+      });
+
+      const firstRunSettings = JSON.parse(files.get(settingsPath) ?? '{}');
+      const fingerprint = firstRunSettings.providerConfigs.codex.environmentHash;
+      expect(firstRunSettings.providerConfigs.codex.cliPathsByHost).toEqual({
+        [hostnameKey]: '/custom/codex',
+      });
+      expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
+      expect(firstRunSettings.pendingProviderSessionInvalidations?.codex)
+        .toEqual(expect.any(Number));
+
+      plugin.onunload();
+      const restartedPlugin = new ClaudianPlugin(mockApp, mockManifest);
+      (restartedPlugin.loadData as jest.Mock).mockResolvedValue({});
+      const saveMetadataSpy = jest.spyOn(
+        ConversationPersistenceStore.prototype,
+        'saveMetadata',
+      );
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+        .mockImplementation(async (options) => {
+          options?.onBatch?.([deferredMetadata]);
+          return {
+            metadata: [deferredMetadata],
+            complete: true,
+            invalidMetadataCount: 0,
+          };
+        });
+      const loadSourceSpy = mockMetadataSources(deferredMetadata);
+
+      await restartedPlugin.onload();
+      await (restartedPlugin as any).loadRemainingSessionMetadata();
+
+      const restartedConversation = restartedPlugin.getCachedConversation(deferredMetadata.id);
+      const persistedMetadata = JSON.parse(
+        files.get('.claudian/sessions/runtime-settings-restart-session.meta.json') ?? '{}',
+      );
+      const restartedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
+      const invalidationWrites = saveMetadataSpy.mock.calls.filter(
+        ([metadata]) => metadata.id === deferredMetadata.id,
+      );
+      listSpy.mockRestore();
+      loadSourceSpy.mockRestore();
+      saveMetadataSpy.mockRestore();
+
+      expect(restartedConversation).toEqual(expect.objectContaining({
+        sessionId: null,
+        providerState: undefined,
+      }));
+      expect(persistedMetadata).toEqual(expect.objectContaining({
+        sessionId: null,
+      }));
+      expect(persistedMetadata).not.toHaveProperty('providerState');
+      expect(restartedSettings.providerConfigs.codex.environmentHash).toBe(fingerprint);
+      expect(restartedSettings.pendingProviderSessionInvalidations?.codex).toBeUndefined();
+      expect(invalidationWrites).toHaveLength(1);
+    });
+
+    it('advances the Grok fingerprint while preserving reload-policy sessions', async () => {
+      await plugin.onload();
+      const conversation = await plugin.createConversation({
+        providerId: 'grok',
+        sessionId: 'grok-session-id',
+      });
+      await plugin.updateConversation(conversation.id, {
+        providerState: { sessionDirectory: '/tmp/grok/session-id' },
+      });
+      const hostnameKey = getHostnameKey();
+
+      await plugin.applyProviderRuntimeSettings(['grok'], (settings) => {
+        updateGrokProviderSettings(settings, {
+          cliPathsByHost: { [hostnameKey]: '/custom/grok' },
+          enabled: true,
+        });
+      });
+
+      const grokSettings = getGrokProviderSettings(plugin.settings);
+      expect(grokSettings.environmentHash).toBe(computeGrokEnvironmentHash(plugin.settings));
+      expect(plugin.getConversationSync(conversation.id)).toEqual(expect.objectContaining({
+        sessionId: 'grok-session-id',
+        providerState: { sessionDirectory: '/tmp/grok/session-id' },
+      }));
+      expect(ProviderSettingsCoordinator.reconcileProviders(
+        plugin.settings,
+        [conversation],
+        ['grok'],
+      ).changed).toBe(false);
+    });
+
+    it('finishes durable invalidation when a post-commit apply hook fails', async () => {
+      await plugin.onload();
+      (plugin as any).hasLoadedAllSessionMetadata = true;
+      const conversation = await plugin.createConversation({
+        providerId: 'codex',
+        sessionId: 'post-commit-thread',
+      });
+      await plugin.updateConversation(conversation.id, {
+        providerState: { threadId: 'post-commit-thread' },
+      });
+      const hostnameKey = getHostnameKey();
+
+      await expect(plugin.applyProviderRuntimeSettings(
+        ['codex'],
+        (settings) => {
+          updateCodexProviderSettings(settings, {
+            cliPathsByHost: { [hostnameKey]: '/custom/post-commit-codex' },
+          });
+        },
+        () => {
+          throw new Error('resolver reset failed');
+        },
+      )).rejects.toThrow('resolver reset failed');
+
+      const codexSettings = getCodexProviderSettings(plugin.settings);
+      expect(codexSettings.cliPathsByHost).toEqual({
+        [hostnameKey]: '/custom/post-commit-codex',
+      });
+      expect(isVersionedRuntimeInputFingerprint(
+        codexSettings.environmentHash,
+      )).toBe(true);
+      expect(plugin.getConversationSync(conversation.id)).toEqual(expect.objectContaining({
+        sessionId: null,
+        providerState: undefined,
+      }));
+      expect(plugin.settings.pendingProviderSessionInvalidations.codex).toBeUndefined();
     });
   });
 

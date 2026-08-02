@@ -339,16 +339,28 @@ function createContext(settings: Record<string, unknown>) {
     _providerIds: string[],
     mutation: () => Promise<void>,
   ) => mutation());
+  const mutateSettings = jest.fn(async (
+    mutation: (current: any) => void | Promise<void>,
+  ) => {
+    await mutation(settings);
+    await saveSettings();
+  });
+  const applyProviderRuntimeSettings = jest.fn(async (
+    providerIds: string[],
+    mutation: (current: any) => void | Promise<void>,
+    onApplied?: () => void | Promise<void>,
+  ) => runProviderExecutionTransition(providerIds, async () => {
+    await mutateSettings(mutation);
+    await onApplied?.();
+  }));
   return {
     plugin: {
+      applyProviderRuntimeSettings,
       notifyProviderChatOptionsChanged: jest.fn(),
       runProviderExecutionTransition,
       saveSettings,
       settings,
-      mutateSettings: jest.fn(async (mutation: (current: any) => void | Promise<void>) => {
-        await mutation(settings);
-        await saveSettings();
-      }),
+      mutateSettings,
     },
     renderAgentSkillSettings: jest.fn(),
     notifyProviderModelOptionsChanged: jest.fn(),
@@ -592,6 +604,11 @@ describe('PiSettingsTab', () => {
     expect(getPiProviderSettings(settings).cliPathsByHost).toEqual({
       'current-host': '/new/pi',
     });
+    expect(context.plugin.applyProviderRuntimeSettings).toHaveBeenCalledWith(
+      ['pi'],
+      expect.any(Function),
+      expect.any(Function),
+    );
   });
 
   it('resynchronizes the Pi CLI input when transition setup fails before mutation', async () => {

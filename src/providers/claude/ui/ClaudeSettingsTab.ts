@@ -123,12 +123,13 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           delete cliPathsByHost[hostnameKey];
         }
 
-        await context.plugin.runProviderExecutionTransition(['claude'], async () => {
-          await context.plugin.mutateSettings((settings) => {
+        await context.plugin.applyProviderRuntimeSettings(
+          ['claude'],
+          (settings) => {
             updateClaudeProviderSettings(settings, { cliPathsByHost });
-          });
-          claudeWorkspace.cliResolver.reset();
-        });
+          },
+          () => claudeWorkspace.cliResolver.reset(),
+        );
       },
       placeholder: process.platform === 'win32'
         ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli-wrapper.cjs'

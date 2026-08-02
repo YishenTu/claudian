@@ -106,13 +106,14 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           delete cliPathsByHost[hostnameKey];
         }
 
-        await context.plugin.runProviderExecutionTransition(['opencode'], async () => {
-          await context.plugin.mutateSettings((settings) => {
+        await context.plugin.applyProviderRuntimeSettings(
+          ['opencode'],
+          (settings) => {
             updateOpencodeProviderSettings(settings, { cliPathsByHost });
             clearOpencodeDiscoveryState(settings);
-          });
-          opencodeWorkspace?.cliResolver?.reset();
-        });
+          },
+          () => opencodeWorkspace?.cliResolver?.reset(),
+        );
       },
       placeholder: process.platform === 'win32'
         ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\opencode.cmd'

@@ -870,6 +870,130 @@ export default class ClaudianPlugin extends Plugin {
     await apply;
   }
 
+  async applyProviderRuntimeSettings(
+    providerIds: ProviderId[],
+    mutation: SettingsMutation<ClaudianSettings>,
+    onApplied?: () => void | Promise<void>,
+  ): Promise<void> {
+    const uniqueProviderIds = Array.from(new Set(providerIds));
+    await this.runProviderExecutionTransition(uniqueProviderIds, async () => {
+      await this.commitProviderRuntimeSettings(
+        uniqueProviderIds,
+        mutation,
+        {
+          failureMessage: 'Provider runtime settings change recovery failed.',
+          onSettingsCommitted: onApplied,
+        },
+      );
+    });
+  }
+
+  private async commitProviderRuntimeSettings(
+    providerIds: ProviderId[],
+    mutation: SettingsMutation<ClaudianSettings>,
+    options: {
+      failureMessage: string;
+      onInvalidationsPersisted?: (
+        reconciliation: SettingsReconciliationResult,
+      ) => void | Promise<void>;
+      onSettingsCommitted?: (
+        reconciliation: SettingsReconciliationResult,
+      ) => void | Promise<void>;
+    },
+  ): Promise<SettingsReconciliationResult> {
+    let reconciliation: SettingsReconciliationResult = {
+      changed: false,
+      environmentChangedProviderIds: [],
+      invalidatedConversations: [],
+      sessionInvalidationProviderIds: [],
+    };
+    let invalidationGenerations = new Map<ProviderId, number>();
+    let invalidationPublished = false;
+    let settingsCommitted = false;
+    const errors: unknown[] = [];
+
+    try {
+      await this.mutateSettings(async (settings) => {
+        await mutation(settings);
+        reconciliation = this.reconcileModelWithEnvironment(providerIds, false);
+        invalidationGenerations = this.stagePendingSessionInvalidations(
+          settings,
+          reconciliation.sessionInvalidationProviderIds,
+        );
+      }, () => {
+        this.commitPendingSessionInvalidations(invalidationGenerations);
+        this.blockEnvironmentInvalidationCompletion(invalidationGenerations);
+        ProviderSettingsCoordinator.invalidateConversationSessions(
+          this.conversationRepository.getAll(),
+          reconciliation.sessionInvalidationProviderIds,
+        );
+        invalidationPublished = true;
+      });
+      settingsCommitted = true;
+    } catch (error) {
+      if (error instanceof SettingsPostCommitError) {
+        settingsCommitted = true;
+        errors.push(error.cause);
+      } else {
+        errors.push(error);
+      }
+    }
+
+    if (settingsCommitted) {
+      try {
+        await options.onSettingsCommitted?.(reconciliation);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+
+    if (invalidationPublished && invalidationGenerations.size > 0) {
+      let invalidationMetadataPersisted = false;
+      try {
+        const invalidatedProviderIds = new Set(invalidationGenerations.keys());
+        const conversationsToPersist = this.conversationRepository.getAll().filter(
+          conversation => invalidatedProviderIds.has(conversation.providerId),
+        );
+        await this.conversationRepository.persistConversations(
+          conversationsToPersist.filter(
+            (conversation) =>
+              this.conversationRepository.getCachedConversation(conversation.id)
+              === conversation,
+          ),
+        );
+        invalidationMetadataPersisted = true;
+      } catch (error) {
+        errors.push(error);
+      }
+      if (invalidationMetadataPersisted) {
+        this.releaseEnvironmentInvalidationCompletion(invalidationGenerations);
+        if (this.hasLoadedAllSessionMetadata && !this.isUnloading) {
+          try {
+            await this.completePendingSessionInvalidations(invalidationGenerations);
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+      }
+    }
+
+    if (settingsCommitted) {
+      try {
+        await options.onInvalidationsPersisted?.(reconciliation);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, options.failureMessage);
+    }
+    return reconciliation;
+  }
+
   private async applyEnvironmentVariablesBatchNow(
     updates: Array<{ scope: EnvironmentScope; envText: string }>,
   ): Promise<void> {
@@ -889,13 +1013,10 @@ export default class ClaudianPlugin extends Plugin {
     const providersToQuiesce = this.getAffectedEnvironmentProviders(changedScopes);
     await this.runProviderExecutionTransition(providersToQuiesce, async () => {
       let affectedProviderIds: ProviderId[] = [];
-      let sessionInvalidationProviderIds: ProviderId[] = [];
-      let invalidationGenerations = new Map<ProviderId, number>();
-      let invalidationPublished = false;
-      let settingsCommitted = false;
-      const errors: unknown[] = [];
-      try {
-        await this.mutateSettings((settings) => {
+      const modelCatalogDiagnostics: string[] = [];
+      await this.commitProviderRuntimeSettings(
+        providersToQuiesce,
+        (settings) => {
           const settingsBag = settings as unknown as Record<string, unknown>;
           const changedScopes: EnvironmentScope[] = [];
           for (const [scope, envText] of nextEnvironmentByScope) {
@@ -907,113 +1028,51 @@ export default class ClaudianPlugin extends Plugin {
           }
           affectedProviderIds = this.getAffectedEnvironmentProviders(changedScopes);
           ProviderSettingsCoordinator.handleEnvironmentChange(settingsBag, affectedProviderIds);
-          const reconciliation = this.reconcileModelWithEnvironment(
-            affectedProviderIds,
-            false,
-          );
-          sessionInvalidationProviderIds = reconciliation.sessionInvalidationProviderIds;
-          invalidationGenerations = this.stagePendingSessionInvalidations(
-            settings,
-            sessionInvalidationProviderIds,
-          );
-        }, () => {
-          this.commitPendingSessionInvalidations(invalidationGenerations);
-          this.blockEnvironmentInvalidationCompletion(invalidationGenerations);
-          ProviderSettingsCoordinator.invalidateConversationSessions(
-            this.conversationRepository.getAll(),
-            sessionInvalidationProviderIds,
-          );
-          invalidationPublished = true;
-        });
-        settingsCommitted = true;
-      } catch (error) {
-        if (error instanceof SettingsPostCommitError) {
-          settingsCommitted = true;
-          errors.push(error.cause);
-        } else {
-          errors.push(error);
-        }
-      }
-
-      const modelCatalogDiagnostics: string[] = [];
-      if (settingsCommitted && affectedProviderIds.length > 0) {
-        try {
-          for (const providerId of affectedProviderIds) {
-            if (ProviderRegistry.isEnabled(providerId, this.settings)) {
-              const transitionOwner = { providerTransitionOwner: true } as const;
-              const result = await ProviderWorkspaceRegistry.refreshModelCatalog(
-                providerId,
-                transitionOwner,
-              );
-              if (result.diagnostics) {
-                modelCatalogDiagnostics.push(
-                  `${ProviderRegistry.getProviderDisplayName(providerId)}: ${result.diagnostics}`,
+        },
+        {
+          failureMessage: 'Environment change recovery failed.',
+          onSettingsCommitted: async () => {
+            if (affectedProviderIds.length === 0) {
+              return;
+            }
+            for (const providerId of affectedProviderIds) {
+              if (ProviderRegistry.isEnabled(providerId, this.settings)) {
+                const transitionOwner = { providerTransitionOwner: true } as const;
+                const result = await ProviderWorkspaceRegistry.refreshModelCatalog(
+                  providerId,
+                  transitionOwner,
+                );
+                if (result.diagnostics) {
+                  modelCatalogDiagnostics.push(
+                    `${ProviderRegistry.getProviderDisplayName(providerId)}: ${result.diagnostics}`,
+                  );
+                }
+                await ProviderWorkspaceRegistry.refreshAgentMentions(
+                  providerId,
+                  transitionOwner,
                 );
               }
-              await ProviderWorkspaceRegistry.refreshAgentMentions(
-                providerId,
-                transitionOwner,
-              );
             }
-          }
-        } catch (error) {
-          errors.push(error);
-        }
-
-        if (invalidationPublished && invalidationGenerations.size > 0) {
-          let invalidationMetadataPersisted = false;
-          try {
-            const invalidatedProviderIds = new Set(invalidationGenerations.keys());
-            const conversationsToPersist = this.conversationRepository.getAll().filter(
-              conversation => invalidatedProviderIds.has(conversation.providerId),
-            );
-            await this.conversationRepository.persistConversations(
-              conversationsToPersist.filter(
-                (conversation) =>
-                  this.conversationRepository.getCachedConversation(conversation.id)
-                  === conversation,
-              ),
-            );
-            invalidationMetadataPersisted = true;
-          } catch (error) {
-            errors.push(error);
-          }
-          if (invalidationMetadataPersisted) {
-            this.releaseEnvironmentInvalidationCompletion(invalidationGenerations);
-            if (this.hasLoadedAllSessionMetadata && !this.isUnloading) {
-              try {
-                await this.completePendingSessionInvalidations(invalidationGenerations);
-              } catch (error) {
-                errors.push(error);
-              }
+          },
+          onInvalidationsPersisted: (reconciliation) => {
+            if (affectedProviderIds.length === 0) {
+              return;
             }
-          }
-        }
+            for (const openView of this.getAllViews()) {
+              openView.invalidateProviderCommandCaches(affectedProviderIds);
+              openView.refreshModelSelector();
+            }
 
-        try {
-          for (const openView of this.getAllViews()) {
-            openView.invalidateProviderCommandCaches(affectedProviderIds);
-            openView.refreshModelSelector();
-          }
-        } catch (error) {
-          errors.push(error);
-        }
-
-        const noticeText = sessionInvalidationProviderIds.length > 0
-          ? 'Environment variables applied. Sessions will be rebuilt on next message.'
-          : 'Environment variables applied.';
-        new Notice(noticeText);
-        if (modelCatalogDiagnostics.length > 0) {
-          new Notice(`Model catalog refresh failed:\n${modelCatalogDiagnostics.join('\n')}`);
-        }
-      }
-
-      if (errors.length === 1) {
-        throw errors[0];
-      }
-      if (errors.length > 1) {
-        throw new AggregateError(errors, 'Environment change recovery failed.');
-      }
+            const noticeText = reconciliation.sessionInvalidationProviderIds.length > 0
+              ? 'Environment variables applied. Sessions will be rebuilt on next message.'
+              : 'Environment variables applied.';
+            new Notice(noticeText);
+            if (modelCatalogDiagnostics.length > 0) {
+              new Notice(`Model catalog refresh failed:\n${modelCatalogDiagnostics.join('\n')}`);
+            }
+          },
+        },
+      );
     });
   }
 
