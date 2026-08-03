@@ -209,6 +209,10 @@ describe('ClaudianView tab controls', () => {
     const actions = header.querySelector('.claudian-session-header-actions');
     const newTabButton = actions?.children[0];
     const newSessionButton = actions?.children[1];
+    expect(newTabButton?.tagName).toBe('DIV');
+    expect(newSessionButton?.tagName).toBe('DIV');
+    expect(newTabButton?.getAttribute('role')).toBe('button');
+    expect(newSessionButton?.getAttribute('tabindex')).toBe('0');
     expect(newTabButton?.getAttribute('aria-label')).toBe('New tab');
     expect(newSessionButton?.getAttribute('aria-label')).toBe('New session');
 

@@ -666,23 +666,43 @@ export class ClaudianView extends ItemView {
     if (!header) return;
 
     const actions = header.createDiv({ cls: 'claudian-session-header-actions' });
-    this.sessionNewTabButtonEl = actions.createEl('button', {
-      cls: 'claudian-session-header-btn',
-      attr: { type: 'button' },
-    });
-    setIcon(this.sessionNewTabButtonEl, 'square-plus');
-    this.sessionNewTabButtonEl.setAttribute('aria-label', 'New tab');
-    this.sessionNewTabButtonEl.addEventListener('click', () => this.requestNewTab());
-
-    const newSessionButton = actions.createEl('button', {
-      cls: 'claudian-session-header-btn',
-      attr: { type: 'button' },
-    });
-    setIcon(newSessionButton, 'square-pen');
-    newSessionButton.setAttribute('aria-label', 'New session');
-    newSessionButton.addEventListener('click', () => this.requestNewConversation());
+    this.sessionNewTabButtonEl = this.createSessionHeaderAction(
+      actions,
+      'square-plus',
+      'New tab',
+      () => this.requestNewTab(),
+    );
+    this.createSessionHeaderAction(
+      actions,
+      'square-pen',
+      'New session',
+      () => this.requestNewConversation(),
+    );
 
     this.updateNewTabButtonVisibility();
+  }
+
+  private createSessionHeaderAction(
+    parent: HTMLElement,
+    icon: string,
+    label: string,
+    action: () => void,
+  ): HTMLElement {
+    const control = parent.createDiv({ cls: 'claudian-session-header-btn' });
+    control.setAttribute('role', 'button');
+    control.setAttribute('tabindex', '0');
+    control.setAttribute('aria-label', label);
+
+    const iconEl = control.createDiv({ cls: 'claudian-session-header-icon' });
+    setIcon(iconEl, icon);
+
+    control.addEventListener('click', action);
+    control.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      action();
+    });
+    return control;
   }
 
   private startSessionSidebarLayoutObserver(): void {
