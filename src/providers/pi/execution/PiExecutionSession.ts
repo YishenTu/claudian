@@ -758,6 +758,12 @@ implements ProviderExecutionSession, SteerableExecutionSession {
           type: 'thinking_delta',
         });
         break;
+      case 'citations':
+        this.emitRequested(active, {
+          citations: chunk.citations,
+          type: 'citations',
+        });
+        break;
       case 'tool_use':
       case 'subagent_tool_use':
         this.emitRequested(active, {
@@ -1512,6 +1518,7 @@ function getCompactInstructions(prompt: string): string | null {
 function isAssistantChunk(chunk: StreamChunk): boolean {
   return chunk.type === 'text'
     || chunk.type === 'thinking'
+    || chunk.type === 'citations'
     || chunk.type === 'tool_use'
     || chunk.type === 'subagent_tool_use';
 }

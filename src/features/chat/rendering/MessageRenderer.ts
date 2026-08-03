@@ -13,7 +13,13 @@ import {
   TOOL_WRITE_STDIN,
 } from '../../../core/tools/toolNames';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
-import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '../../../core/types';
+import type {
+  ChatMessage,
+  CitationGroup,
+  ImageAttachment,
+  SubagentInfo,
+  ToolCallInfo,
+} from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { extractUserDisplayContent } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
@@ -28,6 +34,7 @@ import {
 import type { FeatureHost } from '../../FeatureHost';
 import { findRewindContext } from '../rewind';
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
+import { renderCitationGroup as renderCitationBlock } from './CitationRenderer';
 import { resolveSubagentAdapter } from './subagentAdapterResolution';
 import {
   renderStoredAsyncSubagent,
@@ -320,6 +327,7 @@ export class MessageRenderer {
       for (const block of msg.contentBlocks) {
         if (block.type === 'thinking' && block.content.trim().length > 0) return true;
         if (block.type === 'text' && block.content.trim().length > 0) return true;
+        if (block.type === 'citations' && block.citations.entries.length > 0) return true;
         if (block.type === 'context_compacted') return true;
         if (block.type === 'subagent') return true;
         if (block.type === 'tool_use') {
@@ -386,6 +394,8 @@ export class MessageRenderer {
           const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
           void this.renderContent(textEl, normalized.content);
           this.addTextCopyButton(textEl, normalized.content);
+        } else if (block.type === 'citations') {
+          this.renderCitationGroup(contentEl, block.citations);
         } else if (block.type === 'tool_use') {
           const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
           if (toolCall) {
@@ -447,6 +457,10 @@ export class MessageRenderer {
     }
 
     return hadLegacyInterruptIndicator;
+  }
+
+  renderCitationGroup(parentEl: HTMLElement, citations: CitationGroup): HTMLElement {
+    return renderCitationBlock(parentEl, citations);
   }
 
   /**

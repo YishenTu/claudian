@@ -26,6 +26,8 @@ export function adaptCodexStreamChunk(
       return { type: 'text_delta', scope, text: chunk.content };
     case 'thinking':
       return { type: 'thinking_delta', scope, text: chunk.content };
+    case 'citations':
+      return { type: 'citations', scope, citations: chunk.citations };
     case 'tool_use':
       return {
         type: 'tool_started',

@@ -1,5 +1,9 @@
-import type { StreamChunk, UsageInfo } from '../../../core/types';
+import type { CitationGroup, StreamChunk, UsageInfo } from '../../../core/types';
 import { extractCodexUserVisibleText, joinCodexUserTextParts } from '../codexUserText';
+import {
+  normalizeCodexMemoryCitation,
+  stripCodexMemoryCitationMarkup,
+} from '../normalization/CodexMemoryCitation';
 import {
   appendCodexCommandOutput,
   extractCodexExecCellId,
@@ -69,6 +73,8 @@ export class CodexNotificationRouter {
   private startedUserMessageIds = new Set<string>();
   private startedAgentMessageIds = new Set<string>();
   private agentMessageDeltaIds = new Set<string>();
+  private emittedMemoryCitationIds = new Set<string>();
+  private emittedMemoryCitationKeys = new Set<string>();
   private streamedAssistantTurnText = '';
   private currentAssistantSegmentId: string | undefined;
   private currentAssistantSegmentText = '';
@@ -140,6 +146,8 @@ export class CodexNotificationRouter {
     this.startedUserMessageIds.clear();
     this.startedAgentMessageIds.clear();
     this.agentMessageDeltaIds.clear();
+    this.emittedMemoryCitationIds.clear();
+    this.emittedMemoryCitationKeys.clear();
     this.resetAssistantTextTracking();
     this.rawStartedCallIds.clear();
     this.rawToolNamesByCallId.clear();
@@ -160,6 +168,8 @@ export class CodexNotificationRouter {
     this.startedUserMessageIds.clear();
     this.startedAgentMessageIds.clear();
     this.agentMessageDeltaIds.clear();
+    this.emittedMemoryCitationIds.clear();
+    this.emittedMemoryCitationKeys.clear();
     this.resetAssistantTextTracking();
     this.rawStartedCallIds.clear();
     this.rawToolNamesByCallId.clear();
@@ -396,8 +406,13 @@ export class CodexNotificationRouter {
       return;
     }
 
-    const text = firstString(payload.text, payload.message);
+    const text = stripCodexMemoryCitationMarkup(
+      firstString(payload.text, payload.message),
+    );
     this.emitMissingAssistantTurnText(text);
+    this.emitMemoryCitation(
+      payload.memory_citation ?? payload.memoryCitation,
+    );
   }
 
   private handleRawFunctionCall(item: Record<string, unknown>): void {
@@ -572,9 +587,10 @@ export class CodexNotificationRouter {
   }
 
   private emitMissingRawAgentMessageText(item: Record<string, unknown>): void {
-    const text = item.type === 'message'
+    const rawText = item.type === 'message'
       ? readAssistantMessageText(item)
       : firstString(item.text, item.message);
+    const text = stripCodexMemoryCitationMarkup(rawText);
     this.emitMissingAssistantSegmentText(text);
   }
 
@@ -883,11 +899,33 @@ export class CodexNotificationRouter {
       this.emitAgentMessageBoundary(item);
     }
 
-    if (this.agentMessageDeltaIds.has(item.id) || !item.text) {
+    const visibleText = stripCodexMemoryCitationMarkup(item.text);
+    if (!this.agentMessageDeltaIds.has(item.id) && visibleText) {
+      this.emitMissingAssistantSegmentText(visibleText, item.id);
+    }
+
+    this.emitMemoryCitation(item.memoryCitation, item.id);
+  }
+
+  private emitMemoryCitation(value: unknown, itemId?: string): void {
+    if (itemId && this.emittedMemoryCitationIds.has(itemId)) {
+      return;
+    }
+    const citations = normalizeCodexMemoryCitation(value);
+    if (!citations) {
       return;
     }
 
-    this.emitMissingAssistantSegmentText(item.text, item.id);
+    if (itemId) {
+      this.emittedMemoryCitationIds.add(itemId);
+    }
+    const citationKey = buildMemoryCitationKey(citations);
+    if (this.emittedMemoryCitationKeys.has(citationKey)) {
+      return;
+    }
+
+    this.emittedMemoryCitationKeys.add(citationKey);
+    this.emit({ type: 'citations', citations });
   }
 
   private extractUserMessageText(content: UserInput[]): string {
@@ -982,6 +1020,12 @@ function firstString(...values: unknown[]): string {
     }
   }
   return '';
+}
+
+function buildMemoryCitationKey(citations: CitationGroup): string {
+  return citations.entries
+    .map(entry => [entry.path, entry.lineStart, entry.lineEnd, entry.note].join('\0'))
+    .join('\u0001');
 }
 
 function getItemId(item: { id?: string } | Record<string, unknown>): string | undefined {

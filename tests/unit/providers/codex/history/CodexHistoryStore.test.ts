@@ -219,6 +219,78 @@ describe('CodexHistoryStore', () => {
       ]);
     });
 
+    it('replays memory citations without exposing raw markup or duplicating assistant text', () => {
+      const citationMarkup = [
+        '<oai-mem-citation>',
+        '<citation_entries>',
+        'MEMORY.md:10-12|note=[Used project conventions]',
+        '</citation_entries>',
+        '<rollout_ids>',
+        'thread-1',
+        '</rollout_ids>',
+        '</oai-mem-citation>',
+      ].join('\n');
+      const content = [
+        JSON.stringify({
+          timestamp: '2026-07-29T00:00:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_started' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-29T00:00:01.000Z',
+          type: 'event_msg',
+          payload: {
+            type: 'agent_message',
+            message: 'Answer',
+            memory_citation: {
+              entries: [{
+                path: 'MEMORY.md',
+                lineStart: 10,
+                lineEnd: 12,
+                note: 'Used project conventions',
+              }],
+              rolloutIds: ['thread-1'],
+            },
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-29T00:00:01.001Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: `Answer\n${citationMarkup}` }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-29T00:00:02.000Z',
+          type: 'event_msg',
+          payload: { type: 'task_complete' },
+        }),
+      ].join('\n');
+
+      const messages = parseCodexSessionContent(content);
+      const assistantMessage = messages.find(message => message.role === 'assistant');
+
+      expect(assistantMessage?.content).toBe('Answer');
+      expect(assistantMessage?.content).not.toContain('oai-mem-citation');
+      expect(assistantMessage?.contentBlocks).toEqual([
+        { type: 'text', content: 'Answer' },
+        {
+          type: 'citations',
+          citations: {
+            kind: 'memory',
+            entries: [{
+              path: 'MEMORY.md',
+              lineStart: 10,
+              lineEnd: 12,
+              note: 'Used project conventions',
+            }],
+          },
+        },
+      ]);
+    });
+
     it('rehydrates user images from persisted input_image parts', () => {
       const content = [
         JSON.stringify({

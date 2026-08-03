@@ -209,6 +209,20 @@ export class StreamController {
         await this.appendText(chunk.content);
         break;
 
+      case 'citations': {
+        this.flushPendingTools();
+        if (state.currentThinkingState) {
+          await this.finalizeCurrentThinkingBlock(msg);
+        }
+        await this.finalizeCurrentTextBlock(msg);
+        msg.contentBlocks = msg.contentBlocks || [];
+        msg.contentBlocks.push({ type: 'citations', citations: chunk.citations });
+        if (state.currentContentEl) {
+          this.deps.renderer.renderCitationGroup(state.currentContentEl, chunk.citations);
+        }
+        break;
+      }
+
       case 'tool_use': {
         if (state.currentThinkingState) {
           await this.finalizeCurrentThinkingBlock(msg);
@@ -1969,6 +1983,8 @@ export function providerOutputEventToStreamChunk(
       return { content: event.text, type: 'text' };
     case 'thinking_delta':
       return { content: event.text, type: 'thinking' };
+    case 'citations':
+      return { citations: event.citations, type: 'citations' };
     case 'tool_started':
       return event.toolScope.kind === 'subagent'
         ? {

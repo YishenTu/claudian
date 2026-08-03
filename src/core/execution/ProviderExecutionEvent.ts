@@ -1,4 +1,5 @@
 import type {
+  CitationGroup,
   SDKToolUseResult,
   ToolProviderPayload,
   UsageInfo,
@@ -107,6 +108,13 @@ export type ProviderThinkingDeltaEvent = ProviderEventBase<
   ProviderOpaqueEventPayload & {
     readonly text: string;
   };
+
+export type ProviderCitationsEvent = ProviderEventBase<
+  'citations',
+  ProviderTurnEventScope
+> & {
+  readonly citations: CitationGroup;
+};
 
 interface ProviderToolIdentity {
   readonly toolCallId: string;
@@ -237,6 +245,7 @@ export type ProviderRequestedExecutionEvent =
   | (ProviderAssistantMessageStartedEvent & { readonly scope: ProviderRequestedEventScope })
   | (ProviderTextDeltaEvent & { readonly scope: ProviderRequestedEventScope })
   | (ProviderThinkingDeltaEvent & { readonly scope: ProviderRequestedEventScope })
+  | (ProviderCitationsEvent & { readonly scope: ProviderRequestedEventScope })
   | (ProviderToolStartedEvent & { readonly scope: ProviderRequestedEventScope })
   | (ProviderToolOutputEvent & { readonly scope: ProviderRequestedEventScope })
   | (ProviderToolCompletedEvent & { readonly scope: ProviderRequestedEventScope })
@@ -299,6 +308,7 @@ export type ProviderBackgroundOutputEvent =
   | (ProviderAssistantMessageStartedEvent & { readonly scope: ProviderBackgroundEventScope })
   | (ProviderTextDeltaEvent & { readonly scope: ProviderBackgroundEventScope })
   | (ProviderThinkingDeltaEvent & { readonly scope: ProviderBackgroundEventScope })
+  | (ProviderCitationsEvent & { readonly scope: ProviderBackgroundEventScope })
   | (ProviderToolStartedEvent & { readonly scope: ProviderBackgroundEventScope })
   | (ProviderToolOutputEvent & { readonly scope: ProviderBackgroundEventScope })
   | (ProviderToolCompletedEvent & { readonly scope: ProviderBackgroundEventScope })

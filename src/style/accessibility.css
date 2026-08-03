@@ -3,6 +3,7 @@
 /* outline + offset + border-radius */
 .claudian-tool-header:focus-visible,
 .claudian-thinking-header:focus-visible,
+.claudian-citations-header:focus-visible,
 .claudian-subagent-header:focus-visible,
 .claudian-input-nav-btn:focus-visible,
 .claudian-model-btn:focus-visible,

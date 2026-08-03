@@ -75,12 +75,25 @@ export interface ExecutionInputSnapshot {
   context?: ExecutionInputContextSnapshot;
 }
 
+export interface CitationEntry {
+  path: string;
+  lineStart: number;
+  lineEnd: number;
+  note: string;
+}
+
+export interface CitationGroup {
+  kind: 'memory';
+  entries: CitationEntry[];
+}
+
 /** Content block for preserving streaming order in messages. */
 export type ContentBlock =
   | { type: 'text'; content: string }
   | { type: 'tool_use'; toolId: string }
   | { type: 'thinking'; content: string; durationSeconds?: number }
   | { type: 'subagent'; subagentId: string; mode?: SubagentMode }
+  | { type: 'citations'; citations: CitationGroup }
   | { type: 'context_compacted' };
 
 /** Chat message with content, tool calls, and attachments. */
@@ -199,6 +212,7 @@ export type StreamChunk =
   | { type: 'assistant_message_start'; itemId?: string }
   | { type: 'text'; content: string }
   | { type: 'thinking'; content: string }
+  | { type: 'citations'; citations: CitationGroup }
   | {
       type: 'tool_use';
       id: string;

@@ -2247,6 +2247,7 @@ function isVisibleAutoTurnChunk(chunk: StreamChunk, hiddenToolIds: Set<string>):
     case 'text':
       return chunk.content.trim().length > 0;
     case 'thinking':
+    case 'citations':
     case 'notice':
     case 'error':
     case 'tool_output':

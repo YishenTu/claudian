@@ -124,7 +124,19 @@ export interface AgentMessageItem {
   id: string;
   text: string;
   phase: string;
-  memoryCitation: unknown;
+  memoryCitation: CodexMemoryCitation | null;
+}
+
+export interface CodexMemoryCitation {
+  entries: CodexMemoryCitationEntry[];
+  threadIds: string[];
+}
+
+export interface CodexMemoryCitationEntry {
+  path: string;
+  lineStart: number;
+  lineEnd: number;
+  note: string;
 }
 
 export interface PlanItem {

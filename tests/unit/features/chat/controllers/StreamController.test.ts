@@ -13,7 +13,11 @@ import {
   TOOL_WAIT_AGENT,
 } from '@/core/tools/toolNames';
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
-import { StreamController, type StreamControllerDeps } from '@/features/chat/controllers/StreamController';
+import {
+  providerOutputEventToStreamChunk,
+  StreamController,
+  type StreamControllerDeps,
+} from '@/features/chat/controllers/StreamController';
 import { ChatState } from '@/features/chat/state/ChatState';
 
 jest.mock('@/core/tools/todo', () => ({
@@ -140,6 +144,7 @@ function createMockDeps(): MockStreamControllerDeps {
     renderer: {
       renderContent: jest.fn(),
       addTextCopyButton: jest.fn(),
+      renderCitationGroup: jest.fn(),
     } as any,
     subagentManager: {
       isAsyncTask: jest.fn().mockReturnValue(false),
@@ -513,6 +518,79 @@ describe('StreamController - Text Content', () => {
       await controller.handleStreamChunk({ type: 'context_compacted' }, msg);
 
       expect(msg.contentBlocks).toContainEqual({ type: 'context_compacted' });
+    });
+  });
+
+  describe('citation handling', () => {
+    it('maps provider citation events back to stream chunks', () => {
+      const citations = {
+        kind: 'memory' as const,
+        entries: [{
+          path: 'MEMORY.md',
+          lineStart: 10,
+          lineEnd: 12,
+          note: 'Used project conventions',
+        }],
+      };
+
+      expect(providerOutputEventToStreamChunk({
+        type: 'citations',
+        scope: {
+          kind: 'requested',
+          sessionInstanceId: 'session-1',
+          executionId: 'execution-1',
+          turnId: 'turn-1',
+          sequence: 1,
+        },
+        citations,
+      })).toEqual({ type: 'citations', citations });
+    });
+
+    it('finalizes text and records a rendered citation block', async () => {
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk({ type: 'text', content: 'Answer' }, msg);
+      await controller.handleStreamChunk({
+        type: 'citations',
+        citations: {
+          kind: 'memory',
+          entries: [{
+            path: 'MEMORY.md',
+            lineStart: 10,
+            lineEnd: 12,
+            note: 'Used project conventions',
+          }],
+        },
+      }, msg);
+
+      expect(msg.contentBlocks).toEqual([
+        { type: 'text', content: 'Answer' },
+        {
+          type: 'citations',
+          citations: {
+            kind: 'memory',
+            entries: [{
+              path: 'MEMORY.md',
+              lineStart: 10,
+              lineEnd: 12,
+              note: 'Used project conventions',
+            }],
+          },
+        },
+      ]);
+      expect(deps.renderer.renderCitationGroup).toHaveBeenCalledWith(
+        deps.state.currentContentEl,
+        {
+          kind: 'memory',
+          entries: [{
+            path: 'MEMORY.md',
+            lineStart: 10,
+            lineEnd: 12,
+            note: 'Used project conventions',
+          }],
+        },
+      );
     });
   });
 

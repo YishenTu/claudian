@@ -1,6 +1,8 @@
 // Chat types
 export {
   type ChatMessage,
+  type CitationEntry,
+  type CitationGroup,
   type ContentBlock,
   type Conversation,
   type ConversationMeta,

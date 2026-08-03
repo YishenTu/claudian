@@ -13,6 +13,7 @@ export {
   type ProviderBackgroundTurnCompletedEvent,
   type ProviderBackgroundTurnStartedEvent,
   type ProviderCancelledEvent,
+  type ProviderCitationsEvent,
   type ProviderContextCompactedEvent,
   type ProviderExecutionErrorCategory,
   type ProviderExecutionErrorEvent,

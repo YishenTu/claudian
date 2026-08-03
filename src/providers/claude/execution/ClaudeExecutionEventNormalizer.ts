@@ -2,6 +2,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import type {
   ProviderAssistantMessageStartedEvent,
+  ProviderCitationsEvent,
   ProviderContextCompactedEvent,
   ProviderNoticeEvent,
   ProviderTextDeltaEvent,
@@ -38,6 +39,7 @@ export type ClaudeNormalizedOutputEvent = WithoutScope<
   | ProviderAssistantMessageStartedEvent
   | ProviderTextDeltaEvent
   | ProviderThinkingDeltaEvent
+  | ProviderCitationsEvent
   | ProviderToolStartedEvent
   | ProviderToolOutputEvent
   | ProviderToolCompletedEvent
@@ -319,6 +321,11 @@ function toOutputEvent(
         type: 'thinking_delta',
         text: chunk.content,
       };
+    case 'citations':
+      return {
+        type: 'citations',
+        citations: chunk.citations,
+      };
     case 'tool_use':
     case 'subagent_tool_use':
       return normalizeToolStarted(chunk, state);
@@ -414,6 +421,7 @@ function isAssistantOutputChunk(chunk: StreamChunk): boolean {
   return (
     chunk.type === 'text'
     || chunk.type === 'thinking'
+    || chunk.type === 'citations'
     || chunk.type === 'tool_use'
     || chunk.type === 'subagent_tool_use'
   );

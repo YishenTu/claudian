@@ -12,6 +12,7 @@ import {
   TOOL_WRITE_STDIN,
 } from '@/core/tools/toolNames';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
+import { renderCitationGroup } from '@/features/chat/rendering/CitationRenderer';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat/rendering/SubagentRenderer';
 import { renderStoredThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
@@ -24,6 +25,9 @@ jest.mock('@/features/chat/rendering/SubagentRenderer', () => ({
 }));
 jest.mock('@/features/chat/rendering/ThinkingBlockRenderer', () => ({
   renderStoredThinkingBlock: jest.fn(),
+}));
+jest.mock('@/features/chat/rendering/CitationRenderer', () => ({
+  renderCitationGroup: jest.fn(),
 }));
 jest.mock('@/features/chat/rendering/ToolCallRenderer', () => ({
   renderStoredToolCall: jest.fn(),
@@ -186,6 +190,33 @@ describe('MessageRenderer', () => {
     const interruptedEl = lastChild.children[0];
     expect(interruptedEl.hasClass('claudian-interrupted')).toBe(true);
     expect(interruptedEl.textContent).toBe('Interrupted');
+  });
+
+  it('renders persisted citation content blocks', () => {
+    const messagesEl = createMockEl();
+    const { renderer } = createRenderer(messagesEl, 'codex');
+    const citations = {
+      kind: 'memory' as const,
+      entries: [{
+        path: 'MEMORY.md',
+        lineStart: 10,
+        lineEnd: 12,
+        note: 'Used project conventions',
+      }],
+    };
+
+    renderer.renderStoredMessage({
+      id: 'assistant-citations',
+      role: 'assistant',
+      content: 'Answer',
+      timestamp: Date.now(),
+      contentBlocks: [
+        { type: 'text', content: 'Answer' },
+        { type: 'citations', citations },
+      ],
+    });
+
+    expect(renderCitationGroup).toHaveBeenCalledWith(expect.anything(), citations);
   });
 
   it('upgrades a persisted legacy interruption marker to the typed indicator', async () => {

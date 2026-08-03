@@ -4,7 +4,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import type {
+  ChatMessage,
+  CitationGroup,
+  ContentBlock,
+  ImageAttachment,
+  ToolCallInfo,
+} from '../../../core/types';
 import { extractUserDisplayContent } from '../../../utils/context';
 import {
   buildImageAttachmentFromBase64,
@@ -14,6 +20,10 @@ import {
   extractCodexUserVisibleText,
   joinCodexUserTextParts,
 } from '../codexUserText';
+import {
+  normalizeCodexMemoryCitation,
+  stripCodexMemoryCitationMarkup,
+} from '../normalization/CodexMemoryCitation';
 import {
   appendCodexCommandOutput,
   decodeCodexExecEnvelope,
@@ -117,6 +127,8 @@ interface PersistedEventPayload {
   type?: string;
   text?: string;
   message?: string;
+  memory_citation?: unknown;
+  memoryCitation?: unknown;
 }
 
 interface PersistedCompactionPayload {
@@ -296,6 +308,51 @@ function appendOrderedTextChunk(
 
   chunks.push(trimmed);
   bubble.contentBlocks.push({ type, content: trimmed });
+}
+
+function appendCitationBlock(bubble: CodexAssistantBubble, value: unknown): void {
+  const citations = normalizeCodexMemoryCitation(value);
+  if (!citations) return;
+
+  const lastBlock = bubble.contentBlocks[bubble.contentBlocks.length - 1];
+  if (
+    lastBlock?.type === 'citations'
+    && areCitationGroupsEqual(lastBlock.citations, citations)
+  ) {
+    return;
+  }
+  bubble.contentBlocks.push({ type: 'citations', citations });
+}
+
+function areCitationGroupsEqual(left: CitationGroup, right: CitationGroup): boolean {
+  return left.kind === right.kind
+    && left.entries.length === right.entries.length
+    && left.entries.every((entry, index) => {
+      const other = right.entries[index];
+      return entry.path === other.path
+        && entry.lineStart === other.lineStart
+        && entry.lineEnd === other.lineEnd
+        && entry.note === other.note;
+    });
+}
+
+function appendPersistedAssistantText(
+  bubble: CodexAssistantBubble,
+  value: string,
+): void {
+  const trimmed = value.trim();
+  if (!trimmed) return;
+
+  const lastBlock = bubble.contentBlocks[bubble.contentBlocks.length - 1];
+  const previousBlock = bubble.contentBlocks[bubble.contentBlocks.length - 2];
+  if (
+    lastBlock?.type === 'citations'
+    && previousBlock?.type === 'text'
+    && previousBlock.content.trim() === trimmed
+  ) {
+    return;
+  }
+  appendOrderedTextChunk(bubble, 'text', trimmed);
 }
 
 function replaceLatestOrderedTextChunk(
@@ -568,8 +625,9 @@ function processLegacyItem(
     case 'agent_message':
       if (eventType === 'item.completed' || eventType === 'item.updated') {
         if (item.text) {
-          turn.assistantText = item.text;
-          setTextBlock(turn, item.text);
+          const visibleText = stripCodexMemoryCitationMarkup(item.text);
+          turn.assistantText = visibleText;
+          setTextBlock(turn, visibleText);
         }
       }
       break;
@@ -1119,11 +1177,13 @@ function processPersistedPayload(
         }
         appendUserImages(turn, messagePayload.content, timestamp);
       } else if (messagePayload.role === 'assistant') {
-        const text = extractMessageText(messagePayload.content);
+        const text = stripCodexMemoryCitationMarkup(
+          extractMessageText(messagePayload.content),
+        );
         const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
         const bubble = ensureAssistantBubble(turn, timestamp);
         if (text) {
-          appendOrderedTextChunk(bubble, 'text', text);
+          appendPersistedAssistantText(bubble, text);
         }
       }
       break;
@@ -1239,8 +1299,15 @@ function processEventMsg(
       const bubble = ensureAssistantBubble(turn, timestamp);
       const msg = payload.message;
       if (typeof msg === 'string') {
-        appendOrderedTextChunk(bubble, 'text', msg);
+        appendPersistedAssistantText(
+          bubble,
+          stripCodexMemoryCitationMarkup(msg),
+        );
       }
+      appendCitationBlock(
+        bubble,
+        payload.memory_citation ?? payload.memoryCitation,
+      );
       break;
     }
 
@@ -1316,9 +1383,10 @@ function flushBubbleTurnMessages(
     const hasContent = contentText.trim().length > 0;
     const hasThinking = thinkingText.trim().length > 0;
     const hasToolCalls = bubble.toolCalls.length > 0;
+    const hasCitations = bubble.contentBlocks.some(block => block.type === 'citations');
     const hasCompactBoundary = bubble.contentBlocks.some(b => b.type === 'context_compacted');
 
-    if (!hasContent && !hasThinking && !hasToolCalls && !hasCompactBoundary) {
+    if (!hasContent && !hasThinking && !hasToolCalls && !hasCitations && !hasCompactBoundary) {
       if (bubble.interrupted) {
         messages.push({
           id: `codex-msg-${msgIndex}`,
@@ -1781,7 +1849,11 @@ function processLegacyItemInModernContext(
       if ((eventType === 'item.updated' || eventType === 'item.completed') && item.text) {
         const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
         const bubble = ensureAssistantBubble(turn, timestamp);
-        replaceLatestOrderedTextChunk(bubble, 'text', item.text);
+        replaceLatestOrderedTextChunk(
+          bubble,
+          'text',
+          stripCodexMemoryCitationMarkup(item.text),
+        );
       }
       break;
     }

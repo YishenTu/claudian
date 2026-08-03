@@ -64,6 +64,177 @@ describe('CodexNotificationRouter', () => {
       ]);
     });
 
+    it('does not append raw memory citation markup after streamed text', () => {
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'msg1',
+        delta: 'Answer\n',
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [{
+            type: 'output_text',
+            text: [
+              'Answer',
+              '<oai-mem-citation>',
+              '<citation_entries>',
+              'MEMORY.md:10-12|note=[Used project conventions]',
+              '</citation_entries>',
+              '<rollout_ids>',
+              '</rollout_ids>',
+              '</oai-mem-citation>',
+            ].join('\n'),
+          }],
+        },
+      });
+
+      expect(chunks).toEqual([{ type: 'text', content: 'Answer\n' }]);
+    });
+
+    it('hides an unterminated raw memory citation block', () => {
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [{
+            type: 'output_text',
+            text: 'Answer<oai-mem-citation>unfinished citation',
+          }],
+        },
+      });
+
+      expect(chunks).toEqual([{ type: 'text', content: 'Answer' }]);
+    });
+
+    it('emits structured memory citations from a completed agent message', () => {
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'agentMessage',
+          id: 'msg1',
+          text: '',
+          phase: 'streaming',
+          memoryCitation: null,
+        },
+      });
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'msg1',
+        delta: 'Answer',
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'agentMessage',
+          id: 'msg1',
+          text: 'Answer',
+          phase: 'final_answer',
+          memoryCitation: {
+            entries: [{
+              path: 'MEMORY.md',
+              lineStart: 10,
+              lineEnd: 12,
+              note: 'Used project conventions',
+            }],
+            threadIds: ['thread-1'],
+          },
+        },
+      });
+
+      expect(chunks).toEqual([
+        { type: 'assistant_message_start', itemId: 'msg1' },
+        { type: 'text', content: 'Answer' },
+        {
+          type: 'citations',
+          citations: {
+            kind: 'memory',
+            entries: [{
+              path: 'MEMORY.md',
+              lineStart: 10,
+              lineEnd: 12,
+              note: 'Used project conventions',
+            }],
+          },
+        },
+      ]);
+    });
+
+    it('normalizes memory citations from event_msg fallback notifications without duplication', () => {
+      const memoryCitation = {
+        entries: [{
+          path: 'MEMORY.md',
+          lineStart: 10,
+          lineEnd: 12,
+          note: 'Used project conventions',
+        }],
+        rolloutIds: ['thread-1'],
+      };
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'agentMessage',
+          id: 'msg1',
+          text: '',
+          phase: 'streaming',
+          memoryCitation: null,
+        },
+      });
+      router.handleNotification('event_msg', {
+        type: 'agent_message',
+        message: [
+          'Answer',
+          '<oai-mem-citation>',
+          '<citation_entries>',
+          'MEMORY.md:10-12|note=[Used project conventions]',
+          '</citation_entries>',
+          '<rollout_ids>',
+          'thread-1',
+          '</rollout_ids>',
+          '</oai-mem-citation>',
+        ].join('\n'),
+        memory_citation: memoryCitation,
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'agentMessage',
+          id: 'msg1',
+          text: 'Answer\n',
+          phase: 'final_answer',
+          memoryCitation,
+        },
+      });
+
+      expect(chunks).toEqual([
+        { type: 'assistant_message_start', itemId: 'msg1' },
+        { type: 'text', content: 'Answer\n' },
+        {
+          type: 'citations',
+          citations: {
+            kind: 'memory',
+            entries: [{
+              path: 'MEMORY.md',
+              lineStart: 10,
+              lineEnd: 12,
+              note: 'Used project conventions',
+            }],
+          },
+        },
+      ]);
+    });
+
     it('deduplicates raw completed text against the current post-tool assistant segment', () => {
       router.handleNotification('item/agentMessage/delta', {
         threadId: 't1',
