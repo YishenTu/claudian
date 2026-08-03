@@ -210,7 +210,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.registerEvent).toHaveBeenCalledWith({ id: 'workspace-event' });
     });
 
-    it('loads restored-tab metadata without waiting for the full history scan', async () => {
+    it('loads only current-tab metadata before the full history scan', async () => {
       type EmptyMetadataScan = {
         metadata: [];
         complete: true;
@@ -229,8 +229,6 @@ describe('ClaudianPlugin', () => {
       };
       const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockReturnValue(historyScan);
-      const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
-        .mockResolvedValue(restoredMetadata);
       const loadSourceSpy = jest.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue({
           metadata: restoredMetadata,
@@ -251,11 +249,10 @@ describe('ClaudianPlugin', () => {
       finishHistoryScan({ metadata: [], complete: true, invalidMetadataCount: 0 });
       await onloadPromise;
       const cachedConversation = plugin.getCachedConversation(restoredMetadata.id);
-      const didLoadRestoredMetadata = loadSpy.mock.calls.some(
+      const didLoadRestoredMetadata = loadSourceSpy.mock.calls.some(
         ([id]) => id === restoredMetadata.id,
       );
       listSpy.mockRestore();
-      loadSpy.mockRestore();
       loadSourceSpy.mockRestore();
 
       expect(completedBeforeHistoryScan).toBe(true);
@@ -973,16 +970,12 @@ describe('ClaudianPlugin', () => {
       expect(disposeSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('keeps the latest open-tab snapshot when views are not closed first', async () => {
+    it('flushes the current tab identity when views are not closed first', async () => {
       await plugin.onload();
-      const state = {
-        openTabs: [{ tabId: 'tab-1', conversationId: 'conversation-1' }],
-        activeTabId: 'tab-1',
-      };
-      const persistSpy = jest.spyOn(plugin, 'persistTabManagerState').mockResolvedValue(undefined);
+      const flushCurrentTabState = jest.fn().mockResolvedValue(undefined);
       mockApp.workspace.getLeavesOfType.mockReturnValue([{
         view: {
-          getPersistedTabState: jest.fn().mockReturnValue(state),
+          flushCurrentTabState,
           getTabManager: jest.fn(),
         },
       }]);
@@ -991,7 +984,7 @@ describe('ClaudianPlugin', () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(persistSpy).toHaveBeenCalledWith(state);
+      expect(flushCurrentTabState).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1103,6 +1096,26 @@ describe('ClaudianPlugin', () => {
 
       expect(plugin.settings.userName).toBe('TestUser');
       expect(plugin.settings.hiddenProviderCommands).toEqual(DEFAULT_SETTINGS.hiddenProviderCommands);
+    });
+
+    it('normalizes the concurrent running session limit to 5-10', async () => {
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => (
+        path === '.claudian/claudian-settings.json'
+      ));
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === '.claudian/claudian-settings.json') {
+          return JSON.stringify({ maxWarmAgentProcesses: 3 });
+        }
+        return '';
+      });
+
+      await plugin.loadSettings();
+
+      expect(plugin.settings.maxWarmAgentProcesses).toBe(5);
+      const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
+        ([path]) => path === '.claudian/claudian-settings.json',
+      );
+      expect(JSON.parse(writeCall[1]).maxWarmAgentProcesses).toBe(5);
     });
 
     it('should strip legacy blocklist fields when loading old settings', async () => {
@@ -2265,7 +2278,7 @@ describe('ClaudianPlugin', () => {
       expect(focusActiveInput).toHaveBeenCalledTimes(1);
     });
 
-    it('creates a new tab after reopening a persisted tab layout', async () => {
+    it('starts from the fresh runtime tab after reopening a persisted layout', async () => {
       (plugin.loadData as jest.Mock).mockResolvedValue({
         tabManagerState: {
           openTabs: [
@@ -2278,8 +2291,10 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
 
       const createNewTab = jest.fn().mockResolvedValue(undefined);
+      const focusActiveInput = jest.fn();
       const mockView = {
         createNewTab,
+        focusActiveInput,
       };
 
       let viewOpened = false;
@@ -2298,10 +2313,11 @@ describe('ClaudianPlugin', () => {
       await new Promise<void>((resolve) => setImmediate(resolve));
 
       expect(plugin.activateView).toHaveBeenCalledTimes(1);
-      expect(createNewTab).toHaveBeenCalledTimes(1);
+      expect(createNewTab).not.toHaveBeenCalled();
+      expect(focusActiveInput).toHaveBeenCalledTimes(1);
     });
 
-    it('stays unavailable when the open view is already at the tab limit', async () => {
+    it('stays available regardless of the former tab limit', async () => {
       await plugin.onload();
 
       const mockView = {
@@ -2314,7 +2330,7 @@ describe('ClaudianPlugin', () => {
 
       const command = getRegisteredCommand('new-tab');
 
-      expect(command.checkCallback(true)).toBe(false);
+      expect(command.checkCallback(true)).toBe(true);
     });
 
     it('keeps tab commands unavailable while a Claudian leaf view is not initialized', async () => {
@@ -2330,7 +2346,7 @@ describe('ClaudianPlugin', () => {
       }
     });
 
-    it('stays unavailable when reopening the persisted layout would already hit the tab limit', async () => {
+    it('ignores the persisted runtime layout when checking new-tab availability', async () => {
       (plugin.loadData as jest.Mock).mockResolvedValue({
         tabManagerState: {
           openTabs: [
@@ -2348,7 +2364,7 @@ describe('ClaudianPlugin', () => {
 
       const command = getRegisteredCommand('new-tab');
 
-      expect(command.checkCallback(true)).toBe(false);
+      expect(command.checkCallback(true)).toBe(true);
     });
   });
 

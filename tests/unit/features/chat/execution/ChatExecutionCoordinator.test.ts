@@ -21,6 +21,7 @@ import {
 import type { ChatMessage, Conversation, ProviderId } from '@/core/types';
 import {
   ChatExecutionCoordinator,
+  type ChatExecutionCoordinatorDeps,
   type ChatExecutionEventContext,
   ChatExecutionInteractionStaleError,
   type ChatExecutionPersistence,
@@ -28,6 +29,11 @@ import {
   type ChatTurnSubmission,
   type MissingProviderSessionResolution,
 } from '@/features/chat/execution/ChatExecutionCoordinator';
+import {
+  WarmExecutionCapacityError,
+  type WarmExecutionOwner,
+  WarmExecutionPool,
+} from '@/features/chat/execution/WarmExecutionPool';
 
 class EventQueue<T> implements AsyncIterable<T> {
   private readonly values: T[] = [];
@@ -227,6 +233,11 @@ function createHarness(options: {
   onRequestedEvent?: (
     event: ProviderExecutionEvent,
   ) => void | Promise<void>;
+  onSessionEvent?: (
+    event: ProviderSessionEvent,
+    context: ChatExecutionEventContext,
+  ) => void | Promise<void>;
+  warmExecution?: ChatExecutionCoordinatorDeps['warmExecution'];
 } = {}) {
   const registry = new ProviderExecutionLifecycleRegistry();
   const backends = new Map<ProviderId, FakeBackend>([
@@ -283,8 +294,10 @@ function createHarness(options: {
     onSessionEvent: (event, context) => {
       sessionEvents.push(event);
       sessionEventContexts.push(context);
+      return options.onSessionEvent?.(event, context);
     },
     resolveMissingProviderSession: missingSession,
+    ...(options.warmExecution ? { warmExecution: options.warmExecution } : {}),
   });
 
   return {
@@ -338,6 +351,21 @@ async function beginExecution(
   return { session, run, resultPromise };
 }
 
+async function reserveProtectedWarmSlots(
+  pool: WarmExecutionPool,
+  count = 4,
+): Promise<WarmExecutionOwner[]> {
+  const owners = Array.from({ length: count }, (_, index) => ({
+    id: `reserved-${index}`,
+    canCool: () => false,
+    cool: jest.fn().mockResolvedValue(undefined),
+  }));
+  for (const owner of owners) {
+    await pool.acquire(owner);
+  }
+  return owners;
+}
+
 describe('ChatExecutionCoordinator', () => {
   it('binds cold and acquires a persistent execution session only on prepare or execute', async () => {
     const harness = createHarness();
@@ -365,6 +393,214 @@ describe('ChatExecutionCoordinator', () => {
       'local-1',
       0,
     );
+  });
+
+  it('cools the least-recently-used idle coordinator without closing its tab state', async () => {
+    const pool = new WarmExecutionPool(() => 5);
+    await reserveProtectedWarmSlots(pool);
+    const firstWarmStates: boolean[] = [];
+    const secondWarmStates: boolean[] = [];
+    const first = createHarness({
+      warmExecution: {
+        ownerId: 'first-tab',
+        pool,
+        canCool: () => true,
+        onWarmStateChanged: state => firstWarmStates.push(state),
+      },
+    });
+    const second = createHarness({
+      warmExecution: {
+        ownerId: 'second-tab',
+        pool,
+        canCool: () => true,
+        onWarmStateChanged: state => secondWarmStates.push(state),
+      },
+    });
+
+    await first.coordinator.bindConversation({
+      conversationId: 'conversation-1',
+      providerId: 'claude',
+    });
+    await first.coordinator.prepare();
+    const firstSession = first.backends.get('claude')!.sessions[0];
+
+    await second.coordinator.bindConversation({
+      conversationId: 'conversation-2',
+      providerId: 'claude',
+    });
+    await second.coordinator.prepare();
+
+    expect(first.coordinator.state).toBe('absent');
+    expect(firstSession.disposeCalls).toBe(1);
+    expect(first.repository.releaseExecutionBinding).toHaveBeenCalledTimes(1);
+    expect(firstWarmStates).toEqual([true, false]);
+    expect(second.coordinator.state).toBe('idle');
+    expect(secondWarmStates).toEqual([true]);
+    expect(pool.getWarmCount()).toBe(5);
+
+    await Promise.all([
+      first.coordinator.dispose(),
+      second.coordinator.dispose(),
+      first.registry.dispose(),
+      second.registry.dispose(),
+    ]);
+  });
+
+  it('does not cool a coordinator with an active provider turn', async () => {
+    const pool = new WarmExecutionPool(() => 5);
+    await reserveProtectedWarmSlots(pool);
+    const first = createHarness({
+      warmExecution: {
+        ownerId: 'first-tab',
+        pool,
+        canCool: () => true,
+      },
+    });
+    const second = createHarness({
+      warmExecution: {
+        ownerId: 'second-tab',
+        pool,
+        canCool: () => true,
+      },
+    });
+    const { resultPromise } = await beginExecution(first);
+    await second.coordinator.bindConversation({
+      conversationId: 'conversation-2',
+      providerId: 'claude',
+    });
+
+    await expect(second.coordinator.prepare()).rejects.toEqual(
+      new WarmExecutionCapacityError(5),
+    );
+    expect(first.coordinator.state).toBe('active');
+
+    first.coordinator.cancel();
+    await resultPromise;
+    await first.coordinator.dispose();
+    await second.coordinator.dispose();
+    await first.registry.dispose();
+    await second.registry.dispose();
+  });
+
+  it('protects a provider mode operation until its RPC settles', async () => {
+    const pool = new WarmExecutionPool(() => 5);
+    await reserveProtectedWarmSlots(pool);
+    const first = createHarness({
+      warmExecution: {
+        ownerId: 'first-tab',
+        pool,
+        canCool: () => true,
+      },
+    });
+    const second = createHarness({
+      warmExecution: {
+        ownerId: 'second-tab',
+        pool,
+        canCool: () => true,
+      },
+    });
+    await first.coordinator.bindConversation({
+      conversationId: 'conversation-1',
+      providerId: 'claude',
+    });
+    await first.coordinator.prepare();
+    const firstSession = first.backends.get('claude')!.sessions[0];
+    const modeResult = deferred<boolean>();
+    const setMode = jest.spyOn(firstSession, 'setMode')
+      .mockImplementation(async () => modeResult.promise);
+
+    const pendingModeChange = first.coordinator.setMode('plan');
+    for (let attempt = 0; attempt < 20 && setMode.mock.calls.length === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+    expect(setMode).toHaveBeenCalledTimes(1);
+    await second.coordinator.bindConversation({
+      conversationId: 'conversation-2',
+      providerId: 'claude',
+    });
+    let capacityError: unknown;
+    try {
+      await second.coordinator.prepare();
+    } catch (error) {
+      capacityError = error;
+    }
+
+    modeResult.resolve(true);
+    const applied = await pendingModeChange;
+    expect(capacityError).toEqual(new WarmExecutionCapacityError(5));
+    expect(applied).toBe(true);
+    expect(firstSession.disposeCalls).toBe(0);
+
+    await first.coordinator.dispose();
+    await second.coordinator.dispose();
+    await first.registry.dispose();
+    await second.registry.dispose();
+  });
+
+  it('protects pending background event persistence before cooling', async () => {
+    const pool = new WarmExecutionPool(() => 5);
+    await reserveProtectedWarmSlots(pool);
+    const eventWork = deferred<void>();
+    const first = createHarness({
+      onSessionEvent: event => event.type === 'background_turn_completed'
+        ? eventWork.promise
+        : undefined,
+      warmExecution: {
+        ownerId: 'first-tab',
+        pool,
+        canCool: () => true,
+      },
+    });
+    const second = createHarness({
+      warmExecution: {
+        ownerId: 'second-tab',
+        pool,
+        canCool: () => true,
+      },
+    });
+    await first.coordinator.bindConversation({
+      conversationId: 'conversation-1',
+      providerId: 'claude',
+    });
+    await first.coordinator.prepare();
+    const firstSession = first.backends.get('claude')!.sessions[0];
+    const backgroundScope = {
+      kind: 'background' as const,
+      sessionInstanceId: firstSession.sessionInstanceId,
+      turnId: 'background-persistence',
+      sequence: 1,
+    };
+    firstSession.emit({ type: 'background_turn_started', scope: backgroundScope });
+    firstSession.emit({
+      type: 'background_turn_completed',
+      scope: { ...backgroundScope, sequence: 2 },
+      reason: 'completed',
+    });
+    await second.coordinator.bindConversation({
+      conversationId: 'conversation-2',
+      providerId: 'claude',
+    });
+    let capacityError: unknown;
+    try {
+      await second.coordinator.prepare();
+    } catch (error) {
+      capacityError = error;
+    }
+
+    expect(capacityError).toEqual(new WarmExecutionCapacityError(5));
+    expect(firstSession.disposeCalls).toBe(0);
+
+    eventWork.resolve();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await Promise.resolve();
+    }
+    await second.coordinator.prepare();
+    expect(firstSession.disposeCalls).toBe(1);
+
+    await first.coordinator.dispose();
+    await second.coordinator.dispose();
+    await first.registry.dispose();
+    await second.registry.dispose();
   });
 
   it('stages canonical input before execute, builds a neutral request, and accepts native IDs', async () => {

@@ -2,9 +2,10 @@ import type { App } from 'obsidian';
 
 import type { SharedAppStorage } from '../core/bootstrap/storage';
 import type { ProviderHost } from '../core/providers/ProviderHost';
-import type { AppTabManagerState, ProviderId } from '../core/providers/types';
+import type { ProviderId } from '../core/providers/types';
 import type { ClaudianSettings, Conversation, ConversationMeta } from '../core/types';
 import type { ChatExecutionPersistence } from './chat/execution/ChatExecutionCoordinator';
+import type { WarmExecutionPool } from './chat/execution/WarmExecutionPool';
 import type { TabData, TabId, TabManagerViewHost } from './chat/tabs/types';
 
 export interface FeatureTabManagerHost {
@@ -31,6 +32,7 @@ export interface FeatureHost {
   readonly providerHost: ProviderHost;
   readonly settings: ClaudianSettings;
   readonly storage: SharedAppStorage;
+  readonly warmExecutionPool: WarmExecutionPool;
 
   mutateSettings(
     mutation: (settings: ClaudianSettings) => void | Promise<void>,
@@ -57,7 +59,6 @@ export interface FeatureHost {
   getConversationSync(id: string): Conversation | null;
   getConversationList(): ConversationMeta[];
 
-  persistTabManagerState(state: AppTabManagerState): Promise<void>;
   getView(): FeatureViewHost | null;
   getAllViews(): FeatureViewHost[];
   findConversationAcrossViews(

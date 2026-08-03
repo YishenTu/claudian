@@ -11,7 +11,7 @@ export interface TabSessionState {
 }
 
 export class TabSession {
-  activeTurn: Promise<void> | null = null;
+  private activeTurnValue: Promise<void> | null = null;
   private backgroundWork: Promise<void> = Promise.resolve();
   private backgroundWorkPauseDepth = 0;
   private coordinator: ChatExecutionCoordinator | null = null;
@@ -28,6 +28,11 @@ export class TabSession {
   get draftModel(): string | null { return this.state.draftModel; }
   set draftModel(value: string | null) { this.state.draftModel = value; }
   get executionCoordinator(): ChatExecutionCoordinator | null { return this.coordinator; }
+  get activeTurn(): Promise<void> | null { return this.activeTurnValue; }
+  set activeTurn(value: Promise<void> | null) {
+    this.activeTurnValue = value;
+    if (value === null) this.coordinator?.notifyMayCool();
+  }
 
   setExecutionCoordinator(coordinator: ChatExecutionCoordinator | null): void {
     this.coordinator = coordinator;

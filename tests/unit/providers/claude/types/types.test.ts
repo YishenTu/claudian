@@ -75,6 +75,10 @@ describe('types.ts', () => {
     it('should collapse file edits by default', () => {
       expect(DEFAULT_SETTINGS.expandFileEditsByDefault).toBe(false);
     });
+
+    it('should keep five agent processes warm by default', () => {
+      expect(DEFAULT_SETTINGS.maxWarmAgentProcesses).toBe(5);
+    });
   });
 
   describe('ClaudianSettings type', () => {
@@ -106,7 +110,7 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
-        maxTabs: 3,
+        maxWarmAgentProcesses: 5,
         enableChrome: false,
         enableBangBash: false,
         enableAutoScroll: true,
@@ -160,7 +164,7 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
-        maxTabs: 3,
+        maxWarmAgentProcesses: 5,
         enableChrome: false,
         enableBangBash: false,
         enableAutoScroll: true,
@@ -215,7 +219,7 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
-        maxTabs: 5,
+        maxWarmAgentProcesses: 5,
         enableChrome: false,
         enableBangBash: false,
         enableAutoScroll: false,

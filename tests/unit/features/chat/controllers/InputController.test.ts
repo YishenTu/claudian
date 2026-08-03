@@ -153,6 +153,7 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     },
     conversationController: {
       clearTerminalSubagentsFromMessages: jest.fn(),
+      createNew: jest.fn().mockResolvedValue(undefined),
       generateFallbackTitle: jest.fn().mockReturnValue('Fallback title'),
       save: jest.fn().mockResolvedValue(undefined),
       updateHistoryDropdown: jest.fn(),
@@ -218,6 +219,28 @@ describe('InputController coordinator execution', () => {
       permissionMode: 'normal',
       serviceTier: 'standard',
     });
+  });
+
+  it('delegates /clear to the layout-owned New action when it handles the command', async () => {
+    const handleNewConversationCommand = jest.fn().mockResolvedValue(true);
+    const fixture = createFixture({ handleNewConversationCommand });
+    fixture.input.value = '/clear';
+
+    await fixture.controller.sendMessage();
+
+    expect(handleNewConversationCommand).toHaveBeenCalledTimes(1);
+    expect(fixture.deps.conversationController.createNew).not.toHaveBeenCalled();
+  });
+
+  it('clears the current tab in place when the layout does not handle /clear', async () => {
+    const handleNewConversationCommand = jest.fn().mockResolvedValue(false);
+    const fixture = createFixture({ handleNewConversationCommand });
+    fixture.input.value = '/clear';
+
+    await fixture.controller.sendMessage();
+
+    expect(handleNewConversationCommand).toHaveBeenCalledTimes(1);
+    expect(fixture.deps.conversationController.createNew).toHaveBeenCalledTimes(1);
   });
 
   it('submits first and continued turns through the coordinator', async () => {

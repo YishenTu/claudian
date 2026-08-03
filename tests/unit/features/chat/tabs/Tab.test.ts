@@ -12,6 +12,7 @@ import {
   initializeTabExecution,
   initializeTabUI,
   updatePlanModeUI,
+  wireTabInputEvents,
 } from '@/features/chat/tabs/Tab';
 
 const coordinatorInstances: MockCoordinator[] = [];
@@ -22,6 +23,7 @@ interface MockCoordinator {
   cancel: jest.Mock;
   dispose: jest.Mock;
   isEventContextCurrent: jest.Mock;
+  notifyMayCool: jest.Mock;
   prepare: jest.Mock;
   resolveForkSource: jest.Mock;
   setMode: jest.Mock;
@@ -36,6 +38,7 @@ jest.mock('@/features/chat/execution/ChatExecutionCoordinator', () => ({
       cancel: jest.fn(),
       dispose: jest.fn().mockResolvedValue(undefined),
       isEventContextCurrent: jest.fn().mockReturnValue(true),
+      notifyMayCool: jest.fn(),
       prepare: jest.fn().mockResolvedValue(undefined),
       resolveForkSource: jest.fn().mockResolvedValue({ sessionId: 'native-session' }),
       setMode: jest.fn().mockResolvedValue(true),
@@ -71,6 +74,7 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
     getCapabilities: jest.fn().mockReturnValue({
       providerId: 'claude',
       supportsFork: true,
+      supportsImageAttachments: true,
       supportsPlanMode: true,
     }),
     getChatUIConfig: jest.fn().mockReturnValue({
@@ -272,7 +276,7 @@ describe('Tab provider execution ownership', () => {
       },
     });
     expect(coordinator.prepare).toHaveBeenCalledTimes(1);
-    expect(tab.lifecycleState).toBe('bound_active');
+    expect(tab.lifecycleState).toBe('warm');
   });
 
   it('keeps blank-tab initialization session-free', async () => {
@@ -287,6 +291,136 @@ describe('Tab provider execution ownership', () => {
 
     expect(coordinator.bindConversation).toHaveBeenCalledWith(null);
     expect(coordinator.prepare).not.toHaveBeenCalled();
+  });
+
+  it('routes /clear through the view layout before resetting the current tab', async () => {
+    const conversation = createConversation();
+    const plugin = createPlugin();
+    const tab = createTab({
+      plugin,
+      containerEl: createMockEl() as any,
+      conversation,
+    });
+    const handleNewConversationCommand = jest.fn().mockResolvedValue(true);
+    initializeTabControllers(tab, plugin, {
+      addChild: jest.fn(),
+      handleNewConversationCommand,
+      registerDomEvent: jest.fn(),
+      registerEvent: jest.fn(),
+    } as any);
+    tab.dom.inputEl.value = '/clear';
+
+    await tab.controllers.inputController!.sendMessage();
+
+    expect(handleNewConversationCommand).toHaveBeenCalledTimes(1);
+    expect(tab.conversationId).toBe(conversation.id);
+  });
+
+  it('commits a provisional preview to cold state when the user types', () => {
+    const plugin = createPlugin();
+    const tab = createTab({
+      plugin,
+      containerEl: createMockEl() as any,
+      lifecycleState: 'provisional',
+    });
+
+    wireTabInputEvents(tab, plugin);
+    tab.dom.inputEl.value = 'Keep this draft';
+    (tab.dom.inputEl as any).dispatchEvent('input');
+
+    expect(tab.lifecycleState).toBe('cold');
+  });
+
+  it('commits a provisional preview to cold state when the user attaches an image', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
+      disconnect: jest.fn(),
+      observe: jest.fn(),
+    })) as unknown as typeof ResizeObserver;
+    const plugin = createPlugin();
+    const tab = createTab({
+      plugin,
+      containerEl: createMockEl() as any,
+      lifecycleState: 'provisional',
+    });
+    initializeTabUI(tab, plugin);
+
+    const attached = await (tab.ui.imageContextManager as any).addImageFromFile({
+      arrayBuffer: async () => new Uint8Array([1]).buffer,
+      name: 'draft.png',
+      size: 1,
+      type: 'image/png',
+    }, 'paste');
+
+    expect(attached).toBe(true);
+    expect(tab.lifecycleState).toBe('cold');
+    globalThis.ResizeObserver = originalResizeObserver;
+  });
+
+  it('commits a provisional preview when the user removes captured editor context', () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
+      disconnect: jest.fn(),
+      observe: jest.fn(),
+    })) as unknown as typeof ResizeObserver;
+    const plugin = createPlugin();
+    const tab = createTab({
+      plugin,
+      containerEl: createMockEl() as any,
+      lifecycleState: 'provisional',
+    });
+    initializeTabUI(tab, plugin);
+    initializeTabControllers(tab, plugin, {
+      addChild: jest.fn(),
+      registerDomEvent: jest.fn(),
+      registerEvent: jest.fn(),
+    } as any);
+    const selectionController = tab.controllers.selectionController as any;
+    selectionController.storedSelection = {
+      lineCount: 1,
+      notePath: 'note.md',
+      selectedText: 'draft context',
+    };
+    selectionController.updateIndicator();
+
+    const removeButton = tab.dom.contextRowEl.querySelector(
+      '.claudian-context-chip-remove',
+    ) as any;
+    removeButton.dispatchEvent('click');
+
+    expect(tab.lifecycleState).toBe('cold');
+    globalThis.ResizeObserver = originalResizeObserver;
+  });
+
+  it('keeps a browsed conversation provisional after hydration', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
+      disconnect: jest.fn(),
+      observe: jest.fn(),
+    })) as unknown as typeof ResizeObserver;
+    const conversation = createConversation();
+    const plugin = createPlugin({
+      getConversationSync: jest.fn().mockReturnValue(conversation),
+      switchConversation: jest.fn().mockResolvedValue(conversation),
+      updateConversation: jest.fn().mockResolvedValue(undefined),
+    });
+    const tab = createTab({
+      plugin,
+      containerEl: createMockEl() as any,
+      conversation,
+      lifecycleState: 'provisional',
+    });
+    initializeTabUI(tab, plugin);
+    initializeTabControllers(tab, plugin, {
+      addChild: jest.fn(),
+      registerDomEvent: jest.fn(),
+      registerEvent: jest.fn(),
+    } as any);
+
+    await tab.controllers.conversationController!.switchTo(conversation.id);
+
+    expect(tab.lifecycleState).toBe('provisional');
+    globalThis.ResizeObserver = originalResizeObserver;
   });
 
   it('activates conversation-owned input after the real tab switch callback settles', async () => {

@@ -16,6 +16,7 @@ const IMAGE_EXTENSIONS: Record<string, ImageMediaType> = {
 
 export interface ImageContextCallbacks {
   onImagesChanged?: () => void;
+  onUserImagesChanged?: () => void;
 }
 
 export class ImageContextManager {
@@ -234,6 +235,7 @@ export class ImageContextManager {
       this.attachedImages.set(attachment.id, attachment);
       this.updateImagePreview();
       this.callbacks.onImagesChanged?.();
+      this.callbacks.onUserImagesChanged?.();
       return true;
     } catch (error) {
       this.notifyImageError('Failed to attach image.', error);
@@ -269,6 +271,7 @@ export class ImageContextManager {
         this.attachedImages.delete(id);
         this.updateImagePreview();
         this.callbacks.onImagesChanged?.();
+        this.callbacks.onUserImagesChanged?.();
       },
     })));
   }

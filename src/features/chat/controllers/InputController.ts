@@ -131,6 +131,8 @@ export interface InputControllerDeps {
   /** Returns true if ready. */
   ensureExecutionInitialized?: () => Promise<boolean>;
   openConversation?: (conversationId: string) => Promise<void>;
+  /** Lets the active layout replace in-place clear with its own New action. */
+  handleNewConversationCommand?: () => Promise<boolean>;
   onForkAll?: () => Promise<void>;
   /** Toggles the active provider's fast service tier when available. */
   toggleFastMode?: () => Promise<boolean>;
@@ -1991,9 +1993,13 @@ export class InputController {
     }
 
     switch (command.action) {
-      case 'clear':
-        await conversationController.createNew();
+      case 'clear': {
+        const handledByLayout = await this.deps.handleNewConversationCommand?.() ?? false;
+        if (!handledByLayout) {
+          await conversationController.createNew();
+        }
         break;
+      }
       case 'add-dir': {
         const externalContextSelector = this.deps.getExternalContextSelector();
         if (!externalContextSelector) {

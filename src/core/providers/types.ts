@@ -392,7 +392,7 @@ export interface ProviderCommandLoader {
 
 export type ProviderTabWarmupMode = 'none' | 'commands' | 'execution';
 
-export type ProviderTabWarmupLifecycleState = 'blank' | 'bound_cold' | 'bound_active' | 'closing';
+export type ProviderTabWarmupLifecycleState = 'provisional' | 'cold' | 'warm' | 'closing';
 
 export interface ProviderTabWarmupContext {
   coordinatorState: 'absent' | 'idle' | 'active' | 'stale';

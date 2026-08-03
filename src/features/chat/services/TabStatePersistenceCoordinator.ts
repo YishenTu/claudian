@@ -3,7 +3,7 @@ import type { AppTabManagerState } from '../../../core/providers/types';
 type TimerHost = Pick<Window, 'clearTimeout' | 'setTimeout'>;
 
 /**
- * Owns the latest tab-layout snapshot and serializes persistence writes.
+ * Owns the latest tab snapshot and serializes persistence writes.
  */
 export class TabStatePersistenceCoordinator {
   private timer: number | null = null;

@@ -23,6 +23,7 @@ export class SelectionController {
   private inputEl: HTMLElement;
   private focusScopeEls: HTMLElement[];
   private onVisibilityChange: (() => void) | null;
+  private onUserSelectionChanged: (() => void) | null;
   private storedSelection: StoredSelection | null = null;
   private inputHandoffGraceUntil: number | null = null;
   private pollInterval: number | null = null;
@@ -41,13 +42,15 @@ export class SelectionController {
     contextTray: ComposerContextTray,
     inputEl: HTMLElement,
     onVisibilityChange?: () => void,
-    focusScopeEl?: FocusScopeInput
+    focusScopeEl?: FocusScopeInput,
+    onUserSelectionChanged?: () => void,
   ) {
     this.app = app;
     this.contextTray = contextTray;
     this.inputEl = inputEl;
     this.focusScopeEls = this.normalizeFocusScopes(focusScopeEl);
     this.onVisibilityChange = onVisibilityChange ?? null;
+    this.onUserSelectionChanged = onUserSelectionChanged ?? null;
   }
 
   start(): void {
@@ -137,6 +140,7 @@ export class SelectionController {
         }
         this.storedSelection = { notePath, selectedText, lineCount, startLine, from, to, editorView };
         this.updateIndicator();
+        this.onUserSelectionChanged?.();
       }
     } else {
       this.handleDeselection();
@@ -180,6 +184,7 @@ export class SelectionController {
         this.clearHighlight();
         this.storedSelection = { notePath, selectedText, lineCount, domRanges };
         this.updateIndicator();
+        this.onUserSelectionChanged?.();
       }
     } else {
       this.handleDeselection();
@@ -310,6 +315,7 @@ export class SelectionController {
     this.clearHighlight();
     this.storedSelection = null;
     this.updateIndicator();
+    this.onUserSelectionChanged?.();
   }
 
   private handleDeselection(): void {
@@ -327,6 +333,7 @@ export class SelectionController {
     this.clearHighlight();
     this.storedSelection = null;
     this.updateIndicator();
+    this.onUserSelectionChanged?.();
   }
 
   // ============================================
@@ -386,7 +393,10 @@ export class SelectionController {
         label,
         icon: 'text-select',
         ariaLabel: label,
-        onRemove: () => this.clear(),
+        onRemove: () => {
+          this.clear();
+          this.onUserSelectionChanged?.();
+        },
       }]);
     } else {
       this.contextTray.clearItems('editor-selection');

@@ -157,16 +157,16 @@ export interface TabCreateOptions {
   containerEl: HTMLElement;
   conversation?: Conversation;
   tabId?: TabId;
-  /** Restored draft model for blank tabs. */
+  /** Initial draft model for an unbound tab. */
   draftModel?: string | null;
   /** Provider to inherit for blank tabs (e.g. from the active tab). */
   defaultProviderId?: ProviderId;
+  lifecycleState?: Extract<TabData['lifecycleState'], 'provisional' | 'cold'>;
   onStreamingChanged?: (isStreaming: boolean) => void;
   onRewindingChanged?: (isRewinding: boolean) => void;
   onTitleChanged?: (title: string) => void;
   onAttentionChanged?: (needsAttention: boolean) => void;
   onConversationIdChanged?: (conversationId: string | null) => void;
-  onPersistedStateChanged?: () => void;
 }
 
 export { getTabProviderId } from './providerResolution';
@@ -224,7 +224,7 @@ function getTabSelectedModel(
   plugin: FeatureHost,
 ): string | null {
   const providerId = getTabProviderId(tab, plugin);
-  if (tab.lifecycleState === 'blank') {
+  if (tab.conversationId === null) {
     return normalizeProviderModelSelection(providerId, plugin.settings, tab.draftModel)
       ?? tab.draftModel
       ?? null;
@@ -550,7 +550,7 @@ function resolveBlankTabFallback(
  * Prefer the draft provider's advertised default before crossing providers.
  */
 export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost): boolean {
-  if (tab.lifecycleState !== 'blank') return false;
+  if (tab.conversationId !== null) return false;
 
   const settingsSnapshot = plugin.settings as unknown as Record<string, unknown>;
   const enabledProviderIds = ProviderRegistry.getEnabledProviderIds(settingsSnapshot);
@@ -641,7 +641,7 @@ export function createTab(options: TabCreateOptions): TabData {
       : DEFAULT_CHAT_PROVIDER_ID);
   const session = new TabSession({
     id,
-    lifecycleState: isBound ? 'bound_cold' : 'blank',
+    lifecycleState: options.lifecycleState ?? 'cold',
     draftModel,
     providerId: initialProviderId,
     conversationId: conversation?.id ?? null,
@@ -682,7 +682,6 @@ export function createTab(options: TabCreateOptions): TabData {
     set executionCoordinator(coordinator) {
       session.setExecutionCoordinator(coordinator);
     },
-    onPersistedStateChanged: options.onPersistedStateChanged,
     providerCatalogResolver: null,
     state,
     controllers: {
@@ -823,6 +822,21 @@ function createTabExecutionCoordinator(
       plugin.handleMissingProviderSession(conversationId, missingProviderSessionId),
     onError: error => {
       new Notice(error instanceof Error ? error.message : 'Provider execution failed.');
+    },
+    warmExecution: {
+      ownerId: tab.id,
+      pool: plugin.warmExecutionPool,
+      canCool: () => (
+        !tab.state.isStreaming
+        && !tab.state.isRewinding
+        && !tab.state.needsAttention
+        && tab.session.activeTurn === null
+        && tab.lifecycleState !== 'closing'
+      ),
+      onWarmStateChanged: (isWarm) => {
+        if (tab.lifecycleState === 'closing') return;
+        tab.lifecycleState = isWarm ? 'warm' : 'cold';
+      },
     },
   });
 }
@@ -1076,8 +1090,10 @@ export async function initializeTabExecution(
   if (isClosingLifecycleState(tab.lifecycleState)) return;
 
   tab.providerId = providerId;
-  if (tab.lifecycleState === 'blank') tab.draftModel = null;
-  tab.lifecycleState = conversation ? 'bound_active' : 'blank';
+  if (conversation) {
+    tab.draftModel = null;
+    tab.lifecycleState = 'warm';
+  }
 }
 
 function isConversationLike(value: unknown): value is Conversation {
@@ -1087,7 +1103,11 @@ function isConversationLike(value: unknown): value is Conversation {
     && Array.isArray((value as Conversation).messages);
 }
 
-function initializeContextManagers(tab: TabData, plugin: FeatureHost): void {
+function initializeContextManagers(
+  tab: TabData,
+  plugin: FeatureHost,
+  onUserModified?: () => void,
+): void {
   const { dom } = tab;
   const app = plugin.app;
   const contextTray = tab.ui.contextTray;
@@ -1102,6 +1122,7 @@ function initializeContextManagers(tab: TabData, plugin: FeatureHost): void {
     {
       getExcludedTags: () => plugin.settings.excludedTags,
       getExternalContexts: () => tab.ui.externalContextSelector?.getExternalContexts() || [],
+      onUserChipsChanged: onUserModified,
     },
     dom.inputContainerEl,
     contextTray,
@@ -1111,7 +1132,7 @@ function initializeContextManagers(tab: TabData, plugin: FeatureHost): void {
   tab.ui.imageContextManager = new ImageContextManager(
     dom.inputContainerEl,
     dom.inputEl,
-    {},
+    { onUserImagesChanged: onUserModified },
     dom.contextRowEl,
     contextTray,
   );
@@ -1205,7 +1226,7 @@ function initializeInputToolbar(
   plugin: FeatureHost,
   getProviderCatalogConfig?: () => ProviderCatalogInfo,
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>,
-  onDraftModelChanged?: () => void,
+  onUserModified?: () => void,
   onCommandContextChanged?: () => void,
 ): void {
   const { dom } = tab;
@@ -1227,7 +1248,7 @@ function initializeInputToolbar(
 
   const toolbarComponents = createInputToolbar(inputToolbar, {
     getUIConfig: () => {
-      if (tab.lifecycleState === 'blank') {
+      if (tab.conversationId === null) {
         return blankTabUIConfigProxy();
       }
       return getTabChatUIConfig(tab, plugin);
@@ -1237,7 +1258,7 @@ function initializeInputToolbar(
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
     onModelChange: async (model: string) => {
       // For blank tabs, update draft model and derive provider
-      if (tab.lifecycleState === 'blank') {
+      if (tab.conversationId === null) {
         const previousProvider = tab.providerId;
         const previousModel = tab.draftModel;
         tab.draftModel = model;
@@ -1267,7 +1288,7 @@ function initializeInputToolbar(
         } else {
           syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
         }
-        onDraftModelChanged?.();
+        onUserModified?.();
         await uiConfig.prepareModelMetadata?.(
           model,
           getProviderSettingsSnapshotWithModel(plugin.settings, newProvider, model),
@@ -1306,6 +1327,7 @@ function initializeInputToolbar(
           selectedModel: normalizedModel,
         });
       }
+      onUserModified?.();
 
       await uiConfig.prepareModelMetadata?.(
         normalizedModel,
@@ -1334,6 +1356,7 @@ function initializeInputToolbar(
       });
       tab.ui.modeSelector?.updateDisplay();
       tab.ui.modeSelector?.renderOptions();
+      onUserModified?.();
     },
     onThinkingBudgetChange: async (budget: string) => {
       await updateTabProviderSettings(tab, plugin, (settings) => {
@@ -1341,6 +1364,7 @@ function initializeInputToolbar(
         settings.thinkingBudget = budget;
         getTabChatUIConfig(tab, plugin).applyReasoningSelection?.(model, budget, settings);
       });
+      onUserModified?.();
     },
     onEffortLevelChange: async (effort: string) => {
       await updateTabProviderSettings(tab, plugin, (settings) => {
@@ -1348,9 +1372,11 @@ function initializeInputToolbar(
         settings.effortLevel = effort;
         getTabChatUIConfig(tab, plugin).applyReasoningSelection?.(model, effort, settings);
       });
+      onUserModified?.();
     },
     onServiceTierChange: async (serviceTier: string) => {
       await updateTabServiceTier(tab, plugin, serviceTier);
+      onUserModified?.();
     },
     onPermissionModeChange: async (mode: string) => {
       await updateTabProviderSettings(tab, plugin, (settings) => {
@@ -1366,6 +1392,7 @@ function initializeInputToolbar(
         'claudian-input-plan-mode',
         mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
       );
+      onUserModified?.();
     },
   });
 
@@ -1381,6 +1408,9 @@ function initializeInputToolbar(
   tab.ui.serviceTierToggle = toolbarComponents.serviceTierToggle;
 
   tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
+  tab.ui.mcpServerSelector.setOnChange(() => {
+    onUserModified?.();
+  });
 
   // Sync @-mentions to UI selector
   tab.ui.fileContextManager?.setOnMcpMentionChange((servers) => {
@@ -1391,6 +1421,7 @@ function initializeInputToolbar(
   tab.ui.externalContextSelector.setOnChange(() => {
     tab.ui.fileContextManager?.preScanExternalContexts();
     onCommandContextChanged?.();
+    onUserModified?.();
   });
 
   // Initialize persistent paths
@@ -1414,7 +1445,6 @@ function initializeInputToolbar(
 export interface InitializeTabUIOptions {
   getProviderCatalogConfig?: ProviderCatalogResolver;
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>;
-  onDraftModelChanged?: () => void;
   onCommandContextChanged?: () => void;
 }
 
@@ -1428,6 +1458,7 @@ export function initializeTabUI(
   options: InitializeTabUIOptions = {}
 ): void {
   const { dom, state } = tab;
+  const onUserModified = (): void => commitProvisionalTab(tab);
   tab.providerCatalogResolver = options.getProviderCatalogConfig ?? null;
 
   tab.ui.contextTray = new ComposerContextTray(dom.contextRowEl, {
@@ -1436,7 +1467,7 @@ export function initializeTabUI(
       tab.renderer?.scrollToBottomIfNeeded();
     },
   });
-  initializeContextManagers(tab, plugin);
+  initializeContextManagers(tab, plugin, onUserModified);
 
   const catalogInfo = options.getProviderCatalogConfig?.() ?? null;
   initializeSlashCommands(
@@ -1459,7 +1490,7 @@ export function initializeTabUI(
     plugin,
     options.getProviderCatalogConfig,
     options.onProviderChanged,
-    options.onDraftModelChanged,
+    onUserModified,
     options.onCommandContextChanged,
   );
 
@@ -1502,6 +1533,12 @@ function deepCloneMessages(messages: ChatMessage[]): ChatMessage[] {
 
 function isClosingLifecycleState(state: TabData['lifecycleState']): boolean {
   return state === 'closing';
+}
+
+export function commitProvisionalTab(tab: TabData): void {
+  if (tab.lifecycleState === 'provisional') {
+    tab.lifecycleState = 'cold';
+  }
 }
 
 interface ForkSource {
@@ -1701,11 +1738,12 @@ export function initializeTabControllers(
     ((conversationId: string) => Promise<void>) | undefined;
   const getProviderCatalogConfig = (isLegacy ? arg7 : arg6) as
     (() => ProviderCatalogInfo) | undefined;
+  const viewHost = component as Partial<TabManagerViewHost>;
 
   const { dom, state, services, ui } = tab;
   const ensureExecutionInitialized = async (): Promise<boolean> => {
     if (
-      tab.lifecycleState === 'bound_active'
+      tab.lifecycleState === 'warm'
       && (tab.executionCoordinator?.state === 'idle'
         || tab.executionCoordinator?.state === 'active')
     ) {
@@ -1713,7 +1751,7 @@ export function initializeTabControllers(
     }
 
     try {
-      if (tab.lifecycleState === 'blank' && tab.draftModel) {
+      if (tab.conversationId === null && tab.draftModel) {
         tab.providerId = getEnabledProviderForModel(tab.draftModel, plugin.settings);
       }
 
@@ -1750,18 +1788,23 @@ export function initializeTabControllers(
     dom.inputEl,
     undefined,
     [dom.contentEl, dom.inputComposerEl, ...getSharedSelectionFocusScopeEls(component)],
+    () => commitProvisionalTab(tab),
   );
 
   tab.controllers.browserSelectionController = new BrowserSelectionController(
     plugin.app,
     ui.contextTray!,
     dom.inputEl,
+    undefined,
+    () => commitProvisionalTab(tab),
   );
 
   tab.controllers.canvasSelectionController = new CanvasSelectionController(
     plugin.app,
     ui.contextTray!,
     dom.inputEl,
+    undefined,
+    () => commitProvisionalTab(tab),
   );
 
   tab.controllers.streamController = new StreamController({
@@ -1872,7 +1915,9 @@ export function initializeTabControllers(
 
         tab.conversationId = conversation?.id ?? null;
         tab.draftModel = null;
-        tab.lifecycleState = conversation ? 'bound_cold' : 'blank';
+        if (tab.lifecycleState !== 'provisional') {
+          tab.lifecycleState = 'cold';
+        }
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig, conversation);
 
         await tab.executionCoordinator?.bindConversation(conversation
@@ -1887,7 +1932,7 @@ export function initializeTabControllers(
       onNewConversation: () => {
         const previousProviderId = tab.providerId;
         void tab.executionCoordinator?.bindConversation(null);
-        tab.lifecycleState = 'blank';
+        tab.lifecycleState = 'cold';
         tab.draftModel = resolveBlankTabModel(plugin, previousProviderId);
         tab.conversationId = null;
         tab.providerId = getTabProviderId(tab, plugin);
@@ -1897,7 +1942,6 @@ export function initializeTabControllers(
         refreshTabProviderUI(tab, plugin);
         applyProviderUIGating(tab, plugin);
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
-        tab.onPersistedStateChanged?.();
       },
       onConversationLoaded: () => {
         invalidateTabProviderCommands(tab, getProviderCatalogConfig);
@@ -1942,6 +1986,9 @@ export function initializeTabControllers(
     turnOwner: tab.session,
     ensureExecutionInitialized,
     openConversation,
+    handleNewConversationCommand: viewHost.handleNewConversationCommand
+      ? () => viewHost.handleNewConversationCommand!()
+      : undefined,
     onForkAll: forkRequestCallback
       ? () => handleForkAll(tab, plugin, forkRequestCallback)
       : undefined,
@@ -2048,6 +2095,7 @@ export function wireTabInputEvents(tab: TabData, plugin: FeatureHost): void {
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('keydown', keydownHandler));
 
   const inputHandler = () => {
+    commitProvisionalTab(tab);
     if (!ui.bangBashModeManager?.isActive()) {
       ui.fileContextManager?.handleInputChange();
     }
@@ -2383,7 +2431,7 @@ export async function updatePlanModeUI(
         snapshot,
       );
     });
-    if (options.syncExecution && tab.lifecycleState !== 'blank') {
+    if (options.syncExecution && tab.conversationId !== null) {
       try {
         await tab.executionCoordinator?.setMode(getTabPermissionMode(tab, plugin));
       } catch (error) {

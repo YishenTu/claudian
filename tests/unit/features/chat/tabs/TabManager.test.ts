@@ -20,7 +20,7 @@ function createMockTab(options: Record<string, any>): any {
       state: 'absent',
     },
     hydrationState: options.conversation ? 'idle' : 'ready',
-    lifecycleState: options.conversation ? 'bound_cold' : 'blank',
+    lifecycleState: options.lifecycleState ?? 'cold',
     providerId: options.conversation?.providerId ?? 'claude',
     state: {
       currentConversationId: options.conversation?.id ?? null,
@@ -112,7 +112,7 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
       },
     },
     settings: {
-      maxTabs: 3,
+      maxWarmAgentProcesses: 5,
       persistentExternalContextPaths: [],
     },
     providerHost: {
@@ -175,8 +175,104 @@ describe('TabManager provider execution orchestration', () => {
     const tab = await manager.createTab();
 
     expect(tab).not.toBeNull();
+    expect(tab?.lifecycleState).toBe('cold');
     const options = mockCreateTab.mock.calls[0]?.[0];
     expect(options).not.toHaveProperty('onRuntimeInstalled');
+  });
+
+  it('allows unlimited runtime tabs independently from the warm process limit', async () => {
+    const { manager } = createManager(createPlugin({
+      settings: {
+        maxWarmAgentProcesses: 1,
+        persistentExternalContextPaths: [],
+      },
+    }));
+
+    const tabs = await Promise.all(
+      Array.from({ length: 12 }, () => manager.createTab()),
+    );
+
+    expect(tabs.every(Boolean)).toBe(true);
+    expect(manager.getTabCount()).toBe(12);
+    expect(manager.canCreateTab()).toBe(true);
+  });
+
+  it('creates session selections as provisional runtime tabs', async () => {
+    const conversation = {
+      id: 'conversation-1',
+      providerId: 'claude',
+    };
+    const { manager } = createManager(createPlugin({
+      getCachedConversation: jest.fn().mockReturnValue(conversation),
+    }));
+
+    await manager.openConversation(conversation.id, {
+      activate: true,
+      preferNewTab: true,
+      provisional: true,
+    });
+
+    expect(manager.getActiveTab()?.lifecycleState).toBe('provisional');
+  });
+
+  it('reuses the provisional preview while browsing unopened sessions', async () => {
+    const getCachedConversation = jest.fn((id: string) => ({
+      id,
+      providerId: 'claude',
+    }));
+    const { manager } = createManager(createPlugin({ getCachedConversation }));
+
+    await manager.openConversation('conversation-1', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    const preview = manager.getActiveTab()!;
+    await manager.openConversation('conversation-2', {
+      preferNewTab: true,
+      provisional: true,
+    });
+
+    expect(manager.getTabCount()).toBe(1);
+    expect(preview.controllers.conversationController?.switchTo)
+      .toHaveBeenCalledWith('conversation-2');
+    expect(preview.lifecycleState).toBe('provisional');
+  });
+
+  it('discards provisional previews without removing cold or warm runtime tabs', async () => {
+    const getCachedConversation = jest.fn((id: string) => ({
+      id,
+      providerId: 'claude',
+    }));
+    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const cold = await manager.createTab('conversation-1');
+    const warm = await manager.createTab('conversation-2', undefined, { activate: false });
+    warm!.lifecycleState = 'warm';
+    await manager.openConversation('conversation-3', {
+      activate: false,
+      preferNewTab: true,
+      provisional: true,
+    });
+
+    await manager.discardProvisionalTabs();
+
+    expect(manager.getAllTabs()).toEqual([cold, warm]);
+    expect(mockDestroyTab).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the active preview when every runtime tab is provisional', async () => {
+    const { manager } = createManager();
+    const first = await manager.createTab(null, undefined, {
+      lifecycleState: 'provisional',
+    });
+    const current = await manager.createTab(null, undefined, {
+      lifecycleState: 'provisional',
+    });
+
+    await manager.discardProvisionalTabs();
+
+    expect(manager.getAllTabs()).toEqual([current]);
+    expect(current?.lifecycleState).toBe('cold');
+    expect(mockDestroyTab).toHaveBeenCalledWith(first);
   });
 
   it('runs command discovery without a runtime or provider session', async () => {
@@ -257,7 +353,7 @@ describe('TabManager provider execution orchestration', () => {
     await executionLifecycleRegistry.dispose();
   });
 
-  it('routes execution warmup through tab execution initialization', async () => {
+  it('does not warm tab execution during metadata warmup', async () => {
     const { manager } = createManager();
     await manager.createTab();
     warmupPolicy.resolveMode.mockReturnValue('execution');
@@ -266,7 +362,7 @@ describe('TabManager provider execution orchestration', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(mockInitializeTabExecution).toHaveBeenCalled();
+    expect(mockInitializeTabExecution).not.toHaveBeenCalled();
   });
 
   it('copies the accepted input ledger when forking', async () => {

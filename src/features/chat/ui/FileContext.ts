@@ -20,6 +20,7 @@ import { FileChipsView } from './file-context/view/FileChipsView';
 export interface FileContextCallbacks {
   getExcludedTags: () => string[];
   onChipsChanged?: () => void;
+  onUserChipsChanged?: () => void;
   getExternalContexts?: () => string[];
   /** Called when an agent is selected from the @ mention dropdown. */
   onAgentMentionSelect?: (agentId: string) => void;
@@ -71,6 +72,7 @@ export class FileContextManager {
           this.currentNotePath = null;
           this.state.detachFile(filePath);
           this.refreshCurrentNoteChip();
+          this.callbacks.onUserChipsChanged?.();
         }
       },
       onOpenFile: (filePath) => {

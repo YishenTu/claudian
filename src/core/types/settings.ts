@@ -158,7 +158,7 @@ export interface ClaudianSettings {
   lastCustomModel?: string;
 
   // UI preferences
-  maxTabs: number;
+  maxWarmAgentProcesses: number;
   enableAutoScroll: boolean;
   deferMathRenderingDuringStreaming: boolean;
   expandFileEditsByDefault: boolean;

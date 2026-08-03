@@ -44,7 +44,6 @@ import type {
   ProviderCliResolutionContext,
   ProviderId,
 } from './core/providers/types';
-import type { AppTabManagerState } from './core/providers/types';
 import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
 import type {
   ClaudianSettings,
@@ -58,6 +57,11 @@ import {
 import type { ChatViewPlacement, EnvironmentScope } from './core/types/settings';
 import { ClaudianView } from './features/chat/ClaudianView';
 import type { ChatExecutionPersistence } from './features/chat/execution/ChatExecutionCoordinator';
+import {
+  DEFAULT_MAX_WARM_AGENT_PROCESSES,
+  normalizeWarmExecutionLimit,
+  WarmExecutionPool,
+} from './features/chat/execution/WarmExecutionPool';
 import { registerFileMenu } from './features/chat/fileMenu';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
@@ -122,9 +126,11 @@ export default class ClaudianPlugin extends Plugin {
   storage!: SharedAppStorage;
   readonly executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   readonly providerHost = new ClaudianProviderHost(this);
+  readonly warmExecutionPool = new WarmExecutionPool(
+    () => this.settings?.maxWarmAgentProcesses ?? DEFAULT_MAX_WARM_AGENT_PROCESSES,
+  );
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
   private conversationRepository!: ConversationRepository;
-  private lastKnownTabManagerState: AppTabManagerState | null = null;
   private pendingSessionMetadataScan = false;
   private pendingEnvironmentInvalidationGenerations = new Map<ProviderId, number>();
   private blockedEnvironmentInvalidationGenerations = new Map<ProviderId, number>();
@@ -291,18 +297,11 @@ export default class ClaudianPlugin extends Plugin {
       this.sessionMetadataLoadTimer = null;
     }
     StartupProfiler.freeze();
-    void this.persistOpenTabStates().catch(() => undefined);
+    void Promise.all(
+      this.getAllViews().map(view => view.flushCurrentTabState()),
+    ).catch(() => undefined);
     void this.executionLifecycleRegistry.dispose();
     void ProviderWorkspaceRegistry.disposeInitialized();
-  }
-
-  private async persistOpenTabStates(): Promise<void> {
-    for (const view of this.getAllViews()) {
-      const state = view.getPersistedTabState();
-      if (state) {
-        await this.persistTabManagerState(state);
-      }
-    }
   }
 
   async activateView() {
@@ -343,14 +342,14 @@ export default class ClaudianPlugin extends Plugin {
     const tabManager = view?.getTabManager();
 
     if (tabManager) {
-      return tabManager.canCreateTab();
+      return true;
     }
 
     if (hasClaudianLeaf) {
       return false;
     }
 
-    return this.getLastKnownOpenTabCount() < this.getMaxTabsLimit();
+    return true;
   }
 
   private async ensureViewOpen(): Promise<ClaudianView | null> {
@@ -370,20 +369,12 @@ export default class ClaudianPlugin extends Plugin {
       return;
     }
 
-    const restoredTabCount = this.getLastKnownOpenTabCount();
     const view = await this.ensureViewOpen();
     if (!view) {
       return;
     }
 
-    // A cold-open view creates its initial tab during restore. Avoid stacking
-    // an extra blank tab on top when there was no prior layout to restore.
-    if (restoredTabCount === 0) {
-      view.focusActiveInput();
-      return;
-    }
-
-    await view.createNewTab();
+    view.focusActiveInput();
   }
 
   async loadSettings(options: { deferNonRestoredSessionMetadata?: boolean } = {}) {
@@ -391,12 +382,16 @@ export default class ClaudianPlugin extends Plugin {
     const sharedStorage = new SharedStorageService(this);
     this.storage = sharedStorage;
     const { claudian } = await sharedStorage.initialize();
-    this.lastKnownTabManagerState = await this.storage.getTabManagerState();
-
     this.settings = {
       ...DEFAULT_CLAUDIAN_SETTINGS,
       ...claudian,
     };
+    const normalizedWarmExecutionLimit = normalizeWarmExecutionLimit(
+      this.settings.maxWarmAgentProcesses,
+    );
+    const didNormalizeWarmExecutionLimit =
+      normalizedWarmExecutionLimit !== this.settings.maxWarmAgentProcesses;
+    this.settings.maxWarmAgentProcesses = normalizedWarmExecutionLimit;
     this.settingsCoordinator = new SettingsCoordinator(
       this.settings,
       async (settings) => {
@@ -446,20 +441,20 @@ export default class ClaudianPlugin extends Plugin {
 
     const deferRemainingMetadata = options.deferNonRestoredSessionMetadata === true;
     const initialMetadataScan = await StartupProfiler.runAsync(
-      deferRemainingMetadata ? 'restored-session-metadata-load' : 'session-metadata-load',
+      deferRemainingMetadata ? 'deferred-session-metadata-load' : 'session-metadata-load',
       async () => deferRemainingMetadata
         ? {
-          records: await this.loadRestoredSessionMetadata(),
-          complete: false,
-          invalidMetadataCount: 0,
-        }
+            records: await this.loadCurrentTabSessionMetadata(),
+            complete: false,
+            invalidMetadataCount: 0,
+          }
         : this.loadSessionMetadataWithSources(),
     );
     const initialEntries = initialMetadataScan.records.map(({ metadata, source }) => ({
       conversation: this.createConversationMetadataShell(metadata),
       source,
     }));
-    StartupProfiler.recordCount('restored-session-metadata-count', initialEntries.length);
+    StartupProfiler.recordCount('initial-session-metadata-count', initialEntries.length);
     StartupProfiler.recordCount('session-metadata-count', initialEntries.length);
     StartupProfiler.recordCount(
       'invalid-session-metadata-count',
@@ -493,6 +488,7 @@ export default class ClaudianPlugin extends Plugin {
       || didNormalizeModelVariants
       || didNormalizeProviderSelection
       || didNormalizePendingSessionInvalidations
+      || didNormalizeWarmExecutionLimit
     ) {
       await this.saveSettings();
     }
@@ -510,18 +506,13 @@ export default class ClaudianPlugin extends Plugin {
     this.pendingSessionMetadataScan = deferRemainingMetadata;
   }
 
-  private async loadRestoredSessionMetadata(): Promise<SessionMetadataReadResult[]> {
-    const restoredConversationIds = Array.from(new Set(
-      (this.lastKnownTabManagerState?.openTabs ?? [])
-        .map(({ conversationId }) => conversationId)
-        .filter((conversationId): conversationId is string => conversationId !== null),
-    ));
-    const metadata = await Promise.all(
-      restoredConversationIds.map(id => this.storage.sessions.loadMetadata(id)),
-    );
-    return this.resolveMetadataSources(
-      metadata.filter((item): item is SessionMetadata => item !== null),
-    );
+  private async loadCurrentTabSessionMetadata(): Promise<SessionMetadataReadResult[]> {
+    const state = await this.storage.getTabManagerState();
+    const currentTab = state?.openTabs.find(tab => tab.tabId === state.activeTabId);
+    if (!currentTab?.conversationId) return [];
+
+    const record = await this.storage.sessions.load(currentTab.conversationId);
+    return record ? [record] : [];
   }
 
   private async loadSessionMetadataWithSources(): Promise<{
@@ -1241,11 +1232,6 @@ export default class ClaudianPlugin extends Plugin {
     return this.conversationRepository.list();
   }
 
-  async persistTabManagerState(state: AppTabManagerState): Promise<void> {
-    this.lastKnownTabManagerState = state;
-    await this.storage.setTabManagerState(state);
-  }
-
   getView(): ClaudianView | null {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     return leaves.map(leaf => leaf.view).find(isClaudianView) ?? null;
@@ -1269,15 +1255,6 @@ export default class ClaudianPlugin extends Plugin {
       }
     }
     return null;
-  }
-
-  private getLastKnownOpenTabCount(): number {
-    return this.lastKnownTabManagerState?.openTabs.length ?? 0;
-  }
-
-  private getMaxTabsLimit(): number {
-    const maxTabs = this.settings.maxTabs ?? 3;
-    return Math.max(3, Math.min(10, maxTabs));
   }
 
 }

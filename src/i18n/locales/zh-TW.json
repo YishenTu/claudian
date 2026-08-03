@@ -45,7 +45,6 @@
       "chooseTarget": "分叉對話",
       "targetNewTab": "新分頁",
       "targetCurrentTab": "目前分頁",
-      "maxTabsReached": "無法分叉：已達到最大 {count} 個分頁",
       "notice": "已分叉到新分頁",
       "noticeCurrentTab": "已在目前分頁分叉",
       "failed": "分叉失敗：{error}",
@@ -279,10 +278,9 @@
         "noNode": "在 PATH 中找不到 Node.js。請安裝 Node.js 或檢查 PATH 設定。"
       }
     },
-    "maxTabs": {
-      "name": "最大聊天標籤數",
-      "desc": "同時開啟的最大聊天標籤數（3-10）。每個標籤使用獨立的 Claude 對話。",
-      "warning": "超過 5 個標籤可能會影響效能和記憶體使用。"
+    "maxWarmAgentProcesses": {
+      "name": "最大並行執行工作階段數",
+      "desc": "同時保持就緒的代理工作階段最大數量（5-10）。較早的閒置工作階段會自動暫停，並在使用時恢復。"
     },
     "enableAutoScroll": {
       "name": "串流傳輸時自動捲動",
