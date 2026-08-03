@@ -35,6 +35,12 @@ type LoadableView = {
   load: () => Promise<void> | void;
 };
 
+const WIDE_SESSION_LAYOUT_MIN_WIDTH = 600;
+const MIN_CHAT_PANEL_WIDTH = 320;
+const MIN_SESSION_SIDEBAR_WIDTH = 180;
+const SESSION_RESIZER_WIDTH = 5;
+const SESSION_RESIZE_KEYBOARD_STEP = 16;
+
 export class ClaudianView extends ItemView {
   private plugin: FeatureHost;
 
@@ -43,6 +49,7 @@ export class ClaudianView extends ItemView {
   private mentionCacheCoordinator: MentionCacheCoordinator | null = null;
   private tabBar: TabBar | null = null;
   private tabBarContainerEl: HTMLElement | null = null;
+  private chatPanelEl: HTMLElement | null = null;
   private tabContentEl: HTMLElement | null = null;
   private navRowContent: HTMLElement | null = null;
   private inputFooterEl: HTMLElement | null = null;
@@ -57,6 +64,13 @@ export class ClaudianView extends ItemView {
   // History elements
   private historyDropdown: HTMLElement | null = null;
   private historyRenderAbortController: AbortController | null = null;
+  private sessionSidebarEl: HTMLElement | null = null;
+  private sessionSidebarResizerEl: HTMLElement | null = null;
+  private sessionSidebarRenderAbortController: AbortController | null = null;
+  private sessionSidebarResizeObserver: ResizeObserver | null = null;
+  private sessionSidebarResizeCleanup: (() => void) | null = null;
+  private sessionSidebarWidth: number | null = null;
+  private isWideSessionLayout = false;
 
   // Event refs for cleanup
   private eventRefs: EventRef[] = [];
@@ -213,8 +227,8 @@ export class ClaudianView extends ItemView {
     this.viewContainerEl.addClass('claudian-container');
 
     this.navRowContent = this.buildNavRowContent();
-    this.tabContentEl = this.viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
-    this.buildInputFooter();
+    this.buildViewLayout();
+    if (!this.tabContentEl) return;
 
     this.tabManager = new TabManager(
       this.plugin,
@@ -277,10 +291,14 @@ export class ClaudianView extends ItemView {
     this.attachNavRowContentToInputFooter();
     this.updateInputLocation();
     this.updateTabBarVisibility();
+    this.startSessionSidebarLayoutObserver();
   }
 
   async onClose() {
     this.cancelHistoryRendering();
+    this.cancelSessionSidebarRendering();
+    this.disconnectSessionSidebarLayoutObserver();
+    this.stopSessionSidebarResize();
     if (this.pendingTabBarUpdate !== null) {
       cancelScheduledAnimationFrame(this.pendingTabBarUpdate);
       this.pendingTabBarUpdate = null;
@@ -314,6 +332,31 @@ export class ClaudianView extends ItemView {
   // ============================================
   // UI Building
   // ============================================
+
+  private buildViewLayout(): void {
+    if (!this.viewContainerEl) return;
+
+    this.chatPanelEl = this.viewContainerEl.createDiv({ cls: 'claudian-chat-panel' });
+    this.tabContentEl = this.chatPanelEl.createDiv({ cls: 'claudian-tab-content-container' });
+    this.buildInputFooter();
+
+    this.sessionSidebarResizerEl = this.viewContainerEl.createDiv({
+      cls: 'claudian-session-resizer',
+    });
+    this.sessionSidebarResizerEl.setAttribute('role', 'separator');
+    this.sessionSidebarResizerEl.setAttribute('aria-label', 'Resize conversation sessions');
+    this.sessionSidebarResizerEl.setAttribute('aria-orientation', 'vertical');
+    this.sessionSidebarResizerEl.setAttribute('tabindex', '0');
+    this.sessionSidebarResizerEl.addEventListener('pointerdown', (event) => {
+      this.startSessionSidebarResize(event);
+    });
+    this.sessionSidebarResizerEl.addEventListener('keydown', (event) => {
+      this.handleSessionSidebarResizeKeydown(event);
+    });
+
+    this.sessionSidebarEl = this.viewContainerEl.createDiv({ cls: 'claudian-session-sidebar' });
+    this.sessionSidebarEl.setAttribute('aria-label', 'Conversation sessions');
+  }
 
   /**
    * Builds the active tab nav row content.
@@ -370,9 +413,9 @@ export class ClaudianView extends ItemView {
   }
 
   private buildInputFooter(): void {
-    if (!this.viewContainerEl) return;
+    if (!this.chatPanelEl) return;
 
-    this.inputFooterEl = this.viewContainerEl.createDiv({ cls: 'claudian-input-footer' });
+    this.inputFooterEl = this.chatPanelEl.createDiv({ cls: 'claudian-input-footer' });
     this.inputNavRowHostEl = this.inputFooterEl.createDiv({
       cls: 'claudian-input-nav-row claudian-view-input-nav-row',
     });
@@ -537,12 +580,17 @@ export class ClaudianView extends ItemView {
   }
 
   private historyDropdownDirty = true;
-  private historyDropdownRendered = false;
+  private sessionSidebarDirty = true;
+  private historySurfaceRendered = false;
 
   private updateHistoryDropdown(): void {
     this.historyDropdownDirty = true;
+    this.sessionSidebarDirty = true;
     if (this.historyDropdown?.hasClass('visible')) {
       this.renderHistoryDropdown();
+    }
+    if (this.isWideSessionLayout) {
+      this.renderSessionSidebar();
     }
   }
 
@@ -553,30 +601,172 @@ export class ClaudianView extends ItemView {
     const abortController = new AbortController();
     this.historyRenderAbortController = abortController;
 
-    const span = this.historyDropdownRendered ? null : StartupProfiler.start('history-list-render');
-    this.historyDropdownRendered = true;
+    const span = this.historySurfaceRendered ? null : StartupProfiler.start('history-list-render');
+    this.historySurfaceRendered = true;
 
     try {
-      this.historyDropdown.empty();
-
-      const activeTab = this.tabManager?.getActiveTab();
-      const conversationController = activeTab?.controllers.conversationController;
-
-      if (conversationController) {
-        conversationController.renderHistoryDropdown(this.historyDropdown, {
-          onSelectConversation: (id) => this.openHistoryConversation(id),
-          onOpenConversationInNewTab: (id, activate) =>
-            this.openHistoryConversationInNewTab(id, activate),
-          getConversationStatus: (id) => this.getHistoryConversationStatus(id),
-          signal: abortController.signal,
-        });
-      }
+      this.renderHistorySurface(this.historyDropdown, abortController.signal);
       this.historyDropdownDirty = false;
     } finally {
       if (span) {
         StartupProfiler.finish(span);
       }
     }
+  }
+
+  private renderSessionSidebar(): void {
+    if (!this.sessionSidebarEl || !this.sessionSidebarDirty || !this.isWideSessionLayout) return;
+
+    this.cancelSessionSidebarRendering();
+    const abortController = new AbortController();
+    this.sessionSidebarRenderAbortController = abortController;
+
+    const span = this.historySurfaceRendered ? null : StartupProfiler.start('history-list-render');
+    this.historySurfaceRendered = true;
+
+    try {
+      this.renderHistorySurface(this.sessionSidebarEl, abortController.signal);
+      this.sessionSidebarDirty = false;
+    } finally {
+      if (span) {
+        StartupProfiler.finish(span);
+      }
+    }
+  }
+
+  private renderHistorySurface(container: HTMLElement, signal: AbortSignal): void {
+    container.empty();
+
+    const activeTab = this.tabManager?.getActiveTab();
+    const conversationController = activeTab?.controllers.conversationController;
+    if (!conversationController) return;
+
+    conversationController.renderHistoryDropdown(container, {
+      onSelectConversation: (id) => this.openHistoryConversation(id),
+      onOpenConversationInNewTab: (id, activate) =>
+        this.openHistoryConversationInNewTab(id, activate),
+      getConversationStatus: (id) => this.getHistoryConversationStatus(id),
+      signal,
+    });
+  }
+
+  private startSessionSidebarLayoutObserver(): void {
+    if (!this.viewContainerEl) return;
+
+    const viewContainerEl = this.viewContainerEl;
+    const ResizeObserverConstructor = viewContainerEl.ownerDocument.defaultView?.ResizeObserver;
+    if (typeof ResizeObserverConstructor === 'function') {
+      this.sessionSidebarResizeObserver = new ResizeObserverConstructor((entries) => {
+        const entry = entries.at(-1);
+        const width = entry?.contentRect.width ?? viewContainerEl.getBoundingClientRect().width;
+        this.updateSessionSidebarLayout(width);
+      });
+      this.sessionSidebarResizeObserver.observe(viewContainerEl);
+    }
+
+    this.updateSessionSidebarLayout(viewContainerEl.getBoundingClientRect().width);
+  }
+
+  private disconnectSessionSidebarLayoutObserver(): void {
+    this.sessionSidebarResizeObserver?.disconnect();
+    this.sessionSidebarResizeObserver = null;
+  }
+
+  private startSessionSidebarResize(event: PointerEvent): void {
+    if (!this.isWideSessionLayout || event.button !== 0 || !this.sessionSidebarEl) return;
+
+    event.preventDefault();
+    this.stopSessionSidebarResize();
+
+    const ownerDocument = (event.currentTarget as HTMLElement).ownerDocument;
+    const startX = event.clientX;
+    const startWidth = this.sessionSidebarWidth
+      ?? this.sessionSidebarEl.getBoundingClientRect().width;
+
+    const handlePointerMove = (moveEvent: PointerEvent): void => {
+      this.setSessionSidebarWidth(startWidth - (moveEvent.clientX - startX));
+    };
+    const handlePointerEnd = (): void => {
+      this.stopSessionSidebarResize();
+    };
+
+    ownerDocument.addEventListener('pointermove', handlePointerMove);
+    ownerDocument.addEventListener('pointerup', handlePointerEnd);
+    ownerDocument.addEventListener('pointercancel', handlePointerEnd);
+    this.viewContainerEl?.addClass('claudian-resizing-session-sidebar');
+    this.sessionSidebarResizeCleanup = () => {
+      ownerDocument.removeEventListener('pointermove', handlePointerMove);
+      ownerDocument.removeEventListener('pointerup', handlePointerEnd);
+      ownerDocument.removeEventListener('pointercancel', handlePointerEnd);
+      this.viewContainerEl?.removeClass('claudian-resizing-session-sidebar');
+    };
+  }
+
+  private stopSessionSidebarResize(): void {
+    const cleanup = this.sessionSidebarResizeCleanup;
+    this.sessionSidebarResizeCleanup = null;
+    cleanup?.();
+  }
+
+  private handleSessionSidebarResizeKeydown(event: KeyboardEvent): void {
+    if (!this.isWideSessionLayout || !this.sessionSidebarEl) return;
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+
+    event.preventDefault();
+    const currentWidth = this.sessionSidebarWidth
+      ?? this.sessionSidebarEl.getBoundingClientRect().width;
+    const delta = event.key === 'ArrowLeft'
+      ? SESSION_RESIZE_KEYBOARD_STEP
+      : -SESSION_RESIZE_KEYBOARD_STEP;
+    this.setSessionSidebarWidth(currentWidth + delta);
+  }
+
+  private setSessionSidebarWidth(requestedWidth: number): void {
+    if (!this.viewContainerEl) return;
+
+    const totalWidth = this.viewContainerEl.getBoundingClientRect().width;
+    const maxWidth = Math.max(
+      MIN_SESSION_SIDEBAR_WIDTH,
+      totalWidth - MIN_CHAT_PANEL_WIDTH - SESSION_RESIZER_WIDTH,
+    );
+    const width = Math.round(Math.min(
+      Math.max(requestedWidth, MIN_SESSION_SIDEBAR_WIDTH),
+      maxWidth,
+    ));
+
+    this.sessionSidebarWidth = width;
+    this.viewContainerEl.style.setProperty('--claudian-session-sidebar-width', `${width}px`);
+    this.sessionSidebarResizerEl?.setAttribute('aria-valuenow', String(width));
+    this.sessionSidebarResizerEl?.setAttribute('aria-valuemin', String(MIN_SESSION_SIDEBAR_WIDTH));
+    this.sessionSidebarResizerEl?.setAttribute('aria-valuemax', String(Math.round(maxWidth)));
+  }
+
+  private updateSessionSidebarLayout(width: number): void {
+    if (!this.viewContainerEl) return;
+
+    const isWide = width >= WIDE_SESSION_LAYOUT_MIN_WIDTH;
+    if (isWide === this.isWideSessionLayout) {
+      if (isWide) {
+        if (this.sessionSidebarWidth !== null) {
+          this.setSessionSidebarWidth(this.sessionSidebarWidth);
+        }
+        this.renderSessionSidebar();
+      }
+      return;
+    }
+
+    this.isWideSessionLayout = isWide;
+    this.viewContainerEl.toggleClass('claudian-wide-session-layout', isWide);
+
+    if (isWide) {
+      this.historyDropdown?.removeClass('visible');
+      this.cancelHistoryRendering();
+      this.renderSessionSidebar();
+      return;
+    }
+
+    this.stopSessionSidebarResize();
+    this.cancelSessionSidebarRendering();
   }
 
   private async openHistoryConversation(conversationId: string): Promise<void> {
@@ -600,6 +790,11 @@ export class ClaudianView extends ItemView {
   private cancelHistoryRendering(): void {
     this.historyRenderAbortController?.abort();
     this.historyRenderAbortController = null;
+  }
+
+  private cancelSessionSidebarRendering(): void {
+    this.sessionSidebarRenderAbortController?.abort();
+    this.sessionSidebarRenderAbortController = null;
   }
 
   private getHistoryConversationStatus(conversationId: string): HistoryConversationStatus {

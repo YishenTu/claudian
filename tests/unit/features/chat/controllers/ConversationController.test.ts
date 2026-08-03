@@ -766,6 +766,16 @@ describe('ConversationController', () => {
     });
 
     describe('renderHistoryDropdown', () => {
+      it('labels the conversation selector as Sessions', () => {
+        const container = createMockEl();
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+        });
+
+        expect(container.children[0].children[0].textContent).toBe('Sessions');
+      });
+
       it('should render history items to provided container', () => {
         const container = createMockEl();
         const onSelectConversation = jest.fn();

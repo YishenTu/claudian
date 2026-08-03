@@ -2,6 +2,109 @@
   position: static;
 }
 
+.claudian-session-sidebar {
+  display: none;
+  flex: 0 0 var(--claudian-session-sidebar-width, 240px);
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+.claudian-session-resizer {
+  position: relative;
+  display: none;
+  flex: 0 0 5px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.claudian-session-resizer::after {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 2px;
+  width: 1px;
+  background: transparent;
+  content: "";
+  transition: background 0.15s ease;
+}
+
+.claudian-session-resizer:hover::after,
+.claudian-session-resizer:focus-visible::after,
+.claudian-resizing-session-sidebar .claudian-session-resizer::after {
+  background: var(--interactive-accent);
+}
+
+.claudian-resizing-session-sidebar,
+.claudian-resizing-session-sidebar * {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.claudian-wide-session-layout .claudian-session-sidebar {
+  display: flex;
+}
+
+.claudian-wide-session-layout .claudian-session-resizer {
+  display: block;
+}
+
+.claudian-wide-session-layout .claudian-history-container {
+  display: none;
+}
+
+.claudian-session-sidebar .claudian-history-header {
+  flex-shrink: 0;
+  border-bottom: none;
+}
+
+.claudian-session-sidebar .claudian-history-list {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
+}
+
+.claudian-session-sidebar .claudian-history-item {
+  position: relative;
+  border-bottom: none;
+}
+
+.claudian-session-sidebar .claudian-history-item-icon {
+  display: none;
+}
+
+.claudian-session-sidebar .claudian-history-item-title {
+  color: var(--text-muted);
+}
+
+.claudian-session-sidebar .claudian-history-item.active,
+.claudian-session-sidebar .claudian-history-item.open {
+  padding-inline-start: 12px;
+  background: transparent;
+  border-inline-start: none;
+}
+
+.claudian-session-sidebar .claudian-history-item.active:hover,
+.claudian-session-sidebar .claudian-history-item.open:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-session-sidebar .claudian-history-item.active .claudian-history-item-title {
+  color: var(--text-normal);
+}
+
+.claudian-session-sidebar .claudian-history-item-actions {
+  display: none;
+  flex-shrink: 0;
+  margin-inline-start: 0;
+}
+
+.claudian-session-sidebar .claudian-history-item:hover .claudian-history-item-actions,
+.claudian-session-sidebar .claudian-history-item:focus-within .claudian-history-item-actions {
+  display: flex;
+}
+
 /* History dropup menu (opens upward since it's at bottom of view) */
 .claudian-history-menu {
   display: none;

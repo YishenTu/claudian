@@ -689,7 +689,7 @@ export class ConversationController {
     container.empty();
 
     const dropdownHeader = container.createDiv({ cls: 'claudian-history-header' });
-    dropdownHeader.createSpan({ text: 'Conversations' });
+    dropdownHeader.createSpan({ text: 'Sessions' });
 
     const list = container.createDiv({ cls: 'claudian-history-list' });
     const allConversations = plugin.getConversationList();

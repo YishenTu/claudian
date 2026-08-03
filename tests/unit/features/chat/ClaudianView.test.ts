@@ -312,7 +312,7 @@ describe('ClaudianView tab controls', () => {
 
     view.historyDropdown = historyDropdown;
     view.historyDropdownDirty = true;
-    view.historyDropdownRendered = false;
+    view.historySurfaceRendered = false;
     view.tabManager = {
       getActiveTab: jest.fn().mockReturnValue({
         controllers: {
@@ -341,6 +341,210 @@ describe('ClaudianView tab controls', () => {
     view.updateHistoryDropdown();
 
     expect(renderHistoryDropdown).toHaveBeenCalledTimes(2);
+  });
+
+  it('builds the persistent session column to the right of the chat panel', () => {
+    const viewContainerEl = createMockEl();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.viewContainerEl = viewContainerEl;
+
+    view.buildViewLayout();
+
+    expect(viewContainerEl.children).toHaveLength(3);
+    expect(viewContainerEl.children[0].hasClass('claudian-chat-panel')).toBe(true);
+    expect(viewContainerEl.children[1].hasClass('claudian-session-resizer')).toBe(true);
+    expect(viewContainerEl.children[2].hasClass('claudian-session-sidebar')).toBe(true);
+    expect(viewContainerEl.children[1].getAttribute('role')).toBe('separator');
+    expect(viewContainerEl.children[0].children).toContain(view.tabContentEl);
+    expect(viewContainerEl.children[0].children).toContain(view.inputFooterEl);
+  });
+
+  it('shows and renders the persistent session column when the view becomes wide', () => {
+    const viewContainerEl = createMockEl();
+    const historyDropdown = createMockEl();
+    historyDropdown.addClass('visible');
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      cancelHistoryRendering: jest.fn(),
+      historyDropdown,
+      isWideSessionLayout: false,
+      renderSessionSidebar: jest.fn(),
+      viewContainerEl,
+    });
+
+    view.updateSessionSidebarLayout(600);
+
+    expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(true);
+    expect(view.isWideSessionLayout).toBe(true);
+    expect(historyDropdown.hasClass('visible')).toBe(false);
+    expect(view.cancelHistoryRendering).toHaveBeenCalledTimes(1);
+    expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns to the history dropdown layout below the wide breakpoint', () => {
+    const viewContainerEl = createMockEl();
+    viewContainerEl.addClass('claudian-wide-session-layout');
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      cancelSessionSidebarRendering: jest.fn(),
+      isWideSessionLayout: true,
+      viewContainerEl,
+    });
+
+    view.updateSessionSidebarLayout(599);
+
+    expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(false);
+    expect(view.isWideSessionLayout).toBe(false);
+    expect(view.cancelSessionSidebarRendering).toHaveBeenCalledTimes(1);
+  });
+
+  it('resizes chat and session columns without changing the total view width', () => {
+    const viewContainerEl = createMockEl();
+    viewContainerEl.getBoundingClientRect = jest.fn().mockReturnValue({ width: 800 });
+    viewContainerEl.style.setProperty = jest.fn();
+    const sessionSidebarEl = createMockEl();
+    sessionSidebarEl.getBoundingClientRect = jest.fn().mockReturnValue({ width: 240 });
+    const documentListeners = new Map<string, EventListener>();
+    const ownerDocument = {
+      addEventListener: jest.fn((event: string, listener: EventListener) => {
+        documentListeners.set(event, listener);
+      }),
+      removeEventListener: jest.fn((event: string) => {
+        documentListeners.delete(event);
+      }),
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      isWideSessionLayout: true,
+      sessionSidebarEl,
+      viewContainerEl,
+    });
+
+    view.startSessionSidebarResize({
+      button: 0,
+      clientX: 500,
+      currentTarget: { ownerDocument },
+      preventDefault: jest.fn(),
+    });
+    documentListeners.get('pointermove')?.({ clientX: 450 } as unknown as Event);
+
+    expect(viewContainerEl.style.setProperty).toHaveBeenLastCalledWith(
+      '--claudian-session-sidebar-width',
+      '290px',
+    );
+    expect(viewContainerEl.hasClass('claudian-resizing-session-sidebar')).toBe(true);
+
+    documentListeners.get('pointerup')?.({} as Event);
+    expect(viewContainerEl.hasClass('claudian-resizing-session-sidebar')).toBe(false);
+    expect(ownerDocument.removeEventListener).toHaveBeenCalledWith(
+      'pointermove',
+      expect.any(Function),
+    );
+  });
+
+  it('clamps the resized session column to preserve the minimum chat width', () => {
+    const viewContainerEl = createMockEl();
+    viewContainerEl.getBoundingClientRect = jest.fn().mockReturnValue({ width: 700 });
+    viewContainerEl.style.setProperty = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      viewContainerEl,
+    });
+
+    view.setSessionSidebarWidth(600);
+
+    expect(viewContainerEl.style.setProperty).toHaveBeenCalledWith(
+      '--claudian-session-sidebar-width',
+      '375px',
+    );
+  });
+
+  it('refreshes the persistent session column while wide', () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      historyDropdown: createMockEl(),
+      isWideSessionLayout: true,
+      renderSessionSidebar: jest.fn(),
+      sessionSidebarDirty: false,
+    });
+
+    view.updateHistoryDropdown();
+
+    expect(view.sessionSidebarDirty).toBe(true);
+    expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the existing history content into the persistent session column', () => {
+    const sessionSidebarEl = createMockEl();
+    const renderHistoryDropdown = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      cancelSessionSidebarRendering: jest.fn(),
+      historySurfaceRendered: true,
+      isWideSessionLayout: true,
+      sessionSidebarDirty: true,
+      sessionSidebarEl,
+      tabManager: {
+        getActiveTab: jest.fn().mockReturnValue({
+          controllers: { conversationController: { renderHistoryDropdown } },
+        }),
+      },
+    });
+
+    view.renderSessionSidebar();
+
+    expect(renderHistoryDropdown).toHaveBeenCalledWith(
+      sessionSidebarEl,
+      expect.objectContaining({
+        getConversationStatus: expect.any(Function),
+        onOpenConversationInNewTab: expect.any(Function),
+        onSelectConversation: expect.any(Function),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(view.sessionSidebarDirty).toBe(false);
+  });
+
+  it('observes the Claudian view width and disconnects the observer on teardown', () => {
+    const viewContainerEl = createMockEl();
+    viewContainerEl.getBoundingClientRect = jest.fn().mockReturnValue({ width: 640 });
+    const observe = jest.fn();
+    const disconnect = jest.fn();
+    let resizeCallback: ResizeObserverCallback = () => {};
+    viewContainerEl.ownerDocument.defaultView.ResizeObserver = class {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallback = callback;
+      }
+
+      observe = observe;
+      disconnect = disconnect;
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      updateSessionSidebarLayout: jest.fn(),
+      viewContainerEl,
+    });
+
+    view.startSessionSidebarLayoutObserver();
+
+    expect(observe).toHaveBeenCalledWith(viewContainerEl);
+    expect(view.updateSessionSidebarLayout).toHaveBeenCalledWith(640);
+
+    resizeCallback([
+      { contentRect: { width: 900 } } as ResizeObserverEntry,
+    ], {} as ResizeObserver);
+    expect(view.updateSessionSidebarLayout).toHaveBeenLastCalledWith(900);
+
+    view.disconnectSessionSidebarLayoutObserver();
+    expect(disconnect).toHaveBeenCalledTimes(1);
   });
 
   it('persists expanded title tab ids with the tab layout snapshot', () => {
