@@ -145,11 +145,7 @@ export async function loadSDKSessionMessages(
 
   // Merge consecutive assistant messages until an actual user message appears
   for (const sdkMsg of filteredEntries) {
-    const systemInjected = isSystemInjectedMessage(sdkMsg);
-    if (sdkMsg.type === 'user' && !systemInjected) {
-      taskToolNormalizer.reset();
-    }
-    if (systemInjected) continue;
+    if (isSystemInjectedMessage(sdkMsg)) continue;
 
     // Skip synthetic assistant messages (e.g., "No response requested." after /compact)
     if (sdkMsg.type === 'assistant' && sdkMsg.message?.model === '<synthetic>') continue;
