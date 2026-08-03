@@ -11,6 +11,7 @@ Do not assume provider parity. Check each provider's `capabilities.ts`, `registr
 - This file is the canonical cross-agent guide. Keep shared instructions here.
 - `CLAUDE.md` files should import the nearest `AGENTS.md`; do not duplicate shared guidance there.
 - Before editing a scoped area, read its nearest scoped guide:
+  - `src/app/AGENTS.md`
   - `src/core/AGENTS.md`
   - `src/features/chat/AGENTS.md`
   - `src/providers/claude/AGENTS.md`
@@ -43,10 +44,14 @@ Tests mirror `src/` under `tests/unit/` and `tests/integration/`.
 
 ## Architecture
 
-| Area | Ownership |
+This table is a location map. It describes responsibility, not exclusive mutation authority. Scoped guides name the source of truth and allowed mutators for state in their area.
+
+| Area | Responsibility |
 | --- | --- |
-| `src/app/` | Shared settings defaults and plugin-level storage helpers |
+| `src/main.ts` | Plugin lifecycle and concrete application composition |
+| `src/app/` | Application conversation, settings, provider-host, and storage services |
 | `src/core/` | Provider-neutral runtime, registry, storage, tool, and type contracts |
+| `src/providers/acp/` | Shared ACP transport, interaction, and session primitives without provider policy |
 | `src/providers/*/` | Provider adaptors, provider-owned runtime protocol, history, storage, settings, and UI |
 | `src/features/chat/` | Sidebar chat orchestration against provider-neutral contracts |
 | `src/features/inline-edit/` | Inline edit modal and provider-backed edit services |
@@ -54,7 +59,33 @@ Tests mirror `src/` under `tests/unit/` and `tests/integration/`.
 | `src/shared/` | Reusable UI components |
 | `src/style/` | Modular CSS built into `styles.css` |
 
-The feature layer depends on `core/` contracts, not provider internals. Provider-specific session fields belong behind typed helpers in the owning provider directory.
+### Dependency Direction
+
+In the rules below, `A -> B` means `A` may import or call `B`:
+
+```text
+composition root (`src/main.ts`) -> app services + features + provider registrations + core
+app services -> core contracts
+features -> FeatureHost + core contracts + shared UI
+providers -> ProviderHost + core contracts + shared provider primitives
+```
+
+- `core/` must not import feature code, app composition, or provider implementations.
+- Feature code must not import provider implementations. Resolve provider behavior through core registries and contracts.
+- Provider runtime and protocol code must not import chat views, feature controllers, or other feature orchestration.
+- Existing Claude compatibility re-exports that point into `src/app/` are migration seams, not an allowed general dependency direction. Do not add new provider-to-app imports; move shared contracts into `core/` when touching those seams materially.
+- `src/providers/acp/` may contain protocol primitives shared by ACP providers. Provider-specific launch policy, extensions, normalization, history, and state remain in the owning provider.
+- If a dependency does not fit these directions, introduce or extend an explicit contract at the owning boundary instead of reaching across layers.
+
+### Cross-Layer Ownership
+
+- `src/main.ts` owns plugin lifecycle and wiring; it does not become the home for feature or provider behavior.
+- `src/app/` owns application-scoped repositories, settings transactions, host adapters, and persistence coordination. See its scoped guide for exact state authority.
+- `src/features/*/` owns user-facing orchestration and presentation state, not provider-native processes or storage formats.
+- `src/providers/*/` owns native protocol, process, session, transcript, settings, and provider-state interpretation.
+- `src/core/` owns provider-neutral contracts and shared lifecycle mechanisms, not concrete provider behavior.
+
+Provider-specific session fields belong behind typed helpers in the owning provider directory. Provider-native transcripts are read-only inputs; Claudian state changes must never rewrite or delete them.
 
 ## Provider Rules
 
@@ -106,3 +137,4 @@ The feature layer depends on `core/` contracts, not provider internals. Provider
 - Findings first: correctness, regression risk, API or contract ambiguity, and missing tests.
 - Treat maintainability issues as real findings when they increase future change cost or failure risk.
 - Call out duplicated logic, unclear ownership, and tight coupling with a concrete refactoring direction.
+- For architecture changes, ask whether the change reverses an allowed dependency, mutates state outside its owner, leaks a provider detail, or persists state with the wrong lifetime.

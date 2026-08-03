@@ -2,9 +2,22 @@
 
 `src/providers/grok/` adapts Grok Build through Agent Client Protocol over a `grok agent --no-leader stdio` subprocess.
 
+## Dependency Boundary
+
+- Grok code may depend on core contracts, shared ACP primitives from `src/providers/acp/`, shared UI primitives, and provider-local modules. It must not import chat views or feature controllers.
+- Standard ACP transport and interaction mechanics may be shared. xAI extensions, launch policy, model semantics, tool normalization, session metadata, and history interpretation remain Grok-owned.
+- Do not add a generic ACP runtime superclass. Share protocol primitives while keeping provider policy and lifecycle explicit.
+
 ## Ownership
 
-- Grok process/session lifecycle, xAI protocol extensions, native-history hydration, model catalogs, tool normalization, settings reconciliation, UI, and auxiliary services live here.
+| Area | Owns |
+| --- | --- |
+| `execution/` | Grok process/session binding, native connection, execution state, interaction routing, snapshots, and recovery |
+| `runtime/` | CLI resolution, xAI extension calls, model-catalog discovery, environment construction, and notification normalization |
+| `history/` | Read-only native-history discovery and replay projection |
+| `app/` and `commands/` | Workspace command metadata and model-catalog coordination |
+| `types.ts` and provider settings | Typed Grok provider state and current-device discovery snapshots |
+
 - Provider-owned conversation data stays behind `GrokProviderState` helpers; feature code must not inspect it.
 
 ## Protocol and Session Rules
@@ -12,7 +25,7 @@
 - Account authentication is Grok-native. Never call ACP `authenticate` automatically or persist xAI credentials.
 - Preserve `Conversation.sessionId` and provider state across prompt, CLI-path, and environment changes. Recycle the process and load the same native session.
 - Use Grok's native history under `~/.grok/sessions/` read-only.
-- Send image attachments as ACP image content blocks and rehydrate their persisted native blocks. Use Grok's `x.ai/interject` and `x.ai/session/fork` extensions behind typed provider-owned boundaries for steering and forks.
+- Send image attachments as ACP image content blocks and rehydrate their persisted native blocks. Use Grok's `_x.ai/interject` and `_x.ai/session/fork` extensions behind typed provider-owned boundaries for steering and forks.
 - Keep Grok/xAI tools enabled and preserve unknown tool data losslessly. Adapt Grok task-family lifecycle calls into the shared subagent renderer while retaining their raw names and payloads.
 - Expose Safe, Plan, and YOLO. Plan is a native ACP session mode layered over the remembered Safe or YOLO base; native mode updates remain authoritative.
 
@@ -22,7 +35,7 @@
 - Catalog snapshots are current-device scoped and contain only normalized non-secret metadata.
 - Expose Low, Medium, and High as the initial fallback for enabled models. After a real ACP session, persist and prefer the chosen model's advertised reasoning metadata; never create a session solely for discovery, and prune reasoning state when a model is disabled.
 - Do not rewrite `~/.grok/config.toml`, own BYOK endpoints, or source shell startup files.
-- Do not add a generic ACP runtime superclass; share protocol primitives while keeping xAI behavior provider-owned.
+- Any change to Grok environment text or resolved CLI-path fingerprint clears device discovery state and reloads provider processes while preserving native conversation identifiers.
 
 ## Repository Instructions vs Runtime Instructions
 
@@ -34,3 +47,11 @@
 
 - Provider behavior that is not established by standard ACP must be backed by sanitized Grok protocol evidence.
 - Put raw captures and throwaway scripts in `.context/`. Never commit credentials, private prompts, absolute personal paths, or raw user configuration.
+
+## Invariants
+
+- Environment and CLI changes recycle processes and catalogs; they do not clear `Conversation.sessionId` or opaque Grok provider state.
+- Native session mode notifications are authoritative over remembered UI mode.
+- Steering and fork extensions stay behind typed Grok boundaries and preserve unknown xAI payloads losslessly.
+- Command/model discovery must not create a user conversation session solely for metadata.
+- Existing native history and user configuration are never rewritten or deleted.

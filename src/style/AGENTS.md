@@ -4,17 +4,25 @@
 
 ## Structure
 
-```text
-src/style/
-├── base/           # container, animations, variables
-├── components/     # header, history, messages, code, thinking, toolcalls, status-panel, input, tabs
-├── toolbar/        # model selector, thinking selector, permission toggles, external context, MCP selector
-├── features/       # file/image context, inline edit, diff, commands, plan mode, ask-user, resume session
-├── modals/         # instruction, MCP, fork target
-├── settings/       # shared settings panels and provider settings modules
-├── accessibility.css
-└── index.css       # build order
-```
+| Area | Owns |
+| --- | --- |
+| `base/` | Variables, container primitives, animations, and global visibility behavior |
+| `components/` | Reusable chat surfaces such as messages, input, tabs, navigation, status, context, citations, and tool output |
+| `toolbar/` | Composer and provider-option controls |
+| `features/` | Styles coupled to a named feature workflow such as context, diff, inline edit, plan mode, or commands |
+| `modals/` | Modal-specific layouts |
+| `settings/` | Shared settings shell and provider settings modules |
+| `accessibility.css` | Cross-feature accessibility adaptations |
+| `index.css` | Complete module inclusion and deterministic build order |
+
+Choose a folder by UI ownership, not by the screen where a selector happens to appear. Shared visual primitives belong in `components/`; behavior-specific selectors stay with their feature.
+
+## Boundaries
+
+- TypeScript owns semantic and lifecycle state. CSS may render classes and attributes but must not be treated as the source of truth for state transitions.
+- Feature-specific styling must not leak provider behavior into shared selectors. Provider variants should use explicit provider classes or data attributes supplied by UI config.
+- Keep Obsidian host-selector overrides narrow. Do not globally restyle host classes when a Claudian container can scope the rule.
+- Root `styles.css` is generated output. Never edit it directly.
 
 ## Build Rules
 
