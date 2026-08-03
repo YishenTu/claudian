@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import { isWriteEditTool } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import { extractUserQuery } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
 import { buildImageAttachmentFromBase64 } from '../../../utils/imageAttachment';
 import {
@@ -442,9 +443,12 @@ function mapPiSessionEntry(
   const timestamp = getTimestamp(message.timestamp ?? entry.raw.timestamp);
 
   if (role === 'user') {
+    const content = extractTextContent(message.content ?? message.text ?? message.message);
+    const displayContent = extractPiSkillDisplayContent(content);
     const images = extractUserImages(message.content ?? message.parts ?? message.blocks, entry.id ?? `pi-user-${messages.length}`);
     return {
-      content: extractTextContent(message.content ?? message.text ?? message.message),
+      content,
+      ...(displayContent ? { displayContent } : {}),
       id: entry.id ?? `pi-user-${messages.length}`,
       ...(images.length > 0 ? { images } : {}),
       role: 'user',
@@ -505,6 +509,16 @@ function mapPiSessionEntry(
   }
 
   return null;
+}
+
+function extractPiSkillDisplayContent(content: string): string | undefined {
+  const match = content.match(
+    /^<skill name="([^"]+)" location="[^"]+">\n[\s\S]*?\n<\/skill>(?:\n\n([\s\S]+))?$/,
+  );
+  if (!match) return undefined;
+
+  const visibleArguments = match[2] ? extractUserQuery(match[2]) : '';
+  return `/skill:${match[1]}${visibleArguments ? ` ${visibleArguments}` : ''}`;
 }
 
 function extractAssistantContentBlocks(value: unknown): ContentBlock[] {

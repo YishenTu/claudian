@@ -70,6 +70,50 @@ describe('PiHistoryStore', () => {
     expect(messages[0].displayContent).toBeUndefined();
   });
 
+  it.each([
+    {
+      displayContent: '/skill:commit-push',
+      suffix: '',
+    },
+    {
+      displayContent: '/skill:commit-push include untracked files',
+      suffix: [
+        '',
+        '',
+        'include untracked files',
+        '',
+        '<linked_note path="notes/release.md" />',
+      ].join('\n'),
+    },
+  ])('restores $displayContent from Pi-expanded skill prompts', ({
+    displayContent,
+    suffix,
+  }) => {
+    const expandedPrompt = [
+      '<skill name="commit-push" location="/Users/test/.agents/skills/commit-push/SKILL.md">',
+      'References are relative to /Users/test/.agents/skills/commit-push.',
+      '',
+      'Commit all uncommitted changes, then push to remote.',
+      '</skill>',
+    ].join('\n') + suffix;
+    const content = JSON.stringify({
+      id: 'u1',
+      type: 'message',
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: expandedPrompt }],
+      },
+    });
+
+    const messages = parsePiSessionContent(content);
+
+    expect(messages[0]).toMatchObject({
+      content: expandedPrompt,
+      displayContent,
+      role: 'user',
+    });
+  });
+
   it('rehydrates user image content parts', () => {
     const content = [
       JSON.stringify({
