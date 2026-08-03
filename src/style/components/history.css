@@ -54,9 +54,49 @@
   display: none;
 }
 
+.claudian-wide-session-layout .claudian-input-nav-actions > .claudian-new-tab-btn,
+.claudian-wide-session-layout .claudian-input-nav-actions > .claudian-new-conversation-btn {
+  display: none;
+}
+
 .claudian-session-sidebar .claudian-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   flex-shrink: 0;
   border-bottom: none;
+}
+
+.claudian-session-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.claudian-session-header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.claudian-session-header-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-session-header-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 .claudian-session-sidebar .claudian-history-list {

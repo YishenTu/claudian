@@ -124,9 +124,11 @@ function createViewHarness(options: {
   tabCount?: number;
 }): {
   newTabButtonEl: ReturnType<typeof createMockEl>;
+  sessionNewTabButtonEl: ReturnType<typeof createMockEl>;
   view: any;
 } {
   const newTabButtonEl = createMockEl();
+  const sessionNewTabButtonEl = createMockEl();
   const view = Object.create(ClaudianView.prototype) as any;
 
   view.plugin = {
@@ -138,8 +140,9 @@ function createViewHarness(options: {
   };
   view.tabBarContainerEl = createMockEl();
   view.newTabButtonEl = newTabButtonEl;
+  view.sessionNewTabButtonEl = sessionNewTabButtonEl;
 
-  return { newTabButtonEl, view };
+  return { newTabButtonEl, sessionNewTabButtonEl, view };
 }
 
 describe('ClaudianView tab controls', () => {
@@ -161,26 +164,58 @@ describe('ClaudianView tab controls', () => {
   });
 
   it('hides the new-tab button when the tab manager is at capacity', () => {
-    const { newTabButtonEl, view } = createViewHarness({ canCreateTab: false });
+    const { newTabButtonEl, sessionNewTabButtonEl, view } = createViewHarness({ canCreateTab: false });
 
     view.refreshTabControls();
 
     expect(newTabButtonEl.hasClass('claudian-hidden')).toBe(true);
     expect(newTabButtonEl.getAttribute('aria-disabled')).toBe('true');
     expect(newTabButtonEl.getAttribute('aria-hidden')).toBe('true');
+    expect(sessionNewTabButtonEl.hasClass('claudian-hidden')).toBe(true);
+    expect(sessionNewTabButtonEl.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('shows the new-tab button when another tab can be created', () => {
-    const { newTabButtonEl, view } = createViewHarness({ canCreateTab: true });
+    const { newTabButtonEl, sessionNewTabButtonEl, view } = createViewHarness({ canCreateTab: true });
     newTabButtonEl.addClass('claudian-hidden');
     newTabButtonEl.setAttribute('aria-disabled', 'true');
     newTabButtonEl.setAttribute('aria-hidden', 'true');
+    sessionNewTabButtonEl.addClass('claudian-hidden');
+    sessionNewTabButtonEl.setAttribute('aria-disabled', 'true');
+    sessionNewTabButtonEl.setAttribute('aria-hidden', 'true');
 
     view.refreshTabControls();
 
     expect(newTabButtonEl.hasClass('claudian-hidden')).toBe(false);
     expect(newTabButtonEl.getAttribute('aria-disabled')).toBeNull();
     expect(newTabButtonEl.getAttribute('aria-hidden')).toBeNull();
+    expect(sessionNewTabButtonEl.hasClass('claudian-hidden')).toBe(false);
+    expect(sessionNewTabButtonEl.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('renders new-tab and new-session controls in the persistent header', () => {
+    const container = createMockEl();
+    const header = container.createDiv({ cls: 'claudian-history-header' });
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      requestNewConversation: jest.fn(),
+      requestNewTab: jest.fn(),
+      tabManager: { canCreateTab: jest.fn().mockReturnValue(true) },
+    });
+
+    view.buildSessionHeaderActions(container);
+
+    const actions = header.querySelector('.claudian-session-header-actions');
+    const newTabButton = actions?.children[0];
+    const newSessionButton = actions?.children[1];
+    expect(newTabButton?.getAttribute('aria-label')).toBe('New tab');
+    expect(newSessionButton?.getAttribute('aria-label')).toBe('New session');
+
+    newTabButton?.click();
+    newSessionButton?.click();
+    expect(view.requestNewTab).toHaveBeenCalledTimes(1);
+    expect(view.requestNewConversation).toHaveBeenCalledTimes(1);
   });
 
   it('keeps tab controls in the view-owned input row', () => {

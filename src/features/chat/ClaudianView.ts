@@ -60,6 +60,7 @@ export class ClaudianView extends ItemView {
   // DOM Elements
   private viewContainerEl: HTMLElement | null = null;
   private newTabButtonEl: HTMLElement | null = null;
+  private sessionNewTabButtonEl: HTMLElement | null = null;
 
   // History elements
   private historyDropdown: HTMLElement | null = null;
@@ -371,9 +372,7 @@ export class ClaudianView extends ItemView {
       onTabClose: (tabId) => {
         void this.handleTabClose(tabId);
       },
-      onNewTab: () => {
-        void this.createNewTab().catch(() => new Notice('Failed to create tab'));
-      },
+      onNewTab: () => this.requestNewTab(),
       onTitleExpansionChanged: () => this.persistTabState(),
     });
 
@@ -382,19 +381,14 @@ export class ClaudianView extends ItemView {
     this.newTabButtonEl = navActionsEl.createDiv({ cls: 'claudian-input-nav-btn claudian-new-tab-btn' });
     setIcon(this.newTabButtonEl, 'square-plus');
     this.newTabButtonEl.setAttribute('aria-label', 'New tab');
-    this.newTabButtonEl.addEventListener('click', () => {
-      void this.createNewTab().catch(() => new Notice('Failed to create tab'));
-    });
+    this.newTabButtonEl.addEventListener('click', () => this.requestNewTab());
 
-    const newBtn = navActionsEl.createDiv({ cls: 'claudian-input-nav-btn' });
+    const newBtn = navActionsEl.createDiv({
+      cls: 'claudian-input-nav-btn claudian-new-conversation-btn',
+    });
     setIcon(newBtn, 'square-pen');
     newBtn.setAttribute('aria-label', 'New conversation');
-    newBtn.addEventListener('click', () => {
-      void (async () => {
-        await this.tabManager?.createNewConversation();
-        this.updateHistoryDropdown();
-      })().catch(() => new Notice('Failed to create conversation'));
-    });
+    newBtn.addEventListener('click', () => this.requestNewConversation());
 
     // History dropdown
     const historyContainer = navActionsEl.createDiv({ cls: 'claudian-history-container' });
@@ -410,6 +404,17 @@ export class ClaudianView extends ItemView {
     });
 
     return wrapper;
+  }
+
+  private requestNewTab(): void {
+    void this.createNewTab().catch(() => new Notice('Failed to create tab'));
+  }
+
+  private requestNewConversation(): void {
+    void (async () => {
+      await this.tabManager?.createNewConversation();
+      this.updateHistoryDropdown();
+    })().catch(() => new Notice('Failed to create conversation'));
   }
 
   private buildInputFooter(): void {
@@ -540,18 +545,22 @@ export class ClaudianView extends ItemView {
   }
 
   private updateNewTabButtonVisibility(): void {
-    if (!this.newTabButtonEl || !this.tabManager) return;
+    if (!this.tabManager) return;
 
     const canCreateTab = this.tabManager.canCreateTab();
-    this.newTabButtonEl.toggleClass('claudian-hidden', !canCreateTab);
-    if (canCreateTab) {
-      this.newTabButtonEl.removeAttribute('aria-disabled');
-      this.newTabButtonEl.removeAttribute('aria-hidden');
-      return;
-    }
+    const buttons = [this.newTabButtonEl, this.sessionNewTabButtonEl]
+      .filter((button): button is HTMLElement => Boolean(button));
+    for (const button of buttons) {
+      button.toggleClass('claudian-hidden', !canCreateTab);
+      if (canCreateTab) {
+        button.removeAttribute('aria-disabled');
+        button.removeAttribute('aria-hidden');
+        continue;
+      }
 
-    this.newTabButtonEl.setAttribute('aria-disabled', 'true');
-    this.newTabButtonEl.setAttribute('aria-hidden', 'true');
+      button.setAttribute('aria-disabled', 'true');
+      button.setAttribute('aria-hidden', 'true');
+    }
   }
 
   /** Sets `data-provider` on the root container so CSS brand color follows the active provider. */
@@ -625,7 +634,9 @@ export class ClaudianView extends ItemView {
     this.historySurfaceRendered = true;
 
     try {
+      this.sessionNewTabButtonEl = null;
       this.renderHistorySurface(this.sessionSidebarEl, abortController.signal);
+      this.buildSessionHeaderActions(this.sessionSidebarEl);
       this.sessionSidebarDirty = false;
     } finally {
       if (span) {
@@ -648,6 +659,30 @@ export class ClaudianView extends ItemView {
       getConversationStatus: (id) => this.getHistoryConversationStatus(id),
       signal,
     });
+  }
+
+  private buildSessionHeaderActions(container: HTMLElement): void {
+    const header = container.querySelector<HTMLElement>('.claudian-history-header');
+    if (!header) return;
+
+    const actions = header.createDiv({ cls: 'claudian-session-header-actions' });
+    this.sessionNewTabButtonEl = actions.createEl('button', {
+      cls: 'claudian-session-header-btn',
+      attr: { type: 'button' },
+    });
+    setIcon(this.sessionNewTabButtonEl, 'square-plus');
+    this.sessionNewTabButtonEl.setAttribute('aria-label', 'New tab');
+    this.sessionNewTabButtonEl.addEventListener('click', () => this.requestNewTab());
+
+    const newSessionButton = actions.createEl('button', {
+      cls: 'claudian-session-header-btn',
+      attr: { type: 'button' },
+    });
+    setIcon(newSessionButton, 'square-pen');
+    newSessionButton.setAttribute('aria-label', 'New session');
+    newSessionButton.addEventListener('click', () => this.requestNewConversation());
+
+    this.updateNewTabButtonVisibility();
   }
 
   private startSessionSidebarLayoutObserver(): void {
