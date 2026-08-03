@@ -24,6 +24,10 @@ import type {
 } from '../../../core/types/settings';
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
+import {
+  appendCurrentNote,
+  appendCurrentNoteContent,
+} from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import {
   getEnhancedPath,
@@ -277,14 +281,13 @@ export class ClaudeExecutionRequestEncoder {
       .join('\n\n');
     const context = request.context;
     if (context?.currentNote) {
-      prompt += context.currentNote.content === undefined
-        ? `\n\n<linked_note>\n${context.currentNote.path}\n</linked_note>`
-        : `\n\n<current_note path="${escapeXmlAttribute(
+      prompt = context.currentNote.content === undefined
+        ? appendCurrentNote(prompt, context.currentNote.path)
+        : appendCurrentNoteContent(
+          prompt,
           context.currentNote.path,
-        )}">\n${escapeXmlBody(
           context.currentNote.content,
-          'current_note',
-        )}\n</current_note>`;
+        );
     }
     if (context?.editorSelection) {
       prompt = appendEditorContext(prompt, context.editorSelection);
@@ -383,21 +386,6 @@ function isEffortLevel(value: unknown): value is EffortLevel {
 
 function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values.filter((value) => value.trim().length > 0))];
-}
-
-function escapeXmlAttribute(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function escapeXmlBody(value: string, closingTag: string): string {
-  return value.replace(
-    new RegExp(`</${closingTag}>`, 'gi'),
-    `&lt;/${closingTag}&gt;`,
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

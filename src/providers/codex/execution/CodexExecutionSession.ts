@@ -24,7 +24,13 @@ import {
 } from '../../../core/prompt/mainAgent';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ChatMessage, ImageAttachment, StreamChunk } from '../../../core/types';
-import { appendCurrentNote } from '../../../utils/context';
+import { appendBrowserContext } from '../../../utils/browser';
+import { appendCanvasContext } from '../../../utils/canvas';
+import {
+  appendCurrentNote,
+  appendCurrentNoteContent,
+} from '../../../utils/context';
+import { appendEditorContext } from '../../../utils/editor';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
@@ -1700,22 +1706,22 @@ export class CodexExecutionSession
       .join('\n\n');
     const context = request.context;
     if (context?.currentNote) {
-      prompt = appendCurrentNote(prompt, context.currentNote.path);
-      if (context.currentNote.content) {
-        prompt += `\n\n[Current note content:\n${context.currentNote.content}\n]`;
-      }
+      prompt = context.currentNote.content === undefined
+        ? appendCurrentNote(prompt, context.currentNote.path)
+        : appendCurrentNoteContent(
+          prompt,
+          context.currentNote.path,
+          context.currentNote.content,
+        );
     }
-    if (context?.editorSelection?.selectedText) {
-      prompt += `\n\n[Editor selection from ${context.editorSelection.notePath || 'current note'}:\n${context.editorSelection.selectedText}\n]`;
+    if (context?.editorSelection) {
+      prompt = appendEditorContext(prompt, context.editorSelection);
     }
-    if (context?.browserSelection?.selectedText) {
-      prompt += `\n\n[Browser selection from ${context.browserSelection.url ?? 'unknown page'}:\n${context.browserSelection.selectedText}\n]`;
+    if (context?.browserSelection) {
+      prompt = appendBrowserContext(prompt, context.browserSelection);
     }
     if (context?.canvasSelection) {
-      const nodes = context.canvasSelection.nodeIds.join(', ');
-      if (nodes) {
-        prompt += `\n\n[Canvas selection from ${context.canvasSelection.canvasPath}:\n${nodes}\n]`;
-      }
+      prompt = appendCanvasContext(prompt, context.canvasSelection);
     }
 
     const history = request.conversationHistory;

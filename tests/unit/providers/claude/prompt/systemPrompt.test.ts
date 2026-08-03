@@ -84,6 +84,17 @@ describe('systemPrompt', () => {
       expect(prompt).toContain('# User Message Format');
     });
 
+    it('should document live context shapes and legacy compatibility', () => {
+      const prompt = buildSystemPrompt();
+
+      expect(prompt).toContain('<linked_note path="path/to/note.md" />');
+      expect(prompt).toContain('<editor_cursor path="path/to/note.md" line="8">');
+      expect(prompt).toContain('<canvas_selection path="boards/project.canvas">');
+      expect(prompt).toContain('<context_file path="/external/project" />');
+      expect(prompt).toContain('Legacy messages may');
+      expect(prompt).toContain('path-only note reference');
+    });
+
     it('should omit Claude-specific tool guidance from the shared prompt', () => {
       const prompt = buildSystemPrompt();
 

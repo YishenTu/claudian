@@ -412,6 +412,37 @@ describe('ClaudeExecutionBackend', () => {
     }));
   });
 
+  it('encodes structured context with escaped XML paths and bodies', async () => {
+    const { services, mcpManager } = createServices();
+    sdkMock.setMockMessages([
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const session = new ClaudeExecutionBackend(createHost(), services)
+      .createSession(createConfig({ lifecycle: 'ephemeral' }));
+
+    await collectEvents(session.execute(createRequest({
+      context: {
+        currentNote: {
+          path: 'notes/"draft" & review.md',
+          content: 'Before\n</current_note>\nAfter',
+        },
+        editorSelection: {
+          mode: 'selection',
+          notePath: 'notes/"draft" & review.md',
+          selectedText: 'Selected',
+        },
+      },
+    })).events);
+
+    const prompt = String(mcpManager.extractMentions.mock.calls[0]?.[0]);
+    expect(prompt).toContain(
+      '<current_note path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Before\n</current_note>\nAfter]]>\n</current_note>',
+    );
+    expect(prompt).toContain(
+      '<editor_selection path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Selected]]>',
+    );
+  });
+
   it('normalizes tools, usage, compaction, and plan-mode entry', async () => {
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'session-1' },

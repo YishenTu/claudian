@@ -7,7 +7,10 @@ import {
   appendCanvasContext,
   type CanvasSelectionContext,
 } from '../../../utils/canvas';
-import { appendCurrentNote } from '../../../utils/context';
+import {
+  appendCurrentNote,
+  appendCurrentNoteContent,
+} from '../../../utils/context';
 import {
   appendEditorContext,
   type EditorSelectionContext,
@@ -19,6 +22,7 @@ export interface OpencodePromptRequest {
   text: string;
   images?: ImageAttachment[];
   currentNotePath?: string;
+  currentNoteContent?: string;
   editorSelection?: EditorSelectionContext | null;
   browserSelection?: BrowserSelectionContext | null;
   canvasSelection?: CanvasSelectionContext | null;
@@ -32,7 +36,13 @@ export function buildOpencodePromptText(
   let prompt = request.text;
 
   if (request.currentNotePath) {
-    prompt = appendCurrentNote(prompt, request.currentNotePath);
+    prompt = request.currentNoteContent === undefined
+      ? appendCurrentNote(prompt, request.currentNotePath)
+      : appendCurrentNoteContent(
+        prompt,
+        request.currentNotePath,
+        request.currentNoteContent,
+      );
   }
 
   if (request.editorSelection && request.editorSelection.mode !== 'none') {

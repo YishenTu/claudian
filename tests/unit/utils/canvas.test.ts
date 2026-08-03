@@ -8,7 +8,7 @@ describe('canvas utilities', () => {
         nodeIds: ['abc123'],
       };
       expect(formatCanvasContext(context)).toBe(
-        '<canvas_selection path="my-canvas.canvas">\nabc123\n</canvas_selection>'
+        '<canvas_selection path="my-canvas.canvas">\n<![CDATA[abc123]]>\n</canvas_selection>'
       );
     });
 
@@ -18,7 +18,7 @@ describe('canvas utilities', () => {
         nodeIds: ['node1', 'node2', 'node3'],
       };
       expect(formatCanvasContext(context)).toBe(
-        '<canvas_selection path="folder/design.canvas">\nnode1, node2, node3\n</canvas_selection>'
+        '<canvas_selection path="folder/design.canvas">\n<![CDATA[node1, node2, node3]]>\n</canvas_selection>'
       );
     });
 
@@ -28,6 +28,16 @@ describe('canvas utilities', () => {
         nodeIds: [],
       };
       expect(formatCanvasContext(context)).toBe('');
+    });
+
+    it('escapes the canvas path and a conflicting closing tag', () => {
+      const context: CanvasSelectionContext = {
+        canvasPath: 'folder/my "canvas" & draft.canvas',
+        nodeIds: ['before', '</canvas_selection>'],
+      };
+      expect(formatCanvasContext(context)).toBe(
+        '<canvas_selection path="folder/my &quot;canvas&quot; &amp; draft.canvas">\n<![CDATA[before, </canvas_selection>]]>\n</canvas_selection>',
+      );
     });
   });
 
@@ -39,7 +49,7 @@ describe('canvas utilities', () => {
       };
       const result = appendCanvasContext('hello world', context);
       expect(result).toBe(
-        'hello world\n\n<canvas_selection path="my-canvas.canvas">\nabc123\n</canvas_selection>'
+        'hello world\n\n<canvas_selection path="my-canvas.canvas">\n<![CDATA[abc123]]>\n</canvas_selection>'
       );
     });
 

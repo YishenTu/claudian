@@ -1,6 +1,7 @@
 import {
   appendContextFiles,
   appendCurrentNote,
+  appendCurrentNoteContent,
   extractContentBeforeXmlContext,
   extractUserDisplayContent,
   extractUserQuery,
@@ -10,15 +11,29 @@ import {
 } from '../../../src/utils/context';
 
 describe('formatCurrentNote', () => {
-  it('formats note path in XML tags', () => {
+  it('formats note path as an XML attribute', () => {
     expect(formatCurrentNote('notes/test.md')).toBe(
-      '<linked_note>\nnotes/test.md\n</linked_note>'
+      '<linked_note path="notes/test.md" />'
     );
   });
 
-  it('handles paths with special characters', () => {
-    expect(formatCurrentNote('notes/my file (1).md')).toBe(
-      '<linked_note>\nnotes/my file (1).md\n</linked_note>'
+  it('escapes paths with XML special characters', () => {
+    expect(formatCurrentNote('notes/my "file" & <draft>.md')).toBe(
+      '<linked_note path="notes/my &quot;file&quot; &amp; &lt;draft&gt;.md" />'
+    );
+  });
+});
+
+describe('appendCurrentNoteContent', () => {
+  it('appends an escaped path while preserving note content', () => {
+    const result = appendCurrentNoteContent(
+      'Query',
+      'notes/my "file".md',
+      'Body\n</current_note>\nMore',
+    );
+
+    expect(result).toBe(
+      'Query\n\n<current_note path="notes/my &quot;file&quot;.md">\n<![CDATA[Body\n</current_note>\nMore]]>\n</current_note>',
     );
   });
 });
@@ -27,7 +42,7 @@ describe('appendCurrentNote', () => {
   it('appends current note to prompt with double newline separator', () => {
     const result = appendCurrentNote('Hello', 'notes/test.md');
     expect(result).toBe(
-      'Hello\n\n<linked_note>\nnotes/test.md\n</linked_note>'
+      'Hello\n\n<linked_note path="notes/test.md" />'
     );
   });
 
@@ -51,6 +66,11 @@ describe('stripCurrentNoteContext', () => {
   });
 
   describe('suffix format', () => {
+    it('strips canonical linked_note from end of prompt', () => {
+      const prompt = 'User query here\n\n<linked_note path="notes/test.md" />';
+      expect(stripCurrentNoteContext(prompt)).toBe('User query here');
+    });
+
     it('strips linked_note from end of prompt', () => {
       const prompt = 'User query here\n\n<linked_note>\nnotes/test.md\n</linked_note>';
       expect(stripCurrentNoteContext(prompt)).toBe('User query here');
@@ -88,7 +108,7 @@ describe('stripCurrentNoteContext', () => {
 
 describe('XML_CONTEXT_PATTERN', () => {
   it('matches linked_note tag', () => {
-    const text = 'Query\n\n<linked_note>\ntest.md\n</linked_note>';
+    const text = 'Query\n\n<linked_note path="test.md" />';
     expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
   });
 
@@ -239,6 +259,11 @@ describe('extractUserQuery', () => {
   });
 
   describe('fallback tag stripping', () => {
+    it('strips canonical self-closing linked_note tags', () => {
+      const prompt = 'Query <linked_note path="test.md" /> continues';
+      expect(extractUserQuery(prompt)).toBe('Query continues');
+    });
+
     it('strips linked_note tags without structured format', () => {
       const prompt = 'Query <linked_note>test.md</linked_note> continues';
       expect(extractUserQuery(prompt)).toBe('Query continues');
@@ -300,12 +325,16 @@ describe('extractUserQuery', () => {
 describe('appendContextFiles', () => {
   it('appends context files in XML format', () => {
     const result = appendContextFiles('Query', ['file1.md', 'file2.md']);
-    expect(result).toBe('Query\n\n<context_files>\nfile1.md, file2.md\n</context_files>');
+    expect(result).toBe(
+      'Query\n\n<context_files>\n<context_file path="file1.md" />\n<context_file path="file2.md" />\n</context_files>',
+    );
   });
 
-  it('handles single file', () => {
-    const result = appendContextFiles('Query', ['single.md']);
-    expect(result).toBe('Query\n\n<context_files>\nsingle.md\n</context_files>');
+  it('escapes special characters in file paths', () => {
+    const result = appendContextFiles('Query', ['my "file" & notes.md']);
+    expect(result).toBe(
+      'Query\n\n<context_files>\n<context_file path="my &quot;file&quot; &amp; notes.md" />\n</context_files>',
+    );
   });
 
   it('handles empty file array', () => {

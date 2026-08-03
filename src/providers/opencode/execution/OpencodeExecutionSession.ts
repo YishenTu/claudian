@@ -858,16 +858,14 @@ function buildPromptBlocks(
     ))
     .map(({ image }) => image);
   const currentNote = request.context?.currentNote;
-  const noteContent = currentNote?.content
-    ? `\n\n<current_note path="${currentNote.path}">\n${currentNote.content}\n</current_note>`
-    : '';
   return buildOpencodePromptBlocks({
     browserSelection: request.context?.browserSelection,
     canvasSelection: request.context?.canvasSelection,
-    currentNotePath: currentNote?.content ? undefined : currentNote?.path,
+    currentNoteContent: currentNote?.content,
+    currentNotePath: currentNote?.path,
     editorSelection: request.context?.editorSelection,
     images,
-    text: `${text}${noteContent}`,
+    text,
   }, bootstrapHistory
     ? [...(request.conversationHistory ?? [])] as ChatMessage[]
     : []);

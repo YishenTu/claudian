@@ -493,6 +493,74 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('sends all attached context using canonical escaped XML', async () => {
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult('thread-context');
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn('thread-context', 'turn-context'));
+        return createTurnResult('turn-context');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+
+    await collectEvents(session.execute(createRequest(
+      new AbortController().signal,
+      {
+        context: {
+          currentNote: {
+            path: 'notes/"draft" & review.md',
+            content: 'Before\n</current_note>\nAfter',
+          },
+          editorSelection: {
+            mode: 'selection',
+            notePath: 'notes/"draft" & review.md',
+            selectedText: 'Selected\n</editor_selection>',
+          },
+          browserSelection: {
+            source: 'browser:https://example.com',
+            selectedText: 'Browser text',
+            url: 'https://example.com/?a=1&b=2',
+          },
+          canvasSelection: {
+            canvasPath: 'boards/"draft" & review.canvas',
+            nodeIds: ['node-1'],
+          },
+        },
+      },
+    )).events);
+
+    const turnParams = mockTransportRequest.mock.calls
+      .find(([method]) => method === 'turn/start')?.[1] as {
+        input: Array<{ text?: string; type: string }>;
+      };
+    const prompt = turnParams.input.find(block => block.type === 'text')?.text;
+    expect(prompt).toContain(
+      '<current_note path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Before\n</current_note>\nAfter]]>\n</current_note>',
+    );
+    expect(prompt).toContain(
+      '<editor_selection path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Selected\n</editor_selection>]]>\n</editor_selection>',
+    );
+    expect(prompt).toContain(
+      '<browser_selection source="browser:https://example.com" url="https://example.com/?a=1&amp;b=2">',
+    );
+    expect(prompt).toContain(
+      '<canvas_selection path="boards/&quot;draft&quot; &amp; review.canvas">',
+    );
+    expect(prompt).not.toContain('[Editor selection from');
+
+    await session.dispose();
+  });
+
   it.each([
     ['persistent', true],
     ['ephemeral', false],

@@ -9,10 +9,10 @@ describe('buildOpencodePromptText', () => {
         title: 'Example',
         url: 'https://example.com',
       },
-      currentNotePath: 'notes/today.md',
+      currentNotePath: 'notes/"today" & draft.md',
       editorSelection: {
         mode: 'selection',
-        notePath: 'notes/today.md',
+        notePath: 'notes/"today" & draft.md',
         selectedText: 'Selected text',
         startLine: 4,
         lineCount: 2,
@@ -21,9 +21,8 @@ describe('buildOpencodePromptText', () => {
     });
 
     expect(prompt).toContain('Summarize this');
-    expect(prompt).toContain('<linked_note>');
-    expect(prompt).toContain('notes/today.md');
-    expect(prompt).toContain('<editor_selection path="notes/today.md" lines="4-5">');
+    expect(prompt).toContain('<linked_note path="notes/&quot;today&quot; &amp; draft.md" />');
+    expect(prompt).toContain('<editor_selection path="notes/&quot;today&quot; &amp; draft.md" lines="4-5">');
     expect(prompt).toContain('<browser_selection source="browser:https://example.com" title="Example" url="https://example.com">');
   });
 
@@ -36,6 +35,19 @@ describe('buildOpencodePromptText', () => {
     expect(prompt).toContain('Summarize this');
     expect(prompt).not.toContain('<context_files>');
     expect(prompt).not.toContain('/tmp/project');
+  });
+
+  it('encodes current note content without allowing the context tag to close early', () => {
+    const prompt = buildOpencodePromptText({
+      currentNoteContent: 'Before\n</current_note>\nAfter',
+      currentNotePath: 'notes/"draft".md',
+      text: 'Review this',
+    });
+
+    expect(prompt).toContain(
+      '<current_note path="notes/&quot;draft&quot;.md">\n<![CDATA[Before\n</current_note>\nAfter]]>\n</current_note>',
+    );
+    expect(prompt).not.toContain('<linked_note');
   });
 
   it('rebuilds prior conversation context when a native session must be recreated', () => {
