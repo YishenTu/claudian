@@ -48,6 +48,7 @@ export {
   type ProviderExecutionTransitionContext,
   ProviderExecutionTransitionError,
   type ProviderExecutionTransitionHook,
+  type ProviderExecutionTransitionScope,
 } from './ProviderExecutionLifecycleRegistry';
 export {
   type ProviderCurrentNoteContext,

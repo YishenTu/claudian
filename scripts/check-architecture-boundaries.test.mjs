@@ -70,3 +70,8 @@ test('runtime command discovery cannot import shared skill management', () => {
   const pattern = /from\s+['"][^'"]*(?:core\/skills|AgentSkillSettings)/;
   assert.deepEqual(findMatches(roots, pattern), []);
 });
+
+test('renderer source does not import AsyncLocalStorage', () => {
+  const pattern = /import\s*\{[^}]*\bAsyncLocalStorage\b[^}]*\}\s*from\s*['"](?:node:)?async_hooks['"]/s;
+  assert.deepEqual(findMatches([sourceRoot], pattern), []);
+});

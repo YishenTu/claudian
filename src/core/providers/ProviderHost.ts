@@ -1,7 +1,10 @@
 import type { App } from 'obsidian';
 
 import type { SharedAppStorage } from '../bootstrap/storage';
-import type { ProviderExecutionLifecycleRegistry } from '../execution';
+import type {
+  ProviderExecutionLifecycleRegistry,
+  ProviderExecutionTransitionScope,
+} from '../execution';
 import type { ClaudianSettings } from '../types';
 import type { EnvironmentScope } from '../types/settings';
 import type { ProviderCliResolutionContext, ProviderId } from './types';
@@ -52,7 +55,8 @@ export interface ProviderHost {
   ): Promise<string | null>;
   runProviderExecutionTransition<T>(
     providerIds: ProviderId[],
-    mutation: () => Promise<T>,
+    mutation: (scope: ProviderExecutionTransitionScope) => Promise<T>,
+    parentScope?: ProviderExecutionTransitionScope,
   ): Promise<T>;
 
   notifyProviderChatOptionsChanged(providerId: ProviderId): void;

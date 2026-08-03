@@ -1,6 +1,9 @@
 import '@/providers';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
+import {
+  ProviderExecutionLifecycleRegistry,
+  type ProviderExecutionTransitionScope,
+} from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '@/core/providers/types';
@@ -12,9 +15,14 @@ function createProviderHost(): ProviderHost {
     executionLifecycleRegistry,
     runProviderExecutionTransition: <T>(
       providerIds: ProviderId[],
-      mutation: () => Promise<T>,
+      mutation: (scope: ProviderExecutionTransitionScope) => Promise<T>,
+      parentScope?: ProviderExecutionTransitionScope,
     ) => (
-      executionLifecycleRegistry.runTransition(providerIds, mutation)
+      executionLifecycleRegistry.runTransition(
+        providerIds,
+        mutation,
+        parentScope,
+      )
     ),
     settings: {},
     storage: {
@@ -259,5 +267,45 @@ describe('ProviderWorkspaceRegistry', () => {
 
     expect(events).toEqual(['before', 'initialize', 'after']);
     expect(host.executionLifecycleRegistry.getProviderGeneration('grok')).toBe(1);
+  });
+
+  it('rejects a nested transition started by async provider initialization', async () => {
+    const host = createProviderHost();
+    const nestedMutation = jest.fn(async () => undefined);
+    ProviderWorkspaceRegistry.register('grok', {
+      initialize: jest.fn(async (context) => {
+        await Promise.resolve();
+        await context.plugin.runProviderExecutionTransition(
+          ['grok'],
+          nestedMutation,
+          context.transitionScope,
+        );
+        return { commandCatalog: {} as any };
+      }),
+    });
+
+    const initialization = ProviderWorkspaceRegistry.ensureInitialized(
+      host,
+      'grok',
+      'nested-transition',
+    );
+    const outcome = await Promise.race([
+      initialization.then(
+        () => ({ kind: 'resolved' as const }),
+        (error: unknown) => ({ kind: 'rejected' as const, error }),
+      ),
+      new Promise<{ kind: 'timeout' }>((resolve) => {
+        setTimeout(() => resolve({ kind: 'timeout' }), 100);
+      }),
+    ]);
+
+    expect(outcome).toMatchObject({
+      kind: 'rejected',
+      error: {
+        providerId: 'grok',
+        retryable: true,
+      },
+    });
+    expect(nestedMutation).not.toHaveBeenCalled();
   });
 });

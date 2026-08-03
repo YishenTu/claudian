@@ -1,6 +1,9 @@
 import type { CursorContext } from '../../utils/editor';
 import type { SharedAppStorage } from '../bootstrap/storage';
-import type { ProviderExecutionBackend } from '../execution';
+import type {
+  ProviderExecutionBackend,
+  ProviderExecutionTransitionScope,
+} from '../execution';
 import type { McpServerManager } from '../mcp/McpServerManager';
 import type { HomeFileAdapter } from '../storage/HomeFileAdapter';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
@@ -460,6 +463,7 @@ export interface ProviderWorkspaceInitContext {
   storage: SharedAppStorage;
   vaultAdapter: VaultFileAdapter;
   homeAdapter: HomeFileAdapter;
+  transitionScope: ProviderExecutionTransitionScope;
 }
 
 export interface ProviderWorkspaceRegistration<

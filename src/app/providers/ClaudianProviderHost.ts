@@ -1,3 +1,4 @@
+import type { ProviderExecutionTransitionScope } from '../../core/execution';
 import type { ProviderHost } from '../../core/providers/ProviderHost';
 import type { ProviderCliResolutionContext, ProviderId } from '../../core/providers/types';
 import type { EnvironmentScope } from '../../core/types/settings';
@@ -90,9 +91,17 @@ export class ClaudianProviderHost implements ProviderHost {
 
   runProviderExecutionTransition<T>(
     providerIds: ProviderId[],
-    mutation: () => Promise<T>,
+    mutation: (scope: ProviderExecutionTransitionScope) => Promise<T>,
+    parentScope?: ProviderExecutionTransitionScope,
   ): Promise<T> {
-    return this.plugin.runProviderExecutionTransition(providerIds, mutation);
+    if (!parentScope) {
+      return this.plugin.runProviderExecutionTransition(providerIds, mutation);
+    }
+    return this.plugin.runProviderExecutionTransition(
+      providerIds,
+      mutation,
+      parentScope,
+    );
   }
 
   notifyProviderChatOptionsChanged(providerId: ProviderId): void {

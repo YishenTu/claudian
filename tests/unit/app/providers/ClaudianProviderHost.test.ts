@@ -1,4 +1,5 @@
 import { ClaudianProviderHost } from '@/app/providers/ClaudianProviderHost';
+import type { ProviderExecutionTransitionScope } from '@/core/execution';
 import type ClaudianPlugin from '@/main';
 
 function createPlugin(overrides: Record<string, unknown> = {}): ClaudianPlugin {
@@ -86,6 +87,20 @@ describe('ClaudianProviderHost', () => {
     expect(runProviderExecutionTransition).toHaveBeenCalledWith(
       ['opencode', 'claude'],
       mutation,
+    );
+
+    const parentScope = {
+      providerIds: ['claude'],
+    } as unknown as ProviderExecutionTransitionScope;
+    await host.runProviderExecutionTransition(
+      ['codex'],
+      mutation,
+      parentScope,
+    );
+    expect(runProviderExecutionTransition).toHaveBeenLastCalledWith(
+      ['codex'],
+      mutation,
+      parentScope,
     );
   });
 

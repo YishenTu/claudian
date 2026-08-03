@@ -5,6 +5,7 @@
  * initialization promise so concurrent callers cannot repeat work.
  */
 
+import type { ProviderExecutionTransitionScope } from '../execution';
 import type { ProviderHost } from './ProviderHost';
 import type {
   ProviderId,
@@ -64,7 +65,12 @@ export class ProviderInitializationBoundary {
     const generation = this.generation;
     const promise = plugin.runProviderExecutionTransition(
       [providerId],
-      () => this.runInitialize(plugin, providerId, generation),
+      (transitionScope) => this.runInitialize(
+        plugin,
+        providerId,
+        generation,
+        transitionScope,
+      ),
     );
     const attempt: ProviderInitializationAttempt = {
       promise,
@@ -102,6 +108,7 @@ export class ProviderInitializationBoundary {
     plugin: ProviderHost,
     providerId: ProviderId,
     generation: number,
+    transitionScope: ProviderExecutionTransitionScope,
   ): Promise<void> {
     const registration = this.registrations[providerId];
     if (!registration) {
@@ -118,6 +125,7 @@ export class ProviderInitializationBoundary {
       storage,
       vaultAdapter,
       homeAdapter,
+      transitionScope,
     };
 
     const services = await registration.initialize(context);

@@ -1,5 +1,3 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
-
 import { toError } from '../../utils/error';
 import type { ProviderId } from '../types/provider';
 import type {
@@ -7,6 +5,8 @@ import type {
   ProviderSessionConfig,
 } from './ProviderExecutionBackend';
 import type { ProviderExecutionSession } from './ProviderExecutionSession';
+
+declare const providerExecutionTransitionScopeBrand: unique symbol;
 
 export type ProviderExecutionOwnerKind =
   | 'chat'
@@ -40,6 +40,18 @@ export interface ProviderExecutionSessionLease {
 export interface ProviderExecutionTransitionContext {
   readonly providerId: ProviderId;
   readonly generation: number;
+  readonly scope: ProviderExecutionTransitionScope;
+}
+
+/**
+ * Explicit ownership marker for work running inside a provider transition.
+ *
+ * Renderer code must not use AsyncLocalStorage for this state because Node and
+ * Blink share the same continuation-preserved embedder slot in Electron.
+ */
+export interface ProviderExecutionTransitionScope {
+  readonly [providerExecutionTransitionScopeBrand]: true;
+  readonly providerIds: readonly ProviderId[];
 }
 
 type ProviderExecutionTransitionCallback = (
@@ -80,11 +92,6 @@ interface ProviderLifecycleState {
   readonly leases: Set<ProviderExecutionSessionLeaseImpl>;
   readonly hooks: Set<ProviderExecutionTransitionHook>;
   readonly lock: AsyncLock;
-}
-
-interface ActiveProviderTransition {
-  active: boolean;
-  readonly providerIds: ReadonlySet<ProviderId>;
 }
 
 class AsyncLock {
@@ -198,8 +205,8 @@ class ProviderExecutionSessionLeaseImpl
  */
 export class ProviderExecutionLifecycleRegistry {
   private readonly states = new Map<ProviderId, ProviderLifecycleState>();
-  private readonly activeTransition =
-    new AsyncLocalStorage<ActiveProviderTransition>();
+  private readonly activeTransitionScopes =
+    new WeakSet<ProviderExecutionTransitionScope>();
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
 
@@ -229,40 +236,45 @@ export class ProviderExecutionLifecycleRegistry {
     return this.states.get(providerId)?.generation ?? 0;
   }
 
+  /**
+   * Runs a provider transition with explicit ownership across async boundaries.
+   * Work that can start another transition must forward the received scope as
+   * parentScope so re-entrancy fails before attempting to acquire nested locks.
+   */
   async runTransition<T>(
     providerIds: ProviderId[],
-    mutation: () => Promise<T>,
+    mutation: (scope: ProviderExecutionTransitionScope) => Promise<T>,
+    parentScope?: ProviderExecutionTransitionScope,
   ): Promise<T> {
     this.assertAvailable();
     const orderedProviderIds = [...new Set(providerIds)].sort();
-    const parentTransition = this.activeTransition.getStore();
-    if (parentTransition?.active) {
+    if (parentScope && this.activeTransitionScopes.has(parentScope)) {
       const rejectedProviderId =
         orderedProviderIds[0]
-        ?? [...parentTransition.providerIds].sort()[0];
+        ?? parentScope.providerIds[0];
       if (rejectedProviderId) {
         throw new ProviderExecutionTransitionError(rejectedProviderId);
       }
     }
 
-    const transition: ActiveProviderTransition = {
-      active: true,
-      providerIds: new Set([
-        ...(parentTransition?.active ? parentTransition.providerIds : []),
-        ...orderedProviderIds,
-      ]),
-    };
+    const scope = Object.freeze({
+      providerIds: Object.freeze([...orderedProviderIds]),
+    }) as ProviderExecutionTransitionScope;
+    this.activeTransitionScopes.add(scope);
     try {
-      return await this.activeTransition.run(transition, () =>
-        this.runTransitionWithLocks(orderedProviderIds, mutation),
+      return await this.runTransitionWithLocks(
+        orderedProviderIds,
+        scope,
+        () => mutation(scope),
       );
     } finally {
-      transition.active = false;
+      this.activeTransitionScopes.delete(scope);
     }
   }
 
   private async runTransitionWithLocks<T>(
     orderedProviderIds: ProviderId[],
+    scope: ProviderExecutionTransitionScope,
     mutation: () => Promise<T>,
   ): Promise<T> {
     const states = orderedProviderIds.map((providerId) => ({
@@ -286,6 +298,7 @@ export class ProviderExecutionLifecycleRegistry {
         return {
           providerId,
           generation: state.generation,
+          scope,
         } satisfies ProviderExecutionTransitionContext;
       });
 

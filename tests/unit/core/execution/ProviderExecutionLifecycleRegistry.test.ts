@@ -8,6 +8,7 @@ import {
   type ProviderExecutionSession,
   ProviderExecutionTransitionError,
   type ProviderExecutionTransitionHook,
+  type ProviderExecutionTransitionScope,
   type ProviderSessionConfig,
   type ProviderSessionEvent,
   type ProviderSessionSnapshot,
@@ -387,12 +388,72 @@ describe('ProviderExecutionLifecycleRegistry', () => {
     await registry.dispose();
   });
 
+  it('provides an explicit scope for rejecting nested transitions after async boundaries', async () => {
+    const registry = new ProviderExecutionLifecycleRegistry();
+    const nestedMutation = jest.fn(async () => undefined);
+
+    await registry.runTransition(['pi'], async (scope) => {
+      expect(scope.providerIds).toEqual(['pi']);
+      await Promise.resolve();
+
+      await expect(
+        registry.runTransition(['claude'], nestedMutation, scope),
+      ).rejects.toMatchObject({
+        providerId: 'claude',
+        retryable: true,
+      });
+    });
+
+    expect(nestedMutation).not.toHaveBeenCalled();
+    await registry.dispose();
+  });
+
+  it('provides transition hooks with the active scope', async () => {
+    const registry = new ProviderExecutionLifecycleRegistry();
+    const nestedMutation = jest.fn(async () => undefined);
+
+    registry.registerTransitionHook('claude', {
+      beforeTransition: async (context) => {
+        expect(context.scope.providerIds).toEqual(['claude']);
+        await expect(
+          registry.runTransition(['pi'], nestedMutation, context.scope),
+        ).rejects.toMatchObject({
+          providerId: 'pi',
+          retryable: true,
+        });
+      },
+    });
+
+    await registry.runTransition(['claude'], async () => undefined);
+
+    expect(nestedMutation).not.toHaveBeenCalled();
+    await registry.dispose();
+  });
+
+  it('does not treat a completed transition scope as active ownership', async () => {
+    const registry = new ProviderExecutionLifecycleRegistry();
+    let completedScope!: ProviderExecutionTransitionScope;
+
+    await registry.runTransition(['pi'], async (scope) => {
+      completedScope = scope;
+    });
+
+    await expect(
+      registry.runTransition(
+        ['claude'],
+        async () => 'completed',
+        completedScope,
+      ),
+    ).resolves.toBe('completed');
+    await registry.dispose();
+  });
+
   it('rejects a nested same-provider transition instead of deadlocking', async () => {
     const registry = new ProviderExecutionLifecycleRegistry();
     const nestedMutation = jest.fn(async () => undefined);
 
-    const transition = registry.runTransition(['claude'], async () => {
-      await registry.runTransition(['claude'], nestedMutation);
+    const transition = registry.runTransition(['claude'], async (scope) => {
+      await registry.runTransition(['claude'], nestedMutation, scope);
     });
     const outcome = await Promise.race([
       transition.then(
@@ -426,10 +487,10 @@ describe('ProviderExecutionLifecycleRegistry', () => {
     const nestedMutation = jest.fn(async () => undefined);
     const independentMutation = jest.fn(async () => undefined);
 
-    const outer = registry.runTransition(['pi'], async () => {
+    const outer = registry.runTransition(['pi'], async (scope) => {
       outerMutationStarted.resolve();
       await beginNestedTransition.promise;
-      await registry.runTransition(['claude'], nestedMutation);
+      await registry.runTransition(['claude'], nestedMutation, scope);
     });
     await outerMutationStarted.promise;
 

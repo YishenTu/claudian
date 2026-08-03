@@ -25,7 +25,10 @@ import {
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SessionMetadataReadResult } from './core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from './core/bootstrap/storage';
-import { ProviderExecutionLifecycleRegistry } from './core/execution';
+import {
+  ProviderExecutionLifecycleRegistry,
+  type ProviderExecutionTransitionScope,
+} from './core/execution';
 import {
   getEnvironmentVariablesForScope as getScopedEnvironmentVariables,
   getRuntimeEnvironmentText,
@@ -1170,9 +1173,14 @@ export default class ClaudianPlugin extends Plugin {
 
   runProviderExecutionTransition<T>(
     providerIds: ProviderId[],
-    mutation: () => Promise<T>,
+    mutation: (scope: ProviderExecutionTransitionScope) => Promise<T>,
+    parentScope?: ProviderExecutionTransitionScope,
   ): Promise<T> {
-    return this.executionLifecycleRegistry.runTransition(providerIds, mutation);
+    return this.executionLifecycleRegistry.runTransition(
+      providerIds,
+      mutation,
+      parentScope,
+    );
   }
 
   private async resetDeletedConversationTabs(id: string): Promise<void> {
