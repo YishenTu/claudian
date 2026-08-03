@@ -101,6 +101,11 @@ type HistoryRenderOptions = {
   signal?: AbortSignal;
   pageSize?: number;
   visibleCount?: number;
+  showOpenStateLabels?: boolean;
+};
+
+type HistorySurfaceRenderOptions = Omit<HistoryRenderOptions, 'onRerender'> & {
+  onRerender?: () => void;
 };
 
 export class ConversationController {
@@ -738,7 +743,11 @@ export class ConversationController {
       titleEl.setAttribute('title', conv.title);
       content.createDiv({
         cls: 'claudian-history-item-date',
-        text: this.getHistoryItemStatusText(conversationStatus, conv.lastResponseAt ?? conv.createdAt),
+        text: this.getHistoryItemStatusText(
+          conversationStatus,
+          conv.lastResponseAt ?? conv.createdAt,
+          options.showOpenStateLabels ?? true,
+        ),
       });
 
       if (!isCurrent) {
@@ -880,9 +889,14 @@ export class ConversationController {
   private getHistoryItemStatusText(
     status: HistoryConversationStatus,
     timestamp: number,
+    showOpenStateLabels: boolean,
   ): string {
     const { openState, isRunning } = status;
     const location = status.location ?? 'current-view';
+
+    if (!isRunning && !showOpenStateLabels) {
+      return this.formatDate(timestamp);
+    }
 
     if (openState !== 'closed' && location === 'other-view') {
       return isRunning ? 'Running in another pane' : 'Open in another pane';
@@ -1233,11 +1247,12 @@ export class ConversationController {
    */
   renderHistoryDropdown(
     container: HTMLElement,
-    options: Omit<HistoryRenderOptions, 'onRerender'>,
+    options: HistorySurfaceRenderOptions,
   ): void {
     this.renderHistoryItems(container, {
       ...options,
-      onRerender: () => this.renderHistoryDropdown(container, options),
+      onRerender: options.onRerender
+        ?? (() => this.renderHistoryDropdown(container, options)),
     });
   }
 }

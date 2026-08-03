@@ -789,6 +789,31 @@ describe('ConversationController', () => {
         expect(container.children.length).toBe(2); // header + list
       });
 
+      it('delegates rerendering after deletion when the surface owner provides a callback', async () => {
+        const container = createMockEl();
+        const onRerender = jest.fn();
+
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'conv-1', title: 'Test', createdAt: 1000, lastResponseAt: 1000 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          onRerender,
+        });
+
+        const deleteBtn = container.querySelector('.claudian-delete-btn');
+        const clickHandlers = deleteBtn?._eventListeners?.get('click');
+        expect(clickHandlers).toBeDefined();
+
+        clickHandlers![0]({ stopPropagation: jest.fn() });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(deps.plugin.deleteConversation).toHaveBeenCalledWith('conv-1');
+        expect(onRerender).toHaveBeenCalledTimes(1);
+      });
+
       it('paginates large history lists and loads the next bounded page on demand', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue(
@@ -903,6 +928,33 @@ describe('ConversationController', () => {
         expect(openItem.getAttribute('data-tab-index')).toBe('2');
         expect(openItem.getAttribute('data-tab-location')).toBe('current-view');
         expect(openItemDate?.textContent).toBe('Open in tab 2');
+      });
+
+      it('shows timestamps instead of open-state labels when requested by the surface', () => {
+        const container = createMockEl();
+        jest.spyOn(controller, 'formatDate').mockImplementation(
+          (timestamp) => `Date ${timestamp}`,
+        );
+
+        deps.state.currentConversationId = 'conv-1';
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
+          { id: 'conv-2', title: 'Open', createdAt: 2000, lastResponseAt: 1000 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          getConversationStatus: (id) => id === 'conv-1'
+            ? { openState: 'current', isRunning: false, location: 'current-view', tabIndex: 1 }
+            : { openState: 'open', isRunning: false, location: 'current-view', tabIndex: 2 },
+          showOpenStateLabels: false,
+        });
+
+        const list = container.children[1];
+        expect(list.children[0].querySelector('.claudian-history-item-date')?.textContent)
+          .toBe('Date 2000');
+        expect(list.children[1].querySelector('.claudian-history-item-date')?.textContent)
+          .toBe('Date 1000');
       });
 
       it('should display running status for the current conversation', () => {

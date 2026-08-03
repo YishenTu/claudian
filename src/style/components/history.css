@@ -134,15 +134,6 @@
   color: var(--text-normal);
 }
 
-.claudian-session-sidebar
-  .claudian-history-item[data-running="false"][data-open-state="current"]
-  .claudian-history-item-date,
-.claudian-session-sidebar
-  .claudian-history-item[data-running="false"][data-open-state="open"]
-  .claudian-history-item-date {
-  display: none;
-}
-
 .claudian-session-sidebar .claudian-history-item-actions {
   display: none;
   flex-shrink: 0;

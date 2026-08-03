@@ -122,13 +122,14 @@ describe('ClaudianView model refresh routing', () => {
 function createViewHarness(options: {
   canCreateTab: boolean;
   tabCount?: number;
+  tabs?: Array<{ conversationId: string | null }>;
 }): {
   newTabButtonEl: ReturnType<typeof createMockEl>;
-  sessionNewTabButtonEl: ReturnType<typeof createMockEl>;
+  sessionNewButtonEl: ReturnType<typeof createMockEl>;
   view: any;
 } {
   const newTabButtonEl = createMockEl();
-  const sessionNewTabButtonEl = createMockEl();
+  const sessionNewButtonEl = createMockEl();
   const view = Object.create(ClaudianView.prototype) as any;
 
   view.plugin = {
@@ -136,13 +137,14 @@ function createViewHarness(options: {
   };
   view.tabManager = {
     canCreateTab: jest.fn().mockReturnValue(options.canCreateTab),
+    getAllTabs: jest.fn().mockReturnValue(options.tabs ?? []),
     getTabCount: jest.fn().mockReturnValue(options.tabCount ?? 1),
   };
   view.tabBarContainerEl = createMockEl();
   view.newTabButtonEl = newTabButtonEl;
-  view.sessionNewTabButtonEl = sessionNewTabButtonEl;
+  view.sessionNewButtonEl = sessionNewButtonEl;
 
-  return { newTabButtonEl, sessionNewTabButtonEl, view };
+  return { newTabButtonEl, sessionNewButtonEl, view };
 }
 
 describe('ClaudianView tab controls', () => {
@@ -164,62 +166,134 @@ describe('ClaudianView tab controls', () => {
   });
 
   it('hides the new-tab button when the tab manager is at capacity', () => {
-    const { newTabButtonEl, sessionNewTabButtonEl, view } = createViewHarness({ canCreateTab: false });
+    const { newTabButtonEl, sessionNewButtonEl, view } = createViewHarness({ canCreateTab: false });
 
     view.refreshTabControls();
 
     expect(newTabButtonEl.hasClass('claudian-hidden')).toBe(true);
     expect(newTabButtonEl.getAttribute('aria-disabled')).toBe('true');
     expect(newTabButtonEl.getAttribute('aria-hidden')).toBe('true');
-    expect(sessionNewTabButtonEl.hasClass('claudian-hidden')).toBe(true);
-    expect(sessionNewTabButtonEl.getAttribute('aria-disabled')).toBe('true');
+    expect(sessionNewButtonEl.hasClass('claudian-hidden')).toBe(true);
+    expect(sessionNewButtonEl.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('shows the new-tab button when another tab can be created', () => {
-    const { newTabButtonEl, sessionNewTabButtonEl, view } = createViewHarness({ canCreateTab: true });
+    const { newTabButtonEl, sessionNewButtonEl, view } = createViewHarness({ canCreateTab: true });
     newTabButtonEl.addClass('claudian-hidden');
     newTabButtonEl.setAttribute('aria-disabled', 'true');
     newTabButtonEl.setAttribute('aria-hidden', 'true');
-    sessionNewTabButtonEl.addClass('claudian-hidden');
-    sessionNewTabButtonEl.setAttribute('aria-disabled', 'true');
-    sessionNewTabButtonEl.setAttribute('aria-hidden', 'true');
+    sessionNewButtonEl.addClass('claudian-hidden');
+    sessionNewButtonEl.setAttribute('aria-disabled', 'true');
+    sessionNewButtonEl.setAttribute('aria-hidden', 'true');
 
     view.refreshTabControls();
 
     expect(newTabButtonEl.hasClass('claudian-hidden')).toBe(false);
     expect(newTabButtonEl.getAttribute('aria-disabled')).toBeNull();
     expect(newTabButtonEl.getAttribute('aria-hidden')).toBeNull();
-    expect(sessionNewTabButtonEl.hasClass('claudian-hidden')).toBe(false);
-    expect(sessionNewTabButtonEl.getAttribute('aria-disabled')).toBeNull();
+    expect(sessionNewButtonEl.hasClass('claudian-hidden')).toBe(false);
+    expect(sessionNewButtonEl.getAttribute('aria-disabled')).toBeNull();
   });
 
-  it('renders new-tab and new-session controls in the persistent header', () => {
+  it('keeps the dual-mode New control available to resume an unbound draft at capacity', () => {
+    const { newTabButtonEl, sessionNewButtonEl, view } = createViewHarness({
+      canCreateTab: false,
+      tabs: [{ conversationId: 'conversation-1' }, { conversationId: null }],
+    });
+
+    view.refreshTabControls();
+
+    expect(newTabButtonEl.hasClass('claudian-hidden')).toBe(true);
+    expect(sessionNewButtonEl.hasClass('claudian-hidden')).toBe(false);
+    expect(sessionNewButtonEl.getAttribute('aria-disabled')).toBeNull();
+    expect(sessionNewButtonEl.getAttribute('aria-hidden')).toBeNull();
+  });
+
+  it('renders one New control in the persistent header', () => {
     const container = createMockEl();
     const header = container.createDiv({ cls: 'claudian-history-header' });
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
-      requestNewConversation: jest.fn(),
-      requestNewTab: jest.fn(),
-      tabManager: { canCreateTab: jest.fn().mockReturnValue(true) },
+      requestDualNew: jest.fn(),
+      tabManager: {
+        canCreateTab: jest.fn().mockReturnValue(true),
+        getAllTabs: jest.fn().mockReturnValue([]),
+      },
     });
 
     view.buildSessionHeaderActions(container);
 
     const actions = header.querySelector('.claudian-session-header-actions');
-    const newTabButton = actions?.children[0];
-    const newSessionButton = actions?.children[1];
-    expect(newTabButton?.tagName).toBe('DIV');
-    expect(newSessionButton?.tagName).toBe('DIV');
-    expect(newTabButton?.getAttribute('role')).toBe('button');
-    expect(newSessionButton?.getAttribute('tabindex')).toBe('0');
-    expect(newTabButton?.getAttribute('aria-label')).toBe('New tab');
-    expect(newSessionButton?.getAttribute('aria-label')).toBe('New session');
+    const newButton = actions?.children[0];
+    expect(actions?.children).toHaveLength(1);
+    expect(newButton?.tagName).toBe('DIV');
+    expect(newButton?.getAttribute('role')).toBe('button');
+    expect(newButton?.getAttribute('tabindex')).toBe('0');
+    expect(newButton?.getAttribute('aria-label')).toBe('New');
 
-    newTabButton?.click();
-    newSessionButton?.click();
-    expect(view.requestNewTab).toHaveBeenCalledTimes(1);
-    expect(view.requestNewConversation).toHaveBeenCalledTimes(1);
+    newButton?.click();
+    expect(view.requestDualNew).toHaveBeenCalledTimes(1);
+  });
+
+  it('focuses the current unbound draft when New is clicked again in dual mode', async () => {
+    const inputEl = createMockEl('textarea') as unknown as HTMLTextAreaElement;
+    inputEl.focus = jest.fn();
+    const draftTab = { id: 'draft-1', conversationId: null, dom: { inputEl } };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.createNewTab = jest.fn();
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue(draftTab),
+      getAllTabs: jest.fn().mockReturnValue([draftTab]),
+      switchToTab: jest.fn(),
+    };
+
+    await view.activateOrCreateDraftTab();
+
+    expect(inputEl.focus).toHaveBeenCalledTimes(1);
+    expect(view.tabManager.switchToTab).not.toHaveBeenCalled();
+    expect(view.createNewTab).not.toHaveBeenCalled();
+  });
+
+  it('resumes the most recent unbound draft instead of creating another one', async () => {
+    const firstInputEl = createMockEl('textarea') as unknown as HTMLTextAreaElement;
+    const latestInputEl = createMockEl('textarea') as unknown as HTMLTextAreaElement;
+    firstInputEl.focus = jest.fn();
+    latestInputEl.focus = jest.fn();
+    const activeTab = { id: 'tab-1', conversationId: 'conversation-1' };
+    const firstDraft = { id: 'draft-1', conversationId: null, dom: { inputEl: firstInputEl } };
+    const latestDraft = { id: 'draft-2', conversationId: null, dom: { inputEl: latestInputEl } };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.createNewTab = jest.fn();
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue(activeTab),
+      getAllTabs: jest.fn().mockReturnValue([activeTab, firstDraft, latestDraft]),
+      switchToTab: jest.fn().mockResolvedValue(undefined),
+    };
+
+    await view.activateOrCreateDraftTab();
+
+    expect(view.tabManager.switchToTab).toHaveBeenCalledWith('draft-2');
+    expect(latestInputEl.focus).toHaveBeenCalledTimes(1);
+    expect(firstInputEl.focus).not.toHaveBeenCalled();
+    expect(view.createNewTab).not.toHaveBeenCalled();
+  });
+
+  it('creates an unbound tab when dual mode has no draft to resume', async () => {
+    const activeTab = { id: 'tab-1', conversationId: 'conversation-1' };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.createNewTab = jest.fn().mockResolvedValue(undefined);
+    view.tabManager = {
+      getActiveTab: jest.fn().mockReturnValue(activeTab),
+      getAllTabs: jest.fn().mockReturnValue([activeTab]),
+    };
+
+    await view.activateOrCreateDraftTab();
+
+    expect(view.createNewTab).toHaveBeenCalledTimes(1);
   });
 
   it('keeps tab controls in the view-owned input row', () => {
@@ -522,6 +596,7 @@ describe('ClaudianView tab controls', () => {
   it('renders the existing history content into the persistent session column', () => {
     const sessionSidebarEl = createMockEl();
     const renderHistoryDropdown = jest.fn();
+    const updateHistoryDropdown = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
@@ -530,6 +605,7 @@ describe('ClaudianView tab controls', () => {
       isWideSessionLayout: true,
       sessionSidebarDirty: true,
       sessionSidebarEl,
+      updateHistoryDropdown,
       tabManager: {
         getActiveTab: jest.fn().mockReturnValue({
           controllers: { conversationController: { renderHistoryDropdown } },
@@ -544,11 +620,84 @@ describe('ClaudianView tab controls', () => {
       expect.objectContaining({
         getConversationStatus: expect.any(Function),
         onOpenConversationInNewTab: expect.any(Function),
+        onRerender: expect.any(Function),
         onSelectConversation: expect.any(Function),
+        showOpenStateLabels: false,
         signal: expect.any(AbortSignal),
       }),
     );
     expect(view.sessionSidebarDirty).toBe(false);
+
+    renderHistoryDropdown.mock.calls[0][1].onRerender();
+    expect(updateHistoryDropdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a closed session in a new container from the dual-mode session column', async () => {
+    const openConversation = jest.fn().mockResolvedValue(undefined);
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.plugin = {
+      findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      settings: { maxTabs: 3 },
+    };
+    view.tabManager = {
+      canCreateTab: jest.fn().mockReturnValue(true),
+      getAllTabs: jest.fn().mockReturnValue([
+        { id: 'draft-1', conversationId: null },
+      ]),
+      openConversation,
+    };
+
+    await view.openSessionConversation('conversation-2');
+
+    expect(openConversation).toHaveBeenCalledWith('conversation-2', {
+      preferNewTab: true,
+      activate: true,
+    });
+  });
+
+  it('does not replace an unbound draft when a closed session cannot get a container', async () => {
+    const openConversation = jest.fn().mockResolvedValue(undefined);
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.plugin = {
+      findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      settings: { maxTabs: 2 },
+    };
+    view.tabManager = {
+      canCreateTab: jest.fn().mockReturnValue(false),
+      getAllTabs: jest.fn().mockReturnValue([
+        { id: 'tab-1', conversationId: 'conversation-1' },
+        { id: 'draft-1', conversationId: null },
+      ]),
+      openConversation,
+    };
+
+    await view.openSessionConversation('conversation-2');
+
+    expect(openConversation).not.toHaveBeenCalled();
+  });
+
+  it('switches to an already-open dual-mode session even at container capacity', async () => {
+    const openConversation = jest.fn().mockResolvedValue(undefined);
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.plugin = {
+      findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      settings: { maxTabs: 2 },
+    };
+    view.tabManager = {
+      canCreateTab: jest.fn().mockReturnValue(false),
+      getAllTabs: jest.fn().mockReturnValue([
+        { id: 'tab-1', conversationId: 'conversation-1' },
+        { id: 'tab-2', conversationId: 'conversation-2' },
+      ]),
+      openConversation,
+    };
+
+    await view.openSessionConversation('conversation-2');
+
+    expect(openConversation).toHaveBeenCalledWith('conversation-2');
   });
 
   it('observes the Claudian view width and disconnects the observer on teardown', () => {

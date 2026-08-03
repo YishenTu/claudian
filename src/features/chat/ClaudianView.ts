@@ -60,7 +60,7 @@ export class ClaudianView extends ItemView {
   // DOM Elements
   private viewContainerEl: HTMLElement | null = null;
   private newTabButtonEl: HTMLElement | null = null;
-  private sessionNewTabButtonEl: HTMLElement | null = null;
+  private sessionNewButtonEl: HTMLElement | null = null;
 
   // History elements
   private historyDropdown: HTMLElement | null = null;
@@ -417,6 +417,38 @@ export class ClaudianView extends ItemView {
     })().catch(() => new Notice('Failed to create conversation'));
   }
 
+  private requestDualNew(): void {
+    void this.activateOrCreateDraftTab()
+      .catch(() => new Notice('Failed to open a new tab'));
+  }
+
+  private async activateOrCreateDraftTab(): Promise<void> {
+    const activeTab = this.tabManager?.getActiveTab();
+    if (activeTab?.conversationId === null) {
+      activeTab.dom.inputEl.focus();
+      return;
+    }
+
+    const draftTab = this.findMostRecentUnboundTab();
+    if (draftTab) {
+      await this.tabManager?.switchToTab(draftTab.id);
+      draftTab.dom.inputEl.focus();
+      return;
+    }
+
+    await this.createNewTab();
+  }
+
+  private findMostRecentUnboundTab(): TabData | null {
+    const tabs = this.tabManager?.getAllTabs() ?? [];
+    for (let index = tabs.length - 1; index >= 0; index -= 1) {
+      if (tabs[index].conversationId === null) {
+        return tabs[index];
+      }
+    }
+    return null;
+  }
+
   private buildInputFooter(): void {
     if (!this.chatPanelEl) return;
 
@@ -548,19 +580,25 @@ export class ClaudianView extends ItemView {
     if (!this.tabManager) return;
 
     const canCreateTab = this.tabManager.canCreateTab();
-    const buttons = [this.newTabButtonEl, this.sessionNewTabButtonEl]
-      .filter((button): button is HTMLElement => Boolean(button));
-    for (const button of buttons) {
-      button.toggleClass('claudian-hidden', !canCreateTab);
-      if (canCreateTab) {
-        button.removeAttribute('aria-disabled');
-        button.removeAttribute('aria-hidden');
-        continue;
-      }
+    this.setNewButtonAvailability(this.newTabButtonEl, canCreateTab);
+    this.setNewButtonAvailability(
+      this.sessionNewButtonEl,
+      canCreateTab || this.findMostRecentUnboundTab() !== null,
+    );
+  }
 
-      button.setAttribute('aria-disabled', 'true');
-      button.setAttribute('aria-hidden', 'true');
+  private setNewButtonAvailability(button: HTMLElement | null, isAvailable: boolean): void {
+    if (!button) return;
+
+    button.toggleClass('claudian-hidden', !isAvailable);
+    if (isAvailable) {
+      button.removeAttribute('aria-disabled');
+      button.removeAttribute('aria-hidden');
+      return;
     }
+
+    button.setAttribute('aria-disabled', 'true');
+    button.setAttribute('aria-hidden', 'true');
   }
 
   /** Sets `data-provider` on the root container so CSS brand color follows the active provider. */
@@ -634,8 +672,8 @@ export class ClaudianView extends ItemView {
     this.historySurfaceRendered = true;
 
     try {
-      this.sessionNewTabButtonEl = null;
-      this.renderHistorySurface(this.sessionSidebarEl, abortController.signal);
+      this.sessionNewButtonEl = null;
+      this.renderHistorySurface(this.sessionSidebarEl, abortController.signal, 'sessions');
       this.buildSessionHeaderActions(this.sessionSidebarEl);
       this.sessionSidebarDirty = false;
     } finally {
@@ -645,7 +683,11 @@ export class ClaudianView extends ItemView {
     }
   }
 
-  private renderHistorySurface(container: HTMLElement, signal: AbortSignal): void {
+  private renderHistorySurface(
+    container: HTMLElement,
+    signal: AbortSignal,
+    navigationMode: 'history' | 'sessions' = 'history',
+  ): void {
     container.empty();
 
     const activeTab = this.tabManager?.getActiveTab();
@@ -653,10 +695,16 @@ export class ClaudianView extends ItemView {
     if (!conversationController) return;
 
     conversationController.renderHistoryDropdown(container, {
-      onSelectConversation: (id) => this.openHistoryConversation(id),
+      onSelectConversation: (id) => navigationMode === 'sessions'
+        ? this.openSessionConversation(id)
+        : this.openHistoryConversation(id),
       onOpenConversationInNewTab: (id, activate) =>
-        this.openHistoryConversationInNewTab(id, activate),
+        navigationMode === 'sessions'
+          ? this.openSessionConversation(id, activate)
+          : this.openHistoryConversationInNewTab(id, activate),
       getConversationStatus: (id) => this.getHistoryConversationStatus(id),
+      onRerender: () => this.updateHistoryDropdown(),
+      showOpenStateLabels: navigationMode === 'history',
       signal,
     });
   }
@@ -666,17 +714,11 @@ export class ClaudianView extends ItemView {
     if (!header) return;
 
     const actions = header.createDiv({ cls: 'claudian-session-header-actions' });
-    this.sessionNewTabButtonEl = this.createSessionHeaderAction(
+    this.sessionNewButtonEl = this.createSessionHeaderAction(
       actions,
       'square-plus',
-      'New tab',
-      () => this.requestNewTab(),
-    );
-    this.createSessionHeaderAction(
-      actions,
-      'square-pen',
-      'New session',
-      () => this.requestNewConversation(),
+      'New',
+      () => this.requestDualNew(),
     );
 
     this.updateNewTabButtonVisibility();
@@ -840,6 +882,33 @@ export class ClaudianView extends ItemView {
     });
     this.historyDropdown?.removeClass('visible');
     this.cancelHistoryRendering();
+  }
+
+  private async openSessionConversation(
+    conversationId: string,
+    activate = true,
+  ): Promise<void> {
+    if (!this.tabManager) return;
+
+    const localTab = this.findTabWithConversation(conversationId);
+    const crossViewResult = localTab
+      ? null
+      : this.plugin.findConversationAcrossViews(conversationId);
+    if (localTab || (crossViewResult && crossViewResult.view !== this)) {
+      await this.tabManager.openConversation(conversationId);
+      return;
+    }
+
+    if (!this.tabManager.canCreateTab()) {
+      const maxTabs = this.plugin.settings.maxTabs ?? 3;
+      new Notice(`Maximum ${maxTabs} tabs allowed`);
+      return;
+    }
+
+    await this.tabManager.openConversation(conversationId, {
+      preferNewTab: true,
+      activate,
+    });
   }
 
   private cancelHistoryRendering(): void {
