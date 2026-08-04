@@ -55,6 +55,7 @@
 }
 
 .claudian-session-new-control,
+.claudian-session-search-control,
 .claudian-session-archive-control {
   display: flex;
   align-items: center;
@@ -72,10 +73,48 @@
 
 .claudian-session-new-control:hover,
 .claudian-session-new-control:focus-visible,
+.claudian-session-search-control:hover,
+.claudian-session-search-control:focus-visible,
 .claudian-session-archive-control:hover,
 .claudian-session-archive-control:focus-visible {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
+}
+
+.claudian-session-search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.claudian-session-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-normal);
+  font-family: inherit;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.claudian-session-search-input:hover,
+.claudian-session-search-input:focus {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.claudian-session-search-input::-webkit-search-cancel-button {
+  display: none;
 }
 
 .claudian-session-new-icon,

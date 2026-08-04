@@ -210,7 +210,7 @@ describe('ClaudianView tab controls', () => {
     expect(sessionNewButtonEl.getAttribute('aria-hidden')).toBeNull();
   });
 
-  it('renders a full-width New row above the Sessions header actions', () => {
+  it('renders New, Search, and Archive navigation above the Sessions header', () => {
     const container = createMockEl();
     const list = container.createDiv({ cls: 'claudian-history-list' });
     const header = list.createDiv({
@@ -220,6 +220,8 @@ describe('ClaudianView tab controls', () => {
 
     Object.assign(view, {
       plugin: { settings: {} },
+      activateSessionSearch: jest.fn(),
+      isArchiveSessionView: false,
       requestDualNew: jest.fn(),
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
@@ -232,6 +234,8 @@ describe('ClaudianView tab controls', () => {
     const actions = header.querySelector('.claudian-session-header-actions');
     const optionsButton = actions?.children[0];
     const newButton = container.querySelector('.claudian-session-new-control');
+    const searchButton = container.querySelector('.claudian-session-search-control');
+    const archiveButton = container.querySelector('.claudian-session-archive-control');
     expect(actions?.children).toHaveLength(1);
     expect(optionsButton?.getAttribute('aria-label')).toBe('Session options');
     expect(newButton?.tagName).toBe('DIV');
@@ -243,10 +247,16 @@ describe('ClaudianView tab controls', () => {
       newButton?.querySelector('.claudian-session-new-icon'),
       'square-pen',
     );
+    expect(searchButton?.getAttribute('aria-label')).toBe('Search');
+    expect(searchButton?.querySelector('.claudian-session-nav-label')?.textContent)
+      .toBe('Search');
+    expect(archiveButton?.getAttribute('aria-label')).toBe('Archive');
     expect(container.querySelector('.claudian-history-list')).toBe(list);
 
     newButton?.click();
     expect(view.requestDualNew).toHaveBeenCalledTimes(1);
+    searchButton?.click();
+    expect(view.activateSessionSearch).toHaveBeenCalledTimes(1);
   });
 
   it('switches between active and archived session manager views', () => {
@@ -292,6 +302,133 @@ describe('ClaudianView tab controls', () => {
 
     expect(view.isArchiveSessionView).toBe(false);
     expect(view.renderSessionSidebar).toHaveBeenCalledTimes(2);
+  });
+
+  it('renders an inline search field and routes query and close interactions', () => {
+    const container = createMockEl();
+    const list = container.createDiv({ cls: 'claudian-history-list' });
+    list.createDiv({
+      cls: 'claudian-history-header claudian-session-list-header',
+    });
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      closeSessionSearch: jest.fn(),
+      isArchiveSessionView: false,
+      isSessionSearchActive: true,
+      plugin: { settings: {} },
+      sessionSearchQuery: 'roadmap',
+      tabManager: {
+        canCreateTab: jest.fn().mockReturnValue(true),
+        getAllTabs: jest.fn().mockReturnValue([]),
+      },
+      updateSessionSearchQuery: jest.fn(),
+    });
+
+    view.buildSessionHeaderActions(container);
+
+    const input = container.querySelector('.claudian-session-search-input')!;
+    expect(input.value).toBe('roadmap');
+    expect(input.getAttribute('placeholder')).toBe('Search sessions');
+    expect(container.querySelector('.claudian-session-search-close')).toBeNull();
+    input.value = 'roadmap review';
+    input.dispatchEvent('input');
+    expect(view.updateSessionSearchQuery).toHaveBeenCalledWith('roadmap review');
+
+    view.updateSessionSearchQuery.mockClear();
+    input.dispatchEvent('compositionstart');
+    input.value = '项目计划';
+    input.dispatchEvent({ type: 'input', isComposing: true });
+    expect(view.updateSessionSearchQuery).not.toHaveBeenCalled();
+    const composingEscape = {
+      type: 'keydown',
+      key: 'Escape',
+      isComposing: true,
+      preventDefault: jest.fn(),
+      stopPropagation: jest.fn(),
+    };
+    input.dispatchEvent(composingEscape);
+    expect(view.closeSessionSearch).not.toHaveBeenCalled();
+    expect(composingEscape.preventDefault).not.toHaveBeenCalled();
+    expect(composingEscape.stopPropagation).toHaveBeenCalledTimes(1);
+    input.dispatchEvent('compositionend');
+    expect(view.updateSessionSearchQuery).toHaveBeenCalledWith('项目计划');
+    input.dispatchEvent({ type: 'input', isComposing: false });
+    expect(view.updateSessionSearchQuery).toHaveBeenCalledTimes(1);
+
+    input.dispatchEvent({
+      type: 'keydown',
+      key: 'Escape',
+      isComposing: false,
+      preventDefault: jest.fn(),
+    });
+    expect(view.closeSessionSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores session and pinned scroll positions after search', () => {
+    const sessionSidebarEl = createMockEl();
+    const list = sessionSidebarEl.createDiv({ cls: 'claudian-history-list' });
+    const pinnedSection = list.createDiv({ cls: 'claudian-history-section--pinned' });
+    const pinnedList = pinnedSection.createDiv({ cls: 'claudian-history-section-items' });
+    const sessionList = list.createDiv({ cls: 'claudian-session-list-items' });
+    pinnedList.scrollTop = 40;
+    sessionList.scrollTop = 160;
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.sessionSidebarEl = sessionSidebarEl;
+
+    view.sessionSearchRestoreState = view.captureSessionSearchScrollState();
+    pinnedList.scrollTop = 0;
+    sessionList.scrollTop = 0;
+    view.restoreSessionSearchScrollState();
+
+    expect(pinnedList.scrollTop).toBe(40);
+    expect(sessionList.scrollTop).toBe(160);
+  });
+
+  it('dismisses search after outside pointer and keyboard focus interactions', async () => {
+    const container = createMockEl();
+    const list = container.createDiv({ cls: 'claudian-history-list' });
+    list.createDiv({
+      cls: 'claudian-history-header claudian-session-list-header',
+    });
+    const documentListeners = new Map<string, (event: Event) => void>();
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      closeSessionSearch: jest.fn(),
+      isArchiveSessionView: false,
+      isSessionSearchActive: true,
+      plugin: { settings: {} },
+      sessionSearchQuery: '',
+      tabManager: {
+        canCreateTab: jest.fn().mockReturnValue(true),
+        getAllTabs: jest.fn().mockReturnValue([]),
+      },
+    });
+
+    view.buildSessionHeaderActions(container);
+    const input = container.querySelector('.claudian-session-search-input')!;
+    input.ownerDocument.addEventListener = jest.fn((type, listener) => {
+      documentListeners.set(type, listener as (event: Event) => void);
+    });
+    input.ownerDocument.removeEventListener = jest.fn();
+    input.ownerDocument.defaultView.addEventListener = jest.fn();
+    input.ownerDocument.defaultView.removeEventListener = jest.fn();
+    view.scheduleSessionSearchDismissHandlers();
+    await Promise.resolve();
+
+    const outsideTarget = container.querySelector('.claudian-history-list')!;
+    documentListeners.get('pointerdown')?.({ target: outsideTarget } as unknown as Event);
+    documentListeners.get('focusin')?.({ target: outsideTarget } as unknown as Event);
+    expect(view.closeSessionSearch).not.toHaveBeenCalled();
+
+    documentListeners.get('click')?.({ target: outsideTarget } as unknown as Event);
+    expect(view.closeSessionSearch).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(view.closeSessionSearch).toHaveBeenCalledTimes(1);
+
+    view.closeSessionSearch.mockClear();
+    documentListeners.get('keydown')?.({ target: outsideTarget } as unknown as Event);
+    documentListeners.get('focusin')?.({ target: outsideTarget } as unknown as Event);
+    expect(view.closeSessionSearch).toHaveBeenCalledTimes(1);
   });
 
   it('keeps archive navigation at the top of the single-mode history list', () => {
@@ -752,6 +889,9 @@ describe('ClaudianView tab controls', () => {
 
     Object.assign(view, {
       cancelSessionSidebarRendering: jest.fn(),
+      isSessionSearchActive: true,
+      isSessionSearchComposing: false,
+      sessionSearchQuery: 'roadmap',
       isWideSessionLayout: true,
       plugin: { getConversationSync: jest.fn() },
       tabManager: {
@@ -765,6 +905,8 @@ describe('ClaudianView tab controls', () => {
 
     expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(false);
     expect(view.isWideSessionLayout).toBe(false);
+    expect(view.isSessionSearchActive).toBe(false);
+    expect(view.sessionSearchQuery).toBe('');
     expect(view.cancelSessionSidebarRendering).toHaveBeenCalledTimes(1);
     expect(discardProvisionalTabs).toHaveBeenCalledTimes(1);
   });
@@ -1002,6 +1144,25 @@ describe('ClaudianView tab controls', () => {
     expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
   });
 
+  it('defers persistent session column refresh while search IME composition is active', () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+    const sessionSidebarEl = createMockEl();
+
+    Object.assign(view, {
+      cancelSessionSidebarRendering: jest.fn(),
+      isSessionSearchComposing: true,
+      isWideSessionLayout: true,
+      renderHistorySurface: jest.fn(),
+      sessionSidebarDirty: true,
+      sessionSidebarEl,
+    });
+
+    view.renderSessionSidebar();
+
+    expect(view.renderHistorySurface).not.toHaveBeenCalled();
+    expect(view.sessionSidebarDirty).toBe(true);
+  });
+
   it('renders the existing history content into the persistent session column', () => {
     const sessionSidebarEl = createMockEl();
     const previousList = sessionSidebarEl.createDiv({ cls: 'claudian-history-list' });
@@ -1015,7 +1176,9 @@ describe('ClaudianView tab controls', () => {
       cancelSessionSidebarRendering: jest.fn(),
       historySurfaceRendered: true,
       isArchiveSessionView: false,
+      isSessionSearchActive: true,
       isWideSessionLayout: true,
+      sessionSearchQuery: 'roadmap',
       sessionSidebarDirty: true,
       sessionSidebarEl,
       updateHistoryDropdown,
@@ -1041,6 +1204,7 @@ describe('ClaudianView tab controls', () => {
         onRerender: expect.any(Function),
         onSelectConversation: expect.any(Function),
         preserveListState: true,
+        searchQuery: 'roadmap',
         showOpenStateActions: false,
         showOpenStateLabels: false,
         showPinnedSection: true,
@@ -1715,6 +1879,35 @@ describe('ClaudianView Escape handling', () => {
 
     expect(cancelStreaming).not.toHaveBeenCalled();
     expect(result).toBe(false);
+  });
+
+  it('closes session search from the scoped Escape handler', () => {
+    const { cancelStreaming, view } = createEscapeHarness({ isStreaming: true });
+    view.closeSessionSearch = jest.fn();
+    view.isSessionSearchActive = true;
+    view.isSessionSearchComposing = false;
+
+    view.wireEventHandlers();
+    const escapeHandler = view.scope.handlers.find((handler: any) => handler.key === 'Escape');
+    const result = escapeHandler.func({ key: 'Escape', isComposing: false } as KeyboardEvent);
+
+    expect(view.closeSessionSearch).toHaveBeenCalledTimes(1);
+    expect(cancelStreaming).not.toHaveBeenCalled();
+    expect(result).toBe(false);
+  });
+
+  it('does not close session search from scoped Escape during IME composition', () => {
+    const { view } = createEscapeHarness({ isStreaming: false });
+    view.closeSessionSearch = jest.fn();
+    view.isSessionSearchActive = true;
+    view.isSessionSearchComposing = true;
+
+    view.wireEventHandlers();
+    const escapeHandler = view.scope.handlers.find((handler: any) => handler.key === 'Escape');
+    const result = escapeHandler.func({ key: 'Escape', isComposing: false } as KeyboardEvent);
+
+    expect(view.closeSessionSearch).not.toHaveBeenCalled();
+    expect(result).toBeUndefined();
   });
 
   it('consumes already handled scoped Escape without cancelling again', () => {

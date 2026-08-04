@@ -38,6 +38,11 @@ type LoadableView = {
   load: () => Promise<void> | void;
 };
 
+type SessionSearchScrollState = {
+  pinnedScrollTop: number;
+  sessionScrollTop: number;
+};
+
 const WIDE_SESSION_LAYOUT_MIN_WIDTH = 600;
 const MIN_CHAT_PANEL_WIDTH = 320;
 const MIN_SESSION_SIDEBAR_WIDTH = 180;
@@ -64,6 +69,9 @@ export class ClaudianView extends ItemView {
   private viewContainerEl: HTMLElement | null = null;
   private newTabButtonEl: HTMLElement | null = null;
   private sessionNewButtonEl: HTMLElement | null = null;
+  private sessionSearchFieldEl: HTMLElement | null = null;
+  private sessionSearchInputEl: HTMLInputElement | null = null;
+  private sessionSearchDismissCleanup: (() => void) | null = null;
   private sessionGroupToggleButtonEl: HTMLElement | null = null;
 
   // History elements
@@ -77,6 +85,11 @@ export class ClaudianView extends ItemView {
   private sessionSidebarWidth: number | null = null;
   private isWideSessionLayout = false;
   private isArchiveSessionView = false;
+  private isSessionSearchActive = false;
+  private isSessionSearchComposing = false;
+  private sessionSearchQuery = '';
+  private sessionSearchRestoreState: SessionSearchScrollState | null = null;
+  private searchCollapsedSessionGroupKeys?: Set<string> = new Set<string>();
   private collapsedSessionGroupKeys?: Set<string> = new Set<string>();
   private sessionGroupKeys?: Set<string> = new Set<string>();
 
@@ -303,6 +316,7 @@ export class ClaudianView extends ItemView {
   }
 
   async onClose() {
+    this.clearSessionSearchDismissHandlers();
     this.cancelHistoryRendering();
     this.cancelSessionSidebarRendering();
     this.disconnectSessionSidebarLayoutObserver();
@@ -687,6 +701,11 @@ export class ClaudianView extends ItemView {
 
   private renderSessionSidebar(): void {
     if (!this.sessionSidebarEl || !this.sessionSidebarDirty || !this.isWideSessionLayout) return;
+    if (this.isSessionSearchComposing) return;
+
+    const previousSearchInput = this.sessionSearchInputEl;
+    const shouldRestoreSearchFocus = previousSearchInput?.ownerDocument.activeElement
+      === previousSearchInput;
 
     this.cancelSessionSidebarRendering();
     const abortController = new AbortController();
@@ -697,9 +716,14 @@ export class ClaudianView extends ItemView {
 
     try {
       this.sessionNewButtonEl = null;
+      this.sessionSearchFieldEl = null;
+      this.sessionSearchInputEl = null;
       this.sessionGroupToggleButtonEl = null;
       this.renderHistorySurface(this.sessionSidebarEl, abortController.signal, 'sessions');
       this.buildSessionHeaderActions(this.sessionSidebarEl);
+      if (shouldRestoreSearchFocus) {
+        this.focusSessionSearchInput();
+      }
       this.sessionSidebarDirty = false;
     } finally {
       if (span) {
@@ -752,12 +776,13 @@ export class ClaudianView extends ItemView {
             sort: this.getSessionManagerSort(),
             language: getObsidianLanguage(this.plugin.settings.locale),
             noteExists: (notePath: string) => this.noteExists(notePath),
+            searchQuery: this.isSessionSearchActive ? this.sessionSearchQuery : undefined,
             showOpenStateActions: false,
             showPinnedSection: !isArchiveView,
             showArchivedSection: isArchiveView,
-            collapsedGroupKeys: this.getCollapsedSessionGroupKeys(),
+            collapsedGroupKeys: this.getDisplayedCollapsedSessionGroupKeys(),
             onGroupCollapseChange: (groupKey: string, collapsed: boolean) => {
-              const collapsedGroupKeys = this.getCollapsedSessionGroupKeys();
+              const collapsedGroupKeys = this.getDisplayedCollapsedSessionGroupKeys();
               if (collapsed) {
                 collapsedGroupKeys.add(groupKey);
               } else {
@@ -798,6 +823,79 @@ export class ClaudianView extends ItemView {
     container.insertBefore(newControl, list);
     this.sessionNewButtonEl = newControl;
 
+    if (this.isSessionSearchActive) {
+      const searchField = container.createDiv({ cls: 'claudian-session-search-field' });
+      const searchIcon = searchField.createSpan({ cls: 'claudian-session-nav-icon' });
+      setIcon(searchIcon, 'search');
+      const searchInput = searchField.createEl('input', {
+        cls: 'claudian-session-search-input',
+        attr: {
+          type: 'search',
+          autocomplete: 'off',
+          placeholder: this.isArchiveSessionView
+            ? 'Search archived sessions'
+            : 'Search sessions',
+          'aria-label': this.isArchiveSessionView
+            ? 'Search archived sessions'
+            : 'Search sessions',
+        },
+      });
+      searchInput.value = this.sessionSearchQuery;
+      let committedCompositionValue: string | null = null;
+      searchInput.addEventListener('compositionstart', () => {
+        this.isSessionSearchComposing = true;
+        committedCompositionValue = null;
+      });
+      searchInput.addEventListener('compositionend', () => {
+        this.isSessionSearchComposing = false;
+        committedCompositionValue = searchInput.value;
+        this.updateSessionSearchQuery(searchInput.value);
+        queueMicrotask(() => {
+          committedCompositionValue = null;
+        });
+      });
+      searchInput.addEventListener('input', (event) => {
+        if (
+          this.isSessionSearchComposing
+          || (event as InputEvent | undefined)?.isComposing
+        ) return;
+        if (committedCompositionValue === searchInput.value) {
+          committedCompositionValue = null;
+          return;
+        }
+        committedCompositionValue = null;
+        this.updateSessionSearchQuery(searchInput.value);
+      });
+      searchInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (this.isSessionSearchComposing || event.isComposing) {
+          event.stopPropagation();
+          return;
+        }
+        event.preventDefault();
+        this.closeSessionSearch();
+      });
+      container.insertBefore(searchField, list);
+      this.sessionSearchFieldEl = searchField;
+      this.sessionSearchInputEl = searchInput;
+    } else {
+      const searchControl = container.createDiv({ cls: 'claudian-session-search-control' });
+      searchControl.setAttribute('role', 'button');
+      searchControl.setAttribute('tabindex', '0');
+      searchControl.setAttribute('aria-label', 'Search');
+      const searchIcon = searchControl.createSpan({ cls: 'claudian-session-nav-icon' });
+      setIcon(searchIcon, 'search');
+      searchControl.createSpan({ cls: 'claudian-session-nav-label', text: 'Search' });
+      const activateSearch = (): void => this.activateSessionSearch();
+      searchControl.addEventListener('click', activateSearch);
+      searchControl.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        activateSearch();
+      });
+      container.insertBefore(searchControl, list);
+    }
+
     const archiveControl = container.createDiv({ cls: 'claudian-session-archive-control' });
     archiveControl.setAttribute('role', 'button');
     archiveControl.setAttribute('tabindex', '0');
@@ -827,7 +925,7 @@ export class ClaudianView extends ItemView {
       this.getSessionManagerOrganization() === 'linked-note'
       && sessionGroupKeys.size > 0
     ) {
-      const collapsedGroupKeys = this.getCollapsedSessionGroupKeys();
+      const collapsedGroupKeys = this.getDisplayedCollapsedSessionGroupKeys();
       const allCollapsed = [...sessionGroupKeys].every(groupKey => (
         collapsedGroupKeys.has(groupKey)
       ));
@@ -858,8 +956,156 @@ export class ClaudianView extends ItemView {
     this.requestDualNew();
   }
 
+  private activateSessionSearch(): void {
+    if (this.isSessionSearchActive) {
+      this.focusSessionSearchInput();
+      return;
+    }
+
+    this.sessionSearchRestoreState = this.captureSessionSearchScrollState();
+    this.isSessionSearchActive = true;
+    this.isSessionSearchComposing = false;
+    this.sessionSearchQuery = '';
+    this.searchCollapsedSessionGroupKeys = new Set<string>();
+    this.sessionSidebarDirty = true;
+    this.renderSessionSidebar();
+    this.focusSessionSearchInput();
+    this.scheduleSessionSearchDismissHandlers();
+  }
+
+  private updateSessionSearchQuery(query: string): void {
+    const wasFiltering = this.isSessionSearchFiltering();
+    this.sessionSearchQuery = query;
+    this.sessionSidebarDirty = true;
+    this.renderSessionSidebar();
+    if (wasFiltering && !this.isSessionSearchFiltering()) {
+      this.restoreSessionSearchScrollState();
+    }
+    this.focusSessionSearchInput();
+  }
+
+  private closeSessionSearch(): void {
+    if (!this.isSessionSearchActive) return;
+
+    this.clearSessionSearchDismissHandlers();
+    this.isSessionSearchActive = false;
+    this.isSessionSearchComposing = false;
+    this.sessionSearchQuery = '';
+    this.sessionSearchFieldEl = null;
+    this.sessionSearchInputEl = null;
+    this.searchCollapsedSessionGroupKeys = new Set<string>();
+    this.sessionSidebarDirty = true;
+    this.renderSessionSidebar();
+    this.restoreSessionSearchScrollState();
+    this.sessionSearchRestoreState = null;
+  }
+
+  private focusSessionSearchInput(): void {
+    const input = this.sessionSearchInputEl;
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange?.(input.value.length, input.value.length);
+  }
+
+  private scheduleSessionSearchDismissHandlers(): void {
+    queueMicrotask(() => {
+      if (!this.isSessionSearchActive || !this.sessionSearchInputEl) return;
+
+      this.clearSessionSearchDismissHandlers();
+      const ownerDocument = this.sessionSearchInputEl.ownerDocument;
+      const ownerWindow = ownerDocument.defaultView;
+      let pointerDownOutsideSearch = false;
+      const isOutsideSearch = (event: Event): boolean => {
+        const searchField = this.sessionSearchFieldEl;
+        const target = event.target;
+        return !searchField || !target || !searchField.contains(target as Node);
+      };
+      const handlePointerDown = (event: Event): void => {
+        pointerDownOutsideSearch = isOutsideSearch(event);
+      };
+      const handleFocusIn = (event: Event): void => {
+        if (!pointerDownOutsideSearch && isOutsideSearch(event)) {
+          this.closeSessionSearch();
+        }
+      };
+      const handleClick = (event: Event): void => {
+        const shouldDismiss = isOutsideSearch(event);
+        pointerDownOutsideSearch = false;
+        if (shouldDismiss) {
+          queueMicrotask(() => this.closeSessionSearch());
+        }
+      };
+      const handlePointerCancel = (): void => {
+        pointerDownOutsideSearch = false;
+      };
+      const handleKeyDown = (): void => {
+        pointerDownOutsideSearch = false;
+      };
+      const handleWindowBlur = (): void => this.closeSessionSearch();
+
+      ownerDocument.addEventListener('pointerdown', handlePointerDown, true);
+      ownerDocument.addEventListener('pointercancel', handlePointerCancel, true);
+      ownerDocument.addEventListener('keydown', handleKeyDown, true);
+      ownerDocument.addEventListener('focusin', handleFocusIn, true);
+      ownerDocument.addEventListener('click', handleClick, true);
+      ownerWindow?.addEventListener?.('blur', handleWindowBlur);
+      this.sessionSearchDismissCleanup = () => {
+        ownerDocument.removeEventListener('pointerdown', handlePointerDown, true);
+        ownerDocument.removeEventListener('pointercancel', handlePointerCancel, true);
+        ownerDocument.removeEventListener('keydown', handleKeyDown, true);
+        ownerDocument.removeEventListener('focusin', handleFocusIn, true);
+        ownerDocument.removeEventListener('click', handleClick, true);
+        ownerWindow?.removeEventListener?.('blur', handleWindowBlur);
+      };
+    });
+  }
+
+  private clearSessionSearchDismissHandlers(): void {
+    this.sessionSearchDismissCleanup?.();
+    this.sessionSearchDismissCleanup = null;
+  }
+
+  private captureSessionSearchScrollState(): SessionSearchScrollState {
+    const list = this.sessionSidebarEl?.querySelector<HTMLElement>('.claudian-history-list');
+    const sessionList = list?.querySelector<HTMLElement>('.claudian-session-list-items') ?? list;
+    const pinnedSection = list?.querySelector<HTMLElement>('.claudian-history-section--pinned');
+    const pinnedList = pinnedSection?.querySelector<HTMLElement>(
+      '.claudian-history-section-items',
+    );
+    return {
+      pinnedScrollTop: pinnedList?.scrollTop ?? 0,
+      sessionScrollTop: sessionList?.scrollTop ?? 0,
+    };
+  }
+
+  private restoreSessionSearchScrollState(): void {
+    const state = this.sessionSearchRestoreState;
+    if (!state) return;
+
+    const list = this.sessionSidebarEl?.querySelector<HTMLElement>('.claudian-history-list');
+    const sessionList = list?.querySelector<HTMLElement>('.claudian-session-list-items') ?? list;
+    const pinnedSection = list?.querySelector<HTMLElement>('.claudian-history-section--pinned');
+    const pinnedList = pinnedSection?.querySelector<HTMLElement>(
+      '.claudian-history-section-items',
+    );
+    if (sessionList) sessionList.scrollTop = state.sessionScrollTop;
+    if (pinnedList) pinnedList.scrollTop = state.pinnedScrollTop;
+  }
+
+  private isSessionSearchFiltering(): boolean {
+    return this.isSessionSearchActive && this.sessionSearchQuery.trim().length > 0;
+  }
+
   private setArchiveSessionView(isArchiveSessionView: boolean): void {
     if (this.isArchiveSessionView === isArchiveSessionView) return;
+    this.clearSessionSearchDismissHandlers();
+    this.isSessionSearchActive = false;
+    this.isSessionSearchComposing = false;
+    this.sessionSearchQuery = '';
+    this.sessionSearchFieldEl = null;
+    this.sessionSearchInputEl = null;
+    this.sessionSearchRestoreState = null;
+    this.searchCollapsedSessionGroupKeys = new Set<string>();
     this.isArchiveSessionView = isArchiveSessionView;
     this.historyDropdownDirty = true;
     this.sessionSidebarDirty = true;
@@ -1009,6 +1255,13 @@ export class ClaudianView extends ItemView {
     return this.collapsedSessionGroupKeys ??= new Set<string>();
   }
 
+  private getDisplayedCollapsedSessionGroupKeys(): Set<string> {
+    if (this.isSessionSearchFiltering()) {
+      return this.searchCollapsedSessionGroupKeys ??= new Set<string>();
+    }
+    return this.getCollapsedSessionGroupKeys();
+  }
+
   private getSessionGroupKeys(): Set<string> {
     return this.sessionGroupKeys ??= new Set<string>();
   }
@@ -1018,7 +1271,7 @@ export class ClaudianView extends ItemView {
     if (!button) return;
 
     const sessionGroupKeys = this.getSessionGroupKeys();
-    const collapsedGroupKeys = this.getCollapsedSessionGroupKeys();
+    const collapsedGroupKeys = this.getDisplayedCollapsedSessionGroupKeys();
     const allCollapsed = sessionGroupKeys.size > 0
       && [...sessionGroupKeys].every(groupKey => collapsedGroupKeys.has(groupKey));
     button.setAttribute(
@@ -1038,7 +1291,7 @@ export class ClaudianView extends ItemView {
     const sessionGroupKeys = this.getSessionGroupKeys();
     if (sessionGroupKeys.size === 0) return;
 
-    const collapsedGroupKeys = this.getCollapsedSessionGroupKeys();
+    const collapsedGroupKeys = this.getDisplayedCollapsedSessionGroupKeys();
     const shouldExpand = [...sessionGroupKeys].every(groupKey => (
       collapsedGroupKeys.has(groupKey)
     ));
@@ -1236,6 +1489,7 @@ export class ClaudianView extends ItemView {
       return;
     }
 
+    this.closeSessionSearch();
     this.stopSessionSidebarResize();
     this.cancelSessionSidebarRendering();
     this.retainPinnedProvisionalTabs();
@@ -1414,7 +1668,11 @@ export class ClaudianView extends ItemView {
     // Returning false consumes Escape before Obsidian uses it for pane navigation.
     this.scope = new Scope(this.app.scope);
     this.scope.register([], 'Escape', (e: KeyboardEvent) => {
-      if (e.isComposing) return;
+      if (e.isComposing || this.isSessionSearchComposing) return;
+      if (this.isSessionSearchActive) {
+        this.closeSessionSearch();
+        return false;
+      }
       if (!e.defaultPrevented) {
         const activeTab = this.tabManager?.getActiveTab();
         if (activeTab?.state.isStreaming) {

@@ -932,6 +932,66 @@ describe('ConversationController', () => {
         )).toBe(false);
       });
 
+      it('filters the current session scope by title and linked-note path', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'active-title',
+            title: 'Roadmap review',
+            createdAt: 4,
+            lastActivityAt: 4,
+          },
+          {
+            id: 'active-note',
+            title: 'Planning notes',
+            currentNote: 'Projects/Roadmap.md',
+            createdAt: 3,
+            lastActivityAt: 3,
+          },
+          {
+            id: 'active-other',
+            title: 'Other',
+            createdAt: 2,
+            lastActivityAt: 2,
+          },
+          {
+            id: 'archived-match',
+            title: 'Archived roadmap',
+            createdAt: 1,
+            lastActivityAt: 1,
+            isArchived: true,
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+          sessionScope: 'active',
+          searchQuery: 'ROADMAP',
+        });
+
+        expect(container.querySelectorAll('.claudian-history-item-title')
+          .map((el: { textContent: string }) => el.textContent))
+          .toEqual(['Roadmap review', 'Planning notes']);
+      });
+
+      it('shows a search-specific empty state within the archived scope', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'archived', title: 'Archived', createdAt: 1, isArchived: true },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showArchivedSection: true,
+          sessionScope: 'archived',
+          searchQuery: 'missing',
+        });
+
+        expect(container.querySelector('.claudian-history-empty')?.textContent)
+          .toBe('No matching sessions');
+      });
+
       it('renders archived sessions with restore and delete actions only', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
@@ -1236,6 +1296,37 @@ describe('ConversationController', () => {
         const rerenderedList = container.querySelector('.claudian-history-list')!;
         expect(rerenderedList.querySelectorAll('.claudian-history-item')).toHaveLength(50);
         expect(rerenderedList.scrollTop).toBe(320);
+      });
+
+      it('preserves the loaded session count through an empty search result', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue(
+          Array.from({ length: 75 }, (_, index) => ({
+            id: `conv-${index}`,
+            title: `Conversation ${index}`,
+            createdAt: 75 - index,
+          })),
+        );
+        const options = {
+          onSelectConversation: jest.fn(),
+          pageSize: 25,
+          preserveListState: true,
+          showPinnedSection: true,
+        };
+
+        controller.renderHistoryDropdown(container, options);
+        container.querySelector('.claudian-history-load-more')?.click();
+        controller.renderHistoryDropdown(container, options);
+        expect(container.querySelectorAll('.claudian-history-item')).toHaveLength(50);
+
+        controller.renderHistoryDropdown(container, {
+          ...options,
+          searchQuery: 'missing',
+        });
+        expect(container.querySelector('.claudian-history-list')?.dataset.visibleCount).toBe('50');
+
+        controller.renderHistoryDropdown(container, options);
+        expect(container.querySelectorAll('.claudian-history-item')).toHaveLength(50);
       });
 
       it('preserves dual-mode pinned and session scroll positions across a rerender', () => {

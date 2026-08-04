@@ -125,6 +125,7 @@ type HistoryRenderOptions = {
   sessionActionMode?: 'active' | 'archived';
   historyHeaderLabel?: string;
   allowConversationSelection?: boolean;
+  searchQuery?: string;
   onSetConversationPinned?: (id: string, isPinned: boolean) => Promise<void>;
   onSetConversationArchived?: (id: string, isArchived: boolean) => Promise<void>;
 };
@@ -756,12 +757,25 @@ export class ConversationController {
       : options.sessionScope === 'active'
         ? allConversations.filter(conversation => !conversation.isArchived)
         : allConversations;
+    const searchTerms = (options.searchQuery ?? '')
+      .trim()
+      .toLocaleLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+    const filteredConversations = searchTerms.length === 0
+      ? scopedConversations
+      : scopedConversations.filter((conversation) => {
+          const searchableText = [conversation.title, conversation.currentNote ?? '']
+            .join('\n')
+            .toLocaleLowerCase();
+          return searchTerms.every(term => searchableText.includes(term));
+        });
     const pinnedConversations = options.showPinnedSection
-      ? scopedConversations.filter(conversation => conversation.isPinned)
+      ? filteredConversations.filter(conversation => conversation.isPinned)
       : [];
     const sessionConversations = options.showPinnedSection
-      ? scopedConversations.filter(conversation => !conversation.isPinned)
-      : scopedConversations;
+      ? filteredConversations.filter(conversation => !conversation.isPinned)
+      : filteredConversations;
     const showSessionSections = options.showPinnedSection || options.showArchivedSection;
 
     let list: HTMLElement;
@@ -814,11 +828,21 @@ export class ConversationController {
       sessionList = list;
     }
 
-    if (scopedConversations.length === 0) {
+    const pageSize = Math.max(1, options.pageSize ?? DEFAULT_HISTORY_PAGE_SIZE);
+    const visibleCount = Math.max(
+      pageSize,
+      options.visibleCount ?? previousVisibleCount,
+    );
+    list.dataset.visibleCount = String(visibleCount);
+
+    if (filteredConversations.length === 0) {
       if (organization === 'linked-note') {
         options.onGroupKeysChange?.([]);
       }
-      sessionList.createDiv({ cls: 'claudian-history-empty', text: 'No conversations' });
+      sessionList.createDiv({
+        cls: 'claudian-history-empty',
+        text: searchTerms.length > 0 ? 'No matching sessions' : 'No conversations',
+      });
       if (pinnedList) pinnedList.scrollTop = previousPinnedScrollTop;
       this.restoreHistoryListPosition(
         sessionList,
@@ -828,12 +852,6 @@ export class ConversationController {
       return;
     }
 
-    const pageSize = Math.max(1, options.pageSize ?? DEFAULT_HISTORY_PAGE_SIZE);
-    const visibleCount = Math.max(
-      pageSize,
-      options.visibleCount ?? previousVisibleCount,
-    );
-    list.dataset.visibleCount = String(visibleCount);
     const sortedPinnedConversations = organizeSessionList(pinnedConversations, {
       organization: 'list',
       sort: options.sort ?? 'last-updated',
