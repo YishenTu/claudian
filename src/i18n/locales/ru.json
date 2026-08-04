@@ -78,6 +78,7 @@
       "claude": "Claude",
       "codex": "Codex"
     },
+    "omp": { "setup": "Настройка", "enable": "Включить OMP", "enableDesc": "Включить провайдер Oh My Pi ACP.", "cliPath": "Путь к CLI", "cliPathDesc": "Абсолютный путь к OMP на этом компьютере.", "models": "Модели", "noModels": "Модели OMP пока не обнаружены.", "catalogFailed": "Не удалось загрузить каталог моделей OMP.", "loadingModels": "Загрузка моделей OMP…", "discoveryFailed": "Не удалось обнаружить модели OMP: {error}", "workspaceNotInitialized": "Рабочая область OMP не инициализирована", "safe": "Безопасно", "yolo": "YOLO", "permissionRequest": "OMP запрашивает разрешение на использование: {tool}.", "tool": "инструмент" },
     "display": "Отображение",
     "conversations": "Разговоры",
     "content": "Содержание",

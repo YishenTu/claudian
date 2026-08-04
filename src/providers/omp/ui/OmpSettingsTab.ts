@@ -5,6 +5,7 @@ import { Notice, Setting } from 'obsidian';
 import type {
   ProviderSettingsTabRenderer,
 } from '../../../core/providers/types';
+import { t } from '../../../i18n/i18n';
 import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameCliPathSetting';
 import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
 import {
@@ -26,12 +27,12 @@ export const ompSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const settings = context.plugin.settings as unknown as Record<string, unknown>;
     const workspace = maybeGetOmpWorkspaceServices();
     const hostnameKey = getHostnameKey();
-    new Setting(container).setName('Setup').setHeading();
+    new Setting(container).setName(t('settings.omp.setup')).setHeading();
     renderProviderEnablementSetting({
       container,
-      description: 'Enable the Oh My Pi ACP provider.',
+      description: t('settings.omp.enableDesc'),
       getValue: () => getOmpProviderSettings(settings).enabled,
-      name: 'Enable OMP',
+      name: t('settings.omp.enable'),
       onChange: async enabled => {
         await context.plugin.mutateSettings(target => {
           updateOmpProviderSettings(target, { enabled });
@@ -41,9 +42,9 @@ export const ompSettingsTabRenderer: ProviderSettingsTabRenderer = {
     });
     renderHostnameCliPathSetting({
       container,
-      description: 'Absolute path to OMP on this computer. This also makes its Bun runtime available to Obsidian.',
+      description: t('settings.omp.cliPathDesc'),
       getValue: () => getOmpProviderSettings(settings).cliPathsByHost[hostnameKey] || '',
-      name: 'CLI path',
+      name: t('settings.omp.cliPath'),
       onChange: async value => {
         const provider = getOmpProviderSettings(settings);
         const cliPathsByHost = { ...provider.cliPathsByHost };
@@ -63,7 +64,7 @@ export const ompSettingsTabRenderer: ProviderSettingsTabRenderer = {
         : '/Users/you/.bun/bin/omp',
       validate: validateCliPath,
     });
-    new Setting(container).setName('Models').setHeading();
+    new Setting(container).setName(t('settings.omp.models')).setHeading();
     renderOmpModelPicker(container, context, settings);
   },
 };
@@ -84,19 +85,21 @@ function renderOmpModelPicker(
   };
   renderProviderModelPicker({
     container,
-    emptyCatalogText: 'No OMP models discovered yet. Check OMP login and click Discover.',
-    failedCatalogText: 'Could not load the OMP model catalog. Check the CLI path and login state.',
+    emptyCatalogText: t('settings.omp.noModels'),
+    failedCatalogText: t('settings.omp.catalogFailed'),
     getState,
     async loadCatalog() {
       const result = await maybeGetOmpWorkspaceServices()?.refreshModelCatalog?.();
       if (!result || result.diagnostics) {
-        new Notice(`OMP model discovery failed: ${result?.diagnostics ?? 'OMP workspace is not initialized'}`);
+        new Notice(t('settings.omp.discoveryFailed', {
+          error: result?.diagnostics ?? t('settings.omp.workspaceNotInitialized'),
+        }));
         return 'failed';
       }
       context.notifyProviderModelOptionsChanged('omp');
       return getOmpProviderSettings(settings).discoveredModels.length > 0 ? 'loaded' : 'empty';
     },
-    loadingCatalogText: 'Loading OMP models...',
+    loadingCatalogText: t('settings.omp.loadingModels'),
     modifier: 'omp',
     onAliasesChange: async () => undefined,
     async onSelectedIdsChange(visibleModels) {

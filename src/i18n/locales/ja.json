@@ -78,6 +78,7 @@
       "claude": "Claude",
       "codex": "Codex"
     },
+    "omp": { "setup": "セットアップ", "enable": "OMP を有効化", "enableDesc": "Oh My Pi ACP プロバイダーを有効にします。", "cliPath": "CLI パス", "cliPathDesc": "このコンピューター上の OMP の絶対パスです。", "models": "モデル", "noModels": "OMP モデルがまだ見つかりません。", "catalogFailed": "OMP モデルカタログを読み込めませんでした。", "loadingModels": "OMP モデルを読み込み中…", "discoveryFailed": "OMP モデルの検出に失敗しました：{error}", "workspaceNotInitialized": "OMP ワークスペースが初期化されていません", "safe": "安全", "yolo": "YOLO", "permissionRequest": "OMP が{tool}を使用する権限を要求しています。", "tool": "ツール" },
     "display": "表示",
     "conversations": "会話",
     "content": "コンテンツ",

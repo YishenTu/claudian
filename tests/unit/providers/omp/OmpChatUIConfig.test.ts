@@ -1,7 +1,11 @@
+import { setLocale } from '@/i18n/i18n';
 import { OMP_PROVIDER_CAPABILITIES } from '@/providers/omp/capabilities';
 import { ompChatUIConfig } from '@/providers/omp/ui/OmpChatUIConfig';
 
 describe('OMP chat configuration', () => {
+  afterEach(() => {
+    setLocale('en');
+  });
   const settings: Record<string, unknown> = {
     providerConfigs: {
       omp: {
@@ -41,6 +45,14 @@ describe('OMP chat configuration', () => {
     expect(ompChatUIConfig.resolvePermissionMode?.(settings)).toBe('yolo');
     ompChatUIConfig.applyPermissionMode?.('normal', settings);
     expect(ompChatUIConfig.resolvePermissionMode?.(settings)).toBe('normal');
+  });
+
+  it('localizes the permission control with the active interface locale', () => {
+    setLocale('zh-CN');
+    expect(ompChatUIConfig.getPermissionModeToggle?.()).toMatchObject({
+      activeLabel: 'YOLO',
+      inactiveLabel: '安全',
+    });
   });
 
   it('provides a context snapshot when restoring an OMP conversation', () => {

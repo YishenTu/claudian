@@ -78,6 +78,14 @@
       "claude": "Claude",
       "codex": "Codex"
     },
+    "omp": {
+      "setup": "Setup", "enable": "Enable OMP", "enableDesc": "Enable the Oh My Pi ACP provider.",
+      "cliPath": "CLI path", "cliPathDesc": "Absolute path to OMP on this computer. This also makes its Bun runtime available to Obsidian.",
+      "models": "Models", "noModels": "No OMP models discovered yet. Check OMP login and click Discover.",
+      "catalogFailed": "Could not load the OMP model catalog. Check the CLI path and login state.", "loadingModels": "Loading OMP models...",
+      "discoveryFailed": "OMP model discovery failed: {error}", "workspaceNotInitialized": "OMP workspace is not initialized",
+      "safe": "Safe", "yolo": "YOLO", "permissionRequest": "OMP requests permission to use {tool}.", "tool": "a tool"
+    },
     "display": "Display",
     "conversations": "Conversations",
     "content": "Content",

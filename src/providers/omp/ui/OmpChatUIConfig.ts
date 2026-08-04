@@ -2,19 +2,13 @@ import type {
   ProviderChatUIConfig,
   ProviderPermissionModeToggleConfig,
 } from '../../../core/providers/types';
+import { t } from '../../../i18n/i18n';
 import { buildInitialOmpUsageInfo } from '../execution/OmpExecutionSession';
 import {
   decodeOmpModelId,
   encodeOmpModelId,
 } from '../models';
 import { getOmpProviderSettings } from '../settings';
-
-const PERMISSION_MODE: ProviderPermissionModeToggleConfig = {
-  inactiveValue: 'normal',
-  inactiveLabel: 'Safe',
-  activeValue: 'yolo',
-  activeLabel: 'YOLO',
-};
 
 export const ompChatUIConfig: ProviderChatUIConfig = {
   getModelOptions(settings) {
@@ -49,7 +43,12 @@ export const ompChatUIConfig: ProviderChatUIConfig = {
   applyModelDefaults: () => undefined,
   normalizeModelVariant: model => model,
   getCustomModelIds: () => new Set<string>(),
-  getPermissionModeToggle: (): ProviderPermissionModeToggleConfig => PERMISSION_MODE,
+  getPermissionModeToggle: (): ProviderPermissionModeToggleConfig => ({
+    inactiveValue: 'normal',
+    inactiveLabel: t('settings.omp.safe'),
+    activeValue: 'yolo',
+    activeLabel: t('settings.omp.yolo'),
+  }),
   resolvePermissionMode(settings) {
     return settings.permissionMode === 'yolo' ? 'yolo' : 'normal';
   },

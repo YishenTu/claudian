@@ -78,6 +78,14 @@
       "claude": "Claude",
       "codex": "Codex"
     },
+    "omp": {
+      "setup": "配置", "enable": "启用 OMP", "enableDesc": "启用 Oh My Pi ACP 提供商。",
+      "cliPath": "CLI 路径", "cliPathDesc": "此电脑上的 OMP 绝对路径，同时会让 Obsidian 使用其 Bun 运行时。",
+      "models": "模型", "noModels": "尚未发现 OMP 模型。请检查 OMP 登录状态，然后点击“发现”。",
+      "catalogFailed": "无法加载 OMP 模型目录。请检查 CLI 路径和登录状态。", "loadingModels": "正在加载 OMP 模型……",
+      "discoveryFailed": "OMP 模型发现失败：{error}", "workspaceNotInitialized": "OMP 工作区尚未初始化",
+      "safe": "安全", "yolo": "YOLO", "permissionRequest": "OMP 请求使用{tool}的权限。", "tool": "工具"
+    },
     "display": "显示",
     "conversations": "对话",
     "content": "内容",

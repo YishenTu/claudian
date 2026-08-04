@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import type { ProviderSessionConfig } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { t } from '@/i18n/i18n';
 import {
   AcpClientConnection,
   AcpInteractionController,
@@ -212,7 +213,9 @@ function presentOmpPermission(
   _input: Readonly<Record<string, unknown>>,
 ): AcpPermissionPresentation {
   return {
-    description: `OMP requests permission to use ${request.toolCall.title || 'a tool'}.`,
-    toolName: request.toolCall.title || 'OMP tool',
+    description: t('settings.omp.permissionRequest', {
+      tool: request.toolCall.title || t('settings.omp.tool'),
+    }),
+    toolName: request.toolCall.title || t('settings.omp.tool'),
   };
 }

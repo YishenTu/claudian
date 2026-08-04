@@ -78,6 +78,7 @@
       "claude": "Claude",
       "codex": "Codex"
     },
+    "omp": { "setup": "Configuração", "enable": "Ativar OMP", "enableDesc": "Ativar o provedor ACP do Oh My Pi.", "cliPath": "Caminho do CLI", "cliPathDesc": "Caminho absoluto para o OMP neste computador.", "models": "Modelos", "noModels": "Nenhum modelo OMP descoberto ainda.", "catalogFailed": "Não foi possível carregar o catálogo de modelos OMP.", "loadingModels": "Carregando modelos OMP…", "discoveryFailed": "Falha ao descobrir modelos OMP: {error}", "workspaceNotInitialized": "O workspace do OMP não foi inicializado", "safe": "Seguro", "yolo": "YOLO", "permissionRequest": "OMP solicita permissão para usar {tool}.", "tool": "uma ferramenta" },
     "display": "Exibição",
     "conversations": "Conversas",
     "content": "Conteúdo",
