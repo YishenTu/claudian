@@ -33,12 +33,6 @@ function compareConversations(
   right: ConversationMeta,
   sort: SessionManagerSort,
 ): number {
-  if (sort === 'title') {
-    return left.title.localeCompare(right.title, undefined, { sensitivity: 'base', numeric: true })
-      || getLastActivityTimestamp(right) - getLastActivityTimestamp(left)
-      || left.id.localeCompare(right.id);
-  }
-
   const getTimestamp = sort === 'created'
     ? (conversation: ConversationMeta) => conversation.createdAt
     : getLastActivityTimestamp;
@@ -51,7 +45,7 @@ function compareConversations(
 
 function getSectionTimestamp(
   section: SessionListSection,
-  sort: Exclude<SessionManagerSort, 'title'>,
+  sort: SessionManagerSort,
 ): number {
   return section.conversations.reduce((latest, conversation) => {
     const timestamp = sort === 'created'
@@ -66,12 +60,6 @@ function compareSections(
   right: SessionListSection,
   sort: SessionManagerSort,
 ): number {
-  if (sort === 'title') {
-    return (left.label ?? '').localeCompare(right.label ?? '', undefined, {
-      sensitivity: 'base',
-      numeric: true,
-    });
-  }
   return getSectionTimestamp(right, sort) - getSectionTimestamp(left, sort)
     || (left.label ?? '').localeCompare(right.label ?? '', undefined, {
       sensitivity: 'base',
@@ -130,7 +118,7 @@ export function organizeSessionList(
     sections.push({
       key: 'ungrouped',
       kind: 'ungrouped',
-      label: 'Ungrouped',
+      label: 'Unlinked',
       conversations: ungrouped,
     });
   }

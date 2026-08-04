@@ -1006,7 +1006,7 @@ describe('ConversationController', () => {
           sessionScope: 'archived',
           sessionActionMode: 'archived',
           organization: 'linked-note',
-          sort: 'title',
+          sort: 'created',
           language: 'en',
           noteExists: () => true,
           onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
@@ -1014,7 +1014,7 @@ describe('ConversationController', () => {
 
         expect(container.querySelectorAll('.claudian-session-group-label')
           .map((el: { textContent: string }) => el.textContent))
-          .toEqual(['A', 'B']);
+          .toEqual(['B', 'A']);
       });
 
       it('renders full-path note groups only for the linked-note organization', () => {
@@ -1025,7 +1025,7 @@ describe('ConversationController', () => {
           {
             id: 'plan-a',
             title: 'Plan A',
-            createdAt: 1,
+            createdAt: 3,
             currentNote: 'Projects/A/Plan.md',
           },
           {
@@ -1037,7 +1037,7 @@ describe('ConversationController', () => {
           {
             id: 'untitled',
             title: 'Draft discussion',
-            createdAt: 3,
+            createdAt: 1,
             currentNote: 'Inbox/Untitled 2.md',
           },
         ]);
@@ -1045,7 +1045,7 @@ describe('ConversationController', () => {
         controller.renderHistoryDropdown(container, {
           onSelectConversation: jest.fn(),
           organization: 'linked-note',
-          sort: 'title',
+          sort: 'created',
           language: 'en',
           noteExists: () => true,
           onGroupCollapseChange,
@@ -1055,7 +1055,7 @@ describe('ConversationController', () => {
         const labels = container
           .querySelectorAll('.claudian-session-group-label')
           .map((label: { textContent: string }) => label.textContent);
-        expect(labels).toEqual(['Plan', 'Plan', 'Ungrouped']);
+        expect(labels).toEqual(['Plan', 'Plan', 'Unlinked']);
         expect(labels).not.toContain('Untitled 2');
         const groupHeaders = container.querySelectorAll('.claudian-session-group-header');
         expect(groupHeaders[0].getAttribute('title')).toBe('Projects/A/Plan.md');
@@ -1319,7 +1319,7 @@ describe('ConversationController', () => {
           onSelectConversation: jest.fn(),
           onRerender,
           organization: 'linked-note',
-          sort: 'title',
+          sort: 'created',
           pageSize: 25,
           collapsedGroupKeys,
           onGroupCollapseChange: (groupKey, collapsed) => {
@@ -2092,7 +2092,7 @@ describe('ConversationController', () => {
         onSelectConversation: jest.fn(),
         onRerender,
         organization: 'linked-note',
-        sort: 'title',
+        sort: 'created',
       });
 
       const item = container.querySelector('.claudian-history-item')!;

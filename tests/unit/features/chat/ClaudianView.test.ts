@@ -1,5 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
-import { Menu, Notice, Platform, Scope } from 'obsidian';
+import { Menu, Notice, Platform, Scope, setIcon } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -239,6 +239,10 @@ describe('ClaudianView tab controls', () => {
     expect(newButton?.getAttribute('tabindex')).toBe('0');
     expect(newButton?.getAttribute('aria-label')).toBe('New');
     expect(newButton?.querySelector('.claudian-session-new-label')?.textContent).toBe('New');
+    expect(setIcon).toHaveBeenCalledWith(
+      newButton?.querySelector('.claudian-session-new-icon'),
+      'square-pen',
+    );
     expect(container.querySelector('.claudian-history-list')).toBe(list);
 
     newButton?.click();
@@ -1112,7 +1116,6 @@ describe('ClaudianView tab controls', () => {
       'Sort sessions by',
       'Last activity',
       'Created',
-      'Title',
     ]);
     expect(menu.items.find((item: any) => item.title === 'In one list').checked).toBe(true);
     expect(menu.items.find((item: any) => item.title === 'Last activity').checked).toBe(true);
@@ -1125,6 +1128,28 @@ describe('ClaudianView tab controls', () => {
     expect(view.sessionSidebarDirty).toBe(true);
     expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
     expect(otherView.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to last activity when a legacy title sort setting is present', () => {
+    (Menu as typeof Menu & { instances: unknown[] }).instances.length = 0;
+    const container = createMockEl();
+    const list = container.createDiv({ cls: 'claudian-history-list' });
+    list.createDiv({
+      cls: 'claudian-history-header claudian-session-list-header',
+    });
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      plugin: {
+        settings: { sessionManagerSort: 'title' },
+      },
+    });
+
+    view.buildSessionHeaderActions(container);
+    container.querySelector('.claudian-session-header-actions')?.children[0]?.click();
+
+    const menu = (Menu as typeof Menu & { instances: any[] }).instances.at(-1);
+    expect(menu.items.some((item: any) => item.title === 'Title')).toBe(false);
+    expect(menu.items.find((item: any) => item.title === 'Last activity').checked).toBe(true);
   });
 
   it('opens a closed session in a new container from the dual-mode session column', async () => {

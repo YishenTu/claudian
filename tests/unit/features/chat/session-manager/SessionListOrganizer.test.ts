@@ -80,7 +80,7 @@ describe('SessionListOrganizer', () => {
     });
 
     expect(sections).toHaveLength(2);
-    expect(sections[0]).toMatchObject({ kind: 'ungrouped', label: 'Ungrouped' });
+    expect(sections[0]).toMatchObject({ kind: 'ungrouped', label: 'Unlinked' });
     expect(sections[0].conversations.map(conversation => conversation.id)).toEqual([
       'provisional',
       'unlinked',
@@ -94,7 +94,7 @@ describe('SessionListOrganizer', () => {
       createConversation('missing-b', { currentNote: 'Gone/B.md' }),
     ], {
       organization: 'linked-note',
-      sort: 'title',
+      sort: 'created',
       language: 'en',
       noteExists: () => false,
     });

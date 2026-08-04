@@ -768,7 +768,7 @@ export class ClaudianView extends ItemView {
     newControl.setAttribute('tabindex', '0');
     newControl.setAttribute('aria-label', 'New');
     const newIcon = newControl.createSpan({ cls: 'claudian-session-new-icon' });
-    setIcon(newIcon, 'plus');
+    setIcon(newIcon, 'square-pen');
     newControl.createSpan({ cls: 'claudian-session-new-label', text: 'New' });
     newControl.addEventListener('click', () => this.requestSessionNew());
     newControl.addEventListener('keydown', (event) => {
@@ -981,9 +981,9 @@ export class ClaudianView extends ItemView {
       : 'list';
   }
 
-  private getSessionManagerSort(): 'last-updated' | 'created' | 'title' {
+  private getSessionManagerSort(): 'last-updated' | 'created' {
     const sort = this.plugin.settings.sessionManagerSort;
-    return sort === 'created' || sort === 'title' ? sort : 'last-updated';
+    return sort === 'created' ? sort : 'last-updated';
   }
 
   private getCollapsedSessionGroupKeys(): Set<string> {
@@ -1067,10 +1067,6 @@ export class ClaudianView extends ItemView {
       .setTitle('Created')
       .setChecked(sort === 'created')
       .onClick(() => this.setSessionManagerSort('created')));
-    menu.addItem(item => item
-      .setTitle('Title')
-      .setChecked(sort === 'title')
-      .onClick(() => this.setSessionManagerSort('title')));
 
     if (event) {
       menu.showAtMouseEvent(event);
@@ -1089,7 +1085,7 @@ export class ClaudianView extends ItemView {
       .catch(() => new Notice('Failed to update session organization'));
   }
 
-  private setSessionManagerSort(sort: 'last-updated' | 'created' | 'title'): void {
+  private setSessionManagerSort(sort: 'last-updated' | 'created'): void {
     void this.plugin.mutateSettings((settings) => {
       settings.sessionManagerSort = sort;
     }).then(() => this.refreshSessionManagerPresentation())

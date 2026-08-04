@@ -63,7 +63,7 @@ export const CHAT_VIEW_PLACEMENTS = [
 export type ChatViewPlacement = typeof CHAT_VIEW_PLACEMENTS[number];
 
 export type SessionManagerOrganization = 'list' | 'linked-note';
-export type SessionManagerSort = 'last-updated' | 'created' | 'title';
+export type SessionManagerSort = 'last-updated' | 'created';
 
 /** Forced provider transition invalidated a parked auxiliary continuation. */
 export interface AuxiliaryContinuityReset {
