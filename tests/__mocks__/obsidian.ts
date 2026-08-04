@@ -262,6 +262,10 @@ export const MarkdownRenderer = {
   renderMarkdown: renderMarkdownMock,
 };
 
+export const loadPrism = jest.fn().mockResolvedValue({
+  highlightElement: jest.fn(),
+});
+
 export const setIcon = jest.fn();
 
 // Notice mock that tracks constructor calls

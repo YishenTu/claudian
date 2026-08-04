@@ -30,8 +30,14 @@ type ActiveListContext = Pick<ParagraphContext, 'blockquoteDepth' | 'listIndents
 interface MarkdownSegment {
   text: string;
   transformable: boolean;
+  fence?: MarkdownFenceOpening;
   rawHtml?: boolean;
   sealed?: boolean;
+}
+
+export interface MarkdownFenceOpening {
+  info: string;
+  infoStart: number;
 }
 
 interface InlineContinuation {
@@ -238,6 +244,25 @@ function appendSegment(
   } else {
     segments.push({ text, transformable, rawHtml });
   }
+}
+
+function appendFenceOpeningSegment(
+  segments: MarkdownSegment[],
+  line: string,
+  lineWithoutNewline: string,
+  fenceRun: FenceRun,
+): void {
+  const runStart = lineWithoutNewline.indexOf(fenceRun.run);
+  const infoStart = runStart + fenceRun.run.length;
+  segments.push({
+    text: line,
+    transformable: false,
+    fence: {
+      info: lineWithoutNewline.slice(infoStart),
+      infoStart,
+    },
+    sealed: true,
+  });
 }
 
 function sealLastSegment(segments: MarkdownSegment[]): void {
@@ -743,7 +768,7 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
     const fenceRun = contextualFenceRun ?? getFenceRun(lineWithoutNewline);
     if (fenceRun) {
       paragraphContext = null;
-      appendSegment(segments, line, false);
+      appendFenceOpeningSegment(segments, line, lineWithoutNewline, fenceRun);
       fence = {
         marker: fenceRun.run[0] as '`' | '~',
         length: fenceRun.run.length,
@@ -808,6 +833,7 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
 }
 
 interface MarkdownTransforms {
+  fence?: (opener: string, fence: MarkdownFenceOpening) => string;
   text?: (text: string) => string;
   rawHtml?: (text: string) => string;
 }
@@ -819,6 +845,9 @@ export function transformMarkdownSegments(
 ): string {
   return splitMarkdown(markdown)
     .map(segment => {
+      if (segment.fence) {
+        return transforms.fence?.(segment.text, segment.fence) ?? segment.text;
+      }
       if (segment.rawHtml) {
         return transforms.rawHtml?.(segment.text) ?? segment.text;
       }

@@ -35,6 +35,10 @@ import type { FeatureHost } from '../../FeatureHost';
 import { findRewindContext } from '../rewind';
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
 import { renderCitationGroup as renderCitationBlock } from './CitationRenderer';
+import {
+  prepareDisplayOnlyCodeFences,
+  restoreDisplayOnlyCodeFences,
+} from './DisplayOnlyCodeFences';
 import { resolveSubagentAdapter } from './subagentAdapterResolution';
 import {
   renderStoredAsyncSubagent,
@@ -741,8 +745,9 @@ export class MessageRenderer {
       // as plain text. Trusted plugin markup (image embeds) is injected only
       // after this step, otherwise it would be escaped too.
       const safeMarkdown = escapeRawHtmlTags(renderMarkdown);
+      const displayOnlyCodeFences = prepareDisplayOnlyCodeFences(safeMarkdown);
       const processedMarkdown = replaceImageEmbedsWithHtml(
-        safeMarkdown,
+        displayOnlyCodeFences.markdown,
         this.app,
         { mediaFolder: this.plugin.settings.mediaFolder }
       );
@@ -753,6 +758,7 @@ export class MessageRenderer {
         '',
         this.component
       );
+      await restoreDisplayOnlyCodeFences(el, displayOnlyCodeFences.fences);
 
       // Wrap pre elements and move buttons outside scroll area
       el.querySelectorAll('pre').forEach((pre) => {

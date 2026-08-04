@@ -2205,6 +2205,35 @@ describe('MessageRenderer', () => {
   // ============================================
 
   describe('renderContent - language label and copy', () => {
+    it('renders fenced languages through inert placeholders and restores highlighting', async () => {
+      const { loadPrism, MarkdownRenderer } = await import('obsidian');
+      const { renderer } = createRenderer();
+      const el = createMockEl();
+      const highlightElement = jest.fn();
+      let code: ReturnType<typeof createMockEl> | null = null;
+      (loadPrism as jest.Mock).mockResolvedValueOnce({ highlightElement });
+
+      (MarkdownRenderer.renderMarkdown as jest.Mock).mockImplementationOnce(
+        async (renderedMarkdown: string, container: any) => {
+          const language = renderedMarkdown.match(/^```([^\n]+)/)?.[1];
+          const pre = container.createEl('pre');
+          code = pre.createEl('code', {
+            cls: `language-${language}`,
+            text: 'TABLE file.name',
+          });
+        }
+      );
+
+      await renderer.renderContent(el, '```dataview\nTABLE file.name\n```');
+
+      const renderedMarkdown = (MarkdownRenderer.renderMarkdown as jest.Mock).mock.calls[0][0];
+      expect(renderedMarkdown).toContain('```claudian-display-only-fence-0');
+      expect(renderedMarkdown).not.toContain('```dataview');
+      expect(code?.hasClass('language-dataview')).toBe(true);
+      expect(code?.hasClass('language-claudian-display-only-fence-0')).toBe(false);
+      expect(highlightElement).toHaveBeenCalledWith(code);
+    });
+
     it('should add language label when code block has language class', async () => {
       const { MarkdownRenderer } = await import('obsidian');
       const { renderer } = createRenderer();
