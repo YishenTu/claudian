@@ -1151,6 +1151,7 @@ describe('ConversationController', () => {
         const container = createMockEl();
         const onGroupCollapseChange = jest.fn();
         const onGroupKeysChange = jest.fn();
+        const onStartLinkedNoteConversation = jest.fn().mockResolvedValue(undefined);
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
             id: 'plan-a',
@@ -1180,6 +1181,7 @@ describe('ConversationController', () => {
           noteExists: () => true,
           onGroupCollapseChange,
           onGroupKeysChange,
+          onStartLinkedNoteConversation,
         });
 
         const labels = container
@@ -1195,6 +1197,23 @@ describe('ConversationController', () => {
         expect(setIcon).toHaveBeenCalledWith(groupIcons[0], 'file-text');
         expect(setIcon).toHaveBeenCalledWith(groupIcons[1], 'file-text');
         expect(setIcon).toHaveBeenCalledWith(groupIcons[2], 'inbox');
+        const linkedNoteActions = container.querySelectorAll(
+          '.claudian-session-group-new-action',
+        );
+        expect(linkedNoteActions).toHaveLength(2);
+        expect(linkedNoteActions[0].tagName).toBe('SPAN');
+        expect(linkedNoteActions[0].getAttribute('role')).toBe('button');
+        expect(linkedNoteActions[0].getAttribute('tabindex')).toBe('0');
+        expect(setIcon).toHaveBeenCalledWith(linkedNoteActions[0], 'square-pen');
+        expect(linkedNoteActions[0].getAttribute('aria-label'))
+          .toBe('New chat for Plan');
+        const stopPropagation = jest.fn();
+        linkedNoteActions[0].dispatchEvent({ type: 'click', stopPropagation });
+        expect(stopPropagation).toHaveBeenCalledTimes(1);
+        expect(onStartLinkedNoteConversation).toHaveBeenCalledWith(
+          'Projects/A/Plan.md',
+        );
+        expect(groupHeaders[0].getAttribute('aria-expanded')).toBe('true');
         expect(onGroupKeysChange).toHaveBeenCalledWith([
           'note:Projects/A/Plan.md',
           'note:Projects/B/Plan.md',

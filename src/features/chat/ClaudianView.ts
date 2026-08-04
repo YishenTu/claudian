@@ -1,4 +1,4 @@
-import type { EventRef, WorkspaceLeaf } from 'obsidian';
+import type { EventRef, TFile, WorkspaceLeaf } from 'obsidian';
 import { ItemView, Menu, Notice, Scope, setIcon } from 'obsidian';
 
 import { StartupProfiler } from '../../core/performance/StartupProfiler';
@@ -16,6 +16,7 @@ import {
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
 } from '../../utils/animationFrame';
+import { getVaultFileByPath, revealWorkspaceLeaf } from '../../utils/obsidianCompat';
 import type { FeatureHost, FeatureTabManagerHost } from '../FeatureHost';
 import type { HistoryConversationStatus } from './controllers/ConversationController';
 import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
@@ -73,6 +74,7 @@ export class ClaudianView extends ItemView {
   private sessionSearchInputEl: HTMLInputElement | null = null;
   private sessionSearchDismissCleanup: (() => void) | null = null;
   private sessionGroupToggleButtonEl: HTMLElement | null = null;
+  private linkedNoteNavigationDepth = 0;
 
   // History elements
   private historyDropdown: HTMLElement | null = null;
@@ -797,6 +799,9 @@ export class ClaudianView extends ItemView {
             onGroupKeysChange: (groupKeys: readonly string[]) => {
               this.sessionGroupKeys = new Set(groupKeys);
             },
+            onStartLinkedNoteConversation: (notePath: string) => (
+              this.startLinkedNoteConversation(notePath)
+            ),
           }
         : {}),
       signal,
@@ -958,6 +963,70 @@ export class ClaudianView extends ItemView {
       this.setArchiveSessionView(false);
     }
     this.requestDualNew();
+  }
+
+  private async startLinkedNoteConversation(notePath: string): Promise<void> {
+    if (!this.tabManager) {
+      throw new Error('Chat tabs are unavailable');
+    }
+
+    const file = getVaultFileByPath(this.plugin.app, notePath);
+    if (!file) {
+      throw new Error(`Linked note not found: ${notePath}`);
+    }
+
+    const workspace = this.plugin.app.workspace;
+    const openLeaf = workspace.getLeavesOfType('markdown').find((leaf) => {
+      const view = leaf.view as { file?: { path?: string } | null };
+      return view.file?.path === notePath;
+    });
+    const noteLeaf = openLeaf ?? workspace.getLeaf('tab');
+
+    if (this.isArchiveSessionView) {
+      this.setArchiveSessionView(false);
+    }
+
+    await this.tabManager.waitForTabSwitchIdle();
+    const initialTabId = this.tabManager.getActiveTabId();
+    const initialSwitchRevision = this.tabManager.getTabSwitchRequestRevision();
+
+    this.linkedNoteNavigationDepth += 1;
+    try {
+      if (!openLeaf) {
+        await noteLeaf.openFile(file);
+      }
+      await revealWorkspaceLeaf(workspace, noteLeaf);
+    } finally {
+      this.linkedNoteNavigationDepth -= 1;
+    }
+
+    await this.tabManager.waitForTabSwitchIdle();
+    const shouldActivate = this.tabManager.getActiveTabId() === initialTabId
+      && this.tabManager.getTabSwitchRequestRevision() === initialSwitchRevision;
+    const tab = await this.tabManager.createTab(null, undefined, {
+      activate: shouldActivate,
+      lifecycleState: 'provisional',
+    });
+    if (!tab) {
+      throw new Error('Failed to create a provisional chat tab');
+    }
+
+    try {
+      tab.ui.fileContextManager?.resetForNewConversation();
+      tab.ui.fileContextManager?.setCurrentNote(notePath);
+      this.updateTabBarVisibility();
+      if (this.tabManager.getActiveTabId() === tab.id) {
+        tab.dom.inputEl.focus();
+      }
+    } catch (error) {
+      await this.tabManager.closeTab(tab.id).catch(() => false);
+      throw error;
+    }
+  }
+
+  private handleWorkspaceFileOpen(file: TFile): void {
+    if (this.linkedNoteNavigationDepth > 0) return;
+    this.tabManager?.getActiveTab()?.ui.fileContextManager?.handleFileOpen(file);
   }
 
   private activateSessionSearch(): void {
@@ -1708,7 +1777,7 @@ export class ClaudianView extends ItemView {
     this.registerEvent(
       this.plugin.app.workspace.on('file-open', (file) => {
         if (file) {
-          this.tabManager?.getActiveTab()?.ui.fileContextManager?.handleFileOpen(file);
+          this.handleWorkspaceFileOpen(file);
         }
       })
     );

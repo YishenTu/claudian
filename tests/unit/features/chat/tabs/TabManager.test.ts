@@ -203,6 +203,24 @@ describe('TabManager provider execution orchestration', () => {
     expect(target!.state.acknowledgeReview).toHaveBeenCalledTimes(1);
   });
 
+  it('waits for prior tab switching to settle', async () => {
+    const { manager } = createManager();
+    const initial = await manager.createTab();
+    const managerInternals = manager as any;
+    managerInternals.isSwitchingTab = true;
+
+    const switchingIdle = managerInternals.waitForTabSwitchIdle();
+    await Promise.resolve();
+
+    expect(manager.getActiveTabId()).toBe(initial!.id);
+
+    managerInternals.isSwitchingTab = false;
+    managerInternals.resolveTabSwitchIdleWaitersIfIdle();
+
+    await expect(switchingIdle).resolves.toBeUndefined();
+    expect(manager.getActiveTabId()).toBe(initial!.id);
+  });
+
   it('marks only inactive tabs when a reviewable turn settles', async () => {
     const { manager } = createManager();
     const active = await manager.createTab();

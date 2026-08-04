@@ -122,6 +122,8 @@ export class TabManager implements TabManagerInterface {
   /** Guard to prevent concurrent tab switches. */
   private isSwitchingTab = false;
   private pendingSwitchTabId: TabId | null = null;
+  private readonly tabSwitchIdleWaiters = new Set<() => void>();
+  private tabSwitchRequestRevision = 0;
   private profiledFirstHydration = false;
 
   constructor(
@@ -280,6 +282,7 @@ export class TabManager implements TabManagerInterface {
     if (!tab) {
       return;
     }
+    this.tabSwitchRequestRevision += 1;
 
     // Guard against concurrent tab switches
     if (this.isSwitchingTab) {
@@ -359,6 +362,29 @@ export class TabManager implements TabManagerInterface {
       if (pendingTabId && pendingTabId !== this.activeTabId) {
         await this.switchToTab(pendingTabId);
       }
+      this.resolveTabSwitchIdleWaitersIfIdle();
+    }
+  }
+
+  getTabSwitchRequestRevision(): number {
+    return this.tabSwitchRequestRevision;
+  }
+
+  async waitForTabSwitchIdle(): Promise<void> {
+    while (this.isSwitchingTab) {
+      await new Promise<void>((resolve) => {
+        this.tabSwitchIdleWaiters.add(resolve);
+      });
+    }
+  }
+
+  private resolveTabSwitchIdleWaitersIfIdle(): void {
+    if (this.isSwitchingTab || this.pendingSwitchTabId) return;
+
+    const waiters = [...this.tabSwitchIdleWaiters];
+    this.tabSwitchIdleWaiters.clear();
+    for (const resolve of waiters) {
+      resolve();
     }
   }
 

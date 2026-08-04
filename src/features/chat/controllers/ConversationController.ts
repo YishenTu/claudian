@@ -120,6 +120,7 @@ type HistoryRenderOptions = {
   collapsedGroupKeys?: ReadonlySet<string>;
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
+  onStartLinkedNoteConversation?: (notePath: string) => Promise<void>;
   preserveListState?: boolean;
   showAttentionState?: boolean;
   showPinnedSection?: boolean;
@@ -956,6 +957,43 @@ export class ConversationController {
         if (groupRunningIndicator) {
           setIcon(groupRunningIndicator, 'loader-2');
           groupRunningIndicator.setAttribute('aria-label', 'Running');
+        }
+        if (
+          section.kind === 'note'
+          && section.notePath
+          && options.onStartLinkedNoteConversation
+        ) {
+          const notePath = section.notePath;
+          const newConversationButton = groupHeader.createSpan({
+            cls: 'claudian-session-group-new-action',
+          });
+          newConversationButton.setAttribute('role', 'button');
+          newConversationButton.setAttribute('tabindex', '0');
+          setIcon(newConversationButton, 'square-pen');
+          newConversationButton.setAttribute(
+            'aria-label',
+            `New chat for ${section.label ?? notePath}`,
+          );
+          newConversationButton.setAttribute(
+            'title',
+            `New chat for ${section.label ?? notePath}`,
+          );
+          const startLinkedNoteConversation = (): void => {
+            runConversationAction(
+              () => options.onStartLinkedNoteConversation!(notePath),
+              'Failed to start a chat for this note',
+            );
+          };
+          newConversationButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            startLinkedNoteConversation();
+          });
+          newConversationButton.addEventListener('keydown', (event) => {
+            event.stopPropagation();
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            startLinkedNoteConversation();
+          });
         }
         const groupBody = sessionList.createDiv({
           cls: [

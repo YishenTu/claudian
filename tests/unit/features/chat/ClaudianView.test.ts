@@ -1,5 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
-import { Menu, Notice, Platform, Scope, setIcon } from 'obsidian';
+import { Menu, Notice, Platform, Scope, setIcon, TFile } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -164,6 +164,203 @@ describe('ClaudianView tab controls', () => {
     await view.createNewTab();
 
     expect(inputEl.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('reveals an open linked note and creates a provisional note chat', async () => {
+    const note = Object.assign(new TFile(), {
+      basename: 'Plan',
+      extension: 'md',
+      name: 'Plan.md',
+      path: 'Projects/Plan.md',
+    });
+    const existingLeaf = { view: { file: note } };
+    const previousDraftHandleFileOpen = jest.fn();
+    const linkedDraftHandleFileOpen = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+    const revealLeaf = jest.fn().mockImplementation(async () => {
+      view.handleWorkspaceFileOpen(note);
+    });
+    const getLeaf = jest.fn();
+    const resetForNewConversation = jest.fn();
+    const setCurrentNote = jest.fn();
+    const focus = jest.fn();
+    let activeTabId = 'initial-tab';
+    const createTab = jest.fn().mockImplementation(async () => {
+      activeTabId = 'linked-note-tab';
+      return {
+        id: 'linked-note-tab',
+        dom: { inputEl: { focus } },
+        ui: {
+          fileContextManager: {
+            handleFileOpen: linkedDraftHandleFileOpen,
+            resetForNewConversation,
+            setCurrentNote,
+          },
+        },
+      };
+    });
+    Object.assign(view, {
+      isArchiveSessionView: false,
+      linkedNoteNavigationDepth: 0,
+      plugin: {
+        app: {
+          vault: { getAbstractFileByPath: jest.fn().mockReturnValue(note) },
+          workspace: {
+            getLeaf,
+            getLeavesOfType: jest.fn().mockReturnValue([existingLeaf]),
+            revealLeaf,
+          },
+        },
+      },
+      tabManager: {
+        closeTab: jest.fn().mockResolvedValue(true),
+        createTab,
+        getActiveTabId: jest.fn(() => activeTabId),
+        getTabSwitchRequestRevision: jest.fn().mockReturnValue(0),
+        getActiveTab: jest.fn().mockReturnValue({
+          ui: {
+            fileContextManager: {
+              handleFileOpen: previousDraftHandleFileOpen,
+            },
+          },
+        }),
+        waitForTabSwitchIdle: jest.fn().mockResolvedValue(undefined),
+      },
+      updateTabBarVisibility: jest.fn(),
+    });
+
+    await view.startLinkedNoteConversation(note.path);
+
+    expect(revealLeaf).toHaveBeenCalledWith(existingLeaf);
+    expect(getLeaf).not.toHaveBeenCalled();
+    expect(previousDraftHandleFileOpen).not.toHaveBeenCalled();
+    expect(linkedDraftHandleFileOpen).not.toHaveBeenCalled();
+    expect(revealLeaf.mock.invocationCallOrder[0])
+      .toBeLessThan(createTab.mock.invocationCallOrder[0]);
+    expect(createTab).toHaveBeenCalledWith(null, undefined, {
+      activate: true,
+      lifecycleState: 'provisional',
+    });
+    expect(resetForNewConversation).toHaveBeenCalledTimes(1);
+    expect(setCurrentNote).toHaveBeenCalledWith(note.path);
+    expect(resetForNewConversation.mock.invocationCallOrder[0])
+      .toBeLessThan(setCurrentNote.mock.invocationCallOrder[0]);
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a closed linked note in a new workspace tab before creating chat', async () => {
+    const note = Object.assign(new TFile(), {
+      basename: 'Plan',
+      extension: 'md',
+      name: 'Plan.md',
+      path: 'Projects/Plan.md',
+    });
+    const noteLeaf = { openFile: jest.fn().mockResolvedValue(undefined), view: {} };
+    const revealLeaf = jest.fn().mockResolvedValue(undefined);
+    const resetForNewConversation = jest.fn();
+    const setCurrentNote = jest.fn();
+    let activeTabId = 'initial-tab';
+    const createTab = jest.fn().mockImplementation(async () => {
+      activeTabId = 'linked-note-tab';
+      return {
+        id: 'linked-note-tab',
+        dom: { inputEl: { focus: jest.fn() } },
+        ui: { fileContextManager: { resetForNewConversation, setCurrentNote } },
+      };
+    });
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      isArchiveSessionView: false,
+      plugin: {
+        app: {
+          vault: { getAbstractFileByPath: jest.fn().mockReturnValue(note) },
+          workspace: {
+            getLeaf: jest.fn().mockReturnValue(noteLeaf),
+            getLeavesOfType: jest.fn().mockReturnValue([]),
+            revealLeaf,
+          },
+        },
+      },
+      tabManager: {
+        createTab,
+        getActiveTabId: jest.fn(() => activeTabId),
+        getTabSwitchRequestRevision: jest.fn().mockReturnValue(0),
+        waitForTabSwitchIdle: jest.fn().mockResolvedValue(undefined),
+      },
+      updateTabBarVisibility: jest.fn(),
+    });
+
+    await view.startLinkedNoteConversation(note.path);
+
+    expect(view.plugin.app.workspace.getLeaf).toHaveBeenCalledWith('tab');
+    expect(noteLeaf.openFile).toHaveBeenCalledWith(note);
+    expect(revealLeaf).toHaveBeenCalledWith(noteLeaf);
+    expect(createTab).toHaveBeenCalledWith(null, undefined, {
+      activate: true,
+      lifecycleState: 'provisional',
+    });
+    expect(resetForNewConversation).toHaveBeenCalledTimes(1);
+    expect(setCurrentNote).toHaveBeenCalledWith(note.path);
+  });
+
+  it('does not steal chat focus after a user switches tabs during note navigation', async () => {
+    const note = Object.assign(new TFile(), {
+      basename: 'Plan',
+      extension: 'md',
+      name: 'Plan.md',
+      path: 'Projects/Plan.md',
+    });
+    let resolveReveal!: () => void;
+    const revealLeaf = jest.fn().mockReturnValue(new Promise<void>((resolve) => {
+      resolveReveal = resolve;
+    }));
+    const focus = jest.fn();
+    const resetForNewConversation = jest.fn();
+    const setCurrentNote = jest.fn();
+    const createTab = jest.fn().mockResolvedValue({
+      id: 'linked-note-tab',
+      dom: { inputEl: { focus } },
+      ui: { fileContextManager: { resetForNewConversation, setCurrentNote } },
+    });
+    const activeTabId = 'initial-tab';
+    let tabSwitchRequestRevision = 0;
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      isArchiveSessionView: false,
+      linkedNoteNavigationDepth: 0,
+      plugin: {
+        app: {
+          vault: { getAbstractFileByPath: jest.fn().mockReturnValue(note) },
+          workspace: {
+            getLeaf: jest.fn(),
+            getLeavesOfType: jest.fn().mockReturnValue([{ view: { file: note } }]),
+            revealLeaf,
+          },
+        },
+      },
+      tabManager: {
+        closeTab: jest.fn().mockResolvedValue(true),
+        createTab,
+        getActiveTabId: jest.fn(() => activeTabId),
+        getTabSwitchRequestRevision: jest.fn(() => tabSwitchRequestRevision),
+        waitForTabSwitchIdle: jest.fn().mockResolvedValue(undefined),
+      },
+      updateTabBarVisibility: jest.fn(),
+    });
+
+    const startLinkedChat = view.startLinkedNoteConversation(note.path);
+    await Promise.resolve();
+    tabSwitchRequestRevision += 1;
+    resolveReveal();
+    await startLinkedChat;
+
+    expect(createTab).toHaveBeenCalledWith(null, undefined, {
+      activate: false,
+      lifecycleState: 'provisional',
+    });
+    expect(resetForNewConversation).toHaveBeenCalledTimes(1);
+    expect(setCurrentNote).toHaveBeenCalledWith(note.path);
+    expect(focus).not.toHaveBeenCalled();
   });
 
   it('hides the new-tab button when the tab manager is at capacity', () => {
@@ -1201,6 +1398,7 @@ describe('ClaudianView tab controls', () => {
         getConversationStatus: expect.any(Function),
         collapsedGroupKeys: expect.any(Set),
         onGroupCollapseChange: expect.any(Function),
+        onStartLinkedNoteConversation: expect.any(Function),
         onRerender: expect.any(Function),
         onSelectConversation: expect.any(Function),
         preserveListState: true,
