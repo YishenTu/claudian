@@ -1,22 +1,41 @@
-import { addIcon } from 'obsidian';
+export type SessionGroupToggleIconState = 'collapse' | 'expand';
 
-export const SESSION_COLLAPSE_ALL_ICON = 'claudian-list-chevrons-down-up';
-export const SESSION_EXPAND_ALL_ICON = 'claudian-list-chevrons-up-down';
+const ICON_PATHS: Record<SessionGroupToggleIconState, readonly string[]> = {
+  collapse: [
+    'M3 5h8',
+    'M3 12h8',
+    'M3 19h8',
+    'm15 5 3 3 3-3',
+    'm15 19 3-3 3 3',
+  ],
+  expand: [
+    'M3 5h8',
+    'M3 12h8',
+    'M3 19h8',
+    'm15 8 3-3 3 3',
+    'm15 16 3 3 3-3',
+  ],
+};
 
-let registered = false;
+export function renderSessionGroupToggleIcon(
+  container: HTMLElement,
+  state: SessionGroupToggleIconState,
+): void {
+  container.empty();
+  container.dataset.iconState = state;
 
-export function registerSessionManagerIcons(): void {
-  if (registered) return;
-  registered = true;
-
-  addIcon(
-    SESSION_COLLAPSE_ALL_ICON,
-    '<path d="M3 5h8"/><path d="M3 12h8"/><path d="M3 19h8"/>'
-      + '<path d="m15 5 3 3 3-3"/><path d="m15 19 3-3 3 3"/>',
-  );
-  addIcon(
-    SESSION_EXPAND_ALL_ICON,
-    '<path d="M3 5h8"/><path d="M3 12h8"/><path d="M3 19h8"/>'
-      + '<path d="m15 8 3-3 3 3"/><path d="m15 16 3 3 3-3"/>',
-  );
+  const svg = container.createSvg('svg', {
+    attr: {
+      'aria-hidden': 'true',
+      fill: 'none',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      'stroke-width': '2',
+      stroke: 'currentColor',
+      viewBox: '0 0 24 24',
+    },
+  });
+  for (const path of ICON_PATHS[state]) {
+    svg.createSvg('path', { attr: { d: path } });
+  }
 }

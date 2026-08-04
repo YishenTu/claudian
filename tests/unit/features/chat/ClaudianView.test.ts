@@ -1,5 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
-import { Menu, Platform, Scope, setIcon } from 'obsidian';
+import { Menu, Platform, Scope } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -266,11 +266,10 @@ describe('ClaudianView tab controls', () => {
     const actions = container.querySelector('.claudian-session-header-actions')!;
     expect(actions.children).toHaveLength(3);
     const collapseButton = actions.children[1];
+    const collapseIcon = collapseButton.querySelector('.claudian-session-header-icon')!;
     expect(collapseButton.getAttribute('aria-label')).toBe('Collapse all groups');
-    expect(setIcon).toHaveBeenCalledWith(
-      collapseButton.querySelector('.claudian-session-header-icon'),
-      'claudian-list-chevrons-down-up',
-    );
+    expect(collapseIcon.dataset.iconState).toBe('collapse');
+    expect(collapseIcon.children[0]?.tagName).toBe('SVG');
 
     view.collapsedSessionGroupKeys = new Set([
       'note:Projects/Plan.md',
@@ -279,10 +278,7 @@ describe('ClaudianView tab controls', () => {
     view.updateSessionGroupToggleButton();
 
     expect(collapseButton.getAttribute('aria-label')).toBe('Expand all groups');
-    expect(setIcon).toHaveBeenCalledWith(
-      collapseButton.querySelector('.claudian-session-header-icon'),
-      'claudian-list-chevrons-up-down',
-    );
+    expect(collapseIcon.dataset.iconState).toBe('expand');
 
     view.collapsedSessionGroupKeys.clear();
 
@@ -300,10 +296,8 @@ describe('ClaudianView tab controls', () => {
     const expandButton = collapsedContainer
       .querySelector('.claudian-session-header-actions')!.children[1];
     expect(expandButton.getAttribute('aria-label')).toBe('Expand all groups');
-    expect(setIcon).toHaveBeenCalledWith(
-      expandButton.querySelector('.claudian-session-header-icon'),
-      'claudian-list-chevrons-up-down',
-    );
+    expect(expandButton.querySelector('.claudian-session-header-icon')?.dataset.iconState)
+      .toBe('expand');
 
     view.toggleAllSessionGroups();
     expect(view.collapsedSessionGroupKeys).toEqual(new Set());

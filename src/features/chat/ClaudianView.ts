@@ -21,11 +21,7 @@ import type { HistoryConversationStatus } from './controllers/ConversationContro
 import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
 import { TabStatePersistenceCoordinator } from './services/TabStatePersistenceCoordinator';
 import { getObsidianLanguage } from './session-manager/ProvisionalNoteNames';
-import {
-  registerSessionManagerIcons,
-  SESSION_COLLAPSE_ALL_ICON,
-  SESSION_EXPAND_ALL_ICON,
-} from './session-manager/SessionManagerIcons';
+import { renderSessionGroupToggleIcon } from './session-manager/SessionManagerIcons';
 import {
   commitProvisionalTab,
   getTabProviderId,
@@ -92,7 +88,6 @@ export class ClaudianView extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, plugin: FeatureHost) {
     super(leaf);
-    registerSessionManagerIcons();
     this.plugin = plugin;
     this.tabStatePersistence = new TabStatePersistenceCoordinator(
       state => this.plugin.storage.setTabManagerState(state),
@@ -768,9 +763,10 @@ export class ClaudianView extends ItemView {
       ));
       this.sessionGroupToggleButtonEl = this.createSessionHeaderAction(
         actions,
-        allCollapsed
-          ? SESSION_EXPAND_ALL_ICON
-          : SESSION_COLLAPSE_ALL_ICON,
+        icon => renderSessionGroupToggleIcon(
+          icon,
+          allCollapsed ? 'expand' : 'collapse',
+        ),
         allCollapsed ? 'Expand all groups' : 'Collapse all groups',
         () => this.toggleAllSessionGroups(),
       );
@@ -787,7 +783,7 @@ export class ClaudianView extends ItemView {
 
   private createSessionHeaderAction(
     parent: HTMLElement,
-    icon: string,
+    icon: string | ((container: HTMLElement) => void),
     label: string,
     action: (event?: MouseEvent) => void,
   ): HTMLElement {
@@ -797,7 +793,11 @@ export class ClaudianView extends ItemView {
     control.setAttribute('aria-label', label);
 
     const iconEl = control.createDiv({ cls: 'claudian-session-header-icon' });
-    setIcon(iconEl, icon);
+    if (typeof icon === 'string') {
+      setIcon(iconEl, icon);
+    } else {
+      icon(iconEl);
+    }
 
     control.addEventListener('click', (event) => action(event));
     control.addEventListener('keydown', (event) => {
@@ -841,9 +841,9 @@ export class ClaudianView extends ItemView {
     );
     const icon = button.querySelector<HTMLElement>('.claudian-session-header-icon');
     if (icon) {
-      setIcon(
+      renderSessionGroupToggleIcon(
         icon,
-        allCollapsed ? SESSION_EXPAND_ALL_ICON : SESSION_COLLAPSE_ALL_ICON,
+        allCollapsed ? 'expand' : 'collapse',
       );
     }
   }
