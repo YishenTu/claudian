@@ -148,6 +148,8 @@ export interface Conversation {
   currentNote?: string;
   /** Whether the session is pinned in the dual-pane session manager. */
   isPinned?: boolean;
+  /** Whether the session is archived and hidden from active session lists. */
+  isArchived?: boolean;
   /** Session-specific external context paths (directories with full access). Resets on new session. */
   externalContextPaths?: string[];
   /** Context window usage information. */
@@ -158,6 +160,12 @@ export interface Conversation {
   enabledMcpServers?: string[];
   /** Assistant checkpoint identifier for resumeAtMessageId after rewind. */
   resumeAtMessageId?: string;
+}
+
+/** Controls persistence semantics for partial conversation updates. */
+export interface ConversationUpdateOptions {
+  /** Whether this update represents user activity for session ordering. */
+  touchUpdatedAt?: boolean;
 }
 
 /** Lightweight conversation metadata for the history dropdown. */
@@ -175,6 +183,8 @@ export interface ConversationMeta {
   currentNote?: string;
   /** Whether the session is pinned in the dual-pane session manager. */
   isPinned?: boolean;
+  /** Whether the session is archived and hidden from active session lists. */
+  isArchived?: boolean;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
 }
@@ -199,6 +209,7 @@ export interface SessionMetadata {
   providerState?: Record<string, unknown>;
   currentNote?: string;
   isPinned?: boolean;
+  isArchived?: boolean;
   externalContextPaths?: string[];
   enabledMcpServers?: string[];
   usage?: UsageInfo;

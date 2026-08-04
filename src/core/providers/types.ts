@@ -471,6 +471,12 @@ export interface ProviderWorkspaceRegistration<
 }
 
 export interface ProviderConversationHistoryService {
+  /** Recovers a missing provider-native session reference before history hydration. */
+  recoverConversationSessionReference?(
+    conversation: Conversation,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<boolean>;
   /**
    * Reports whether the provider-native session needed to resume a persisted
    * conversation is still available. Providers that cannot distinguish a

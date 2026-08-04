@@ -23,6 +23,7 @@ import {
   type ChatMessage,
   type Conversation,
   type ConversationMeta,
+  type ConversationUpdateOptions,
   isCanonicalUserMessage,
   type SessionMetadata,
 } from '../../core/types';
@@ -432,7 +433,11 @@ export class ConversationRepository {
     await this.save(conversation);
   }
 
-  async update(id: string, updates: Partial<Conversation>): Promise<void> {
+  async update(
+    id: string,
+    updates: Partial<Conversation>,
+    options: ConversationUpdateOptions = {},
+  ): Promise<void> {
     const conversation = this.getSync(id);
     if (!conversation) return;
 
@@ -450,7 +455,10 @@ export class ConversationRepository {
         delete safeUpdates.selectedModel;
       }
     }
-    Object.assign(conversation, safeUpdates, { updatedAt: Date.now() });
+    Object.assign(conversation, safeUpdates);
+    if (options.touchUpdatedAt !== false) {
+      conversation.updatedAt = Date.now();
+    }
     if (
       'sessionId' in safeUpdates
       || 'providerState' in safeUpdates
@@ -464,9 +472,28 @@ export class ConversationRepository {
 
   async setPinned(id: string, isPinned: boolean): Promise<void> {
     const conversation = this.getSync(id);
-    if (!conversation || conversation.isPinned === isPinned) return;
+    if (
+      !conversation
+      || (isPinned && conversation.isArchived)
+      || conversation.isPinned === isPinned
+    ) return;
 
     conversation.isPinned = isPinned;
+    await this.save(conversation);
+  }
+
+  async setArchived(id: string, isArchived: boolean): Promise<void> {
+    const conversation = this.getSync(id);
+    if (!conversation) return;
+    if (
+      conversation.isArchived === isArchived
+      && (!isArchived || conversation.isPinned === false)
+    ) return;
+
+    conversation.isArchived = isArchived;
+    if (isArchived) {
+      conversation.isPinned = false;
+    }
     await this.save(conversation);
   }
 
@@ -765,6 +792,7 @@ export class ConversationRepository {
       preview: this.getPreview(conversation),
       currentNote: conversation.currentNote,
       isPinned: conversation.isPinned,
+      isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
     };
   }
@@ -851,6 +879,7 @@ export class ConversationRepository {
       preview: this.getPreview(conversation),
       currentNote: conversation.currentNote,
       isPinned: conversation.isPinned,
+      isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
     }));
   }
@@ -900,13 +929,36 @@ export class ConversationRepository {
     const historyService = ProviderRegistry.getConversationHistoryService(
       conversation.providerId,
     );
-    if (!historyService.getConversationSessionAvailability) return;
 
     const vaultPath = this.deps.getVaultPath();
     const pathContext = this.getHistoryPathContext(
       conversation.providerId,
       vaultPath,
     );
+    if (historyService.recoverConversationSessionReference) {
+      const previousSessionId = conversation.sessionId;
+      const previousProviderState = conversation.providerState;
+      const previousResumeAtMessageId = conversation.resumeAtMessageId;
+      try {
+        if (
+          await historyService.recoverConversationSessionReference(
+            conversation,
+            vaultPath,
+            pathContext,
+          )
+        ) {
+          await this.save(conversation);
+        }
+      } catch {
+        conversation.sessionId = previousSessionId;
+        conversation.providerState = previousProviderState;
+        conversation.resumeAtMessageId = previousResumeAtMessageId;
+        return;
+      }
+    }
+
+    if (!historyService.getConversationSessionAvailability) return;
+
     let availability;
     try {
       availability =
@@ -1270,6 +1322,7 @@ export class ConversationRepository {
           : undefined,
       currentNote: conversation.currentNote,
       isPinned: conversation.isPinned,
+      isArchived: conversation.isArchived,
       externalContextPaths: conversation.externalContextPaths,
       enabledMcpServers: conversation.enabledMcpServers,
       usage: conversation.usage,

@@ -256,6 +256,37 @@ describe('ClaudeConversationHistoryService', () => {
   });
 
   describe('hydrateConversationHistory', () => {
+    it('recovers an unlinked native transcript from the conversation timestamps', async () => {
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation({
+        sessionId: null,
+        providerState: undefined,
+        createdAt: 1_000,
+        lastResponseAt: 2_000,
+      });
+      const legacySpy = jest.spyOn(historyStore, 'readLegacyConversationSessionId')
+        .mockResolvedValue(null);
+      const recoverySpy = jest.spyOn(historyStore, 'recoverSDKSessionIdByTime')
+        .mockResolvedValue('recovered-session');
+
+      await expect(service.recoverConversationSessionReference(
+        conversation,
+        '/vault',
+      )).resolves.toBe(true);
+
+      expect(recoverySpy).toHaveBeenCalledWith('/vault', {
+        createdAt: 1_000,
+        lastResponseAt: 2_000,
+      });
+      expect(conversation).toMatchObject({
+        sessionId: 'recovered-session',
+        providerState: { providerSessionId: 'recovered-session' },
+      });
+
+      legacySpy.mockRestore();
+      recoverySpy.mockRestore();
+    });
+
     it('recovers a cleared session pointer from the legacy conversation backup', async () => {
       const service = new ClaudeConversationHistoryService();
       const conversation = createConversation({

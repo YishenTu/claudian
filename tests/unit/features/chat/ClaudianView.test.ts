@@ -1,5 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
-import { Menu, Platform, Scope } from 'obsidian';
+import { Menu, Notice, Platform, Scope } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -231,7 +231,7 @@ describe('ClaudianView tab controls', () => {
 
     const actions = header.querySelector('.claudian-session-header-actions');
     const optionsButton = actions?.children[0];
-    const newButton = container.children[0];
+    const newButton = container.querySelector('.claudian-session-new-control');
     expect(actions?.children).toHaveLength(1);
     expect(optionsButton?.getAttribute('aria-label')).toBe('Session options');
     expect(newButton?.tagName).toBe('DIV');
@@ -239,10 +239,76 @@ describe('ClaudianView tab controls', () => {
     expect(newButton?.getAttribute('tabindex')).toBe('0');
     expect(newButton?.getAttribute('aria-label')).toBe('New');
     expect(newButton?.querySelector('.claudian-session-new-label')?.textContent).toBe('New');
-    expect(container.children[1]).toBe(list);
+    expect(container.querySelector('.claudian-history-list')).toBe(list);
 
     newButton?.click();
     expect(view.requestDualNew).toHaveBeenCalledTimes(1);
+  });
+
+  it('switches between active and archived session manager views', () => {
+    const createContainer = () => {
+      const container = createMockEl();
+      const list = container.createDiv({ cls: 'claudian-history-list' });
+      list.createDiv({
+        cls: 'claudian-history-header claudian-session-list-header',
+      });
+      return container;
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      isArchiveSessionView: false,
+      isWideSessionLayout: true,
+      plugin: { settings: {} },
+      renderSessionSidebar: jest.fn(),
+      requestDualNew: jest.fn(),
+      tabManager: {
+        canCreateTab: jest.fn().mockReturnValue(true),
+        getAllTabs: jest.fn().mockReturnValue([]),
+      },
+    });
+
+    const activeContainer = createContainer();
+    view.buildSessionHeaderActions(activeContainer);
+    const archiveControl = activeContainer.querySelector('.claudian-session-archive-control')!;
+    expect(archiveControl.querySelector('.claudian-session-nav-label')?.textContent)
+      .toBe('Archive');
+
+    archiveControl.click();
+
+    expect(view.isArchiveSessionView).toBe(true);
+    expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
+
+    const archiveContainer = createContainer();
+    view.buildSessionHeaderActions(archiveContainer);
+    const sessionsControl = archiveContainer.querySelector('.claudian-session-archive-control')!;
+    expect(sessionsControl.querySelector('.claudian-session-nav-label')?.textContent)
+      .toBe('Sessions');
+
+    sessionsControl.click();
+
+    expect(view.isArchiveSessionView).toBe(false);
+    expect(view.renderSessionSidebar).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps archive navigation at the top of the single-mode history list', () => {
+    const container = createMockEl();
+    const list = container.createDiv({ cls: 'claudian-history-list' });
+    list.createDiv({ cls: 'claudian-history-item' });
+    const setArchiveSessionView = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      isArchiveSessionView: false,
+      setArchiveSessionView,
+    });
+
+    view.buildHistoryArchiveNavigation(container);
+
+    const archiveControl = list.querySelector('.claudian-history-archive-control')!;
+    expect(list.children[0]).toBe(archiveControl);
+    expect(archiveControl.querySelector('.claudian-session-nav-label')?.textContent)
+      .toBe('Archive');
+    archiveControl.click();
+    expect(setArchiveSessionView).toHaveBeenCalledWith(true);
   });
 
   it('collapses and expands every linked-note group from the session header', () => {
@@ -516,6 +582,59 @@ describe('ClaudianView tab controls', () => {
     expect(historyDropdown.hasClass('visible')).toBe(false);
   });
 
+  it('switches the single-mode history menu between Sessions and Archived', () => {
+    const historyDropdown = createMockEl();
+    historyDropdown.addClass('visible');
+    const renderHistoryDropdown = jest.fn((container, _options?: unknown) => {
+      container.empty();
+      container.createDiv({ cls: 'claudian-history-header' });
+      container.createDiv({ cls: 'claudian-history-list' });
+    });
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      historyDropdown,
+      historyDropdownDirty: true,
+      historySurfaceRendered: true,
+      isArchiveSessionView: false,
+      isWideSessionLayout: false,
+      plugin: {},
+      tabManager: {
+        getActiveTab: jest.fn().mockReturnValue({
+          controllers: { conversationController: { renderHistoryDropdown } },
+        }),
+      },
+    });
+
+    view.renderHistoryDropdown();
+
+    expect(renderHistoryDropdown).toHaveBeenLastCalledWith(
+      historyDropdown,
+      expect.objectContaining({
+        preserveListState: true,
+        sessionScope: 'active',
+        sessionActionMode: 'active',
+        allowConversationSelection: true,
+        onOpenConversationInNewTab: expect.any(Function),
+      }),
+    );
+    historyDropdown.querySelector('.claudian-history-archive-control')!.click();
+
+    expect(view.isArchiveSessionView).toBe(true);
+    expect(renderHistoryDropdown).toHaveBeenLastCalledWith(
+      historyDropdown,
+      expect.objectContaining({
+        preserveListState: true,
+        sessionScope: 'archived',
+        sessionActionMode: 'archived',
+        allowConversationSelection: false,
+      }),
+    );
+    expect(renderHistoryDropdown.mock.calls.at(-1)?.[1])
+      .not.toHaveProperty('onOpenConversationInNewTab');
+    expect(historyDropdown.querySelector('.claudian-session-nav-label')?.textContent)
+      .toBe('Sessions');
+  });
+
   it('defers hidden history rendering and coalesces invalidations until the dropdown opens', () => {
     const historyDropdown = createMockEl();
     const renderHistoryDropdown = jest.fn();
@@ -682,6 +801,94 @@ describe('ClaudianView tab controls', () => {
     expect(view.tabManager.getAllTabs).toHaveBeenCalledTimes(2);
   });
 
+  it('closes every open idle container before archiving a session', async () => {
+    const localTab = {
+      id: 'local-tab',
+      conversationId: 'conversation-1',
+      state: { isStreaming: false },
+    };
+    const otherTab = {
+      id: 'other-tab',
+      conversationId: 'conversation-1',
+      state: { isStreaming: false },
+    };
+    const localManager = {
+      closeTab: jest.fn().mockResolvedValue(true),
+      getAllTabs: jest.fn().mockReturnValue([localTab]),
+    };
+    const otherManager = {
+      closeTab: jest.fn().mockResolvedValue(true),
+      getAllTabs: jest.fn().mockReturnValue([otherTab]),
+    };
+    const otherView = { getTabManager: jest.fn().mockReturnValue(otherManager) };
+    const setConversationArchived = jest.fn().mockResolvedValue(undefined);
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      plugin: {
+        getAllViews: jest.fn().mockReturnValue([view, otherView]),
+        setConversationArchived,
+      },
+      tabManager: localManager,
+    });
+    view.getTabManager = jest.fn().mockReturnValue(localManager);
+
+    await view.setConversationArchived('conversation-1', true);
+
+    expect(localManager.closeTab).toHaveBeenCalledWith('local-tab');
+    expect(otherManager.closeTab).toHaveBeenCalledWith('other-tab');
+    expect(setConversationArchived).toHaveBeenCalledWith('conversation-1', true);
+    expect(localManager.closeTab.mock.invocationCallOrder[0])
+      .toBeLessThan(setConversationArchived.mock.invocationCallOrder[0]);
+  });
+
+  it('does not archive a running session', async () => {
+    const runningTab = {
+      id: 'running-tab',
+      conversationId: 'conversation-1',
+      state: { isStreaming: true },
+    };
+    const manager = {
+      closeTab: jest.fn().mockResolvedValue(true),
+      getAllTabs: jest.fn().mockReturnValue([runningTab]),
+    };
+    const setConversationArchived = jest.fn().mockResolvedValue(undefined);
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      plugin: {
+        getAllViews: jest.fn().mockReturnValue([view]),
+        setConversationArchived,
+      },
+      tabManager: manager,
+    });
+    view.getTabManager = jest.fn().mockReturnValue(manager);
+
+    await view.setConversationArchived('conversation-1', true);
+
+    expect(manager.closeTab).not.toHaveBeenCalled();
+    expect(setConversationArchived).not.toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledWith('Running sessions cannot be archived');
+  });
+
+  it('restores an archived session without opening a container', async () => {
+    const setConversationArchived = jest.fn().mockResolvedValue(undefined);
+    const manager = {
+      closeTab: jest.fn(),
+      getAllTabs: jest.fn().mockReturnValue([]),
+      openConversation: jest.fn(),
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      plugin: { setConversationArchived },
+      tabManager: manager,
+    });
+
+    await view.setConversationArchived('conversation-1', false);
+
+    expect(setConversationArchived).toHaveBeenCalledWith('conversation-1', false);
+    expect(manager.closeTab).not.toHaveBeenCalled();
+    expect(manager.openConversation).not.toHaveBeenCalled();
+  });
+
   it('resizes chat and session columns without changing the total view width', () => {
     const viewContainerEl = createMockEl();
     viewContainerEl.getBoundingClientRect = jest.fn().mockReturnValue({ width: 800 });
@@ -777,6 +984,7 @@ describe('ClaudianView tab controls', () => {
     Object.assign(view, {
       cancelSessionSidebarRendering: jest.fn(),
       historySurfaceRendered: true,
+      isArchiveSessionView: false,
       isWideSessionLayout: true,
       sessionSidebarDirty: true,
       sessionSidebarEl,
@@ -806,7 +1014,12 @@ describe('ClaudianView tab controls', () => {
         showOpenStateActions: false,
         showOpenStateLabels: false,
         showPinnedSection: true,
+        showArchivedSection: false,
+        sessionScope: 'active',
+        sessionActionMode: 'active',
+        allowConversationSelection: true,
         onSetConversationPinned: expect.any(Function),
+        onSetConversationArchived: expect.any(Function),
         signal: expect.any(AbortSignal),
       }),
     );
@@ -820,6 +1033,24 @@ describe('ClaudianView tab controls', () => {
 
     renderHistoryDropdown.mock.calls[0][1].onRerender();
     expect(updateHistoryDropdown).toHaveBeenCalledTimes(1);
+
+    view.isArchiveSessionView = true;
+    view.sessionSidebarDirty = true;
+    view.renderSessionSidebar();
+
+    expect(renderHistoryDropdown).toHaveBeenLastCalledWith(
+      sessionSidebarEl,
+      expect.objectContaining({
+        organization: 'list',
+        sort: 'last-updated',
+        showPinnedSection: false,
+        showArchivedSection: true,
+        sessionScope: 'archived',
+        sessionActionMode: 'archived',
+        allowConversationSelection: false,
+        collapsedGroupKeys: expect.any(Set),
+      }),
+    );
   });
 
   it('notifies other open views when runtime session navigation changes', () => {

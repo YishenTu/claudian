@@ -16,7 +16,7 @@ import {
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
 } from '../../utils/animationFrame';
-import type { FeatureHost } from '../FeatureHost';
+import type { FeatureHost, FeatureTabManagerHost } from '../FeatureHost';
 import type { HistoryConversationStatus } from './controllers/ConversationController';
 import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
 import { TabStatePersistenceCoordinator } from './services/TabStatePersistenceCoordinator';
@@ -76,6 +76,7 @@ export class ClaudianView extends ItemView {
   private sessionSidebarResizeCleanup: (() => void) | null = null;
   private sessionSidebarWidth: number | null = null;
   private isWideSessionLayout = false;
+  private isArchiveSessionView = false;
   private collapsedSessionGroupKeys?: Set<string> = new Set<string>();
   private sessionGroupKeys?: Set<string> = new Set<string>();
 
@@ -700,11 +701,12 @@ export class ClaudianView extends ItemView {
       return;
     }
 
+    const isArchiveView = this.isArchiveSessionView;
     conversationController.renderHistoryDropdown(container, {
       onSelectConversation: (id) => navigationMode === 'sessions'
         ? this.openSessionConversation(id)
         : this.openHistoryConversation(id),
-      ...(navigationMode === 'history'
+      ...(navigationMode === 'history' && !isArchiveView
         ? {
             onOpenConversationInNewTab: (id: string, activate?: boolean) =>
               this.openHistoryConversationInNewTab(id, activate),
@@ -713,18 +715,27 @@ export class ClaudianView extends ItemView {
       getConversationStatus: (id) => this.getHistoryConversationStatus(id),
       onRerender: () => this.updateHistoryDropdown(),
       showOpenStateLabels: navigationMode === 'history',
+      showOpenStateActions: navigationMode === 'history' && !isArchiveView,
+      preserveListState: true,
+      sessionScope: isArchiveView ? 'archived' : 'active',
+      sessionActionMode: isArchiveView ? 'archived' : 'active',
+      historyHeaderLabel: isArchiveView ? 'Archived' : 'Sessions',
+      allowConversationSelection: !isArchiveView,
+      onSetConversationPinned: (id: string, isPinned: boolean) => (
+        this.setConversationPinned(id, isPinned)
+      ),
+      onSetConversationArchived: (id: string, isArchived: boolean) => (
+        this.setConversationArchived(id, isArchived)
+      ),
       ...(navigationMode === 'sessions'
         ? {
             organization: this.getSessionManagerOrganization(),
             sort: this.getSessionManagerSort(),
             language: getObsidianLanguage(this.plugin.settings.locale),
             noteExists: (notePath: string) => this.noteExists(notePath),
-            preserveListState: true,
             showOpenStateActions: false,
-            showPinnedSection: true,
-            onSetConversationPinned: (id: string, isPinned: boolean) => (
-              this.setConversationPinned(id, isPinned)
-            ),
+            showPinnedSection: !isArchiveView,
+            showArchivedSection: isArchiveView,
             collapsedGroupKeys: this.getCollapsedSessionGroupKeys(),
             onGroupCollapseChange: (groupKey: string, collapsed: boolean) => {
               const collapsedGroupKeys = this.getCollapsedSessionGroupKeys();
@@ -742,6 +753,9 @@ export class ClaudianView extends ItemView {
         : {}),
       signal,
     });
+    if (navigationMode === 'history') {
+      this.buildHistoryArchiveNavigation(container);
+    }
   }
 
   private buildSessionHeaderActions(container: HTMLElement): void {
@@ -756,14 +770,36 @@ export class ClaudianView extends ItemView {
     const newIcon = newControl.createSpan({ cls: 'claudian-session-new-icon' });
     setIcon(newIcon, 'plus');
     newControl.createSpan({ cls: 'claudian-session-new-label', text: 'New' });
-    newControl.addEventListener('click', () => this.requestDualNew());
+    newControl.addEventListener('click', () => this.requestSessionNew());
     newControl.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
-      this.requestDualNew();
+      this.requestSessionNew();
     });
     container.insertBefore(newControl, list);
     this.sessionNewButtonEl = newControl;
+
+    const archiveControl = container.createDiv({ cls: 'claudian-session-archive-control' });
+    archiveControl.setAttribute('role', 'button');
+    archiveControl.setAttribute('tabindex', '0');
+    const archiveLabel = this.isArchiveSessionView ? 'Sessions' : 'Archive';
+    archiveControl.setAttribute('aria-label', archiveLabel);
+    const archiveIcon = archiveControl.createSpan({ cls: 'claudian-session-nav-icon' });
+    setIcon(archiveIcon, this.isArchiveSessionView ? 'arrow-left' : 'archive');
+    archiveControl.createSpan({
+      cls: 'claudian-session-nav-label',
+      text: archiveLabel,
+    });
+    const toggleArchiveView = (): void => {
+      this.setArchiveSessionView(!this.isArchiveSessionView);
+    };
+    archiveControl.addEventListener('click', toggleArchiveView);
+    archiveControl.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      toggleArchiveView();
+    });
+    container.insertBefore(archiveControl, list);
 
     this.sessionGroupToggleButtonEl = null;
     const actions = header.createDiv({ cls: 'claudian-session-header-actions' });
@@ -796,6 +832,49 @@ export class ClaudianView extends ItemView {
     this.updateNewTabButtonVisibility();
   }
 
+  private requestSessionNew(): void {
+    if (this.isArchiveSessionView) {
+      this.setArchiveSessionView(false);
+    }
+    this.requestDualNew();
+  }
+
+  private setArchiveSessionView(isArchiveSessionView: boolean): void {
+    if (this.isArchiveSessionView === isArchiveSessionView) return;
+    this.isArchiveSessionView = isArchiveSessionView;
+    this.historyDropdownDirty = true;
+    this.sessionSidebarDirty = true;
+    if (this.isWideSessionLayout) {
+      this.renderSessionSidebar();
+    } else if (this.historyDropdown?.hasClass('visible')) {
+      this.renderHistoryDropdown();
+    }
+  }
+
+  private buildHistoryArchiveNavigation(container: HTMLElement): void {
+    const list = container.querySelector<HTMLElement>('.claudian-history-list');
+    if (!list) return;
+
+    const label = this.isArchiveSessionView ? 'Sessions' : 'Archive';
+    const control = list.createDiv({ cls: 'claudian-history-archive-control' });
+    control.setAttribute('role', 'button');
+    control.setAttribute('tabindex', '0');
+    control.setAttribute('aria-label', label);
+    const icon = control.createSpan({ cls: 'claudian-session-nav-icon' });
+    setIcon(icon, this.isArchiveSessionView ? 'arrow-left' : 'archive');
+    control.createSpan({ cls: 'claudian-session-nav-label', text: label });
+    const toggleArchiveView = (): void => {
+      this.setArchiveSessionView(!this.isArchiveSessionView);
+    };
+    control.addEventListener('click', toggleArchiveView);
+    control.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      toggleArchiveView();
+    });
+    list.insertBefore(control, list.firstChild);
+  }
+
   private async setConversationPinned(
     conversationId: string,
     isPinned: boolean,
@@ -808,6 +887,54 @@ export class ClaudianView extends ItemView {
         commitProvisionalTab(tab);
       }
     }
+  }
+
+  private async setConversationArchived(
+    conversationId: string,
+    isArchived: boolean,
+  ): Promise<void> {
+    if (!isArchived) {
+      await this.plugin.setConversationArchived(conversationId, false);
+      return;
+    }
+
+    const openTabs = this.getOpenConversationTabs(conversationId);
+    if (openTabs.some(({ tab }) => tab.state.isStreaming)) {
+      new Notice('Running sessions cannot be archived');
+      return;
+    }
+
+    for (const { manager, tab } of openTabs) {
+      const didClose = await manager.closeTab(tab.id);
+      if (!didClose) {
+        throw new Error('Failed to close the session before archiving');
+      }
+    }
+    await this.plugin.setConversationArchived(conversationId, true);
+  }
+
+  private getOpenConversationTabs(conversationId: string): Array<{
+    manager: FeatureTabManagerHost;
+    tab: TabData;
+  }> {
+    const managers = new Set(
+      this.plugin.getAllViews()
+        .map(view => view.getTabManager())
+        .filter((manager): manager is NonNullable<typeof manager> => manager !== null),
+    );
+    if (this.tabManager) {
+      managers.add(this.tabManager);
+    }
+
+    const openTabs: Array<{ manager: FeatureTabManagerHost; tab: TabData }> = [];
+    for (const manager of managers) {
+      for (const tab of manager.getAllTabs()) {
+        if (tab.conversationId === conversationId) {
+          openTabs.push({ manager, tab });
+        }
+      }
+    }
+    return openTabs;
   }
 
   private retainPinnedProvisionalTabs(): void {

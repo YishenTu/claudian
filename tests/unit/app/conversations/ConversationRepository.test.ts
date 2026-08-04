@@ -95,6 +95,32 @@ describe('ConversationRepository hydration', () => {
     }));
   });
 
+  it('persists archive state without changing activity and clears pin state', async () => {
+    const conversation = createConversation();
+    conversation.updatedAt = 42;
+    conversation.isPinned = true;
+    const { repository, persistence } = createRepository(conversation);
+
+    await repository.setArchived(conversation.id, true);
+
+    expect(repository.getMetadata(conversation.id)).toMatchObject({
+      isArchived: true,
+      isPinned: false,
+      updatedAt: 42,
+    });
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: conversation.id,
+      isArchived: true,
+      isPinned: false,
+    }));
+
+    await repository.setPinned(conversation.id, true);
+    expect(conversation.isPinned).toBe(false);
+
+    await repository.setArchived(conversation.id, false);
+    expect(conversation).toMatchObject({ isArchived: false, isPinned: false });
+  });
+
   it('rewrites linked note paths without changing session activity timestamps', async () => {
     const fileConversation = createConversation('file');
     fileConversation.currentNote = 'Notes/Old.md';
@@ -132,6 +158,25 @@ describe('ConversationRepository hydration', () => {
       id: 'folder',
       currentNote: 'Projects/New/Plan.md',
       updatedAt: 40,
+    }));
+  });
+
+  it('persists read-only state synchronization without changing session activity', async () => {
+    const conversation = createConversation();
+    conversation.updatedAt = 42;
+    const { repository, persistence } = createRepository(conversation);
+
+    await repository.update(
+      conversation.id,
+      { currentNote: 'Notes/Current.md' },
+      { touchUpdatedAt: false },
+    );
+
+    expect(conversation.updatedAt).toBe(42);
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: conversation.id,
+      currentNote: 'Notes/Current.md',
+      updatedAt: 42,
     }));
   });
 
@@ -173,6 +218,47 @@ describe('ConversationRepository hydration', () => {
     await repository.ensureHydrated(conversation.id);
 
     expect(hydrateConversationHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('durably saves a provider-recovered session reference before hydrating history', async () => {
+    const conversation = createConversation();
+    conversation.sessionId = null;
+    conversation.providerState = undefined;
+    conversation.updatedAt = 42;
+    const recoverConversationSessionReference = jest.fn(async (target: Conversation) => {
+      target.sessionId = 'recovered-session';
+      target.providerState = { providerSessionId: 'recovered-session' };
+      return true;
+    });
+    const getConversationSessionAvailability = jest.fn().mockResolvedValue('available');
+    const hydrateConversationHistory = jest.fn().mockImplementation(async (target: Conversation) => {
+      target.messages.push({ id: 'message-1', role: 'user', content: 'Recovered', timestamp: 1 });
+    });
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      recoverConversationSessionReference,
+      getConversationSessionAvailability,
+      hydrateConversationHistory,
+    } as any);
+    const { repository, persistence } = createRepository(conversation);
+
+    await expect(repository.ensureHydrated(conversation.id)).resolves.toBe(conversation);
+
+    expect(recoverConversationSessionReference).toHaveBeenCalledWith(
+      conversation,
+      '/vault',
+      expect.any(Object),
+    );
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: conversation.id,
+      sessionId: 'recovered-session',
+      providerState: { providerSessionId: 'recovered-session' },
+      updatedAt: 42,
+    }));
+    expect(hydrateConversationHistory).toHaveBeenCalledWith(
+      conversation,
+      '/vault',
+      expect.any(Object),
+    );
   });
 
   it('allows hydration to retry after a provider history failure', async () => {

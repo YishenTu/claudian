@@ -49,6 +49,7 @@ import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
+  ConversationUpdateOptions,
   SessionMetadata,
 } from './core/types';
 import {
@@ -808,6 +809,7 @@ export default class ClaudianPlugin extends Plugin {
       messages: [],
       currentNote: meta.currentNote,
       isPinned: meta.isPinned,
+      isArchived: meta.isArchived,
       externalContextPaths: meta.externalContextPaths,
       enabledMcpServers: meta.enabledMcpServers,
       usage: meta.usage,
@@ -1224,6 +1226,11 @@ export default class ClaudianPlugin extends Plugin {
     this.notifyConversationViewsChanged();
   }
 
+  async setConversationArchived(id: string, isArchived: boolean): Promise<void> {
+    await this.conversationRepository.setArchived(id, isArchived);
+    this.notifyConversationViewsChanged();
+  }
+
   private async handleLinkedNoteRename(
     file: TAbstractFile,
     oldPath: string,
@@ -1234,8 +1241,12 @@ export default class ClaudianPlugin extends Plugin {
     this.notifyConversationViewsChanged();
   }
 
-  async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
-    await this.conversationRepository.update(id, updates);
+  async updateConversation(
+    id: string,
+    updates: Partial<Conversation>,
+    options?: ConversationUpdateOptions,
+  ): Promise<void> {
+    await this.conversationRepository.update(id, updates, options);
     this.notifyConversationViewsChanged();
   }
 

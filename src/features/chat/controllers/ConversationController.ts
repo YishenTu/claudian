@@ -89,6 +89,7 @@ export interface ConversationControllerDeps {
 type SaveOptions = {
   resumeAtMessageId?: string;
   resetProviderSession?: boolean;
+  touchUpdatedAt?: boolean;
 };
 
 export type HistoryConversationOpenState = 'closed' | 'open' | 'current';
@@ -120,11 +121,22 @@ type HistoryRenderOptions = {
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
   preserveListState?: boolean;
   showPinnedSection?: boolean;
+  showArchivedSection?: boolean;
+  sessionScope?: 'active' | 'archived';
+  sessionActionMode?: 'active' | 'archived';
+  historyHeaderLabel?: string;
+  allowConversationSelection?: boolean;
   onSetConversationPinned?: (id: string, isPinned: boolean) => Promise<void>;
+  onSetConversationArchived?: (id: string, isArchived: boolean) => Promise<void>;
 };
 
 type HistorySurfaceRenderOptions = Omit<HistoryRenderOptions, 'onRerender'> & {
   onRerender?: () => void;
+};
+
+type HistoryScrollAnchor = {
+  conversationId: string;
+  viewportOffset: number;
 };
 
 export class ConversationController {
@@ -510,10 +522,11 @@ export class ConversationController {
         await this.save(
           false,
           result.sessionStrategy === 'preserve-provider-session'
-            ? { resumeAtMessageId: undefined }
+            ? { resumeAtMessageId: undefined, touchUpdatedAt: true }
             : {
               resumeAtMessageId: prevAssistantUuid,
               resetProviderSession: !prevAssistantUuid,
+              touchUpdatedAt: true,
             },
         );
       } catch (e) {
@@ -550,6 +563,7 @@ export class ConversationController {
    */
   async save(updateLastResponse = false, options?: SaveOptions): Promise<void> {
     const { plugin, state } = this.deps;
+    let createdConversation = false;
 
     // Entry point with no messages - nothing to save
     if (!state.currentConversationId && state.messages.length === 0) {
@@ -569,6 +583,7 @@ export class ConversationController {
         ...(currentNote ? { currentNote } : {}),
       });
       state.currentConversationId = conversation.id;
+      createdConversation = true;
     }
 
     const externalContextSelector = this.deps.getExternalContextSelector();
@@ -588,15 +603,27 @@ export class ConversationController {
       updates.lastResponseAt = Date.now();
     }
 
-    if (options) {
+    if (options && 'resumeAtMessageId' in options) {
       updates.resumeAtMessageId = options.resumeAtMessageId;
-      if (options.resetProviderSession) {
-        updates.sessionId = null;
-        updates.providerState = undefined;
-      }
+    }
+    if (options?.resetProviderSession) {
+      updates.sessionId = null;
+      updates.providerState = undefined;
     }
 
-    await plugin.updateConversation(state.currentConversationId!, updates);
+    const shouldTouchUpdatedAt = options?.touchUpdatedAt === true
+      || createdConversation
+      || updateLastResponse
+      || state.hasPendingConversationSave;
+    if (shouldTouchUpdatedAt) {
+      await plugin.updateConversation(state.currentConversationId!, updates);
+    } else {
+      await plugin.updateConversation(
+        state.currentConversationId!,
+        updates,
+        { touchUpdatedAt: false },
+      );
+    }
     state.hasPendingConversationSave = false;
   }
 
@@ -715,28 +742,47 @@ export class ConversationController {
     const previousList = options.preserveListState
       ? container.querySelector<HTMLElement>('.claudian-history-list')
       : null;
-    const previousScrollTop = previousList?.scrollTop ?? 0;
+    const previousSessionList = previousList?.querySelector<HTMLElement>(
+      '.claudian-session-list-items',
+    ) ?? previousList;
+    const previousPinnedSection = previousList?.querySelector<HTMLElement>(
+      '.claudian-history-section--pinned',
+    );
+    const previousPinnedList = previousPinnedSection?.querySelector<HTMLElement>(
+      '.claudian-history-section-items',
+    );
+    const previousSessionScrollTop = previousSessionList?.scrollTop ?? 0;
+    const previousPinnedScrollTop = previousPinnedList?.scrollTop ?? 0;
     const previousVisibleCountFromState = Number(previousList?.dataset.visibleCount);
     const previousVisibleCount = Number.isFinite(previousVisibleCountFromState)
       && previousVisibleCountFromState > 0
       ? previousVisibleCountFromState
       : previousList?.querySelectorAll('.claudian-history-item').length ?? 0;
+    const previousScrollAnchors = previousSessionList
+      ? this.captureHistoryScrollAnchors(previousSessionList)
+      : [];
     const organization = options.organization ?? 'list';
 
     container.empty();
 
     const allConversations = plugin.getConversationList();
+    const scopedConversations = options.sessionScope === 'archived'
+      ? allConversations.filter(conversation => conversation.isArchived)
+      : options.sessionScope === 'active'
+        ? allConversations.filter(conversation => !conversation.isArchived)
+        : allConversations;
     const pinnedConversations = options.showPinnedSection
-      ? allConversations.filter(conversation => conversation.isPinned)
+      ? scopedConversations.filter(conversation => conversation.isPinned)
       : [];
     const sessionConversations = options.showPinnedSection
-      ? allConversations.filter(conversation => !conversation.isPinned)
-      : allConversations;
+      ? scopedConversations.filter(conversation => !conversation.isPinned)
+      : scopedConversations;
+    const showSessionSections = options.showPinnedSection || options.showArchivedSection;
 
     let list: HTMLElement;
     let sessionList: HTMLElement;
     let pinnedList: HTMLElement | null = null;
-    if (options.showPinnedSection) {
+    if (showSessionSections) {
       list = container.createDiv({ cls: 'claudian-history-list' });
       if (pinnedConversations.length > 0) {
         const pinnedSection = list.createDiv({
@@ -755,7 +801,12 @@ export class ConversationController {
       }
 
       const sessionsSection = list.createDiv({
-        cls: 'claudian-history-section claudian-history-section--sessions',
+        cls: [
+          'claudian-history-section',
+          options.showArchivedSection
+            ? 'claudian-history-section--archived'
+            : 'claudian-history-section--sessions',
+        ].join(' '),
       });
       const sessionsHeader = sessionsSection.createDiv({
         cls: [
@@ -766,23 +817,29 @@ export class ConversationController {
       });
       sessionsHeader.createSpan({
         cls: 'claudian-history-section-label',
-        text: 'Sessions',
+        text: options.showArchivedSection ? 'Archived' : 'Sessions',
       });
       sessionList = sessionsSection.createDiv({
         cls: 'claudian-history-section-items claudian-session-list-items',
       });
     } else {
       const dropdownHeader = container.createDiv({ cls: 'claudian-history-header' });
-      dropdownHeader.createSpan({ text: 'Sessions' });
+      dropdownHeader.createSpan({ text: options.historyHeaderLabel ?? 'Sessions' });
       list = container.createDiv({ cls: 'claudian-history-list' });
       sessionList = list;
     }
 
-    if (allConversations.length === 0) {
+    if (scopedConversations.length === 0) {
       if (organization === 'linked-note') {
         options.onGroupKeysChange?.([]);
       }
       sessionList.createDiv({ cls: 'claudian-history-empty', text: 'No conversations' });
+      if (pinnedList) pinnedList.scrollTop = previousPinnedScrollTop;
+      this.restoreHistoryListPosition(
+        sessionList,
+        previousSessionScrollTop,
+        previousScrollAnchors,
+      );
       return;
     }
 
@@ -940,7 +997,59 @@ export class ConversationController {
       });
     }
 
+    if (pinnedList) pinnedList.scrollTop = previousPinnedScrollTop;
+    this.restoreHistoryListPosition(
+      sessionList,
+      previousSessionScrollTop,
+      previousScrollAnchors,
+    );
+  }
+
+  private captureHistoryScrollAnchors(list: HTMLElement): HistoryScrollAnchor[] {
+    const listRect = list.getBoundingClientRect();
+    if (listRect.height <= 0) return [];
+
+    return Array.from(list.querySelectorAll<HTMLElement>('.claudian-history-item'))
+      .map((item): HistoryScrollAnchor | null => {
+        const conversationId = item.getAttribute('data-conversation-id');
+        const itemRect = item.getBoundingClientRect();
+        if (
+          !conversationId
+          || itemRect.height <= 0
+          || itemRect.bottom <= listRect.top
+          || itemRect.top >= listRect.bottom
+        ) return null;
+        return {
+          conversationId,
+          viewportOffset: itemRect.top - listRect.top,
+        };
+      })
+      .filter((anchor): anchor is HistoryScrollAnchor => anchor !== null);
+  }
+
+  private restoreHistoryListPosition(
+    list: HTMLElement,
+    previousScrollTop: number,
+    anchors: readonly HistoryScrollAnchor[],
+  ): void {
     list.scrollTop = previousScrollTop;
+    if (anchors.length === 0) return;
+
+    const items = Array.from(
+      list.querySelectorAll<HTMLElement>('.claudian-history-item'),
+    );
+    const listTop = list.getBoundingClientRect().top;
+    for (const anchor of anchors) {
+      const item = items.find(candidate => (
+        candidate.getAttribute('data-conversation-id') === anchor.conversationId
+      ));
+      if (!item) continue;
+
+      const itemRect = item.getBoundingClientRect();
+      if (itemRect.height <= 0) continue;
+      list.scrollTop += itemRect.top - listTop - anchor.viewportOffset;
+      return;
+    }
   }
 
   private renderHistoryConversationItem(
@@ -963,9 +1072,13 @@ export class ConversationController {
         isCurrent ? 'active' : '',
         isOpen ? 'open' : '',
         isRunning ? 'running' : '',
+        options.allowConversationSelection === false
+          ? 'claudian-history-item--noninteractive'
+          : '',
       ].filter(Boolean).join(' '),
     });
     item.setAttribute('data-open-state', openState);
+    item.setAttribute('data-conversation-id', conversation.id);
     item.setAttribute('data-running', isRunning ? 'true' : 'false');
     item.setAttribute('data-tab-location', conversationStatus.location ?? 'current-view');
     if (typeof conversationStatus.tabIndex === 'number') {
@@ -990,7 +1103,7 @@ export class ConversationController {
       ),
     });
 
-    if (!isCurrent) {
+    if (!isCurrent && options.allowConversationSelection !== false) {
       content.addEventListener('click', (event) => {
         event.stopPropagation();
         if (this.isHistoryNewTabModifierClick(event) && options.onOpenConversationInNewTab) {
@@ -1080,29 +1193,91 @@ export class ConversationController {
       });
     }
 
-    const renameBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
-    setIcon(renameBtn, 'pencil');
-    renameBtn.setAttribute('aria-label', 'Rename');
-    renameBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      this.showRenameInput(item, conversation.id, conversation.title, options);
-    });
-
-    const deleteBtn = actions.createEl('button', {
-      cls: 'claudian-action-btn claudian-delete-btn',
-    });
-    setIcon(deleteBtn, 'trash-2');
-    deleteBtn.setAttribute('aria-label', 'Delete');
-    deleteBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      runConversationAction(
-        () => this.runHistoryAction(
-          () => this.deleteHistoryConversation(conversation.id, options),
+    const createDeleteButton = (): void => {
+      const deleteBtn = actions.createEl('button', {
+        cls: 'claudian-action-btn claudian-delete-btn',
+      });
+      setIcon(deleteBtn, 'trash-2');
+      deleteBtn.setAttribute('aria-label', 'Delete');
+      deleteBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        runConversationAction(
+          () => this.runHistoryAction(
+            () => this.deleteHistoryConversation(conversation.id, options),
+            'Failed to delete conversation',
+          ),
           'Failed to delete conversation',
-        ),
-        'Failed to delete conversation',
+        );
+      });
+    };
+
+    if (options.sessionActionMode === 'active') {
+      const isPinned = conversation.isPinned === true;
+      const pinBtn = actions.createEl('button', {
+        cls: 'claudian-action-btn claudian-pin-btn',
+      });
+      setIcon(pinBtn, isPinned ? 'pin-off' : 'pin');
+      pinBtn.setAttribute('aria-label', isPinned ? 'Unpin' : 'Pin');
+      pinBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        runConversationAction(
+          () => this.runHistoryAction(
+            () => options.onSetConversationPinned?.(conversation.id, !isPinned),
+            isPinned ? 'Failed to unpin session' : 'Failed to pin session',
+          ),
+          isPinned ? 'Failed to unpin session' : 'Failed to pin session',
+        );
+      });
+
+      const archiveBtn = actions.createEl('button', {
+        cls: 'claudian-action-btn claudian-archive-btn',
+      });
+      setIcon(archiveBtn, 'archive');
+      archiveBtn.setAttribute(
+        'aria-label',
+        isRunning ? 'Cannot archive a running session' : 'Archive',
       );
-    });
+      if (isRunning) {
+        archiveBtn.setAttribute('disabled', '');
+      } else {
+        archiveBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          runConversationAction(
+            () => this.runHistoryAction(
+              () => options.onSetConversationArchived?.(conversation.id, true),
+              'Failed to archive session',
+            ),
+            'Failed to archive session',
+          );
+        });
+      }
+    } else if (options.sessionActionMode === 'archived') {
+      const restoreBtn = actions.createEl('button', {
+        cls: 'claudian-action-btn claudian-restore-btn',
+      });
+      setIcon(restoreBtn, 'undo-2');
+      restoreBtn.setAttribute('aria-label', 'Restore');
+      restoreBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        runConversationAction(
+          () => this.runHistoryAction(
+            () => options.onSetConversationArchived?.(conversation.id, false),
+            'Failed to restore session',
+          ),
+          'Failed to restore session',
+        );
+      });
+      createDeleteButton();
+    } else {
+      const renameBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
+      setIcon(renameBtn, 'pencil');
+      renameBtn.setAttribute('aria-label', 'Rename');
+      renameBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        this.showRenameInput(item, conversation.id, conversation.title, options);
+      });
+      createDeleteButton();
+    }
 
     if (isRunning && options.showOpenStateLabels === false) {
       const runningIndicator = item.createSpan({
@@ -1232,7 +1407,11 @@ export class ConversationController {
     const { id: conversationId, title } = conversation;
     const menu = new Menu();
     const fallbackOpenState: HistoryConversationOpenState = isCurrent ? 'current' : 'closed';
-    const { openState } = this.getHistoryConversationStatus(conversationId, fallbackOpenState, options);
+    const { openState, isRunning } = this.getHistoryConversationStatus(
+      conversationId,
+      fallbackOpenState,
+      options,
+    );
 
     if (options.showOpenStateActions !== false && openState !== 'current') {
       if (openState === 'closed' && options.onOpenConversationInNewTab) {
@@ -1264,6 +1443,27 @@ export class ConversationController {
       }
     }
 
+    if (options.sessionActionMode === 'archived') {
+      menu.addItem((menuItem) => menuItem
+        .setTitle('Restore')
+        .onClick(() => {
+          void this.runHistoryAction(
+            () => options.onSetConversationArchived?.(conversationId, false),
+            'Failed to restore session',
+          );
+        }));
+      menu.addItem((menuItem) => menuItem
+        .setTitle('Delete')
+        .onClick(() => {
+          void this.runHistoryAction(
+            () => this.deleteHistoryConversation(conversationId, options),
+            'Failed to delete conversation',
+          );
+        }));
+      menu.showAtMouseEvent(event);
+      return;
+    }
+
     if (options.onSetConversationPinned) {
       const isPinned = conversation.isPinned === true;
       menu.addItem((menuItem) => menuItem
@@ -1274,6 +1474,29 @@ export class ConversationController {
             isPinned ? 'Failed to unpin session' : 'Failed to pin session',
           );
         }));
+    }
+
+    if (options.sessionActionMode === 'active') {
+      menu.addItem((menuItem) => {
+        menuItem
+          .setTitle('Archive')
+          .setDisabled(isRunning);
+        if (!isRunning) {
+          menuItem.onClick(() => {
+            void this.runHistoryAction(
+              () => options.onSetConversationArchived?.(conversationId, true),
+              'Failed to archive session',
+            );
+          });
+        }
+      });
+      menu.addItem((menuItem) => menuItem
+        .setTitle('Rename')
+        .onClick(() => {
+          this.showRenameInput(item, conversationId, title, options);
+        }));
+      menu.showAtMouseEvent(event);
+      return;
     }
 
     menu.addItem((menuItem) => menuItem
@@ -1298,7 +1521,7 @@ export class ConversationController {
     options: HistoryRenderOptions,
   ): Promise<void> {
     const { plugin, state } = this.deps;
-    if (state.isStreaming) return;
+    if (state.isStreaming && options.sessionActionMode !== 'archived') return;
 
     await plugin.deleteConversation(conversationId);
     options.onRerender();

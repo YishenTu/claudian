@@ -131,6 +131,7 @@ describe('ConversationController', () => {
       it('should save current conversation before creating new one', async () => {
         deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
         deps.state.currentConversationId = 'old-conv';
+        deps.state.hasPendingConversationSave = true;
 
         await controller.createNew();
 
@@ -216,6 +217,20 @@ describe('ConversationController', () => {
         await controller.switchTo('new-conv');
 
         expect(deps.clearQueuedMessage).toHaveBeenCalled();
+      });
+
+      it('does not touch session activity when switching away without pending messages', async () => {
+        deps.state.currentConversationId = 'old-conv';
+        deps.state.messages = [{ id: '1', role: 'user', content: 'Existing', timestamp: 1 }];
+        deps.state.hasPendingConversationSave = false;
+
+        await controller.switchTo('new-conv');
+
+        expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+          'old-conv',
+          expect.any(Object),
+          { touchUpdatedAt: false },
+        );
       });
 
       it('should not switch while streaming', async () => {
@@ -891,6 +906,120 @@ describe('ConversationController', () => {
         expect(container.querySelector('.claudian-history-section--sessions')).not.toBeNull();
       });
 
+      it('renders active session management actions without archived sessions', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'active', title: 'Active', createdAt: 2 },
+          { id: 'archived', title: 'Archived', createdAt: 1, isArchived: true },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+          sessionScope: 'active',
+          sessionActionMode: 'active',
+          onSetConversationPinned: jest.fn().mockResolvedValue(undefined),
+          onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
+        });
+
+        expect(container.querySelectorAll('.claudian-history-item-title')
+          .map((el: { textContent: string }) => el.textContent))
+          .toEqual(['Active']);
+        expect(container.querySelector('.claudian-pin-btn')).not.toBeNull();
+        expect(container.querySelector('.claudian-archive-btn')).not.toBeNull();
+        expect(container.querySelector('.claudian-delete-btn')).toBeNull();
+        expect(container.querySelectorAll('.claudian-action-btn').some(
+          (button: { getAttribute(name: string): string | null | undefined }) => (
+            button.getAttribute('aria-label') === 'Rename'
+          ),
+        )).toBe(false);
+      });
+
+      it('renders archived sessions with restore and delete actions only', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'active', title: 'Active', createdAt: 2 },
+          { id: 'archived', title: 'Archived', createdAt: 1, isArchived: true },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showArchivedSection: true,
+          sessionScope: 'archived',
+          sessionActionMode: 'archived',
+          onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
+        });
+
+        expect(container.querySelector('.claudian-history-section-label')?.textContent)
+          .toBe('Archived');
+        expect(container.querySelectorAll('.claudian-history-item-title')
+          .map((el: { textContent: string }) => el.textContent))
+          .toEqual(['Archived']);
+        expect(container.querySelector('.claudian-restore-btn')).not.toBeNull();
+        expect(container.querySelector('.claudian-delete-btn')).not.toBeNull();
+        expect(container.querySelector('.claudian-pin-btn')).toBeNull();
+        expect(container.querySelector('.claudian-archive-btn')).toBeNull();
+      });
+
+      it('disables archive actions for running sessions', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'running', title: 'Running', createdAt: 1 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+          sessionScope: 'active',
+          sessionActionMode: 'active',
+          getConversationStatus: () => ({ openState: 'current', isRunning: true }),
+          onSetConversationPinned: jest.fn().mockResolvedValue(undefined),
+          onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
+        });
+
+        const archiveButton = container.querySelector('.claudian-archive-btn')!;
+        expect(archiveButton.getAttribute('disabled')).not.toBeNull();
+        expect(archiveButton.getAttribute('aria-label'))
+          .toBe('Cannot archive a running session');
+      });
+
+      it('uses the same linked-note grouping and sorting for archived sessions', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'archived-b',
+            title: 'Second',
+            createdAt: 2,
+            currentNote: 'Projects/B.md',
+            isArchived: true,
+          },
+          {
+            id: 'archived-a',
+            title: 'First',
+            createdAt: 1,
+            currentNote: 'Projects/A.md',
+            isArchived: true,
+          },
+          { id: 'active', title: 'Active', createdAt: 3 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showArchivedSection: true,
+          sessionScope: 'archived',
+          sessionActionMode: 'archived',
+          organization: 'linked-note',
+          sort: 'title',
+          language: 'en',
+          noteExists: () => true,
+          onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
+        });
+
+        expect(container.querySelectorAll('.claudian-session-group-label')
+          .map((el: { textContent: string }) => el.textContent))
+          .toEqual(['A', 'B']);
+      });
+
       it('renders full-path note groups only for the linked-note organization', () => {
         const container = createMockEl();
         const onGroupCollapseChange = jest.fn();
@@ -1110,6 +1239,64 @@ describe('ConversationController', () => {
         const rerenderedList = container.querySelector('.claudian-history-list')!;
         expect(rerenderedList.querySelectorAll('.claudian-history-item')).toHaveLength(50);
         expect(rerenderedList.scrollTop).toBe(320);
+      });
+
+      it('preserves dual-mode pinned and session scroll positions across a rerender', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'pinned', title: 'Pinned', createdAt: 100, isPinned: true },
+          ...Array.from({ length: 40 }, (_, index) => ({
+            id: `session-${index}`,
+            title: `Session ${index}`,
+            createdAt: 40 - index,
+          })),
+        ]);
+        const options = {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+          pageSize: 50,
+          preserveListState: true,
+        };
+
+        controller.renderHistoryDropdown(container, options);
+        const pinnedItems = container.querySelector('.claudian-history-section--pinned')!
+          .querySelector('.claudian-history-section-items')!;
+        const sessionItems = container.querySelector('.claudian-session-list-items')!;
+        pinnedItems.scrollTop = 24;
+        sessionItems.scrollTop = 320;
+
+        controller.renderHistoryDropdown(container, options);
+
+        expect(
+          container.querySelector('.claudian-history-section--pinned')!
+            .querySelector('.claudian-history-section-items')!.scrollTop,
+        ).toBe(24);
+        expect(container.querySelector('.claudian-session-list-items')!.scrollTop).toBe(320);
+      });
+
+      it('preserves list position when archiving removes the final active session', () => {
+        const container = createMockEl();
+        const conversation = {
+          id: 'conv-1',
+          title: 'Conversation',
+          createdAt: 1,
+          isArchived: false,
+        };
+        (deps.plugin.getConversationList as jest.Mock).mockImplementation(() => [conversation]);
+        const options = {
+          onSelectConversation: jest.fn(),
+          sessionScope: 'active' as const,
+          sessionActionMode: 'active' as const,
+          preserveListState: true,
+        };
+
+        controller.renderHistoryDropdown(container, options);
+        container.querySelector('.claudian-history-list')!.scrollTop = 120;
+        conversation.isArchived = true;
+
+        controller.renderHistoryDropdown(container, options);
+
+        expect(container.querySelector('.claudian-history-list')!.scrollTop).toBe(120);
       });
 
       it('does not let collapsed groups consume pagination or hide later headers', () => {
@@ -1739,6 +1926,53 @@ describe('ConversationController', () => {
         await Promise.resolve();
         expect(onSetConversationPinned).toHaveBeenCalledWith('pinned', false);
       });
+
+      it('keeps rename in the active context menu and delete in Archived only', () => {
+        const activeContainer = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'active', title: 'Active', createdAt: 2 },
+        ]);
+        controller.renderHistoryDropdown(activeContainer, {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+          sessionScope: 'active',
+          sessionActionMode: 'active',
+          showOpenStateActions: false,
+          onSetConversationPinned: jest.fn().mockResolvedValue(undefined),
+          onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
+        });
+        activeContainer.querySelector('.claudian-history-item')!.dispatchEvent({
+          type: 'contextmenu',
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+        let menu = (Menu as typeof Menu & {
+          instances: Array<{ items: Array<{ title: string }> }>;
+        }).instances.at(-1)!;
+        expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Archive', 'Rename']);
+
+        const archivedContainer = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'archived', title: 'Archived', createdAt: 1, isArchived: true },
+        ]);
+        controller.renderHistoryDropdown(archivedContainer, {
+          onSelectConversation: jest.fn(),
+          showArchivedSection: true,
+          sessionScope: 'archived',
+          sessionActionMode: 'archived',
+          showOpenStateActions: false,
+          onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
+        });
+        archivedContainer.querySelector('.claudian-history-item')!.dispatchEvent({
+          type: 'contextmenu',
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+        menu = (Menu as typeof Menu & {
+          instances: Array<{ items: Array<{ title: string }> }>;
+        }).instances.at(-1)!;
+        expect(menu.items.map(item => item.title)).toEqual(['Restore', 'Delete']);
+      });
     });
   });
 
@@ -2216,7 +2450,8 @@ describe('ConversationController - MCP Server Persistence', () => {
         'conv-1',
         expect.objectContaining({
           enabledMcpServers: ['mcp-server-1', 'mcp-server-2'],
-        })
+        }),
+        { touchUpdatedAt: false },
       );
     });
 
@@ -2230,7 +2465,8 @@ describe('ConversationController - MCP Server Persistence', () => {
         'conv-1',
         expect.objectContaining({
           enabledMcpServers: undefined,
-        })
+        }),
+        { touchUpdatedAt: false },
       );
     });
   });

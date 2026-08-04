@@ -3,7 +3,12 @@ import type { App } from 'obsidian';
 import type { SharedAppStorage } from '../core/bootstrap/storage';
 import type { ProviderHost } from '../core/providers/ProviderHost';
 import type { ProviderId } from '../core/providers/types';
-import type { ClaudianSettings, Conversation, ConversationMeta } from '../core/types';
+import type {
+  ClaudianSettings,
+  Conversation,
+  ConversationMeta,
+  ConversationUpdateOptions,
+} from '../core/types';
 import type { ChatExecutionPersistence } from './chat/execution/ChatExecutionCoordinator';
 import type { WarmExecutionPool } from './chat/execution/WarmExecutionPool';
 import type { TabData, TabId, TabManagerViewHost } from './chat/tabs/types';
@@ -12,6 +17,7 @@ export interface FeatureTabManagerHost {
   getAllTabs(): TabData[];
   getTab(tabId: TabId): TabData | null;
   switchToTab(tabId: TabId): Promise<void>;
+  closeTab(tabId: TabId, force?: boolean): Promise<boolean>;
   primeProviderExecution(providerIds?: ProviderId | ProviderId[]): void;
   invalidateProviderResources(providerIds: ProviderId | ProviderId[], generation: number): void;
 }
@@ -56,7 +62,12 @@ export interface FeatureHost {
   ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'>;
   renameConversation(id: string, title: string): Promise<void>;
   setConversationPinned(id: string, isPinned: boolean): Promise<void>;
-  updateConversation(id: string, updates: Partial<Conversation>): Promise<void>;
+  setConversationArchived(id: string, isArchived: boolean): Promise<void>;
+  updateConversation(
+    id: string,
+    updates: Partial<Conversation>,
+    options?: ConversationUpdateOptions,
+  ): Promise<void>;
   getConversationById(id: string): Promise<Conversation | null>;
   getCachedConversation(id: string): Conversation | null;
   getConversationSync(id: string): Conversation | null;

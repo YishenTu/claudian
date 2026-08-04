@@ -38,6 +38,14 @@ import {
 } from './sdkSubagentSidecar';
 
 export type {
+  ClaudeSessionTimeCandidate,
+  ClaudeSessionTimeFingerprint,
+} from './ClaudeSessionRecovery';
+export {
+  recoverSDKSessionIdByTime,
+  selectClaudeSessionRecoveryCandidate,
+} from './ClaudeSessionRecovery';
+export type {
   AsyncSubagentResult,
   ResolvedAsyncStatus,
   SDKNativeContentBlock,

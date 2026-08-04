@@ -27,6 +27,7 @@ import {
   locateSDKSession,
   locateSDKSessions,
   readLegacyConversationSessionId,
+  recoverSDKSessionIdByTime,
 } from './ClaudeHistoryStore';
 import type { SDKSessionLocation } from './sdkSessionPaths';
 
@@ -590,6 +591,44 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     return sanitizeProviderState(providerState);
   }
 
+  async recoverConversationSessionReference(
+    conversation: Conversation,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<boolean> {
+    if (!vaultPath || this.resolveSessionIdForConversation(conversation)) {
+      return false;
+    }
+
+    const legacySessionId = await readLegacyConversationSessionId(
+      vaultPath,
+      conversation.id,
+    );
+    if (legacySessionId) {
+      conversation.providerState = sanitizeProviderState({
+        ...getClaudeState(conversation.providerState),
+        previousProviderSessionIds: [legacySessionId],
+      });
+      return true;
+    }
+
+    const fingerprint = {
+      createdAt: conversation.createdAt,
+      lastResponseAt: conversation.lastResponseAt,
+    };
+    const recoveredSessionId = pathContext
+      ? await recoverSDKSessionIdByTime(vaultPath, fingerprint, pathContext)
+      : await recoverSDKSessionIdByTime(vaultPath, fingerprint);
+    if (!recoveredSessionId) return false;
+
+    conversation.sessionId = recoveredSessionId;
+    conversation.providerState = sanitizeProviderState({
+      ...getClaudeState(conversation.providerState),
+      providerSessionId: recoveredSessionId,
+    });
+    return true;
+  }
+
   async hydrateConversationHistory(
     conversation: Conversation,
     vaultPath: string | null,
@@ -599,20 +638,8 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       return;
     }
 
-    let allSessionIds = this.getConversationSessionIds(conversation);
-    if (allSessionIds.length === 0) {
-      const recoveredSessionId = await readLegacyConversationSessionId(
-        vaultPath,
-        conversation.id,
-      );
-      if (recoveredSessionId) {
-        conversation.providerState = sanitizeProviderState({
-          ...getClaudeState(conversation.providerState),
-          previousProviderSessionIds: [recoveredSessionId],
-        });
-        allSessionIds = [recoveredSessionId];
-      }
-    }
+    await this.recoverConversationSessionReference(conversation, vaultPath, pathContext);
+    const allSessionIds = this.getConversationSessionIds(conversation);
 
     this.synchronizeHistoryCache(conversation, vaultPath, pathContext);
     if (this.hydratedConversationIds.has(conversation.id)) return;
