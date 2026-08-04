@@ -138,14 +138,14 @@
       "btnSet": "Festlegen"
     },
     "newSessionHotkey": {
-      "name": "Neue Sitzung",
+      "name": "Aktuelle Unterhaltung ersetzen",
       "descWithKey": "Aktuelles Tastenkürzel: {hotkey}",
       "descNoKey": "Kein Tastenkürzel festgelegt",
       "btnChange": "Ändern",
       "btnSet": "Festlegen"
     },
     "newTabHotkey": {
-      "name": "Neuer Tab",
+      "name": "Neu",
       "descWithKey": "Aktuelles Tastenkürzel: {hotkey}",
       "descNoKey": "Kein Tastenkürzel festgelegt",
       "btnChange": "Ändern",

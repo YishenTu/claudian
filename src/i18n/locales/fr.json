@@ -138,14 +138,14 @@
       "btnSet": "Définir"
     },
     "newSessionHotkey": {
-      "name": "Nouvelle session",
+      "name": "Remplacer la conversation actuelle",
       "descWithKey": "Raccourci actuel : {hotkey}",
       "descNoKey": "Aucun raccourci défini",
       "btnChange": "Modifier",
       "btnSet": "Définir"
     },
     "newTabHotkey": {
-      "name": "Nouvel onglet",
+      "name": "Nouveau",
       "descWithKey": "Raccourci actuel : {hotkey}",
       "descNoKey": "Aucun raccourci défini",
       "btnChange": "Modifier",

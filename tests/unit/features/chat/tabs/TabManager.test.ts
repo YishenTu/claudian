@@ -1,13 +1,16 @@
 import { createMockEl } from '@test/helpers/MockElement';
+import { Notice } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 
 const mockInitializeTabExecution = jest.fn().mockResolvedValue(undefined);
+const mockInitializeTabControllers = jest.fn();
 const mockDestroyTab = jest.fn().mockResolvedValue(undefined);
 const mockTabs: any[] = [];
 const mockCreateTab = jest.fn((options: Record<string, any>) => createMockTab(options));
+const mockChooseForkTarget = jest.fn();
 
 function createMockTab(options: Record<string, any>): any {
   const tab = {
@@ -54,12 +57,16 @@ jest.mock('@/features/chat/tabs/Tab', () => ({
   deactivateTab: jest.fn(),
   destroyTab: (...args: unknown[]) => mockDestroyTab(...args),
   getTabTitle: jest.fn().mockReturnValue('Tab'),
-  initializeTabControllers: jest.fn(),
+  initializeTabControllers: (...args: unknown[]) => mockInitializeTabControllers(...args),
   initializeTabExecution: (...args: unknown[]) => mockInitializeTabExecution(...args),
   initializeTabUI: jest.fn(),
   onProviderAvailabilityChanged: jest.fn().mockReturnValue(false),
   refreshTabWorkspaceServices: jest.fn(),
   wireTabInputEvents: jest.fn(),
+}));
+
+jest.mock('@/shared/modals/ForkTargetModal', () => ({
+  chooseForkTarget: (...args: unknown[]) => mockChooseForkTarget(...args),
 }));
 
 const commandLoader = {
@@ -136,13 +143,13 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
-function createManager(plugin = createPlugin()) {
+function createManager(plugin = createPlugin(), callbacks: Record<string, unknown> = {}) {
   const view = {
     leaf: {},
     getTabManager: jest.fn(),
   } as any;
   return {
-    manager: new TabManager(plugin, createMockEl() as any, view),
+    manager: new TabManager(plugin, createMockEl() as any, view, callbacks),
     plugin,
   };
 }
@@ -384,6 +391,25 @@ describe('TabManager provider execution orchestration', () => {
       'forked',
       expect.objectContaining({ providerState: { fork: true } }),
     );
+  });
+
+  it('forks into a new runtime tab without prompting in dual mode', async () => {
+    const { manager } = createManager(createPlugin(), {
+      shouldForkToNewTab: () => true,
+    });
+    await manager.createTab();
+    const forkRequest = mockInitializeTabControllers.mock.calls[0]?.[3];
+
+    await forkRequest({
+      messages: [],
+      providerId: 'claude',
+      resumeAt: 'assistant-checkpoint',
+      sourceSessionId: 'native-session',
+    });
+
+    expect(mockChooseForkTarget).not.toHaveBeenCalled();
+    expect(Notice).not.toHaveBeenCalled();
+    expect(manager.getTabCount()).toBe(2);
   });
 
   it('deletes a partial fork if ledger copy fails', async () => {

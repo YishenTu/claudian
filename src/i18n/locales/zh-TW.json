@@ -138,14 +138,14 @@
       "btnSet": "設定快捷鍵"
     },
     "newSessionHotkey": {
-      "name": "新工作階段",
+      "name": "取代目前對話",
       "descWithKey": "目前快捷鍵：{hotkey}",
       "descNoKey": "未設定快捷鍵",
       "btnChange": "變更",
       "btnSet": "設定快捷鍵"
     },
     "newTabHotkey": {
-      "name": "新分頁",
+      "name": "新增",
       "descWithKey": "目前快捷鍵：{hotkey}",
       "descNoKey": "未設定快捷鍵",
       "btnChange": "變更",

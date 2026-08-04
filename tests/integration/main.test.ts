@@ -2253,6 +2253,48 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('new-tab command', () => {
+    it('uses the layout-neutral New label', async () => {
+      await plugin.onload();
+
+      expect(getRegisteredCommand('new-tab').name).toBe('New');
+    });
+
+    it('delegates New to the active dual-pane navigation policy', async () => {
+      await plugin.onload();
+
+      const handleNewConversationCommand = jest.fn().mockResolvedValue(true);
+      const createNewTab = jest.fn().mockResolvedValue(undefined);
+      jest.spyOn(plugin, 'getView').mockReturnValue({
+        createNewTab,
+        getTabManager: jest.fn().mockReturnValue({}),
+        handleNewConversationCommand,
+      } as any);
+
+      const command = getRegisteredCommand('new-tab');
+      expect(command.checkCallback(false)).toBe(true);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(handleNewConversationCommand).toHaveBeenCalledTimes(1);
+      expect(createNewTab).not.toHaveBeenCalled();
+    });
+
+    it('keeps replace and close tab commands out of dual mode', async () => {
+      await plugin.onload();
+
+      jest.spyOn(plugin, 'getView').mockReturnValue({
+        isDualPaneMode: () => true,
+        getTabManager: jest.fn().mockReturnValue({
+          getActiveTab: jest.fn().mockReturnValue({ state: { isStreaming: false } }),
+        }),
+      } as any);
+
+      const replaceCommand = getRegisteredCommand('new-session');
+      const closeCommand = getRegisteredCommand('close-current-tab');
+      expect(replaceCommand.name).toBe('Replace current conversation');
+      expect(replaceCommand.checkCallback(true)).toBe(false);
+      expect(closeCommand.checkCallback(true)).toBe(false);
+    });
+
     it('opens the view without creating a duplicate tab when no tab layout is persisted', async () => {
       await plugin.onload();
 

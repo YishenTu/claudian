@@ -226,7 +226,7 @@ export default class ClaudianPlugin extends Plugin {
 
       this.addCommand({
         id: 'new-tab',
-        name: 'New tab',
+        name: 'New',
         checkCallback: (checking: boolean) => {
           if (!this.canCreateNewTab()) return false;
 
@@ -239,10 +239,11 @@ export default class ClaudianPlugin extends Plugin {
 
       this.addCommand({
         id: 'new-session',
-        name: 'New session (in current tab)',
+        name: 'Replace current conversation',
         checkCallback: (checking: boolean) => {
           const view = this.getView();
           if (!view) return false;
+          if (view.isDualPaneMode()) return false;
 
           const tabManager = view.getTabManager();
           if (!tabManager) return false;
@@ -265,6 +266,7 @@ export default class ClaudianPlugin extends Plugin {
         checkCallback: (checking: boolean) => {
           const view = this.getView();
           if (!view) return false;
+          if (view.isDualPaneMode()) return false;
 
           const tabManager = view.getTabManager();
           if (!tabManager) return false;
@@ -370,6 +372,9 @@ export default class ClaudianPlugin extends Plugin {
   private async openNewTab(): Promise<void> {
     const existingView = this.getView();
     if (existingView) {
+      if (await existingView.handleNewConversationCommand()) {
+        return;
+      }
       await existingView.createNewTab();
       return;
     }

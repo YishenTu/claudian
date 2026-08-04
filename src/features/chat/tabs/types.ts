@@ -52,6 +52,9 @@ export interface TabManagerViewHost extends Component {
 
   /** Handles /clear and /new when the active layout gives New different semantics. */
   handleNewConversationCommand?(): Promise<boolean>;
+
+  /** Starts approved plan content in a layout-owned new conversation when required. */
+  handleNewSessionPlan?(planContent: string): Promise<boolean>;
 }
 
 /**
@@ -228,6 +231,9 @@ export type TabProviderContext = Pick<
  * Callbacks for tab state changes.
  */
 export interface TabManagerCallbacks {
+  /** Skips the target prompt when the active layout always forks into a new runtime tab. */
+  shouldForkToNewTab?: () => boolean;
+
   /** Called when a tab is created. */
   onTabCreated?: (tab: TabData) => void;
 

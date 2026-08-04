@@ -464,6 +464,32 @@ describe('ClaudianView tab controls', () => {
     expect(view.activateOrCreateDraftTab).not.toHaveBeenCalled();
   });
 
+  it('starts an approved plan in a fresh dual-mode runtime tab', async () => {
+    const sendMessage = jest.fn().mockResolvedValue(undefined);
+    const targetTab = {
+      controllers: { inputController: { sendMessage } },
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.isWideSessionLayout = true;
+    view.createNewTab = jest.fn().mockResolvedValue(undefined);
+    view.tabManager = { getActiveTab: jest.fn().mockReturnValue(targetTab) };
+
+    await expect(view.handleNewSessionPlan('Implement the plan')).resolves.toBe(true);
+
+    expect(view.createNewTab).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith({ content: 'Implement the plan' });
+  });
+
+  it('leaves approved-plan session replacement unchanged in single mode', async () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.isWideSessionLayout = false;
+    view.createNewTab = jest.fn().mockResolvedValue(undefined);
+
+    await expect(view.handleNewSessionPlan('Implement the plan')).resolves.toBe(false);
+
+    expect(view.createNewTab).not.toHaveBeenCalled();
+  });
+
   it('keeps tab controls in the view-owned input row', () => {
     const navRowContent = createMockEl();
     const inputNavRowHostEl = createMockEl();

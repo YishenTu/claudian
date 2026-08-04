@@ -133,6 +133,8 @@ export interface InputControllerDeps {
   openConversation?: (conversationId: string) => Promise<void>;
   /** Lets the active layout replace in-place clear with its own New action. */
   handleNewConversationCommand?: () => Promise<boolean>;
+  /** Lets the active layout start approved plan content in a separate conversation. */
+  handleNewSessionPlan?: (planContent: string) => Promise<boolean>;
   onForkAll?: () => Promise<void>;
   /** Toggles the active provider's fast service tier when available. */
   toggleFastMode?: () => Promise<boolean>;
@@ -642,12 +644,15 @@ export class InputController {
             const planContent = state.pendingNewSessionPlan;
             if (planContent) {
               state.pendingNewSessionPlan = null;
-              await conversationController.createNew();
-              this.deps.getInputEl().value = planContent;
-              this.sendMessage().catch(() => {
-                // sendMessage() handles its own errors internally; this prevents
-                // unhandled rejection if an unexpected error slips through.
-              });
+              const handledByLayout = await this.deps.handleNewSessionPlan?.(planContent) ?? false;
+              if (!handledByLayout) {
+                await conversationController.createNew();
+                this.deps.getInputEl().value = planContent;
+                this.sendMessage().catch(() => {
+                  // sendMessage() handles its own errors internally; this prevents
+                  // unhandled rejection if an unexpected error slips through.
+                });
+              }
             } else if (shouldProcessQueuedMessage) {
               this.processQueuedMessage();
             }

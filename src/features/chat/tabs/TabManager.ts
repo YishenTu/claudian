@@ -690,13 +690,18 @@ export class TabManager implements TabManagerInterface {
   // ============================================
 
   private async handleForkRequest(context: ForkContext): Promise<void> {
-    const target = await chooseForkTarget(this.plugin.app);
+    const shouldForkToNewTab = this.callbacks.shouldForkToNewTab?.() ?? false;
+    const target = shouldForkToNewTab
+      ? 'new-tab'
+      : await chooseForkTarget(this.plugin.app);
     if (!target) return;
 
     if (target === 'new-tab') {
       const tab = await this.forkToNewTab(context);
       if (!tab) return;
-      new Notice(t('chat.fork.notice'));
+      if (!shouldForkToNewTab) {
+        new Notice(t('chat.fork.notice'));
+      }
     } else {
       const success = await this.forkInCurrentTab(context);
       if (!success) {

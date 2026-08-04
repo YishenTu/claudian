@@ -138,14 +138,14 @@
       "btnSet": "Definir"
     },
     "newSessionHotkey": {
-      "name": "Nova sessão",
+      "name": "Substituir conversa atual",
       "descWithKey": "Atalho atual: {hotkey}",
       "descNoKey": "Nenhum atalho definido",
       "btnChange": "Alterar",
       "btnSet": "Definir"
     },
     "newTabHotkey": {
-      "name": "Nova aba",
+      "name": "Novo",
       "descWithKey": "Atalho atual: {hotkey}",
       "descNoKey": "Nenhum atalho definido",
       "btnChange": "Alterar",

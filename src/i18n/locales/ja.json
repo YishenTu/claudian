@@ -138,14 +138,14 @@
       "btnSet": "設定"
     },
     "newSessionHotkey": {
-      "name": "新規セッション",
+      "name": "現在の会話を置き換える",
       "descWithKey": "現在のホットキー: {hotkey}",
       "descNoKey": "ホットキー未設定",
       "btnChange": "変更",
       "btnSet": "設定"
     },
     "newTabHotkey": {
-      "name": "新規タブ",
+      "name": "新規",
       "descWithKey": "現在のホットキー: {hotkey}",
       "descNoKey": "ホットキー未設定",
       "btnChange": "変更",

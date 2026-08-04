@@ -1412,6 +1412,17 @@ describe('InputController coordinator execution', () => {
     expect(fixture.deps.conversationController.save).toHaveBeenCalled();
   });
 
+  it('hands an approved new-session plan to the active layout', async () => {
+    const handleNewSessionPlan = jest.fn().mockResolvedValue(true);
+    const fixture = createFixture({ handleNewSessionPlan });
+    fixture.state.pendingNewSessionPlan = 'Implement the plan';
+
+    await fixture.controller.sendMessage({ content: 'make a plan' });
+
+    expect(handleNewSessionPlan).toHaveBeenCalledWith('Implement the plan');
+    expect(fixture.deps.conversationController.createNew).not.toHaveBeenCalled();
+  });
+
   it('starts title generation independently of the execution session', async () => {
     const generateTitle = jest.fn().mockResolvedValue(undefined);
     const fixture = createFixture({

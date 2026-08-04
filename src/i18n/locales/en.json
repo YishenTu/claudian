@@ -138,14 +138,14 @@
       "btnSet": "Set hotkey"
     },
     "newSessionHotkey": {
-      "name": "New Session",
+      "name": "Replace Current Conversation",
       "descWithKey": "Current hotkey: {hotkey}",
       "descNoKey": "No hotkey set",
       "btnChange": "Change",
       "btnSet": "Set hotkey"
     },
     "newTabHotkey": {
-      "name": "New Tab",
+      "name": "New",
       "descWithKey": "Current hotkey: {hotkey}",
       "descNoKey": "No hotkey set",
       "btnChange": "Change",

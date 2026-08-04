@@ -138,14 +138,14 @@
       "btnSet": "단축키 설정"
     },
     "newSessionHotkey": {
-      "name": "새 세션",
+      "name": "현재 대화 바꾸기",
       "descWithKey": "현재 단축키: {hotkey}",
       "descNoKey": "단축키 미설정",
       "btnChange": "변경",
       "btnSet": "단축키 설정"
     },
     "newTabHotkey": {
-      "name": "새 탭",
+      "name": "새로 만들기",
       "descWithKey": "현재 단축키: {hotkey}",
       "descNoKey": "단축키 미설정",
       "btnChange": "변경",

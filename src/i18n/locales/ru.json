@@ -138,14 +138,14 @@
       "btnSet": "Назначить"
     },
     "newSessionHotkey": {
-      "name": "Новая сессия",
+      "name": "Заменить текущий диалог",
       "descWithKey": "Текущая клавиша: {hotkey}",
       "descNoKey": "Клавиша не назначена",
       "btnChange": "Изменить",
       "btnSet": "Назначить"
     },
     "newTabHotkey": {
-      "name": "Новая вкладка",
+      "name": "Новое",
       "descWithKey": "Текущая клавиша: {hotkey}",
       "descNoKey": "Клавиша не назначена",
       "btnChange": "Изменить",

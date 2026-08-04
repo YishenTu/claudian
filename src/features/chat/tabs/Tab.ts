@@ -1311,7 +1311,7 @@ function initializeInputToolbar(
       const boundProvider = tab.providerId;
       const modelProvider = getProviderForModel(model, plugin.settings);
       if (modelProvider !== boundProvider) {
-        new Notice('Cannot switch provider on a bound session. Start a new tab instead.');
+        new Notice('Cannot switch provider on a bound session. Start a new conversation instead.');
         tab.ui.modelSelector?.updateDisplay();
         return;
       }
@@ -1990,6 +1990,9 @@ export function initializeTabControllers(
     openConversation,
     handleNewConversationCommand: viewHost.handleNewConversationCommand
       ? () => viewHost.handleNewConversationCommand!()
+      : undefined,
+    handleNewSessionPlan: viewHost.handleNewSessionPlan
+      ? (planContent) => viewHost.handleNewSessionPlan!(planContent)
       : undefined,
     onForkAll: forkRequestCallback
       ? () => handleForkAll(tab, plugin, forkRequestCallback)

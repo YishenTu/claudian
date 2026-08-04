@@ -138,14 +138,14 @@
       "btnSet": "设置快捷键"
     },
     "newSessionHotkey": {
-      "name": "新会话",
+      "name": "替换当前会话",
       "descWithKey": "当前快捷键：{hotkey}",
       "descNoKey": "未设置快捷键",
       "btnChange": "更改",
       "btnSet": "设置快捷键"
     },
     "newTabHotkey": {
-      "name": "新标签页",
+      "name": "新建",
       "descWithKey": "当前快捷键：{hotkey}",
       "descNoKey": "未设置快捷键",
       "btnChange": "更改",

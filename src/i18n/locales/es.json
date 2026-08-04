@@ -138,14 +138,14 @@
       "btnSet": "Configurar"
     },
     "newSessionHotkey": {
-      "name": "Nueva sesión",
+      "name": "Reemplazar conversación actual",
       "descWithKey": "Atajo actual: {hotkey}",
       "descNoKey": "Sin atajo configurado",
       "btnChange": "Cambiar",
       "btnSet": "Configurar"
     },
     "newTabHotkey": {
-      "name": "Nueva pestaña",
+      "name": "Nuevo",
       "descWithKey": "Atajo actual: {hotkey}",
       "descNoKey": "Sin atajo configurado",
       "btnChange": "Cambiar",

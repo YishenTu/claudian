@@ -242,6 +242,7 @@ export class ClaudianView extends ItemView {
       this.tabContentEl,
       this,
       {
+        shouldForkToNewTab: () => this.isWideSessionLayout,
         onTabCreated: () => {
           this.updateTabBar();
           this.notifyConversationNavigationChanged();
@@ -423,7 +424,7 @@ export class ClaudianView extends ItemView {
 
   private requestDualNew(): void {
     void this.activateOrCreateDraftTab()
-      .catch(() => new Notice('Failed to open a new tab'));
+      .catch(() => new Notice('Failed to start a new conversation'));
   }
 
   private async activateOrCreateDraftTab(): Promise<void> {
@@ -447,6 +448,24 @@ export class ClaudianView extends ItemView {
     if (!this.isWideSessionLayout) return false;
     await this.activateOrCreateDraftTab();
     return true;
+  }
+
+  async handleNewSessionPlan(planContent: string): Promise<boolean> {
+    if (!this.isWideSessionLayout) return false;
+
+    await this.createNewTab();
+    const inputController = this.tabManager?.getActiveTab()?.controllers.inputController;
+    if (!inputController) {
+      throw new Error('New conversation input is unavailable');
+    }
+    void inputController.sendMessage({ content: planContent }).catch(() => {
+      new Notice('Failed to start the approved plan in a new conversation');
+    });
+    return true;
+  }
+
+  isDualPaneMode(): boolean {
+    return this.isWideSessionLayout;
   }
 
   private findMostRecentUnboundTab(): TabData | null {
