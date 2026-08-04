@@ -67,7 +67,7 @@ describe('renderLastEnabledProviderWarning', () => {
         role: 'status',
       },
       cls: expect.stringContaining('claudian-setting-validation-warning'),
-      text: 'At least one provider must remain enabled for Claudian to work.',
+      text: 'At least one provider must remain enabled for Oh My Claudian to work.',
     });
     expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', true);
 
