@@ -70,6 +70,31 @@ npm run lint
 npm run test
 ```
 
+## Release
+
+Releases are created automatically by [`.github/workflows/release.yml`](.github/workflows/release.yml) when a version tag is pushed.
+
+1. Update the version in `manifest.json` and commit the change.
+2. Run the local validation checks:
+
+   ```bash
+   npm run typecheck
+   npm run lint
+   npm run test
+   npm run build
+   ```
+
+3. Create a tag that exactly matches the `manifest.json` version, for example:
+
+   ```bash
+   git tag 2.1.2
+   git push origin 2.1.2
+   ```
+
+   If your writable remote is named `fork`, use `git push fork 2.1.2` instead.
+
+The workflow validates the version, builds the plugin, runs the performance check, generates release notes, and publishes `main.js`, `manifest.json`, and `styles.css` to the GitHub Release. These are the files used for the Obsidian Community Plugins release.
+
 ## Privacy
 
 Your input, attachments, and tool results are sent only to the provider you select: Claude, Codex, Grok, OMP, OpenCode, Pi, or their configured model providers. Oh My Claudian does not send telemetry. Network activity is limited to explicit provider work and configured MCP endpoints.
@@ -94,7 +119,18 @@ src/
 
 ## Contributing
 
-Issues and focused pull requests are welcome. Please describe the problem, reproduction steps, proposed solution, and validation.
+Issues and focused pull requests are welcome. Before opening one, please search existing issues and pull requests to avoid duplicates. For substantial changes, open an issue first so the problem and scope can be discussed.
+
+Pull requests should focus on one problem and explain:
+
+- Why the change is needed and who it affects.
+- What behavior or code changed, and why this approach was chosen.
+- How it was validated, including tests and manual checks.
+- Known limitations, compatibility risks, and follow-up work.
+
+Add or update tests for behavior changes, preserve provider ownership boundaries, avoid unnecessary production dependencies, and update documentation for user-facing changes. New provider additions are not accepted; improvements to existing providers should document provider-specific capabilities and limitations.
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full development and pull request guide.
 
 ## License
 

@@ -1,6 +1,6 @@
 {
   "name": "oh-my-claudian",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Coding agents embedded in an Obsidian sidebar, including Oh My Pi support",
   "main": "main.js",
   "engines": {
