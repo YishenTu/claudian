@@ -7,6 +7,8 @@ import './providers';
 
 StartupProfiler.finishModuleEvaluation();
 
+const PLUGIN_DISPLAY_NAME = 'Oh My Claudian';
+
 import type { Editor, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView, Notice, Plugin } from 'obsidian';
 
@@ -155,8 +157,7 @@ export default class ClaudianPlugin extends Plugin {
       );
       registerFileMenu(this);
 
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- Preserve the product's title casing.
-      this.addRibbonIcon('bot', 'Open Oh My Claudian', () => {
+      this.addRibbonIcon('bot', `Open ${PLUGIN_DISPLAY_NAME}`, () => {
         void this.activateView();
       });
 
