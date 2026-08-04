@@ -146,6 +146,8 @@ export interface Conversation {
   providerState?: Record<string, unknown>;
   messages: ChatMessage[];
   currentNote?: string;
+  /** Whether the session is pinned in the dual-pane session manager. */
+  isPinned?: boolean;
   /** Session-specific external context paths (directories with full access). Resets on new session. */
   externalContextPaths?: string[];
   /** Context window usage information. */
@@ -171,6 +173,8 @@ export interface ConversationMeta {
   preview: string;
   /** Vault-relative path of the note linked to this session. */
   currentNote?: string;
+  /** Whether the session is pinned in the dual-pane session manager. */
+  isPinned?: boolean;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
 }
@@ -194,6 +198,7 @@ export interface SessionMetadata {
   /** Opaque provider-owned state bag. */
   providerState?: Record<string, unknown>;
   currentNote?: string;
+  isPinned?: boolean;
   externalContextPaths?: string[];
   enabledMcpServers?: string[];
   usage?: UsageInfo;

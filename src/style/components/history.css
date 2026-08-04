@@ -54,6 +54,39 @@
   display: none;
 }
 
+.claudian-session-new-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin: 4px 0;
+  padding: 8px 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-session-new-control:hover,
+.claudian-session-new-control:focus-visible {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-session-new-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+}
+
+.claudian-session-new-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
 .claudian-session-sidebar .claudian-history-header {
   display: flex;
   align-items: center;
@@ -61,6 +94,21 @@
   gap: 8px;
   flex-shrink: 0;
   border-bottom: none;
+}
+
+.claudian-session-sidebar .claudian-history-section--sessions:not(:first-child) {
+  margin-top: 4px;
+}
+
+.claudian-session-sidebar .claudian-session-section-header {
+  min-height: 40px;
+}
+
+.claudian-session-sidebar .claudian-session-list-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--background-primary);
 }
 
 .claudian-session-header-actions {

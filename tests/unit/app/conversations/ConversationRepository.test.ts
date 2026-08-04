@@ -79,6 +79,22 @@ describe('ConversationRepository hydration', () => {
     expect(repository.list()[0].currentNote).toBe('Notes/Architecture.md');
   });
 
+  it('persists and projects pinned session metadata', async () => {
+    const conversation = createConversation();
+    conversation.updatedAt = 42;
+    const { repository, persistence } = createRepository(conversation);
+
+    await repository.setPinned(conversation.id, true);
+
+    expect(repository.getMetadata(conversation.id)?.isPinned).toBe(true);
+    expect(repository.list()[0].isPinned).toBe(true);
+    expect(conversation.updatedAt).toBe(42);
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: conversation.id,
+      isPinned: true,
+    }));
+  });
+
   it('rewrites linked note paths without changing session activity timestamps', async () => {
     const fileConversation = createConversation('file');
     fileConversation.currentNote = 'Notes/Old.md';

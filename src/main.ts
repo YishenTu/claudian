@@ -807,6 +807,7 @@ export default class ClaudianPlugin extends Plugin {
       providerState: meta.providerState,
       messages: [],
       currentNote: meta.currentNote,
+      isPinned: meta.isPinned,
       externalContextPaths: meta.externalContextPaths,
       enabledMcpServers: meta.enabledMcpServers,
       usage: meta.usage,
@@ -1215,6 +1216,11 @@ export default class ClaudianPlugin extends Plugin {
 
   async renameConversation(id: string, title: string): Promise<void> {
     await this.conversationRepository.rename(id, title);
+    this.notifyConversationViewsChanged();
+  }
+
+  async setConversationPinned(id: string, isPinned: boolean): Promise<void> {
+    await this.conversationRepository.setPinned(id, isPinned);
     this.notifyConversationViewsChanged();
   }
 

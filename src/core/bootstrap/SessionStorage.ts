@@ -233,6 +233,7 @@ export class SessionStorage implements SessionMetadataReader {
       messageCount: 0,
       preview: 'SDK session',
       currentNote: meta.currentNote,
+      isPinned: meta.isPinned,
       titleGenerationStatus: meta.titleGenerationStatus,
     }));
     return metas.sort(

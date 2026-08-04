@@ -462,6 +462,14 @@ export class ConversationRepository {
     await this.save(conversation);
   }
 
+  async setPinned(id: string, isPinned: boolean): Promise<void> {
+    const conversation = this.getSync(id);
+    if (!conversation || conversation.isPinned === isPinned) return;
+
+    conversation.isPinned = isPinned;
+    await this.save(conversation);
+  }
+
   async persistConversations(
     conversations: readonly Conversation[],
   ): Promise<void> {
@@ -756,6 +764,7 @@ export class ConversationRepository {
       messageCount: conversation.messages.length,
       preview: this.getPreview(conversation),
       currentNote: conversation.currentNote,
+      isPinned: conversation.isPinned,
       titleGenerationStatus: conversation.titleGenerationStatus,
     };
   }
@@ -841,6 +850,7 @@ export class ConversationRepository {
       messageCount: conversation.messages.length,
       preview: this.getPreview(conversation),
       currentNote: conversation.currentNote,
+      isPinned: conversation.isPinned,
       titleGenerationStatus: conversation.titleGenerationStatus,
     }));
   }
@@ -1259,6 +1269,7 @@ export class ConversationRepository {
           ? providerState
           : undefined,
       currentNote: conversation.currentNote,
+      isPinned: conversation.isPinned,
       externalContextPaths: conversation.externalContextPaths,
       enabledMcpServers: conversation.enabledMcpServers,
       usage: conversation.usage,

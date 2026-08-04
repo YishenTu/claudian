@@ -119,6 +119,8 @@ type HistoryRenderOptions = {
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
   preserveListState?: boolean;
+  showPinnedSection?: boolean;
+  onSetConversationPinned?: (id: string, isPinned: boolean) => Promise<void>;
 };
 
 type HistorySurfaceRenderOptions = Omit<HistoryRenderOptions, 'onRerender'> & {
@@ -723,21 +725,86 @@ export class ConversationController {
 
     container.empty();
 
-    const dropdownHeader = container.createDiv({ cls: 'claudian-history-header' });
-    dropdownHeader.createSpan({ text: 'Sessions' });
-
-    const list = container.createDiv({ cls: 'claudian-history-list' });
     const allConversations = plugin.getConversationList();
+    const pinnedConversations = options.showPinnedSection
+      ? allConversations.filter(conversation => conversation.isPinned)
+      : [];
+    const sessionConversations = options.showPinnedSection
+      ? allConversations.filter(conversation => !conversation.isPinned)
+      : allConversations;
+
+    let list: HTMLElement;
+    let sessionList: HTMLElement;
+    let pinnedList: HTMLElement | null = null;
+    if (options.showPinnedSection) {
+      list = container.createDiv({ cls: 'claudian-history-list' });
+      if (pinnedConversations.length > 0) {
+        const pinnedSection = list.createDiv({
+          cls: 'claudian-history-section claudian-history-section--pinned',
+        });
+        const pinnedHeader = pinnedSection.createDiv({
+          cls: 'claudian-history-header claudian-session-section-header',
+        });
+        pinnedHeader.createSpan({
+          cls: 'claudian-history-section-label',
+          text: 'Pinned',
+        });
+        pinnedList = pinnedSection.createDiv({
+          cls: 'claudian-history-section-items',
+        });
+      }
+
+      const sessionsSection = list.createDiv({
+        cls: 'claudian-history-section claudian-history-section--sessions',
+      });
+      const sessionsHeader = sessionsSection.createDiv({
+        cls: [
+          'claudian-history-header',
+          'claudian-session-section-header',
+          'claudian-session-list-header',
+        ].join(' '),
+      });
+      sessionsHeader.createSpan({
+        cls: 'claudian-history-section-label',
+        text: 'Sessions',
+      });
+      sessionList = sessionsSection.createDiv({
+        cls: 'claudian-history-section-items claudian-session-list-items',
+      });
+    } else {
+      const dropdownHeader = container.createDiv({ cls: 'claudian-history-header' });
+      dropdownHeader.createSpan({ text: 'Sessions' });
+      list = container.createDiv({ cls: 'claudian-history-list' });
+      sessionList = list;
+    }
 
     if (allConversations.length === 0) {
       if (organization === 'linked-note') {
         options.onGroupKeysChange?.([]);
       }
-      list.createDiv({ cls: 'claudian-history-empty', text: 'No conversations' });
+      sessionList.createDiv({ cls: 'claudian-history-empty', text: 'No conversations' });
       return;
     }
 
-    const sections = organizeSessionList(allConversations, {
+    const pageSize = Math.max(1, options.pageSize ?? DEFAULT_HISTORY_PAGE_SIZE);
+    const visibleCount = Math.max(
+      pageSize,
+      options.visibleCount ?? previousVisibleCount,
+    );
+    list.dataset.visibleCount = String(visibleCount);
+    const sortedPinnedConversations = organizeSessionList(pinnedConversations, {
+      organization: 'list',
+      sort: options.sort ?? 'response-activity',
+      language: options.language ?? 'en',
+    })[0]?.conversations ?? [];
+    const visiblePinnedConversations = sortedPinnedConversations.slice(0, visibleCount);
+    if (pinnedList) {
+      for (const conversation of visiblePinnedConversations) {
+        this.renderHistoryConversationItem(pinnedList, conversation, options);
+      }
+    }
+
+    const sections = organizeSessionList(sessionConversations, {
       organization,
       sort: options.sort ?? 'response-activity',
       language: options.language ?? 'en',
@@ -746,20 +813,16 @@ export class ConversationController {
     if (organization === 'linked-note') {
       options.onGroupKeysChange?.(sections.map(({ key }) => key));
     }
-    const pageSize = Math.max(1, options.pageSize ?? DEFAULT_HISTORY_PAGE_SIZE);
-    const visibleCount = Math.max(
-      pageSize,
-      options.visibleCount ?? previousVisibleCount,
-    );
-    list.dataset.visibleCount = String(visibleCount);
-    const visibleConversationTotal = organization === 'linked-note'
+    const visibleSessionConversationTotal = organization === 'linked-note'
       ? sections.reduce((total, section) => (
           options.collapsedGroupKeys?.has(section.key)
             ? total
             : total + section.conversations.length
         ), 0)
-      : allConversations.length;
-    let renderedConversationCount = 0;
+      : sessionConversations.length;
+    const visibleConversationTotal = pinnedConversations.length
+      + visibleSessionConversationTotal;
+    let renderedConversationCount = visiblePinnedConversations.length;
 
     for (const section of sections) {
       const remainingVisibleCount = visibleCount - renderedConversationCount;
@@ -770,12 +833,12 @@ export class ConversationController {
         : section.conversations.slice(0, remainingVisibleCount);
       if (organization !== 'linked-note' && visibleConversations.length === 0) break;
 
-      let itemContainer = list;
+      let itemContainer = sessionList;
       if (organization === 'linked-note') {
         const hasRunningConversation = section.conversations.some(conversation => (
           this.getHistoryConversationStatusForMetadata(conversation, options).isRunning
         ));
-        const groupHeader = list.createDiv({
+        const groupHeader = sessionList.createDiv({
           cls: [
             'claudian-session-group-header',
             `claudian-session-group-header--${section.kind}`,
@@ -823,7 +886,7 @@ export class ConversationController {
           groupRunningIndicator.setAttribute('aria-label', 'Running');
         }
 
-        const groupBody = list.createDiv({
+        const groupBody = sessionList.createDiv({
           cls: [
             'claudian-session-group-body',
             isCollapsed ? 'claudian-session-group-body--collapsed' : '',
@@ -858,15 +921,21 @@ export class ConversationController {
     }
 
     if (renderedConversationCount < visibleConversationTotal && !options.signal?.aborted) {
-      const loadMoreButton = list.createEl('button', {
+      const loadMoreButton = sessionList.createEl('button', {
         cls: 'claudian-history-load-more',
         text: `Load more (${visibleConversationTotal - renderedConversationCount} remaining)`,
       });
       loadMoreButton.addEventListener('click', () => {
         if (options.signal?.aborted) return;
+        const nextVisibleCount = visibleCount + pageSize;
+        if (options.preserveListState) {
+          list.dataset.visibleCount = String(nextVisibleCount);
+          options.onRerender();
+          return;
+        }
         this.renderHistoryItems(container, {
           ...options,
-          visibleCount: visibleCount + pageSize,
+          visibleCount: nextVisibleCount,
         });
       });
     }
@@ -966,8 +1035,7 @@ export class ConversationController {
       event.stopPropagation();
       this.showHistoryContextMenu(
         item,
-        conversation.id,
-        conversation.title,
+        conversation,
         isCurrent,
         options,
         event,
@@ -1156,12 +1224,12 @@ export class ConversationController {
 
   private showHistoryContextMenu(
     item: HTMLElement,
-    conversationId: string,
-    title: string,
+    conversation: ConversationMeta,
     isCurrent: boolean,
     options: HistoryRenderOptions,
     event: MouseEvent,
   ): void {
+    const { id: conversationId, title } = conversation;
     const menu = new Menu();
     const fallbackOpenState: HistoryConversationOpenState = isCurrent ? 'current' : 'closed';
     const { openState } = this.getHistoryConversationStatus(conversationId, fallbackOpenState, options);
@@ -1194,6 +1262,18 @@ export class ConversationController {
             );
           }));
       }
+    }
+
+    if (options.onSetConversationPinned) {
+      const isPinned = conversation.isPinned === true;
+      menu.addItem((menuItem) => menuItem
+        .setTitle(isPinned ? 'Unpin' : 'Pin')
+        .onClick(() => {
+          void this.runHistoryAction(
+            () => options.onSetConversationPinned?.(conversationId, !isPinned),
+            isPinned ? 'Failed to unpin session' : 'Failed to pin session',
+          );
+        }));
     }
 
     menu.addItem((menuItem) => menuItem

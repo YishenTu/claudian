@@ -721,6 +721,10 @@ export class ClaudianView extends ItemView {
             noteExists: (notePath: string) => this.noteExists(notePath),
             preserveListState: true,
             showOpenStateActions: false,
+            showPinnedSection: true,
+            onSetConversationPinned: (id: string, isPinned: boolean) => (
+              this.setConversationPinned(id, isPinned)
+            ),
             collapsedGroupKeys: this.getCollapsedSessionGroupKeys(),
             onGroupCollapseChange: (groupKey: string, collapsed: boolean) => {
               const collapsedGroupKeys = this.getCollapsedSessionGroupKeys();
@@ -741,17 +745,28 @@ export class ClaudianView extends ItemView {
   }
 
   private buildSessionHeaderActions(container: HTMLElement): void {
-    const header = container.querySelector<HTMLElement>('.claudian-history-header');
-    if (!header) return;
+    const header = container.querySelector<HTMLElement>('.claudian-session-list-header');
+    const list = container.querySelector<HTMLElement>('.claudian-history-list');
+    if (!header || !list) return;
+
+    const newControl = container.createDiv({ cls: 'claudian-session-new-control' });
+    newControl.setAttribute('role', 'button');
+    newControl.setAttribute('tabindex', '0');
+    newControl.setAttribute('aria-label', 'New');
+    const newIcon = newControl.createSpan({ cls: 'claudian-session-new-icon' });
+    setIcon(newIcon, 'plus');
+    newControl.createSpan({ cls: 'claudian-session-new-label', text: 'New' });
+    newControl.addEventListener('click', () => this.requestDualNew());
+    newControl.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      this.requestDualNew();
+    });
+    container.insertBefore(newControl, list);
+    this.sessionNewButtonEl = newControl;
 
     this.sessionGroupToggleButtonEl = null;
     const actions = header.createDiv({ cls: 'claudian-session-header-actions' });
-    const optionsButton = this.createSessionHeaderAction(
-      actions,
-      'ellipsis',
-      'Session options',
-      (event) => this.showSessionOptionsMenu(optionsButton, event),
-    );
     const sessionGroupKeys = this.getSessionGroupKeys();
     if (
       this.getSessionManagerOrganization() === 'linked-note'
@@ -771,14 +786,39 @@ export class ClaudianView extends ItemView {
         () => this.toggleAllSessionGroups(),
       );
     }
-    this.sessionNewButtonEl = this.createSessionHeaderAction(
+    const optionsButton = this.createSessionHeaderAction(
       actions,
-      'square-plus',
-      'New',
-      () => this.requestDualNew(),
+      'ellipsis',
+      'Session options',
+      (event) => this.showSessionOptionsMenu(optionsButton, event),
     );
 
     this.updateNewTabButtonVisibility();
+  }
+
+  private async setConversationPinned(
+    conversationId: string,
+    isPinned: boolean,
+  ): Promise<void> {
+    await this.plugin.setConversationPinned(conversationId, isPinned);
+    if (!isPinned) return;
+
+    for (const tab of this.tabManager?.getAllTabs() ?? []) {
+      if (tab.conversationId === conversationId) {
+        commitProvisionalTab(tab);
+      }
+    }
+  }
+
+  private retainPinnedProvisionalTabs(): void {
+    for (const tab of this.tabManager?.getAllTabs() ?? []) {
+      if (
+        tab.conversationId
+        && this.plugin.getConversationSync(tab.conversationId)?.isPinned
+      ) {
+        commitProvisionalTab(tab);
+      }
+    }
   }
 
   private createSessionHeaderAction(
@@ -1056,6 +1096,7 @@ export class ClaudianView extends ItemView {
 
     this.stopSessionSidebarResize();
     this.cancelSessionSidebarRendering();
+    this.retainPinnedProvisionalTabs();
     void this.tabManager?.discardProvisionalTabs().catch(() => {
       new Notice('Failed to close the provisional session preview');
     });
@@ -1091,6 +1132,7 @@ export class ClaudianView extends ItemView {
       : this.plugin.findConversationAcrossViews(conversationId);
     if (localTab || (crossViewResult && crossViewResult.view !== this)) {
       await this.tabManager.openConversation(conversationId);
+      this.retainPinnedConversationTab(conversationId);
       return;
     }
 
@@ -1099,6 +1141,17 @@ export class ClaudianView extends ItemView {
       activate,
       provisional: true,
     });
+    this.retainPinnedConversationTab(conversationId);
+  }
+
+  private retainPinnedConversationTab(conversationId: string): void {
+    if (!this.plugin.getConversationSync(conversationId)?.isPinned) return;
+
+    for (const tab of this.tabManager?.getAllTabs() ?? []) {
+      if (tab.conversationId === conversationId) {
+        commitProvisionalTab(tab);
+      }
+    }
   }
 
   private cancelHistoryRendering(): void {

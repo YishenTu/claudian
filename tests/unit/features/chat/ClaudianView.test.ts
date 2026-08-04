@@ -210,9 +210,12 @@ describe('ClaudianView tab controls', () => {
     expect(sessionNewButtonEl.getAttribute('aria-hidden')).toBeNull();
   });
 
-  it('renders session options and one New control in the persistent header', () => {
+  it('renders a full-width New row above the Sessions header actions', () => {
     const container = createMockEl();
-    const header = container.createDiv({ cls: 'claudian-history-header' });
+    const list = container.createDiv({ cls: 'claudian-history-list' });
+    const header = list.createDiv({
+      cls: 'claudian-history-header claudian-session-list-header',
+    });
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
@@ -228,13 +231,15 @@ describe('ClaudianView tab controls', () => {
 
     const actions = header.querySelector('.claudian-session-header-actions');
     const optionsButton = actions?.children[0];
-    const newButton = actions?.children[1];
-    expect(actions?.children).toHaveLength(2);
+    const newButton = container.children[0];
+    expect(actions?.children).toHaveLength(1);
     expect(optionsButton?.getAttribute('aria-label')).toBe('Session options');
     expect(newButton?.tagName).toBe('DIV');
     expect(newButton?.getAttribute('role')).toBe('button');
     expect(newButton?.getAttribute('tabindex')).toBe('0');
     expect(newButton?.getAttribute('aria-label')).toBe('New');
+    expect(newButton?.querySelector('.claudian-session-new-label')?.textContent).toBe('New');
+    expect(container.children[1]).toBe(list);
 
     newButton?.click();
     expect(view.requestDualNew).toHaveBeenCalledTimes(1);
@@ -242,7 +247,10 @@ describe('ClaudianView tab controls', () => {
 
   it('collapses and expands every linked-note group from the session header', () => {
     const container = createMockEl();
-    container.createDiv({ cls: 'claudian-history-header' });
+    const list = container.createDiv({ cls: 'claudian-history-list' });
+    list.createDiv({
+      cls: 'claudian-history-header claudian-session-list-header',
+    });
     const view = Object.create(ClaudianView.prototype) as any;
     const renderSessionSidebar = jest.fn();
     Object.assign(view, {
@@ -264,8 +272,8 @@ describe('ClaudianView tab controls', () => {
     view.buildSessionHeaderActions(container);
 
     const actions = container.querySelector('.claudian-session-header-actions')!;
-    expect(actions.children).toHaveLength(3);
-    const collapseButton = actions.children[1];
+    expect(actions.children).toHaveLength(2);
+    const collapseButton = actions.children[0];
     const collapseIcon = collapseButton.querySelector('.claudian-session-header-icon')!;
     expect(collapseButton.getAttribute('aria-label')).toBe('Collapse all groups');
     expect(collapseIcon.dataset.iconState).toBe('collapse');
@@ -291,10 +299,13 @@ describe('ClaudianView tab controls', () => {
     expect(renderSessionSidebar).toHaveBeenCalledTimes(1);
 
     const collapsedContainer = createMockEl();
-    collapsedContainer.createDiv({ cls: 'claudian-history-header' });
+    const collapsedList = collapsedContainer.createDiv({ cls: 'claudian-history-list' });
+    collapsedList.createDiv({
+      cls: 'claudian-history-header claudian-session-list-header',
+    });
     view.buildSessionHeaderActions(collapsedContainer);
     const expandButton = collapsedContainer
-      .querySelector('.claudian-session-header-actions')!.children[1];
+      .querySelector('.claudian-session-header-actions')!.children[0];
     expect(expandButton.getAttribute('aria-label')).toBe('Expand all groups');
     expect(expandButton.querySelector('.claudian-session-header-icon')?.dataset.iconState)
       .toBe('expand');
@@ -593,7 +604,11 @@ describe('ClaudianView tab controls', () => {
     Object.assign(view, {
       cancelSessionSidebarRendering: jest.fn(),
       isWideSessionLayout: true,
-      tabManager: { discardProvisionalTabs },
+      plugin: { getConversationSync: jest.fn() },
+      tabManager: {
+        discardProvisionalTabs,
+        getAllTabs: jest.fn().mockReturnValue([]),
+      },
       viewContainerEl,
     });
 
@@ -603,6 +618,68 @@ describe('ClaudianView tab controls', () => {
     expect(view.isWideSessionLayout).toBe(false);
     expect(view.cancelSessionSidebarRendering).toHaveBeenCalledTimes(1);
     expect(discardProvisionalTabs).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains pinned provisional sessions when returning to single mode', () => {
+    const viewContainerEl = createMockEl();
+    viewContainerEl.addClass('claudian-wide-session-layout');
+    const view = Object.create(ClaudianView.prototype) as any;
+    const pinnedTab = {
+      id: 'pinned-tab',
+      conversationId: 'pinned-conversation',
+      lifecycleState: 'provisional',
+    };
+    const previewTab = {
+      id: 'preview-tab',
+      conversationId: 'preview-conversation',
+      lifecycleState: 'provisional',
+    };
+    const discardProvisionalTabs = jest.fn().mockImplementation(async () => {
+      expect(pinnedTab.lifecycleState).toBe('cold');
+      expect(previewTab.lifecycleState).toBe('provisional');
+    });
+
+    Object.assign(view, {
+      cancelSessionSidebarRendering: jest.fn(),
+      isWideSessionLayout: true,
+      plugin: {
+        getConversationSync: jest.fn((id: string) => (
+          id === 'pinned-conversation' ? { isPinned: true } : { isPinned: false }
+        )),
+      },
+      tabManager: {
+        discardProvisionalTabs,
+        getAllTabs: jest.fn().mockReturnValue([pinnedTab, previewTab]),
+      },
+      viewContainerEl,
+    });
+
+    view.updateSessionSidebarLayout(599);
+
+    expect(discardProvisionalTabs).toHaveBeenCalledTimes(1);
+  });
+
+  it('promotes an open provisional session when it is pinned without opening closed sessions', async () => {
+    const openTab = {
+      conversationId: 'open-conversation',
+      lifecycleState: 'provisional',
+    };
+    const setConversationPinned = jest.fn().mockResolvedValue(undefined);
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      plugin: { setConversationPinned },
+      tabManager: { getAllTabs: jest.fn().mockReturnValue([openTab]) },
+    });
+
+    await view.setConversationPinned('open-conversation', true);
+    await view.setConversationPinned('open-conversation', false);
+    await view.setConversationPinned('closed-conversation', true);
+
+    expect(setConversationPinned).toHaveBeenNthCalledWith(1, 'open-conversation', true);
+    expect(setConversationPinned).toHaveBeenNthCalledWith(2, 'open-conversation', false);
+    expect(setConversationPinned).toHaveBeenNthCalledWith(3, 'closed-conversation', true);
+    expect(openTab.lifecycleState).toBe('cold');
+    expect(view.tabManager.getAllTabs).toHaveBeenCalledTimes(2);
   });
 
   it('resizes chat and session columns without changing the total view width', () => {
@@ -728,6 +805,8 @@ describe('ClaudianView tab controls', () => {
         preserveListState: true,
         showOpenStateActions: false,
         showOpenStateLabels: false,
+        showPinnedSection: true,
+        onSetConversationPinned: expect.any(Function),
         signal: expect.any(AbortSignal),
       }),
     );
@@ -760,7 +839,10 @@ describe('ClaudianView tab controls', () => {
   it('adds an organization menu beside New and persists both menu choices', async () => {
     (Menu as typeof Menu & { instances: unknown[] }).instances.length = 0;
     const container = createMockEl();
-    container.createDiv({ cls: 'claudian-history-header' });
+    const list = container.createDiv({ cls: 'claudian-history-list' });
+    list.createDiv({
+      cls: 'claudian-history-header claudian-session-list-header',
+    });
     const settings = {
       sessionManagerOrganization: 'list',
       sessionManagerSort: 'last-updated',
@@ -786,7 +868,7 @@ describe('ClaudianView tab controls', () => {
     view.buildSessionHeaderActions(container);
 
     const actions = container.querySelector('.claudian-session-header-actions');
-    expect(actions?.children).toHaveLength(2);
+    expect(actions?.children).toHaveLength(1);
     const optionsButton = actions?.children[0];
     expect(optionsButton?.getAttribute('aria-label')).toBe('Session options');
     optionsButton?.click();
@@ -820,6 +902,7 @@ describe('ClaudianView tab controls', () => {
 
     view.plugin = {
       findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      getConversationSync: jest.fn().mockReturnValue(null),
     };
     view.tabManager = {
       canCreateTab: jest.fn().mockReturnValue(true),
@@ -838,12 +921,34 @@ describe('ClaudianView tab controls', () => {
     });
   });
 
+  it('immediately retains a pinned session opened from the dual-mode session column', async () => {
+    const tabs: Array<{ conversationId: string; lifecycleState: string }> = [];
+    const openConversation = jest.fn().mockImplementation(async (conversationId: string) => {
+      tabs.push({ conversationId, lifecycleState: 'provisional' });
+    });
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    view.plugin = {
+      findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      getConversationSync: jest.fn().mockReturnValue({ isPinned: true }),
+    };
+    view.tabManager = {
+      getAllTabs: jest.fn(() => tabs),
+      openConversation,
+    };
+
+    await view.openSessionConversation('pinned-conversation');
+
+    expect(tabs[0].lifecycleState).toBe('cold');
+  });
+
   it('opens a provisional session even when the former tab limit is reached', async () => {
     const openConversation = jest.fn().mockResolvedValue(undefined);
     const view = Object.create(ClaudianView.prototype) as any;
 
     view.plugin = {
       findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      getConversationSync: jest.fn().mockReturnValue(null),
     };
     view.tabManager = {
       canCreateTab: jest.fn().mockReturnValue(false),
@@ -869,6 +974,7 @@ describe('ClaudianView tab controls', () => {
 
     view.plugin = {
       findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      getConversationSync: jest.fn().mockReturnValue(null),
     };
     view.tabManager = {
       canCreateTab: jest.fn().mockReturnValue(false),

@@ -486,6 +486,7 @@ describe('SessionStorage', () => {
             updatedAt: 1700001000,
             lastResponseAt: 1700000900,
             currentNote: 'Notes/One.md',
+            isPinned: true,
           }));
         }
         if (path.includes('session-2')) {
@@ -514,6 +515,7 @@ describe('SessionStorage', () => {
       expect(metas[1].preview).toBe('SDK session');
       expect(metas[1].messageCount).toBe(0);
       expect(metas[1].currentNote).toBe('Notes/One.md');
+      expect(metas[1].isPinned).toBe(true);
     });
 
     it('returns empty array when no metadata exists', async () => {

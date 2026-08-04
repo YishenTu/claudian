@@ -848,6 +848,49 @@ describe('ConversationController', () => {
         expect(container.children.length).toBe(2); // header + list
       });
 
+      it('partitions pinned sessions into a dedicated dual-mode section', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'normal', title: 'Normal', createdAt: 2, updatedAt: 2 },
+          { id: 'pinned-old', title: 'Pinned old', createdAt: 1, updatedAt: 1, isPinned: true },
+          { id: 'pinned-new', title: 'Pinned new', createdAt: 3, updatedAt: 3, isPinned: true },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+          sort: 'last-updated',
+        });
+
+        const pinnedSection = container.querySelector('.claudian-history-section--pinned')!;
+        const sessionsSection = container.querySelector('.claudian-history-section--sessions')!;
+        expect(pinnedSection.querySelector('.claudian-history-section-label')?.textContent)
+          .toBe('Pinned');
+        expect(sessionsSection.querySelector('.claudian-history-section-label')?.textContent)
+          .toBe('Sessions');
+        expect(pinnedSection.querySelectorAll('.claudian-history-item-title')
+          .map((el: { textContent: string }) => el.textContent))
+          .toEqual(['Pinned new', 'Pinned old']);
+        expect(sessionsSection.querySelectorAll('.claudian-history-item-title')
+          .map((el: { textContent: string }) => el.textContent))
+          .toEqual(['Normal']);
+      });
+
+      it('hides the pinned section when no sessions are pinned', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'normal', title: 'Normal', createdAt: 1 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+        });
+
+        expect(container.querySelector('.claudian-history-section--pinned')).toBeNull();
+        expect(container.querySelector('.claudian-history-section--sessions')).not.toBeNull();
+      });
+
       it('renders full-path note groups only for the linked-note organization', () => {
         const container = createMockEl();
         const onGroupCollapseChange = jest.fn();
@@ -966,6 +1009,47 @@ describe('ConversationController', () => {
         list = container.children[1];
         expect(list.querySelectorAll('.claudian-history-item')).toHaveLength(50);
         expect(list.querySelector('.claudian-history-load-more')).not.toBeNull();
+      });
+
+      it('keeps pagination bounded across pinned and regular dual-mode sessions', () => {
+        const container = createMockEl();
+        const onRerender = jest.fn();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          ...Array.from({ length: 20 }, (_, index) => ({
+            id: `pinned-${index}`,
+            title: `Pinned ${index}`,
+            createdAt: 100 - index,
+            isPinned: true,
+          })),
+          ...Array.from({ length: 20 }, (_, index) => ({
+            id: `regular-${index}`,
+            title: `Regular ${index}`,
+            createdAt: 50 - index,
+          })),
+        ]);
+
+        const options = {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+          pageSize: 25,
+          preserveListState: true,
+          onRerender,
+        };
+        controller.renderHistoryDropdown(container, options);
+
+        let list = container.querySelector('.claudian-history-list')!;
+        expect(list.querySelectorAll('.claudian-history-item')).toHaveLength(25);
+        expect(list.querySelector('.claudian-history-load-more')).not.toBeNull();
+
+        list.querySelector('.claudian-history-load-more')!.click();
+        expect(onRerender).toHaveBeenCalledTimes(1);
+        expect(list.dataset.visibleCount).toBe('50');
+        expect(list.querySelectorAll('.claudian-history-item')).toHaveLength(25);
+
+        controller.renderHistoryDropdown(container, options);
+        list = container.querySelector('.claudian-history-list')!;
+        expect(list.querySelectorAll('.claudian-history-item')).toHaveLength(40);
+        expect(list.querySelector('.claudian-history-load-more')).toBeNull();
       });
 
       it('preserves grouped-list position and loaded count across an external rerender', () => {
@@ -1608,6 +1692,52 @@ describe('ConversationController', () => {
           instances: Array<{ items: Array<{ title: string }> }>;
         }).instances[0];
         expect(menu.items.map(item => item.title)).toEqual(['Rename', 'Delete']);
+      });
+
+      it('offers pin and unpin actions on the Sessions surface', async () => {
+        const container = createMockEl();
+        const onSetConversationPinned = jest.fn().mockResolvedValue(undefined);
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'normal', title: 'Normal', createdAt: 2 },
+          { id: 'pinned', title: 'Pinned', createdAt: 1, isPinned: true },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+          onSetConversationPinned,
+          showOpenStateActions: false,
+        });
+
+        const normalItem = container.querySelector('.claudian-history-section--sessions')!
+          .querySelector('.claudian-history-item')!;
+        normalItem.dispatchEvent({
+          type: 'contextmenu',
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+        let menu = (Menu as typeof Menu & {
+          instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
+        }).instances.at(-1)!;
+        expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Delete']);
+        menu.items[0].clickHandler?.();
+        await Promise.resolve();
+        expect(onSetConversationPinned).toHaveBeenCalledWith('normal', true);
+
+        const pinnedItem = container.querySelector('.claudian-history-section--pinned')!
+          .querySelector('.claudian-history-item')!;
+        pinnedItem.dispatchEvent({
+          type: 'contextmenu',
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+        menu = (Menu as typeof Menu & {
+          instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
+        }).instances.at(-1)!;
+        expect(menu.items.map(item => item.title)).toEqual(['Unpin', 'Rename', 'Delete']);
+        menu.items[0].clickHandler?.();
+        await Promise.resolve();
+        expect(onSetConversationPinned).toHaveBeenCalledWith('pinned', false);
       });
     });
   });
