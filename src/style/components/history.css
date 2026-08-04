@@ -61,7 +61,7 @@
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-  margin: 4px 0;
+  margin: 1px 0;
   padding: 8px 8px;
   color: var(--text-muted);
   font-size: 13px;
@@ -86,11 +86,15 @@
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-  margin: 4px 0;
+  margin: 1px 0;
   padding: 6px 8px;
   border-radius: 6px;
   background: transparent;
   color: var(--text-muted);
+}
+
+.claudian-session-archive-control {
+  margin-bottom: 12px;
 }
 
 .claudian-session-search-input {
@@ -263,6 +267,11 @@
   white-space: nowrap;
 }
 
+.claudian-session-group-header--attention .claudian-session-group-label {
+  color: var(--text-normal);
+  animation: attention-title-pulse 1.6s ease-in-out infinite;
+}
+
 .claudian-session-group-status {
   flex-shrink: 0;
   font-size: 10px;
@@ -333,6 +342,13 @@
 
 .claudian-session-sidebar .claudian-history-item.active .claudian-history-item-title {
   color: var(--text-normal);
+}
+
+.claudian-session-sidebar
+  .claudian-history-item.claudian-history-item--attention
+  .claudian-history-item-title {
+  color: var(--text-normal);
+  animation: attention-title-pulse 1.6s ease-in-out infinite;
 }
 
 .claudian-session-sidebar .claudian-history-item.running .claudian-history-item-date {

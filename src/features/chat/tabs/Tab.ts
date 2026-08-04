@@ -63,6 +63,7 @@ import { findRewindContext } from '../rewind';
 import { BangBashService } from '../services/BangBashService';
 import { SubagentManager } from '../services/SubagentManager';
 import { ChatState } from '../state/ChatState';
+import type { TabAttention } from '../state/types';
 import { BangBashModeManager as BangBashModeManagerClass } from '../ui/BangBashModeManager';
 import { ComposerContextTray } from '../ui/ComposerContextTray';
 import { FileContextManager } from '../ui/FileContext';
@@ -165,7 +166,8 @@ export interface TabCreateOptions {
   onStreamingChanged?: (isStreaming: boolean) => void;
   onRewindingChanged?: (isRewinding: boolean) => void;
   onTitleChanged?: (title: string) => void;
-  onAttentionChanged?: (needsAttention: boolean) => void;
+  onAttentionChanged?: (attention: TabAttention) => void;
+  captureReviewableSettlement?: () => () => void;
   onConversationIdChanged?: (conversationId: string | null) => void;
 }
 
@@ -683,6 +685,7 @@ export function createTab(options: TabCreateOptions): TabData {
       session.setExecutionCoordinator(coordinator);
     },
     providerCatalogResolver: null,
+    captureReviewableSettlement: options.captureReviewableSettlement ?? null,
     state,
     controllers: {
       selectionController: null,
@@ -749,55 +752,71 @@ function createTabExecutionCoordinator(
   const interactionPort: ProviderInteractionPort = {
     requestApproval: async (request) => {
       interactionKinds.set(request.interactionId, request.kind);
-      const decision = await tab.controllers.inputController?.handleApprovalRequest(
-        request.toolName,
-        { ...request.input },
-        request.description,
-        {
-          ...(request.decisionReason ? { decisionReason: request.decisionReason } : {}),
-          ...(request.blockedPath ? { blockedPath: request.blockedPath } : {}),
-          ...(request.decisionOptions
-            ? { decisionOptions: request.decisionOptions.map(option => ({ ...option })) }
-            : {}),
-          ...(request.additionalPermissions !== undefined
-            ? { additionalPermissions: request.additionalPermissions }
-            : {}),
-        },
-      ) ?? 'cancel';
-      interactionKinds.delete(request.interactionId);
-      return { interactionId: request.interactionId, decision };
+      tab.state.beginActionRequired(request.interactionId);
+      try {
+        const decision = await tab.controllers.inputController?.handleApprovalRequest(
+          request.toolName,
+          { ...request.input },
+          request.description,
+          {
+            ...(request.decisionReason ? { decisionReason: request.decisionReason } : {}),
+            ...(request.blockedPath ? { blockedPath: request.blockedPath } : {}),
+            ...(request.decisionOptions
+              ? { decisionOptions: request.decisionOptions.map(option => ({ ...option })) }
+              : {}),
+            ...(request.additionalPermissions !== undefined
+              ? { additionalPermissions: request.additionalPermissions }
+              : {}),
+          },
+        ) ?? 'cancel';
+        return { interactionId: request.interactionId, decision };
+      } finally {
+        interactionKinds.delete(request.interactionId);
+        tab.state.endActionRequired(request.interactionId);
+      }
     },
     askUserQuestion: async (request, signal) => {
       interactionKinds.set(request.interactionId, request.kind);
-      const answers = await tab.controllers.inputController?.handleAskUserQuestion(
-        { ...request.input },
-        signal,
-      ) ?? null;
-      interactionKinds.delete(request.interactionId);
-      return { interactionId: request.interactionId, answers };
+      tab.state.beginActionRequired(request.interactionId);
+      try {
+        const answers = await tab.controllers.inputController?.handleAskUserQuestion(
+          { ...request.input },
+          signal,
+        ) ?? null;
+        return { interactionId: request.interactionId, answers };
+      } finally {
+        interactionKinds.delete(request.interactionId);
+        tab.state.endActionRequired(request.interactionId);
+      }
     },
     requestPlanDecision: async (request, signal) => {
       interactionKinds.set(request.interactionId, request.kind);
-      const decision = await tab.controllers.inputController?.handleExitPlanMode(
-        { ...request.input },
-        signal,
-        request.presentation,
-      ) ?? null;
-      interactionKinds.delete(request.interactionId);
-      if (decision !== null && decision.type !== 'feedback') {
-        await restorePrePlanMode(tab, plugin);
-        if (decision.type === 'approve-new-session') {
-          tab.state.pendingNewSessionPlan = decision.planContent;
-          tab.state.cancelRequested = true;
+      tab.state.beginActionRequired(request.interactionId);
+      try {
+        const decision = await tab.controllers.inputController?.handleExitPlanMode(
+          { ...request.input },
+          signal,
+          request.presentation,
+        ) ?? null;
+        if (decision !== null && decision.type !== 'feedback') {
+          await restorePrePlanMode(tab, plugin);
+          if (decision.type === 'approve-new-session') {
+            tab.state.pendingNewSessionPlan = decision.planContent;
+            tab.state.cancelRequested = true;
+          }
         }
+        return { interactionId: request.interactionId, decision };
+      } finally {
+        interactionKinds.delete(request.interactionId);
+        tab.state.endActionRequired(request.interactionId);
       }
-      return { interactionId: request.interactionId, decision };
     },
     dismissInteraction: (interactionId) => {
       const kind = interactionKinds.get(interactionId);
       if (kind) {
         tab.controllers.inputController?.dismissProviderInteraction(kind);
         interactionKinds.delete(interactionId);
+        tab.state.endActionRequired(interactionId);
       }
     },
   };
@@ -829,7 +848,7 @@ function createTabExecutionCoordinator(
       canCool: () => (
         !tab.state.isStreaming
         && !tab.state.isRewinding
-        && !tab.state.needsAttention
+        && !tab.state.requiresAction
         && tab.session.activeTurn === null
         && tab.lifecycleState !== 'closing'
       ),
@@ -878,7 +897,12 @@ async function handleTabSessionEvent(
       ...(event.result !== undefined ? { result: event.result } : {}),
     });
     if (applied && isCurrent()) {
-      await tab.controllers.conversationController?.save(true);
+      const reportReviewableSettlement = tab.captureReviewableSettlement?.();
+      try {
+        await tab.controllers.conversationController?.save(true);
+      } finally {
+        if (isCurrent()) reportReviewableSettlement?.();
+      }
     }
     return;
   }
@@ -902,7 +926,7 @@ async function handleTabSessionEvent(
     const chunks = events
       .map(providerOutputEventToStreamChunk)
       .filter((chunk): chunk is StreamChunk => chunk !== null);
-    await renderAutoTriggeredTurn(tab, {
+    const hasVisibleOutput = await renderAutoTriggeredTurn(tab, {
       chunks,
       metadata: {
         ...(event.nativeAssistantId
@@ -911,7 +935,14 @@ async function handleTabSessionEvent(
       },
     }, isCurrent);
     if (isCurrent()) {
-      await tab.controllers.conversationController?.save(true);
+      const reportReviewableSettlement = hasVisibleOutput
+        ? tab.captureReviewableSettlement?.()
+        : null;
+      try {
+        await tab.controllers.conversationController?.save(true);
+      } finally {
+        if (isCurrent()) reportReviewableSettlement?.();
+      }
     }
     return;
   }
@@ -2010,6 +2041,7 @@ export function initializeTabControllers(
         }
       }
     },
+    captureReviewableSettlement: tab.captureReviewableSettlement ?? undefined,
   });
 
   tab.controllers.navigationController = new NavigationController({
@@ -2410,7 +2442,7 @@ async function renderAutoTriggeredTurn(
       tab.renderer?.scrollToBottom();
     }
   }
-  return true;
+  return hasVisibleContent;
 }
 
 export async function updatePlanModeUI(

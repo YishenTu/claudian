@@ -903,6 +903,76 @@ describe('ConversationController', () => {
         expect(container.querySelector('.claudian-history-section--sessions')).not.toBeNull();
       });
 
+      it('marks attention rows for title animation without session action buttons', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'review-pinned',
+            title: 'Pinned review',
+            createdAt: 4,
+            isPinned: true,
+          },
+          { id: 'action', title: 'Action required', createdAt: 3 },
+          { id: 'review', title: 'Review later', createdAt: 2 },
+          { id: 'normal', title: 'Normal', createdAt: 1 },
+        ]);
+        const attentionById = new Map([
+          ['review-pinned', { kind: 'review' as const, since: 300 }],
+          ['action', { kind: 'action-required' as const, since: 100 }],
+          ['review', { kind: 'review' as const, since: 200 }],
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          getConversationStatus: id => ({
+            attention: attentionById.get(id) ?? null,
+            isRunning: false,
+            openState: 'open',
+          }),
+          onSelectConversation: jest.fn(),
+          sessionActionMode: 'active',
+          onSetConversationPinned: jest.fn().mockResolvedValue(undefined),
+          onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
+          showAttentionState: true,
+          showPinnedSection: true,
+        });
+
+        expect(container.querySelector('.claudian-history-section--attention')).toBeNull();
+        expect(container.querySelectorAll('.claudian-history-item')).toHaveLength(4);
+        const attentionItems = container.querySelectorAll('.claudian-history-item--attention');
+        expect(attentionItems).toHaveLength(3);
+        expect(container.querySelector('.claudian-session-attention-indicator')).toBeNull();
+        for (const item of attentionItems) {
+          expect(item.querySelector('.claudian-pin-btn')).toBeNull();
+          expect(item.querySelector('.claudian-archive-btn')).toBeNull();
+        }
+        const normalItem = container.querySelectorAll('.claudian-history-item').find(
+          (item: HTMLElement) => item.getAttribute('data-conversation-id') === 'normal',
+        )!;
+        expect(normalItem.querySelector('.claudian-pin-btn')).not.toBeNull();
+        expect(normalItem.querySelector('.claudian-archive-btn')).not.toBeNull();
+      });
+
+      it('does not mark archived rows for attention presentation', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'archived', title: 'Archived', createdAt: 1, isArchived: true },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          getConversationStatus: () => ({
+            attention: { kind: 'action-required', since: 1 },
+            isRunning: false,
+            openState: 'open',
+          }),
+          onSelectConversation: jest.fn(),
+          sessionScope: 'archived',
+          showArchivedSection: true,
+          showAttentionState: false,
+        });
+
+        expect(container.querySelector('.claudian-history-item--attention')).toBeNull();
+      });
+
       it('renders active session management actions without archived sessions', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
@@ -1631,6 +1701,47 @@ describe('ConversationController', () => {
           'claudian-session-group-running-indicator--visible',
         )).toBe(true);
         expect(setIcon).toHaveBeenCalledWith(headerIndicator, 'loader-2');
+      });
+
+      it('marks a collapsed linked-note header when it contains attention', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'attention',
+            title: 'Needs review',
+            createdAt: 1000,
+            currentNote: 'Projects/Plan.md',
+          },
+          {
+            id: 'normal',
+            title: 'No attention',
+            createdAt: 900,
+            currentNote: 'Projects/Plan.md',
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          organization: 'linked-note',
+          sort: 'last-updated',
+          language: 'en',
+          showAttentionState: true,
+          getConversationStatus: (id) => ({
+            openState: 'open',
+            isRunning: false,
+            attention: id === 'attention'
+              ? { kind: 'review', since: 1000 }
+              : null,
+          }),
+        });
+
+        const header = container.querySelector('.claudian-session-group-header')!;
+        expect(header.hasClass('claudian-session-group-header--attention')).toBe(false);
+        expect(header.querySelector('.claudian-session-group-attention-indicator')).toBeNull();
+
+        header.click();
+
+        expect(header.hasClass('claudian-session-group-header--attention')).toBe(true);
       });
 
       it('should display running status for the current conversation', () => {

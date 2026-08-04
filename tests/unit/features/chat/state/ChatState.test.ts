@@ -61,7 +61,7 @@ describe('ChatState', () => {
       expect(state.usage).toBeNull();
       expect(state.ignoreUsageUpdates).toBe(false);
       expect(state.currentTodos).toBeNull();
-      expect(state.needsAttention).toBe(false);
+      expect(state.attention).toBeNull();
       expect(state.autoScrollEnabled).toBe(true);
       expect(state.responseStartTime).toBeNull();
       expect(state.flavorTimerInterval).toBeNull();
@@ -322,14 +322,144 @@ describe('ChatState', () => {
     });
   });
 
-  describe('needsAttention', () => {
-    it('fires onAttentionChanged when value changes', () => {
+  describe('attention', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('starts without attention', () => {
+      const chatState = new ChatState();
+
+      expect(chatState.attention).toBeNull();
+      expect(chatState.needsAttention).toBe(false);
+      expect(chatState.requiresAction).toBe(false);
+    });
+
+    it('marks and acknowledges review attention', () => {
+      jest.spyOn(Date, 'now').mockReturnValue(123);
       const onAttentionChanged = jest.fn();
       const chatState = new ChatState({ onAttentionChanged });
 
-      chatState.needsAttention = true;
+      chatState.markReviewRequired();
 
-      expect(onAttentionChanged).toHaveBeenCalledWith(true);
+      expect(chatState.attention).toEqual({ kind: 'review', since: 123 });
+      expect(chatState.needsAttention).toBe(true);
+      expect(chatState.requiresAction).toBe(false);
+      expect(onAttentionChanged).toHaveBeenCalledWith({ kind: 'review', since: 123 });
+
+      chatState.acknowledgeReview();
+
+      expect(chatState.attention).toBeNull();
+      expect(onAttentionChanged).toHaveBeenLastCalledWith(null);
+    });
+
+    it('tracks multiple action-required interactions until the last one ends', () => {
+      jest.spyOn(Date, 'now')
+        .mockReturnValueOnce(100)
+        .mockReturnValueOnce(200);
+      const onAttentionChanged = jest.fn();
+      const chatState = new ChatState({ onAttentionChanged });
+
+      chatState.beginActionRequired('approval-1');
+      chatState.beginActionRequired('question-1');
+
+      expect(chatState.attention).toEqual({ kind: 'action-required', since: 100 });
+      expect(chatState.requiresAction).toBe(true);
+      expect(onAttentionChanged).toHaveBeenCalledTimes(1);
+
+      chatState.endActionRequired('approval-1');
+      expect(chatState.requiresAction).toBe(true);
+      expect(onAttentionChanged).toHaveBeenCalledTimes(1);
+
+      chatState.endActionRequired('question-1');
+      expect(chatState.attention).toBeNull();
+      expect(onAttentionChanged).toHaveBeenLastCalledWith(null);
+    });
+
+    it('keeps action-required attention when review is acknowledged', () => {
+      const chatState = new ChatState();
+
+      chatState.beginActionRequired('approval-1');
+      chatState.acknowledgeReview();
+
+      expect(chatState.requiresAction).toBe(true);
+    });
+
+    it('reveals review attention after the last action-required interaction settles', () => {
+      jest.spyOn(Date, 'now')
+        .mockReturnValueOnce(100)
+        .mockReturnValueOnce(200);
+      const chatState = new ChatState();
+
+      chatState.beginActionRequired('approval-1');
+      chatState.markReviewRequired();
+      chatState.endActionRequired('approval-1');
+
+      expect(chatState.attention).toEqual({ kind: 'review', since: 200 });
+    });
+
+    it('restores existing review after action-required attention settles', () => {
+      jest.spyOn(Date, 'now')
+        .mockReturnValueOnce(100)
+        .mockReturnValueOnce(200);
+      const chatState = new ChatState();
+
+      chatState.markReviewRequired();
+      chatState.beginActionRequired('approval-1');
+      chatState.endActionRequired('approval-1');
+
+      expect(chatState.attention).toEqual({ kind: 'review', since: 100 });
+    });
+
+    it('acknowledges review hidden beneath action-required attention', () => {
+      const chatState = new ChatState();
+
+      chatState.beginActionRequired('approval-1');
+      chatState.markReviewRequired();
+      chatState.acknowledgeReview();
+      chatState.endActionRequired('approval-1');
+
+      expect(chatState.attention).toBeNull();
+    });
+
+    it('treats duplicate begin and end calls as idempotent', () => {
+      const onAttentionChanged = jest.fn();
+      const chatState = new ChatState({ onAttentionChanged });
+
+      chatState.beginActionRequired('approval-1');
+      chatState.beginActionRequired('approval-1');
+      chatState.endActionRequired('missing');
+      chatState.endActionRequired('approval-1');
+      chatState.endActionRequired('approval-1');
+
+      expect(chatState.attention).toBeNull();
+      expect(onAttentionChanged).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not reset review time or emit redundant callbacks', () => {
+      jest.spyOn(Date, 'now')
+        .mockReturnValueOnce(100)
+        .mockReturnValueOnce(200);
+      const onAttentionChanged = jest.fn();
+      const chatState = new ChatState({ onAttentionChanged });
+
+      chatState.markReviewRequired();
+      chatState.markReviewRequired();
+
+      expect(chatState.attention).toEqual({ kind: 'review', since: 100 });
+      expect(onAttentionChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears visible attention and pending action tokens', () => {
+      const onAttentionChanged = jest.fn();
+      const chatState = new ChatState({ onAttentionChanged });
+
+      chatState.beginActionRequired('approval-1');
+      chatState.clearAttention();
+      chatState.endActionRequired('approval-1');
+
+      expect(chatState.attention).toBeNull();
+      expect(onAttentionChanged).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -460,6 +590,7 @@ describe('ChatState', () => {
       chatState.queuedMessage = { content: 'queued', editorContext: null, canvasContext: null };
       chatState.usage = { inputTokens: 100, outputTokens: 50 } as any;
       chatState.currentTodos = [{ content: 'Test', status: 'pending' as const, activeForm: 'Testing' }];
+      chatState.beginActionRequired('approval-1');
       // autoScrollEnabled defaults to true, set to false first so reset triggers change
       chatState.autoScrollEnabled = false;
 
@@ -478,6 +609,7 @@ describe('ChatState', () => {
       expect(chatState.queuedMessage).toBeNull();
       expect(chatState.usage).toBeNull();
       expect(chatState.currentTodos).toBeNull();
+      expect(chatState.attention).toBeNull();
       expect(chatState.autoScrollEnabled).toBe(true);
 
       // Verify callbacks were fired

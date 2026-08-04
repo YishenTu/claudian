@@ -9,6 +9,17 @@
   }
 }
 
+@keyframes attention-title-pulse {
+  0%,
+  100% {
+    color: var(--text-normal);
+  }
+
+  50% {
+    color: var(--text-muted);
+  }
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

@@ -117,6 +117,7 @@ export class TabManager implements TabManagerInterface {
   >();
   private providerResourceGenerations = new Map<ProviderId, number>();
   private tabCommandContextRevisions = new Map<TabId, number>();
+  private tabActivationRevisions = new Map<TabId, number>();
 
   /** Guard to prevent concurrent tab switches. */
   private isSwitchingTab = false;
@@ -204,9 +205,24 @@ export class TabManager implements TabManagerInterface {
       onTitleChanged: (title) => {
         this.callbacks.onTabTitleChanged?.(tab.id, title);
       },
-      onAttentionChanged: (needsAttention) => {
-        this.callbacks.onTabAttentionChanged?.(tab.id, needsAttention);
-        if (!needsAttention) tab.executionCoordinator?.notifyMayCool();
+      onAttentionChanged: (attention) => {
+        this.callbacks.onTabAttentionChanged?.(tab.id, attention);
+        if (attention?.kind !== 'action-required') {
+          tab.executionCoordinator?.notifyMayCool();
+        }
+      },
+      captureReviewableSettlement: () => {
+        const shouldReport = this.isTabAlive(tab) && this.activeTabId !== tab.id;
+        const activationRevision = this.tabActivationRevisions.get(tab.id) ?? 0;
+        return () => {
+          if (
+            shouldReport
+            && this.isTabAlive(tab)
+            && (this.tabActivationRevisions.get(tab.id) ?? 0) === activationRevision
+          ) {
+            tab.state.markReviewRequired();
+          }
+        };
       },
       onConversationIdChanged: (conversationId) => {
         this.bumpTabCommandContextRevision(tab.id);
@@ -217,6 +233,7 @@ export class TabManager implements TabManagerInterface {
     });
 
     this.tabCommandContextRevisions.set(tab.id, 0);
+    this.tabActivationRevisions.set(tab.id, 0);
     this.ensureProviderCommandDiscoveryStore(tab.id);
 
     // Initialize UI components with provider catalog
@@ -284,7 +301,12 @@ export class TabManager implements TabManagerInterface {
 
       // Activate new tab
       this.activeTabId = tabId;
+      this.tabActivationRevisions.set(
+        tabId,
+        (this.tabActivationRevisions.get(tabId) ?? 0) + 1,
+      );
       activateTab(tab);
+      tab.state.acknowledgeReview();
       this.callbacks.onActiveTabChanged?.(previousTabId, tabId);
 
       const providerId = tab.providerId;
@@ -392,6 +414,7 @@ export class TabManager implements TabManagerInterface {
     this.providerRuntimeCommandCache.delete(tabId);
     this.providerCommandDiscoveryStores.delete(tabId);
     this.tabCommandContextRevisions.delete(tabId);
+    this.tabActivationRevisions.delete(tabId);
     this.tabs.delete(tabId);
     const wasActiveTab = this.activeTabId === tabId;
     if (wasActiveTab) {
@@ -1251,6 +1274,7 @@ export class TabManager implements TabManagerInterface {
     this.providerRuntimeCommandCache.clear();
     this.providerCommandDiscoveryStores.clear();
     this.tabCommandContextRevisions.clear();
+    this.tabActivationRevisions.clear();
     this.activeTabId = null;
   }
 }

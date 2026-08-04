@@ -1205,6 +1205,7 @@ describe('ClaudianView tab controls', () => {
         onSelectConversation: expect.any(Function),
         preserveListState: true,
         searchQuery: 'roadmap',
+        showAttentionState: true,
         showOpenStateActions: false,
         showOpenStateLabels: false,
         showPinnedSection: true,
@@ -1237,6 +1238,7 @@ describe('ClaudianView tab controls', () => {
       expect.objectContaining({
         organization: 'list',
         sort: 'last-updated',
+        showAttentionState: false,
         showPinnedSection: false,
         showArchivedSection: true,
         sessionScope: 'archived',
@@ -1245,6 +1247,52 @@ describe('ClaudianView tab controls', () => {
         collapsedGroupKeys: expect.any(Set),
       }),
     );
+  });
+
+  it('projects local and cross-view runtime attention into session status', () => {
+    const activeTab = {
+      conversationId: 'active',
+      id: 'tab-active',
+      state: {
+        attention: { kind: 'action-required', since: 20 },
+        isStreaming: true,
+      },
+    };
+    const localTab = {
+      conversationId: 'local',
+      id: 'tab-local',
+      state: {
+        attention: { kind: 'review', since: 10 },
+        isStreaming: false,
+      },
+    };
+    const crossViewTab = {
+      state: {
+        attention: { kind: 'review', since: 5 },
+        isStreaming: false,
+      },
+    };
+    const otherView = {
+      getTabManager: () => ({ getTab: () => crossViewTab }),
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.tabManager = {
+      getActiveTab: () => activeTab,
+      getAllTabs: () => [activeTab, localTab],
+    };
+    view.plugin = {
+      findConversationAcrossViews: (id: string) => id === 'cross'
+        ? { tabId: 'tab-cross', view: otherView }
+        : null,
+    };
+
+    expect(view.getHistoryConversationStatus('active').attention)
+      .toEqual({ kind: 'action-required', since: 20 });
+    expect(view.getHistoryConversationStatus('local').attention)
+      .toEqual({ kind: 'review', since: 10 });
+    expect(view.getHistoryConversationStatus('cross').attention)
+      .toEqual({ kind: 'review', since: 5 });
+    expect(view.getHistoryConversationStatus('closed').attention).toBeUndefined();
   });
 
   it('notifies other open views when runtime session navigation changes', () => {
@@ -1502,6 +1550,8 @@ describe('ClaudianView runtime tab initialization', () => {
         },
       },
       syncProviderBrandColor: jest.fn(),
+      notifyConversationNavigationChanged: jest.fn(),
+      updateTabBar: jest.fn(),
       updateInputLocation: jest.fn(),
       updateTabBarVisibility: jest.fn(),
       wireEventHandlers: jest.fn(),
@@ -1511,6 +1561,11 @@ describe('ClaudianView runtime tab initialization', () => {
 
     expect(createTab).toHaveBeenCalledTimes(1);
     expect(tabManagerCallbacks).not.toHaveProperty('onPersistedStateChanged');
+
+    tabManagerCallbacks.onTabAttentionChanged('tab-1', { kind: 'review', since: 1 });
+
+    expect(view.updateTabBar).toHaveBeenCalledTimes(1);
+    expect(view.notifyConversationNavigationChanged).toHaveBeenCalledTimes(1);
   });
 });
 

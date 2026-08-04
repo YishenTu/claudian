@@ -19,20 +19,26 @@ function createMockTab(options: Record<string, any>): any {
     draftModel: options.conversation ? null : 'claude-default',
     executionCoordinator: {
       copyInputsForFork: jest.fn().mockResolvedValue(undefined),
+      notifyMayCool: jest.fn(),
       prepare: jest.fn().mockResolvedValue(undefined),
       state: 'absent',
     },
     hydrationState: options.conversation ? 'idle' : 'ready',
     lifecycleState: options.lifecycleState ?? 'cold',
     providerId: options.conversation?.providerId ?? 'claude',
+    captureReviewableSettlement: options.captureReviewableSettlement ?? null,
     state: {
+      acknowledgeReview: jest.fn(),
+      attention: null,
       currentConversationId: options.conversation?.id ?? null,
       hasPendingConversationSave: false,
       isRewinding: false,
       isStreaming: false,
       isSwitchingConversation: false,
       messages: [],
+      markReviewRequired: jest.fn(),
       needsAttention: false,
+      requiresAction: false,
     },
     controllers: {
       conversationController: {
@@ -185,6 +191,48 @@ describe('TabManager provider execution orchestration', () => {
     expect(tab?.lifecycleState).toBe('cold');
     const options = mockCreateTab.mock.calls[0]?.[0];
     expect(options).not.toHaveProperty('onRuntimeInstalled');
+  });
+
+  it('acknowledges review attention when a tab becomes active', async () => {
+    const { manager } = createManager();
+    await manager.createTab();
+    const target = await manager.createTab(null, undefined, { activate: false });
+
+    await manager.switchToTab(target!.id);
+
+    expect(target!.state.acknowledgeReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks only inactive tabs when a reviewable turn settles', async () => {
+    const { manager } = createManager();
+    const active = await manager.createTab();
+    const background = await manager.createTab(null, undefined, { activate: false });
+    const activeSettlement = mockCreateTab.mock.calls[0]?.[0].captureReviewableSettlement;
+    const backgroundSettlement = mockCreateTab.mock.calls[1]?.[0].captureReviewableSettlement;
+
+    activeSettlement()();
+    backgroundSettlement()();
+
+    expect(active!.state.markReviewRequired).not.toHaveBeenCalled();
+    expect(background!.state.markReviewRequired).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses activity at completion and invalidates review after activation', async () => {
+    const { manager } = createManager();
+    const active = await manager.createTab();
+    const background = await manager.createTab(null, undefined, { activate: false });
+    const activeSettlement = mockCreateTab.mock.calls[0]?.[0].captureReviewableSettlement;
+    const backgroundSettlement = mockCreateTab.mock.calls[1]?.[0].captureReviewableSettlement;
+    const reportActiveCompletion = activeSettlement();
+    const reportBackgroundCompletion = backgroundSettlement();
+
+    await manager.switchToTab(background!.id);
+    await manager.switchToTab(active!.id);
+    reportActiveCompletion();
+    reportBackgroundCompletion();
+
+    expect(active!.state.markReviewRequired).not.toHaveBeenCalled();
+    expect(background!.state.markReviewRequired).not.toHaveBeenCalled();
   });
 
   it('allows unlimited runtime tabs independently from the warm process limit', async () => {

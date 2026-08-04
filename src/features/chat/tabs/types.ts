@@ -16,6 +16,7 @@ import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordin
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
+import type { TabAttention } from '../state/types';
 import type { BangBashModeManager } from '../ui/BangBashModeManager';
 import type { ComposerContextTray } from '../ui/ComposerContextTray';
 import type { FileContextManager } from '../ui/FileContext';
@@ -203,6 +204,9 @@ export interface TabData {
   /** Tab-manager-owned provider discovery callback retained across UI/runtime refreshes. */
   providerCatalogResolver: ProviderCatalogResolver | null;
 
+  /** Captures whether completed runtime work will need review after finalization. */
+  captureReviewableSettlement: (() => () => void) | null;
+
   /** Per-tab chat state. */
   state: ChatState;
 
@@ -256,7 +260,7 @@ export interface TabManagerCallbacks {
   onTabTitleChanged?: (tabId: TabId, title: string) => void;
 
   /** Called when tab attention state changes (approval pending, etc.). */
-  onTabAttentionChanged?: (tabId: TabId, needsAttention: boolean) => void;
+  onTabAttentionChanged?: (tabId: TabId, attention: TabAttention) => void;
 
   /** Called when a tab's conversation changes (loaded different conversation in same tab). */
   onTabConversationChanged?: (tabId: TabId, conversationId: string | null) => void;

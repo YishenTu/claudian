@@ -25,6 +25,7 @@ import { findRewindContext } from '../rewind';
 import type { SubagentManager } from '../services/SubagentManager';
 import { organizeSessionList } from '../session-manager/SessionListOrganizer';
 import type { ChatState } from '../state/ChatState';
+import type { TabAttention } from '../state/types';
 import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type { ExternalContextSelector, McpServerSelector } from '../ui/InputToolbar';
@@ -96,6 +97,7 @@ export type HistoryConversationOpenState = 'closed' | 'open' | 'current';
 export type HistoryConversationStatus = {
   openState: HistoryConversationOpenState;
   isRunning: boolean;
+  attention?: TabAttention;
   location?: 'current-view' | 'other-view';
   tabIndex?: number;
 };
@@ -119,6 +121,7 @@ type HistoryRenderOptions = {
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
   preserveListState?: boolean;
+  showAttentionState?: boolean;
   showPinnedSection?: boolean;
   showArchivedSection?: boolean;
   sessionScope?: 'active' | 'archived';
@@ -895,14 +898,23 @@ export class ConversationController {
 
       let itemContainer = sessionList;
       if (organization === 'linked-note') {
-        const hasRunningConversation = section.conversations.some(conversation => (
-          this.getHistoryConversationStatusForMetadata(conversation, options).isRunning
+        const conversationStatuses = section.conversations.map(conversation => (
+          this.getHistoryConversationStatusForMetadata(conversation, options)
         ));
+        const hasRunningConversation = conversationStatuses.some(({ isRunning }) => isRunning);
+        const hasAttentionConversation = options.showAttentionState === true
+          && options.sessionScope !== 'archived'
+          && conversationStatuses.some(({ attention }) => (
+            attention !== null && attention !== undefined
+          ));
         const groupHeader = sessionList.createDiv({
           cls: [
             'claudian-session-group-header',
             `claudian-session-group-header--${section.kind}`,
-          ].join(' '),
+            hasAttentionConversation && isCollapsed
+              ? 'claudian-session-group-header--attention'
+              : '',
+          ].filter(Boolean).join(' '),
         });
         groupHeader.setAttribute('data-group-kind', section.kind);
         groupHeader.setAttribute('role', 'button');
@@ -945,7 +957,6 @@ export class ConversationController {
           setIcon(groupRunningIndicator, 'loader-2');
           groupRunningIndicator.setAttribute('aria-label', 'Running');
         }
-
         const groupBody = sessionList.createDiv({
           cls: [
             'claudian-session-group-body',
@@ -963,6 +974,9 @@ export class ConversationController {
             'claudian-session-group-running-indicator--visible',
             collapsed,
           );
+          if (hasAttentionConversation) {
+            groupHeader.toggleClass('claudian-session-group-header--attention', collapsed);
+          }
           options.onGroupCollapseChange?.(section.key, collapsed);
           options.onRerender();
         };
@@ -1067,6 +1081,10 @@ export class ConversationController {
       options,
     );
     const { openState, isRunning } = conversationStatus;
+    const showAttentionState = options.showAttentionState === true
+      && options.sessionScope !== 'archived'
+      && conversationStatus.attention !== null
+      && conversationStatus.attention !== undefined;
     const isCurrent = openState === 'current';
     const isOpen = openState === 'open';
     const item = list.createDiv({
@@ -1075,6 +1093,7 @@ export class ConversationController {
         isCurrent ? 'active' : '',
         isOpen ? 'open' : '',
         isRunning ? 'running' : '',
+        showAttentionState ? 'claudian-history-item--attention' : '',
         options.allowConversationSelection === false
           ? 'claudian-history-item--noninteractive'
           : '',
@@ -1215,44 +1234,46 @@ export class ConversationController {
     };
 
     if (options.sessionActionMode === 'active') {
-      const isPinned = conversation.isPinned === true;
-      const pinBtn = actions.createEl('button', {
-        cls: 'claudian-action-btn claudian-pin-btn',
-      });
-      setIcon(pinBtn, isPinned ? 'pin-off' : 'pin');
-      pinBtn.setAttribute('aria-label', isPinned ? 'Unpin' : 'Pin');
-      pinBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        runConversationAction(
-          () => this.runHistoryAction(
-            () => options.onSetConversationPinned?.(conversation.id, !isPinned),
-            isPinned ? 'Failed to unpin session' : 'Failed to pin session',
-          ),
-          isPinned ? 'Failed to unpin session' : 'Failed to pin session',
-        );
-      });
-
-      const archiveBtn = actions.createEl('button', {
-        cls: 'claudian-action-btn claudian-archive-btn',
-      });
-      setIcon(archiveBtn, 'archive');
-      archiveBtn.setAttribute(
-        'aria-label',
-        isRunning ? 'Cannot archive a running session' : 'Archive',
-      );
-      if (isRunning) {
-        archiveBtn.setAttribute('disabled', '');
-      } else {
-        archiveBtn.addEventListener('click', (event) => {
+      if (!showAttentionState) {
+        const isPinned = conversation.isPinned === true;
+        const pinBtn = actions.createEl('button', {
+          cls: 'claudian-action-btn claudian-pin-btn',
+        });
+        setIcon(pinBtn, isPinned ? 'pin-off' : 'pin');
+        pinBtn.setAttribute('aria-label', isPinned ? 'Unpin' : 'Pin');
+        pinBtn.addEventListener('click', (event) => {
           event.stopPropagation();
           runConversationAction(
             () => this.runHistoryAction(
-              () => options.onSetConversationArchived?.(conversation.id, true),
-              'Failed to archive session',
+              () => options.onSetConversationPinned?.(conversation.id, !isPinned),
+              isPinned ? 'Failed to unpin session' : 'Failed to pin session',
             ),
-            'Failed to archive session',
+            isPinned ? 'Failed to unpin session' : 'Failed to pin session',
           );
         });
+
+        const archiveBtn = actions.createEl('button', {
+          cls: 'claudian-action-btn claudian-archive-btn',
+        });
+        setIcon(archiveBtn, 'archive');
+        archiveBtn.setAttribute(
+          'aria-label',
+          isRunning ? 'Cannot archive a running session' : 'Archive',
+        );
+        if (isRunning) {
+          archiveBtn.setAttribute('disabled', '');
+        } else {
+          archiveBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            runConversationAction(
+              () => this.runHistoryAction(
+                () => options.onSetConversationArchived?.(conversation.id, true),
+                'Failed to archive session',
+              ),
+              'Failed to archive session',
+            );
+          });
+        }
       }
     } else if (options.sessionActionMode === 'archived') {
       const restoreBtn = actions.createEl('button', {

@@ -87,6 +87,10 @@ function requestedUserMessageStarted(
 }
 
 function createFixture(overrides: Record<string, unknown> = {}) {
+  const {
+    onReviewableSettlement,
+    ...dependencyOverrides
+  } = overrides;
   const state = new ChatState();
   state.currentConversationId = 'conversation-1';
   const input = createInput();
@@ -191,7 +195,10 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     }) as any,
     getTabProviderId: () => 'claude',
     ensureExecutionInitialized: jest.fn().mockResolvedValue(true),
-    ...overrides,
+    ...dependencyOverrides,
+    ...(typeof onReviewableSettlement === 'function'
+      ? { captureReviewableSettlement: () => onReviewableSettlement as () => void }
+      : {}),
   } as unknown as InputControllerDeps;
   return {
     controller: new InputController(deps),
@@ -1410,6 +1417,241 @@ describe('InputController coordinator execution', () => {
 
     expect(restoreMode).toHaveBeenCalledTimes(1);
     expect(fixture.deps.conversationController.save).toHaveBeenCalled();
+  });
+
+  it('reports a terminal completed turn as reviewable', async () => {
+    const onReviewableSettlement = jest.fn();
+    const fixture = createFixture({ onReviewableSettlement });
+
+    await fixture.controller.sendMessage({ content: 'finish this' });
+
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a terminal accepted error as reviewable', async () => {
+    const onReviewableSettlement = jest.fn();
+    const fixture = createFixture({ onReviewableSettlement });
+    fixture.coordinator.execute.mockResolvedValueOnce({
+      accepted: true,
+      error: new Error('provider failed'),
+      planCompleted: false,
+      status: 'error',
+    });
+
+    await fixture.controller.sendMessage({ content: 'finish this' });
+
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['cancelled', 'invalidated', 'missing-session'] as const)(
+    'does not report a %s turn as reviewable',
+    async (status) => {
+      const onReviewableSettlement = jest.fn();
+      const fixture = createFixture({ onReviewableSettlement });
+      fixture.coordinator.execute.mockResolvedValueOnce({
+        accepted: status !== 'missing-session',
+        missingSessionResolution: status === 'missing-session' ? 'reset' : undefined,
+        planCompleted: false,
+        status,
+      });
+
+      await fixture.controller.sendMessage({ content: 'finish this' });
+
+      expect(onReviewableSettlement).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not report a definite pre-handoff failure as reviewable', async () => {
+    const onReviewableSettlement = jest.fn();
+    const fixture = createFixture({ onReviewableSettlement });
+    fixture.coordinator.execute.mockRejectedValueOnce(
+      new ChatExecutionPreHandoffError('not handed off'),
+    );
+
+    await fixture.controller.sendMessage({ content: 'finish this' });
+
+    expect(onReviewableSettlement).not.toHaveBeenCalled();
+  });
+
+  it('defers review attention while a queued turn continuation is scheduled', async () => {
+    const onReviewableSettlement = jest.fn();
+    const fixture = createFixture({ onReviewableSettlement });
+    fixture.state.queuedMessage = {
+      canvasContext: null,
+      content: 'continue',
+      editorContext: null,
+    };
+    jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
+
+    await fixture.controller.sendMessage({ content: 'first turn' });
+
+    expect(onReviewableSettlement).not.toHaveBeenCalled();
+  });
+
+  it('reports deferred review when the continuation fails before handoff', async () => {
+    const onReviewableSettlement = jest.fn();
+    const fixture = createFixture({ onReviewableSettlement });
+    fixture.state.queuedMessage = {
+      canvasContext: null,
+      content: 'continue',
+      editorContext: null,
+    };
+    jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
+
+    await fixture.controller.sendMessage({ content: 'first turn' });
+    fixture.state.queuedMessage = null;
+    fixture.coordinator.execute.mockRejectedValueOnce(
+      new ChatExecutionPreHandoffError('continuation not handed off'),
+    );
+
+    await fixture.controller.sendMessage({ content: 'continue' });
+
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports deferred review when continuation initialization fails', async () => {
+    const onReviewableSettlement = jest.fn();
+    const fixture = createFixture({ onReviewableSettlement });
+    fixture.state.queuedMessage = {
+      canvasContext: null,
+      content: 'continue',
+      editorContext: null,
+    };
+    jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
+
+    await fixture.controller.sendMessage({ content: 'first turn' });
+    fixture.state.queuedMessage = null;
+    jest.mocked(fixture.deps.ensureExecutionInitialized!).mockResolvedValueOnce(false);
+
+    await fixture.controller.sendMessage({ content: 'continue' });
+
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports deferred review when continuation exits during preflight', async () => {
+    const onReviewableSettlement = jest.fn();
+    const fixture = createFixture({ onReviewableSettlement });
+    fixture.state.queuedMessage = {
+      canvasContext: null,
+      content: 'continue',
+      editorContext: null,
+    };
+    jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
+
+    await fixture.controller.sendMessage({ content: 'first turn' });
+    fixture.state.queuedMessage = null;
+    fixture.state.isRewinding = true;
+
+    await fixture.controller.sendMessage({ content: 'continue' });
+
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports completed work when terminal persistence fails', async () => {
+    const onReviewableSettlement = jest.fn();
+    const fixture = createFixture({ onReviewableSettlement });
+    jest.mocked(fixture.deps.conversationController.save).mockRejectedValueOnce(
+      new Error('save failed'),
+    );
+
+    await expect(fixture.controller.sendMessage({ content: 'finish this' }))
+      .rejects.toThrow('save failed');
+
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves review when auto-implement cannot initialize', async () => {
+    const onReviewableSettlement = jest.fn();
+    const ensureExecutionInitialized = jest.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const fixture = createFixture({
+      ensureExecutionInitialized,
+      onReviewableSettlement,
+    });
+    fixture.coordinator.execute.mockResolvedValueOnce({
+      accepted: true,
+      planCompleted: true,
+      status: 'completed',
+    });
+    jest.spyOn(fixture.controller as any, 'showPlanApproval').mockResolvedValue({
+      decision: { type: 'implement' },
+      invalidated: false,
+    });
+
+    await fixture.controller.sendMessage({ content: 'make a plan' });
+    await Promise.resolve();
+
+    expect(ensureExecutionInitialized).toHaveBeenCalledTimes(2);
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports deferred review before a non-replacing built-in command', async () => {
+    const onReviewableSettlement = jest.fn();
+    const fixture = createFixture({ onReviewableSettlement });
+    fixture.state.queuedMessage = {
+      canvasContext: null,
+      content: '/add-dir Projects',
+      editorContext: null,
+    };
+    jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
+
+    await fixture.controller.sendMessage({ content: 'first turn' });
+    fixture.state.queuedMessage = null;
+    await fixture.controller.sendMessage({ content: '/add-dir Projects' });
+
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards deferred review when clear replaces the conversation', async () => {
+    const onReviewableSettlement = jest.fn();
+    const fixture = createFixture({ onReviewableSettlement });
+    fixture.state.queuedMessage = {
+      canvasContext: null,
+      content: '/clear',
+      editorContext: null,
+    };
+    jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
+
+    await fixture.controller.sendMessage({ content: 'first turn' });
+    fixture.state.queuedMessage = null;
+    await fixture.controller.sendMessage({ content: '/clear' });
+
+    expect(onReviewableSettlement).not.toHaveBeenCalled();
+  });
+
+  it('marks the local post-plan prompt action-required until it resolves', async () => {
+    const fixture = createFixture();
+    const planDecision = deferred<{
+      decision: { type: 'cancel' };
+      invalidated: boolean;
+    }>();
+    fixture.coordinator.execute.mockResolvedValueOnce({
+      accepted: true,
+      planCompleted: true,
+      status: 'completed',
+    });
+    const showPlanApproval = jest.spyOn(fixture.controller as any, 'showPlanApproval')
+      .mockReturnValue(planDecision.promise);
+
+    const sendPromise = fixture.controller.sendMessage({ content: 'make a plan' });
+    await waitForCall(showPlanApproval as unknown as jest.Mock);
+
+    expect(fixture.state.requiresAction).toBe(true);
+
+    planDecision.resolve({ decision: { type: 'cancel' }, invalidated: false });
+    await sendPromise;
+
+    expect(fixture.state.requiresAction).toBe(false);
+  });
+
+  it('acknowledges stale review when a new provider turn starts', async () => {
+    const fixture = createFixture();
+    fixture.state.markReviewRequired();
+
+    await fixture.controller.sendMessage({ content: 'continue working' });
+
+    expect(fixture.state.attention).toBeNull();
   });
 
   it('hands an approved new-session plan to the active layout', async () => {

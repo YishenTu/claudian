@@ -287,7 +287,10 @@ export class ClaudianView extends ItemView {
         },
         onTabRewindingChanged: () => this.updateTabBar(),
         onTabTitleChanged: () => this.updateTabBar(),
-        onTabAttentionChanged: () => this.updateTabBar(),
+        onTabAttentionChanged: () => {
+          this.updateTabBar();
+          this.notifyConversationNavigationChanged();
+        },
         onTabConversationChanged: () => {
           this.updateTabBar();
           this.notifyConversationNavigationChanged();
@@ -778,6 +781,7 @@ export class ClaudianView extends ItemView {
             noteExists: (notePath: string) => this.noteExists(notePath),
             searchQuery: this.isSessionSearchActive ? this.sessionSearchQuery : undefined,
             showOpenStateActions: false,
+            showAttentionState: !isArchiveView,
             showPinnedSection: !isArchiveView,
             showArchivedSection: isArchiveView,
             collapsedGroupKeys: this.getDisplayedCollapsedSessionGroupKeys(),
@@ -1564,6 +1568,7 @@ export class ClaudianView extends ItemView {
     const activeTab = this.tabManager?.getActiveTab();
     if (activeTab?.conversationId === conversationId) {
       return {
+        attention: activeTab.state.attention,
         openState: 'current',
         isRunning: activeTab.state.isStreaming,
         location: 'current-view',
@@ -1574,6 +1579,7 @@ export class ClaudianView extends ItemView {
     const localTab = this.findTabWithConversation(conversationId);
     if (localTab) {
       return {
+        attention: localTab.state.attention,
         openState: 'open',
         isRunning: localTab.state.isStreaming,
         location: 'current-view',
@@ -1585,6 +1591,7 @@ export class ClaudianView extends ItemView {
     if (crossViewResult && crossViewResult.view !== this) {
       const crossViewTab = crossViewResult.view.getTabManager()?.getTab(crossViewResult.tabId);
       return {
+        attention: crossViewTab?.state.attention,
         openState: 'open',
         isRunning: crossViewTab?.state.isStreaming ?? false,
         location: 'other-view',
