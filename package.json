@@ -1,7 +1,7 @@
 {
-  "name": "claudian",
-  "version": "2.0.44",
-  "description": "Claudian - Claude Code embedded in Obsidian sidebar",
+  "name": "oh-my-claudian",
+  "version": "2.1.0",
+  "description": "Coding agents embedded in an Obsidian sidebar, including Oh My Pi support",
   "main": "main.js",
   "engines": {
     "node": ">=24 <25"
@@ -30,7 +30,7 @@
     "productivity",
     "ide"
   ],
-  "author": "Yishen Tu",
+  "author": "Lee",
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -8,6 +8,8 @@
   --claudian-brand-codex-rgb: 208, 208, 208;
   --claudian-brand-opencode: #B8B8B8;
   --claudian-brand-opencode-rgb: 184, 184, 184;
+  --claudian-brand-omp: #00B8D9;
+  --claudian-brand-omp-rgb: 0, 184, 217;
   --claudian-brand-pi: #ffffff;
   --claudian-brand-pi-rgb: 255, 255, 255;
   --claudian-brand-grok: #ffffff;
@@ -42,6 +44,11 @@ body.theme-light .claudian-container {
 .claudian-container[data-provider="opencode"] {
   --claudian-brand: var(--claudian-brand-opencode);
   --claudian-brand-rgb: var(--claudian-brand-opencode-rgb);
+}
+
+.claudian-container[data-provider="omp"] {
+  --claudian-brand: var(--claudian-brand-omp);
+  --claudian-brand-rgb: var(--claudian-brand-omp-rgb);
 }
 
 .claudian-container[data-provider="pi"] {

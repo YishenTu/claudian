@@ -11,6 +11,7 @@ import {
   rmSync,
 } from 'fs';
 import rendererSafeUnrefHelpers from './scripts/rendererSafeUnref.js';
+import { resolveObsidianPluginPath } from './scripts/obsidianPluginPath.mjs';
 
 const {
   findUnsafeTimerUnrefSites,
@@ -131,8 +132,9 @@ function createPatchRendererUnsafeUnref(outputPaths) {
 
 // Obsidian plugin folder path (set via OBSIDIAN_VAULT env var or .env.local)
 const OBSIDIAN_VAULT = process.env.OBSIDIAN_VAULT;
+const PLUGIN_MANIFEST = JSON.parse(readFileSync('manifest.json', 'utf-8'));
 const OBSIDIAN_PLUGIN_PATH = OBSIDIAN_VAULT && existsSync(OBSIDIAN_VAULT)
-  ? path.join(OBSIDIAN_VAULT, '.obsidian', 'plugins', 'claudian')
+  ? resolveObsidianPluginPath(OBSIDIAN_VAULT, PLUGIN_MANIFEST)
   : null;
 
 // Plugin to copy built files to Obsidian plugin folder

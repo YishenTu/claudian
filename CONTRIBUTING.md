@@ -42,18 +42,9 @@ Please also:
 
 ## New Provider Policy
 
-Pull requests that add a new provider are not accepted.
+Provider additions must include focused tests and a clear explanation of the runtime, permission, history, and settings behavior they introduce.
 
-This is a maintenance and product-quality boundary:
-
-1. I am the sole maintainer of this project and remain responsible for every integration after it is merged. If I do not use a provider myself, I cannot test and maintain its integration responsibly over time.
-2. Integrated providers must offer a broadly consistent feature set and user experience. Past attempts have shown that partial integrations are difficult to bring to parity and keep reliable.
-3. Some provider CLIs do not currently expose the capabilities required for a complete integration. For example, Antigravity CLI does not expose ACP or a comparable integration protocol, and Cursor CLI does not allow the system prompt to be customized fully.
-4. Integrating a separate CLI from every model vendor is not sustainable. OpenCode and Pi already support multiple model vendors through API configuration. Codex and Claude Code can also use alternative model endpoints through configuration. Inside an Obsidian vault, switching the underlying harness usually provides limited additional value compared with the ongoing integration and maintenance cost.
-
-You may open an issue to describe an unmet provider-related use case, but please do not submit a new-provider implementation. An issue does not imply that the provider will be added.
-
-Contributions that improve an existing provider are welcome when they follow the focused pull request requirements above and preserve the expected cross-provider experience.
+Provider contributions should preserve provider isolation, use provider-native behavior where possible, and document any capabilities that are intentionally unavailable. Changes that improve an existing provider should follow the same focused pull request requirements.
 
 ## Development
 

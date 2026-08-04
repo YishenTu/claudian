@@ -1,10 +1,10 @@
 {
-  "id": "realclaudian",
-  "name": "Claudian",
-  "version": "2.0.44",
+  "id": "oh-my-claudian",
+  "name": "Oh My Claudian",
+  "version": "2.1.0",
   "minAppVersion": "1.7.2",
-  "description": "Embeds Claude Code, Codex, and other coding agents as AI collaborators in your vault. Your vault becomes their working directory, giving them capabilities for file reads and writes, search, bash commands, and multi-step workflows.",
-  "author": "Yishen Tu",
-  "authorUrl": "https://github.com/YishenTu",
+  "description": "Embeds coding agents as AI collaborators in your vault, including Oh My Pi support.",
+  "author": "Lee",
+  "authorUrl": "https://github.com/lee259",
   "isDesktopOnly": true
 }

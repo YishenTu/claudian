@@ -5,7 +5,7 @@ import type {
   ChatRewindMode,
 } from '../../../core/execution';
 import type { TitleGenerationService } from '../../../core/providers/types';
-import type { ChatMessage, Conversation, ProviderId } from '../../../core/types';
+import type { ChatMessage, Conversation, ProviderId, UsageInfo } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { confirm } from '../../../shared/modals/ConfirmModal';
 import { extractUserDisplayContent } from '../../../utils/context';
@@ -71,6 +71,7 @@ export interface ConversationControllerDeps {
   ensureExecutionInitialized?: () => Promise<boolean>;
   getProviderId?: () => ProviderId;
   getSelectedModel?: () => string | null;
+  getInitialUsage?: (providerId: ProviderId, model: string) => UsageInfo | null;
   ensureExecutionForConversation?: (conversation: Conversation | null) => Promise<void>;
   dismissPendingInlinePrompts?: () => void;
   awaitBackgroundWork?: () => Promise<void>;
@@ -586,7 +587,12 @@ export class ConversationController {
 
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
-    state.usage = conversation.usage ?? null;
+    const providerId = conversation.providerId ?? this.deps.getProviderId?.();
+    const model = conversation.selectedModel ?? this.deps.getSelectedModel?.() ?? '';
+    state.usage = conversation.usage
+      ?? (providerId
+        ? this.deps.getInitialUsage?.(providerId, model) ?? null
+        : null);
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
     state.hasPendingConversationSave = false;
 

@@ -72,7 +72,7 @@
     }
   },
   "settings": {
-    "title": "Claudian Settings",
+    "title": "Oh My Claudian Settings",
     "tabs": {
       "general": "General",
       "claude": "Claude",
@@ -86,7 +86,7 @@
     "models": "Models",
     "experimental": "Experimental",
     "userName": {
-      "name": "What should Claudian call you?",
+      "name": "What should Oh My Claudian call you?",
       "desc": "Your name for personalized greetings (leave empty for generic greetings)"
     },
     "excludedTags": {
@@ -165,7 +165,7 @@
     },
     "hiddenSlashCommands": {
       "name": "Hidden Commands and Skills",
-      "desc": "Hide specific commands and skills from the dropdown. Useful for hiding Claude Code entries that are not relevant to Claudian. Enter names without the leading slash, one per line.",
+      "desc": "Hide specific commands and skills from the dropdown. Useful for hiding Claude Code entries that are not relevant to Oh My Claudian. Enter names without the leading slash, one per line.",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {
@@ -297,7 +297,7 @@
       "desc": "Show Write and Edit diffs expanded when they first appear."
     },
     "chatViewPlacement": {
-      "name": "Open Claudian in",
+      "name": "Open Oh My Claudian in",
       "desc": "Choose where the chat panel opens when it is created",
       "rightSidebar": "Right sidebar",
       "leftSidebar": "Left sidebar",
@@ -320,13 +320,13 @@
     "providerEnablement": {
       "name": "Enable {provider}",
       "desc": "Make enabled {provider} models available for new conversations. Existing sessions are preserved when disabled.",
-      "lastProviderWarning": "At least one provider must remain enabled for Claudian to work.",
+      "lastProviderWarning": "At least one provider must remain enabled for Oh My Claudian to work.",
       "noModelsWarning": "No {provider} models are enabled. Go to Models below and enable at least one model."
     },
     "codex": {
       "installationMethod": {
         "name": "Installation method",
-        "desc": "How Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.",
+        "desc": "How Oh My Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.",
         "nativeWindows": "Native Windows",
         "wsl": "WSL"
       },
@@ -377,7 +377,7 @@
       },
       "mcp": {
         "descBeforeCommand": "Codex manages MCP servers via its own CLI. Configure with ",
-        "descAfterCommand": " and they will be available in Claudian. ",
+        "descAfterCommand": " and they will be available in Oh My Claudian. ",
         "learnMore": "Learn more"
       },
       "environment": {

@@ -72,7 +72,7 @@
     }
   },
   "settings": {
-    "title": "Настройки Claudian",
+    "title": "Настройки Oh My Claudian",
     "tabs": {
       "general": "Общие",
       "claude": "Claude",
@@ -86,7 +86,7 @@
     "models": "Модели",
     "experimental": "Экспериментальное",
     "userName": {
-      "name": "Как Claudian должен обращаться к вам?",
+      "name": "Как Oh My Claudian должен обращаться к вам?",
       "desc": "Ваше имя для персонализированных приветствий (оставьте пустым для общих приветствий)"
     },
     "excludedTags": {
@@ -165,7 +165,7 @@
     },
     "hiddenSlashCommands": {
       "name": "Скрытые команды и навыки",
-      "desc": "Скрыть определённые команды и навыки из выпадающего списка. Полезно для скрытия записей Claude Code, которые не актуальны для Claudian. Вводите имена без начального слэша, по одному на строку.",
+      "desc": "Скрыть определённые команды и навыки из выпадающего списка. Полезно для скрытия записей Claude Code, которые не актуальны для Oh My Claudian. Вводите имена без начального слэша, по одному на строку.",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {
@@ -297,7 +297,7 @@
       "desc": "Показывать diff для Write и Edit раскрытым при первом появлении."
     },
     "chatViewPlacement": {
-      "name": "Открывать Claudian в",
+      "name": "Открывать Oh My Claudian в",
       "desc": "Выберите, где открывается панель чата при создании",
       "rightSidebar": "Правая боковая панель",
       "leftSidebar": "Левая боковая панель",
@@ -320,13 +320,13 @@
     "providerEnablement": {
       "name": "Включить {provider}",
       "desc": "Сделать включённые модели {provider} доступными для новых бесед. Существующие сеансы сохраняются после отключения.",
-      "lastProviderWarning": "Для работы Claudian должен быть включён хотя бы один провайдер.",
+      "lastProviderWarning": "Для работы Oh My Claudian должен быть включён хотя бы один провайдер.",
       "noModelsWarning": "Нет включённых моделей {provider}. В разделе «Модели» ниже включите хотя бы одну модель."
     },
     "codex": {
       "installationMethod": {
         "name": "Способ установки",
-        "desc": "Как Claudian должен запускать Codex в Windows. Нативный Windows использует путь к Windows-исполняемому файлу. WSL запускает Linux CLI внутри выбранного дистрибутива.",
+        "desc": "Как Oh My Claudian должен запускать Codex в Windows. Нативный Windows использует путь к Windows-исполняемому файлу. WSL запускает Linux CLI внутри выбранного дистрибутива.",
         "nativeWindows": "Нативный Windows",
         "wsl": "WSL"
       },
@@ -377,7 +377,7 @@
       },
       "mcp": {
         "descBeforeCommand": "Codex управляет MCP-серверами через собственный CLI. Настройте через ",
-        "descAfterCommand": ", и они будут доступны в Claudian. ",
+        "descAfterCommand": ", и они будут доступны в Oh My Claudian. ",
         "learnMore": "Подробнее"
       },
       "environment": {

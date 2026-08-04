@@ -18,6 +18,7 @@ import type {
   SlashCommand,
   SubagentInfo,
   ToolCallInfo,
+  UsageInfo,
 } from '../types';
 import type { ProviderId } from '../types/provider';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
@@ -288,6 +289,9 @@ export interface ProviderChatUIConfig {
 
   /** Default reasoning value for the model. */
   getDefaultReasoningValue(model: string, settings: Record<string, unknown>): string;
+
+  /** Optional provider-owned context snapshot for a restored conversation without usage data. */
+  getInitialUsage?(model: string, settings: Record<string, unknown>): UsageInfo | null;
 
   /** Context window size in tokens. */
   getContextWindowSize(

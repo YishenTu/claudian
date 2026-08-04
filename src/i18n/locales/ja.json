@@ -72,7 +72,7 @@
     }
   },
   "settings": {
-    "title": "Claudian 設定",
+    "title": "Oh My Claudian 設定",
     "tabs": {
       "general": "一般",
       "claude": "Claude",
@@ -86,7 +86,7 @@
     "models": "モデル",
     "experimental": "実験的機能",
     "userName": {
-      "name": "Claudian はどのように呼びますか？",
+      "name": "Oh My Claudian はどのように呼びますか？",
       "desc": "パーソナライズされた挨拶に使用する名前（空欄で一般の挨拶）"
     },
     "excludedTags": {
@@ -165,7 +165,7 @@
     },
     "hiddenSlashCommands": {
       "name": "非表示のコマンドとスキル",
-      "desc": "ドロップダウンから特定のコマンドとスキルを非表示にします。Claudian に関係のない Claude Code の項目を隠すのに便利です。先頭のスラッシュなしで名前を1行に1つ入力してください。",
+      "desc": "ドロップダウンから特定のコマンドとスキルを非表示にします。Oh My Claudian に関係のない Claude Code の項目を隠すのに便利です。先頭のスラッシュなしで名前を1行に1つ入力してください。",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {
@@ -297,7 +297,7 @@
       "desc": "Write と Edit の diff が最初に表示されるとき、展開した状態で表示します。"
     },
     "chatViewPlacement": {
-      "name": "Claudian を開く場所",
+      "name": "Oh My Claudian を開く場所",
       "desc": "チャットパネルを作成するときに開く場所を選択します",
       "rightSidebar": "右サイドバー",
       "leftSidebar": "左サイドバー",
@@ -320,13 +320,13 @@
     "providerEnablement": {
       "name": "{provider} を有効化",
       "desc": "有効にした {provider} モデルを新しい会話で使用できるようにします。無効にしても既存のセッションは保持されます。",
-      "lastProviderWarning": "Claudian を使用するには、少なくとも 1 つのプロバイダーを有効にする必要があります。",
+      "lastProviderWarning": "Oh My Claudian を使用するには、少なくとも 1 つのプロバイダーを有効にする必要があります。",
       "noModelsWarning": "有効な {provider} モデルがありません。下の「モデル」で少なくとも1つのモデルを有効にしてください。"
     },
     "codex": {
       "installationMethod": {
         "name": "インストール方式",
-        "desc": "Windows で Claudian が Codex を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",
+        "desc": "Windows で Oh My Claudian が Codex を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",
         "nativeWindows": "ネイティブ Windows",
         "wsl": "WSL"
       },
@@ -377,7 +377,7 @@
       },
       "mcp": {
         "descBeforeCommand": "Codex は独自の CLI で MCP サーバーを管理します。",
-        "descAfterCommand": " で設定すると Claudian で利用できます。",
+        "descAfterCommand": " で設定すると Oh My Claudian で利用できます。",
         "learnMore": "詳しく見る"
       },
       "environment": {

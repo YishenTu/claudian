@@ -1471,6 +1471,7 @@ export function initializeTabUI(
     onTodosChanged: (todos) => tab.ui.statusPanel?.updateTodos(todos),
     onAutoScrollChanged: () => tab.ui.navigationSidebar?.updateVisibility(),
   };
+  tab.ui.contextUsageMeter?.update(state.usage);
 
   // ResizeObserver to detect overflow changes (e.g., content growth)
   const resizeObserver = new ResizeObserver(() => {
@@ -1858,6 +1859,9 @@ export function initializeTabControllers(
       ensureExecutionInitialized,
       getProviderId: () => getTabProviderId(tab, plugin),
       getSelectedModel: () => getTabSelectedModel(tab, plugin),
+      getInitialUsage: (providerId, model) => ProviderRegistry
+        .getChatUIConfig(providerId)
+        .getInitialUsage?.(model, plugin.settings) ?? null,
       dismissPendingInlinePrompts: () => tab.controllers.inputController?.dismissPendingApproval(),
       awaitBackgroundWork: () => tab.session.awaitBackgroundWork(),
       isDisposed: () => tab.lifecycleState === 'closing',

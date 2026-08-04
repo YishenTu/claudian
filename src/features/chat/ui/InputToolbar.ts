@@ -451,13 +451,12 @@ export class PermissionToggle {
     }
 
     this.container.removeClass('claudian-hidden');
-    const mode = this.callbacks.getSettings().permissionMode;
+    const mode = this.getCurrentMode();
     const planValue = toggleConfig.planValue;
     const planLabel = toggleConfig.planLabel ?? 'PLAN';
     const canShowPlan = Boolean(planValue) && capabilities.supportsPlanMode;
 
     if (canShowPlan && planValue && mode === planValue) {
-      this.toggleEl.addClass('claudian-hidden');
       this.labelEl.setText(planLabel);
       this.labelEl.addClass('plan-active');
     } else {
@@ -477,12 +476,22 @@ export class PermissionToggle {
     const toggleConfig = this.getToggleConfig();
     if (!toggleConfig) return;
 
-    const current = this.callbacks.getSettings().permissionMode;
-    const newMode = current === toggleConfig.activeValue
-      ? toggleConfig.inactiveValue
-      : toggleConfig.activeValue;
+    const current = this.getCurrentMode();
+    const canCyclePlan = Boolean(toggleConfig.planValue)
+      && this.callbacks.getCapabilities().supportsPlanMode;
+    const newMode = current === toggleConfig.inactiveValue
+      ? toggleConfig.activeValue
+      : current === toggleConfig.activeValue && canCyclePlan
+        ? toggleConfig.planValue!
+        : toggleConfig.inactiveValue;
     await this.callbacks.onPermissionModeChange(newMode);
     this.updateDisplay();
+  }
+
+  private getCurrentMode(): string {
+    const settings = this.callbacks.getSettings();
+    return this.callbacks.getUIConfig().resolvePermissionMode?.(settings)
+      ?? settings.permissionMode;
   }
 }
 
@@ -1224,7 +1233,7 @@ export class ContextUsageMeter {
   }
 
   update(usage: UsageInfo | null): void {
-    if (!usage || usage.contextTokens <= 0) {
+    if (!usage || usage.contextWindow <= 0) {
       this.container.addClass('claudian-hidden');
       return;
     }

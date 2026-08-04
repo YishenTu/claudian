@@ -155,7 +155,8 @@ export default class ClaudianPlugin extends Plugin {
       );
       registerFileMenu(this);
 
-      this.addRibbonIcon('bot', 'Open Claudian', () => {
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- Preserve the product's title casing.
+      this.addRibbonIcon('bot', 'Open Oh My Claudian', () => {
         void this.activateView();
       });
 

@@ -72,7 +72,7 @@
     }
   },
   "settings": {
-    "title": "Claudian 設定",
+    "title": "Oh My Claudian 設定",
     "tabs": {
       "general": "一般",
       "claude": "Claude",
@@ -86,7 +86,7 @@
     "models": "模型",
     "experimental": "實驗性功能",
     "userName": {
-      "name": "Claudian 應該如何稱呼您？",
+      "name": "Oh My Claudian 應該如何稱呼您？",
       "desc": "用於個人化問候的使用者名稱（留空使用通用問候）"
     },
     "excludedTags": {
@@ -165,7 +165,7 @@
     },
     "hiddenSlashCommands": {
       "name": "隱藏命令與技能",
-      "desc": "從下拉選單中隱藏特定的命令與技能。適用於隱藏與 Claudian 無關的 Claude Code 項目。每行輸入一個名稱，無需前導斜線。",
+      "desc": "從下拉選單中隱藏特定的命令與技能。適用於隱藏與 Oh My Claudian 無關的 Claude Code 項目。每行輸入一個名稱，無需前導斜線。",
       "placeholder": "commit\nbuild\ntest"
     },
     "mcpServers": {
@@ -297,7 +297,7 @@
       "desc": "Write 和 Edit diff 首次出現時以展開狀態顯示。"
     },
     "chatViewPlacement": {
-      "name": "Claudian 開啟位置",
+      "name": "Oh My Claudian 開啟位置",
       "desc": "選擇新建聊天面板時的開啟位置",
       "rightSidebar": "右側邊欄",
       "leftSidebar": "左側邊欄",
@@ -320,13 +320,13 @@
     "providerEnablement": {
       "name": "啟用 {provider}",
       "desc": "讓已啟用的 {provider} 模型可用於新對話。停用後，現有工作階段仍會保留。",
-      "lastProviderWarning": "至少需要啟用一個提供者，Claudian 才能正常運作。",
+      "lastProviderWarning": "至少需要啟用一個提供者，Oh My Claudian 才能正常運作。",
       "noModelsWarning": "未啟用任何 {provider} 模型。請前往下方的「模型」區段並至少啟用一個模型。"
     },
     "codex": {
       "installationMethod": {
         "name": "安裝方式",
-        "desc": "Claudian 在 Windows 上啟動 Codex 的方式。原生 Windows 使用 Windows 可執行檔路徑；WSL 會在所選發行版內啟動 Linux CLI。",
+        "desc": "Oh My Claudian 在 Windows 上啟動 Codex 的方式。原生 Windows 使用 Windows 可執行檔路徑；WSL 會在所選發行版內啟動 Linux CLI。",
         "nativeWindows": "原生 Windows",
         "wsl": "WSL"
       },
@@ -377,7 +377,7 @@
       },
       "mcp": {
         "descBeforeCommand": "Codex 透過自己的 CLI 管理 MCP 伺服器。請使用 ",
-        "descAfterCommand": " 進行設定，它們會在 Claudian 中可用。",
+        "descAfterCommand": " 進行設定，它們會在 Oh My Claudian 中可用。",
         "learnMore": "了解更多"
       },
       "environment": {
