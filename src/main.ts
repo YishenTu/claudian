@@ -7,8 +7,8 @@ import './providers';
 
 StartupProfiler.finishModuleEvaluation();
 
-import type { Editor, WorkspaceLeaf } from 'obsidian';
-import { MarkdownView, Notice, Plugin } from 'obsidian';
+import type { Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
+import { MarkdownView, Notice, Plugin, TFolder } from 'obsidian';
 
 import { ConversationRepository } from './app/conversations/ConversationRepository';
 import { ClaudianProviderHost } from './app/providers/ClaudianProviderHost';
@@ -160,6 +160,11 @@ export default class ClaudianPlugin extends Plugin {
         (leaf) => new ClaudianView(leaf, this)
       );
       registerFileMenu(this);
+      this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+        void this.handleLinkedNoteRename(file, oldPath).catch(() => {
+          new Notice('Failed to update linked session note paths');
+        });
+      }));
 
       this.addRibbonIcon('bot', 'Open Claudian', () => {
         void this.activateView();
@@ -1150,8 +1155,11 @@ export default class ClaudianPlugin extends Plugin {
     providerId?: ProviderId;
     sessionId?: string;
     selectedModel?: string;
+    currentNote?: string;
   }): Promise<Conversation> {
-    return this.conversationRepository.create(options);
+    const conversation = await this.conversationRepository.create(options);
+    this.notifyConversationViewsChanged();
+    return conversation;
   }
 
   async switchConversation(id: string): Promise<Conversation | null> {
@@ -1160,6 +1168,7 @@ export default class ClaudianPlugin extends Plugin {
 
   async deleteConversation(id: string): Promise<void> {
     await this.conversationRepository.delete(id);
+    this.notifyConversationViewsChanged();
   }
 
   runProviderExecutionTransition<T>(
@@ -1206,10 +1215,28 @@ export default class ClaudianPlugin extends Plugin {
 
   async renameConversation(id: string, title: string): Promise<void> {
     await this.conversationRepository.rename(id, title);
+    this.notifyConversationViewsChanged();
+  }
+
+  private async handleLinkedNoteRename(
+    file: TAbstractFile,
+    oldPath: string,
+  ): Promise<void> {
+    await this.conversationRepository.rewriteCurrentNotePaths(oldPath, file.path, {
+      includeDescendants: file instanceof TFolder,
+    });
+    this.notifyConversationViewsChanged();
   }
 
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
     await this.conversationRepository.update(id, updates);
+    this.notifyConversationViewsChanged();
+  }
+
+  private notifyConversationViewsChanged(): void {
+    for (const view of this.getAllViews()) {
+      view.notifyConversationListChanged();
+    }
   }
 
   async getConversationById(id: string): Promise<Conversation | null> {

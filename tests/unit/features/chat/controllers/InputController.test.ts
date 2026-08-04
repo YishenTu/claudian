@@ -1428,4 +1428,30 @@ describe('InputController coordinator execution', () => {
     );
     expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
   });
+
+  it('creates the first-turn conversation with its active note metadata', async () => {
+    const fixture = createFixture({
+      getFileContextManager: () => ({
+        getCurrentNotePath: () => 'Projects/Plan.md',
+      }) as any,
+    });
+    fixture.state.currentConversationId = null;
+    fixture.state.messages = [{
+      id: 'user-1',
+      role: 'user',
+      content: 'Start linked session',
+      timestamp: 1,
+    }];
+    fixture.plugin.createConversation.mockResolvedValue({
+      id: 'linked-conversation',
+    });
+
+    await (fixture.controller as any).triggerTitleGeneration();
+
+    expect(fixture.plugin.createConversation).toHaveBeenCalledWith({
+      providerId: 'claude',
+      selectedModel: 'claude-model',
+      currentNote: 'Projects/Plan.md',
+    });
+  });
 });

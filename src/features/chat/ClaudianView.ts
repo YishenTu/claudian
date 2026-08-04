@@ -1,5 +1,5 @@
 import type { EventRef, WorkspaceLeaf } from 'obsidian';
-import { ItemView, Notice, Scope, setIcon } from 'obsidian';
+import { ItemView, Menu, Notice, Scope, setIcon } from 'obsidian';
 
 import { StartupProfiler } from '../../core/performance/StartupProfiler';
 import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
@@ -20,6 +20,12 @@ import type { FeatureHost } from '../FeatureHost';
 import type { HistoryConversationStatus } from './controllers/ConversationController';
 import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
 import { TabStatePersistenceCoordinator } from './services/TabStatePersistenceCoordinator';
+import { getObsidianLanguage } from './session-manager/ProvisionalNoteNames';
+import {
+  registerSessionManagerIcons,
+  SESSION_COLLAPSE_ALL_ICON,
+  SESSION_EXPAND_ALL_ICON,
+} from './session-manager/SessionManagerIcons';
 import {
   commitProvisionalTab,
   getTabProviderId,
@@ -62,6 +68,7 @@ export class ClaudianView extends ItemView {
   private viewContainerEl: HTMLElement | null = null;
   private newTabButtonEl: HTMLElement | null = null;
   private sessionNewButtonEl: HTMLElement | null = null;
+  private sessionGroupToggleButtonEl: HTMLElement | null = null;
 
   // History elements
   private historyDropdown: HTMLElement | null = null;
@@ -73,6 +80,8 @@ export class ClaudianView extends ItemView {
   private sessionSidebarResizeCleanup: (() => void) | null = null;
   private sessionSidebarWidth: number | null = null;
   private isWideSessionLayout = false;
+  private collapsedSessionGroupKeys?: Set<string> = new Set<string>();
+  private sessionGroupKeys?: Set<string> = new Set<string>();
 
   // Event refs for cleanup
   private eventRefs: EventRef[] = [];
@@ -83,6 +92,7 @@ export class ClaudianView extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, plugin: FeatureHost) {
     super(leaf);
+    registerSessionManagerIcons();
     this.plugin = plugin;
     this.tabStatePersistence = new TabStatePersistenceCoordinator(
       state => this.plugin.storage.setTabManagerState(state),
@@ -238,39 +248,39 @@ export class ClaudianView extends ItemView {
       {
         onTabCreated: () => {
           this.updateTabBar();
-          this.updateHistoryDropdown();
+          this.notifyConversationNavigationChanged();
           this.updateInputLocation();
           this.syncProviderBrandColor();
         },
         onActiveTabChanged: () => {
           this.updateTabBar();
-          this.updateHistoryDropdown();
+          this.notifyConversationNavigationChanged();
           this.updateInputLocation();
           this.syncProviderBrandColor();
           this.persistCurrentTabState();
         },
         onTabSwitched: () => {
           this.updateTabBar();
-          this.updateHistoryDropdown();
+          this.notifyConversationNavigationChanged();
           this.updateInputLocation();
           this.syncProviderBrandColor();
         },
         onTabClosed: () => {
           this.updateTabBar();
-          this.updateHistoryDropdown();
+          this.notifyConversationNavigationChanged();
           this.updateInputLocation();
           this.persistCurrentTabState();
         },
         onTabStreamingChanged: () => {
           this.updateTabBar();
-          this.updateHistoryDropdown();
+          this.notifyConversationNavigationChanged();
         },
         onTabRewindingChanged: () => this.updateTabBar(),
         onTabTitleChanged: () => this.updateTabBar(),
         onTabAttentionChanged: () => this.updateTabBar(),
         onTabConversationChanged: () => {
           this.updateTabBar();
-          this.updateHistoryDropdown();
+          this.notifyConversationNavigationChanged();
           this.syncProviderBrandColor();
           this.persistCurrentTabState();
         },
@@ -356,7 +366,6 @@ export class ClaudianView extends ItemView {
     });
 
     this.sessionSidebarEl = this.viewContainerEl.createDiv({ cls: 'claudian-session-sidebar' });
-    this.sessionSidebarEl.setAttribute('aria-label', 'Conversation sessions');
   }
 
   /**
@@ -673,6 +682,7 @@ export class ClaudianView extends ItemView {
 
     try {
       this.sessionNewButtonEl = null;
+      this.sessionGroupToggleButtonEl = null;
       this.renderHistorySurface(this.sessionSidebarEl, abortController.signal, 'sessions');
       this.buildSessionHeaderActions(this.sessionSidebarEl);
       this.sessionSidebarDirty = false;
@@ -688,11 +698,12 @@ export class ClaudianView extends ItemView {
     signal: AbortSignal,
     navigationMode: 'history' | 'sessions' = 'history',
   ): void {
-    container.empty();
-
     const activeTab = this.tabManager?.getActiveTab();
     const conversationController = activeTab?.controllers.conversationController;
-    if (!conversationController) return;
+    if (!conversationController) {
+      container.empty();
+      return;
+    }
 
     conversationController.renderHistoryDropdown(container, {
       onSelectConversation: (id) => navigationMode === 'sessions'
@@ -707,6 +718,29 @@ export class ClaudianView extends ItemView {
       getConversationStatus: (id) => this.getHistoryConversationStatus(id),
       onRerender: () => this.updateHistoryDropdown(),
       showOpenStateLabels: navigationMode === 'history',
+      ...(navigationMode === 'sessions'
+        ? {
+            organization: this.getSessionManagerOrganization(),
+            sort: this.getSessionManagerSort(),
+            language: getObsidianLanguage(this.plugin.settings.locale),
+            noteExists: (notePath: string) => this.noteExists(notePath),
+            preserveListState: true,
+            showOpenStateActions: false,
+            collapsedGroupKeys: this.getCollapsedSessionGroupKeys(),
+            onGroupCollapseChange: (groupKey: string, collapsed: boolean) => {
+              const collapsedGroupKeys = this.getCollapsedSessionGroupKeys();
+              if (collapsed) {
+                collapsedGroupKeys.add(groupKey);
+              } else {
+                collapsedGroupKeys.delete(groupKey);
+              }
+              this.updateSessionGroupToggleButton();
+            },
+            onGroupKeysChange: (groupKeys: readonly string[]) => {
+              this.sessionGroupKeys = new Set(groupKeys);
+            },
+          }
+        : {}),
       signal,
     });
   }
@@ -715,7 +749,32 @@ export class ClaudianView extends ItemView {
     const header = container.querySelector<HTMLElement>('.claudian-history-header');
     if (!header) return;
 
+    this.sessionGroupToggleButtonEl = null;
     const actions = header.createDiv({ cls: 'claudian-session-header-actions' });
+    const optionsButton = this.createSessionHeaderAction(
+      actions,
+      'ellipsis',
+      'Session options',
+      (event) => this.showSessionOptionsMenu(optionsButton, event),
+    );
+    const sessionGroupKeys = this.getSessionGroupKeys();
+    if (
+      this.getSessionManagerOrganization() === 'linked-note'
+      && sessionGroupKeys.size > 0
+    ) {
+      const collapsedGroupKeys = this.getCollapsedSessionGroupKeys();
+      const allCollapsed = [...sessionGroupKeys].every(groupKey => (
+        collapsedGroupKeys.has(groupKey)
+      ));
+      this.sessionGroupToggleButtonEl = this.createSessionHeaderAction(
+        actions,
+        allCollapsed
+          ? SESSION_EXPAND_ALL_ICON
+          : SESSION_COLLAPSE_ALL_ICON,
+        allCollapsed ? 'Expand all groups' : 'Collapse all groups',
+        () => this.toggleAllSessionGroups(),
+      );
+    }
     this.sessionNewButtonEl = this.createSessionHeaderAction(
       actions,
       'square-plus',
@@ -730,7 +789,7 @@ export class ClaudianView extends ItemView {
     parent: HTMLElement,
     icon: string,
     label: string,
-    action: () => void,
+    action: (event?: MouseEvent) => void,
   ): HTMLElement {
     const control = parent.createDiv({ cls: 'claudian-session-header-btn' });
     control.setAttribute('role', 'button');
@@ -740,13 +799,144 @@ export class ClaudianView extends ItemView {
     const iconEl = control.createDiv({ cls: 'claudian-session-header-icon' });
     setIcon(iconEl, icon);
 
-    control.addEventListener('click', action);
+    control.addEventListener('click', (event) => action(event));
     control.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
       action();
     });
     return control;
+  }
+
+  private getSessionManagerOrganization(): 'list' | 'linked-note' {
+    return this.plugin.settings.sessionManagerOrganization === 'linked-note'
+      ? 'linked-note'
+      : 'list';
+  }
+
+  private getSessionManagerSort(): 'last-updated' | 'created' | 'title' {
+    const sort = this.plugin.settings.sessionManagerSort;
+    return sort === 'created' || sort === 'title' ? sort : 'last-updated';
+  }
+
+  private getCollapsedSessionGroupKeys(): Set<string> {
+    return this.collapsedSessionGroupKeys ??= new Set<string>();
+  }
+
+  private getSessionGroupKeys(): Set<string> {
+    return this.sessionGroupKeys ??= new Set<string>();
+  }
+
+  private updateSessionGroupToggleButton(): void {
+    const button = this.sessionGroupToggleButtonEl;
+    if (!button) return;
+
+    const sessionGroupKeys = this.getSessionGroupKeys();
+    const collapsedGroupKeys = this.getCollapsedSessionGroupKeys();
+    const allCollapsed = sessionGroupKeys.size > 0
+      && [...sessionGroupKeys].every(groupKey => collapsedGroupKeys.has(groupKey));
+    button.setAttribute(
+      'aria-label',
+      allCollapsed ? 'Expand all groups' : 'Collapse all groups',
+    );
+    const icon = button.querySelector<HTMLElement>('.claudian-session-header-icon');
+    if (icon) {
+      setIcon(
+        icon,
+        allCollapsed ? SESSION_EXPAND_ALL_ICON : SESSION_COLLAPSE_ALL_ICON,
+      );
+    }
+  }
+
+  private toggleAllSessionGroups(): void {
+    const sessionGroupKeys = this.getSessionGroupKeys();
+    if (sessionGroupKeys.size === 0) return;
+
+    const collapsedGroupKeys = this.getCollapsedSessionGroupKeys();
+    const shouldExpand = [...sessionGroupKeys].every(groupKey => (
+      collapsedGroupKeys.has(groupKey)
+    ));
+    for (const groupKey of sessionGroupKeys) {
+      if (shouldExpand) {
+        collapsedGroupKeys.delete(groupKey);
+      } else {
+        collapsedGroupKeys.add(groupKey);
+      }
+    }
+    this.refreshSessionManagerPresentation();
+  }
+
+  private noteExists(notePath: string): boolean {
+    const { vault } = this.plugin.app;
+    return typeof vault.getAbstractFileByPath !== 'function'
+      || vault.getAbstractFileByPath(notePath) !== null;
+  }
+
+  private showSessionOptionsMenu(anchor: HTMLElement, event?: MouseEvent): void {
+    const menu = new Menu();
+    const organization = this.getSessionManagerOrganization();
+    const sort = this.getSessionManagerSort();
+
+    menu.addItem(item => item
+      .setTitle('Organize sessions')
+      .setIsLabel(true));
+    menu.addItem(item => item
+      .setTitle('In one list')
+      .setChecked(organization === 'list')
+      .onClick(() => this.setSessionManagerOrganization('list')));
+    menu.addItem(item => item
+      .setTitle('By linked note')
+      .setChecked(organization === 'linked-note')
+      .onClick(() => this.setSessionManagerOrganization('linked-note')));
+    menu.addSeparator();
+    menu.addItem(item => item
+      .setTitle('Sort sessions by')
+      .setIsLabel(true));
+    menu.addItem(item => item
+      .setTitle('Last updated')
+      .setChecked(sort === 'last-updated')
+      .onClick(() => this.setSessionManagerSort('last-updated')));
+    menu.addItem(item => item
+      .setTitle('Created')
+      .setChecked(sort === 'created')
+      .onClick(() => this.setSessionManagerSort('created')));
+    menu.addItem(item => item
+      .setTitle('Title')
+      .setChecked(sort === 'title')
+      .onClick(() => this.setSessionManagerSort('title')));
+
+    if (event) {
+      menu.showAtMouseEvent(event);
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
+  }
+
+  private setSessionManagerOrganization(
+    organization: 'list' | 'linked-note',
+  ): void {
+    void this.plugin.mutateSettings((settings) => {
+      settings.sessionManagerOrganization = organization;
+    }).then(() => this.refreshSessionManagerPresentation())
+      .catch(() => new Notice('Failed to update session organization'));
+  }
+
+  private setSessionManagerSort(sort: 'last-updated' | 'created' | 'title'): void {
+    void this.plugin.mutateSettings((settings) => {
+      settings.sessionManagerSort = sort;
+    }).then(() => this.refreshSessionManagerPresentation())
+      .catch(() => new Notice('Failed to update session sorting'));
+  }
+
+  private refreshSessionManagerPresentation(): void {
+    this.sessionSidebarDirty = true;
+    this.renderSessionSidebar();
+    for (const view of this.plugin.getAllViews()) {
+      if (view !== this) {
+        view.notifyConversationListChanged();
+      }
+    }
   }
 
   private startSessionSidebarLayoutObserver(): void {
@@ -1158,6 +1348,15 @@ export class ClaudianView extends ItemView {
 
   notifyConversationListChanged(): void {
     this.updateHistoryDropdown();
+  }
+
+  private notifyConversationNavigationChanged(): void {
+    this.updateHistoryDropdown();
+    for (const view of this.plugin.getAllViews()) {
+      if (view !== this) {
+        view.notifyConversationListChanged();
+      }
+    }
   }
 
   /** Gets the tab manager. */

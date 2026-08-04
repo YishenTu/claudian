@@ -485,6 +485,7 @@ describe('SessionStorage', () => {
             createdAt: 1700000000,
             updatedAt: 1700001000,
             lastResponseAt: 1700000900,
+            currentNote: 'Notes/One.md',
           }));
         }
         if (path.includes('session-2')) {
@@ -512,6 +513,7 @@ describe('SessionStorage', () => {
       expect(metas[0].messageCount).toBe(0);
       expect(metas[1].preview).toBe('SDK session');
       expect(metas[1].messageCount).toBe(0);
+      expect(metas[1].currentNote).toBe('Notes/One.md');
     });
 
     it('returns empty array when no metadata exists', async () => {

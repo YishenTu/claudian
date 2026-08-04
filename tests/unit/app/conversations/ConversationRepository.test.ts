@@ -70,6 +70,69 @@ describe('ConversationRepository hydration', () => {
     expect(hydrateConversationHistory).not.toHaveBeenCalled();
   });
 
+  it('projects the linked note path into lightweight conversation metadata', () => {
+    const conversation = createConversation();
+    conversation.currentNote = 'Notes/Architecture.md';
+    const { repository } = createRepository(conversation);
+
+    expect(repository.getMetadata(conversation.id)?.currentNote).toBe('Notes/Architecture.md');
+    expect(repository.list()[0].currentNote).toBe('Notes/Architecture.md');
+  });
+
+  it('rewrites linked note paths without changing session activity timestamps', async () => {
+    const fileConversation = createConversation('file');
+    fileConversation.currentNote = 'Notes/Old.md';
+    fileConversation.updatedAt = 20;
+    fileConversation.lastResponseAt = 15;
+    const folderConversation = createConversation('folder');
+    folderConversation.currentNote = 'Projects/Old/Plan.md';
+    folderConversation.updatedAt = 40;
+    const unrelatedConversation = createConversation('unrelated');
+    unrelatedConversation.currentNote = 'Notes/Other.md';
+    const { repository, persistence } = createRepository(fileConversation);
+    repository.mergeMetadataConversations([folderConversation, unrelatedConversation]);
+
+    await repository.rewriteCurrentNotePaths('Notes/Old.md', 'Notes/New.md');
+    await repository.rewriteCurrentNotePaths('Projects/Old', 'Projects/New', {
+      includeDescendants: true,
+    });
+
+    expect(fileConversation).toMatchObject({
+      currentNote: 'Notes/New.md',
+      updatedAt: 20,
+      lastResponseAt: 15,
+    });
+    expect(folderConversation).toMatchObject({
+      currentNote: 'Projects/New/Plan.md',
+      updatedAt: 40,
+    });
+    expect(unrelatedConversation.currentNote).toBe('Notes/Other.md');
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'file',
+      currentNote: 'Notes/New.md',
+      updatedAt: 20,
+    }));
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'folder',
+      currentNote: 'Projects/New/Plan.md',
+      updatedAt: 40,
+    }));
+  });
+
+  it('does not apply an earlier rename to a new session that reuses the old path', async () => {
+    const originalConversation = createConversation('original');
+    originalConversation.currentNote = 'Notes/Old.md';
+    const { repository } = createRepository(originalConversation);
+
+    await repository.rewriteCurrentNotePaths('Notes/Old.md', 'Notes/Renamed.md');
+    const newConversation = await repository.create();
+    await repository.update(newConversation.id, { currentNote: 'Notes/Old.md' });
+    await repository.rewriteCurrentNotePaths('Notes/Renamed.md', 'Notes/Final.md');
+
+    expect(originalConversation.currentNote).toBe('Notes/Final.md');
+    expect(newConversation.currentNote).toBe('Notes/Old.md');
+  });
+
   it('deduplicates concurrent hydration and does not reread an empty transcript', async () => {
     let release!: () => void;
     const hydrateConversationHistory = jest.fn(async () => {

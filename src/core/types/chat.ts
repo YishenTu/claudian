@@ -169,6 +169,8 @@ export interface ConversationMeta {
   lastResponseAt?: number;
   messageCount: number;
   preview: string;
+  /** Vault-relative path of the note linked to this session. */
+  currentNote?: string;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
 }

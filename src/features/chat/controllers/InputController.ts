@@ -1472,9 +1472,12 @@ export class InputController {
 
     if (!state.currentConversationId) {
       const selectedModel = this.getAuxiliaryModel() ?? undefined;
+      const currentNote = this.deps.getFileContextManager()?.getCurrentNotePath()
+        ?? undefined;
       const conversation = await plugin.createConversation({
         providerId: this.getActiveProviderId(),
         ...(selectedModel ? { selectedModel } : {}),
+        ...(currentNote ? { currentNote } : {}),
       });
       state.currentConversationId = conversation.id;
     }

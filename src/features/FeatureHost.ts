@@ -19,6 +19,7 @@ export interface FeatureTabManagerHost {
 export interface FeatureViewHost extends TabManagerViewHost {
   getActiveTab(): TabData | null;
   getTabManager(): FeatureTabManagerHost | null;
+  notifyConversationListChanged(): void;
   refreshModelSelector(providerId?: ProviderId): void;
   refreshTabControls(): void;
   updateHiddenProviderCommands(): void;
@@ -45,6 +46,7 @@ export interface FeatureHost {
     providerId?: ProviderId;
     sessionId?: string;
     selectedModel?: string;
+    currentNote?: string;
   }): Promise<Conversation>;
   switchConversation(id: string): Promise<Conversation | null>;
   deleteConversation(id: string): Promise<void>;

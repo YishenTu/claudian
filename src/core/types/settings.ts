@@ -62,6 +62,9 @@ export const CHAT_VIEW_PLACEMENTS = [
 /** Workspace location used when opening the Claudian chat view. */
 export type ChatViewPlacement = typeof CHAT_VIEW_PLACEMENTS[number];
 
+export type SessionManagerOrganization = 'list' | 'linked-note';
+export type SessionManagerSort = 'last-updated' | 'created' | 'title';
+
 /** Forced provider transition invalidated a parked auxiliary continuation. */
 export interface AuxiliaryContinuityReset {
   success: false;
@@ -163,6 +166,8 @@ export interface ClaudianSettings {
   deferMathRenderingDuringStreaming: boolean;
   expandFileEditsByDefault: boolean;
   chatViewPlacement: ChatViewPlacement;
+  sessionManagerOrganization?: SessionManagerOrganization;
+  sessionManagerSort?: SessionManagerSort;
 
   // Provider command visibility
   hiddenProviderCommands: HiddenProviderCommands;

@@ -27,6 +27,7 @@ import {
   type SessionMetadata,
 } from '../../core/types';
 import { extractUserDisplayContent } from '../../utils/context';
+import { rewriteVaultPathAfterRename } from '../../utils/path';
 
 interface ConversationRepositoryBaseDeps {
   getSettings: () => Record<string, unknown>;
@@ -67,6 +68,12 @@ interface ConversationDeletionState {
   readonly executionBinding: ExecutionBindingState | null;
 }
 
+interface NotePathRename {
+  oldPath: string;
+  newPath: string;
+  includeDescendants: boolean;
+}
+
 export class ConversationInputLedgerUnavailableError extends Error {
   constructor(
     readonly conversationId: string,
@@ -96,6 +103,8 @@ export class ConversationRepository {
   private readonly persistenceQueues = new Map<string, Promise<void>>();
   private readonly executionBindings = new Map<string, ExecutionBindingState>();
   private readonly deletionStates = new Map<string, ConversationDeletionState>();
+  private readonly notePathRenames: NotePathRename[] = [];
+  private readonly pendingNotePathCorrectionIds = new Set<string>();
   private readonly persistence: ConversationPersistence;
 
   constructor(private readonly deps: ConversationRepositoryDeps) {
@@ -105,6 +114,9 @@ export class ConversationRepository {
   replaceAll(conversations: Conversation[]): void {
     for (const conversation of this.conversations) {
       this.invalidateConversation(conversation.id);
+    }
+    for (const conversation of conversations) {
+      this.applyNotePathRenames(conversation);
     }
     this.conversations = conversations.filter(
       ({ id }) => !this.deletedConversationIds.has(id),
@@ -127,6 +139,15 @@ export class ConversationRepository {
       source: SessionMetadataReadResult['source'];
     }>,
   ): Promise<void> {
+    const notePathCorrectedIds = new Set<string>();
+    for (const { conversation } of entries) {
+      if (
+        this.pendingNotePathCorrectionIds.has(conversation.id)
+        || this.applyNotePathRenames(conversation)
+      ) {
+        notePathCorrectedIds.add(conversation.id);
+      }
+    }
     const added = this.mergeMetadataConversations(
       entries.map(({ conversation }) => conversation),
     );
@@ -134,22 +155,33 @@ export class ConversationRepository {
     const migrations = entries
       .filter(
         ({ conversation, source }) =>
-          source === 'legacy'
-          && (addedIds.has(conversation.id) || !!this.getSync(conversation.id)),
+          (
+            source === 'legacy'
+            && (addedIds.has(conversation.id) || !!this.getSync(conversation.id))
+          )
+          || notePathCorrectedIds.has(conversation.id),
       )
-      .map(({ conversation }) => this.enqueuePersistence(
+      .map(({ conversation, source }) => this.enqueuePersistence(
         conversation.id,
         async () => {
           const current = this.getSync(conversation.id);
           if (!current || !await this.canWriteConversation(current)) return;
           await this.persistence.saveMetadata(this.toSessionMetadata(current));
-          await this.persistence.deleteLegacyMetadata(current.id);
+          this.pendingNotePathCorrectionIds.delete(current.id);
+          if (source === 'legacy') {
+            await this.persistence.deleteLegacyMetadata(current.id);
+          }
         },
       ));
     await Promise.all(migrations);
   }
 
   mergeMetadataConversations(conversations: Conversation[]): Conversation[] {
+    for (const conversation of conversations) {
+      if (this.applyNotePathRenames(conversation)) {
+        this.pendingNotePathCorrectionIds.add(conversation.id);
+      }
+    }
     const existingIds = new Set(this.conversations.map(({ id }) => id));
     const added = conversations.filter(
       ({ id }) =>
@@ -227,6 +259,7 @@ export class ConversationRepository {
     providerId?: ProviderId;
     sessionId?: string;
     selectedModel?: string;
+    currentNote?: string;
   }): Promise<Conversation> {
     const settings = this.deps.getSettings();
     const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
@@ -257,6 +290,7 @@ export class ConversationRepository {
       sessionId: sessionId ?? null,
       selectedModel,
       messages: [],
+      currentNote: options?.currentNote,
     };
 
     this.conversations.unshift(conversation);
@@ -434,6 +468,25 @@ export class ConversationRepository {
     await Promise.all(
       conversations.map((conversation) => this.save(conversation)),
     );
+  }
+
+  async rewriteCurrentNotePaths(
+    oldPath: string,
+    newPath: string,
+    options: { includeDescendants?: boolean } = {},
+  ): Promise<void> {
+    if (!oldPath || !newPath || oldPath === newPath) return;
+
+    const rename: NotePathRename = {
+      oldPath,
+      newPath,
+      includeDescendants: options.includeDescendants ?? false,
+    };
+    this.notePathRenames.push(rename);
+    const changed = this.conversations.filter(conversation => (
+      this.applyNotePathRename(conversation, rename)
+    ));
+    await this.persistConversations(changed);
   }
 
   registerExecutionBinding(
@@ -702,6 +755,7 @@ export class ConversationRepository {
       lastResponseAt: conversation.lastResponseAt,
       messageCount: conversation.messages.length,
       preview: this.getPreview(conversation),
+      currentNote: conversation.currentNote,
       titleGenerationStatus: conversation.titleGenerationStatus,
     };
   }
@@ -786,8 +840,48 @@ export class ConversationRepository {
       lastResponseAt: conversation.lastResponseAt,
       messageCount: conversation.messages.length,
       preview: this.getPreview(conversation),
+      currentNote: conversation.currentNote,
       titleGenerationStatus: conversation.titleGenerationStatus,
     }));
+  }
+
+  private applyNotePathRenames(conversation: Conversation): boolean {
+    const originalPath = conversation.currentNote;
+    if (!originalPath) return false;
+
+    let currentPath = originalPath;
+    for (const rename of this.notePathRenames) {
+      const rewrittenPath = this.rewriteNotePath(currentPath, rename);
+      currentPath = rewrittenPath ?? currentPath;
+    }
+    if (currentPath === originalPath) return false;
+
+    conversation.currentNote = currentPath;
+    return true;
+  }
+
+  private applyNotePathRename(
+    conversation: Conversation,
+    rename: NotePathRename,
+  ): boolean {
+    if (!conversation.currentNote) return false;
+    const rewrittenPath = this.rewriteNotePath(conversation.currentNote, rename);
+    if (!rewrittenPath || rewrittenPath === conversation.currentNote) return false;
+
+    conversation.currentNote = rewrittenPath;
+    return true;
+  }
+
+  private rewriteNotePath(
+    notePath: string,
+    rename: NotePathRename,
+  ): string | null {
+    return rewriteVaultPathAfterRename(
+      notePath,
+      rename.oldPath,
+      rename.newPath,
+      rename.includeDescendants,
+    );
   }
 
   private async reconcileProviderSession(

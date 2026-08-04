@@ -35,6 +35,8 @@ export {
   type InstructionRefineResult,
   type KeyboardNavigationSettings,
   type PermissionMode,
+  type SessionManagerOrganization,
+  type SessionManagerSort,
   type SlashCommand,
 } from './settings';
 

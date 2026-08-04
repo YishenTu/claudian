@@ -212,6 +212,8 @@ class MockMenuItem {
   title = '';
   icon = '';
   disabled = false;
+  checked: boolean | null = null;
+  isLabel = false;
   clickHandler: (() => void) | null = null;
 
   setTitle = jest.fn((title: string) => {
@@ -229,6 +231,16 @@ class MockMenuItem {
     return this;
   });
 
+  setChecked = jest.fn((checked: boolean | null) => {
+    this.checked = checked;
+    return this;
+  });
+
+  setIsLabel = jest.fn((isLabel: boolean) => {
+    this.isLabel = isLabel;
+    return this;
+  });
+
   onClick = jest.fn((handler: () => void) => {
     this.clickHandler = handler;
     return this;
@@ -240,6 +252,7 @@ export class Menu {
 
   items: MockMenuItem[] = [];
   showAtMouseEvent = jest.fn();
+  showAtPosition = jest.fn();
 
   constructor() {
     Menu.instances.push(this);
@@ -249,6 +262,10 @@ export class Menu {
     const item = new MockMenuItem();
     callback(item);
     this.items.push(item);
+    return this;
+  }
+
+  addSeparator(): this {
     return this;
   }
 }
@@ -267,6 +284,7 @@ export const loadPrism = jest.fn().mockResolvedValue({
 });
 
 export const setIcon = jest.fn();
+export const addIcon = jest.fn();
 
 // Notice mock that tracks constructor calls
 export const Notice = jest.fn().mockImplementation((_message: string, _timeout?: number) => {});

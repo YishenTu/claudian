@@ -1,5 +1,5 @@
 import type { App, EventRef } from 'obsidian';
-import { Notice, TFile } from 'obsidian';
+import { Notice, TFile, TFolder } from 'obsidian';
 
 import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import type { AgentMentionProvider } from '../../../shared/mention/MentionDropdownController';
@@ -12,7 +12,11 @@ import {
 } from '../../../utils/contextMentionResolver';
 import { buildExternalContextDisplayEntries } from '../../../utils/externalContext';
 import { externalContextScanner } from '../../../utils/externalContextScanner';
-import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
+import {
+  getVaultPath,
+  normalizePathForVault as normalizePathForVaultUtil,
+  rewriteVaultPathAfterRename,
+} from '../../../utils/path';
 import { ComposerContextTray } from './ComposerContextTray';
 import { FileContextState } from './file-context/state/FileContextState';
 import { FileChipsView } from './file-context/view/FileChipsView';
@@ -113,7 +117,9 @@ export class FileContextManager {
     });
 
     this.renameEventRef = this.app.vault.on('rename', (file, oldPath) => {
-      if (file instanceof TFile) this.handleFileRenamed(oldPath, file.path);
+      if (file instanceof TFile || file instanceof TFolder) {
+        this.handleFileRenamed(oldPath, file.path, file instanceof TFolder);
+      }
     });
   }
 
@@ -281,25 +287,41 @@ export class FileContextManager {
     this.callbacks.onChipsChanged?.();
   }
 
-  private handleFileRenamed(oldPath: string, newPath: string) {
+  private handleFileRenamed(
+    oldPath: string,
+    newPath: string,
+    includeDescendants = false,
+  ): void {
     const normalizedOld = this.normalizePathForVault(oldPath);
     const normalizedNew = this.normalizePathForVault(newPath);
-    if (!normalizedOld) return;
+    if (!normalizedOld || !normalizedNew) return;
 
     let needsUpdate = false;
 
-    // Update current note path if renamed
-    if (this.currentNotePath === normalizedOld) {
-      this.currentNotePath = normalizedNew;
+    const renamedCurrentNote = this.currentNotePath
+      ? rewriteVaultPathAfterRename(
+          this.currentNotePath,
+          normalizedOld,
+          normalizedNew,
+          includeDescendants,
+        )
+      : null;
+    if (renamedCurrentNote) {
+      this.currentNotePath = renamedCurrentNote;
       needsUpdate = true;
     }
 
-    // Update attached files
-    if (this.state.getAttachedFiles().has(normalizedOld)) {
-      this.state.detachFile(normalizedOld);
-      if (normalizedNew) {
-        this.state.attachFile(normalizedNew);
-      }
+    for (const attachedPath of [...this.state.getAttachedFiles()]) {
+      const renamedAttachedPath = rewriteVaultPathAfterRename(
+        attachedPath,
+        normalizedOld,
+        normalizedNew,
+        includeDescendants,
+      );
+      if (!renamedAttachedPath) continue;
+
+      this.state.detachFile(attachedPath);
+      this.state.attachFile(renamedAttachedPath);
       needsUpdate = true;
     }
 

@@ -52,6 +52,8 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   deferMathRenderingDuringStreaming: true,
   expandFileEditsByDefault: false,
   chatViewPlacement: 'right-sidebar',
+  sessionManagerOrganization: 'list',
+  sessionManagerSort: 'last-updated',
 
   hiddenProviderCommands: getDefaultHiddenProviderCommands(),
 };

@@ -1,5 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
-import { Platform, Scope } from 'obsidian';
+import { Menu, Platform, Scope, setIcon } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -210,12 +210,13 @@ describe('ClaudianView tab controls', () => {
     expect(sessionNewButtonEl.getAttribute('aria-hidden')).toBeNull();
   });
 
-  it('renders one New control in the persistent header', () => {
+  it('renders session options and one New control in the persistent header', () => {
     const container = createMockEl();
     const header = container.createDiv({ cls: 'claudian-history-header' });
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
+      plugin: { settings: {} },
       requestDualNew: jest.fn(),
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
@@ -226,8 +227,10 @@ describe('ClaudianView tab controls', () => {
     view.buildSessionHeaderActions(container);
 
     const actions = header.querySelector('.claudian-session-header-actions');
-    const newButton = actions?.children[0];
-    expect(actions?.children).toHaveLength(1);
+    const optionsButton = actions?.children[0];
+    const newButton = actions?.children[1];
+    expect(actions?.children).toHaveLength(2);
+    expect(optionsButton?.getAttribute('aria-label')).toBe('Session options');
     expect(newButton?.tagName).toBe('DIV');
     expect(newButton?.getAttribute('role')).toBe('button');
     expect(newButton?.getAttribute('tabindex')).toBe('0');
@@ -235,6 +238,75 @@ describe('ClaudianView tab controls', () => {
 
     newButton?.click();
     expect(view.requestDualNew).toHaveBeenCalledTimes(1);
+  });
+
+  it('collapses and expands every linked-note group from the session header', () => {
+    const container = createMockEl();
+    container.createDiv({ cls: 'claudian-history-header' });
+    const view = Object.create(ClaudianView.prototype) as any;
+    const renderSessionSidebar = jest.fn();
+    Object.assign(view, {
+      collapsedSessionGroupKeys: new Set<string>(),
+      plugin: {
+        settings: { sessionManagerOrganization: 'linked-note' },
+        getAllViews: jest.fn().mockReturnValue([]),
+      },
+      renderSessionSidebar,
+      requestDualNew: jest.fn(),
+      sessionGroupKeys: new Set(['note:Projects/Plan.md', 'ungrouped']),
+      sessionSidebarDirty: false,
+      tabManager: {
+        canCreateTab: jest.fn().mockReturnValue(true),
+        getAllTabs: jest.fn().mockReturnValue([]),
+      },
+    });
+
+    view.buildSessionHeaderActions(container);
+
+    const actions = container.querySelector('.claudian-session-header-actions')!;
+    expect(actions.children).toHaveLength(3);
+    const collapseButton = actions.children[1];
+    expect(collapseButton.getAttribute('aria-label')).toBe('Collapse all groups');
+    expect(setIcon).toHaveBeenCalledWith(
+      collapseButton.querySelector('.claudian-session-header-icon'),
+      'claudian-list-chevrons-down-up',
+    );
+
+    view.collapsedSessionGroupKeys = new Set([
+      'note:Projects/Plan.md',
+      'ungrouped',
+    ]);
+    view.updateSessionGroupToggleButton();
+
+    expect(collapseButton.getAttribute('aria-label')).toBe('Expand all groups');
+    expect(setIcon).toHaveBeenCalledWith(
+      collapseButton.querySelector('.claudian-session-header-icon'),
+      'claudian-list-chevrons-up-down',
+    );
+
+    view.collapsedSessionGroupKeys.clear();
+
+    collapseButton.click();
+
+    expect(view.collapsedSessionGroupKeys).toEqual(
+      new Set(['note:Projects/Plan.md', 'ungrouped']),
+    );
+    expect(view.sessionSidebarDirty).toBe(true);
+    expect(renderSessionSidebar).toHaveBeenCalledTimes(1);
+
+    const collapsedContainer = createMockEl();
+    collapsedContainer.createDiv({ cls: 'claudian-history-header' });
+    view.buildSessionHeaderActions(collapsedContainer);
+    const expandButton = collapsedContainer
+      .querySelector('.claudian-session-header-actions')!.children[1];
+    expect(expandButton.getAttribute('aria-label')).toBe('Expand all groups');
+    expect(setIcon).toHaveBeenCalledWith(
+      expandButton.querySelector('.claudian-session-header-icon'),
+      'claudian-list-chevrons-up-down',
+    );
+
+    view.toggleAllSessionGroups();
+    expect(view.collapsedSessionGroupKeys).toEqual(new Set());
   });
 
   it('focuses the current unbound draft when New is clicked again in dual mode', async () => {
@@ -489,6 +561,7 @@ describe('ClaudianView tab controls', () => {
     expect(viewContainerEl.children[0].hasClass('claudian-chat-panel')).toBe(true);
     expect(viewContainerEl.children[1].hasClass('claudian-session-resizer')).toBe(true);
     expect(viewContainerEl.children[2].hasClass('claudian-session-sidebar')).toBe(true);
+    expect(viewContainerEl.children[2].getAttribute('aria-label')).toBeNull();
     expect(viewContainerEl.children[1].getAttribute('role')).toBe('separator');
     expect(viewContainerEl.children[0].children).toContain(view.tabContentEl);
     expect(viewContainerEl.children[0].children).toContain(view.inputFooterEl);
@@ -558,6 +631,10 @@ describe('ClaudianView tab controls', () => {
     Object.assign(view, {
       isWideSessionLayout: true,
       sessionSidebarEl,
+      plugin: {
+        app: { vault: {} },
+        settings: {},
+      },
       viewContainerEl,
     });
 
@@ -619,7 +696,10 @@ describe('ClaudianView tab controls', () => {
 
   it('renders the existing history content into the persistent session column', () => {
     const sessionSidebarEl = createMockEl();
-    const renderHistoryDropdown = jest.fn();
+    const previousList = sessionSidebarEl.createDiv({ cls: 'claudian-history-list' });
+    const renderHistoryDropdown = jest.fn((container, _options) => {
+      expect(container.querySelector('.claudian-history-list')).toBe(previousList);
+    });
     const updateHistoryDropdown = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
 
@@ -630,6 +710,10 @@ describe('ClaudianView tab controls', () => {
       sessionSidebarDirty: true,
       sessionSidebarEl,
       updateHistoryDropdown,
+      plugin: {
+        app: { vault: {} },
+        settings: {},
+      },
       tabManager: {
         getActiveTab: jest.fn().mockReturnValue({
           controllers: { conversationController: { renderHistoryDropdown } },
@@ -643,8 +727,12 @@ describe('ClaudianView tab controls', () => {
       sessionSidebarEl,
       expect.objectContaining({
         getConversationStatus: expect.any(Function),
+        collapsedGroupKeys: expect.any(Set),
+        onGroupCollapseChange: expect.any(Function),
         onRerender: expect.any(Function),
         onSelectConversation: expect.any(Function),
+        preserveListState: true,
+        showOpenStateActions: false,
         showOpenStateLabels: false,
         signal: expect.any(AbortSignal),
       }),
@@ -653,8 +741,83 @@ describe('ClaudianView tab controls', () => {
       .not.toHaveProperty('onOpenConversationInNewTab');
     expect(view.sessionSidebarDirty).toBe(false);
 
+    const sessionOptions = renderHistoryDropdown.mock.calls[0][1];
+    sessionOptions.onGroupCollapseChange('note:Projects/Plan.md', true);
+    expect(sessionOptions.collapsedGroupKeys.has('note:Projects/Plan.md')).toBe(true);
+
     renderHistoryDropdown.mock.calls[0][1].onRerender();
     expect(updateHistoryDropdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies other open views when runtime session navigation changes', () => {
+    const otherView = { notifyConversationListChanged: jest.fn() };
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      plugin: { getAllViews: jest.fn().mockReturnValue([view, otherView]) },
+      updateHistoryDropdown: jest.fn(),
+    });
+
+    view.notifyConversationNavigationChanged();
+
+    expect(view.updateHistoryDropdown).toHaveBeenCalledTimes(1);
+    expect(otherView.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds an organization menu beside New and persists both menu choices', async () => {
+    (Menu as typeof Menu & { instances: unknown[] }).instances.length = 0;
+    const container = createMockEl();
+    container.createDiv({ cls: 'claudian-history-header' });
+    const settings = {
+      sessionManagerOrganization: 'list',
+      sessionManagerSort: 'last-updated',
+    };
+    const mutateSettings = jest.fn(async (mutation) => mutation(settings));
+    const view = Object.create(ClaudianView.prototype) as any;
+    const otherView = { notifyConversationListChanged: jest.fn() };
+    Object.assign(view, {
+      plugin: {
+        settings,
+        mutateSettings,
+        getAllViews: jest.fn().mockReturnValue([view, otherView]),
+      },
+      requestDualNew: jest.fn(),
+      renderSessionSidebar: jest.fn(),
+      sessionSidebarDirty: false,
+      tabManager: {
+        canCreateTab: jest.fn().mockReturnValue(true),
+        getAllTabs: jest.fn().mockReturnValue([]),
+      },
+    });
+
+    view.buildSessionHeaderActions(container);
+
+    const actions = container.querySelector('.claudian-session-header-actions');
+    expect(actions?.children).toHaveLength(2);
+    const optionsButton = actions?.children[0];
+    expect(optionsButton?.getAttribute('aria-label')).toBe('Session options');
+    optionsButton?.click();
+
+    const menu = (Menu as typeof Menu & { instances: any[] }).instances.at(-1);
+    expect(menu.items.map((item: any) => item.title)).toEqual([
+      'Organize sessions',
+      'In one list',
+      'By linked note',
+      'Sort sessions by',
+      'Last updated',
+      'Created',
+      'Title',
+    ]);
+    expect(menu.items.find((item: any) => item.title === 'In one list').checked).toBe(true);
+    expect(menu.items.find((item: any) => item.title === 'Last updated').checked).toBe(true);
+
+    menu.items.find((item: any) => item.title === 'By linked note').clickHandler();
+    await Promise.resolve();
+
+    expect(settings.sessionManagerOrganization).toBe('linked-note');
+    expect(mutateSettings).toHaveBeenCalledTimes(1);
+    expect(view.sessionSidebarDirty).toBe(true);
+    expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
+    expect(otherView.notifyConversationListChanged).toHaveBeenCalledTimes(1);
   });
 
   it('opens a closed session in a new container from the dual-mode session column', async () => {

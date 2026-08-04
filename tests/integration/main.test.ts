@@ -1,4 +1,6 @@
 
+import { TFile, TFolder } from 'obsidian';
+
 import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -119,6 +121,7 @@ describe('ClaudianPlugin', () => {
 
     mockApp = {
       vault: {
+        on: jest.fn().mockReturnValue({ id: 'vault-event' }),
         adapter: {
           basePath: '/test/vault',
           exists: jest.fn().mockResolvedValue(false),
@@ -2598,6 +2601,7 @@ describe('ClaudianPlugin', () => {
       const createNew = jest.fn().mockResolvedValue(undefined);
       mockApp.workspace.getLeavesOfType.mockReturnValue([{
         view: {
+          notifyConversationListChanged: jest.fn(),
           getTabManager: () => ({
             getAllTabs: () => [{
               conversationId: conv.id,
@@ -2645,6 +2649,7 @@ describe('ClaudianPlugin', () => {
       };
       mockApp.workspace.getLeavesOfType.mockReturnValue([{
         view: {
+          notifyConversationListChanged: jest.fn(),
           getTabManager: () => ({
             getAllTabs: () => [firstTab, secondTab],
           }),
@@ -2756,9 +2761,106 @@ describe('ClaudianPlugin', () => {
       const updated = await plugin.getConversationById(conv.id);
       expect(updated?.title).toBeTruthy();
     });
+
+    it('notifies every open view after conversation list mutations', async () => {
+      await plugin.onload();
+      const firstView = {
+        getTabManager: jest.fn().mockReturnValue(null),
+        notifyConversationListChanged: jest.fn(),
+      };
+      const secondView = {
+        getTabManager: jest.fn().mockReturnValue(null),
+        notifyConversationListChanged: jest.fn(),
+      };
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([
+        firstView as any,
+        secondView as any,
+      ]);
+
+      const conversation = await plugin.createConversation();
+      await plugin.renameConversation(conversation.id, 'Renamed');
+      await plugin.deleteConversation(conversation.id);
+
+      expect(firstView.notifyConversationListChanged).toHaveBeenCalledTimes(3);
+      expect(secondView.notifyConversationListChanged).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('linked note renames', () => {
+    it('registers a Vault rename listener', async () => {
+      await plugin.onload();
+
+      expect(mockApp.vault.on).toHaveBeenCalledWith('rename', expect.any(Function));
+    });
+
+    it('rewrites linked file and folder paths without changing activity timestamps', async () => {
+      await plugin.onload();
+      const fileConversation = await plugin.createConversation();
+      const folderConversation = await plugin.createConversation();
+      await plugin.updateConversation(fileConversation.id, { currentNote: 'Notes/Old.md' });
+      await plugin.updateConversation(folderConversation.id, {
+        currentNote: 'Projects/Old/Plan.md',
+      });
+      const fileUpdatedAt = fileConversation.updatedAt;
+      const folderUpdatedAt = folderConversation.updatedAt;
+
+      await (plugin as any).handleLinkedNoteRename(
+        new (TFile as any)('Notes/New.md'),
+        'Notes/Old.md',
+      );
+      await (plugin as any).handleLinkedNoteRename(
+        new (TFolder as any)('Projects/New'),
+        'Projects/Old',
+      );
+
+      expect(fileConversation).toMatchObject({
+        currentNote: 'Notes/New.md',
+        updatedAt: fileUpdatedAt,
+      });
+      expect(folderConversation).toMatchObject({
+        currentNote: 'Projects/New/Plan.md',
+        updatedAt: folderUpdatedAt,
+      });
+    });
   });
 
   describe('updateConversation', () => {
+    it('creates linked-note metadata atomically and publishes later note changes', async () => {
+      await plugin.onload();
+      const notifyConversationListChanged = jest.fn();
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([{
+        notifyConversationListChanged,
+      } as any]);
+
+      const conv = await plugin.createConversation({
+        currentNote: 'Projects/Initial.md',
+      });
+
+      expect(plugin.getConversationList().find(({ id }) => id === conv.id)?.currentNote)
+        .toBe('Projects/Initial.md');
+      notifyConversationListChanged.mockClear();
+
+      await plugin.updateConversation(conv.id, {
+        currentNote: 'Projects/Updated.md',
+      });
+
+      expect(plugin.getConversationList().find(({ id }) => id === conv.id)?.currentNote)
+        .toBe('Projects/Updated.md');
+      expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
+
+      notifyConversationListChanged.mockClear();
+      await plugin.updateConversation(conv.id, {
+        lastResponseAt: 1234,
+        titleGenerationStatus: 'failed',
+      });
+
+      expect(plugin.getConversationList().find(({ id }) => id === conv.id)).toMatchObject({
+        lastResponseAt: 1234,
+        titleGenerationStatus: 'failed',
+      });
+      expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
+    });
+
     it('should update conversation messages', async () => {
       await plugin.onload();
 

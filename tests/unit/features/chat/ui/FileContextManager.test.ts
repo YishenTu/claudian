@@ -1,5 +1,5 @@
 import { createMockEl, type MockElement } from '@test/helpers/MockElement';
-import { TFile } from 'obsidian';
+import { TFile, TFolder } from 'obsidian';
 
 import type { FileContextCallbacks } from '@/features/chat/ui/FileContext';
 import { FileContextManager } from '@/features/chat/ui/FileContext';
@@ -596,6 +596,24 @@ describe('FileContextManager', () => {
       renameHandler(createMockTFile('notes/new.md'), 'notes/old.md');
       expect(manager.getAttachedFiles().has('notes/new.md')).toBe(true);
       expect(manager.getAttachedFiles().has('notes/old.md')).toBe(false);
+      manager.destroy();
+    });
+
+    it('should update current and attached note paths when a folder is renamed', () => {
+      const app = createMockApp({ files: ['projects/old/plan.md'] });
+      const manager = new FileContextManager(
+        app, containerEl as any, inputEl, createMockCallbacks()
+      );
+
+      manager.setCurrentNote('projects/old/plan.md');
+      const renameHandler = (app.vault.on as jest.Mock).mock.calls
+        .find((c: any[]) => c[0] === 'rename')?.[1];
+
+      renameHandler(new (TFolder as any)('projects/new'), 'projects/old');
+
+      expect(manager.getCurrentNotePath()).toBe('projects/new/plan.md');
+      expect(manager.getAttachedFiles().has('projects/new/plan.md')).toBe(true);
+      expect(manager.getAttachedFiles().has('projects/old/plan.md')).toBe(false);
       manager.destroy();
     });
 

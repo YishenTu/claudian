@@ -1,5 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
-import { Menu, Notice } from 'obsidian';
+import { Menu, Notice, setIcon } from 'obsidian';
 
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { ChatState } from '@/features/chat/state/ChatState';
@@ -451,6 +451,35 @@ describe('ConversationController', () => {
       });
     });
 
+    it('should include the active note when lazily creating a conversation', async () => {
+      const fileContextManager = deps.getFileContextManager()!;
+      (fileContextManager.getCurrentNotePath as jest.Mock).mockReturnValue(
+        'Projects/Plan.md',
+      );
+      deps.state.currentConversationId = null;
+      deps.state.messages = [
+        { id: '1', role: 'user', content: 'hello', timestamp: Date.now() },
+      ];
+      (deps.plugin.createConversation as jest.Mock).mockResolvedValue({
+        id: 'linked-conv',
+        title: 'New Conversation',
+        messages: [],
+        sessionId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      await controller.save();
+
+      expect(deps.plugin.createConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ currentNote: 'Projects/Plan.md' }),
+      );
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+        'linked-conv',
+        expect.objectContaining({ currentNote: 'Projects/Plan.md' }),
+      );
+    });
+
     it('should set lastResponseAt when updateLastResponse is true', async () => {
       deps.state.currentConversationId = 'conv-1';
       deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
@@ -664,6 +693,36 @@ describe('ConversationController', () => {
         expect(firstTitle?.textContent).toBe('New');
       });
 
+      it('preserves response-activity ordering in the single-mode history surface', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'metadata-newer',
+            title: 'Metadata newer',
+            createdAt: 1,
+            updatedAt: 300,
+            lastResponseAt: 100,
+          },
+          {
+            id: 'response-newer',
+            title: 'Response newer',
+            createdAt: 2,
+            updatedAt: 200,
+            lastResponseAt: 200,
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+        });
+
+        const titles = container.querySelectorAll('.claudian-history-item-title');
+        expect(titles.map((title: { textContent: string }) => title.textContent)).toEqual([
+          'Response newer',
+          'Metadata newer',
+        ]);
+      });
+
       it('should mark current conversation as active', () => {
         deps.state.currentConversationId = 'conv-1';
 
@@ -789,6 +848,75 @@ describe('ConversationController', () => {
         expect(container.children.length).toBe(2); // header + list
       });
 
+      it('renders full-path note groups only for the linked-note organization', () => {
+        const container = createMockEl();
+        const onGroupCollapseChange = jest.fn();
+        const onGroupKeysChange = jest.fn();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'plan-a',
+            title: 'Plan A',
+            createdAt: 1,
+            currentNote: 'Projects/A/Plan.md',
+          },
+          {
+            id: 'plan-b',
+            title: 'Plan B',
+            createdAt: 2,
+            currentNote: 'Projects/B/Plan.md',
+          },
+          {
+            id: 'untitled',
+            title: 'Draft discussion',
+            createdAt: 3,
+            currentNote: 'Inbox/Untitled 2.md',
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          organization: 'linked-note',
+          sort: 'title',
+          language: 'en',
+          noteExists: () => true,
+          onGroupCollapseChange,
+          onGroupKeysChange,
+        });
+
+        const labels = container
+          .querySelectorAll('.claudian-session-group-label')
+          .map((label: { textContent: string }) => label.textContent);
+        expect(labels).toEqual(['Plan', 'Plan', 'Ungrouped']);
+        expect(labels).not.toContain('Untitled 2');
+        const groupHeaders = container.querySelectorAll('.claudian-session-group-header');
+        expect(groupHeaders[0].getAttribute('title')).toBe('Projects/A/Plan.md');
+        expect(groupHeaders[1].getAttribute('title')).toBe('Projects/B/Plan.md');
+        const groupIcons = container.querySelectorAll('.claudian-session-group-icon');
+        expect(groupIcons).toHaveLength(3);
+        expect(setIcon).toHaveBeenCalledWith(groupIcons[0], 'file-text');
+        expect(setIcon).toHaveBeenCalledWith(groupIcons[1], 'file-text');
+        expect(setIcon).toHaveBeenCalledWith(groupIcons[2], 'inbox');
+        expect(onGroupKeysChange).toHaveBeenCalledWith([
+          'note:Projects/A/Plan.md',
+          'note:Projects/B/Plan.md',
+          'ungrouped',
+        ]);
+        expect(groupHeaders[0].getAttribute('role')).toBe('button');
+        expect(groupHeaders[0].getAttribute('aria-expanded')).toBe('true');
+        const groupBodies = container.querySelectorAll('.claudian-session-group-body');
+        expect(groupBodies).toHaveLength(3);
+
+        groupHeaders[0].click();
+
+        expect(groupHeaders[0].getAttribute('aria-expanded')).toBe('false');
+        expect(groupBodies[0].hasClass('claudian-session-group-body--collapsed')).toBe(true);
+        expect(onGroupCollapseChange).toHaveBeenCalledWith(
+          'note:Projects/A/Plan.md',
+          true,
+        );
+        expect(container.querySelectorAll('.claudian-history-item')).toHaveLength(3);
+      });
+
       it('delegates rerendering after deletion when the surface owner provides a callback', async () => {
         const container = createMockEl();
         const onRerender = jest.fn();
@@ -838,6 +966,111 @@ describe('ConversationController', () => {
         list = container.children[1];
         expect(list.querySelectorAll('.claudian-history-item')).toHaveLength(50);
         expect(list.querySelector('.claudian-history-load-more')).not.toBeNull();
+      });
+
+      it('preserves grouped-list position and loaded count across an external rerender', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue(
+          Array.from({ length: 75 }, (_, index) => ({
+            id: `conv-${index}`,
+            title: `Conversation ${index}`,
+            createdAt: 75 - index,
+            currentNote: 'Projects/Plan.md',
+          })),
+        );
+        const options = {
+          onSelectConversation: jest.fn(),
+          organization: 'linked-note' as const,
+          sort: 'last-updated' as const,
+          language: 'en',
+          pageSize: 25,
+          preserveListState: true,
+        };
+
+        controller.renderHistoryDropdown(container, options);
+        container.querySelector('.claudian-history-load-more')?.click();
+        const previousList = container.querySelector('.claudian-history-list')!;
+        previousList.scrollTop = 320;
+
+        controller.renderHistoryDropdown(container, options);
+
+        const rerenderedList = container.querySelector('.claudian-history-list')!;
+        expect(rerenderedList.querySelectorAll('.claudian-history-item')).toHaveLength(50);
+        expect(rerenderedList.scrollTop).toBe(320);
+      });
+
+      it('preserves flat session-list position and loaded count across an external rerender', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue(
+          Array.from({ length: 75 }, (_, index) => ({
+            id: `conv-${index}`,
+            title: `Conversation ${index}`,
+            createdAt: 75 - index,
+          })),
+        );
+        const options = {
+          onSelectConversation: jest.fn(),
+          organization: 'list' as const,
+          sort: 'last-updated' as const,
+          pageSize: 25,
+          preserveListState: true,
+        };
+
+        controller.renderHistoryDropdown(container, options);
+        container.querySelector('.claudian-history-load-more')?.click();
+        const previousList = container.querySelector('.claudian-history-list')!;
+        previousList.scrollTop = 320;
+
+        controller.renderHistoryDropdown(container, options);
+
+        const rerenderedList = container.querySelector('.claudian-history-list')!;
+        expect(rerenderedList.querySelectorAll('.claudian-history-item')).toHaveLength(50);
+        expect(rerenderedList.scrollTop).toBe(320);
+      });
+
+      it('does not let collapsed groups consume pagination or hide later headers', () => {
+        const container = createMockEl();
+        const collapsedGroupKeys = new Set(['note:Projects/A.md']);
+        const onRerender = jest.fn();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          ...Array.from({ length: 75 }, (_, index) => ({
+            id: `a-${index}`,
+            title: `A ${index}`,
+            createdAt: 1000 - index,
+            currentNote: 'Projects/A.md',
+          })),
+          {
+            id: 'b-1',
+            title: 'B 1',
+            createdAt: 1,
+            currentNote: 'Projects/B.md',
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          onRerender,
+          organization: 'linked-note',
+          sort: 'title',
+          pageSize: 25,
+          collapsedGroupKeys,
+          onGroupCollapseChange: (groupKey, collapsed) => {
+            if (collapsed) {
+              collapsedGroupKeys.add(groupKey);
+            } else {
+              collapsedGroupKeys.delete(groupKey);
+            }
+          },
+        });
+
+        const labels = container.querySelectorAll('.claudian-session-group-label');
+        expect(labels.map((label: { textContent: string }) => label.textContent))
+          .toEqual(['A', 'B']);
+        expect(container.querySelectorAll('.claudian-history-item')).toHaveLength(1);
+        expect(container.querySelector('.claudian-history-load-more')).toBeNull();
+
+        container.querySelectorAll('.claudian-session-group-header')[0].click();
+        expect(onRerender).toHaveBeenCalledTimes(1);
       });
 
       it('does not render when the history render signal is already aborted', () => {
@@ -946,7 +1179,7 @@ describe('ConversationController', () => {
           onSelectConversation: jest.fn(),
           getConversationStatus: (id) => id === 'conv-1'
             ? { openState: 'current', isRunning: false, location: 'current-view', tabIndex: 1 }
-            : { openState: 'open', isRunning: false, location: 'current-view', tabIndex: 2 },
+            : { openState: 'open', isRunning: true, location: 'current-view', tabIndex: 2 },
           showOpenStateLabels: false,
         });
 
@@ -955,6 +1188,91 @@ describe('ConversationController', () => {
           .toBe('Date 2000');
         expect(list.children[1].querySelector('.claudian-history-item-date')?.textContent)
           .toBe('Date 1000');
+        const runningIndicators = list.querySelectorAll(
+          '.claudian-session-running-indicator',
+        );
+        expect(runningIndicators).toHaveLength(1);
+        expect(setIcon).toHaveBeenCalledWith(runningIndicators[0], 'loader-2');
+      });
+
+      it('displays the timestamp selected by the session sort mode', () => {
+        const container = createMockEl();
+        jest.spyOn(controller, 'formatDate').mockImplementation(
+          (timestamp) => `Date ${timestamp}`,
+        );
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'conv-1',
+            title: 'Timestamped',
+            createdAt: 1000,
+            updatedAt: 3000,
+            lastResponseAt: 2000,
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          sort: 'last-updated',
+          showOpenStateLabels: false,
+        });
+
+        expect(container.querySelector('.claudian-history-item-date')?.textContent)
+          .toBe('Date 3000');
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          sort: 'created',
+          showOpenStateLabels: false,
+        });
+
+        expect(container.querySelector('.claudian-history-item-date')?.textContent)
+          .toBe('Date 1000');
+      });
+
+      it('shows a running indicator on a collapsed linked-note header', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'running',
+            title: 'Running session',
+            createdAt: 1000,
+            currentNote: 'Projects/Plan.md',
+          },
+          {
+            id: 'idle',
+            title: 'Idle session',
+            createdAt: 900,
+            currentNote: 'Projects/Plan.md',
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          organization: 'linked-note',
+          sort: 'last-updated',
+          language: 'en',
+          showOpenStateLabels: false,
+          getConversationStatus: (id) => ({
+            openState: id === 'running' ? 'open' : 'closed',
+            isRunning: id === 'running',
+          }),
+        });
+
+        const header = container.querySelector('.claudian-session-group-header')!;
+        const headerIndicator = header.querySelector(
+          '.claudian-session-group-running-indicator',
+        )!;
+        expect(headerIndicator).not.toBeNull();
+        expect(headerIndicator.hasClass(
+          'claudian-session-group-running-indicator--visible',
+        )).toBe(false);
+
+        header.click();
+
+        expect(headerIndicator.hasClass(
+          'claudian-session-group-running-indicator--visible',
+        )).toBe(true);
+        expect(setIcon).toHaveBeenCalledWith(headerIndicator, 'loader-2');
       });
 
       it('should display running status for the current conversation', () => {
@@ -1261,6 +1579,36 @@ describe('ConversationController', () => {
           'Delete',
         ]);
       });
+
+      it('hides tab-aware context actions on the Sessions surface', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'conv-1', title: 'Open elsewhere', createdAt: 1000 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          getConversationStatus: () => ({
+            openState: 'open',
+            isRunning: false,
+            location: 'current-view',
+            tabIndex: 2,
+          }),
+          showOpenStateActions: false,
+          showOpenStateLabels: false,
+        });
+
+        container.querySelector('.claudian-history-item')!.dispatchEvent({
+          type: 'contextmenu',
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+
+        const menu = (Menu as typeof Menu & {
+          instances: Array<{ items: Array<{ title: string }> }>;
+        }).instances[0];
+        expect(menu.items.map(item => item.title)).toEqual(['Rename', 'Delete']);
+      });
     });
   });
 
@@ -1371,6 +1719,34 @@ describe('ConversationController', () => {
       } finally {
         item.createEl = origCreateEl;
       }
+    });
+
+    it('rerenders the owning session surface after inline rename', async () => {
+      const container = createMockEl();
+      const onRerender = jest.fn();
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Old title', createdAt: 1000 },
+      ]);
+
+      controller.renderHistoryDropdown(container, {
+        onSelectConversation: jest.fn(),
+        onRerender,
+        organization: 'linked-note',
+        sort: 'title',
+      });
+
+      const item = container.querySelector('.claudian-history-item')!;
+      const title = item.querySelector('.claudian-history-item-title')!;
+      title.replaceWith = jest.fn();
+      item.querySelector('.claudian-history-item-actions')!.children[0].click();
+      const input = item.querySelector('.claudian-rename-input')!;
+      input.value = 'New title';
+      input.blur();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'New title');
+      expect(onRerender).toHaveBeenCalledTimes(1);
     });
 
     it('should delete conversation and reload active when deleting current conversation', async () => {

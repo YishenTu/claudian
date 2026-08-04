@@ -1261,6 +1261,27 @@ describe('ConversationRepository persistence queue and binding fences', () => {
 
     expect(calls).toEqual(['save:Latest title', 'delete-legacy']);
   });
+
+  it('applies note renames to metadata adopted after the rename event', async () => {
+    const existing = createConversation('existing');
+    const persistence = createPersistence();
+    const { repository } = createRepository(existing, persistence);
+    await repository.rewriteCurrentNotePaths('Notes/Old.md', 'Notes/New.md');
+    persistence.saveMetadata.mockClear();
+
+    const deferredConversation = createConversation('deferred');
+    deferredConversation.currentNote = 'Notes/Old.md';
+    repository.mergeMetadataConversations([deferredConversation]);
+    await repository.adoptMetadataConversations([
+      { conversation: deferredConversation, source: 'current' },
+    ]);
+
+    expect(deferredConversation.currentNote).toBe('Notes/New.md');
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'deferred',
+      currentNote: 'Notes/New.md',
+    }));
+  });
 });
 
 describe('ConversationRepository deletion, fork, and rewind persistence', () => {

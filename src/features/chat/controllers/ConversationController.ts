@@ -5,7 +5,14 @@ import type {
   ChatRewindMode,
 } from '../../../core/execution';
 import type { TitleGenerationService } from '../../../core/providers/types';
-import type { ChatMessage, Conversation, ProviderId } from '../../../core/types';
+import type {
+  ChatMessage,
+  Conversation,
+  ConversationMeta,
+  ProviderId,
+  SessionManagerOrganization,
+  SessionManagerSort,
+} from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { confirm } from '../../../shared/modals/ConfirmModal';
 import { extractUserDisplayContent } from '../../../utils/context';
@@ -16,6 +23,7 @@ import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement, renderWelcomeContent } from '../rendering/WelcomeRenderer';
 import { findRewindContext } from '../rewind';
 import type { SubagentManager } from '../services/SubagentManager';
+import { organizeSessionList } from '../session-manager/SessionListOrganizer';
 import type { ChatState } from '../state/ChatState';
 import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
@@ -101,7 +109,16 @@ type HistoryRenderOptions = {
   signal?: AbortSignal;
   pageSize?: number;
   visibleCount?: number;
+  showOpenStateActions?: boolean;
   showOpenStateLabels?: boolean;
+  organization?: SessionManagerOrganization;
+  sort?: SessionManagerSort;
+  language?: string;
+  noteExists?: (notePath: string) => boolean;
+  collapsedGroupKeys?: ReadonlySet<string>;
+  onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
+  onGroupKeysChange?: (groupKeys: readonly string[]) => void;
+  preserveListState?: boolean;
 };
 
 type HistorySurfaceRenderOptions = Omit<HistoryRenderOptions, 'onRerender'> & {
@@ -537,6 +554,9 @@ export class ConversationController {
       return;
     }
 
+    const fileCtx = this.deps.getFileContextManager();
+    const currentNote = fileCtx?.getCurrentNotePath() || undefined;
+
     // Entry point with messages - create conversation lazily
     // New conversations always use SDK-native storage.
     if (!state.currentConversationId && state.messages.length > 0) {
@@ -544,12 +564,11 @@ export class ConversationController {
       const conversation = await plugin.createConversation({
         providerId: this.deps.getProviderId?.(),
         ...(selectedModel ? { selectedModel } : {}),
+        ...(currentNote ? { currentNote } : {}),
       });
       state.currentConversationId = conversation.id;
     }
 
-    const fileCtx = this.deps.getFileContextManager();
-    const currentNote = fileCtx?.getCurrentNotePath() || undefined;
     const externalContextSelector = this.deps.getExternalContextSelector();
     const externalContextPaths = externalContextSelector?.getExternalContexts() ?? [];
     const mcpServerSelector = this.deps.getMcpServerSelector();
@@ -688,8 +707,19 @@ export class ConversationController {
     container: HTMLElement,
     options: HistoryRenderOptions
   ): void {
-    const { plugin, state } = this.deps;
+    const { plugin } = this.deps;
     if (options.signal?.aborted) return;
+
+    const previousList = options.preserveListState
+      ? container.querySelector<HTMLElement>('.claudian-history-list')
+      : null;
+    const previousScrollTop = previousList?.scrollTop ?? 0;
+    const previousVisibleCountFromState = Number(previousList?.dataset.visibleCount);
+    const previousVisibleCount = Number.isFinite(previousVisibleCountFromState)
+      && previousVisibleCountFromState > 0
+      ? previousVisibleCountFromState
+      : previousList?.querySelectorAll('.claudian-history-item').length ?? 0;
+    const organization = options.organization ?? 'list';
 
     container.empty();
 
@@ -700,167 +730,137 @@ export class ConversationController {
     const allConversations = plugin.getConversationList();
 
     if (allConversations.length === 0) {
+      if (organization === 'linked-note') {
+        options.onGroupKeysChange?.([]);
+      }
       list.createDiv({ cls: 'claudian-history-empty', text: 'No conversations' });
       return;
     }
 
-    // Sort by lastResponseAt (fallback to createdAt) descending
-    const conversations = [...allConversations].sort((a, b) => {
-      return (b.lastResponseAt ?? b.createdAt) - (a.lastResponseAt ?? a.createdAt);
+    const sections = organizeSessionList(allConversations, {
+      organization,
+      sort: options.sort ?? 'response-activity',
+      language: options.language ?? 'en',
+      noteExists: options.noteExists,
     });
+    if (organization === 'linked-note') {
+      options.onGroupKeysChange?.(sections.map(({ key }) => key));
+    }
     const pageSize = Math.max(1, options.pageSize ?? DEFAULT_HISTORY_PAGE_SIZE);
-    const visibleCount = Math.max(pageSize, options.visibleCount ?? pageSize);
-    const visibleConversations = conversations.slice(0, visibleCount);
+    const visibleCount = Math.max(
+      pageSize,
+      options.visibleCount ?? previousVisibleCount,
+    );
+    list.dataset.visibleCount = String(visibleCount);
+    const visibleConversationTotal = organization === 'linked-note'
+      ? sections.reduce((total, section) => (
+          options.collapsedGroupKeys?.has(section.key)
+            ? total
+            : total + section.conversations.length
+        ), 0)
+      : allConversations.length;
+    let renderedConversationCount = 0;
 
-    for (const conv of visibleConversations) {
-      if (options.signal?.aborted) return;
-      const fallbackOpenState: HistoryConversationOpenState =
-        conv.id === state.currentConversationId ? 'current' : 'closed';
-      const conversationStatus = this.getHistoryConversationStatus(conv.id, fallbackOpenState, options);
-      const { openState, isRunning } = conversationStatus;
-      const isCurrent = openState === 'current';
-      const isOpen = openState === 'open';
-      const item = list.createDiv({
-        cls: [
-          'claudian-history-item',
-          isCurrent ? 'active' : '',
-          isOpen ? 'open' : '',
-          isRunning ? 'running' : '',
-        ].filter(Boolean).join(' '),
-      });
-      item.setAttribute('data-open-state', openState);
-      item.setAttribute('data-running', isRunning ? 'true' : 'false');
-      item.setAttribute('data-tab-location', conversationStatus.location ?? 'current-view');
-      if (typeof conversationStatus.tabIndex === 'number') {
-        item.setAttribute('data-tab-index', String(conversationStatus.tabIndex));
-      }
+    for (const section of sections) {
+      const remainingVisibleCount = visibleCount - renderedConversationCount;
+      const isCollapsed = organization === 'linked-note'
+        && (options.collapsedGroupKeys?.has(section.key) ?? false);
+      const visibleConversations = isCollapsed || remainingVisibleCount <= 0
+        ? []
+        : section.conversations.slice(0, remainingVisibleCount);
+      if (organization !== 'linked-note' && visibleConversations.length === 0) break;
 
-      const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
-      setIcon(iconEl, this.getHistoryItemIcon(openState, isRunning));
-
-      const content = item.createDiv({ cls: 'claudian-history-item-content' });
-      const titleEl = content.createDiv({ cls: 'claudian-history-item-title', text: conv.title });
-      titleEl.setAttribute('title', conv.title);
-      content.createDiv({
-        cls: 'claudian-history-item-date',
-        text: this.getHistoryItemStatusText(
-          conversationStatus,
-          conv.lastResponseAt ?? conv.createdAt,
-          options.showOpenStateLabels ?? true,
-        ),
-      });
-
-      if (!isCurrent) {
-        content.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (this.isHistoryNewTabModifierClick(e) && options.onOpenConversationInNewTab) {
-            e.preventDefault();
-            runConversationAction(
-              () => this.runHistoryAction(
-                () => options.onOpenConversationInNewTab?.(conv.id, true),
-                'Failed to load conversation',
-              ),
-              'Failed to load conversation',
-            );
-            return;
-          }
-
-          runConversationAction(
-            () => this.runHistoryAction(
-              () => options.onSelectConversation(conv.id),
-              'Failed to load conversation',
-            ),
-            'Failed to load conversation',
-          );
+      let itemContainer = list;
+      if (organization === 'linked-note') {
+        const hasRunningConversation = section.conversations.some(conversation => (
+          this.getHistoryConversationStatusForMetadata(conversation, options).isRunning
+        ));
+        const groupHeader = list.createDiv({
+          cls: [
+            'claudian-session-group-header',
+            `claudian-session-group-header--${section.kind}`,
+          ].join(' '),
         });
-
-        if (options.onOpenConversationInNewTab) {
-          content.addEventListener('auxclick', (e) => {
-            if (e.button !== 1) return;
-            e.preventDefault();
-            e.stopPropagation();
-            runConversationAction(
-              () => this.runHistoryAction(
-                () => options.onOpenConversationInNewTab?.(conv.id, true),
-                'Failed to load conversation',
-              ),
-              'Failed to load conversation',
-            );
+        groupHeader.setAttribute('data-group-kind', section.kind);
+        groupHeader.setAttribute('role', 'button');
+        groupHeader.setAttribute('tabindex', '0');
+        groupHeader.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+        if (section.notePath) {
+          groupHeader.setAttribute('data-note-path', section.notePath);
+          groupHeader.setAttribute('title', section.notePath);
+          const noteIcon = groupHeader.createSpan({
+            cls: 'claudian-session-group-icon',
+          });
+          setIcon(noteIcon, 'file-text');
+        } else if (section.kind === 'ungrouped') {
+          const ungroupedIcon = groupHeader.createSpan({
+            cls: 'claudian-session-group-icon',
+          });
+          setIcon(ungroupedIcon, 'inbox');
+        }
+        groupHeader.createSpan({
+          cls: 'claudian-session-group-label',
+          text: section.label ?? '',
+        });
+        if (section.kind === 'missing') {
+          groupHeader.createSpan({
+            cls: 'claudian-session-group-status',
+            text: 'Missing',
           });
         }
-      }
+        const groupRunningIndicator = hasRunningConversation
+          ? groupHeader.createSpan({
+              cls: [
+                'claudian-session-group-running-indicator',
+                isCollapsed
+                  ? 'claudian-session-group-running-indicator--visible'
+                  : '',
+              ].filter(Boolean).join(' '),
+            })
+          : null;
+        if (groupRunningIndicator) {
+          setIcon(groupRunningIndicator, 'loader-2');
+          groupRunningIndicator.setAttribute('aria-label', 'Running');
+        }
 
-      item.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.showHistoryContextMenu(item, conv.id, conv.title, isCurrent, options, e);
-      });
+        const groupBody = list.createDiv({
+          cls: [
+            'claudian-session-group-body',
+            isCollapsed ? 'claudian-session-group-body--collapsed' : '',
+          ].filter(Boolean).join(' '),
+        });
+        groupBody.setAttribute('data-group-key', section.key);
+        itemContainer = groupBody;
 
-      const actions = item.createDiv({ cls: 'claudian-history-item-actions' });
-
-      // Show regenerate button if title generation failed, or loading indicator if pending
-      if (conv.titleGenerationStatus === 'pending') {
-        const loadingEl = actions.createSpan({ cls: 'claudian-action-btn claudian-action-loading' });
-        setIcon(loadingEl, 'loader-2');
-        loadingEl.setAttribute('aria-label', 'Generating title...');
-      } else if (conv.titleGenerationStatus === 'failed') {
-        const regenerateBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
-        setIcon(regenerateBtn, 'refresh-cw');
-        regenerateBtn.setAttribute('aria-label', 'Regenerate title');
-        regenerateBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          runConversationAction(
-            () => this.regenerateTitle(conv.id),
-            'Failed to regenerate response',
+        const toggleGroup = (): void => {
+          const collapsed = groupHeader.getAttribute('aria-expanded') === 'true';
+          groupHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+          groupBody.toggleClass('claudian-session-group-body--collapsed', collapsed);
+          groupRunningIndicator?.toggleClass(
+            'claudian-session-group-running-indicator--visible',
+            collapsed,
           );
+          options.onGroupCollapseChange?.(section.key, collapsed);
+          options.onRerender();
+        };
+        groupHeader.addEventListener('click', toggleGroup);
+        groupHeader.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          toggleGroup();
         });
       }
 
-      if (openState === 'closed' && options.onOpenConversationInNewTab) {
-        const openInNewTabBtn = actions.createEl('button', {
-          cls: 'claudian-action-btn claudian-open-new-tab-btn',
-        });
-        setIcon(openInNewTabBtn, 'square-plus');
-        openInNewTabBtn.setAttribute('aria-label', 'Open in new tab');
-        openInNewTabBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          runConversationAction(
-            () => this.runHistoryAction(
-              () => options.onOpenConversationInNewTab?.(conv.id, true),
-              'Failed to load conversation',
-            ),
-            'Failed to load conversation',
-          );
-        });
+      for (const conv of visibleConversations) {
+        this.renderHistoryConversationItem(itemContainer, conv, options);
       }
-
-      const renameBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
-      setIcon(renameBtn, 'pencil');
-      renameBtn.setAttribute('aria-label', 'Rename');
-      renameBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.showRenameInput(item, conv.id, conv.title);
-      });
-
-      const deleteBtn = actions.createEl('button', { cls: 'claudian-action-btn claudian-delete-btn' });
-      setIcon(deleteBtn, 'trash-2');
-      deleteBtn.setAttribute('aria-label', 'Delete');
-      deleteBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        runConversationAction(
-          () => this.runHistoryAction(
-            () => this.deleteHistoryConversation(conv.id, options),
-            'Failed to delete conversation',
-          ),
-          'Failed to delete conversation',
-        );
-      });
+      renderedConversationCount += visibleConversations.length;
     }
 
-    if (visibleConversations.length < conversations.length && !options.signal?.aborted) {
+    if (renderedConversationCount < visibleConversationTotal && !options.signal?.aborted) {
       const loadMoreButton = list.createEl('button', {
         cls: 'claudian-history-load-more',
-        text: `Load more (${conversations.length - visibleConversations.length} remaining)`,
+        text: `Load more (${visibleConversationTotal - renderedConversationCount} remaining)`,
       });
       loadMoreButton.addEventListener('click', () => {
         if (options.signal?.aborted) return;
@@ -870,6 +870,205 @@ export class ConversationController {
         });
       });
     }
+
+    list.scrollTop = previousScrollTop;
+  }
+
+  private renderHistoryConversationItem(
+    list: HTMLElement,
+    conversation: ConversationMeta,
+    options: HistoryRenderOptions,
+  ): void {
+    if (options.signal?.aborted) return;
+
+    const conversationStatus = this.getHistoryConversationStatusForMetadata(
+      conversation,
+      options,
+    );
+    const { openState, isRunning } = conversationStatus;
+    const isCurrent = openState === 'current';
+    const isOpen = openState === 'open';
+    const item = list.createDiv({
+      cls: [
+        'claudian-history-item',
+        isCurrent ? 'active' : '',
+        isOpen ? 'open' : '',
+        isRunning ? 'running' : '',
+      ].filter(Boolean).join(' '),
+    });
+    item.setAttribute('data-open-state', openState);
+    item.setAttribute('data-running', isRunning ? 'true' : 'false');
+    item.setAttribute('data-tab-location', conversationStatus.location ?? 'current-view');
+    if (typeof conversationStatus.tabIndex === 'number') {
+      item.setAttribute('data-tab-index', String(conversationStatus.tabIndex));
+    }
+
+    const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
+    setIcon(iconEl, this.getHistoryItemIcon(openState, isRunning));
+
+    const content = item.createDiv({ cls: 'claudian-history-item-content' });
+    const titleEl = content.createDiv({
+      cls: 'claudian-history-item-title',
+      text: conversation.title,
+    });
+    titleEl.setAttribute('title', conversation.title);
+    content.createDiv({
+      cls: 'claudian-history-item-date',
+      text: this.getHistoryItemStatusText(
+        conversationStatus,
+        this.getHistoryItemTimestamp(conversation, options),
+        options.showOpenStateLabels ?? true,
+      ),
+    });
+
+    if (!isCurrent) {
+      content.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (this.isHistoryNewTabModifierClick(event) && options.onOpenConversationInNewTab) {
+          event.preventDefault();
+          runConversationAction(
+            () => this.runHistoryAction(
+              () => options.onOpenConversationInNewTab?.(conversation.id, true),
+              'Failed to load conversation',
+            ),
+            'Failed to load conversation',
+          );
+          return;
+        }
+
+        runConversationAction(
+          () => this.runHistoryAction(
+            () => options.onSelectConversation(conversation.id),
+            'Failed to load conversation',
+          ),
+          'Failed to load conversation',
+        );
+      });
+
+      if (options.onOpenConversationInNewTab) {
+        content.addEventListener('auxclick', (event) => {
+          if (event.button !== 1) return;
+          event.preventDefault();
+          event.stopPropagation();
+          runConversationAction(
+            () => this.runHistoryAction(
+              () => options.onOpenConversationInNewTab?.(conversation.id, true),
+              'Failed to load conversation',
+            ),
+            'Failed to load conversation',
+          );
+        });
+      }
+    }
+
+    item.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.showHistoryContextMenu(
+        item,
+        conversation.id,
+        conversation.title,
+        isCurrent,
+        options,
+        event,
+      );
+    });
+
+    const actions = item.createDiv({ cls: 'claudian-history-item-actions' });
+    if (conversation.titleGenerationStatus === 'pending') {
+      const loadingEl = actions.createSpan({
+        cls: 'claudian-action-btn claudian-action-loading',
+      });
+      setIcon(loadingEl, 'loader-2');
+      loadingEl.setAttribute('aria-label', 'Generating title...');
+    } else if (conversation.titleGenerationStatus === 'failed') {
+      const regenerateBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
+      setIcon(regenerateBtn, 'refresh-cw');
+      regenerateBtn.setAttribute('aria-label', 'Regenerate title');
+      regenerateBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        runConversationAction(
+          () => this.regenerateTitle(conversation.id),
+          'Failed to regenerate response',
+        );
+      });
+    }
+
+    if (openState === 'closed' && options.onOpenConversationInNewTab) {
+      const openInNewTabBtn = actions.createEl('button', {
+        cls: 'claudian-action-btn claudian-open-new-tab-btn',
+      });
+      setIcon(openInNewTabBtn, 'square-plus');
+      openInNewTabBtn.setAttribute('aria-label', 'Open in new tab');
+      openInNewTabBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        runConversationAction(
+          () => this.runHistoryAction(
+            () => options.onOpenConversationInNewTab?.(conversation.id, true),
+            'Failed to load conversation',
+          ),
+          'Failed to load conversation',
+        );
+      });
+    }
+
+    const renameBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
+    setIcon(renameBtn, 'pencil');
+    renameBtn.setAttribute('aria-label', 'Rename');
+    renameBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.showRenameInput(item, conversation.id, conversation.title, options);
+    });
+
+    const deleteBtn = actions.createEl('button', {
+      cls: 'claudian-action-btn claudian-delete-btn',
+    });
+    setIcon(deleteBtn, 'trash-2');
+    deleteBtn.setAttribute('aria-label', 'Delete');
+    deleteBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      runConversationAction(
+        () => this.runHistoryAction(
+          () => this.deleteHistoryConversation(conversation.id, options),
+          'Failed to delete conversation',
+        ),
+        'Failed to delete conversation',
+      );
+    });
+
+    if (isRunning && options.showOpenStateLabels === false) {
+      const runningIndicator = item.createSpan({
+        cls: 'claudian-session-running-indicator',
+      });
+      setIcon(runningIndicator, 'loader-2');
+      runningIndicator.setAttribute('aria-label', 'Running');
+    }
+  }
+
+  private getHistoryConversationStatusForMetadata(
+    conversation: ConversationMeta,
+    options: HistoryRenderOptions,
+  ): HistoryConversationStatus {
+    const fallbackOpenState: HistoryConversationOpenState =
+      conversation.id === this.deps.state.currentConversationId ? 'current' : 'closed';
+    return this.getHistoryConversationStatus(
+      conversation.id,
+      fallbackOpenState,
+      options,
+    );
+  }
+
+  private getHistoryItemTimestamp(
+    conversation: ConversationMeta,
+    options: HistoryRenderOptions,
+  ): number {
+    if (options.sort === 'created') return conversation.createdAt;
+    if (options.sort === 'last-updated') {
+      return conversation.updatedAt
+        ?? conversation.lastResponseAt
+        ?? conversation.createdAt;
+    }
+    return conversation.lastResponseAt ?? conversation.createdAt;
   }
 
   private getHistoryConversationStatus(
@@ -894,7 +1093,7 @@ export class ConversationController {
     const { openState, isRunning } = status;
     const location = status.location ?? 'current-view';
 
-    if (!isRunning && !showOpenStateLabels) {
+    if (!showOpenStateLabels) {
       return this.formatDate(timestamp);
     }
 
@@ -967,7 +1166,7 @@ export class ConversationController {
     const fallbackOpenState: HistoryConversationOpenState = isCurrent ? 'current' : 'closed';
     const { openState } = this.getHistoryConversationStatus(conversationId, fallbackOpenState, options);
 
-    if (openState !== 'current') {
+    if (options.showOpenStateActions !== false && openState !== 'current') {
       if (openState === 'closed' && options.onOpenConversationInNewTab) {
         menu.addItem((menuItem) => menuItem
           .setTitle('Open in new tab')
@@ -1000,7 +1199,7 @@ export class ConversationController {
     menu.addItem((menuItem) => menuItem
       .setTitle('Rename')
       .onClick(() => {
-        this.showRenameInput(item, conversationId, title);
+        this.showRenameInput(item, conversationId, title, options);
       }));
     menu.addItem((menuItem) => menuItem
       .setTitle('Delete')
@@ -1030,7 +1229,12 @@ export class ConversationController {
   }
 
   /** Shows inline rename input for a conversation. */
-  private showRenameInput(item: HTMLElement, convId: string, currentTitle: string): void {
+  private showRenameInput(
+    item: HTMLElement,
+    convId: string,
+    currentTitle: string,
+    options: HistoryRenderOptions,
+  ): void {
     const titleEl = item.querySelector('.claudian-history-item-title') as HTMLElement;
     if (!titleEl) return;
 
@@ -1047,7 +1251,7 @@ export class ConversationController {
       try {
         const newTitle = input.value.trim() || currentTitle;
         await this.deps.plugin.renameConversation(convId, newTitle);
-        this.updateHistoryDropdown();
+        options.onRerender();
       } catch {
         new Notice('Failed to rename conversation');
       }

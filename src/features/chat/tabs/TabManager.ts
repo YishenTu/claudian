@@ -742,6 +742,7 @@ export class TabManager implements TabManagerInterface {
     const conversation = await this.plugin.createConversation({
       providerId: context.providerId,
       ...(context.sourceSelectedModel ? { selectedModel: context.sourceSelectedModel } : {}),
+      ...(context.currentNote ? { currentNote: context.currentNote } : {}),
     });
 
     const title = context.sourceTitle
