@@ -62,6 +62,32 @@ describe('SessionStorage', () => {
   });
 
   describe('loadMetadata', () => {
+    it('normalizes legacy timestamps to a single activity timestamp', async () => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${SESSIONS_PATH}/session-legacy-time.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-legacy-time',
+        title: 'Legacy Session',
+        createdAt: 100,
+        updatedAt: 900,
+        lastResponseAt: 700,
+      }));
+
+      const result = await storage.load('session-legacy-time');
+
+      expect(result).toEqual({
+        metadata: {
+          id: 'session-legacy-time',
+          title: 'Legacy Session',
+          createdAt: 100,
+          lastActivityAt: 700,
+        },
+        needsMigration: true,
+        source: 'current',
+      });
+    });
+
     it('returns null if file does not exist', async () => {
       mockAdapter.exists.mockResolvedValue(false);
 
@@ -75,7 +101,7 @@ describe('SessionStorage', () => {
         id: 'session-legacy',
         title: 'Legacy Session',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
       };
 
       mockAdapter.exists.mockImplementation(async (path: string) => (
@@ -95,7 +121,7 @@ describe('SessionStorage', () => {
         id: 'session-legacy',
         title: 'Legacy Session',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
       };
 
       mockAdapter.exists.mockImplementation(async (path: string) => (
@@ -116,7 +142,7 @@ describe('SessionStorage', () => {
         id: 'session-other',
         title: 'Mismatched',
         createdAt: 1,
-        updatedAt: 1,
+        lastActivityAt: 1,
       }));
 
       await expect(storage.loadMetadata('session-requested')).resolves.toBeNull();
@@ -129,7 +155,7 @@ describe('SessionStorage', () => {
         id: 'session-abc',
         title: 'Loaded Session',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
         titleGenerationStatus: 'pending',
       };
 
@@ -149,7 +175,7 @@ describe('SessionStorage', () => {
         providerId: 'codex',
         title: 'Codex Session',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
       };
 
       mockAdapter.exists.mockImplementation(async (path: string) => (
@@ -199,7 +225,7 @@ describe('SessionStorage', () => {
             providerId: 'claude',
             title: 'Claude Session',
             createdAt: 1700000000,
-            updatedAt: 1700001000,
+            lastActivityAt: 1700001000,
           }));
         }
         if (path.includes('codex-session')) {
@@ -208,7 +234,7 @@ describe('SessionStorage', () => {
             providerId: 'codex',
             title: 'Codex Session',
             createdAt: 1700000000,
-            updatedAt: 1700002000,
+            lastActivityAt: 1700002000,
           }));
         }
         return Promise.resolve('{}');
@@ -232,7 +258,7 @@ describe('SessionStorage', () => {
         id: 'old',
         title: 'Old Session',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
       }));
 
       const metas = await storage.listAllConversations();
@@ -255,7 +281,7 @@ describe('SessionStorage', () => {
             id: 'native-1',
             title: 'Native One',
             createdAt: 1700000000,
-            updatedAt: 1700002000,
+            lastActivityAt: 1700002000,
           }));
         }
         if (path.includes('native-2')) {
@@ -263,7 +289,7 @@ describe('SessionStorage', () => {
             id: 'native-2',
             title: 'Native Two',
             createdAt: 1700000000,
-            updatedAt: 1700001000,
+            lastActivityAt: 1700001000,
           }));
         }
         return Promise.resolve('{}');
@@ -314,7 +340,7 @@ describe('SessionStorage', () => {
             id: 'good',
             title: 'Good',
             createdAt: 1700000000,
-            updatedAt: 1700001000,
+            lastActivityAt: 1700001000,
           }));
         }
         return Promise.reject(new Error('Read error'));
@@ -343,7 +369,7 @@ describe('SessionStorage', () => {
           id: 'good',
           title: 'Good',
           createdAt: 1,
-          updatedAt: 2,
+          lastActivityAt: 2,
         });
       });
 
@@ -379,7 +405,7 @@ describe('SessionStorage', () => {
         id: 'legacy',
         title: 'Legacy session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       }));
       mockAdapter.write.mockRejectedValue(new Error('EEXIST: .claudian/sessions'));
 
@@ -395,7 +421,7 @@ describe('SessionStorage', () => {
         id: 'different-id',
         title: 'Mismatch',
         createdAt: 1,
-        updatedAt: 1,
+        lastActivityAt: 1,
       });
       mockAdapter.listFiles.mockResolvedValue([
         '.claudian/sessions/filename-id.meta.json',
@@ -425,7 +451,7 @@ describe('SessionStorage', () => {
         await new Promise(resolve => setTimeout(resolve, 1));
         activeReads -= 1;
         const id = path.split('/').pop()!.replace('.meta.json', '');
-        return JSON.stringify({ id, title: id, createdAt: 1, updatedAt: 1 });
+        return JSON.stringify({ id, title: id, createdAt: 1, lastActivityAt: 1 });
       });
 
       const metas = await storage.listMetadata();
@@ -453,7 +479,7 @@ describe('SessionStorage', () => {
         if (blockedIds.has(id)) {
           await blockedReads;
         }
-        return JSON.stringify({ id, title: id, createdAt: 1, updatedAt: 1 });
+        return JSON.stringify({ id, title: id, createdAt: 1, lastActivityAt: 1 });
       });
 
       const scan = storage.listMetadata({ onBatch, batchSize: 4 });
@@ -506,7 +532,7 @@ describe('SessionStorage', () => {
 
       expect(metas).toHaveLength(2);
 
-      // Should be sorted by lastResponseAt descending
+      // Should be sorted by lastActivityAt descending
       expect(metas[0].id).toBe('session-2');
       expect(metas[1].id).toBe('session-1');
 
@@ -537,7 +563,7 @@ describe('SessionStorage', () => {
         id: 'session-status',
         title: 'Status Test',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
         titleGenerationStatus: 'failed',
       }));
 
@@ -555,7 +581,7 @@ describe('SessionStorage', () => {
         providerId: 'claude' as ProviderId,
         title: 'Subagent Test',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
         sessionId: 'sdk-session',
         messages: [
           { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
@@ -601,7 +627,7 @@ describe('SessionStorage', () => {
         providerId: 'claude' as ProviderId,
         title: 'No Subagent',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
         sessionId: null,
         messages: [
           { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
@@ -620,7 +646,7 @@ describe('SessionStorage', () => {
         providerId: 'claude' as ProviderId,
         title: 'Task Subagent Test',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
         sessionId: 'sdk-session',
         messages: [
           {
@@ -654,7 +680,7 @@ describe('SessionStorage', () => {
         providerId: 'claude' as ProviderId,
         title: 'Rewind Test',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
         sessionId: 'sdk-session',
         messages: [],
         resumeAtMessageId: 'assistant-uuid-123',
@@ -671,7 +697,7 @@ describe('SessionStorage', () => {
         providerId: 'claude' as ProviderId,
         title: 'No Rewind',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
         sessionId: null,
         messages: [],
       };
@@ -691,7 +717,7 @@ describe('SessionStorage', () => {
         providerId: 'claude',
         title: 'Rejected state',
         createdAt: 1,
-        updatedAt: 1,
+        lastActivityAt: 1,
         sessionId: null,
         messages: [],
         providerState: { untrustedPath: '/outside/root/session.jsonl' },
@@ -717,8 +743,7 @@ describe('SessionStorage', () => {
         providerId: 'claude' as ProviderId,
         title: 'Convert Test',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
-        lastResponseAt: 1700000900,
+        lastActivityAt: 1700000900,
         sessionId: 'sdk-session',
         providerState: { providerSessionId: 'current-sdk-session' },
         messages: [
@@ -736,8 +761,7 @@ describe('SessionStorage', () => {
       expect(metadata.id).toBe('conv-convert');
       expect(metadata.title).toBe('Convert Test');
       expect(metadata.createdAt).toBe(1700000000);
-      expect(metadata.updatedAt).toBe(1700001000);
-      expect(metadata.lastResponseAt).toBe(1700000900);
+      expect(metadata.lastActivityAt).toBe(1700000900);
       expect(metadata.sessionId).toBe('sdk-session');
       expect((metadata.providerState as any)?.providerSessionId).toBe('current-sdk-session');
       expect(metadata.currentNote).toBe('notes/test.md');
@@ -756,7 +780,7 @@ describe('SessionStorage', () => {
         providerId: 'claude' as ProviderId,
         title: 'Fork Test',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
         sessionId: null,
         messages: [],
         providerState: { forkSource: { sessionId: 'source-session-abc', resumeAt: 'asst-uuid-xyz' } },
@@ -776,7 +800,7 @@ describe('SessionStorage', () => {
         providerId: 'claude' as ProviderId,
         title: 'No Fork',
         createdAt: 1700000000,
-        updatedAt: 1700001000,
+        lastActivityAt: 1700001000,
         sessionId: 'sdk-session',
         messages: [],
       };

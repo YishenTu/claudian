@@ -14,7 +14,7 @@ function createConversation(sessionFile: string): Conversation {
     providerState: { sessionFile, sessionId: 's1' },
     sessionId: 's1',
     title: 'Pi',
-    updatedAt: 1,
+    lastActivityAt: 1,
   };
 }
 

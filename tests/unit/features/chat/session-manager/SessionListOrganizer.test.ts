@@ -13,7 +13,7 @@ function createConversation(
     providerId: 'claude',
     title: id,
     createdAt: 1,
-    updatedAt: 1,
+    lastActivityAt: 1,
     messageCount: 0,
     preview: '',
     ...overrides,
@@ -43,9 +43,9 @@ describe('SessionListOrganizer', () => {
 
   it('groups by full note path and keeps same-name notes in separate groups', () => {
     const sections = organizeSessionList([
-      createConversation('a', { currentNote: 'Projects/A/Plan.md', updatedAt: 10 }),
-      createConversation('b', { currentNote: 'Projects/B/Plan.md', updatedAt: 30 }),
-      createConversation('c', { currentNote: 'Projects/A/Plan.md', updatedAt: 20 }),
+      createConversation('a', { currentNote: 'Projects/A/Plan.md', lastActivityAt: 10 }),
+      createConversation('b', { currentNote: 'Projects/B/Plan.md', lastActivityAt: 30 }),
+      createConversation('c', { currentNote: 'Projects/A/Plan.md', lastActivityAt: 20 }),
     ], {
       organization: 'linked-note',
       sort: 'last-updated',
@@ -63,14 +63,14 @@ describe('SessionListOrganizer', () => {
 
   it('keeps unlinked and provisional sessions out of note groups', () => {
     const sections = organizeSessionList([
-      createConversation('unlinked', { lastResponseAt: 20 }),
+      createConversation('unlinked', { lastActivityAt: 20 }),
       createConversation('provisional', {
         currentNote: 'Inbox/Untitled 2.md',
-        updatedAt: 30,
+        lastActivityAt: 30,
       }),
       createConversation('linked', {
         currentNote: 'Notes/Real note.md',
-        updatedAt: 10,
+        lastActivityAt: 10,
       }),
     ], {
       organization: 'linked-note',
@@ -111,8 +111,8 @@ describe('SessionListOrganizer', () => {
 
   it('returns one flat section for the chronological organization', () => {
     const sections = organizeSessionList([
-      createConversation('older', { updatedAt: 10 }),
-      createConversation('newer', { updatedAt: 20 }),
+      createConversation('older', { lastActivityAt: 10 }),
+      createConversation('newer', { lastActivityAt: 20 }),
     ], {
       organization: 'list',
       sort: 'last-updated',
@@ -127,15 +127,13 @@ describe('SessionListOrganizer', () => {
     ]);
   });
 
-  it('uses metadata updatedAt for the last-updated sort', () => {
+  it('uses lastActivityAt for the last-updated sort', () => {
     const sections = organizeSessionList([
       createConversation('older-update', {
-        updatedAt: 10,
-        lastResponseAt: 100,
+        lastActivityAt: 10,
       }),
       createConversation('newer-update', {
-        updatedAt: 20,
-        lastResponseAt: 1,
+        lastActivityAt: 20,
       }),
     ], {
       organization: 'list',

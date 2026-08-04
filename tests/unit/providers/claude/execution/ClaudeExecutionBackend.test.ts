@@ -1029,7 +1029,7 @@ describe('ClaudeExecutionBackend', () => {
       providerId: 'claude',
       title: 'Claude recovery',
       createdAt: 1,
-      updatedAt: 1,
+      lastActivityAt: 1,
       sessionId: 'missing-session',
       messages: [],
       providerState: {

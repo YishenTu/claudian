@@ -1060,7 +1060,7 @@ export class ClaudianView extends ItemView {
       .setTitle('Sort sessions by')
       .setIsLabel(true));
     menu.addItem(item => item
-      .setTitle('Last updated')
+      .setTitle('Last activity')
       .setChecked(sort === 'last-updated')
       .onClick(() => this.setSessionManagerSort('last-updated')));
     menu.addItem(item => item

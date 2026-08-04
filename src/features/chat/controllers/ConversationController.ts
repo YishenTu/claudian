@@ -89,7 +89,6 @@ export interface ConversationControllerDeps {
 type SaveOptions = {
   resumeAtMessageId?: string;
   resetProviderSession?: boolean;
-  touchUpdatedAt?: boolean;
 };
 
 export type HistoryConversationOpenState = 'closed' | 'open' | 'current';
@@ -165,6 +164,7 @@ export class ConversationController {
   async createNew(options: { force?: boolean } = {}): Promise<void> {
     const { plugin, state, subagentManager } = this.deps;
     const force = !!options.force;
+    const isCancellingForegroundTurn = force && state.isStreaming;
     if (state.isStreaming && !force) return;
     if (state.isRewinding) return;
     if (state.isCreatingConversation) return;
@@ -176,7 +176,7 @@ export class ConversationController {
     try {
       this.deps.dismissPendingInlinePrompts?.();
 
-      if (force && state.isStreaming) {
+      if (isCancellingForegroundTurn) {
         state.cancelRequested = true;
         state.bumpStreamGeneration();
         this.getExecutionCoordinator()?.cancel();
@@ -190,7 +190,7 @@ export class ConversationController {
 
       // Persist terminalized background tasks before clearing their runtime state.
       if (state.currentConversationId && state.messages.length > 0) {
-        await this.save();
+        await this.save(isCancellingForegroundTurn);
       }
 
       subagentManager.clear();
@@ -520,13 +520,12 @@ export class ConversationController {
       let saveError: string | null = null;
       try {
         await this.save(
-          false,
+          true,
           result.sessionStrategy === 'preserve-provider-session'
-            ? { resumeAtMessageId: undefined, touchUpdatedAt: true }
+            ? { resumeAtMessageId: undefined }
             : {
               resumeAtMessageId: prevAssistantUuid,
               resetProviderSession: !prevAssistantUuid,
-              touchUpdatedAt: true,
             },
         );
       } catch (e) {
@@ -561,9 +560,8 @@ export class ConversationController {
    * For native sessions (new conversations with sessionId from SDK),
    * only metadata is saved - the SDK handles message persistence.
    */
-  async save(updateLastResponse = false, options?: SaveOptions): Promise<void> {
+  async save(updateLastActivity = false, options?: SaveOptions): Promise<void> {
     const { plugin, state } = this.deps;
-    let createdConversation = false;
 
     // Entry point with no messages - nothing to save
     if (!state.currentConversationId && state.messages.length === 0) {
@@ -583,7 +581,6 @@ export class ConversationController {
         ...(currentNote ? { currentNote } : {}),
       });
       state.currentConversationId = conversation.id;
-      createdConversation = true;
     }
 
     const externalContextSelector = this.deps.getExternalContextSelector();
@@ -599,8 +596,8 @@ export class ConversationController {
       enabledMcpServers: enabledMcpServers.length > 0 ? enabledMcpServers : undefined,
     };
 
-    if (updateLastResponse) {
-      updates.lastResponseAt = Date.now();
+    if (updateLastActivity) {
+      updates.lastActivityAt = Date.now();
     }
 
     if (options && 'resumeAtMessageId' in options) {
@@ -611,19 +608,7 @@ export class ConversationController {
       updates.providerState = undefined;
     }
 
-    const shouldTouchUpdatedAt = options?.touchUpdatedAt === true
-      || createdConversation
-      || updateLastResponse
-      || state.hasPendingConversationSave;
-    if (shouldTouchUpdatedAt) {
-      await plugin.updateConversation(state.currentConversationId!, updates);
-    } else {
-      await plugin.updateConversation(
-        state.currentConversationId!,
-        updates,
-        { touchUpdatedAt: false },
-      );
-    }
+    await plugin.updateConversation(state.currentConversationId!, updates);
     state.hasPendingConversationSave = false;
   }
 
@@ -851,7 +836,7 @@ export class ConversationController {
     list.dataset.visibleCount = String(visibleCount);
     const sortedPinnedConversations = organizeSessionList(pinnedConversations, {
       organization: 'list',
-      sort: options.sort ?? 'response-activity',
+      sort: options.sort ?? 'last-updated',
       language: options.language ?? 'en',
     })[0]?.conversations ?? [];
     const visiblePinnedConversations = sortedPinnedConversations.slice(0, visibleCount);
@@ -863,7 +848,7 @@ export class ConversationController {
 
     const sections = organizeSessionList(sessionConversations, {
       organization,
-      sort: options.sort ?? 'response-activity',
+      sort: options.sort ?? 'last-updated',
       language: options.language ?? 'en',
       noteExists: options.noteExists,
     });
@@ -1306,12 +1291,7 @@ export class ConversationController {
     options: HistoryRenderOptions,
   ): number {
     if (options.sort === 'created') return conversation.createdAt;
-    if (options.sort === 'last-updated') {
-      return conversation.updatedAt
-        ?? conversation.lastResponseAt
-        ?? conversation.createdAt;
-    }
-    return conversation.lastResponseAt ?? conversation.createdAt;
+    return conversation.lastActivityAt;
   }
 
   private getHistoryConversationStatus(

@@ -11,7 +11,7 @@ function createConversation(id = 'conversation-1'): Conversation {
     providerId: 'claude',
     title: 'Conversation',
     createdAt: 1,
-    updatedAt: 1,
+    lastActivityAt: 1,
     sessionId: 'session-1',
     messages: [],
   };
@@ -81,23 +81,45 @@ describe('ConversationRepository hydration', () => {
 
   it('persists and projects pinned session metadata', async () => {
     const conversation = createConversation();
-    conversation.updatedAt = 42;
+    conversation.lastActivityAt = 42;
     const { repository, persistence } = createRepository(conversation);
 
     await repository.setPinned(conversation.id, true);
 
     expect(repository.getMetadata(conversation.id)?.isPinned).toBe(true);
     expect(repository.list()[0].isPinned).toBe(true);
-    expect(conversation.updatedAt).toBe(42);
+    expect(conversation.lastActivityAt).toBe(42);
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: conversation.id,
       isPinned: true,
     }));
   });
 
+  it('does not treat metadata edits or provider snapshots as session activity', async () => {
+    const conversation = createConversation();
+    conversation.lastActivityAt = 42;
+    const { repository } = createRepository(conversation);
+
+    await repository.rename(conversation.id, 'Renamed');
+    repository.registerExecutionBinding(conversation.id, 'binding-1', 1);
+    await repository.persistExecutionSnapshot(
+      conversation.id,
+      'binding-1',
+      1,
+      {
+        providerId: 'claude',
+        revision: 1,
+        providerSessionId: 'native-session',
+        status: 'idle',
+      },
+    );
+
+    expect(conversation.lastActivityAt).toBe(42);
+  });
+
   it('persists archive state without changing activity and clears pin state', async () => {
     const conversation = createConversation();
-    conversation.updatedAt = 42;
+    conversation.lastActivityAt = 42;
     conversation.isPinned = true;
     const { repository, persistence } = createRepository(conversation);
 
@@ -106,7 +128,7 @@ describe('ConversationRepository hydration', () => {
     expect(repository.getMetadata(conversation.id)).toMatchObject({
       isArchived: true,
       isPinned: false,
-      updatedAt: 42,
+      lastActivityAt: 42,
     });
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: conversation.id,
@@ -124,11 +146,10 @@ describe('ConversationRepository hydration', () => {
   it('rewrites linked note paths without changing session activity timestamps', async () => {
     const fileConversation = createConversation('file');
     fileConversation.currentNote = 'Notes/Old.md';
-    fileConversation.updatedAt = 20;
-    fileConversation.lastResponseAt = 15;
+    fileConversation.lastActivityAt = 20;
     const folderConversation = createConversation('folder');
     folderConversation.currentNote = 'Projects/Old/Plan.md';
-    folderConversation.updatedAt = 40;
+    folderConversation.lastActivityAt = 40;
     const unrelatedConversation = createConversation('unrelated');
     unrelatedConversation.currentNote = 'Notes/Other.md';
     const { repository, persistence } = createRepository(fileConversation);
@@ -141,42 +162,40 @@ describe('ConversationRepository hydration', () => {
 
     expect(fileConversation).toMatchObject({
       currentNote: 'Notes/New.md',
-      updatedAt: 20,
-      lastResponseAt: 15,
+      lastActivityAt: 20,
     });
     expect(folderConversation).toMatchObject({
       currentNote: 'Projects/New/Plan.md',
-      updatedAt: 40,
+      lastActivityAt: 40,
     });
     expect(unrelatedConversation.currentNote).toBe('Notes/Other.md');
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: 'file',
       currentNote: 'Notes/New.md',
-      updatedAt: 20,
+      lastActivityAt: 20,
     }));
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: 'folder',
       currentNote: 'Projects/New/Plan.md',
-      updatedAt: 40,
+      lastActivityAt: 40,
     }));
   });
 
   it('persists read-only state synchronization without changing session activity', async () => {
     const conversation = createConversation();
-    conversation.updatedAt = 42;
+    conversation.lastActivityAt = 42;
     const { repository, persistence } = createRepository(conversation);
 
     await repository.update(
       conversation.id,
       { currentNote: 'Notes/Current.md' },
-      { touchUpdatedAt: false },
     );
 
-    expect(conversation.updatedAt).toBe(42);
+    expect(conversation.lastActivityAt).toBe(42);
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: conversation.id,
       currentNote: 'Notes/Current.md',
-      updatedAt: 42,
+      lastActivityAt: 42,
     }));
   });
 
@@ -224,7 +243,7 @@ describe('ConversationRepository hydration', () => {
     const conversation = createConversation();
     conversation.sessionId = null;
     conversation.providerState = undefined;
-    conversation.updatedAt = 42;
+    conversation.lastActivityAt = 42;
     const recoverConversationSessionReference = jest.fn(async (target: Conversation) => {
       target.sessionId = 'recovered-session';
       target.providerState = { providerSessionId: 'recovered-session' };
@@ -252,7 +271,7 @@ describe('ConversationRepository hydration', () => {
       id: conversation.id,
       sessionId: 'recovered-session',
       providerState: { providerSessionId: 'recovered-session' },
-      updatedAt: 42,
+      lastActivityAt: 42,
     }));
     expect(hydrateConversationHistory).toHaveBeenCalledWith(
       conversation,
@@ -368,7 +387,7 @@ describe('ConversationRepository hydration', () => {
     const { repository } = createRepository(existing);
     const duplicate = createConversation('existing');
     const added = createConversation('added');
-    added.updatedAt = 2;
+    added.lastActivityAt = 2;
 
     const merged = repository.mergeMetadataConversations([duplicate, added]);
 

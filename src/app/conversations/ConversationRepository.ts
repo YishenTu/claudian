@@ -23,7 +23,6 @@ import {
   type ChatMessage,
   type Conversation,
   type ConversationMeta,
-  type ConversationUpdateOptions,
   isCanonicalUserMessage,
   type SessionMetadata,
 } from '../../core/types';
@@ -73,6 +72,11 @@ interface NotePathRename {
   oldPath: string;
   newPath: string;
   includeDescendants: boolean;
+}
+
+interface InputLedgerCorrelationResult {
+  ledgerChanged: boolean;
+  lastAcceptedInputAt: number | null;
 }
 
 export class ConversationInputLedgerUnavailableError extends Error {
@@ -137,6 +141,7 @@ export class ConversationRepository {
   async adoptMetadataConversations(
     entries: ReadonlyArray<{
       conversation: Conversation;
+      needsMigration: SessionMetadataReadResult['needsMigration'];
       source: SessionMetadataReadResult['source'];
     }>,
   ): Promise<void> {
@@ -155,9 +160,9 @@ export class ConversationRepository {
     const addedIds = new Set(added.map(({ id }) => id));
     const migrations = entries
       .filter(
-        ({ conversation, source }) =>
+        ({ conversation, needsMigration, source }) =>
           (
-            source === 'legacy'
+            (source === 'legacy' || needsMigration)
             && (addedIds.has(conversation.id) || !!this.getSync(conversation.id))
           )
           || notePathCorrectedIds.has(conversation.id),
@@ -167,7 +172,9 @@ export class ConversationRepository {
         async () => {
           const current = this.getSync(conversation.id);
           if (!current || !await this.canWriteConversation(current)) return;
-          await this.persistence.saveMetadata(this.toSessionMetadata(current));
+          await this.persistence.saveMetadata(this.toSessionMetadata(current, {
+            preserveProviderState: !this.hydratedConversationIds.has(current.id),
+          }));
           this.pendingNotePathCorrectionIds.delete(current.id);
           if (source === 'legacy') {
             await this.persistence.deleteLegacyMetadata(current.id);
@@ -197,8 +204,7 @@ export class ConversationRepository {
     this.conversations.push(...added);
     this.conversations.sort(
       (left, right) =>
-        (right.lastResponseAt ?? right.updatedAt)
-        - (left.lastResponseAt ?? left.updatedAt),
+        right.lastActivityAt - left.lastActivityAt,
     );
     for (const conversation of added) {
       if (conversation.messages.length > 0) {
@@ -228,32 +234,6 @@ export class ConversationRepository {
 
   getAll(): Conversation[] {
     return this.conversations;
-  }
-
-  backfillResponseTimestamps(): Conversation[] {
-    const updated: Conversation[] = [];
-    for (const conversation of this.conversations) {
-      if (
-        conversation.lastResponseAt != null
-        || conversation.messages.length === 0
-      ) {
-        continue;
-      }
-
-      for (
-        let index = conversation.messages.length - 1;
-        index >= 0;
-        index -= 1
-      ) {
-        const message = conversation.messages[index];
-        if (message.role === 'assistant') {
-          conversation.lastResponseAt = message.timestamp;
-          updated.push(conversation);
-          break;
-        }
-      }
-    }
-    return updated;
   }
 
   async create(options?: {
@@ -287,7 +267,7 @@ export class ConversationRepository {
       providerId,
       title: this.generateDefaultTitle(),
       createdAt: Date.now(),
-      updatedAt: Date.now(),
+      lastActivityAt: Date.now(),
       sessionId: sessionId ?? null,
       selectedModel,
       messages: [],
@@ -429,15 +409,10 @@ export class ConversationRepository {
     if (!conversation) return;
 
     conversation.title = title.trim() || this.generateDefaultTitle();
-    conversation.updatedAt = Date.now();
     await this.save(conversation);
   }
 
-  async update(
-    id: string,
-    updates: Partial<Conversation>,
-    options: ConversationUpdateOptions = {},
-  ): Promise<void> {
+  async update(id: string, updates: Partial<Conversation>): Promise<void> {
     const conversation = this.getSync(id);
     if (!conversation) return;
 
@@ -456,9 +431,6 @@ export class ConversationRepository {
       }
     }
     Object.assign(conversation, safeUpdates);
-    if (options.touchUpdatedAt !== false) {
-      conversation.updatedAt = Date.now();
-    }
     if (
       'sessionId' in safeUpdates
       || 'providerState' in safeUpdates
@@ -698,7 +670,10 @@ export class ConversationRepository {
     const conversation = this.getSync(conversationId);
     if (conversation) {
       this.attachRecordToInMemoryMessages(conversation, record);
-      conversation.updatedAt = Date.now();
+      conversation.lastActivityAt = Math.max(
+        conversation.lastActivityAt,
+        record.timestamp,
+      );
     }
 
     await this.enqueuePersistence(conversationId, async () => {
@@ -786,8 +761,7 @@ export class ConversationRepository {
       providerId: conversation.providerId,
       title: conversation.title,
       createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-      lastResponseAt: conversation.lastResponseAt,
+      lastActivityAt: conversation.lastActivityAt,
       messageCount: conversation.messages.length,
       preview: this.getPreview(conversation),
       currentNote: conversation.currentNote,
@@ -873,8 +847,7 @@ export class ConversationRepository {
       providerId: conversation.providerId,
       title: conversation.title,
       createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-      lastResponseAt: conversation.lastResponseAt,
+      lastActivityAt: conversation.lastActivityAt,
       messageCount: conversation.messages.length,
       preview: this.getPreview(conversation),
       currentNote: conversation.currentNote,
@@ -1035,12 +1008,23 @@ export class ConversationRepository {
   ): Promise<void> {
     const state = await this.loadInputLedger(conversation.id);
     if (state.status !== 'loaded') return;
-    const promoted = this.correlateInputLedger(conversation, state.ledger);
-    if (promoted) {
+    const correlation = this.correlateInputLedger(conversation, state.ledger);
+    if (correlation.ledgerChanged) {
       try {
         await this.persistLedgerOnly(conversation.id, state.ledger);
       } catch {
         // Native history remains usable; the accepted promotion stays dirty.
+      }
+    }
+    if (
+      correlation.lastAcceptedInputAt !== null
+      && correlation.lastAcceptedInputAt > conversation.lastActivityAt
+    ) {
+      conversation.lastActivityAt = correlation.lastAcceptedInputAt;
+      try {
+        await this.save(conversation);
+      } catch {
+        // The repaired activity remains in memory for the next metadata write.
       }
     }
   }
@@ -1109,9 +1093,10 @@ export class ConversationRepository {
   private correlateInputLedger(
     conversation: Conversation,
     ledger: ConversationInputLedger,
-  ): boolean {
+  ): InputLedgerCorrelationResult {
     const usedRecordIds = new Set<string>();
-    let promoted = false;
+    let ledgerChanged = false;
+    let lastAcceptedInputAt: number | null = null;
     let userTurnOrdinal = 0;
     for (
       let messageIndex = 0;
@@ -1154,7 +1139,7 @@ export class ConversationRepository {
         && record.providerUserMessageId !== message.userMessageId
       ) {
         record.providerUserMessageId = message.userMessageId;
-        promoted = true;
+        ledgerChanged = true;
       }
       if (!record.providerAssistantMessageId) {
         const assistant = findAssistantForCanonicalUserTurn(
@@ -1163,16 +1148,19 @@ export class ConversationRepository {
         );
         if (assistant?.assistantMessageId) {
           record.providerAssistantMessageId = assistant.assistantMessageId;
-          promoted = true;
+          ledgerChanged = true;
         }
       }
       this.attachRecordToMessage(message, record);
       if (record.state === 'staged') {
         record.state = 'accepted';
-        promoted = true;
+        ledgerChanged = true;
       }
+      lastAcceptedInputAt = lastAcceptedInputAt === null
+        ? record.timestamp
+        : Math.max(lastAcceptedInputAt, record.timestamp);
     }
-    return promoted;
+    return { ledgerChanged, lastAcceptedInputAt };
   }
 
   private attachRecordToInMemoryMessages(
@@ -1272,7 +1260,6 @@ export class ConversationRepository {
         ? nextProviderState
         : undefined;
     }
-    conversation.updatedAt = Date.now();
   }
 
   private save(conversation: Conversation): Promise<void> {
@@ -1299,11 +1286,15 @@ export class ConversationRepository {
     );
   }
 
-  private toSessionMetadata(conversation: Conversation): SessionMetadata {
+  private toSessionMetadata(
+    conversation: Conversation,
+    options: { preserveProviderState?: boolean } = {},
+  ): SessionMetadata {
     const historyService = ProviderRegistry.getConversationHistoryService(
       conversation.providerId,
     );
-    const providerState = historyService.buildPersistedProviderState
+    const providerState = !options.preserveProviderState
+      && historyService.buildPersistedProviderState
       ? historyService.buildPersistedProviderState(conversation)
       : conversation.providerState;
     return {
@@ -1312,8 +1303,7 @@ export class ConversationRepository {
       title: conversation.title,
       titleGenerationStatus: conversation.titleGenerationStatus,
       createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-      lastResponseAt: conversation.lastResponseAt,
+      lastActivityAt: conversation.lastActivityAt,
       sessionId: conversation.sessionId,
       selectedModel: conversation.selectedModel,
       providerState:

@@ -34,7 +34,7 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
         messages: [],
         sessionId: null,
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        lastActivityAt: Date.now(),
       }),
       switchConversation: jest.fn().mockResolvedValue({
         id: 'switched-conv',
@@ -42,7 +42,7 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
         messages: [],
         sessionId: null,
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        lastActivityAt: Date.now(),
       }),
       getConversationById: jest.fn().mockResolvedValue(null),
       getConversationSync: jest.fn().mockReturnValue(null),
@@ -229,7 +229,6 @@ describe('ConversationController', () => {
         expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
           'old-conv',
           expect.any(Object),
-          { touchUpdatedAt: false },
         );
       });
 
@@ -426,7 +425,7 @@ describe('ConversationController', () => {
         messages: [],
         sessionId: null,
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        lastActivityAt: Date.now(),
       });
 
       await controller.save();
@@ -455,7 +454,7 @@ describe('ConversationController', () => {
         messages: [],
         sessionId: 'session-codex',
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        lastActivityAt: Date.now(),
       });
 
       await controller.save();
@@ -481,7 +480,7 @@ describe('ConversationController', () => {
         messages: [],
         sessionId: null,
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        lastActivityAt: Date.now(),
       });
 
       await controller.save();
@@ -495,7 +494,7 @@ describe('ConversationController', () => {
       );
     });
 
-    it('should set lastResponseAt when updateLastResponse is true', async () => {
+    it('should set lastActivityAt when updateLastActivity is true', async () => {
       deps.state.currentConversationId = 'conv-1';
       deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
 
@@ -505,12 +504,12 @@ describe('ConversationController', () => {
 
       const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
       const updates = call[1];
-      expect(updates.lastResponseAt).toBeDefined();
-      expect(updates.lastResponseAt).toBeGreaterThanOrEqual(beforeCall);
-      expect(updates.lastResponseAt).toBeLessThanOrEqual(Date.now());
+      expect(updates.lastActivityAt).toBeDefined();
+      expect(updates.lastActivityAt).toBeGreaterThanOrEqual(beforeCall);
+      expect(updates.lastActivityAt).toBeLessThanOrEqual(Date.now());
     });
 
-    it('should NOT clear resumeAtMessageId when updateLastResponse is true (caller must pass extraUpdates)', async () => {
+    it('should NOT clear resumeAtMessageId when updateLastActivity is true (caller must pass options)', async () => {
       deps.state.currentConversationId = 'conv-1';
       deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
 
@@ -673,8 +672,8 @@ describe('ConversationController', () => {
     describe('updateHistoryDropdown with conversations', () => {
       it('should render conversation items when conversations exist', () => {
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'First Conversation', createdAt: 1000, lastResponseAt: 3000 },
-          { id: 'conv-2', title: 'Second Conversation', createdAt: 2000, lastResponseAt: 2000 },
+          { id: 'conv-1', title: 'First Conversation', createdAt: 1000, lastActivityAt: 3000 },
+          { id: 'conv-2', title: 'Second Conversation', createdAt: 2000, lastActivityAt: 2000 },
         ]);
 
         controller.updateHistoryDropdown();
@@ -694,11 +693,11 @@ describe('ConversationController', () => {
         expect(list.children[0].hasClass('claudian-history-empty')).toBe(true);
       });
 
-      it('should sort conversations by lastResponseAt descending', () => {
+      it('should sort conversations by lastActivityAt descending', () => {
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-old', title: 'Old', createdAt: 1000, lastResponseAt: 1000 },
-          { id: 'conv-new', title: 'New', createdAt: 2000, lastResponseAt: 5000 },
-          { id: 'conv-mid', title: 'Mid', createdAt: 3000, lastResponseAt: 3000 },
+          { id: 'conv-old', title: 'Old', createdAt: 1000, lastActivityAt: 1000 },
+          { id: 'conv-new', title: 'New', createdAt: 2000, lastActivityAt: 5000 },
+          { id: 'conv-mid', title: 'Mid', createdAt: 3000, lastActivityAt: 3000 },
         ]);
 
         controller.updateHistoryDropdown();
@@ -708,22 +707,20 @@ describe('ConversationController', () => {
         expect(firstTitle?.textContent).toBe('New');
       });
 
-      it('preserves response-activity ordering in the single-mode history surface', () => {
+      it('uses the same activity ordering in the single-mode history surface', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
             id: 'metadata-newer',
             title: 'Metadata newer',
             createdAt: 1,
-            updatedAt: 300,
-            lastResponseAt: 100,
+            lastActivityAt: 100,
           },
           {
             id: 'response-newer',
             title: 'Response newer',
             createdAt: 2,
-            updatedAt: 200,
-            lastResponseAt: 200,
+            lastActivityAt: 200,
           },
         ]);
 
@@ -742,8 +739,8 @@ describe('ConversationController', () => {
         deps.state.currentConversationId = 'conv-1';
 
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 1000 },
-          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 2000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 1000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastActivityAt: 2000 },
         ]);
 
         controller.updateHistoryDropdown();
@@ -756,7 +753,7 @@ describe('ConversationController', () => {
 
       it('should show loading indicator for pending title generation', () => {
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Generating...', createdAt: 1000, lastResponseAt: 1000, titleGenerationStatus: 'pending' },
+          { id: 'conv-1', title: 'Generating...', createdAt: 1000, lastActivityAt: 1000, titleGenerationStatus: 'pending' },
         ]);
 
         controller.updateHistoryDropdown();
@@ -769,7 +766,7 @@ describe('ConversationController', () => {
 
       it('should show regenerate button for failed title generation', () => {
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Fallback Title', createdAt: 1000, lastResponseAt: 1000, titleGenerationStatus: 'failed' },
+          { id: 'conv-1', title: 'Fallback Title', createdAt: 1000, lastActivityAt: 1000, titleGenerationStatus: 'failed' },
         ]);
 
         controller.updateHistoryDropdown();
@@ -786,7 +783,7 @@ describe('ConversationController', () => {
         deps.state.currentConversationId = 'conv-1';
 
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 1000 },
         ]);
 
         controller.updateHistoryDropdown();
@@ -802,14 +799,14 @@ describe('ConversationController', () => {
         deps.state.currentConversationId = 'conv-1';
 
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.updateHistoryDropdown();
 
         const list = dropdown.children[1];
-        // conv-2 is the non-current one (sorted second by lastResponseAt)
+        // conv-2 is the non-current one (sorted second by lastActivityAt)
         const otherItem = list.children[1];
         const content = otherItem.querySelector('.claudian-history-item-content');
         const listeners = content?._eventListeners?.get('click');
@@ -821,7 +818,7 @@ describe('ConversationController', () => {
         deps.state.isStreaming = true;
 
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Test', createdAt: 1000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Test', createdAt: 1000, lastActivityAt: 1000 },
         ]);
 
         controller.updateHistoryDropdown();
@@ -855,7 +852,7 @@ describe('ConversationController', () => {
         const onSelectConversation = jest.fn();
 
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Test', createdAt: 1000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Test', createdAt: 1000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, { onSelectConversation });
@@ -866,9 +863,9 @@ describe('ConversationController', () => {
       it('partitions pinned sessions into a dedicated dual-mode section', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'normal', title: 'Normal', createdAt: 2, updatedAt: 2 },
-          { id: 'pinned-old', title: 'Pinned old', createdAt: 1, updatedAt: 1, isPinned: true },
-          { id: 'pinned-new', title: 'Pinned new', createdAt: 3, updatedAt: 3, isPinned: true },
+          { id: 'normal', title: 'Normal', createdAt: 2, lastActivityAt: 2 },
+          { id: 'pinned-old', title: 'Pinned old', createdAt: 1, lastActivityAt: 1, isPinned: true },
+          { id: 'pinned-new', title: 'Pinned new', createdAt: 3, lastActivityAt: 3, isPinned: true },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1094,7 +1091,7 @@ describe('ConversationController', () => {
         const onRerender = jest.fn();
 
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Test', createdAt: 1000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Test', createdAt: 1000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1363,8 +1360,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Open elsewhere', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Open elsewhere', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1387,7 +1384,7 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1414,8 +1411,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Open elsewhere', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Open elsewhere', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1442,8 +1439,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Open', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Open', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1476,8 +1473,7 @@ describe('ConversationController', () => {
             id: 'conv-1',
             title: 'Timestamped',
             createdAt: 1000,
-            updatedAt: 3000,
-            lastResponseAt: 2000,
+            lastActivityAt: 2000,
           },
         ]);
 
@@ -1488,7 +1484,7 @@ describe('ConversationController', () => {
         });
 
         expect(container.querySelector('.claudian-history-item-date')?.textContent)
-          .toBe('Date 3000');
+          .toBe('Date 2000');
 
         controller.renderHistoryDropdown(container, {
           onSelectConversation: jest.fn(),
@@ -1551,7 +1547,7 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1577,8 +1573,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Running elsewhere', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Running elsewhere', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1604,9 +1600,9 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Open elsewhere', createdAt: 2000, lastResponseAt: 1000 },
-          { id: 'conv-3', title: 'Running elsewhere', createdAt: 3000, lastResponseAt: 500 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Open elsewhere', createdAt: 2000, lastActivityAt: 1000 },
+          { id: 'conv-3', title: 'Running elsewhere', createdAt: 3000, lastActivityAt: 500 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1641,8 +1637,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Closed', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Closed', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1670,8 +1666,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Open elsewhere', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Open elsewhere', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1693,8 +1689,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1729,8 +1725,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1760,8 +1756,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1792,8 +1788,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1823,8 +1819,8 @@ describe('ConversationController', () => {
 
         deps.state.currentConversationId = 'conv-1';
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-          { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+          { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+          { id: 'conv-2', title: 'Other', createdAt: 2000, lastActivityAt: 1000 },
         ]);
 
         controller.renderHistoryDropdown(container, {
@@ -1988,8 +1984,8 @@ describe('ConversationController', () => {
       deps.state.currentConversationId = 'conv-1';
 
       (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-        { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-        { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+        { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+        { id: 'conv-2', title: 'Other', createdAt: 2000, lastActivityAt: 1000 },
       ]);
 
       controller.updateHistoryDropdown();
@@ -2014,7 +2010,7 @@ describe('ConversationController', () => {
       deps.getTitleGenerationService = () => mockTitleService as any;
 
       (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-        { id: 'conv-1', title: 'Failed', createdAt: 1000, lastResponseAt: 1000, titleGenerationStatus: 'failed' },
+        { id: 'conv-1', title: 'Failed', createdAt: 1000, lastActivityAt: 1000, titleGenerationStatus: 'failed' },
       ]);
 
       controller.updateHistoryDropdown();
@@ -2042,7 +2038,7 @@ describe('ConversationController', () => {
 
     it('should invoke rename handler when clicking rename button', () => {
       (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-        { id: 'conv-1', title: 'Test Title', createdAt: 1000, lastResponseAt: 1000 },
+        { id: 'conv-1', title: 'Test Title', createdAt: 1000, lastActivityAt: 1000 },
       ]);
 
       controller.updateHistoryDropdown();
@@ -2117,7 +2113,7 @@ describe('ConversationController', () => {
       deps.state.currentConversationId = 'conv-1';
 
       (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-        { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 1000 },
+        { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 1000 },
       ]);
 
       controller.updateHistoryDropdown();
@@ -2139,8 +2135,8 @@ describe('ConversationController', () => {
       deps.state.currentConversationId = 'conv-1';
 
       (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-        { id: 'conv-1', title: 'Current', createdAt: 1000, lastResponseAt: 2000 },
-        { id: 'conv-2', title: 'Other', createdAt: 2000, lastResponseAt: 1000 },
+        { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 2000 },
+        { id: 'conv-2', title: 'Other', createdAt: 2000, lastActivityAt: 1000 },
       ]);
 
       controller.updateHistoryDropdown();
@@ -2451,7 +2447,6 @@ describe('ConversationController - MCP Server Persistence', () => {
         expect.objectContaining({
           enabledMcpServers: ['mcp-server-1', 'mcp-server-2'],
         }),
-        { touchUpdatedAt: false },
       );
     });
 
@@ -2466,7 +2461,6 @@ describe('ConversationController - MCP Server Persistence', () => {
         expect.objectContaining({
           enabledMcpServers: undefined,
         }),
-        { touchUpdatedAt: false },
       );
     });
   });
@@ -2544,7 +2538,7 @@ describe('ConversationController - MCP Server Persistence', () => {
         messages: [],
         sessionId: null,
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        lastActivityAt: Date.now(),
       };
 
       deps = createMockDeps({
@@ -2603,6 +2597,10 @@ describe('ConversationController - Race Condition Guards', () => {
     it('should reset even when streaming if force is true', async () => {
       deps.state.isStreaming = true;
       deps.state.cancelRequested = false;
+      deps.state.currentConversationId = 'active-conversation';
+      deps.state.messages = [
+        { id: 'message-1', role: 'user', content: 'Working', timestamp: 1 },
+      ];
       const initialGeneration = deps.state.streamGeneration;
 
       await controller.createNew({ force: true });
@@ -2611,6 +2609,10 @@ describe('ConversationController - Race Condition Guards', () => {
       expect(deps.state.cancelRequested).toBe(true);
       expect(deps.state.streamGeneration).toBe(initialGeneration + 1);
       expect(deps.state.currentConversationId).toBeNull();
+      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
+        'active-conversation',
+        expect.objectContaining({ lastActivityAt: expect.any(Number) }),
+      );
     });
 
     it('should set and reset isCreatingConversation flag during entry point reset', async () => {
@@ -2677,7 +2679,7 @@ describe('ConversationController - Race Condition Guards', () => {
           messages: [],
           sessionId: null,
           createdAt: Date.now(),
-          updatedAt: Date.now(),
+          lastActivityAt: Date.now(),
         };
       });
 

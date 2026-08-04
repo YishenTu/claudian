@@ -6,7 +6,6 @@ export {
   type ContentBlock,
   type Conversation,
   type ConversationMeta,
-  type ConversationUpdateOptions,
   type ExecutionInputBrowserSnapshot,
   type ExecutionInputCanvasSnapshot,
   type ExecutionInputContextSnapshot,

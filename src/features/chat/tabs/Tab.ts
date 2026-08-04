@@ -878,7 +878,7 @@ async function handleTabSessionEvent(
       ...(event.result !== undefined ? { result: event.result } : {}),
     });
     if (applied && isCurrent()) {
-      await tab.controllers.conversationController?.save(false);
+      await tab.controllers.conversationController?.save(true);
     }
     return;
   }
@@ -894,13 +894,15 @@ async function handleTabSessionEvent(
     return;
   }
   if (event.type === 'background_turn_completed') {
+    const hasBufferedTurn = turns.has(event.scope.turnId);
     const events = turns.get(event.scope.turnId) ?? [];
     turns.delete(event.scope.turnId);
     deleteBackgroundTurnBuffersIfEmpty(tab, context.bindingId, turns);
+    if (!hasBufferedTurn) return;
     const chunks = events
       .map(providerOutputEventToStreamChunk)
       .filter((chunk): chunk is StreamChunk => chunk !== null);
-    const rendered = await renderAutoTriggeredTurn(tab, {
+    await renderAutoTriggeredTurn(tab, {
       chunks,
       metadata: {
         ...(event.nativeAssistantId
@@ -908,8 +910,8 @@ async function handleTabSessionEvent(
           : {}),
       },
     }, isCurrent);
-    if (rendered && isCurrent()) {
-      await tab.controllers.conversationController?.save(false);
+    if (isCurrent()) {
+      await tab.controllers.conversationController?.save(true);
     }
     return;
   }
@@ -2199,13 +2201,13 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.session.pauseBackgroundWork();
 
   tab.controllers.inputController?.dismissPendingApproval();
-  await cancelAndAwaitActiveTurn(tab);
+  const cancelledActiveTurn = await cancelAndAwaitActiveTurn(tab);
   await tab.session.awaitBackgroundWork();
 
   tab.services.subagentManager.orphanAllActive();
   if (tab.state.currentConversationId) {
     try {
-      await tab.controllers.conversationController?.save(false);
+      await tab.controllers.conversationController?.save(cancelledActiveTurn);
     } catch {
       new Notice('Background task state could not be saved before closing the tab.');
     }

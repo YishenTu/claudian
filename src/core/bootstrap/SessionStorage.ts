@@ -30,6 +30,7 @@ export type SessionMetadataSource = 'current' | 'legacy';
 
 export interface SessionMetadataReadResult {
   metadata: SessionMetadata;
+  needsMigration: boolean;
   source: SessionMetadataSource;
 }
 
@@ -228,8 +229,7 @@ export class SessionStorage implements SessionMetadataReader {
       providerId: meta.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
       title: meta.title,
       createdAt: meta.createdAt,
-      updatedAt: meta.updatedAt,
-      lastResponseAt: meta.lastResponseAt,
+      lastActivityAt: meta.lastActivityAt,
       messageCount: 0,
       preview: 'SDK session',
       currentNote: meta.currentNote,
@@ -239,8 +239,7 @@ export class SessionStorage implements SessionMetadataReader {
     }));
     return metas.sort(
       (left, right) =>
-        (right.lastResponseAt ?? right.createdAt)
-        - (left.lastResponseAt ?? left.createdAt),
+        right.lastActivityAt - left.lastActivityAt,
     );
   }
 
@@ -259,14 +258,39 @@ export class SessionStorage implements SessionMetadataReader {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return null;
     }
-    const metadata = parsed as SessionMetadata;
+    const rawMetadata = parsed as Record<string, unknown>;
     if (
-      metadata.id !== expectedId
-      || !isValidSessionMetadataId(metadata.id)
+      rawMetadata.id !== expectedId
+      || typeof rawMetadata.id !== 'string'
+      || !isValidSessionMetadataId(rawMetadata.id)
     ) {
       return null;
     }
-    return { metadata, source };
+    const lastActivityAt = this.getFirstFiniteTimestamp(
+      rawMetadata.lastActivityAt,
+      rawMetadata.lastResponseAt,
+      rawMetadata.updatedAt,
+      rawMetadata.createdAt,
+    ) ?? 0;
+    const {
+      updatedAt: _updatedAt,
+      lastResponseAt: _lastResponseAt,
+      ...metadataFields
+    } = rawMetadata;
+    const metadata = {
+      ...metadataFields,
+      lastActivityAt,
+    } as unknown as SessionMetadata;
+    const needsMigration = !Number.isFinite(rawMetadata.lastActivityAt)
+      || 'updatedAt' in rawMetadata
+      || 'lastResponseAt' in rawMetadata;
+    return { metadata, needsMigration, source };
+  }
+
+  private getFirstFiniteTimestamp(...values: unknown[]): number | undefined {
+    return values.find((value): value is number => (
+      typeof value === 'number' && Number.isFinite(value)
+    ));
   }
 
   private async listFiles(

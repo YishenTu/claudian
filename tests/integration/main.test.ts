@@ -66,7 +66,7 @@ describe('ClaudianPlugin', () => {
       providerId: 'claude' | 'codex';
       title: string;
       createdAt: number;
-      updatedAt: number;
+      lastActivityAt: number;
       [key: string]: unknown;
     }>
   ): jest.SpyInstance {
@@ -75,7 +75,7 @@ describe('ClaudianPlugin', () => {
       .mockImplementation(async (id) => {
         const item = metadataById.get(id);
         return item
-          ? { metadata: item, source: 'current' as const }
+          ? { metadata: item, needsMigration: false, source: 'current' as const }
           : null;
       });
   }
@@ -228,13 +228,14 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Restored conversation',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
       const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockReturnValue(historyScan);
       const loadSourceSpy = jest.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue({
           metadata: restoredMetadata,
+          needsMigration: false,
           source: 'current',
         });
       (plugin.loadData as jest.Mock).mockResolvedValue({
@@ -270,7 +271,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Background conversation',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
       mockApp.workspace.onLayoutReady = jest.fn((callback: () => void) => {
         layoutReady = callback;
@@ -306,7 +307,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Legacy background conversation',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
       const events: string[] = [];
 
@@ -323,6 +324,7 @@ describe('ClaudianPlugin', () => {
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue({
           metadata: legacyMetadata,
+          needsMigration: false,
           source: 'legacy',
         });
       const persistence = getConversationPersistence(plugin);
@@ -353,7 +355,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Restored environment session',
         createdAt: 1,
-        updatedAt: 3,
+        lastActivityAt: 3,
         sessionId: 'restored-session-id',
         providerState: { providerSessionId: 'restored-provider-session-id' },
         resumeAtMessageId: 'restored-message-id',
@@ -363,7 +365,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Deferred environment session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'deferred-session-id',
         providerState: { providerSessionId: 'deferred-provider-session-id' },
         resumeAtMessageId: 'deferred-message-id',
@@ -437,7 +439,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Restored reload session',
         createdAt: 1,
-        updatedAt: 3,
+        lastActivityAt: 3,
         sessionId: 'restored-session-id',
         providerState: { providerSessionId: 'restored-provider-session-id' },
       };
@@ -446,7 +448,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Deferred reload session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'deferred-session-id',
         providerState: { providerSessionId: 'deferred-provider-session-id' },
       };
@@ -504,7 +506,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'First scanned session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'first-session-id',
         providerState: { providerSessionId: 'first-provider-session-id' },
       };
@@ -513,7 +515,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Later scanned session',
         createdAt: 1,
-        updatedAt: 1,
+        lastActivityAt: 1,
         sessionId: 'later-session-id',
         providerState: { providerSessionId: 'later-provider-session-id' },
       };
@@ -575,7 +577,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Pending environment write session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'pending-environment-write-session-id',
         providerState: { providerSessionId: 'pending-environment-write-provider-session-id' },
       };
@@ -584,7 +586,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Later environment write session',
         createdAt: 1,
-        updatedAt: 1,
+        lastActivityAt: 1,
         sessionId: 'later-environment-write-session-id',
         providerState: { providerSessionId: 'later-environment-write-provider-session-id' },
       };
@@ -660,7 +662,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Incomplete scan session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'incomplete-scan-session-id',
         providerState: { providerSessionId: 'incomplete-scan-provider-session-id' },
       };
@@ -712,7 +714,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Deleted background conversation',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
 
       await plugin.onload();
@@ -755,7 +757,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Tombstoned during source resolution',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
 
       await plugin.onload();
@@ -786,7 +788,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Cached shell tombstoned during source resolution',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
 
       await plugin.onload();
@@ -821,7 +823,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Restart deferred session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'restart-session-id',
         providerState: { providerSessionId: 'restart-provider-session-id' },
       };
@@ -895,7 +897,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Failed write session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'failed-write-session-id',
         providerState: { providerSessionId: 'failed-write-provider-session-id' },
       };
@@ -1634,7 +1636,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Deferred failed environment',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'deferred-session',
         providerState: {
           providerSessionId: 'deferred-provider-session',
@@ -2072,7 +2074,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'codex' as const,
         title: 'Runtime settings restart session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'codex-thread-id',
         providerState: { threadId: 'codex-thread-id' },
       };
@@ -2801,8 +2803,8 @@ describe('ClaudianPlugin', () => {
       await plugin.updateConversation(folderConversation.id, {
         currentNote: 'Projects/Old/Plan.md',
       });
-      const fileUpdatedAt = fileConversation.updatedAt;
-      const folderUpdatedAt = folderConversation.updatedAt;
+      const fileUpdatedAt = fileConversation.lastActivityAt;
+      const folderUpdatedAt = folderConversation.lastActivityAt;
 
       await (plugin as any).handleLinkedNoteRename(
         new (TFile as any)('Notes/New.md'),
@@ -2815,11 +2817,11 @@ describe('ClaudianPlugin', () => {
 
       expect(fileConversation).toMatchObject({
         currentNote: 'Notes/New.md',
-        updatedAt: fileUpdatedAt,
+        lastActivityAt: fileUpdatedAt,
       });
       expect(folderConversation).toMatchObject({
         currentNote: 'Projects/New/Plan.md',
-        updatedAt: folderUpdatedAt,
+        lastActivityAt: folderUpdatedAt,
       });
     });
   });
@@ -2850,12 +2852,12 @@ describe('ClaudianPlugin', () => {
 
       notifyConversationListChanged.mockClear();
       await plugin.updateConversation(conv.id, {
-        lastResponseAt: 1234,
+        lastActivityAt: 1234,
         titleGenerationStatus: 'failed',
       });
 
       expect(plugin.getConversationList().find(({ id }) => id === conv.id)).toMatchObject({
-        lastResponseAt: 1234,
+        lastActivityAt: 1234,
         titleGenerationStatus: 'failed',
       });
       expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
@@ -2915,19 +2917,16 @@ describe('ClaudianPlugin', () => {
       expect(updated?.sessionId).toBe('new-session-id');
     });
 
-    it('should update updatedAt timestamp', async () => {
+    it('should preserve lastActivityAt for metadata-only updates', async () => {
       await plugin.onload();
 
       const conv = await plugin.createConversation();
-      const originalUpdatedAt = conv.updatedAt;
-
-      // Small delay to ensure timestamp differs
-      await new Promise(resolve => setTimeout(resolve, 10));
+      const originalLastActivityAt = conv.lastActivityAt;
 
       await plugin.updateConversation(conv.id, { title: 'Changed' });
 
       const updated = await plugin.getConversationById(conv.id);
-      expect(updated?.updatedAt).toBeGreaterThan(originalUpdatedAt);
+      expect(updated?.lastActivityAt).toBe(originalLastActivityAt);
     });
   });
 
@@ -2971,7 +2970,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude',
         title: 'Stale Chat',
         createdAt: timestamp,
-        updatedAt: timestamp,
+        lastActivityAt: timestamp,
         sessionId: 'missing-session',
       });
 
@@ -3011,7 +3010,7 @@ describe('ClaudianPlugin', () => {
         id: 'conv-saved-1',
         title: 'Saved Chat',
         createdAt: timestamp,
-        updatedAt: timestamp,
+        lastActivityAt: timestamp,
         sessionId: 'saved-session',
       });
 
@@ -3060,7 +3059,7 @@ describe('ClaudianPlugin', () => {
         id: 'conv-saved-1',
         title: 'Saved Chat',
         createdAt: timestamp,
-        updatedAt: timestamp,
+        lastActivityAt: timestamp,
         sessionId: 'saved-session',
       });
 
@@ -3132,7 +3131,7 @@ describe('ClaudianPlugin', () => {
         id: 'conv-multi-session',
         title: 'Multi Session Chat',
         createdAt: timestamp,
-        updatedAt: timestamp,
+        lastActivityAt: timestamp,
         providerState: {
           providerSessionId: 'session-B',
           previousProviderSessionIds: ['session-A'],

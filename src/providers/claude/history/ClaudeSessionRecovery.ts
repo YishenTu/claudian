@@ -11,20 +11,21 @@ import {
 const TRANSCRIPT_CHUNK_SIZE = 64 * 1024;
 const TRANSCRIPT_SCAN_CONCURRENCY = 16;
 const RECOVERY_INDEX_TTL_MS = 5_000;
-const MAX_CREATED_AT_DELTA_WITH_RESPONSE_MS = 2 * 60_000;
-const MAX_LAST_RESPONSE_AT_DELTA_MS = 2 * 60_000;
-const MAX_CREATED_AT_DELTA_WITHOUT_RESPONSE_MS = 10_000;
+const MAX_CREATED_AT_DELTA_WITH_ACTIVITY_MS = 2 * 60_000;
+const MAX_LAST_ACTIVITY_AT_DELTA_MS = 2 * 60_000;
+const MAX_CREATED_AT_DELTA_MS = 10_000;
 const MIN_UNIQUE_SCORE_GAP_MS = 5_000;
 
 export interface ClaudeSessionTimeFingerprint {
   createdAt: number;
-  lastResponseAt?: number;
+  lastActivityAt?: number;
 }
 
 export interface ClaudeSessionTimeCandidate {
   sessionId: string;
   firstTimestamp: number;
   lastTimestamp: number;
+  hasAssistantMessage: boolean;
 }
 
 interface RecoveryIndexCacheEntry {
@@ -38,25 +39,34 @@ export function selectClaudeSessionRecoveryCandidate(
   candidates: readonly ClaudeSessionTimeCandidate[],
   fingerprint: ClaudeSessionTimeFingerprint,
 ): string | null {
-  const hasLastResponseAt = Number.isFinite(fingerprint.lastResponseAt);
-  const maximumCreatedAtDelta = hasLastResponseAt
-    ? MAX_CREATED_AT_DELTA_WITH_RESPONSE_MS
-    : MAX_CREATED_AT_DELTA_WITHOUT_RESPONSE_MS;
-  const scored = candidates.flatMap((candidate) => {
+  const hasLastActivityAt = Number.isFinite(fingerprint.lastActivityAt)
+    && fingerprint.lastActivityAt! > fingerprint.createdAt;
+  if (hasLastActivityAt) {
+    const activityMatches = candidates.flatMap((candidate) => {
+      if (!candidate.hasAssistantMessage) return [];
+      const createdAtDelta = Math.abs(candidate.firstTimestamp - fingerprint.createdAt);
+      if (createdAtDelta > MAX_CREATED_AT_DELTA_WITH_ACTIVITY_MS) return [];
+      const lastActivityAtDelta = Math.abs(
+        candidate.lastTimestamp - fingerprint.lastActivityAt!,
+      );
+      if (lastActivityAtDelta > MAX_LAST_ACTIVITY_AT_DELTA_MS) return [];
+      return [{ candidate, score: createdAtDelta + lastActivityAtDelta }];
+    });
+    return selectUniqueCandidate(activityMatches);
+  }
+
+  const creationMatches = candidates.flatMap((candidate) => {
     const createdAtDelta = Math.abs(candidate.firstTimestamp - fingerprint.createdAt);
-    if (createdAtDelta > maximumCreatedAtDelta) return [];
+    if (createdAtDelta > MAX_CREATED_AT_DELTA_MS) return [];
+    return [{ candidate, score: createdAtDelta }];
+  });
+  return selectUniqueCandidate(creationMatches);
+}
 
-    if (!hasLastResponseAt) {
-      return [{ candidate, score: createdAtDelta }];
-    }
-
-    const lastResponseAtDelta = Math.abs(
-      candidate.lastTimestamp - fingerprint.lastResponseAt!,
-    );
-    if (lastResponseAtDelta > MAX_LAST_RESPONSE_AT_DELTA_MS) return [];
-    return [{ candidate, score: createdAtDelta + lastResponseAtDelta }];
-  }).sort((left, right) => left.score - right.score);
-
+function selectUniqueCandidate(
+  scoredCandidates: Array<{ candidate: ClaudeSessionTimeCandidate; score: number }>,
+): string | null {
+  const scored = scoredCandidates.sort((left, right) => left.score - right.score);
   if (scored.length === 0) return null;
   if (
     scored.length > 1
@@ -162,7 +172,8 @@ async function readSessionTimeCandidate(
       : parseCompleteRecords(lastBuffer.toString('utf8'), true, true);
     const observedSessionIds = new Set<string>();
     const timestamps: number[] = [];
-    for (const record of [...firstRecords, ...lastRecords]) {
+    const sampledRecords = [...firstRecords, ...lastRecords];
+    for (const record of sampledRecords) {
       if (typeof record.sessionId === 'string') {
         observedSessionIds.add(record.sessionId);
       }
@@ -176,7 +187,12 @@ async function readSessionTimeCandidate(
     const firstTimestamp = firstTimestampFromRecords(firstRecords);
     const lastTimestamp = lastTimestampFromRecords(lastRecords);
     if (firstTimestamp === null || lastTimestamp === null) return null;
-    return { sessionId, firstTimestamp, lastTimestamp };
+    return {
+      sessionId,
+      firstTimestamp,
+      lastTimestamp,
+      hasAssistantMessage: sampledRecords.some(({ type }) => type === 'assistant'),
+    };
   } catch {
     return null;
   } finally {
@@ -188,7 +204,7 @@ function parseCompleteRecords(
   content: string,
   includesEndOfFile: boolean,
   beginsMidLine: boolean,
-): Array<{ sessionId?: unknown; timestamp?: unknown }> {
+): Array<{ sessionId?: unknown; timestamp?: unknown; type?: unknown }> {
   let lines = content.split(/\r?\n/);
   if (beginsMidLine) lines = lines.slice(1);
   if (!includesEndOfFile) lines = lines.slice(0, -1);
@@ -196,7 +212,11 @@ function parseCompleteRecords(
   return lines.flatMap((line) => {
     if (!line) return [];
     try {
-      return [JSON.parse(line) as { sessionId?: unknown; timestamp?: unknown }];
+      return [JSON.parse(line) as {
+        sessionId?: unknown;
+        timestamp?: unknown;
+        type?: unknown;
+      }];
     } catch {
       return [];
     }

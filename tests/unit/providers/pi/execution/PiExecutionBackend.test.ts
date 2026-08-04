@@ -647,7 +647,7 @@ describe('PiExecutionBackend', () => {
       providerId: 'pi',
       title: 'Pi recovery',
       createdAt: 1,
-      updatedAt: 1,
+      lastActivityAt: 1,
       sessionId: missingSessionFile,
       messages: [],
       providerState: {

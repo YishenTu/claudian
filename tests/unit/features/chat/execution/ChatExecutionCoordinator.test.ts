@@ -1833,7 +1833,7 @@ describe('ChatExecutionCoordinator', () => {
       providerId: 'claude',
       title: 'Conversation',
       createdAt: 1,
-      updatedAt: 1,
+      lastActivityAt: 1,
       sessionId: null,
       messages: [],
     };

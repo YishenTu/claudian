@@ -174,7 +174,7 @@ function createConversation() {
     title: 'Conversation',
     messages: [],
     createdAt: 1,
-    updatedAt: 1,
+    lastActivityAt: 1,
   } as any;
 }
 
@@ -555,7 +555,36 @@ describe('Tab provider execution ownership', () => {
       { content: 'background result', type: 'text' },
       expect.objectContaining({ role: 'assistant' }),
     );
-    expect(tab.controllers.conversationController!.save).toHaveBeenCalledWith(false);
+    expect(tab.controllers.conversationController!.save).toHaveBeenCalledWith(true);
+  });
+
+  it('records background completion activity without renderable output', async () => {
+    const plugin = createPlugin();
+    const tab = createTab({ plugin, containerEl: createMockEl() as any });
+    Object.defineProperty(tab.dom.contentEl, 'isConnected', { value: true });
+    const save = jest.fn().mockResolvedValue(undefined);
+    tab.controllers.conversationController = {
+      save,
+    } as any;
+    const backgroundScope = {
+      kind: 'background' as const,
+      sequence: 1,
+      sessionInstanceId: 'session-instance-1',
+      turnId: 'background-turn-empty',
+    };
+    const context = createEventContext();
+
+    await coordinatorDeps[0].onSessionEvent?.({
+      type: 'background_turn_started',
+      scope: backgroundScope,
+    }, context);
+    await coordinatorDeps[0].onSessionEvent?.({
+      type: 'background_turn_completed',
+      reason: 'completed',
+      scope: { ...backgroundScope, sequence: 2 },
+    }, context);
+
+    expect(save).toHaveBeenCalledWith(true);
   });
 
   it('discards binding output when a transition rejects session-event admission', async () => {
@@ -650,7 +679,7 @@ describe('Tab provider execution ownership', () => {
       taskId: 'subagent-1',
       type: 'async_subagent_completion',
     });
-    expect(tab.controllers.conversationController!.save).toHaveBeenCalledWith(false);
+    expect(tab.controllers.conversationController!.save).toHaveBeenCalledWith(true);
   });
 
   it('drains deferred background rendering before a conversation transition can proceed', async () => {
@@ -835,11 +864,15 @@ describe('Tab provider execution ownership', () => {
     tab.session.activeTurn = new Promise<void>((resolve) => {
       resolveTurn = resolve;
     });
+    tab.state.currentConversationId = 'active-conversation';
+    const save = jest.fn().mockResolvedValue(undefined);
+    tab.controllers.conversationController = { save } as any;
     coordinator.cancel.mockImplementation(() => resolveTurn());
 
     await destroyTab(tab);
 
     expect(coordinator.cancel).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith(true);
     expect(coordinator.dispose).toHaveBeenCalledTimes(1);
   });
 

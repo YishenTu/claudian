@@ -45,7 +45,7 @@ describe('GrokConversationHistoryService', () => {
       providerState: { sessionDirectory: path.join(tempRoot, 'outside', 'session-fixture') },
       sessionId: 'session-fixture',
       title: 'Fixture',
-      updatedAt: 1,
+      lastActivityAt: 1,
     };
   }
 
@@ -253,7 +253,7 @@ describe('GrokConversationHistoryService', () => {
       providerState,
       sessionId: null,
       title: 'Fork',
-      updatedAt: 1,
+      lastActivityAt: 1,
     };
 
     expect(service.isPendingForkConversation(conversation)).toBe(true);

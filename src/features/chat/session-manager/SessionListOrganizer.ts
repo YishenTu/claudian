@@ -17,41 +17,31 @@ export interface SessionListSection {
   conversations: ConversationMeta[];
 }
 
-type SessionListSort = SessionManagerSort | 'response-activity';
-
 interface OrganizeSessionListOptions {
   organization: SessionManagerOrganization;
-  sort: SessionListSort;
+  sort: SessionManagerSort;
   language: string;
   noteExists?: (notePath: string) => boolean;
 }
 
-function getLastUpdatedTimestamp(conversation: ConversationMeta): number {
-  return conversation.updatedAt
-    ?? conversation.lastResponseAt
-    ?? conversation.createdAt;
-}
-
-function getResponseActivityTimestamp(conversation: ConversationMeta): number {
-  return conversation.lastResponseAt ?? conversation.createdAt;
+function getLastActivityTimestamp(conversation: ConversationMeta): number {
+  return conversation.lastActivityAt;
 }
 
 function compareConversations(
   left: ConversationMeta,
   right: ConversationMeta,
-  sort: SessionListSort,
+  sort: SessionManagerSort,
 ): number {
   if (sort === 'title') {
     return left.title.localeCompare(right.title, undefined, { sensitivity: 'base', numeric: true })
-      || getLastUpdatedTimestamp(right) - getLastUpdatedTimestamp(left)
+      || getLastActivityTimestamp(right) - getLastActivityTimestamp(left)
       || left.id.localeCompare(right.id);
   }
 
   const getTimestamp = sort === 'created'
     ? (conversation: ConversationMeta) => conversation.createdAt
-    : sort === 'response-activity'
-      ? getResponseActivityTimestamp
-      : getLastUpdatedTimestamp;
+    : getLastActivityTimestamp;
   const leftTimestamp = getTimestamp(left);
   const rightTimestamp = getTimestamp(right);
   return rightTimestamp - leftTimestamp
@@ -61,14 +51,12 @@ function compareConversations(
 
 function getSectionTimestamp(
   section: SessionListSection,
-  sort: Exclude<SessionListSort, 'title'>,
+  sort: Exclude<SessionManagerSort, 'title'>,
 ): number {
   return section.conversations.reduce((latest, conversation) => {
     const timestamp = sort === 'created'
       ? conversation.createdAt
-      : sort === 'response-activity'
-        ? getResponseActivityTimestamp(conversation)
-        : getLastUpdatedTimestamp(conversation);
+      : getLastActivityTimestamp(conversation);
     return Math.max(latest, timestamp);
   }, 0);
 }
@@ -76,7 +64,7 @@ function getSectionTimestamp(
 function compareSections(
   left: SessionListSection,
   right: SessionListSection,
-  sort: SessionListSort,
+  sort: SessionManagerSort,
 ): number {
   if (sort === 'title') {
     return (left.label ?? '').localeCompare(right.label ?? '', undefined, {

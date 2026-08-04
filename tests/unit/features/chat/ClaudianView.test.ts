@@ -1110,12 +1110,12 @@ describe('ClaudianView tab controls', () => {
       'In one list',
       'By linked note',
       'Sort sessions by',
-      'Last updated',
+      'Last activity',
       'Created',
       'Title',
     ]);
     expect(menu.items.find((item: any) => item.title === 'In one list').checked).toBe(true);
-    expect(menu.items.find((item: any) => item.title === 'Last updated').checked).toBe(true);
+    expect(menu.items.find((item: any) => item.title === 'Last activity').checked).toBe(true);
 
     menu.items.find((item: any) => item.title === 'By linked note').clickHandler();
     await Promise.resolve();

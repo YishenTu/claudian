@@ -9,7 +9,7 @@ function createConversation(overrides: Partial<Conversation> = {}): Conversation
     providerId: 'claude',
     title: 'Conversation',
     createdAt: 1,
-    updatedAt: 1,
+    lastActivityAt: 1,
     sessionId: 'session-1',
     messages: [],
     ...overrides,
@@ -262,7 +262,7 @@ describe('ClaudeConversationHistoryService', () => {
         sessionId: null,
         providerState: undefined,
         createdAt: 1_000,
-        lastResponseAt: 2_000,
+        lastActivityAt: 2_000,
       });
       const legacySpy = jest.spyOn(historyStore, 'readLegacyConversationSessionId')
         .mockResolvedValue(null);
@@ -276,7 +276,7 @@ describe('ClaudeConversationHistoryService', () => {
 
       expect(recoverySpy).toHaveBeenCalledWith('/vault', {
         createdAt: 1_000,
-        lastResponseAt: 2_000,
+        lastActivityAt: 2_000,
       });
       expect(conversation).toMatchObject({
         sessionId: 'recovered-session',

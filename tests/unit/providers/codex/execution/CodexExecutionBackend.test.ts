@@ -135,7 +135,7 @@ function createThreadResult(threadId: string, turns: Array<{ id: string }> = [])
       modelProvider: 'openai',
       source: 'app-server',
       createdAt: 0,
-      updatedAt: 0,
+      lastActivityAt: 0,
       agentNickname: null,
       agentRole: null,
       gitInfo: null,

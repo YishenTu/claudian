@@ -34,7 +34,7 @@ function createMetadata(id: string): SessionMetadata {
     providerId: 'claude',
     title: `Conversation ${id}`,
     createdAt: 1,
-    updatedAt: 2,
+    lastActivityAt: 2,
   };
 }
 
@@ -77,10 +77,12 @@ describe('SessionStorage read boundary', () => {
 
     await expect(storage.load('current')).resolves.toEqual({
       metadata: current,
+      needsMigration: false,
       source: 'current',
     } satisfies SessionMetadataReadResult);
     await expect(storage.load('legacy')).resolves.toEqual({
       metadata: legacy,
+      needsMigration: false,
       source: 'legacy',
     } satisfies SessionMetadataReadResult);
     await expect(storage.loadMetadata('legacy')).resolves.toEqual(legacy);
@@ -115,8 +117,8 @@ describe('SessionStorage read boundary', () => {
     const result = await storage.scan();
 
     expect(result.records).toEqual([
-      { metadata: current, source: 'current' },
-      { metadata: legacyOnly, source: 'legacy' },
+      { metadata: current, needsMigration: false, source: 'current' },
+      { metadata: legacyOnly, needsMigration: false, source: 'legacy' },
     ]);
     expect(result.complete).toBe(true);
     expect(adapter.write).not.toHaveBeenCalled();
@@ -147,7 +149,11 @@ describe('SessionStorage read boundary', () => {
     const result = await storage.scan();
 
     expect(result.records).toEqual([
-      { metadata: createMetadata('visible'), source: 'current' },
+      {
+        metadata: createMetadata('visible'),
+        needsMigration: false,
+        source: 'current',
+      },
     ]);
     expect(adapter.read).not.toHaveBeenCalledWith(
       `${SESSIONS_PATH}/deleted.meta.json`,
@@ -294,7 +300,7 @@ describe('ConversationPersistenceStore', () => {
       providerId: 'claude' as const,
       title: 'Persisted conversation',
       createdAt: 1,
-      updatedAt: 2,
+      lastActivityAt: 2,
       currentNote: 'Notes/current.md',
     };
 

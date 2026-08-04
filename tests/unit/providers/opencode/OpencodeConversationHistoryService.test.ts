@@ -262,6 +262,6 @@ function createConversation(sessionId: string, databasePath: string): Conversati
     providerState: { databasePath },
     sessionId,
     title: 'OpenCode conversation',
-    updatedAt: 1,
+    lastActivityAt: 1,
   };
 }

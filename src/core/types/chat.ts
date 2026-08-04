@@ -136,9 +136,8 @@ export interface Conversation {
   providerId: ProviderId;
   title: string;
   createdAt: number;
-  updatedAt: number;
-  /** Timestamp when the last agent response completed. */
-  lastResponseAt?: number;
+  /** Timestamp of the most recent user or agent conversation activity. */
+  lastActivityAt: number;
   sessionId: string | null;
   /** Conversation-owned model selection. Missing values are migrated lazily. */
   selectedModel?: string;
@@ -162,21 +161,14 @@ export interface Conversation {
   resumeAtMessageId?: string;
 }
 
-/** Controls persistence semantics for partial conversation updates. */
-export interface ConversationUpdateOptions {
-  /** Whether this update represents user activity for session ordering. */
-  touchUpdatedAt?: boolean;
-}
-
 /** Lightweight conversation metadata for the history dropdown. */
 export interface ConversationMeta {
   id: string;
   providerId: ProviderId;
   title: string;
   createdAt: number;
-  updatedAt: number;
-  /** Timestamp when the last agent response completed. */
-  lastResponseAt?: number;
+  /** Timestamp of the most recent user or agent conversation activity. */
+  lastActivityAt: number;
   messageCount: number;
   preview: string;
   /** Vault-relative path of the note linked to this session. */
@@ -199,8 +191,7 @@ export interface SessionMetadata {
   title: string;
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
   createdAt: number;
-  updatedAt: number;
-  lastResponseAt?: number;
+  lastActivityAt: number;
   /** Session ID used for provider resume (may be cleared when invalidated). */
   sessionId?: string | null;
   /** Conversation-owned model selection. */

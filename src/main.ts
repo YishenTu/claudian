@@ -49,7 +49,6 @@ import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
-  ConversationUpdateOptions,
   SessionMetadata,
 } from './core/types';
 import {
@@ -456,8 +455,9 @@ export default class ClaudianPlugin extends Plugin {
           }
         : this.loadSessionMetadataWithSources(),
     );
-    const initialEntries = initialMetadataScan.records.map(({ metadata, source }) => ({
+    const initialEntries = initialMetadataScan.records.map(({ metadata, needsMigration, source }) => ({
       conversation: this.createConversationMetadataShell(metadata),
+      needsMigration,
       source,
     }));
     StartupProfiler.recordCount('initial-session-metadata-count', initialEntries.length);
@@ -468,8 +468,6 @@ export default class ClaudianPlugin extends Plugin {
     );
     await this.conversationRepository.adoptMetadataConversations(initialEntries);
     setLocale(this.settings.locale as Locale);
-
-    const backfilledConversations = this.conversationRepository.backfillResponseTimestamps();
 
     const reconciliation = this.reconcileModelWithEnvironment();
     this.markPendingSessionInvalidations(
@@ -500,7 +498,6 @@ export default class ClaudianPlugin extends Plugin {
     }
 
     const conversationsToSave = new Set([
-      ...backfilledConversations,
       ...reconciliation.invalidatedConversations,
       ...pendingInvalidatedConversations,
     ]);
@@ -647,8 +644,9 @@ export default class ClaudianPlugin extends Plugin {
       }
       publishBatch(records.map(({ metadata }) => metadata));
       await this.conversationRepository.adoptMetadataConversations(
-        records.map(({ metadata, source }) => ({
+        records.map(({ metadata, needsMigration, source }) => ({
           conversation: this.createConversationMetadataShell(metadata),
+          needsMigration,
           source,
         })),
       );
@@ -801,8 +799,7 @@ export default class ClaudianPlugin extends Plugin {
       providerId: meta.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
       title: meta.title,
       createdAt: meta.createdAt,
-      updatedAt: meta.updatedAt,
-      lastResponseAt: meta.lastResponseAt,
+      lastActivityAt: meta.lastActivityAt,
       sessionId: meta.sessionId !== undefined ? meta.sessionId : meta.id,
       selectedModel: meta.selectedModel,
       providerState: meta.providerState,
@@ -1241,12 +1238,8 @@ export default class ClaudianPlugin extends Plugin {
     this.notifyConversationViewsChanged();
   }
 
-  async updateConversation(
-    id: string,
-    updates: Partial<Conversation>,
-    options?: ConversationUpdateOptions,
-  ): Promise<void> {
-    await this.conversationRepository.update(id, updates, options);
+  async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
+    await this.conversationRepository.update(id, updates);
     this.notifyConversationViewsChanged();
   }
 

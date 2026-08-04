@@ -37,7 +37,7 @@ function createConversation(
     providerId: 'claude',
     title,
     createdAt: Date.now() - 10000,
-    updatedAt: Date.now() - 5000,
+    lastActivityAt: Date.now() - 5000,
     messageCount: 3,
     preview: 'Test preview',
     ...opts,
@@ -74,9 +74,9 @@ describe('ResumeSessionDropdown', () => {
   let callbacks: ResumeSessionDropdownCallbacks;
 
   const conversations: ConversationMeta[] = [
-    createConversation('conv-1', 'First Chat', { lastResponseAt: 1000 }),
-    createConversation('conv-2', 'Second Chat', { lastResponseAt: 3000 }),
-    createConversation('conv-3', 'Third Chat', { lastResponseAt: 2000 }),
+    createConversation('conv-1', 'First Chat', { lastActivityAt: 1000 }),
+    createConversation('conv-2', 'Second Chat', { lastActivityAt: 3000 }),
+    createConversation('conv-3', 'Third Chat', { lastActivityAt: 2000 }),
   ];
 
   beforeEach(() => {
@@ -100,15 +100,15 @@ describe('ResumeSessionDropdown', () => {
       dropdown.destroy();
     });
 
-    it('sorts conversations by lastResponseAt descending', () => {
+    it('sorts conversations by lastActivityAt descending', () => {
       const dropdown = new ResumeSessionDropdown(
         containerEl, inputEl, conversations, null, callbacks
       );
 
       const items = getRenderedItems(containerEl);
-      expect(items[0].title).toBe('Second Chat');  // lastResponseAt: 3000
-      expect(items[1].title).toBe('Third Chat');   // lastResponseAt: 2000
-      expect(items[2].title).toBe('First Chat');   // lastResponseAt: 1000
+      expect(items[0].title).toBe('Second Chat');  // lastActivityAt: 3000
+      expect(items[1].title).toBe('Third Chat');   // lastActivityAt: 2000
+      expect(items[2].title).toBe('First Chat');   // lastActivityAt: 1000
 
       dropdown.destroy();
     });
@@ -213,7 +213,7 @@ describe('ResumeSessionDropdown', () => {
 
       expect(result).toBe(true);
       expect(event.preventDefault).toHaveBeenCalled();
-      // First item after sorting is conv-2 (highest lastResponseAt)
+      // First item after sorting is conv-2 (highest lastActivityAt)
       expect(callbacks.onSelect).toHaveBeenCalledWith('conv-2');
 
       dropdown.destroy();
@@ -267,7 +267,7 @@ describe('ResumeSessionDropdown', () => {
         containerEl, inputEl, conversations, 'conv-2', callbacks
       );
 
-      // conv-2 is first after sorting (highest lastResponseAt), so Enter selects it
+      // conv-2 is first after sorting (highest lastActivityAt), so Enter selects it
       const event = { key: 'Enter', preventDefault: jest.fn() } as any;
       dropdown.handleKeydown(event);
 

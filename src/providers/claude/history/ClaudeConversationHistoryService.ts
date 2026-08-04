@@ -614,7 +614,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
 
     const fingerprint = {
       createdAt: conversation.createdAt,
-      lastResponseAt: conversation.lastResponseAt,
+      lastActivityAt: conversation.lastActivityAt,
     };
     const recoveredSessionId = pathContext
       ? await recoverSDKSessionIdByTime(vaultPath, fingerprint, pathContext)

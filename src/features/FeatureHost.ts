@@ -7,7 +7,6 @@ import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
-  ConversationUpdateOptions,
 } from '../core/types';
 import type { ChatExecutionPersistence } from './chat/execution/ChatExecutionCoordinator';
 import type { WarmExecutionPool } from './chat/execution/WarmExecutionPool';
@@ -63,11 +62,7 @@ export interface FeatureHost {
   renameConversation(id: string, title: string): Promise<void>;
   setConversationPinned(id: string, isPinned: boolean): Promise<void>;
   setConversationArchived(id: string, isArchived: boolean): Promise<void>;
-  updateConversation(
-    id: string,
-    updates: Partial<Conversation>,
-    options?: ConversationUpdateOptions,
-  ): Promise<void>;
+  updateConversation(id: string, updates: Partial<Conversation>): Promise<void>;
   getConversationById(id: string): Promise<Conversation | null>;
   getCachedConversation(id: string): Conversation | null;
   getConversationSync(id: string): Conversation | null;
