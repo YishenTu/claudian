@@ -143,6 +143,8 @@ export interface Conversation {
   selectedModel?: string;
   /** Opaque provider-owned state bag (session tracking, fork metadata, etc.). */
   providerState?: Record<string, unknown>;
+  /** Read-only native locator retained solely for historical model recovery. */
+  modelRecoverySource?: ConversationModelRecoverySource;
   messages: ChatMessage[];
   currentNote?: string;
   /** Whether the session is pinned in the dual-pane session manager. */
@@ -161,10 +163,19 @@ export interface Conversation {
   resumeAtMessageId?: string;
 }
 
+/** Native session locator that must never make an invalidated session resumable. */
+export interface ConversationModelRecoverySource {
+  sessionId: string | null;
+  providerState?: Record<string, unknown>;
+  resumeAtMessageId?: string;
+}
+
 /** Lightweight conversation metadata for the history dropdown. */
 export interface ConversationMeta {
   id: string;
   providerId: ProviderId;
+  /** Conversation-owned model selection, projected without hydrating history. */
+  selectedModel?: string;
   title: string;
   createdAt: number;
   /** Timestamp of the most recent user or agent conversation activity. */
@@ -198,6 +209,8 @@ export interface SessionMetadata {
   selectedModel?: string;
   /** Opaque provider-owned state bag. */
   providerState?: Record<string, unknown>;
+  /** Read-only native locator retained solely for historical model recovery. */
+  modelRecoverySource?: ConversationModelRecoverySource;
   currentNote?: string;
   isPinned?: boolean;
   isArchived?: boolean;

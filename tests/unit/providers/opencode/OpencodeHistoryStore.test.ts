@@ -409,6 +409,7 @@ describe('loadOpencodeSessionMessages', () => {
 
   it('loads conversation content without selecting raw message metadata', async () => {
     expect(OPENCODE_MESSAGE_ROW_SQL).toContain("json_extract(data, '$.role')");
+    expect(OPENCODE_MESSAGE_ROW_SQL).toContain("json_extract(data, '$.modelID')");
     expect(OPENCODE_MESSAGE_ROW_SQL).not.toMatch(/\btime_created,\s*data\s+from\s+message\b/i);
 
     const dbPath = path.join(tmpRoot, 'opencode.db');

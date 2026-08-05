@@ -68,7 +68,7 @@ function compareSections(
     });
 }
 
-function getNoteLabel(notePath: string): string {
+export function getLinkedNoteTitle(notePath: string): string {
   const filename = notePath.replace(/\\/g, '/').split('/').pop() ?? notePath;
   return filename.replace(/\.md$/i, '');
 }
@@ -96,7 +96,7 @@ export function organizeSessionList(
     noteGroups.set(notePath, {
       key: `${kind}:${notePath}`,
       kind,
-      label: getNoteLabel(notePath),
+      label: getLinkedNoteTitle(notePath),
       notePath,
       conversations: [],
     });
@@ -117,7 +117,7 @@ export function organizeSessionList(
       group = {
         key: `${kind}:${notePath}`,
         kind,
-        label: getNoteLabel(notePath),
+        label: getLinkedNoteTitle(notePath),
         notePath,
         conversations: [],
       };

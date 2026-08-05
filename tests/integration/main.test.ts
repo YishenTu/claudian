@@ -7,7 +7,7 @@ import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCo
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
-import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { type Conversation, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { SessionStorage } from '@/providers/claude/storage/SessionStorage';
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
@@ -347,6 +347,89 @@ describe('ClaudianPlugin', () => {
       loadSpy.mockRestore();
       saveSpy.mockRestore();
       deleteLegacySpy.mockRestore();
+    });
+
+    it('recovers missing model metadata after the background session scan', async () => {
+      await plugin.onload();
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+        .mockResolvedValue({
+          metadata: [],
+          complete: true,
+          invalidMetadataCount: 0,
+        });
+      const repository = (plugin as any).conversationRepository;
+      const recoverySpy = jest.spyOn(repository, 'recoverMissingSelectedModels')
+        .mockResolvedValue([]);
+
+      await (plugin as any).loadRemainingSessionMetadata();
+
+      expect(recoverySpy).toHaveBeenCalledTimes(1);
+
+      scanSpy.mockRestore();
+      recoverySpy.mockRestore();
+    });
+
+    it('recovers models from original metadata before persisting session invalidation', async () => {
+      const metadata = {
+        id: 'codex-model-before-invalidation',
+        providerId: 'codex' as const,
+        title: 'Codex model before invalidation',
+        createdAt: 1,
+        lastActivityAt: 2,
+        sessionId: 'thread-before-invalidation',
+        providerState: { threadId: 'thread-before-invalidation' },
+      };
+      await plugin.onload();
+      (plugin as any).pendingEnvironmentInvalidationGenerations.set('codex', 1);
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+        .mockResolvedValue({
+          metadata: [metadata],
+          complete: true,
+          invalidMetadataCount: 0,
+        });
+      const loadSpy = mockMetadataSources(metadata);
+      const repository = (plugin as any).conversationRepository;
+      const registeredSources: Conversation[] = [];
+      const originalRegister = repository.registerHistoricalModelRecoverySources
+        .bind(repository);
+      const registerSpy = jest.spyOn(repository, 'registerHistoricalModelRecoverySources')
+        .mockImplementation((...args: unknown[]) => {
+          const sources = args[0] as readonly Conversation[];
+          registeredSources.push(...sources);
+          originalRegister(sources);
+        });
+      const events: string[] = [];
+      const persistedRecoverySources: unknown[] = [];
+      const recoverySpy = jest.spyOn(repository, 'recoverMissingSelectedModels')
+        .mockImplementation(async () => {
+          events.push('recover');
+          return [];
+        });
+      const persistSpy = jest.spyOn(repository, 'persistConversations')
+        .mockImplementation(async (...args: unknown[]) => {
+          const conversations = args[0] as readonly Conversation[];
+          events.push(`persist:${String(conversations[0]?.sessionId)}`);
+          persistedRecoverySources.push(conversations[0]?.modelRecoverySource);
+        });
+
+      await (plugin as any).loadRemainingSessionMetadata();
+
+      expect(registeredSources).toContainEqual(expect.objectContaining({
+        id: metadata.id,
+        sessionId: 'thread-before-invalidation',
+        providerState: { threadId: 'thread-before-invalidation' },
+      }));
+      expect(events).toEqual(['recover', 'persist:null']);
+      expect(persistedRecoverySources).toEqual([{
+        sessionId: 'thread-before-invalidation',
+        providerState: { threadId: 'thread-before-invalidation' },
+      }]);
+
+      scanSpy.mockRestore();
+      loadSpy.mockRestore();
+      registerSpy.mockRestore();
+      recoverySpy.mockRestore();
+      persistSpy.mockRestore();
     });
 
     it('invalidates restored and deferred sessions after a provider environment change', async () => {

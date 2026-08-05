@@ -6,6 +6,7 @@ import {
   collectAsyncSubagentResults,
   encodeVaultPathForSDK,
   filterActiveBranch,
+  getLastSDKSessionModel,
   getSDKProjectsPath,
   getSDKSessionAvailability,
   getSDKSessionPath,
@@ -36,6 +37,62 @@ describe('sdkSession', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockOs.homedir.mockReturnValue('/Users/test');
+  });
+
+  it('finds the last non-synthetic model on the active Claude branch', () => {
+    const entries: SDKNativeMessage[] = [
+      { type: 'assistant', uuid: 'a1', message: { model: 'claude-opus-4-6' } },
+      {
+        type: 'user',
+        uuid: 'u2',
+        parentUuid: 'a1',
+        message: { role: 'user', content: 'Continue' },
+      },
+      {
+        type: 'assistant',
+        uuid: 'a2',
+        parentUuid: 'u2',
+        message: { model: '<synthetic>' },
+      },
+      {
+        type: 'assistant',
+        uuid: 'a3',
+        parentUuid: 'a2',
+        message: { model: 'deepseek-v4-pro' },
+      },
+    ];
+
+    expect(getLastSDKSessionModel(entries)).toBe('deepseek-v4-pro');
+    expect(getLastSDKSessionModel(entries, 'a1')).toBe('claude-opus-4-6');
+  });
+
+  it('does not recover a Claude model from a stale rewind checkpoint', () => {
+    const entries: SDKNativeMessage[] = [
+      { type: 'user', uuid: 'u1', parentUuid: null },
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        message: { model: 'claude-sonnet-4-5' },
+      },
+      { type: 'user', uuid: 'u2', parentUuid: 'a1' },
+      {
+        type: 'assistant',
+        uuid: 'a2',
+        parentUuid: 'u2',
+        message: { model: 'claude-opus-4-6' },
+      },
+      { type: 'user', uuid: 'u3', parentUuid: 'a1' },
+      {
+        type: 'assistant',
+        uuid: 'a3',
+        parentUuid: 'u3',
+        message: { model: 'claude-haiku-4-5' },
+      },
+    ];
+
+    expect(getLastSDKSessionModel(entries, 'missing-checkpoint')).toBeNull();
+    expect(getLastSDKSessionModel(entries, 'a2')).toBeNull();
   });
 
   describe('encodeVaultPathForSDK', () => {

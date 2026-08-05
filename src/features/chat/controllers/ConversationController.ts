@@ -4,7 +4,7 @@ import type {
   ChatRewindConflict,
   ChatRewindMode,
 } from '../../../core/execution';
-import type { TitleGenerationService } from '../../../core/providers/types';
+import type { ProviderIconSvg, TitleGenerationService } from '../../../core/providers/types';
 import type {
   ChatMessage,
   Conversation,
@@ -14,6 +14,7 @@ import type {
   SessionManagerSort,
 } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
+import { createProviderIconSvg } from '../../../shared/icons';
 import { confirm } from '../../../shared/modals/ConfirmModal';
 import { extractUserDisplayContent } from '../../../utils/context';
 import type { FeatureHost } from '../../FeatureHost';
@@ -24,6 +25,8 @@ import { createWelcomeElement, renderWelcomeContent } from '../rendering/Welcome
 import { findRewindContext } from '../rewind';
 import type { SubagentManager } from '../services/SubagentManager';
 import {
+  getLinkedNoteTitle,
+  isProvisionalNotePath,
   organizeSessionList,
   type SessionListSection,
 } from '../session-manager/SessionListOrganizer';
@@ -110,12 +113,15 @@ type HistoryRenderOptions = {
   onOpenConversationInNewTab?: (id: string, activate?: boolean) => Promise<void>;
   getConversationOpenState?: (id: string) => HistoryConversationOpenState;
   getConversationStatus?: (id: string) => HistoryConversationStatus;
+  getProviderIcon?: (conversation: ConversationMeta) => ProviderIconSvg | null | undefined;
+  getModelLabel?: (conversation: ConversationMeta) => string;
   onRerender: () => void;
   signal?: AbortSignal;
   pageSize?: number;
   visibleCount?: number;
   showOpenStateActions?: boolean;
   showOpenStateLabels?: boolean;
+  showMetadataPopover?: boolean;
   organization?: SessionManagerOrganization;
   sort?: SessionManagerSort;
   language?: string;
@@ -123,6 +129,7 @@ type HistoryRenderOptions = {
   collapsedGroupKeys?: ReadonlySet<string>;
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
+  onSetConversationsArchived?: (ids: readonly string[]) => Promise<void>;
   onSetLinkedNotePinned?: (notePath: string, isPinned: boolean) => Promise<void>;
   onStartLinkedNoteConversation?: (notePath: string) => Promise<void>;
   pinnedLinkedNotePaths?: ReadonlySet<string>;
@@ -137,6 +144,7 @@ type HistoryRenderOptions = {
   searchQuery?: string;
   onSetConversationPinned?: (id: string, isPinned: boolean) => Promise<void>;
   onSetConversationArchived?: (id: string, isArchived: boolean) => Promise<void>;
+  onBeforeRestoreListState?: (container: HTMLElement) => void;
 };
 
 type HistorySurfaceRenderOptions = Omit<HistoryRenderOptions, 'onRerender'> & {
@@ -151,6 +159,11 @@ type HistoryScrollAnchor = {
 export class ConversationController {
   private deps: ConversationControllerDeps;
   private callbacks: ConversationCallbacks;
+  private metadataPopoverCleanup: (() => void) | null = null;
+  private metadataPopoverCloseTimer: number | null = null;
+  private metadataPopoverEl: HTMLElement | null = null;
+  private metadataPopoverTarget: HTMLElement | null = null;
+  private metadataPopoverSequence = 0;
 
   constructor(deps: ConversationControllerDeps, callbacks: ConversationCallbacks = {}) {
     this.deps = deps;
@@ -733,6 +746,9 @@ export class ConversationController {
   ): void {
     const { plugin } = this.deps;
     if (options.signal?.aborted) return;
+    if (options.showMetadataPopover) {
+      this.closeSessionMetadataPopover();
+    }
 
     const previousList = options.preserveListState
       ? container.querySelector<HTMLElement>('.claudian-history-list')
@@ -779,6 +795,13 @@ export class ConversationController {
             .toLocaleLowerCase();
           return searchTerms.every(term => searchableText.includes(term));
         });
+    const conversationsByLinkedNote = new Map<string, ConversationMeta[]>();
+    for (const conversation of scopedConversations) {
+      if (!conversation.currentNote) continue;
+      const noteConversations = conversationsByLinkedNote.get(conversation.currentNote) ?? [];
+      noteConversations.push(conversation);
+      conversationsByLinkedNote.set(conversation.currentNote, noteConversations);
+    }
     const pinnedLinkedNotePaths = organization === 'linked-note'
       && options.showPinnedSection
       && options.sessionScope !== 'archived'
@@ -883,6 +906,7 @@ export class ConversationController {
         cls: 'claudian-history-empty',
         text: searchTerms.length > 0 ? 'No matching sessions' : 'No conversations',
       });
+      options.onBeforeRestoreListState?.(container);
       if (pinnedList) pinnedList.scrollTop = previousPinnedScrollTop;
       this.restoreHistoryListPosition(
         sessionList,
@@ -939,6 +963,9 @@ export class ConversationController {
           visibleConversations,
           isCollapsed,
           options,
+          section.notePath
+            ? conversationsByLinkedNote.get(section.notePath) ?? []
+            : section.conversations,
         );
         renderedConversationCount += visibleConversations.length;
       }
@@ -969,6 +996,9 @@ export class ConversationController {
           visibleConversations,
           isCollapsed,
           options,
+          section.notePath
+            ? conversationsByLinkedNote.get(section.notePath) ?? []
+            : section.conversations,
         );
       } else {
         for (const conversation of visibleConversations) {
@@ -998,6 +1028,7 @@ export class ConversationController {
       });
     }
 
+    options.onBeforeRestoreListState?.(container);
     if (pinnedList) pinnedList.scrollTop = previousPinnedScrollTop;
     this.restoreHistoryListPosition(
       sessionList,
@@ -1012,6 +1043,7 @@ export class ConversationController {
     visibleConversations: readonly ConversationMeta[],
     isCollapsed: boolean,
     options: HistoryRenderOptions,
+    linkedNoteConversations: readonly ConversationMeta[],
   ): void {
     const conversationStatuses = section.conversations.map(conversation => (
       this.getHistoryConversationStatusForMetadata(conversation, options)
@@ -1142,28 +1174,61 @@ export class ConversationController {
 
     const notePath = section.notePath;
     const onSetLinkedNotePinned = options.onSetLinkedNotePinned;
+    const onSetConversationsArchived = options.onSetConversationsArchived;
     const isPinnedLinkedNote = notePath
       ? options.pinnedLinkedNotePaths?.has(notePath) ?? false
       : false;
-    if (
+    const canToggleLinkedNotePin = !!(
       notePath
       && onSetLinkedNotePinned
       && (section.kind === 'note' || isPinnedLinkedNote)
+    );
+    const canArchiveLinkedNoteSessions = !!(
+      notePath
+      && onSetConversationsArchived
+      && options.sessionActionMode === 'active'
+    );
+    if (
+      notePath
+      && (canToggleLinkedNotePin || canArchiveLinkedNoteSessions)
     ) {
       groupHeader.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        const menu = new Menu();
-        menu.addItem(menuItem => menuItem
-          .setTitle(isPinnedLinkedNote ? 'Unpin linked note' : 'Pin linked note')
-          .onClick(() => {
-            runConversationAction(
-              () => onSetLinkedNotePinned(notePath, !isPinnedLinkedNote),
-              isPinnedLinkedNote
-                ? 'Failed to unpin linked note'
-                : 'Failed to pin linked note',
-            );
-          }));
+        const menu = new Menu().setUseNativeMenu(false);
+        if (canToggleLinkedNotePin && onSetLinkedNotePinned) {
+          menu.addItem(menuItem => menuItem
+            .setTitle(isPinnedLinkedNote ? 'Unpin linked note' : 'Pin linked note')
+            .onClick(() => {
+              runConversationAction(
+                () => onSetLinkedNotePinned(notePath, !isPinnedLinkedNote),
+                isPinnedLinkedNote
+                  ? 'Failed to unpin linked note'
+                  : 'Failed to pin linked note',
+              );
+            }));
+        }
+        if (canArchiveLinkedNoteSessions && onSetConversationsArchived) {
+          const archivableConversationIds = linkedNoteConversations
+            .filter(conversation => (
+              !this.getHistoryConversationStatusForMetadata(conversation, options).isRunning
+            ))
+            .map(conversation => conversation.id);
+          if (canToggleLinkedNotePin) menu.addSeparator();
+          menu.addItem((menuItem) => {
+            menuItem
+              .setTitle('Archive all sessions')
+              .setDisabled(archivableConversationIds.length === 0);
+            if (archivableConversationIds.length > 0) {
+              menuItem.onClick(() => {
+                runConversationAction(
+                  () => onSetConversationsArchived(archivableConversationIds),
+                  'Failed to archive linked-note sessions',
+                );
+              });
+            }
+          });
+        }
         menu.showAtMouseEvent(event);
       });
     }
@@ -1267,14 +1332,19 @@ export class ConversationController {
       text: conversation.title,
     });
     titleEl.setAttribute('title', conversation.title);
-    content.createDiv({
-      cls: 'claudian-history-item-date',
-      text: this.getHistoryItemStatusText(
-        conversationStatus,
-        this.getHistoryItemTimestamp(conversation, options),
-        options.showOpenStateLabels ?? true,
-      ),
-    });
+    if (options.showMetadataPopover) {
+      item.setAttribute('tabindex', '0');
+      this.attachSessionMetadataPopover(item, conversation, options);
+    } else {
+      content.createDiv({
+        cls: 'claudian-history-item-date',
+        text: this.getHistoryItemStatusText(
+          conversationStatus,
+          this.getHistoryItemTimestamp(conversation, options),
+          options.showOpenStateLabels ?? true,
+        ),
+      });
+    }
 
     if (!isCurrent && options.allowConversationSelection !== false) {
       content.addEventListener('click', (event) => {
@@ -1476,6 +1546,246 @@ export class ConversationController {
     );
   }
 
+  private attachSessionMetadataPopover(
+    item: HTMLElement,
+    conversation: ConversationMeta,
+    options: HistoryRenderOptions,
+  ): void {
+    item.addEventListener('mouseenter', () => {
+      this.showSessionMetadataPopover(item, conversation, options);
+    });
+    item.addEventListener('mouseleave', () => {
+      this.scheduleSessionMetadataPopoverClose(item);
+    });
+    item.addEventListener('focusin', () => {
+      this.showSessionMetadataPopover(item, conversation, options);
+    });
+    item.addEventListener('focusout', () => {
+      queueMicrotask(() => {
+        const activeElement = item.ownerDocument.activeElement;
+        if (activeElement && item.contains(activeElement)) return;
+        if (typeof item.matches === 'function' && item.matches(':hover')) return;
+        if (this.metadataPopoverTarget === item) {
+          this.scheduleSessionMetadataPopoverClose(item);
+        }
+      });
+    });
+    item.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || this.metadataPopoverTarget !== item) return;
+      event.stopPropagation();
+      this.closeSessionMetadataPopover();
+    });
+  }
+
+  private showSessionMetadataPopover(
+    item: HTMLElement,
+    conversation: ConversationMeta,
+    options: HistoryRenderOptions,
+  ): void {
+    if (this.metadataPopoverEl && this.metadataPopoverTarget === item) {
+      this.cancelSessionMetadataPopoverClose();
+      return;
+    }
+    this.closeSessionMetadataPopover();
+
+    const document = item.ownerDocument;
+    const body = document.body;
+    if (!body) return;
+
+    const hoverEl = body.createDiv({ cls: 'claudian-session-metadata-popover' });
+    this.metadataPopoverEl = hoverEl;
+    this.metadataPopoverTarget = item;
+
+    const popoverId = `claudian-session-metadata-${++this.metadataPopoverSequence}`;
+    hoverEl.setAttribute('id', popoverId);
+    hoverEl.setAttribute('role', 'tooltip');
+    item.setAttribute('aria-describedby', popoverId);
+
+    const language = options.language ?? 'en';
+    const linkedNotePath = conversation.currentNote;
+    const hasLinkedNote = !!linkedNotePath
+      && !isProvisionalNotePath(linkedNotePath, language);
+    if (hasLinkedNote) {
+      this.renderSessionMetadataRow(
+        hoverEl,
+        'file-text',
+        null,
+        getLinkedNoteTitle(linkedNotePath),
+        {
+          className: 'claudian-session-metadata-value--note',
+          title: linkedNotePath,
+        },
+      );
+    }
+    this.renderSessionMetadataProviderRow(
+      hoverEl,
+      conversation,
+      options.getProviderIcon?.(conversation),
+      options.getModelLabel?.(conversation) ?? conversation.selectedModel ?? '',
+    );
+    this.renderSessionMetadataRow(
+      hoverEl,
+      'calendar-days',
+      'Created',
+      this.formatMetadataDate(conversation.createdAt),
+    );
+    this.renderSessionMetadataRow(
+      hoverEl,
+      'clock-3',
+      'Last active',
+      this.formatMetadataDateTime(conversation.lastActivityAt),
+    );
+
+    this.positionSessionMetadataPopover(item, hoverEl);
+    const cancelClose = (): void => this.cancelSessionMetadataPopoverClose();
+    const scheduleClose = (): void => this.scheduleSessionMetadataPopoverClose(item);
+    const closeForViewportChange = (): void => {
+      if (this.metadataPopoverEl === hoverEl) this.closeSessionMetadataPopover();
+    };
+    hoverEl.addEventListener('mouseenter', cancelClose);
+    hoverEl.addEventListener('mouseleave', scheduleClose);
+    document.addEventListener('scroll', closeForViewportChange, true);
+    document.defaultView?.addEventListener('resize', closeForViewportChange);
+
+    const signal = options.signal;
+    const closeOnAbort = (): void => {
+      if (this.metadataPopoverEl === hoverEl) {
+        this.closeSessionMetadataPopover();
+      }
+    };
+    signal?.addEventListener('abort', closeOnAbort, { once: true });
+    this.metadataPopoverCleanup = () => {
+      hoverEl.removeEventListener('mouseenter', cancelClose);
+      hoverEl.removeEventListener('mouseleave', scheduleClose);
+      document.removeEventListener('scroll', closeForViewportChange, true);
+      document.defaultView?.removeEventListener('resize', closeForViewportChange);
+      signal?.removeEventListener('abort', closeOnAbort);
+      if (item.getAttribute('aria-describedby') === popoverId) {
+        item.removeAttribute('aria-describedby');
+      }
+    };
+  }
+
+  private positionSessionMetadataPopover(target: HTMLElement, popover: HTMLElement): void {
+    const document = target.ownerDocument;
+    const targetRect = target.getBoundingClientRect();
+    const popoverRect = popover.getBoundingClientRect();
+    const viewportWidth = document.defaultView?.innerWidth
+      ?? document.documentElement?.clientWidth
+      ?? 1024;
+    const viewportHeight = document.defaultView?.innerHeight
+      ?? document.documentElement?.clientHeight
+      ?? 768;
+    const gap = 8;
+    const viewportMargin = 8;
+
+    let left = targetRect.right + gap;
+    if (left + popoverRect.width > viewportWidth - viewportMargin) {
+      left = targetRect.left - popoverRect.width - gap;
+    }
+    left = Math.min(
+      Math.max(viewportMargin, left),
+      Math.max(viewportMargin, viewportWidth - popoverRect.width - viewportMargin),
+    );
+
+    const top = Math.min(
+      Math.max(viewportMargin, targetRect.top),
+      Math.max(viewportMargin, viewportHeight - popoverRect.height - viewportMargin),
+    );
+    popover.style.left = `${Math.round(left)}px`;
+    popover.style.top = `${Math.round(top)}px`;
+  }
+
+  private scheduleSessionMetadataPopoverClose(target: HTMLElement): void {
+    if (this.metadataPopoverTarget !== target) return;
+    this.cancelSessionMetadataPopoverClose();
+    const window = target.ownerDocument.defaultView;
+    if (!window) {
+      this.closeSessionMetadataPopover();
+      return;
+    }
+    this.metadataPopoverCloseTimer = window.setTimeout(() => {
+      if (this.metadataPopoverTarget === target) {
+        this.closeSessionMetadataPopover();
+      }
+    }, 120);
+  }
+
+  private cancelSessionMetadataPopoverClose(): void {
+    if (this.metadataPopoverCloseTimer === null) return;
+    this.metadataPopoverTarget?.ownerDocument.defaultView?.clearTimeout(
+      this.metadataPopoverCloseTimer,
+    );
+    this.metadataPopoverCloseTimer = null;
+  }
+
+  private renderSessionMetadataRow(
+    parent: HTMLElement,
+    icon: string,
+    label: string | null,
+    value: string,
+    options: { className?: string; title?: string } = {},
+  ): void {
+    const row = parent.createDiv({
+      cls: [
+        'claudian-session-metadata-row',
+        label ? '' : 'claudian-session-metadata-row--unlabeled',
+      ].filter(Boolean).join(' '),
+    });
+    const iconEl = row.createSpan({ cls: 'claudian-session-metadata-icon' });
+    setIcon(iconEl, icon);
+    if (label) {
+      row.createSpan({ cls: 'claudian-session-metadata-label', text: label });
+    }
+    const valueEl = row.createSpan({
+      cls: [
+        'claudian-session-metadata-value',
+        options.className ?? '',
+      ].filter(Boolean).join(' '),
+      text: value,
+    });
+    if (options.title) valueEl.setAttribute('title', options.title);
+  }
+
+  private renderSessionMetadataProviderRow(
+    parent: HTMLElement,
+    conversation: ConversationMeta,
+    icon: ProviderIconSvg | null | undefined,
+    value: string,
+  ): void {
+    const row = parent.createDiv({
+      cls: [
+        'claudian-session-metadata-row',
+        'claudian-session-metadata-row--provider',
+        icon ? '' : 'claudian-session-metadata-row--provider-no-icon',
+      ].filter(Boolean).join(' '),
+    });
+    if (icon) {
+      createProviderIconSvg(icon, {
+        className: 'claudian-session-metadata-provider-icon',
+        dataProvider: conversation.providerId,
+        height: 14,
+        parent: row,
+        width: 14,
+      });
+    }
+    row.createSpan({
+      cls: 'claudian-session-metadata-value claudian-session-metadata-value--provider',
+      text: value,
+    });
+  }
+
+  private closeSessionMetadataPopover(): void {
+    this.cancelSessionMetadataPopoverClose();
+    const popover = this.metadataPopoverEl;
+    this.metadataPopoverCleanup?.();
+    this.metadataPopoverCleanup = null;
+    this.metadataPopoverEl = null;
+    this.metadataPopoverTarget = null;
+    popover?.addClass('claudian-hidden');
+    popover?.remove();
+  }
+
   private getHistoryItemTimestamp(
     conversation: ConversationMeta,
     options: HistoryRenderOptions,
@@ -1575,7 +1885,7 @@ export class ConversationController {
     event: MouseEvent,
   ): void {
     const { id: conversationId, title } = conversation;
-    const menu = new Menu();
+    const menu = new Menu().setUseNativeMenu(false);
     const fallbackOpenState: HistoryConversationOpenState = isCurrent ? 'current' : 'closed';
     const { openState, isRunning } = this.getHistoryConversationStatus(
       conversationId,
@@ -1912,6 +2222,24 @@ export class ConversationController {
       return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
     }
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  formatMetadataDate(timestamp: number): string {
+    return new Date(timestamp).toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+
+  formatMetadataDateTime(timestamp: number): string {
+    return new Date(timestamp).toLocaleString(undefined, {
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
   }
 
   // ============================================

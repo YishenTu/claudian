@@ -2,6 +2,7 @@ import '@/providers';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import type { ConversationPersistence } from '@/core/bootstrap/ConversationPersistenceStore';
+import { resolveConversationModel } from '@/core/providers/conversationModel';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { Conversation } from '@/core/types';
 
@@ -73,10 +74,338 @@ describe('ConversationRepository hydration', () => {
   it('projects the linked note path into lightweight conversation metadata', () => {
     const conversation = createConversation();
     conversation.currentNote = 'Notes/Architecture.md';
+    conversation.selectedModel = 'claude-sonnet-4-5';
     const { repository } = createRepository(conversation);
 
-    expect(repository.getMetadata(conversation.id)?.currentNote).toBe('Notes/Architecture.md');
-    expect(repository.list()[0].currentNote).toBe('Notes/Architecture.md');
+    expect(repository.getMetadata(conversation.id)).toMatchObject({
+      currentNote: 'Notes/Architecture.md',
+      selectedModel: 'claude-sonnet-4-5',
+    });
+    expect(repository.list()[0]).toMatchObject({
+      currentNote: 'Notes/Architecture.md',
+      selectedModel: 'claude-sonnet-4-5',
+    });
+  });
+
+  it('recovers and persists only missing historical model selections', async () => {
+    const missing = createConversation('missing-model');
+    const existing = createConversation('existing-model');
+    existing.selectedModel = 'claude-code/current-model';
+    const recoverConversationModelSelection = jest.fn(async (conversation: Conversation) => (
+      conversation.id === missing.id ? 'claude-code/historical-model' : null
+    ));
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hydrateConversationHistory: jest.fn(),
+      recoverConversationModelSelection,
+    } as any);
+    const { repository, persistence } = createRepository(missing);
+    repository.replaceAll([missing, existing]);
+
+    await expect(repository.recoverMissingSelectedModels()).resolves.toEqual([missing]);
+
+    expect(recoverConversationModelSelection).toHaveBeenCalledTimes(1);
+    expect(recoverConversationModelSelection).toHaveBeenCalledWith(
+      missing,
+      '/vault',
+      expect.any(Object),
+    );
+    expect(missing.selectedModel).toBe('claude-code/historical-model');
+    expect(existing.selectedModel).toBe('claude-code/current-model');
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: missing.id,
+      selectedModel: 'claude-code/historical-model',
+    }));
+  });
+
+  it('continues recovery when historical metadata references an unavailable provider', async () => {
+    const unavailable = createConversation('unavailable-provider');
+    unavailable.providerId = 'removed-provider';
+    const recoverable = createConversation('recoverable-provider');
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService')
+      .mockImplementation((providerId) => {
+        if (providerId === unavailable.providerId) {
+          throw new Error('Provider is no longer registered');
+        }
+        return {
+          recoverConversationModelSelection: jest.fn()
+            .mockResolvedValue('claude-code/recovered-model'),
+        } as any;
+      });
+    const { repository } = createRepository(unavailable);
+    repository.replaceAll([unavailable, recoverable]);
+
+    await expect(repository.recoverMissingSelectedModels())
+      .resolves.toEqual([recoverable]);
+    expect(unavailable.selectedModel).toBeUndefined();
+    expect(recoverable.selectedModel).toBe('claude-code/recovered-model');
+  });
+
+  it('isolates malformed persisted model metadata during recovery', async () => {
+    const malformed = createConversation('malformed-model');
+    (malformed as unknown as { selectedModel: unknown }).selectedModel = 42;
+    const recoverable = createConversation('valid-missing-model');
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      recoverConversationModelSelection: jest.fn(async (conversation: Conversation) => (
+        `claude-code/recovered-${conversation.id}`
+      )),
+    } as any);
+    const { repository } = createRepository(malformed);
+    repository.replaceAll([malformed, recoverable]);
+
+    await expect(repository.recoverMissingSelectedModels())
+      .resolves.toEqual([malformed, recoverable]);
+    expect(malformed.selectedModel).toBe('claude-code/recovered-malformed-model');
+    expect(recoverable.selectedModel).toBe('claude-code/recovered-valid-missing-model');
+  });
+
+  it('recovers from preserved metadata after live session state is invalidated', async () => {
+    const recoverySource = createConversation('invalidated-session');
+    recoverySource.providerId = 'codex';
+    recoverySource.providerState = { threadId: 'thread-before-invalidation' };
+    recoverySource.sessionId = 'thread-before-invalidation';
+    const invalidated = {
+      ...recoverySource,
+      providerState: undefined,
+      sessionId: null,
+    };
+    const recoverConversationModelSelection = jest.fn().mockResolvedValue(
+      'openai-codex/gpt-5.5',
+    );
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hasConversationModelRecoverySource: (conversation: Conversation) => (
+        conversation.sessionId === 'thread-before-invalidation'
+      ),
+      recoverConversationModelSelection,
+    } as any);
+    const { repository } = createRepository(invalidated);
+
+    (repository as any).registerHistoricalModelRecoverySources([recoverySource]);
+
+    await expect(repository.recoverMissingSelectedModels()).resolves.toEqual([invalidated]);
+    expect(recoverConversationModelSelection).toHaveBeenCalledWith(
+      recoverySource,
+      '/vault',
+      expect.any(Object),
+    );
+    expect(invalidated.selectedModel).toBe('openai-codex/gpt-5.5');
+  });
+
+  it('persists unresolved recovery locators for retry after restart', async () => {
+    const recoverySource = createConversation('retry-after-restart');
+    recoverySource.providerId = 'codex';
+    recoverySource.sessionId = 'thread-before-invalidation';
+    recoverySource.providerState = { threadId: 'thread-before-invalidation' };
+    const invalidated: Conversation = {
+      ...recoverySource,
+      sessionId: null,
+      providerState: undefined,
+    };
+    const recoverConversationModelSelection = jest.fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce('openai-codex/gpt-5.5');
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hasConversationModelRecoverySource: (conversation: Conversation) => (
+        conversation.sessionId === 'thread-before-invalidation'
+      ),
+      recoverConversationModelSelection,
+    } as any);
+    const firstRun = createRepository(invalidated);
+
+    firstRun.repository.registerHistoricalModelRecoverySources([recoverySource]);
+    await expect(firstRun.repository.recoverMissingSelectedModels()).resolves.toEqual([]);
+    await firstRun.repository.persistConversations([invalidated]);
+
+    const persisted = firstRun.persistence.saveMetadata.mock.calls.at(-1)?.[0];
+    expect(persisted).toMatchObject({
+      id: invalidated.id,
+      sessionId: null,
+      modelRecoverySource: {
+        sessionId: 'thread-before-invalidation',
+        providerState: { threadId: 'thread-before-invalidation' },
+      },
+    });
+
+    const restartedConversation: Conversation = {
+      ...invalidated,
+      modelRecoverySource: persisted?.modelRecoverySource,
+    };
+    const restarted = createRepository(restartedConversation);
+
+    await expect(restarted.repository.recoverMissingSelectedModels())
+      .resolves.toEqual([restartedConversation]);
+    expect(recoverConversationModelSelection).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sessionId: 'thread-before-invalidation',
+        providerState: { threadId: 'thread-before-invalidation' },
+      }),
+      '/vault',
+      expect.any(Object),
+    );
+    expect(restartedConversation.modelRecoverySource).toBeUndefined();
+    expect(restarted.persistence.saveMetadata).toHaveBeenCalledWith(
+      expect.not.objectContaining({ modelRecoverySource: expect.anything() }),
+    );
+  });
+
+  it('retires an unresolved recovery locator when a fresh provider session is accepted', async () => {
+    const recoverySource = createConversation('fresh-session-supersedes-recovery');
+    recoverySource.providerId = 'codex';
+    recoverySource.sessionId = 'old-thread';
+    recoverySource.providerState = { threadId: 'old-thread' };
+    const invalidated: Conversation = {
+      ...recoverySource,
+      sessionId: null,
+      providerState: undefined,
+    };
+    const recoverConversationModelSelection = jest.fn(async (conversation: Conversation) => (
+      conversation.sessionId === 'fresh-thread'
+        ? 'openai-codex/gpt-5.6'
+        : null
+    ));
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hasConversationModelRecoverySource: (conversation: Conversation) => (
+        typeof conversation.sessionId === 'string'
+      ),
+      recoverConversationModelSelection,
+    } as any);
+    const firstRun = createRepository(invalidated);
+
+    firstRun.repository.registerHistoricalModelRecoverySources([recoverySource]);
+    await expect(firstRun.repository.recoverMissingSelectedModels()).resolves.toEqual([]);
+    firstRun.repository.registerExecutionBinding(invalidated.id, 'binding-1', 1);
+    await expect(firstRun.repository.persistExecutionSnapshot(
+      invalidated.id,
+      'binding-1',
+      1,
+      {
+        providerId: 'codex',
+        revision: 1,
+        status: 'idle',
+        providerSessionId: 'fresh-thread',
+        providerState: { threadId: 'fresh-thread' },
+      },
+    )).resolves.toBe(true);
+
+    const persisted = firstRun.persistence.saveMetadata.mock.calls.at(-1)?.[0];
+    expect(invalidated.modelRecoverySource).toBeUndefined();
+    expect(persisted).toMatchObject({
+      sessionId: 'fresh-thread',
+      providerState: { threadId: 'fresh-thread' },
+    });
+    expect(persisted).not.toHaveProperty('modelRecoverySource');
+
+    const restartedConversation: Conversation = {
+      ...invalidated,
+      sessionId: persisted?.sessionId ?? null,
+      providerState: persisted?.providerState,
+    };
+    const restarted = createRepository(restartedConversation);
+
+    await expect(restarted.repository.recoverMissingSelectedModels())
+      .resolves.toEqual([restartedConversation]);
+    expect(recoverConversationModelSelection).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sessionId: 'fresh-thread',
+        providerState: { threadId: 'fresh-thread' },
+      }),
+      '/vault',
+      expect.any(Object),
+    );
+  });
+
+  it('coalesces lazy and background recovery before usage metadata can win', async () => {
+    const conversation = createConversation('recovery-race');
+    conversation.usage = {
+      contextTokens: 1,
+      contextWindow: 200_000,
+      inputTokens: 1,
+      model: 'opus',
+      percentage: 1,
+    };
+    let finishRecovery: (model: string | null) => void = () => undefined;
+    const recoverConversationModelSelection = jest.fn(() => new Promise<string | null>(
+      resolve => { finishRecovery = resolve; },
+    ));
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      recoverConversationModelSelection,
+    } as any);
+    const { repository } = createRepository(conversation);
+
+    const backgroundRecovery = repository.recoverMissingSelectedModels();
+    const lazyInitialization = (repository as any).ensureSelectedModel(conversation);
+    finishRecovery('claude-code/retired-native-model');
+
+    await expect(Promise.all([backgroundRecovery, lazyInitialization]))
+      .resolves.toEqual([[conversation], undefined]);
+    expect(recoverConversationModelSelection).toHaveBeenCalledTimes(1);
+    expect(conversation.selectedModel).toBe('claude-code/retired-native-model');
+  });
+
+  it('leaves usage fallback unpersisted when native model recovery is unresolved', async () => {
+    const conversation = createConversation('unresolved-model');
+    conversation.usage = {
+      contextTokens: 1,
+      contextWindow: 200_000,
+      inputTokens: 1,
+      model: 'opus',
+      percentage: 1,
+    };
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      recoverConversationModelSelection: jest.fn().mockResolvedValue(null),
+    } as any);
+    const { repository, persistence } = createRepository(conversation);
+
+    await (repository as any).ensureSelectedModel(conversation);
+
+    expect(conversation.selectedModel).toBeUndefined();
+    expect(persistence.saveMetadata).not.toHaveBeenCalled();
+  });
+
+  it('retains usage migration when the provider has no native recovery source', async () => {
+    const conversation = createConversation('usage-only-model');
+    conversation.usage = {
+      contextTokens: 1,
+      contextWindow: 200_000,
+      inputTokens: 1,
+      model: 'opus',
+      percentage: 1,
+    };
+    const recoverConversationModelSelection = jest.fn().mockResolvedValue(null);
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hasConversationModelRecoverySource: jest.fn().mockReturnValue(false),
+      recoverConversationModelSelection,
+    } as any);
+    const { repository, persistence } = createRepository(conversation);
+
+    await (repository as any).ensureSelectedModel(conversation);
+
+    expect(recoverConversationModelSelection).not.toHaveBeenCalled();
+    expect(conversation.selectedModel).toBe('opus');
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      selectedModel: 'opus',
+    }));
+  });
+
+  it('preserves an unavailable historical selection while runtime resolution falls back', async () => {
+    const conversation = createConversation('retired-model');
+    conversation.selectedModel = 'claude-code/retired-native-model';
+    conversation.usage = {
+      contextTokens: 1,
+      contextWindow: 200_000,
+      inputTokens: 1,
+      model: 'opus',
+      percentage: 1,
+    };
+    const { repository, persistence } = createRepository(conversation);
+
+    await (repository as any).ensureSelectedModel(conversation);
+
+    expect(conversation.selectedModel).toBe('claude-code/retired-native-model');
+    expect(persistence.saveMetadata).not.toHaveBeenCalled();
+    expect(resolveConversationModel({}, 'claude', conversation)).toMatchObject({
+      model: 'opus',
+      source: 'usage',
+    });
   });
 
   it('persists and projects pinned session metadata', async () => {

@@ -953,6 +953,8 @@ describe('ClaudianView tab controls', () => {
       container.empty();
       container.createDiv({ cls: 'claudian-history-header' });
       container.createDiv({ cls: 'claudian-history-list' });
+      (_options as { onBeforeRestoreListState?: (target: HTMLElement) => void })
+        ?.onBeforeRestoreListState?.(container);
     });
     const view = Object.create(ClaudianView.prototype) as any;
     Object.assign(view, {
@@ -979,6 +981,7 @@ describe('ClaudianView tab controls', () => {
         sessionActionMode: 'active',
         allowConversationSelection: true,
         onOpenConversationInNewTab: expect.any(Function),
+        onBeforeRestoreListState: expect.any(Function),
       }),
     );
     historyDropdown.querySelector('.claudian-history-archive-control')!.click();
@@ -1398,8 +1401,11 @@ describe('ClaudianView tab controls', () => {
         getConversationStatus: expect.any(Function),
         collapsedGroupKeys: expect.any(Set),
         onGroupCollapseChange: expect.any(Function),
+        onSetConversationsArchived: expect.any(Function),
         onSetLinkedNotePinned: expect.any(Function),
         onStartLinkedNoteConversation: expect.any(Function),
+        getProviderIcon: expect.any(Function),
+        getModelLabel: expect.any(Function),
         onRerender: expect.any(Function),
         onSelectConversation: expect.any(Function),
         preserveListState: true,
@@ -1407,6 +1413,7 @@ describe('ClaudianView tab controls', () => {
         showAttentionState: true,
         showOpenStateActions: false,
         showOpenStateLabels: false,
+        showMetadataPopover: true,
         showPinnedSection: true,
         pinnedLinkedNotePaths: expect.any(Set),
         showArchivedSection: false,
@@ -1423,6 +1430,14 @@ describe('ClaudianView tab controls', () => {
     expect(view.sessionSidebarDirty).toBe(false);
 
     const sessionOptions = renderHistoryDropdown.mock.calls[0][1];
+    const historicalProviderConversation = {
+      id: 'historical-provider-conversation',
+      providerId: 'removed-provider',
+      selectedModel: 'removed-provider/opaque-model',
+    };
+    expect(sessionOptions.getProviderIcon(historicalProviderConversation)).toBeUndefined();
+    expect(sessionOptions.getModelLabel(historicalProviderConversation))
+      .toBe('removed-provider/opaque-model');
     sessionOptions.onGroupCollapseChange('note:Projects/Plan.md', true);
     expect(sessionOptions.collapsedGroupKeys.has('note:Projects/Plan.md')).toBe(true);
 
@@ -1519,6 +1534,46 @@ describe('ClaudianView tab controls', () => {
     await view.setLinkedNotePinned('Projects/Plan.md', true);
 
     expect(setLinkedNotePinned).toHaveBeenCalledWith('Projects/Plan.md', true);
+  });
+
+  it('archives linked-note sessions through the existing guarded archive flow', async () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.setConversationArchived = jest.fn().mockResolvedValue(undefined);
+
+    await view.archiveConversations(['conversation-1', 'conversation-2']);
+
+    expect(view.setConversationArchived.mock.calls).toEqual([
+      ['conversation-1', true],
+      ['conversation-2', true],
+    ]);
+  });
+
+  it('formats persisted model metadata for the session hover card', () => {
+    jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+      getModelOptions: jest.fn().mockReturnValue([
+        { value: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
+      ]),
+    } as any);
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.plugin = { settings: {} };
+
+    expect(view.getConversationModelLabel({
+      providerId: 'codex',
+      selectedModel: 'gpt-5.1-codex',
+    })).toBe('GPT-5.1 Codex');
+  });
+
+  it('ignores malformed persisted model metadata in the session hover card', () => {
+    const getChatUIConfig = jest.spyOn(ProviderRegistry, 'getChatUIConfig');
+    getChatUIConfig.mockClear();
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.plugin = { settings: {} };
+
+    expect(view.getConversationModelLabel({
+      providerId: 'claude',
+      selectedModel: 42,
+    })).toBe('');
+    expect(getChatUIConfig).not.toHaveBeenCalled();
   });
 
   it('adds an organization menu beside New and persists both menu choices', async () => {

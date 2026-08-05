@@ -9,6 +9,7 @@ import { resolveOpencodeDatabasePathHint } from './OpencodeHistoryPathResolver';
 import {
   isOpencodeSessionHydrationDiagnosticMessage,
   loadOpencodeSessionMessages,
+  loadOpencodeSessionModel,
 } from './OpencodeHistoryStore';
 
 const OPENCODE_PROVIDER_STATE_KEYS = [
@@ -18,6 +19,22 @@ const OPENCODE_PROVIDER_STATE_KEYS = [
 
 export class OpencodeConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedKeys = new Map<string, string>();
+
+  hasConversationModelRecoverySource(conversation: Conversation): boolean {
+    return !!conversation.sessionId;
+  }
+
+  async recoverConversationModelSelection(
+    conversation: Conversation,
+    _vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<string | null> {
+    if (!conversation.sessionId) return null;
+    const state = getOpencodeState(conversation.providerState);
+    const databasePath = resolveOpencodeDatabasePathHint(state.databasePath, pathContext);
+    if (!databasePath) return null;
+    return loadOpencodeSessionModel(conversation.sessionId, { databasePath });
+  }
 
   async hydrateConversationHistory(
     conversation: Conversation,

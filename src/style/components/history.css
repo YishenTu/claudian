@@ -395,26 +395,89 @@
   animation: attention-title-pulse 1.6s ease-in-out infinite;
 }
 
-.claudian-session-sidebar .claudian-history-item.running .claudian-history-item-date {
-  color: var(--text-faint);
-  font-weight: 400;
-}
-
-.claudian-session-sidebar .claudian-history-item-date {
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.claudian-session-sidebar .claudian-history-item:hover .claudian-history-item-date,
-.claudian-session-sidebar .claudian-history-item:focus-within .claudian-history-item-date {
-  opacity: 1;
-}
-
 .claudian-session-sidebar .claudian-history-item-actions {
   display: none;
   flex-shrink: 0;
   gap: 6px;
   margin-inline-start: 0;
+}
+
+.claudian-session-metadata-popover {
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  width: min(280px, calc(100vw - 24px));
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background-color: #ffffff;
+  background-image: linear-gradient(var(--background-primary), var(--background-primary));
+  box-shadow: var(--shadow-s);
+}
+
+body.theme-dark .claudian-session-metadata-popover {
+  background-color: #1e1e1e;
+}
+
+.claudian-session-metadata-row {
+  display: grid;
+  grid-template-columns: 16px max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-session-metadata-row--provider {
+  grid-template-columns: 16px minmax(0, 1fr);
+}
+
+.claudian-session-metadata-row--unlabeled {
+  grid-template-columns: 16px minmax(0, 1fr);
+}
+
+.claudian-session-metadata-row--provider-no-icon {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.claudian-session-metadata-provider-icon {
+  color: var(--text-muted);
+}
+
+.claudian-session-metadata-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.claudian-session-metadata-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-session-metadata-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.claudian-session-metadata-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-session-metadata-value--note {
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-overflow: clip;
+  scrollbar-width: none;
+}
+
+.claudian-session-metadata-value--note::-webkit-scrollbar {
+  display: none;
 }
 
 .claudian-session-sidebar .claudian-history-item:hover .claudian-history-item-actions,

@@ -6,6 +6,7 @@ export {
   type ContentBlock,
   type Conversation,
   type ConversationMeta,
+  type ConversationModelRecoverySource,
   type ExecutionInputBrowserSnapshot,
   type ExecutionInputCanvasSnapshot,
   type ExecutionInputContextSnapshot,

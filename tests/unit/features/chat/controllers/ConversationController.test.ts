@@ -3,6 +3,7 @@ import { Menu, Notice, setIcon } from 'obsidian';
 
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { OPENAI_PROVIDER_ICON } from '@/shared/icons';
 import { confirm } from '@/shared/modals/ConfirmModal';
 
 jest.mock('@/shared/modals/ConfirmModal', () => ({
@@ -1021,6 +1022,223 @@ describe('ConversationController', () => {
         expect(onSetLinkedNotePinned).toHaveBeenCalledWith('Projects/Other.md', true);
       });
 
+      it('uses a DOM menu and archives non-running sessions from a linked-note header', async () => {
+        const container = createMockEl();
+        const onSetConversationsArchived = jest.fn().mockResolvedValue(undefined);
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'ready',
+            title: 'Ready session',
+            createdAt: 3,
+            currentNote: 'Projects/Plan.md',
+          },
+          {
+            id: 'running',
+            title: 'Running session',
+            createdAt: 2,
+            currentNote: 'Projects/Plan.md',
+          },
+          {
+            id: 'hidden',
+            title: 'Hidden session',
+            createdAt: 1,
+            currentNote: 'Projects/Plan.md',
+          },
+          {
+            id: 'busy',
+            title: 'Busy session',
+            createdAt: 0,
+            currentNote: 'Projects/Busy.md',
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          organization: 'linked-note',
+          sessionActionMode: 'active',
+          searchQuery: 'ready',
+          getConversationStatus: id => ({
+            openState: 'closed',
+            isRunning: id === 'running' || id === 'busy',
+          }),
+          onSetLinkedNotePinned: jest.fn().mockResolvedValue(undefined),
+          onSetConversationsArchived,
+        });
+
+        const groupHeaders = container.querySelectorAll('.claudian-session-group-header');
+        const planHeader = groupHeaders.find((header: any) => (
+          header.getAttribute('data-note-path') === 'Projects/Plan.md'
+        ))!;
+        planHeader.dispatchEvent({
+          type: 'contextmenu',
+          preventDefault: jest.fn(),
+          stopPropagation: jest.fn(),
+        });
+        let menu = (Menu as typeof Menu & {
+          instances: Array<{
+            items: Array<{
+              title: string;
+              disabled: boolean;
+              clickHandler: (() => void) | null;
+            }>;
+            useNativeMenu: boolean | null;
+          }>;
+        }).instances.at(-1)!;
+        expect(menu.useNativeMenu).toBe(false);
+        expect(menu.items.map(item => item.title)).toEqual([
+          'Pin linked note',
+          'Archive all sessions',
+        ]);
+        expect(menu.items[1].disabled).toBe(false);
+        menu.items[1].clickHandler?.();
+        await Promise.resolve();
+        expect(onSetConversationsArchived).toHaveBeenCalledWith(['ready', 'hidden']);
+
+        const busyContainer = createMockEl();
+        controller.renderHistoryDropdown(busyContainer, {
+          onSelectConversation: jest.fn(),
+          organization: 'linked-note',
+          sessionActionMode: 'active',
+          searchQuery: 'busy',
+          getConversationStatus: id => ({
+            openState: 'closed',
+            isRunning: id === 'running' || id === 'busy',
+          }),
+          onSetLinkedNotePinned: jest.fn().mockResolvedValue(undefined),
+          onSetConversationsArchived,
+        });
+        const busyHeader = busyContainer.querySelector('.claudian-session-group-header')!;
+        busyHeader.dispatchEvent({
+          type: 'contextmenu',
+          preventDefault: jest.fn(),
+          stopPropagation: jest.fn(),
+        });
+        menu = (Menu as typeof Menu & {
+          instances: Array<{
+            items: Array<{
+              title: string;
+              disabled: boolean;
+              clickHandler: (() => void) | null;
+            }>;
+            useNativeMenu: boolean | null;
+          }>;
+        }).instances.at(-1)!;
+        expect(menu.items[1].disabled).toBe(true);
+        expect(menu.items[1].clickHandler).toBeNull();
+      });
+
+      it('renders dual-mode sessions on one row with metadata in a hover card', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([{
+          id: 'session-1',
+          providerId: 'codex',
+          selectedModel: 'gpt-5.1-codex',
+          title: 'Review architecture',
+          createdAt: 1_000,
+          lastActivityAt: 2_000,
+          currentNote: 'Projects/Architecture.md',
+        }]);
+        jest.spyOn(controller, 'formatMetadataDate').mockReturnValue('Aug 3, 2026');
+        jest.spyOn(controller, 'formatMetadataDateTime').mockReturnValue('Aug 5, 2026, 14:28');
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showMetadataPopover: true,
+          getProviderIcon: () => OPENAI_PROVIDER_ICON,
+          getModelLabel: () => 'GPT-5.1 Codex',
+        });
+
+        const item = container.querySelector('.claudian-history-item')!;
+        item.getBoundingClientRect = jest.fn().mockReturnValue({
+          top: 120,
+          left: 20,
+          width: 200,
+          height: 28,
+          right: 220,
+          bottom: 148,
+          x: 20,
+          y: 120,
+          toJSON: jest.fn(),
+        });
+        const body = createMockEl();
+        Object.defineProperty(item.ownerDocument, 'body', {
+          configurable: true,
+          value: body,
+        });
+        expect(item.getAttribute('tabindex')).toBe('0');
+        expect(item.querySelector('.claudian-history-item-date')).toBeNull();
+
+        item.dispatchEvent({ type: 'mouseenter' });
+
+        const popover = body.querySelector('.claudian-session-metadata-popover')!;
+        expect(popover.getAttribute('role')).toBe('tooltip');
+        expect(popover.querySelectorAll('.claudian-session-metadata-label')
+          .map((label: { textContent: string }) => label.textContent))
+          .toEqual(['Created', 'Last active']);
+        expect(popover.querySelectorAll('.claudian-session-metadata-value')
+          .map((value: { textContent: string }) => value.textContent))
+          .toEqual([
+            'Architecture',
+            'GPT-5.1 Codex',
+            'Aug 3, 2026',
+            'Aug 5, 2026, 14:28',
+          ]);
+        expect(popover.querySelector('.claudian-session-metadata-provider-icon'))
+          .not.toBeNull();
+        expect(popover.style.top).toBe('120px');
+        const noteValue = popover.querySelector(
+          '.claudian-session-metadata-value--note',
+        )!;
+        expect(noteValue.getAttribute('title')).toBe('Projects/Architecture.md');
+
+        item.dispatchEvent({
+          type: 'keydown',
+          key: 'Escape',
+          stopPropagation: jest.fn(),
+        });
+        expect(popover.hasClass('claudian-hidden')).toBe(true);
+
+        item.dispatchEvent({ type: 'focusin' });
+        expect(body.querySelectorAll('.claudian-session-metadata-popover'))
+          .toHaveLength(2);
+      });
+
+      it('omits the note metadata row for unlinked sessions', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([{
+          id: 'session-1',
+          providerId: 'codex',
+          selectedModel: 'gpt-5.1-codex',
+          title: 'Review architecture',
+          createdAt: 1_000,
+          lastActivityAt: 2_000,
+        }]);
+        jest.spyOn(controller, 'formatMetadataDate').mockReturnValue('Aug 3, 2026');
+        jest.spyOn(controller, 'formatMetadataDateTime').mockReturnValue('Aug 5, 2026, 14:28');
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showMetadataPopover: true,
+          getProviderIcon: () => OPENAI_PROVIDER_ICON,
+          getModelLabel: () => 'GPT-5.1 Codex',
+        });
+
+        const item = container.querySelector('.claudian-history-item')!;
+        const body = createMockEl();
+        Object.defineProperty(item.ownerDocument, 'body', {
+          configurable: true,
+          value: body,
+        });
+
+        item.dispatchEvent({ type: 'mouseenter' });
+
+        const popover = body.querySelector('.claudian-session-metadata-popover')!;
+        expect(popover.querySelectorAll('.claudian-session-metadata-row')).toHaveLength(3);
+        expect(popover.querySelectorAll('.claudian-session-metadata-value')
+          .map((value: { textContent: string }) => value.textContent))
+          .toEqual(['GPT-5.1 Codex', 'Aug 3, 2026', 'Aug 5, 2026, 14:28']);
+      });
+
       it('hides the pinned section when no sessions are pinned', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
@@ -1608,6 +1826,56 @@ describe('ConversationController', () => {
 
         expect(container.querySelector('.claudian-history-list')!.scrollTop).toBe(120);
       });
+
+      it('installs surface controls before restoring preserved list position', () => {
+        const container = createMockEl();
+        const order: string[] = [];
+        const restoreSpy = jest.spyOn(controller as any, 'restoreHistoryListPosition')
+          .mockImplementation(() => {
+            order.push('restore');
+          });
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'conv-1', title: 'Conversation', createdAt: 1 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          preserveListState: true,
+          onBeforeRestoreListState: (listContainer) => {
+            order.push('decorate');
+            const list = listContainer.querySelector('.claudian-history-list')!;
+            list.insertBefore(createMockEl(), list.firstChild);
+          },
+        });
+
+        expect(order).toEqual(['decorate', 'restore']);
+        restoreSpy.mockRestore();
+      });
+
+      it.each(['active', 'archived'] as const)(
+        'installs surface controls when the %s session scope is empty',
+        (sessionScope) => {
+          const container = createMockEl();
+          const onBeforeRestoreListState = jest.fn((listContainer: HTMLElement) => {
+            const list = listContainer.querySelector('.claudian-history-list')!;
+            list.insertBefore(createMockEl(), list.firstChild);
+          });
+          (deps.plugin.getConversationList as jest.Mock).mockReturnValue([]);
+
+          controller.renderHistoryDropdown(container, {
+            onSelectConversation: jest.fn(),
+            sessionScope,
+            preserveListState: true,
+            onBeforeRestoreListState,
+          });
+
+          const list = container.querySelector('.claudian-history-list')!;
+          expect(onBeforeRestoreListState).toHaveBeenCalledWith(container);
+          const emptyState = list.querySelector('.claudian-history-empty');
+          expect(list.children[0]).not.toBe(emptyState);
+          expect(emptyState).not.toBeNull();
+        },
+      );
 
       it('does not let collapsed groups consume pagination or hide later headers', () => {
         const container = createMockEl();
@@ -2297,8 +2565,12 @@ describe('ConversationController', () => {
           preventDefault: jest.fn(),
         });
         let menu = (Menu as typeof Menu & {
-          instances: Array<{ items: Array<{ title: string }> }>;
+          instances: Array<{
+            items: Array<{ title: string }>;
+            useNativeMenu: boolean | null;
+          }>;
         }).instances.at(-1)!;
+        expect(menu.useNativeMenu).toBe(false);
         expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Archive', 'Rename']);
 
         const archivedContainer = createMockEl();
@@ -2319,8 +2591,12 @@ describe('ConversationController', () => {
           preventDefault: jest.fn(),
         });
         menu = (Menu as typeof Menu & {
-          instances: Array<{ items: Array<{ title: string }> }>;
+          instances: Array<{
+            items: Array<{ title: string }>;
+            useNativeMenu: boolean | null;
+          }>;
         }).instances.at(-1)!;
+        expect(menu.useNativeMenu).toBe(false);
         expect(menu.items.map(item => item.title)).toEqual(['Restore', 'Delete']);
       });
     });

@@ -10,7 +10,7 @@ import {
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { type AppTabManagerState, DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
-import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
+import { type ConversationMeta, VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
@@ -775,6 +775,13 @@ export class ClaudianView extends ItemView {
       onSetConversationArchived: (id: string, isArchived: boolean) => (
         this.setConversationArchived(id, isArchived)
       ),
+      ...(navigationMode === 'history'
+        ? {
+            onBeforeRestoreListState: (target: HTMLElement) => (
+              this.buildHistoryArchiveNavigation(target)
+            ),
+          }
+        : {}),
       ...(navigationMode === 'sessions'
         ? {
             organization: this.getSessionManagerOrganization(),
@@ -782,6 +789,7 @@ export class ClaudianView extends ItemView {
             language: getObsidianLanguage(this.plugin.settings.locale),
             noteExists: (notePath: string) => this.noteExists(notePath),
             searchQuery: this.isSessionSearchActive ? this.sessionSearchQuery : undefined,
+            showMetadataPopover: true,
             showOpenStateActions: false,
             showAttentionState: !isArchiveView,
             showPinnedSection: !isArchiveView,
@@ -805,16 +813,28 @@ export class ClaudianView extends ItemView {
             onSetLinkedNotePinned: (notePath: string, isPinned: boolean) => (
               this.setLinkedNotePinned(notePath, isPinned)
             ),
+            onSetConversationsArchived: (ids: readonly string[]) => (
+              this.archiveConversations(ids)
+            ),
             onStartLinkedNoteConversation: (notePath: string) => (
               this.startLinkedNoteConversation(notePath)
+            ),
+            getProviderIcon: (conversation: ConversationMeta) => {
+              try {
+                return ProviderRegistry
+                  .getChatUIConfig(conversation.providerId)
+                  .getProviderIcon?.();
+              } catch {
+                return undefined;
+              }
+            },
+            getModelLabel: (conversation: ConversationMeta) => (
+              this.getConversationModelLabel(conversation)
             ),
           }
         : {}),
       signal,
     });
-    if (navigationMode === 'history') {
-      this.buildHistoryArchiveNavigation(container);
-    }
   }
 
   private buildSessionHeaderActions(container: HTMLElement): void {
@@ -1240,6 +1260,23 @@ export class ClaudianView extends ItemView {
     await this.plugin.setLinkedNotePinned(notePath, isPinned);
   }
 
+  private getConversationModelLabel(conversation: ConversationMeta): string {
+    const selectedModel = typeof conversation.selectedModel === 'string'
+      ? conversation.selectedModel.trim()
+      : '';
+    if (!selectedModel) return '';
+
+    try {
+      return ProviderRegistry
+        .getChatUIConfig(conversation.providerId)
+        .getModelOptions(this.plugin.settings)
+        .find(option => option.value === selectedModel)
+        ?.label ?? selectedModel;
+    } catch {
+      return selectedModel;
+    }
+  }
+
   private async setConversationArchived(
     conversationId: string,
     isArchived: boolean,
@@ -1262,6 +1299,12 @@ export class ClaudianView extends ItemView {
       }
     }
     await this.plugin.setConversationArchived(conversationId, true);
+  }
+
+  private async archiveConversations(conversationIds: readonly string[]): Promise<void> {
+    for (const conversationId of conversationIds) {
+      await this.setConversationArchived(conversationId, true);
+    }
   }
 
   private getOpenConversationTabs(conversationId: string): Array<{
@@ -1398,7 +1441,7 @@ export class ClaudianView extends ItemView {
   }
 
   private showSessionOptionsMenu(anchor: HTMLElement, event?: MouseEvent): void {
-    const menu = new Menu();
+    const menu = new Menu().setUseNativeMenu(false);
     const organization = this.getSessionManagerOrganization();
     const sort = this.getSessionManagerSort();
 

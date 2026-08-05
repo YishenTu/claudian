@@ -88,6 +88,97 @@ describe('SessionStorage', () => {
       });
     });
 
+    it('removes malformed model metadata and marks the record for migration', async () => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${SESSIONS_PATH}/session-malformed-model.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-malformed-model',
+        title: 'Malformed model',
+        createdAt: 100,
+        lastActivityAt: 200,
+        selectedModel: 42,
+      }));
+
+      const result = await storage.load('session-malformed-model');
+
+      expect(result).toEqual({
+        metadata: {
+          id: 'session-malformed-model',
+          title: 'Malformed model',
+          createdAt: 100,
+          lastActivityAt: 200,
+        },
+        needsMigration: true,
+        source: 'current',
+      });
+    });
+
+    it('loads a durable model recovery locator without making it active session state', async () => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${SESSIONS_PATH}/session-model-retry.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-model-retry',
+        title: 'Model retry',
+        createdAt: 100,
+        lastActivityAt: 200,
+        sessionId: null,
+        modelRecoverySource: {
+          sessionId: 'native-session-before-invalidation',
+          providerState: { threadId: 'native-session-before-invalidation' },
+          resumeAtMessageId: 'checkpoint-1',
+        },
+      }));
+
+      const result = await storage.load('session-model-retry');
+
+      expect(result).toEqual({
+        metadata: {
+          id: 'session-model-retry',
+          title: 'Model retry',
+          createdAt: 100,
+          lastActivityAt: 200,
+          sessionId: null,
+          modelRecoverySource: {
+            sessionId: 'native-session-before-invalidation',
+            providerState: { threadId: 'native-session-before-invalidation' },
+            resumeAtMessageId: 'checkpoint-1',
+          },
+        },
+        needsMigration: false,
+        source: 'current',
+      });
+    });
+
+    it('drops a malformed model recovery locator and marks the record for migration', async () => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${SESSIONS_PATH}/session-malformed-model-retry.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-malformed-model-retry',
+        title: 'Malformed model retry',
+        createdAt: 100,
+        lastActivityAt: 200,
+        modelRecoverySource: {
+          sessionId: ['not', 'a', 'session'],
+        },
+      }));
+
+      const result = await storage.load('session-malformed-model-retry');
+
+      expect(result).toEqual({
+        metadata: {
+          id: 'session-malformed-model-retry',
+          title: 'Malformed model retry',
+          createdAt: 100,
+          lastActivityAt: 200,
+        },
+        needsMigration: true,
+        source: 'current',
+      });
+    });
+
     it('returns null if file does not exist', async () => {
       mockAdapter.exists.mockResolvedValue(false);
 
@@ -512,6 +603,7 @@ describe('SessionStorage', () => {
             updatedAt: 1700001000,
             lastResponseAt: 1700000900,
             currentNote: 'Notes/One.md',
+            selectedModel: 'claude-sonnet-4-5',
             isPinned: true,
             isArchived: true,
           }));
@@ -542,6 +634,7 @@ describe('SessionStorage', () => {
       expect(metas[1].preview).toBe('SDK session');
       expect(metas[1].messageCount).toBe(0);
       expect(metas[1].currentNote).toBe('Notes/One.md');
+      expect(metas[1].selectedModel).toBe('claude-sonnet-4-5');
       expect(metas[1].isPinned).toBe(true);
       expect(metas[1].isArchived).toBe(true);
     });

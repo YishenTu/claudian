@@ -471,6 +471,17 @@ export interface ProviderWorkspaceRegistration<
 }
 
 export interface ProviderConversationHistoryService {
+  /** Whether this conversation still references native history worth model recovery. */
+  hasConversationModelRecoverySource?(conversation: Conversation): boolean;
+  /**
+   * Recovers a stable provider-owned model selection from native history.
+   * Implementations must not require the model to remain in the current catalog.
+   */
+  recoverConversationModelSelection?(
+    conversation: Conversation,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<string | null>;
   /** Recovers a missing provider-native session reference before history hydration. */
   recoverConversationSessionReference?(
     conversation: Conversation,

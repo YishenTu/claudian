@@ -465,6 +465,9 @@ export default class ClaudianPlugin extends Plugin {
           }
         : this.loadSessionMetadataWithSources(),
     );
+    const initialModelRecoverySources = initialMetadataScan.records.map(({ metadata }) => (
+      this.createConversationMetadataShell(metadata)
+    ));
     const initialEntries = initialMetadataScan.records.map(({ metadata, needsMigration, source }) => ({
       conversation: this.createConversationMetadataShell(metadata),
       needsMigration,
@@ -477,6 +480,17 @@ export default class ClaudianPlugin extends Plugin {
       initialMetadataScan.invalidMetadataCount,
     );
     await this.conversationRepository.adoptMetadataConversations(initialEntries);
+    this.conversationRepository.registerHistoricalModelRecoverySources(
+      initialModelRecoverySources,
+    );
+    if (initialMetadataScan.complete) {
+      const recoveredModels = await this.conversationRepository
+        .recoverMissingSelectedModels();
+      StartupProfiler.recordCount(
+        'recovered-session-model-count',
+        recoveredModels.length,
+      );
+    }
     setLocale(this.settings.locale as Locale);
 
     const reconciliation = this.reconcileModelWithEnvironment();
@@ -605,6 +619,9 @@ export default class ClaudianPlugin extends Plugin {
       const publishBatch = (metadata: SessionMetadata[]): void => {
         if (this.isUnloading || metadata.length === 0) return;
 
+        const recoverySources = metadata.map((item) => (
+          this.createConversationMetadataShell(item)
+        ));
         const shells = metadata.map((item) => (
           this.createConversationMetadataShell(item)
         ));
@@ -614,6 +631,9 @@ export default class ClaudianPlugin extends Plugin {
         );
         const invalidatedIds = new Set(invalidatedShells.map(({ id }) => id));
         const added = this.conversationRepository.mergeMetadataConversations(shells);
+        this.conversationRepository.registerHistoricalModelRecoverySources(
+          recoverySources,
+        );
         if (added.length === 0) return;
 
         addedConversations.push(...added);
@@ -664,6 +684,19 @@ export default class ClaudianPlugin extends Plugin {
         this.conversationRepository.getCachedConversation(conversation.id) === conversation
       ));
       StartupProfiler.recordCount('background-session-metadata-count', currentAddedConversations.length);
+      if (!this.isUnloading) {
+        const recoveredModels = await this.conversationRepository
+          .recoverMissingSelectedModels();
+        StartupProfiler.recordCount(
+          'recovered-session-model-count',
+          recoveredModels.length,
+        );
+        if (recoveredModels.length > 0) {
+          for (const view of this.getAllViews()) {
+            view.notifyConversationListChanged();
+          }
+        }
+      }
       await this.conversationRepository.persistConversations(
         invalidatedConversations.filter(
           (conversation) =>
@@ -813,6 +846,7 @@ export default class ClaudianPlugin extends Plugin {
       sessionId: meta.sessionId !== undefined ? meta.sessionId : meta.id,
       selectedModel: meta.selectedModel,
       providerState: meta.providerState,
+      modelRecoverySource: meta.modelRecoverySource,
       messages: [],
       currentNote: meta.currentNote,
       isPinned: meta.isPinned,

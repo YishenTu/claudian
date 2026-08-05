@@ -14,7 +14,10 @@ import { normalizeProviderModelSelection, resolveConversationModel } from '../..
 import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
-import type { ProviderHistoryPathContext } from '../../core/providers/types';
+import type {
+  ProviderConversationHistoryService,
+  ProviderHistoryPathContext,
+} from '../../core/providers/types';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
   type ProviderId,
@@ -23,9 +26,11 @@ import {
   type ChatMessage,
   type Conversation,
   type ConversationMeta,
+  type ConversationModelRecoverySource,
   isCanonicalUserMessage,
   type SessionMetadata,
 } from '../../core/types';
+import { mapWithConcurrency } from '../../utils/concurrency';
 import { extractUserDisplayContent } from '../../utils/context';
 import { rewriteVaultPathAfterRename } from '../../utils/path';
 
@@ -79,6 +84,73 @@ interface InputLedgerCorrelationResult {
   lastAcceptedInputAt: number | null;
 }
 
+type HistoricalModelRecoveryResult =
+  | 'recovered'
+  | 'superseded'
+  | 'unresolved';
+
+type HistoricalModelRecovery = NonNullable<
+  ProviderConversationHistoryService['recoverConversationModelSelection']
+>;
+
+const HISTORICAL_MODEL_RECOVERY_CONCURRENCY = 2;
+
+function getStoredModelSelection(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function cloneModelRecoverySource(
+  source: ConversationModelRecoverySource,
+): ConversationModelRecoverySource {
+  return {
+    sessionId: source.sessionId,
+    ...(source.providerState
+      ? { providerState: { ...source.providerState } }
+      : {}),
+    ...(source.resumeAtMessageId
+      ? { resumeAtMessageId: source.resumeAtMessageId }
+      : {}),
+  };
+}
+
+function getModelRecoverySource(
+  conversation: Conversation,
+): ConversationModelRecoverySource | null {
+  if (conversation.modelRecoverySource) {
+    return cloneModelRecoverySource(conversation.modelRecoverySource);
+  }
+  if (
+    conversation.sessionId === null
+    && !conversation.providerState
+    && !conversation.resumeAtMessageId
+  ) {
+    return null;
+  }
+  return {
+    sessionId: conversation.sessionId,
+    ...(conversation.providerState
+      ? { providerState: { ...conversation.providerState } }
+      : {}),
+    ...(conversation.resumeAtMessageId
+      ? { resumeAtMessageId: conversation.resumeAtMessageId }
+      : {}),
+  };
+}
+
+function applyModelRecoverySource(
+  conversation: Conversation,
+  source: ConversationModelRecoverySource,
+): Conversation {
+  return {
+    ...conversation,
+    sessionId: source.sessionId,
+    providerState: source.providerState
+      ? { ...source.providerState }
+      : undefined,
+    resumeAtMessageId: source.resumeAtMessageId,
+  };
+}
+
 export class ConversationInputLedgerUnavailableError extends Error {
   constructor(
     readonly conversationId: string,
@@ -108,6 +180,11 @@ export class ConversationRepository {
   private readonly persistenceQueues = new Map<string, Promise<void>>();
   private readonly executionBindings = new Map<string, ExecutionBindingState>();
   private readonly deletionStates = new Map<string, ConversationDeletionState>();
+  private readonly historicalModelRecoveryPromises = new Map<
+    string,
+    Promise<HistoricalModelRecoveryResult>
+  >();
+  private readonly historicalModelRecoverySources = new Map<string, Conversation>();
   private readonly notePathRenames: NotePathRename[] = [];
   private readonly pendingNotePathCorrectionIds = new Set<string>();
   private readonly persistence: ConversationPersistence;
@@ -132,6 +209,8 @@ export class ConversationRepository {
         .map(({ id }) => id),
     );
     this.hydrationPromises.clear();
+    this.historicalModelRecoveryPromises.clear();
+    this.historicalModelRecoverySources.clear();
     this.ledgerStates.clear();
     this.ledgerLoadPromises.clear();
     this.executionBindings.clear();
@@ -477,6 +556,143 @@ export class ConversationRepository {
     );
   }
 
+  registerHistoricalModelRecoverySources(
+    conversations: readonly Conversation[],
+  ): void {
+    for (const source of conversations) {
+      const target = this.getSync(source.id);
+      if (
+        !target
+        || getStoredModelSelection(target.selectedModel)
+        || getStoredModelSelection(source.selectedModel)
+        || this.historicalModelRecoverySources.has(source.id)
+      ) {
+        continue;
+      }
+      const recoverySource = getModelRecoverySource(source)
+        ?? getModelRecoverySource(target);
+      if (!recoverySource) continue;
+
+      target.modelRecoverySource ??= cloneModelRecoverySource(recoverySource);
+      this.historicalModelRecoverySources.set(
+        source.id,
+        applyModelRecoverySource(source, recoverySource),
+      );
+    }
+  }
+
+  async recoverMissingSelectedModels(): Promise<Conversation[]> {
+    const candidates = this.conversations.filter(conversation => (
+      !getStoredModelSelection(conversation.selectedModel)
+    ));
+    const recovered = await mapWithConcurrency(
+      candidates,
+      async (conversation): Promise<Conversation | null> => {
+        const recovery = this.recoverHistoricalModelSelection(conversation);
+        if (!recovery) return null;
+        const result = await recovery;
+        return result === 'recovered' && this.getSync(conversation.id) === conversation
+          ? conversation
+          : null;
+      },
+      HISTORICAL_MODEL_RECOVERY_CONCURRENCY,
+    );
+    return recovered.filter(
+      (conversation): conversation is Conversation => conversation !== null,
+    );
+  }
+
+  private recoverHistoricalModelSelection(
+    conversation: Conversation,
+  ): Promise<HistoricalModelRecoveryResult> | null {
+    if (getStoredModelSelection(conversation.selectedModel)) {
+      return null;
+    }
+
+    const existing = this.historicalModelRecoveryPromises.get(conversation.id);
+    if (existing) return existing;
+
+    const persistedRecoverySource = conversation.modelRecoverySource
+      ? cloneModelRecoverySource(conversation.modelRecoverySource)
+      : null;
+    const recoverySource = this.historicalModelRecoverySources.get(conversation.id)
+      ?? (persistedRecoverySource
+        ? applyModelRecoverySource(conversation, persistedRecoverySource)
+        : conversation);
+    let recoverModelSelection: HistoricalModelRecovery | undefined;
+    try {
+      const historyService = ProviderRegistry.getConversationHistoryService(
+        recoverySource.providerId,
+      );
+      if (historyService.hasConversationModelRecoverySource?.(recoverySource) === false) {
+        return null;
+      }
+      recoverModelSelection = historyService.recoverConversationModelSelection
+        ?.bind(historyService);
+    } catch {
+      return null;
+    }
+    if (!recoverModelSelection) return null;
+
+    const generation = this.getConversationGeneration(conversation.id);
+    const recovery = this.runHistoricalModelRecovery(
+      conversation,
+      generation,
+      recoverModelSelection,
+      recoverySource,
+    );
+    this.historicalModelRecoveryPromises.set(conversation.id, recovery);
+    return recovery;
+  }
+
+  private async runHistoricalModelRecovery(
+    conversation: Conversation,
+    generation: number,
+    recoverModelSelection: HistoricalModelRecovery,
+    recoverySource: Conversation,
+  ): Promise<HistoricalModelRecoveryResult> {
+    let selectedModel: string | null;
+    try {
+      const vaultPath = this.deps.getVaultPath();
+      selectedModel = (await recoverModelSelection(
+        recoverySource,
+        vaultPath,
+        this.getHistoryPathContext(recoverySource.providerId, vaultPath),
+      ))?.trim() || null;
+    } catch {
+      return 'unresolved';
+    }
+    if (!selectedModel) return 'unresolved';
+    if (
+      !this.isConversationCurrent(conversation, generation)
+      || getStoredModelSelection(conversation.selectedModel)
+    ) {
+      return 'superseded';
+    }
+
+    const previousSelectedModel = conversation.selectedModel;
+    const previousModelRecoverySource = conversation.modelRecoverySource;
+    conversation.selectedModel = selectedModel;
+    conversation.modelRecoverySource = undefined;
+    try {
+      await this.save(conversation);
+    } catch {
+      if (conversation.selectedModel === selectedModel) {
+        conversation.selectedModel = previousSelectedModel;
+        conversation.modelRecoverySource = previousModelRecoverySource;
+      }
+      return 'unresolved';
+    }
+    if (
+      this.isConversationCurrent(conversation, generation)
+      && conversation.selectedModel === selectedModel
+    ) {
+      this.historicalModelRecoverySources.delete(conversation.id);
+      return 'recovered';
+    }
+    return 'superseded';
+  }
+
   async rewriteCurrentNotePaths(
     oldPath: string,
     newPath: string,
@@ -759,6 +975,7 @@ export class ConversationRepository {
     return {
       id: conversation.id,
       providerId: conversation.providerId,
+      selectedModel: conversation.selectedModel,
       title: conversation.title,
       createdAt: conversation.createdAt,
       lastActivityAt: conversation.lastActivityAt,
@@ -845,6 +1062,7 @@ export class ConversationRepository {
     return this.conversations.map((conversation) => ({
       id: conversation.id,
       providerId: conversation.providerId,
+      selectedModel: conversation.selectedModel,
       title: conversation.title,
       createdAt: conversation.createdAt,
       lastActivityAt: conversation.lastActivityAt,
@@ -973,11 +1191,22 @@ export class ConversationRepository {
   private async ensureSelectedModel(
     conversation: Conversation,
   ): Promise<void> {
+    let recoveryResult: HistoricalModelRecoveryResult | 'unsupported' = 'unsupported';
+    if (!getStoredModelSelection(conversation.selectedModel)) {
+      const recovery = this.recoverHistoricalModelSelection(conversation);
+      if (recovery) recoveryResult = await recovery;
+    }
     const resolved = resolveConversationModel(
       this.deps.getSettings(),
       conversation.providerId,
       conversation,
     );
+    if (
+      (getStoredModelSelection(conversation.selectedModel) && resolved.source !== 'selected')
+      || (recoveryResult === 'unresolved' && resolved.source === 'usage')
+    ) {
+      return;
+    }
     if (
       !resolved.shouldPersist
       || !resolved.model
@@ -1239,6 +1468,20 @@ export class ConversationRepository {
     conversation: Conversation,
     snapshot: ProviderSessionSnapshot,
   ): void {
+    const establishesFreshProviderSession = snapshot.status !== 'invalidated'
+      && typeof snapshot.providerSessionId === 'string'
+      && snapshot.providerSessionId.trim().length > 0;
+    if (
+      establishesFreshProviderSession
+      && (
+        conversation.modelRecoverySource
+        || this.historicalModelRecoverySources.has(conversation.id)
+        || this.historicalModelRecoveryPromises.has(conversation.id)
+      )
+    ) {
+      conversation.modelRecoverySource = undefined;
+      this.invalidateConversation(conversation.id);
+    }
     if (snapshot.providerSessionId !== undefined) {
       conversation.sessionId = snapshot.providerSessionId;
     } else if (snapshot.status === 'invalidated') {
@@ -1310,6 +1553,14 @@ export class ConversationRepository {
         providerState && Object.keys(providerState).length > 0
           ? providerState
           : undefined,
+      ...(!getStoredModelSelection(conversation.selectedModel)
+        && conversation.modelRecoverySource
+        ? {
+            modelRecoverySource: cloneModelRecoverySource(
+              conversation.modelRecoverySource,
+            ),
+          }
+        : {}),
       currentNote: conversation.currentNote,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
@@ -1385,6 +1636,8 @@ export class ConversationRepository {
   }
 
   private invalidateConversation(id: string): void {
+    this.historicalModelRecoveryPromises.delete(id);
+    this.historicalModelRecoverySources.delete(id);
     this.conversationGenerations.set(
       id,
       this.getConversationGeneration(id) + 1,

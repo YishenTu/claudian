@@ -21,6 +21,7 @@ import {
 import {
   parsePiSessionContent,
   parsePiSessionEntries,
+  parsePiSessionModel,
   readPiSessionHeader,
 } from './PiHistoryStore';
 
@@ -36,6 +37,45 @@ const PI_PROVIDER_STATE_KEYS = [
 
 export class PiConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedKeys = new Map<string, string>();
+
+  hasConversationModelRecoverySource(conversation: Conversation): boolean {
+    const state = getPiState(conversation.providerState);
+    return !!(
+      state.sessionFile
+      || state.sessionId
+      || conversation.sessionId
+      || state.forkSource?.sessionId
+      || state.forkSourceSessionFile
+    );
+  }
+
+  async recoverConversationModelSelection(
+    conversation: Conversation,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<string | null> {
+    const state = getPiState(conversation.providerState);
+    const isPendingFork = this.isPendingForkConversation(conversation);
+    const sessionId = isPendingFork
+      ? state.forkSource!.sessionId
+      : (state.sessionId ?? conversation.sessionId);
+    const sessionFile = resolvePiSessionFileHint(
+      isPendingFork ? state.forkSourceSessionFile : state.sessionFile,
+      sessionId,
+      vaultPath,
+      pathContext,
+    );
+    if (!sessionFile) return null;
+
+    try {
+      return parsePiSessionModel(
+        await fs.readFile(sessionFile, 'utf8'),
+        isPendingFork ? state.forkSource!.resumeAt : state.leafEntryId,
+      );
+    } catch {
+      return null;
+    }
+  }
 
   async hydrateConversationHistory(
     conversation: Conversation,

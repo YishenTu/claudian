@@ -37,6 +37,8 @@ describe('loadOpencodeSessionRows', () => {
         data_time_created: 1_000,
         data_valid: 1,
         id: 'msg-user',
+        model_id: null,
+        provider_id: null,
         role: 'user',
         time_created: 1_000,
       }],

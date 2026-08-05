@@ -7,6 +7,7 @@ import {
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   ConversationMeta,
+  ConversationModelRecoverySource,
   SessionMetadata,
 } from '../types';
 import {
@@ -227,6 +228,7 @@ export class SessionStorage implements SessionMetadataReader {
     const metas: ConversationMeta[] = nativeMetas.map((meta) => ({
       id: meta.id,
       providerId: meta.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
+      selectedModel: meta.selectedModel,
       title: meta.title,
       createdAt: meta.createdAt,
       lastActivityAt: meta.lastActivityAt,
@@ -275,16 +277,57 @@ export class SessionStorage implements SessionMetadataReader {
     const {
       updatedAt: _updatedAt,
       lastResponseAt: _lastResponseAt,
+      selectedModel: rawSelectedModel,
+      modelRecoverySource: rawModelRecoverySource,
       ...metadataFields
     } = rawMetadata;
+    const selectedModel = typeof rawSelectedModel === 'string'
+      ? rawSelectedModel
+      : undefined;
+    const modelRecoverySource = this.parseModelRecoverySource(rawModelRecoverySource);
     const metadata = {
       ...metadataFields,
+      ...(selectedModel !== undefined ? { selectedModel } : {}),
+      ...(modelRecoverySource ? { modelRecoverySource } : {}),
       lastActivityAt,
     } as unknown as SessionMetadata;
     const needsMigration = !Number.isFinite(rawMetadata.lastActivityAt)
       || 'updatedAt' in rawMetadata
-      || 'lastResponseAt' in rawMetadata;
+      || 'lastResponseAt' in rawMetadata
+      || (rawSelectedModel !== undefined && selectedModel === undefined)
+      || (rawModelRecoverySource !== undefined && modelRecoverySource === undefined);
     return { metadata, needsMigration, source };
+  }
+
+  private parseModelRecoverySource(value: unknown): ConversationModelRecoverySource | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const source = value as Record<string, unknown>;
+    if (typeof source.sessionId !== 'string' && source.sessionId !== null) return undefined;
+    if (
+      source.providerState !== undefined
+      && (
+        !source.providerState
+        || typeof source.providerState !== 'object'
+        || Array.isArray(source.providerState)
+      )
+    ) {
+      return undefined;
+    }
+    if (
+      source.resumeAtMessageId !== undefined
+      && typeof source.resumeAtMessageId !== 'string'
+    ) {
+      return undefined;
+    }
+    return {
+      sessionId: source.sessionId,
+      ...(source.providerState
+        ? { providerState: source.providerState as Record<string, unknown> }
+        : {}),
+      ...(typeof source.resumeAtMessageId === 'string'
+        ? { resumeAtMessageId: source.resumeAtMessageId }
+        : {}),
+    };
   }
 
   private getFirstFiniteTimestamp(...values: unknown[]): number | undefined {

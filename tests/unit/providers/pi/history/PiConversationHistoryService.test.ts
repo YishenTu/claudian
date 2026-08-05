@@ -39,6 +39,66 @@ describe('PiConversationHistoryService', () => {
     });
   });
 
+  it('recovers the last Pi model on the persisted active branch', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-model-history-'));
+    const sessionFile = path.join(dir, 'session.jsonl');
+    await fs.writeFile(sessionFile, [
+      JSON.stringify({
+        id: 'model-1',
+        modelId: 'gpt-5.4-mini',
+        provider: 'openai-codex',
+        type: 'model_change',
+      }),
+      JSON.stringify({
+        id: 'model-2',
+        modelId: 'gpt-5.5',
+        parentId: 'model-1',
+        provider: 'openai-codex',
+        type: 'model_change',
+      }),
+    ].join('\n'));
+    const conversation = createConversation(sessionFile);
+    conversation.providerState = {
+      leafEntryId: 'model-2',
+      sessionFile,
+      sessionId: 's1',
+    };
+
+    await expect(new PiConversationHistoryService()
+      .recoverConversationModelSelection?.(conversation, null))
+      .resolves.toBe('pi:openai-codex/gpt-5.5');
+  });
+
+  it('leaves model recovery unresolved when the persisted leaf is missing', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-missing-model-leaf-'));
+    const sessionFile = path.join(dir, 'session.jsonl');
+    await fs.writeFile(sessionFile, [
+      JSON.stringify({
+        id: 'model-1',
+        modelId: 'gpt-5.4-mini',
+        provider: 'openai-codex',
+        type: 'model_change',
+      }),
+      JSON.stringify({
+        id: 'model-2',
+        modelId: 'gpt-5.5',
+        parentId: 'model-1',
+        provider: 'openai-codex',
+        type: 'model_change',
+      }),
+    ].join('\n'));
+    const conversation = createConversation(sessionFile);
+    conversation.providerState = {
+      leafEntryId: 'missing-leaf',
+      sessionFile,
+      sessionId: 's1',
+    };
+
+    await expect(new PiConversationHistoryService()
+      .recoverConversationModelSelection?.(conversation, null))
+      .resolves.toBeNull();
+  });
+
   it('rejects an out-of-root metadata path and re-resolves by logical session id', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-home-'));
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-outside-'));

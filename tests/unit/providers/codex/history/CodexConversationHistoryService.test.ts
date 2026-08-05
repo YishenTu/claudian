@@ -97,6 +97,177 @@ describe('CodexConversationHistoryService', () => {
     expect((conversation.providerState as Record<string, unknown>).sessionFilePath).toBe(transcriptPath);
   });
 
+  it('recovers the last Codex model from turn context without catalog validation', async () => {
+    const transcriptPath = path.join(tempHome, 'historical-model.jsonl');
+    fs.writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.4-mini' } }),
+        JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
+      ].join('\n'),
+      'utf8',
+    );
+    const conversation: Conversation = {
+      id: 'historical-model',
+      providerId: 'codex',
+      title: 'Historical model',
+      createdAt: 1,
+      lastActivityAt: 2,
+      sessionId: 'thread-1',
+      providerState: { sessionFilePath: transcriptPath, threadId: 'thread-1' },
+      messages: [],
+    };
+
+    await expect(new CodexConversationHistoryService()
+      .recoverConversationModelSelection?.(conversation, null))
+      .resolves.toBe('openai-codex/gpt-5.5');
+  });
+
+  it('does not recover a Codex model past a missing rewind checkpoint', async () => {
+    const transcriptPath = path.join(tempHome, 'stale-checkpoint-model.jsonl');
+    fs.writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({
+          type: 'turn_context',
+          payload: { model: 'gpt-5.4-mini', turn_id: 'turn-1' },
+        }),
+        JSON.stringify({
+          type: 'turn_context',
+          payload: { model: 'gpt-5.5', turn_id: 'turn-2' },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
+    const conversation: Conversation = {
+      id: 'stale-checkpoint-model',
+      providerId: 'codex',
+      title: 'Stale checkpoint model',
+      createdAt: 1,
+      lastActivityAt: 2,
+      sessionId: 'thread-stale-checkpoint',
+      resumeAtMessageId: 'missing-turn',
+      providerState: {
+        sessionFilePath: transcriptPath,
+        threadId: 'thread-stale-checkpoint',
+      },
+      messages: [],
+    };
+
+    await expect(new CodexConversationHistoryService()
+      .recoverConversationModelSelection(conversation, null))
+      .resolves.toBeNull();
+  });
+
+  it('does not recover an established fork model past a missing source checkpoint', async () => {
+    const sourcePath = path.join(tempHome, 'fork-source-model.jsonl');
+    const forkPath = path.join(tempHome, 'established-fork-model.jsonl');
+    fs.writeFileSync(
+      sourcePath,
+      JSON.stringify({
+        type: 'turn_context',
+        payload: { model: 'gpt-5.4-mini', turn_id: 'source-turn-1' },
+      }),
+      'utf8',
+    );
+    fs.writeFileSync(
+      forkPath,
+      JSON.stringify({
+        type: 'turn_context',
+        payload: { model: 'gpt-5.5', turn_id: 'fork-turn-1' },
+      }),
+      'utf8',
+    );
+    const conversation: Conversation = {
+      id: 'established-fork-stale-source-checkpoint',
+      providerId: 'codex',
+      title: 'Established fork stale source checkpoint',
+      createdAt: 1,
+      lastActivityAt: 2,
+      sessionId: 'fork-thread',
+      providerState: {
+        threadId: 'fork-thread',
+        sessionFilePath: forkPath,
+        forkSource: {
+          sessionId: 'source-thread',
+          resumeAt: 'missing-source-turn',
+        },
+        forkSourceSessionFilePath: sourcePath,
+      },
+      messages: [],
+    };
+
+    await expect(new CodexConversationHistoryService()
+      .recoverConversationModelSelection(conversation, null))
+      .resolves.toBeNull();
+  });
+
+  it('recovers a model after Codex moves the transcript into archived_sessions', async () => {
+    const threadId = 'thread-archived-model';
+    const codexDir = path.join(tempHome, '.codex');
+    const sessionsDir = path.join(codexDir, 'sessions');
+    const archivedDir = path.join(codexDir, 'archived_sessions');
+    const stalePath = path.join(sessionsDir, `rollout-stale-${threadId}.jsonl`);
+    const archivedPath = path.join(
+      archivedDir,
+      `rollout-2026-08-05T00-00-00-${threadId}.jsonl`,
+    );
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    fs.mkdirSync(archivedDir, { recursive: true });
+    fs.writeFileSync(
+      archivedPath,
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
+      'utf8',
+    );
+    const conversation: Conversation = {
+      id: 'archived-model',
+      providerId: 'codex',
+      title: 'Archived model',
+      createdAt: 1,
+      lastActivityAt: 2,
+      sessionId: threadId,
+      providerState: {
+        sessionFilePath: stalePath,
+        threadId,
+        transcriptRootPath: sessionsDir,
+      },
+      messages: [],
+    };
+
+    await expect(new CodexConversationHistoryService()
+      .recoverConversationModelSelection(conversation, null))
+      .resolves.toBe('openai-codex/gpt-5.5');
+  });
+
+  it('recovers an archived model from legacy metadata containing only a thread id', async () => {
+    const threadId = 'thread-archived-legacy-model';
+    const archivedDir = path.join(tempHome, '.codex', 'archived_sessions');
+    const archivedPath = path.join(
+      archivedDir,
+      `rollout-2026-08-05T00-00-00-${threadId}.jsonl`,
+    );
+    fs.mkdirSync(archivedDir, { recursive: true });
+    fs.writeFileSync(
+      archivedPath,
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
+      'utf8',
+    );
+    const conversation: Conversation = {
+      id: 'archived-legacy-model',
+      providerId: 'codex',
+      title: 'Archived legacy model',
+      createdAt: 1,
+      lastActivityAt: 2,
+      sessionId: threadId,
+      providerState: { threadId },
+      messages: [],
+    };
+
+    await expect(new CodexConversationHistoryService()
+      .recoverConversationModelSelection(conversation, null))
+      .resolves.toBe('openai-codex/gpt-5.5');
+  });
+
   it('marks native context established after recovering a non-empty owned transcript', async () => {
     const threadId = 'thread-crash-recovery';
     const sessionsDir = path.join(tempHome, '.codex', 'sessions', '2026', '03', '27');

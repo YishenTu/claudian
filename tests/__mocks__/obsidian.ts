@@ -251,6 +251,7 @@ export class Menu {
   static instances: Menu[] = [];
 
   items: MockMenuItem[] = [];
+  useNativeMenu: boolean | null = null;
   showAtMouseEvent = jest.fn();
   showAtPosition = jest.fn();
 
@@ -268,6 +269,11 @@ export class Menu {
   addSeparator(): this {
     return this;
   }
+
+  setUseNativeMenu = jest.fn((useNativeMenu: boolean) => {
+    this.useNativeMenu = useNativeMenu;
+    return this;
+  });
 }
 
 const renderMarkdownMock = jest.fn<Promise<void>, [string, unknown, string, unknown]>().mockResolvedValue(undefined);
