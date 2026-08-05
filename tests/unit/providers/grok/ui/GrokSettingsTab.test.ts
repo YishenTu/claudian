@@ -90,7 +90,6 @@ jest.mock('@/shared/settings/ProviderModelPicker', () => ({
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
-  getLegacyHostnameKey: () => 'legacy-host',
 }));
 
 interface MockTextComponent {

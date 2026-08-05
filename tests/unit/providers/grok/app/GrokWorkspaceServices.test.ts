@@ -50,7 +50,6 @@ function createPlugin(cached = true): any {
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => 'device:current',
-  getLegacyHostnameKey: () => 'legacy-host',
 }));
 
 describe('GrokWorkspaceServices', () => {

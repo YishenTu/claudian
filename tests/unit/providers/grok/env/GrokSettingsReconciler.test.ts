@@ -9,7 +9,6 @@ import { getGrokProviderSettings } from '@/providers/grok/settings';
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => 'current-host',
-  getLegacyHostnameKey: () => 'legacy-host',
 }));
 
 describe('GrokSettingsReconciler', () => {

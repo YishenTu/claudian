@@ -54,7 +54,6 @@ function makeSettings(overrides: Record<string, unknown> = {}): Record<string, u
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => 'device:current',
-  getLegacyHostnameKey: () => 'legacy-host',
 }));
 
 describe('GrokChatUIConfig', () => {

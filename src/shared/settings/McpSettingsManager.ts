@@ -8,6 +8,7 @@ import type { ManagedMcpServer, McpServerConfig, McpServerType } from '../../cor
 import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../core/types';
 import { formatCommand } from '../../utils/mcp';
 import { confirmDelete } from '../modals/ConfirmModal';
+import { McpImportModal } from './McpImportModal';
 import { McpServerModal } from './McpServerModal';
 import { McpTestModal } from './McpTestModal';
 
@@ -70,10 +71,10 @@ export class McpSettingsManager {
 
     const importOption = dropdown.createDiv({ cls: 'claudian-mcp-add-option' });
     setIcon(importOption.createSpan({ cls: 'claudian-mcp-add-option-icon' }), 'clipboard-paste');
-    importOption.createSpan({ text: 'Import from clipboard' });
+    importOption.createSpan({ text: 'Paste configuration' });
     importOption.addEventListener('click', () => {
       dropdown.removeClass('is-visible');
-      void this.importFromClipboard();
+      this.openImportModal();
     });
 
     addBtn.addEventListener('click', (e) => {
@@ -267,18 +268,20 @@ export class McpSettingsManager {
     modal.open();
   }
 
-  private async importFromClipboard() {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (!text.trim()) {
-        new Notice('Clipboard is empty');
-        return;
-      }
+  private openImportModal(): void {
+    const modal = new McpImportModal(
+      this.app,
+      (config) => this.importPastedConfig(config),
+    );
+    modal.open();
+  }
 
+  private async importPastedConfig(text: string): Promise<boolean> {
+    try {
       const parsed = tryParseClipboardConfig(text);
       if (!parsed || parsed.servers.length === 0) {
-        new Notice('No valid mcp configuration found in clipboard');
-        return;
+        new Notice('No valid mcp configuration found');
+        return false;
       }
 
       if (parsed.needsName || parsed.servers.length === 1) {
@@ -299,14 +302,14 @@ export class McpSettingsManager {
         if (parsed.needsName) {
           new Notice('Enter a name for the server');
         }
-        return;
+        return true;
       }
 
       await this.importServers(parsed.servers);
+      return true;
     } catch (error) {
-      if (!isNotifiedMutationError(error)) {
-        new Notice('Failed to read clipboard');
-      }
+      this.showMutationError(error, 'Failed to import MCP configuration');
+      return false;
     }
   }
 

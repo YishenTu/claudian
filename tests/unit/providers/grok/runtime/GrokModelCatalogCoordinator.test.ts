@@ -1,10 +1,8 @@
 const mockGetHostnameKey = jest.fn(() => 'device:current');
-const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
 
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
-  getLegacyHostnameKey: () => mockGetLegacyHostnameKey(),
 }));
 
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -177,7 +175,6 @@ describe('GrokModelCatalogCoordinator', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('device:current');
-    mockGetLegacyHostnameKey.mockReturnValue('legacy-host');
   });
 
   it('returns the current-host cached catalog immediately when fresh', async () => {

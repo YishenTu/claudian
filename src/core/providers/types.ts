@@ -5,7 +5,6 @@ import type {
   ProviderExecutionTransitionScope,
 } from '../execution';
 import type { McpServerManager } from '../mcp/McpServerManager';
-import type { HomeFileAdapter } from '../storage/HomeFileAdapter';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   AgentDefinition,
@@ -462,7 +461,6 @@ export interface ProviderWorkspaceInitContext {
   plugin: ProviderHost;
   storage: SharedAppStorage;
   vaultAdapter: VaultFileAdapter;
-  homeAdapter: HomeFileAdapter;
   transitionScope: ProviderExecutionTransitionScope;
 }
 

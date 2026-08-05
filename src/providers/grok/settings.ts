@@ -3,11 +3,7 @@ import { getProviderEnvironmentVariables } from '../../core/providers/providerEn
 import { STANDARD_REASONING_VALUES } from '../../core/providers/reasoning';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
 import type { HostnameCliPaths } from '../../core/types/settings';
-import {
-  getHostnameKey,
-  getLegacyHostnameKey,
-  migrateLegacyHostnameKeyedMap,
-} from '../../utils/env';
+import { getHostnameKey } from '../../utils/env';
 import {
   clearGrokReasoningMetadata,
   decodeGrokModelId,
@@ -79,17 +75,8 @@ export function getGrokProviderSettings(
 ): GrokProviderSettings {
   const config = getProviderConfig(settings, 'grok');
   const currentHostKey = getHostnameKey();
-  const legacyHostKey = getLegacyHostnameKey();
-  const cliPathsByHost = migrateLegacyHostnameKeyedMap(
-    normalizeHostnameStringMap(config.cliPathsByHost),
-    currentHostKey,
-    legacyHostKey,
-  );
-  const catalogsByHost = migrateLegacyGrokCatalogs(
-    normalizeGrokCatalogsByHost(config.catalogsByHost),
-    currentHostKey,
-    legacyHostKey,
-  );
+  const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
+  const catalogsByHost = normalizeGrokCatalogsByHost(config.catalogsByHost);
   const currentCatalog = catalogsByHost[currentHostKey] ?? null;
   const selectedModelIds = collectSelectedGrokRawModelIds(settings);
   const catalogModels = currentCatalog?.models ?? [];
@@ -386,28 +373,6 @@ function normalizeGrokCatalogsByHost(
     }
   }
   return normalized;
-}
-
-function migrateLegacyGrokCatalogs(
-  catalogsByHost: Record<string, GrokCatalogSnapshot>,
-  currentHostKey: string,
-  legacyHostKey: string,
-): Record<string, GrokCatalogSnapshot> {
-  if (
-    !currentHostKey
-    || !legacyHostKey
-    || currentHostKey === legacyHostKey
-    || !Object.prototype.hasOwnProperty.call(catalogsByHost, legacyHostKey)
-  ) {
-    return catalogsByHost;
-  }
-
-  const migrated = { ...catalogsByHost };
-  if (!Object.prototype.hasOwnProperty.call(migrated, currentHostKey)) {
-    migrated[currentHostKey] = migrated[legacyHostKey];
-  }
-  delete migrated[legacyHostKey];
-  return migrated;
 }
 
 function collectSelectedGrokRawModelIds(settings: Record<string, unknown>): Set<string> {

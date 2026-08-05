@@ -33,7 +33,8 @@
 }
 
 .claudian-mcp-cmd-textarea,
-.claudian-mcp-env-textarea {
+.claudian-mcp-env-textarea,
+.claudian-mcp-import-textarea {
   width: 100%;
   min-height: 50px;
   resize: vertical;
@@ -46,9 +47,14 @@
 }
 
 .claudian-mcp-cmd-textarea:focus,
-.claudian-mcp-env-textarea:focus {
+.claudian-mcp-env-textarea:focus,
+.claudian-mcp-import-textarea:focus {
   border-color: var(--interactive-accent);
   outline: none;
+}
+
+.claudian-mcp-import-textarea {
+  min-height: 240px;
 }
 
 .claudian-mcp-buttons {

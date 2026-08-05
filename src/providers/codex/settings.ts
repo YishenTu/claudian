@@ -3,11 +3,7 @@ import { getProviderEnvironmentVariables } from '../../core/providers/providerEn
 import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
 import type { HostnameCliPaths } from '../../core/types/settings';
-import {
-  getHostnameKey,
-  getLegacyHostnameKey,
-  migrateLegacyHostnameKeyedMap,
-} from '../../utils/env';
+import { getHostnameKey } from '../../utils/env';
 import {
   type CodexDiscoveredModel,
   findCodexModel,
@@ -45,7 +41,6 @@ export interface CodexProviderConfig {
 export interface NormalizeCodexStoredConfigContext {
   platform?: NodeJS.Platform;
   hostnameKey?: string;
-  legacyHostnameKey?: string;
 }
 
 export interface NormalizeCodexStoredConfigResult {
@@ -68,7 +63,6 @@ function shouldPersistCodexInstallationSettings(): boolean {
 function omitCurrentHost<T>(entries: Record<string, T>, hostnameKey: string): Record<string, T> {
   const next = { ...entries };
   delete next[hostnameKey];
-  delete next[getLegacyHostnameKey()];
   return next;
 }
 
@@ -357,23 +351,16 @@ function hasOwnEntry<T>(entries: Record<string, T>, key: string): boolean {
 
 function getCodexStoredConfig(
   settings: Record<string, unknown>,
-  hostnameKey: string,
-  legacyHostnameKey: string,
 ): CodexProviderConfig {
   const config = getProviderConfig(settings, 'codex');
-  const normalizedCliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost ?? settings.codexCliPathsByHost);
-  const normalizedInstallationMethodsByHost = normalizeInstallationMethodsByHost(config.installationMethodsByHost);
-  const normalizedWslDistroOverridesByHost = normalizeHostnameStringMap(config.wslDistroOverridesByHost);
-  const cliPathsByHost = migrateLegacyHostnameKeyedMap(normalizedCliPathsByHost, hostnameKey, legacyHostnameKey);
-  const installationMethodsByHost = migrateLegacyHostnameKeyedMap(
-    normalizedInstallationMethodsByHost,
-    hostnameKey,
-    legacyHostnameKey,
+  const cliPathsByHost = normalizeHostnameStringMap(
+    config.cliPathsByHost ?? settings.codexCliPathsByHost,
   );
-  const wslDistroOverridesByHost = migrateLegacyHostnameKeyedMap(
-    normalizedWslDistroOverridesByHost,
-    hostnameKey,
-    legacyHostnameKey,
+  const installationMethodsByHost = normalizeInstallationMethodsByHost(
+    config.installationMethodsByHost,
+  );
+  const wslDistroOverridesByHost = normalizeHostnameStringMap(
+    config.wslDistroOverridesByHost,
   );
   const discoveredModels = normalizeCodexDiscoveredModels(config.discoveredModels);
   const visibleModels = normalizeCodexVisibleModels(config.visibleModels, discoveredModels);
@@ -424,7 +411,6 @@ function getNormalizedCodexStoredConfigContext(
   return {
     platform: context.platform ?? process.platform,
     hostnameKey: context.hostnameKey ?? getHostnameKey(),
-    legacyHostnameKey: context.legacyHostnameKey ?? getLegacyHostnameKey(),
   };
 }
 
@@ -451,9 +437,8 @@ export function normalizeCodexStoredConfig(
   const {
     platform,
     hostnameKey,
-    legacyHostnameKey,
   } = getNormalizedCodexStoredConfigContext(context);
-  const storedConfig = getCodexStoredConfig(settings, hostnameKey, legacyHostnameKey);
+  const storedConfig = getCodexStoredConfig(settings);
   const installationMethodsByHost = { ...storedConfig.installationMethodsByHost };
   const wslDistroOverridesByHost = { ...storedConfig.wslDistroOverridesByHost };
 
@@ -470,9 +455,7 @@ export function normalizeCodexStoredConfig(
     }
   } else {
     delete installationMethodsByHost[hostnameKey];
-    delete installationMethodsByHost[legacyHostnameKey];
     delete wslDistroOverridesByHost[hostnameKey];
-    delete wslDistroOverridesByHost[legacyHostnameKey];
   }
 
   const normalizedConfig: CodexProviderConfig & Record<string, unknown> = {
@@ -496,8 +479,7 @@ export function getCodexProviderSettings(
 ): CodexProviderSettings {
   const config = getProviderConfig(settings, 'codex');
   const hostnameKey = getHostnameKey();
-  const legacyHostnameKey = getLegacyHostnameKey();
-  const storedConfig = getCodexStoredConfig(settings, hostnameKey, legacyHostnameKey);
+  const storedConfig = getCodexStoredConfig(settings);
   const hasHostScopedInstallationMethods = Object.keys(storedConfig.installationMethodsByHost).length > 0;
   const hasHostScopedWslDistroOverrides = Object.keys(storedConfig.wslDistroOverridesByHost).length > 0;
   const legacyInstallationMethod = normalizeCodexInstallationMethod(config.installationMethod);

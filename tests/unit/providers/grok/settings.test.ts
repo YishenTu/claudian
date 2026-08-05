@@ -1,10 +1,8 @@
 const mockGetHostnameKey = jest.fn(() => 'device:current');
-const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
 
 jest.mock('../../../../src/utils/env', () => ({
   ...jest.requireActual('../../../../src/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
-  getLegacyHostnameKey: () => mockGetLegacyHostnameKey(),
 }));
 
 import {
@@ -50,7 +48,6 @@ describe('Grok settings', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('device:current');
-    mockGetLegacyHostnameKey.mockReturnValue('legacy-host');
   });
 
   it('defaults to disabled with empty environment and host state', () => {
@@ -68,7 +65,7 @@ describe('Grok settings', () => {
     });
   });
 
-  it('migrates legacy CLI and catalog keys to the opaque current host key', () => {
+  it('preserves hostname-scoped state without assigning it to the current device', () => {
     const settings = getGrokProviderSettings({
       providerConfigs: {
         grok: {
@@ -85,14 +82,14 @@ describe('Grok settings', () => {
     });
 
     expect(settings.cliPathsByHost).toEqual({
-      'device:current': '/legacy/grok',
+      'legacy-host': '/legacy/grok',
       'other-host': '/other/grok',
     });
     expect(settings.catalogsByHost).toEqual({
-      'device:current': currentCatalog,
+      'legacy-host': currentCatalog,
       'other-host': otherCatalog,
     });
-    expect(settings.currentCatalog).toEqual(currentCatalog);
+    expect(settings.currentCatalog).toBeNull();
   });
 
   it('rejects arrays and filters mixed hostname CLI maps', () => {

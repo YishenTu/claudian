@@ -14,7 +14,6 @@ const {
   getEnhancedPath,
   getMissingNodeError,
   getHostnameKey,
-  migrateLegacyHostnameKeyedMap,
   parseContextLimit,
   parseEnvironmentVariables,
 } = env;
@@ -873,21 +872,6 @@ describe('getHostnameKey', () => {
     expect(first).toBe(second);
   });
 
-  it('migrates the current legacy hostname entry to the opaque device key', () => {
-    const migrated = migrateLegacyHostnameKeyedMap(
-      {
-        'legacy-host': '/legacy/cli',
-        'other-host': '/other/cli',
-      },
-      'device:new',
-      'legacy-host',
-    );
-
-    expect(migrated).toEqual({
-      'device:new': '/legacy/cli',
-      'other-host': '/other/cli',
-    });
-  });
 });
 
 describe('parseContextLimit', () => {

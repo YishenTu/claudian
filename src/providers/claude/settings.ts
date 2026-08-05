@@ -3,11 +3,6 @@ import { getProviderEnvironmentVariables } from '../../core/providers/providerEn
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import {
-  getHostnameKey,
-  getLegacyHostnameKey,
-  migrateLegacyHostnameKeyedMap,
-} from '../../utils/env';
-import {
   type ClaudeModelEnvironmentType,
   isClaudeModelEnvironmentType,
 } from './modelTiers';
@@ -66,16 +61,9 @@ export function getClaudeProviderSettings(
   settings: Record<string, unknown>,
 ): ClaudeProviderSettings {
   const config = getProviderConfig(settings, 'claude');
-  const normalizedCliPathsByHost = normalizeHostnameStringMap(
+  const cliPathsByHost = normalizeHostnameStringMap(
     config.cliPathsByHost ?? settings.claudeCliPathsByHost,
   );
-  const cliPathsByHost = Object.keys(normalizedCliPathsByHost).length > 0
-    ? migrateLegacyHostnameKeyedMap(
-      normalizedCliPathsByHost,
-      getHostnameKey(),
-      getLegacyHostnameKey(),
-    )
-    : normalizedCliPathsByHost;
 
   return {
     enabled: (config.enabled as boolean | undefined)
