@@ -21,6 +21,7 @@ interface OrganizeSessionListOptions {
   organization: SessionManagerOrganization;
   sort: SessionManagerSort;
   language: string;
+  includeNotePaths?: readonly string[];
   noteExists?: (notePath: string) => boolean;
 }
 
@@ -88,6 +89,18 @@ export function organizeSessionList(
   }
 
   const noteGroups = new Map<string, SessionListSection>();
+  for (const notePath of options.includeNotePaths ?? []) {
+    const kind: SessionListSectionKind = options.noteExists?.(notePath) === false
+      ? 'missing'
+      : 'note';
+    noteGroups.set(notePath, {
+      key: `${kind}:${notePath}`,
+      kind,
+      label: getNoteLabel(notePath),
+      notePath,
+      conversations: [],
+    });
+  }
   const ungrouped: ConversationMeta[] = [];
   for (const conversation of sortedConversations) {
     const notePath = conversation.currentNote;

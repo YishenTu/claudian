@@ -2831,10 +2831,11 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('linked note renames', () => {
-    it('registers a Vault rename listener', async () => {
+    it('registers Vault rename and delete listeners', async () => {
       await plugin.onload();
 
       expect(mockApp.vault.on).toHaveBeenCalledWith('rename', expect.any(Function));
+      expect(mockApp.vault.on).toHaveBeenCalledWith('delete', expect.any(Function));
     });
 
     it('rewrites linked file and folder paths without changing activity timestamps', async () => {
@@ -2847,6 +2848,8 @@ describe('ClaudianPlugin', () => {
       });
       const fileUpdatedAt = fileConversation.lastActivityAt;
       const folderUpdatedAt = folderConversation.lastActivityAt;
+      await plugin.setLinkedNotePinned('Notes/Old.md', true);
+      await plugin.setLinkedNotePinned('Projects/Old/Plan.md', true);
 
       await (plugin as any).handleLinkedNoteRename(
         new (TFile as any)('Notes/New.md'),
@@ -2865,6 +2868,26 @@ describe('ClaudianPlugin', () => {
         currentNote: 'Projects/New/Plan.md',
         lastActivityAt: folderUpdatedAt,
       });
+      expect(plugin.settings.pinnedLinkedNotePaths).toEqual([
+        'Notes/New.md',
+        'Projects/New/Plan.md',
+      ]);
+    });
+
+    it('removes deleted file and folder paths from pinned linked notes', async () => {
+      await plugin.onload();
+      await plugin.setLinkedNotePinned('Notes/Plan.md', true);
+      await plugin.setLinkedNotePinned('Projects/Archive/One.md', true);
+      await plugin.setLinkedNotePinned('Projects/Archive/Two.md', true);
+
+      await (plugin as any).handlePinnedLinkedNoteDeleted(
+        new (TFile as any)('Notes/Plan.md'),
+      );
+      await (plugin as any).handlePinnedLinkedNoteDeleted(
+        new (TFolder as any)('Projects/Archive'),
+      );
+
+      expect(plugin.settings.pinnedLinkedNotePaths).toEqual([]);
     });
   });
 

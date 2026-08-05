@@ -23,7 +23,10 @@ import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement, renderWelcomeContent } from '../rendering/WelcomeRenderer';
 import { findRewindContext } from '../rewind';
 import type { SubagentManager } from '../services/SubagentManager';
-import { organizeSessionList } from '../session-manager/SessionListOrganizer';
+import {
+  organizeSessionList,
+  type SessionListSection,
+} from '../session-manager/SessionListOrganizer';
 import type { ChatState } from '../state/ChatState';
 import type { TabAttention } from '../state/types';
 import type { FileContextManager } from '../ui/FileContext';
@@ -120,7 +123,9 @@ type HistoryRenderOptions = {
   collapsedGroupKeys?: ReadonlySet<string>;
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
+  onSetLinkedNotePinned?: (notePath: string, isPinned: boolean) => Promise<void>;
   onStartLinkedNoteConversation?: (notePath: string) => Promise<void>;
+  pinnedLinkedNotePaths?: ReadonlySet<string>;
   preserveListState?: boolean;
   showAttentionState?: boolean;
   showPinnedSection?: boolean;
@@ -774,12 +779,43 @@ export class ConversationController {
             .toLocaleLowerCase();
           return searchTerms.every(term => searchableText.includes(term));
         });
+    const pinnedLinkedNotePaths = organization === 'linked-note'
+      && options.showPinnedSection
+      && options.sessionScope !== 'archived'
+      ? options.pinnedLinkedNotePaths ?? new Set<string>()
+      : new Set<string>();
+    const isInPinnedNoteGroup = (conversation: ConversationMeta): boolean => (
+      !!conversation.currentNote
+      && pinnedLinkedNotePaths.has(conversation.currentNote)
+    );
+    const pinnedNoteConversations = filteredConversations.filter(isInPinnedNoteGroup);
     const pinnedConversations = options.showPinnedSection
-      ? filteredConversations.filter(conversation => conversation.isPinned)
+      ? filteredConversations.filter(conversation => (
+          conversation.isPinned && !isInPinnedNoteGroup(conversation)
+        ))
       : [];
     const sessionConversations = options.showPinnedSection
-      ? filteredConversations.filter(conversation => !conversation.isPinned)
+      ? filteredConversations.filter(conversation => (
+          !conversation.isPinned && !isInPinnedNoteGroup(conversation)
+        ))
       : filteredConversations;
+    const pinnedPathsWithMatchingSessions = new Set(
+      pinnedNoteConversations.flatMap(conversation => (
+        conversation.currentNote ? [conversation.currentNote] : []
+      )),
+    );
+    const visiblePinnedNotePaths = [...pinnedLinkedNotePaths].filter((notePath) => (
+      searchTerms.length === 0
+      || pinnedPathsWithMatchingSessions.has(notePath)
+      || searchTerms.every(term => notePath.toLocaleLowerCase().includes(term))
+    ));
+    const pinnedNoteSections = organizeSessionList(pinnedNoteConversations, {
+      organization: 'linked-note',
+      sort: options.sort ?? 'last-updated',
+      language: options.language ?? 'en',
+      includeNotePaths: visiblePinnedNotePaths,
+      noteExists: options.noteExists,
+    }).filter(section => section.notePath !== undefined);
     const showSessionSections = options.showPinnedSection || options.showArchivedSection;
 
     let list: HTMLElement;
@@ -787,7 +823,7 @@ export class ConversationController {
     let pinnedList: HTMLElement | null = null;
     if (showSessionSections) {
       list = container.createDiv({ cls: 'claudian-history-list' });
-      if (pinnedConversations.length > 0) {
+      if (pinnedConversations.length > 0 || pinnedNoteSections.length > 0) {
         const pinnedSection = list.createDiv({
           cls: 'claudian-history-section claudian-history-section--pinned',
         });
@@ -839,7 +875,7 @@ export class ConversationController {
     );
     list.dataset.visibleCount = String(visibleCount);
 
-    if (filteredConversations.length === 0) {
+    if (filteredConversations.length === 0 && pinnedNoteSections.length === 0) {
       if (organization === 'linked-note') {
         options.onGroupKeysChange?.([]);
       }
@@ -861,13 +897,6 @@ export class ConversationController {
       sort: options.sort ?? 'last-updated',
       language: options.language ?? 'en',
     })[0]?.conversations ?? [];
-    const visiblePinnedConversations = sortedPinnedConversations.slice(0, visibleCount);
-    if (pinnedList) {
-      for (const conversation of visiblePinnedConversations) {
-        this.renderHistoryConversationItem(pinnedList, conversation, options);
-      }
-    }
-
     const sections = organizeSessionList(sessionConversations, {
       organization,
       sort: options.sort ?? 'last-updated',
@@ -875,8 +904,16 @@ export class ConversationController {
       noteExists: options.noteExists,
     });
     if (organization === 'linked-note') {
-      options.onGroupKeysChange?.(sections.map(({ key }) => key));
+      options.onGroupKeysChange?.([
+        ...pinnedNoteSections.map(({ key }) => key),
+        ...sections.map(({ key }) => key),
+      ]);
     }
+    const visiblePinnedNoteConversationTotal = pinnedNoteSections.reduce((total, section) => (
+      options.collapsedGroupKeys?.has(section.key)
+        ? total
+        : total + section.conversations.length
+    ), 0);
     const visibleSessionConversationTotal = organization === 'linked-note'
       ? sections.reduce((total, section) => (
           options.collapsedGroupKeys?.has(section.key)
@@ -884,9 +921,37 @@ export class ConversationController {
             : total + section.conversations.length
         ), 0)
       : sessionConversations.length;
-    const visibleConversationTotal = pinnedConversations.length
+    const visibleConversationTotal = visiblePinnedNoteConversationTotal
+      + pinnedConversations.length
       + visibleSessionConversationTotal;
-    let renderedConversationCount = visiblePinnedConversations.length;
+    let renderedConversationCount = 0;
+
+    if (pinnedList) {
+      for (const section of pinnedNoteSections) {
+        const remainingVisibleCount = visibleCount - renderedConversationCount;
+        const isCollapsed = options.collapsedGroupKeys?.has(section.key) ?? false;
+        const visibleConversations = isCollapsed || remainingVisibleCount <= 0
+          ? []
+          : section.conversations.slice(0, remainingVisibleCount);
+        this.renderLinkedNoteSection(
+          pinnedList,
+          section,
+          visibleConversations,
+          isCollapsed,
+          options,
+        );
+        renderedConversationCount += visibleConversations.length;
+      }
+
+      const visiblePinnedConversations = sortedPinnedConversations.slice(
+        0,
+        Math.max(0, visibleCount - renderedConversationCount),
+      );
+      for (const conversation of visiblePinnedConversations) {
+        this.renderHistoryConversationItem(pinnedList, conversation, options);
+      }
+      renderedConversationCount += visiblePinnedConversations.length;
+    }
 
     for (const section of sections) {
       const remainingVisibleCount = visibleCount - renderedConversationCount;
@@ -897,137 +962,18 @@ export class ConversationController {
         : section.conversations.slice(0, remainingVisibleCount);
       if (organization !== 'linked-note' && visibleConversations.length === 0) break;
 
-      let itemContainer = sessionList;
       if (organization === 'linked-note') {
-        const conversationStatuses = section.conversations.map(conversation => (
-          this.getHistoryConversationStatusForMetadata(conversation, options)
-        ));
-        const hasRunningConversation = conversationStatuses.some(({ isRunning }) => isRunning);
-        const hasAttentionConversation = options.showAttentionState === true
-          && options.sessionScope !== 'archived'
-          && conversationStatuses.some(({ attention }) => (
-            attention !== null && attention !== undefined
-          ));
-        const groupHeader = sessionList.createDiv({
-          cls: [
-            'claudian-session-group-header',
-            `claudian-session-group-header--${section.kind}`,
-            hasAttentionConversation && isCollapsed
-              ? 'claudian-session-group-header--attention'
-              : '',
-          ].filter(Boolean).join(' '),
-        });
-        groupHeader.setAttribute('data-group-kind', section.kind);
-        groupHeader.setAttribute('role', 'button');
-        groupHeader.setAttribute('tabindex', '0');
-        groupHeader.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
-        if (section.notePath) {
-          groupHeader.setAttribute('data-note-path', section.notePath);
-          groupHeader.setAttribute('title', section.notePath);
-          const noteIcon = groupHeader.createSpan({
-            cls: 'claudian-session-group-icon',
-          });
-          setIcon(noteIcon, 'file-text');
-        } else if (section.kind === 'ungrouped') {
-          const ungroupedIcon = groupHeader.createSpan({
-            cls: 'claudian-session-group-icon',
-          });
-          setIcon(ungroupedIcon, 'inbox');
+        this.renderLinkedNoteSection(
+          sessionList,
+          section,
+          visibleConversations,
+          isCollapsed,
+          options,
+        );
+      } else {
+        for (const conversation of visibleConversations) {
+          this.renderHistoryConversationItem(sessionList, conversation, options);
         }
-        groupHeader.createSpan({
-          cls: 'claudian-session-group-label',
-          text: section.label ?? '',
-        });
-        if (section.kind === 'missing') {
-          groupHeader.createSpan({
-            cls: 'claudian-session-group-status',
-            text: 'Missing',
-          });
-        }
-        const groupRunningIndicator = hasRunningConversation
-          ? groupHeader.createSpan({
-              cls: [
-                'claudian-session-group-running-indicator',
-                isCollapsed
-                  ? 'claudian-session-group-running-indicator--visible'
-                  : '',
-              ].filter(Boolean).join(' '),
-            })
-          : null;
-        if (groupRunningIndicator) {
-          setIcon(groupRunningIndicator, 'loader-2');
-          groupRunningIndicator.setAttribute('aria-label', 'Running');
-        }
-        if (
-          section.kind === 'note'
-          && section.notePath
-          && options.onStartLinkedNoteConversation
-        ) {
-          const notePath = section.notePath;
-          const newConversationButton = groupHeader.createSpan({
-            cls: 'claudian-session-group-new-action',
-          });
-          newConversationButton.setAttribute('role', 'button');
-          newConversationButton.setAttribute('tabindex', '0');
-          setIcon(newConversationButton, 'square-pen');
-          newConversationButton.setAttribute(
-            'aria-label',
-            `New chat for ${section.label ?? notePath}`,
-          );
-          newConversationButton.setAttribute(
-            'title',
-            `New chat for ${section.label ?? notePath}`,
-          );
-          const startLinkedNoteConversation = (): void => {
-            runConversationAction(
-              () => options.onStartLinkedNoteConversation!(notePath),
-              'Failed to start a chat for this note',
-            );
-          };
-          newConversationButton.addEventListener('click', (event) => {
-            event.stopPropagation();
-            startLinkedNoteConversation();
-          });
-          newConversationButton.addEventListener('keydown', (event) => {
-            event.stopPropagation();
-            if (event.key !== 'Enter' && event.key !== ' ') return;
-            event.preventDefault();
-            startLinkedNoteConversation();
-          });
-        }
-        const groupBody = sessionList.createDiv({
-          cls: [
-            'claudian-session-group-body',
-            isCollapsed ? 'claudian-session-group-body--collapsed' : '',
-          ].filter(Boolean).join(' '),
-        });
-        groupBody.setAttribute('data-group-key', section.key);
-        itemContainer = groupBody;
-
-        const toggleGroup = (): void => {
-          const collapsed = groupHeader.getAttribute('aria-expanded') === 'true';
-          groupHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-          groupBody.toggleClass('claudian-session-group-body--collapsed', collapsed);
-          groupRunningIndicator?.toggleClass(
-            'claudian-session-group-running-indicator--visible',
-            collapsed,
-          );
-          if (hasAttentionConversation) {
-            groupHeader.toggleClass('claudian-session-group-header--attention', collapsed);
-          }
-          options.onGroupCollapseChange?.(section.key, collapsed);
-          options.onRerender();
-        };
-        groupHeader.addEventListener('click', toggleGroup);
-        groupHeader.addEventListener('keydown', (event) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          event.preventDefault();
-          toggleGroup();
-        });
-      }
-
-      for (const conv of visibleConversations) {
-        this.renderHistoryConversationItem(itemContainer, conv, options);
       }
       renderedConversationCount += visibleConversations.length;
     }
@@ -1058,6 +1004,173 @@ export class ConversationController {
       previousSessionScrollTop,
       previousScrollAnchors,
     );
+  }
+
+  private renderLinkedNoteSection(
+    list: HTMLElement,
+    section: SessionListSection,
+    visibleConversations: readonly ConversationMeta[],
+    isCollapsed: boolean,
+    options: HistoryRenderOptions,
+  ): void {
+    const conversationStatuses = section.conversations.map(conversation => (
+      this.getHistoryConversationStatusForMetadata(conversation, options)
+    ));
+    const hasRunningConversation = conversationStatuses.some(({ isRunning }) => isRunning);
+    const hasAttentionConversation = options.showAttentionState === true
+      && options.sessionScope !== 'archived'
+      && conversationStatuses.some(({ attention }) => (
+        attention !== null && attention !== undefined
+      ));
+    const groupHeader = list.createDiv({
+      cls: [
+        'claudian-session-group-header',
+        `claudian-session-group-header--${section.kind}`,
+        hasAttentionConversation && isCollapsed
+          ? 'claudian-session-group-header--attention'
+          : '',
+      ].filter(Boolean).join(' '),
+    });
+    groupHeader.setAttribute('data-group-kind', section.kind);
+    groupHeader.setAttribute('role', 'button');
+    groupHeader.setAttribute('tabindex', '0');
+    groupHeader.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+    if (section.notePath) {
+      groupHeader.setAttribute('data-note-path', section.notePath);
+      groupHeader.setAttribute('title', section.notePath);
+      const noteIcon = groupHeader.createSpan({
+        cls: 'claudian-session-group-icon',
+      });
+      setIcon(noteIcon, 'file-text');
+    } else if (section.kind === 'ungrouped') {
+      const ungroupedIcon = groupHeader.createSpan({
+        cls: 'claudian-session-group-icon',
+      });
+      setIcon(ungroupedIcon, 'inbox');
+    }
+    groupHeader.createSpan({
+      cls: 'claudian-session-group-label',
+      text: section.label ?? '',
+    });
+    if (section.kind === 'missing') {
+      groupHeader.createSpan({
+        cls: 'claudian-session-group-status',
+        text: 'Missing',
+      });
+    }
+    const groupRunningIndicator = hasRunningConversation
+      ? groupHeader.createSpan({
+          cls: [
+            'claudian-session-group-running-indicator',
+            isCollapsed
+              ? 'claudian-session-group-running-indicator--visible'
+              : '',
+          ].filter(Boolean).join(' '),
+        })
+      : null;
+    if (groupRunningIndicator) {
+      setIcon(groupRunningIndicator, 'loader-2');
+      groupRunningIndicator.setAttribute('aria-label', 'Running');
+    }
+    if (
+      section.kind === 'note'
+      && section.notePath
+      && options.onStartLinkedNoteConversation
+    ) {
+      const notePath = section.notePath;
+      const startLinkedNoteConversation = options.onStartLinkedNoteConversation;
+      const newConversationButton = groupHeader.createSpan({
+        cls: 'claudian-session-group-new-action',
+      });
+      newConversationButton.setAttribute('role', 'button');
+      newConversationButton.setAttribute('tabindex', '0');
+      setIcon(newConversationButton, 'square-pen');
+      newConversationButton.setAttribute(
+        'aria-label',
+        `New chat for ${section.label ?? notePath}`,
+      );
+      newConversationButton.setAttribute(
+        'title',
+        `New chat for ${section.label ?? notePath}`,
+      );
+      const startConversation = (): void => {
+        runConversationAction(
+          () => startLinkedNoteConversation(notePath),
+          'Failed to start a chat for this note',
+        );
+      };
+      newConversationButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        startConversation();
+      });
+      newConversationButton.addEventListener('keydown', (event) => {
+        event.stopPropagation();
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        startConversation();
+      });
+    }
+
+    const groupBody = list.createDiv({
+      cls: [
+        'claudian-session-group-body',
+        isCollapsed ? 'claudian-session-group-body--collapsed' : '',
+      ].filter(Boolean).join(' '),
+    });
+    groupBody.setAttribute('data-group-key', section.key);
+
+    const toggleGroup = (): void => {
+      const collapsed = groupHeader.getAttribute('aria-expanded') === 'true';
+      groupHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      groupBody.toggleClass('claudian-session-group-body--collapsed', collapsed);
+      groupRunningIndicator?.toggleClass(
+        'claudian-session-group-running-indicator--visible',
+        collapsed,
+      );
+      if (hasAttentionConversation) {
+        groupHeader.toggleClass('claudian-session-group-header--attention', collapsed);
+      }
+      options.onGroupCollapseChange?.(section.key, collapsed);
+      options.onRerender();
+    };
+    groupHeader.addEventListener('click', toggleGroup);
+    groupHeader.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      toggleGroup();
+    });
+
+    const notePath = section.notePath;
+    const onSetLinkedNotePinned = options.onSetLinkedNotePinned;
+    const isPinnedLinkedNote = notePath
+      ? options.pinnedLinkedNotePaths?.has(notePath) ?? false
+      : false;
+    if (
+      notePath
+      && onSetLinkedNotePinned
+      && (section.kind === 'note' || isPinnedLinkedNote)
+    ) {
+      groupHeader.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const menu = new Menu();
+        menu.addItem(menuItem => menuItem
+          .setTitle(isPinnedLinkedNote ? 'Unpin linked note' : 'Pin linked note')
+          .onClick(() => {
+            runConversationAction(
+              () => onSetLinkedNotePinned(notePath, !isPinnedLinkedNote),
+              isPinnedLinkedNote
+                ? 'Failed to unpin linked note'
+                : 'Failed to pin linked note',
+            );
+          }));
+        menu.showAtMouseEvent(event);
+      });
+    }
+
+    for (const conversation of visibleConversations) {
+      this.renderHistoryConversationItem(groupBody, conversation, options);
+    }
   }
 
   private captureHistoryScrollAnchors(list: HTMLElement): HistoryScrollAnchor[] {

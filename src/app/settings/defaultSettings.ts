@@ -54,6 +54,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   chatViewPlacement: 'right-sidebar',
   sessionManagerOrganization: 'list',
   sessionManagerSort: 'last-updated',
+  pinnedLinkedNotePaths: [],
 
   hiddenProviderCommands: getDefaultHiddenProviderCommands(),
 };

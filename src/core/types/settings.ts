@@ -168,6 +168,7 @@ export interface ClaudianSettings {
   chatViewPlacement: ChatViewPlacement;
   sessionManagerOrganization?: SessionManagerOrganization;
   sessionManagerSort?: SessionManagerSort;
+  pinnedLinkedNotePaths?: string[];
 
   // Provider command visibility
   hiddenProviderCommands: HiddenProviderCommands;

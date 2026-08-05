@@ -785,6 +785,9 @@ export class ClaudianView extends ItemView {
             showOpenStateActions: false,
             showAttentionState: !isArchiveView,
             showPinnedSection: !isArchiveView,
+            pinnedLinkedNotePaths: new Set(
+              this.plugin.settings.pinnedLinkedNotePaths ?? [],
+            ),
             showArchivedSection: isArchiveView,
             collapsedGroupKeys: this.getDisplayedCollapsedSessionGroupKeys(),
             onGroupCollapseChange: (groupKey: string, collapsed: boolean) => {
@@ -799,6 +802,9 @@ export class ClaudianView extends ItemView {
             onGroupKeysChange: (groupKeys: readonly string[]) => {
               this.sessionGroupKeys = new Set(groupKeys);
             },
+            onSetLinkedNotePinned: (notePath: string, isPinned: boolean) => (
+              this.setLinkedNotePinned(notePath, isPinned)
+            ),
             onStartLinkedNoteConversation: (notePath: string) => (
               this.startLinkedNoteConversation(notePath)
             ),
@@ -1225,6 +1231,13 @@ export class ClaudianView extends ItemView {
         commitProvisionalTab(tab);
       }
     }
+  }
+
+  private async setLinkedNotePinned(
+    notePath: string,
+    isPinned: boolean,
+  ): Promise<void> {
+    await this.plugin.setLinkedNotePinned(notePath, isPinned);
   }
 
   private async setConversationArchived(

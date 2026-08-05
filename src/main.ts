@@ -165,6 +165,11 @@ export default class ClaudianPlugin extends Plugin {
           new Notice('Failed to update linked session note paths');
         });
       }));
+      this.registerEvent(this.app.vault.on('delete', (file) => {
+        void this.handlePinnedLinkedNoteDeleted(file).catch(() => {
+          new Notice('Failed to update pinned linked notes');
+        });
+      }));
 
       this.addRibbonIcon('bot', 'Open Claudian', () => {
         void this.activateView();
@@ -1228,6 +1233,25 @@ export default class ClaudianPlugin extends Plugin {
     this.notifyConversationViewsChanged();
   }
 
+  async setLinkedNotePinned(notePath: string, isPinned: boolean): Promise<void> {
+    let changed = false;
+    await this.mutateSettingsConditionally((settings) => {
+      const pinnedPaths = new Set(settings.pinnedLinkedNotePaths ?? []);
+      if (isPinned) {
+        if (pinnedPaths.has(notePath)) return false;
+        pinnedPaths.add(notePath);
+      } else {
+        if (!pinnedPaths.delete(notePath)) return false;
+      }
+      settings.pinnedLinkedNotePaths = [...pinnedPaths];
+      changed = true;
+      return true;
+    });
+    if (changed) {
+      this.notifyConversationViewsChanged();
+    }
+  }
+
   async setConversationArchived(id: string, isArchived: boolean): Promise<void> {
     await this.conversationRepository.setArchived(id, isArchived);
     this.notifyConversationViewsChanged();
@@ -1240,7 +1264,66 @@ export default class ClaudianPlugin extends Plugin {
     await this.conversationRepository.rewriteCurrentNotePaths(oldPath, file.path, {
       includeDescendants: file instanceof TFolder,
     });
+    await this.rewritePinnedLinkedNotePaths(oldPath, file.path, file instanceof TFolder);
     this.notifyConversationViewsChanged();
+  }
+
+  private async handlePinnedLinkedNoteDeleted(file: TAbstractFile): Promise<void> {
+    const removed = await this.removePinnedLinkedNotePaths(
+      file.path,
+      file instanceof TFolder,
+    );
+    if (removed) {
+      this.notifyConversationViewsChanged();
+    }
+  }
+
+  private async rewritePinnedLinkedNotePaths(
+    oldPath: string,
+    newPath: string,
+    includeDescendants: boolean,
+  ): Promise<boolean> {
+    let changed = false;
+    await this.mutateSettingsConditionally((settings) => {
+      const oldPrefix = `${oldPath.replace(/\/$/, '')}/`;
+      const currentPaths = settings.pinnedLinkedNotePaths ?? [];
+      const rewrittenPaths = currentPaths.map((path) => {
+        if (path === oldPath) return newPath;
+        if (includeDescendants && path.startsWith(oldPrefix)) {
+          return `${newPath.replace(/\/$/, '')}/${path.slice(oldPrefix.length)}`;
+        }
+        return path;
+      });
+      const deduplicatedPaths = [...new Set(rewrittenPaths)];
+      changed = deduplicatedPaths.length !== currentPaths.length
+        || deduplicatedPaths.some((path, index) => (
+          path !== currentPaths[index]
+        ));
+      if (!changed) return false;
+      settings.pinnedLinkedNotePaths = deduplicatedPaths;
+      return true;
+    });
+    return changed;
+  }
+
+  private async removePinnedLinkedNotePaths(
+    deletedPath: string,
+    includeDescendants: boolean,
+  ): Promise<boolean> {
+    let changed = false;
+    await this.mutateSettingsConditionally((settings) => {
+      const deletedPrefix = `${deletedPath.replace(/\/$/, '')}/`;
+      const currentPaths = settings.pinnedLinkedNotePaths ?? [];
+      const retainedPaths = currentPaths.filter(path => (
+        path !== deletedPath
+        && !(includeDescendants && path.startsWith(deletedPrefix))
+      ));
+      changed = retainedPaths.length !== currentPaths.length;
+      if (!changed) return false;
+      settings.pinnedLinkedNotePaths = retainedPaths;
+      return true;
+    });
+    return changed;
   }
 
   async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {

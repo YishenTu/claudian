@@ -109,6 +109,24 @@ describe('SessionListOrganizer', () => {
     ]);
   });
 
+  it('includes requested linked-note groups even when they have no sessions', () => {
+    const sections = organizeSessionList([], {
+      organization: 'linked-note',
+      sort: 'last-updated',
+      language: 'en',
+      includeNotePaths: ['Projects/Plan.md'],
+      noteExists: () => true,
+    });
+
+    expect(sections).toEqual([{
+      conversations: [],
+      key: 'note:Projects/Plan.md',
+      kind: 'note',
+      label: 'Plan',
+      notePath: 'Projects/Plan.md',
+    }]);
+  });
+
   it('returns one flat section for the chronological organization', () => {
     const sections = organizeSessionList([
       createConversation('older', { lastActivityAt: 10 }),

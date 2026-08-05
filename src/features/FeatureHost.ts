@@ -61,6 +61,7 @@ export interface FeatureHost {
   ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'>;
   renameConversation(id: string, title: string): Promise<void>;
   setConversationPinned(id: string, isPinned: boolean): Promise<void>;
+  setLinkedNotePinned(notePath: string, isPinned: boolean): Promise<void>;
   setConversationArchived(id: string, isArchived: boolean): Promise<void>;
   updateConversation(id: string, updates: Partial<Conversation>): Promise<void>;
   getConversationById(id: string): Promise<Conversation | null>;

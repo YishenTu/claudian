@@ -400,6 +400,16 @@
   font-weight: 400;
 }
 
+.claudian-session-sidebar .claudian-history-item-date {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.claudian-session-sidebar .claudian-history-item:hover .claudian-history-item-date,
+.claudian-session-sidebar .claudian-history-item:focus-within .claudian-history-item-date {
+  opacity: 1;
+}
+
 .claudian-session-sidebar .claudian-history-item-actions {
   display: none;
   flex-shrink: 0;

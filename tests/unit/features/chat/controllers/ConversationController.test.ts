@@ -888,6 +888,139 @@ describe('ConversationController', () => {
           .toEqual(['Normal']);
       });
 
+      it('moves pinned note groups above standalone pinned sessions without duplication', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'note-regular',
+            title: 'Note regular',
+            createdAt: 4,
+            lastActivityAt: 4,
+            currentNote: 'Projects/Plan.md',
+          },
+          {
+            id: 'note-pinned-session',
+            title: 'Note pinned session',
+            createdAt: 3,
+            lastActivityAt: 3,
+            currentNote: 'Projects/Plan.md',
+            isPinned: true,
+          },
+          {
+            id: 'standalone',
+            title: 'Standalone pinned',
+            createdAt: 2,
+            lastActivityAt: 2,
+            isPinned: true,
+          },
+          {
+            id: 'regular',
+            title: 'Regular',
+            createdAt: 1,
+            lastActivityAt: 1,
+            currentNote: 'Projects/Other.md',
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+          organization: 'linked-note',
+          sort: 'last-updated',
+          language: 'en',
+          noteExists: () => true,
+          pinnedLinkedNotePaths: new Set([
+            'Projects/Plan.md',
+            'Projects/Empty.md',
+          ]),
+        });
+
+        const pinnedSection = container.querySelector('.claudian-history-section--pinned')!;
+        const pinnedHeaders = pinnedSection.querySelectorAll('.claudian-session-group-header');
+        expect(pinnedHeaders.map((header: any) => header.getAttribute('data-note-path'))).toEqual([
+          'Projects/Plan.md',
+          'Projects/Empty.md',
+        ]);
+        expect(pinnedSection.querySelectorAll('.claudian-session-group-body')[0]
+          .querySelectorAll('.claudian-history-item-title')
+          .map((item: any) => item.textContent))
+          .toEqual(['Note regular', 'Note pinned session']);
+        expect(pinnedSection.querySelectorAll('.claudian-history-item-title')
+          .map((item: any) => item.textContent))
+          .toEqual(['Note regular', 'Note pinned session', 'Standalone pinned']);
+
+        const sessionsSection = container.querySelector('.claudian-history-section--sessions')!;
+        expect(sessionsSection.querySelectorAll('.claudian-history-item-title')
+          .map((item: any) => item.textContent))
+          .toEqual(['Regular']);
+        expect(container.querySelectorAll('.claudian-history-item').filter((item: any) => (
+          item.getAttribute('data-conversation-id') === 'note-pinned-session'
+        ))).toHaveLength(1);
+      });
+
+      it('offers note pinning from linked-note header context menus', async () => {
+        const container = createMockEl();
+        const onSetLinkedNotePinned = jest.fn().mockResolvedValue(undefined);
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          {
+            id: 'plan',
+            title: 'Plan session',
+            createdAt: 2,
+            currentNote: 'Projects/Plan.md',
+          },
+          {
+            id: 'other',
+            title: 'Other session',
+            createdAt: 1,
+            currentNote: 'Projects/Other.md',
+          },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          showPinnedSection: true,
+          organization: 'linked-note',
+          sort: 'created',
+          language: 'en',
+          noteExists: () => true,
+          pinnedLinkedNotePaths: new Set(['Projects/Plan.md']),
+          onSetLinkedNotePinned,
+        });
+
+        const groupHeaders = container.querySelectorAll('.claudian-session-group-header');
+        const pinnedHeader = groupHeaders.find((header: any) => (
+          header.getAttribute('data-note-path') === 'Projects/Plan.md'
+        ))!;
+        pinnedHeader.dispatchEvent({
+          type: 'contextmenu',
+          preventDefault: jest.fn(),
+          stopPropagation: jest.fn(),
+        });
+        let menu = (Menu as typeof Menu & {
+          instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
+        }).instances.at(-1)!;
+        expect(menu.items.map(item => item.title)).toEqual(['Unpin linked note']);
+        menu.items[0].clickHandler?.();
+        await Promise.resolve();
+        expect(onSetLinkedNotePinned).toHaveBeenCalledWith('Projects/Plan.md', false);
+
+        const regularHeader = groupHeaders.find((header: any) => (
+          header.getAttribute('data-note-path') === 'Projects/Other.md'
+        ))!;
+        regularHeader.dispatchEvent({
+          type: 'contextmenu',
+          preventDefault: jest.fn(),
+          stopPropagation: jest.fn(),
+        });
+        menu = (Menu as typeof Menu & {
+          instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
+        }).instances.at(-1)!;
+        expect(menu.items.map(item => item.title)).toEqual(['Pin linked note']);
+        menu.items[0].clickHandler?.();
+        await Promise.resolve();
+        expect(onSetLinkedNotePinned).toHaveBeenCalledWith('Projects/Other.md', true);
+      });
+
       it('hides the pinned section when no sessions are pinned', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([

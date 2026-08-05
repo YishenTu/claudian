@@ -1398,6 +1398,7 @@ describe('ClaudianView tab controls', () => {
         getConversationStatus: expect.any(Function),
         collapsedGroupKeys: expect.any(Set),
         onGroupCollapseChange: expect.any(Function),
+        onSetLinkedNotePinned: expect.any(Function),
         onStartLinkedNoteConversation: expect.any(Function),
         onRerender: expect.any(Function),
         onSelectConversation: expect.any(Function),
@@ -1407,6 +1408,7 @@ describe('ClaudianView tab controls', () => {
         showOpenStateActions: false,
         showOpenStateLabels: false,
         showPinnedSection: true,
+        pinnedLinkedNotePaths: expect.any(Set),
         showArchivedSection: false,
         sessionScope: 'active',
         sessionActionMode: 'active',
@@ -1505,6 +1507,18 @@ describe('ClaudianView tab controls', () => {
 
     expect(view.updateHistoryDropdown).toHaveBeenCalledTimes(1);
     expect(otherView.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists linked-note pins through the feature host', async () => {
+    const setLinkedNotePinned = jest.fn().mockResolvedValue(undefined);
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      plugin: { setLinkedNotePinned },
+    });
+
+    await view.setLinkedNotePinned('Projects/Plan.md', true);
+
+    expect(setLinkedNotePinned).toHaveBeenCalledWith('Projects/Plan.md', true);
   });
 
   it('adds an organization menu beside New and persists both menu choices', async () => {
