@@ -14,7 +14,8 @@ const tsconfigRootDir = dirname(fileURLToPath(import.meta.url));
 const obsidianRuleSeverity = 'warn';
 
 // Enforces the file naming conventions from AGENTS.md without extra dependencies.
-const fileNamingRule = {
+// Exported so scripts/check-eslint-config.test.mjs can exercise it directly.
+export const fileNamingRule = {
   meta: {
     type: 'suggestion',
     docs: { description: 'Enforce the file naming conventions from AGENTS.md' },
@@ -27,7 +28,7 @@ const fileNamingRule = {
   },
   create(context) {
     const filename = context.physicalFilename ?? context.filename;
-    const base = filename.split('/').pop() ?? '';
+    const base = filename.split(/[\\/]/).pop() ?? '';
     if (!base.endsWith('.ts')) return {};
     const first = base.split('.')[0];
     if (first === 'index' || first === 'types') return {};
