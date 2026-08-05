@@ -63,6 +63,7 @@ import { findRewindContext } from '../rewind';
 import { BangBashService } from '../services/BangBashService';
 import { SubagentManager } from '../services/SubagentManager';
 import { ChatState } from '../state/ChatState';
+import type { TabAttention } from '../state/types';
 import { BangBashModeManager as BangBashModeManagerClass } from '../ui/BangBashModeManager';
 import { ComposerContextTray } from '../ui/ComposerContextTray';
 import { FileContextManager } from '../ui/FileContext';
@@ -157,16 +158,17 @@ export interface TabCreateOptions {
   containerEl: HTMLElement;
   conversation?: Conversation;
   tabId?: TabId;
-  /** Restored draft model for blank tabs. */
+  /** Initial draft model for an unbound tab. */
   draftModel?: string | null;
   /** Provider to inherit for blank tabs (e.g. from the active tab). */
   defaultProviderId?: ProviderId;
+  lifecycleState?: Extract<TabData['lifecycleState'], 'provisional' | 'cold'>;
   onStreamingChanged?: (isStreaming: boolean) => void;
   onRewindingChanged?: (isRewinding: boolean) => void;
   onTitleChanged?: (title: string) => void;
-  onAttentionChanged?: (needsAttention: boolean) => void;
+  onAttentionChanged?: (attention: TabAttention) => void;
+  captureReviewableSettlement?: () => () => void;
   onConversationIdChanged?: (conversationId: string | null) => void;
-  onPersistedStateChanged?: () => void;
 }
 
 export { getTabProviderId } from './providerResolution';
@@ -224,7 +226,7 @@ function getTabSelectedModel(
   plugin: FeatureHost,
 ): string | null {
   const providerId = getTabProviderId(tab, plugin);
-  if (tab.lifecycleState === 'blank') {
+  if (tab.conversationId === null) {
     return normalizeProviderModelSelection(providerId, plugin.settings, tab.draftModel)
       ?? tab.draftModel
       ?? null;
@@ -550,7 +552,7 @@ function resolveBlankTabFallback(
  * Prefer the draft provider's advertised default before crossing providers.
  */
 export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost): boolean {
-  if (tab.lifecycleState !== 'blank') return false;
+  if (tab.conversationId !== null) return false;
 
   const settingsSnapshot = plugin.settings as unknown as Record<string, unknown>;
   const enabledProviderIds = ProviderRegistry.getEnabledProviderIds(settingsSnapshot);
@@ -641,7 +643,7 @@ export function createTab(options: TabCreateOptions): TabData {
       : DEFAULT_CHAT_PROVIDER_ID);
   const session = new TabSession({
     id,
-    lifecycleState: isBound ? 'bound_cold' : 'blank',
+    lifecycleState: options.lifecycleState ?? 'cold',
     draftModel,
     providerId: initialProviderId,
     conversationId: conversation?.id ?? null,
@@ -682,8 +684,8 @@ export function createTab(options: TabCreateOptions): TabData {
     set executionCoordinator(coordinator) {
       session.setExecutionCoordinator(coordinator);
     },
-    onPersistedStateChanged: options.onPersistedStateChanged,
     providerCatalogResolver: null,
+    captureReviewableSettlement: options.captureReviewableSettlement ?? null,
     state,
     controllers: {
       selectionController: null,
@@ -750,55 +752,71 @@ function createTabExecutionCoordinator(
   const interactionPort: ProviderInteractionPort = {
     requestApproval: async (request) => {
       interactionKinds.set(request.interactionId, request.kind);
-      const decision = await tab.controllers.inputController?.handleApprovalRequest(
-        request.toolName,
-        { ...request.input },
-        request.description,
-        {
-          ...(request.decisionReason ? { decisionReason: request.decisionReason } : {}),
-          ...(request.blockedPath ? { blockedPath: request.blockedPath } : {}),
-          ...(request.decisionOptions
-            ? { decisionOptions: request.decisionOptions.map(option => ({ ...option })) }
-            : {}),
-          ...(request.additionalPermissions !== undefined
-            ? { additionalPermissions: request.additionalPermissions }
-            : {}),
-        },
-      ) ?? 'cancel';
-      interactionKinds.delete(request.interactionId);
-      return { interactionId: request.interactionId, decision };
+      tab.state.beginActionRequired(request.interactionId);
+      try {
+        const decision = await tab.controllers.inputController?.handleApprovalRequest(
+          request.toolName,
+          { ...request.input },
+          request.description,
+          {
+            ...(request.decisionReason ? { decisionReason: request.decisionReason } : {}),
+            ...(request.blockedPath ? { blockedPath: request.blockedPath } : {}),
+            ...(request.decisionOptions
+              ? { decisionOptions: request.decisionOptions.map(option => ({ ...option })) }
+              : {}),
+            ...(request.additionalPermissions !== undefined
+              ? { additionalPermissions: request.additionalPermissions }
+              : {}),
+          },
+        ) ?? 'cancel';
+        return { interactionId: request.interactionId, decision };
+      } finally {
+        interactionKinds.delete(request.interactionId);
+        tab.state.endActionRequired(request.interactionId);
+      }
     },
     askUserQuestion: async (request, signal) => {
       interactionKinds.set(request.interactionId, request.kind);
-      const answers = await tab.controllers.inputController?.handleAskUserQuestion(
-        { ...request.input },
-        signal,
-      ) ?? null;
-      interactionKinds.delete(request.interactionId);
-      return { interactionId: request.interactionId, answers };
+      tab.state.beginActionRequired(request.interactionId);
+      try {
+        const answers = await tab.controllers.inputController?.handleAskUserQuestion(
+          { ...request.input },
+          signal,
+        ) ?? null;
+        return { interactionId: request.interactionId, answers };
+      } finally {
+        interactionKinds.delete(request.interactionId);
+        tab.state.endActionRequired(request.interactionId);
+      }
     },
     requestPlanDecision: async (request, signal) => {
       interactionKinds.set(request.interactionId, request.kind);
-      const decision = await tab.controllers.inputController?.handleExitPlanMode(
-        { ...request.input },
-        signal,
-        request.presentation,
-      ) ?? null;
-      interactionKinds.delete(request.interactionId);
-      if (decision !== null && decision.type !== 'feedback') {
-        await restorePrePlanMode(tab, plugin);
-        if (decision.type === 'approve-new-session') {
-          tab.state.pendingNewSessionPlan = decision.planContent;
-          tab.state.cancelRequested = true;
+      tab.state.beginActionRequired(request.interactionId);
+      try {
+        const decision = await tab.controllers.inputController?.handleExitPlanMode(
+          { ...request.input },
+          signal,
+          request.presentation,
+        ) ?? null;
+        if (decision !== null && decision.type !== 'feedback') {
+          await restorePrePlanMode(tab, plugin);
+          if (decision.type === 'approve-new-session') {
+            tab.state.pendingNewSessionPlan = decision.planContent;
+            tab.state.cancelRequested = true;
+          }
         }
+        return { interactionId: request.interactionId, decision };
+      } finally {
+        interactionKinds.delete(request.interactionId);
+        tab.state.endActionRequired(request.interactionId);
       }
-      return { interactionId: request.interactionId, decision };
     },
     dismissInteraction: (interactionId) => {
       const kind = interactionKinds.get(interactionId);
       if (kind) {
         tab.controllers.inputController?.dismissProviderInteraction(kind);
         interactionKinds.delete(interactionId);
+        tab.state.endActionRequired(interactionId);
       }
     },
   };
@@ -823,6 +841,21 @@ function createTabExecutionCoordinator(
       plugin.handleMissingProviderSession(conversationId, missingProviderSessionId),
     onError: error => {
       new Notice(error instanceof Error ? error.message : 'Provider execution failed.');
+    },
+    warmExecution: {
+      ownerId: tab.id,
+      pool: plugin.warmExecutionPool,
+      canCool: () => (
+        !tab.state.isStreaming
+        && !tab.state.isRewinding
+        && !tab.state.requiresAction
+        && tab.session.activeTurn === null
+        && tab.lifecycleState !== 'closing'
+      ),
+      onWarmStateChanged: (isWarm) => {
+        if (tab.lifecycleState === 'closing') return;
+        tab.lifecycleState = isWarm ? 'warm' : 'cold';
+      },
     },
   });
 }
@@ -864,7 +897,12 @@ async function handleTabSessionEvent(
       ...(event.result !== undefined ? { result: event.result } : {}),
     });
     if (applied && isCurrent()) {
-      await tab.controllers.conversationController?.save(false);
+      const reportReviewableSettlement = tab.captureReviewableSettlement?.();
+      try {
+        await tab.controllers.conversationController?.save(true);
+      } finally {
+        if (isCurrent()) reportReviewableSettlement?.();
+      }
     }
     return;
   }
@@ -880,13 +918,15 @@ async function handleTabSessionEvent(
     return;
   }
   if (event.type === 'background_turn_completed') {
+    const hasBufferedTurn = turns.has(event.scope.turnId);
     const events = turns.get(event.scope.turnId) ?? [];
     turns.delete(event.scope.turnId);
     deleteBackgroundTurnBuffersIfEmpty(tab, context.bindingId, turns);
+    if (!hasBufferedTurn) return;
     const chunks = events
       .map(providerOutputEventToStreamChunk)
       .filter((chunk): chunk is StreamChunk => chunk !== null);
-    const rendered = await renderAutoTriggeredTurn(tab, {
+    const hasVisibleOutput = await renderAutoTriggeredTurn(tab, {
       chunks,
       metadata: {
         ...(event.nativeAssistantId
@@ -894,8 +934,15 @@ async function handleTabSessionEvent(
           : {}),
       },
     }, isCurrent);
-    if (rendered && isCurrent()) {
-      await tab.controllers.conversationController?.save(false);
+    if (isCurrent()) {
+      const reportReviewableSettlement = hasVisibleOutput
+        ? tab.captureReviewableSettlement?.()
+        : null;
+      try {
+        await tab.controllers.conversationController?.save(true);
+      } finally {
+        if (isCurrent()) reportReviewableSettlement?.();
+      }
     }
     return;
   }
@@ -1076,8 +1123,10 @@ export async function initializeTabExecution(
   if (isClosingLifecycleState(tab.lifecycleState)) return;
 
   tab.providerId = providerId;
-  if (tab.lifecycleState === 'blank') tab.draftModel = null;
-  tab.lifecycleState = conversation ? 'bound_active' : 'blank';
+  if (conversation) {
+    tab.draftModel = null;
+    tab.lifecycleState = 'warm';
+  }
 }
 
 function isConversationLike(value: unknown): value is Conversation {
@@ -1087,7 +1136,11 @@ function isConversationLike(value: unknown): value is Conversation {
     && Array.isArray((value as Conversation).messages);
 }
 
-function initializeContextManagers(tab: TabData, plugin: FeatureHost): void {
+function initializeContextManagers(
+  tab: TabData,
+  plugin: FeatureHost,
+  onUserModified?: () => void,
+): void {
   const { dom } = tab;
   const app = plugin.app;
   const contextTray = tab.ui.contextTray;
@@ -1102,6 +1155,7 @@ function initializeContextManagers(tab: TabData, plugin: FeatureHost): void {
     {
       getExcludedTags: () => plugin.settings.excludedTags,
       getExternalContexts: () => tab.ui.externalContextSelector?.getExternalContexts() || [],
+      onUserChipsChanged: onUserModified,
     },
     dom.inputContainerEl,
     contextTray,
@@ -1111,7 +1165,7 @@ function initializeContextManagers(tab: TabData, plugin: FeatureHost): void {
   tab.ui.imageContextManager = new ImageContextManager(
     dom.inputContainerEl,
     dom.inputEl,
-    {},
+    { onUserImagesChanged: onUserModified },
     dom.contextRowEl,
     contextTray,
   );
@@ -1205,7 +1259,7 @@ function initializeInputToolbar(
   plugin: FeatureHost,
   getProviderCatalogConfig?: () => ProviderCatalogInfo,
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>,
-  onDraftModelChanged?: () => void,
+  onUserModified?: () => void,
   onCommandContextChanged?: () => void,
 ): void {
   const { dom } = tab;
@@ -1227,7 +1281,7 @@ function initializeInputToolbar(
 
   const toolbarComponents = createInputToolbar(inputToolbar, {
     getUIConfig: () => {
-      if (tab.lifecycleState === 'blank') {
+      if (tab.conversationId === null) {
         return blankTabUIConfigProxy();
       }
       return getTabChatUIConfig(tab, plugin);
@@ -1237,7 +1291,7 @@ function initializeInputToolbar(
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
     onModelChange: async (model: string) => {
       // For blank tabs, update draft model and derive provider
-      if (tab.lifecycleState === 'blank') {
+      if (tab.conversationId === null) {
         const previousProvider = tab.providerId;
         const previousModel = tab.draftModel;
         tab.draftModel = model;
@@ -1267,7 +1321,7 @@ function initializeInputToolbar(
         } else {
           syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
         }
-        onDraftModelChanged?.();
+        onUserModified?.();
         await uiConfig.prepareModelMetadata?.(
           model,
           getProviderSettingsSnapshotWithModel(plugin.settings, newProvider, model),
@@ -1288,7 +1342,7 @@ function initializeInputToolbar(
       const boundProvider = tab.providerId;
       const modelProvider = getProviderForModel(model, plugin.settings);
       if (modelProvider !== boundProvider) {
-        new Notice('Cannot switch provider on a bound session. Start a new tab instead.');
+        new Notice('Cannot switch provider on a bound session. Start a new conversation instead.');
         tab.ui.modelSelector?.updateDisplay();
         return;
       }
@@ -1306,6 +1360,7 @@ function initializeInputToolbar(
           selectedModel: normalizedModel,
         });
       }
+      onUserModified?.();
 
       await uiConfig.prepareModelMetadata?.(
         normalizedModel,
@@ -1334,6 +1389,7 @@ function initializeInputToolbar(
       });
       tab.ui.modeSelector?.updateDisplay();
       tab.ui.modeSelector?.renderOptions();
+      onUserModified?.();
     },
     onThinkingBudgetChange: async (budget: string) => {
       await updateTabProviderSettings(tab, plugin, (settings) => {
@@ -1341,6 +1397,7 @@ function initializeInputToolbar(
         settings.thinkingBudget = budget;
         getTabChatUIConfig(tab, plugin).applyReasoningSelection?.(model, budget, settings);
       });
+      onUserModified?.();
     },
     onEffortLevelChange: async (effort: string) => {
       await updateTabProviderSettings(tab, plugin, (settings) => {
@@ -1348,9 +1405,11 @@ function initializeInputToolbar(
         settings.effortLevel = effort;
         getTabChatUIConfig(tab, plugin).applyReasoningSelection?.(model, effort, settings);
       });
+      onUserModified?.();
     },
     onServiceTierChange: async (serviceTier: string) => {
       await updateTabServiceTier(tab, plugin, serviceTier);
+      onUserModified?.();
     },
     onPermissionModeChange: async (mode: string) => {
       await updateTabProviderSettings(tab, plugin, (settings) => {
@@ -1366,6 +1425,7 @@ function initializeInputToolbar(
         'claudian-input-plan-mode',
         mode === 'plan' && getTabCapabilities(tab, plugin).supportsPlanMode,
       );
+      onUserModified?.();
     },
   });
 
@@ -1381,6 +1441,9 @@ function initializeInputToolbar(
   tab.ui.serviceTierToggle = toolbarComponents.serviceTierToggle;
 
   tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
+  tab.ui.mcpServerSelector.setOnChange(() => {
+    onUserModified?.();
+  });
 
   // Sync @-mentions to UI selector
   tab.ui.fileContextManager?.setOnMcpMentionChange((servers) => {
@@ -1391,6 +1454,7 @@ function initializeInputToolbar(
   tab.ui.externalContextSelector.setOnChange(() => {
     tab.ui.fileContextManager?.preScanExternalContexts();
     onCommandContextChanged?.();
+    onUserModified?.();
   });
 
   // Initialize persistent paths
@@ -1414,7 +1478,6 @@ function initializeInputToolbar(
 export interface InitializeTabUIOptions {
   getProviderCatalogConfig?: ProviderCatalogResolver;
   onProviderChanged?: (providerId: ProviderId) => void | Promise<void>;
-  onDraftModelChanged?: () => void;
   onCommandContextChanged?: () => void;
 }
 
@@ -1428,6 +1491,7 @@ export function initializeTabUI(
   options: InitializeTabUIOptions = {}
 ): void {
   const { dom, state } = tab;
+  const onUserModified = (): void => commitProvisionalTab(tab);
   tab.providerCatalogResolver = options.getProviderCatalogConfig ?? null;
 
   tab.ui.contextTray = new ComposerContextTray(dom.contextRowEl, {
@@ -1436,7 +1500,7 @@ export function initializeTabUI(
       tab.renderer?.scrollToBottomIfNeeded();
     },
   });
-  initializeContextManagers(tab, plugin);
+  initializeContextManagers(tab, plugin, onUserModified);
 
   const catalogInfo = options.getProviderCatalogConfig?.() ?? null;
   initializeSlashCommands(
@@ -1459,7 +1523,7 @@ export function initializeTabUI(
     plugin,
     options.getProviderCatalogConfig,
     options.onProviderChanged,
-    options.onDraftModelChanged,
+    onUserModified,
     options.onCommandContextChanged,
   );
 
@@ -1503,6 +1567,12 @@ function deepCloneMessages(messages: ChatMessage[]): ChatMessage[] {
 
 function isClosingLifecycleState(state: TabData['lifecycleState']): boolean {
   return state === 'closing';
+}
+
+export function commitProvisionalTab(tab: TabData): void {
+  if (tab.lifecycleState === 'provisional') {
+    tab.lifecycleState = 'cold';
+  }
 }
 
 interface ForkSource {
@@ -1702,11 +1772,12 @@ export function initializeTabControllers(
     ((conversationId: string) => Promise<void>) | undefined;
   const getProviderCatalogConfig = (isLegacy ? arg7 : arg6) as
     (() => ProviderCatalogInfo) | undefined;
+  const viewHost = component as Partial<TabManagerViewHost>;
 
   const { dom, state, services, ui } = tab;
   const ensureExecutionInitialized = async (): Promise<boolean> => {
     if (
-      tab.lifecycleState === 'bound_active'
+      tab.lifecycleState === 'warm'
       && (tab.executionCoordinator?.state === 'idle'
         || tab.executionCoordinator?.state === 'active')
     ) {
@@ -1714,7 +1785,7 @@ export function initializeTabControllers(
     }
 
     try {
-      if (tab.lifecycleState === 'blank' && tab.draftModel) {
+      if (tab.conversationId === null && tab.draftModel) {
         tab.providerId = getEnabledProviderForModel(tab.draftModel, plugin.settings);
       }
 
@@ -1751,18 +1822,23 @@ export function initializeTabControllers(
     dom.inputEl,
     undefined,
     [dom.contentEl, dom.inputComposerEl, ...getSharedSelectionFocusScopeEls(component)],
+    () => commitProvisionalTab(tab),
   );
 
   tab.controllers.browserSelectionController = new BrowserSelectionController(
     plugin.app,
     ui.contextTray!,
     dom.inputEl,
+    undefined,
+    () => commitProvisionalTab(tab),
   );
 
   tab.controllers.canvasSelectionController = new CanvasSelectionController(
     plugin.app,
     ui.contextTray!,
     dom.inputEl,
+    undefined,
+    () => commitProvisionalTab(tab),
   );
 
   tab.controllers.streamController = new StreamController({
@@ -1876,7 +1952,9 @@ export function initializeTabControllers(
 
         tab.conversationId = conversation?.id ?? null;
         tab.draftModel = null;
-        tab.lifecycleState = conversation ? 'bound_cold' : 'blank';
+        if (tab.lifecycleState !== 'provisional') {
+          tab.lifecycleState = 'cold';
+        }
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig, conversation);
 
         await tab.executionCoordinator?.bindConversation(conversation
@@ -1891,7 +1969,7 @@ export function initializeTabControllers(
       onNewConversation: () => {
         const previousProviderId = tab.providerId;
         void tab.executionCoordinator?.bindConversation(null);
-        tab.lifecycleState = 'blank';
+        tab.lifecycleState = 'cold';
         tab.draftModel = resolveBlankTabModel(plugin, previousProviderId);
         tab.conversationId = null;
         tab.providerId = getTabProviderId(tab, plugin);
@@ -1901,7 +1979,6 @@ export function initializeTabControllers(
         refreshTabProviderUI(tab, plugin);
         applyProviderUIGating(tab, plugin);
         syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
-        tab.onPersistedStateChanged?.();
       },
       onConversationLoaded: () => {
         invalidateTabProviderCommands(tab, getProviderCatalogConfig);
@@ -1946,6 +2023,12 @@ export function initializeTabControllers(
     turnOwner: tab.session,
     ensureExecutionInitialized,
     openConversation,
+    handleNewConversationCommand: viewHost.handleNewConversationCommand
+      ? () => viewHost.handleNewConversationCommand!()
+      : undefined,
+    handleNewSessionPlan: viewHost.handleNewSessionPlan
+      ? (planContent) => viewHost.handleNewSessionPlan!(planContent)
+      : undefined,
     onForkAll: forkRequestCallback
       ? () => handleForkAll(tab, plugin, forkRequestCallback)
       : undefined,
@@ -1962,6 +2045,7 @@ export function initializeTabControllers(
         }
       }
     },
+    captureReviewableSettlement: tab.captureReviewableSettlement ?? undefined,
   });
 
   tab.controllers.navigationController = new NavigationController({
@@ -2052,6 +2136,7 @@ export function wireTabInputEvents(tab: TabData, plugin: FeatureHost): void {
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('keydown', keydownHandler));
 
   const inputHandler = () => {
+    commitProvisionalTab(tab);
     if (!ui.bangBashModeManager?.isActive()) {
       ui.fileContextManager?.handleInputChange();
     }
@@ -2155,13 +2240,13 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.session.pauseBackgroundWork();
 
   tab.controllers.inputController?.dismissPendingApproval();
-  await cancelAndAwaitActiveTurn(tab);
+  const cancelledActiveTurn = await cancelAndAwaitActiveTurn(tab);
   await tab.session.awaitBackgroundWork();
 
   tab.services.subagentManager.orphanAllActive();
   if (tab.state.currentConversationId) {
     try {
-      await tab.controllers.conversationController?.save(false);
+      await tab.controllers.conversationController?.save(cancelledActiveTurn);
     } catch {
       new Notice('Background task state could not be saved before closing the tab.');
     }
@@ -2361,7 +2446,7 @@ async function renderAutoTriggeredTurn(
       tab.renderer?.scrollToBottom();
     }
   }
-  return true;
+  return hasVisibleContent;
 }
 
 export async function updatePlanModeUI(
@@ -2387,7 +2472,7 @@ export async function updatePlanModeUI(
         snapshot,
       );
     });
-    if (options.syncExecution && tab.lifecycleState !== 'blank') {
+    if (options.syncExecution && tab.conversationId !== null) {
       try {
         await tab.executionCoordinator?.setMode(getTabPermissionMode(tab, plugin));
       } catch (error) {

@@ -4,7 +4,6 @@
 
 ## Dependency Boundary
 
-- Grok code may depend on core contracts, shared ACP primitives from `src/providers/acp/`, shared UI primitives, and provider-local modules. It must not import chat views or feature controllers.
 - Standard ACP transport and interaction mechanics may be shared. xAI extensions, launch policy, model semantics, tool normalization, session metadata, and history interpretation remain Grok-owned.
 - Do not add a generic ACP runtime superclass. Share protocol primitives while keeping provider policy and lifecycle explicit.
 
@@ -47,11 +46,3 @@
 
 - Provider behavior that is not established by standard ACP must be backed by sanitized Grok protocol evidence.
 - Put raw captures and throwaway scripts in `.context/`. Never commit credentials, private prompts, absolute personal paths, or raw user configuration.
-
-## Invariants
-
-- Environment and CLI changes recycle processes and catalogs; they do not clear `Conversation.sessionId` or opaque Grok provider state.
-- Native session mode notifications are authoritative over remembered UI mode.
-- Steering and fork extensions stay behind typed Grok boundaries and preserve unknown xAI payloads losslessly.
-- Command/model discovery must not create a user conversation session solely for metadata.
-- Existing native history and user configuration are never rewritten or deleted.

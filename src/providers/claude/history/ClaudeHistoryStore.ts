@@ -7,7 +7,7 @@ import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormali
 import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
 import { filterActiveBranch } from './sdkBranchFilter';
-import type { SDKSessionLoadResult } from './sdkHistoryTypes';
+import type { SDKNativeMessage, SDKSessionLoadResult } from './sdkHistoryTypes';
 import {
   collectAsyncSubagentResults,
   collectStructuredPatchResults,
@@ -37,6 +37,14 @@ import {
   loadSubagentToolCalls,
 } from './sdkSubagentSidecar';
 
+export type {
+  ClaudeSessionTimeCandidate,
+  ClaudeSessionTimeFingerprint,
+} from './ClaudeSessionRecovery';
+export {
+  recoverSDKSessionIdByTime,
+  selectClaudeSessionRecoveryCandidate,
+} from './ClaudeSessionRecovery';
 export type {
   AsyncSubagentResult,
   ResolvedAsyncStatus,
@@ -240,6 +248,47 @@ export async function loadSDKSessionMessages(
   chatMessages.sort((a, b) => a.timestamp - b.timestamp);
 
   return { messages: chatMessages, skippedLines: result.skippedLines };
+}
+
+export function getLastSDKSessionModel(
+  entries: SDKNativeMessage[],
+  resumeAtMessageId?: string,
+): string | null {
+  const activeBranch = filterActiveBranch(entries, resumeAtMessageId);
+  if (
+    resumeAtMessageId
+    && !activeBranch.some(entry => entry.uuid === resumeAtMessageId)
+  ) {
+    return null;
+  }
+
+  let model: string | null = null;
+  for (const entry of activeBranch) {
+    const candidate = entry.type === 'assistant'
+      ? entry.message?.model?.trim()
+      : '';
+    if (candidate && candidate !== '<synthetic>') {
+      model = candidate;
+    }
+  }
+  return model;
+}
+
+export async function loadSDKSessionModel(
+  vaultPath: string,
+  sessionId: string,
+  resumeAtMessageId?: string,
+  sessionPath?: string,
+  pathContext?: ProviderHistoryPathContext,
+): Promise<string | null> {
+  const result = sessionPath
+    ? await readSDKSessionFile(sessionPath)
+    : await (pathContext
+      ? readSDKSession(vaultPath, sessionId, pathContext)
+      : readSDKSession(vaultPath, sessionId));
+  return result.error
+    ? null
+    : getLastSDKSessionModel(result.messages, resumeAtMessageId);
 }
 
 function normalizeTaskToolCalls(

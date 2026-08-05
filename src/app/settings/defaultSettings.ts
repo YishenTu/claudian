@@ -47,11 +47,14 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
 
   lastCustomModel: '',
 
-  maxTabs: 3,
+  maxWarmAgentProcesses: 5,
   enableAutoScroll: true,
   deferMathRenderingDuringStreaming: true,
   expandFileEditsByDefault: false,
   chatViewPlacement: 'right-sidebar',
+  sessionManagerOrganization: 'list',
+  sessionManagerSort: 'last-updated',
+  pinnedLinkedNotePaths: [],
 
   hiddenProviderCommands: getDefaultHiddenProviderCommands(),
 };

@@ -294,6 +294,36 @@ export function normalizePathForComparison(value: string): string {
     : normalizedWithPrefix;
 }
 
+function normalizeVaultEventPath(value: string): string {
+  return value
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/\/+$/, '');
+}
+
+export function rewriteVaultPathAfterRename(
+  value: string,
+  oldPath: string,
+  newPath: string,
+  includeDescendants = false,
+): string | null {
+  const normalizedValue = normalizeVaultEventPath(value);
+  const normalizedOldPath = normalizeVaultEventPath(oldPath);
+  const normalizedNewPath = normalizeVaultEventPath(newPath);
+  if (!normalizedValue || !normalizedOldPath || !normalizedNewPath) return null;
+
+  if (normalizedValue === normalizedOldPath) {
+    return normalizedNewPath;
+  }
+  if (
+    includeDescendants
+    && normalizedValue.startsWith(`${normalizedOldPath}/`)
+  ) {
+    return `${normalizedNewPath}${normalizedValue.slice(normalizedOldPath.length)}`;
+  }
+  return null;
+}
+
 export function isPathWithinDirectory(
   candidatePath: string,
   directoryPath: string,

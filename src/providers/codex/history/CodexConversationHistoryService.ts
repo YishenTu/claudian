@@ -5,10 +5,12 @@ import type {
   ProviderHistoryPathContext,
 } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
+import { encodeCodexModelSelectionId } from '../modelSelection';
 import type { CodexProviderState } from '../types';
 import { getCodexState } from '../types';
 import {
   CODEX_HISTORY_LOOKUP_TIMEOUT_MS,
+  getCodexArchivedTranscriptRoots,
   resolveCodexSessionFileHint,
   resolveCodexTranscriptRootHint,
 } from './CodexHistoryPathResolver';
@@ -17,6 +19,7 @@ import {
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFileAsync,
   parseCodexSessionFileAsync,
+  parseCodexSessionModel,
   parseCodexSessionTurns,
 } from './CodexHistoryStore';
 
@@ -36,8 +39,103 @@ async function readSessionTurns(sessionFilePath: string): Promise<CodexParsedTur
   }
 }
 
+async function readSessionModel(
+  sessionFilePath: string | null,
+  resumeAtTurnId?: string,
+): Promise<string | null> {
+  if (!sessionFilePath) return null;
+  try {
+    return parseCodexSessionModel(
+      await fs.readFile(sessionFilePath, 'utf8'),
+      resumeAtTurnId,
+    );
+  } catch {
+    return null;
+  }
+}
+
 export class CodexConversationHistoryService implements ProviderConversationHistoryService {
   private hydratedConversationPaths = new Map<string, string>();
+
+  hasConversationModelRecoverySource(conversation: Conversation): boolean {
+    const state = getCodexState(conversation.providerState);
+    return !!(
+      state.threadId
+      || conversation.sessionId
+      || state.sessionFilePath
+      || state.forkSource?.sessionId
+      || state.forkSourceSessionFilePath
+    );
+  }
+
+  async recoverConversationModelSelection(
+    conversation: Conversation,
+    _vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<string | null> {
+    const state = getCodexState(conversation.providerState);
+    const isPendingFork = this.isPendingForkConversation(conversation);
+    const threadId = isPendingFork
+      ? state.forkSource!.sessionId
+      : (state.threadId ?? conversation.sessionId);
+    const persistedPath = isPendingFork
+      ? state.forkSourceSessionFilePath
+      : state.sessionFilePath;
+    const transcriptRootPath = resolveCodexTranscriptRootHint(
+      isPendingFork
+        ? state.forkSourceTranscriptRootPath
+          ?? deriveCodexSessionsRootFromSessionPath(persistedPath)
+        : state.transcriptRootPath
+          ?? deriveCodexSessionsRootFromSessionPath(persistedPath),
+      pathContext,
+    );
+    const deadline = Date.now() + CODEX_HISTORY_LOOKUP_TIMEOUT_MS;
+    if (!isPendingFork && state.forkSource && state.threadId) {
+      const sourceSessionFile = await this.resolveSourceSessionFile(
+        state,
+        pathContext,
+        deadline,
+      );
+      if (
+        !sourceSessionFile
+        || !await readSessionModel(sourceSessionFile, state.forkSource.resumeAt)
+      ) {
+        return null;
+      }
+    }
+    const resolvedPath = await resolveCodexSessionFileHint(
+      persistedPath,
+      threadId,
+      pathContext,
+      deadline,
+    );
+    const resumeAt = isPendingFork
+      ? state.forkSource!.resumeAt
+      : conversation.resumeAtMessageId;
+    let model = await readSessionModel(resolvedPath, resumeAt);
+
+    if (!model && threadId) {
+      const archivedRoots = getCodexArchivedTranscriptRoots(
+        pathContext,
+        transcriptRootPath ? [transcriptRootPath] : [],
+      );
+      for (const archivedRoot of archivedRoots) {
+        const remainingMs = Math.max(0, deadline - Date.now());
+        if (remainingMs === 0) break;
+        const historicalPath = await findCodexSessionFileAsync(
+          threadId,
+          archivedRoot,
+          remainingMs,
+        );
+        if (historicalPath && historicalPath !== resolvedPath) {
+          model = await readSessionModel(historicalPath, resumeAt);
+        }
+        if (model) break;
+      }
+    }
+
+    return model ? encodeCodexModelSelectionId(model) : null;
+  }
 
   async hydrateConversationHistory(
     conversation: Conversation,

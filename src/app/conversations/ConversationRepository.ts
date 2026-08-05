@@ -14,7 +14,10 @@ import { normalizeProviderModelSelection, resolveConversationModel } from '../..
 import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
-import type { ProviderHistoryPathContext } from '../../core/providers/types';
+import type {
+  ProviderConversationHistoryService,
+  ProviderHistoryPathContext,
+} from '../../core/providers/types';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
   type ProviderId,
@@ -23,10 +26,13 @@ import {
   type ChatMessage,
   type Conversation,
   type ConversationMeta,
+  type ConversationModelRecoverySource,
   isCanonicalUserMessage,
   type SessionMetadata,
 } from '../../core/types';
+import { mapWithConcurrency } from '../../utils/concurrency';
 import { extractUserDisplayContent } from '../../utils/context';
+import { rewriteVaultPathAfterRename } from '../../utils/path';
 
 interface ConversationRepositoryBaseDeps {
   getSettings: () => Record<string, unknown>;
@@ -67,6 +73,84 @@ interface ConversationDeletionState {
   readonly executionBinding: ExecutionBindingState | null;
 }
 
+interface NotePathRename {
+  oldPath: string;
+  newPath: string;
+  includeDescendants: boolean;
+}
+
+interface InputLedgerCorrelationResult {
+  ledgerChanged: boolean;
+  lastAcceptedInputAt: number | null;
+}
+
+type HistoricalModelRecoveryResult =
+  | 'recovered'
+  | 'superseded'
+  | 'unresolved';
+
+type HistoricalModelRecovery = NonNullable<
+  ProviderConversationHistoryService['recoverConversationModelSelection']
+>;
+
+const HISTORICAL_MODEL_RECOVERY_CONCURRENCY = 2;
+
+function getStoredModelSelection(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function cloneModelRecoverySource(
+  source: ConversationModelRecoverySource,
+): ConversationModelRecoverySource {
+  return {
+    sessionId: source.sessionId,
+    ...(source.providerState
+      ? { providerState: { ...source.providerState } }
+      : {}),
+    ...(source.resumeAtMessageId
+      ? { resumeAtMessageId: source.resumeAtMessageId }
+      : {}),
+  };
+}
+
+function getModelRecoverySource(
+  conversation: Conversation,
+): ConversationModelRecoverySource | null {
+  if (conversation.modelRecoverySource) {
+    return cloneModelRecoverySource(conversation.modelRecoverySource);
+  }
+  if (
+    conversation.sessionId === null
+    && !conversation.providerState
+    && !conversation.resumeAtMessageId
+  ) {
+    return null;
+  }
+  return {
+    sessionId: conversation.sessionId,
+    ...(conversation.providerState
+      ? { providerState: { ...conversation.providerState } }
+      : {}),
+    ...(conversation.resumeAtMessageId
+      ? { resumeAtMessageId: conversation.resumeAtMessageId }
+      : {}),
+  };
+}
+
+function applyModelRecoverySource(
+  conversation: Conversation,
+  source: ConversationModelRecoverySource,
+): Conversation {
+  return {
+    ...conversation,
+    sessionId: source.sessionId,
+    providerState: source.providerState
+      ? { ...source.providerState }
+      : undefined,
+    resumeAtMessageId: source.resumeAtMessageId,
+  };
+}
+
 export class ConversationInputLedgerUnavailableError extends Error {
   constructor(
     readonly conversationId: string,
@@ -96,6 +180,13 @@ export class ConversationRepository {
   private readonly persistenceQueues = new Map<string, Promise<void>>();
   private readonly executionBindings = new Map<string, ExecutionBindingState>();
   private readonly deletionStates = new Map<string, ConversationDeletionState>();
+  private readonly historicalModelRecoveryPromises = new Map<
+    string,
+    Promise<HistoricalModelRecoveryResult>
+  >();
+  private readonly historicalModelRecoverySources = new Map<string, Conversation>();
+  private readonly notePathRenames: NotePathRename[] = [];
+  private readonly pendingNotePathCorrectionIds = new Set<string>();
   private readonly persistence: ConversationPersistence;
 
   constructor(private readonly deps: ConversationRepositoryDeps) {
@@ -106,6 +197,9 @@ export class ConversationRepository {
     for (const conversation of this.conversations) {
       this.invalidateConversation(conversation.id);
     }
+    for (const conversation of conversations) {
+      this.applyNotePathRenames(conversation);
+    }
     this.conversations = conversations.filter(
       ({ id }) => !this.deletedConversationIds.has(id),
     );
@@ -115,6 +209,8 @@ export class ConversationRepository {
         .map(({ id }) => id),
     );
     this.hydrationPromises.clear();
+    this.historicalModelRecoveryPromises.clear();
+    this.historicalModelRecoverySources.clear();
     this.ledgerStates.clear();
     this.ledgerLoadPromises.clear();
     this.executionBindings.clear();
@@ -124,32 +220,55 @@ export class ConversationRepository {
   async adoptMetadataConversations(
     entries: ReadonlyArray<{
       conversation: Conversation;
+      needsMigration: SessionMetadataReadResult['needsMigration'];
       source: SessionMetadataReadResult['source'];
     }>,
   ): Promise<void> {
+    const notePathCorrectedIds = new Set<string>();
+    for (const { conversation } of entries) {
+      if (
+        this.pendingNotePathCorrectionIds.has(conversation.id)
+        || this.applyNotePathRenames(conversation)
+      ) {
+        notePathCorrectedIds.add(conversation.id);
+      }
+    }
     const added = this.mergeMetadataConversations(
       entries.map(({ conversation }) => conversation),
     );
     const addedIds = new Set(added.map(({ id }) => id));
     const migrations = entries
       .filter(
-        ({ conversation, source }) =>
-          source === 'legacy'
-          && (addedIds.has(conversation.id) || !!this.getSync(conversation.id)),
+        ({ conversation, needsMigration, source }) =>
+          (
+            (source === 'legacy' || needsMigration)
+            && (addedIds.has(conversation.id) || !!this.getSync(conversation.id))
+          )
+          || notePathCorrectedIds.has(conversation.id),
       )
-      .map(({ conversation }) => this.enqueuePersistence(
+      .map(({ conversation, source }) => this.enqueuePersistence(
         conversation.id,
         async () => {
           const current = this.getSync(conversation.id);
           if (!current || !await this.canWriteConversation(current)) return;
-          await this.persistence.saveMetadata(this.toSessionMetadata(current));
-          await this.persistence.deleteLegacyMetadata(current.id);
+          await this.persistence.saveMetadata(this.toSessionMetadata(current, {
+            preserveProviderState: !this.hydratedConversationIds.has(current.id),
+          }));
+          this.pendingNotePathCorrectionIds.delete(current.id);
+          if (source === 'legacy') {
+            await this.persistence.deleteLegacyMetadata(current.id);
+          }
         },
       ));
     await Promise.all(migrations);
   }
 
   mergeMetadataConversations(conversations: Conversation[]): Conversation[] {
+    for (const conversation of conversations) {
+      if (this.applyNotePathRenames(conversation)) {
+        this.pendingNotePathCorrectionIds.add(conversation.id);
+      }
+    }
     const existingIds = new Set(this.conversations.map(({ id }) => id));
     const added = conversations.filter(
       ({ id }) =>
@@ -164,8 +283,7 @@ export class ConversationRepository {
     this.conversations.push(...added);
     this.conversations.sort(
       (left, right) =>
-        (right.lastResponseAt ?? right.updatedAt)
-        - (left.lastResponseAt ?? left.updatedAt),
+        right.lastActivityAt - left.lastActivityAt,
     );
     for (const conversation of added) {
       if (conversation.messages.length > 0) {
@@ -197,36 +315,11 @@ export class ConversationRepository {
     return this.conversations;
   }
 
-  backfillResponseTimestamps(): Conversation[] {
-    const updated: Conversation[] = [];
-    for (const conversation of this.conversations) {
-      if (
-        conversation.lastResponseAt != null
-        || conversation.messages.length === 0
-      ) {
-        continue;
-      }
-
-      for (
-        let index = conversation.messages.length - 1;
-        index >= 0;
-        index -= 1
-      ) {
-        const message = conversation.messages[index];
-        if (message.role === 'assistant') {
-          conversation.lastResponseAt = message.timestamp;
-          updated.push(conversation);
-          break;
-        }
-      }
-    }
-    return updated;
-  }
-
   async create(options?: {
     providerId?: ProviderId;
     sessionId?: string;
     selectedModel?: string;
+    currentNote?: string;
   }): Promise<Conversation> {
     const settings = this.deps.getSettings();
     const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
@@ -253,10 +346,11 @@ export class ConversationRepository {
       providerId,
       title: this.generateDefaultTitle(),
       createdAt: Date.now(),
-      updatedAt: Date.now(),
+      lastActivityAt: Date.now(),
       sessionId: sessionId ?? null,
       selectedModel,
       messages: [],
+      currentNote: options?.currentNote,
     };
 
     this.conversations.unshift(conversation);
@@ -394,7 +488,6 @@ export class ConversationRepository {
     if (!conversation) return;
 
     conversation.title = title.trim() || this.generateDefaultTitle();
-    conversation.updatedAt = Date.now();
     await this.save(conversation);
   }
 
@@ -416,7 +509,7 @@ export class ConversationRepository {
         delete safeUpdates.selectedModel;
       }
     }
-    Object.assign(conversation, safeUpdates, { updatedAt: Date.now() });
+    Object.assign(conversation, safeUpdates);
     if (
       'sessionId' in safeUpdates
       || 'providerState' in safeUpdates
@@ -428,12 +521,195 @@ export class ConversationRepository {
     await this.save(conversation);
   }
 
+  async setPinned(id: string, isPinned: boolean): Promise<void> {
+    const conversation = this.getSync(id);
+    if (
+      !conversation
+      || (isPinned && conversation.isArchived)
+      || conversation.isPinned === isPinned
+    ) return;
+
+    conversation.isPinned = isPinned;
+    await this.save(conversation);
+  }
+
+  async setArchived(id: string, isArchived: boolean): Promise<void> {
+    const conversation = this.getSync(id);
+    if (!conversation) return;
+    if (
+      conversation.isArchived === isArchived
+      && (!isArchived || conversation.isPinned === false)
+    ) return;
+
+    conversation.isArchived = isArchived;
+    if (isArchived) {
+      conversation.isPinned = false;
+    }
+    await this.save(conversation);
+  }
+
   async persistConversations(
     conversations: readonly Conversation[],
   ): Promise<void> {
     await Promise.all(
       conversations.map((conversation) => this.save(conversation)),
     );
+  }
+
+  registerHistoricalModelRecoverySources(
+    conversations: readonly Conversation[],
+  ): void {
+    for (const source of conversations) {
+      const target = this.getSync(source.id);
+      if (
+        !target
+        || getStoredModelSelection(target.selectedModel)
+        || getStoredModelSelection(source.selectedModel)
+        || this.historicalModelRecoverySources.has(source.id)
+      ) {
+        continue;
+      }
+      const recoverySource = getModelRecoverySource(source)
+        ?? getModelRecoverySource(target);
+      if (!recoverySource) continue;
+
+      target.modelRecoverySource ??= cloneModelRecoverySource(recoverySource);
+      this.historicalModelRecoverySources.set(
+        source.id,
+        applyModelRecoverySource(source, recoverySource),
+      );
+    }
+  }
+
+  async recoverMissingSelectedModels(): Promise<Conversation[]> {
+    const candidates = this.conversations.filter(conversation => (
+      !getStoredModelSelection(conversation.selectedModel)
+    ));
+    const recovered = await mapWithConcurrency(
+      candidates,
+      async (conversation): Promise<Conversation | null> => {
+        const recovery = this.recoverHistoricalModelSelection(conversation);
+        if (!recovery) return null;
+        const result = await recovery;
+        return result === 'recovered' && this.getSync(conversation.id) === conversation
+          ? conversation
+          : null;
+      },
+      HISTORICAL_MODEL_RECOVERY_CONCURRENCY,
+    );
+    return recovered.filter(
+      (conversation): conversation is Conversation => conversation !== null,
+    );
+  }
+
+  private recoverHistoricalModelSelection(
+    conversation: Conversation,
+  ): Promise<HistoricalModelRecoveryResult> | null {
+    if (getStoredModelSelection(conversation.selectedModel)) {
+      return null;
+    }
+
+    const existing = this.historicalModelRecoveryPromises.get(conversation.id);
+    if (existing) return existing;
+
+    const persistedRecoverySource = conversation.modelRecoverySource
+      ? cloneModelRecoverySource(conversation.modelRecoverySource)
+      : null;
+    const recoverySource = this.historicalModelRecoverySources.get(conversation.id)
+      ?? (persistedRecoverySource
+        ? applyModelRecoverySource(conversation, persistedRecoverySource)
+        : conversation);
+    let recoverModelSelection: HistoricalModelRecovery | undefined;
+    try {
+      const historyService = ProviderRegistry.getConversationHistoryService(
+        recoverySource.providerId,
+      );
+      if (historyService.hasConversationModelRecoverySource?.(recoverySource) === false) {
+        return null;
+      }
+      recoverModelSelection = historyService.recoverConversationModelSelection
+        ?.bind(historyService);
+    } catch {
+      return null;
+    }
+    if (!recoverModelSelection) return null;
+
+    const generation = this.getConversationGeneration(conversation.id);
+    const recovery = this.runHistoricalModelRecovery(
+      conversation,
+      generation,
+      recoverModelSelection,
+      recoverySource,
+    );
+    this.historicalModelRecoveryPromises.set(conversation.id, recovery);
+    return recovery;
+  }
+
+  private async runHistoricalModelRecovery(
+    conversation: Conversation,
+    generation: number,
+    recoverModelSelection: HistoricalModelRecovery,
+    recoverySource: Conversation,
+  ): Promise<HistoricalModelRecoveryResult> {
+    let selectedModel: string | null;
+    try {
+      const vaultPath = this.deps.getVaultPath();
+      selectedModel = (await recoverModelSelection(
+        recoverySource,
+        vaultPath,
+        this.getHistoryPathContext(recoverySource.providerId, vaultPath),
+      ))?.trim() || null;
+    } catch {
+      return 'unresolved';
+    }
+    if (!selectedModel) return 'unresolved';
+    if (
+      !this.isConversationCurrent(conversation, generation)
+      || getStoredModelSelection(conversation.selectedModel)
+    ) {
+      return 'superseded';
+    }
+
+    const previousSelectedModel = conversation.selectedModel;
+    const previousModelRecoverySource = conversation.modelRecoverySource;
+    conversation.selectedModel = selectedModel;
+    conversation.modelRecoverySource = undefined;
+    try {
+      await this.save(conversation);
+    } catch {
+      if (conversation.selectedModel === selectedModel) {
+        conversation.selectedModel = previousSelectedModel;
+        conversation.modelRecoverySource = previousModelRecoverySource;
+      }
+      return 'unresolved';
+    }
+    if (
+      this.isConversationCurrent(conversation, generation)
+      && conversation.selectedModel === selectedModel
+    ) {
+      this.historicalModelRecoverySources.delete(conversation.id);
+      return 'recovered';
+    }
+    return 'superseded';
+  }
+
+  async rewriteCurrentNotePaths(
+    oldPath: string,
+    newPath: string,
+    options: { includeDescendants?: boolean } = {},
+  ): Promise<void> {
+    if (!oldPath || !newPath || oldPath === newPath) return;
+
+    const rename: NotePathRename = {
+      oldPath,
+      newPath,
+      includeDescendants: options.includeDescendants ?? false,
+    };
+    this.notePathRenames.push(rename);
+    const changed = this.conversations.filter(conversation => (
+      this.applyNotePathRename(conversation, rename)
+    ));
+    await this.persistConversations(changed);
   }
 
   registerExecutionBinding(
@@ -610,7 +886,10 @@ export class ConversationRepository {
     const conversation = this.getSync(conversationId);
     if (conversation) {
       this.attachRecordToInMemoryMessages(conversation, record);
-      conversation.updatedAt = Date.now();
+      conversation.lastActivityAt = Math.max(
+        conversation.lastActivityAt,
+        record.timestamp,
+      );
     }
 
     await this.enqueuePersistence(conversationId, async () => {
@@ -696,12 +975,15 @@ export class ConversationRepository {
     return {
       id: conversation.id,
       providerId: conversation.providerId,
+      selectedModel: conversation.selectedModel,
       title: conversation.title,
       createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-      lastResponseAt: conversation.lastResponseAt,
+      lastActivityAt: conversation.lastActivityAt,
       messageCount: conversation.messages.length,
       preview: this.getPreview(conversation),
+      currentNote: conversation.currentNote,
+      isPinned: conversation.isPinned,
+      isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
     };
   }
@@ -780,14 +1062,56 @@ export class ConversationRepository {
     return this.conversations.map((conversation) => ({
       id: conversation.id,
       providerId: conversation.providerId,
+      selectedModel: conversation.selectedModel,
       title: conversation.title,
       createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-      lastResponseAt: conversation.lastResponseAt,
+      lastActivityAt: conversation.lastActivityAt,
       messageCount: conversation.messages.length,
       preview: this.getPreview(conversation),
+      currentNote: conversation.currentNote,
+      isPinned: conversation.isPinned,
+      isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
     }));
+  }
+
+  private applyNotePathRenames(conversation: Conversation): boolean {
+    const originalPath = conversation.currentNote;
+    if (!originalPath) return false;
+
+    let currentPath = originalPath;
+    for (const rename of this.notePathRenames) {
+      const rewrittenPath = this.rewriteNotePath(currentPath, rename);
+      currentPath = rewrittenPath ?? currentPath;
+    }
+    if (currentPath === originalPath) return false;
+
+    conversation.currentNote = currentPath;
+    return true;
+  }
+
+  private applyNotePathRename(
+    conversation: Conversation,
+    rename: NotePathRename,
+  ): boolean {
+    if (!conversation.currentNote) return false;
+    const rewrittenPath = this.rewriteNotePath(conversation.currentNote, rename);
+    if (!rewrittenPath || rewrittenPath === conversation.currentNote) return false;
+
+    conversation.currentNote = rewrittenPath;
+    return true;
+  }
+
+  private rewriteNotePath(
+    notePath: string,
+    rename: NotePathRename,
+  ): string | null {
+    return rewriteVaultPathAfterRename(
+      notePath,
+      rename.oldPath,
+      rename.newPath,
+      rename.includeDescendants,
+    );
   }
 
   private async reconcileProviderSession(
@@ -796,13 +1120,36 @@ export class ConversationRepository {
     const historyService = ProviderRegistry.getConversationHistoryService(
       conversation.providerId,
     );
-    if (!historyService.getConversationSessionAvailability) return;
 
     const vaultPath = this.deps.getVaultPath();
     const pathContext = this.getHistoryPathContext(
       conversation.providerId,
       vaultPath,
     );
+    if (historyService.recoverConversationSessionReference) {
+      const previousSessionId = conversation.sessionId;
+      const previousProviderState = conversation.providerState;
+      const previousResumeAtMessageId = conversation.resumeAtMessageId;
+      try {
+        if (
+          await historyService.recoverConversationSessionReference(
+            conversation,
+            vaultPath,
+            pathContext,
+          )
+        ) {
+          await this.save(conversation);
+        }
+      } catch {
+        conversation.sessionId = previousSessionId;
+        conversation.providerState = previousProviderState;
+        conversation.resumeAtMessageId = previousResumeAtMessageId;
+        return;
+      }
+    }
+
+    if (!historyService.getConversationSessionAvailability) return;
+
     let availability;
     try {
       availability =
@@ -844,11 +1191,22 @@ export class ConversationRepository {
   private async ensureSelectedModel(
     conversation: Conversation,
   ): Promise<void> {
+    let recoveryResult: HistoricalModelRecoveryResult | 'unsupported' = 'unsupported';
+    if (!getStoredModelSelection(conversation.selectedModel)) {
+      const recovery = this.recoverHistoricalModelSelection(conversation);
+      if (recovery) recoveryResult = await recovery;
+    }
     const resolved = resolveConversationModel(
       this.deps.getSettings(),
       conversation.providerId,
       conversation,
     );
+    if (
+      (getStoredModelSelection(conversation.selectedModel) && resolved.source !== 'selected')
+      || (recoveryResult === 'unresolved' && resolved.source === 'usage')
+    ) {
+      return;
+    }
     if (
       !resolved.shouldPersist
       || !resolved.model
@@ -879,12 +1237,23 @@ export class ConversationRepository {
   ): Promise<void> {
     const state = await this.loadInputLedger(conversation.id);
     if (state.status !== 'loaded') return;
-    const promoted = this.correlateInputLedger(conversation, state.ledger);
-    if (promoted) {
+    const correlation = this.correlateInputLedger(conversation, state.ledger);
+    if (correlation.ledgerChanged) {
       try {
         await this.persistLedgerOnly(conversation.id, state.ledger);
       } catch {
         // Native history remains usable; the accepted promotion stays dirty.
+      }
+    }
+    if (
+      correlation.lastAcceptedInputAt !== null
+      && correlation.lastAcceptedInputAt > conversation.lastActivityAt
+    ) {
+      conversation.lastActivityAt = correlation.lastAcceptedInputAt;
+      try {
+        await this.save(conversation);
+      } catch {
+        // The repaired activity remains in memory for the next metadata write.
       }
     }
   }
@@ -953,9 +1322,10 @@ export class ConversationRepository {
   private correlateInputLedger(
     conversation: Conversation,
     ledger: ConversationInputLedger,
-  ): boolean {
+  ): InputLedgerCorrelationResult {
     const usedRecordIds = new Set<string>();
-    let promoted = false;
+    let ledgerChanged = false;
+    let lastAcceptedInputAt: number | null = null;
     let userTurnOrdinal = 0;
     for (
       let messageIndex = 0;
@@ -998,7 +1368,7 @@ export class ConversationRepository {
         && record.providerUserMessageId !== message.userMessageId
       ) {
         record.providerUserMessageId = message.userMessageId;
-        promoted = true;
+        ledgerChanged = true;
       }
       if (!record.providerAssistantMessageId) {
         const assistant = findAssistantForCanonicalUserTurn(
@@ -1007,16 +1377,19 @@ export class ConversationRepository {
         );
         if (assistant?.assistantMessageId) {
           record.providerAssistantMessageId = assistant.assistantMessageId;
-          promoted = true;
+          ledgerChanged = true;
         }
       }
       this.attachRecordToMessage(message, record);
       if (record.state === 'staged') {
         record.state = 'accepted';
-        promoted = true;
+        ledgerChanged = true;
       }
+      lastAcceptedInputAt = lastAcceptedInputAt === null
+        ? record.timestamp
+        : Math.max(lastAcceptedInputAt, record.timestamp);
     }
-    return promoted;
+    return { ledgerChanged, lastAcceptedInputAt };
   }
 
   private attachRecordToInMemoryMessages(
@@ -1095,6 +1468,20 @@ export class ConversationRepository {
     conversation: Conversation,
     snapshot: ProviderSessionSnapshot,
   ): void {
+    const establishesFreshProviderSession = snapshot.status !== 'invalidated'
+      && typeof snapshot.providerSessionId === 'string'
+      && snapshot.providerSessionId.trim().length > 0;
+    if (
+      establishesFreshProviderSession
+      && (
+        conversation.modelRecoverySource
+        || this.historicalModelRecoverySources.has(conversation.id)
+        || this.historicalModelRecoveryPromises.has(conversation.id)
+      )
+    ) {
+      conversation.modelRecoverySource = undefined;
+      this.invalidateConversation(conversation.id);
+    }
     if (snapshot.providerSessionId !== undefined) {
       conversation.sessionId = snapshot.providerSessionId;
     } else if (snapshot.status === 'invalidated') {
@@ -1116,7 +1503,6 @@ export class ConversationRepository {
         ? nextProviderState
         : undefined;
     }
-    conversation.updatedAt = Date.now();
   }
 
   private save(conversation: Conversation): Promise<void> {
@@ -1143,11 +1529,15 @@ export class ConversationRepository {
     );
   }
 
-  private toSessionMetadata(conversation: Conversation): SessionMetadata {
+  private toSessionMetadata(
+    conversation: Conversation,
+    options: { preserveProviderState?: boolean } = {},
+  ): SessionMetadata {
     const historyService = ProviderRegistry.getConversationHistoryService(
       conversation.providerId,
     );
-    const providerState = historyService.buildPersistedProviderState
+    const providerState = !options.preserveProviderState
+      && historyService.buildPersistedProviderState
       ? historyService.buildPersistedProviderState(conversation)
       : conversation.providerState;
     return {
@@ -1156,15 +1546,24 @@ export class ConversationRepository {
       title: conversation.title,
       titleGenerationStatus: conversation.titleGenerationStatus,
       createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-      lastResponseAt: conversation.lastResponseAt,
+      lastActivityAt: conversation.lastActivityAt,
       sessionId: conversation.sessionId,
       selectedModel: conversation.selectedModel,
       providerState:
         providerState && Object.keys(providerState).length > 0
           ? providerState
           : undefined,
+      ...(!getStoredModelSelection(conversation.selectedModel)
+        && conversation.modelRecoverySource
+        ? {
+            modelRecoverySource: cloneModelRecoverySource(
+              conversation.modelRecoverySource,
+            ),
+          }
+        : {}),
       currentNote: conversation.currentNote,
+      isPinned: conversation.isPinned,
+      isArchived: conversation.isArchived,
       externalContextPaths: conversation.externalContextPaths,
       enabledMcpServers: conversation.enabledMcpServers,
       usage: conversation.usage,
@@ -1237,6 +1636,8 @@ export class ConversationRepository {
   }
 
   private invalidateConversation(id: string): void {
+    this.historicalModelRecoveryPromises.delete(id);
+    this.historicalModelRecoverySources.delete(id);
     this.conversationGenerations.set(
       id,
       this.getConversationGeneration(id) + 1,

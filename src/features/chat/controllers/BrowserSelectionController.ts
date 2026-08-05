@@ -14,6 +14,7 @@ export class BrowserSelectionController {
   private contextTray: ComposerContextTray;
   private inputEl: HTMLElement;
   private onVisibilityChange: (() => void) | null;
+  private onUserSelectionChanged: (() => void) | null;
   private storedSelection: BrowserSelectionContext | null = null;
   private pollInterval: number | null = null;
   private pollInFlight = false;
@@ -22,12 +23,14 @@ export class BrowserSelectionController {
     app: App,
     contextTray: ComposerContextTray,
     inputEl: HTMLElement,
-    onVisibilityChange?: () => void
+    onVisibilityChange?: () => void,
+    onUserSelectionChanged?: () => void,
   ) {
     this.app = app;
     this.contextTray = contextTray;
     this.inputEl = inputEl;
     this.onVisibilityChange = onVisibilityChange ?? null;
+    this.onUserSelectionChanged = onUserSelectionChanged ?? null;
   }
 
   start(): void {
@@ -61,6 +64,7 @@ export class BrowserSelectionController {
         if (!this.isSameSelection(nextContext, this.storedSelection)) {
           this.storedSelection = nextContext;
           this.updateIndicator();
+          this.onUserSelectionChanged?.();
         }
       } else {
         this.clearWhenInputIsNotFocused();
@@ -236,6 +240,7 @@ export class BrowserSelectionController {
     if (this.storedSelection) {
       this.storedSelection = null;
       this.updateIndicator();
+      this.onUserSelectionChanged?.();
     }
   }
 
@@ -250,7 +255,10 @@ export class BrowserSelectionController {
         label,
         icon: 'globe',
         ariaLabel: label,
-        onRemove: () => this.clear(),
+        onRemove: () => {
+          this.clear();
+          this.onUserSelectionChanged?.();
+        },
       }]);
     } else {
       this.contextTray.clearItems('browser-selection');

@@ -4,7 +4,6 @@
 
 ## Dependency Boundary
 
-- Codex code may depend on core contracts, shared UI primitives, and provider-local app-server modules. It must not import chat views or feature controllers.
 - App-server JSON-RPC types, notifications, raw response items, and JSONL records remain provider-local until normalized into core execution events, snapshots, or history projections.
 - App-server process management, model discovery, skill listing, and chat execution may share transport primitives but must not share a live process or session implicitly.
 
@@ -15,7 +14,7 @@
 | `CodexExecutionSession` | One provider execution binding, thread/turn requests, pending notification fencing, interactions, cancellation, and provider snapshots |
 | `CodexAppServerProcess` and `CodexRpcTransport` | App-server subprocess and JSON-RPC transport mechanics |
 | `CodexNotificationRouter` | Projection of live notifications and raw response items into normalized stream chunks |
-| `history/CodexHistoryStore.ts` | Read-only JSONL replay projection and session-file lookup |
+| `history/CodexHistoryStore.ts` | Read-only JSONL replay projection, session-file lookup, and historical model recovery |
 | `CodexSkillListingService` | Independent short-lived skill-listing process and result lifecycle |
 | `CodexModelCatalogCoordinator` | Workspace model discovery snapshots and transition fencing |
 
@@ -38,7 +37,7 @@ Live execution state and replay state are separate authorities. Do not fill gaps
 
 ## Design Rules
 
-- Native transcripts live under `~/.codex/sessions/`; resolve roots via `CodexHistoryPathResolver` (WSL and home-dir aware).
+- Native transcripts live under `~/.codex/sessions/` and may move to sibling `archived_sessions/`; resolve both through `CodexHistoryPathResolver` (WSL and home-dir aware).
 - `CodexSkillListingService` uses a separate short-lived app-server process for `skills/list`. Do not couple skill discovery to the active chat runtime.
 - Runtime fingerprint changes invalidate existing Codex sessions. The fingerprint includes `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `PATH`, explicit/host CLI-path inputs, installation method, and WSL distro override.
 - Existing threads require `thread/resume` before operations in a new app-server process.
@@ -51,6 +50,7 @@ Live execution state and replay state are separate authorities. Do not fill gaps
 - A session file may contain legacy records and modern records. Prefer the modern path if any modern records are present.
 - Do not replay `type: 'compacted'` `replacement_history` as visible UI history. The durable visible marker is `event_msg:context_compacted`.
 - Session file names may include a date prefix. Keep DFS fallback in session-file lookup.
+- Historical selected-model recovery must honor the persisted rollback/fork checkpoint. For a materialized fork, validate the source segment before trusting the fork transcript, search trusted archived roots when the active session path no longer exists, and never make invalidated thread metadata resumable.
 
 ## Runtime Gotchas
 
@@ -63,6 +63,4 @@ Live execution state and replay state are separate authorities. Do not fill gaps
 
 - A thread must be started or resumed before a turn, rollback, or compact operation targets it in the current app-server process.
 - Only current binding, provider generation, and turn notifications may update the active execution.
-- Live UI output comes from app-server notifications; JSONL remains read-only replay input.
-- Auxiliary model, dependency, and skill queries own their own process lifecycle and must not reuse the chat session.
 - Provider state persists opaque Codex thread and fork metadata; feature code must not reconstruct it.

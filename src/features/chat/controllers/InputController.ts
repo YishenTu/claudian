@@ -131,10 +131,16 @@ export interface InputControllerDeps {
   /** Returns true if ready. */
   ensureExecutionInitialized?: () => Promise<boolean>;
   openConversation?: (conversationId: string) => Promise<void>;
+  /** Lets the active layout replace in-place clear with its own New action. */
+  handleNewConversationCommand?: () => Promise<boolean>;
+  /** Lets the active layout start approved plan content in a separate conversation. */
+  handleNewSessionPlan?: (planContent: string) => Promise<boolean>;
   onForkAll?: () => Promise<void>;
   /** Toggles the active provider's fast service tier when available. */
   toggleFastMode?: () => Promise<boolean>;
   restorePrePlanPermissionModeIfNeeded?: () => void | Promise<void>;
+  /** Captures a review reporter when a terminal provider turn becomes visible. */
+  captureReviewableSettlement?: () => () => void;
   turnOwner?: ActiveTurnOwner;
 }
 
@@ -186,6 +192,10 @@ export class InputController {
   private pendingProviderUserMessages: PendingProviderUserMessage[] = [];
   private sawInitialProviderUserMessage = false;
   private awaitingProviderAssistantStart = false;
+  private deferredReviewableSettlement: {
+    conversationId: string | null;
+    report: () => void;
+  } | null = null;
   private readonly turnCoordinator: TurnCoordinator<SendMessageOptions>;
 
   constructor(deps: InputControllerDeps) {
@@ -279,9 +289,13 @@ export class InputController {
       canvasSelectionController,
       conversationController
     } = this.deps;
+    this.discardDeferredReviewForDifferentConversation();
 
     // During conversation creation/switching, don't send - input is preserved so user can retry
-    if (state.isCreatingConversation || state.isSwitchingConversation) return;
+    if (state.isCreatingConversation || state.isSwitchingConversation) {
+      this.reportDeferredReviewableSettlement();
+      return;
+    }
 
     const inputEl = this.deps.getInputEl();
     const imageContextManager = this.deps.getImageContextManager();
@@ -294,16 +308,25 @@ export class InputController {
     const hasImages = imageOverride !== undefined
       ? imageOverride.length > 0
       : (imageContextManager?.hasImages() ?? false);
-    if (!content && !hasImages) return;
+    if (!content && !hasImages) {
+      this.reportDeferredReviewableSettlement();
+      return;
+    }
 
     if (state.isRewinding) {
       new Notice(t('chat.rewind.inProgress'));
+      this.reportDeferredReviewableSettlement();
       return;
     }
 
     // Check for built-in commands first (e.g., /clear, /new, /add-dir)
     const builtInCmd = detectBuiltInCommand(content, this.getActiveProviderId());
     if (builtInCmd) {
+      if (builtInCmd.command.action === 'clear') {
+        this.clearDeferredReviewableSettlement();
+      } else {
+        this.reportDeferredReviewableSettlement();
+      }
       if (shouldUseInput) {
         inputEl.value = '';
         this.deps.resetInputHeight();
@@ -342,6 +365,8 @@ export class InputController {
       this.updateQueueIndicator();
       return;
     }
+
+    state.acknowledgeReview();
 
     let turnConversationId = state.currentConversationId;
     this.delegatePendingSteerCorrelationToHistory(turnConversationId);
@@ -444,6 +469,12 @@ export class InputController {
     let didEnqueueToSdk = false;
     let planCompleted = false;
     let didRollbackUnsentTurn = false;
+    let shouldReportReviewableSettlement = false;
+    let currentReviewableSettlementReporter: (() => void) | null = null;
+    let didCancelThisTurn = false;
+    let planApprovalInvalidated = false;
+    let scheduledContinuation = false;
+    let continuationStaysInCurrentController = false;
 
     // Lazy initialization: bind and prepare execution on the first provider action.
     if (this.deps.ensureExecutionInitialized) {
@@ -454,6 +485,7 @@ export class InputController {
         this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
         this.activeStreamingAssistantMessage = null;
         this.resetProviderMessageBoundaryState();
+        this.reportDeferredReviewableSettlement();
         return;
       }
     }
@@ -465,6 +497,7 @@ export class InputController {
       this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
       this.activeStreamingAssistantMessage = null;
       this.resetProviderMessageBoundaryState();
+      this.reportDeferredReviewableSettlement();
       return;
     }
 
@@ -479,6 +512,12 @@ export class InputController {
       ));
       didEnqueueToSdk = result.accepted;
       planCompleted = result.planCompleted;
+      shouldReportReviewableSettlement = result.status === 'completed'
+        || (result.status === 'error' && result.accepted);
+      if (shouldReportReviewableSettlement) {
+        currentReviewableSettlementReporter =
+          this.deps.captureReviewableSettlement?.() ?? null;
+      }
       if (result.status === 'cancelled') {
         wasInterrupted = true;
       } else if (result.status === 'invalidated') {
@@ -527,9 +566,13 @@ export class InputController {
         this.rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
         didRollbackUnsentTurn = true;
         new Notice('Message was not sent. Please try again.');
+        this.reportDeferredReviewableSettlement();
       } else {
+        shouldReportReviewableSettlement = true;
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
+        currentReviewableSettlementReporter =
+          this.deps.captureReviewableSettlement?.() ?? null;
       }
     } finally {
       const finalAssistantMsg = this.activeStreamingAssistantMessage ?? assistantMsg;
@@ -537,134 +580,172 @@ export class InputController {
       // ALWAYS clear the timer interval, even on stream invalidation (prevents memory leaks)
       state.clearFlavorTimerInterval();
 
-      // Skip remaining cleanup if stream was invalidated (tab closed or conversation switched)
-      if (
-        !wasInvalidated
-        && !didRollbackUnsentTurn
-        && state.streamGeneration === streamGeneration
-      ) {
-        const didCancelThisTurn = wasInterrupted || state.cancelRequested;
-        if (didCancelThisTurn && !state.pendingNewSessionPlan) {
-          finalAssistantMsg.isInterrupt = true;
-          if (state.currentContentEl) {
-            renderer.appendInterruptIndicator(state.currentContentEl);
-          }
-        }
-        streamController.hideThinkingIndicator();
-        state.isStreaming = false;
-        state.cancelRequested = false;
-
-        // Capture response duration before resetting state (skip for interrupted responses and compaction)
-        const hasCompactBoundary = finalAssistantMsg.contentBlocks?.some(b => b.type === 'context_compacted');
-        if (!didCancelThisTurn && !hasCompactBoundary) {
-          const durationSeconds = state.responseStartTime
-            ? Math.floor((performance.now() - state.responseStartTime) / 1000)
-            : 0;
-          if (durationSeconds > 0) {
-            const flavorWord =
-              COMPLETION_FLAVOR_WORDS[Math.floor(Math.random() * COMPLETION_FLAVOR_WORDS.length)];
-            finalAssistantMsg.durationSeconds = durationSeconds;
-            finalAssistantMsg.durationFlavorWord = flavorWord;
-            // Add footer to live message in DOM
+      try {
+        // Skip remaining cleanup if stream was invalidated (tab closed or conversation switched)
+        if (
+          !wasInvalidated
+          && !didRollbackUnsentTurn
+          && state.streamGeneration === streamGeneration
+        ) {
+          didCancelThisTurn = wasInterrupted || state.cancelRequested;
+          if (didCancelThisTurn && !state.pendingNewSessionPlan) {
+            finalAssistantMsg.isInterrupt = true;
             if (state.currentContentEl) {
-              const footerEl = state.currentContentEl.createDiv({ cls: 'claudian-response-footer' });
-              footerEl.createSpan({
-                text: `* ${flavorWord} for ${formatDurationMmSs(durationSeconds)}`,
-                cls: 'claudian-baked-duration',
-              });
+              renderer.appendInterruptIndicator(state.currentContentEl);
+            }
+          }
+          streamController.hideThinkingIndicator();
+          state.isStreaming = false;
+          state.cancelRequested = false;
+
+          // Capture response duration before resetting state (skip for interrupted responses and compaction)
+          const hasCompactBoundary = finalAssistantMsg.contentBlocks?.some(b => b.type === 'context_compacted');
+          if (!didCancelThisTurn && !hasCompactBoundary) {
+            const durationSeconds = state.responseStartTime
+              ? Math.floor((performance.now() - state.responseStartTime) / 1000)
+              : 0;
+            if (durationSeconds > 0) {
+              const flavorWord =
+                COMPLETION_FLAVOR_WORDS[Math.floor(Math.random() * COMPLETION_FLAVOR_WORDS.length)];
+              finalAssistantMsg.durationSeconds = durationSeconds;
+              finalAssistantMsg.durationFlavorWord = flavorWord;
+              // Add footer to live message in DOM
+              if (state.currentContentEl) {
+                const footerEl = state.currentContentEl.createDiv({ cls: 'claudian-response-footer' });
+                footerEl.createSpan({
+                  text: `* ${flavorWord} for ${formatDurationMmSs(durationSeconds)}`,
+                  cls: 'claudian-baked-duration',
+                });
+              }
+            }
+          }
+
+          state.currentContentEl = null;
+
+          await streamController.finalizeCurrentThinkingBlock(finalAssistantMsg);
+          await streamController.finalizeCurrentTextBlock(finalAssistantMsg);
+          this.deps.getSubagentManager().resetStreamingState();
+
+          // Auto-hide completed todo panel on response end
+          // Panel reappears only when new TodoWrite tool is called
+          if (state.currentTodos && state.currentTodos.every(t => t.status === 'completed')) {
+            state.currentTodos = null;
+          }
+          this.syncScrollToBottomAfterRenderUpdates();
+
+          // approve-new-session: the tool_result chunk is dropped because cancelRequested
+          // was set before the stream loop could process it — manually set the result so
+          // the saved conversation renders correctly when revisited
+          if (state.pendingNewSessionPlan && finalAssistantMsg.toolCalls) {
+            for (const tc of finalAssistantMsg.toolCalls) {
+              if (tc.name === TOOL_EXIT_PLAN_MODE && !tc.result) {
+                tc.status = 'completed';
+                tc.result = 'User approved the plan and started a new session.';
+                updateToolCallResult(tc.id, tc, state.toolCallElements);
+              }
+            }
+          }
+
+          // Provider-agnostic post-plan approval: show UI and await decision before save/auto-send
+          let planAutoSendContent: string | null = null;
+          let shouldProcessQueuedMessage = true;
+          if (planCompleted && !didCancelThisTurn) {
+            const planInteractionId = `local-plan-approval:${streamGeneration}`;
+            state.beginActionRequired(planInteractionId);
+            let decisionResult: { decision: PlanApprovalDecision | null; invalidated: boolean };
+            try {
+              decisionResult = await this.showPlanApproval();
+            } finally {
+              state.endActionRequired(planInteractionId);
+            }
+            const { decision, invalidated } = decisionResult;
+
+            // Re-check invalidation after async approval prompt
+            if (state.streamGeneration !== streamGeneration || invalidated) {
+              planApprovalInvalidated = true;
+            } else if (decision?.type === 'implement') {
+              await this.deps.restorePrePlanPermissionModeIfNeeded?.();
+              planAutoSendContent = 'Implement the plan.';
+            } else if (decision?.type === 'revise') {
+              // Keep plan mode active, populate input with feedback text
+              this.deps.getInputEl().value = decision.text;
+              shouldProcessQueuedMessage = false;
+            } else {
+              // cancel or null (dismissed)
+              await this.deps.restorePrePlanPermissionModeIfNeeded?.();
+            }
+          }
+
+          if (!planApprovalInvalidated) {
+            // Only clear resumeAtMessageId if enqueue succeeded; preserve checkpoint on failure for retry
+            const saveExtras = didEnqueueToSdk ? { resumeAtMessageId: undefined } : undefined;
+            await conversationController.save(true, saveExtras);
+
+            const userMsgIndex = state.messages.indexOf(userMsg);
+            renderer.refreshActionButtons(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
+
+            // Auto-implement takes precedence over both approve-new-session and queued input
+            if (planAutoSendContent) {
+              scheduledContinuation = true;
+              continuationStaysInCurrentController = true;
+              this.deps.getInputEl().value = planAutoSendContent;
+              this.deferReviewableSettlement(currentReviewableSettlementReporter);
+              this.sendMessage().catch(() => this.reportDeferredReviewableSettlement());
+            } else {
+              // approve-new-session: create fresh conversation and send plan content
+              // Must be inside the invalidation guard — if the tab was closed or
+              // conversation switched, we must not create a new session on stale state.
+              const planContent = state.pendingNewSessionPlan;
+              if (planContent) {
+                state.pendingNewSessionPlan = null;
+                const handledByLayout = await this.deps.handleNewSessionPlan?.(planContent) ?? false;
+                if (handledByLayout) {
+                  scheduledContinuation = true;
+                } else {
+                  await conversationController.createNew();
+                  scheduledContinuation = true;
+                  continuationStaysInCurrentController = true;
+                  this.deps.getInputEl().value = planContent;
+                  this.deferReviewableSettlement(currentReviewableSettlementReporter);
+                  this.sendMessage().catch(() => this.reportDeferredReviewableSettlement());
+                }
+              } else if (shouldProcessQueuedMessage) {
+                scheduledContinuation = this.processQueuedMessage();
+                continuationStaysInCurrentController = scheduledContinuation;
+              }
             }
           }
         }
 
-        state.currentContentEl = null;
-
-        await streamController.finalizeCurrentThinkingBlock(finalAssistantMsg);
-        await streamController.finalizeCurrentTextBlock(finalAssistantMsg);
-        this.deps.getSubagentManager().resetStreamingState();
-
-        // Auto-hide completed todo panel on response end
-        // Panel reappears only when new TodoWrite tool is called
-        if (state.currentTodos && state.currentTodos.every(t => t.status === 'completed')) {
-          state.currentTodos = null;
+        if (wasInvalidated) {
+          this.clearCurrentPendingSteerUi();
+          this.updateQueueIndicator();
         }
-        this.syncScrollToBottomAfterRenderUpdates();
-
-        // approve-new-session: the tool_result chunk is dropped because cancelRequested
-        // was set before the stream loop could process it — manually set the result so
-        // the saved conversation renders correctly when revisited
-        if (state.pendingNewSessionPlan && finalAssistantMsg.toolCalls) {
-          for (const tc of finalAssistantMsg.toolCalls) {
-            if (tc.name === TOOL_EXIT_PLAN_MODE && !tc.result) {
-              tc.status = 'completed';
-              tc.result = 'User approved the plan and started a new session.';
-              updateToolCallResult(tc.id, tc, state.toolCallElements);
+      } finally {
+        const currentSettlementIsReviewable = shouldReportReviewableSettlement
+          && !didCancelThisTurn
+          && !planApprovalInvalidated
+          && state.streamGeneration === streamGeneration;
+        if (scheduledContinuation) {
+          if (continuationStaysInCurrentController) {
+            if (currentSettlementIsReviewable && currentReviewableSettlementReporter) {
+              this.deferReviewableSettlement(currentReviewableSettlementReporter);
             }
-          }
-        }
-
-        // Provider-agnostic post-plan approval: show UI and await decision before save/auto-send
-        let planAutoSendContent: string | null = null;
-        let planApprovalInvalidated = false;
-        let shouldProcessQueuedMessage = true;
-        if (planCompleted && !didCancelThisTurn) {
-          const { decision, invalidated } = await this.showPlanApproval();
-
-          // Re-check invalidation after async approval prompt
-          if (state.streamGeneration !== streamGeneration || invalidated) {
-            planApprovalInvalidated = true;
-          } else if (decision?.type === 'implement') {
-            await this.deps.restorePrePlanPermissionModeIfNeeded?.();
-            planAutoSendContent = 'Implement the plan.';
-          } else if (decision?.type === 'revise') {
-            // Keep plan mode active, populate input with feedback text
-            this.deps.getInputEl().value = decision.text;
-            shouldProcessQueuedMessage = false;
           } else {
-            // cancel or null (dismissed)
-            await this.deps.restorePrePlanPermissionModeIfNeeded?.();
+            this.clearDeferredReviewableSettlement();
           }
+        } else if (currentSettlementIsReviewable) {
+          this.reportCurrentOrDeferredReviewableSettlement(
+            currentReviewableSettlementReporter,
+          );
+        } else {
+          this.reportDeferredReviewableSettlement();
         }
 
-        if (!planApprovalInvalidated) {
-          // Only clear resumeAtMessageId if enqueue succeeded; preserve checkpoint on failure for retry
-          const saveExtras = didEnqueueToSdk ? { resumeAtMessageId: undefined } : undefined;
-          await conversationController.save(true, saveExtras);
-
-          const userMsgIndex = state.messages.indexOf(userMsg);
-          renderer.refreshActionButtons(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
-
-          // Auto-implement takes precedence over both approve-new-session and queued input
-          if (planAutoSendContent) {
-            this.deps.getInputEl().value = planAutoSendContent;
-            this.sendMessage().catch(() => {});
-          } else {
-            // approve-new-session: create fresh conversation and send plan content
-            // Must be inside the invalidation guard — if the tab was closed or
-            // conversation switched, we must not create a new session on stale state.
-            const planContent = state.pendingNewSessionPlan;
-            if (planContent) {
-              state.pendingNewSessionPlan = null;
-              await conversationController.createNew();
-              this.deps.getInputEl().value = planContent;
-              this.sendMessage().catch(() => {
-                // sendMessage() handles its own errors internally; this prevents
-                // unhandled rejection if an unexpected error slips through.
-              });
-            } else if (shouldProcessQueuedMessage) {
-              this.processQueuedMessage();
-            }
-          }
-        }
+        this.delegatePendingSteerCorrelationToHistory(turnConversationId);
+        this.activeStreamingAssistantMessage = null;
+        this.resetProviderMessageBoundaryState();
       }
-
-      if (wasInvalidated) {
-        this.clearCurrentPendingSteerUi();
-        this.updateQueueIndicator();
-      }
-
-      this.delegatePendingSteerCorrelationToHistory(turnConversationId);
-      this.activeStreamingAssistantMessage = null;
-      this.resetProviderMessageBoundaryState();
     }
   }
 
@@ -821,9 +902,9 @@ export class InputController {
     this.updateQueueIndicator();
   }
 
-  private processQueuedMessage(): void {
+  private processQueuedMessage(): boolean {
     const { state } = this.deps;
-    if (!state.queuedMessage) return;
+    if (!state.queuedMessage) return false;
 
     const queuedMessage = this.cloneQueuedMessage(state.queuedMessage);
     state.queuedMessage = null;
@@ -835,10 +916,56 @@ export class InputController {
           content: queuedMessage.content,
           images: queuedMessage.images,
           turnRequestOverride: this.toQueuedChatTurn(queuedMessage).request,
-        });
+        }).catch(() => this.reportDeferredReviewableSettlement());
       },
       0
     );
+    return true;
+  }
+
+  private deferReviewableSettlement(report: (() => void) | null): void {
+    if (!report) return;
+    this.deferredReviewableSettlement = {
+      conversationId: this.deps.state.currentConversationId,
+      report,
+    };
+  }
+
+  private hasDeferredReviewableSettlement(): boolean {
+    this.discardDeferredReviewForDifferentConversation();
+    return this.deferredReviewableSettlement !== null;
+  }
+
+  private reportDeferredReviewableSettlement(): void {
+    if (!this.hasDeferredReviewableSettlement()) return;
+    const deferred = this.deferredReviewableSettlement;
+    this.clearDeferredReviewableSettlement();
+    deferred?.report();
+  }
+
+  private reportCurrentOrDeferredReviewableSettlement(
+    currentReporter: (() => void) | null,
+  ): void {
+    const reporter = currentReporter
+      ?? (this.hasDeferredReviewableSettlement()
+        ? this.deferredReviewableSettlement?.report ?? null
+        : null);
+    this.clearDeferredReviewableSettlement();
+    reporter?.();
+  }
+
+  private discardDeferredReviewForDifferentConversation(): void {
+    if (
+      this.deferredReviewableSettlement !== null
+      && this.deferredReviewableSettlement.conversationId
+        !== this.deps.state.currentConversationId
+    ) {
+      this.clearDeferredReviewableSettlement();
+    }
+  }
+
+  private clearDeferredReviewableSettlement(): void {
+    this.deferredReviewableSettlement = null;
   }
 
   private buildTurnSubmission(options: {
@@ -1157,6 +1284,7 @@ export class InputController {
   }
 
   onConversationActivated(): void {
+    this.discardDeferredReviewForDifferentConversation();
     if (
       this.deps.state.isSwitchingConversation
       || this.deps.state.isCreatingConversation
@@ -1474,9 +1602,12 @@ export class InputController {
 
     if (!state.currentConversationId) {
       const selectedModel = this.getAuxiliaryModel() ?? undefined;
+      const currentNote = this.deps.getFileContextManager()?.getCurrentNotePath()
+        ?? undefined;
       const conversation = await plugin.createConversation({
         providerId: this.getActiveProviderId(),
         ...(selectedModel ? { selectedModel } : {}),
+        ...(currentNote ? { currentNote } : {}),
       });
       state.currentConversationId = conversation.id;
     }
@@ -1995,9 +2126,13 @@ export class InputController {
     }
 
     switch (command.action) {
-      case 'clear':
-        await conversationController.createNew();
+      case 'clear': {
+        const handledByLayout = await this.deps.handleNewConversationCommand?.() ?? false;
+        if (!handledByLayout) {
+          await conversationController.createNew();
+        }
         break;
+      }
       case 'add-dir': {
         const externalContextSelector = this.deps.getExternalContextSelector();
         if (!externalContextSelector) {

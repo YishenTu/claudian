@@ -136,16 +136,21 @@ export interface Conversation {
   providerId: ProviderId;
   title: string;
   createdAt: number;
-  updatedAt: number;
-  /** Timestamp when the last agent response completed. */
-  lastResponseAt?: number;
+  /** Timestamp of the most recent user or agent conversation activity. */
+  lastActivityAt: number;
   sessionId: string | null;
   /** Conversation-owned model selection. Missing values are migrated lazily. */
   selectedModel?: string;
   /** Opaque provider-owned state bag (session tracking, fork metadata, etc.). */
   providerState?: Record<string, unknown>;
+  /** Read-only native locator retained solely for historical model recovery. */
+  modelRecoverySource?: ConversationModelRecoverySource;
   messages: ChatMessage[];
   currentNote?: string;
+  /** Whether the session is pinned in the dual-pane session manager. */
+  isPinned?: boolean;
+  /** Whether the session is archived and hidden from active session lists. */
+  isArchived?: boolean;
   /** Session-specific external context paths (directories with full access). Resets on new session. */
   externalContextPaths?: string[];
   /** Context window usage information. */
@@ -158,17 +163,31 @@ export interface Conversation {
   resumeAtMessageId?: string;
 }
 
+/** Native session locator that must never make an invalidated session resumable. */
+export interface ConversationModelRecoverySource {
+  sessionId: string | null;
+  providerState?: Record<string, unknown>;
+  resumeAtMessageId?: string;
+}
+
 /** Lightweight conversation metadata for the history dropdown. */
 export interface ConversationMeta {
   id: string;
   providerId: ProviderId;
+  /** Conversation-owned model selection, projected without hydrating history. */
+  selectedModel?: string;
   title: string;
   createdAt: number;
-  updatedAt: number;
-  /** Timestamp when the last agent response completed. */
-  lastResponseAt?: number;
+  /** Timestamp of the most recent user or agent conversation activity. */
+  lastActivityAt: number;
   messageCount: number;
   preview: string;
+  /** Vault-relative path of the note linked to this session. */
+  currentNote?: string;
+  /** Whether the session is pinned in the dual-pane session manager. */
+  isPinned?: boolean;
+  /** Whether the session is archived and hidden from active session lists. */
+  isArchived?: boolean;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
 }
@@ -183,15 +202,18 @@ export interface SessionMetadata {
   title: string;
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
   createdAt: number;
-  updatedAt: number;
-  lastResponseAt?: number;
+  lastActivityAt: number;
   /** Session ID used for provider resume (may be cleared when invalidated). */
   sessionId?: string | null;
   /** Conversation-owned model selection. */
   selectedModel?: string;
   /** Opaque provider-owned state bag. */
   providerState?: Record<string, unknown>;
+  /** Read-only native locator retained solely for historical model recovery. */
+  modelRecoverySource?: ConversationModelRecoverySource;
   currentNote?: string;
+  isPinned?: boolean;
+  isArchived?: boolean;
   externalContextPaths?: string[];
   enabledMcpServers?: string[];
   usage?: UsageInfo;

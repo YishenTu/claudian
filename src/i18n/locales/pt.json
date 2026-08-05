@@ -45,7 +45,6 @@
       "chooseTarget": "Bifurcar conversa",
       "targetNewTab": "Nova aba",
       "targetCurrentTab": "Aba atual",
-      "maxTabsReached": "Não é possível bifurcar: máximo de {count} abas atingido",
       "notice": "Bifurcado para nova aba",
       "noticeCurrentTab": "Bifurcado na aba atual",
       "failed": "Falha ao bifurcar: {error}",
@@ -141,14 +140,14 @@
       "btnSet": "Definir"
     },
     "newSessionHotkey": {
-      "name": "Nova sessão",
+      "name": "Substituir conversa atual",
       "descWithKey": "Atalho atual: {hotkey}",
       "descNoKey": "Nenhum atalho definido",
       "btnChange": "Alterar",
       "btnSet": "Definir"
     },
     "newTabHotkey": {
-      "name": "Nova aba",
+      "name": "Novo",
       "descWithKey": "Atalho atual: {hotkey}",
       "descNoKey": "Nenhum atalho definido",
       "btnChange": "Alterar",
@@ -281,10 +280,9 @@
         "noNode": "Node.js não encontrado no PATH. Instale o Node.js ou verifique a configuração do PATH."
       }
     },
-    "maxTabs": {
-      "name": "Máximo de abas de chat",
-      "desc": "Número máximo de abas de chat simultâneas (3-10). Cada aba usa uma sessão Claude separada.",
-      "warning": "Mais de 5 abas pode afetar o desempenho e o uso de memória."
+    "maxWarmAgentProcesses": {
+      "name": "Máximo de sessões em execução simultâneas",
+      "desc": "Número máximo de sessões de agente mantidas prontas ao mesmo tempo (5-10). Sessões ociosas mais antigas pausam automaticamente e retomam quando usadas."
     },
     "enableAutoScroll": {
       "name": "Rolagem automática durante streaming",

@@ -88,6 +88,45 @@ describe('OpencodeConversationHistoryService', () => {
     ]);
   });
 
+  it('recovers the last OpenCode model from native message metadata', async () => {
+    const dbPath = path.join(tmpRoot, 'model-history.db');
+    const sessionId = 'session-model';
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.exec(`
+        create table message (
+          id text primary key,
+          session_id text not null,
+          time_created integer not null,
+          data text not null
+        );
+        create table part (
+          id text primary key,
+          session_id text not null,
+          message_id text not null,
+          data text not null
+        );
+      `);
+      db.prepare('insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)').run(
+        'assistant-1',
+        sessionId,
+        1_000,
+        JSON.stringify({
+          modelID: 'gemini-3.5-flash',
+          providerID: 'google',
+          role: 'assistant',
+        }),
+      );
+    } finally {
+      db.close();
+    }
+    const conversation = createConversation(sessionId, dbPath);
+
+    await expect(new OpencodeConversationHistoryService()
+      .recoverConversationModelSelection?.(conversation, null))
+      .resolves.toBe('opencode:google/gemini-3.5-flash');
+  });
+
   it('does not open an out-of-root metadata database and uses the current local database', async () => {
     const sessionId = 'session-trusted-path';
     const xdgDataHome = path.join(tmpRoot, 'xdg');
@@ -262,6 +301,6 @@ function createConversation(sessionId: string, databasePath: string): Conversati
     providerState: { databasePath },
     sessionId,
     title: 'OpenCode conversation',
-    updatedAt: 1,
+    lastActivityAt: 1,
   };
 }

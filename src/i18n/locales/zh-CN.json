@@ -45,7 +45,6 @@
       "chooseTarget": "分叉对话",
       "targetNewTab": "新标签页",
       "targetCurrentTab": "当前标签页",
-      "maxTabsReached": "无法分叉：已达到最大 {count} 个标签页",
       "notice": "已分叉到新标签页",
       "noticeCurrentTab": "已在当前标签页分叉",
       "failed": "分叉失败：{error}",
@@ -155,14 +154,14 @@
       "btnSet": "设置快捷键"
     },
     "newSessionHotkey": {
-      "name": "新会话",
+      "name": "替换当前会话",
       "descWithKey": "当前快捷键：{hotkey}",
       "descNoKey": "未设置快捷键",
       "btnChange": "更改",
       "btnSet": "设置快捷键"
     },
     "newTabHotkey": {
-      "name": "新标签页",
+      "name": "新建",
       "descWithKey": "当前快捷键：{hotkey}",
       "descNoKey": "未设置快捷键",
       "btnChange": "更改",
@@ -295,10 +294,9 @@
         "noNode": "未在 PATH 中找到 Node.js。请安装 Node.js 或检查 PATH 配置。"
       }
     },
-    "maxTabs": {
-      "name": "最大聊天标签数",
-      "desc": "同时开启的最大聊天标签数（3-10）。每个标签使用独立的 Claude 会话。",
-      "warning": "超过 5 个标签可能会影响性能和内存使用。"
+    "maxWarmAgentProcesses": {
+      "name": "最大并发运行会话数",
+      "desc": "同时保持就绪的代理会话最大数量（5-10）。较早的空闲会话会自动暂停，并在使用时恢复。"
     },
     "enableAutoScroll": {
       "name": "流式传输时自动滚动",

@@ -1,3 +1,4 @@
+import { encodeProviderModelSelectionId } from '../../../core/providers/modelSelection';
 import type {
   ProviderConversationHistoryService,
   ProviderConversationSessionAvailability,
@@ -23,10 +24,12 @@ import {
   encodeVaultPathForSDK,
   getSDKProjectsPath,
   loadSDKSessionMessages,
+  loadSDKSessionModel,
   loadSubagentToolCalls,
   locateSDKSession,
   locateSDKSessions,
   readLegacyConversationSessionId,
+  recoverSDKSessionIdByTime,
 } from './ClaudeHistoryStore';
 import type { SDKSessionLocation } from './sdkSessionPaths';
 
@@ -590,6 +593,44 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     return sanitizeProviderState(providerState);
   }
 
+  async recoverConversationSessionReference(
+    conversation: Conversation,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<boolean> {
+    if (!vaultPath || this.resolveSessionIdForConversation(conversation)) {
+      return false;
+    }
+
+    const legacySessionId = await readLegacyConversationSessionId(
+      vaultPath,
+      conversation.id,
+    );
+    if (legacySessionId) {
+      conversation.providerState = sanitizeProviderState({
+        ...getClaudeState(conversation.providerState),
+        previousProviderSessionIds: [legacySessionId],
+      });
+      return true;
+    }
+
+    const fingerprint = {
+      createdAt: conversation.createdAt,
+      lastActivityAt: conversation.lastActivityAt,
+    };
+    const recoveredSessionId = pathContext
+      ? await recoverSDKSessionIdByTime(vaultPath, fingerprint, pathContext)
+      : await recoverSDKSessionIdByTime(vaultPath, fingerprint);
+    if (!recoveredSessionId) return false;
+
+    conversation.sessionId = recoveredSessionId;
+    conversation.providerState = sanitizeProviderState({
+      ...getClaudeState(conversation.providerState),
+      providerSessionId: recoveredSessionId,
+    });
+    return true;
+  }
+
   async hydrateConversationHistory(
     conversation: Conversation,
     vaultPath: string | null,
@@ -599,20 +640,8 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       return;
     }
 
-    let allSessionIds = this.getConversationSessionIds(conversation);
-    if (allSessionIds.length === 0) {
-      const recoveredSessionId = await readLegacyConversationSessionId(
-        vaultPath,
-        conversation.id,
-      );
-      if (recoveredSessionId) {
-        conversation.providerState = sanitizeProviderState({
-          ...getClaudeState(conversation.providerState),
-          previousProviderSessionIds: [recoveredSessionId],
-        });
-        allSessionIds = [recoveredSessionId];
-      }
-    }
+    await this.recoverConversationSessionReference(conversation, vaultPath, pathContext);
+    const allSessionIds = this.getConversationSessionIds(conversation);
 
     this.synchronizeHistoryCache(conversation, vaultPath, pathContext);
     if (this.hydratedConversationIds.has(conversation.id)) return;
@@ -727,4 +756,54 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     }
   }
 
+  hasConversationModelRecoverySource(conversation: Conversation): boolean {
+    return getClaudeConversationSessionIds(conversation).length > 0;
+  }
+
+  async recoverConversationModelSelection(
+    conversation: Conversation,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<string | null> {
+    if (!vaultPath) return null;
+
+    const state = getClaudeState(conversation.providerState);
+    const sessionIds = getClaudeConversationSessionIds(conversation);
+    if (sessionIds.length === 0) return null;
+
+    const locations = await (pathContext
+      ? locateSDKSessions(vaultPath, sessionIds, pathContext)
+      : locateSDKSessions(vaultPath, sessionIds));
+    const isPendingFork = this.isPendingForkConversation(conversation);
+    const checkpointSessionId = isPendingFork
+      ? state.forkSource!.sessionId
+      : (state.providerSessionId ?? conversation.sessionId)
+        ?? sessionIds.at(-1)
+        ?? null;
+    let model: string | null = null;
+    let resolvedAuthoritativeSegment = checkpointSessionId === null;
+
+    for (const sessionId of sessionIds) {
+      const location = locations.get(sessionId);
+      const resumeAt = sessionId === checkpointSessionId
+        ? (isPendingFork ? state.forkSource!.resumeAt : conversation.resumeAtMessageId)
+        : undefined;
+      const recovered = await loadSDKSessionModel(
+        vaultPath,
+        sessionId,
+        resumeAt,
+        location?.sessionPath,
+        pathContext,
+      );
+      if (sessionId === checkpointSessionId) {
+        if (!recovered) return null;
+        resolvedAuthoritativeSegment = true;
+      }
+      if (recovered) model = recovered;
+    }
+
+    return model && resolvedAuthoritativeSegment
+      ? encodeProviderModelSelectionId('claude', model)
+      : null;
+  }
 }

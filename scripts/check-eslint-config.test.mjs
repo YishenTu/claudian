@@ -12,6 +12,18 @@ test('Obsidian DOM creation helpers are enforced for source files', async () => 
   assert.deepEqual(config.rules['obsidianmd/prefer-create-el'], [2]);
 });
 
+test('TypeScript promise rejections require Error reasons', async () => {
+  const eslint = new ESLint();
+  const config = await eslint.calculateConfigForFile(
+    'src/features/chat/execution/ChatExecutionCoordinator.ts',
+  );
+
+  assert.deepEqual(config.rules['prefer-promise-reject-errors'], [
+    2,
+    { allowEmptyReject: false },
+  ]);
+});
+
 // ESLint hands the rule an absolute path using the host platform's separator, so the
 // basename has to be taken from either separator. Windows paths are used here on every
 // platform on purpose: they are what regressed, and CI only runs Linux.

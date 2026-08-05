@@ -45,7 +45,6 @@
       "chooseTarget": "会話を分岐",
       "targetNewTab": "新しいタブ",
       "targetCurrentTab": "現在のタブ",
-      "maxTabsReached": "分岐できません：最大 {count} タブに達しました",
       "notice": "新しいタブに分岐しました",
       "noticeCurrentTab": "現在のタブで分岐しました",
       "failed": "分岐に失敗：{error}",
@@ -141,14 +140,14 @@
       "btnSet": "設定"
     },
     "newSessionHotkey": {
-      "name": "新規セッション",
+      "name": "現在の会話を置き換える",
       "descWithKey": "現在のホットキー: {hotkey}",
       "descNoKey": "ホットキー未設定",
       "btnChange": "変更",
       "btnSet": "設定"
     },
     "newTabHotkey": {
-      "name": "新規タブ",
+      "name": "新規",
       "descWithKey": "現在のホットキー: {hotkey}",
       "descNoKey": "ホットキー未設定",
       "btnChange": "変更",
@@ -281,10 +280,9 @@
         "noNode": "PATH に Node.js が見つかりません。Node.js をインストールするか、PATH 設定を確認してください。"
       }
     },
-    "maxTabs": {
-      "name": "最大チャットタブ数",
-      "desc": "同時に開ける最大チャットタブ数（3-10）。各タブは個別の Claude セッションを使用します。",
-      "warning": "5 タブを超えるとパフォーマンスやメモリ使用量に影響する可能性があります。"
+    "maxWarmAgentProcesses": {
+      "name": "同時実行セッションの上限",
+      "desc": "同時に実行準備状態を保つエージェントセッションの最大数（5-10）。古いアイドルセッションは自動的に一時停止し、使用時に再開します。"
     },
     "enableAutoScroll": {
       "name": "ストリーミング中の自動スクロール",

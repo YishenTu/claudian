@@ -9,6 +9,7 @@ import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '.
 import { extractUserQuery } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
 import { buildImageAttachmentFromBase64 } from '../../../utils/imageAttachment';
+import { encodePiModelId } from '../models';
 import {
   extractPiToolTextContent,
   normalizePiToolInput,
@@ -77,6 +78,32 @@ export function parsePiSessionContent(
     resolvePiActivePath(parsed.entries, leafEntryId),
     options.syntheticIdNamespace,
   );
+}
+
+export function parsePiSessionModel(
+  content: string,
+  leafEntryId?: string,
+): string | null {
+  const parsed = parsePiSessionEntries(content);
+  const persistedLeafEntryId = leafEntryId?.trim();
+  if (
+    persistedLeafEntryId
+    && !parsed.entries.some(entry => entry.id === persistedLeafEntryId)
+  ) {
+    return null;
+  }
+  const entries = resolvePiActivePath(parsed.entries, persistedLeafEntryId);
+  let selection: string | null = null;
+  for (const entry of entries) {
+    const provider = getString(entry.raw.provider)
+      ?? getString(entry.message?.provider);
+    const modelId = getString(entry.raw.modelId)
+      ?? getString(entry.message?.model);
+    if (provider && modelId) {
+      selection = encodePiModelId(provider, modelId);
+    }
+  }
+  return selection;
 }
 
 export function parsePiSessionEntries(content: string): ParsedPiSessionEntries {

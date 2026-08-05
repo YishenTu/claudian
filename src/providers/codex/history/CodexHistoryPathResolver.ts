@@ -116,6 +116,20 @@ function getTrustedSessionRoots(
   return [...new Set(roots)];
 }
 
+export function getCodexArchivedTranscriptRoots(
+  context?: ProviderHistoryPathContext,
+  sessionRootHints: string[] = [],
+): string[] {
+  const defaultSessionsRoot = path.join(os.homedir(), '.codex', 'sessions');
+  const sessionRoots = context
+    ? getTrustedSessionRoots(context, sessionRootHints)
+    : [...sessionRootHints, defaultSessionsRoot];
+  return [...new Set(sessionRoots.map((root) => {
+    const pathModule = isWindowsPath(root) ? path.win32 : path.posix;
+    return pathModule.join(pathModule.dirname(root), 'archived_sessions');
+  }))];
+}
+
 export function resolveCodexTranscriptRootHint(
   persistedRoot: string | null | undefined,
   context?: ProviderHistoryPathContext,

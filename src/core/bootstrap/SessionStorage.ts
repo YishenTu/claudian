@@ -7,6 +7,7 @@ import {
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   ConversationMeta,
+  ConversationModelRecoverySource,
   SessionMetadata,
 } from '../types';
 import {
@@ -30,6 +31,7 @@ export type SessionMetadataSource = 'current' | 'legacy';
 
 export interface SessionMetadataReadResult {
   metadata: SessionMetadata;
+  needsMigration: boolean;
   source: SessionMetadataSource;
 }
 
@@ -226,18 +228,20 @@ export class SessionStorage implements SessionMetadataReader {
     const metas: ConversationMeta[] = nativeMetas.map((meta) => ({
       id: meta.id,
       providerId: meta.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
+      selectedModel: meta.selectedModel,
       title: meta.title,
       createdAt: meta.createdAt,
-      updatedAt: meta.updatedAt,
-      lastResponseAt: meta.lastResponseAt,
+      lastActivityAt: meta.lastActivityAt,
       messageCount: 0,
       preview: 'SDK session',
+      currentNote: meta.currentNote,
+      isPinned: meta.isPinned,
+      isArchived: meta.isArchived,
       titleGenerationStatus: meta.titleGenerationStatus,
     }));
     return metas.sort(
       (left, right) =>
-        (right.lastResponseAt ?? right.createdAt)
-        - (left.lastResponseAt ?? left.createdAt),
+        right.lastActivityAt - left.lastActivityAt,
     );
   }
 
@@ -256,14 +260,80 @@ export class SessionStorage implements SessionMetadataReader {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return null;
     }
-    const metadata = parsed as SessionMetadata;
+    const rawMetadata = parsed as Record<string, unknown>;
     if (
-      metadata.id !== expectedId
-      || !isValidSessionMetadataId(metadata.id)
+      rawMetadata.id !== expectedId
+      || typeof rawMetadata.id !== 'string'
+      || !isValidSessionMetadataId(rawMetadata.id)
     ) {
       return null;
     }
-    return { metadata, source };
+    const lastActivityAt = this.getFirstFiniteTimestamp(
+      rawMetadata.lastActivityAt,
+      rawMetadata.lastResponseAt,
+      rawMetadata.updatedAt,
+      rawMetadata.createdAt,
+    ) ?? 0;
+    const {
+      updatedAt: _updatedAt,
+      lastResponseAt: _lastResponseAt,
+      selectedModel: rawSelectedModel,
+      modelRecoverySource: rawModelRecoverySource,
+      ...metadataFields
+    } = rawMetadata;
+    const selectedModel = typeof rawSelectedModel === 'string'
+      ? rawSelectedModel
+      : undefined;
+    const modelRecoverySource = this.parseModelRecoverySource(rawModelRecoverySource);
+    const metadata = {
+      ...metadataFields,
+      ...(selectedModel !== undefined ? { selectedModel } : {}),
+      ...(modelRecoverySource ? { modelRecoverySource } : {}),
+      lastActivityAt,
+    } as unknown as SessionMetadata;
+    const needsMigration = !Number.isFinite(rawMetadata.lastActivityAt)
+      || 'updatedAt' in rawMetadata
+      || 'lastResponseAt' in rawMetadata
+      || (rawSelectedModel !== undefined && selectedModel === undefined)
+      || (rawModelRecoverySource !== undefined && modelRecoverySource === undefined);
+    return { metadata, needsMigration, source };
+  }
+
+  private parseModelRecoverySource(value: unknown): ConversationModelRecoverySource | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const source = value as Record<string, unknown>;
+    if (typeof source.sessionId !== 'string' && source.sessionId !== null) return undefined;
+    if (
+      source.providerState !== undefined
+      && (
+        !source.providerState
+        || typeof source.providerState !== 'object'
+        || Array.isArray(source.providerState)
+      )
+    ) {
+      return undefined;
+    }
+    if (
+      source.resumeAtMessageId !== undefined
+      && typeof source.resumeAtMessageId !== 'string'
+    ) {
+      return undefined;
+    }
+    return {
+      sessionId: source.sessionId,
+      ...(source.providerState
+        ? { providerState: source.providerState as Record<string, unknown> }
+        : {}),
+      ...(typeof source.resumeAtMessageId === 'string'
+        ? { resumeAtMessageId: source.resumeAtMessageId }
+        : {}),
+    };
+  }
+
+  private getFirstFiniteTimestamp(...values: unknown[]): number | undefined {
+    return values.find((value): value is number => (
+      typeof value === 'number' && Number.isFinite(value)
+    ));
   }
 
   private async listFiles(

@@ -1,11 +1,13 @@
 
+import { TFile, TFolder } from 'obsidian';
+
 import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
-import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { type Conversation, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { SessionStorage } from '@/providers/claude/storage/SessionStorage';
 import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
@@ -64,7 +66,7 @@ describe('ClaudianPlugin', () => {
       providerId: 'claude' | 'codex';
       title: string;
       createdAt: number;
-      updatedAt: number;
+      lastActivityAt: number;
       [key: string]: unknown;
     }>
   ): jest.SpyInstance {
@@ -73,7 +75,7 @@ describe('ClaudianPlugin', () => {
       .mockImplementation(async (id) => {
         const item = metadataById.get(id);
         return item
-          ? { metadata: item, source: 'current' as const }
+          ? { metadata: item, needsMigration: false, source: 'current' as const }
           : null;
       });
   }
@@ -119,6 +121,7 @@ describe('ClaudianPlugin', () => {
 
     mockApp = {
       vault: {
+        on: jest.fn().mockReturnValue({ id: 'vault-event' }),
         adapter: {
           basePath: '/test/vault',
           exists: jest.fn().mockResolvedValue(false),
@@ -210,7 +213,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.registerEvent).toHaveBeenCalledWith({ id: 'workspace-event' });
     });
 
-    it('loads restored-tab metadata without waiting for the full history scan', async () => {
+    it('loads only current-tab metadata before the full history scan', async () => {
       type EmptyMetadataScan = {
         metadata: [];
         complete: true;
@@ -225,15 +228,14 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Restored conversation',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
       const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
         .mockReturnValue(historyScan);
-      const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
-        .mockResolvedValue(restoredMetadata);
       const loadSourceSpy = jest.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue({
           metadata: restoredMetadata,
+          needsMigration: false,
           source: 'current',
         });
       (plugin.loadData as jest.Mock).mockResolvedValue({
@@ -251,11 +253,10 @@ describe('ClaudianPlugin', () => {
       finishHistoryScan({ metadata: [], complete: true, invalidMetadataCount: 0 });
       await onloadPromise;
       const cachedConversation = plugin.getCachedConversation(restoredMetadata.id);
-      const didLoadRestoredMetadata = loadSpy.mock.calls.some(
+      const didLoadRestoredMetadata = loadSourceSpy.mock.calls.some(
         ([id]) => id === restoredMetadata.id,
       );
       listSpy.mockRestore();
-      loadSpy.mockRestore();
       loadSourceSpy.mockRestore();
 
       expect(completedBeforeHistoryScan).toBe(true);
@@ -270,7 +271,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Background conversation',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
       mockApp.workspace.onLayoutReady = jest.fn((callback: () => void) => {
         layoutReady = callback;
@@ -306,7 +307,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Legacy background conversation',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
       const events: string[] = [];
 
@@ -323,6 +324,7 @@ describe('ClaudianPlugin', () => {
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue({
           metadata: legacyMetadata,
+          needsMigration: false,
           source: 'legacy',
         });
       const persistence = getConversationPersistence(plugin);
@@ -347,13 +349,96 @@ describe('ClaudianPlugin', () => {
       deleteLegacySpy.mockRestore();
     });
 
+    it('recovers missing model metadata after the background session scan', async () => {
+      await plugin.onload();
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+        .mockResolvedValue({
+          metadata: [],
+          complete: true,
+          invalidMetadataCount: 0,
+        });
+      const repository = (plugin as any).conversationRepository;
+      const recoverySpy = jest.spyOn(repository, 'recoverMissingSelectedModels')
+        .mockResolvedValue([]);
+
+      await (plugin as any).loadRemainingSessionMetadata();
+
+      expect(recoverySpy).toHaveBeenCalledTimes(1);
+
+      scanSpy.mockRestore();
+      recoverySpy.mockRestore();
+    });
+
+    it('recovers models from original metadata before persisting session invalidation', async () => {
+      const metadata = {
+        id: 'codex-model-before-invalidation',
+        providerId: 'codex' as const,
+        title: 'Codex model before invalidation',
+        createdAt: 1,
+        lastActivityAt: 2,
+        sessionId: 'thread-before-invalidation',
+        providerState: { threadId: 'thread-before-invalidation' },
+      };
+      await plugin.onload();
+      (plugin as any).pendingEnvironmentInvalidationGenerations.set('codex', 1);
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+        .mockResolvedValue({
+          metadata: [metadata],
+          complete: true,
+          invalidMetadataCount: 0,
+        });
+      const loadSpy = mockMetadataSources(metadata);
+      const repository = (plugin as any).conversationRepository;
+      const registeredSources: Conversation[] = [];
+      const originalRegister = repository.registerHistoricalModelRecoverySources
+        .bind(repository);
+      const registerSpy = jest.spyOn(repository, 'registerHistoricalModelRecoverySources')
+        .mockImplementation((...args: unknown[]) => {
+          const sources = args[0] as readonly Conversation[];
+          registeredSources.push(...sources);
+          originalRegister(sources);
+        });
+      const events: string[] = [];
+      const persistedRecoverySources: unknown[] = [];
+      const recoverySpy = jest.spyOn(repository, 'recoverMissingSelectedModels')
+        .mockImplementation(async () => {
+          events.push('recover');
+          return [];
+        });
+      const persistSpy = jest.spyOn(repository, 'persistConversations')
+        .mockImplementation(async (...args: unknown[]) => {
+          const conversations = args[0] as readonly Conversation[];
+          events.push(`persist:${String(conversations[0]?.sessionId)}`);
+          persistedRecoverySources.push(conversations[0]?.modelRecoverySource);
+        });
+
+      await (plugin as any).loadRemainingSessionMetadata();
+
+      expect(registeredSources).toContainEqual(expect.objectContaining({
+        id: metadata.id,
+        sessionId: 'thread-before-invalidation',
+        providerState: { threadId: 'thread-before-invalidation' },
+      }));
+      expect(events).toEqual(['recover', 'persist:null']);
+      expect(persistedRecoverySources).toEqual([{
+        sessionId: 'thread-before-invalidation',
+        providerState: { threadId: 'thread-before-invalidation' },
+      }]);
+
+      scanSpy.mockRestore();
+      loadSpy.mockRestore();
+      registerSpy.mockRestore();
+      recoverySpy.mockRestore();
+      persistSpy.mockRestore();
+    });
+
     it('invalidates restored and deferred sessions after a provider environment change', async () => {
       const restoredMetadata = {
         id: 'restored-environment-session',
         providerId: 'claude' as const,
         title: 'Restored environment session',
         createdAt: 1,
-        updatedAt: 3,
+        lastActivityAt: 3,
         sessionId: 'restored-session-id',
         providerState: { providerSessionId: 'restored-provider-session-id' },
         resumeAtMessageId: 'restored-message-id',
@@ -363,7 +448,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Deferred environment session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'deferred-session-id',
         providerState: { providerSessionId: 'deferred-provider-session-id' },
         resumeAtMessageId: 'deferred-message-id',
@@ -437,7 +522,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Restored reload session',
         createdAt: 1,
-        updatedAt: 3,
+        lastActivityAt: 3,
         sessionId: 'restored-session-id',
         providerState: { providerSessionId: 'restored-provider-session-id' },
       };
@@ -446,7 +531,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Deferred reload session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'deferred-session-id',
         providerState: { providerSessionId: 'deferred-provider-session-id' },
       };
@@ -504,7 +589,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'First scanned session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'first-session-id',
         providerState: { providerSessionId: 'first-provider-session-id' },
       };
@@ -513,7 +598,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Later scanned session',
         createdAt: 1,
-        updatedAt: 1,
+        lastActivityAt: 1,
         sessionId: 'later-session-id',
         providerState: { providerSessionId: 'later-provider-session-id' },
       };
@@ -575,7 +660,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Pending environment write session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'pending-environment-write-session-id',
         providerState: { providerSessionId: 'pending-environment-write-provider-session-id' },
       };
@@ -584,7 +669,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Later environment write session',
         createdAt: 1,
-        updatedAt: 1,
+        lastActivityAt: 1,
         sessionId: 'later-environment-write-session-id',
         providerState: { providerSessionId: 'later-environment-write-provider-session-id' },
       };
@@ -660,7 +745,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Incomplete scan session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'incomplete-scan-session-id',
         providerState: { providerSessionId: 'incomplete-scan-provider-session-id' },
       };
@@ -712,7 +797,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Deleted background conversation',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
 
       await plugin.onload();
@@ -755,7 +840,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Tombstoned during source resolution',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
 
       await plugin.onload();
@@ -786,7 +871,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Cached shell tombstoned during source resolution',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
       };
 
       await plugin.onload();
@@ -821,7 +906,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Restart deferred session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'restart-session-id',
         providerState: { providerSessionId: 'restart-provider-session-id' },
       };
@@ -895,7 +980,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Failed write session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'failed-write-session-id',
         providerState: { providerSessionId: 'failed-write-provider-session-id' },
       };
@@ -973,16 +1058,12 @@ describe('ClaudianPlugin', () => {
       expect(disposeSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('keeps the latest open-tab snapshot when views are not closed first', async () => {
+    it('flushes the current tab identity when views are not closed first', async () => {
       await plugin.onload();
-      const state = {
-        openTabs: [{ tabId: 'tab-1', conversationId: 'conversation-1' }],
-        activeTabId: 'tab-1',
-      };
-      const persistSpy = jest.spyOn(plugin, 'persistTabManagerState').mockResolvedValue(undefined);
+      const flushCurrentTabState = jest.fn().mockResolvedValue(undefined);
       mockApp.workspace.getLeavesOfType.mockReturnValue([{
         view: {
-          getPersistedTabState: jest.fn().mockReturnValue(state),
+          flushCurrentTabState,
           getTabManager: jest.fn(),
         },
       }]);
@@ -991,7 +1072,7 @@ describe('ClaudianPlugin', () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(persistSpy).toHaveBeenCalledWith(state);
+      expect(flushCurrentTabState).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1103,6 +1184,26 @@ describe('ClaudianPlugin', () => {
 
       expect(plugin.settings.userName).toBe('TestUser');
       expect(plugin.settings.hiddenProviderCommands).toEqual(DEFAULT_SETTINGS.hiddenProviderCommands);
+    });
+
+    it('normalizes the concurrent running session limit to 5-10', async () => {
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => (
+        path === '.claudian/claudian-settings.json'
+      ));
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === '.claudian/claudian-settings.json') {
+          return JSON.stringify({ maxWarmAgentProcesses: 3 });
+        }
+        return '';
+      });
+
+      await plugin.loadSettings();
+
+      expect(plugin.settings.maxWarmAgentProcesses).toBe(5);
+      const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
+        ([path]) => path === '.claudian/claudian-settings.json',
+      );
+      expect(JSON.parse(writeCall[1]).maxWarmAgentProcesses).toBe(5);
     });
 
     it('should strip legacy blocklist fields when loading old settings', async () => {
@@ -1618,7 +1719,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude' as const,
         title: 'Deferred failed environment',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'deferred-session',
         providerState: {
           providerSessionId: 'deferred-provider-session',
@@ -2056,7 +2157,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'codex' as const,
         title: 'Runtime settings restart session',
         createdAt: 1,
-        updatedAt: 2,
+        lastActivityAt: 2,
         sessionId: 'codex-thread-id',
         providerState: { threadId: 'codex-thread-id' },
       };
@@ -2235,6 +2336,48 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('new-tab command', () => {
+    it('uses the layout-neutral New label', async () => {
+      await plugin.onload();
+
+      expect(getRegisteredCommand('new-tab').name).toBe('New');
+    });
+
+    it('delegates New to the active dual-pane navigation policy', async () => {
+      await plugin.onload();
+
+      const handleNewConversationCommand = jest.fn().mockResolvedValue(true);
+      const createNewTab = jest.fn().mockResolvedValue(undefined);
+      jest.spyOn(plugin, 'getView').mockReturnValue({
+        createNewTab,
+        getTabManager: jest.fn().mockReturnValue({}),
+        handleNewConversationCommand,
+      } as any);
+
+      const command = getRegisteredCommand('new-tab');
+      expect(command.checkCallback(false)).toBe(true);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(handleNewConversationCommand).toHaveBeenCalledTimes(1);
+      expect(createNewTab).not.toHaveBeenCalled();
+    });
+
+    it('keeps replace and close tab commands out of dual mode', async () => {
+      await plugin.onload();
+
+      jest.spyOn(plugin, 'getView').mockReturnValue({
+        isDualPaneMode: () => true,
+        getTabManager: jest.fn().mockReturnValue({
+          getActiveTab: jest.fn().mockReturnValue({ state: { isStreaming: false } }),
+        }),
+      } as any);
+
+      const replaceCommand = getRegisteredCommand('new-session');
+      const closeCommand = getRegisteredCommand('close-current-tab');
+      expect(replaceCommand.name).toBe('Replace current conversation');
+      expect(replaceCommand.checkCallback(true)).toBe(false);
+      expect(closeCommand.checkCallback(true)).toBe(false);
+    });
+
     it('opens the view without creating a duplicate tab when no tab layout is persisted', async () => {
       await plugin.onload();
 
@@ -2265,7 +2408,7 @@ describe('ClaudianPlugin', () => {
       expect(focusActiveInput).toHaveBeenCalledTimes(1);
     });
 
-    it('creates a new tab after reopening a persisted tab layout', async () => {
+    it('starts from the fresh runtime tab after reopening a persisted layout', async () => {
       (plugin.loadData as jest.Mock).mockResolvedValue({
         tabManagerState: {
           openTabs: [
@@ -2278,8 +2421,10 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
 
       const createNewTab = jest.fn().mockResolvedValue(undefined);
+      const focusActiveInput = jest.fn();
       const mockView = {
         createNewTab,
+        focusActiveInput,
       };
 
       let viewOpened = false;
@@ -2298,10 +2443,11 @@ describe('ClaudianPlugin', () => {
       await new Promise<void>((resolve) => setImmediate(resolve));
 
       expect(plugin.activateView).toHaveBeenCalledTimes(1);
-      expect(createNewTab).toHaveBeenCalledTimes(1);
+      expect(createNewTab).not.toHaveBeenCalled();
+      expect(focusActiveInput).toHaveBeenCalledTimes(1);
     });
 
-    it('stays unavailable when the open view is already at the tab limit', async () => {
+    it('stays available regardless of the former tab limit', async () => {
       await plugin.onload();
 
       const mockView = {
@@ -2314,7 +2460,7 @@ describe('ClaudianPlugin', () => {
 
       const command = getRegisteredCommand('new-tab');
 
-      expect(command.checkCallback(true)).toBe(false);
+      expect(command.checkCallback(true)).toBe(true);
     });
 
     it('keeps tab commands unavailable while a Claudian leaf view is not initialized', async () => {
@@ -2330,7 +2476,7 @@ describe('ClaudianPlugin', () => {
       }
     });
 
-    it('stays unavailable when reopening the persisted layout would already hit the tab limit', async () => {
+    it('ignores the persisted runtime layout when checking new-tab availability', async () => {
       (plugin.loadData as jest.Mock).mockResolvedValue({
         tabManagerState: {
           openTabs: [
@@ -2348,7 +2494,7 @@ describe('ClaudianPlugin', () => {
 
       const command = getRegisteredCommand('new-tab');
 
-      expect(command.checkCallback(true)).toBe(false);
+      expect(command.checkCallback(true)).toBe(true);
     });
   });
 
@@ -2582,6 +2728,7 @@ describe('ClaudianPlugin', () => {
       const createNew = jest.fn().mockResolvedValue(undefined);
       mockApp.workspace.getLeavesOfType.mockReturnValue([{
         view: {
+          notifyConversationListChanged: jest.fn(),
           getTabManager: () => ({
             getAllTabs: () => [{
               conversationId: conv.id,
@@ -2629,6 +2776,7 @@ describe('ClaudianPlugin', () => {
       };
       mockApp.workspace.getLeavesOfType.mockReturnValue([{
         view: {
+          notifyConversationListChanged: jest.fn(),
           getTabManager: () => ({
             getAllTabs: () => [firstTab, secondTab],
           }),
@@ -2740,9 +2888,129 @@ describe('ClaudianPlugin', () => {
       const updated = await plugin.getConversationById(conv.id);
       expect(updated?.title).toBeTruthy();
     });
+
+    it('notifies every open view after conversation list mutations', async () => {
+      await plugin.onload();
+      const firstView = {
+        getTabManager: jest.fn().mockReturnValue(null),
+        notifyConversationListChanged: jest.fn(),
+      };
+      const secondView = {
+        getTabManager: jest.fn().mockReturnValue(null),
+        notifyConversationListChanged: jest.fn(),
+      };
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([
+        firstView as any,
+        secondView as any,
+      ]);
+
+      const conversation = await plugin.createConversation();
+      await plugin.renameConversation(conversation.id, 'Renamed');
+      await plugin.deleteConversation(conversation.id);
+
+      expect(firstView.notifyConversationListChanged).toHaveBeenCalledTimes(3);
+      expect(secondView.notifyConversationListChanged).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('linked note renames', () => {
+    it('registers Vault rename and delete listeners', async () => {
+      await plugin.onload();
+
+      expect(mockApp.vault.on).toHaveBeenCalledWith('rename', expect.any(Function));
+      expect(mockApp.vault.on).toHaveBeenCalledWith('delete', expect.any(Function));
+    });
+
+    it('rewrites linked file and folder paths without changing activity timestamps', async () => {
+      await plugin.onload();
+      const fileConversation = await plugin.createConversation();
+      const folderConversation = await plugin.createConversation();
+      await plugin.updateConversation(fileConversation.id, { currentNote: 'Notes/Old.md' });
+      await plugin.updateConversation(folderConversation.id, {
+        currentNote: 'Projects/Old/Plan.md',
+      });
+      const fileUpdatedAt = fileConversation.lastActivityAt;
+      const folderUpdatedAt = folderConversation.lastActivityAt;
+      await plugin.setLinkedNotePinned('Notes/Old.md', true);
+      await plugin.setLinkedNotePinned('Projects/Old/Plan.md', true);
+
+      await (plugin as any).handleLinkedNoteRename(
+        new (TFile as any)('Notes/New.md'),
+        'Notes/Old.md',
+      );
+      await (plugin as any).handleLinkedNoteRename(
+        new (TFolder as any)('Projects/New'),
+        'Projects/Old',
+      );
+
+      expect(fileConversation).toMatchObject({
+        currentNote: 'Notes/New.md',
+        lastActivityAt: fileUpdatedAt,
+      });
+      expect(folderConversation).toMatchObject({
+        currentNote: 'Projects/New/Plan.md',
+        lastActivityAt: folderUpdatedAt,
+      });
+      expect(plugin.settings.pinnedLinkedNotePaths).toEqual([
+        'Notes/New.md',
+        'Projects/New/Plan.md',
+      ]);
+    });
+
+    it('removes deleted file and folder paths from pinned linked notes', async () => {
+      await plugin.onload();
+      await plugin.setLinkedNotePinned('Notes/Plan.md', true);
+      await plugin.setLinkedNotePinned('Projects/Archive/One.md', true);
+      await plugin.setLinkedNotePinned('Projects/Archive/Two.md', true);
+
+      await (plugin as any).handlePinnedLinkedNoteDeleted(
+        new (TFile as any)('Notes/Plan.md'),
+      );
+      await (plugin as any).handlePinnedLinkedNoteDeleted(
+        new (TFolder as any)('Projects/Archive'),
+      );
+
+      expect(plugin.settings.pinnedLinkedNotePaths).toEqual([]);
+    });
   });
 
   describe('updateConversation', () => {
+    it('creates linked-note metadata atomically and publishes later note changes', async () => {
+      await plugin.onload();
+      const notifyConversationListChanged = jest.fn();
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([{
+        notifyConversationListChanged,
+      } as any]);
+
+      const conv = await plugin.createConversation({
+        currentNote: 'Projects/Initial.md',
+      });
+
+      expect(plugin.getConversationList().find(({ id }) => id === conv.id)?.currentNote)
+        .toBe('Projects/Initial.md');
+      notifyConversationListChanged.mockClear();
+
+      await plugin.updateConversation(conv.id, {
+        currentNote: 'Projects/Updated.md',
+      });
+
+      expect(plugin.getConversationList().find(({ id }) => id === conv.id)?.currentNote)
+        .toBe('Projects/Updated.md');
+      expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
+
+      notifyConversationListChanged.mockClear();
+      await plugin.updateConversation(conv.id, {
+        lastActivityAt: 1234,
+        titleGenerationStatus: 'failed',
+      });
+
+      expect(plugin.getConversationList().find(({ id }) => id === conv.id)).toMatchObject({
+        lastActivityAt: 1234,
+        titleGenerationStatus: 'failed',
+      });
+      expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
+    });
+
     it('should update conversation messages', async () => {
       await plugin.onload();
 
@@ -2797,19 +3065,16 @@ describe('ClaudianPlugin', () => {
       expect(updated?.sessionId).toBe('new-session-id');
     });
 
-    it('should update updatedAt timestamp', async () => {
+    it('should preserve lastActivityAt for metadata-only updates', async () => {
       await plugin.onload();
 
       const conv = await plugin.createConversation();
-      const originalUpdatedAt = conv.updatedAt;
-
-      // Small delay to ensure timestamp differs
-      await new Promise(resolve => setTimeout(resolve, 10));
+      const originalLastActivityAt = conv.lastActivityAt;
 
       await plugin.updateConversation(conv.id, { title: 'Changed' });
 
       const updated = await plugin.getConversationById(conv.id);
-      expect(updated?.updatedAt).toBeGreaterThan(originalUpdatedAt);
+      expect(updated?.lastActivityAt).toBe(originalLastActivityAt);
     });
   });
 
@@ -2853,7 +3118,7 @@ describe('ClaudianPlugin', () => {
         providerId: 'claude',
         title: 'Stale Chat',
         createdAt: timestamp,
-        updatedAt: timestamp,
+        lastActivityAt: timestamp,
         sessionId: 'missing-session',
       });
 
@@ -2893,7 +3158,7 @@ describe('ClaudianPlugin', () => {
         id: 'conv-saved-1',
         title: 'Saved Chat',
         createdAt: timestamp,
-        updatedAt: timestamp,
+        lastActivityAt: timestamp,
         sessionId: 'saved-session',
       });
 
@@ -2942,7 +3207,7 @@ describe('ClaudianPlugin', () => {
         id: 'conv-saved-1',
         title: 'Saved Chat',
         createdAt: timestamp,
-        updatedAt: timestamp,
+        lastActivityAt: timestamp,
         sessionId: 'saved-session',
       });
 
@@ -3014,7 +3279,7 @@ describe('ClaudianPlugin', () => {
         id: 'conv-multi-session',
         title: 'Multi Session Chat',
         createdAt: timestamp,
-        updatedAt: timestamp,
+        lastActivityAt: timestamp,
         providerState: {
           providerSessionId: 'session-B',
           previousProviderSessionIds: ['session-A'],

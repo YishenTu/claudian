@@ -293,6 +293,8 @@ select
   time_created,
   data_valid,
   case when data_valid then json_extract(data, '$.role') end as role,
+  case when data_valid then json_extract(data, '$.providerID') end as provider_id,
+  case when data_valid then json_extract(data, '$.modelID') end as model_id,
   case when data_valid then json_extract(data, '$.time.created') end as data_time_created,
   case when data_valid then json_extract(data, '$.time.completed') end as data_time_completed
 from message_json

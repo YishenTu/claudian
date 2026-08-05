@@ -81,6 +81,6 @@ function createConversation(providerState: Record<string, unknown>): Conversatio
     providerState,
     sessionId: null,
     title: 'OpenCode malformed state',
-    updatedAt: 1,
+    lastActivityAt: 1,
   };
 }

@@ -45,7 +45,6 @@
       "chooseTarget": "Bifurcar conversación",
       "targetNewTab": "Nueva pestaña",
       "targetCurrentTab": "Pestaña actual",
-      "maxTabsReached": "No se puede bifurcar: máximo de {count} pestañas alcanzado",
       "notice": "Bifurcado a nueva pestaña",
       "noticeCurrentTab": "Bifurcado en pestaña actual",
       "failed": "Error al bifurcar: {error}",
@@ -141,14 +140,14 @@
       "btnSet": "Configurar"
     },
     "newSessionHotkey": {
-      "name": "Nueva sesión",
+      "name": "Reemplazar conversación actual",
       "descWithKey": "Atajo actual: {hotkey}",
       "descNoKey": "Sin atajo configurado",
       "btnChange": "Cambiar",
       "btnSet": "Configurar"
     },
     "newTabHotkey": {
-      "name": "Nueva pestaña",
+      "name": "Nuevo",
       "descWithKey": "Atajo actual: {hotkey}",
       "descNoKey": "Sin atajo configurado",
       "btnChange": "Cambiar",
@@ -281,10 +280,9 @@
         "noNode": "Node.js no se encontró en PATH. Instala Node.js o revisa tu configuración de PATH."
       }
     },
-    "maxTabs": {
-      "name": "Máximo de pestañas de chat",
-      "desc": "Número máximo de pestañas de chat simultáneas (3-10). Cada pestaña usa una sesión de Claude separada.",
-      "warning": "Más de 5 pestañas puede afectar el rendimiento y el uso de memoria."
+    "maxWarmAgentProcesses": {
+      "name": "Máximo de sesiones en ejecución simultáneas",
+      "desc": "Número máximo de sesiones de agente listas a la vez (5-10). Las sesiones inactivas más antiguas se pausan automáticamente y se reanudan al usarlas."
     },
     "enableAutoScroll": {
       "name": "Desplazamiento automático durante streaming",

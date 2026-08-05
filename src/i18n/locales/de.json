@@ -45,7 +45,6 @@
       "chooseTarget": "Konversation verzweigen",
       "targetNewTab": "Neuer Tab",
       "targetCurrentTab": "Aktueller Tab",
-      "maxTabsReached": "Verzweigung nicht möglich: maximal {count} Tabs erreicht",
       "notice": "In neuem Tab verzweigt",
       "noticeCurrentTab": "Im aktuellen Tab verzweigt",
       "failed": "Verzweigung fehlgeschlagen: {error}",
@@ -141,14 +140,14 @@
       "btnSet": "Festlegen"
     },
     "newSessionHotkey": {
-      "name": "Neue Sitzung",
+      "name": "Aktuelle Unterhaltung ersetzen",
       "descWithKey": "Aktuelles Tastenkürzel: {hotkey}",
       "descNoKey": "Kein Tastenkürzel festgelegt",
       "btnChange": "Ändern",
       "btnSet": "Festlegen"
     },
     "newTabHotkey": {
-      "name": "Neuer Tab",
+      "name": "Neu",
       "descWithKey": "Aktuelles Tastenkürzel: {hotkey}",
       "descNoKey": "Kein Tastenkürzel festgelegt",
       "btnChange": "Ändern",
@@ -281,10 +280,9 @@
         "noNode": "Node.js wurde auf PATH nicht gefunden. Installiere Node.js oder prüfe deine PATH-Konfiguration."
       }
     },
-    "maxTabs": {
-      "name": "Maximale Chat-Tabs",
-      "desc": "Maximale Anzahl gleichzeitiger Chat-Tabs (3-10). Jeder Tab verwendet eine separate Claude-Sitzung.",
-      "warning": "Mehr als 5 Tabs können Leistung und Speichernutzung beeinträchtigen."
+    "maxWarmAgentProcesses": {
+      "name": "Maximale gleichzeitig laufende Sitzungen",
+      "desc": "Maximale Anzahl gleichzeitig bereiter Agent-Sitzungen (5-10). Ältere inaktive Sitzungen pausieren automatisch und werden bei Nutzung fortgesetzt."
     },
     "enableAutoScroll": {
       "name": "Automatisches Scrollen während Streaming",

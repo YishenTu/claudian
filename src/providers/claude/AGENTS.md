@@ -4,7 +4,6 @@
 
 ## Dependency Boundary
 
-- Claude code may depend on core contracts, shared UI primitives, the Anthropic SDK, and provider-local modules. It must not import chat views or feature controllers.
 - Native SDK events, options, transcript records, and provider state must be normalized before crossing into core or feature contracts.
 - Existing imports from provider compatibility storage/types into `src/app/` are migration seams. Do not add new ones; move a shared contract into `core/` when changing those seams materially.
 
@@ -14,7 +13,7 @@
 | --- | --- |
 | `execution/` | Provider execution-session binding, snapshots, event adaptation, interactions, and recovery policy |
 | `runtime/` | Persistent SDK query, restart decisions, message-channel behavior, CLI spawning, and native prompt construction |
-| `history/` | Read-only native transcript discovery, branch projection, rewind, and subagent replay |
+| `history/` | Read-only native transcript discovery, branch projection, historical model recovery, rewind, and subagent replay |
 | `app/`, `commands/`, `agents/`, `plugins/` | Workspace-scoped discovery and provider-native catalogs |
 | `storage/` | Only the documented Claudian-managed portions of Claude-compatible settings, MCP, command, skill, agent, and plugin files |
 | `types/` | Typed interpretation and sanitization of Claude-owned provider state |
@@ -35,6 +34,7 @@ The execution session owns the live provider snapshot. History services reconstr
 - `.claude/mcp.json` has a Claude-compatible `mcpServers` namespace and a Claudian `_claudian.servers` metadata namespace. Keep them separate.
 - Plugin enabled state is dual-written to `.claude/settings.json` and `PluginManager.plugins[].enabled`. Keep both in sync.
 - Native transcripts are read from `{CLAUDE_CONFIG_DIR:-~/.claude}/projects/{vault}/`; resolve the config dir through `resolveClaudeConfigDir`, never hardcode `~/.claude`.
+- Historical selected-model recovery returns a provider-qualified model only from a valid active-branch checkpoint. For multi-segment conversations, the checkpoint-bearing or latest authoritative segment must resolve; do not silently fall back to an older segment's model or make the recovery locator resumable.
 - Slash command IDs use reversible encoding: dashes become `-_`, slashes become `--`.
 
 ## Runtime Gotchas
@@ -49,7 +49,5 @@ The execution session owns the live provider snapshot. History services reconstr
 
 ## Invariants
 
-- Dynamic model, permission, MCP, and effort updates must not restart a compatible persistent query.
 - Restarting or recovering a query must preserve the intended conversation binding and must not duplicate visible output.
 - Provider snapshots are the only path from live SDK state into persisted Claudian resume state.
-- Reads of native transcripts and user-owned Claude configuration are non-destructive; writes merge only the fields explicitly owned above.

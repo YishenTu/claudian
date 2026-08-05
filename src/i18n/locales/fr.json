@@ -45,7 +45,6 @@
       "chooseTarget": "Bifurquer la conversation",
       "targetNewTab": "Nouvel onglet",
       "targetCurrentTab": "Onglet actuel",
-      "maxTabsReached": "Impossible de bifurquer : maximum de {count} onglets atteint",
       "notice": "Bifurqué dans un nouvel onglet",
       "noticeCurrentTab": "Bifurqué dans l'onglet actuel",
       "failed": "Échec de la bifurcation : {error}",
@@ -141,14 +140,14 @@
       "btnSet": "Définir"
     },
     "newSessionHotkey": {
-      "name": "Nouvelle session",
+      "name": "Remplacer la conversation actuelle",
       "descWithKey": "Raccourci actuel : {hotkey}",
       "descNoKey": "Aucun raccourci défini",
       "btnChange": "Modifier",
       "btnSet": "Définir"
     },
     "newTabHotkey": {
-      "name": "Nouvel onglet",
+      "name": "Nouveau",
       "descWithKey": "Raccourci actuel : {hotkey}",
       "descNoKey": "Aucun raccourci défini",
       "btnChange": "Modifier",
@@ -281,10 +280,9 @@
         "noNode": "Node.js introuvable dans PATH. Installez Node.js ou vérifiez votre configuration PATH."
       }
     },
-    "maxTabs": {
-      "name": "Maximum d'onglets de chat",
-      "desc": "Nombre maximum d'onglets de chat simultanés (3-10). Chaque onglet utilise une session Claude séparée.",
-      "warning": "Plus de 5 onglets peut affecter les performances et l'utilisation de la mémoire."
+    "maxWarmAgentProcesses": {
+      "name": "Maximum de sessions exécutées simultanément",
+      "desc": "Nombre maximal de sessions d'agent gardées prêtes à la fois (5-10). Les anciennes sessions inactives se mettent automatiquement en pause et reprennent à l'utilisation."
     },
     "enableAutoScroll": {
       "name": "Défilement automatique pendant le streaming",

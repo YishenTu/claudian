@@ -2,6 +2,548 @@
   position: static;
 }
 
+.claudian-session-sidebar {
+  display: none;
+  flex: 0 0 var(--claudian-session-sidebar-width, 240px);
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+.claudian-session-resizer {
+  position: relative;
+  display: none;
+  flex: 0 0 5px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.claudian-session-resizer::after {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 2px;
+  width: 1px;
+  background: transparent;
+  content: "";
+  transition: background 0.15s ease;
+}
+
+.claudian-session-resizer:hover::after,
+.claudian-session-resizer:focus-visible::after,
+.claudian-resizing-session-sidebar .claudian-session-resizer::after {
+  background: var(--interactive-accent);
+}
+
+.claudian-resizing-session-sidebar,
+.claudian-resizing-session-sidebar * {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.claudian-wide-session-layout .claudian-session-sidebar {
+  display: flex;
+}
+
+.claudian-wide-session-layout .claudian-session-resizer {
+  display: block;
+}
+
+.claudian-wide-session-layout .claudian-view-input-nav-row {
+  display: none;
+}
+
+.claudian-session-new-control,
+.claudian-session-search-control,
+.claudian-session-archive-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin: 1px 0;
+  padding: 8px 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-session-new-control:hover,
+.claudian-session-new-control:focus-visible,
+.claudian-session-search-control:hover,
+.claudian-session-search-control:focus-visible,
+.claudian-session-archive-control:hover,
+.claudian-session-archive-control:focus-visible {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-session-search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin: 1px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.claudian-session-archive-control {
+  margin-bottom: 12px;
+}
+
+.claudian-session-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-normal);
+  font-family: inherit;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.claudian-session-search-input:hover,
+.claudian-session-search-input:focus {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.claudian-session-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.claudian-session-new-icon,
+.claudian-session-nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+}
+
+.claudian-session-new-icon svg,
+.claudian-session-nav-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-session-sidebar .claudian-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+  border-bottom: none;
+}
+
+.claudian-session-sidebar .claudian-history-section--sessions:not(:first-child) {
+  margin-top: 4px;
+}
+
+.claudian-session-sidebar .claudian-session-section-header {
+  flex-shrink: 0;
+  min-height: 40px;
+  background: var(--background-primary);
+}
+
+.claudian-session-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.claudian-session-header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.claudian-session-header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-faint);
+  transition: color 0.15s ease;
+}
+
+.claudian-session-header-btn:hover .claudian-session-header-icon,
+.claudian-session-header-btn:focus-visible .claudian-session-header-icon {
+  color: var(--text-normal);
+}
+
+.claudian-session-header-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-session-header-icon[data-icon-state] svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-session-sidebar .claudian-history-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  max-height: none;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.claudian-session-sidebar .claudian-history-section--pinned {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  max-height: 50%;
+  min-height: 0;
+}
+
+.claudian-session-sidebar .claudian-history-section--pinned
+  .claudian-history-section-items {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-anchor: none;
+}
+
+.claudian-session-sidebar .claudian-history-section--sessions,
+.claudian-session-sidebar .claudian-history-section--archived {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.claudian-session-sidebar .claudian-session-list-items {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-anchor: none;
+}
+
+.claudian-session-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 12px;
+  color: var(--text-faint);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.claudian-session-group-header:hover,
+.claudian-session-group-header:focus-visible {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-session-group-icon {
+  display: flex;
+  flex: 0 0 14px;
+  align-items: center;
+  justify-content: center;
+}
+
+.claudian-session-group-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-session-group-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-session-group-header--attention .claudian-session-group-label {
+  color: var(--text-normal);
+  animation: attention-title-pulse 1.6s ease-in-out infinite;
+}
+
+.claudian-session-group-status {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.claudian-session-group-running-indicator,
+.claudian-session-running-indicator {
+  display: none;
+  flex: 0 0 14px;
+  align-items: center;
+  justify-content: center;
+  color: var(--interactive-accent);
+}
+
+.claudian-session-group-running-indicator--visible,
+.claudian-session-running-indicator {
+  display: flex;
+}
+
+.claudian-session-group-running-indicator svg,
+.claudian-session-running-indicator svg {
+  width: 14px;
+  height: 14px;
+  animation: spin 1s linear infinite;
+  stroke-width: 2.5;
+}
+
+.claudian-session-group-new-action {
+  display: none;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+.claudian-session-group-header:hover .claudian-session-group-new-action,
+.claudian-session-group-header:focus-within .claudian-session-group-new-action {
+  display: flex;
+}
+
+.claudian-session-group-new-action:hover,
+.claudian-session-group-new-action:focus-visible {
+  border: 0;
+  background: transparent;
+  color: var(--text-normal);
+  box-shadow: none;
+}
+
+.claudian-session-group-new-action svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+.claudian-session-group-new-action:hover svg,
+.claudian-session-group-new-action:focus-visible svg {
+  color: var(--text-normal);
+}
+
+.claudian-session-group-body--collapsed {
+  display: none;
+}
+
+.claudian-session-group-header--missing .claudian-session-group-icon,
+.claudian-session-group-header--missing .claudian-session-group-label,
+.claudian-session-group-header--missing .claudian-session-group-status {
+  color: var(--text-error);
+}
+
+.claudian-session-sidebar .claudian-history-item {
+  position: relative;
+  border-bottom: none;
+  border-radius: 6px;
+}
+
+.claudian-session-sidebar .claudian-history-item-icon {
+  display: none;
+}
+
+.claudian-session-sidebar .claudian-history-item-title {
+  color: var(--text-muted);
+}
+
+.claudian-session-sidebar .claudian-history-item.active,
+.claudian-session-sidebar .claudian-history-item.open {
+  padding-inline-start: 12px;
+  background: transparent;
+  border-inline-start: none;
+}
+
+.claudian-session-sidebar .claudian-session-group-body .claudian-history-item {
+  padding-inline-start: 32px;
+}
+
+.claudian-session-sidebar .claudian-history-item.active:hover,
+.claudian-session-sidebar .claudian-history-item.open:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-session-sidebar .claudian-history-item.active .claudian-history-item-title {
+  color: var(--text-normal);
+}
+
+.claudian-session-sidebar
+  .claudian-history-item.claudian-history-item--attention
+  .claudian-history-item-title {
+  color: var(--text-normal);
+  animation: attention-title-pulse 1.6s ease-in-out infinite;
+}
+
+.claudian-session-sidebar .claudian-history-item-actions {
+  display: none;
+  flex-shrink: 0;
+  gap: 6px;
+  margin-inline-start: 0;
+}
+
+.claudian-session-metadata-popover {
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  width: min(280px, calc(100vw - 24px));
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background-color: #ffffff;
+  background-image: linear-gradient(var(--background-primary), var(--background-primary));
+  box-shadow: var(--shadow-s);
+}
+
+body.theme-dark .claudian-session-metadata-popover {
+  background-color: #1e1e1e;
+}
+
+.claudian-session-metadata-row {
+  display: grid;
+  grid-template-columns: 16px max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-session-metadata-row--provider {
+  grid-template-columns: 16px minmax(0, 1fr);
+}
+
+.claudian-session-metadata-row--unlabeled {
+  grid-template-columns: 16px minmax(0, 1fr);
+}
+
+.claudian-session-metadata-row--provider-no-icon {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.claudian-session-metadata-provider-icon {
+  color: var(--text-muted);
+}
+
+.claudian-session-metadata-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.claudian-session-metadata-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-session-metadata-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.claudian-session-metadata-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-session-metadata-value--note {
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-overflow: clip;
+  scrollbar-width: none;
+}
+
+.claudian-session-metadata-value--note::-webkit-scrollbar {
+  display: none;
+}
+
+.claudian-session-sidebar .claudian-history-item:hover .claudian-history-item-actions,
+.claudian-session-sidebar .claudian-history-item:focus-within .claudian-history-item-actions {
+  display: flex;
+}
+
+.claudian-session-sidebar .claudian-history-item-actions .claudian-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  min-width: 0;
+  height: 14px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+.claudian-session-sidebar .claudian-history-item-actions .claudian-action-btn:hover,
+.claudian-session-sidebar .claudian-history-item-actions .claudian-action-btn:focus-visible {
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.claudian-session-sidebar .claudian-history-item-actions .claudian-delete-btn:hover,
+.claudian-session-sidebar .claudian-history-item-actions .claudian-delete-btn:focus-visible {
+  color: var(--color-red);
+}
+
+.claudian-session-sidebar .claudian-archive-btn:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.claudian-history-item--noninteractive .claudian-history-item-content {
+  cursor: default;
+}
+
+.claudian-history-archive-control {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.claudian-history-archive-control:hover,
+.claudian-history-archive-control:focus-visible {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
 /* History dropup menu (opens upward since it's at bottom of view) */
 .claudian-history-menu {
   display: none;
@@ -38,6 +580,7 @@
 .claudian-history-list {
   max-height: 350px;
   overflow-y: auto;
+  overflow-anchor: none;
 }
 
 .claudian-history-empty {

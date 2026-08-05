@@ -122,7 +122,7 @@ export class ResumeSessionDropdown {
 
   private sortConversations(conversations: ConversationMeta[]): ConversationMeta[] {
     return [...conversations].sort((a, b) => {
-      return (b.lastResponseAt ?? b.createdAt) - (a.lastResponseAt ?? a.createdAt);
+      return b.lastActivityAt - a.lastActivityAt;
     });
   }
 
@@ -155,7 +155,7 @@ export class ResumeSessionDropdown {
       titleEl.setAttribute('title', conv.title);
       content.createDiv({
         cls: 'claudian-resume-item-date',
-        text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.createdAt),
+        text: isCurrent ? 'Current session' : this.formatDate(conv.lastActivityAt),
       });
 
       item.addEventListener('click', () => {

@@ -16,6 +16,7 @@ import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordin
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
+import type { TabAttention } from '../state/types';
 import type { BangBashModeManager } from '../ui/BangBashModeManager';
 import type { ComposerContextTray } from '../ui/ComposerContextTray';
 import type { FileContextManager } from '../ui/FileContext';
@@ -36,27 +37,6 @@ import type { StatusPanel } from '../ui/StatusPanel';
 import type { TabSession } from './TabSession';
 
 /**
- * Default number of tabs allowed.
- *
- * Set to 3 to balance usability with resource usage:
- * - Each tab has its own chat runtime and persistent query
- * - More tabs = more memory and potential SDK processes
- * - 3 tabs allows multi-tasking without excessive overhead
- */
-export const DEFAULT_MAX_TABS = 3;
-
-/**
- * Minimum number of tabs allowed (settings floor).
- */
-export const MIN_TABS = 3;
-
-/**
- * Maximum number of tabs allowed (settings ceiling).
- * Users can configure up to this many tabs via settings.
- */
-export const MAX_TABS = 10;
-
-/**
  * Minimal interface for the ClaudianView methods used by TabManager and Tab.
  * Extends Component for Obsidian integration (event handling, cleanup).
  * Avoids circular dependency by not importing ClaudianView directly.
@@ -70,6 +50,12 @@ export interface TabManagerViewHost extends Component {
 
   /** Gets view-owned elements that should preserve active tab selection context. */
   getSharedSelectionFocusScopeEls?(): HTMLElement[];
+
+  /** Handles /clear and /new when the active layout gives New different semantics. */
+  handleNewConversationCommand?(): Promise<boolean>;
+
+  /** Starts approved plan content in a layout-owned new conversation when required. */
+  handleNewSessionPlan?(planContent: string): Promise<boolean>;
 }
 
 /**
@@ -173,13 +159,13 @@ export interface TabDOMElements {
 }
 
 /**
- * Tab lifecycle states:
- * - `blank`: No conversation binding, no runtime. Draft model selection only.
- * - `bound_cold`: Bound to a conversation, but runtime not started yet.
- * - `bound_active`: Bound to a conversation with a running runtime.
+ * Runtime tab lifecycle states, independent from conversation binding:
+ * - `provisional`: Replaceable session preview created by dual-mode navigation.
+ * - `cold`: Retained working state without provider execution resources.
+ * - `warm`: Retained working state holding provider execution resources.
  * - `closing`: Tab is being torn down.
  */
-export type TabLifecycleState = 'blank' | 'bound_cold' | 'bound_active' | 'closing';
+export type TabLifecycleState = 'provisional' | 'cold' | 'warm' | 'closing';
 
 /** Conversation hydration state, independent from runtime activation. */
 export type TabHydrationState = 'idle' | 'loading' | 'ready' | 'failed';
@@ -215,11 +201,11 @@ export interface TabData {
   /** Per-tab owner of provider execution and session lifecycle. */
   executionCoordinator: ChatExecutionCoordinator | null;
 
-  /** Tab-manager hook for mutations that change the serialized tab state. */
-  onPersistedStateChanged?: () => void;
-
   /** Tab-manager-owned provider discovery callback retained across UI/runtime refreshes. */
   providerCatalogResolver: ProviderCatalogResolver | null;
+
+  /** Captures whether completed runtime work will need review after finalization. */
+  captureReviewableSettlement: (() => () => void) | null;
 
   /** Per-tab chat state. */
   state: ChatState;
@@ -246,29 +232,11 @@ export type TabProviderContext = Pick<
 >;
 
 /**
- * Persisted tab state for restoration on plugin reload.
- */
-export interface PersistedTabState {
-  tabId: TabId;
-  conversationId: string | null;
-  draftModel?: string | null;
-}
-
-/**
- * Tab manager state persisted to data.json.
- */
-export interface PersistedTabManagerState {
-  openTabs: PersistedTabState[];
-  activeTabId: TabId | null;
-  expandedTitleTabIds?: TabId[];
-}
-
-/**
  * Callbacks for tab state changes.
  */
 export interface TabManagerCallbacks {
-  /** Called whenever the serialized tab-manager state may have changed. */
-  onPersistedStateChanged?: () => void;
+  /** Skips the target prompt when the active layout always forks into a new runtime tab. */
+  shouldForkToNewTab?: () => boolean;
 
   /** Called when a tab is created. */
   onTabCreated?: (tab: TabData) => void;
@@ -292,7 +260,7 @@ export interface TabManagerCallbacks {
   onTabTitleChanged?: (tabId: TabId, title: string) => void;
 
   /** Called when tab attention state changes (approval pending, etc.). */
-  onTabAttentionChanged?: (tabId: TabId, needsAttention: boolean) => void;
+  onTabAttentionChanged?: (tabId: TabId, attention: TabAttention) => void;
 
   /** Called when a tab's conversation changes (loaded different conversation in same tab). */
   onTabConversationChanged?: (tabId: TabId, conversationId: string | null) => void;

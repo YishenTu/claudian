@@ -396,7 +396,7 @@ export interface ProviderCommandLoader {
 
 export type ProviderTabWarmupMode = 'none' | 'commands' | 'execution';
 
-export type ProviderTabWarmupLifecycleState = 'blank' | 'bound_cold' | 'bound_active' | 'closing';
+export type ProviderTabWarmupLifecycleState = 'provisional' | 'cold' | 'warm' | 'closing';
 
 export interface ProviderTabWarmupContext {
   coordinatorState: 'absent' | 'idle' | 'active' | 'stale';
@@ -475,6 +475,23 @@ export interface ProviderWorkspaceRegistration<
 }
 
 export interface ProviderConversationHistoryService {
+  /** Whether this conversation still references native history worth model recovery. */
+  hasConversationModelRecoverySource?(conversation: Conversation): boolean;
+  /**
+   * Recovers a stable provider-owned model selection from native history.
+   * Implementations must not require the model to remain in the current catalog.
+   */
+  recoverConversationModelSelection?(
+    conversation: Conversation,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<string | null>;
+  /** Recovers a missing provider-native session reference before history hydration. */
+  recoverConversationSessionReference?(
+    conversation: Conversation,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<boolean>;
   /**
    * Reports whether the provider-native session needed to resume a persisted
    * conversation is still available. Providers that cannot distinguish a

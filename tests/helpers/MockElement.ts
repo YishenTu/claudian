@@ -45,6 +45,8 @@ export interface MockElement {
   setCssProps: (props: Record<string, string>) => void;
   ownerDocument: {
     defaultView: {
+      addEventListener: (event: string, handler: (...args: any[]) => void) => void;
+      removeEventListener: (event: string, handler: (...args: any[]) => void) => void;
       requestAnimationFrame: (callback: FrameRequestCallback) => number;
       cancelAnimationFrame: (handle: number) => void;
       setTimeout: (callback: () => void, timeout: number) => number;
@@ -133,6 +135,8 @@ export function createMockEl(tag = 'div'): any {
   };
 
   const defaultView = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
     requestAnimationFrame: (callback: FrameRequestCallback): number => {
       const requestFrame =
         (globalThis as { window?: Window }).window?.requestAnimationFrame

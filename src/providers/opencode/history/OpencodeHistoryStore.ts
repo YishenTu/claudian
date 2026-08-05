@@ -9,6 +9,7 @@ import {
   buildImageAttachmentFromBase64,
   parseImageDataUri,
 } from '../../../utils/imageAttachment';
+import { encodeOpencodeModelId } from '../models';
 import {
   normalizeOpencodeToolInput,
   normalizeOpencodeToolName,
@@ -57,6 +58,28 @@ export async function loadOpencodeSessionMessages(
     hydrateStoredMessages(rows.messageRows, rows.partRows),
     { databasePath, sessionId },
   );
+}
+
+export async function loadOpencodeSessionModel(
+  sessionId: string,
+  providerState?: OpencodeProviderState,
+): Promise<string | null> {
+  const databasePath = resolveExistingOpencodeDatabasePath(providerState?.databasePath);
+  if (!databasePath || databasePath === ':memory:' || !fs.existsSync(databasePath)) {
+    return null;
+  }
+
+  const rows = await loadOpencodeSessionRows(databasePath, sessionId);
+  let rawModelId: string | null = null;
+  for (const row of rows?.messageRows ?? []) {
+    const data = parseJsonObject(row.data);
+    const providerId = getString(row.provider_id) ?? getString(data?.providerID);
+    const modelId = getString(row.model_id) ?? getString(data?.modelID);
+    if (providerId && modelId) {
+      rawModelId = `${providerId}/${modelId}`;
+    }
+  }
+  return rawModelId ? encodeOpencodeModelId(rawModelId) : null;
 }
 
 export function mapOpencodeMessages(

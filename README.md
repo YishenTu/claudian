@@ -24,6 +24,13 @@ Oh My Claudian is an Obsidian plugin that embeds coding agents in your vault. Ag
 - Provider-neutral execution outcomes for completion, cancellation, invalidation, and recoverable errors, with recovery actions fenced while a turn is active.
 - MCP support where available from the selected provider.
 - Internationalized interface with 10 locales, including Simplified and Traditional Chinese.
+**Plan Mode** — Toggle via `Shift+Tab`. The agent explores and designs before implementing, then presents a plan for approval.
+
+**Instruction Mode (`#`)** — Refined custom instructions added from the chat input.
+
+**MCP Servers** — Connect external tools via Model Context Protocol (stdio, SSE, HTTP). Claude manages vault MCP in-app; Other harnesses uses its own CLI-managed MCP configuration.
+
+**Tabs & Session Management** — Use multiple tabs in single-panel mode or a persistent session manager beside the chat in dual-pane mode.
 
 ## Requirements
 

@@ -1657,6 +1657,36 @@ export function parseCodexSessionContent(content: string): ChatMessage[] {
   return turns.flatMap(t => t.messages);
 }
 
+export function parseCodexSessionModel(
+  content: string,
+  resumeAtTurnId?: string,
+): string | null {
+  let model: string | null = null;
+  for (const line of content.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const record = JSON.parse(line) as {
+        type?: unknown;
+        payload?: { model?: unknown; turn_id?: unknown };
+      };
+      if (record.type !== 'turn_context') continue;
+      const candidate = typeof record.payload?.model === 'string'
+        ? record.payload.model.trim()
+        : '';
+      if (candidate) model = candidate;
+      if (
+        resumeAtTurnId
+        && record.payload?.turn_id === resumeAtTurnId
+      ) {
+        return model;
+      }
+    } catch {
+      // Ignore malformed provider-native transcript records.
+    }
+  }
+  return resumeAtTurnId ? null : model;
+}
+
 export function parseCodexSessionTurns(content: string): CodexParsedTurn[] {
   const records = content
     .split('\n')

@@ -45,7 +45,6 @@
       "chooseTarget": "Fork conversation",
       "targetNewTab": "New tab",
       "targetCurrentTab": "Current tab",
-      "maxTabsReached": "Cannot fork: maximum {count} tabs reached",
       "notice": "Forked to new tab",
       "noticeCurrentTab": "Forked in current tab",
       "failed": "Fork failed: {error}",
@@ -155,14 +154,14 @@
       "btnSet": "Set hotkey"
     },
     "newSessionHotkey": {
-      "name": "New Session",
+      "name": "Replace Current Conversation",
       "descWithKey": "Current hotkey: {hotkey}",
       "descNoKey": "No hotkey set",
       "btnChange": "Change",
       "btnSet": "Set hotkey"
     },
     "newTabHotkey": {
-      "name": "New Tab",
+      "name": "New",
       "descWithKey": "Current hotkey: {hotkey}",
       "descNoKey": "No hotkey set",
       "btnChange": "Change",
@@ -295,10 +294,9 @@
         "noNode": "Node.js not found on PATH. Install Node.js or check your PATH configuration."
       }
     },
-    "maxTabs": {
-      "name": "Maximum chat tabs",
-      "desc": "Maximum number of concurrent chat tabs (3-10). Each tab uses a separate Claude session.",
-      "warning": "More than 5 tabs may impact performance and memory usage."
+    "maxWarmAgentProcesses": {
+      "name": "Maximum concurrent running sessions",
+      "desc": "Maximum number of agent sessions kept ready at once (5-10). Older idle sessions pause automatically and resume when used."
     },
     "enableAutoScroll": {
       "name": "Auto-scroll during streaming",

@@ -16,6 +16,10 @@ import type { Locale, TranslationKey } from '../../i18n/types';
 import { AgentSkillSettings } from '../../shared/settings/AgentSkillSettings';
 import { renderEnvironmentSettingsSection } from '../../shared/settings/EnvironmentSettingsSection';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
+import {
+  MAX_WARM_AGENT_PROCESSES,
+  MIN_WARM_AGENT_PROCESSES,
+} from '../chat/execution/WarmExecutionPool';
 import type { FeatureHost } from '../FeatureHost';
 import { AgentSkillManagementCoordinator } from './AgentSkillManagementCoordinator';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
@@ -280,36 +284,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
     // --- Display ---
 
     new Setting(container).setName(t('settings.display')).setHeading();
-
-    const maxTabsSetting = new Setting(container)
-      .setName(t('settings.maxTabs.name'))
-      .setDesc(t('settings.maxTabs.desc'));
-
-    const maxTabsWarningEl = container.createDiv({
-      cls: 'claudian-max-tabs-warning claudian-setting-validation claudian-setting-validation-warning claudian-hidden',
-    });
-    maxTabsWarningEl.setText(t('settings.maxTabs.warning'));
-
-    const updateMaxTabsWarning = (value: number): void => {
-      maxTabsWarningEl.toggleClass('claudian-hidden', value <= 5);
-    };
-
-    maxTabsSetting.addSlider((slider) => {
-      slider
-        .setLimits(3, 10, 1)
-        .setValue(this.plugin.settings.maxTabs ?? 3)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
-          await this.plugin.mutateSettings((settings) => {
-            settings.maxTabs = value;
-          });
-          updateMaxTabsWarning(value);
-          for (const view of this.plugin.getAllViews()) {
-            view.refreshTabControls();
-          }
-        });
-      updateMaxTabsWarning(this.plugin.settings.maxTabs ?? 3);
-    });
 
     new Setting(container)
       .setName(t('settings.chatViewPlacement.name'))
@@ -598,6 +572,39 @@ export class ClaudianSettingTab extends PluginSettingTab {
       desc: 'Provider-neutral runtime variables shared across all providers. Use this for PATH, proxy, cert, and temp variables.',
       placeholder: 'PATH=/opt/homebrew/bin:/usr/local/bin\nHTTPS_PROXY=http://proxy.example.com:8080\nSSL_CERT_FILE=/path/to/cert.pem',
     });
+
+    // --- Advanced ---
+
+    new Setting(container).setName(t('common.advanced')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.maxWarmAgentProcesses.name'))
+      .setDesc(t('settings.maxWarmAgentProcesses.desc'))
+      .addSlider((slider) => {
+        slider
+          .setLimits(MIN_WARM_AGENT_PROCESSES, MAX_WARM_AGENT_PROCESSES, 1)
+          .setValue(this.plugin.settings.maxWarmAgentProcesses ?? 5)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.maxWarmAgentProcesses = value;
+            });
+            try {
+              const reconciled = await this.plugin.warmExecutionPool.reconcileLimit();
+              if (!reconciled) {
+                new Notice(
+                  'The new concurrent running session limit will apply as busy sessions become idle.',
+                );
+              }
+            } catch (error) {
+              new Notice(
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to release excess warm agent processes.',
+              );
+            }
+          });
+      });
   }
 
   private notifyProviderModelOptionsChanged(providerId: ProviderId): void {

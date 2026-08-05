@@ -6,6 +6,7 @@ export {
   type ContentBlock,
   type Conversation,
   type ConversationMeta,
+  type ConversationModelRecoverySource,
   type ExecutionInputBrowserSnapshot,
   type ExecutionInputCanvasSnapshot,
   type ExecutionInputContextSnapshot,
@@ -35,6 +36,8 @@ export {
   type InstructionRefineResult,
   type KeyboardNavigationSettings,
   type PermissionMode,
+  type SessionManagerOrganization,
+  type SessionManagerSort,
   type SlashCommand,
 } from './settings';
 

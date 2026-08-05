@@ -7,6 +7,19 @@
   font-family: var(--font-text);
 }
 
+.claudian-chat-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.claudian-container.claudian-wide-session-layout {
+  flex-direction: row;
+}
+
 .claudian-provider-icon-variant--dark {
   display: none;
 }

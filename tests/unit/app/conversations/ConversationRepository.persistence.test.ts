@@ -20,7 +20,7 @@ function createConversation(id = 'conversation-1'): Conversation {
     providerId: 'claude',
     title: 'Conversation',
     createdAt: 1,
-    updatedAt: 1,
+    lastActivityAt: 1,
     sessionId: 'session-1',
     messages: [],
   };
@@ -352,6 +352,43 @@ describe('ConversationRepository input ledger', () => {
       conversation.id,
       ledger,
     );
+    expect(conversation.lastActivityAt).toBe(matched.timestamp);
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: conversation.id,
+      lastActivityAt: matched.timestamp,
+    }));
+  });
+
+  it('repairs activity from a matched accepted record during hydration', async () => {
+    const conversation = createConversation();
+    const accepted = createInputRecord({
+      id: 'accepted',
+      state: 'accepted',
+      providerUserMessageId: 'native-1',
+      timestamp: 50,
+    });
+    const ledger = createLedger(conversation.id, [accepted]);
+    const persistence = createPersistence({ status: 'loaded', ledger });
+    const { repository } = createRepository(conversation, persistence);
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hydrateConversationHistory: async (target: Conversation) => {
+        target.messages = [{
+          id: 'message-1',
+          role: 'user',
+          content: 'Hello',
+          timestamp: 50,
+          userMessageId: 'native-1',
+        }];
+      },
+    } as any);
+
+    await repository.ensureHydrated(conversation.id);
+
+    expect(conversation.lastActivityAt).toBe(accepted.timestamp);
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: conversation.id,
+      lastActivityAt: accepted.timestamp,
+    }));
   });
 
   it('keeps checkpoint correlation within canonical user-turn boundaries', async () => {
@@ -528,6 +565,11 @@ describe('ConversationRepository input ledger', () => {
         providerAssistantMessageId: 'native-assistant',
       }),
     ]);
+    expect(conversation.lastActivityAt).toBe(record.timestamp);
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: conversation.id,
+      lastActivityAt: record.timestamp,
+    }));
     expect(persistence.saveInputLedger).toHaveBeenCalledTimes(3);
 
     const second = createInputRecord({ id: 'input-2', userTurnOrdinal: 2 });
@@ -1256,10 +1298,78 @@ describe('ConversationRepository persistence queue and binding fences', () => {
     conversation.title = 'Latest title';
 
     await repository.adoptMetadataConversations([
-      { conversation, source: 'legacy' },
+      { conversation, needsMigration: false, source: 'legacy' },
     ]);
 
     expect(calls).toEqual(['save:Latest title', 'delete-legacy']);
+  });
+
+  it('rewrites current metadata after timestamp schema migration', async () => {
+    const conversation = createConversation();
+    conversation.lastActivityAt = 42;
+    const persistence = createPersistence();
+    const { repository } = createRepository(conversation, persistence);
+
+    await repository.adoptMetadataConversations([
+      { conversation, needsMigration: true, source: 'current' },
+    ]);
+
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: conversation.id,
+      lastActivityAt: 42,
+    }));
+    expect(persistence.saveMetadata.mock.calls[0][0]).not.toHaveProperty('updatedAt');
+    expect(persistence.saveMetadata.mock.calls[0][0]).not.toHaveProperty('lastResponseAt');
+    expect(persistence.deleteLegacyMetadata).not.toHaveBeenCalled();
+  });
+
+  it('preserves provider state while migrating an unhydrated metadata shell', async () => {
+    const conversation = createConversation();
+    conversation.providerState = {
+      providerSessionId: 'native-session',
+      subagentData: {
+        'task-1': {
+          id: 'task-1',
+          description: 'Completed background task',
+          status: 'completed',
+          result: 'Recovered result',
+          toolCalls: [],
+          isExpanded: false,
+        },
+      },
+    };
+    const persistence = createPersistence();
+    const { repository } = createRepository(conversation, persistence);
+
+    await repository.adoptMetadataConversations([
+      { conversation, needsMigration: true, source: 'current' },
+    ]);
+
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: conversation.id,
+      providerState: conversation.providerState,
+    }));
+  });
+
+  it('applies note renames to metadata adopted after the rename event', async () => {
+    const existing = createConversation('existing');
+    const persistence = createPersistence();
+    const { repository } = createRepository(existing, persistence);
+    await repository.rewriteCurrentNotePaths('Notes/Old.md', 'Notes/New.md');
+    persistence.saveMetadata.mockClear();
+
+    const deferredConversation = createConversation('deferred');
+    deferredConversation.currentNote = 'Notes/Old.md';
+    repository.mergeMetadataConversations([deferredConversation]);
+    await repository.adoptMetadataConversations([
+      { conversation: deferredConversation, needsMigration: false, source: 'current' },
+    ]);
+
+    expect(deferredConversation.currentNote).toBe('Notes/New.md');
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'deferred',
+      currentNote: 'Notes/New.md',
+    }));
   });
 });
 
@@ -1669,7 +1779,7 @@ describe('ConversationRepository deletion, fork, and rewind persistence', () => 
     const { repository } = createRepository(conversation, persistence);
 
     const migration = repository.adoptMetadataConversations([
-      { conversation, source: 'legacy' },
+      { conversation, needsMigration: false, source: 'legacy' },
     ]);
     const deletion = repository.delete(conversation.id);
     await Promise.all([migration, deletion]);

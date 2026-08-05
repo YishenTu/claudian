@@ -75,6 +75,10 @@ describe('types.ts', () => {
     it('should collapse file edits by default', () => {
       expect(DEFAULT_SETTINGS.expandFileEditsByDefault).toBe(false);
     });
+
+    it('should keep five agent processes warm by default', () => {
+      expect(DEFAULT_SETTINGS.maxWarmAgentProcesses).toBe(5);
+    });
   });
 
   describe('ClaudianSettings type', () => {
@@ -106,7 +110,7 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
-        maxTabs: 3,
+        maxWarmAgentProcesses: 5,
         enableChrome: false,
         enableBangBash: false,
         enableAutoScroll: true,
@@ -160,7 +164,7 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
-        maxTabs: 3,
+        maxWarmAgentProcesses: 5,
         enableChrome: false,
         enableBangBash: false,
         enableAutoScroll: true,
@@ -215,7 +219,7 @@ describe('types.ts', () => {
         claudeCliPath: '',
         claudeCliPathsByHost: {},
         loadUserClaudeSettings: false,
-        maxTabs: 5,
+        maxWarmAgentProcesses: 5,
         enableChrome: false,
         enableBangBash: false,
         enableAutoScroll: false,
@@ -442,7 +446,7 @@ describe('types.ts', () => {
         providerId: 'claude',
         title: 'Test Conversation',
         createdAt: 1700000000000,
-        updatedAt: 1700000001000,
+        lastActivityAt: 1700000001000,
         sessionId: 'session-abc',
         messages: [],
       };
@@ -450,7 +454,7 @@ describe('types.ts', () => {
       expect(conversation.id).toBe('conv-123');
       expect(conversation.title).toBe('Test Conversation');
       expect(conversation.createdAt).toBe(1700000000000);
-      expect(conversation.updatedAt).toBe(1700000001000);
+      expect(conversation.lastActivityAt).toBe(1700000001000);
       expect(conversation.sessionId).toBe('session-abc');
       expect(conversation.messages).toEqual([]);
     });
@@ -461,7 +465,7 @@ describe('types.ts', () => {
         providerId: 'claude',
         title: 'New Chat',
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        lastActivityAt: Date.now(),
         sessionId: null,
         messages: [],
       };
@@ -480,7 +484,7 @@ describe('types.ts', () => {
         providerId: 'claude',
         title: 'Chat with Messages',
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        lastActivityAt: Date.now(),
         sessionId: 'session-xyz',
         messages,
       };
@@ -498,7 +502,7 @@ describe('types.ts', () => {
         providerId: 'claude',
         title: 'Test Conversation',
         createdAt: 1700000000000,
-        updatedAt: 1700000001000,
+        lastActivityAt: 1700000001000,
         messageCount: 5,
         preview: 'Hello, how can I...',
       };
@@ -506,7 +510,7 @@ describe('types.ts', () => {
       expect(meta.id).toBe('conv-123');
       expect(meta.title).toBe('Test Conversation');
       expect(meta.createdAt).toBe(1700000000000);
-      expect(meta.updatedAt).toBe(1700000001000);
+      expect(meta.lastActivityAt).toBe(1700000001000);
       expect(meta.messageCount).toBe(5);
       expect(meta.preview).toBe('Hello, how can I...');
     });
@@ -517,7 +521,7 @@ describe('types.ts', () => {
         providerId: 'claude',
         title: 'Empty Chat',
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        lastActivityAt: Date.now(),
         messageCount: 0,
         preview: 'New conversation',
       };

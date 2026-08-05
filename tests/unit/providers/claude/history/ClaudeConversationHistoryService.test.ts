@@ -9,7 +9,7 @@ function createConversation(overrides: Partial<Conversation> = {}): Conversation
     providerId: 'claude',
     title: 'Conversation',
     createdAt: 1,
-    updatedAt: 1,
+    lastActivityAt: 1,
     sessionId: 'session-1',
     messages: [],
     ...overrides,
@@ -142,6 +142,124 @@ describe('ClaudeConversationHistoryService', () => {
     });
   });
 
+  describe('recoverConversationModelSelection', () => {
+    it('recovers the last model across transcript segments at the resume checkpoint', async () => {
+      const locationsSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockResolvedValue(new Map([
+          ['session-previous', {
+            availability: 'available',
+            sessionPath: '/vault/session-previous.jsonl',
+          }],
+          ['session-current', {
+            availability: 'available',
+            sessionPath: '/vault/session-current.jsonl',
+          }],
+        ]));
+      const modelSpy = jest.spyOn(historyStore, 'loadSDKSessionModel')
+        .mockResolvedValueOnce('claude-sonnet-4-5')
+        .mockResolvedValueOnce('claude-opus-4-6');
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation({
+        sessionId: 'session-current',
+        resumeAtMessageId: 'assistant-checkpoint',
+        providerState: {
+          previousProviderSessionIds: ['session-previous'],
+          providerSessionId: 'session-current',
+        },
+      });
+
+      await expect(service.recoverConversationModelSelection(
+        conversation,
+        '/vault',
+      )).resolves.toBe('claude-code/claude-opus-4-6');
+      expect(modelSpy).toHaveBeenNthCalledWith(
+        1,
+        '/vault',
+        'session-previous',
+        undefined,
+        '/vault/session-previous.jsonl',
+        undefined,
+      );
+      expect(modelSpy).toHaveBeenNthCalledWith(
+        2,
+        '/vault',
+        'session-current',
+        'assistant-checkpoint',
+        '/vault/session-current.jsonl',
+        undefined,
+      );
+
+      locationsSpy.mockRestore();
+      modelSpy.mockRestore();
+    });
+
+    it('does not recover an older model when the current segment is unresolved', async () => {
+      const locationsSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockResolvedValue(new Map([
+          ['session-previous', {
+            availability: 'available',
+            sessionPath: '/vault/session-previous.jsonl',
+          }],
+          ['session-current', {
+            availability: 'available',
+            sessionPath: '/vault/session-current.jsonl',
+          }],
+        ]));
+      const modelSpy = jest.spyOn(historyStore, 'loadSDKSessionModel')
+        .mockResolvedValueOnce('claude-sonnet-4-5')
+        .mockResolvedValueOnce(null);
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation({
+        sessionId: 'session-current',
+        resumeAtMessageId: 'missing-checkpoint',
+        providerState: {
+          previousProviderSessionIds: ['session-previous'],
+          providerSessionId: 'session-current',
+        },
+      });
+
+      await expect(service.recoverConversationModelSelection(
+        conversation,
+        '/vault',
+      )).resolves.toBeNull();
+
+      locationsSpy.mockRestore();
+      modelSpy.mockRestore();
+    });
+
+    it('does not recover an older model when the final preserved segment is unresolved', async () => {
+      const locationsSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockResolvedValue(new Map([
+          ['session-older', {
+            availability: 'available',
+            sessionPath: '/vault/session-older.jsonl',
+          }],
+          ['session-newest', {
+            availability: 'available',
+            sessionPath: '/vault/session-newest.jsonl',
+          }],
+        ]));
+      const modelSpy = jest.spyOn(historyStore, 'loadSDKSessionModel')
+        .mockResolvedValueOnce('claude-sonnet-4-5')
+        .mockResolvedValueOnce(null);
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation({
+        sessionId: null,
+        providerState: {
+          previousProviderSessionIds: ['session-older', 'session-newest'],
+        },
+      });
+
+      await expect(service.recoverConversationModelSelection(
+        conversation,
+        '/vault',
+      )).resolves.toBeNull();
+
+      locationsSpy.mockRestore();
+      modelSpy.mockRestore();
+    });
+  });
+
   describe('prepareRelocatedConversationSession', () => {
     it('clears the resume pointer and retains the session for history replay', async () => {
       const service = new ClaudeConversationHistoryService();
@@ -256,6 +374,37 @@ describe('ClaudeConversationHistoryService', () => {
   });
 
   describe('hydrateConversationHistory', () => {
+    it('recovers an unlinked native transcript from the conversation timestamps', async () => {
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation({
+        sessionId: null,
+        providerState: undefined,
+        createdAt: 1_000,
+        lastActivityAt: 2_000,
+      });
+      const legacySpy = jest.spyOn(historyStore, 'readLegacyConversationSessionId')
+        .mockResolvedValue(null);
+      const recoverySpy = jest.spyOn(historyStore, 'recoverSDKSessionIdByTime')
+        .mockResolvedValue('recovered-session');
+
+      await expect(service.recoverConversationSessionReference(
+        conversation,
+        '/vault',
+      )).resolves.toBe(true);
+
+      expect(recoverySpy).toHaveBeenCalledWith('/vault', {
+        createdAt: 1_000,
+        lastActivityAt: 2_000,
+      });
+      expect(conversation).toMatchObject({
+        sessionId: 'recovered-session',
+        providerState: { providerSessionId: 'recovered-session' },
+      });
+
+      legacySpy.mockRestore();
+      recoverySpy.mockRestore();
+    });
+
     it('recovers a cleared session pointer from the legacy conversation backup', async () => {
       const service = new ClaudeConversationHistoryService();
       const conversation = createConversation({

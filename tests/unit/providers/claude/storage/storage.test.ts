@@ -10,7 +10,7 @@ describe('SessionStorage JSONL format', () => {
   describe('parseJSONL', () => {
     it('should parse valid JSONL with meta and messages', () => {
       const jsonl = [
-        '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"updatedAt":2000,"sessionId":"sess-1"}',
+        '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"lastActivityAt":2000,"sessionId":"sess-1"}',
         '{"type":"message","message":{"id":"msg-1","role":"user","content":"Hello","timestamp":1001}}',
         '{"type":"message","message":{"id":"msg-2","role":"assistant","content":"Hi","timestamp":1002}}',
       ].join('\n');
@@ -21,7 +21,7 @@ describe('SessionStorage JSONL format', () => {
       expect(conversation!.id).toBe('conv-123');
       expect(conversation!.title).toBe('Test');
       expect(conversation!.createdAt).toBe(1000);
-      expect(conversation!.updatedAt).toBe(2000);
+      expect(conversation!.lastActivityAt).toBe(2000);
       expect(conversation!.sessionId).toBe('sess-1');
       expect(conversation!.messages).toHaveLength(2);
       expect(conversation!.messages[0].role).toBe('user');
@@ -41,7 +41,7 @@ describe('SessionStorage JSONL format', () => {
 
     it('should skip malformed lines gracefully', () => {
       const jsonl = [
-        '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"updatedAt":2000,"sessionId":null}',
+        '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"lastActivityAt":2000,"sessionId":null}',
         'not valid json',
         '{"type":"message","message":{"id":"msg-1","role":"user","content":"Hello","timestamp":1001}}',
       ].join('\n');
@@ -59,15 +59,15 @@ describe('SessionStorage JSONL format', () => {
       expect(conversation).toBeNull();
     });
 
-    it('should parse lastResponseAt when present', () => {
-      const jsonl = '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"updatedAt":2000,"lastResponseAt":1500,"sessionId":null}';
+    it('should parse lastActivityAt when present', () => {
+      const jsonl = '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"lastActivityAt":2000,"lastActivityAt":1500,"sessionId":null}';
 
       const conversation = parseJSONLHelper(jsonl);
-      expect(conversation!.lastResponseAt).toBe(1500);
+      expect(conversation!.lastActivityAt).toBe(1500);
     });
 
     it('should parse currentNote when present', () => {
-      const jsonl = '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"updatedAt":2000,"sessionId":null,"currentNote":"file1.md"}';
+      const jsonl = '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"lastActivityAt":2000,"sessionId":null,"currentNote":"file1.md"}';
 
       const conversation = parseJSONLHelper(jsonl);
       expect(conversation!.currentNote).toBe('file1.md');
@@ -81,7 +81,7 @@ describe('SessionStorage JSONL format', () => {
         providerId: 'claude' as ProviderId,
         title: 'My Chat',
         createdAt: 5000,
-        updatedAt: 6000,
+        lastActivityAt: 6000,
         sessionId: 'sess-abc',
         messages: [
           { id: 'msg-1', role: 'user', content: 'Question', timestamp: 5001 },
@@ -115,7 +115,7 @@ describe('SessionStorage JSONL format', () => {
         providerId: 'claude' as ProviderId,
         title: 'Image Chat',
         createdAt: 1000,
-        updatedAt: 2000,
+        lastActivityAt: 2000,
         sessionId: null,
         messages: [
           {
@@ -147,14 +147,13 @@ describe('SessionStorage JSONL format', () => {
       expect(msgRecord.message.images[0].data).toBe('base64-image-data');
     });
 
-    it('should preserve lastResponseAt in serialization', () => {
+    it('should preserve lastActivityAt in serialization', () => {
       const conversation: Conversation = {
         id: 'conv-lr',
         providerId: 'claude' as ProviderId,
         title: 'Test',
         createdAt: 1000,
-        updatedAt: 2000,
-        lastResponseAt: 1500,
+        lastActivityAt: 1500,
         sessionId: null,
         messages: [],
       };
@@ -162,7 +161,7 @@ describe('SessionStorage JSONL format', () => {
       const jsonl = serializeToJSONLHelper(conversation);
       const meta = JSON.parse(jsonl.split('\n')[0]);
 
-      expect(meta.lastResponseAt).toBe(1500);
+      expect(meta.lastActivityAt).toBe(1500);
     });
 
     it('should round-trip conversation correctly', () => {
@@ -171,8 +170,7 @@ describe('SessionStorage JSONL format', () => {
         providerId: 'claude' as ProviderId,
         title: 'Round Trip',
         createdAt: 1000,
-        updatedAt: 2000,
-        lastResponseAt: 1500,
+        lastActivityAt: 1500,
         sessionId: 'sess-rt',
         currentNote: 'a.md',
         messages: [
@@ -188,8 +186,7 @@ describe('SessionStorage JSONL format', () => {
       expect(parsed!.id).toBe(original.id);
       expect(parsed!.title).toBe(original.title);
       expect(parsed!.createdAt).toBe(original.createdAt);
-      expect(parsed!.updatedAt).toBe(original.updatedAt);
-      expect(parsed!.lastResponseAt).toBe(original.lastResponseAt);
+      expect(parsed!.lastActivityAt).toBe(original.lastActivityAt);
       expect(parsed!.sessionId).toBe(original.sessionId);
       expect(parsed!.currentNote).toBe(original.currentNote);
       expect(parsed!.messages).toHaveLength(2);
@@ -283,8 +280,7 @@ interface SessionMetaRecord {
   id: string;
   title: string;
   createdAt: number;
-  updatedAt: number;
-  lastResponseAt?: number;
+  lastActivityAt: number;
   sessionId: string | null;
   currentNote?: string;
 }
@@ -323,8 +319,7 @@ function parseJSONLHelper(content: string): Conversation | null {
     providerId: 'claude' as ProviderId,
     title: meta.title,
     createdAt: meta.createdAt,
-    updatedAt: meta.updatedAt,
-    lastResponseAt: meta.lastResponseAt,
+    lastActivityAt: meta.lastActivityAt,
     sessionId: meta.sessionId,
     messages,
     currentNote: meta.currentNote,
@@ -339,8 +334,7 @@ function serializeToJSONLHelper(conversation: Conversation): string {
     id: conversation.id,
     title: conversation.title,
     createdAt: conversation.createdAt,
-    updatedAt: conversation.updatedAt,
-    lastResponseAt: conversation.lastResponseAt,
+    lastActivityAt: conversation.lastActivityAt,
     sessionId: conversation.sessionId,
     currentNote: conversation.currentNote,
   };
@@ -357,4 +351,3 @@ function serializeToJSONLHelper(conversation: Conversation): string {
 
   return lines.join('\n');
 }
-
