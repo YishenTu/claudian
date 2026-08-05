@@ -79,6 +79,7 @@
       "codex": "Codex"
     },
     "omp": { "setup": "설정", "enable": "OMP 활성화", "enableDesc": "Oh My Pi ACP 공급자를 활성화합니다.", "cliPath": "CLI 경로", "cliPathDesc": "이 컴퓨터의 OMP 절대 경로입니다.", "models": "모델", "noModels": "아직 OMP 모델을 찾지 못했습니다.", "catalogFailed": "OMP 모델 카탈로그를 불러오지 못했습니다.", "loadingModels": "OMP 모델을 불러오는 중…", "discoveryFailed": "OMP 모델 검색 실패: {error}", "workspaceNotInitialized": "OMP 작업 공간이 초기화되지 않았습니다", "safe": "안전", "yolo": "YOLO", "permissionRequest": "OMP가 {tool} 사용 권한을 요청합니다.", "tool": "도구" },
+    "providerReadiness": { "title": "준비 상태", "desc": "{provider}가 채팅을 시작할 준비가 되었는지 확인합니다.", "checking": "공급자 준비 상태 확인 중…", "refresh": "다시 확인", "status": { "disabled": "비활성화됨", "blocked": "조치 필요", "attention": "확인 필요", "ready": "준비됨" }, "check": { "enabled": "공급자 활성화됨", "cli": "CLI 사용 가능", "models": "모델 카탈로그 사용 가능", "selection": "채팅 모델 선택됨" } },
     "display": "표시",
     "conversations": "대화",
     "content": "콘텐츠",

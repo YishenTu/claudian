@@ -57,6 +57,7 @@
 @import "./settings/agent-settings.css";
 @import "./settings/agent-skills.css";
 @import "./settings/provider-model-picker.css";
+@import "./settings/provider-readiness.css";
 
 /* Accessibility */
 @import "./accessibility.css";

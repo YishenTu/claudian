@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { Notice, Setting } from 'obsidian';
 
+import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
@@ -12,6 +13,7 @@ import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
+import { renderProviderReadinessPanel } from '../../../shared/settings/ProviderReadinessPanel';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getCodexWorkspaceServices } from '../app/CodexWorkspaceServices';
@@ -39,6 +41,23 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         new Notice(`Codex model discovery failed: ${result.diagnostics}`);
       }
     };
+
+    renderProviderReadinessPanel({
+      container,
+      providerName: 'Codex',
+      async getSnapshot() {
+        const current = getCodexProviderSettings(settingsBag);
+        return assessProviderReadiness({
+          cliPath: typeof context.plugin.getResolvedProviderCliPath === 'function'
+            ? await context.plugin.getResolvedProviderCliPath('codex')
+            : null,
+          discoveredModelCount: current.discoveredModels.length,
+          enabled: current.enabled,
+          selectedModelCount: getCodexModelOptions(settingsBag).length,
+        });
+      },
+      onRefresh: refreshCodexModelCatalog,
+    });
 
     // --- Setup ---
 

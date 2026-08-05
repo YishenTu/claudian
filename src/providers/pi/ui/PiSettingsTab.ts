@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 
 import { Notice, Setting } from 'obsidian';
 
+import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
   ProviderSettingsTabRenderer,
@@ -20,6 +21,7 @@ import {
   type ProviderModelPickerState,
   renderProviderModelPicker,
 } from '../../../shared/settings/ProviderModelPicker';
+import { renderProviderReadinessPanel } from '../../../shared/settings/ProviderReadinessPanel';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { maybeGetPiWorkspaceServices } from '../app/PiWorkspaceServices';
@@ -37,6 +39,22 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
     const hostnameKey = getHostnameKey();
     const workspace = maybeGetPiWorkspaceServices();
+
+    renderProviderReadinessPanel({
+      container,
+      providerName: 'Pi',
+      async getSnapshot() {
+        const current = getPiProviderSettings(settingsBag);
+        return assessProviderReadiness({
+          cliPath: typeof context.plugin.getResolvedProviderCliPath === 'function'
+            ? await context.plugin.getResolvedProviderCliPath('pi')
+            : null,
+          discoveredModelCount: current.discoveredModels.length,
+          enabled: current.enabled,
+          selectedModelCount: current.visibleModels.length,
+        });
+      },
+    });
 
     new Setting(container).setName('Setup').setHeading();
 

@@ -79,6 +79,7 @@
       "codex": "Codex"
     },
     "omp": { "setup": "セットアップ", "enable": "OMP を有効化", "enableDesc": "Oh My Pi ACP プロバイダーを有効にします。", "cliPath": "CLI パス", "cliPathDesc": "このコンピューター上の OMP の絶対パスです。", "models": "モデル", "noModels": "OMP モデルがまだ見つかりません。", "catalogFailed": "OMP モデルカタログを読み込めませんでした。", "loadingModels": "OMP モデルを読み込み中…", "discoveryFailed": "OMP モデルの検出に失敗しました：{error}", "workspaceNotInitialized": "OMP ワークスペースが初期化されていません", "safe": "安全", "yolo": "YOLO", "permissionRequest": "OMP が{tool}を使用する権限を要求しています。", "tool": "ツール" },
+    "providerReadiness": { "title": "準備状況", "desc": "{provider} がチャットを開始できる状態か確認します。", "checking": "プロバイダーの準備状況を確認中…", "refresh": "再確認", "status": { "disabled": "無効", "blocked": "対応が必要", "attention": "要確認", "ready": "準備完了" }, "check": { "enabled": "プロバイダーが有効", "cli": "CLI が利用可能", "models": "モデルカタログが利用可能", "selection": "チャットモデルを選択済み" } },
     "display": "表示",
     "conversations": "会話",
     "content": "コンテンツ",

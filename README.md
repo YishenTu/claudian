@@ -18,6 +18,7 @@ Oh My Claudian is an Obsidian plugin that embeds coding agents in your vault. Ag
 - Inline edits with word-level diff preview.
 - Slash commands, skills, `@` mentions, and instruction mode.
 - Provider-specific planning, permissions, reasoning controls, and model selection.
+- Provider readiness diagnostics in each provider settings tab, covering enablement, CLI availability, model discovery, and model selection.
 - MCP support where available from the selected provider.
 - Internationalized interface with 10 locales, including Simplified and Traditional Chinese.
 
@@ -58,6 +59,8 @@ Then enable the plugin in Obsidian under **Settings → Community plugins**.
 
 Open the chat sidebar from the ribbon icon or command palette. Select text and use the inline-edit hotkey to edit notes with a diff preview. Use `/` for commands and skills, `@` to reference vault files or provider resources, and the provider selector to choose Claude, Codex, Grok, OMP, OpenCode, or Pi.
 
+Each provider has a readiness panel in its settings tab. Use it to see whether the provider is enabled, its CLI is available, models have been discovered, and a chat model is selected. The panel reports problems and lets you recheck the current provider state; installation and authentication remain provider-native.
+
 OMP requires its CLI to be installed and logged in separately. In **Settings → Oh My Claudian → OMP**, enable the provider, set the CLI path if it is not detected automatically, and use **Discover** to load available models.
 
 ## Development
@@ -69,6 +72,8 @@ npm run typecheck
 npm run lint
 npm run test
 ```
+
+`npm run dev` watches TypeScript, styles, and `manifest.json`. When `OBSIDIAN_VAULT` is set in `.env.local`, rebuilt plugin resources are copied to that vault automatically, including CSS and manifest changes.
 
 ## Release
 

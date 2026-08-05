@@ -1,5 +1,6 @@
 import esbuild from 'esbuild';
 import { builtinModules } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import path from 'path';
 import process from 'process';
 import {
@@ -11,6 +12,7 @@ import {
   rmSync,
 } from 'fs';
 import rendererSafeUnrefHelpers from './scripts/rendererSafeUnref.js';
+import { getDevelopmentWatchFiles } from './scripts/devWatchFiles.mjs';
 import { resolveObsidianPluginPath } from './scripts/obsidianPluginPath.mjs';
 
 const {
@@ -136,6 +138,21 @@ const PLUGIN_MANIFEST = JSON.parse(readFileSync('manifest.json', 'utf-8'));
 const OBSIDIAN_PLUGIN_PATH = OBSIDIAN_VAULT && existsSync(OBSIDIAN_VAULT)
   ? resolveObsidianPluginPath(OBSIDIAN_VAULT, PLUGIN_MANIFEST)
   : null;
+const DEVELOPMENT_WATCH_FILES = prod ? [] : getDevelopmentWatchFiles(process.cwd());
+
+const watchDevelopmentResources = {
+  name: 'watch-development-resources',
+  setup(build) {
+    if (prod) return;
+
+    build.onLoad({ filter: /[\\/]src[\\/]main\.ts$/ }, async (args) => ({
+      contents: await fsPromises.readFile(args.path, 'utf8'),
+      loader: 'ts',
+      resolveDir: path.dirname(args.path),
+      watchFiles: DEVELOPMENT_WATCH_FILES,
+    }));
+  },
+};
 
 // Plugin to copy built files to Obsidian plugin folder
 const copyToObsidian = {
@@ -143,6 +160,12 @@ const copyToObsidian = {
   setup(build) {
     build.onEnd((result) => {
       if (result.errors.length > 0) return;
+      if (!prod) {
+        execFileSync(process.execPath, ['scripts/build-css.mjs'], {
+          cwd: process.cwd(),
+          stdio: 'inherit',
+        });
+      }
       rmSync(path.join(process.cwd(), '.codex-vendor'), { recursive: true, force: true });
 
       if (!OBSIDIAN_PLUGIN_PATH) return;
@@ -188,6 +211,7 @@ const mainContext = await esbuild.context({
   bundle: true,
   plugins: [
     patchSdkImportMeta,
+    watchDevelopmentResources,
     createPatchRendererUnsafeUnref(['main.js']),
     copyToObsidian,
   ],

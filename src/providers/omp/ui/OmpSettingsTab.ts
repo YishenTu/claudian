@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 
 import { Notice, Setting } from 'obsidian';
 
+import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import type {
   ProviderSettingsTabRenderer,
 } from '../../../core/providers/types';
@@ -13,6 +14,7 @@ import {
   type ProviderModelPickerState,
   renderProviderModelPicker,
 } from '../../../shared/settings/ProviderModelPicker';
+import { renderProviderReadinessPanel } from '../../../shared/settings/ProviderReadinessPanel';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { maybeGetOmpWorkspaceServices } from '../app/OmpWorkspaceServices';
@@ -27,6 +29,28 @@ export const ompSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const settings = context.plugin.settings as unknown as Record<string, unknown>;
     const workspace = maybeGetOmpWorkspaceServices();
     const hostnameKey = getHostnameKey();
+    renderProviderReadinessPanel({
+      container,
+      providerName: 'OMP',
+      async getSnapshot() {
+        const provider = getOmpProviderSettings(settings);
+        return assessProviderReadiness({
+          cliPath: typeof context.plugin.getResolvedProviderCliPath === 'function'
+            ? await context.plugin.getResolvedProviderCliPath('omp')
+            : null,
+          discoveredModelCount: provider.discoveredModels.length,
+          enabled: provider.enabled,
+          selectedModelCount: provider.visibleModels.length,
+        });
+      },
+      async onRefresh() {
+        const result = await workspace?.refreshModelCatalog?.();
+        if (result?.diagnostics) {
+          new Notice(t('settings.omp.discoveryFailed', { error: result.diagnostics }));
+        }
+        context.notifyProviderModelOptionsChanged('omp');
+      },
+    });
     new Setting(container).setName(t('settings.omp.setup')).setHeading();
     renderProviderEnablementSetting({
       container,

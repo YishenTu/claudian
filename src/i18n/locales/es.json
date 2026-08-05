@@ -79,6 +79,7 @@
       "codex": "Codex"
     },
     "omp": { "setup": "Configuración", "enable": "Activar OMP", "enableDesc": "Activar el proveedor ACP de Oh My Pi.", "cliPath": "Ruta del CLI", "cliPathDesc": "Ruta absoluta a OMP en este equipo.", "models": "Modelos", "noModels": "Aún no se han descubierto modelos OMP.", "catalogFailed": "No se pudo cargar el catálogo de modelos OMP.", "loadingModels": "Cargando modelos OMP…", "discoveryFailed": "Error al descubrir modelos OMP: {error}", "workspaceNotInitialized": "El espacio de trabajo OMP no está inicializado", "safe": "Seguro", "yolo": "YOLO", "permissionRequest": "OMP solicita permiso para usar {tool}.", "tool": "una herramienta" },
+    "providerReadiness": { "title": "Preparación", "desc": "Comprueba si {provider} está listo para iniciar un chat.", "checking": "Comprobando el estado del proveedor…", "refresh": "Comprobar de nuevo", "status": { "disabled": "Desactivado", "blocked": "Acción necesaria", "attention": "Requiere atención", "ready": "Listo" }, "check": { "enabled": "Proveedor activado", "cli": "CLI disponible", "models": "Catálogo de modelos disponible", "selection": "Modelo de chat seleccionado" } },
     "display": "Pantalla",
     "conversations": "Conversaciones",
     "content": "Contenido",

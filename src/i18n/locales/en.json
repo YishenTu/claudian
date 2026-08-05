@@ -86,6 +86,14 @@
       "discoveryFailed": "OMP model discovery failed: {error}", "workspaceNotInitialized": "OMP workspace is not initialized",
       "safe": "Safe", "yolo": "YOLO", "permissionRequest": "OMP requests permission to use {tool}.", "tool": "a tool"
     },
+    "providerReadiness": {
+      "title": "Readiness",
+      "desc": "Check whether {provider} is ready to start a chat.",
+      "checking": "Checking provider readiness…",
+      "refresh": "Check again",
+      "status": { "disabled": "Disabled", "blocked": "Action required", "attention": "Needs attention", "ready": "Ready" },
+      "check": { "enabled": "Provider enabled", "cli": "CLI available", "models": "Model catalog available", "selection": "Chat model selected" }
+    },
     "display": "Display",
     "conversations": "Conversations",
     "content": "Content",

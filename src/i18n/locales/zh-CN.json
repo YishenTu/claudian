@@ -86,6 +86,14 @@
       "discoveryFailed": "OMP 模型发现失败：{error}", "workspaceNotInitialized": "OMP 工作区尚未初始化",
       "safe": "安全", "yolo": "YOLO", "permissionRequest": "OMP 请求使用{tool}的权限。", "tool": "工具"
     },
+    "providerReadiness": {
+      "title": "就绪状态",
+      "desc": "检查 {provider} 是否可以开始聊天。",
+      "checking": "正在检查提供商状态……",
+      "refresh": "重新检查",
+      "status": { "disabled": "未启用", "blocked": "需要处理", "attention": "需要关注", "ready": "已就绪" },
+      "check": { "enabled": "提供商已启用", "cli": "CLI 可用", "models": "模型目录可用", "selection": "已选择聊天模型" }
+    },
     "display": "显示",
     "conversations": "对话",
     "content": "内容",
