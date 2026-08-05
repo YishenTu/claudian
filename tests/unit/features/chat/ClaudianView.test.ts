@@ -645,7 +645,12 @@ describe('ClaudianView tab controls', () => {
     expect(list.children[0]).toBe(archiveControl);
     expect(archiveControl.querySelector('.claudian-session-nav-label')?.textContent)
       .toBe('Archive');
-    archiveControl.click();
+    const stopPropagation = jest.fn();
+    archiveControl.dispatchEvent({
+      type: 'click',
+      stopPropagation,
+    });
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
     expect(setArchiveSessionView).toHaveBeenCalledWith(true);
   });
 

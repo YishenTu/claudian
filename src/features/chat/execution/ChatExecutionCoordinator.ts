@@ -33,6 +33,7 @@ import type {
   ImageAttachment,
   ProviderId,
 } from '@/core/types';
+import { toError } from '@/utils/error';
 
 import {
   ExecutionSessionSupervisor,
@@ -943,7 +944,7 @@ export class ChatExecutionCoordinator {
         this.deps.onSessionEvent?.(event, this.createEventContext(binding)),
       ));
     } catch (error) {
-      eventWork.push(Promise.reject(error));
+      eventWork.push(Promise.reject(toError(error, 'Session event handler failed')));
     }
     this.trackBindingWork(binding, Promise.all(eventWork));
     if (event.type === 'background_turn_completed') {

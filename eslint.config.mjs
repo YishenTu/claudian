@@ -139,6 +139,7 @@ export default defineConfig([
         { args: 'none', ignoreRestSiblings: true },
       ],
       '@typescript-eslint/no-explicit-any': 'off',
+      'prefer-promise-reject-errors': 'error',
       'simple-import-sort/imports': 'error',
       'simple-import-sort/exports': 'error',
     },

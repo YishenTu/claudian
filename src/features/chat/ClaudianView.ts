@@ -1235,10 +1235,14 @@ export class ClaudianView extends ItemView {
     const toggleArchiveView = (): void => {
       this.setArchiveSessionView(!this.isArchiveSessionView);
     };
-    control.addEventListener('click', toggleArchiveView);
+    control.addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleArchiveView();
+    });
     control.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
+      event.stopPropagation();
       toggleArchiveView();
     });
     list.insertBefore(control, list.firstChild);

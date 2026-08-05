@@ -230,6 +230,7 @@ function createSubmission(overrides: Partial<ChatTurnSubmission> = {}): ChatTurn
 }
 
 function createHarness(options: {
+  onError?: (error: unknown) => void;
   onRequestedEvent?: (
     event: ProviderExecutionEvent,
   ) => void | Promise<void>;
@@ -296,6 +297,7 @@ function createHarness(options: {
       sessionEventContexts.push(context);
       return options.onSessionEvent?.(event, context);
     },
+    onError: options.onError,
     resolveMissingProviderSession: missingSession,
     ...(options.warmExecution ? { warmExecution: options.warmExecution } : {}),
   });
@@ -746,6 +748,44 @@ describe('ChatExecutionCoordinator', () => {
     await second.coordinator.dispose();
     await first.registry.dispose();
     await second.registry.dispose();
+  });
+
+  it('normalizes synchronous session event handler rejections to errors', async () => {
+    const onError = jest.fn();
+    const harness = createHarness({
+      onError,
+      onSessionEvent: () => {
+        throw 'session event callback failed';
+      },
+    });
+    await harness.coordinator.bindConversation({
+      conversationId: 'conversation-1',
+      providerId: 'claude',
+    });
+    await harness.coordinator.prepare();
+    const session = harness.backends.get('claude')!.sessions[0];
+
+    session.emit({
+      type: 'session_error',
+      category: 'provider',
+      message: 'Provider event',
+      recoverable: true,
+      scope: {
+        kind: 'session',
+        sessionInstanceId: session.sessionInstanceId,
+        sequence: 1,
+      },
+    });
+    for (let attempt = 0; attempt < 20 && onError.mock.calls.length === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+
+    expect(onError).toHaveBeenCalledWith(expect.any(Error));
+    expect((onError.mock.calls[0][0] as Error).message)
+      .toBe('session event callback failed');
+
+    await harness.coordinator.dispose();
+    await harness.registry.dispose();
   });
 
   it('stages canonical input before execute, builds a neutral request, and accepts native IDs', async () => {

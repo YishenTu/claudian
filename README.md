@@ -31,9 +31,9 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Instruction Mode (`#`)** — Refined custom instructions added from the chat input.
 
-**MCP Servers** — Connect external tools via Model Context Protocol (stdio, SSE, HTTP). Claude manages vault MCP in-app; Codex uses its own CLI-managed MCP configuration.
+**MCP Servers** — Connect external tools via Model Context Protocol (stdio, SSE, HTTP). Claude manages vault MCP in-app; Other harnesses uses its own CLI-managed MCP configuration.
 
-**Multi-Tab & Conversations** — Multiple chat tabs, conversation history, fork, resume, and compact.
+**Tabs & Session Management** — Use multiple tabs in single-panel mode or a persistent session manager beside the chat in dual-pane mode.
 
 ## Requirements
 
