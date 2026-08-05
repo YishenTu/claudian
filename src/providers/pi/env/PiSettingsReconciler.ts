@@ -4,7 +4,10 @@ import {
   hasCliPathFingerprintInputs,
 } from '../../../core/providers/cli/CliPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
+import {
+  createRuntimeInputFingerprint,
+  isVersionedRuntimeInputFingerprint,
+} from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
@@ -22,9 +25,9 @@ import {
   normalizePiVisibleModels,
   updatePiProviderSettings,
 } from '../settings';
-import { getPiState } from '../types';
+import { clearPiResumeState } from '../types';
 
-const PI_ENV_HASH_KEYS = [
+const LEGACY_PI_ENV_HASH_KEYS = [
   'PI_CODING_AGENT_DIR',
   'PI_CODING_AGENT_SESSION_DIR',
   'PI_PACKAGE_DIR',
@@ -32,6 +35,10 @@ const PI_ENV_HASH_KEYS = [
   'PI_SKIP_VERSION_CHECK',
   'PI_TELEMETRY',
   'PI_CACHE_RETENTION',
+] as const;
+
+const PI_ENV_HASH_KEYS = [
+  ...LEGACY_PI_ENV_HASH_KEYS,
   'PATH',
 ] as const;
 
@@ -47,22 +54,31 @@ function computePiRuntimeFingerprint(
 }
 
 function invalidatePiConversationSessions(conversations: Conversation[]): Conversation[] {
-  const invalidatedConversations: Conversation[] = [];
-  for (const conversation of conversations) {
-    if (conversation.providerId !== 'pi') {
-      continue;
-    }
+  return conversations.filter(conversation => (
+    conversation.providerId === 'pi' && clearPiResumeState(conversation)
+  ));
+}
 
-    const state = getPiState(conversation.providerState);
-    if (!conversation.sessionId && !state.sessionId && !state.sessionFile) {
-      continue;
-    }
-
-    conversation.sessionId = null;
-    conversation.providerState = undefined;
-    invalidatedConversations.push(conversation);
+function isCurrentLegacyPiFingerprint(
+  environmentText: string,
+  savedFingerprint: string,
+  cliPathInputs: CliPathFingerprintInputs,
+): boolean {
+  if (
+    !savedFingerprint
+    || isVersionedRuntimeInputFingerprint(savedFingerprint)
+    || hasCliPathFingerprintInputs(cliPathInputs)
+  ) {
+    return false;
   }
-  return invalidatedConversations;
+
+  const environment = parseEnvironmentVariables(environmentText);
+  const legacyFingerprint = LEGACY_PI_ENV_HASH_KEYS
+    .filter(key => environment[key])
+    .map(key => `${key}=${environment[key]}`)
+    .sort()
+    .join('|');
+  return savedFingerprint === legacyFingerprint;
 }
 
 export const piSettingsReconciler: ProviderSettingsReconciler = {
@@ -113,6 +129,22 @@ export const piSettingsReconciler: ProviderSettingsReconciler = {
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
     const piSettings = getPiProviderSettings(settings);
     let changed = false;
+
+    const envText = getRuntimeEnvironmentText(settings, 'pi');
+    const cliPathInputs = createCliPathFingerprintInputs(
+      piSettings.cliPathsByHost[getHostnameKey()],
+      piSettings.cliPath,
+    );
+    if (isCurrentLegacyPiFingerprint(
+      envText,
+      piSettings.environmentHash,
+      cliPathInputs,
+    )) {
+      updatePiProviderSettings(settings, {
+        environmentHash: computePiRuntimeFingerprint(envText, cliPathInputs),
+      });
+      changed = true;
+    }
 
     const normalizeSelection = (value: unknown): string | null => {
       if (typeof value !== 'string') {

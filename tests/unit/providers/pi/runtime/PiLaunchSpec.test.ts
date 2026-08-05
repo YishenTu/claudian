@@ -58,6 +58,21 @@ describe('PiLaunchSpec', () => {
     ]);
   });
 
+  it('does not resume from detached previous sessions', () => {
+    expect(buildPiLaunchSpec({
+      command: 'pi',
+      cwd: '/vault',
+      providerState: {
+        previousSessions: [{
+          leafEntryId: 'assistant-1',
+          sessionFile: '/tmp/previous.jsonl',
+          sessionId: 'previous-session',
+        }],
+      },
+      settings: baseSettings,
+    }).args).toEqual(['--mode', 'rpc']);
+  });
+
   it('passes max thinking through to Pi', () => {
     expect(buildPiLaunchSpec({
       command: 'pi',

@@ -14,6 +14,7 @@ import {
   normalizePiToolInput,
   normalizePiToolName,
 } from '../normalizations/piToolNormalization';
+import { decodePiRecoveryPrompt } from './PiRecoveryPromptCodec';
 
 export interface PiSessionEntry {
   id?: string;
@@ -31,6 +32,7 @@ export interface ParsedPiSessionEntries {
 export interface ParsePiSessionContentOptions {
   leafEntryId?: string;
   requireLeafEntryId?: boolean;
+  syntheticIdNamespace?: string;
 }
 
 export interface CreatePiForkSessionFileOptions {
@@ -71,10 +73,10 @@ export function parsePiSessionContent(
     return [];
   }
 
-  return mapPiSessionEntries(resolvePiActivePath(
-    parsed.entries,
-    leafEntryId,
-  ));
+  return mapPiSessionEntries(
+    resolvePiActivePath(parsed.entries, leafEntryId),
+    options.syntheticIdNamespace,
+  );
 }
 
 export function parsePiSessionEntries(content: string): ParsedPiSessionEntries {
@@ -116,6 +118,33 @@ export function parsePiSessionEntries(content: string): ParsedPiSessionEntries {
   }
 
   return { entries, header };
+}
+
+export async function readPiSessionHeader(
+  sessionFile: string,
+): Promise<Record<string, unknown> | null> {
+  const maxHeaderBytes = 64 * 1024;
+  let handle: fsp.FileHandle | null = null;
+  try {
+    handle = await fsp.open(sessionFile, 'r');
+    const buffer = Buffer.alloc(maxHeaderBytes);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    const content = buffer.subarray(0, bytesRead).toString('utf8');
+    const newlineIndex = content.search(/\r?\n/);
+    if (newlineIndex === -1 && bytesRead === maxHeaderBytes) {
+      return null;
+    }
+    const firstLine = newlineIndex === -1 ? content : content.slice(0, newlineIndex);
+    const parsed = JSON.parse(firstLine) as unknown;
+    if (!isPlainObject(parsed) || getString(parsed.type) !== 'session') {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
 }
 
 export function resolvePiActivePath(entries: PiSessionEntry[], leafId?: string): PiSessionEntry[] {
@@ -374,11 +403,14 @@ export function derivePiSessionsRootFromSessionPath(sessionPath: string): string
   return path.dirname(normalized);
 }
 
-function mapPiSessionEntries(entries: PiSessionEntry[]): ChatMessage[] {
+function mapPiSessionEntries(
+  entries: PiSessionEntry[],
+  syntheticIdNamespace?: string,
+): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
   for (const entry of entries) {
-    const mapped = mapPiSessionEntry(entry, messages);
+    const mapped = mapPiSessionEntry(entry, messages, syntheticIdNamespace);
     if (mapped) {
       const previous = messages[messages.length - 1];
       if (isAssistantMessageEntry(entry) && canMergeAssistantContinuation(previous, mapped)) {
@@ -437,19 +469,33 @@ function mergeAssistantContinuation(target: ChatMessage, source: ChatMessage): v
 function mapPiSessionEntry(
   entry: PiSessionEntry,
   messages: ChatMessage[],
+  syntheticIdNamespace?: string,
 ): ChatMessage | null {
   const message = entry.message ?? entry.raw;
   const role = getString(message.role) ?? inferRole(entry.type);
   const timestamp = getTimestamp(message.timestamp ?? entry.raw.timestamp);
 
   if (role === 'user') {
-    const content = extractTextContent(message.content ?? message.text ?? message.message);
+    const rawContent = extractTextContent(message.content ?? message.text ?? message.message);
+    const recoveryPrompt = decodePiRecoveryPrompt(rawContent);
+    const content = recoveryPrompt?.currentInput ?? (recoveryPrompt ? '' : rawContent);
     const displayContent = extractPiSkillDisplayContent(content);
-    const images = extractUserImages(message.content ?? message.parts ?? message.blocks, entry.id ?? `pi-user-${messages.length}`);
+    const messageId = entry.id ?? createSyntheticPiMessageId(
+      'user',
+      messages.length,
+      syntheticIdNamespace,
+    );
+    const images = extractUserImages(
+      message.content ?? message.parts ?? message.blocks,
+      messageId,
+    );
+    if (recoveryPrompt?.currentInput === null && images.length === 0) {
+      return null;
+    }
     return {
       content,
       ...(displayContent ? { displayContent } : {}),
-      id: entry.id ?? `pi-user-${messages.length}`,
+      id: messageId,
       ...(images.length > 0 ? { images } : {}),
       role: 'user',
       timestamp,
@@ -469,7 +515,11 @@ function mapPiSessionEntry(
       assistantMessageId: entry.id,
       content: text,
       ...(contentBlocks.length > 0 ? { contentBlocks } : {}),
-      id: entry.id ?? `pi-assistant-${messages.length}`,
+      id: entry.id ?? createSyntheticPiMessageId(
+        'assistant',
+        messages.length,
+        syntheticIdNamespace,
+      ),
       role: 'assistant',
       timestamp,
       ...(toolCalls.length > 0 ? { toolCalls } : {}),
@@ -485,7 +535,11 @@ function mapPiSessionEntry(
     return {
       content: '',
       contentBlocks: [{ type: 'context_compacted' }],
-      id: entry.id ?? `pi-compaction-${messages.length}`,
+      id: entry.id ?? createSyntheticPiMessageId(
+        'compaction',
+        messages.length,
+        syntheticIdNamespace,
+      ),
       role: 'assistant',
       timestamp,
     };
@@ -502,13 +556,26 @@ function mapPiSessionEntry(
     return {
       content,
       contentBlocks: [{ type: 'text', content }],
-      id: entry.id ?? `pi-notice-${messages.length}`,
+      id: entry.id ?? createSyntheticPiMessageId(
+        'notice',
+        messages.length,
+        syntheticIdNamespace,
+      ),
       role: 'assistant',
       timestamp,
     };
   }
 
   return null;
+}
+
+function createSyntheticPiMessageId(
+  kind: string,
+  index: number,
+  namespace?: string,
+): string {
+  const localId = `pi-${kind}-${index}`;
+  return namespace ? `${namespace}:${localId}` : localId;
 }
 
 function extractPiSkillDisplayContent(content: string): string | undefined {

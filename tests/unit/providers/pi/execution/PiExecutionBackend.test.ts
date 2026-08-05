@@ -680,12 +680,136 @@ describe('PiExecutionBackend', () => {
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toEqual({
       futureResumeCursor: { token: 'keep-me' },
+      previousSessions: [{
+        sessionFile: missingSessionFile,
+        sessionId: missingSessionFile,
+      }],
     });
 
     await recovery.coordinator.prepare();
     expect(recovery.createSessionSpy).toHaveBeenCalledTimes(2);
     expect(recovery.createSessionSpy.mock.calls[1]?.[0].resumeSeed).toBeUndefined();
     await recovery.coordinator.dispose();
+    await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  it('starts fresh while retaining detached Pi history state', async () => {
+    const harness = createHarness(createConfig({
+      resumeSeed: {
+        providerState: {
+          futureResumeCursor: { token: 'keep-me' },
+          previousSessions: [{
+            leafEntryId: 'assistant-1',
+            sessionFile: '/tmp/previous.jsonl',
+            sessionId: 'previous-session',
+          }],
+        },
+      },
+    }));
+    const run = harness.session.execute(createRequest({
+      conversationHistory: createConversationHistory('detached prior'),
+    }));
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
+    completeTurn(harness.kernels[0]);
+    await eventsPromise;
+
+    expect(harness.kernels[0].launchSpec.args).not.toContain('--session');
+    expect(getPromptMessages(harness.kernels[0])[0]).toEqual(expect.stringContaining(
+      'detached prior question',
+    ));
+    expect(harness.session.getSnapshot().providerState).toMatchObject({
+      futureResumeCursor: { token: 'keep-me' },
+      previousSessions: [{
+        leafEntryId: 'assistant-1',
+        sessionFile: '/tmp/previous.jsonl',
+        sessionId: 'previous-session',
+      }],
+    });
+  });
+
+  it('does not duplicate recovered history after the fresh native session reloads', async () => {
+    const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-recovery-reload-'));
+    const previousFile = path.join(sessionDir, 'previous.jsonl');
+    const activeFile = path.join(sessionDir, 'active.jsonl');
+    await fs.writeFile(previousFile, [
+      JSON.stringify({ type: 'session', id: 'previous-session', cwd: sessionDir }),
+      JSON.stringify({
+        id: 'recovered-user',
+        type: 'message',
+        message: { role: 'user', content: 'recovered question' },
+      }),
+      JSON.stringify({
+        id: 'recovered-assistant',
+        type: 'message',
+        message: { role: 'assistant', content: 'recovered answer' },
+      }),
+    ].join('\n'));
+    const previousSession = {
+      leafEntryId: 'recovered-assistant',
+      sessionFile: previousFile,
+      sessionId: 'previous-session',
+    };
+    const harness = createHarness(createConfig({
+      resumeSeed: { providerState: { previousSessions: [previousSession] } },
+      vaultWorkingDirectory: sessionDir,
+    }));
+    const run = harness.session.execute(createRequest({
+      conversationHistory: createConversationHistory('recovered'),
+      input: [{ text: 'Follow up', type: 'text' }],
+    }));
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
+    completeTurn(harness.kernels[0]);
+    await eventsPromise;
+
+    await fs.writeFile(activeFile, [
+      JSON.stringify({ type: 'session', id: 'active-session', cwd: sessionDir }),
+      JSON.stringify({
+        id: 'fresh-user',
+        type: 'message',
+        message: { role: 'user', content: getPromptMessages(harness.kernels[0])[0] },
+      }),
+      JSON.stringify({
+        id: 'fresh-assistant',
+        type: 'message',
+        message: { role: 'assistant', content: 'Fresh answer' },
+      }),
+    ].join('\n'));
+    const conversation = {
+      id: 'recovered-conversation',
+      providerId: 'pi',
+      title: 'Recovered',
+      createdAt: 1,
+      updatedAt: 1,
+      sessionId: 'active-session',
+      messages: [],
+      providerState: {
+        previousSessions: [previousSession],
+        sessionFile: activeFile,
+        sessionId: 'active-session',
+      },
+    } as Conversation;
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      sessionDir,
+      {
+        environment: {
+          HOME: sessionDir,
+          PI_CODING_AGENT_SESSION_DIR: sessionDir,
+        },
+      },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual([
+      'recovered question',
+      'recovered answer',
+      'Follow up',
+      'Fresh answer',
+    ]);
     await fs.rm(sessionDir, { force: true, recursive: true });
   });
 

@@ -53,6 +53,7 @@ import {
   resolvePiActivePath,
   type rollbackCreatedPiForkSessionFile,
 } from '../history/PiHistoryStore';
+import { encodePiRecoveryPrompt } from '../history/PiRecoveryPromptCodec';
 import {
   clampPiThinkingLevel,
   decodePiModelId,
@@ -1482,11 +1483,15 @@ function encodePrompt(
   if (replayConversationHistory && request.conversationHistory?.length) {
     const history = [...request.conversationHistory] as ChatMessage[];
     const historyContext = buildContextFromHistory(history);
-    text = buildPromptWithHistoryContext(
+    const recoveredPrompt = buildPromptWithHistoryContext(
       historyContext,
       text,
       text,
       history,
+    );
+    text = encodePiRecoveryPrompt(
+      historyContext,
+      recoveredPrompt === historyContext ? null : text,
     );
   }
   return {
