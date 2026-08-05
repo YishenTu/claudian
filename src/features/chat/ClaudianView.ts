@@ -86,6 +86,10 @@ export class ClaudianView extends ItemView {
   private sessionSidebarResizeCleanup: (() => void) | null = null;
   private sessionSidebarWidth: number | null = null;
   private isWideSessionLayout = false;
+  private requestedWideSessionLayout = false;
+  private sessionLayoutRequestRevision = 0;
+  private pendingProvisionalTabCleanup: Promise<void> | null = null;
+  private pendingSessionLayoutTransition: Promise<void> | null = null;
   private isArchiveSessionView = false;
   private isSessionSearchActive = false;
   private isSessionSearchComposing = false;
@@ -321,6 +325,7 @@ export class ClaudianView extends ItemView {
   }
 
   async onClose() {
+    this.sessionLayoutRequestRevision += 1;
     this.clearSessionSearchDismissHandlers();
     this.cancelHistoryRendering();
     this.cancelSessionSidebarRendering();
@@ -1597,9 +1602,9 @@ export class ClaudianView extends ItemView {
   private updateSessionSidebarLayout(width: number): void {
     if (!this.viewContainerEl) return;
 
-    const isWide = width >= WIDE_SESSION_LAYOUT_MIN_WIDTH;
-    if (isWide === this.isWideSessionLayout) {
-      if (isWide) {
+    const shouldUseWideLayout = width >= WIDE_SESSION_LAYOUT_MIN_WIDTH;
+    if (shouldUseWideLayout === this.requestedWideSessionLayout) {
+      if (shouldUseWideLayout && this.isWideSessionLayout) {
         if (this.sessionSidebarWidth !== null) {
           this.setSessionSidebarWidth(this.sessionSidebarWidth);
         }
@@ -1608,23 +1613,67 @@ export class ClaudianView extends ItemView {
       return;
     }
 
-    this.isWideSessionLayout = isWide;
-    this.viewContainerEl.toggleClass('claudian-wide-session-layout', isWide);
+    this.requestedWideSessionLayout = shouldUseWideLayout;
+    const requestRevision = ++this.sessionLayoutRequestRevision;
 
-    if (isWide) {
+    if (shouldUseWideLayout) {
+      if (!this.isWideSessionLayout) {
+        this.isWideSessionLayout = true;
+        this.viewContainerEl.addClass('claudian-wide-session-layout');
+      }
       this.historyDropdown?.removeClass('visible');
       this.cancelHistoryRendering();
       this.renderSessionSidebar();
       return;
     }
 
+    if (!this.isWideSessionLayout) return;
+
     this.closeSessionSearch();
     this.stopSessionSidebarResize();
     this.cancelSessionSidebarRendering();
     this.retainPinnedProvisionalTabs();
-    void this.tabManager?.discardProvisionalTabs().catch(() => {
-      new Notice('Failed to close the provisional session preview');
+    const cleanup = this.getProvisionalTabCleanup();
+    const transition = this.completeSingleLayoutTransition(cleanup, requestRevision);
+    this.pendingSessionLayoutTransition = transition;
+    void transition.finally(() => {
+      if (this.pendingSessionLayoutTransition === transition) {
+        this.pendingSessionLayoutTransition = null;
+      }
     });
+  }
+
+  private getProvisionalTabCleanup(): Promise<void> {
+    if (this.pendingProvisionalTabCleanup) {
+      return this.pendingProvisionalTabCleanup;
+    }
+
+    const cleanup = (this.tabManager?.discardProvisionalTabs() ?? Promise.resolve())
+      .catch(() => {
+        new Notice('Failed to close the provisional session preview');
+      });
+    this.pendingProvisionalTabCleanup = cleanup;
+    void cleanup.finally(() => {
+      if (this.pendingProvisionalTabCleanup === cleanup) {
+        this.pendingProvisionalTabCleanup = null;
+      }
+    });
+    return cleanup;
+  }
+
+  private async completeSingleLayoutTransition(
+    cleanup: Promise<void>,
+    requestRevision: number,
+  ): Promise<void> {
+    await cleanup;
+    if (
+      requestRevision !== this.sessionLayoutRequestRevision
+      || this.requestedWideSessionLayout
+      || !this.viewContainerEl
+    ) return;
+
+    this.isWideSessionLayout = false;
+    this.viewContainerEl.removeClass('claudian-wide-session-layout');
   }
 
   private async openHistoryConversation(conversationId: string): Promise<void> {

@@ -6,10 +6,8 @@ Claudian is an Obsidian plugin that embeds provider-backed coding agents in a si
 
 Do not assume provider parity. Check each provider's `capabilities.ts`, `registration.ts`, and UI config before wiring shared behavior.
 
-## Instruction Map
+## Scope Guides
 
-- This file is the canonical cross-agent guide. Keep shared instructions here.
-- `CLAUDE.md` files should import the nearest `AGENTS.md`; do not duplicate shared guidance there.
 - Before editing a scoped area, read its nearest scoped guide:
   - `src/app/AGENTS.md`
   - `src/core/AGENTS.md`
@@ -20,6 +18,15 @@ Do not assume provider parity. Check each provider's `capabilities.ts`, `registr
   - `src/providers/opencode/AGENTS.md`
   - `src/providers/pi/AGENTS.md`
   - `src/style/AGENTS.md`
+
+## AGENTS.md Maintenance
+
+- AGENTS.md is execution context for agents, not general documentation. Keep only repository- or scope-specific information that a capable agent would not reliably know; every statement must change implementation, review, or verification behavior.
+- Keep repository-wide rules here; put local ownership, dependencies, invariants, failure modes, verification, and active decisions in the narrowest scoped guide that governs them.
+- Do not duplicate inherited guidance or silently contradict it. State a necessary local exception and its rationale explicitly.
+- Omit tours, ordinary implementation details, temporary status, and general engineering advice.
+- Record a decision only when it is active, surprising from the code, expensive to reverse, and reflects a real tradeoff. State the decision, rationale, and any concrete reconsideration condition; use Git history as the archive.
+- `CLAUDE.md` files should import the nearest `AGENTS.md`; do not duplicate shared guidance there.
 
 ## Commands
 
@@ -34,7 +41,7 @@ npm run test:watch
 npm run test:coverage
 ```
 
-Use focused commands while iterating. Before handing off code changes, run the narrowest meaningful verification plus broader checks when the change touches shared behavior. The default full check is:
+The default full check is:
 
 ```bash
 npm run typecheck && npm run lint && npm run test && npm run build
@@ -44,7 +51,7 @@ Tests mirror `src/` under `tests/unit/` and `tests/integration/`.
 
 ## Architecture
 
-This table is a location map. It describes responsibility, not exclusive mutation authority. Scoped guides name the source of truth and allowed mutators for state in their area.
+Scoped guides define the source of truth and allowed mutators for state in their area.
 
 | Area | Responsibility |
 | --- | --- |
@@ -67,7 +74,7 @@ In the rules below, `A -> B` means `A` may import or call `B`:
 composition root (`src/main.ts`) -> app services + features + provider registrations + core
 app services -> core contracts
 features -> FeatureHost + core contracts + shared UI
-providers -> ProviderHost + core contracts + shared provider primitives
+providers -> ProviderHost + core contracts + shared provider and UI primitives
 ```
 
 - `core/` must not import feature code, app composition, or provider implementations.
@@ -85,7 +92,29 @@ providers -> ProviderHost + core contracts + shared provider primitives
 - `src/providers/*/` owns native protocol, process, session, transcript, settings, and provider-state interpretation.
 - `src/core/` owns provider-neutral contracts and shared lifecycle mechanisms, not concrete provider behavior.
 
-Provider-specific session fields belong behind typed helpers in the owning provider directory. Provider-native transcripts are read-only inputs; Claudian state changes must never rewrite or delete them.
+Provider-specific session fields belong behind typed helpers in the owning provider directory.
+
+## Naming Conventions
+
+- **Symbols**: no `I` prefix on interfaces. Treat acronyms as words (`SdkSessionReadResult`), except in types mirroring an external SDK (`SDKMessage`).
+- **Files**: name the file after its primary exported concept in `PascalCase.ts`; use `camelCase.ts` only for utility bags with no dominant export (when in doubt, `PascalCase`). Use `kebab-case.ts` only to mirror an external package name (`tests/__mocks__/claude-agent-sdk.ts`). Barrels stay `index.ts`, type buckets stay `types.ts`, tests mirror the source name plus `.test.ts` (qualifiers allowed: `fileLink.dom.test.ts`).
+- **Folders**: `kebab-case`.
+- **Imports**: no `.ts` extensions; prefer `@/` aliases over deep relative paths.
+
+## Development Rules
+
+- Write code, comments, identifiers, commit messages, and code blocks in English.
+- Do not use `console.*` in production code.
+- Settings writers must merge rather than replace provider-owned configuration.
+- Put non-committed notes, handoff files, traces, and throwaway scripts in `.context/`.
+
+## TDD Workflow
+
+- For new behavior or bug fixes, work one observable slice at a time: add or update the failing test in the mirrored `tests/` path, make it pass, then refactor.
+- Test through the closest stable owner or public interface; do not expose or test private methods only for convenience.
+- Mock environment and provider boundaries. Prefer real Claudian code, fixtures, or lightweight fakes for Claudian-owned collaborators.
+- For shared provider contracts, test provider-neutral behavior first, then cover each provider adapter's distinct behavior separately.
+- If a change cannot be tested directly, document why and cover the closest stable contract instead.
 
 ## Provider Rules
 
@@ -99,42 +128,6 @@ Provider-specific session fields belong behind typed helpers in the owning provi
 - Runtime-discovered commands are read-only in Claudian; providers own their editing and deletion.
 - Auxiliary query runners own their own process and session, independent from the chat runtime.
 
-## Development Rules
+## Review Checks
 
-- Use `rg` or `rg --files` for repo searches.
-- Write code, comments, identifiers, commit messages, and code blocks in English.
-- Keep comments sparse. Explain non-obvious intent, protocol constraints, or invariants; do not narrate obvious code.
-- Do not use `console.*` in production code.
-- Preserve user data and provider-native files. Settings writers should merge with existing provider-owned data instead of clobbering it.
-- Put non-committed notes, handoff files, traces, and throwaway scripts in `.context/`.
-- Do not add new production dependencies without a clear need and an explicit tradeoff.
-
-## TDD Workflow
-
-- For new behavior or bug fixes, write or update the failing test first in the mirrored `tests/` path.
-- Make the narrowest implementation change that passes the focused test.
-- Refactor after the test is green, preserving the provider and feature ownership boundaries above.
-- If a change cannot be tested directly, document why and cover the closest stable contract instead.
-
-## Project structure
-
-- Organize code by clear domain responsibility rather than accumulating related files in flat directories.
-- Keep each feature's public entry point small and obvious; place its contracts, state, orchestration, adapters, persistence, and implementation in focused subfolders when the feature warrants them.
-- Use meaningful ownership-based folder names. Do not create catch-all `utils`, `common`, or miscellaneous folders.
-- Mirror the relevant production structure in tests so ownership and coverage remain easy to find.
-- Avoid both flat dumping grounds and unnecessary nesting. Before a material reorganization, propose the target tree and explain each group's responsibility.
-- Preserve project tooling, build configuration, imports, and test discovery when moving files, and verify the affected build and tests afterward.
-
-## Naming Conventions
-
-- **Symbols**: `PascalCase` for classes, interfaces, types, enums, and enum members; `camelCase` for variables, functions, and properties; `SCREAMING_SNAKE_CASE` for module-level constants and values in enum-like const objects. No `I` prefix on interfaces. Treat acronyms as words (`SdkSessionReadResult`), except in types mirroring an external SDK (`SDKMessage`).
-- **Files**: name the file after its primary exported concept in `PascalCase.ts`; use `camelCase.ts` only for utility bags with no dominant export (when in doubt, `PascalCase`). Use `kebab-case.ts` only to mirror an external package name (`tests/__mocks__/claude-agent-sdk.ts`). Barrels stay `index.ts`, type buckets stay `types.ts`, tests mirror the source name plus `.test.ts` (qualifiers allowed: `fileLink.dom.test.ts`).
-- **Folders**: `kebab-case`.
-- **Imports**: no `.ts` extensions; prefer `@/` aliases over deep relative paths.
-
-## Review Expectations
-
-- Findings first: correctness, regression risk, API or contract ambiguity, and missing tests.
-- Treat maintainability issues as real findings when they increase future change cost or failure risk.
-- Call out duplicated logic, unclear ownership, and tight coupling with a concrete refactoring direction.
-- For architecture changes, ask whether the change reverses an allowed dependency, mutates state outside its owner, leaks a provider detail, or persists state with the wrong lifetime.
+Reviews must enforce the dependency, ownership, provider-boundary, and state-lifetime constraints above.

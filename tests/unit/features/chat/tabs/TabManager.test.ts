@@ -478,6 +478,27 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getTabCount()).toBe(2);
   });
 
+  it('keeps the fork target chooser and current-tab replacement in single mode', async () => {
+    mockChooseForkTarget.mockResolvedValue('current-tab');
+    const { manager, plugin } = createManager(createPlugin(), {
+      shouldForkToNewTab: () => false,
+    });
+    const source = await manager.createTab();
+    const forkRequest = mockInitializeTabControllers.mock.calls[0]?.[3];
+
+    await forkRequest({
+      messages: [],
+      providerId: 'claude',
+      resumeAt: 'assistant-checkpoint',
+      sourceSessionId: 'native-session',
+    });
+
+    expect(mockChooseForkTarget).toHaveBeenCalledWith(plugin.app);
+    expect(source!.controllers.conversationController!.switchTo).toHaveBeenCalledWith('forked');
+    expect(manager.getTabCount()).toBe(1);
+    expect(Notice).toHaveBeenCalled();
+  });
+
   it('deletes a partial fork if ledger copy fails', async () => {
     const { manager, plugin } = createManager();
     const source = await manager.createTab();

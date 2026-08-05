@@ -649,6 +649,37 @@ describe('ClaudianView tab controls', () => {
     expect(setArchiveSessionView).toHaveBeenCalledWith(true);
   });
 
+  it('keeps tab-aware navigation on the single-mode history surface', () => {
+    const container = createMockEl();
+    const renderHistoryDropdown = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      isArchiveSessionView: false,
+      openHistoryConversation: jest.fn(),
+      openHistoryConversationInNewTab: jest.fn(),
+      getHistoryConversationStatus: jest.fn(),
+      setConversationPinned: jest.fn(),
+      setConversationArchived: jest.fn(),
+      updateHistoryDropdown: jest.fn(),
+      buildHistoryArchiveNavigation: jest.fn(),
+      tabManager: {
+        getActiveTab: jest.fn().mockReturnValue({
+          controllers: { conversationController: { renderHistoryDropdown } },
+        }),
+      },
+    });
+
+    view.renderHistorySurface(container, new AbortController().signal);
+
+    const options = renderHistoryDropdown.mock.calls[0]?.[1];
+    expect(options.showOpenStateLabels).toBe(true);
+    expect(options.showOpenStateActions).toBe(true);
+    expect(options.onOpenConversationInNewTab).toEqual(expect.any(Function));
+    expect(options.onBeforeRestoreListState).toEqual(expect.any(Function));
+    expect(options).not.toHaveProperty('organization');
+    expect(options).not.toHaveProperty('showMetadataPopover');
+  });
+
   it('collapses and expands every linked-note group from the session header', () => {
     const container = createMockEl();
     const list = container.createDiv({ cls: 'claudian-history-list' });
@@ -1081,11 +1112,14 @@ describe('ClaudianView tab controls', () => {
     expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
   });
 
-  it('returns to the history dropdown layout below the wide breakpoint', () => {
+  it('keeps dual-mode controls in place until provisional cleanup finishes', async () => {
     const viewContainerEl = createMockEl();
     viewContainerEl.addClass('claudian-wide-session-layout');
     const view = Object.create(ClaudianView.prototype) as any;
-    const discardProvisionalTabs = jest.fn().mockResolvedValue(undefined);
+    let finishDiscard!: () => void;
+    const discardProvisionalTabs = jest.fn().mockReturnValue(new Promise<void>((resolve) => {
+      finishDiscard = resolve;
+    }));
 
     Object.assign(view, {
       cancelSessionSidebarRendering: jest.fn(),
@@ -1093,6 +1127,8 @@ describe('ClaudianView tab controls', () => {
       isSessionSearchComposing: false,
       sessionSearchQuery: 'roadmap',
       isWideSessionLayout: true,
+      requestedWideSessionLayout: true,
+      sessionLayoutRequestRevision: 0,
       plugin: { getConversationSync: jest.fn() },
       tabManager: {
         discardProvisionalTabs,
@@ -1103,12 +1139,53 @@ describe('ClaudianView tab controls', () => {
 
     view.updateSessionSidebarLayout(599);
 
-    expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(false);
-    expect(view.isWideSessionLayout).toBe(false);
+    expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(true);
+    expect(view.isWideSessionLayout).toBe(true);
     expect(view.isSessionSearchActive).toBe(false);
     expect(view.sessionSearchQuery).toBe('');
     expect(view.cancelSessionSidebarRendering).toHaveBeenCalledTimes(1);
     expect(discardProvisionalTabs).toHaveBeenCalledTimes(1);
+
+    finishDiscard();
+    await view.pendingSessionLayoutTransition;
+
+    expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(false);
+    expect(view.isWideSessionLayout).toBe(false);
+  });
+
+  it('cancels a pending compact transition when the view becomes wide again', async () => {
+    const viewContainerEl = createMockEl();
+    viewContainerEl.addClass('claudian-wide-session-layout');
+    let finishDiscard!: () => void;
+    const discardProvisionalTabs = jest.fn().mockReturnValue(new Promise<void>((resolve) => {
+      finishDiscard = resolve;
+    }));
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      cancelHistoryRendering: jest.fn(),
+      cancelSessionSidebarRendering: jest.fn(),
+      isWideSessionLayout: true,
+      plugin: { getConversationSync: jest.fn() },
+      renderSessionSidebar: jest.fn(),
+      requestedWideSessionLayout: true,
+      sessionLayoutRequestRevision: 0,
+      sessionSidebarWidth: null,
+      tabManager: {
+        discardProvisionalTabs,
+        getAllTabs: jest.fn().mockReturnValue([]),
+      },
+      viewContainerEl,
+    });
+
+    view.updateSessionSidebarLayout(599);
+    const compactTransition = view.pendingSessionLayoutTransition;
+    view.updateSessionSidebarLayout(600);
+    finishDiscard();
+    await compactTransition;
+
+    expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(true);
+    expect(view.isWideSessionLayout).toBe(true);
+    expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
   });
 
   it('retains pinned provisional sessions when returning to single mode', () => {
