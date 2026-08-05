@@ -124,7 +124,11 @@ export class TabManager implements TabManagerInterface {
   private pendingSwitchTabId: TabId | null = null;
   private readonly tabSwitchIdleWaiters = new Set<() => void>();
   private tabSwitchRequestRevision = 0;
+  private conversationNavigationRequestRevision = 0;
+  private conversationNavigationTail: Promise<void> = Promise.resolve();
+  private provisionalCleanupPromise: Promise<void> | null = null;
   private profiledFirstHydration = false;
+  private destroyed = false;
 
   constructor(
     plugin: FeatureHost,
@@ -553,6 +557,25 @@ export class TabManager implements TabManagerInterface {
 
   /** Removes replaceable dual-mode previews while retaining cold and warm work. */
   async discardProvisionalTabs(): Promise<void> {
+    if (this.destroyed) return;
+    if (this.provisionalCleanupPromise) {
+      await this.provisionalCleanupPromise;
+      return;
+    }
+
+    const cleanup = this.discardProvisionalTabsProtected();
+    this.provisionalCleanupPromise = cleanup;
+    try {
+      await cleanup;
+    } finally {
+      if (this.provisionalCleanupPromise === cleanup) {
+        this.provisionalCleanupPromise = null;
+      }
+    }
+  }
+
+  private async discardProvisionalTabsProtected(): Promise<void> {
+    await this.invalidateAndDrainConversationNavigation();
     const hasRetainedTab = Array.from(this.tabs.values()).some(
       tab => tab.lifecycleState !== 'provisional' && tab.lifecycleState !== 'closing',
     );
@@ -618,6 +641,55 @@ export class TabManager implements TabManagerInterface {
     const provisional = typeof options === 'boolean'
       ? false
       : options.provisional ?? false;
+
+    await this.enqueueConversationNavigation(
+      conversationId,
+      preferNewTab,
+      activate,
+      provisional,
+    );
+  }
+
+  private async enqueueConversationNavigation(
+    conversationId: string,
+    preferNewTab: boolean,
+    activate: boolean,
+    provisional: boolean,
+  ): Promise<void> {
+    if (this.destroyed || this.provisionalCleanupPromise) return;
+    const requestRevision = ++this.conversationNavigationRequestRevision;
+    const pending = this.conversationNavigationTail
+      .catch(() => undefined)
+      .then(async () => {
+        if (
+          this.destroyed
+          || requestRevision !== this.conversationNavigationRequestRevision
+        ) return;
+        await this.openConversationImmediately(
+          conversationId,
+          preferNewTab,
+          activate,
+          provisional,
+        );
+      });
+    this.conversationNavigationTail = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    await pending;
+  }
+
+  private async invalidateAndDrainConversationNavigation(): Promise<void> {
+    this.conversationNavigationRequestRevision += 1;
+    await this.conversationNavigationTail;
+  }
+
+  private async openConversationImmediately(
+    conversationId: string,
+    preferNewTab: boolean,
+    activate: boolean,
+    provisional: boolean,
+  ): Promise<void> {
 
     // Check if conversation is already open in this view's tabs
     for (const tab of this.tabs.values()) {
@@ -1285,6 +1357,16 @@ export class TabManager implements TabManagerInterface {
 
   /** Destroys all tabs and cleans up resources. */
   async destroy(): Promise<void> {
+    this.destroyed = true;
+    await this.invalidateAndDrainConversationNavigation();
+    let provisionalCleanupError: unknown;
+    let didProvisionalCleanupFail = false;
+    try {
+      await this.provisionalCleanupPromise;
+    } catch (error) {
+      didProvisionalCleanupFail = true;
+      provisionalCleanupError = error;
+    }
     for (const discovery of this.providerCommandDiscoveryStores.values()) {
       discovery.invalidate();
     }
@@ -1302,5 +1384,9 @@ export class TabManager implements TabManagerInterface {
     this.tabCommandContextRevisions.clear();
     this.tabActivationRevisions.clear();
     this.activeTabId = null;
+
+    if (didProvisionalCleanupFail) {
+      throw provisionalCleanupError;
+    }
   }
 }

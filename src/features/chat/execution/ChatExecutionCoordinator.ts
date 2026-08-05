@@ -233,6 +233,8 @@ export class ChatExecutionCoordinator {
   private disposePromise: Promise<void> | null = null;
   private stale = false;
   private protectedOperationCount = 0;
+  private conversationBindingGeneration = 0;
+  private preparationTail: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: ChatExecutionCoordinatorDeps) {
     this.supervisor = new ExecutionSessionSupervisor(deps.lifecycleRegistry);
@@ -277,6 +279,7 @@ export class ChatExecutionCoordinator {
       return;
     }
 
+    this.conversationBindingGeneration += 1;
     this.invalidateActiveExecution('invalidated', 'conversation-switched');
     this.pendingSteerAttempts.clear();
     this.conversation = conversation;
@@ -285,13 +288,29 @@ export class ChatExecutionCoordinator {
   }
 
   async prepare(): Promise<void> {
-    await this.runProtectedOperation(() => this.prepareSession());
+    await this.runProtectedOperation(() => this.enqueuePreparation());
+  }
+
+  private enqueuePreparation(): Promise<void> {
+    const pending = this.preparationTail
+      .catch(() => undefined)
+      .then(() => this.prepareSession());
+    this.preparationTail = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    return pending;
   }
 
   private async prepareSession(): Promise<void> {
     this.assertAvailable();
     const conversation = this.requireConversation();
+    const bindingGeneration = this.conversationBindingGeneration;
     await this.acquireWarmSlot();
+    if (!this.isPreparationCurrent(conversation, bindingGeneration)) {
+      this.releaseWarmSlot();
+      return;
+    }
     if (this.sessionBinding && this.isBindingCurrent(this.sessionBinding)) return;
     try {
       const backend = this.deps.resolveBackend(conversation.providerId);
@@ -333,7 +352,12 @@ export class ChatExecutionCoordinator {
       );
       try {
         await this.persistSnapshot(binding, binding.session.getSnapshot());
-        this.deps.warmExecution?.onWarmStateChanged?.(true);
+        if (
+          this.isBindingCurrent(binding)
+          && this.isPreparationCurrent(conversation, bindingGeneration)
+        ) {
+          this.deps.warmExecution?.onWarmStateChanged?.(true);
+        }
       } catch (error) {
         await this.releaseSessionBinding();
         throw error;
@@ -625,9 +649,12 @@ export class ChatExecutionCoordinator {
   dispose(): Promise<void> {
     if (this.disposePromise) return this.disposePromise;
     this.disposed = true;
+    this.conversationBindingGeneration += 1;
     this.invalidateActiveExecution('invalidated', 'session-disposed');
     this.pendingSteerAttempts.clear();
-    this.disposePromise = this.releaseSessionBinding();
+    this.disposePromise = this.preparationTail
+      .catch(() => undefined)
+      .then(() => this.releaseSessionBinding());
     return this.disposePromise;
   }
 
@@ -1064,8 +1091,21 @@ export class ChatExecutionCoordinator {
 
   private isBindingCurrent(binding: SessionBinding): boolean {
     return (
-      this.sessionBinding === binding
+      !this.disposed
+      && this.sessionBinding === binding
+      && sameConversationBinding(binding.conversation, this.conversation)
       && this.supervisor.isCurrent(binding.session, binding.generation)
+    );
+  }
+
+  private isPreparationCurrent(
+    conversation: ChatExecutionConversationBinding,
+    bindingGeneration: number,
+  ): boolean {
+    return (
+      !this.disposed
+      && bindingGeneration === this.conversationBindingGeneration
+      && sameConversationBinding(conversation, this.conversation)
     );
   }
 

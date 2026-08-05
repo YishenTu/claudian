@@ -1303,6 +1303,7 @@ export class ConversationController {
       && conversationStatus.attention !== undefined;
     const isCurrent = openState === 'current';
     const isOpen = openState === 'open';
+    const isSelectable = !isCurrent && options.allowConversationSelection !== false;
     const item = list.createDiv({
       cls: [
         'claudian-history-item',
@@ -1333,8 +1334,12 @@ export class ConversationController {
     });
     titleEl.setAttribute('title', conversation.title);
     if (options.showMetadataPopover) {
-      item.setAttribute('tabindex', '0');
-      this.attachSessionMetadataPopover(item, conversation, options);
+      const focusTarget = isSelectable ? content : item;
+      focusTarget.setAttribute('tabindex', '0');
+      if (isSelectable) {
+        focusTarget.setAttribute('role', 'button');
+      }
+      this.attachSessionMetadataPopover(item, focusTarget, conversation, options);
     } else {
       content.createDiv({
         cls: 'claudian-history-item-date',
@@ -1346,7 +1351,27 @@ export class ConversationController {
       });
     }
 
-    if (!isCurrent && options.allowConversationSelection !== false) {
+    if (isSelectable) {
+      const selectConversation = (): void => {
+        runConversationAction(
+          () => this.runHistoryAction(
+            () => options.onSelectConversation(conversation.id),
+            'Failed to load conversation',
+          ),
+          'Failed to load conversation',
+        );
+      };
+      if (options.showMetadataPopover) {
+        content.addEventListener('keydown', (event) => {
+          if (event.target !== content || (event.key !== 'Enter' && event.key !== ' ')) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          selectConversation();
+        });
+      }
+
       content.addEventListener('click', (event) => {
         event.stopPropagation();
         if (this.isHistoryNewTabModifierClick(event) && options.onOpenConversationInNewTab) {
@@ -1361,13 +1386,7 @@ export class ConversationController {
           return;
         }
 
-        runConversationAction(
-          () => this.runHistoryAction(
-            () => options.onSelectConversation(conversation.id),
-            'Failed to load conversation',
-          ),
-          'Failed to load conversation',
-        );
+        selectConversation();
       });
 
       if (options.onOpenConversationInNewTab) {
@@ -1548,29 +1567,30 @@ export class ConversationController {
 
   private attachSessionMetadataPopover(
     item: HTMLElement,
+    focusTarget: HTMLElement,
     conversation: ConversationMeta,
     options: HistoryRenderOptions,
   ): void {
     item.addEventListener('mouseenter', () => {
-      this.showSessionMetadataPopover(item, conversation, options);
+      this.showSessionMetadataPopover(item, focusTarget, conversation, options);
     });
     item.addEventListener('mouseleave', () => {
       this.scheduleSessionMetadataPopoverClose(item);
     });
-    item.addEventListener('focusin', () => {
-      this.showSessionMetadataPopover(item, conversation, options);
+    focusTarget.addEventListener('focusin', () => {
+      this.showSessionMetadataPopover(item, focusTarget, conversation, options);
     });
-    item.addEventListener('focusout', () => {
+    focusTarget.addEventListener('focusout', () => {
       queueMicrotask(() => {
         const activeElement = item.ownerDocument.activeElement;
-        if (activeElement && item.contains(activeElement)) return;
+        if (activeElement && focusTarget.contains(activeElement)) return;
         if (typeof item.matches === 'function' && item.matches(':hover')) return;
         if (this.metadataPopoverTarget === item) {
           this.scheduleSessionMetadataPopoverClose(item);
         }
       });
     });
-    item.addEventListener('keydown', (event) => {
+    focusTarget.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape' || this.metadataPopoverTarget !== item) return;
       event.stopPropagation();
       this.closeSessionMetadataPopover();
@@ -1579,6 +1599,7 @@ export class ConversationController {
 
   private showSessionMetadataPopover(
     item: HTMLElement,
+    descriptionTarget: HTMLElement,
     conversation: ConversationMeta,
     options: HistoryRenderOptions,
   ): void {
@@ -1599,7 +1620,7 @@ export class ConversationController {
     const popoverId = `claudian-session-metadata-${++this.metadataPopoverSequence}`;
     hoverEl.setAttribute('id', popoverId);
     hoverEl.setAttribute('role', 'tooltip');
-    item.setAttribute('aria-describedby', popoverId);
+    descriptionTarget.setAttribute('aria-describedby', popoverId);
 
     const language = options.language ?? 'en';
     const linkedNotePath = conversation.currentNote;
@@ -1660,8 +1681,8 @@ export class ConversationController {
       document.removeEventListener('scroll', closeForViewportChange, true);
       document.defaultView?.removeEventListener('resize', closeForViewportChange);
       signal?.removeEventListener('abort', closeOnAbort);
-      if (item.getAttribute('aria-describedby') === popoverId) {
-        item.removeAttribute('aria-describedby');
+      if (descriptionTarget.getAttribute('aria-describedby') === popoverId) {
+        descriptionTarget.removeAttribute('aria-describedby');
       }
     };
   }

@@ -395,6 +395,151 @@ describe('ChatExecutionCoordinator', () => {
     );
   });
 
+  it('does not install a provider session after the conversation changes during warm acquisition', async () => {
+    const pool = new WarmExecutionPool(() => 5);
+    const acquisitionGate = deferred<void>();
+    const coolingOwner: WarmExecutionOwner = {
+      id: 'cooling-owner',
+      canCool: () => true,
+      cool: jest.fn(() => acquisitionGate.promise),
+    };
+    await pool.acquire(coolingOwner);
+    await reserveProtectedWarmSlots(pool);
+    const harness = createHarness({
+      warmExecution: {
+        ownerId: 'preview-tab',
+        pool,
+        canCool: () => true,
+      },
+    });
+    await harness.coordinator.bindConversation({
+      conversationId: 'conversation-1',
+      providerId: 'claude',
+      resumeSeed: { providerSessionId: 'native-session-1' },
+    });
+
+    const stalePreparation = harness.coordinator.prepare();
+    for (let attempt = 0;
+      attempt < 20 && (coolingOwner.cool as jest.Mock).mock.calls.length === 0;
+      attempt += 1) {
+      await Promise.resolve();
+    }
+    expect(coolingOwner.cool).toHaveBeenCalledTimes(1);
+
+    await harness.coordinator.bindConversation({
+      conversationId: 'conversation-2',
+      providerId: 'claude',
+      resumeSeed: { providerSessionId: 'native-session-2' },
+    });
+    acquisitionGate.resolve(undefined);
+    await stalePreparation;
+
+    expect(harness.backends.get('claude')!.sessions).toHaveLength(0);
+    expect(harness.repository.registerExecutionBinding).not.toHaveBeenCalled();
+    expect(pool.has('preview-tab')).toBe(false);
+
+    await harness.coordinator.prepare();
+
+    expect(harness.backends.get('claude')!.configs).toEqual([
+      expect.objectContaining({
+        resumeSeed: { providerSessionId: 'native-session-2' },
+      }),
+    ]);
+    expect(harness.repository.registerExecutionBinding).toHaveBeenCalledWith(
+      'conversation-2',
+      'local-1',
+      0,
+    );
+
+    await harness.coordinator.dispose();
+    await harness.registry.dispose();
+  });
+
+  it('does not resurrect a provider session after disposal during warm acquisition', async () => {
+    const pool = new WarmExecutionPool(() => 5);
+    const acquisitionGate = deferred<void>();
+    const coolingOwner: WarmExecutionOwner = {
+      id: 'cooling-owner',
+      canCool: () => true,
+      cool: jest.fn(() => acquisitionGate.promise),
+    };
+    await pool.acquire(coolingOwner);
+    await reserveProtectedWarmSlots(pool);
+    const harness = createHarness({
+      warmExecution: {
+        ownerId: 'disposed-tab',
+        pool,
+        canCool: () => true,
+      },
+    });
+    await harness.coordinator.bindConversation({
+      conversationId: 'conversation-1',
+      providerId: 'claude',
+    });
+
+    const stalePreparation = harness.coordinator.prepare();
+    for (let attempt = 0;
+      attempt < 20 && (coolingOwner.cool as jest.Mock).mock.calls.length === 0;
+      attempt += 1) {
+      await Promise.resolve();
+    }
+    expect(coolingOwner.cool).toHaveBeenCalledTimes(1);
+
+    const disposal = harness.coordinator.dispose();
+    acquisitionGate.resolve(undefined);
+    await Promise.all([stalePreparation, disposal]);
+
+    expect(harness.coordinator.state).toBe('disposed');
+    expect(harness.backends.get('claude')!.sessions).toHaveLength(0);
+    expect(harness.repository.registerExecutionBinding).not.toHaveBeenCalled();
+    expect(pool.has('disposed-tab')).toBe(false);
+
+    await harness.registry.dispose();
+  });
+
+  it('does not publish stale warm state after rebinding during snapshot persistence', async () => {
+    const pool = new WarmExecutionPool(() => 5);
+    const warmStates: boolean[] = [];
+    const snapshotPersistence = deferred<boolean>();
+    const harness = createHarness({
+      warmExecution: {
+        ownerId: 'rebound-tab',
+        pool,
+        canCool: () => true,
+        onWarmStateChanged: state => warmStates.push(state),
+      },
+    });
+    harness.repository.persistExecutionSnapshot.mockImplementation(
+      async () => snapshotPersistence.promise,
+    );
+    await harness.coordinator.bindConversation({
+      conversationId: 'conversation-1',
+      providerId: 'claude',
+    });
+
+    const stalePreparation = harness.coordinator.prepare();
+    for (let attempt = 0;
+      attempt < 20 && harness.repository.persistExecutionSnapshot.mock.calls.length === 0;
+      attempt += 1) {
+      await Promise.resolve();
+    }
+    expect(harness.repository.persistExecutionSnapshot).toHaveBeenCalledTimes(1);
+
+    await harness.coordinator.bindConversation({
+      conversationId: 'conversation-2',
+      providerId: 'claude',
+    });
+    snapshotPersistence.resolve(true);
+    await stalePreparation;
+
+    expect(harness.coordinator.state).toBe('absent');
+    expect(warmStates).not.toContain(true);
+    expect(pool.has('rebound-tab')).toBe(false);
+
+    await harness.coordinator.dispose();
+    await harness.registry.dispose();
+  });
+
   it('cools the least-recently-used idle coordinator without closing its tab state', async () => {
     const pool = new WarmExecutionPool(() => 5);
     await reserveProtectedWarmSlots(pool);

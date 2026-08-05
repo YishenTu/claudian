@@ -79,6 +79,9 @@ Tab activation and conversation hydration do not themselves authorize creation o
 - Closing a tab disposes its runtime resources but never deletes its conversation; conversation deletion is a separate application operation.
 - Layout and presentation changes must not alter conversation binding or execution lifecycle.
 - A stale provider generation, session binding, or stream generation must not update the current tab.
+- Warm preparation is provisional until the coordinator revalidates its conversation binding and disposal generation after acquisition and snapshot persistence; superseded work must not install, retain, or publish a warm provider session.
+- Conversation navigation is latest-wins across provisional and retained targets; provisional cleanup blocks new navigation while it invalidates and drains pending work, and manager teardown fences all later requests.
+- Focusable, selectable history rows support Enter and Space activation as well as pointer activation.
 - Provider command and metadata warmup must respect provider resource generations and must not reuse stale results.
 
 ## Gotchas

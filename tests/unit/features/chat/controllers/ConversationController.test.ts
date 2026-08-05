@@ -1165,7 +1165,11 @@ describe('ConversationController', () => {
           configurable: true,
           value: body,
         });
-        expect(item.getAttribute('tabindex')).toBe('0');
+        const content = item.querySelector('.claudian-history-item-content')!;
+        expect(item.getAttribute('tabindex')).toBeNull();
+        expect(item.getAttribute('role')).toBeNull();
+        expect(content.getAttribute('tabindex')).toBe('0');
+        expect(content.getAttribute('role')).toBe('button');
         expect(item.querySelector('.claudian-history-item-date')).toBeNull();
 
         item.dispatchEvent({ type: 'mouseenter' });
@@ -1191,16 +1195,54 @@ describe('ConversationController', () => {
         )!;
         expect(noteValue.getAttribute('title')).toBe('Projects/Architecture.md');
 
-        item.dispatchEvent({
+        content.dispatchEvent({
           type: 'keydown',
           key: 'Escape',
           stopPropagation: jest.fn(),
         });
         expect(popover.hasClass('claudian-hidden')).toBe(true);
 
-        item.dispatchEvent({ type: 'focusin' });
+        content.dispatchEvent({ type: 'focusin' });
         expect(body.querySelectorAll('.claudian-session-metadata-popover'))
           .toHaveLength(2);
+      });
+
+      it.each(['Enter', ' '])('opens a focusable dual-mode session with %s', async (key) => {
+        const container = createMockEl();
+        const onSelectConversation = jest.fn().mockResolvedValue(undefined);
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([{
+          id: 'session-1',
+          providerId: 'claude',
+          title: 'Keyboard session',
+          createdAt: 1_000,
+          lastActivityAt: 2_000,
+        }]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation,
+          showMetadataPopover: true,
+        });
+
+        const item = container.querySelector('.claudian-history-item')!;
+        const content = item.querySelector('.claudian-history-item-content')!;
+        const preventDefault = jest.fn();
+        const stopPropagation = jest.fn();
+        expect(item.getAttribute('role')).toBeNull();
+        expect(content.getAttribute('role')).toBe('button');
+
+        content.dispatchEvent({
+          type: 'keydown',
+          key,
+          target: content,
+          preventDefault,
+          stopPropagation,
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(preventDefault).toHaveBeenCalledTimes(1);
+        expect(stopPropagation).toHaveBeenCalledTimes(1);
+        expect(onSelectConversation).toHaveBeenCalledWith('session-1');
       });
 
       it('omits the note metadata row for unlinked sessions', () => {

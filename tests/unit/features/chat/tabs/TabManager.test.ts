@@ -162,13 +162,16 @@ function createManager(plugin = createPlugin(), callbacks: Record<string, unknow
 
 function deferred<T>(): {
   promise: Promise<T>;
+  reject: (error: unknown) => void;
   resolve: (value: T) => void;
 } {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolver) => {
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolver, rejecter) => {
     resolve = resolver;
+    reject = rejecter;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 describe('TabManager provider execution orchestration', () => {
@@ -309,6 +312,213 @@ describe('TabManager provider execution orchestration', () => {
     expect(preview.controllers.conversationController?.switchTo)
       .toHaveBeenCalledWith('conversation-2');
     expect(preview.lifecycleState).toBe('provisional');
+  });
+
+  it('keeps the latest provisional selection during overlapping preview hydration', async () => {
+    const getCachedConversation = jest.fn((id: string) => ({
+      id,
+      providerId: 'claude',
+    }));
+    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    await manager.openConversation('conversation-1', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    const preview = manager.getActiveTab()!;
+    const firstHydration = deferred<void>();
+    const switchedConversationIds: string[] = [];
+    let isSwitching = false;
+    const switchTo = preview.controllers.conversationController!.switchTo as jest.Mock;
+    switchTo.mockImplementation(
+      async (conversationId: string) => {
+        if (isSwitching) return;
+        isSwitching = true;
+        switchedConversationIds.push(conversationId);
+        try {
+          if (conversationId === 'conversation-2') {
+            await firstHydration.promise;
+          }
+        } finally {
+          isSwitching = false;
+        }
+      },
+    );
+
+    const firstSelection = manager.openConversation('conversation-2', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    for (let attempt = 0;
+      attempt < 20 && switchedConversationIds.length === 0;
+      attempt += 1) {
+      await Promise.resolve();
+    }
+    expect(switchedConversationIds).toEqual(['conversation-2']);
+    const supersededSelection = manager.openConversation('conversation-3', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    const latestSelection = manager.openConversation('conversation-4', {
+      preferNewTab: true,
+      provisional: true,
+    });
+
+    firstHydration.resolve(undefined);
+    await Promise.all([firstSelection, supersededSelection, latestSelection]);
+
+    expect(switchedConversationIds).toEqual(['conversation-2', 'conversation-4']);
+    expect(preview.lifecycleState).toBe('provisional');
+  });
+
+  it('lets an immediate retained-tab selection supersede an in-flight preview', async () => {
+    const getCachedConversation = jest.fn((id: string) => ({
+      id,
+      providerId: 'claude',
+    }));
+    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const retained = await manager.createTab('retained-conversation');
+    await manager.openConversation('conversation-1', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    const preview = manager.getActiveTab()!;
+    const firstHydration = deferred<void>();
+    const switchTo = preview.controllers.conversationController!.switchTo as jest.Mock;
+    switchTo.mockImplementation(async () => firstHydration.promise);
+    switchTo.mockClear();
+
+    const previewSelection = manager.openConversation('conversation-2', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    for (let attempt = 0; attempt < 20 && switchTo.mock.calls.length === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+    expect(switchTo).toHaveBeenCalledWith('conversation-2');
+
+    const retainedSelection = manager.openConversation('retained-conversation');
+    firstHydration.resolve(undefined);
+    await Promise.all([previewSelection, retainedSelection]);
+
+    expect(manager.getActiveTab()).toBe(retained);
+  });
+
+  it('drains and invalidates preview navigation before provisional cleanup', async () => {
+    const getCachedConversation = jest.fn((id: string) => ({
+      id,
+      providerId: 'claude',
+    }));
+    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    await manager.openConversation('conversation-1', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    const preview = manager.getActiveTab()!;
+    const firstHydration = deferred<void>();
+    const switchTo = preview.controllers.conversationController!.switchTo as jest.Mock;
+    switchTo.mockImplementation(async () => firstHydration.promise);
+    switchTo.mockClear();
+
+    const previewSelection = manager.openConversation('conversation-2', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    for (let attempt = 0; attempt < 20 && switchTo.mock.calls.length === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+    const cleanup = manager.discardProvisionalTabs();
+    const ignoredLateSelection = manager.openConversation('conversation-3', {
+      preferNewTab: true,
+      provisional: true,
+    });
+
+    firstHydration.resolve(undefined);
+    await Promise.all([previewSelection, ignoredLateSelection, cleanup]);
+
+    expect(manager.getAllTabs().every(tab => tab.lifecycleState !== 'provisional'))
+      .toBe(true);
+    expect(switchTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('prevents queued preview navigation from creating tabs after destroy', async () => {
+    const getCachedConversation = jest.fn((id: string) => ({
+      id,
+      providerId: 'claude',
+    }));
+    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    await manager.openConversation('conversation-1', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    const preview = manager.getActiveTab()!;
+    const firstHydration = deferred<void>();
+    const switchTo = preview.controllers.conversationController!.switchTo as jest.Mock;
+    switchTo.mockImplementation(async () => firstHydration.promise);
+    switchTo.mockClear();
+
+    const firstSelection = manager.openConversation('conversation-2', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    for (let attempt = 0; attempt < 20 && switchTo.mock.calls.length === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+    const queuedSelection = manager.openConversation('conversation-3', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    const destruction = manager.destroy();
+
+    firstHydration.resolve(undefined);
+    await Promise.all([firstSelection, queuedSelection, destruction]);
+
+    expect(manager.getAllTabs()).toHaveLength(0);
+    expect(mockCreateTab).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes mandatory teardown when concurrent provisional cleanup fails', async () => {
+    const getCachedConversation = jest.fn((id: string) => ({
+      id,
+      providerId: 'claude',
+    }));
+    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const retained = await manager.createTab('retained-conversation');
+    await manager.openConversation('preview-conversation', {
+      preferNewTab: true,
+      provisional: true,
+    });
+    const preview = manager.getActiveTab()!;
+    const saveFailure = deferred<void>();
+    preview.controllers.conversationController!.save = jest.fn(
+      async () => saveFailure.promise,
+    );
+
+    const cleanupResult = manager.discardProvisionalTabs().then(
+      () => null,
+      error => error,
+    );
+    for (let attempt = 0;
+      attempt < 20
+        && (preview.controllers.conversationController!.save as jest.Mock).mock.calls.length === 0;
+      attempt += 1) {
+      await Promise.resolve();
+    }
+    const destructionResult = manager.destroy().then(
+      () => null,
+      error => error,
+    );
+
+    saveFailure.reject(new Error('Failed to save preview'));
+    const [cleanupError, destructionError] = await Promise.all([
+      cleanupResult,
+      destructionResult,
+    ]);
+
+    expect(cleanupError).toEqual(new Error('Failed to save preview'));
+    expect(destructionError).toEqual(new Error('Failed to save preview'));
+    expect(mockDestroyTab).toHaveBeenCalledWith(preview);
+    expect(mockDestroyTab).toHaveBeenCalledWith(retained);
+    expect(manager.getAllTabs()).toHaveLength(0);
   });
 
   it('discards provisional previews without removing cold or warm runtime tabs', async () => {
