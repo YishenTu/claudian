@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import { Notice, Setting } from 'obsidian';
 
+import { deriveProviderModelCatalogStatus } from '../../../core/providers/modelCatalog';
 import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -58,7 +59,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         : 'empty';
     };
 
-    renderProviderReadinessPanel({
+    const readinessPanel = renderProviderReadinessPanel({
       container,
       providerName: 'Grok',
       async getSnapshot() {
@@ -110,6 +111,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         } else {
           lastProviderWarning.showFor();
         }
+        await readinessPanel.refresh();
         modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
       },
     });
@@ -210,8 +212,19 @@ function renderGrokModelPicker(
     const selectedIds = settings.visibleModels ?? catalogModels.map(model => model.rawId);
     return {
       aliases: settings.modelAliases,
+      catalogRefreshedAt: settings.currentCatalog?.refreshedAt,
+      catalogStatus: deriveProviderModelCatalogStatus({
+        modelCount: catalogModels.length,
+        refreshedAt: settings.currentCatalog?.refreshedAt,
+      }),
+      defaultModelId: settings.currentCatalog?.defaultModelId ?? undefined,
       discoveredCount: catalogModels.length,
-      models: buildGrokPickerModels(catalogModels, selectedIds),
+      models: buildGrokPickerModels(
+        catalogModels,
+        selectedIds,
+        settings.currentCatalog?.defaultModelId ?? undefined,
+      ),
+      selectionMode: settings.visibleModels === null ? 'all' : 'explicit',
       selectedIds,
     };
   };
@@ -254,8 +267,10 @@ function renderGrokModelPicker(
 function buildGrokPickerModels(
   catalogModels: GrokDiscoveredModel[],
   selectedIds: string[],
+  defaultModelId?: string,
 ): ProviderModelPickerModel[] {
   const models: ProviderModelPickerModel[] = catalogModels.map(model => ({
+    ...(model.rawId === defaultModelId ? { catalogBadge: 'Default' } : {}),
     description: model.description,
     id: model.rawId,
     isAvailable: true,

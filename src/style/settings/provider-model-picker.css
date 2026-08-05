@@ -27,6 +27,11 @@
   font-weight: var(--font-medium);
 }
 
+.claudian-provider-model-picker-summary-default {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
 .claudian-provider-model-picker-selected {
   display: flex;
   flex-direction: column;
@@ -255,6 +260,11 @@
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   margin-left: auto;
+}
+
+.claudian-provider-model-picker[data-catalog-status="stale"] .claudian-provider-model-picker-catalog-count,
+.claudian-provider-model-picker[data-catalog-status="failed"] .claudian-provider-model-picker-catalog-count {
+  color: var(--text-warning);
 }
 
 .claudian-provider-model-picker-controls {

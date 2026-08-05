@@ -238,6 +238,10 @@ export class InputController {
   }
 
   async handleExecutionEvent(event: ProviderExecutionEvent): Promise<void> {
+    if (event.type === 'usage_updated') {
+      this.deps.streamController.updateUsage(event.usage);
+      return;
+    }
     const assistant = this.activeStreamingAssistantMessage;
     if (!assistant) return;
     if (event.type === 'user_message_started') {

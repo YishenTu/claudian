@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import { deriveProviderModelCatalogStatus } from '../../../core/providers/modelCatalog';
 import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
@@ -48,7 +49,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
     const hostnameKey = getHostnameKey();
 
-    renderProviderReadinessPanel({
+    const readinessPanel = renderProviderReadinessPanel({
       container,
       providerName: 'OpenCode',
       async getSnapshot() {
@@ -96,6 +97,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         } else {
           lastProviderWarning.showFor();
         }
+        await readinessPanel.refresh();
         modelWarning.context.notifyProviderModelOptionsChanged('opencode');
       },
     });
@@ -205,8 +207,15 @@ function renderOpencodeModelPicker(
     const current = getOpencodeProviderSettings(settingsBag);
     return {
       aliases: current.modelAliases,
+      catalogRefreshedAt: current.catalogTimestamp || undefined,
+      catalogStatus: deriveProviderModelCatalogStatus({
+        modelCount: current.discoveredModels.length,
+        refreshedAt: current.catalogTimestamp || undefined,
+      }),
+      defaultModelId: current.visibleModels[0],
       discoveredCount: current.discoveredModels.length,
       models: buildOpencodePickerModels(current.discoveredModels, current.visibleModels),
+      selectionMode: 'explicit',
       selectedIds: current.visibleModels,
     };
   };

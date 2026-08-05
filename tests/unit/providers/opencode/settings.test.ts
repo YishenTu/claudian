@@ -264,6 +264,40 @@ describe('OpenCode settings normalization', () => {
     expect((settings.providerConfigs as Record<string, any>).opencode.discoveredModels).toBeUndefined();
   });
 
+  it('preserves the catalog refresh time across reads and persists a refresh with unchanged models', () => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: {
+        opencode: {
+          catalogTimestamp: 1_000,
+          discoveredModels,
+          visibleModels: ['anthropic/claude-sonnet-4'],
+        },
+      },
+    };
+
+    expect(getOpencodeProviderSettings(settings).catalogTimestamp).toBe(1_000);
+
+    const next = updateOpencodeProviderSettings(settings, {
+      catalogTimestamp: 2_000,
+      discoveredModels,
+    });
+
+    expect(next.catalogTimestamp).toBe(2_000);
+    expect((settings.providerConfigs as Record<string, any>).opencode.catalogTimestamp).toBe(2_000);
+  });
+
+  it('does not treat legacy discovered models as freshly refreshed when no timestamp exists', () => {
+    const settings = {
+      providerConfigs: {
+        opencode: {
+          discoveredModels,
+        },
+      },
+    } as Record<string, unknown>;
+
+    expect(getOpencodeProviderSettings(settings).catalogTimestamp).toBe(0);
+  });
+
   it('persists thinking options only for visible or selected OpenCode models', () => {
     const settings: Record<string, unknown> = {
       model: 'opencode:google/gemini-2.5-pro',

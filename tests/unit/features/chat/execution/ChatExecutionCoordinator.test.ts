@@ -718,6 +718,33 @@ describe('ChatExecutionCoordinator', () => {
     await expect(resultPromise).resolves.toMatchObject({ status: 'cancelled' });
   });
 
+  it('blocks rewind while a turn is active so recovery cannot race streaming', async () => {
+    const harness = createHarness();
+    const { session, resultPromise } = await beginExecution(harness);
+    const rewind = jest.spyOn(session, 'rewind');
+
+    await expect(harness.coordinator.previewRewind(
+      'user-1',
+      'assistant-1',
+    )).resolves.toEqual({
+      canRewind: false,
+      error: 'Cannot rewind while a chat execution is active.',
+    });
+    await expect(harness.coordinator.rewind(
+      'user-1',
+      'assistant-1',
+    )).resolves.toEqual({
+      canRewind: false,
+      error: 'Cannot rewind while a chat execution is active.',
+    });
+    expect(rewind).not.toHaveBeenCalled();
+    await expect(harness.coordinator.setMode('plan')).resolves.toBe(false);
+    expect(session.modes).toEqual([]);
+
+    harness.coordinator.cancel();
+    await resultPromise;
+  });
+
   it('stages and accepts steer input only when the current session supports and accepts it', async () => {
     const harness = createHarness();
     const { session, run, resultPromise } = await beginExecution(harness);

@@ -35,6 +35,7 @@ import type {
   StreamChunk,
   SubagentInfo,
   ToolCallInfo,
+  UsageInfo,
 } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import {
@@ -300,25 +301,7 @@ export class StreamController {
       }
 
       case 'usage': {
-        // Skip usage updates from other sessions or when flagged (during session reset)
-        const currentSessionId = this.deps.getProviderSessionId?.() ?? null;
-        const chunkSessionId = chunk.sessionId ?? null;
-        if (
-          (chunkSessionId && currentSessionId && chunkSessionId !== currentSessionId) ||
-          (chunkSessionId && !currentSessionId)
-        ) {
-          break;
-        }
-        // Skip usage updates when subagents ran (SDK reports cumulative usage including subagents)
-        if (this.deps.subagentManager.subagentsSpawnedThisStream > 0) {
-          break;
-        }
-        if (!state.ignoreUsageUpdates) {
-          const activeModel = this.getActiveProviderModel();
-          state.usage = activeModel && !chunk.usage.model
-            ? { ...chunk.usage, model: activeModel }
-            : chunk.usage;
-        }
+        this.updateUsage(chunk.usage, chunk.sessionId ?? undefined);
         break;
       }
 
@@ -327,6 +310,25 @@ export class StreamController {
     }
 
     this.scrollToBottom();
+  }
+
+  updateUsage(usage: UsageInfo, sessionId?: string): void {
+    const state = this.deps.state;
+    const currentSessionId = this.deps.getProviderSessionId?.() ?? null;
+    const chunkSessionId = sessionId ?? null;
+    if (
+      (chunkSessionId && currentSessionId && chunkSessionId !== currentSessionId) ||
+      (chunkSessionId && !currentSessionId)
+    ) {
+      return;
+    }
+    if (this.deps.subagentManager.subagentsSpawnedThisStream > 0) return;
+    if (state.ignoreUsageUpdates) return;
+
+    const activeModel = this.getActiveProviderModel();
+    state.usage = activeModel && !usage.model
+      ? { ...usage, model: activeModel }
+      : usage;
   }
 
   // ============================================

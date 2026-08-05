@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 
+import { deriveProviderModelCatalogStatus } from '../../../core/providers/modelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRendererContext } from '../../../core/providers/types';
 import {
@@ -11,6 +12,7 @@ import {
 import type { CodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import {
   getCodexModelsInPickerOrder,
+  getDefaultCodexModel,
   isCodexModelAvailable,
 } from '../models';
 import {
@@ -82,8 +84,15 @@ export function renderCodexModelPicker(
 
     return {
       aliases: current.modelAliases,
+      catalogRefreshedAt: current.catalogTimestamp,
+      catalogStatus: deriveProviderModelCatalogStatus({
+        modelCount: current.discoveredModels.length,
+        refreshedAt: current.catalogTimestamp || undefined,
+      }),
+      defaultModelId: getDefaultCodexModel(current.discoveredModels)?.model,
       discoveredCount: current.discoveredModels.length,
       models,
+      selectionMode: current.visibleModels === null ? 'all' : 'explicit',
       selectedIds,
     };
   };

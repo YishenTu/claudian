@@ -3,29 +3,29 @@ import {
   CONVERSATION_INPUT_LEDGER_SCHEMA_VERSION,
   type ConversationInputRecord,
 } from '@/core/bootstrap/ConversationInputLedgerStorage';
-import type {
-  ChatRewindMode,
-  ChatRewindPreview,
-  ChatRewindResult,
-  ProviderExecutionBackend,
-  ProviderExecutionConfiguration,
-  ProviderExecutionEvent,
-  ProviderExecutionInvalidationReason,
-  ProviderExecutionLifecycleRegistry,
-  ProviderExecutionRequest,
-  ProviderExecutionRun,
-  ProviderExecutionSession,
-  ProviderInteractionDismissReason,
-  ProviderInteractionPort,
-  ProviderNativeResumeSeed,
-  ProviderSessionEvent,
-  ProviderSessionSnapshot,
-  ProviderToolPolicy,
-} from '@/core/execution';
 import {
+  type ChatRewindMode,
+  type ChatRewindPreview,
+  type ChatRewindResult,
+  createProviderExecutionOutcome,
   isModeConfigurableExecutionSession,
   isRewindableExecutionSession,
   isSteerableExecutionSession,
+  type ProviderExecutionBackend,
+  type ProviderExecutionConfiguration,
+  type ProviderExecutionEvent,
+  type ProviderExecutionInvalidationReason,
+  type ProviderExecutionLifecycleRegistry,
+  type ProviderExecutionOutcome,
+  type ProviderExecutionRequest,
+  type ProviderExecutionRun,
+  type ProviderExecutionSession,
+  type ProviderInteractionDismissReason,
+  type ProviderInteractionPort,
+  type ProviderNativeResumeSeed,
+  type ProviderSessionEvent,
+  type ProviderSessionSnapshot,
+  type ProviderToolPolicy,
 } from '@/core/execution';
 import type {
   ChatMessage,
@@ -147,21 +147,12 @@ export interface ChatExecutionCoordinatorDeps {
   readonly onError?: (error: unknown) => void;
 }
 
-export interface ChatExecutionResult {
-  readonly status:
-    | 'completed'
-    | 'cancelled'
-    | 'error'
-    | 'missing-session'
-    | 'invalidated';
-  readonly accepted: boolean;
-  readonly planCompleted: boolean;
-  readonly nativeUserMessageId?: string;
-  readonly nativeAssistantMessageId?: string;
-  readonly nativeCheckpointId?: string;
-  readonly error?: Extract<ProviderExecutionEvent, { type: 'execution_error' }>;
+export interface ChatMissingSessionResult extends Omit<ProviderExecutionOutcome, 'status'> {
+  readonly status: 'missing-session';
   readonly missingSessionResolution?: MissingProviderSessionResolution;
 }
+
+export type ChatExecutionResult = ProviderExecutionOutcome | ChatMissingSessionResult;
 
 interface SessionBinding {
   readonly conversation: ChatExecutionConversationBinding;
@@ -479,6 +470,10 @@ export class ChatExecutionCoordinator {
     assistantMessageId: string | undefined,
     mode?: ChatRewindMode,
   ): Promise<ChatRewindPreview> {
+    const activeExecutionError = this.getActiveExecutionMutationError('rewind');
+    if (activeExecutionError) {
+      return { canRewind: false, error: activeExecutionError };
+    }
     await this.prepare();
     const session = this.requireCurrentSessionBinding().session;
     if (!isRewindableExecutionSession(session)) {
@@ -488,6 +483,7 @@ export class ChatExecutionCoordinator {
   }
 
   async setMode(mode: string): Promise<boolean> {
+    if (this.getActiveExecutionMutationError('change execution mode')) return false;
     await this.prepare();
     const binding = this.requireCurrentSessionBinding();
     if (!isModeConfigurableExecutionSession(binding.session)) return false;
@@ -502,6 +498,10 @@ export class ChatExecutionCoordinator {
     assistantMessageId: string | undefined,
     mode?: ChatRewindMode,
   ): Promise<ChatRewindResult> {
+    const activeExecutionError = this.getActiveExecutionMutationError('rewind');
+    if (activeExecutionError) {
+      return { canRewind: false, error: activeExecutionError };
+    }
     await this.prepare();
     const binding = this.requireCurrentSessionBinding();
     if (!isRewindableExecutionSession(binding.session)) {
@@ -566,7 +566,6 @@ export class ChatExecutionCoordinator {
   ): Promise<ChatExecutionResult> {
     let lastSequence = 0;
     let accepted = false;
-    let planCompleted = false;
     let nativeUserMessageId: string | undefined;
     let nativeAssistantMessageId: string | undefined;
     let nativeCheckpointId: string | undefined;
@@ -615,7 +614,6 @@ export class ChatExecutionCoordinator {
         await this.persistSnapshot(active.binding, event.snapshot);
       } else if (event.type === 'turn_completed') {
         terminal = event;
-        planCompleted = event.planCompleted === true;
         nativeAssistantMessageId =
           event.nativeAssistantId ?? nativeAssistantMessageId;
         nativeCheckpointId =
@@ -678,34 +676,35 @@ export class ChatExecutionCoordinator {
     }
 
     if (active.terminationOverride) {
-      return createInterruptedResult(active.terminationOverride, accepted);
-    }
-    if (!this.isBindingCurrent(active.binding)) {
-      return createInterruptedResult('invalidated', accepted);
-    }
-    if (!terminal) {
-      return createInterruptedResult('cancelled', accepted);
-    }
-    if (terminal.type === 'turn_completed') {
-      return {
-        status: 'completed',
+      return createProviderExecutionOutcome({
+        interruption: active.terminationOverride,
         accepted,
-        planCompleted,
         nativeUserMessageId,
         nativeAssistantMessageId,
         nativeCheckpointId,
-      };
+      });
     }
-    if (terminal.type === 'cancelled') {
-      return {
-        status: 'cancelled',
+    if (!this.isBindingCurrent(active.binding)) {
+      return createProviderExecutionOutcome({
+        interruption: 'invalidated',
         accepted,
-        planCompleted: false,
         nativeUserMessageId,
         nativeAssistantMessageId,
-      };
+        nativeCheckpointId,
+      });
     }
-    if (terminal.category === 'provider-session-missing') {
+    if (!terminal) {
+      return createProviderExecutionOutcome({
+        accepted,
+        nativeUserMessageId,
+        nativeAssistantMessageId,
+        nativeCheckpointId,
+      });
+    }
+    if (
+      terminal.type === 'execution_error'
+      && terminal.category === 'provider-session-missing'
+    ) {
       let resolution: MissingProviderSessionResolution;
       try {
         resolution = await this.deps.resolveMissingProviderSession(
@@ -723,7 +722,13 @@ export class ChatExecutionCoordinator {
           !== active.binding.conversation.conversationId
       ) {
         if (terminalSinkFailure) throw terminalSinkFailure.error;
-        return createInterruptedResult('invalidated', accepted);
+        return createProviderExecutionOutcome({
+          interruption: 'invalidated',
+          accepted,
+          nativeUserMessageId,
+          nativeAssistantMessageId,
+          nativeCheckpointId,
+        });
       }
       try {
         if (this.sessionBinding === active.binding) {
@@ -760,14 +765,13 @@ export class ChatExecutionCoordinator {
         missingSessionResolution: resolution,
       };
     }
-    return {
-      status: 'error',
+    return createProviderExecutionOutcome({
+      terminal,
       accepted,
-      planCompleted: false,
       nativeUserMessageId,
       nativeAssistantMessageId,
-      error: terminal,
-    };
+      nativeCheckpointId,
+    });
   }
 
   private handleSessionEvent(event: ProviderSessionEvent): void {
@@ -807,6 +811,12 @@ export class ChatExecutionCoordinator {
       binding.backgroundSequences.delete(event.scope.turnId);
       binding.completedBackgroundTurns.add(event.scope.turnId);
     }
+  }
+
+  private getActiveExecutionMutationError(operation: string): string | null {
+    return this.activeExecution
+      ? `Cannot ${operation} while a chat execution is active.`
+      : null;
   }
 
   private async persistSnapshot(
@@ -1126,17 +1136,6 @@ function sameConversationBinding(
     && left.providerId === right.providerId
     && JSON.stringify(left.resumeSeed) === JSON.stringify(right.resumeSeed)
   );
-}
-
-function createInterruptedResult(
-  status: 'cancelled' | 'invalidated',
-  accepted: boolean,
-): ChatExecutionResult {
-  return {
-    status,
-    accepted,
-    planCompleted: false,
-  };
 }
 
 function isDefinitePreHandoffRejection(

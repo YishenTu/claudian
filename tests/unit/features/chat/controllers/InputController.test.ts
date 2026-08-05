@@ -141,6 +141,7 @@ function createFixture(overrides: Record<string, unknown> = {}) {
       handleStreamChunk: jest.fn(),
       hideThinkingIndicator: jest.fn(),
       showThinkingIndicator: jest.fn(),
+      updateUsage: jest.fn(),
     },
     selectionController: {
       getContext: jest.fn().mockReturnValue(null),
@@ -492,6 +493,40 @@ describe('InputController coordinator execution', () => {
     expect(fixture.deps.streamController.handleStreamChunk).toHaveBeenCalledWith(
       { content: 'world', type: 'text' },
       expect.objectContaining({ role: 'assistant' }),
+    );
+  });
+
+  it('routes usage updates after the assistant stream has finished', async () => {
+    const fixture = createFixture();
+    fixture.coordinator.execute.mockResolvedValueOnce({
+      accepted: true,
+      planCompleted: false,
+      status: 'completed',
+    });
+
+    await fixture.controller.sendMessage({ content: 'hello' });
+    await fixture.controller.handleExecutionEvent({
+      scope: {
+        executionId: 'execution-1',
+        kind: 'requested',
+        sequence: 1,
+        sessionInstanceId: 'session-1',
+        turnId: 'turn-1',
+      },
+      type: 'usage_updated',
+      usage: {
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        contextTokens: 50_000,
+        contextWindow: 200_000,
+        inputTokens: 50_000,
+        model: 'claude-model',
+        percentage: 25,
+      },
+    });
+
+    expect(fixture.deps.streamController.updateUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ contextTokens: 50_000 }),
     );
   });
 

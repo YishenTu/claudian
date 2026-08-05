@@ -32,7 +32,7 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
     const claudeSettings = getClaudeProviderSettings(settingsBag);
 
-    renderProviderReadinessPanel({
+    const readinessPanel = renderProviderReadinessPanel({
       container,
       providerName: 'Claude',
       async getSnapshot() {
@@ -99,6 +99,7 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         } else {
           lastProviderWarning.showFor();
         }
+        await readinessPanel.refresh();
         context.notifyProviderModelOptionsChanged('claude');
       },
     });

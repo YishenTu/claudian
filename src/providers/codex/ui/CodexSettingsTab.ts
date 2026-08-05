@@ -42,7 +42,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
       }
     };
 
-    renderProviderReadinessPanel({
+    const readinessPanel = renderProviderReadinessPanel({
       container,
       providerName: 'Codex',
       async getSnapshot() {
@@ -93,6 +93,7 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
         } else {
           lastProviderWarning.showFor();
         }
+        await readinessPanel.refresh();
         modelWarning.context.notifyProviderModelOptionsChanged('codex');
       },
     });

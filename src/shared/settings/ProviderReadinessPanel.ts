@@ -14,9 +14,13 @@ export interface ProviderReadinessPanelOptions {
   onRefresh?: () => Promise<void>;
 }
 
+export interface ProviderReadinessPanelController {
+  refresh(): Promise<void>;
+}
+
 export function renderProviderReadinessPanel(
   options: ProviderReadinessPanelOptions,
-): void {
+): ProviderReadinessPanelController {
   const root = options.container.createDiv({ cls: 'claudian-provider-readiness' });
   new Setting(root)
     .setName(t('settings.providerReadiness.title'))
@@ -57,6 +61,7 @@ export function renderProviderReadinessPanel(
   };
 
   void refresh();
+  return { refresh };
 }
 
 function renderCheck(container: HTMLElement, check: ProviderReadinessCheck): void {

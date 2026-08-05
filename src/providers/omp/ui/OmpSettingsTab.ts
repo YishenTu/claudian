@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 
 import { Notice, Setting } from 'obsidian';
 
+import { deriveProviderModelCatalogStatus } from '../../../core/providers/modelCatalog';
 import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import type {
   ProviderSettingsTabRenderer,
@@ -29,7 +30,7 @@ export const ompSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const settings = context.plugin.settings as unknown as Record<string, unknown>;
     const workspace = maybeGetOmpWorkspaceServices();
     const hostnameKey = getHostnameKey();
-    renderProviderReadinessPanel({
+    const readinessPanel = renderProviderReadinessPanel({
       container,
       providerName: 'OMP',
       async getSnapshot() {
@@ -61,6 +62,7 @@ export const ompSettingsTabRenderer: ProviderSettingsTabRenderer = {
         await context.plugin.mutateSettings(target => {
           updateOmpProviderSettings(target, { enabled });
         });
+        await readinessPanel.refresh();
         context.notifyProviderModelOptionsChanged('omp');
       },
     });
@@ -102,8 +104,15 @@ function renderOmpModelPicker(
     const provider = getOmpProviderSettings(settings);
     return {
       aliases: {},
+      catalogRefreshedAt: provider.catalogTimestamp || undefined,
+      catalogStatus: deriveProviderModelCatalogStatus({
+        modelCount: provider.discoveredModels.length,
+        refreshedAt: provider.catalogTimestamp || undefined,
+      }),
+      defaultModelId: provider.visibleModels[0],
       discoveredCount: provider.discoveredModels.length,
       models: provider.discoveredModels.map(toPickerModel),
+      selectionMode: 'explicit',
       selectedIds: provider.visibleModels,
     };
   };

@@ -14,6 +14,7 @@ const OPENCODE_DISCOVERY_STATE = Symbol('opencodeDiscoveryState');
 
 interface OpencodeDiscoveryState {
   availableModes: OpencodeMode[];
+  refreshedAt: number;
   discoveredModels: OpencodeDiscoveredModel[];
   thinkingOptionsByModel: OpencodeThinkingOptionsByModel;
 }
@@ -26,6 +27,7 @@ function ensureDiscoveryState(settings: Record<string, unknown>): OpencodeDiscov
   if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
     const state = existing as Partial<OpencodeDiscoveryState>;
     state.availableModes ??= [];
+    state.refreshedAt ??= 0;
     state.discoveredModels ??= [];
     state.thinkingOptionsByModel ??= {};
     return state as OpencodeDiscoveryState;
@@ -33,6 +35,7 @@ function ensureDiscoveryState(settings: Record<string, unknown>): OpencodeDiscov
 
   const next: OpencodeDiscoveryState = {
     availableModes: [],
+    refreshedAt: 0,
     discoveredModels: [],
     thinkingOptionsByModel: {},
   };
@@ -63,6 +66,7 @@ export function getOpencodeDiscoveryState(settings: Record<string, unknown>): Op
   const state = ensureDiscoveryState(settings);
   return {
     availableModes: cloneModes(state.availableModes),
+    refreshedAt: state.refreshedAt,
     discoveredModels: cloneDiscoveredModels(state.discoveredModels),
     thinkingOptionsByModel: cloneThinkingOptionsByModel(state.thinkingOptionsByModel),
   };
@@ -82,15 +86,20 @@ export function updateOpencodeDiscoveryState(
   const nextThinkingOptionsByModel = 'thinkingOptionsByModel' in updates
     ? normalizeOpencodeThinkingOptionsByModel(updates.thinkingOptionsByModel, nextDiscoveredModels)
     : state.thinkingOptionsByModel;
+  const nextRefreshedAt = 'refreshedAt' in updates
+    ? (typeof updates.refreshedAt === 'number' ? updates.refreshedAt : 0)
+    : state.refreshedAt;
   const changed = !sameModes(state.availableModes, nextAvailableModes)
     || !sameDiscoveredModels(state.discoveredModels, nextDiscoveredModels)
-    || !sameThinkingOptionsByModel(state.thinkingOptionsByModel, nextThinkingOptionsByModel);
+    || !sameThinkingOptionsByModel(state.thinkingOptionsByModel, nextThinkingOptionsByModel)
+    || state.refreshedAt !== nextRefreshedAt;
 
   if (!changed) {
     return false;
   }
 
   state.availableModes = cloneModes(nextAvailableModes);
+  state.refreshedAt = nextRefreshedAt;
   state.discoveredModels = cloneDiscoveredModels(nextDiscoveredModels);
   state.thinkingOptionsByModel = cloneThinkingOptionsByModel(nextThinkingOptionsByModel);
   return true;
@@ -101,12 +110,14 @@ export function clearOpencodeDiscoveryState(settings: Record<string, unknown>): 
   if (
     state.availableModes.length === 0
     && state.discoveredModels.length === 0
+    && state.refreshedAt === 0
     && Object.keys(state.thinkingOptionsByModel).length === 0
   ) {
     return false;
   }
 
   state.availableModes = [];
+  state.refreshedAt = 0;
   state.discoveredModels = [];
   state.thinkingOptionsByModel = {};
   return true;
@@ -130,6 +141,9 @@ export function seedOpencodeDiscoveryStateFromLegacyConfig(
   return updateOpencodeDiscoveryState(settings, {
     availableModes: nextAvailableModes,
     discoveredModels: nextDiscoveredModels,
+    refreshedAt: typeof legacyConfig.catalogTimestamp === 'number'
+      ? legacyConfig.catalogTimestamp
+      : 0,
     thinkingOptionsByModel: nextThinkingOptionsByModel,
   });
 }

@@ -66,6 +66,8 @@ npm run build
 
 For user-facing settings changes, manually check every provider tab (Claude, Codex, Grok, OpenCode, OMP, and Pi) when the provider is available. Confirm that readiness status reflects the provider's own CLI and model configuration, and that refreshing the panel does not mutate provider-native files.
 
+When changing provider settings, also verify that enabling or disabling a provider immediately refreshes its readiness panel. For model catalog changes, check the cached/stale/failed state, default model label, and all-versus-explicit selection behavior for the affected provider.
+
 During development, `npm run dev` also watches styles and `manifest.json`. Set `OBSIDIAN_VAULT` in `.env.local` to copy rebuilt resources into a test vault automatically.
 
 The project architecture and area-specific development rules are documented in `AGENTS.md` and the scoped `AGENTS.md` files under `src/`.

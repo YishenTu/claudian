@@ -25,6 +25,7 @@ export type PiToolMode = 'all' | 'readonly';
 export interface PersistedPiProviderSettings {
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
+  catalogTimestamp?: number;
   discoveredModels: PiDiscoveredModel[];
   enabled: boolean;
   environmentHash: string;
@@ -40,6 +41,7 @@ export type PiProviderSettings = PersistedPiProviderSettings;
 export const DEFAULT_PI_PROVIDER_SETTINGS: Readonly<PersistedPiProviderSettings> = Object.freeze({
   cliPath: '',
   cliPathsByHost: {},
+  catalogTimestamp: 0,
   discoveredModels: [],
   enabled: false,
   environmentHash: '',
@@ -139,6 +141,7 @@ export function getPiProviderSettings(settings: Record<string, unknown>): PiProv
     cliPath: (config.cliPath as string | undefined)
       ?? DEFAULT_PI_PROVIDER_SETTINGS.cliPath,
     cliPathsByHost,
+    catalogTimestamp: typeof config.catalogTimestamp === 'number' ? config.catalogTimestamp : 0,
     discoveredModels,
     enabled: (config.enabled as boolean | undefined)
       ?? DEFAULT_PI_PROVIDER_SETTINGS.enabled,

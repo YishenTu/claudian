@@ -52,6 +52,13 @@ export {
   type ProviderExecutionTransitionScope,
 } from './ProviderExecutionLifecycleRegistry';
 export {
+  createProviderExecutionOutcome,
+  type ProviderExecutionOutcome,
+  type ProviderExecutionOutcomeInput,
+  type ProviderExecutionOutcomeStatus,
+  type ProviderExecutionTerminalEvent,
+} from './ProviderExecutionOutcome';
+export {
   type ProviderCurrentNoteContext,
   type ProviderExecutionConfiguration,
   type ProviderExecutionContext,

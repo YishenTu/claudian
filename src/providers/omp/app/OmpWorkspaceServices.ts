@@ -25,6 +25,7 @@ export const ompWorkspaceRegistration: ProviderWorkspaceRegistration<OmpWorkspac
           await plugin.mutateSettings(settings => {
             updateOmpProviderSettings(settings, {
               discoveredModels: catalog.models,
+              catalogTimestamp: Date.now(),
               ...(catalog.thinking ? { thinking: catalog.thinking } : {}),
             });
           });

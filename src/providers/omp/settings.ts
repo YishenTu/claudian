@@ -18,6 +18,7 @@ export interface OmpProviderSettings {
   environmentVariables: string;
   thinking: OmpThinkingConfig | null;
   discoveredModels: OmpDiscoveredModel[];
+  catalogTimestamp: number;
   visibleModels: string[];
 }
 
@@ -29,6 +30,7 @@ export const DEFAULT_OMP_PROVIDER_SETTINGS: Readonly<OmpProviderSettings> = Obje
   environmentVariables: '',
   thinking: null,
   discoveredModels: [],
+  catalogTimestamp: 0,
   visibleModels: [],
 });
 
@@ -45,6 +47,7 @@ export function getOmpProviderSettings(settings: Record<string, unknown>): OmpPr
       : getProviderEnvironmentVariables(settings, 'omp') ?? '',
     thinking: normalizeOmpThinkingConfig(config.thinking),
     discoveredModels,
+    catalogTimestamp: typeof config.catalogTimestamp === 'number' ? config.catalogTimestamp : 0,
     visibleModels: normalizeOmpVisibleModels(config.visibleModels, discoveredModels),
   };
 }

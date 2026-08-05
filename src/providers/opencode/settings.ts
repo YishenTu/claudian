@@ -29,6 +29,7 @@ import {
 } from './modes';
 
 export interface PersistedOpencodeProviderSettings {
+  catalogTimestamp?: number;
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
   enabled: boolean;
@@ -43,12 +44,14 @@ export interface PersistedOpencodeProviderSettings {
 
 export interface OpencodeProviderSettings extends PersistedOpencodeProviderSettings {
   availableModes: OpencodeMode[];
+  catalogTimestamp: number;
   discoveredModels: OpencodeDiscoveredModel[];
 }
 
 export const OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES = 'OPENCODE_ENABLE_EXA=1';
 
 export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<PersistedOpencodeProviderSettings> = Object.freeze({
+  catalogTimestamp: 0,
   cliPath: '',
   cliPathsByHost: {},
   enabled: false,
@@ -167,6 +170,7 @@ export function getOpencodeProviderSettings(
 
   return {
     availableModes,
+    catalogTimestamp: discoveryState.refreshedAt,
     cliPath: (config.cliPath as string | undefined)
       ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath,
     cliPathsByHost,
@@ -195,6 +199,7 @@ export function updateOpencodeProviderSettings(
 ): OpencodeProviderSettings {
   const current = getOpencodeProviderSettings(settings);
   const hostnameKey = getHostnameKey();
+  const refreshRequested = 'discoveredModels' in updates || 'catalogTimestamp' in updates;
   if ('availableModes' in updates || 'discoveredModels' in updates || 'thinkingOptionsByModel' in updates) {
     updateOpencodeDiscoveryState(settings, {
       ...(updates.availableModes !== undefined ? { availableModes: updates.availableModes } : {}),
@@ -202,6 +207,13 @@ export function updateOpencodeProviderSettings(
       ...(updates.thinkingOptionsByModel !== undefined
         ? { thinkingOptionsByModel: updates.thinkingOptionsByModel }
         : {}),
+      ...(refreshRequested
+        ? { refreshedAt: updates.catalogTimestamp ?? Date.now() }
+        : {}),
+    });
+  } else if (refreshRequested) {
+    updateOpencodeDiscoveryState(settings, {
+      refreshedAt: updates.catalogTimestamp ?? Date.now(),
     });
   }
   const discoveryState = getOpencodeDiscoveryState(settings);
@@ -253,6 +265,7 @@ export function updateOpencodeProviderSettings(
     ...current,
     ...updates,
     availableModes: nextAvailableModes,
+    catalogTimestamp: discoveryState.refreshedAt,
     cliPath: nextCliPath,
     cliPathsByHost: nextCliPathsByHost,
     discoveredModels: nextDiscoveredModels,
@@ -276,6 +289,7 @@ export function updateOpencodeProviderSettings(
   );
 
   setProviderConfig(settings, 'opencode', {
+    catalogTimestamp: next.catalogTimestamp,
     cliPath: next.cliPath,
     cliPathsByHost: next.cliPathsByHost,
     enabled: next.enabled,

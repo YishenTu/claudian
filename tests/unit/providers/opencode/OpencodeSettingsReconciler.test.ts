@@ -51,6 +51,7 @@ describe('opencodeSettingsReconciler.handleEnvironmentChange', () => {
     expect(getOpencodeDiscoveryState(settings)).toEqual({
       availableModes: [],
       discoveredModels: [],
+      refreshedAt: 0,
       thinkingOptionsByModel: {},
     });
   });

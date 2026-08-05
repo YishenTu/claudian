@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 
 import { Notice, Setting } from 'obsidian';
 
+import { deriveProviderModelCatalogStatus } from '../../../core/providers/modelCatalog';
 import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
@@ -40,7 +41,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const hostnameKey = getHostnameKey();
     const workspace = maybeGetPiWorkspaceServices();
 
-    renderProviderReadinessPanel({
+    const readinessPanel = renderProviderReadinessPanel({
       container,
       providerName: 'Pi',
       async getSnapshot() {
@@ -88,6 +89,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
         } else {
           lastProviderWarning.showFor();
         }
+        await readinessPanel.refresh();
         modelWarning.context.notifyProviderModelOptionsChanged('pi');
       },
     });
@@ -168,8 +170,15 @@ function renderPiModelPicker(
     const current = getPiProviderSettings(settingsBag);
     return {
       aliases: current.modelAliases,
+      catalogRefreshedAt: current.catalogTimestamp || undefined,
+      catalogStatus: deriveProviderModelCatalogStatus({
+        modelCount: current.discoveredModels.length,
+        refreshedAt: current.catalogTimestamp || undefined,
+      }),
+      defaultModelId: current.visibleModels[0],
       discoveredCount: current.discoveredModels.length,
       models: buildPiPickerModels(current.discoveredModels, current.visibleModels),
+      selectionMode: 'explicit',
       selectedIds: current.visibleModels,
     };
   };
@@ -197,6 +206,7 @@ function renderPiModelPicker(
         await context.plugin.mutateSettings((settings) => {
           updatePiProviderSettings(settings, {
             discoveredModels: result.models,
+            catalogTimestamp: Date.now(),
             visibleModels: normalizedVisibleModels,
           });
         });
