@@ -65,12 +65,7 @@ export async function restoreDisplayOnlyCodeFences(
 
   try {
     const prism: unknown = await loadPrism();
-    if (
-      typeof prism !== 'object'
-      || prism === null
-      || !('highlightElement' in prism)
-      || typeof prism.highlightElement !== 'function'
-    ) {
+    if (!isPrismHighlighter(prism)) {
       return;
     }
     for (const code of codeBlocks) {
@@ -79,4 +74,13 @@ export async function restoreDisplayOnlyCodeFences(
   } catch {
     // Language restoration is authoritative; highlighting is best-effort.
   }
+}
+
+function isPrismHighlighter(value: unknown): value is {
+  highlightElement(element: HTMLElement): void;
+} {
+  if (typeof value !== 'object' || value === null || !('highlightElement' in value)) {
+    return false;
+  }
+  return typeof value.highlightElement === 'function';
 }
