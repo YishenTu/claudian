@@ -1,10 +1,8 @@
 const mockGetHostnameKey = jest.fn(() => 'host-a');
-const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
 
 jest.mock('../../../../src/utils/env', () => ({
   ...jest.requireActual('../../../../src/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
-  getLegacyHostnameKey: () => mockGetLegacyHostnameKey(),
 }));
 
 import { piSettingsReconciler } from '@/providers/pi/env/PiSettingsReconciler';
@@ -42,7 +40,6 @@ describe('Pi settings normalization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('host-a');
-    mockGetLegacyHostnameKey.mockReturnValue('legacy-host');
   });
 
   it('defaults Pi to disabled all-tools mode', () => {
@@ -53,9 +50,8 @@ describe('Pi settings normalization', () => {
     });
   });
 
-  it('migrates current legacy hostname-scoped CLI paths', () => {
+  it('preserves hostname-scoped CLI paths without assigning them to the current device', () => {
     mockGetHostnameKey.mockReturnValue('device:current');
-    mockGetLegacyHostnameKey.mockReturnValue('host-a');
 
     expect(getPiProviderSettings({
       providerConfigs: {
@@ -67,7 +63,7 @@ describe('Pi settings normalization', () => {
         },
       },
     }).cliPathsByHost).toEqual({
-      'device:current': '/host-a/pi',
+      'host-a': '/host-a/pi',
       'host-b': '/host-b/pi',
     });
   });

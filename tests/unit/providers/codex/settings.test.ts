@@ -14,20 +14,17 @@ import {
 } from '@/providers/codex/settings';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
-const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
 const originalPlatform = process.platform;
 
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
-  getLegacyHostnameKey: () => mockGetLegacyHostnameKey(),
 }));
 
 describe('codex settings', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('host-a');
-    mockGetLegacyHostnameKey.mockReturnValue('legacy-host');
   });
 
   afterEach(() => {
@@ -86,9 +83,9 @@ describe('codex settings', () => {
       },
     }).installationMethodsByHost;
 
-    expect(methods['host-a']).toBe('wsl');
+    expect(methods['legacy-host']).toBe('wsl');
     expect(methods.__proto__).toBe('native-windows');
-    expect(Object.keys(methods).sort()).toEqual(['__proto__', 'host-a']);
+    expect(Object.keys(methods).sort()).toEqual(['__proto__', 'legacy-host']);
     expect(Object.getPrototypeOf(methods)).toBe(Object.prototype);
     expect(Object.prototype.hasOwnProperty.call(methods, '__proto__')).toBe(true);
     expect(Object.prototype.hasOwnProperty.call(methods, 'inherited')).toBe(false);
@@ -281,9 +278,8 @@ describe('codex settings', () => {
     expect(settings.wslDistroOverride).toBe('');
   });
 
-  it('migrates current legacy hostname-scoped settings to the opaque device key', () => {
+  it('preserves hostname-scoped settings without assigning them to the current device', () => {
     mockGetHostnameKey.mockReturnValue('device:current');
-    mockGetLegacyHostnameKey.mockReturnValue('host-a');
 
     const settings = getCodexProviderSettings({
       providerConfigs: {
@@ -305,17 +301,17 @@ describe('codex settings', () => {
     });
 
     expect(settings.cliPathsByHost).toEqual({
-      'device:current': '/host-a/codex',
+      'host-a': '/host-a/codex',
       'host-b': '/host-b/codex',
     });
-    expect(settings.installationMethod).toBe('wsl');
+    expect(settings.installationMethod).toBe('native-windows');
     expect(settings.installationMethodsByHost).toEqual({
-      'device:current': 'wsl',
+      'host-a': 'wsl',
       'host-b': 'native-windows',
     });
-    expect(settings.wslDistroOverride).toBe('Ubuntu');
+    expect(settings.wslDistroOverride).toBe('');
     expect(settings.wslDistroOverridesByHost).toEqual({
-      'device:current': 'Ubuntu',
+      'host-a': 'Ubuntu',
       'host-b': 'Debian',
     });
   });
@@ -436,7 +432,6 @@ describe('codex settings', () => {
       {
         platform: 'darwin',
         hostnameKey: 'host-a',
-        legacyHostnameKey: 'legacy-host',
       },
     );
 
@@ -467,7 +462,6 @@ describe('codex settings', () => {
       {
         platform: 'win32',
         hostnameKey: 'host-a',
-        legacyHostnameKey: 'legacy-host',
       },
     );
 

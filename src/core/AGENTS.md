@@ -19,7 +19,7 @@
 | `rpc/` | Provider-neutral JSON-RPC transport primitives |
 | `security/` | Permission and approval helpers |
 | `skills/` | Shared skill model, codec, validation, and repository contracts |
-| `storage/` | Generic vault/home filesystem adapters |
+| `storage/` | Generic vault filesystem adapters |
 | `tools/` | Shared tool constants and formatting helpers |
 | `types/` | Shared type definitions |
 

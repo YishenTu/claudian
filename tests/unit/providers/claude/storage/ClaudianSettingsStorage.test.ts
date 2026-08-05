@@ -19,13 +19,11 @@ import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { getPiProviderSettings } from '@/providers/pi/settings';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
-const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
 const originalPlatform = process.platform;
 
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
-  getLegacyHostnameKey: () => mockGetLegacyHostnameKey(),
 }));
 
 const mockAdapter = {
@@ -47,7 +45,6 @@ describe('ClaudianSettingsStorage', () => {
     mockAdapter.write.mockResolvedValue(undefined);
     mockAdapter.delete.mockResolvedValue(undefined);
     mockGetHostnameKey.mockReturnValue('host-a');
-    mockGetLegacyHostnameKey.mockReturnValue('legacy-host');
     storage = new ClaudianSettingsStorage(mockAdapter);
   });
 
@@ -210,10 +207,9 @@ describe('ClaudianSettingsStorage', () => {
       expect(getCodexProviderSettings(result).cliPathsByHost['host-b']).toBe('/custom/codex-b');
     });
 
-    it('migrates current legacy hostname-scoped provider settings to the opaque device key', async () => {
+    it('preserves hostname-scoped provider settings without assigning them to the current device', async () => {
       Object.defineProperty(process, 'platform', { value: 'win32' });
       mockGetHostnameKey.mockReturnValue('device:current');
-      mockGetLegacyHostnameKey.mockReturnValue('host-a');
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
         providerConfigs: {
@@ -259,58 +255,42 @@ describe('ClaudianSettingsStorage', () => {
       const piSettings = getPiProviderSettings(result);
       const persistedOpencodeConfig = result.providerConfigs.opencode as Record<string, unknown>;
       const persistedPiConfig = result.providerConfigs.pi as Record<string, unknown>;
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
       expect(claudeSettings.cliPathsByHost).toEqual({
-        'device:current': '/custom/claude-a',
+        'host-a': '/custom/claude-a',
         'host-b': '/custom/claude-b',
       });
       expect(codexSettings.cliPathsByHost).toEqual({
-        'device:current': '/custom/codex-a',
+        'host-a': '/custom/codex-a',
         'host-b': '/custom/codex-b',
       });
-      expect(codexSettings.installationMethod).toBe('wsl');
+      expect(codexSettings.installationMethod).toBe('native-windows');
       expect(codexSettings.installationMethodsByHost).toEqual({
-        'device:current': 'wsl',
+        'host-a': 'wsl',
         'host-b': 'native-windows',
       });
-      expect(codexSettings.wslDistroOverride).toBe('Ubuntu');
+      expect(codexSettings.wslDistroOverride).toBe('');
       expect(codexSettings.wslDistroOverridesByHost).toEqual({
-        'device:current': 'Ubuntu',
+        'host-a': 'Ubuntu',
         'host-b': 'Debian',
       });
       expect(opencodeSettings.cliPathsByHost).toEqual({
-        'device:current': '/custom/opencode-a',
+        'host-a': '/custom/opencode-a',
         'host-b': '/custom/opencode-b',
       });
       expect(piSettings.cliPathsByHost).toEqual({
-        'device:current': '/custom/pi-a',
+        'host-a': '/custom/pi-a',
         'host-b': '/custom/pi-b',
       });
       expect(persistedOpencodeConfig.cliPathsByHost).toEqual({
-        'device:current': '/custom/opencode-a',
+        'host-a': '/custom/opencode-a',
         'host-b': '/custom/opencode-b',
       });
       expect(persistedPiConfig.cliPathsByHost).toEqual({
-        'device:current': '/custom/pi-a',
+        'host-a': '/custom/pi-a',
         'host-b': '/custom/pi-b',
       });
-      expect(writtenContent.providerConfigs.claude.cliPathsByHost).toEqual({
-        'device:current': '/custom/claude-a',
-        'host-b': '/custom/claude-b',
-      });
-      expect(writtenContent.providerConfigs.codex.cliPathsByHost).toEqual({
-        'device:current': '/custom/codex-a',
-        'host-b': '/custom/codex-b',
-      });
-      expect(writtenContent.providerConfigs.opencode.cliPathsByHost).toEqual({
-        'device:current': '/custom/opencode-a',
-        'host-b': '/custom/opencode-b',
-      });
-      expect(writtenContent.providerConfigs.pi.cliPathsByHost).toEqual({
-        'device:current': '/custom/pi-a',
-        'host-b': '/custom/pi-b',
-      });
+      expect(mockAdapter.write).not.toHaveBeenCalled();
     });
 
     it('clears Codex Windows installation settings on non-Windows hosts during normalization', async () => {
@@ -355,9 +335,8 @@ describe('ClaudianSettingsStorage', () => {
       });
     });
 
-    it('migrates Grok CLI and catalog maps to the opaque device key', async () => {
+    it('preserves Grok hostname-scoped CLI and catalog maps', async () => {
       mockGetHostnameKey.mockReturnValue('device:current');
-      mockGetLegacyHostnameKey.mockReturnValue('host-a');
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
         providerConfigs: {
@@ -390,19 +369,19 @@ describe('ClaudianSettingsStorage', () => {
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
       expect(grokSettings.cliPathsByHost).toEqual({
-        'device:current': '/custom/grok-a',
+        'host-a': '/custom/grok-a',
         'host-b': '/custom/grok-b',
       });
       expect(grokSettings.catalogsByHost).toEqual(expect.objectContaining({
-        'device:current': expect.objectContaining({ fingerprint: 'current' }),
+        'host-a': expect.objectContaining({ fingerprint: 'current' }),
         'host-b': expect.objectContaining({ fingerprint: 'other' }),
       }));
       expect(writtenContent.providerConfigs.grok.cliPathsByHost).toEqual({
-        'device:current': '/custom/grok-a',
+        'host-a': '/custom/grok-a',
         'host-b': '/custom/grok-b',
       });
       expect(writtenContent.providerConfigs.grok.catalogsByHost).toEqual(expect.objectContaining({
-        'device:current': expect.objectContaining({ fingerprint: 'current' }),
+        'host-a': expect.objectContaining({ fingerprint: 'current' }),
         'host-b': expect.objectContaining({ fingerprint: 'other' }),
       }));
     });

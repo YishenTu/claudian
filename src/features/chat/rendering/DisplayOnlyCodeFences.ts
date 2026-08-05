@@ -4,6 +4,18 @@ import { transformMarkdownSegments } from '../../../utils/markdownSegments';
 
 const PLACEHOLDER_LANGUAGE_PREFIX = 'claudian-display-only-fence-';
 
+interface PrismHighlighter {
+  highlightElement(element: Element): void;
+}
+
+function isPrismHighlighter(value: unknown): value is PrismHighlighter {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  return typeof (value as Record<string, unknown>).highlightElement === 'function';
+}
+
 export interface DisplayOnlyCodeFence {
   placeholderLanguage: string;
   originalLanguage: string;
@@ -74,13 +86,4 @@ export async function restoreDisplayOnlyCodeFences(
   } catch {
     // Language restoration is authoritative; highlighting is best-effort.
   }
-}
-
-function isPrismHighlighter(value: unknown): value is {
-  highlightElement(element: HTMLElement): void;
-} {
-  if (typeof value !== 'object' || value === null || !('highlightElement' in value)) {
-    return false;
-  }
-  return typeof value.highlightElement === 'function';
 }

@@ -5,7 +5,6 @@ import type {
   ProviderExecutionTransitionScope,
 } from '../execution';
 import type { McpServerManager } from '../mcp/McpServerManager';
-import type { HomeFileAdapter } from '../storage/HomeFileAdapter';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   AgentDefinition,
@@ -466,7 +465,6 @@ export interface ProviderWorkspaceInitContext {
   plugin: ProviderHost;
   storage: SharedAppStorage;
   vaultAdapter: VaultFileAdapter;
-  homeAdapter: HomeFileAdapter;
   transitionScope: ProviderExecutionTransitionScope;
 }
 
@@ -512,7 +510,9 @@ export interface ProviderConversationHistoryService {
     sourceSessionId: string,
     resumeAt: string,
     sourceProviderState?: Record<string, unknown>,
-  ): Record<string, unknown>;
+    vaultPath?: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
   /** Adds provider-owned persisted metadata to Conversation.providerState before session save. */
   buildPersistedProviderState?(conversation: Conversation): Record<string, unknown> | undefined;
 }

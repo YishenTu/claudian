@@ -97,6 +97,314 @@ describe('PiConversationHistoryService', () => {
     expect(conversation.providerState).toEqual({ sessionFile });
   });
 
+  it('hydrates detached previous sessions without making them active resume state', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-detached-'));
+    const trustedDir = path.join(home, '.pi', 'agent', 'sessions');
+    await fs.mkdir(trustedDir, { recursive: true });
+    const sessionFile = path.join(trustedDir, 'detached.jsonl');
+    await fs.writeFile(sessionFile, [
+      JSON.stringify({ type: 'session', id: 'detached-session' }),
+      JSON.stringify({
+        id: 'u1',
+        message: { content: 'Detached history', role: 'user', timestamp: 1 },
+        type: 'message',
+      }),
+    ].join('\n'));
+    const conversation = createConversation(sessionFile);
+    conversation.providerState = {
+      previousSessions: [{
+        leafEntryId: 'u1',
+        sessionFile,
+        sessionId: 'detached-session',
+      }],
+    };
+    conversation.sessionId = null;
+    const service = new PiConversationHistoryService();
+
+    await service.hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { HOME: home } },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['Detached history']);
+    expect(service.resolveSessionIdForConversation(conversation)).toBe(sessionFile);
+    expect(conversation.providerState).toEqual({
+      previousSessions: [{
+        leafEntryId: 'u1',
+        sessionFile,
+        sessionId: 'detached-session',
+      }],
+    });
+  });
+
+  it('hydrates previous and active Pi session segments in chronological order', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-segments-'));
+    const trustedDir = path.join(home, '.pi', 'agent', 'sessions');
+    await fs.mkdir(trustedDir, { recursive: true });
+    const previousFile = path.join(trustedDir, 'previous.jsonl');
+    const activeFile = path.join(trustedDir, 'active.jsonl');
+    await fs.writeFile(previousFile, [
+      JSON.stringify({ type: 'session', id: 'previous-session' }),
+      JSON.stringify({
+        id: 'previous-user',
+        message: { content: 'Previous', role: 'user', timestamp: 1 },
+        type: 'message',
+      }),
+    ].join('\n'));
+    await fs.writeFile(activeFile, [
+      JSON.stringify({ type: 'session', id: 'active-session' }),
+      JSON.stringify({
+        id: 'active-user',
+        message: { content: 'Active', role: 'user', timestamp: 2 },
+        type: 'message',
+      }),
+    ].join('\n'));
+    const conversation = createConversation(activeFile);
+    conversation.providerState = {
+      previousSessions: [{
+        leafEntryId: 'previous-user',
+        sessionFile: previousFile,
+        sessionId: 'previous-session',
+      }],
+      sessionFile: activeFile,
+      sessionId: 'active-session',
+    };
+    conversation.sessionId = 'active-session';
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { HOME: home } },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['Previous', 'Active']);
+  });
+
+  it('preserves unrelated id-less messages from different session segments', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-idless-segments-'));
+    const trustedDir = path.join(home, '.pi', 'agent', 'sessions');
+    await fs.mkdir(trustedDir, { recursive: true });
+    const previousFile = path.join(trustedDir, 'previous.jsonl');
+    const activeFile = path.join(trustedDir, 'active.jsonl');
+    await fs.writeFile(previousFile, [
+      JSON.stringify({ type: 'session', id: 'previous-session' }),
+      JSON.stringify({ type: 'custom_message', content: 'Previous notice' }),
+    ].join('\n'));
+    await fs.writeFile(activeFile, [
+      JSON.stringify({ type: 'session', id: 'active-session' }),
+      JSON.stringify({ type: 'custom_message', content: 'Active notice' }),
+    ].join('\n'));
+    const conversation = createConversation(activeFile);
+    conversation.providerState = {
+      previousSessions: [{
+        sessionFile: previousFile,
+        sessionId: 'previous-session',
+      }],
+      sessionFile: activeFile,
+      sessionId: 'active-session',
+    };
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { HOME: home } },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual([
+      'Previous notice',
+      'Active notice',
+    ]);
+  });
+
+  it('builds a fork from the segment that contains the selected checkpoint', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-segment-'));
+    const trustedDir = path.join(home, '.pi', 'agent', 'sessions');
+    await fs.mkdir(trustedDir, { recursive: true });
+    const previousFile = path.join(trustedDir, 'previous.jsonl');
+    const activeFile = path.join(trustedDir, 'active.jsonl');
+    await fs.writeFile(previousFile, [
+      JSON.stringify({ type: 'session', id: 'previous-session' }),
+      JSON.stringify({
+        id: 'previous-assistant',
+        message: { content: 'Previous', role: 'assistant', timestamp: 1 },
+        type: 'message',
+      }),
+    ].join('\n'));
+    await fs.writeFile(activeFile, [
+      JSON.stringify({ type: 'session', id: 'active-session' }),
+      JSON.stringify({
+        id: 'active-assistant',
+        message: { content: 'Active', role: 'assistant', timestamp: 2 },
+        type: 'message',
+      }),
+    ].join('\n'));
+    const providerState = {
+      previousSessions: [{
+        leafEntryId: 'previous-assistant',
+        sessionFile: previousFile,
+        sessionId: 'previous-session',
+      }],
+      sessionFile: activeFile,
+      sessionId: 'active-session',
+    };
+    const conversation = createConversation(activeFile);
+    conversation.providerState = providerState;
+    conversation.sessionId = 'active-session';
+    const service = new PiConversationHistoryService();
+
+    await service.hydrateConversationHistory(
+      conversation,
+      null,
+      { environment: { HOME: home } },
+    );
+
+    await expect(service.buildForkProviderState(
+      'active-session',
+      'previous-assistant',
+      providerState,
+    )).resolves.toEqual({
+      forkSource: { sessionId: 'previous-session', resumeAt: 'previous-assistant' },
+      forkSourceSessionFile: previousFile,
+    });
+    await expect(service.buildForkProviderState(
+      'active-session',
+      'active-assistant',
+      providerState,
+    )).resolves.toEqual({
+      forkSource: { sessionId: 'active-session', resumeAt: 'active-assistant' },
+      forkSourceSessionFile: activeFile,
+    });
+  });
+
+  it('does not probe an archived fork source that fails path identity validation', async () => {
+    const vault = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-vault-'));
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-safe-home-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-unsafe-'));
+    const trustedDir = path.join(home, '.pi', 'agent', 'sessions');
+    await fs.mkdir(trustedDir, { recursive: true });
+    const activeFile = path.join(trustedDir, 'active.jsonl');
+    const outsideFile = path.join(outside, 'previous.jsonl');
+    await fs.writeFile(activeFile, [
+      JSON.stringify({ type: 'session', id: 'active-session', cwd: vault }),
+      JSON.stringify({ id: 'active-assistant', type: 'message', message: { role: 'assistant' } }),
+    ].join('\n'));
+    await fs.writeFile(outsideFile, [
+      JSON.stringify({ type: 'session', id: 'previous-session', cwd: outside }),
+      JSON.stringify({ id: 'target-assistant', type: 'message', message: { role: 'assistant' } }),
+    ].join('\n'));
+    const service = new PiConversationHistoryService();
+
+    await expect((service.buildForkProviderState as any)(
+      'active-session',
+      'target-assistant',
+      {
+        previousSessions: [{
+          sessionFile: outsideFile,
+          sessionId: 'previous-session',
+        }],
+        sessionFile: activeFile,
+        sessionId: 'active-session',
+      },
+      vault,
+      { environment: { HOME: home }, vaultPath: vault },
+    )).resolves.toEqual({
+      forkSource: { sessionId: 'active-session', resumeAt: 'target-assistant' },
+      forkSourceSessionFile: activeFile,
+    });
+  });
+
+  it('hydrates an archived transcript after the configured session root changes', async () => {
+    const vault = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-archive-vault-'));
+    const oldRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-archive-old-'));
+    const newRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-archive-new-'));
+    const safeHome = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-archive-home-'));
+    const sessionFile = path.join(oldRoot, 'archived.jsonl');
+    await fs.writeFile(sessionFile, [
+      JSON.stringify({ type: 'session', id: 'archived-session', cwd: vault }),
+      JSON.stringify({
+        id: 'archived-user',
+        message: { content: 'Archived history', role: 'user', timestamp: 1 },
+        type: 'message',
+      }),
+    ].join('\n'));
+    const conversation = createConversation(sessionFile);
+    conversation.providerState = {
+      previousSessions: [{
+        leafEntryId: 'archived-user',
+        sessionFile,
+        sessionId: 'archived-session',
+      }],
+    };
+    conversation.sessionId = null;
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      vault,
+      {
+        environment: {
+          HOME: safeHome,
+          PI_CODING_AGENT_SESSION_DIR: newRoot,
+        },
+      },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['Archived history']);
+    expect(conversation.providerState).toEqual({
+      previousSessions: [{
+        leafEntryId: 'archived-user',
+        sessionFile,
+        sessionId: 'archived-session',
+      }],
+    });
+  });
+
+  it('does not replace an archived path with a mismatched logical-id candidate', async () => {
+    const vault = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-identity-vault-'));
+    const oldRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-identity-old-'));
+    const newRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-identity-new-'));
+    const safeHome = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-identity-home-'));
+    const archivedPath = path.join(oldRoot, 'archived-session.jsonl');
+    const mismatchedPath = path.join(newRoot, 'archived-session.jsonl');
+    await fs.writeFile(mismatchedPath, [
+      JSON.stringify({ type: 'session', id: 'different-session', cwd: vault }),
+      JSON.stringify({
+        id: 'wrong-user',
+        message: { content: 'Wrong history', role: 'user', timestamp: 1 },
+        type: 'message',
+      }),
+    ].join('\n'));
+    const conversation = createConversation(archivedPath);
+    conversation.providerState = {
+      previousSessions: [{
+        leafEntryId: 'archived-user',
+        sessionFile: archivedPath,
+        sessionId: 'archived-session',
+      }],
+    };
+    conversation.sessionId = null;
+
+    await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      vault,
+      {
+        environment: {
+          HOME: safeHome,
+          PI_CODING_AGENT_SESSION_DIR: newRoot,
+        },
+      },
+    );
+
+    expect(conversation.messages).toEqual([]);
+    expect(conversation.providerState).toEqual({
+      previousSessions: [{
+        leafEntryId: 'archived-user',
+        sessionFile: archivedPath,
+        sessionId: 'archived-session',
+      }],
+    });
+  });
+
   it('accepts a metadata path under the explicitly configured session directory', async () => {
     const configuredDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-configured-'));
     const sessionFile = path.join(configuredDir, 'session.jsonl');
@@ -142,44 +450,61 @@ describe('PiConversationHistoryService', () => {
     expect(conversation.messages).toEqual([]);
   });
 
-  it('builds pending fork state from source session metadata', () => {
+  it('builds pending fork state from source session metadata', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-fork-state-'));
+    const sessionFile = path.join(dir, 'session.jsonl');
+    const sourceFile = path.join(dir, 'source.jsonl');
+    await fs.writeFile(sessionFile, [
+      JSON.stringify({ type: 'session', id: 's1' }),
+      JSON.stringify({ id: 'checkpoint', type: 'message', message: { role: 'assistant' } }),
+    ].join('\n'));
+    await fs.writeFile(sourceFile, [
+      JSON.stringify({ type: 'session', id: 'source-session' }),
+      JSON.stringify({ id: 'checkpoint', type: 'message', message: { role: 'assistant' } }),
+    ].join('\n'));
     const service = new PiConversationHistoryService();
-    const conversation = createConversation('/tmp/session.jsonl');
+    const conversation = createConversation(sessionFile);
     conversation.providerState = {
       forkSource: { sessionId: 'source-session', resumeAt: 'assistant-1' },
-      forkSourceSessionFile: '/tmp/source.jsonl',
+      forkSourceSessionFile: sourceFile,
     };
     conversation.sessionId = null;
 
     expect(service.isPendingForkConversation(conversation)).toBe(true);
     expect(service.resolveSessionIdForConversation(conversation)).toBe('source-session');
-    expect(service.buildForkProviderState('s1', 'checkpoint', {
-      sessionFile: '/tmp/session.jsonl',
-    })).toEqual({
+    await expect(service.buildForkProviderState('s1', 'checkpoint', {
+      sessionFile,
+    })).resolves.toEqual({
       forkSource: { sessionId: 's1', resumeAt: 'checkpoint' },
-      forkSourceSessionFile: '/tmp/session.jsonl',
+      forkSourceSessionFile: sessionFile,
     });
-    expect(service.buildForkProviderState('source-session', 'checkpoint', {
+    await expect(service.buildForkProviderState('source-session', 'checkpoint', {
       forkSource: { sessionId: 'source-session', resumeAt: 'assistant-1' },
-      forkSourceSessionFile: '/tmp/source.jsonl',
-    })).toEqual({
+      forkSourceSessionFile: sourceFile,
+    })).resolves.toEqual({
       forkSource: { sessionId: 'source-session', resumeAt: 'checkpoint' },
-      forkSourceSessionFile: '/tmp/source.jsonl',
+      forkSourceSessionFile: sourceFile,
     });
   });
 
-  it('resolves file-only Pi sessions as fork sources', () => {
+  it('resolves file-only Pi sessions as fork sources', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-history-file-fork-'));
+    const sessionFile = path.join(dir, 'session.jsonl');
+    await fs.writeFile(sessionFile, [
+      JSON.stringify({ type: 'session', id: 'file-session' }),
+      JSON.stringify({ id: 'checkpoint', type: 'message', message: { role: 'assistant' } }),
+    ].join('\n'));
     const service = new PiConversationHistoryService();
-    const conversation = createConversation('/tmp/session.jsonl');
-    conversation.providerState = { sessionFile: '/tmp/session.jsonl' };
+    const conversation = createConversation(sessionFile);
+    conversation.providerState = { sessionFile };
     conversation.sessionId = null;
 
-    expect(service.resolveSessionIdForConversation(conversation)).toBe('/tmp/session.jsonl');
-    expect(service.buildForkProviderState('/tmp/session.jsonl', 'checkpoint', {
-      sessionFile: '/tmp/session.jsonl',
-    })).toEqual({
-      forkSource: { sessionId: '/tmp/session.jsonl', resumeAt: 'checkpoint' },
-      forkSourceSessionFile: '/tmp/session.jsonl',
+    expect(service.resolveSessionIdForConversation(conversation)).toBe(sessionFile);
+    await expect(service.buildForkProviderState(sessionFile, 'checkpoint', {
+      sessionFile,
+    })).resolves.toEqual({
+      forkSource: { sessionId: sessionFile, resumeAt: 'checkpoint' },
+      forkSourceSessionFile: sessionFile,
     });
   });
 
@@ -306,6 +631,15 @@ describe('PiConversationHistoryService', () => {
       futureResumeCursor: { token: 'cursor-1' },
       leafEntryId: 'leaf-1',
       parentSession: '/tmp/source.jsonl',
+      previousSessions: [
+        {
+          leafEntryId: 'previous-leaf',
+          sessionFile: '/tmp/previous.jsonl',
+          sessionId: 'previous-session',
+        },
+        { sessionId: ' ' },
+        { ignored: true },
+      ],
       sessionFile: '/tmp/session.jsonl',
       sessionId: 's1',
     };
@@ -315,6 +649,11 @@ describe('PiConversationHistoryService', () => {
       futureResumeCursor: { token: 'cursor-1' },
       leafEntryId: 'leaf-1',
       parentSession: '/tmp/source.jsonl',
+      previousSessions: [{
+        leafEntryId: 'previous-leaf',
+        sessionFile: '/tmp/previous.jsonl',
+        sessionId: 'previous-session',
+      }],
       sessionFile: '/tmp/session.jsonl',
       sessionId: 's1',
     });
@@ -344,6 +683,11 @@ describe('PiConversationHistoryService', () => {
         futureResumeCursor: { token: 'keep-me' },
         leafEntryId: 'assistant-1',
         parentSession: '/trusted/parent.jsonl',
+        previousSessions: [{
+          leafEntryId: 'assistant-1',
+          sessionFile: '/trusted/missing.jsonl',
+          sessionId: '/trusted/missing.jsonl',
+        }],
         sessionId: 's1',
       });
       expect(service.resolveSessionIdForConversation(conversation)).toBe('s1');
@@ -375,12 +719,17 @@ describe('PiConversationHistoryService', () => {
       expect(recreatedConversation.sessionId).toBeNull();
       expect(recreatedConversation.providerState).toEqual({
         futureResumeCursor: { token: 'keep-me' },
+        previousSessions: [{
+          leafEntryId: 'assistant-1',
+          sessionFile: missingPath,
+          sessionId: missingPath,
+        }],
       });
       expect(
         new PiConversationHistoryService().resolveSessionIdForConversation(
           recreatedConversation,
         ),
-      ).toBeNull();
+      ).toBe(missingPath);
     });
 
     it('clears an exact stale logical binding while preserving unknown state and native files', async () => {
@@ -406,6 +755,10 @@ describe('PiConversationHistoryService', () => {
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
         futureResumeCursor: { token: 'keep-me' },
+        previousSessions: [{
+          leafEntryId: 'assistant-1',
+          sessionId: 's1',
+        }],
       });
       await expect(fs.readFile(nativeFile, 'utf8')).resolves.toBe(nativeContent);
     });

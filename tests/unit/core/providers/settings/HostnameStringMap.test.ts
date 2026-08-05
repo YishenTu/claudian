@@ -1,5 +1,4 @@
 import { normalizeHostnameStringMap } from '@/core/providers/settings/HostnameStringMap';
-import { migrateLegacyHostnameKeyedMap } from '@/utils/env';
 
 describe('normalizeHostnameStringMap', () => {
   it.each([null, undefined, 'path', 1, true, []])(
@@ -42,7 +41,7 @@ describe('normalizeHostnameStringMap', () => {
     expect(Object.prototype.hasOwnProperty.call(normalized, 'inherited')).toBe(false);
   });
 
-  it('composes with legacy-hostname migration without changing its precedence', () => {
+  it('preserves normalized entries without interpreting host-shaped keys', () => {
     const persisted: Record<string, unknown> = {
       'legacy-host': '/legacy/provider',
       'device:current': '/current/provider',
@@ -52,16 +51,16 @@ describe('normalizeHostnameStringMap', () => {
       value: '/bin/prototype-name',
     });
     const normalized = normalizeHostnameStringMap(persisted);
-    const migrated = migrateLegacyHostnameKeyedMap(
-      normalized,
+
+    expect(normalized['device:current']).toBe('/current/provider');
+    expect(normalized['legacy-host']).toBe('/legacy/provider');
+    expect(normalized.__proto__).toBe('/bin/prototype-name');
+    expect(Object.keys(normalized).sort()).toEqual([
+      '__proto__',
       'device:current',
       'legacy-host',
-    );
-
-    expect(migrated['device:current']).toBe('/current/provider');
-    expect(migrated.__proto__).toBe('/bin/prototype-name');
-    expect(Object.keys(migrated).sort()).toEqual(['__proto__', 'device:current']);
-    expect(Object.getPrototypeOf(migrated)).toBe(Object.prototype);
-    expect(Object.prototype.hasOwnProperty.call(migrated, '__proto__')).toBe(true);
+    ]);
+    expect(Object.getPrototypeOf(normalized)).toBe(Object.prototype);
+    expect(Object.prototype.hasOwnProperty.call(normalized, '__proto__')).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 import { createMockEl } from '@test/helpers/MockElement';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 
 const mockInitializeTabExecution = jest.fn().mockResolvedValue(undefined);
@@ -104,6 +105,7 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
 function createPlugin(overrides: Record<string, unknown> = {}) {
   return {
     app: {
+      vault: { adapter: { basePath: '/vault' } },
       workspace: {
         revealLeaf: jest.fn(),
         setActiveLeaf: jest.fn(),
@@ -301,6 +303,23 @@ describe('TabManager provider execution orchestration', () => {
       resumeAt: 'assistant-checkpoint',
       sourceSessionId: 'native-session',
     })).rejects.toThrow('ledger copy failed');
+
+    expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
+  });
+
+  it('deletes a partial fork if async provider-state construction fails', async () => {
+    const { manager, plugin } = createManager();
+    await manager.createTab();
+    (ProviderRegistry.getConversationHistoryService as jest.Mock).mockReturnValueOnce({
+      buildForkProviderState: jest.fn().mockRejectedValue(new Error('fork state failed')),
+    });
+
+    await expect(manager.forkToNewTab({
+      messages: [],
+      providerId: 'claude',
+      resumeAt: 'assistant-checkpoint',
+      sourceSessionId: 'native-session',
+    })).rejects.toThrow('fork state failed');
 
     expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
   });

@@ -7,7 +7,6 @@ jest.mock('fs');
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => 'current-host',
-  getLegacyHostnameKey: () => 'legacy-host',
 }));
 
 const mockedStat = fs.statSync as jest.Mock;

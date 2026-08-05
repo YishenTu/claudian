@@ -1,16 +1,14 @@
 const mockGetHostnameKey = jest.fn(() => 'device:current');
-const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
 
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
-  getLegacyHostnameKey: () => mockGetLegacyHostnameKey(),
 }));
 
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 
 describe('Claude settings normalization', () => {
-  it('normalizes mixed CLI maps and preserves legacy hostname migration', () => {
+  it('normalizes mixed CLI maps without interpreting host-shaped keys', () => {
     expect(getClaudeProviderSettings({
       providerConfigs: {
         claude: {
@@ -22,7 +20,7 @@ describe('Claude settings normalization', () => {
         },
       },
     }).cliPathsByHost).toEqual({
-      'device:current': '/legacy/claude',
+      'legacy-host': '/legacy/claude',
     });
   });
 

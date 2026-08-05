@@ -609,6 +609,25 @@ describe('utils.ts', () => {
         expect(findClaudeCLIPath(customPath)).toBe(cliWrapperPath);
       });
 
+      it('should prefer cli-wrapper.cjs over the extension-less npm sh shim', () => {
+        const npmBin = 'D:\\npm-global';
+        const shimPath = path.join(npmBin, 'claude');
+        const cliWrapperPath = path.join(npmBin, 'node_modules', '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs');
+        mockExistingFile(shimPath, cliWrapperPath);
+
+        const customPath = `${npmBin};C:\\Windows\\System32`;
+        expect(findClaudeCLIPath(customPath)).toBe(cliWrapperPath);
+      });
+
+      it('should ignore the extension-less npm sh shim when no package entrypoint exists', () => {
+        jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
+        const npmBin = 'D:\\npm-global';
+        mockExistingFile(path.join(npmBin, 'claude'));
+
+        const customPath = `${npmBin};C:\\Windows\\System32`;
+        expect(findClaudeCLIPath(customPath)).toBeNull();
+      });
+
       it('should not return a directory path even if it exists', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         const dirPath = path.join('C:\\Users\\test', '.claude', 'local', 'claude');

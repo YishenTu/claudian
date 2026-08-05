@@ -5,6 +5,7 @@ import type { ProviderCommandDiscoveryResult } from '../../../core/providers/com
 import { normalizeProviderCommandDiscoveryItems } from '../../../core/providers/commands/ProviderCommandDiscoveryResult';
 import { ProviderCommandDiscoveryStore } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
+import { getRuntimeEnvironmentVariables } from '../../../core/providers/providerEnvironment';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
@@ -16,6 +17,7 @@ import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
 import { throwIfAborted, toAbortError } from '../../../utils/abort';
 import { scheduleAnimationFrame } from '../../../utils/animationFrame';
 import { revealWorkspaceLeaf } from '../../../utils/obsidianCompat';
+import { getVaultPath } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
 import { getTabProviderId } from './providerResolution';
 import {
@@ -753,15 +755,25 @@ export class TabManager implements TabManagerInterface {
       ? this.buildForkTitle(context.sourceTitle, context.forkAtUserMessage)
       : undefined;
 
-    const forkProviderState = ProviderRegistry
-      .getConversationHistoryService(conversation.providerId)
-      .buildForkProviderState(
-        context.sourceSessionId,
-        context.resumeAt,
-        context.sourceProviderState,
-      );
-
     try {
+      const vaultPath = getVaultPath(this.plugin.app);
+      const forkProviderState = await ProviderRegistry
+        .getConversationHistoryService(conversation.providerId)
+        .buildForkProviderState(
+          context.sourceSessionId,
+          context.resumeAt,
+          context.sourceProviderState,
+          vaultPath,
+          {
+            environment: {
+              ...process.env,
+              ...getRuntimeEnvironmentVariables(this.plugin.settings, conversation.providerId),
+            },
+            hostPlatform: process.platform,
+            settings: this.plugin.settings,
+            vaultPath,
+          },
+        );
       await this.plugin.updateConversation(conversation.id, {
         messages: context.messages,
         providerState: forkProviderState,

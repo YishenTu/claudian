@@ -1,10 +1,8 @@
 const mockGetHostnameKey = jest.fn(() => 'host-a');
-const mockGetLegacyHostnameKey = jest.fn(() => 'legacy-host');
 
 jest.mock('../../../../src/utils/env', () => ({
   ...jest.requireActual('../../../../src/utils/env'),
   getHostnameKey: () => mockGetHostnameKey(),
-  getLegacyHostnameKey: () => mockGetLegacyHostnameKey(),
 }));
 
 import {
@@ -26,7 +24,6 @@ describe('OpenCode settings normalization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('host-a');
-    mockGetLegacyHostnameKey.mockReturnValue('legacy-host');
   });
 
   it('enables Exa-backed web search in the default provider env', () => {
@@ -89,9 +86,8 @@ describe('OpenCode settings normalization', () => {
     });
   });
 
-  it('migrates current legacy hostname-scoped CLI paths to the opaque device key', () => {
+  it('preserves hostname-scoped CLI paths without assigning them to the current device', () => {
     mockGetHostnameKey.mockReturnValue('device:current');
-    mockGetLegacyHostnameKey.mockReturnValue('host-a');
 
     const settings = getOpencodeProviderSettings({
       providerConfigs: {
@@ -105,7 +101,7 @@ describe('OpenCode settings normalization', () => {
     });
 
     expect(settings.cliPathsByHost).toEqual({
-      'device:current': '/host-a/opencode',
+      'host-a': '/host-a/opencode',
       'host-b': '/host-b/opencode',
     });
   });
