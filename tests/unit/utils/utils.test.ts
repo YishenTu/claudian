@@ -577,6 +577,15 @@ describe('utils.ts', () => {
         expect(findClaudeCLIPath()).toBe(expectedPath);
       });
 
+      it('should find cli-wrapper.cjs under an nvm-for-Windows install', () => {
+        jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
+        process.env.NVM_SYMLINK = 'D:\\nvm\\v22.22.0';
+        const expectedPath = path.join('D:\\nvm\\v22.22.0', 'node_modules', '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs');
+        mockExistingFile(expectedPath);
+
+        expect(findClaudeCLIPath()).toBe(expectedPath);
+      });
+
       it('should fall back to .exe if package entrypoint is not found', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         const expectedPath = path.join('C:\\Users\\test', '.claude', 'local', 'claude.exe');

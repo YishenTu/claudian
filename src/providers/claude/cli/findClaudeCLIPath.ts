@@ -152,6 +152,15 @@ function getNpmClaudeCodeEntrypointPaths(): string[] {
       addClaudeCodeEntrypointPaths(entrypointPaths, npmPrefix);
     }
 
+    // nvm-for-Windows keeps global packages under the active version directory that
+    // NVM_SYMLINK points at. Its layout shares nothing with nvm-sh, so
+    // resolveNvmDefaultBin() never matches it, and a GUI app does not necessarily
+    // inherit that directory on PATH.
+    const nvmWindowsCurrent = process.env.NVM_SYMLINK;
+    if (nvmWindowsCurrent) {
+      addClaudeCodeEntrypointPaths(entrypointPaths, nvmWindowsCurrent);
+    }
+
     const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
     const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
 
