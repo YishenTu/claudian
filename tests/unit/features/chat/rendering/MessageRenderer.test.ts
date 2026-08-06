@@ -219,6 +219,99 @@ describe('MessageRenderer', () => {
     expect(renderCitationGroup).toHaveBeenCalledWith(expect.anything(), citations);
   });
 
+  it('renders message timestamps by default', () => {
+    const timestampSpy = jest
+      .spyOn(Date.prototype, 'toLocaleTimeString')
+      .mockReturnValue('10:02 AM');
+    const { renderer, messagesEl } = createRenderer();
+
+    renderer.renderStoredMessage({
+      id: 'timestamped-message',
+      role: 'assistant',
+      content: 'Answer',
+      timestamp: 1_700_000_000_000,
+    });
+
+    const timestamp = messagesEl.querySelector('.claudian-message-timestamp');
+    expect(timestamp?.textContent).toBe('10:02 AM');
+    expect(timestampSpy).toHaveBeenCalled();
+    timestampSpy.mockRestore();
+  });
+
+  it('renders timestamps without a settings toggle', () => {
+    const { renderer, messagesEl } = createRenderer();
+
+    renderer.renderStoredMessage({
+      id: 'untimestamped-message',
+      role: 'assistant',
+      content: 'Answer',
+      timestamp: 1_700_000_000_000,
+    });
+
+    expect(messagesEl.querySelector('.claudian-message-timestamp')).not.toBeNull();
+  });
+
+  it('does not render a timestamp for an empty streaming assistant placeholder', () => {
+    const { renderer, messagesEl } = createRenderer();
+
+    renderer.addMessage({
+      id: 'streaming-assistant',
+      role: 'assistant',
+      content: '',
+      timestamp: 1_700_000_000_000,
+    });
+
+    expect(messagesEl.querySelector('.claudian-message-timestamp')).toBeNull();
+  });
+
+  it('shows timestamps for final assistant text but not thinking-only messages', () => {
+    const timestampSpy = jest
+      .spyOn(Date.prototype, 'toLocaleTimeString')
+      .mockReturnValue('10:02 AM');
+    const { renderer, messagesEl } = createRenderer();
+
+    renderer.renderStoredMessage({
+      id: 'thinking-only',
+      role: 'assistant',
+      content: '',
+      timestamp: 1_700_000_000_000,
+      contentBlocks: [{ type: 'thinking', content: 'Inspecting the note.' }],
+    });
+    renderer.renderStoredMessage({
+      id: 'final-answer',
+      role: 'assistant',
+      content: 'Done.',
+      timestamp: 1_700_000_000_000,
+    });
+
+    expect(messagesEl.querySelectorAll('.claudian-message-timestamp')).toHaveLength(1);
+    expect(timestampSpy).toHaveBeenCalledTimes(1);
+    timestampSpy.mockRestore();
+  });
+
+  it('can add the timestamp when a streaming assistant message becomes final', () => {
+    const timestampSpy = jest
+      .spyOn(Date.prototype, 'toLocaleTimeString')
+      .mockReturnValue('10:02 AM');
+    const { renderer, messagesEl } = createRenderer();
+    const msgEl = renderer.addMessage({
+      id: 'streaming-final',
+      role: 'assistant',
+      content: '',
+      timestamp: 1_700_000_000_000,
+    });
+
+    renderer.renderFinalMessageTimestamp(msgEl, {
+      id: 'streaming-final',
+      role: 'assistant',
+      content: 'Done.',
+      timestamp: 1_700_000_000_000,
+    });
+
+    expect(messagesEl.querySelector('.claudian-message-timestamp')?.textContent).toBe('10:02 AM');
+    timestampSpy.mockRestore();
+  });
+
   it('upgrades a persisted legacy interruption marker to the typed indicator', async () => {
     const { MarkdownRenderer } = await import('obsidian');
     const messagesEl = createMockEl();

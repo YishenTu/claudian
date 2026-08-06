@@ -649,12 +649,7 @@ export class ConversationController {
 
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
-    const providerId = conversation.providerId ?? this.deps.getProviderId?.();
-    const model = conversation.selectedModel ?? this.deps.getSelectedModel?.() ?? '';
-    state.usage = conversation.usage
-      ?? (providerId
-        ? this.deps.getInitialUsage?.(providerId, model) ?? null
-        : null);
+    state.usage = conversation.usage ?? null;
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
     state.hasPendingConversationSave = false;
 

@@ -1,5 +1,6 @@
 import { createMockEl } from '@test/helpers/MockElement';
 
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ConversationController } from '@/features/chat/controllers/ConversationController';
 import type {
   ChatExecutionCoordinatorDeps,
@@ -11,6 +12,7 @@ import {
   initializeTabControllers,
   initializeTabExecution,
   initializeTabUI,
+  onProviderAvailabilityChanged,
   updatePlanModeUI,
   wireTabInputEvents,
 } from '@/features/chat/tabs/Tab';
@@ -84,7 +86,10 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
       getContextWindowSize: jest.fn().mockReturnValue(200000),
       getDefaultModel: jest.fn().mockReturnValue('claude-default'),
       getDefaultReasoningValue: jest.fn().mockReturnValue('off'),
-      getModelOptions: jest.fn().mockReturnValue([{ label: 'Claude', value: 'claude-default' }]),
+      getModelOptions: jest.fn().mockReturnValue([
+        { label: 'Claude Default', value: 'claude-default' },
+        { label: 'Claude Alternate', value: 'claude-alternate' },
+      ]),
       getReasoningOptions: jest.fn().mockReturnValue([]),
       isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
       isDefaultModel: jest.fn().mockReturnValue(true),
@@ -94,7 +99,9 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
     getConversationHistoryService: jest.fn().mockReturnValue({
       resolveSessionIdForConversation: jest.fn().mockReturnValue(null),
     }),
+    getBlankTabProviderIds: jest.fn().mockReturnValue(['claude']),
     getEnabledProviderIds: jest.fn().mockReturnValue(['claude']),
+    getRegisteredProviderIds: jest.fn().mockReturnValue(['claude']),
     getProviderDisplayName: jest.fn().mockReturnValue('Claude'),
     getTaskResultInterpreter: jest.fn(),
     isEnabled: jest.fn().mockReturnValue(true),
@@ -129,11 +136,12 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
 }));
 
 function createPlugin(overrides: Record<string, unknown> = {}) {
-  const settings = {
+  const settings: Record<string, unknown> = {
     model: 'claude-default',
     permissionMode: 'normal',
     persistentExternalContextPaths: [],
   };
+  let nextModelSelectionIntent = 0;
   return {
     app: {
       vault: {
@@ -150,6 +158,16 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
     },
     providerHost: {
       executionLifecycleRegistry: {},
+    },
+    chatModelSelection: {
+      beginIntent: jest.fn(() => {
+        nextModelSelectionIntent += 1;
+        return nextModelSelectionIntent;
+      }),
+      commitIntent: jest.fn(async (_intent, selection) => {
+        settings.lastSelectedChatModel = selection;
+        return true;
+      }),
     },
     settings,
     getActiveEnvironmentVariables: jest.fn().mockReturnValue({}),
@@ -235,6 +253,12 @@ describe('Tab provider execution ownership', () => {
     coordinatorInstances.length = 0;
     coordinatorDeps.length = 0;
     jest.clearAllMocks();
+    const uiConfig = ProviderRegistry.getChatUIConfig('claude');
+    (uiConfig.getDefaultModel as jest.Mock).mockReturnValue('claude-default');
+    (uiConfig.getModelOptions as jest.Mock).mockReturnValue([
+      { label: 'Claude Default', value: 'claude-default' },
+      { label: 'Claude Alternate', value: 'claude-alternate' },
+    ]);
   });
 
   it('creates exactly one tab-owned execution coordinator', () => {
@@ -245,6 +269,174 @@ describe('Tab provider execution ownership', () => {
 
     expect(tab.executionCoordinator).toBe(coordinatorInstances[0]);
     expect(coordinatorInstances).toHaveLength(1);
+  });
+
+  it('snapshots the global provider-qualified model without changing an existing blank tab', () => {
+    const plugin = createPlugin();
+    plugin.settings.lastSelectedChatModel = {
+      providerId: 'claude',
+      model: 'claude-default',
+    };
+    const existing = createTab({ plugin, containerEl: createMockEl() as any });
+
+    plugin.settings.lastSelectedChatModel = {
+      providerId: 'claude',
+      model: 'claude-alternate',
+    };
+    const next = createTab({ plugin, containerEl: createMockEl() as any });
+
+    expect(existing.draftModel).toBe('claude-default');
+    expect(next.draftModel).toBe('claude-alternate');
+    expect(next.providerId).toBe('claude');
+  });
+
+  it('adopts a provider default when a model-less blank tab gains available options', () => {
+    const plugin = createPlugin();
+    const uiConfig = ProviderRegistry.getChatUIConfig('claude');
+    (uiConfig.getDefaultModel as jest.Mock).mockReturnValue(null);
+    (uiConfig.getModelOptions as jest.Mock).mockReturnValue([]);
+    const tab = createTab({ plugin, containerEl: createMockEl() as any });
+
+    expect(tab.draftModel).toBeNull();
+
+    (uiConfig.getDefaultModel as jest.Mock).mockReturnValue('claude-default');
+    (uiConfig.getModelOptions as jest.Mock).mockReturnValue([
+      { label: 'Claude Default', value: 'claude-default' },
+    ]);
+
+    expect(onProviderAvailabilityChanged(tab, plugin)).toBe(true);
+    expect(tab.draftModel).toBe('claude-default');
+    expect(tab.providerId).toBe('claude');
+  });
+
+  it('records an explicit blank-tab model choice as the future-tab seed', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
+      disconnect: jest.fn(),
+      observe: jest.fn(),
+    })) as unknown as typeof ResizeObserver;
+    const plugin = createPlugin();
+    const tab = createTab({ plugin, containerEl: createMockEl() as any });
+    initializeTabUI(tab, plugin);
+    const modelOptions = Array.from(
+      tab.dom.inputWrapper.querySelectorAll('.claudian-model-option'),
+    );
+    const alternate = modelOptions.find(option =>
+      Array.from(option.children).some(child => child.textContent === 'Claude Alternate')
+    );
+
+    (alternate as HTMLElement | undefined)?.click();
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(tab.draftModel).toBe('claude-alternate');
+    expect(plugin.settings.lastSelectedChatModel).toEqual({
+      providerId: 'claude',
+      model: 'claude-alternate',
+    });
+    globalThis.ResizeObserver = originalResizeObserver;
+  });
+
+  it('does not seed an uninitialized provider after overlapping same-provider choices fail', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
+      disconnect: jest.fn(),
+      observe: jest.fn(),
+    })) as unknown as typeof ResizeObserver;
+    const getChatUIConfig = ProviderRegistry.getChatUIConfig as jest.Mock;
+    const getEnabledProviderIds = ProviderRegistry.getEnabledProviderIds as jest.Mock;
+    const resolveProviderForModel = ProviderRegistry.resolveProviderForModel as jest.Mock;
+    const claudeConfig = getChatUIConfig('claude');
+    const codexConfig = {
+      ...claudeConfig,
+      getModelOptions: jest.fn().mockReturnValue([
+        { label: 'Codex First', value: 'codex-first' },
+        { label: 'Codex Latest', value: 'codex-latest' },
+      ]),
+    };
+    getChatUIConfig.mockImplementation((providerId: string) => (
+      providerId === 'codex' ? codexConfig : claudeConfig
+    ));
+    getEnabledProviderIds.mockReturnValue(['claude', 'codex']);
+    resolveProviderForModel.mockImplementation((model: string) => (
+      model.startsWith('codex-') ? 'codex' : 'claude'
+    ));
+    let rejectCodexSwitch!: (error: Error) => void;
+    const codexSwitch = new Promise<void>((_resolve, reject) => {
+      rejectCodexSwitch = reject;
+    });
+
+    try {
+      const plugin = createPlugin();
+      const tab = createTab({ plugin, containerEl: createMockEl() as any });
+      initializeTabUI(tab, plugin, {
+        onProviderChanged: () => codexSwitch,
+      });
+      const modelOptions = Array.from(
+        tab.dom.inputWrapper.querySelectorAll('.claudian-model-option'),
+      );
+      const first = modelOptions.find(option =>
+        Array.from(option.children).some(child => child.textContent === 'Codex First')
+      );
+      const latest = modelOptions.find(option =>
+        Array.from(option.children).some(child => child.textContent === 'Codex Latest')
+      );
+
+      (first as HTMLElement | undefined)?.click();
+      (latest as HTMLElement | undefined)?.click();
+      await new Promise<void>(resolve => setImmediate(resolve));
+
+      expect(tab.providerId).toBe('codex');
+      expect(tab.draftModel).toBe('codex-latest');
+
+      rejectCodexSwitch(new Error('Codex initialization failed'));
+      await new Promise<void>(resolve => setImmediate(resolve));
+
+      expect(tab.providerId).toBe('claude');
+      expect(tab.draftModel).toBe('claude-default');
+      expect(plugin.settings.lastSelectedChatModel).toBeUndefined();
+    } finally {
+      getChatUIConfig.mockReturnValue(claudeConfig);
+      getEnabledProviderIds.mockReturnValue(['claude']);
+      resolveProviderForModel.mockReturnValue('claude');
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
+  it('records an explicit bound-conversation model choice without changing its provider', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
+      disconnect: jest.fn(),
+      observe: jest.fn(),
+    })) as unknown as typeof ResizeObserver;
+    const conversation = createConversation();
+    const plugin = createPlugin({
+      updateConversation: jest.fn().mockResolvedValue(undefined),
+    });
+    const tab = createTab({
+      plugin,
+      containerEl: createMockEl() as any,
+      conversation,
+    });
+    initializeTabUI(tab, plugin);
+    const modelOptions = Array.from(
+      tab.dom.inputWrapper.querySelectorAll('.claudian-model-option'),
+    );
+    const alternate = modelOptions.find(option =>
+      Array.from(option.children).some(child => child.textContent === 'Claude Alternate')
+    );
+
+    (alternate as HTMLElement | undefined)?.click();
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(plugin.updateConversation).toHaveBeenCalledWith(conversation.id, {
+      selectedModel: 'claude-alternate',
+    });
+    expect(plugin.settings.lastSelectedChatModel).toEqual({
+      providerId: 'claude',
+      model: 'claude-alternate',
+    });
+    expect(tab.providerId).toBe('claude');
+    globalThis.ResizeObserver = originalResizeObserver;
   });
 
   it('binds persisted native state and prepares only for a bound conversation', async () => {

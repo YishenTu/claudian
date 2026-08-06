@@ -5,8 +5,10 @@ import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
 describe('ClaudianSettingTab model option updates', () => {
   it('refreshes provider-scoped chat selectors and the live title model menu together', () => {
     const refreshModelSelector = jest.fn();
+    const notifyProviderChatOptionsChanged = jest.fn();
     const plugin = {
       getAllViews: jest.fn(() => [{ refreshModelSelector }]),
+      notifyProviderChatOptionsChanged,
       notifyAgentSkillsChanged: jest.fn(),
       storage: {
         getAdapter: jest.fn(() => ({})),
@@ -18,7 +20,8 @@ describe('ClaudianSettingTab model option updates', () => {
 
     (tab as any).notifyProviderModelOptionsChanged('codex');
 
-    expect(refreshModelSelector).toHaveBeenCalledWith('codex');
+    expect(notifyProviderChatOptionsChanged).toHaveBeenCalledWith('codex');
+    expect(refreshModelSelector).not.toHaveBeenCalled();
     expect(refreshTitleModelOptions).toHaveBeenCalledTimes(1);
   });
 

@@ -30,7 +30,8 @@
 
 ## Models and Settings
 
-- Model selections are `grok/<raw-id>` in Claudian and raw ids on the ACP wire. The discovered catalog default is the provider default.
+- Model selections are `grok/<raw-id>` in Claudian and raw ids on the ACP wire. With legacy `visibleModels: null`, catalog order retains native-default compatibility. Once the user persists an explicit enabled-model order, its first entry is the provider fallback and supersedes the discovered native default.
+- `GrokChatUIConfig` emits enabled options in reverse persisted order because the shared upward-opening toolbar reverses options for display; settings/default resolution continue to use the persisted order directly.
 - Catalog snapshots are current-device scoped and contain only normalized non-secret metadata.
 - Expose Low, Medium, and High as the initial fallback for enabled models. After a real ACP session, persist and prefer the chosen model's advertised reasoning metadata; never create a session solely for discovery, and prune reasoning state when a model is disabled.
 - Do not rewrite `~/.grok/config.toml`, own BYOK endpoints, or source shell startup files.

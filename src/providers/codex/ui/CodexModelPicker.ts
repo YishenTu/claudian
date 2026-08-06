@@ -1,6 +1,5 @@
 import { Notice } from 'obsidian';
 
-import { deriveProviderModelCatalogStatus } from '../../../core/providers/modelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRendererContext } from '../../../core/providers/types';
 import {
@@ -12,7 +11,6 @@ import {
 import type { CodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import {
   getCodexModelsInPickerOrder,
-  getDefaultCodexModel,
   isCodexModelAvailable,
 } from '../models';
 import {
@@ -43,15 +41,11 @@ export function renderCodexModelPicker(
       current.visibleModels,
       current.discoveredModels,
     );
-    const visibleModelIdSet = new Set(visibleModelIds);
-    const selectedIds = pickerOrderedModels
-      .map(model => model.model)
-      .filter(modelId => visibleModelIdSet.has(modelId));
-    for (const modelId of visibleModelIds) {
-      if (!selectedIds.includes(modelId)) {
-        selectedIds.push(modelId);
-      }
-    }
+    const selectedIds = visibleModelIds;
+    const defaultModelId = selectedIds.find((modelId) => {
+      const model = current.discoveredModels.find(candidate => candidate.model === modelId);
+      return Boolean(model && isCodexModelAvailable(model, current.enableUltraEffort));
+    }) ?? null;
 
     const models: ProviderModelPickerModel[] = pickerOrderedModels.map((model) => {
       const isAvailable = isCodexModelAvailable(model, current.enableUltraEffort);
@@ -84,12 +78,7 @@ export function renderCodexModelPicker(
 
     return {
       aliases: current.modelAliases,
-      catalogRefreshedAt: current.catalogTimestamp,
-      catalogStatus: deriveProviderModelCatalogStatus({
-        modelCount: current.discoveredModels.length,
-        refreshedAt: current.catalogTimestamp || undefined,
-      }),
-      defaultModelId: getDefaultCodexModel(current.discoveredModels)?.model,
+      defaultModelId,
       discoveredCount: current.discoveredModels.length,
       models,
       selectionMode: current.visibleModels === null ? 'all' : 'explicit',

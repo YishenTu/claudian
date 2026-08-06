@@ -24,6 +24,10 @@ Core must consume provider data through explicit contracts. Do not branch on pro
 - Title generation routes by the global `titleGenerationModel`, independently of the active chat provider. Core owns its shared prompt, parsing, cancellation, and callback flow over ephemeral execution sessions.
 - For instruction refinement and inline edit, core owns multi-turn orchestration and response parsing; provider backends own native continuation, tools, and lifecycle behavior.
 - Resolve provider workspace services through `ProviderWorkspaceRegistry`, not concrete providers.
+- Chat model resolution distinguishes historical provider ownership from current enabled-option availability. Global future-tab fallback and conversation fallback may use only current provider options and a validated provider-owned default; opaque historical ownership alone is not availability.
+- For an unavailable durable conversation selection, `ConversationModelResolution.model` remains the readable stored value and `modelToPersist` carries the desired fallback. Readers must not project `modelToPersist`; the application repository publishes it only after persistence succeeds.
+- Provider alias canonicalization used during availability checks must not choose a fallback model. Fallback policy remains a separate ordered/default resolution step.
+- Provider fallback order is the registry's explicit blank-tab display order. Do not derive fallback from display-name sorting, registration insertion order, or the current settings projection.
 
 ## Gotchas
 

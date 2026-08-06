@@ -172,32 +172,6 @@ describe('ClaudianSettingTab display settings', () => {
     expect(mockRenderedSettingNames).not.toContain(t('settings.dualPaneSide.name'));
   });
 
-  it('renders a first-run getting started checklist with an open-chat action', () => {
-    const { tab } = createTab(true);
-
-    (tab as any).renderGeneralTab(createContainer());
-
-    expect(mockRenderedSettingNames).toContain(t('settings.gettingStarted.title'));
-    expect(mockRenderedSettingNames).toContain(t('settings.gettingStarted.openChat.name'));
-  });
-
-  it('renders the provider capability matrix in the general settings tab', () => {
-    const { tab } = createTab(true);
-
-    (tab as any).renderGeneralTab(createContainer());
-
-    expect(mockRenderedSettingNames).toContain(t('settings.capabilityMatrix.title'));
-  });
-
-  it('renders language settings before onboarding content', () => {
-    const { tab } = createTab(true);
-
-    (tab as any).renderGeneralTab(createContainer());
-
-    expect(mockRenderedSettingNames.indexOf(t('settings.language.name')))
-      .toBeLessThan(mockRenderedSettingNames.indexOf(t('settings.gettingStarted.title')));
-  });
-
   it('rerenders display settings after dual-pane mode changes', async () => {
     const { tab, plugin } = createTab(true);
     const display = jest.spyOn(tab, 'display').mockImplementation();

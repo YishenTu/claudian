@@ -1,7 +1,7 @@
 {
-  "name": "oh-my-claudian",
-  "version": "2.1.8",
-  "description": "Coding agents embedded in an Obsidian sidebar, including Oh My Pi support",
+  "name": "claudian",
+  "version": "2.1.2",
+  "description": "Claudian - Claude Code embedded in Obsidian sidebar",
   "main": "main.js",
   "engines": {
     "node": ">=24 <25"

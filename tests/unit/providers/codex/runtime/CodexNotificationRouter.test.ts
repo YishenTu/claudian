@@ -12,6 +12,7 @@ describe('CodexNotificationRouter', () => {
     router = new CodexNotificationRouter(
       (chunk) => chunks.push(chunk),
       (update) => turnMetadata.push(update),
+      '/workspace',
     );
   });
 
@@ -438,13 +439,56 @@ describe('CodexNotificationRouter', () => {
         turnId: 'turn1',
       });
 
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
+      expect(chunks).toHaveLength(2);
+      expect(chunks[1]).toMatchObject({
         type: 'tool_result',
         id: 'call_abc',
         content: 'test\n',
         isError: false,
       });
+    });
+
+    it('ignores a late same-ID raw Bash call after canonical command completion', () => {
+      router.beginTurn({ isPlanTurn: false });
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'commandExecution',
+          id: 'call_abc',
+          command: 'echo test',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'echo test' }],
+          aggregatedOutput: 'test\n',
+          exitCode: 0,
+          durationMs: 100,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_abc',
+          input: 'const r = await tools.exec_command({cmd:"echo test"}); text(r.output);',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_abc',
+          output: 'Script completed\nOutput:\ntest\n',
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
     });
 
     it('marks tool_result as error when exitCode is non-zero', () => {
@@ -466,7 +510,8 @@ describe('CodexNotificationRouter', () => {
         turnId: 'turn1',
       });
 
-      expect(chunks[0]).toMatchObject({
+      expect(chunks).toHaveLength(2);
+      expect(chunks[1]).toMatchObject({
         type: 'tool_result',
         isError: true,
       });
@@ -577,6 +622,23 @@ describe('CodexNotificationRouter', () => {
           input: 'const r = await tools.exec_command({cmd:"npm test"}); text(r.output);',
         },
       });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'exec_canonical',
+          command: 'npm test',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'npm test' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
       router.handleNotification('rawResponseItem/completed', {
         threadId: 't1',
         turnId: 'turn1',
@@ -587,6 +649,41 @@ describe('CodexNotificationRouter', () => {
             { type: 'input_text', text: 'Script running with cell ID 42\nWall time 10.0 seconds\nOutput:\n' },
             { type: 'input_text', text: 'tests started\n' },
           ],
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_exec_wrapper',
+          output: [
+            { type: 'input_text', text: 'Script running with cell ID 42\nWall time 10.0 seconds\nOutput:\n' },
+            { type: 'input_text', text: 'tests started\n' },
+          ],
+        },
+      });
+      router.handleNotification('item/commandExecution/outputDelta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'exec_canonical',
+        delta: 'tests started\n',
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'exec_canonical',
+          command: 'npm test',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'npm test' }],
+          aggregatedOutput: 'tests started\n',
+          exitCode: 0,
+          durationMs: 10_000,
         },
       });
       router.handleNotification('rawResponseItem/completed', {
@@ -660,7 +757,70 @@ describe('CodexNotificationRouter', () => {
       ]);
     });
 
-    it('unwraps apply_patch inside exec envelopes', () => {
+    it('binds a wait call and output that arrive before the yielded exec output', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_exec_wrapper',
+          input: 'const r = await tools.exec_command({cmd:"npm test"}); text(r.output);',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'call_wait',
+          arguments: '{"cell_id":"42","yield_time_ms":30000}',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_wait',
+          output: 'Script completed\nOutput:\ntests passed\n',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_exec_wrapper',
+          output: 'Script running with cell ID 42\nOutput:\ntests started\n',
+        },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_exec_wrapper',
+          name: 'Bash',
+          input: { command: 'npm test' },
+        },
+        {
+          type: 'tool_output',
+          id: 'call_exec_wrapper',
+          content: 'tests started\n',
+        },
+        {
+          type: 'tool_result',
+          id: 'call_exec_wrapper',
+          content: 'tests started\ntests passed\n',
+          isError: false,
+        },
+      ]);
+    });
+
+    it('unwraps a raw-only apply_patch exec envelope when its output arrives', () => {
       router.beginTurn({ isPlanTurn: false });
       const patch = '*** Begin Patch\n*** Update File: note.md\n*** End Patch';
 
@@ -675,12 +835,39 @@ describe('CodexNotificationRouter', () => {
         },
       });
 
-      expect(chunks).toEqual([{
-        type: 'tool_use',
-        id: 'call_patch_wrapper',
-        name: 'apply_patch',
-        input: { patch },
-      }]);
+      expect(chunks).toEqual([]);
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_patch_wrapper',
+          output: 'Success. Updated files.',
+        },
+      });
+
+      expect(chunks).toEqual([]);
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_patch_wrapper',
+          name: 'apply_patch',
+          input: { patch },
+        },
+        {
+          type: 'tool_result',
+          id: 'call_patch_wrapper',
+          content: 'Success. Updated files.',
+          isError: false,
+        },
+        { type: 'done' },
+      ]);
     });
 
     it('does not normalize raw command output a second time when item/completed arrives', () => {
@@ -811,7 +998,2183 @@ describe('CodexNotificationRouter', () => {
       expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
     });
 
-    it('suppresses raw apply_patch transport rows so fileChange remains the owner', () => {
+    it('coalesces raw exec envelopes with canonical commands that use a different id', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          id: 'ctc_raw',
+          name: 'exec',
+          call_id: 'call_raw',
+          input: 'const r = await tools.exec_command({cmd:"pwd",workdir:"/workspace"}); text(r.output);',
+        },
+      });
+      router.handleNotification('item/started', {
+        item: {
+          type: 'commandExecution',
+          id: 'exec_canonical',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'commandExecution',
+          id: 'exec_canonical',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: '/workspace\n',
+          exitCode: 0,
+          durationMs: 10,
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          id: 'ctco_raw',
+          call_id: 'call_raw',
+          output: [
+            { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
+            { type: 'input_text', text: '/workspace\n' },
+          ],
+        },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_raw',
+          name: 'Bash',
+          input: { command: 'pwd' },
+        },
+        {
+          type: 'tool_result',
+          id: 'call_raw',
+          content: '/workspace\n',
+          isError: false,
+        },
+      ]);
+    });
+
+    it('ignores repeated terminal output for a raw-owned Bash call', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw',
+          input: 'const r = await tools.exec_command({cmd:"pwd"}); text(r.output);',
+        },
+      });
+      for (let index = 0; index < 2; index += 1) {
+        router.handleNotification('rawResponseItem/completed', {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: {
+            type: 'custom_tool_call_output',
+            call_id: 'call_raw',
+            output: 'Script completed\nOutput:\n/workspace\n',
+          },
+        });
+      }
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+    });
+
+    it('defers raw non-command exec envelopes to the canonical semantic item', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const patch = '*** Begin Patch\n*** Add File: note.md\n+hello\n*** End Patch';
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          id: 'ctc_patch',
+          name: 'exec',
+          call_id: 'call_patch',
+          input: `const patch = ${JSON.stringify(patch)}; text(await tools.apply_patch(patch));`,
+        },
+      });
+
+      expect(chunks).toEqual([]);
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'exec_patch',
+          changes: [{
+            path: '/workspace/note.md',
+            type: 'add',
+            diff: '@@ -0,0 +1 @@\n+hello',
+          }],
+          status: 'inProgress',
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'exec_patch',
+          changes: [{
+            path: '/workspace/note.md',
+            type: 'add',
+            diff: '@@ -0,0 +1 @@\n+hello',
+          }],
+          status: 'completed',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          id: 'ctco_patch',
+          call_id: 'call_patch',
+          output: 'Success. Updated files.',
+        },
+      });
+
+      expect(chunks.filter(chunk => (
+        chunk.type === 'tool_use' || chunk.type === 'tool_result'
+      )).every(chunk => chunk.id === 'exec_patch')).toBe(true);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+    });
+
+    it('does not recreate a claimed exec envelope from a repeated raw call', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const rawCall = {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: 'const r = await tools.view_image({path:"/workspace/image.png"}); image(r.image_url);',
+        },
+      };
+
+      router.handleNotification('rawResponseItem/completed', rawCall);
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' },
+      });
+      router.handleNotification('rawResponseItem/completed', rawCall);
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_image',
+          output: 'Image viewed.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+      expect(chunks.filter(chunk => (
+        chunk.type === 'tool_use' || chunk.type === 'tool_result'
+      )).every(chunk => chunk.id === 'image_canonical')).toBe(true);
+    });
+
+    it('replays Bash output that arrives before its raw call', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_bash',
+          output: 'Script completed\nOutput:\nready\n',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_bash',
+          input: 'const r = await tools.exec_command({cmd:"printf ready"}); text(r.output);',
+        },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_bash',
+          name: 'Bash',
+          input: { command: 'printf ready' },
+        },
+        {
+          type: 'tool_result',
+          id: 'call_bash',
+          content: 'ready\n',
+          isError: false,
+        },
+      ]);
+    });
+
+    it('replays deferred non-Bash output that arrives before its raw call', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_image',
+          output: 'Image viewed.',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: 'const r = await tools.view_image({path:"/workspace/image.png"}); image(r.image_url);',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+      expect(chunks.filter(chunk => (
+        chunk.type === 'tool_use' || chunk.type === 'tool_result'
+      )).every(chunk => chunk.id === 'call_image')).toBe(true);
+    });
+
+    it('does not correlate raw and canonical patches that affect different paths', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const patch = '*** Begin Patch\n*** Add File: raw-only.md\n+raw\n*** End Patch';
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw_patch',
+          input: `const patch = ${JSON.stringify(patch)}; text(await tools.apply_patch(patch));`,
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'canonical_other_patch',
+          changes: [{ path: '/workspace/canonical-only.md', type: 'add' }],
+          status: 'inProgress',
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'canonical_other_patch',
+          changes: [{ path: '/workspace/canonical-only.md', type: 'add' }],
+          status: 'completed',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw_patch',
+          output: 'Success. Updated files.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      const lifecycleIds = new Set(chunks
+        .filter(chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result')
+        .map(chunk => chunk.id));
+      expect(lifecycleIds).toEqual(new Set(['call_raw_patch', 'canonical_other_patch']));
+    });
+
+    it('does not correlate different patch content for the same path', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const patch = '*** Begin Patch\n*** Add File: same.md\n+raw\n*** End Patch';
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw_patch',
+          input: `const patch = ${JSON.stringify(patch)}; text(await tools.apply_patch(patch));`,
+        },
+      });
+      for (const method of ['item/started', 'item/completed']) {
+        router.handleNotification(method, {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: {
+            type: 'fileChange',
+            id: 'canonical_other_patch',
+            changes: [{
+              path: '/workspace/same.md',
+              type: 'add',
+              diff: '@@ -0,0 +1 @@\n+canonical',
+            }],
+            status: method === 'item/started' ? 'inProgress' : 'completed',
+          },
+        });
+      }
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw_patch',
+          output: 'Success. Updated files.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      const lifecycleIds = new Set(chunks
+        .filter(chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result')
+        .map(chunk => chunk.id));
+      expect(lifecycleIds).toEqual(new Set(['call_raw_patch', 'canonical_other_patch']));
+    });
+
+    it('does not correlate identical edits in different patch contexts', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const patch = [
+        '*** Begin Patch',
+        '*** Update File: same.md',
+        '@@',
+        ' section-a',
+        '-old',
+        '+new',
+        '*** End Patch',
+      ].join('\n');
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw_patch',
+          input: `const patch = ${JSON.stringify(patch)}; text(await tools.apply_patch(patch));`,
+        },
+      });
+      for (const method of ['item/started', 'item/completed']) {
+        router.handleNotification(method, {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: {
+            type: 'fileChange',
+            id: 'canonical_other_patch',
+            changes: [{
+              path: '/workspace/same.md',
+              type: 'update',
+              diff: '@@ -1,2 +1,2 @@\n section-b\n-old\n+new',
+            }],
+            status: method === 'item/started' ? 'inProgress' : 'completed',
+          },
+        });
+      }
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw_patch',
+          output: 'Success. Updated files.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      const lifecycleIds = new Set(chunks
+        .filter(chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result')
+        .map(chunk => chunk.id));
+      expect(lifecycleIds).toEqual(new Set(['call_raw_patch', 'canonical_other_patch']));
+    });
+
+    it('correlates matching patch hunks with named anchors', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const patch = [
+        '*** Begin Patch',
+        '*** Update File: note.md',
+        '@@ function target',
+        ' context',
+        '-old',
+        '+new',
+        '*** End Patch',
+      ].join('\n');
+      const change = {
+        path: '/workspace/note.md',
+        type: 'update',
+        diff: '@@ -1,2 +1,2 @@ function target\n context\n-old\n+new',
+      };
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw_patch',
+          input: `const patch = ${JSON.stringify(patch)}; text(await tools.apply_patch(patch));`,
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'canonical_patch',
+          changes: [change],
+          status: 'inProgress',
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'canonical_patch',
+          changes: [change],
+          status: 'completed',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw_patch',
+          output: 'Success. Updated files.',
+        },
+      });
+
+      const lifecycleIds = chunks
+        .filter(chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result')
+        .map(chunk => chunk.id);
+      expect(lifecycleIds.every(id => id === 'canonical_patch')).toBe(true);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+    });
+
+    it('correlates matching move patches across raw and canonical kind shapes', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const patch = [
+        '*** Begin Patch',
+        '*** Update File: old.md',
+        '*** Move to: new.md',
+        '@@',
+        ' context',
+        '-old',
+        '+new',
+        '*** End Patch',
+      ].join('\n');
+      const change = {
+        path: '/workspace/old.md',
+        kind: { type: 'move', move_path: '/workspace/new.md' },
+        diff: '@@ -1,2 +1,2 @@\n context\n-old\n+new',
+      };
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw_patch',
+          input: `const patch = ${JSON.stringify(patch)}; text(await tools.apply_patch(patch));`,
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'canonical_move',
+          changes: [change],
+          status: 'inProgress',
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'canonical_move',
+          changes: [change],
+          status: 'completed',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw_patch',
+          output: 'Success. Updated files.',
+        },
+      });
+
+      expect(chunks.filter(chunk => (
+        chunk.type === 'tool_use' || chunk.type === 'tool_result'
+      )).every(chunk => chunk.id === 'canonical_move')).toBe(true);
+    });
+
+    it('falls back to a raw non-command exec when no canonical item arrives', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const imagePath = '/workspace/image.png';
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          id: 'ctc_image',
+          name: 'exec',
+          call_id: 'call_image',
+          input: `const result = await tools.view_image({path:${JSON.stringify(imagePath)}}); image(result.image_url);`,
+        },
+      });
+
+      expect(chunks).toEqual([]);
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          id: 'ctco_image',
+          call_id: 'call_image',
+          output: [{ type: 'input_text', text: 'Image Size: 100x100.' }],
+        },
+      });
+
+      expect(chunks).toEqual([]);
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'call_image',
+          name: 'Read',
+          input: { path: imagePath, file_path: imagePath },
+        },
+        {
+          type: 'tool_result',
+          id: 'call_image',
+          content: imagePath,
+          isError: false,
+        },
+        { type: 'done' },
+      ]);
+    });
+
+    it('waits for a canonical item when raw non-command output arrives first', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const imagePath = '/workspace/image.png';
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: `const r = await tools.view_image({path:${JSON.stringify(imagePath)}}); image(r.image_url);`,
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_image',
+          output: 'Image viewed.',
+        },
+      });
+      expect(chunks).toEqual([]);
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: imagePath },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: imagePath },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'image_canonical',
+          name: 'Read',
+          input: { path: imagePath, file_path: imagePath },
+        },
+        {
+          type: 'tool_result',
+          id: 'image_canonical',
+          content: imagePath,
+          isError: false,
+        },
+      ]);
+    });
+
+    it('projects every call in a multi-tool exec through its canonical lifecycle', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const imagePath = '/workspace/image.png';
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_multi',
+          input: [
+            'const results = await Promise.all([',
+            `tools.view_image({path:${JSON.stringify(imagePath)}}),`,
+            `tools.view_image({path:${JSON.stringify(imagePath)}})`,
+            ']); results.forEach(image);',
+          ].join(''),
+        },
+      });
+
+      for (const id of ['image_one', 'image_two']) {
+        router.handleNotification('item/started', {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: { type: 'imageView', id, path: imagePath },
+        });
+        router.handleNotification('item/completed', {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: { type: 'imageView', id, path: imagePath },
+        });
+      }
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_multi',
+          output: 'Images viewed.',
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(2);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(2);
+      expect(chunks.some(chunk => (
+        (chunk.type === 'tool_use' || chunk.type === 'tool_result')
+        && chunk.id === 'call_multi'
+      ))).toBe(false);
+    });
+
+    it('projects mixed Bash and non-Bash exec calls through canonical lifecycles', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_multi',
+          input: [
+            'const results = await Promise.all([',
+            'tools.exec_command({cmd:"pwd"}),',
+            'tools.view_image({path:"/workspace/image.png"})',
+            ']); results.forEach(text);',
+          ].join(''),
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'command_canonical',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'command_canonical',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: '/workspace\n',
+          exitCode: 0,
+          durationMs: 10,
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_multi',
+          output: 'Completed.',
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual([
+        'command_canonical',
+        'image_canonical',
+      ]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(2);
+      expect(chunks.some(chunk => (
+        (chunk.type === 'tool_use' || chunk.type === 'tool_result')
+        && chunk.id.startsWith('call_multi')
+      ))).toBe(false);
+    });
+
+    it('does not correlate mixed-envelope Bash calls across working directories', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_multi',
+          input: [
+            'const results = await Promise.all([',
+            'tools.exec_command({cmd:"pwd",workdir:"/workspace/a"}),',
+            'tools.view_image({path:"/workspace/image.png"})',
+            ']); results.forEach(text);',
+          ].join(''),
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'command_other_directory',
+          command: 'pwd',
+          cwd: '/workspace/b',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'command_other_directory',
+          command: 'pwd',
+          cwd: '/workspace/b',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: '/workspace/b\n',
+          exitCode: 0,
+          durationMs: 10,
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_multi',
+          output: 'Completed.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual([
+        'command_other_directory',
+        'image_canonical',
+        'call_multi:1',
+      ]);
+    });
+
+    it('assigns a canonical Bash item to only one raw correlation path', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_multi',
+          input: [
+            'const results = await Promise.all([',
+            'tools.exec_command({cmd:"pwd"}),',
+            'tools.view_image({path:"/workspace/image.png"})',
+            ']); results.forEach(text);',
+          ].join(''),
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_single',
+          input: 'const r = await tools.exec_command({cmd:"pwd"}); text(r.output);',
+        },
+      });
+      const commandItem = {
+        type: 'commandExecution',
+        id: 'command_canonical',
+        command: 'pwd',
+        cwd: '/workspace',
+        processId: '123',
+        source: 'unifiedExecStartup',
+        commandActions: [{ type: 'unknown', command: 'pwd' }],
+      };
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          ...commandItem,
+          status: 'inProgress',
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          ...commandItem,
+          status: 'completed',
+          aggregatedOutput: '/workspace\n',
+          exitCode: 0,
+          durationMs: 10,
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_single',
+          output: 'Script completed\nOutput:\n/workspace\n',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_multi',
+          output: 'Completed.',
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual([
+        'call_single',
+        'command_canonical',
+        'image_canonical',
+      ]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(3);
+    });
+
+    it('falls back only the unclaimed operation from a partial multi-tool exec', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const imagePath = '/workspace/image.png';
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_partial',
+          input: [
+            'const results = await Promise.all([',
+            `tools.view_image({path:${JSON.stringify(imagePath)}}),`,
+            'tools.probe_tool({})',
+            ']); results.forEach(text);',
+          ].join(''),
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: imagePath },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: imagePath },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_partial',
+          output: 'probe complete',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toEqual([
+        {
+          type: 'tool_use',
+          id: 'image_canonical',
+          name: 'Read',
+          input: { path: imagePath, file_path: imagePath },
+        },
+        {
+          type: 'tool_use',
+          id: 'call_partial:2',
+          name: 'probe_tool',
+          input: {},
+        },
+      ]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(2);
+      expect(chunks).not.toContainEqual(expect.objectContaining({ name: 'exec' }));
+    });
+
+    it('keeps identical operations in one exec envelope visible when correlation is ambiguous', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const imagePath = '/workspace/image.png';
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_multi',
+          input: [
+            'const results = await Promise.all([',
+            `tools.view_image({path:${JSON.stringify(imagePath)}}),`,
+            `tools.view_image({path:${JSON.stringify(imagePath)}})`,
+            ']); results.forEach(image);',
+          ].join(''),
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: imagePath },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: imagePath },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_multi',
+          output: 'Images viewed.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual([
+        'image_canonical',
+        'call_multi:1',
+        'call_multi:2',
+      ]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(3);
+    });
+
+    it('coalesces a canonical-first non-command item with its later raw exec envelope', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const imagePath = '/workspace/image.png';
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: imagePath },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: `const r = await tools.view_image({path:${JSON.stringify(imagePath)}}); image(r.image_url);`,
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: imagePath },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_image',
+          output: 'Image viewed.',
+        },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'image_canonical',
+          name: 'Read',
+          input: { path: imagePath, file_path: imagePath },
+        },
+        {
+          type: 'tool_result',
+          id: 'image_canonical',
+          content: imagePath,
+          isError: false,
+        },
+      ]);
+    });
+
+    it('emits an ordered lifecycle when canonical completion precedes its start', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const item = { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' };
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: 'const r = await tools.view_image({path:"/workspace/image.png"}); image(r.image_url);',
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item,
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item,
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_image',
+          output: 'Image viewed.',
+        },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'image_canonical',
+          name: 'Read',
+          input: { path: '/workspace/image.png', file_path: '/workspace/image.png' },
+        },
+        {
+          type: 'tool_result',
+          id: 'image_canonical',
+          content: '/workspace/image.png',
+          isError: false,
+        },
+      ]);
+    });
+
+    it('ignores a repeated canonical tool completion', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const item = { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' };
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item,
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item,
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item,
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+    });
+
+    it('keeps a later identical raw-only call visible after a canonical item completed', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const imagePath = '/workspace/image.png';
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: imagePath },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: imagePath },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: `const r = await tools.view_image({path:${JSON.stringify(imagePath)}}); image(r.image_url);`,
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_image',
+          output: 'Image viewed.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      const lifecycleIds = chunks
+        .filter(chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result')
+        .map(chunk => chunk.id);
+      expect(new Set(lifecycleIds)).toEqual(new Set(['image_canonical', 'call_image']));
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(2);
+    });
+
+    it.each([
+      {
+        label: 'web search',
+        nestedCall: 'web__run',
+        nestedInput: { search_query: [{ q: 'Codex app server' }] },
+        canonicalId: 'web_canonical',
+        startedItem: {
+          type: 'webSearch',
+          id: 'web_canonical',
+          query: 'Codex app server',
+          status: 'inProgress',
+        },
+        completedItem: {
+          type: 'webSearch',
+          id: 'web_canonical',
+          query: 'Codex app server',
+          status: 'completed',
+        },
+      },
+      {
+        label: 'web open page',
+        nestedCall: 'web__run',
+        nestedInput: { open: [{ ref_id: 'https://example.com/docs' }] },
+        canonicalId: 'web_open_canonical',
+        startedItem: {
+          type: 'webSearch',
+          id: 'web_open_canonical',
+          action: { type: 'openPage', url: 'https://example.com/docs' },
+          status: 'inProgress',
+        },
+        completedItem: {
+          type: 'webSearch',
+          id: 'web_open_canonical',
+          query: 'https://example.com/docs',
+          action: { type: 'openPage', url: 'https://example.com/docs' },
+          status: 'completed',
+        },
+      },
+      {
+        label: 'web find in page',
+        nestedCall: 'web__run',
+        nestedInput: {
+          find: [{ ref_id: 'https://example.com/docs', pattern: 'Codex' }],
+        },
+        canonicalId: 'web_find_canonical',
+        startedItem: {
+          type: 'webSearch',
+          id: 'web_find_canonical',
+          status: 'inProgress',
+        },
+        completedItem: {
+          type: 'webSearch',
+          id: 'web_find_canonical',
+          query: 'https://example.com/docs',
+          action: {
+            type: 'findInPage',
+            url: 'https://example.com/docs',
+            pattern: 'Codex',
+          },
+          status: 'completed',
+        },
+      },
+      {
+        label: 'MCP tool',
+        nestedCall: 'mcp__docs__search',
+        nestedInput: { query: 'Codex app server' },
+        canonicalId: 'mcp_canonical',
+        startedItem: {
+          type: 'mcpToolCall',
+          id: 'mcp_canonical',
+          server: 'docs',
+          tool: 'search',
+          arguments: { query: 'Codex app server' },
+          status: 'inProgress',
+        },
+        completedItem: {
+          type: 'mcpToolCall',
+          id: 'mcp_canonical',
+          server: 'docs',
+          tool: 'search',
+          arguments: { query: 'Codex app server' },
+          status: 'completed',
+          result: { content: [{ type: 'text', text: 'Found.' }] },
+          error: null,
+        },
+      },
+      {
+        label: 'dynamic tool',
+        nestedCall: 'probe_tool',
+        nestedInput: {},
+        canonicalId: 'dynamic_canonical',
+        startedItem: {
+          type: 'dynamicToolCall',
+          id: 'dynamic_canonical',
+          tool: 'probe_tool',
+          arguments: {},
+          status: 'inProgress',
+        },
+        completedItem: {
+          type: 'dynamicToolCall',
+          id: 'dynamic_canonical',
+          tool: 'probe_tool',
+          arguments: {},
+          status: 'completed',
+          contentItems: [{ type: 'inputText', text: 'probe complete' }],
+          success: true,
+        },
+      },
+    ])('defers a raw exec envelope to the canonical $label item', ({
+      nestedCall,
+      nestedInput,
+      canonicalId,
+      startedItem,
+      completedItem,
+    }) => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw_exec',
+          input: `const r = await tools.${nestedCall}(${JSON.stringify(nestedInput)}); text(r);`,
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: startedItem,
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: completedItem,
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw_exec',
+          output: 'raw aggregate output',
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+      expect(chunks.filter(chunk => (
+        chunk.type === 'tool_use' || chunk.type === 'tool_result'
+      )).every(chunk => chunk.id === canonicalId)).toBe(true);
+    });
+
+    it('does not correlate MCP calls when canonical arguments are a strict superset', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw_mcp',
+          input: [
+            'const r = await tools.mcp__docs__search(',
+            '{query:"Codex app server"}',
+            '); text(r);',
+          ].join(''),
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'mcpToolCall',
+          id: 'canonical_other_mcp',
+          server: 'docs',
+          tool: 'search',
+          arguments: { query: 'Codex app server', limit: 10 },
+          status: 'inProgress',
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'mcpToolCall',
+          id: 'canonical_other_mcp',
+          server: 'docs',
+          tool: 'search',
+          arguments: { query: 'Codex app server', limit: 10 },
+          status: 'completed',
+          result: { content: [{ type: 'text', text: 'Canonical result.' }] },
+          error: null,
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw_mcp',
+          output: 'Raw result.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      const lifecycleIds = new Set(chunks
+        .filter(chunk => chunk.type === 'tool_use' || chunk.type === 'tool_result')
+        .map(chunk => chunk.id));
+      expect(lifecycleIds).toEqual(new Set(['call_raw_mcp', 'canonical_other_mcp']));
+    });
+
+    it('defers an update_plan exec envelope to turn/plan/updated', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_plan',
+          input: [
+            'const r = await tools.update_plan({',
+            'plan:[{step:"Confirm stream events",status:"in_progress"}]',
+            '}); text(r);',
+          ].join(''),
+        },
+      });
+      router.handleNotification('turn/plan/updated', {
+        threadId: 't1',
+        turnId: 'turn1',
+        explanation: null,
+        plan: [{ step: 'Confirm stream events', status: 'inProgress' }],
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_plan',
+          output: 'Plan updated.',
+        },
+      });
+
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'plan-update-turn1-1',
+          name: 'TodoWrite',
+          input: {
+            todos: [{
+              id: '',
+              content: 'Confirm stream events',
+              activeForm: 'Confirm stream events',
+              status: 'in_progress',
+            }],
+          },
+        },
+        {
+          type: 'tool_result',
+          id: 'plan-update-turn1-1',
+          content: 'Plan updated',
+          isError: false,
+        },
+      ]);
+    });
+
+    it('correlates repeated update_plan calls within the same turn', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      for (const [index, step] of ['First plan', 'Second plan'].entries()) {
+        const callId = `call_plan_${index}`;
+        router.handleNotification('rawResponseItem/completed', {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: {
+            type: 'custom_tool_call',
+            name: 'exec',
+            call_id: callId,
+            input: [
+              'const r = await tools.update_plan({',
+              `plan:[{step:${JSON.stringify(step)},status:"in_progress"}]`,
+              '}); text(r);',
+            ].join(''),
+          },
+        });
+        router.handleNotification('turn/plan/updated', {
+          threadId: 't1',
+          turnId: 'turn1',
+          explanation: null,
+          plan: [{ step, status: 'inProgress' }],
+        });
+        router.handleNotification('rawResponseItem/completed', {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: {
+            type: 'custom_tool_call_output',
+            call_id: callId,
+            output: 'Plan updated.',
+          },
+        });
+      }
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(2);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(2);
+      expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual([
+        'plan-update-turn1-1',
+        'plan-update-turn1-2',
+      ]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result').map(chunk => chunk.id)).toEqual([
+        'plan-update-turn1-1',
+        'plan-update-turn1-2',
+      ]);
+    });
+
+    it('keeps a later identical raw-only call visible after a plan update completed', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('turn/plan/updated', {
+        threadId: 't1',
+        turnId: 'turn1',
+        explanation: null,
+        plan: [{ step: 'Canonical first', status: 'inProgress' }],
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_plan',
+          input: [
+            'const r = await tools.update_plan({',
+            'plan:[{step:"Canonical first",status:"in_progress"}]',
+            '}); text(r);',
+          ].join(''),
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_plan',
+          output: 'Plan updated.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual([
+        'plan-update-turn1-1',
+        'call_plan',
+      ]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(2);
+    });
+
+    it('routes canonical command progress through a correlated raw function call', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          id: 'fc_raw',
+          name: 'exec_command',
+          call_id: 'call_raw',
+          arguments: '{"command":"pwd"}',
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'exec_canonical',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      router.handleNotification('item/commandExecution/outputDelta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'exec_canonical',
+        delta: '/work',
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'exec_canonical',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: '/workspace\n',
+          exitCode: 0,
+          durationMs: 10,
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          id: 'fco_raw',
+          call_id: 'call_raw',
+          output: 'Exit code: 0\nOutput:\n/workspace\n',
+        },
+      });
+
+      expect(chunks).toEqual([
+        { type: 'tool_use', id: 'call_raw', name: 'Bash', input: { command: 'pwd' } },
+        { type: 'tool_output', id: 'call_raw', content: '/work' },
+        { type: 'tool_result', id: 'call_raw', content: '/workspace\n', isError: false },
+      ]);
+    });
+
+    it('keeps repeated commands as separate calls while coalescing each canonical event', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      for (const suffix of ['one', 'two']) {
+        router.handleNotification('rawResponseItem/completed', {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: {
+            type: 'custom_tool_call',
+            id: `ctc_${suffix}`,
+            name: 'exec',
+            call_id: `call_${suffix}`,
+            input: 'const r = await tools.exec_command({cmd:"pwd"}); text(r.output);',
+          },
+        });
+        router.handleNotification('item/started', {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: {
+            type: 'commandExecution',
+            id: `exec_${suffix}`,
+            command: 'pwd',
+            cwd: '/workspace',
+            processId: suffix,
+            source: 'unifiedExecStartup',
+            status: 'inProgress',
+            commandActions: [{ type: 'unknown', command: 'pwd' }],
+            aggregatedOutput: null,
+            exitCode: null,
+            durationMs: null,
+          },
+        });
+      }
+
+      expect(chunks).toEqual([
+        { type: 'tool_use', id: 'call_one', name: 'Bash', input: { command: 'pwd' } },
+        { type: 'tool_use', id: 'call_two', name: 'Bash', input: { command: 'pwd' } },
+      ]);
+    });
+
+    it('coalesces a canonical-first command with its later raw exec envelope', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'exec_canonical',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw',
+          input: 'const r = await tools.exec_command({cmd:"pwd"}); text(r.output);',
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'exec_canonical',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: '/workspace\n',
+          exitCode: 0,
+          durationMs: 10,
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw',
+          output: 'Script completed\nOutput:\n/workspace\n',
+        },
+      });
+
+      expect(chunks).toEqual([
+        { type: 'tool_use', id: 'exec_canonical', name: 'Bash', input: { command: 'pwd' } },
+        { type: 'tool_result', id: 'exec_canonical', content: '/workspace\n', isError: false },
+      ]);
+    });
+
+    it('does not replay canonical output when a later raw Bash call yields', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const canonicalItem = {
+        type: 'commandExecution',
+        id: 'exec_canonical',
+        command: 'npm test',
+        cwd: '/workspace',
+        processId: '123',
+        source: 'unifiedExecStartup',
+        commandActions: [{ type: 'unknown', command: 'npm test' }],
+      };
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          ...canonicalItem,
+          status: 'inProgress',
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      router.handleNotification('item/commandExecution/outputDelta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'exec_canonical',
+        delta: 'tests started\n',
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw',
+          input: 'const r = await tools.exec_command({cmd:"npm test"}); text(r.output);',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw',
+          output: [
+            { type: 'input_text', text: 'Script running with cell ID 42\nOutput:\n' },
+            { type: 'input_text', text: 'tests started\n' },
+          ],
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          ...canonicalItem,
+          status: 'completed',
+          aggregatedOutput: 'tests started\n',
+          exitCode: 0,
+          durationMs: 10,
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'wait',
+          call_id: 'call_wait',
+          arguments: '{"cell_id":"42","yield_time_ms":30000}',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_wait',
+          output: 'Script completed\nOutput:\ntests passed\n',
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_output')).toEqual([{
+        type: 'tool_output',
+        id: 'exec_canonical',
+        content: 'tests started\n',
+      }]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([{
+        type: 'tool_result',
+        id: 'exec_canonical',
+        content: 'tests started\ntests passed\n',
+        isError: false,
+      }]);
+    });
+
+    it('keeps a later identical raw-only command visible after a canonical command completed', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const canonicalItem = {
+        type: 'commandExecution',
+        id: 'exec_canonical',
+        command: 'pwd',
+        cwd: '/workspace',
+        processId: '123',
+        source: 'unifiedExecStartup',
+        commandActions: [{ type: 'unknown', command: 'pwd' }],
+        aggregatedOutput: '/workspace\n',
+        exitCode: 0,
+        durationMs: 10,
+      };
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          ...canonicalItem,
+          status: 'inProgress',
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { ...canonicalItem, status: 'completed' },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw',
+          input: 'const r = await tools.exec_command({cmd:"pwd"}); text(r.output);',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw',
+          output: 'Script completed\nOutput:\n/workspace\n',
+        },
+      });
+
+      expect(chunks).toEqual([
+        { type: 'tool_use', id: 'exec_canonical', name: 'Bash', input: { command: 'pwd' } },
+        { type: 'tool_result', id: 'exec_canonical', content: '/workspace\n', isError: false },
+        { type: 'tool_use', id: 'call_raw', name: 'Bash', input: { command: 'pwd' } },
+        { type: 'tool_result', id: 'call_raw', content: '/workspace\n', isError: false },
+      ]);
+    });
+
+    it('coalesces a canonical command delivered after the raw terminal output', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw_only',
+          input: 'const r = await tools.exec_command({cmd:"pwd"}); text(r.output);',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw_only',
+          output: 'Script completed\nOutput:\n/workspace\n',
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'exec_later',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '456',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'exec_later',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '456',
+          source: 'unifiedExecStartup',
+          status: 'completed',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: '/workspace\n',
+          exitCode: 0,
+          durationMs: 10,
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toEqual([
+        { type: 'tool_use', id: 'call_raw_only', name: 'Bash', input: { command: 'pwd' } },
+      ]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+    });
+
+    it('matches canonical-first commands by their full command alias', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const canonicalItem = {
+        type: 'commandExecution',
+        id: 'exec_canonical',
+        command: '/bin/zsh -lc "echo test"',
+        cwd: '/workspace',
+        processId: '123',
+        source: 'unifiedExecStartup',
+        commandActions: [{ type: 'unknown', command: 'echo test' }],
+      };
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          ...canonicalItem,
+          status: 'inProgress',
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw',
+          input: 'const r = await tools.exec_command({cmd:"/bin/zsh -lc \\"echo test\\""}); text(r.output);',
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          ...canonicalItem,
+          status: 'completed',
+          aggregatedOutput: 'test\n',
+          exitCode: 0,
+          durationMs: 10,
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_raw',
+          output: 'Script completed\nOutput:\ntest\n',
+        },
+      });
+
+      expect(chunks).toEqual([
+        { type: 'tool_use', id: 'exec_canonical', name: 'Bash', input: { command: 'echo test' } },
+        { type: 'tool_result', id: 'exec_canonical', content: 'test\n', isError: false },
+      ]);
+    });
+
+    it('keeps ambiguous concurrent identical commands visible instead of guessing a correlation', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      for (const callId of ['call_one', 'call_two']) {
+        router.handleNotification('rawResponseItem/completed', {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: {
+            type: 'custom_tool_call',
+            name: 'exec',
+            call_id: callId,
+            input: 'const r = await tools.exec_command({cmd:"pwd"}); text(r.output);',
+          },
+        });
+      }
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'exec_ambiguous',
+          command: 'pwd',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual([
+        'call_one',
+        'call_two',
+        'exec_ambiguous',
+      ]);
+    });
+
+    it('does not correlate identical commands from different working directories', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_raw_a',
+          input: [
+            'const r = await tools.exec_command({',
+            'cmd:"pwd",workdir:"/workspace/a"',
+            '}); text(r.output);',
+          ].join(''),
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'exec_b',
+          command: 'pwd',
+          cwd: '/workspace/b',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'pwd' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual([
+        'call_raw_a',
+        'exec_b',
+      ]);
+    });
+
+    it('falls back to a direct raw-only apply_patch call at turn completion', () => {
       router.beginTurn({ isPlanTurn: false });
 
       router.handleNotification('rawResponseItem/completed', {
@@ -838,7 +3201,21 @@ describe('CodexNotificationRouter', () => {
         turn: { id: 'turn1', items: [], status: 'completed', error: null },
       });
 
-      expect(chunks).toEqual([{ type: 'done' }]);
+      expect(chunks).toEqual([
+        {
+          type: 'tool_use',
+          id: 'patch_raw',
+          name: 'apply_patch',
+          input: { patch: '*** Begin Patch\n*** End Patch' },
+        },
+        {
+          type: 'tool_result',
+          id: 'patch_raw',
+          content: 'Success. Updated files.',
+          isError: false,
+        },
+        { type: 'done' },
+      ]);
     });
 
     it('maps fileChange item/started to tool_use chunk', () => {
@@ -936,7 +3313,63 @@ describe('CodexNotificationRouter', () => {
       ]);
     });
 
+    it('retains raw ownership claimed by patchUpdated through completion', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const patch = '*** Begin Patch\n*** Add File: note.md\n+hello\n*** End Patch';
+      const changes = [{
+        path: '/workspace/note.md',
+        type: 'add',
+        diff: '@@ -0,0 +1 @@\n+hello',
+      }];
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_patch',
+          input: `const patch = ${JSON.stringify(patch)}; text(await tools.apply_patch(patch));`,
+        },
+      });
+      router.handleNotification('item/fileChange/patchUpdated', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'patch_canonical',
+        changes,
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'patch_canonical',
+          changes,
+          status: 'completed',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_patch',
+          output: 'Success. Updated files.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+      expect(chunks.filter(chunk => (
+        chunk.type === 'tool_use' || chunk.type === 'tool_result'
+      )).every(chunk => chunk.id === 'patch_canonical')).toBe(true);
+    });
+
     it('merges raw apply_patch input into the fileChange-owned tool call', () => {
+      router.beginTurn({ isPlanTurn: false });
       router.handleNotification('rawResponseItem/completed', {
         threadId: 't1',
         turnId: 'turn1',
@@ -968,6 +3401,124 @@ describe('CodexNotificationRouter', () => {
           },
         },
       ]);
+    });
+
+    it('keeps a same-ID sparse direct patch owned by its canonical fileChange', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const patch = [
+        '*** Begin Patch',
+        '*** Update File: /workspace/foo.ts',
+        '@@',
+        '-old',
+        '+new',
+        '*** End Patch',
+      ].join('\n');
+      const changes = [{ path: '/workspace/foo.ts', type: 'update' }];
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'apply_patch',
+          call_id: 'call_patch',
+          input: patch,
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'call_patch',
+          changes,
+          status: 'inProgress',
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'call_patch',
+          changes,
+          status: 'completed',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_patch',
+          output: 'Success',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(2);
+      expect(chunks.every(chunk => (
+        chunk.type === 'done' || ('id' in chunk && chunk.id === 'call_patch')
+      ))).toBe(true);
+    });
+
+    it('keeps a canonical-completed-first direct patch owned when its raw call arrives later', () => {
+      router.beginTurn({ isPlanTurn: false });
+      const patch = [
+        '*** Begin Patch',
+        '*** Update File: /workspace/foo.ts',
+        '@@',
+        '-old',
+        '+new',
+        '*** End Patch',
+      ].join('\n');
+      const completedItem = {
+        type: 'fileChange' as const,
+        id: 'call_patch',
+        changes: [{ path: '/workspace/foo.ts', type: 'update' }],
+        status: 'completed' as const,
+      };
+
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: completedItem,
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'apply_patch',
+          call_id: 'call_patch',
+          input: patch,
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { ...completedItem, status: 'inProgress' },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_patch',
+          output: 'Success',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
     });
   });
 
@@ -1036,8 +3587,8 @@ describe('CodexNotificationRouter', () => {
         turnId: 'turn1',
       });
 
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
+      expect(chunks).toHaveLength(2);
+      expect(chunks[1]).toMatchObject({
         type: 'tool_result',
         id: 'call_img1',
         isError: false,
@@ -1101,8 +3652,8 @@ describe('CodexNotificationRouter', () => {
         turnId: 'turn1',
       });
 
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
+      expect(chunks).toHaveLength(2);
+      expect(chunks[1]).toMatchObject({
         type: 'tool_result',
         id: 'ws_abc',
         isError: false,
@@ -1159,12 +3710,345 @@ describe('CodexNotificationRouter', () => {
         turnId: 'turn1',
       });
 
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
+      expect(chunks).toHaveLength(2);
+      expect(chunks[1]).toMatchObject({
         type: 'tool_result',
         id: 'call_agent1',
         isError: false,
       });
+    });
+
+    it('ignores a late same-ID raw function call after canonical collab completion', () => {
+      router.beginTurn({ isPlanTurn: false });
+      router.handleNotification('item/completed', {
+        item: {
+          type: 'collabAgentToolCall',
+          id: 'call_wait',
+          tool: 'wait',
+          status: 'completed',
+          arguments: { timeout_ms: 30000 },
+          result: { status: 'done' },
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'wait_agent',
+          call_id: 'call_wait',
+          arguments: '{"timeout_ms":30000}',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_wait',
+          output: 'Agent finished.',
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+    });
+
+    it('closes a raw-only function call without output at turn completion', () => {
+      router.beginTurn({ isPlanTurn: false });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'wait_agent',
+          call_id: 'call_wait',
+          arguments: '{"timeout_ms":30000}',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([{
+        type: 'tool_result',
+        id: 'call_wait',
+        content: '',
+        isError: false,
+      }]);
+    });
+
+    it('ignores a late raw output after a same-id canonical collab completion', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call',
+          name: 'wait_agent',
+          call_id: 'call_wait',
+          arguments: '{"timeout_ms":30000}',
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'collabAgentToolCall',
+          id: 'call_wait',
+          tool: 'wait',
+          status: 'inProgress',
+          arguments: { timeout_ms: 30000 },
+        },
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'collabAgentToolCall',
+          id: 'call_wait',
+          tool: 'wait',
+          status: 'completed',
+          arguments: { timeout_ms: 30000 },
+          result: { status: 'done' },
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_wait',
+          output: 'Agent finished.',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_wait',
+          output: 'Agent finished.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+    });
+
+    it('flushes a deferred raw-only operation before a terminal error', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: 'const r = await tools.view_image({path:"/workspace/image.png"}); image(r.image_url);',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_image',
+          output: 'Image viewed.',
+        },
+      });
+      router.handleNotification('error', {
+        error: { message: 'Transport failed' },
+        willRetry: false,
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toEqual([{
+        type: 'tool_use',
+        id: 'call_image',
+        name: 'Read',
+        input: { path: '/workspace/image.png', file_path: '/workspace/image.png' },
+      }]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'error', content: 'Transport failed' });
+    });
+
+    it('marks an unfinished deferred raw-only operation failed at a terminal error', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: 'const r = await tools.view_image({path:"/workspace/image.png"}); image(r.image_url);',
+        },
+      });
+      router.handleNotification('error', {
+        error: { message: 'Transport failed' },
+        willRetry: false,
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([{
+        type: 'tool_result',
+        id: 'call_image',
+        content: '',
+        isError: true,
+      }]);
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'error', content: 'Transport failed' });
+    });
+
+    it('closes a claimed canonical operation before a terminal error', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: 'const r = await tools.view_image({path:"/workspace/image.png"}); image(r.image_url);',
+        },
+      });
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_image',
+          output: 'Image viewed.',
+        },
+      });
+      router.handleNotification('error', {
+        error: { message: 'Transport failed' },
+        willRetry: false,
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { type: 'imageView', id: 'image_canonical', path: '/workspace/image.png' },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([{
+        type: 'tool_result',
+        id: 'image_canonical',
+        content: 'Image viewed.',
+        isError: false,
+      }]);
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'error', content: 'Transport failed' });
+    });
+
+    it('flushes deferred operations before a failed-turn error', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: 'const r = await tools.view_image({path:"/workspace/image.png"}); image(r.image_url);',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_image',
+          output: 'Image viewed.',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: {
+          id: 'turn1',
+          items: [],
+          status: 'failed',
+          error: { message: 'Turn failed' },
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'error', content: 'Turn failed' });
+    });
+
+    it('closes a deferred raw-only operation without output at turn completion', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_image',
+          input: 'const r = await tools.view_image({path:"/workspace/image.png"}); image(r.image_url);',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
+    });
+
+    it('closes a yielded Bash operation at turn completion', () => {
+      router.beginTurn({ isPlanTurn: false });
+
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'call_bash',
+          input: 'const r = await tools.exec_command({cmd:"npm test"}); text(r.output);',
+        },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'custom_tool_call_output',
+          call_id: 'call_bash',
+          output: 'Script running with cell ID 42\nOutput:\ntests started\n',
+        },
+      });
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([{
+        type: 'tool_result',
+        id: 'call_bash',
+        content: 'tests started\n',
+        isError: false,
+      }]);
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
     });
   });
 
@@ -1219,7 +4103,7 @@ describe('CodexNotificationRouter', () => {
       expect(chunks).toEqual([{ type: 'done' }]);
     });
 
-    it('emits error then done on turn/completed with status failed', () => {
+    it('emits a terminal error on turn/completed with status failed', () => {
       router.handleNotification('turn/completed', {
         threadId: 't1',
         turn: {
@@ -1230,10 +4114,7 @@ describe('CodexNotificationRouter', () => {
         },
       });
 
-      expect(chunks).toEqual([
-        { type: 'error', content: 'Model error' },
-        { type: 'done' },
-      ]);
+      expect(chunks).toEqual([{ type: 'error', content: 'Model error' }]);
     });
 
     it('emits done on turn/completed with status interrupted', () => {
@@ -1324,8 +4205,8 @@ describe('CodexNotificationRouter', () => {
         turnId: 'turn1',
       });
 
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
+      expect(chunks).toHaveLength(2);
+      expect(chunks[1]).toMatchObject({
         type: 'tool_result',
         id: 'call_mcp1',
         content: '{"resources":[]}',
@@ -1350,8 +4231,8 @@ describe('CodexNotificationRouter', () => {
         turnId: 'turn1',
       });
 
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
+      expect(chunks).toHaveLength(2);
+      expect(chunks[1]).toMatchObject({
         type: 'tool_result',
         id: 'call_mcp2',
         content: 'Connection refused',
@@ -1575,7 +4456,28 @@ describe('CodexNotificationRouter', () => {
   });
 
   describe('command execution output delta', () => {
-    it('emits tool_output chunk for incremental command output', () => {
+    const startCommand = (): void => {
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'call_1',
+          command: 'echo line 1',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'echo line 1' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+    };
+
+    it('buffers a command output delta until its tool use starts', () => {
+      router.beginTurn({ isPlanTurn: false });
       router.handleNotification('item/commandExecution/outputDelta', {
         threadId: 't1',
         turnId: 'turn1',
@@ -1583,12 +4485,45 @@ describe('CodexNotificationRouter', () => {
         delta: 'line 1\n',
       });
 
-      expect(chunks).toEqual([
+      expect(chunks).toEqual([]);
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'commandExecution',
+          id: 'call_1',
+          command: 'echo line 1',
+          cwd: '/workspace',
+          processId: '123',
+          source: 'unifiedExecStartup',
+          status: 'inProgress',
+          commandActions: [{ type: 'unknown', command: 'echo line 1' }],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      });
+
+      expect(chunks.map(chunk => chunk.type)).toEqual(['tool_use', 'tool_output']);
+    });
+
+    it('emits tool_output chunk for incremental command output', () => {
+      startCommand();
+      router.handleNotification('item/commandExecution/outputDelta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'call_1',
+        delta: 'line 1\n',
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_output')).toEqual([
         { type: 'tool_output', id: 'call_1', content: 'line 1\n' },
       ]);
     });
 
     it('accumulates multiple output deltas', () => {
+      startCommand();
       router.handleNotification('item/commandExecution/outputDelta', {
         threadId: 't1', turnId: 'turn1', itemId: 'call_1', delta: 'line 1\n',
       });
@@ -1596,14 +4531,29 @@ describe('CodexNotificationRouter', () => {
         threadId: 't1', turnId: 'turn1', itemId: 'call_1', delta: 'line 2\n',
       });
 
-      expect(chunks).toHaveLength(2);
-      expect(chunks[0]).toEqual({ type: 'tool_output', id: 'call_1', content: 'line 1\n' });
-      expect(chunks[1]).toEqual({ type: 'tool_output', id: 'call_1', content: 'line 2\n' });
+      expect(chunks.filter(chunk => chunk.type === 'tool_output')).toEqual([
+        { type: 'tool_output', id: 'call_1', content: 'line 1\n' },
+        { type: 'tool_output', id: 'call_1', content: 'line 2\n' },
+      ]);
     });
   });
 
   describe('file change output delta', () => {
-    it('emits tool_output chunk for incremental file change output', () => {
+    const startFileChange = (): void => {
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'fc_1',
+          changes: [{ path: '/workspace/foo.ts', type: 'update' }],
+          status: 'inProgress',
+        },
+      });
+    };
+
+    it('buffers a file change output delta until its tool use starts', () => {
+      router.beginTurn({ isPlanTurn: false });
       router.handleNotification('item/fileChange/outputDelta', {
         threadId: 't1',
         turnId: 'turn1',
@@ -1611,7 +4561,32 @@ describe('CodexNotificationRouter', () => {
         delta: 'Applied patch to foo.ts',
       });
 
-      expect(chunks).toEqual([
+      expect(chunks).toEqual([]);
+
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'fileChange',
+          id: 'fc_1',
+          changes: [{ path: '/workspace/foo.ts', type: 'update' }],
+          status: 'inProgress',
+        },
+      });
+
+      expect(chunks.map(chunk => chunk.type)).toEqual(['tool_use', 'tool_output']);
+    });
+
+    it('emits tool_output chunk for incremental file change output', () => {
+      startFileChange();
+      router.handleNotification('item/fileChange/outputDelta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'fc_1',
+        delta: 'Applied patch to foo.ts',
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_output')).toEqual([
         { type: 'tool_output', id: 'fc_1', content: 'Applied patch to foo.ts' },
       ]);
     });

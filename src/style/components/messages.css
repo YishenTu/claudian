@@ -44,6 +44,7 @@
 }
 
 .claudian-message {
+  position: relative;
   padding: 10px 14px;
   border-radius: 8px;
   max-width: 95%;
@@ -54,6 +55,7 @@
   position: relative;
   background: rgba(0, 0, 0, 0.3);
   align-self: flex-end;
+  margin-block-end: 16px;
   border-end-end-radius: 4px;
 }
 
@@ -77,6 +79,29 @@
   user-select: text;
   -webkit-user-select: text;
   unicode-bidi: plaintext; /* Proper BiDi text handling for mixed RTL/LTR */
+}
+
+.claudian-message-timestamp {
+  position: absolute;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.85;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.claudian-message-user .claudian-message-timestamp {
+  inset-block-end: -16px;
+  inset-inline-end: 0;
+}
+
+.claudian-message-assistant .claudian-message-timestamp {
+  position: static;
+  display: block;
+  margin-top: 6px;
+  text-align: start;
 }
 
 .claudian-interrupted {

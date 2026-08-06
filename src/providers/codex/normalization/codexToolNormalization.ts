@@ -45,6 +45,11 @@ export interface NormalizedCodexToolCall {
   input: Record<string, unknown>;
 }
 
+export interface DecodedCodexExecEnvelopeCall extends NormalizedCodexToolCall {
+  rawName: string;
+  rawInput: Record<string, unknown>;
+}
+
 export function normalizeCodexToolCall(
   rawName: string | undefined,
   rawInput: Record<string, unknown>,
@@ -63,6 +68,15 @@ export function normalizeCodexToolCall(
 export function decodeCodexExecEnvelope(
   input: Record<string, unknown>,
 ): NormalizedCodexToolCall[] | null {
+  return decodeCodexExecEnvelopeCalls(input)?.map(({ name, input: normalizedInput }) => ({
+    name,
+    input: normalizedInput,
+  })) ?? null;
+}
+
+export function decodeCodexExecEnvelopeCalls(
+  input: Record<string, unknown>,
+): DecodedCodexExecEnvelopeCall[] | null {
   const source = firstNonEmptyString(input.raw, input.value);
   if (!source) return null;
 
@@ -72,11 +86,13 @@ export function decodeCodexExecEnvelope(
   const calls = findExecEnvelopeToolCalls(tokens);
   if (!calls || calls.length === 0) return null;
 
-  const decodedCalls: NormalizedCodexToolCall[] = [];
+  const decodedCalls: DecodedCodexExecEnvelopeCall[] = [];
   for (const call of calls) {
     const rawInput = decodeExecEnvelopeToolInput(tokens, call);
     if (!rawInput) return null;
     decodedCalls.push({
+      rawName: call.name,
+      rawInput,
       name: normalizeCodexToolName(call.name),
       input: normalizeCodexToolInput(call.name, rawInput),
     });

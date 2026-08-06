@@ -49,9 +49,9 @@ interface FakeElement {
   text: string;
   title: string;
   value: string;
-  addEventListener(event: string, handler: () => unknown): void;
+  addEventListener(event: string, handler: (...args: any[]) => unknown): void;
   appendText(value: string): void;
-  classList: { add(value: string): void };
+  classList: { add(value: string): void; remove(value: string): void };
   createDiv(options?: { cls?: string; text?: string }): FakeElement;
   createEl(tag: string, options?: { cls?: string; text?: string; type?: string }): FakeElement;
   createSpan(options?: { cls?: string; text?: string }): FakeElement;
@@ -59,7 +59,7 @@ interface FakeElement {
   setAttribute(name: string, value: string): void;
   setText(value: string): void;
   toggleClass(value: string, force: boolean): void;
-  trigger(event: string): unknown[];
+  trigger(event: string, eventArg?: unknown): unknown[];
 }
 
 function createElement(
@@ -67,7 +67,7 @@ function createElement(
   options: { cls?: string; text?: string; type?: string } = {},
   parent: FakeElement | null = null,
 ): FakeElement {
-  const listeners = new Map<string, Array<() => unknown>>();
+  const listeners = new Map<string, Array<(...args: any[]) => unknown>>();
   const classes = new Set(options.cls?.split(/\s+/).filter(Boolean) ?? []);
   const element: FakeElement = {
     attrs: options.type ? { type: options.type } : {},
@@ -93,6 +93,9 @@ function createElement(
     classList: {
       add(value) {
         classes.add(value);
+      },
+      remove(value) {
+        classes.delete(value);
       },
     },
     createDiv(childOptions = {}) {
@@ -120,8 +123,8 @@ function createElement(
         classes.delete(value);
       }
     },
-    trigger(event) {
-      return (listeners.get(event) ?? []).map(handler => handler());
+    trigger(event, eventArg) {
+      return (listeners.get(event) ?? []).map(handler => handler(eventArg));
     },
   };
   elements.push(element);
@@ -196,7 +199,7 @@ describe('CodexModelPicker', () => {
 
     expect(settingNames).toContain('Visible models');
     expect(settingDescriptions).toContain(
-      'Choose which models are available in the chat selector. Select at least one model to use this provider.',
+      'Choose which models are available in the chat selector. Drag to reorder them; the provider uses the first currently usable model as its default. Select at least one model to use this provider.',
     );
     expect(settingClasses).toContain('claudian-provider-model-picker-setting');
     expect(elements.filter(element => element.attrs.type === 'checkbox').map(element => element.checked))
@@ -222,6 +225,94 @@ describe('CodexModelPicker', () => {
     expect(getCodexProviderSettings(plugin.settings).visibleModels).toEqual([]);
     expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
+  });
+
+  it('marks the first selected model as default and reorders from the drag handle', async () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    renderCodexModelPicker(createElement() as any, context, {
+      refreshModelCatalog: jest.fn(),
+    } as any);
+
+    expect(elements.filter(element =>
+      element.classes.has('claudian-provider-model-picker-selected-default')
+    ).map(element => element.text)).toEqual(['Default']);
+    expect(elements.some(element =>
+      element.classes.has('claudian-provider-model-picker-selected-order')
+    )).toBe(false);
+    const dragHandle = findElement(element =>
+      element.classes.has('claudian-provider-model-picker-selected-drag')
+    );
+    expect(dragHandle.attrs['aria-label']).toContain('Reorder ');
+    const preventDefault = jest.fn();
+
+    dragHandle.trigger('keydown', { key: 'ArrowDown', preventDefault });
+    await flushPromises();
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(getCodexProviderSettings(plugin.settings).visibleModels).toEqual([
+      'gpt-5.4-mini',
+      'gpt-5.5',
+    ]);
+  });
+
+  it('marks the first currently available ordered model as default', () => {
+    const plugin = createPlugin();
+    plugin.settings.providerConfigs.codex.discoveredModels = [
+      {
+        ...TEST_CODEX_CATALOG[1],
+        model: 'gpt-ultra-only',
+        displayName: 'GPT Ultra Only',
+        supportedReasoningEfforts: [{ value: 'ultra', description: 'Ultra' }],
+      },
+      ...TEST_CODEX_CATALOG,
+    ];
+    plugin.settings.providerConfigs.codex.enableUltraEffort = false;
+    plugin.settings.providerConfigs.codex.visibleModels = ['gpt-ultra-only', 'gpt-5.5'];
+
+    renderCodexModelPicker(createElement() as any, createContext(plugin), {
+      refreshModelCatalog: jest.fn(),
+    } as any);
+
+    const defaultBadge = findElement(element =>
+      element.classes.has('claudian-provider-model-picker-selected-default')
+    );
+    expect(defaultBadge.parent?.parent?.parent?.attrs['data-model-id']).toBe('gpt-5.5');
+  });
+
+
+  it('persists drag reordering of selected models', async () => {
+    const plugin = createPlugin();
+    const context = createContext(plugin);
+
+    renderCodexModelPicker(createElement() as any, context, {
+      refreshModelCatalog: jest.fn(),
+    } as any);
+
+    const dragHandles = elements.filter(element =>
+      element.classes.has('claudian-provider-model-picker-selected-drag')
+    );
+    const selectedRows = elements.filter(element =>
+      element.classes.has('claudian-provider-model-picker-selected-row')
+    );
+    const dataTransfer = {
+      effectAllowed: '',
+      getData: jest.fn().mockReturnValue(''),
+      setData: jest.fn(),
+    };
+    dragHandles[1].trigger('dragstart', { dataTransfer });
+    selectedRows[0].trigger('drop', {
+      dataTransfer,
+      preventDefault: jest.fn(),
+    });
+    await flushPromises();
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'gpt-5.4-mini');
+    expect(getCodexProviderSettings(plugin.settings).visibleModels).toEqual([
+      'gpt-5.4-mini',
+      'gpt-5.5',
+    ]);
   });
 
   it('marks an ultra-only model unavailable while ultra effort is disabled', () => {

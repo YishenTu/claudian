@@ -173,6 +173,17 @@ describe('ProviderRegistry', () => {
     })).toEqual(['opencode', 'pi', 'grok', 'codex', 'claude']);
   });
 
+  it('exposes the blank-tab provider order from top to bottom', () => {
+    expect(ProviderRegistry.getBlankTabProviderIds({
+      providerConfigs: {
+        codex: { enabled: true },
+        grok: { enabled: true },
+        opencode: { enabled: true },
+        pi: { enabled: true },
+      },
+    })).toEqual(['claude', 'codex', 'grok', 'pi', 'opencode']);
+  });
+
   it('exposes title generation models only from enabled providers', () => {
     const disabledSettings = {
       providerConfigs: {

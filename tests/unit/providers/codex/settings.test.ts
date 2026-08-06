@@ -117,7 +117,7 @@ describe('codex settings', () => {
     expect(createCodexVisibleModelFilter(
       ['gpt-5.5', 'gpt-5.4-mini'],
       discoveredModels,
-    )).toBeNull();
+    )).toEqual(['gpt-5.5', 'gpt-5.4-mini']);
   });
 
   it('normalizes model aliases against the discovered catalog', () => {
@@ -241,6 +241,36 @@ describe('codex settings', () => {
       savedProviderModel: { codex: 'gpt-5.4-mini' },
       savedProviderEffort: { codex: 'medium' },
       savedProviderServiceTier: { codex: 'default' },
+    });
+  });
+
+  it('retargets projections to the first ordered model that is currently available', () => {
+    const ultraOnlyModel = {
+      ...TEST_CODEX_CATALOG[1],
+      model: 'gpt-ultra-only',
+      displayName: 'GPT Ultra Only',
+      supportedReasoningEfforts: [{ value: 'ultra', description: 'Ultra' }],
+    };
+    const settingsBag: Record<string, unknown> = {
+      settingsProvider: 'codex',
+      model: 'gpt-5.5',
+      savedProviderModel: { codex: 'gpt-5.5' },
+      providerConfigs: {
+        codex: {
+          discoveredModels: [ultraOnlyModel, ...TEST_CODEX_CATALOG],
+          enableUltraEffort: false,
+          visibleModels: null,
+        },
+      },
+    };
+
+    updateCodexProviderSettings(settingsBag, {
+      visibleModels: ['gpt-ultra-only', 'gpt-5.4-mini'],
+    });
+
+    expect(settingsBag).toMatchObject({
+      model: 'gpt-5.4-mini',
+      savedProviderModel: { codex: 'gpt-5.4-mini' },
     });
   });
 

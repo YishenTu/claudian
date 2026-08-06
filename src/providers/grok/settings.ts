@@ -49,6 +49,25 @@ export const DEFAULT_GROK_PROVIDER_SETTINGS: Readonly<PersistedGrokProviderSetti
   visibleModels: null,
 });
 
+export function getOrderedGrokVisibleModelIds(
+  settings: GrokProviderSettings,
+): string[] {
+  if (settings.visibleModels !== null) {
+    return [...settings.visibleModels];
+  }
+
+  const models = settings.currentCatalog?.models ?? [];
+  const defaultModelId = settings.currentCatalog?.defaultModelId;
+  if (!defaultModelId || !models.some(model => model.rawId === defaultModelId)) {
+    return models.map(model => model.rawId);
+  }
+
+  return [
+    defaultModelId,
+    ...models.filter(model => model.rawId !== defaultModelId).map(model => model.rawId),
+  ];
+}
+
 export function normalizeGrokCatalogSnapshot(value: unknown): GrokCatalogSnapshot | null {
   if (!isRecord(value)) {
     return null;

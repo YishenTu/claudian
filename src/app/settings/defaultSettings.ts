@@ -38,6 +38,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   providerConfigs: getBuiltInProviderDefaultConfigs(),
 
   settingsProvider: 'claude',
+  lastSelectedChatModel: null,
   savedProviderModel: {},
   savedProviderEffort: {},
   savedProviderServiceTier: {},

@@ -620,10 +620,12 @@ export class InputController {
             }
           }
 
+          const finalMessageEl = state.currentContentEl?.closest<HTMLElement>('.claudian-message') ?? null;
           state.currentContentEl = null;
 
           await streamController.finalizeCurrentThinkingBlock(finalAssistantMsg);
           await streamController.finalizeCurrentTextBlock(finalAssistantMsg);
+          renderer.renderFinalMessageTimestamp?.(finalMessageEl, finalAssistantMsg);
           this.deps.getSubagentManager().resetStreamingState();
 
           // Auto-hide completed todo panel on response end

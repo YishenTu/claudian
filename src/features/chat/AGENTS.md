@@ -17,6 +17,7 @@
 | --- | --- |
 | `TabManager` | Runtime-tab membership, active-tab selection, and create/switch/close operations |
 | `TabSession` | Authoritative per-tab identity, conversation binding, provider binding, lifecycle value, execution-coordinator attachment, active-turn reference, and background-work sequencing |
+| `TabModelSelectionCoordinator` | Per-tab model-selection request ordering, blank-tab provider-transition serialization, and stable-draft rollback |
 | `ChatExecutionCoordinator` | One tab's provider-session binding, active execution, interaction fencing, cancellation, and disposal |
 | `WarmExecutionPool` | Application-scoped warm execution ownership, the configured concurrent-running-session limit, and least-recently-used cooling of idle owners |
 | `ChatState` | Transient per-tab message projection, stream state, queued input, render state, and conversation-operation flags |
@@ -39,7 +40,7 @@ Keep these layers independent:
    - `AppTabManagerState` currently stores only the active tab ID and its conversation binding. Legacy multi-tab snapshots are restored as the current tab only.
    - Runtime tab membership, blank drafts, and expanded-title presentation are intentionally discarded on plugin reload. The snapshot must not contain DOM, controllers, hydrated messages, pending turns, execution sessions, or provider-native state.
 3. **Runtime tab state**
-   - `TabSession`, `ChatState`, controllers, renderers, and DOM exist only for the current view runtime.
+   - `TabSession`, `ChatState`, controllers, renderers, and DOM exist only for the current view runtime. An unbound tab snapshots its own provider/model draft when created.
    - Hydration state is independent from both active-tab selection and provider execution state.
 4. **Provider execution state**
    - `ChatExecutionCoordinator` owns the live per-tab execution binding.
@@ -83,6 +84,10 @@ Tab activation and conversation hydration do not themselves authorize creation o
 - Conversation navigation is latest-wins across provisional and retained targets; provisional cleanup blocks new navigation while it invalidates and drains pending work, and manager teardown fences all later requests.
 - Focusable, selectable history rows support Enter and Space activation as well as pointer activation.
 - Provider command and metadata warmup must respect provider resource generations and must not reuse stale results.
+- An explicit chat model-picker action updates only the current blank tab or bound conversation and the provider-qualified global seed for future blank tabs. Existing tabs never subscribe to that seed.
+- The app-owned chat model-selection coordinator orders global seed commits by picker intent across the plugin, not by asynchronous provider-switch or conversation-write completion; the latest successful selection wins.
+- `TabModelSelectionCoordinator` serializes blank-tab provider changes per tab. Later choices targeting an in-flight provider share its initialization result, and failed overlapping transitions restore the last stable provider/model without seeding future tabs.
+- Restoration, hydration, automatic availability fallback, fork inheritance, and auxiliary executions must not update the future-tab model seed.
 
 ## Gotchas
 

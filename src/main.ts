@@ -7,13 +7,12 @@ import './providers';
 
 StartupProfiler.finishModuleEvaluation();
 
-const PLUGIN_DISPLAY_NAME = 'Oh My Claudian';
-
 import type { Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView, Notice, Plugin, TFolder } from 'obsidian';
 
 import { ConversationRepository } from './app/conversations/ConversationRepository';
 import { ClaudianProviderHost } from './app/providers/ClaudianProviderHost';
+import { ChatModelSelectionCoordinator } from './app/settings/ChatModelSelectionCoordinator';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { PinnedLinkedNotePathCoordinator } from './app/settings/PinnedLinkedNotePathCoordinator';
 import type {
@@ -133,6 +132,7 @@ export default class ClaudianPlugin extends Plugin {
     () => this.settings?.maxWarmAgentProcesses ?? DEFAULT_MAX_WARM_AGENT_PROCESSES,
   );
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
+  private chatModelSelectionCoordinator!: ChatModelSelectionCoordinator;
   private pinnedLinkedNotePaths!: PinnedLinkedNotePathCoordinator;
   private conversationRepository!: ConversationRepository;
   private pendingSessionMetadataScan = false;
@@ -144,10 +144,15 @@ export default class ClaudianPlugin extends Plugin {
   private hasLoadedAllSessionMetadata = false;
   private sessionMetadataLoadTimer: number | null = null;
   private remainingSessionMetadataLoad: Promise<void> | null = null;
+  private providerChatOptionsChangeTail: Promise<void> = Promise.resolve();
   private isUnloading = false;
 
   get executionPersistence(): ChatExecutionPersistence {
     return this.conversationRepository;
+  }
+
+  get chatModelSelection(): ChatModelSelectionCoordinator {
+    return this.chatModelSelectionCoordinator;
   }
 
   async onload() {
@@ -175,7 +180,7 @@ export default class ClaudianPlugin extends Plugin {
         });
       }));
 
-        this.addRibbonIcon('bot', `Open ${PLUGIN_DISPLAY_NAME}`, () => {
+      this.addRibbonIcon('bot', 'Open Oh My Claudian', () => {
         void this.activateView();
       });
 
@@ -419,6 +424,9 @@ export default class ClaudianPlugin extends Plugin {
         await this.storage.saveClaudianSettings(settings);
       },
     );
+    this.chatModelSelectionCoordinator = new ChatModelSelectionCoordinator(
+      this.settingsCoordinator,
+    );
     this.pinnedLinkedNotePaths = new PinnedLinkedNotePathCoordinator(
       this.settingsCoordinator,
     );
@@ -623,33 +631,38 @@ export default class ClaudianPlugin extends Plugin {
     try {
       const addedConversations: Conversation[] = [];
       const invalidatedConversations: Conversation[] = [];
+      let didChangeConversationList = false;
       const publishBatch = (metadata: SessionMetadata[]): void => {
         if (this.isUnloading || metadata.length === 0) return;
 
         const recoverySources = metadata.map((item) => (
           this.createConversationMetadataShell(item)
         ));
-        const shells = metadata.map((item) => (
-          this.createConversationMetadataShell(item)
-        ));
-        const invalidatedShells = ProviderSettingsCoordinator.invalidateConversationSessions(
-          shells,
-          Array.from(this.pendingEnvironmentInvalidationGenerations.keys()),
+        const shells = metadata
+          .map((item) => this.createConversationMetadataShell(item))
+          .filter((conversation) => (
+            this.conversationRepository.isSelectedModelPublicationSafe(conversation)
+          ));
+        const publishedIds = new Set(shells.map(({ id }) => id));
+        const invalidatedShells = ProviderSettingsCoordinator
+          .invalidateConversationSessions(
+            shells,
+            Array.from(this.pendingEnvironmentInvalidationGenerations.keys()),
+          );
+        const invalidatedIds = new Set(
+          invalidatedShells.map(({ id }) => id),
         );
-        const invalidatedIds = new Set(invalidatedShells.map(({ id }) => id));
         const added = this.conversationRepository.mergeMetadataConversations(shells);
         this.conversationRepository.registerHistoricalModelRecoverySources(
-          recoverySources,
+          recoverySources.filter(({ id }) => publishedIds.has(id)),
         );
         if (added.length === 0) return;
 
         addedConversations.push(...added);
         invalidatedConversations.push(
-          ...added.filter(conversation => invalidatedIds.has(conversation.id)),
+          ...added.filter(({ id }) => invalidatedIds.has(id)),
         );
-        for (const view of this.getAllViews()) {
-          view.notifyConversationListChanged();
-        }
+        didChangeConversationList = true;
       };
       const scan = await this.storage.sessions.scanMetadata({
         onBatch: publishBatch,
@@ -675,42 +688,76 @@ export default class ClaudianPlugin extends Plugin {
         unresolvedShells,
       );
       if (unresolvedShells.length > 0) {
-        for (const view of this.getAllViews()) {
-          view.notifyConversationListChanged();
-        }
+        didChangeConversationList = true;
       }
       publishBatch(records.map(({ metadata }) => metadata));
-      await this.conversationRepository.adoptMetadataConversations(
-        records.map(({ metadata, needsMigration, source }) => ({
-          conversation: this.createConversationMetadataShell(metadata),
-          needsMigration,
-          source,
-        })),
+      const entries = records.map(({ metadata, needsMigration, source }) => ({
+        conversation: this.createConversationMetadataShell(metadata),
+        needsMigration,
+        source,
+      }));
+      const shells = entries.map(({ conversation }) => conversation);
+      const invalidatedEntries = ProviderSettingsCoordinator
+        .invalidateConversationSessions(
+          shells,
+          Array.from(this.pendingEnvironmentInvalidationGenerations.keys()),
+        );
+      const invalidatedIds = new Set(
+        invalidatedEntries.map(({ id }) => id),
       );
-      const currentAddedConversations = addedConversations.filter((conversation) => (
-        this.conversationRepository.getCachedConversation(conversation.id) === conversation
+      const existingIds = new Set(
+        this.conversationRepository.getAll().map(({ id }) => id),
+      );
+      await this.conversationRepository.adoptMetadataConversations(entries);
+      this.conversationRepository.registerHistoricalModelRecoverySources(
+        shells,
+      );
+      const adoptedConversations = shells.filter((conversation) => (
+        !existingIds.has(conversation.id)
+        && this.conversationRepository.getCachedConversation(conversation.id)
+          === conversation
       ));
+      if (adoptedConversations.length > 0) {
+        addedConversations.push(...adoptedConversations);
+        invalidatedConversations.push(
+          ...adoptedConversations.filter(({ id }) => invalidatedIds.has(id)),
+        );
+        didChangeConversationList = true;
+      }
+      const currentAddedConversations = addedConversations.filter((conversation) => (
+        this.conversationRepository.getCachedConversation(conversation.id)
+          === conversation
+      ));
+      const currentInvalidatedConversations = invalidatedConversations.filter(
+        (conversation) => (
+          this.conversationRepository.getCachedConversation(conversation.id)
+            === conversation
+        ),
+      );
+      const uniqueCurrentInvalidatedConversations = currentInvalidatedConversations.filter(
+        ({ id }, index, conversations) => (
+          conversations.findIndex(conversation => conversation.id === id) === index
+        ),
+      );
       StartupProfiler.recordCount('background-session-metadata-count', currentAddedConversations.length);
+      let recoveredModels: Conversation[] = [];
       if (!this.isUnloading) {
-        const recoveredModels = await this.conversationRepository
+        recoveredModels = await this.conversationRepository
           .recoverMissingSelectedModels();
         StartupProfiler.recordCount(
           'recovered-session-model-count',
           recoveredModels.length,
         );
-        if (recoveredModels.length > 0) {
-          for (const view of this.getAllViews()) {
-            view.notifyConversationListChanged();
-          }
-        }
       }
       await this.conversationRepository.persistConversations(
-        invalidatedConversations.filter(
-          (conversation) =>
-            this.conversationRepository.getCachedConversation(conversation.id)
-            === conversation,
-        ),
+        uniqueCurrentInvalidatedConversations,
       );
+      if (
+        !this.isUnloading
+        && (didChangeConversationList || recoveredModels.length > 0)
+      ) {
+        this.notifyConversationViewsChanged();
+      }
       if (scan.complete) {
         this.hasLoadedAllSessionMetadata = true;
         if (!this.isUnloading) {
@@ -1104,14 +1151,18 @@ export default class ClaudianPlugin extends Plugin {
               }
             }
           },
-          onInvalidationsPersisted: (reconciliation) => {
+          onInvalidationsPersisted: async (reconciliation) => {
             if (affectedProviderIds.length === 0) {
               return;
             }
             for (const openView of this.getAllViews()) {
               openView.invalidateProviderCommandCaches(affectedProviderIds);
-              openView.refreshModelSelector();
             }
+            await Promise.all(
+              affectedProviderIds.map(providerId => (
+                this.notifyProviderChatOptionsChanged(providerId)
+              )),
+            );
 
             const noticeText = reconciliation.sessionInvalidationProviderIds.length > 0
               ? 'Environment variables applied. Sessions will be rebuilt on next message.'
@@ -1320,6 +1371,38 @@ export default class ClaudianPlugin extends Plugin {
     for (const view of this.getAllViews()) {
       view.notifyConversationListChanged();
     }
+  }
+
+  notifyProviderChatOptionsChanged(providerId: ProviderId): Promise<void> {
+    const reconcileAndRefresh = async (): Promise<void> => {
+      let didReconcile = false;
+      try {
+        const changedConversations = this.conversationRepository
+          ? await this.conversationRepository.reconcileSelectedModels(providerId)
+          : [];
+        didReconcile = true;
+        if (changedConversations.length > 0) {
+          this.notifyConversationViewsChanged();
+        }
+      } catch (error) {
+        new Notice(
+          error instanceof Error
+            ? `Failed to reconcile ${ProviderRegistry.getProviderDisplayName(providerId)} models: ${error.message}`
+            : `Failed to reconcile ${ProviderRegistry.getProviderDisplayName(providerId)} models.`,
+        );
+      }
+      if (didReconcile) {
+        for (const view of this.getAllViews()) {
+          view.refreshModelSelector(providerId);
+        }
+      }
+    };
+
+    this.providerChatOptionsChangeTail = this.providerChatOptionsChangeTail.then(
+      reconcileAndRefresh,
+      reconcileAndRefresh,
+    );
+    return this.providerChatOptionsChangeTail;
   }
 
   async getConversationById(id: string): Promise<Conversation | null> {

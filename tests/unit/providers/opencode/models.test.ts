@@ -180,6 +180,20 @@ describe('opencodeChatUIConfig', () => {
         value: 'opencode:anthropic/claude-sonnet-4',
       },
     ]);
+    expect(opencodeChatUIConfig.getDefaultModel!({
+      providerConfigs: {
+        opencode: {
+          discoveredModels: [
+            { label: 'Anthropic/Claude Sonnet 4', rawId: 'anthropic/claude-sonnet-4' },
+            { label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' },
+          ],
+          visibleModels: [
+            'anthropic/claude-sonnet-4',
+            'openai/gpt-5',
+          ],
+        },
+      },
+    })).toBe('opencode:anthropic/claude-sonnet-4');
   });
 
   it('shows configured base model ids even before discovery finishes', () => {

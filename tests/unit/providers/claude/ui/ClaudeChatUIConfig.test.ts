@@ -1,6 +1,47 @@
+import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 
 describe('claudeChatUIConfig', () => {
+  describe('getDefaultModel', () => {
+    it('prefers Opus for fresh Claude settings', () => {
+      expect(DEFAULT_CLAUDE_PROVIDER_SETTINGS.defaultModel).toBe('opus');
+      expect(claudeChatUIConfig.getDefaultModel?.({})).toBe('opus');
+    });
+
+    it('follows the Opus environment slot when it overrides the model id', () => {
+      expect(claudeChatUIConfig.getDefaultModel?.({
+        providerConfigs: {
+          claude: {
+            defaultModel: 'opus',
+            environmentVariables: 'ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-enterprise',
+          },
+        },
+      })).toBe('claude-code/claude-opus-enterprise');
+    });
+
+    it('supports a custom model selected as the Claude provider default', () => {
+      expect(claudeChatUIConfig.getDefaultModel?.({
+        providerConfigs: {
+          claude: {
+            customModels: 'claude-opus-4-6',
+            defaultModel: 'claude-code/claude-opus-4-6',
+          },
+        },
+      })).toBe('claude-code/claude-opus-4-6');
+    });
+
+    it('falls back to the first dynamic option when the preference is unavailable', () => {
+      expect(claudeChatUIConfig.getDefaultModel?.({
+        providerConfigs: {
+          claude: {
+            defaultModel: 'retired-model',
+            environmentVariables: 'ANTHROPIC_MODEL=claude-sonnet-gateway',
+          },
+        },
+      })).toBe('claude-code/claude-sonnet-gateway');
+    });
+  });
+
   it('defaults Claude models to high effort', () => {
     expect(claudeChatUIConfig.getDefaultReasoningValue('haiku', {})).toBe('high');
     expect(claudeChatUIConfig.getDefaultReasoningValue('custom-model', {})).toBe('high');

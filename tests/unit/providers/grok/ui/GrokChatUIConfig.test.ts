@@ -85,8 +85,8 @@ describe('GrokChatUIConfig', () => {
         },
       },
     })).map(option => option.value)).toEqual([
-      'grok/grok-4',
       'grok/kimi-coding',
+      'grok/grok-4',
     ]);
   });
 
@@ -120,6 +120,23 @@ describe('GrokChatUIConfig', () => {
     expect(grokChatUIConfig.getDefaultModel?.(settings)).toBe('grok/kimi-coding');
     expect(grokChatUIConfig.getModelOptions(settings).map(option => option.value))
       .toEqual(['grok/kimi-coding']);
+  });
+
+  it('uses the first explicitly ordered model even when the native default remains enabled', () => {
+    const settings = makeSettings({
+      providerConfigs: {
+        grok: {
+          catalogsByHost: { 'device:current': catalog },
+          visibleModels: ['kimi-coding', 'grok-4'],
+        },
+      },
+    });
+
+    expect(grokChatUIConfig.getDefaultModel?.(settings)).toBe('grok/kimi-coding');
+    expect(grokChatUIConfig.getModelOptions(settings).map(option => option.value)).toEqual([
+      'grok/grok-4',
+      'grok/kimi-coding',
+    ]);
   });
 
   it('has no default or options when the user enables no models', () => {

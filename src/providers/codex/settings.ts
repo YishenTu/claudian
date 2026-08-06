@@ -9,6 +9,7 @@ import {
   findCodexModel,
   getCodexDefaultReasoningEffort,
   getDefaultCodexModel,
+  isCodexModelAvailable,
   normalizeCodexDiscoveredModels,
 } from './models';
 import { toCodexRuntimeModelId } from './modelSelection';
@@ -225,21 +226,26 @@ export function createCodexVisibleModelFilter(
   value: unknown,
   discoveredModels: CodexDiscoveredModel[],
 ): string[] | null {
-  const normalized = normalizeCodexVisibleModels(value, discoveredModels);
-  return normalized !== null
-    && discoveredModels.length > 0
-    && normalized.length === discoveredModels.length
-    ? null
-    : normalized;
+  return normalizeCodexVisibleModels(value, discoveredModels);
 }
 
 export function getVisibleCodexModelIds(
   visibleModels: string[] | null,
   discoveredModels: CodexDiscoveredModel[],
 ): string[] {
-  return visibleModels === null
-    ? discoveredModels.map(model => model.model)
-    : normalizeCodexVisibleModels(visibleModels, discoveredModels) ?? [];
+  if (visibleModels !== null) {
+    return normalizeCodexVisibleModels(visibleModels, discoveredModels) ?? [];
+  }
+
+  const defaultModel = getDefaultCodexModel(discoveredModels);
+  return defaultModel
+    ? [
+      defaultModel.model,
+      ...discoveredModels
+        .filter(model => model.model !== defaultModel.model)
+        .map(model => model.model),
+    ]
+    : [];
 }
 
 function pruneCodexModelAliases(
@@ -282,9 +288,11 @@ function retargetRemovedCodexSelections(
     return;
   }
 
-  const fallbackModel = getDefaultCodexModel(
-    next.discoveredModels.filter(model => visibleModelIds.has(model.model)),
-  );
+  const fallbackModel = next.visibleModels
+    .map(modelId => next.discoveredModels.find(model => model.model === modelId))
+    .find((model): model is CodexDiscoveredModel => Boolean(
+      model && isCodexModelAvailable(model, next.enableUltraEffort),
+    )) ?? null;
   if (!fallbackModel) {
     return;
   }

@@ -1,8 +1,6 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
-import { deriveProviderModelCatalogStatus } from '../../../core/providers/modelCatalog';
-import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
   ProviderSettingsTabRenderer,
@@ -22,7 +20,6 @@ import {
   type ProviderModelPickerState,
   renderProviderModelPicker,
 } from '../../../shared/settings/ProviderModelPicker';
-import { renderProviderReadinessPanel } from '../../../shared/settings/ProviderReadinessPanel';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { maybeGetOpencodeWorkspaceServices } from '../app/OpencodeWorkspaceServices';
@@ -48,22 +45,6 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const opencodeWorkspace = maybeGetOpencodeWorkspaceServices();
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
     const hostnameKey = getHostnameKey();
-
-    const readinessPanel = renderProviderReadinessPanel({
-      container,
-      providerName: 'OpenCode',
-      async getSnapshot() {
-        const current = getOpencodeProviderSettings(settingsBag);
-        return assessProviderReadiness({
-          cliPath: typeof context.plugin.getResolvedProviderCliPath === 'function'
-            ? await context.plugin.getResolvedProviderCliPath('opencode')
-            : null,
-          discoveredModelCount: current.discoveredModels.length,
-          enabled: current.enabled,
-          selectedModelCount: current.visibleModels.length,
-        });
-      },
-    });
 
     new Setting(container).setName('Setup').setHeading();
 
@@ -97,7 +78,6 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         } else {
           lastProviderWarning.showFor();
         }
-        await readinessPanel.refresh();
         modelWarning.context.notifyProviderModelOptionsChanged('opencode');
       },
     });
@@ -207,15 +187,8 @@ function renderOpencodeModelPicker(
     const current = getOpencodeProviderSettings(settingsBag);
     return {
       aliases: current.modelAliases,
-      catalogRefreshedAt: current.catalogTimestamp || undefined,
-      catalogStatus: deriveProviderModelCatalogStatus({
-        modelCount: current.discoveredModels.length,
-        refreshedAt: current.catalogTimestamp || undefined,
-      }),
-      defaultModelId: current.visibleModels[0],
       discoveredCount: current.discoveredModels.length,
       models: buildOpencodePickerModels(current.discoveredModels, current.visibleModels),
-      selectionMode: 'explicit',
       selectedIds: current.visibleModels,
     };
   };

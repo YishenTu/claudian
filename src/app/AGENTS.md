@@ -15,9 +15,10 @@
 
 | Component | Authority |
 | --- | --- |
-| `ConversationRepository` | The canonical in-memory Claudian conversation collection, hydration status, pin/archive and note-link metadata, deletion transactions, per-conversation persistence queues, input-ledger coordination, historical model recovery, and execution-snapshot binding |
+| `ConversationRepository` | The canonical in-memory Claudian conversation collection, hydration status, pin/archive and note-link metadata, deletion transactions, per-conversation persistence queues, input-ledger coordination, historical model recovery, selected-model availability reconciliation, and execution-snapshot binding |
 | `SharedStorageService` | Plugin-data and vault persistence I/O plus construction of shared persistence adapters |
 | `SettingsCoordinator` | Serialization of settings mutations, rollback before failed persistence, and post-commit publication ordering |
+| `ChatModelSelectionCoordinator` | Application-wide ordering and durable settings commits for explicit future-tab model-seed intents |
 | `PinnedLinkedNotePathCoordinator` | Pinned linked-note path mutation, folder-descendant rewrite, deduplication, and deletion cleanup through ordered settings transactions |
 | `ClaudianProviderHost` | Typed delegation to application capabilities; it owns no duplicate settings, storage, view, or execution state |
 
@@ -33,6 +34,10 @@ Storage adapters own I/O mechanics, not domain decisions. Callers decide what st
 - `Conversation.currentNote` is a vault-relative full path. Vault rename events must rewrite matching note paths, including descendants for folder renames, through `ConversationRepository` rather than presentation code.
 - `SharedStorageService.setTabManagerState()` must preserve unrelated plugin data when updating the tab-layout snapshot.
 - Settings changes must go through `SettingsCoordinator` or the application mutation APIs so persistence, rollback, provider reconciliation, and publication remain ordered.
+- Provider model-option changes reconcile affected durable conversation selections through `ConversationRepository` before views refresh. Providers and features may publish the change but must not rewrite cached conversations themselves.
+- Environment changes that can alter model options use the same provider model-option reconciliation boundary; direct model-selector refresh is not an allowed shortcut.
+- Deferred metadata with a stored model that needs fallback is withheld until `ConversationRepository` persists and adopts the replacement. Safe model-less shells may remain incrementally readable for environment-invalidation coordination; they must not expose a synthesized fallback before its write.
+- A model recovered from provider-native history is availability-reconciled before its single durable write and before callers may publish it as recovered.
 
 ## Invariants
 

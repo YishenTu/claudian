@@ -63,6 +63,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
       expect(result.requireCommandOrControlEnterToSend).toBe(false);
       expect(result.titleGenerationLocale).toBe('');
+      expect(result.lastSelectedChatModel).toBeNull();
       expect(result.enableDualPane).toBe(true);
       expect(result.dualPaneSide).toBe('right');
       expect(mockAdapter.read).not.toHaveBeenCalled();
@@ -106,6 +107,139 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.userName).toBe('TestUser');
       // Defaults should still be present for unspecified fields
       expect(result.thinkingBudget).toBe(DEFAULT_SETTINGS.thinkingBudget);
+    });
+
+    it('preserves an explicitly stored provider-qualified chat model selection', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        lastSelectedChatModel: {
+          providerId: 'codex',
+          model: 'codex/gpt-5',
+        },
+      }));
+
+      const result = await storage.load();
+
+      expect(result.lastSelectedChatModel).toEqual({
+        providerId: 'codex',
+        model: 'codex/gpt-5',
+      });
+    });
+
+    it('preserves an explicitly stored null chat model selection', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        lastSelectedChatModel: null,
+      }));
+
+      const result = await storage.load();
+
+      expect(result.lastSelectedChatModel).toBeNull();
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+    });
+
+    it('normalizes a malformed stored chat model selection to null', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        lastSelectedChatModel: {
+          providerId: 'codex',
+          model: 42,
+        },
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.lastSelectedChatModel).toBeNull();
+      expect(writtenContent.lastSelectedChatModel).toBeNull();
+    });
+
+    it('migrates the live top-level model for the stored settings provider', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        settingsProvider: 'codex',
+        model: 'codex/gpt-5.7',
+        savedProviderModel: {
+          codex: 'codex/gpt-5.6',
+        },
+        providerConfigs: {
+          codex: { enabled: true },
+        },
+      }));
+
+      const result = await storage.load();
+
+      expect(result.lastSelectedChatModel).toEqual({
+        providerId: 'codex',
+        model: 'codex/gpt-5.7',
+      });
+      expect(mockAdapter.write).toHaveBeenCalled();
+    });
+
+    it('uses the saved provider model when the legacy live projection is empty', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        settingsProvider: 'codex',
+        model: '',
+        savedProviderModel: {
+          codex: 'codex/gpt-5.6',
+        },
+      }));
+
+      const result = await storage.load();
+
+      expect(result.lastSelectedChatModel).toEqual({
+        providerId: 'codex',
+        model: 'codex/gpt-5.6',
+      });
+    });
+
+    it('preserves a legacy seed for a disabled registered provider', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        settingsProvider: 'grok',
+        model: 'grok/kimi-coding',
+        providerConfigs: {
+          grok: { enabled: false },
+        },
+      }));
+
+      const result = await storage.load();
+
+      expect(result.lastSelectedChatModel).toEqual({
+        providerId: 'grok',
+        model: 'grok/kimi-coding',
+      });
+    });
+
+    it('preserves a Claude environment-tier alias during legacy migration', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        settingsProvider: 'claude',
+        model: 'opus',
+      }));
+
+      const result = await storage.load();
+
+      expect(result.lastSelectedChatModel).toEqual({
+        providerId: 'claude',
+        model: 'opus',
+      });
+    });
+
+    it('uses Claude for an unknown legacy provider only when a top-level model exists', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        settingsProvider: 'unknown-provider',
+        model: 'haiku',
+      }));
+
+      const result = await storage.load();
+
+      expect(result.lastSelectedChatModel).toEqual({
+        providerId: 'claude',
+        model: 'haiku',
+      });
     });
 
     it('migrates legacy openInMainTab true to main-tab placement', async () => {
@@ -230,6 +364,7 @@ describe('ClaudianSettingsStorage', () => {
       mockGetHostnameKey.mockReturnValue('device:current');
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
+        lastSelectedChatModel: null,
         providerConfigs: {
           claude: {
             cliPathsByHost: {
@@ -842,6 +977,7 @@ describe('ClaudianSettingsStorage', () => {
     it('should merge updates with existing settings', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
+        lastSelectedChatModel: null,
         model: 'claude-haiku-4-5',
         userName: 'ExistingUser',
       }));

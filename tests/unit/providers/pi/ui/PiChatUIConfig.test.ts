@@ -88,7 +88,19 @@ describe('PiChatUIConfig', () => {
   });
 
   it('uses the first enabled model as the default', () => {
-    expect(piChatUIConfig.getDefaultModel!(settings)).toBe('pi:anthropic/claude-sonnet-4');
+    const piSettings = (settings.providerConfigs as Record<string, Record<string, unknown>>).pi;
+    expect(piChatUIConfig.getDefaultModel!({
+      ...settings,
+      providerConfigs: {
+        pi: {
+          ...piSettings,
+          visibleModels: [
+            'pi:openai/gpt-5',
+            'pi:anthropic/claude-sonnet-4',
+          ],
+        },
+      },
+    })).toBe('pi:openai/gpt-5');
   });
 
   it('maps reasoning options and defaults from cached model metadata', () => {

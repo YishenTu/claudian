@@ -697,6 +697,17 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
   }
 
+  private notifyProviderModelOptionsChanged(providerId: ProviderId): void {
+    this.plugin.notifyProviderChatOptionsChanged(providerId);
+    this.refreshTitleModelOptions?.();
+  }
+
+  private refreshDualPaneLayouts(): void {
+    for (const view of this.plugin.getAllViews()) {
+      view.refreshDualPaneLayout();
+    }
+  }
+
   private renderProviderCapabilityMatrix(container: HTMLElement): void {
     new Setting(container)
       .setName(t('settings.capabilityMatrix.title'))
@@ -718,25 +729,14 @@ export class ClaudianSettingTab extends PluginSettingTab {
       const capabilities = ProviderRegistry.getCapabilities(providerId);
       for (const row of PROVIDER_CAPABILITY_ROWS) {
         bodyRow.createEl('td', {
-          cls: capabilities[row.key] ? 'claudian-capability-supported' : 'claudian-capability-unsupported',
+          cls: capabilities[row.key]
+            ? 'claudian-capability-supported'
+            : 'claudian-capability-unsupported',
           text: capabilities[row.key]
             ? t('settings.capabilityMatrix.supported')
             : t('settings.capabilityMatrix.unsupported'),
         });
       }
-    }
-  }
-
-  private notifyProviderModelOptionsChanged(providerId: ProviderId): void {
-    for (const view of this.plugin.getAllViews()) {
-      view.refreshModelSelector(providerId);
-    }
-    this.refreshTitleModelOptions?.();
-  }
-
-  private refreshDualPaneLayouts(): void {
-    for (const view of this.plugin.getAllViews()) {
-      view.refreshDualPaneLayout();
     }
   }
 

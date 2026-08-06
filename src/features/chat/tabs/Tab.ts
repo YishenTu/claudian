@@ -14,6 +14,7 @@ import {
   getProviderSettingsSnapshotWithModel,
   normalizeProviderModelSelection,
   resolveConversationModel,
+  resolveNewConversationModel,
 } from '../../../core/providers/conversationModel';
 import { getEnabledProviderForModel, getProviderForModel } from '../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
@@ -75,6 +76,7 @@ import { StatusPanel } from '../ui/StatusPanel';
 import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
 import { getTabProviderId } from './providerResolution';
+import { TabModelSelectionCoordinator } from './TabModelSelectionCoordinator';
 import { TabSession } from './TabSession';
 import type {
   ProviderCatalogInfo,
@@ -131,27 +133,6 @@ export function getBlankTabModelOptions(
   });
 }
 
-/**
- * Resolves the draft model for a new blank tab by projecting provider-specific
- * saved settings. Without this, `plugin.settings.model` reflects only the
- * settings-provider's model, which may belong to a different provider.
- */
-function resolveBlankTabModel(
-  plugin: FeatureHost,
-  providerId?: ProviderId,
-): string {
-  const settings = plugin.settings as unknown as Record<string, unknown>;
-  if (!providerId) {
-    return settings.model as string;
-  }
-
-  const targetProviderId = ProviderRegistry.isEnabled(providerId, settings)
-    ? providerId
-    : ProviderRegistry.resolveSettingsProviderId(settings);
-  const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, targetProviderId);
-  return snapshot.model as string;
-}
-
 export interface TabCreateOptions {
   plugin: FeatureHost;
 
@@ -160,8 +141,6 @@ export interface TabCreateOptions {
   tabId?: TabId;
   /** Initial draft model for an unbound tab. */
   draftModel?: string | null;
-  /** Provider to inherit for blank tabs (e.g. from the active tab). */
-  defaultProviderId?: ProviderId;
   lifecycleState?: Extract<TabData['lifecycleState'], 'provisional' | 'cold'>;
   onStreamingChanged?: (isStreaming: boolean) => void;
   onRewindingChanged?: (isRewinding: boolean) => void;
@@ -524,7 +503,8 @@ function resolveBlankTabFallback(
 ): { model: string; providerId: ProviderId } | null {
   const providerIds = [
     ...(enabledProviderIds.includes(preferredProviderId) ? [preferredProviderId] : []),
-    ...enabledProviderIds.filter(providerId => providerId !== preferredProviderId),
+    ...ProviderRegistry.getBlankTabProviderIds(settings)
+      .filter(providerId => providerId !== preferredProviderId),
   ];
 
   for (const providerId of providerIds) {
@@ -583,6 +563,16 @@ export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost)
       tab.draftModel = availableDraftModel;
       nextProviderId = draftProvider;
     }
+  } else {
+    const fallback = resolveBlankTabFallback(
+      settingsSnapshot,
+      enabledProviderIds,
+      tab.providerId,
+    );
+    if (fallback) {
+      tab.draftModel = fallback.model;
+      nextProviderId = fallback.providerId;
+    }
   }
 
   tab.providerId = nextProviderId;
@@ -634,10 +624,14 @@ export function createTab(options: TabCreateOptions): TabData {
   const restoredDraftModel = typeof options.draftModel === 'string'
     ? options.draftModel.trim()
     : '';
+  const newConversationModel = !isBound && !restoredDraftModel
+    ? resolveNewConversationModel(plugin.settings)
+    : null;
   const draftModel = isBound
     ? null
-    : (restoredDraftModel || resolveBlankTabModel(plugin, options.defaultProviderId));
+    : (restoredDraftModel || newConversationModel?.model || null);
   const initialProviderId = conversation?.providerId
+    ?? newConversationModel?.providerId
     ?? (draftModel
       ? getEnabledProviderForModel(draftModel, plugin.settings)
       : DEFAULT_CHAT_PROVIDER_ID);
@@ -1268,9 +1262,7 @@ function initializeInputToolbar(
 
   // Blank-tab UI config wrapper that returns mixed model options
   const blankTabUIConfigProxy = (): ProviderChatUIConfig => {
-    const draftProvider = tab.draftModel
-      ? getEnabledProviderForModel(tab.draftModel, plugin.settings)
-      : DEFAULT_CHAT_PROVIDER_ID;
+    const draftProvider = tab.providerId;
     const baseConfig = ProviderRegistry.getChatUIConfig(draftProvider);
     return {
       ...baseConfig,
@@ -1278,6 +1270,33 @@ function initializeInputToolbar(
         getBlankTabModelOptions(settings),
     };
   };
+
+  const modelSelection = new TabModelSelectionCoordinator({
+    readDraft: () => ({
+      providerId: tab.providerId,
+      model: tab.draftModel,
+    }),
+    applyModel: (model) => {
+      tab.draftModel = model;
+    },
+    applyProviderTarget: ({ providerId, model }) => {
+      tab.draftModel = model;
+      tab.providerId = providerId;
+      syncTabProviderServices(tab, plugin);
+      tab.ui.slashCommandDropdown?.clearProviderCatalog?.();
+    },
+    restoreDraft: ({ providerId, model }) => {
+      tab.draftModel = model;
+      tab.providerId = providerId;
+      syncTabProviderServices(tab, plugin);
+      syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
+      refreshTabProviderUI(tab, plugin);
+      applyProviderUIGating(tab, plugin);
+    },
+    initializeProvider: async (providerId) => {
+      await onProviderChanged?.(providerId);
+    },
+  });
 
   const toolbarComponents = createInputToolbar(inputToolbar, {
     getUIConfig: () => {
@@ -1292,35 +1311,26 @@ function initializeInputToolbar(
     onModelChange: async (model: string) => {
       // For blank tabs, update draft model and derive provider
       if (tab.conversationId === null) {
-        const previousProvider = tab.providerId;
-        const previousModel = tab.draftModel;
-        tab.draftModel = model;
+        const selectionIntent = plugin.chatModelSelection.beginIntent();
+        const request = modelSelection.beginRequest();
         const newProvider = getEnabledProviderForModel(
           model,
           plugin.settings,
         );
-        const didProviderChange = newProvider !== previousProvider;
-        tab.providerId = newProvider;
-        if (didProviderChange) {
-          syncTabProviderServices(tab, plugin);
-        }
+        const result = await modelSelection.selectBlank(request, {
+          providerId: newProvider,
+          model,
+        });
+        if (result.status === 'superseded') return;
+
         const uiConfig = ProviderRegistry.getChatUIConfig(newProvider);
-        if (didProviderChange) {
-          tab.ui.slashCommandDropdown?.clearProviderCatalog?.();
-          try {
-            await onProviderChanged?.(newProvider);
-          } catch (error) {
-            tab.draftModel = previousModel;
-            tab.providerId = previousProvider;
-            syncTabProviderServices(tab, plugin);
-            syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
-            refreshTabProviderUI(tab, plugin);
-            applyProviderUIGating(tab, plugin);
-            throw error;
-          }
-        } else {
-          syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
-        }
+        await plugin.chatModelSelection.commitIntent(
+          selectionIntent,
+          { providerId: newProvider, model },
+        );
+        if (!result.isCurrent()) return;
+
+        syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
         onUserModified?.();
         await uiConfig.prepareModelMetadata?.(
           model,
@@ -1346,6 +1356,8 @@ function initializeInputToolbar(
         tab.ui.modelSelector?.updateDisplay();
         return;
       }
+      const selectionIntent = plugin.chatModelSelection.beginIntent();
+      const request = modelSelection.beginRequest();
 
       const uiConfig: ProviderChatUIConfig = getTabChatUIConfig(tab, plugin);
       const normalizedModel = normalizeProviderModelSelection(boundProvider, plugin.settings, model) ?? model;
@@ -1361,6 +1373,11 @@ function initializeInputToolbar(
         });
       }
       onUserModified?.();
+      await plugin.chatModelSelection.commitIntent(
+        selectionIntent,
+        { providerId: boundProvider, model: normalizedModel },
+      );
+      if (!modelSelection.isCurrent(request)) return;
 
       await uiConfig.prepareModelMetadata?.(
         normalizedModel,
@@ -1968,11 +1985,12 @@ export function initializeTabControllers(
     {
       onNewConversation: () => {
         const previousProviderId = tab.providerId;
+        const nextModel = resolveNewConversationModel(plugin.settings);
         void tab.executionCoordinator?.bindConversation(null);
         tab.lifecycleState = 'cold';
-        tab.draftModel = resolveBlankTabModel(plugin, previousProviderId);
+        tab.draftModel = nextModel?.model ?? null;
         tab.conversationId = null;
-        tab.providerId = getTabProviderId(tab, plugin);
+        tab.providerId = nextModel?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
         if (tab.providerId !== previousProviderId) {
           syncTabProviderServices(tab, plugin);
         }

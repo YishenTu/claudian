@@ -204,6 +204,11 @@ export class ProviderRegistry {
       ));
   }
 
+  /** Provider order as presented from top to bottom in the blank-tab model selector. */
+  static getBlankTabProviderIds(settings: Record<string, unknown>): ProviderId[] {
+    return this.getEnabledProviderIds(settings).reverse();
+  }
+
   static getProviderDisplayName(providerId: ProviderId): string {
     return this.getProviderRegistration(providerId).displayName;
   }

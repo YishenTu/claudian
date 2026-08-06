@@ -23,6 +23,7 @@ import {
   type EnvSnippet,
   type HiddenProviderCommands,
   type ProviderConfigMap,
+  type StoredChatModelSelection,
 } from '../../core/types/settings';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './defaultSettings';
 
@@ -297,6 +298,54 @@ function mergeLegacyClaudeHiddenCommands(
   };
 }
 
+function trimStoredString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeStoredChatModelSelection(
+  value: unknown,
+): StoredChatModelSelection | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const providerId = trimStoredString(candidate.providerId);
+  const model = trimStoredString(candidate.model);
+  if (
+    !providerId
+    || !model
+    || !ProviderRegistry.getRegisteredProviderIds().includes(providerId)
+  ) {
+    return null;
+  }
+
+  return { providerId, model };
+}
+
+function migrateLegacyChatModelSelection(
+  stored: Record<string, unknown>,
+): StoredChatModelSelection | null {
+  const registeredProviderIds = new Set(ProviderRegistry.getRegisteredProviderIds());
+  const storedProviderId = trimStoredString(stored.settingsProvider);
+  const providerId = registeredProviderIds.has(storedProviderId)
+    ? storedProviderId
+    : 'claude';
+  if (!registeredProviderIds.has(providerId)) {
+    return null;
+  }
+
+  const projectedModel = trimStoredString(stored.model);
+  const savedProviderModels = stored.savedProviderModel;
+  const savedModel = savedProviderModels
+    && typeof savedProviderModels === 'object'
+    && !Array.isArray(savedProviderModels)
+    ? trimStoredString((savedProviderModels as Record<string, unknown>)[providerId])
+    : '';
+  const model = projectedModel || savedModel;
+  return model ? { providerId, model } : null;
+}
+
 export class ClaudianSettingsStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
@@ -308,6 +357,15 @@ export class ClaudianSettingsStorage {
 
     const content = await this.adapter.read(settingsPath);
     const stored = JSON.parse(content) as Record<string, unknown>;
+    const hasStoredChatModelSelection = Object.prototype.hasOwnProperty.call(
+      stored,
+      'lastSelectedChatModel',
+    );
+    const lastSelectedChatModel = hasStoredChatModelSelection
+      ? normalizeStoredChatModelSelection(stored.lastSelectedChatModel)
+      : migrateLegacyChatModelSelection(stored);
+    const didNormalizeChatModelSelection = !hasStoredChatModelSelection
+      || JSON.stringify(lastSelectedChatModel) !== JSON.stringify(stored.lastSelectedChatModel);
     const hiddenProviderCommands = mergeLegacyClaudeHiddenCommands(
       normalizeHiddenProviderCommands(stored.hiddenProviderCommands),
       stored.hiddenSlashCommands,
@@ -343,6 +401,7 @@ export class ClaudianSettingsStorage {
       chatViewPlacement,
       enableDualPane,
       dualPaneSide,
+      lastSelectedChatModel,
     };
 
     const merged = {
@@ -384,6 +443,7 @@ export class ClaudianSettingsStorage {
       || didNormalizeProviderSettings
       || didStripRuntimeProviderConfig
       || didNormalizeHostScopedProviderConfigs
+      || didNormalizeChatModelSelection
       )
     ) {
       await this.save(merged);

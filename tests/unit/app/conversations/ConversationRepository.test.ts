@@ -92,7 +92,7 @@ describe('ConversationRepository hydration', () => {
     const existing = createConversation('existing-model');
     existing.selectedModel = 'claude-code/current-model';
     const recoverConversationModelSelection = jest.fn(async (conversation: Conversation) => (
-      conversation.id === missing.id ? 'claude-code/historical-model' : null
+      conversation.id === missing.id ? 'opus' : null
     ));
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
       hydrateConversationHistory: jest.fn(),
@@ -109,11 +109,28 @@ describe('ConversationRepository hydration', () => {
       '/vault',
       expect.any(Object),
     );
-    expect(missing.selectedModel).toBe('claude-code/historical-model');
+    expect(missing.selectedModel).toBe('opus');
     expect(existing.selectedModel).toBe('claude-code/current-model');
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: missing.id,
-      selectedModel: 'claude-code/historical-model',
+      selectedModel: 'opus',
+    }));
+  });
+
+  it('persists the provider fallback before publishing a retired historically recovered model', async () => {
+    const conversation = createConversation('retired-recovered-model');
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      recoverConversationModelSelection: jest.fn()
+        .mockResolvedValue('claude-code/retired-native-model'),
+    } as any);
+    const { repository, persistence } = createRepository(conversation);
+
+    await expect(repository.recoverMissingSelectedModels()).resolves.toEqual([conversation]);
+
+    expect(conversation.selectedModel).toBe('opus');
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: conversation.id,
+      selectedModel: 'opus',
     }));
   });
 
@@ -128,7 +145,7 @@ describe('ConversationRepository hydration', () => {
         }
         return {
           recoverConversationModelSelection: jest.fn()
-            .mockResolvedValue('claude-code/recovered-model'),
+            .mockResolvedValue('opus'),
         } as any;
       });
     const { repository } = createRepository(unavailable);
@@ -137,7 +154,7 @@ describe('ConversationRepository hydration', () => {
     await expect(repository.recoverMissingSelectedModels())
       .resolves.toEqual([recoverable]);
     expect(unavailable.selectedModel).toBeUndefined();
-    expect(recoverable.selectedModel).toBe('claude-code/recovered-model');
+    expect(recoverable.selectedModel).toBe('opus');
   });
 
   it('isolates malformed persisted model metadata during recovery', async () => {
@@ -145,17 +162,15 @@ describe('ConversationRepository hydration', () => {
     (malformed as unknown as { selectedModel: unknown }).selectedModel = 42;
     const recoverable = createConversation('valid-missing-model');
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-      recoverConversationModelSelection: jest.fn(async (conversation: Conversation) => (
-        `claude-code/recovered-${conversation.id}`
-      )),
+      recoverConversationModelSelection: jest.fn().mockResolvedValue('opus'),
     } as any);
     const { repository } = createRepository(malformed);
     repository.replaceAll([malformed, recoverable]);
 
     await expect(repository.recoverMissingSelectedModels())
       .resolves.toEqual([malformed, recoverable]);
-    expect(malformed.selectedModel).toBe('claude-code/recovered-malformed-model');
-    expect(recoverable.selectedModel).toBe('claude-code/recovered-valid-missing-model');
+    expect(malformed.selectedModel).toBe('opus');
+    expect(recoverable.selectedModel).toBe('opus');
   });
 
   it('recovers from preserved metadata after live session state is invalidated', async () => {
@@ -313,7 +328,7 @@ describe('ConversationRepository hydration', () => {
     );
   });
 
-  it('coalesces lazy and background recovery before usage metadata can win', async () => {
+  it('coalesces lazy and background recovery before applying availability fallback', async () => {
     const conversation = createConversation('recovery-race');
     conversation.usage = {
       contextTokens: 1,
@@ -338,7 +353,7 @@ describe('ConversationRepository hydration', () => {
     await expect(Promise.all([backgroundRecovery, lazyInitialization]))
       .resolves.toEqual([[conversation], undefined]);
     expect(recoverConversationModelSelection).toHaveBeenCalledTimes(1);
-    expect(conversation.selectedModel).toBe('claude-code/retired-native-model');
+    expect(conversation.selectedModel).toBe('opus');
   });
 
   it('leaves usage fallback unpersisted when native model recovery is unresolved', async () => {
@@ -386,7 +401,30 @@ describe('ConversationRepository hydration', () => {
     }));
   });
 
-  it('preserves an unavailable historical selection while runtime resolution falls back', async () => {
+  it('persists the provider default when an unsupported legacy usage model is unavailable', async () => {
+    const conversation = createConversation('usage-unavailable-model');
+    conversation.usage = {
+      contextTokens: 1,
+      contextWindow: 200_000,
+      inputTokens: 1,
+      model: 'claude-code/retired-native-model',
+      percentage: 1,
+    };
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hasConversationModelRecoverySource: jest.fn().mockReturnValue(false),
+      recoverConversationModelSelection: jest.fn().mockResolvedValue(null),
+    } as any);
+    const { repository, persistence } = createRepository(conversation);
+
+    await (repository as any).ensureSelectedModel(conversation);
+
+    expect(conversation.selectedModel).toBe('opus');
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      selectedModel: 'opus',
+    }));
+  });
+
+  it('persists the provider default when a stored selection is authoritatively unavailable', async () => {
     const conversation = createConversation('retired-model');
     conversation.selectedModel = 'claude-code/retired-native-model';
     conversation.usage = {
@@ -397,15 +435,194 @@ describe('ConversationRepository hydration', () => {
       percentage: 1,
     };
     const { repository, persistence } = createRepository(conversation);
+    let releasePersistence!: () => void;
+    const persistenceRelease = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    persistence.saveMetadata.mockImplementationOnce(() => persistenceRelease);
+
+    const reconciliation = (repository as any).ensureSelectedModel(conversation);
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(conversation.selectedModel).toBe('claude-code/retired-native-model');
+    expect(resolveConversationModel({}, 'claude', conversation)).toMatchObject({
+      model: 'claude-code/retired-native-model',
+      modelToPersist: 'opus',
+      source: 'selected',
+    });
+
+    releasePersistence();
+    await reconciliation;
+
+    expect(conversation.selectedModel).toBe('opus');
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      selectedModel: 'opus',
+    }));
+    expect(resolveConversationModel({}, 'claude', conversation)).toMatchObject({
+      model: 'opus',
+      source: 'selected',
+    });
+  });
+
+  it('preserves provider-owned state when reconciling an unhydrated model', async () => {
+    const conversation = createConversation('unhydrated-model-state');
+    conversation.selectedModel = 'claude-code/retired-native-model';
+    conversation.providerState = {
+      providerSessionId: 'provider-session-1',
+      subagentData: {
+        'agent-1': {
+          id: 'agent-1',
+          description: 'Preserved agent',
+          isExpanded: false,
+          status: 'completed',
+          toolCalls: [],
+        },
+      },
+    };
+    const { repository, persistence } = createRepository(conversation);
+
+    await repository.reconcileSelectedModels('claude');
+
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      selectedModel: 'opus',
+      providerState: conversation.providerState,
+    }));
+  });
+
+  it('preserves an unavailable stored selection while provider options are empty', async () => {
+    const conversation = createConversation('temporarily-empty-catalog');
+    conversation.selectedModel = 'claude-code/historical-model';
+    jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+      getModelOptions: () => [],
+      getDefaultModel: () => null,
+      normalizeModelVariant: (model: string) => model,
+    } as any);
+    const { repository, persistence } = createRepository(conversation);
 
     await (repository as any).ensureSelectedModel(conversation);
 
-    expect(conversation.selectedModel).toBe('claude-code/retired-native-model');
+    expect(conversation.selectedModel).toBe('claude-code/historical-model');
     expect(persistence.saveMetadata).not.toHaveBeenCalled();
-    expect(resolveConversationModel({}, 'claude', conversation)).toMatchObject({
-      model: 'opus',
-      source: 'usage',
-    });
+  });
+
+  it('reconciles and reports durable model fallbacks for one provider', async () => {
+    const affected = createConversation('affected-model');
+    affected.selectedModel = 'claude-code/retired-model';
+    const unaffected = createConversation('unaffected-model');
+    unaffected.providerId = 'codex';
+    unaffected.selectedModel = 'openai-codex/retired-model';
+    const { repository, persistence } = createRepository(affected);
+    repository.replaceAll([affected, unaffected]);
+
+    await expect(repository.reconcileSelectedModels('claude'))
+      .resolves.toEqual([affected]);
+
+    expect(affected.selectedModel).toBe('opus');
+    expect(unaffected.selectedModel).toBe('openai-codex/retired-model');
+    expect(persistence.saveMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports whether selected-model metadata is safe for incremental publication', () => {
+    const conversation = createConversation('publication-safety');
+    const { repository } = createRepository(conversation);
+
+    conversation.selectedModel = 'claude-code/retired-model';
+    expect(repository.isSelectedModelPublicationSafe(conversation)).toBe(false);
+
+    conversation.selectedModel = 'opus';
+    expect(repository.isSelectedModelPublicationSafe(conversation)).toBe(true);
+
+    conversation.selectedModel = undefined;
+    expect(repository.isSelectedModelPublicationSafe(conversation)).toBe(true);
+
+    conversation.providerId = 'unregistered';
+    conversation.selectedModel = 'retired-model';
+    expect(repository.isSelectedModelPublicationSafe(conversation)).toBe(true);
+  });
+
+  it('reconciles deferred metadata before publishing it and persists the staged fallback on adoption', async () => {
+    const { repository, persistence } = createRepository(createConversation('existing'));
+    const deferred = createConversation('deferred-retired-model');
+    deferred.selectedModel = 'claude-code/retired-model';
+
+    await repository.adoptMetadataConversations([{
+      conversation: deferred,
+      needsMigration: false,
+      source: 'current',
+    }]);
+
+    expect(repository.getCachedConversation(deferred.id)).toBe(deferred);
+    expect(deferred.selectedModel).toBe('opus');
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: deferred.id,
+      selectedModel: 'opus',
+    }));
+  });
+
+  it('keeps failed deferred metadata unpublished so adoption can retry persistence', async () => {
+    const { repository, persistence } = createRepository(createConversation('existing'));
+    const deferred = createConversation('deferred-failed-fallback');
+    deferred.selectedModel = 'claude-code/retired-model';
+    persistence.saveMetadata.mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(repository.adoptMetadataConversations([{
+      conversation: deferred,
+      needsMigration: false,
+      source: 'current',
+    }])).rejects.toThrow('disk full');
+    expect(repository.getCachedConversation(deferred.id)).toBeNull();
+    expect(deferred.selectedModel).toBe('claude-code/retired-model');
+
+    await repository.adoptMetadataConversations([{
+      conversation: deferred,
+      needsMigration: false,
+      source: 'current',
+    }]);
+    expect(persistence.saveMetadata).toHaveBeenCalledTimes(2);
+    expect(persistence.saveMetadata).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: deferred.id,
+      selectedModel: 'opus',
+    }));
+    expect(repository.getCachedConversation(deferred.id)).toBe(deferred);
+    expect(deferred.selectedModel).toBe('opus');
+  });
+
+  it('restores a stale selection after fallback persistence fails so reconciliation can retry', async () => {
+    const conversation = createConversation('failed-fallback');
+    conversation.selectedModel = 'claude-code/retired-model';
+    const { repository, persistence } = createRepository(conversation);
+    persistence.saveMetadata.mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(repository.reconcileSelectedModels('claude')).rejects.toThrow('disk full');
+    expect(conversation.selectedModel).toBe('claude-code/retired-model');
+
+    await expect(repository.reconcileSelectedModels('claude')).resolves.toEqual([conversation]);
+    expect(conversation.selectedModel).toBe('opus');
+    expect(persistence.saveMetadata).toHaveBeenLastCalledWith(expect.objectContaining({
+      selectedModel: 'opus',
+    }));
+  });
+
+  it('does not roll back a newer explicit selection when fallback persistence fails', async () => {
+    const conversation = createConversation('superseded-fallback');
+    conversation.selectedModel = 'claude-code/retired-model';
+    const { repository, persistence } = createRepository(conversation);
+    let rejectFallbackSave: (error: Error) => void = () => undefined;
+    persistence.saveMetadata.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectFallbackSave = reject;
+    }));
+
+    const reconciliation = repository.reconcileSelectedModels('claude');
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const explicitUpdate = repository.update(conversation.id, { selectedModel: 'opus' });
+    rejectFallbackSave(new Error('disk full'));
+
+    await expect(reconciliation).rejects.toThrow('disk full');
+    await expect(explicitUpdate).resolves.toBeUndefined();
+    expect(conversation.selectedModel).toBe('opus');
+    expect(persistence.saveMetadata).toHaveBeenLastCalledWith(expect.objectContaining({
+      selectedModel: 'opus',
+    }));
   });
 
   it('persists and projects pinned session metadata', async () => {

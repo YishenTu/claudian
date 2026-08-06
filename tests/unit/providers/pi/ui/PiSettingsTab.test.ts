@@ -3,7 +3,6 @@ import * as fs from 'node:fs';
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockCliResolverReset = jest.fn();
 const mockDiscoverModels = jest.fn();
-const mockRefreshReadiness = jest.fn().mockResolvedValue(undefined);
 const mockNotices: string[] = [];
 
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
@@ -125,9 +124,6 @@ jest.mock('obsidian', () => ({
 }));
 jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
-}));
-jest.mock('@/shared/settings/ProviderReadinessPanel', () => ({
-  renderProviderReadinessPanel: jest.fn(() => ({ refresh: mockRefreshReadiness })),
 }));
 jest.mock('@/providers/pi/app/PiWorkspaceServices', () => ({
   maybeGetPiWorkspaceServices: jest.fn(() => ({
@@ -435,7 +431,6 @@ describe('PiSettingsTab', () => {
     await enableSetting.toggleComponents[0].onChangeCallback?.(true);
 
     expect(getPiProviderSettings(settings).enabled).toBe(true);
-    expect(mockRefreshReadiness).toHaveBeenCalled();
     expect(context.plugin.saveSettings).toHaveBeenCalled();
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('pi');
   });
