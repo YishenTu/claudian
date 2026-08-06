@@ -14,6 +14,7 @@ import {
   getProviderSettingsSnapshotWithModel,
   normalizeProviderModelSelection,
   resolveConversationModel,
+  resolveNewConversationModel,
 } from '../../../core/providers/conversationModel';
 import { getEnabledProviderForModel, getProviderForModel } from '../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
@@ -108,6 +109,54 @@ const backgroundTurnBuffers = new WeakMap<
   Map<string, Map<string, ProviderBackgroundOutputEvent[]>>
 >();
 
+interface ModelSelectionIntentState {
+  nextIntent: number;
+  committedIntent: number;
+}
+
+interface BlankTabProviderTransition {
+  promise: Promise<void>;
+  providerId: ProviderId;
+  previousModel: string | null;
+  previousProviderId: ProviderId;
+}
+
+const modelSelectionIntentStates = new WeakMap<FeatureHost, ModelSelectionIntentState>();
+const latestTabModelSelectionIntents = new WeakMap<TabData, number>();
+const blankTabProviderTransitions = new WeakMap<TabData, BlankTabProviderTransition>();
+
+function beginModelSelectionIntent(tab: TabData, plugin: FeatureHost): number {
+  const state = modelSelectionIntentStates.get(plugin) ?? {
+    nextIntent: 0,
+    committedIntent: 0,
+  };
+  const intent = state.nextIntent + 1;
+  state.nextIntent = intent;
+  modelSelectionIntentStates.set(plugin, state);
+  latestTabModelSelectionIntents.set(tab, intent);
+  return intent;
+}
+
+function isLatestTabModelSelectionIntent(tab: TabData, intent: number): boolean {
+  return latestTabModelSelectionIntents.get(tab) === intent;
+}
+
+async function commitModelSelectionIntent(
+  plugin: FeatureHost,
+  intent: number,
+  providerId: ProviderId,
+  model: string,
+): Promise<void> {
+  const state = modelSelectionIntentStates.get(plugin);
+  if (!state) return;
+
+  await plugin.mutateSettings((settings) => {
+    if (intent <= state.committedIntent) return;
+    settings.lastSelectedChatModel = { providerId, model };
+  });
+  state.committedIntent = Math.max(state.committedIntent, intent);
+}
+
 function getSharedSelectionFocusScopeEls(component: Component): HTMLElement[] {
   const host = component as Partial<TabManagerViewHost>;
   return host.getSharedSelectionFocusScopeEls?.() ?? [];
@@ -131,27 +180,6 @@ export function getBlankTabModelOptions(
   });
 }
 
-/**
- * Resolves the draft model for a new blank tab by projecting provider-specific
- * saved settings. Without this, `plugin.settings.model` reflects only the
- * settings-provider's model, which may belong to a different provider.
- */
-function resolveBlankTabModel(
-  plugin: FeatureHost,
-  providerId?: ProviderId,
-): string {
-  const settings = plugin.settings as unknown as Record<string, unknown>;
-  if (!providerId) {
-    return settings.model as string;
-  }
-
-  const targetProviderId = ProviderRegistry.isEnabled(providerId, settings)
-    ? providerId
-    : ProviderRegistry.resolveSettingsProviderId(settings);
-  const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, targetProviderId);
-  return snapshot.model as string;
-}
-
 export interface TabCreateOptions {
   plugin: FeatureHost;
 
@@ -160,8 +188,6 @@ export interface TabCreateOptions {
   tabId?: TabId;
   /** Initial draft model for an unbound tab. */
   draftModel?: string | null;
-  /** Provider to inherit for blank tabs (e.g. from the active tab). */
-  defaultProviderId?: ProviderId;
   lifecycleState?: Extract<TabData['lifecycleState'], 'provisional' | 'cold'>;
   onStreamingChanged?: (isStreaming: boolean) => void;
   onRewindingChanged?: (isRewinding: boolean) => void;
@@ -524,7 +550,8 @@ function resolveBlankTabFallback(
 ): { model: string; providerId: ProviderId } | null {
   const providerIds = [
     ...(enabledProviderIds.includes(preferredProviderId) ? [preferredProviderId] : []),
-    ...enabledProviderIds.filter(providerId => providerId !== preferredProviderId),
+    ...ProviderRegistry.getBlankTabProviderIds(settings)
+      .filter(providerId => providerId !== preferredProviderId),
   ];
 
   for (const providerId of providerIds) {
@@ -583,6 +610,16 @@ export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost)
       tab.draftModel = availableDraftModel;
       nextProviderId = draftProvider;
     }
+  } else {
+    const fallback = resolveBlankTabFallback(
+      settingsSnapshot,
+      enabledProviderIds,
+      tab.providerId,
+    );
+    if (fallback) {
+      tab.draftModel = fallback.model;
+      nextProviderId = fallback.providerId;
+    }
   }
 
   tab.providerId = nextProviderId;
@@ -634,10 +671,14 @@ export function createTab(options: TabCreateOptions): TabData {
   const restoredDraftModel = typeof options.draftModel === 'string'
     ? options.draftModel.trim()
     : '';
+  const newConversationModel = !isBound && !restoredDraftModel
+    ? resolveNewConversationModel(plugin.settings)
+    : null;
   const draftModel = isBound
     ? null
-    : (restoredDraftModel || resolveBlankTabModel(plugin, options.defaultProviderId));
+    : (restoredDraftModel || newConversationModel?.model || null);
   const initialProviderId = conversation?.providerId
+    ?? newConversationModel?.providerId
     ?? (draftModel
       ? getEnabledProviderForModel(draftModel, plugin.settings)
       : DEFAULT_CHAT_PROVIDER_ID);
@@ -1268,9 +1309,7 @@ function initializeInputToolbar(
 
   // Blank-tab UI config wrapper that returns mixed model options
   const blankTabUIConfigProxy = (): ProviderChatUIConfig => {
-    const draftProvider = tab.draftModel
-      ? getEnabledProviderForModel(tab.draftModel, plugin.settings)
-      : DEFAULT_CHAT_PROVIDER_ID;
+    const draftProvider = tab.providerId;
     const baseConfig = ProviderRegistry.getChatUIConfig(draftProvider);
     return {
       ...baseConfig,
@@ -1292,13 +1331,42 @@ function initializeInputToolbar(
     onModelChange: async (model: string) => {
       // For blank tabs, update draft model and derive provider
       if (tab.conversationId === null) {
-        const previousProvider = tab.providerId;
-        const previousModel = tab.draftModel;
-        tab.draftModel = model;
+        const selectionIntent = beginModelSelectionIntent(tab, plugin);
         const newProvider = getEnabledProviderForModel(
           model,
           plugin.settings,
         );
+        const pendingTransition = blankTabProviderTransitions.get(tab);
+        if (pendingTransition) {
+          if (pendingTransition.providerId === newProvider) {
+            tab.draftModel = model;
+          }
+          try {
+            await pendingTransition.promise;
+          } catch (error) {
+            if (isLatestTabModelSelectionIntent(tab, selectionIntent)) {
+              tab.draftModel = pendingTransition.previousModel;
+              tab.providerId = pendingTransition.previousProviderId;
+              syncTabProviderServices(tab, plugin);
+              syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
+              refreshTabProviderUI(tab, plugin);
+              applyProviderUIGating(tab, plugin);
+            }
+            if (pendingTransition.providerId === newProvider) {
+              if (isLatestTabModelSelectionIntent(tab, selectionIntent)) {
+                throw error;
+              }
+              return;
+            }
+          }
+          if (!isLatestTabModelSelectionIntent(tab, selectionIntent)) {
+            return;
+          }
+        }
+
+        const previousProvider = tab.providerId;
+        const previousModel = tab.draftModel;
+        tab.draftModel = model;
         const didProviderChange = newProvider !== previousProvider;
         tab.providerId = newProvider;
         if (didProviderChange) {
@@ -1307,9 +1375,21 @@ function initializeInputToolbar(
         const uiConfig = ProviderRegistry.getChatUIConfig(newProvider);
         if (didProviderChange) {
           tab.ui.slashCommandDropdown?.clearProviderCatalog?.();
+          const transition: BlankTabProviderTransition = {
+            promise: (async () => {
+              await onProviderChanged?.(newProvider);
+            })(),
+            providerId: newProvider,
+            previousModel,
+            previousProviderId: previousProvider,
+          };
+          blankTabProviderTransitions.set(tab, transition);
           try {
-            await onProviderChanged?.(newProvider);
+            await transition.promise;
           } catch (error) {
+            if (!isLatestTabModelSelectionIntent(tab, selectionIntent)) {
+              return;
+            }
             tab.draftModel = previousModel;
             tab.providerId = previousProvider;
             syncTabProviderServices(tab, plugin);
@@ -1317,9 +1397,22 @@ function initializeInputToolbar(
             refreshTabProviderUI(tab, plugin);
             applyProviderUIGating(tab, plugin);
             throw error;
+          } finally {
+            if (blankTabProviderTransitions.get(tab) === transition) {
+              blankTabProviderTransitions.delete(tab);
+            }
           }
         } else {
           syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
+        }
+        await commitModelSelectionIntent(
+          plugin,
+          selectionIntent,
+          newProvider,
+          model,
+        );
+        if (!isLatestTabModelSelectionIntent(tab, selectionIntent)) {
+          return;
         }
         onUserModified?.();
         await uiConfig.prepareModelMetadata?.(
@@ -1346,6 +1439,7 @@ function initializeInputToolbar(
         tab.ui.modelSelector?.updateDisplay();
         return;
       }
+      const selectionIntent = beginModelSelectionIntent(tab, plugin);
 
       const uiConfig: ProviderChatUIConfig = getTabChatUIConfig(tab, plugin);
       const normalizedModel = normalizeProviderModelSelection(boundProvider, plugin.settings, model) ?? model;
@@ -1361,6 +1455,15 @@ function initializeInputToolbar(
         });
       }
       onUserModified?.();
+      await commitModelSelectionIntent(
+        plugin,
+        selectionIntent,
+        boundProvider,
+        normalizedModel,
+      );
+      if (!isLatestTabModelSelectionIntent(tab, selectionIntent)) {
+        return;
+      }
 
       await uiConfig.prepareModelMetadata?.(
         normalizedModel,
@@ -1964,11 +2067,12 @@ export function initializeTabControllers(
     {
       onNewConversation: () => {
         const previousProviderId = tab.providerId;
+        const nextModel = resolveNewConversationModel(plugin.settings);
         void tab.executionCoordinator?.bindConversation(null);
         tab.lifecycleState = 'cold';
-        tab.draftModel = resolveBlankTabModel(plugin, previousProviderId);
+        tab.draftModel = nextModel?.model ?? null;
         tab.conversationId = null;
-        tab.providerId = getTabProviderId(tab, plugin);
+        tab.providerId = nextModel?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
         if (tab.providerId !== previousProviderId) {
           syncTabProviderServices(tab, plugin);
         }

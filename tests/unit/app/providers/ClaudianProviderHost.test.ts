@@ -22,6 +22,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): ClaudianPlugin {
     runProviderExecutionTransition: jest.fn(
       async (_providerIds: string[], mutation: () => Promise<unknown>) => mutation(),
     ),
+    notifyProviderChatOptionsChanged: jest.fn(),
     getAllViews: jest.fn(() => []),
     getView: jest.fn(() => null),
     ...overrides,
@@ -50,21 +51,16 @@ describe('ClaudianProviderHost', () => {
     expect('addCommand' in host).toBe(false);
   });
 
-  it('routes provider chat-option changes to every view with provider scope', () => {
-    const firstRefresh = jest.fn();
-    const secondRefresh = jest.fn();
+  it('routes provider chat-option changes through the application reconciliation boundary', () => {
+    const notifyProviderChatOptionsChanged = jest.fn();
     const plugin = createPlugin({
-      getAllViews: jest.fn(() => [
-        { refreshModelSelector: firstRefresh },
-        { refreshModelSelector: secondRefresh },
-      ]),
+      notifyProviderChatOptionsChanged,
     });
     const host = new ClaudianProviderHost(plugin);
 
     host.notifyProviderChatOptionsChanged('codex');
 
-    expect(firstRefresh).toHaveBeenCalledWith('codex');
-    expect(secondRefresh).toHaveBeenCalledWith('codex');
+    expect(notifyProviderChatOptionsChanged).toHaveBeenCalledWith('codex');
   });
 
   it('delegates execution transitions through the application lifecycle registry', async () => {

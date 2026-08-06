@@ -1,7 +1,24 @@
 import { Setting } from 'obsidian';
 
 const ALL_PROVIDERS_KEY = 'all';
-const VISIBLE_MODELS_DESCRIPTION = 'Choose which models are available in the chat selector. Select at least one model to use this provider.';
+const VISIBLE_MODELS_DESCRIPTION = 'Choose which models are available in the chat selector. Drag to reorder them; the provider uses the first currently usable model as its default. Select at least one model to use this provider.';
+
+export function reorderProviderModelIds(
+  selectedIds: readonly string[],
+  modelId: string,
+  targetIndex: number,
+): string[] {
+  const currentIndex = selectedIds.indexOf(modelId);
+  if (currentIndex < 0) {
+    return [...selectedIds];
+  }
+
+  const next = [...selectedIds];
+  next.splice(currentIndex, 1);
+  const boundedIndex = Math.max(0, Math.min(targetIndex, next.length));
+  next.splice(boundedIndex, 0, modelId);
+  return next;
+}
 
 export interface ProviderModelPickerModel {
   aliasPlaceholder?: string;
@@ -18,6 +35,7 @@ export interface ProviderModelPickerModel {
 
 export interface ProviderModelPickerState {
   aliases: Record<string, string>;
+  defaultModelId?: string | null;
   discoveredCount: number;
   models: ProviderModelPickerModel[];
   selectedIds: string[];
@@ -60,6 +78,7 @@ export function renderProviderModelPicker(
   let providerFilter = ALL_PROVIDERS_KEY;
   let loadingCatalog = false;
   let catalogLoadFailed = false;
+  let draggedModelId: string | null = null;
 
   const summaryEl = pickerEl.createDiv({ cls: 'claudian-provider-model-picker-summary' });
   const selectedEl = pickerEl.createDiv({ cls: 'claudian-provider-model-picker-selected' });
@@ -174,6 +193,9 @@ export function renderProviderModelPicker(
 
     selectedEl.toggleClass('claudian-hidden', false);
     const modelsById = new Map(state.models.map(model => [model.id, model] as const));
+    const defaultModelId = state.defaultModelId === undefined
+      ? state.selectedIds[0]
+      : state.defaultModelId;
     const headerEl = selectedEl.createDiv({ cls: 'claudian-provider-model-picker-selected-header' });
     headerEl.createSpan({
       cls: 'claudian-provider-model-picker-selected-label',
@@ -190,7 +212,7 @@ export function renderProviderModelPicker(
     });
 
     const rowsEl = selectedEl.createDiv({ cls: 'claudian-provider-model-picker-selected-rows' });
-    for (const modelId of state.selectedIds) {
+    for (const [modelIndex, modelId] of state.selectedIds.entries()) {
       const model = modelsById.get(modelId) ?? {
         id: modelId,
         isAvailable: false,
@@ -199,9 +221,57 @@ export function renderProviderModelPicker(
       const defaultLabel = model.aliasPlaceholder
         ?? (model.providerLabel ? `${model.providerLabel}/${model.name}` : model.name);
       const rowEl = rowsEl.createDiv({ cls: 'claudian-provider-model-picker-selected-row' });
+      rowEl.setAttribute('data-model-id', modelId);
       if (model.isAvailable === false) {
         rowEl.classList.add('claudian-provider-model-picker-selected-row--unavailable');
       }
+
+      rowEl.addEventListener('dragover', (event) => {
+        if (!draggedModelId || draggedModelId === modelId) {
+          return;
+        }
+        event.preventDefault();
+        rowEl.classList.add('claudian-provider-model-picker-selected-row--drop-target');
+      });
+      rowEl.addEventListener('dragleave', () => {
+        rowEl.classList.remove('claudian-provider-model-picker-selected-row--drop-target');
+      });
+      rowEl.addEventListener('drop', (event) => {
+        event.preventDefault();
+        rowEl.classList.remove('claudian-provider-model-picker-selected-row--drop-target');
+        const sourceModelId = draggedModelId ?? event.dataTransfer?.getData('text/plain') ?? '';
+        draggedModelId = null;
+        if (!sourceModelId || sourceModelId === modelId) {
+          return;
+        }
+        const targetIndex = options.getState().selectedIds.indexOf(modelId);
+        void persistSelectedIds(reorderProviderModelIds(
+          options.getState().selectedIds,
+          sourceModelId,
+          targetIndex,
+        ));
+      });
+
+      const dragHandle = rowEl.createEl('button', {
+        cls: 'claudian-provider-model-picker-selected-drag',
+        text: '⋮⋮',
+      });
+      dragHandle.setAttribute('type', 'button');
+      dragHandle.setAttribute('aria-label', `Drag ${defaultLabel} to reorder`);
+      dragHandle.setAttribute('title', 'Drag to reorder');
+      dragHandle.draggable = state.selectedIds.length > 1;
+      dragHandle.addEventListener('dragstart', (event) => {
+        draggedModelId = modelId;
+        rowEl.classList.add('claudian-provider-model-picker-selected-row--dragging');
+        event.dataTransfer?.setData('text/plain', modelId);
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+        }
+      });
+      dragHandle.addEventListener('dragend', () => {
+        draggedModelId = null;
+        rowEl.classList.remove('claudian-provider-model-picker-selected-row--dragging');
+      });
 
       const infoEl = rowEl.createDiv({ cls: 'claudian-provider-model-picker-selected-info' });
       const titleEl = infoEl.createDiv({ cls: 'claudian-provider-model-picker-selected-title' });
@@ -215,6 +285,12 @@ export function renderProviderModelPicker(
         cls: 'claudian-provider-model-picker-selected-name',
         text: model.name,
       });
+      if (modelId === defaultModelId) {
+        titleEl.createSpan({
+          cls: 'claudian-provider-model-picker-selected-default',
+          text: 'Default',
+        });
+      }
       if (model.isAvailable === false && model.unavailableMessage) {
         infoEl.createDiv({
           cls: 'claudian-provider-model-picker-selected-unavailable',
@@ -227,6 +303,37 @@ export function renderProviderModelPicker(
       });
 
       const rowControlsEl = rowEl.createDiv({ cls: 'claudian-provider-model-picker-selected-controls' });
+      const orderControlsEl = rowControlsEl.createDiv({
+        cls: 'claudian-provider-model-picker-selected-order-controls',
+      });
+      const moveUpButton = orderControlsEl.createEl('button', {
+        cls: 'claudian-provider-model-picker-selected-order',
+        text: '↑',
+      });
+      moveUpButton.setAttribute('type', 'button');
+      moveUpButton.setAttribute('aria-label', `Move ${defaultLabel} up`);
+      moveUpButton.disabled = modelIndex === 0;
+      moveUpButton.addEventListener('click', () => {
+        void persistSelectedIds(reorderProviderModelIds(
+          options.getState().selectedIds,
+          modelId,
+          modelIndex - 1,
+        ));
+      });
+      const moveDownButton = orderControlsEl.createEl('button', {
+        cls: 'claudian-provider-model-picker-selected-order',
+        text: '↓',
+      });
+      moveDownButton.setAttribute('type', 'button');
+      moveDownButton.setAttribute('aria-label', `Move ${defaultLabel} down`);
+      moveDownButton.disabled = modelIndex === state.selectedIds.length - 1;
+      moveDownButton.addEventListener('click', () => {
+        void persistSelectedIds(reorderProviderModelIds(
+          options.getState().selectedIds,
+          modelId,
+          modelIndex + 1,
+        ));
+      });
       const aliasFieldEl = rowControlsEl.createEl('label', {
         cls: 'claudian-provider-model-picker-selected-alias-field',
       });

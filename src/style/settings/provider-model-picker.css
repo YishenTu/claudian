@@ -101,6 +101,32 @@
   border-radius: 6px;
 }
 
+.claudian-provider-model-picker-selected-row--dragging {
+  opacity: 0.55;
+}
+
+.claudian-provider-model-picker-selected-row--drop-target {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+.claudian-provider-model-picker-selected-drag {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: grab;
+  line-height: 1;
+  letter-spacing: -3px;
+}
+
+.claudian-provider-model-picker-selected-drag:active {
+  cursor: grabbing;
+}
+
 .claudian-provider-model-picker-selected-row--unavailable {
   border-style: dashed;
 }
@@ -131,6 +157,15 @@
   letter-spacing: 0.04em;
 }
 
+.claudian-provider-model-picker-selected-default {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+}
+
 .claudian-provider-model-picker-selected-name {
   color: var(--text-normal);
   font-weight: var(--font-medium);
@@ -159,6 +194,35 @@
   align-items: flex-end;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.claudian-provider-model-picker-selected-order-controls {
+  display: flex;
+  gap: 2px;
+}
+
+.claudian-provider-model-picker-selected-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.claudian-provider-model-picker-selected-order:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-provider-model-picker-selected-order:disabled {
+  cursor: default;
+  opacity: 0.35;
 }
 
 .claudian-provider-model-picker-selected-alias-field {
@@ -207,6 +271,26 @@
 .claudian-provider-model-picker-selected-remove:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
+}
+
+@media (max-width: 720px) {
+  .claudian-provider-model-picker-selected-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .claudian-provider-model-picker-selected-controls {
+    width: calc(100% - 34px);
+    margin-left: 34px;
+  }
+
+  .claudian-provider-model-picker-selected-alias-field {
+    flex: 1;
+  }
+
+  .claudian-provider-model-picker-selected-alias {
+    width: 100%;
+  }
 }
 
 .claudian-provider-model-picker-catalog {

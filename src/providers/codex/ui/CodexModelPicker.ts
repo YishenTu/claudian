@@ -41,15 +41,11 @@ export function renderCodexModelPicker(
       current.visibleModels,
       current.discoveredModels,
     );
-    const visibleModelIdSet = new Set(visibleModelIds);
-    const selectedIds = pickerOrderedModels
-      .map(model => model.model)
-      .filter(modelId => visibleModelIdSet.has(modelId));
-    for (const modelId of visibleModelIds) {
-      if (!selectedIds.includes(modelId)) {
-        selectedIds.push(modelId);
-      }
-    }
+    const selectedIds = visibleModelIds;
+    const defaultModelId = selectedIds.find((modelId) => {
+      const model = current.discoveredModels.find(candidate => candidate.model === modelId);
+      return Boolean(model && isCodexModelAvailable(model, current.enableUltraEffort));
+    }) ?? null;
 
     const models: ProviderModelPickerModel[] = pickerOrderedModels.map((model) => {
       const isAvailable = isCodexModelAvailable(model, current.enableUltraEffort);
@@ -82,6 +78,7 @@ export function renderCodexModelPicker(
 
     return {
       aliases: current.modelAliases,
+      defaultModelId,
       discoveredCount: current.discoveredModels.length,
       models,
       selectedIds,

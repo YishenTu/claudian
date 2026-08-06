@@ -31,6 +31,7 @@ import type { GrokDiscoveredModel } from '../models';
 import {
   clearCurrentGrokCatalog,
   getGrokProviderSettings,
+  getOrderedGrokVisibleModelIds,
   normalizeGrokVisibleModels,
   updateGrokProviderSettings,
   updateGrokVisibleModels,
@@ -186,7 +187,7 @@ function renderGrokModelPicker(
   const getState = (): ProviderModelPickerState => {
     const settings = getGrokProviderSettings(settingsBag);
     const catalogModels = settings.currentCatalog?.models ?? [];
-    const selectedIds = settings.visibleModels ?? catalogModels.map(model => model.rawId);
+    const selectedIds = getOrderedGrokVisibleModelIds(settings);
     return {
       aliases: settings.modelAliases,
       discoveredCount: catalogModels.length,
@@ -216,7 +217,7 @@ function renderGrokModelPicker(
       const models = current.currentCatalog?.models ?? [];
       const allowedIds = new Set(models.map(model => model.rawId));
       const normalized = normalizeGrokVisibleModels(selectedIds, allowedIds, models.length > 0);
-      const nextVisibleModels = representsWholeCatalog(normalized, models) ? null : normalized;
+      const nextVisibleModels = normalized;
       if (sameOptionalList(current.visibleModels, nextVisibleModels)) {
         return;
       }
@@ -254,17 +255,6 @@ function buildGrokPickerModels(
     });
   }
   return models;
-}
-
-function representsWholeCatalog(
-  selectedIds: string[] | null,
-  catalogModels: GrokDiscoveredModel[],
-): boolean {
-  if (!selectedIds || selectedIds.length !== catalogModels.length) {
-    return false;
-  }
-  const selected = new Set(selectedIds);
-  return catalogModels.every(model => selected.has(model.rawId));
 }
 
 function sameOptionalList(left: string[] | null, right: string[] | null): boolean {

@@ -47,6 +47,7 @@ export interface FeatureHost {
   getActiveEnvironmentVariables(providerId?: ProviderId): string;
   getAgentSkillResourceGeneration(): number;
   notifyAgentSkillsChanged(): Promise<void>;
+  notifyProviderChatOptionsChanged(providerId: ProviderId): void;
 
   createConversation(options?: {
     providerId?: ProviderId;

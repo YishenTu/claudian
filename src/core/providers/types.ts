@@ -320,6 +320,12 @@ export interface ProviderChatUIConfig {
   /** Normalize model variant based on visibility flags. Provider extracts what it needs from the settings bag. */
   normalizeModelVariant(model: string, settings: Record<string, unknown>): string;
 
+  /** Canonicalize an alias to a current option without applying provider fallback policy. */
+  normalizeAvailableModelSelection?(
+    model: string,
+    settings: Record<string, unknown>,
+  ): string;
+
   /** Extract custom model IDs from parsed environment variables. Used for per-model context limit UI. */
   getCustomModelIds(envVars: Record<string, string>): Set<string>;
 

@@ -565,7 +565,10 @@ describe('GrokSettingsTab', () => {
     await picker.onSelectedIdsChange(['grok-4', 'kimi-coding']);
 
     expect(getGrokProviderSettings(plugin.settings).modelAliases).toEqual({ 'grok-4': 'Primary' });
-    expect(getGrokProviderSettings(plugin.settings).visibleModels).toBeNull();
+    expect(getGrokProviderSettings(plugin.settings).visibleModels).toEqual([
+      'grok-4',
+      'kimi-coding',
+    ]);
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('grok');
   });
 

@@ -194,6 +194,17 @@ describe('TabManager provider execution orchestration', () => {
     expect(tab?.lifecycleState).toBe('cold');
     const options = mockCreateTab.mock.calls[0]?.[0];
     expect(options).not.toHaveProperty('onRuntimeInstalled');
+    expect(options).not.toHaveProperty('defaultProviderId');
+  });
+
+  it('does not inherit the active tab provider when creating another blank tab', async () => {
+    const { manager } = createManager();
+    const active = await manager.createTab();
+    active!.providerId = 'codex';
+
+    await manager.createTab();
+
+    expect(mockCreateTab.mock.calls[1]?.[0]).not.toHaveProperty('defaultProviderId');
   });
 
   it('acknowledges review attention when a tab becomes active', async () => {

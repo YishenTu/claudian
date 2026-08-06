@@ -301,6 +301,60 @@ describe('ClaudianPlugin', () => {
       expect(afterBackgroundLoad?.title).toBe(backgroundMetadata.title);
     });
 
+    it('publishes deferred model fallbacks only after their metadata write is durable', async () => {
+      const deferredMetadata = {
+        id: 'deferred-retired-model',
+        providerId: 'claude' as const,
+        title: 'Deferred retired model',
+        createdAt: 1,
+        lastActivityAt: 2,
+        selectedModel: 'claude-code/retired-model',
+      };
+      await plugin.onload();
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+        .mockImplementation(async (options) => {
+          options?.onBatch?.([deferredMetadata]);
+          return {
+            metadata: [deferredMetadata],
+            complete: true,
+            invalidMetadataCount: 0,
+          };
+        });
+      const loadSourceSpy = mockMetadataSources(deferredMetadata);
+      const notifyConversationListChanged = jest.fn();
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([{
+        notifyConversationListChanged,
+      } as any]);
+      let markWriteStarted!: () => void;
+      const writeStarted = new Promise<void>(resolve => {
+        markWriteStarted = resolve;
+      });
+      let releaseWrite!: () => void;
+      const writeRelease = new Promise<void>(resolve => {
+        releaseWrite = resolve;
+      });
+      const saveSpy = jest.spyOn(getConversationPersistence(plugin), 'saveMetadata')
+        .mockImplementation(async (metadata) => {
+          if (metadata.id === deferredMetadata.id) {
+            markWriteStarted();
+            await writeRelease;
+          }
+        });
+
+      const load = (plugin as any).loadRemainingSessionMetadata();
+      await writeStarted;
+      expect(notifyConversationListChanged).not.toHaveBeenCalled();
+
+      releaseWrite();
+      await load;
+
+      expect(plugin.getCachedConversation(deferredMetadata.id)?.selectedModel).toBe('opus');
+      expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
+      scanSpy.mockRestore();
+      loadSourceSpy.mockRestore();
+      saveSpy.mockRestore();
+    });
+
     it('migrates legacy metadata through the repository after a read-only scan', async () => {
       const legacyMetadata = {
         id: 'legacy-background-conversation',
@@ -1200,9 +1254,10 @@ describe('ClaudianPlugin', () => {
       await plugin.loadSettings();
 
       expect(plugin.settings.maxWarmAgentProcesses).toBe(5);
-      const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
+      const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.filter(
         ([path]) => path === '.claudian/claudian-settings.json',
-      );
+      ).at(-1);
+      expect(writeCall).toBeDefined();
       expect(JSON.parse(writeCall[1]).maxWarmAgentProcesses).toBe(5);
     });
 
@@ -1332,6 +1387,42 @@ describe('ClaudianPlugin', () => {
     });
   });
 
+  describe('notifyProviderChatOptionsChanged', () => {
+    it('reconciles durable conversation models before refreshing views', async () => {
+      await plugin.onload();
+      const events: string[] = [];
+      const repository = (plugin as any).conversationRepository;
+      jest.spyOn(repository, 'reconcileSelectedModels').mockImplementation(async () => {
+        events.push('reconcile');
+        return [];
+      });
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([{
+        refreshModelSelector: jest.fn(() => events.push('refresh')),
+      } as any]);
+
+      plugin.notifyProviderChatOptionsChanged('claude');
+      await (plugin as any).providerChatOptionsChangeTail;
+
+      expect(events).toEqual(['reconcile', 'refresh']);
+    });
+
+    it('does not refresh model selectors when durable reconciliation fails', async () => {
+      await plugin.onload();
+      const repository = (plugin as any).conversationRepository;
+      jest.spyOn(repository, 'reconcileSelectedModels')
+        .mockRejectedValue(new Error('disk full'));
+      const refreshModelSelector = jest.fn();
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([{
+        refreshModelSelector,
+      } as any]);
+
+      plugin.notifyProviderChatOptionsChanged('claude');
+      await (plugin as any).providerChatOptionsChangeTail;
+
+      expect(refreshModelSelector).not.toHaveBeenCalled();
+    });
+  });
+
   describe('applyEnvironmentVariables', () => {
     it('holds the execution lifecycle transition across the environment settings commit', async () => {
       await plugin.onload();
@@ -1353,6 +1444,28 @@ describe('ClaudianPlugin', () => {
       expect(events).toEqual(['before', 'write', 'after']);
       expect(plugin.getEnvironmentVariablesForScope('provider:grok')).toBe('GROK_PROFILE=new');
       unregister();
+    });
+
+    it('reconciles affected conversation models before refreshing after environment changes', async () => {
+      await plugin.onload();
+      const events: string[] = [];
+      const repository = (plugin as any).conversationRepository;
+      jest.spyOn(repository, 'reconcileSelectedModels').mockImplementation(async () => {
+        events.push('reconcile');
+        return [];
+      });
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([{
+        invalidateProviderCommandCaches: jest.fn(() => events.push('invalidate')),
+        refreshModelSelector: jest.fn(() => events.push('refresh')),
+      } as any]);
+
+      await plugin.applyEnvironmentVariables(
+        'provider:claude',
+        'ANTHROPIC_MODEL=claude-sonnet-enterprise',
+      );
+
+      expect(events).toEqual(['invalidate', 'reconcile', 'refresh']);
+      expect(repository.reconcileSelectedModels).toHaveBeenCalledWith('claude');
     });
 
     it('lets an initialized transition owner resolve CLI without reinitializing services', async () => {

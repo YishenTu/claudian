@@ -105,8 +105,6 @@ export class ClaudianProviderHost implements ProviderHost {
   }
 
   notifyProviderChatOptionsChanged(providerId: ProviderId): void {
-    for (const view of this.plugin.getAllViews()) {
-      view.refreshModelSelector(providerId);
-    }
+    this.plugin.notifyProviderChatOptionsChanged(providerId);
   }
 }

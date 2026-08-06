@@ -39,6 +39,14 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     return getClaudeModelOptions(settings);
   },
 
+  getDefaultModel(settings) {
+    const options = getClaudeModelOptions(settings);
+    const preference = getClaudeProviderSettings(settings).defaultModel;
+    return findClaudeModelOption(options, preference)?.value
+      ?? options[0]?.value
+      ?? null;
+  },
+
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
     const runtimeModel = toClaudeRuntimeModelId(model);
     return getClaudeModelOptions(settings).some((option: ProviderUIOption) =>
@@ -127,6 +135,10 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     const normalizedRuntimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
     const option = findClaudeModelOption(getClaudeModelOptions(settings), model);
     return option?.value ?? normalizedRuntimeModel;
+  },
+
+  normalizeAvailableModelSelection(model: string, settings) {
+    return findClaudeModelOption(getClaudeModelOptions(settings), model)?.value ?? model;
   },
 
   getCustomModelIds(envVars: Record<string, string>): Set<string> {

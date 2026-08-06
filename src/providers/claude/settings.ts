@@ -20,6 +20,7 @@ export interface ClaudeProviderSettings {
   enableChrome: boolean;
   enableBangBash: boolean;
   customModels: string;
+  defaultModel: string;
   lastModel: string;
   modelEnvironmentType: ClaudeModelEnvironmentType | '';
   titleModelEnvironmentType: ClaudeModelEnvironmentType | '';
@@ -36,6 +37,7 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   enableChrome: false,
   enableBangBash: false,
   customModels: '',
+  defaultModel: 'opus',
   lastModel: 'haiku',
   modelEnvironmentType: '',
   titleModelEnvironmentType: '',
@@ -86,6 +88,8 @@ export function getClaudeProviderSettings(
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.enableBangBash,
     customModels: (config.customModels as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.customModels,
+    defaultModel: (config.defaultModel as string | undefined)
+      ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.defaultModel,
     lastModel: (config.lastModel as string | undefined)
       ?? (settings.lastClaudeModel as string | undefined)
       ?? DEFAULT_CLAUDE_PROVIDER_SETTINGS.lastModel,

@@ -629,6 +629,46 @@ describe('ClaudeSettingsTab', () => {
     );
   });
 
+  it('renders and persists the Claude provider default from dynamic model options', async () => {
+    const plugin = createPlugin();
+    plugin.settings.providerConfigs.claude.defaultModel = 'claude-code/claude-opus-4-6';
+    const context = createContext(plugin);
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+
+    const setting = findSetting('Default model');
+    const dropdown = setting.dropdownComponents[0];
+    expect(dropdown.value).toBe('claude-code/claude-opus-4-6');
+    expect(dropdown.options).toEqual(expect.arrayContaining([
+      { value: 'opus', label: 'Opus' },
+      { value: 'claude-code/claude-opus-4-6', label: 'Opus 4.6' },
+    ]));
+
+    await dropdown.onChangeCallback?.('opus');
+
+    expect(plugin.settings.providerConfigs.claude.defaultModel).toBe('opus');
+    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
+    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
+  });
+
+  it('stores an unambiguous Claude environment slot as the provider default', async () => {
+    const plugin = createPlugin();
+    plugin.settings.providerConfigs.claude.environmentVariables = [
+      'ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-enterprise',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-enterprise',
+    ].join('\n');
+    const context = createContext(plugin);
+
+    claudeSettingsTabRenderer.render(createContainer(), context);
+
+    const dropdown = findSetting('Default model').dropdownComponents[0];
+    expect(dropdown.value).toBe('claude-code/claude-opus-enterprise');
+
+    await dropdown.onChangeCallback?.('claude-code/claude-sonnet-enterprise');
+
+    expect(plugin.settings.providerConfigs.claude.defaultModel).toBe('sonnet');
+  });
+
   it('keeps Claude CRUD on its explicit vault repository without the shared manager', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);

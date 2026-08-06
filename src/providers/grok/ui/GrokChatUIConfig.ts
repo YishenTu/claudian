@@ -14,7 +14,11 @@ import {
   resolveGrokContextWindow,
   resolveGrokDefaultReasoningEffort,
 } from '../models';
-import { getGrokProviderSettings, updateGrokProviderSettings } from '../settings';
+import {
+  getGrokProviderSettings,
+  getOrderedGrokVisibleModelIds,
+  updateGrokProviderSettings,
+} from '../settings';
 
 const GROK_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveValue: 'normal',
@@ -30,8 +34,7 @@ export const grokChatUIConfig: ProviderChatUIConfig = {
     const grokSettings = getGrokProviderSettings(settings);
     const catalogModels = grokSettings.currentCatalog?.models ?? [];
     const catalogById = new Map(catalogModels.map(model => [model.rawId, model] as const));
-    const visibleModelIds = grokSettings.visibleModels
-      ?? catalogModels.map(model => model.rawId);
+    const visibleModelIds = [...getOrderedGrokVisibleModelIds(grokSettings)].reverse();
     const options: ProviderUIOption[] = [];
     const seen = new Set<string>();
 
@@ -43,12 +46,9 @@ export const grokChatUIConfig: ProviderChatUIConfig = {
   },
 
   getDefaultModel(settings): string | null {
-    const defaultModelId = getGrokProviderSettings(settings).currentCatalog?.defaultModelId?.trim();
-    const options = this.getModelOptions(settings);
-    const preferred = defaultModelId ? encodeGrokModelId(defaultModelId) : null;
-    return (preferred && options.some(option => option.value === preferred)
-      ? preferred
-      : options[0]?.value) ?? null;
+    const grokSettings = getGrokProviderSettings(settings);
+    const firstVisibleModelId = getOrderedGrokVisibleModelIds(grokSettings)[0];
+    return firstVisibleModelId ? encodeGrokModelId(firstVisibleModelId) : null;
   },
 
   ownsModel(model, settings): boolean {

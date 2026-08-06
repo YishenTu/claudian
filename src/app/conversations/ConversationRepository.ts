@@ -185,6 +185,7 @@ export class ConversationRepository {
     Promise<HistoricalModelRecoveryResult>
   >();
   private readonly historicalModelRecoverySources = new Map<string, Conversation>();
+  private readonly selectedModelMutationVersions = new WeakMap<Conversation, number>();
   private readonly notePathRenames: NotePathRename[] = [];
   private readonly pendingNotePathCorrectionIds = new Set<string>();
   private readonly persistence: ConversationPersistence;
@@ -233,10 +234,25 @@ export class ConversationRepository {
         notePathCorrectedIds.add(conversation.id);
       }
     }
+    const registeredProviderIds = new Set(ProviderRegistry.getRegisteredProviderIds());
+    for (const { conversation } of entries) {
+      if (
+        !this.getSync(conversation.id)
+        && registeredProviderIds.has(conversation.providerId)
+      ) {
+        await this.reconcileIncomingSelectedModel(conversation);
+      }
+    }
     const added = this.mergeMetadataConversations(
       entries.map(({ conversation }) => conversation),
     );
     const addedIds = new Set(added.map(({ id }) => id));
+    const providerIds = new Set(entries
+      .map(({ conversation }) => conversation.providerId)
+      .filter(providerId => registeredProviderIds.has(providerId)));
+    for (const providerId of providerIds) {
+      await this.reconcileSelectedModels(providerId);
+    }
     const migrations = entries
       .filter(
         ({ conversation, needsMigration, source }) =>
@@ -505,6 +521,7 @@ export class ConversationRepository {
       );
       if (selectedModel) {
         safeUpdates.selectedModel = selectedModel;
+        this.markSelectedModelMutation(conversation);
       } else {
         delete safeUpdates.selectedModel;
       }
@@ -670,20 +687,28 @@ export class ConversationRepository {
       return 'superseded';
     }
 
-    const previousSelectedModel = conversation.selectedModel;
-    const previousModelRecoverySource = conversation.modelRecoverySource;
-    conversation.selectedModel = selectedModel;
-    conversation.modelRecoverySource = undefined;
+    const resolvedRecoveredModel = resolveConversationModel(
+      this.deps.getSettings(),
+      conversation.providerId,
+      { ...conversation, selectedModel },
+    );
+    const recoveredModelToPersist = resolvedRecoveredModel.modelToPersist
+      ?? resolvedRecoveredModel.model;
+    selectedModel = recoveredModelToPersist || selectedModel;
+
+    let didPersist: boolean;
     try {
-      await this.save(conversation);
+      didPersist = await this.persistSelectedModelBeforePublish(
+        conversation,
+        selectedModel,
+        true,
+      );
     } catch {
-      if (conversation.selectedModel === selectedModel) {
-        conversation.selectedModel = previousSelectedModel;
-        conversation.modelRecoverySource = previousModelRecoverySource;
-      }
       return 'unresolved';
     }
     if (
+      didPersist
+      &&
       this.isConversationCurrent(conversation, generation)
       && conversation.selectedModel === selectedModel
     ) {
@@ -1075,6 +1100,25 @@ export class ConversationRepository {
     }));
   }
 
+  async reconcileSelectedModels(providerId: ProviderId): Promise<Conversation[]> {
+    const changed: Conversation[] = [];
+    for (const conversation of this.conversations) {
+      if (
+        conversation.providerId !== providerId
+        || !getStoredModelSelection(conversation.selectedModel)
+      ) {
+        continue;
+      }
+
+      const previousModel = conversation.selectedModel;
+      await this.ensureSelectedModel(conversation);
+      if (conversation.selectedModel !== previousModel) {
+        changed.push(conversation);
+      }
+    }
+    return changed;
+  }
+
   private applyNotePathRenames(conversation: Conversation): boolean {
     const originalPath = conversation.currentNote;
     if (!originalPath) return false;
@@ -1201,22 +1245,112 @@ export class ConversationRepository {
       conversation.providerId,
       conversation,
     );
+    const modelToPersist = resolved.modelToPersist ?? resolved.model;
     if (
-      (getStoredModelSelection(conversation.selectedModel) && resolved.source !== 'selected')
-      || (recoveryResult === 'unresolved' && resolved.source === 'usage')
+      recoveryResult === 'unresolved' && resolved.source === 'usage'
     ) {
       return;
     }
     if (
       !resolved.shouldPersist
-      || !resolved.model
-      || conversation.selectedModel === resolved.model
+      || !modelToPersist
+      || conversation.selectedModel === modelToPersist
     ) {
       return;
     }
 
-    conversation.selectedModel = resolved.model;
-    await this.save(conversation);
+    await this.persistSelectedModelBeforePublish(conversation, modelToPersist);
+  }
+
+  private async reconcileIncomingSelectedModel(conversation: Conversation): Promise<void> {
+    if (
+      !getStoredModelSelection(conversation.selectedModel)
+    ) {
+      return;
+    }
+
+    const resolved = resolveConversationModel(
+      this.deps.getSettings(),
+      conversation.providerId,
+      conversation,
+    );
+    const modelToPersist = resolved.modelToPersist ?? resolved.model;
+    if (
+      !resolved.shouldPersist
+      || !modelToPersist
+      || conversation.selectedModel === modelToPersist
+    ) {
+      return;
+    }
+
+    const snapshot = { ...conversation, selectedModel: modelToPersist };
+    const didPersist = await this.enqueuePersistence(conversation.id, async () => {
+      if (
+        this.getSync(conversation.id)
+        || this.deletedConversationIds.has(conversation.id)
+        || this.deletingConversationIds.has(conversation.id)
+        || await this.persistence.isDeleted(conversation.id)
+      ) {
+        return false;
+      }
+      await this.persistence.saveMetadata(this.toSessionMetadata(snapshot, {
+        preserveProviderState: true,
+      }));
+      return true;
+    });
+    if (didPersist && !this.getSync(conversation.id)) {
+      conversation.selectedModel = modelToPersist;
+    }
+  }
+
+  private async persistSelectedModelBeforePublish(
+    conversation: Conversation,
+    selectedModel: string,
+    clearRecoverySource = false,
+  ): Promise<boolean> {
+    const previousSelectedModel = conversation.selectedModel;
+    const selectedModelMutationVersion = this.markSelectedModelMutation(conversation);
+    const didPersist = await this.enqueuePersistence(conversation.id, async () => {
+      if (
+        this.getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
+        || !await this.canWriteConversation(conversation)
+        || this.getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
+      ) {
+        return false;
+      }
+      const snapshot = {
+        ...conversation,
+        selectedModel,
+        ...(clearRecoverySource ? { modelRecoverySource: undefined } : {}),
+      };
+      await this.persistence.saveMetadata(this.toSessionMetadata(snapshot, {
+        preserveProviderState: !this.hydratedConversationIds.has(conversation.id),
+      }));
+      return true;
+    });
+    if (
+      !didPersist
+      || this.getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
+      || conversation.selectedModel !== previousSelectedModel
+    ) {
+      return false;
+    }
+
+    conversation.selectedModel = selectedModel;
+    if (clearRecoverySource) {
+      conversation.modelRecoverySource = undefined;
+    }
+    return true;
+  }
+
+  private markSelectedModelMutation(conversation: Conversation): number {
+    const nextVersion = this.getSelectedModelMutationVersion(conversation) + 1;
+    this.selectedModelMutationVersions.set(conversation, nextVersion);
+    return nextVersion;
+  }
+
+  private getSelectedModelMutationVersion(conversation: Conversation): number {
+    return this.selectedModelMutationVersions.get(conversation) ?? 0;
   }
 
   private async hydrateProviderHistory(

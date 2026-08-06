@@ -23,6 +23,7 @@ The execution session owns the live provider snapshot. History services reconstr
 ## Design Rules
 
 - Keep the persistent SDK query alive across turns when possible. Update model, permission mode, MCP servers, and effort through SDK calls.
+- Claude's provider fallback model is a user preference resolved against the current dynamic model options, including environment-mapped and custom options. Fresh settings prefer the Opus tier; an unavailable preference falls back without changing existing conversations or the global future-tab seed.
 - Restart the persistent query when the effective system prompt, disabled-tool set, plugin set, settings source set, CLI path, Chrome enablement, auto-mode enablement, or external context paths change.
 - Do not duplicate assistant text. The SDK can emit text incrementally and again in the final assistant message; stream handling must preserve the existing dedupe behavior.
 - Token usage is intentionally merged from assistant and result messages. Assistant messages provide accurate input-side counts; result messages provide authoritative context-window data.

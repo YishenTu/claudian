@@ -1,10 +1,6 @@
 import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import type { ProviderUIOption } from '../../core/providers/types';
-import {
-  getCodexModelsInPickerOrder,
-  getDefaultCodexModel,
-  isCodexModelAvailable,
-} from './models';
+import { isCodexModelAvailable } from './models';
 import {
   encodeCodexModelSelectionId,
   toCodexRuntimeModelId,
@@ -59,17 +55,24 @@ export function getCodexModelOptions(settings: Record<string, unknown>): Provide
   const getModelLabel = (modelId: string, fallback: string): string => {
     return codexSettings.modelAliases[modelId] ?? fallback;
   };
-  const visibleModelIds = new Set(getVisibleCodexModelIds(
+  const visibleModelIds = getVisibleCodexModelIds(
     codexSettings.visibleModels,
     codexSettings.discoveredModels,
-  ));
-  const pickerOrderedModels = getCodexModelsInPickerOrder(codexSettings.discoveredModels);
+  );
+  const visibleModelIdSet = new Set(visibleModelIds);
+  const discoveredModelsById = new Map(codexSettings.discoveredModels.map(model => [
+    model.model,
+    model,
+  ] as const));
   const discoveredModelIds = new Set(codexSettings.discoveredModels.map(model => model.model));
-  const visibleDiscoveredModels = pickerOrderedModels
-    .filter(model =>
-      visibleModelIds.has(model.model)
-      && isCodexModelAvailable(model, codexSettings.enableUltraEffort)
-    );
+  const visibleDiscoveredModels = [...visibleModelIds]
+    .reverse()
+    .map(modelId => discoveredModelsById.get(modelId))
+    .filter((model): model is NonNullable<typeof model> => Boolean(
+      model
+      && visibleModelIdSet.has(model.model)
+      && isCodexModelAvailable(model, codexSettings.enableUltraEffort),
+    ));
   const models: ProviderUIOption[] = visibleDiscoveredModels.map(model => ({
     value: model.model,
     label: getModelLabel(model.model, model.displayName),
@@ -154,15 +157,13 @@ export function resolveCodexModelSelection(
     }
   }
 
-  const visibleModelIds = new Set(getVisibleCodexModelIds(
+  const visibleModelIds = getVisibleCodexModelIds(
     codexSettings.visibleModels,
     codexSettings.discoveredModels,
-  ));
-  const defaultModel = getDefaultCodexModel(
-    codexSettings.discoveredModels.filter(model =>
-      visibleModelIds.has(model.model)
-      && isCodexModelAvailable(model, codexSettings.enableUltraEffort)
-    ),
   );
-  return defaultModel?.model ?? modelOptions[0]?.value ?? null;
+  const firstVisibleModelId = visibleModelIds.find(modelId => {
+    const model = codexSettings.discoveredModels.find(candidate => candidate.model === modelId);
+    return model && isCodexModelAvailable(model, codexSettings.enableUltraEffort);
+  });
+  return firstVisibleModelId ?? modelOptions[0]?.value ?? null;
 }

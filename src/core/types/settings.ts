@@ -106,6 +106,12 @@ export type HostnameCliPaths = Record<string, string>;
 /** Opaque provider-owned settings bags keyed by provider id. */
 export type ProviderConfigMap = Partial<Record<string, Record<string, unknown>>>;
 
+/** Provider-qualified model explicitly selected in chat and used to seed future tabs. */
+export interface StoredChatModelSelection {
+  providerId: string;
+  model: string;
+}
+
 /**
  * Application settings stored in .claudian/claudian-settings.json.
  *
@@ -153,6 +159,7 @@ export interface ClaudianSettings {
 
   // Provider selection
   settingsProvider: string;  // ProviderId — which provider's model/effort/budget is projected to top-level fields
+  lastSelectedChatModel: StoredChatModelSelection | null;
   savedProviderModel: Partial<Record<string, string>>;
   savedProviderEffort: Partial<Record<string, string>>;
   savedProviderServiceTier: Partial<Record<string, string>>;

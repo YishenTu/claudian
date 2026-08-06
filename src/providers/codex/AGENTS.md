@@ -38,6 +38,7 @@ Live execution state and replay state are separate authorities. Do not fill gaps
 ## Design Rules
 
 - Native transcripts live under `~/.codex/sessions/` and may move to sibling `archived_sessions/`; resolve both through `CodexHistoryPathResolver` (WSL and home-dir aware).
+- An explicit enabled-model array is ordered user state and its first currently available model is the provider fallback, including when retargeting legacy global model/effort/service-tier projections. Legacy `visibleModels: null` derives native-default-first order from the current catalog until the user changes visibility or order; never collapse an explicit full-list order back to `null`.
 - `CodexSkillListingService` uses a separate short-lived app-server process for `skills/list`. Do not couple skill discovery to the active chat runtime.
 - Runtime fingerprint changes invalidate existing Codex sessions. The fingerprint includes `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `PATH`, explicit/host CLI-path inputs, installation method, and WSL distro override.
 - Existing threads require `thread/resume` before operations in a new app-server process.

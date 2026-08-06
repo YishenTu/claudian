@@ -641,9 +641,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   }
 
   private notifyProviderModelOptionsChanged(providerId: ProviderId): void {
-    for (const view of this.plugin.getAllViews()) {
-      view.refreshModelSelector(providerId);
-    }
+    this.plugin.notifyProviderChatOptionsChanged(providerId);
     this.refreshTitleModelOptions?.();
   }
 

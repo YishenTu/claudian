@@ -127,14 +127,14 @@ describe('CodexChatUIConfig', () => {
 
       expect(options).toEqual([
         {
-          value: TEST_CODEX_MODEL,
-          label: 'GPT-5.5',
-          description: 'Latest',
-        },
-        {
           value: 'gpt-5.4-mini',
           label: 'GPT-5.4 Mini',
           description: 'Fast',
+        },
+        {
+          value: TEST_CODEX_MODEL,
+          label: 'GPT-5.5',
+          description: 'Latest',
         },
         {
           value: 'openai-codex/gpt-5.6-preview',
@@ -170,8 +170,8 @@ describe('CodexChatUIConfig', () => {
 
       expect(options.map(option => option.value)).toEqual([
         'openai-codex/my-custom-model',
-        TEST_CODEX_MODEL,
         'gpt-5.4-mini',
+        TEST_CODEX_MODEL,
         'openai-codex/second-custom-model',
       ]);
     });
