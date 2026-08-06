@@ -8,6 +8,10 @@
   overflow: hidden;
 }
 
+.claudian-session-surface {
+  padding-top: 8px;
+}
+
 .claudian-vault-file-tree {
   --trees-bg-override: transparent;
   --trees-bg-muted-override: var(--background-secondary);

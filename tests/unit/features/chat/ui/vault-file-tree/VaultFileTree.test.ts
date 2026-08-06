@@ -20,6 +20,7 @@ type TreeOptions = {
   onSelectionChange?: (paths: readonly string[]) => void;
   paths?: readonly string[];
   search?: boolean;
+  unsafeCSS?: string;
 };
 
 class FakePierreTree {
@@ -70,6 +71,7 @@ function createHarness() {
       getAbstractFileByPath: jest.fn((path: string) => (
         files.find(file => file.path === path) ?? null
       )),
+      getName: jest.fn(() => 'Knowledge Vault'),
       offref: jest.fn(),
       on: jest.fn((event: string, handler: (...args: unknown[]) => void) => {
         handlers.set(event, handler);
@@ -81,13 +83,11 @@ function createHarness() {
     workspace: { getLeaf },
   };
   const hostEl = document.createElement('div');
-  const onShowSessions = jest.fn();
   const sourceLeaf = { id: 'claudian-leaf' };
   const tree = new VaultFileTree({
     app: app as never,
     hostEl,
     loadTreeModule: async () => ({ FileTree: FakePierreTree }) as never,
-    onShowSessions,
     sourceLeaf: sourceLeaf as never,
   });
 
@@ -97,7 +97,6 @@ function createHarness() {
     getLeaf,
     handlers,
     hostEl,
-    onShowSessions,
     openFile,
     refs,
     root,
@@ -122,13 +121,16 @@ describe('VaultFileTree', () => {
       flattenEmptyDirectories: false,
       paths: ['Projects/', 'Projects/Plan.md'],
       search: false,
+      unsafeCSS: expect.stringContaining('scrollbar-width: none'),
     }));
+    expect(model.options.unsafeCSS).toContain('::-webkit-scrollbar');
     expect(root.isRoot).toHaveBeenCalledTimes(1);
     expect(model.render).toHaveBeenCalledWith({
       containerWrapper: hostEl.querySelector('.claudian-vault-file-tree-body'),
     });
     expect(hostEl.querySelector('.claudian-vault-file-tree-loading')).toBeNull();
-    expect(hostEl.querySelector('.claudian-vault-file-tree-title')?.textContent).toBe('Files');
+    expect(hostEl.querySelector('.claudian-vault-file-tree-title')?.textContent)
+      .toBe('Knowledge Vault');
   });
 
   it('opens a sole selected file in an existing navigable Obsidian leaf', async () => {
@@ -280,7 +282,6 @@ describe('VaultFileTree', () => {
       files,
       handlers,
       hostEl,
-      onShowSessions,
       refs,
       tree,
     } = createHarness();
@@ -296,8 +297,7 @@ describe('VaultFileTree', () => {
       'Projects/New.md',
     ]);
 
-    (hostEl.querySelector('[aria-label="Show sessions"]') as HTMLElement).click();
-    expect(onShowSessions).toHaveBeenCalledTimes(1);
+    expect(hostEl.querySelector('[aria-label="Show sessions"]')).toBeNull();
 
     tree.destroy();
     tree.destroy();

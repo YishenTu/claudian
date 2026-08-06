@@ -15,11 +15,22 @@ import {
 
 type PierreTreeModule = { FileTree: typeof PierreFileTree };
 
+const VAULT_FILE_TREE_CSS = `
+  [data-file-tree-virtualized-scroll="true"] {
+    scrollbar-width: none;
+  }
+
+  [data-file-tree-virtualized-scroll="true"]::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+`;
+
 export type VaultFileTreeOptions = {
   app: App;
   hostEl: HTMLElement;
   loadTreeModule?: () => Promise<PierreTreeModule>;
-  onShowSessions: () => void;
   sourceLeaf?: WorkspaceLeaf;
 };
 
@@ -107,6 +118,7 @@ export class VaultFileTree {
         paths: this.collectPaths(),
         search: false,
         stickyFolders: true,
+        unsafeCSS: VAULT_FILE_TREE_CSS,
       });
       this.tree = tree;
       if (this.searchQuery) tree.setSearch(this.searchQuery);
@@ -130,7 +142,11 @@ export class VaultFileTree {
     hostEl.classList.add('claudian-vault-file-tree');
 
     const header = this.createElement('div', 'claudian-vault-file-tree-header');
-    header.append(this.createElement('div', 'claudian-vault-file-tree-title', 'Files'));
+    header.append(this.createElement(
+      'div',
+      'claudian-vault-file-tree-title',
+      this.options.app.vault.getName(),
+    ));
 
     const headerActions = this.createElement('div', 'claudian-vault-file-tree-header-actions');
     this.searchButtonEl = this.createElement(
@@ -149,15 +165,7 @@ export class VaultFileTree {
       }
     });
 
-    const sessionsButton = this.createElement(
-      'button',
-      'claudian-vault-file-tree-header-button',
-    );
-    sessionsButton.type = 'button';
-    sessionsButton.setAttribute('aria-label', 'Show sessions');
-    setIcon(sessionsButton, 'messages-square');
-    sessionsButton.addEventListener('click', this.options.onShowSessions);
-    headerActions.append(this.searchButtonEl, sessionsButton);
+    headerActions.append(this.searchButtonEl);
     header.append(headerActions);
 
     this.searchFieldEl = this.createElement(

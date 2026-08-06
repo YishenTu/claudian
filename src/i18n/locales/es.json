@@ -286,6 +286,10 @@
       "name": "Activar modo de panel doble",
       "desc": "Mostrar automáticamente el gestor de sesiones junto al chat cuando la vista tenga al menos 600 px de ancho."
     },
+    "enableFilePane": {
+      "name": "Activar panel de archivos",
+      "desc": "Mostrar una pestaña Archivos en el gestor de sesiones del modo de panel doble."
+    },
     "dualPaneSide": {
       "name": "Lado del panel doble",
       "desc": "Elegir en qué lado del chat aparece el gestor de sesiones.",

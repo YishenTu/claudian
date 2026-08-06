@@ -407,7 +407,7 @@ describe('ClaudianView tab controls', () => {
     expect(sessionNewButtonEl.getAttribute('aria-hidden')).toBeNull();
   });
 
-  it('renders New, Search, Files, and Archive navigation above the Sessions header', () => {
+  it('renders New, Search, and Archive navigation above the Sessions header', () => {
     const container = createMockEl();
     const list = container.createDiv({ cls: 'claudian-history-list' });
     const header = list.createDiv({
@@ -420,7 +420,6 @@ describe('ClaudianView tab controls', () => {
       activateSessionSearch: jest.fn(),
       isArchiveSessionView: false,
       requestDualNew: jest.fn(),
-      showVaultFiles: jest.fn(),
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
         getAllTabs: jest.fn().mockReturnValue([]),
@@ -433,7 +432,6 @@ describe('ClaudianView tab controls', () => {
     const optionsButton = actions?.children[0];
     const newButton = container.querySelector('.claudian-session-new-control');
     const searchButton = container.querySelector('.claudian-session-search-control');
-    const filesButton = container.querySelector('.claudian-session-files-control');
     const archiveButton = container.querySelector('.claudian-session-archive-control');
     expect(actions?.children).toHaveLength(1);
     expect(optionsButton?.getAttribute('aria-label')).toBe('Session options');
@@ -449,9 +447,7 @@ describe('ClaudianView tab controls', () => {
     expect(searchButton?.getAttribute('aria-label')).toBe('Search');
     expect(searchButton?.querySelector('.claudian-session-nav-label')?.textContent)
       .toBe('Search');
-    expect(filesButton?.getAttribute('aria-label')).toBe('Files');
-    expect(filesButton?.querySelector('.claudian-session-nav-label')?.textContent)
-      .toBe('Files');
+    expect(container.querySelector('.claudian-session-files-control')).toBeNull();
     expect(archiveButton?.getAttribute('aria-label')).toBe('Archive');
     expect(container.querySelector('.claudian-history-list')).toBe(list);
 
@@ -459,8 +455,6 @@ describe('ClaudianView tab controls', () => {
     expect(view.requestDualNew).toHaveBeenCalledTimes(1);
     searchButton?.click();
     expect(view.activateSessionSearch).toHaveBeenCalledTimes(1);
-    filesButton?.click();
-    expect(view.showVaultFiles).toHaveBeenCalledTimes(1);
   });
 
   it('switches between active and archived session manager views', () => {
@@ -1095,9 +1089,17 @@ describe('ClaudianView tab controls', () => {
     expect(viewContainerEl.children[0].hasClass('claudian-chat-panel')).toBe(true);
     expect(viewContainerEl.children[1].hasClass('claudian-session-resizer')).toBe(true);
     expect(viewContainerEl.children[2].hasClass('claudian-session-sidebar')).toBe(true);
-    expect(viewContainerEl.children[2].children[0].hasClass('claudian-session-surface')).toBe(true);
-    expect(viewContainerEl.children[2].children[1].hasClass('claudian-files-surface')).toBe(true);
-    expect(viewContainerEl.children[2].children[1].hasClass('claudian-hidden')).toBe(true);
+    expect(viewContainerEl.children[2].children[0]
+      .hasClass('claudian-sidebar-surface-switcher')).toBe(true);
+    expect(viewContainerEl.children[2].children[1].hasClass('claudian-session-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[2].hasClass('claudian-files-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[2].hasClass('claudian-hidden')).toBe(true);
+    expect(view.sidebarSurfaceSwitcherEl.getAttribute('role')).toBe('group');
+    expect(view.sidebarSurfaceSwitcherEl.getAttribute('aria-label')).toBe('Sidebar view');
+    expect(view.sessionsSurfaceButtonEl.textContent).toBe('Sessions');
+    expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
+    expect(view.filesSurfaceButtonEl.textContent).toBe('Files');
+    expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
     expect(viewContainerEl.children[2].getAttribute('aria-label')).toBeNull();
     expect(viewContainerEl.children[1].getAttribute('role')).toBe('separator');
     expect(viewContainerEl.children[0].children).toContain(view.tabContentEl);
@@ -1120,21 +1122,66 @@ describe('ClaudianView tab controls', () => {
     });
     view.buildViewLayout();
 
-    view.showVaultFiles();
+    view.filesSurfaceButtonEl.click();
 
     expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(true);
     expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(false);
     expect(view.filesSurfaceEl.getAttribute('aria-hidden')).toBe('false');
+    expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
+    expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
     expect(view.createVaultFileTree).toHaveBeenCalledWith(view.filesSurfaceEl);
     expect(mount).toHaveBeenCalledTimes(1);
 
-    view.showSessions();
+    view.sessionsSurfaceButtonEl.click();
     expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(false);
     expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
+    expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
+    expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
 
-    view.showVaultFiles();
+    view.filesSurfaceButtonEl.click();
     expect(view.createVaultFileTree).toHaveBeenCalledTimes(1);
     expect(mount).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the surface switcher when the file pane is disabled', () => {
+    const viewContainerEl = createMockEl();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      plugin: { settings: { enableFilePane: false } },
+      viewContainerEl,
+    });
+    view.buildViewLayout();
+
+    expect(view.sidebarSurfaceSwitcherEl.hasClass('claudian-hidden')).toBe(true);
+    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(false);
+    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
+  });
+
+  it('returns to Sessions and tears down the tree when the file pane is disabled', () => {
+    const viewContainerEl = createMockEl();
+    const destroy = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'files',
+      plugin: { settings: { enableFilePane: true } },
+      updateSessionSidebarLayout: jest.fn(),
+      vaultFileTree: { destroy },
+      viewContainerEl,
+    });
+    view.buildViewLayout();
+    view.plugin.settings.enableFilePane = false;
+
+    view.refreshDualPaneLayout();
+
+    expect(view.activeSidebarSurface).toBe('sessions');
+    expect(view.sidebarSurfaceSwitcherEl.hasClass('claudian-hidden')).toBe(true);
+    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(false);
+    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(view.vaultFileTree).toBeNull();
   });
 
   it('shows and renders the persistent session column when the view becomes wide', () => {

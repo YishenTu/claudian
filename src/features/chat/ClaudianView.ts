@@ -81,6 +81,9 @@ export class ClaudianView extends ItemView {
   private historyDropdown: HTMLElement | null = null;
   private historyRenderAbortController: AbortController | null = null;
   private sessionSidebarEl: HTMLElement | null = null;
+  private sidebarSurfaceSwitcherEl: HTMLElement | null = null;
+  private sessionsSurfaceButtonEl: HTMLButtonElement | null = null;
+  private filesSurfaceButtonEl: HTMLButtonElement | null = null;
   private sessionSurfaceEl: HTMLElement | null = null;
   private filesSurfaceEl: HTMLElement | null = null;
   private activeSidebarSurface: 'sessions' | 'files' = 'sessions';
@@ -394,6 +397,23 @@ export class ClaudianView extends ItemView {
     });
 
     this.sessionSidebarEl = this.viewContainerEl.createDiv({ cls: 'claudian-session-sidebar' });
+    this.sidebarSurfaceSwitcherEl = this.sessionSidebarEl.createDiv({
+      cls: 'claudian-sidebar-surface-switcher',
+    });
+    this.sidebarSurfaceSwitcherEl.setAttribute('role', 'group');
+    this.sidebarSurfaceSwitcherEl.setAttribute('aria-label', 'Sidebar view');
+    this.sessionsSurfaceButtonEl = this.sidebarSurfaceSwitcherEl.createEl('button', {
+      cls: 'claudian-sidebar-surface-button claudian-sidebar-surface-button--sessions',
+      text: 'Sessions',
+      attr: { type: 'button' },
+    });
+    this.sessionsSurfaceButtonEl.addEventListener('click', () => this.showSessions());
+    this.filesSurfaceButtonEl = this.sidebarSurfaceSwitcherEl.createEl('button', {
+      cls: 'claudian-sidebar-surface-button claudian-sidebar-surface-button--files',
+      text: 'Files',
+      attr: { type: 'button' },
+    });
+    this.filesSurfaceButtonEl.addEventListener('click', () => this.showVaultFiles());
     this.sessionSurfaceEl = this.sessionSidebarEl.createDiv({ cls: 'claudian-session-surface' });
     this.filesSurfaceEl = this.sessionSidebarEl.createDiv({ cls: 'claudian-files-surface' });
     if (this.activeSidebarSurface !== 'files') {
@@ -507,6 +527,7 @@ export class ClaudianView extends ItemView {
 
   refreshDualPaneLayout(): void {
     if (!this.viewContainerEl) return;
+    this.updateSidebarSurfaceVisibility();
     this.updateSessionSidebarLayout(this.viewContainerEl.getBoundingClientRect().width);
   }
 
@@ -955,24 +976,6 @@ export class ClaudianView extends ItemView {
       container.insertBefore(searchControl, list);
     }
 
-    const filesControl = container.createDiv({
-      cls: 'claudian-session-files-control',
-    });
-    filesControl.setAttribute('role', 'button');
-    filesControl.setAttribute('tabindex', '0');
-    filesControl.setAttribute('aria-label', 'Files');
-    const filesIcon = filesControl.createSpan({ cls: 'claudian-session-nav-icon' });
-    setIcon(filesIcon, 'files');
-    filesControl.createSpan({ cls: 'claudian-session-nav-label', text: 'Files' });
-    const showFiles = (): void => this.showVaultFiles();
-    filesControl.addEventListener('click', showFiles);
-    filesControl.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-      showFiles();
-    });
-    container.insertBefore(filesControl, list);
-
     const archiveControl = container.createDiv({ cls: 'claudian-session-archive-control' });
     archiveControl.setAttribute('role', 'button');
     archiveControl.setAttribute('tabindex', '0');
@@ -1027,7 +1030,11 @@ export class ClaudianView extends ItemView {
   }
 
   private showVaultFiles(): void {
-    if (!this.isWideSessionLayout || !this.filesSurfaceEl) return;
+    if (
+      !this.isWideSessionLayout
+      || !this.filesSurfaceEl
+      || !(this.plugin?.settings?.enableFilePane ?? true)
+    ) return;
     this.activeSidebarSurface = 'files';
     this.updateSidebarSurfaceVisibility();
 
@@ -1045,17 +1052,28 @@ export class ClaudianView extends ItemView {
     return new VaultFileTree({
       app: this.plugin.app,
       hostEl,
-      onShowSessions: () => this.showSessions(),
       sourceLeaf: this.leaf,
     });
   }
 
   private updateSidebarSurfaceVisibility(): void {
-    const showFiles = this.activeSidebarSurface === 'files';
+    const filePaneEnabled = this.plugin?.settings?.enableFilePane ?? true;
+    if (!filePaneEnabled) {
+      this.activeSidebarSurface = 'sessions';
+      this.vaultFileTree?.destroy();
+      this.vaultFileTree = null;
+    }
+
+    this.sidebarSurfaceSwitcherEl?.toggleClass('claudian-hidden', !filePaneEnabled);
+    const showFiles = filePaneEnabled && this.activeSidebarSurface === 'files';
     this.sessionSurfaceEl?.toggleClass('claudian-hidden', showFiles);
     this.sessionSurfaceEl?.setAttribute('aria-hidden', String(showFiles));
     this.filesSurfaceEl?.toggleClass('claudian-hidden', !showFiles);
     this.filesSurfaceEl?.setAttribute('aria-hidden', String(!showFiles));
+    this.sessionsSurfaceButtonEl?.toggleClass('is-active', !showFiles);
+    this.sessionsSurfaceButtonEl?.setAttribute('aria-pressed', String(!showFiles));
+    this.filesSurfaceButtonEl?.toggleClass('is-active', showFiles);
+    this.filesSurfaceButtonEl?.setAttribute('aria-pressed', String(showFiles));
   }
 
   private requestSessionNew(): void {

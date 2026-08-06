@@ -54,9 +54,47 @@
   display: none;
 }
 
+.claudian-sidebar-surface-switcher {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  padding: 8px 12px 0;
+}
+
+.claudian-session-sidebar .claudian-sidebar-surface-button {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: var(--font-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-session-sidebar .claudian-sidebar-surface-button:hover,
+.claudian-session-sidebar .claudian-sidebar-surface-button:focus-visible,
+.claudian-session-sidebar .claudian-sidebar-surface-button:active,
+.claudian-session-sidebar .claudian-sidebar-surface-button.is-active {
+  color: var(--text-normal);
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-session-sidebar .claudian-sidebar-surface-button.is-active {
+  color: var(--text-normal);
+}
+
 .claudian-session-new-control,
 .claudian-session-search-control,
-.claudian-session-files-control,
 .claudian-session-archive-control {
   display: flex;
   align-items: center;
@@ -76,8 +114,6 @@
 .claudian-session-new-control:focus-visible,
 .claudian-session-search-control:hover,
 .claudian-session-search-control:focus-visible,
-.claudian-session-files-control:hover,
-.claudian-session-files-control:focus-visible,
 .claudian-session-archive-control:hover,
 .claudian-session-archive-control:focus-visible {
   background: var(--background-modifier-hover);
