@@ -1,7 +1,7 @@
 {
   "name": "claudian",
-  "version": "2.1.2",
-  "description": "Claudian - Claude Code embedded in Obsidian sidebar",
+  "version": "2.1.9",
+  "description": "Oh My Claudian - provider-backed coding agents embedded in the Obsidian sidebar",
   "main": "main.js",
   "engines": {
     "node": ">=24 <25"

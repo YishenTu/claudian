@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem with Claudian
+description: Report a reproducible problem with Oh My Claudian
 title: "[Bug]: "
 labels:
   - bug
@@ -55,7 +55,7 @@ body:
       label: Environment
       description: Include every applicable version and installation detail.
       value: |
-        - Claudian version:
+        - Oh My Claudian version:
         - Obsidian version:
         - Operating system:
         - Provider:

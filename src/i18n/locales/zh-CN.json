@@ -80,13 +80,13 @@
       "stepChat": "打开聊天视图并发送第一条消息。",
       "openChat": {
         "name": "打开聊天",
-        "desc": "准备好开始时，打开 Claudian 聊天视图。",
+        "desc": "准备好开始时，打开 Oh My Claudian 聊天视图。",
         "button": "打开聊天"
       }
     },
     "capabilityMatrix": {
-      "title": "Claudian 接入能力",
-      "desc": "对比 Claudian 当前接入的能力。此处不是各 Provider 原生功能的完整清单。",
+      "title": "Oh My Claudian 接入能力",
+      "desc": "对比 Oh My Claudian 当前接入的能力。此处不是各 Provider 原生功能的完整清单。",
       "provider": "Provider",
       "supported": "支持",
       "unsupported": "—",

@@ -80,13 +80,13 @@
       "stepChat": "Open the chat view and send your first message.",
       "openChat": {
         "name": "Open chat",
-        "desc": "Open the Claudian chat view whenever you are ready to start.",
+        "desc": "Open the Oh My Claudian chat view whenever you are ready to start.",
         "button": "Open chat"
       }
     },
     "capabilityMatrix": {
-      "title": "Claudian integration capabilities",
-      "desc": "Compare the capabilities currently integrated by Claudian. This is not a complete list of each provider's native features.",
+      "title": "Oh My Claudian integration capabilities",
+      "desc": "Compare the capabilities currently integrated by Oh My Claudian. This is not a complete list of each provider's native features.",
       "provider": "Provider",
       "supported": "Yes",
       "unsupported": "—",
