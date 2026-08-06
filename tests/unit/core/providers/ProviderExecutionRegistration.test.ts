@@ -8,6 +8,8 @@ import { ClaudeSubagentHistoryService } from '@/providers/claude/history/ClaudeS
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { codexProviderRegistration } from '@/providers/codex/registration';
+import { CursorExecutionBackend } from '@/providers/cursor/execution/CursorExecutionBackend';
+import { cursorProviderRegistration } from '@/providers/cursor/registration';
 import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog';
 import { GrokExecutionBackend } from '@/providers/grok/execution/GrokExecutionBackend';
 import { grokProviderRegistration } from '@/providers/grok/registration';
@@ -47,17 +49,20 @@ describe('provider execution registration', () => {
   afterEach(() => {
     ProviderWorkspaceRegistry.setServices('claude', undefined);
     ProviderWorkspaceRegistry.setServices('codex', undefined);
+    ProviderWorkspaceRegistry.setServices('cursor', undefined);
     ProviderWorkspaceRegistry.setServices('grok', undefined);
     ProviderWorkspaceRegistry.setServices('opencode', undefined);
     ProviderWorkspaceRegistry.setServices('pi', undefined);
   });
 
   it('exposes exactly one execution factory per provider registration', () => {
+    expect(ProviderRegistry.getRegisteredProviderIds()).toContain('cursor');
     for (const registration of [
       claudeProviderRegistration,
       codexProviderRegistration,
       grokProviderRegistration,
       opencodeProviderRegistration,
+      cursorProviderRegistration,
       piProviderRegistration,
     ]) {
       expect(registration).toHaveProperty('createExecutionBackend', expect.any(Function));
@@ -78,6 +83,7 @@ describe('provider execution registration', () => {
       pluginManager: {},
     } as any);
     ProviderWorkspaceRegistry.setServices('codex', {} as any);
+    ProviderWorkspaceRegistry.setServices('cursor', {} as any);
     ProviderWorkspaceRegistry.setServices('grok', {
       commandCatalog: new GrokCommandCatalog(),
       modelCatalogCoordinator: {},
@@ -93,6 +99,8 @@ describe('provider execution registration', () => {
       .toBeInstanceOf(ClaudeExecutionBackend);
     expect(ProviderRegistry.createExecutionBackend(host, 'codex'))
       .toBeInstanceOf(CodexExecutionBackend);
+    expect(ProviderRegistry.createExecutionBackend(host, 'cursor'))
+      .toBeInstanceOf(CursorExecutionBackend);
     expect(ProviderRegistry.createExecutionBackend(host, 'grok'))
       .toBeInstanceOf(GrokExecutionBackend);
     expect(ProviderRegistry.createExecutionBackend(host, 'opencode'))

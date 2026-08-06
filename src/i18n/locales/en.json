@@ -113,6 +113,7 @@
       "discoveryFailed": "OMP model discovery failed: {error}", "workspaceNotInitialized": "OMP workspace is not initialized",
       "safe": "Safe", "yolo": "YOLO", "permissionRequest": "OMP requests permission to use {tool}.", "tool": "a tool"
     },
+    "cursor": {"setup":"Setup","enable":"Enable Cursor","enableDesc":"Enable Cursor Agent through its ACP CLI.","cliPath":"CLI path","cliPathDesc":"Absolute path to the Cursor Agent CLI on this computer.","models":"Models","noModels":"No Cursor models discovered yet. Run agent login and click Discover.","catalogFailed":"Could not load the Cursor model catalog. Check the CLI path and login state.","loadingModels":"Loading Cursor models...","discoveryFailed":"Cursor model discovery failed: {error}","workspaceNotInitialized":"Cursor workspace is not initialized","agent":"Agent","plan":"Plan","ask":"Ask","permissionRequest":"Cursor requests permission to use {tool}.","tool":"a tool"},
     "providerReadiness": {
       "title": "Readiness",
       "desc": "Check whether {provider} is ready to start a chat.",

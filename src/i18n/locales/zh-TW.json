@@ -113,6 +113,7 @@
       "discoveryFailed": "OMP 模型探索失敗：{error}", "workspaceNotInitialized": "OMP 工作區尚未初始化",
       "safe": "安全", "yolo": "YOLO", "permissionRequest": "OMP 請求使用{tool}的權限。", "tool": "工具"
     },
+    "cursor": {"setup":"Setup","enable":"Enable Cursor","enableDesc":"Enable Cursor Agent through its ACP CLI.","cliPath":"CLI path","cliPathDesc":"Absolute path to the Cursor Agent CLI on this computer.","models":"Models","noModels":"No Cursor models discovered yet. Run agent login and click Discover.","catalogFailed":"Could not load the Cursor model catalog. Check the CLI path and login state.","loadingModels":"Loading Cursor models...","discoveryFailed":"Cursor model discovery failed: {error}","workspaceNotInitialized":"Cursor workspace is not initialized","agent":"Agent","plan":"Plan","ask":"Ask","permissionRequest":"Cursor requests permission to use {tool}.","tool":"a tool"},
     "providerReadiness": {
       "title": "就緒狀態", "desc": "檢查 {provider} 是否可以開始聊天。", "checking": "正在檢查提供者狀態……", "refresh": "重新檢查",
       "status": { "disabled": "未啟用", "blocked": "需要處理", "attention": "需要注意", "ready": "已就緒" },

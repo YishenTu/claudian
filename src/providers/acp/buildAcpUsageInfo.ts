@@ -3,6 +3,7 @@ import type { AcpUsage, AcpUsageUpdate } from './types';
 
 export interface BuildAcpUsageInfoParams {
   contextWindow?: AcpUsageUpdate | null;
+  fallbackContextWindow?: number;
   model?: string;
   promptUsage?: AcpUsage | null;
 }
@@ -16,7 +17,7 @@ export function buildAcpUsageInfo(params: BuildAcpUsageInfoParams): UsageInfo | 
   }
 
   const contextTokens = contextWindow?.used ?? promptUsage?.totalTokens ?? 0;
-  const contextWindowSize = contextWindow?.size ?? 0;
+  const contextWindowSize = contextWindow?.size ?? params.fallbackContextWindow ?? 0;
 
   return {
     cacheCreationInputTokens: promptUsage?.cachedWriteTokens ?? 0,
