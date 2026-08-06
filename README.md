@@ -108,11 +108,11 @@ Releases are created automatically by [`.github/workflows/release.yml`](.github/
 3. Create a tag that exactly matches the `manifest.json` version, for example:
 
    ```bash
-   git tag 2.1.9
-   git push origin 2.1.9
+   git tag 2.1.10
+   git push origin 2.1.10
    ```
 
-   If your writable remote is named `fork`, use `git push fork 2.1.9` instead.
+   If your writable remote is named `fork`, use `git push fork 2.1.10` instead.
 
 The workflow validates the version, builds the plugin, runs the performance check, generates release notes, and publishes `main.js`, `manifest.json`, and `styles.css` to the GitHub Release. These are the files used for the Obsidian Community Plugins release.
 
