@@ -524,6 +524,8 @@ export class CodexExecutionSession
 
       this.notificationRouter = new CodexNotificationRouter(
         chunk => this.handleStreamChunk(run, chunk),
+        undefined,
+        this.resolveTargetWorkingDirectory(),
       );
       const isPlanTurn = request.configuration.mode === 'plan'
         || request.configuration.permissionMode === 'plan'
