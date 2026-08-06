@@ -473,7 +473,7 @@ function renderLinesExpanded(
   const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
   for (const line of displayLines) {
     const stripped = line.replace(/^\s*\d+→/, '');
-    const lineEl = linesEl.createDiv({ cls: 'claudian-tool-line' });
+    const lineEl = linesEl.createDiv({ cls: 'claudian-tool-line claudian-tool-line-wrap' });
     if (hoverable) lineEl.addClass('hoverable');
     lineEl.setText(stripped || ' ');
   }
