@@ -1,0 +1,40 @@
+.claudian-provider-capability-matrix {
+  margin: -4px 12px 20px;
+  overflow-x: auto;
+}
+
+.claudian-provider-capability-matrix table {
+  border-collapse: collapse;
+  font-size: var(--font-ui-small);
+  min-width: 100%;
+  white-space: nowrap;
+}
+
+.claudian-provider-capability-matrix th,
+.claudian-provider-capability-matrix td {
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding: 6px 8px;
+  text-align: center;
+}
+
+.claudian-provider-capability-matrix th:first-child,
+.claudian-provider-capability-matrix td:first-child {
+  text-align: left;
+}
+
+.claudian-provider-capability-matrix th {
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+}
+
+.claudian-provider-capability-matrix td {
+  font-weight: var(--font-semibold);
+}
+
+.claudian-provider-capability-matrix .claudian-capability-supported {
+  color: var(--text-success);
+}
+
+.claudian-provider-capability-matrix .claudian-capability-unsupported {
+  color: var(--text-faint);
+}

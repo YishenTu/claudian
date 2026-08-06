@@ -84,6 +84,22 @@
         "button": "Open chat"
       }
     },
+    "capabilityMatrix": {
+      "title": "Claudian integration capabilities",
+      "desc": "Compare the capabilities currently integrated by Claudian. This is not a complete list of each provider's native features.",
+      "provider": "Provider",
+      "supported": "Yes",
+      "unsupported": "—",
+      "rows": {
+        "planMode": "Plan mode",
+        "rewind": "Rewind",
+        "fork": "Fork",
+        "providerCommands": "Provider commands",
+        "imageAttachments": "Image attachments",
+        "mcpTools": "MCP tools",
+        "turnSteer": "Turn steering"
+      }
+    },
     "tabs": {
       "general": "Général",
       "claude": "Claude",

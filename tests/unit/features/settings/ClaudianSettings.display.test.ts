@@ -141,7 +141,7 @@ function createTab(enableDualPane: boolean): {
 function createContainer(): Record<string, jest.Mock> {
   const element: Record<string, jest.Mock> = {
     createSpan: jest.fn(() => ({})),
-    createEl: jest.fn(() => ({ addEventListener: jest.fn() })),
+    createEl: jest.fn(() => createContainer()),
     addEventListener: jest.fn(),
     addClass: jest.fn(),
     removeClass: jest.fn(),
@@ -179,6 +179,23 @@ describe('ClaudianSettingTab display settings', () => {
 
     expect(mockRenderedSettingNames).toContain(t('settings.gettingStarted.title'));
     expect(mockRenderedSettingNames).toContain(t('settings.gettingStarted.openChat.name'));
+  });
+
+  it('renders the provider capability matrix in the general settings tab', () => {
+    const { tab } = createTab(true);
+
+    (tab as any).renderGeneralTab(createContainer());
+
+    expect(mockRenderedSettingNames).toContain(t('settings.capabilityMatrix.title'));
+  });
+
+  it('renders language settings before onboarding content', () => {
+    const { tab } = createTab(true);
+
+    (tab as any).renderGeneralTab(createContainer());
+
+    expect(mockRenderedSettingNames.indexOf(t('settings.language.name')))
+      .toBeLessThan(mockRenderedSettingNames.indexOf(t('settings.gettingStarted.title')));
   });
 
   it('rerenders display settings after dual-pane mode changes', async () => {

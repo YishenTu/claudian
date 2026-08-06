@@ -59,6 +59,7 @@
 @import "./settings/provider-model-picker.css";
 @import "./settings/provider-readiness.css";
 @import "./settings/getting-started.css";
+@import "./settings/provider-capability-matrix.css";
 
 /* Accessibility */
 @import "./accessibility.css";

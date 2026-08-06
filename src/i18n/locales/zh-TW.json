@@ -84,6 +84,22 @@
         "button": "開啟聊天"
       }
     },
+    "capabilityMatrix": {
+      "title": "Claudian 接入能力",
+      "desc": "比較 Claudian 目前接入的能力。此處不是各 Provider 原生功能的完整清單。",
+      "provider": "Provider",
+      "supported": "支援",
+      "unsupported": "—",
+      "rows": {
+        "planMode": "計劃模式",
+        "rewind": "回退",
+        "fork": "分叉工作階段",
+        "providerCommands": "Provider 指令",
+        "imageAttachments": "圖片附件",
+        "mcpTools": "MCP 工具",
+        "turnSteer": "回合控制"
+      }
+    },
     "tabs": {
       "general": "一般",
       "claude": "Claude",

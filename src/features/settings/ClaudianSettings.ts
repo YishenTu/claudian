@@ -8,7 +8,7 @@ import {
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
-import type { ProviderId } from '../../core/providers/types';
+import type { ProviderCapabilities, ProviderId } from '../../core/providers/types';
 import { AgentSkillRepository } from '../../core/skills/AgentSkillRepository';
 import type { ChatViewPlacement, DualPaneSide } from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
@@ -25,6 +25,29 @@ import { AgentSkillManagementCoordinator } from './AgentSkillManagementCoordinat
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 
 type SettingsTabId = string;
+type CapabilityMatrixKey = keyof Pick<
+  ProviderCapabilities,
+  | 'supportsPlanMode'
+  | 'supportsRewind'
+  | 'supportsFork'
+  | 'supportsProviderCommands'
+  | 'supportsImageAttachments'
+  | 'supportsMcpTools'
+  | 'supportsTurnSteer'
+>;
+
+const PROVIDER_CAPABILITY_ROWS: ReadonlyArray<{
+  key: CapabilityMatrixKey;
+  label: TranslationKey;
+}> = [
+  { key: 'supportsPlanMode', label: 'settings.capabilityMatrix.rows.planMode' },
+  { key: 'supportsRewind', label: 'settings.capabilityMatrix.rows.rewind' },
+  { key: 'supportsFork', label: 'settings.capabilityMatrix.rows.fork' },
+  { key: 'supportsProviderCommands', label: 'settings.capabilityMatrix.rows.providerCommands' },
+  { key: 'supportsImageAttachments', label: 'settings.capabilityMatrix.rows.imageAttachments' },
+  { key: 'supportsMcpTools', label: 'settings.capabilityMatrix.rows.mcpTools' },
+  { key: 'supportsTurnSteer', label: 'settings.capabilityMatrix.rows.turnSteer' },
+];
 type AppWithCommands = App & {
   commands?: {
     executeCommandById: (id: string) => boolean;
@@ -264,6 +287,29 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
   private renderGeneralTab(container: HTMLElement): void {
     new Setting(container)
+      .setName(t('settings.language.name'))
+      .setDesc(t('settings.language.desc'))
+      .addDropdown((dropdown) => {
+        const locales = getAvailableLocales();
+        for (const locale of locales) {
+          dropdown.addOption(locale, getLocaleDisplayName(locale));
+        }
+        dropdown
+          .setValue(this.plugin.settings.locale)
+          .onChange(async (value) => {
+            const locale = value as Locale;
+            if (!setLocale(locale)) {
+              dropdown.setValue(this.plugin.settings.locale);
+              return;
+            }
+            await this.plugin.mutateSettings((settings) => {
+              settings.locale = locale;
+            });
+            this.display();
+          });
+      });
+
+    new Setting(container)
       .setName(t('settings.gettingStarted.title'))
       .setDesc(t('settings.gettingStarted.desc'))
       .setHeading();
@@ -287,31 +333,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .onClick(() => {
             (this.plugin.app as AppWithCommands).commands
               ?.executeCommandById('oh-my-claudian:open-view');
-          });
-      });
+         });
+       });
 
-    new Setting(container)
-      .setName(t('settings.language.name'))
-      .setDesc(t('settings.language.desc'))
-      .addDropdown((dropdown) => {
-        const locales = getAvailableLocales();
-        for (const locale of locales) {
-          dropdown.addOption(locale, getLocaleDisplayName(locale));
-        }
-        dropdown
-          .setValue(this.plugin.settings.locale)
-          .onChange(async (value) => {
-            const locale = value as Locale;
-            if (!setLocale(locale)) {
-              dropdown.setValue(this.plugin.settings.locale);
-              return;
-            }
-            await this.plugin.mutateSettings((settings) => {
-              settings.locale = locale;
-            });
-            this.display();
-          });
-      });
+    this.renderProviderCapabilityMatrix(container);
 
     // --- Display ---
 
@@ -670,6 +695,36 @@ export class ClaudianSettingTab extends PluginSettingTab {
             }
           });
       });
+  }
+
+  private renderProviderCapabilityMatrix(container: HTMLElement): void {
+    new Setting(container)
+      .setName(t('settings.capabilityMatrix.title'))
+      .setDesc(t('settings.capabilityMatrix.desc'))
+      .setHeading();
+
+    const matrix = container.createDiv({ cls: 'claudian-provider-capability-matrix' });
+    const table = matrix.createEl('table');
+    const headRow = table.createEl('thead').createEl('tr');
+    headRow.createEl('th', { text: t('settings.capabilityMatrix.provider') });
+    for (const row of PROVIDER_CAPABILITY_ROWS) {
+      headRow.createEl('th', { text: t(row.label) });
+    }
+
+    const body = table.createEl('tbody');
+    for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
+      const bodyRow = body.createEl('tr');
+      bodyRow.createEl('th', { text: ProviderRegistry.getProviderDisplayName(providerId) });
+      const capabilities = ProviderRegistry.getCapabilities(providerId);
+      for (const row of PROVIDER_CAPABILITY_ROWS) {
+        bodyRow.createEl('td', {
+          cls: capabilities[row.key] ? 'claudian-capability-supported' : 'claudian-capability-unsupported',
+          text: capabilities[row.key]
+            ? t('settings.capabilityMatrix.supported')
+            : t('settings.capabilityMatrix.unsupported'),
+        });
+      }
+    }
   }
 
   private notifyProviderModelOptionsChanged(providerId: ProviderId): void {
