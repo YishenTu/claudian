@@ -212,7 +212,7 @@ export function renderProviderModelPicker(
     });
 
     const rowsEl = selectedEl.createDiv({ cls: 'claudian-provider-model-picker-selected-rows' });
-    for (const [modelIndex, modelId] of state.selectedIds.entries()) {
+    for (const modelId of state.selectedIds) {
       const model = modelsById.get(modelId) ?? {
         id: modelId,
         isAvailable: false,
@@ -257,8 +257,11 @@ export function renderProviderModelPicker(
         text: '⋮⋮',
       });
       dragHandle.setAttribute('type', 'button');
-      dragHandle.setAttribute('aria-label', `Drag ${defaultLabel} to reorder`);
-      dragHandle.setAttribute('title', 'Drag to reorder');
+      dragHandle.setAttribute(
+        'aria-label',
+        `Reorder ${defaultLabel}; drag or use the Up and Down Arrow keys`,
+      );
+      dragHandle.setAttribute('title', 'Drag or use arrow keys to reorder');
       dragHandle.draggable = state.selectedIds.length > 1;
       dragHandle.addEventListener('dragstart', (event) => {
         draggedModelId = modelId;
@@ -271,6 +274,29 @@ export function renderProviderModelPicker(
       dragHandle.addEventListener('dragend', () => {
         draggedModelId = null;
         rowEl.classList.remove('claudian-provider-model-picker-selected-row--dragging');
+      });
+      dragHandle.addEventListener('keydown', (event) => {
+        const offset = event.key === 'ArrowUp'
+          ? -1
+          : event.key === 'ArrowDown'
+          ? 1
+          : 0;
+        if (offset === 0) {
+          return;
+        }
+
+        event.preventDefault();
+        const selectedIds = options.getState().selectedIds;
+        const currentIndex = selectedIds.indexOf(modelId);
+        const targetIndex = currentIndex + offset;
+        if (currentIndex < 0 || targetIndex < 0 || targetIndex >= selectedIds.length) {
+          return;
+        }
+        void persistSelectedIds(reorderProviderModelIds(
+          selectedIds,
+          modelId,
+          targetIndex,
+        ));
       });
 
       const infoEl = rowEl.createDiv({ cls: 'claudian-provider-model-picker-selected-info' });
@@ -303,37 +329,6 @@ export function renderProviderModelPicker(
       });
 
       const rowControlsEl = rowEl.createDiv({ cls: 'claudian-provider-model-picker-selected-controls' });
-      const orderControlsEl = rowControlsEl.createDiv({
-        cls: 'claudian-provider-model-picker-selected-order-controls',
-      });
-      const moveUpButton = orderControlsEl.createEl('button', {
-        cls: 'claudian-provider-model-picker-selected-order',
-        text: '↑',
-      });
-      moveUpButton.setAttribute('type', 'button');
-      moveUpButton.setAttribute('aria-label', `Move ${defaultLabel} up`);
-      moveUpButton.disabled = modelIndex === 0;
-      moveUpButton.addEventListener('click', () => {
-        void persistSelectedIds(reorderProviderModelIds(
-          options.getState().selectedIds,
-          modelId,
-          modelIndex - 1,
-        ));
-      });
-      const moveDownButton = orderControlsEl.createEl('button', {
-        cls: 'claudian-provider-model-picker-selected-order',
-        text: '↓',
-      });
-      moveDownButton.setAttribute('type', 'button');
-      moveDownButton.setAttribute('aria-label', `Move ${defaultLabel} down`);
-      moveDownButton.disabled = modelIndex === state.selectedIds.length - 1;
-      moveDownButton.addEventListener('click', () => {
-        void persistSelectedIds(reorderProviderModelIds(
-          options.getState().selectedIds,
-          modelId,
-          modelIndex + 1,
-        ));
-      });
       const aliasFieldEl = rowControlsEl.createEl('label', {
         cls: 'claudian-provider-model-picker-selected-alias-field',
       });

@@ -227,7 +227,7 @@ describe('CodexModelPicker', () => {
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
   });
 
-  it('marks the first selected model as default and supports accessible reordering', async () => {
+  it('marks the first selected model as default and reorders from the drag handle', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
@@ -238,17 +238,19 @@ describe('CodexModelPicker', () => {
     expect(elements.filter(element =>
       element.classes.has('claudian-provider-model-picker-selected-default')
     ).map(element => element.text)).toEqual(['Default']);
-    const moveDown = findElement(element =>
+    expect(elements.some(element =>
       element.classes.has('claudian-provider-model-picker-selected-order')
-      && element.text === '↓'
-      && !element.disabled
+    )).toBe(false);
+    const dragHandle = findElement(element =>
+      element.classes.has('claudian-provider-model-picker-selected-drag')
     );
-    expect(moveDown.attrs['aria-label']).toContain('Move ');
-    expect(moveDown.attrs['aria-label']).toContain(' down');
+    expect(dragHandle.attrs['aria-label']).toContain('Reorder ');
+    const preventDefault = jest.fn();
 
-    moveDown.trigger('click');
+    dragHandle.trigger('keydown', { key: 'ArrowDown', preventDefault });
     await flushPromises();
 
+    expect(preventDefault).toHaveBeenCalledTimes(1);
     expect(getCodexProviderSettings(plugin.settings).visibleModels).toEqual([
       'gpt-5.4-mini',
       'gpt-5.5',
