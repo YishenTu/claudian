@@ -25,6 +25,11 @@ import { AgentSkillManagementCoordinator } from './AgentSkillManagementCoordinat
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 
 type SettingsTabId = string;
+type AppWithCommands = App & {
+  commands?: {
+    executeCommandById: (id: string) => boolean;
+  };
+};
 type ObsidianHotkey = { modifiers: string[]; key: string };
 type ObsidianHotkeyManager = {
   customKeys?: Record<string, ObsidianHotkey[] | undefined>;
@@ -258,6 +263,33 @@ export class ClaudianSettingTab extends PluginSettingTab {
   }
 
   private renderGeneralTab(container: HTMLElement): void {
+    new Setting(container)
+      .setName(t('settings.gettingStarted.title'))
+      .setDesc(t('settings.gettingStarted.desc'))
+      .setHeading();
+
+    container.createDiv({
+      cls: 'claudian-getting-started-steps',
+      text: [
+        t('settings.gettingStarted.stepProvider'),
+        t('settings.gettingStarted.stepReadiness'),
+        t('settings.gettingStarted.stepChat'),
+      ].map((step, index) => `${index + 1}. ${step}`).join('\n'),
+    });
+
+    new Setting(container)
+      .setName(t('settings.gettingStarted.openChat.name'))
+      .setDesc(t('settings.gettingStarted.openChat.desc'))
+      .addButton((button) => {
+        button
+          .setButtonText(t('settings.gettingStarted.openChat.button'))
+          .setCta()
+          .onClick(() => {
+            (this.plugin.app as AppWithCommands).commands
+              ?.executeCommandById('oh-my-claudian:open-view');
+          });
+      });
+
     new Setting(container)
       .setName(t('settings.language.name'))
       .setDesc(t('settings.language.desc'))

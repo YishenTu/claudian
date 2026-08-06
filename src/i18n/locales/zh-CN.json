@@ -72,6 +72,18 @@
   },
   "settings": {
     "title": "Oh My Claudian 设置",
+    "gettingStarted": {
+      "title": "开始使用",
+      "desc": "按以下三个步骤发送第一条由 Provider 驱动的聊天消息。",
+      "stepProvider": "选择一个 Provider 标签页并启用 Provider。",
+      "stepReadiness": "使用就绪状态面板确认 CLI、模型目录和模型选择均已准备好。",
+      "stepChat": "打开聊天视图并发送第一条消息。",
+      "openChat": {
+        "name": "打开聊天",
+        "desc": "准备好开始时，打开 Claudian 聊天视图。",
+        "button": "打开聊天"
+      }
+    },
     "tabs": {
       "general": "通用",
       "claude": "Claude",

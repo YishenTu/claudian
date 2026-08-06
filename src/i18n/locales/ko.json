@@ -72,6 +72,18 @@
   },
   "settings": {
     "title": "Oh My Claudian 설정",
+    "gettingStarted": {
+      "title": "Get started",
+      "desc": "Follow these three steps to send your first provider-backed chat.",
+      "stepProvider": "Choose a provider tab and enable a provider.",
+      "stepReadiness": "Use the Readiness panel to confirm the CLI, model catalog, and model selection are ready.",
+      "stepChat": "Open the chat view and send your first message.",
+      "openChat": {
+        "name": "Open chat",
+        "desc": "Open the Claudian chat view whenever you are ready to start.",
+        "button": "Open chat"
+      }
+    },
     "tabs": {
       "general": "일반",
       "claude": "Claude",

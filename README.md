@@ -69,6 +69,12 @@ Then enable the plugin in Obsidian under **Settings → Community plugins**.
 
 Open the chat sidebar from the ribbon icon or command palette. Select text and use the inline-edit hotkey to edit notes with a diff preview. Use `/` for commands and skills, `@` to reference vault files or provider resources, and the provider selector to choose Claude, Codex, Grok, OMP, OpenCode, or Pi.
 
+### First run
+
+1. Open **Settings → Oh My Claudian** and choose a provider tab.
+2. Enable the provider, confirm its **Readiness** checks, and select a chat model.
+3. Open the chat view and send your first message. Use the **Open chat** button in the General settings tab whenever you need to return to the chat.
+
 Each provider has a readiness panel in its settings tab. Use it to see whether the provider is enabled, its CLI is available, models have been discovered, and a chat model is selected. The panel refreshes after enablement changes and lets you recheck the current provider state; installation and authentication remain provider-native. Model pickers also show whether the catalog is fresh, cached, or failed to refresh, along with the provider default and current selection mode.
 
 OMP requires its CLI to be installed and logged in separately. In **Settings → Oh My Claudian → OMP**, enable the provider, set the CLI path if it is not detected automatically, and use **Discover** to load available models.

@@ -58,6 +58,11 @@ jest.mock('obsidian', () => {
       callback(createChainableComponent());
       return this;
     }
+
+    addButton(callback: (button: MockChainableComponent) => void): this {
+      callback(createChainableComponent());
+      return this;
+    }
   }
 
   function createChainableComponent(): MockChainableComponent {
@@ -69,6 +74,9 @@ jest.mock('obsidian', () => {
       'setPlaceholder',
       'setLimits',
       'setDynamicTooltip',
+      'setButtonText',
+      'setCta',
+      'onClick',
     ]) {
       component[method] = jest.fn(() => component);
     }
@@ -162,6 +170,15 @@ describe('ClaudianSettingTab display settings', () => {
     (disabled.tab as any).renderGeneralTab(createContainer());
 
     expect(mockRenderedSettingNames).not.toContain(t('settings.dualPaneSide.name'));
+  });
+
+  it('renders a first-run getting started checklist with an open-chat action', () => {
+    const { tab } = createTab(true);
+
+    (tab as any).renderGeneralTab(createContainer());
+
+    expect(mockRenderedSettingNames).toContain(t('settings.gettingStarted.title'));
+    expect(mockRenderedSettingNames).toContain(t('settings.gettingStarted.openChat.name'));
   });
 
   it('rerenders display settings after dual-pane mode changes', async () => {

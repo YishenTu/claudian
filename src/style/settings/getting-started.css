@@ -1,0 +1,7 @@
+.claudian-getting-started-steps {
+  margin: -4px 12px 18px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.6;
+  white-space: pre-line;
+}
