@@ -1,6 +1,6 @@
 {
   "name": "claudian",
-  "version": "2.1.10",
+  "version": "2.1.11",
   "description": "Oh My Claudian - provider-backed coding agents embedded in the Obsidian sidebar",
   "main": "main.js",
   "engines": {
