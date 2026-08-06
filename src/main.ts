@@ -12,6 +12,7 @@ import { MarkdownView, Notice, Plugin, TFolder } from 'obsidian';
 
 import { ConversationRepository } from './app/conversations/ConversationRepository';
 import { ClaudianProviderHost } from './app/providers/ClaudianProviderHost';
+import { ChatModelSelectionCoordinator } from './app/settings/ChatModelSelectionCoordinator';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { PinnedLinkedNotePathCoordinator } from './app/settings/PinnedLinkedNotePathCoordinator';
 import type {
@@ -30,7 +31,6 @@ import {
   ProviderExecutionLifecycleRegistry,
   type ProviderExecutionTransitionScope,
 } from './core/execution';
-import { resolveConversationModel } from './core/providers/conversationModel';
 import {
   getEnvironmentVariablesForScope as getScopedEnvironmentVariables,
   getRuntimeEnvironmentText,
@@ -132,6 +132,7 @@ export default class ClaudianPlugin extends Plugin {
     () => this.settings?.maxWarmAgentProcesses ?? DEFAULT_MAX_WARM_AGENT_PROCESSES,
   );
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
+  private chatModelSelectionCoordinator!: ChatModelSelectionCoordinator;
   private pinnedLinkedNotePaths!: PinnedLinkedNotePathCoordinator;
   private conversationRepository!: ConversationRepository;
   private pendingSessionMetadataScan = false;
@@ -148,6 +149,10 @@ export default class ClaudianPlugin extends Plugin {
 
   get executionPersistence(): ChatExecutionPersistence {
     return this.conversationRepository;
+  }
+
+  get chatModelSelection(): ChatModelSelectionCoordinator {
+    return this.chatModelSelectionCoordinator;
   }
 
   async onload() {
@@ -419,6 +424,9 @@ export default class ClaudianPlugin extends Plugin {
         await this.storage.saveClaudianSettings(settings);
       },
     );
+    this.chatModelSelectionCoordinator = new ChatModelSelectionCoordinator(
+      this.settingsCoordinator,
+    );
     this.pinnedLinkedNotePaths = new PinnedLinkedNotePathCoordinator(
       this.settingsCoordinator,
     );
@@ -624,9 +632,6 @@ export default class ClaudianPlugin extends Plugin {
       const addedConversations: Conversation[] = [];
       const invalidatedConversations: Conversation[] = [];
       let didChangeConversationList = false;
-      const registeredProviderIds = new Set(
-        ProviderRegistry.getRegisteredProviderIds(),
-      );
       const publishBatch = (metadata: SessionMetadata[]): void => {
         if (this.isUnloading || metadata.length === 0) return;
 
@@ -635,26 +640,9 @@ export default class ClaudianPlugin extends Plugin {
         ));
         const shells = metadata
           .map((item) => this.createConversationMetadataShell(item))
-          .filter((conversation) => {
-            const storedModel = conversation.selectedModel?.trim();
-            if (
-              !storedModel
-              || !registeredProviderIds.has(conversation.providerId)
-            ) {
-              return true;
-            }
-            const resolved = resolveConversationModel(
-              this.settings,
-              conversation.providerId,
-              conversation,
-            );
-            const modelToPersist = resolved.modelToPersist ?? resolved.model;
-            return !(
-              resolved.shouldPersist
-              && modelToPersist
-              && modelToPersist !== storedModel
-            );
-          });
+          .filter((conversation) => (
+            this.conversationRepository.isSelectedModelPublicationSafe(conversation)
+          ));
         const publishedIds = new Set(shells.map(({ id }) => id));
         const invalidatedShells = ProviderSettingsCoordinator
           .invalidateConversationSessions(

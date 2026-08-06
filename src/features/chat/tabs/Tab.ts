@@ -76,6 +76,7 @@ import { StatusPanel } from '../ui/StatusPanel';
 import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
 import { getTabProviderId } from './providerResolution';
+import { TabModelSelectionCoordinator } from './TabModelSelectionCoordinator';
 import { TabSession } from './TabSession';
 import type {
   ProviderCatalogInfo,
@@ -108,54 +109,6 @@ const backgroundTurnBuffers = new WeakMap<
   TabData,
   Map<string, Map<string, ProviderBackgroundOutputEvent[]>>
 >();
-
-interface ModelSelectionIntentState {
-  nextIntent: number;
-  committedIntent: number;
-}
-
-interface BlankTabProviderTransition {
-  promise: Promise<void>;
-  providerId: ProviderId;
-  previousModel: string | null;
-  previousProviderId: ProviderId;
-}
-
-const modelSelectionIntentStates = new WeakMap<FeatureHost, ModelSelectionIntentState>();
-const latestTabModelSelectionIntents = new WeakMap<TabData, number>();
-const blankTabProviderTransitions = new WeakMap<TabData, BlankTabProviderTransition>();
-
-function beginModelSelectionIntent(tab: TabData, plugin: FeatureHost): number {
-  const state = modelSelectionIntentStates.get(plugin) ?? {
-    nextIntent: 0,
-    committedIntent: 0,
-  };
-  const intent = state.nextIntent + 1;
-  state.nextIntent = intent;
-  modelSelectionIntentStates.set(plugin, state);
-  latestTabModelSelectionIntents.set(tab, intent);
-  return intent;
-}
-
-function isLatestTabModelSelectionIntent(tab: TabData, intent: number): boolean {
-  return latestTabModelSelectionIntents.get(tab) === intent;
-}
-
-async function commitModelSelectionIntent(
-  plugin: FeatureHost,
-  intent: number,
-  providerId: ProviderId,
-  model: string,
-): Promise<void> {
-  const state = modelSelectionIntentStates.get(plugin);
-  if (!state) return;
-
-  await plugin.mutateSettings((settings) => {
-    if (intent <= state.committedIntent) return;
-    settings.lastSelectedChatModel = { providerId, model };
-  });
-  state.committedIntent = Math.max(state.committedIntent, intent);
-}
 
 function getSharedSelectionFocusScopeEls(component: Component): HTMLElement[] {
   const host = component as Partial<TabManagerViewHost>;
@@ -1318,6 +1271,33 @@ function initializeInputToolbar(
     };
   };
 
+  const modelSelection = new TabModelSelectionCoordinator({
+    readDraft: () => ({
+      providerId: tab.providerId,
+      model: tab.draftModel,
+    }),
+    applyModel: (model) => {
+      tab.draftModel = model;
+    },
+    applyProviderTarget: ({ providerId, model }) => {
+      tab.draftModel = model;
+      tab.providerId = providerId;
+      syncTabProviderServices(tab, plugin);
+      tab.ui.slashCommandDropdown?.clearProviderCatalog?.();
+    },
+    restoreDraft: ({ providerId, model }) => {
+      tab.draftModel = model;
+      tab.providerId = providerId;
+      syncTabProviderServices(tab, plugin);
+      syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
+      refreshTabProviderUI(tab, plugin);
+      applyProviderUIGating(tab, plugin);
+    },
+    initializeProvider: async (providerId) => {
+      await onProviderChanged?.(providerId);
+    },
+  });
+
   const toolbarComponents = createInputToolbar(inputToolbar, {
     getUIConfig: () => {
       if (tab.conversationId === null) {
@@ -1331,89 +1311,26 @@ function initializeInputToolbar(
     onModelChange: async (model: string) => {
       // For blank tabs, update draft model and derive provider
       if (tab.conversationId === null) {
-        const selectionIntent = beginModelSelectionIntent(tab, plugin);
+        const selectionIntent = plugin.chatModelSelection.beginIntent();
+        const request = modelSelection.beginRequest();
         const newProvider = getEnabledProviderForModel(
           model,
           plugin.settings,
         );
-        const pendingTransition = blankTabProviderTransitions.get(tab);
-        if (pendingTransition) {
-          if (pendingTransition.providerId === newProvider) {
-            tab.draftModel = model;
-          }
-          try {
-            await pendingTransition.promise;
-          } catch (error) {
-            if (isLatestTabModelSelectionIntent(tab, selectionIntent)) {
-              tab.draftModel = pendingTransition.previousModel;
-              tab.providerId = pendingTransition.previousProviderId;
-              syncTabProviderServices(tab, plugin);
-              syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
-              refreshTabProviderUI(tab, plugin);
-              applyProviderUIGating(tab, plugin);
-            }
-            if (pendingTransition.providerId === newProvider) {
-              if (isLatestTabModelSelectionIntent(tab, selectionIntent)) {
-                throw error;
-              }
-              return;
-            }
-          }
-          if (!isLatestTabModelSelectionIntent(tab, selectionIntent)) {
-            return;
-          }
-        }
-
-        const previousProvider = tab.providerId;
-        const previousModel = tab.draftModel;
-        tab.draftModel = model;
-        const didProviderChange = newProvider !== previousProvider;
-        tab.providerId = newProvider;
-        if (didProviderChange) {
-          syncTabProviderServices(tab, plugin);
-        }
-        const uiConfig = ProviderRegistry.getChatUIConfig(newProvider);
-        if (didProviderChange) {
-          tab.ui.slashCommandDropdown?.clearProviderCatalog?.();
-          const transition: BlankTabProviderTransition = {
-            promise: (async () => {
-              await onProviderChanged?.(newProvider);
-            })(),
-            providerId: newProvider,
-            previousModel,
-            previousProviderId: previousProvider,
-          };
-          blankTabProviderTransitions.set(tab, transition);
-          try {
-            await transition.promise;
-          } catch (error) {
-            if (!isLatestTabModelSelectionIntent(tab, selectionIntent)) {
-              return;
-            }
-            tab.draftModel = previousModel;
-            tab.providerId = previousProvider;
-            syncTabProviderServices(tab, plugin);
-            syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
-            refreshTabProviderUI(tab, plugin);
-            applyProviderUIGating(tab, plugin);
-            throw error;
-          } finally {
-            if (blankTabProviderTransitions.get(tab) === transition) {
-              blankTabProviderTransitions.delete(tab);
-            }
-          }
-        } else {
-          syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
-        }
-        await commitModelSelectionIntent(
-          plugin,
-          selectionIntent,
-          newProvider,
+        const result = await modelSelection.selectBlank(request, {
+          providerId: newProvider,
           model,
+        });
+        if (result.status === 'superseded') return;
+
+        const uiConfig = ProviderRegistry.getChatUIConfig(newProvider);
+        await plugin.chatModelSelection.commitIntent(
+          selectionIntent,
+          { providerId: newProvider, model },
         );
-        if (!isLatestTabModelSelectionIntent(tab, selectionIntent)) {
-          return;
-        }
+        if (!result.isCurrent()) return;
+
+        syncSlashCommandDropdownForProvider(tab, plugin, getProviderCatalogConfig);
         onUserModified?.();
         await uiConfig.prepareModelMetadata?.(
           model,
@@ -1439,7 +1356,8 @@ function initializeInputToolbar(
         tab.ui.modelSelector?.updateDisplay();
         return;
       }
-      const selectionIntent = beginModelSelectionIntent(tab, plugin);
+      const selectionIntent = plugin.chatModelSelection.beginIntent();
+      const request = modelSelection.beginRequest();
 
       const uiConfig: ProviderChatUIConfig = getTabChatUIConfig(tab, plugin);
       const normalizedModel = normalizeProviderModelSelection(boundProvider, plugin.settings, model) ?? model;
@@ -1455,15 +1373,11 @@ function initializeInputToolbar(
         });
       }
       onUserModified?.();
-      await commitModelSelectionIntent(
-        plugin,
+      await plugin.chatModelSelection.commitIntent(
         selectionIntent,
-        boundProvider,
-        normalizedModel,
+        { providerId: boundProvider, model: normalizedModel },
       );
-      if (!isLatestTabModelSelectionIntent(tab, selectionIntent)) {
-        return;
-      }
+      if (!modelSelection.isCurrent(request)) return;
 
       await uiConfig.prepareModelMetadata?.(
         normalizedModel,

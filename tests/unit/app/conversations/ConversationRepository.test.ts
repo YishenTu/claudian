@@ -522,6 +522,24 @@ describe('ConversationRepository hydration', () => {
     expect(persistence.saveMetadata).toHaveBeenCalledTimes(1);
   });
 
+  it('reports whether selected-model metadata is safe for incremental publication', () => {
+    const conversation = createConversation('publication-safety');
+    const { repository } = createRepository(conversation);
+
+    conversation.selectedModel = 'claude-code/retired-model';
+    expect(repository.isSelectedModelPublicationSafe(conversation)).toBe(false);
+
+    conversation.selectedModel = 'opus';
+    expect(repository.isSelectedModelPublicationSafe(conversation)).toBe(true);
+
+    conversation.selectedModel = undefined;
+    expect(repository.isSelectedModelPublicationSafe(conversation)).toBe(true);
+
+    conversation.providerId = 'unregistered';
+    conversation.selectedModel = 'retired-model';
+    expect(repository.isSelectedModelPublicationSafe(conversation)).toBe(true);
+  });
+
   it('reconciles deferred metadata before publishing it and persists the staged fallback on adoption', async () => {
     const { repository, persistence } = createRepository(createConversation('existing'));
     const deferred = createConversation('deferred-retired-model');

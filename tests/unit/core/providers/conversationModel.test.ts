@@ -1,4 +1,5 @@
 import {
+  getConversationModelPersistenceTarget,
   resolveConversationModel,
   resolveNewConversationModel,
 } from '@/core/providers/conversationModel';
@@ -165,6 +166,20 @@ describe('conversation model resolution', () => {
   });
 
   describe('resolveConversationModel', () => {
+    it('exposes one persistence target for normalized and fallback replacements', () => {
+      expect(getConversationModelPersistenceTarget({
+        model: 'canonical-model',
+        shouldPersist: true,
+        source: 'selected',
+      })).toBe('canonical-model');
+      expect(getConversationModelPersistenceTarget({
+        model: 'retired-model',
+        modelToPersist: 'provider-default',
+        shouldPersist: true,
+        source: 'selected',
+      })).toBe('provider-default');
+    });
+
     it('keeps a stored conversation selection that is currently available', () => {
       expect(resolveConversationModel(
         {},

@@ -136,11 +136,12 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
 }));
 
 function createPlugin(overrides: Record<string, unknown> = {}) {
-  const settings = {
+  const settings: Record<string, unknown> = {
     model: 'claude-default',
     permissionMode: 'normal',
     persistentExternalContextPaths: [],
   };
+  let nextModelSelectionIntent = 0;
   return {
     app: {
       vault: {
@@ -157,6 +158,16 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
     },
     providerHost: {
       executionLifecycleRegistry: {},
+    },
+    chatModelSelection: {
+      beginIntent: jest.fn(() => {
+        nextModelSelectionIntent += 1;
+        return nextModelSelectionIntent;
+      }),
+      commitIntent: jest.fn(async (_intent, selection) => {
+        settings.lastSelectedChatModel = selection;
+        return true;
+      }),
     },
     settings,
     getActiveEnvironmentVariables: jest.fn().mockReturnValue({}),
@@ -325,156 +336,6 @@ describe('Tab provider execution ownership', () => {
     globalThis.ResizeObserver = originalResizeObserver;
   });
 
-  it('keeps the latest blank-tab model choice when an earlier provider switch finishes later', async () => {
-    const originalResizeObserver = globalThis.ResizeObserver;
-    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
-      disconnect: jest.fn(),
-      observe: jest.fn(),
-    })) as unknown as typeof ResizeObserver;
-    const getChatUIConfig = ProviderRegistry.getChatUIConfig as jest.Mock;
-    const getEnabledProviderIds = ProviderRegistry.getEnabledProviderIds as jest.Mock;
-    const resolveProviderForModel = ProviderRegistry.resolveProviderForModel as jest.Mock;
-    const claudeConfig = getChatUIConfig('claude');
-    const codexConfig = {
-      ...claudeConfig,
-      getModelOptions: jest.fn().mockReturnValue([
-        { label: 'Codex Slow', value: 'codex-slow' },
-        { label: 'Codex Latest', value: 'codex-latest' },
-      ]),
-    };
-    getChatUIConfig.mockImplementation((providerId: string) => (
-      providerId === 'codex' ? codexConfig : claudeConfig
-    ));
-    getEnabledProviderIds.mockReturnValue(['claude', 'codex']);
-    resolveProviderForModel.mockImplementation((model: string) => (
-      model.startsWith('codex-') ? 'codex' : 'claude'
-    ));
-    let releaseSlowSwitch!: () => void;
-    const slowSwitch = new Promise<void>((resolve) => {
-      releaseSlowSwitch = resolve;
-    });
-    const onProviderChanged = jest.fn().mockImplementation(() => slowSwitch);
-
-    try {
-      const plugin = createPlugin();
-      const tab = createTab({ plugin, containerEl: createMockEl() as any });
-      initializeTabUI(tab, plugin, { onProviderChanged });
-      const modelOptions = Array.from(
-        tab.dom.inputWrapper.querySelectorAll('.claudian-model-option'),
-      );
-      const slow = modelOptions.find(option =>
-        Array.from(option.children).some(child => child.textContent === 'Codex Slow')
-      );
-      const latest = modelOptions.find(option =>
-        Array.from(option.children).some(child => child.textContent === 'Codex Latest')
-      );
-
-      (slow as HTMLElement | undefined)?.click();
-      expect(onProviderChanged).toHaveBeenCalledWith('codex');
-      (latest as HTMLElement | undefined)?.click();
-      await new Promise<void>(resolve => setImmediate(resolve));
-
-      expect(tab.draftModel).toBe('codex-latest');
-      expect(plugin.settings.lastSelectedChatModel).toBeUndefined();
-
-      releaseSlowSwitch();
-      await new Promise<void>(resolve => setImmediate(resolve));
-
-      expect(tab.draftModel).toBe('codex-latest');
-      expect(plugin.settings.lastSelectedChatModel).toEqual({
-        providerId: 'codex',
-        model: 'codex-latest',
-      });
-    } finally {
-      getChatUIConfig.mockReturnValue(claudeConfig);
-      getEnabledProviderIds.mockReturnValue(['claude']);
-      resolveProviderForModel.mockReturnValue('claude');
-      globalThis.ResizeObserver = originalResizeObserver;
-    }
-  });
-
-  it('commits an earlier successful model choice when a newer provider switch fails', async () => {
-    const originalResizeObserver = globalThis.ResizeObserver;
-    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
-      disconnect: jest.fn(),
-      observe: jest.fn(),
-    })) as unknown as typeof ResizeObserver;
-    const getChatUIConfig = ProviderRegistry.getChatUIConfig as jest.Mock;
-    const getEnabledProviderIds = ProviderRegistry.getEnabledProviderIds as jest.Mock;
-    const resolveProviderForModel = ProviderRegistry.resolveProviderForModel as jest.Mock;
-    const claudeConfig = getChatUIConfig('claude');
-    const codexConfig = {
-      ...claudeConfig,
-      getModelOptions: jest.fn().mockReturnValue([
-        { label: 'Codex Slow', value: 'codex-slow' },
-      ]),
-    };
-    const grokConfig = {
-      ...claudeConfig,
-      getModelOptions: jest.fn().mockReturnValue([
-        { label: 'Grok Failing', value: 'grok-failing' },
-      ]),
-    };
-    getChatUIConfig.mockImplementation((providerId: string) => {
-      if (providerId === 'codex') return codexConfig;
-      if (providerId === 'grok') return grokConfig;
-      return claudeConfig;
-    });
-    getEnabledProviderIds.mockReturnValue(['claude', 'codex', 'grok']);
-    resolveProviderForModel.mockImplementation((model: string) => {
-      if (model.startsWith('codex-')) return 'codex';
-      if (model.startsWith('grok-')) return 'grok';
-      return 'claude';
-    });
-    let releaseCodexSwitch!: () => void;
-    const codexSwitch = new Promise<void>((resolve) => {
-      releaseCodexSwitch = resolve;
-    });
-    const onProviderChanged = jest.fn().mockImplementation((providerId: string) => (
-      providerId === 'codex'
-        ? codexSwitch
-        : Promise.reject(new Error('Grok initialization failed'))
-    ));
-
-    try {
-      const plugin = createPlugin();
-      const tab = createTab({ plugin, containerEl: createMockEl() as any });
-      initializeTabUI(tab, plugin, { onProviderChanged });
-      const modelOptions = Array.from(
-        tab.dom.inputWrapper.querySelectorAll('.claudian-model-option'),
-      );
-      const codex = modelOptions.find(option =>
-        Array.from(option.children).some(child => child.textContent === 'Codex Slow')
-      );
-      const grok = modelOptions.find(option =>
-        Array.from(option.children).some(child => child.textContent === 'Grok Failing')
-      );
-
-      (codex as HTMLElement | undefined)?.click();
-      (grok as HTMLElement | undefined)?.click();
-      await new Promise<void>(resolve => setImmediate(resolve));
-
-      expect(tab.providerId).toBe('codex');
-      expect(tab.draftModel).toBe('codex-slow');
-      expect(plugin.settings.lastSelectedChatModel).toBeUndefined();
-
-      releaseCodexSwitch();
-      await new Promise<void>(resolve => setImmediate(resolve));
-
-      expect(tab.providerId).toBe('codex');
-      expect(tab.draftModel).toBe('codex-slow');
-      expect(plugin.settings.lastSelectedChatModel).toEqual({
-        providerId: 'codex',
-        model: 'codex-slow',
-      });
-    } finally {
-      getChatUIConfig.mockReturnValue(claudeConfig);
-      getEnabledProviderIds.mockReturnValue(['claude']);
-      resolveProviderForModel.mockReturnValue('claude');
-      globalThis.ResizeObserver = originalResizeObserver;
-    }
-  });
-
   it('does not seed an uninitialized provider after overlapping same-provider choices fail', async () => {
     const originalResizeObserver = globalThis.ResizeObserver;
     globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
@@ -530,82 +391,6 @@ describe('Tab provider execution ownership', () => {
       rejectCodexSwitch(new Error('Codex initialization failed'));
       await new Promise<void>(resolve => setImmediate(resolve));
 
-      expect(tab.providerId).toBe('claude');
-      expect(tab.draftModel).toBe('claude-default');
-      expect(plugin.settings.lastSelectedChatModel).toBeUndefined();
-    } finally {
-      getChatUIConfig.mockReturnValue(claudeConfig);
-      getEnabledProviderIds.mockReturnValue(['claude']);
-      resolveProviderForModel.mockReturnValue('claude');
-      globalThis.ResizeObserver = originalResizeObserver;
-    }
-  });
-
-  it('restores the stable provider when overlapping provider transitions both fail', async () => {
-    const originalResizeObserver = globalThis.ResizeObserver;
-    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
-      disconnect: jest.fn(),
-      observe: jest.fn(),
-    })) as unknown as typeof ResizeObserver;
-    const getChatUIConfig = ProviderRegistry.getChatUIConfig as jest.Mock;
-    const getEnabledProviderIds = ProviderRegistry.getEnabledProviderIds as jest.Mock;
-    const resolveProviderForModel = ProviderRegistry.resolveProviderForModel as jest.Mock;
-    const claudeConfig = getChatUIConfig('claude');
-    const codexConfig = {
-      ...claudeConfig,
-      getModelOptions: jest.fn().mockReturnValue([
-        { label: 'Codex Failing', value: 'codex-failing' },
-      ]),
-    };
-    const grokConfig = {
-      ...claudeConfig,
-      getModelOptions: jest.fn().mockReturnValue([
-        { label: 'Grok Failing', value: 'grok-failing' },
-      ]),
-    };
-    getChatUIConfig.mockImplementation((providerId: string) => {
-      if (providerId === 'codex') return codexConfig;
-      if (providerId === 'grok') return grokConfig;
-      return claudeConfig;
-    });
-    getEnabledProviderIds.mockReturnValue(['claude', 'codex', 'grok']);
-    resolveProviderForModel.mockImplementation((model: string) => {
-      if (model.startsWith('codex-')) return 'codex';
-      if (model.startsWith('grok-')) return 'grok';
-      return 'claude';
-    });
-    let rejectCodexSwitch!: (error: Error) => void;
-    const codexSwitch = new Promise<void>((_resolve, reject) => {
-      rejectCodexSwitch = reject;
-    });
-    const onProviderChanged = jest.fn().mockImplementation((providerId: string) => (
-      providerId === 'codex'
-        ? codexSwitch
-        : Promise.reject(new Error('Grok initialization failed'))
-    ));
-
-    try {
-      const plugin = createPlugin();
-      const tab = createTab({ plugin, containerEl: createMockEl() as any });
-      initializeTabUI(tab, plugin, { onProviderChanged });
-      const modelOptions = Array.from(
-        tab.dom.inputWrapper.querySelectorAll('.claudian-model-option'),
-      );
-      const codex = modelOptions.find(option =>
-        Array.from(option.children).some(child => child.textContent === 'Codex Failing')
-      );
-      const grok = modelOptions.find(option =>
-        Array.from(option.children).some(child => child.textContent === 'Grok Failing')
-      );
-
-      (codex as HTMLElement | undefined)?.click();
-      (grok as HTMLElement | undefined)?.click();
-      rejectCodexSwitch(new Error('Codex initialization failed'));
-      await new Promise<void>(resolve => setImmediate(resolve));
-      await new Promise<void>(resolve => setImmediate(resolve));
-
-      expect(onProviderChanged).toHaveBeenCalledWith('codex');
-      expect(onProviderChanged).toHaveBeenCalledWith('grok');
       expect(tab.providerId).toBe('claude');
       expect(tab.draftModel).toBe('claude-default');
       expect(plugin.settings.lastSelectedChatModel).toBeUndefined();

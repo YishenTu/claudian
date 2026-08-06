@@ -15,6 +15,12 @@ export interface ConversationModelResolution {
   shouldPersist: boolean;
 }
 
+export function getConversationModelPersistenceTarget(
+  resolution: ConversationModelResolution,
+): string {
+  return resolution.modelToPersist ?? resolution.model;
+}
+
 export type NewConversationModelSource =
   | 'last-selected'
   | 'provider-default'

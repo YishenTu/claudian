@@ -17,6 +17,7 @@
 | --- | --- |
 | `TabManager` | Runtime-tab membership, active-tab selection, and create/switch/close operations |
 | `TabSession` | Authoritative per-tab identity, conversation binding, provider binding, lifecycle value, execution-coordinator attachment, active-turn reference, and background-work sequencing |
+| `TabModelSelectionCoordinator` | Per-tab model-selection request ordering, blank-tab provider-transition serialization, and stable-draft rollback |
 | `ChatExecutionCoordinator` | One tab's provider-session binding, active execution, interaction fencing, cancellation, and disposal |
 | `WarmExecutionPool` | Application-scoped warm execution ownership, the configured concurrent-running-session limit, and least-recently-used cooling of idle owners |
 | `ChatState` | Transient per-tab message projection, stream state, queued input, render state, and conversation-operation flags |
@@ -84,8 +85,8 @@ Tab activation and conversation hydration do not themselves authorize creation o
 - Focusable, selectable history rows support Enter and Space activation as well as pointer activation.
 - Provider command and metadata warmup must respect provider resource generations and must not reuse stale results.
 - An explicit chat model-picker action updates only the current blank tab or bound conversation and the provider-qualified global seed for future blank tabs. Existing tabs never subscribe to that seed.
-- Global seed commits are ordered by picker intent across the plugin, not by asynchronous provider-switch or conversation-write completion; the latest successful selection wins.
-- Blank-tab provider changes are serialized per tab. Later choices targeting an in-flight provider share its initialization result, and failed overlapping transitions restore the last stable provider/model without seeding future tabs.
+- The app-owned chat model-selection coordinator orders global seed commits by picker intent across the plugin, not by asynchronous provider-switch or conversation-write completion; the latest successful selection wins.
+- `TabModelSelectionCoordinator` serializes blank-tab provider changes per tab. Later choices targeting an in-flight provider share its initialization result, and failed overlapping transitions restore the last stable provider/model without seeding future tabs.
 - Restoration, hydration, automatic availability fallback, fork inheritance, and auxiliary executions must not update the future-tab model seed.
 
 ## Gotchas

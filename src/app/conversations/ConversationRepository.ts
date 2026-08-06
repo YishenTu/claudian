@@ -10,7 +10,11 @@ import type {
   SessionMetadataReadResult,
 } from '../../core/bootstrap/SessionStorage';
 import type { ProviderSessionSnapshot } from '../../core/execution';
-import { normalizeProviderModelSelection, resolveConversationModel } from '../../core/providers/conversationModel';
+import {
+  getConversationModelPersistenceTarget,
+  normalizeProviderModelSelection,
+  resolveConversationModel,
+} from '../../core/providers/conversationModel';
 import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
@@ -692,8 +696,9 @@ export class ConversationRepository {
       conversation.providerId,
       { ...conversation, selectedModel },
     );
-    const recoveredModelToPersist = resolvedRecoveredModel.modelToPersist
-      ?? resolvedRecoveredModel.model;
+    const recoveredModelToPersist = getConversationModelPersistenceTarget(
+      resolvedRecoveredModel,
+    );
     selectedModel = recoveredModelToPersist || selectedModel;
 
     let didPersist: boolean;
@@ -1100,6 +1105,28 @@ export class ConversationRepository {
     }));
   }
 
+  isSelectedModelPublicationSafe(conversation: Conversation): boolean {
+    const storedModel = getStoredModelSelection(conversation.selectedModel);
+    if (
+      !storedModel
+      || !ProviderRegistry.getRegisteredProviderIds().includes(conversation.providerId)
+    ) {
+      return true;
+    }
+
+    const resolved = resolveConversationModel(
+      this.deps.getSettings(),
+      conversation.providerId,
+      conversation,
+    );
+    const modelToPersist = getConversationModelPersistenceTarget(resolved);
+    return !(
+      resolved.shouldPersist
+      && modelToPersist
+      && modelToPersist !== storedModel
+    );
+  }
+
   async reconcileSelectedModels(providerId: ProviderId): Promise<Conversation[]> {
     const changed: Conversation[] = [];
     for (const conversation of this.conversations) {
@@ -1245,7 +1272,7 @@ export class ConversationRepository {
       conversation.providerId,
       conversation,
     );
-    const modelToPersist = resolved.modelToPersist ?? resolved.model;
+    const modelToPersist = getConversationModelPersistenceTarget(resolved);
     if (
       recoveryResult === 'unresolved' && resolved.source === 'usage'
     ) {
@@ -1274,7 +1301,7 @@ export class ConversationRepository {
       conversation.providerId,
       conversation,
     );
-    const modelToPersist = resolved.modelToPersist ?? resolved.model;
+    const modelToPersist = getConversationModelPersistenceTarget(resolved);
     if (
       !resolved.shouldPersist
       || !modelToPersist
