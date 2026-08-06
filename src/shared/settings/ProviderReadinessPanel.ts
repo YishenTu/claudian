@@ -2,10 +2,12 @@ import { Setting } from 'obsidian';
 
 import type {
   ProviderReadinessCheck,
+  ProviderReadinessRemediation,
   ProviderReadinessSnapshot,
   ProviderReadinessStatus,
 } from '../../core/providers/ProviderReadiness';
 import { t } from '../../i18n/i18n';
+import type { TranslationKey } from '../../i18n/types';
 
 export interface ProviderReadinessPanelOptions {
   container: HTMLElement;
@@ -79,6 +81,16 @@ function renderCheck(container: HTMLElement, check: ProviderReadinessCheck): voi
     cls: 'claudian-provider-readiness-check-status',
     text: t(`settings.providerReadiness.status.${check.status}`),
   });
+  if (check.remediation) {
+    row.createDiv({
+      cls: 'claudian-provider-readiness-check-hint',
+      text: t(getRemediationTranslationKey(check.remediation)),
+    });
+  }
+}
+
+function getRemediationTranslationKey(remediation: ProviderReadinessRemediation): TranslationKey {
+  return `settings.providerReadiness.hint.${remediation}`;
 }
 
 interface ReadinessSpanOptions {

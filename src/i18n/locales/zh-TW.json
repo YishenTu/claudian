@@ -116,7 +116,8 @@
     "providerReadiness": {
       "title": "就緒狀態", "desc": "檢查 {provider} 是否可以開始聊天。", "checking": "正在檢查提供者狀態……", "refresh": "重新檢查",
       "status": { "disabled": "未啟用", "blocked": "需要處理", "attention": "需要注意", "ready": "已就緒" },
-      "check": { "enabled": "提供者已啟用", "cli": "CLI 可用", "models": "模型目錄可用", "selection": "已選擇聊天模型" }
+      "check": { "enabled": "提供者已啟用", "cli": "CLI 可用", "models": "模型目錄可用", "selection": "已選擇聊天模型" },
+      "hint": { "enableProvider": "啟用此提供者後才能在聊天中使用。", "configureCli": "設定有效的 CLI 路徑，或讓 Obsidian 可以從 PATH 找到它。", "refreshModels": "檢查提供者的登入或工作階段狀態，然後重新檢查以載入模型。", "selectModel": "在下方至少選擇一個聊天模型。" }
     },
     "display": "顯示",
     "conversations": "對話",

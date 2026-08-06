@@ -33,9 +33,9 @@ describe('assessProviderReadiness', () => {
       status: 'blocked',
       checks: [
         { id: 'enabled', status: 'ready' },
-        { id: 'cli', status: 'blocked' },
-        { id: 'models', status: 'attention' },
-        { id: 'selection', status: 'blocked' },
+        { id: 'cli', status: 'blocked', remediation: 'configureCli' },
+        { id: 'models', status: 'attention', remediation: 'refreshModels' },
+        { id: 'selection', status: 'blocked', remediation: 'selectModel' },
       ],
     });
   });
@@ -47,7 +47,7 @@ describe('assessProviderReadiness', () => {
     })).toMatchObject({
       status: 'disabled',
       checks: [
-        { id: 'enabled', status: 'disabled' },
+        { id: 'enabled', status: 'disabled', remediation: 'enableProvider' },
         { id: 'cli', status: 'disabled' },
         { id: 'models', status: 'disabled' },
         { id: 'selection', status: 'disabled' },

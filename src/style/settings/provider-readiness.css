@@ -12,3 +12,4 @@
 .claudian-provider-readiness-check[data-status="attention"] .claudian-provider-readiness-check-icon { color: var(--text-warning); }
 .claudian-provider-readiness-check-label { flex: 1; }
 .claudian-provider-readiness-check-status { color: var(--text-faint); }
+.claudian-provider-readiness-check-hint { margin: -2px 0 2px 26px; color: var(--text-muted); font-size: var(--font-ui-smaller); }

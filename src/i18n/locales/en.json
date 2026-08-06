@@ -119,7 +119,8 @@
       "checking": "Checking provider readiness…",
       "refresh": "Check again",
       "status": { "disabled": "Disabled", "blocked": "Action required", "attention": "Needs attention", "ready": "Ready" },
-      "check": { "enabled": "Provider enabled", "cli": "CLI available", "models": "Model catalog available", "selection": "Chat model selected" }
+      "check": { "enabled": "Provider enabled", "cli": "CLI available", "models": "Model catalog available", "selection": "Chat model selected" },
+      "hint": { "enableProvider": "Enable this provider to use it in chat.", "configureCli": "Set a valid CLI path or make the CLI available on Obsidian's PATH.", "refreshModels": "Check the provider login or session, then check again to load models.", "selectModel": "Select at least one chat model below." }
     },
     "display": "Display",
     "conversations": "Conversations",

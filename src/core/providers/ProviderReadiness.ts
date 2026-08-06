@@ -1,6 +1,11 @@
 export type ProviderReadinessStatus = 'disabled' | 'blocked' | 'attention' | 'ready';
 
 export type ProviderReadinessCheckId = 'enabled' | 'cli' | 'models' | 'selection';
+export type ProviderReadinessRemediation =
+  | 'enableProvider'
+  | 'configureCli'
+  | 'refreshModels'
+  | 'selectModel';
 
 export interface ProviderReadinessInput {
   enabled: boolean;
@@ -12,6 +17,7 @@ export interface ProviderReadinessInput {
 export interface ProviderReadinessCheck {
   id: ProviderReadinessCheckId;
   status: ProviderReadinessStatus;
+  remediation?: ProviderReadinessRemediation;
 }
 
 export interface ProviderReadinessSnapshot {
@@ -26,7 +32,7 @@ export function assessProviderReadiness(
     return {
       status: 'disabled',
       checks: [
-        { id: 'enabled', status: 'disabled' },
+        { id: 'enabled', status: 'disabled', remediation: 'enableProvider' },
         { id: 'cli', status: 'disabled' },
         { id: 'models', status: 'disabled' },
         { id: 'selection', status: 'disabled' },
@@ -43,9 +49,21 @@ export function assessProviderReadiness(
     : 'blocked';
   const checks: ProviderReadinessCheck[] = [
     { id: 'enabled', status: 'ready' },
-    { id: 'cli', status: cliStatus },
-    { id: 'models', status: modelsStatus },
-    { id: 'selection', status: selectionStatus },
+    {
+      id: 'cli',
+      status: cliStatus,
+      ...(cliStatus === 'blocked' ? { remediation: 'configureCli' as const } : {}),
+    },
+    {
+      id: 'models',
+      status: modelsStatus,
+      ...(modelsStatus === 'attention' ? { remediation: 'refreshModels' as const } : {}),
+    },
+    {
+      id: 'selection',
+      status: selectionStatus,
+      ...(selectionStatus === 'blocked' ? { remediation: 'selectModel' as const } : {}),
+    },
   ];
 
   return {
