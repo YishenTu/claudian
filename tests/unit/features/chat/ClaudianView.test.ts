@@ -407,7 +407,7 @@ describe('ClaudianView tab controls', () => {
     expect(sessionNewButtonEl.getAttribute('aria-hidden')).toBeNull();
   });
 
-  it('renders New, Search, and Archive navigation above the Sessions header', () => {
+  it('renders New, Search, Files, and Archive navigation above the Sessions header', () => {
     const container = createMockEl();
     const list = container.createDiv({ cls: 'claudian-history-list' });
     const header = list.createDiv({
@@ -420,6 +420,7 @@ describe('ClaudianView tab controls', () => {
       activateSessionSearch: jest.fn(),
       isArchiveSessionView: false,
       requestDualNew: jest.fn(),
+      showVaultFiles: jest.fn(),
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
         getAllTabs: jest.fn().mockReturnValue([]),
@@ -432,6 +433,7 @@ describe('ClaudianView tab controls', () => {
     const optionsButton = actions?.children[0];
     const newButton = container.querySelector('.claudian-session-new-control');
     const searchButton = container.querySelector('.claudian-session-search-control');
+    const filesButton = container.querySelector('.claudian-session-files-control');
     const archiveButton = container.querySelector('.claudian-session-archive-control');
     expect(actions?.children).toHaveLength(1);
     expect(optionsButton?.getAttribute('aria-label')).toBe('Session options');
@@ -447,6 +449,9 @@ describe('ClaudianView tab controls', () => {
     expect(searchButton?.getAttribute('aria-label')).toBe('Search');
     expect(searchButton?.querySelector('.claudian-session-nav-label')?.textContent)
       .toBe('Search');
+    expect(filesButton?.getAttribute('aria-label')).toBe('Files');
+    expect(filesButton?.querySelector('.claudian-session-nav-label')?.textContent)
+      .toBe('Files');
     expect(archiveButton?.getAttribute('aria-label')).toBe('Archive');
     expect(container.querySelector('.claudian-history-list')).toBe(list);
 
@@ -454,6 +459,8 @@ describe('ClaudianView tab controls', () => {
     expect(view.requestDualNew).toHaveBeenCalledTimes(1);
     searchButton?.click();
     expect(view.activateSessionSearch).toHaveBeenCalledTimes(1);
+    filesButton?.click();
+    expect(view.showVaultFiles).toHaveBeenCalledTimes(1);
   });
 
   it('switches between active and archived session manager views', () => {
@@ -1088,10 +1095,46 @@ describe('ClaudianView tab controls', () => {
     expect(viewContainerEl.children[0].hasClass('claudian-chat-panel')).toBe(true);
     expect(viewContainerEl.children[1].hasClass('claudian-session-resizer')).toBe(true);
     expect(viewContainerEl.children[2].hasClass('claudian-session-sidebar')).toBe(true);
+    expect(viewContainerEl.children[2].children[0].hasClass('claudian-session-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[1].hasClass('claudian-files-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[1].hasClass('claudian-hidden')).toBe(true);
     expect(viewContainerEl.children[2].getAttribute('aria-label')).toBeNull();
     expect(viewContainerEl.children[1].getAttribute('role')).toBe('separator');
     expect(viewContainerEl.children[0].children).toContain(view.tabContentEl);
     expect(viewContainerEl.children[0].children).toContain(view.inputFooterEl);
+  });
+
+  it('switches the persistent sidebar to Files without remounting the tree', () => {
+    const viewContainerEl = createMockEl();
+    const mount = jest.fn().mockResolvedValue(undefined);
+    const destroy = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      createVaultFileTree: jest.fn().mockReturnValue({ destroy, mount }),
+      isWideSessionLayout: true,
+      plugin: { app: {} },
+      viewContainerEl,
+      vaultFileTree: null,
+    });
+    view.buildViewLayout();
+
+    view.showVaultFiles();
+
+    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(true);
+    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(false);
+    expect(view.filesSurfaceEl.getAttribute('aria-hidden')).toBe('false');
+    expect(view.createVaultFileTree).toHaveBeenCalledWith(view.filesSurfaceEl);
+    expect(mount).toHaveBeenCalledTimes(1);
+
+    view.showSessions();
+    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(false);
+    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
+
+    view.showVaultFiles();
+    expect(view.createVaultFileTree).toHaveBeenCalledTimes(1);
+    expect(mount).toHaveBeenCalledTimes(1);
   });
 
   it('shows and renders the persistent session column when the view becomes wide', () => {
@@ -2129,6 +2172,7 @@ describe('ClaudianView shutdown', () => {
     const flushPersistence = jest.fn().mockResolvedValue(undefined);
     const updatePersistence = jest.fn();
     const tabBarDestroy = jest.fn();
+    const vaultFileTreeDestroy = jest.fn();
 
     Object.assign(view, {
       cancelHistoryRendering: jest.fn(),
@@ -2139,6 +2183,7 @@ describe('ClaudianView shutdown', () => {
       restoreActiveInputToTabContent: jest.fn(),
       scope: {},
       tabBar: { destroy: tabBarDestroy },
+      vaultFileTree: { destroy: vaultFileTreeDestroy },
       tabManager: {
         destroy,
         getActiveTab: jest.fn().mockReturnValue({
@@ -2164,6 +2209,8 @@ describe('ClaudianView shutdown', () => {
     expect(disposePersistence).toHaveBeenCalledTimes(1);
     expect(destroy).toHaveBeenCalledTimes(1);
     expect(tabBarDestroy).toHaveBeenCalledTimes(1);
+    expect(vaultFileTreeDestroy).toHaveBeenCalledTimes(1);
+    expect(view.vaultFileTree).toBeNull();
     expect(view.tabManager).toBeNull();
     expect(view.scope).toBeNull();
   });
@@ -2376,6 +2423,24 @@ describe('ClaudianView Escape handling', () => {
     const result = escapeHandler.func({ key: 'Escape', isComposing: false } as KeyboardEvent);
 
     expect(view.closeSessionSearch).toHaveBeenCalledTimes(1);
+    expect(cancelStreaming).not.toHaveBeenCalled();
+    expect(result).toBe(false);
+  });
+
+  it('closes file search from the scoped Escape handler', () => {
+    const { cancelStreaming, view } = createEscapeHarness({ isStreaming: true });
+    const handleEscape = jest.fn().mockReturnValue(true);
+    view.vaultFileTree = {
+      handleEscape,
+      isComposingSearch: jest.fn().mockReturnValue(false),
+    };
+
+    view.wireEventHandlers();
+    const escapeHandler = view.scope.handlers.find((handler: any) => handler.key === 'Escape');
+    const event = { key: 'Escape', isComposing: false } as KeyboardEvent;
+    const result = escapeHandler.func(event);
+
+    expect(handleEscape).toHaveBeenCalledWith(event);
     expect(cancelStreaming).not.toHaveBeenCalled();
     expect(result).toBe(false);
   });

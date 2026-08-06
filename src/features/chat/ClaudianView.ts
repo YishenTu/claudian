@@ -32,6 +32,7 @@ import {
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
 import type { TabData, TabId } from './tabs/types';
+import { VaultFileTree } from './ui/vault-file-tree/VaultFileTree';
 import { recalculateUsageForModel } from './utils/usageInfo';
 
 type LoadableView = {
@@ -80,6 +81,10 @@ export class ClaudianView extends ItemView {
   private historyDropdown: HTMLElement | null = null;
   private historyRenderAbortController: AbortController | null = null;
   private sessionSidebarEl: HTMLElement | null = null;
+  private sessionSurfaceEl: HTMLElement | null = null;
+  private filesSurfaceEl: HTMLElement | null = null;
+  private activeSidebarSurface: 'sessions' | 'files' = 'sessions';
+  private vaultFileTree: VaultFileTree | null = null;
   private sessionSidebarResizerEl: HTMLElement | null = null;
   private sessionSidebarRenderAbortController: AbortController | null = null;
   private sessionSidebarResizeObserver: ResizeObserver | null = null;
@@ -331,6 +336,8 @@ export class ClaudianView extends ItemView {
     this.cancelSessionSidebarRendering();
     this.disconnectSessionSidebarLayoutObserver();
     this.stopSessionSidebarResize();
+    this.vaultFileTree?.destroy();
+    this.vaultFileTree = null;
     if (this.pendingTabBarUpdate !== null) {
       cancelScheduledAnimationFrame(this.pendingTabBarUpdate);
       this.pendingTabBarUpdate = null;
@@ -387,6 +394,12 @@ export class ClaudianView extends ItemView {
     });
 
     this.sessionSidebarEl = this.viewContainerEl.createDiv({ cls: 'claudian-session-sidebar' });
+    this.sessionSurfaceEl = this.sessionSidebarEl.createDiv({ cls: 'claudian-session-surface' });
+    this.filesSurfaceEl = this.sessionSidebarEl.createDiv({ cls: 'claudian-files-surface' });
+    if (this.activeSidebarSurface !== 'files') {
+      this.activeSidebarSurface = 'sessions';
+    }
+    this.updateSidebarSurfaceVisibility();
   }
 
   /**
@@ -715,7 +728,8 @@ export class ClaudianView extends ItemView {
   }
 
   private renderSessionSidebar(): void {
-    if (!this.sessionSidebarEl || !this.sessionSidebarDirty || !this.isWideSessionLayout) return;
+    const sessionSurfaceEl = this.sessionSurfaceEl ?? this.sessionSidebarEl;
+    if (!sessionSurfaceEl || !this.sessionSidebarDirty || !this.isWideSessionLayout) return;
     if (this.isSessionSearchComposing) return;
 
     const previousSearchInput = this.sessionSearchInputEl;
@@ -734,8 +748,8 @@ export class ClaudianView extends ItemView {
       this.sessionSearchFieldEl = null;
       this.sessionSearchInputEl = null;
       this.sessionGroupToggleButtonEl = null;
-      this.renderHistorySurface(this.sessionSidebarEl, abortController.signal, 'sessions');
-      this.buildSessionHeaderActions(this.sessionSidebarEl);
+      this.renderHistorySurface(sessionSurfaceEl, abortController.signal, 'sessions');
+      this.buildSessionHeaderActions(sessionSurfaceEl);
       if (shouldRestoreSearchFocus) {
         this.focusSessionSearchInput();
       }
@@ -941,6 +955,24 @@ export class ClaudianView extends ItemView {
       container.insertBefore(searchControl, list);
     }
 
+    const filesControl = container.createDiv({
+      cls: 'claudian-session-files-control',
+    });
+    filesControl.setAttribute('role', 'button');
+    filesControl.setAttribute('tabindex', '0');
+    filesControl.setAttribute('aria-label', 'Files');
+    const filesIcon = filesControl.createSpan({ cls: 'claudian-session-nav-icon' });
+    setIcon(filesIcon, 'files');
+    filesControl.createSpan({ cls: 'claudian-session-nav-label', text: 'Files' });
+    const showFiles = (): void => this.showVaultFiles();
+    filesControl.addEventListener('click', showFiles);
+    filesControl.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      showFiles();
+    });
+    container.insertBefore(filesControl, list);
+
     const archiveControl = container.createDiv({ cls: 'claudian-session-archive-control' });
     archiveControl.setAttribute('role', 'button');
     archiveControl.setAttribute('tabindex', '0');
@@ -992,6 +1024,38 @@ export class ClaudianView extends ItemView {
     );
 
     this.updateNewTabButtonVisibility();
+  }
+
+  private showVaultFiles(): void {
+    if (!this.isWideSessionLayout || !this.filesSurfaceEl) return;
+    this.activeSidebarSurface = 'files';
+    this.updateSidebarSurfaceVisibility();
+
+    if (this.vaultFileTree) return;
+    this.vaultFileTree = this.createVaultFileTree(this.filesSurfaceEl);
+    void this.vaultFileTree.mount();
+  }
+
+  private showSessions(): void {
+    this.activeSidebarSurface = 'sessions';
+    this.updateSidebarSurfaceVisibility();
+  }
+
+  private createVaultFileTree(hostEl: HTMLElement): VaultFileTree {
+    return new VaultFileTree({
+      app: this.plugin.app,
+      hostEl,
+      onShowSessions: () => this.showSessions(),
+      sourceLeaf: this.leaf,
+    });
+  }
+
+  private updateSidebarSurfaceVisibility(): void {
+    const showFiles = this.activeSidebarSurface === 'files';
+    this.sessionSurfaceEl?.toggleClass('claudian-hidden', showFiles);
+    this.sessionSurfaceEl?.setAttribute('aria-hidden', String(showFiles));
+    this.filesSurfaceEl?.toggleClass('claudian-hidden', !showFiles);
+    this.filesSurfaceEl?.setAttribute('aria-hidden', String(!showFiles));
   }
 
   private requestSessionNew(): void {
@@ -1866,7 +1930,12 @@ export class ClaudianView extends ItemView {
     // Returning false consumes Escape before Obsidian uses it for pane navigation.
     this.scope = new Scope(this.app.scope);
     this.scope.register([], 'Escape', (e: KeyboardEvent) => {
-      if (e.isComposing || this.isSessionSearchComposing) return;
+      if (
+        e.isComposing
+        || this.isSessionSearchComposing
+        || this.vaultFileTree?.isComposingSearch()
+      ) return;
+      if (this.vaultFileTree?.handleEscape(e)) return false;
       if (this.isSessionSearchActive) {
         this.closeSessionSearch();
         return false;

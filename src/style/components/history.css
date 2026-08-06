@@ -56,6 +56,7 @@
 
 .claudian-session-new-control,
 .claudian-session-search-control,
+.claudian-session-files-control,
 .claudian-session-archive-control {
   display: flex;
   align-items: center;
@@ -75,6 +76,8 @@
 .claudian-session-new-control:focus-visible,
 .claudian-session-search-control:hover,
 .claudian-session-search-control:focus-visible,
+.claudian-session-files-control:hover,
+.claudian-session-files-control:focus-visible,
 .claudian-session-archive-control:hover,
 .claudian-session-archive-control:focus-visible {
   background: var(--background-modifier-hover);
