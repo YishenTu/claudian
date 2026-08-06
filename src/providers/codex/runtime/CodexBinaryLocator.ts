@@ -39,6 +39,27 @@ export function findCodexBinaryPath(
     return preferredBinary;
   }
 
+  // Respect the runtime PATH before falling back to legacy user-local
+  // locations. Obsidian may inherit a newer Node/fnm Codex earlier on PATH,
+  // while ~/.local/bin still contains an older installation.
+  if (platform === process.platform) {
+    const runtimePathBinary = findCodexBinaryInDirs(
+      parsePathEntriesForPlatform(process.env.PATH, platform),
+      platform,
+    );
+    if (runtimePathBinary) {
+      return runtimePathBinary;
+    }
+  }
+
+  const userLocalBinary = findCodexBinaryInDirs(
+    getUserLocalCodexBinaryDirs(platform),
+    platform,
+  );
+  if (userLocalBinary) {
+    return userLocalBinary;
+  }
+
   return findCliBinaryPath('codex', additionalPath, platform);
 }
 
@@ -74,17 +95,18 @@ function getPreferredCodexBinaryDirs(platform: NodeJS.Platform): string[] {
       '/Applications/Codex.app/Contents/Resources',
       path.join(home, 'Applications', 'Codex.app', 'Contents', 'MacOS'),
       '/Applications/Codex.app/Contents/MacOS',
-      path.join(home, '.local', 'bin'),
-    ];
-  }
-
-  if (platform !== 'win32') {
-    return [
-      path.join(home, '.local', 'bin'),
     ];
   }
 
   return [];
+}
+
+function getUserLocalCodexBinaryDirs(platform: NodeJS.Platform): string[] {
+  if (platform === 'win32') {
+    return [];
+  }
+
+  return [path.join(getHomeDir(), '.local', 'bin')];
 }
 
 function getHomeDir(): string {

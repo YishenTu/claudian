@@ -10,6 +10,7 @@ import {
 describe('CodexBinaryLocator', () => {
   let tempDir: string;
   const originalHome = process.env.HOME;
+  const originalPath = process.env.PATH;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-binary-locator-'));
@@ -21,6 +22,11 @@ describe('CodexBinaryLocator', () => {
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = originalPath;
     }
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -66,14 +72,19 @@ describe('CodexBinaryLocator', () => {
     expect(findCodexBinaryPath(explicitDir, 'darwin')).toBe(explicitBinary);
   });
 
-  it('prefers a user-local Codex binary before generic Unix PATH auto-detection', () => {
+  it('prefers the current process PATH before a user-local Codex binary', () => {
     process.env.HOME = tempDir;
+    const pathDir = path.join(tempDir, 'runtime-bin');
+    const pathBinary = path.join(pathDir, 'codex');
     const localDir = path.join(tempDir, '.local', 'bin');
     const localBinary = path.join(localDir, 'codex');
+    fs.mkdirSync(pathDir, { recursive: true });
     fs.mkdirSync(localDir, { recursive: true });
+    fs.writeFileSync(pathBinary, '');
     fs.writeFileSync(localBinary, '');
+    process.env.PATH = pathDir;
 
-    expect(findCodexBinaryPath('', 'linux')).toBe(localBinary);
+    expect(findCodexBinaryPath('', process.platform)).toBe(pathBinary);
   });
 
   it('prefers a hostname-specific configured path', () => {
