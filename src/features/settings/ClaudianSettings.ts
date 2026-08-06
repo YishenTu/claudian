@@ -10,7 +10,7 @@ import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettin
 import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '../../core/providers/types';
 import { AgentSkillRepository } from '../../core/skills/AgentSkillRepository';
-import type { ChatViewPlacement } from '../../core/types/settings';
+import type { ChatViewPlacement, DualPaneSide } from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import { AgentSkillSettings } from '../../shared/settings/AgentSkillSettings';
@@ -300,6 +300,39 @@ export class ClaudianSettingTab extends PluginSettingTab {
             });
           });
       });
+
+    new Setting(container)
+      .setName(t('settings.enableDualPane.name'))
+      .setDesc(t('settings.enableDualPane.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableDualPane ?? true)
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.enableDualPane = value;
+            });
+            this.refreshDualPaneLayouts();
+            this.display();
+          })
+      );
+
+    if (this.plugin.settings.enableDualPane ?? true) {
+      new Setting(container)
+        .setName(t('settings.dualPaneSide.name'))
+        .setDesc(t('settings.dualPaneSide.desc'))
+        .addDropdown((dropdown) => {
+          dropdown
+            .addOption('left', t('settings.dualPaneSide.left'))
+            .addOption('right', t('settings.dualPaneSide.right'))
+            .setValue(this.plugin.settings.dualPaneSide ?? 'right')
+            .onChange(async (value) => {
+              await this.plugin.mutateSettings((settings) => {
+                settings.dualPaneSide = value as DualPaneSide;
+              });
+              this.refreshDualPaneLayouts();
+            });
+        });
+    }
 
     new Setting(container)
       .setName(t('settings.enableAutoScroll.name'))
@@ -612,6 +645,12 @@ export class ClaudianSettingTab extends PluginSettingTab {
       view.refreshModelSelector(providerId);
     }
     this.refreshTitleModelOptions?.();
+  }
+
+  private refreshDualPaneLayouts(): void {
+    for (const view of this.plugin.getAllViews()) {
+      view.refreshDualPaneLayout();
+    }
   }
 
   private renderHiddenProviderCommandSetting(

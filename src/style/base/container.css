@@ -7,6 +7,12 @@
   font-family: var(--font-text);
 }
 
+/* Compensate for Obsidian's left-only footer without changing other placements. */
+.workspace-split.mod-left-split .view-content.claudian-container {
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
 .claudian-chat-panel {
   display: flex;
   flex: 1 1 auto;
@@ -18,6 +24,10 @@
 
 .claudian-container.claudian-wide-session-layout {
   flex-direction: row;
+}
+
+.claudian-container.claudian-wide-session-layout.claudian-session-sidebar-left {
+  flex-direction: row-reverse;
 }
 
 .claudian-provider-icon-variant--dark {

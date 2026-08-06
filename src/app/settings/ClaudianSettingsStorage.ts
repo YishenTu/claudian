@@ -17,6 +17,8 @@ import {
   CHAT_VIEW_PLACEMENTS,
   type ChatViewPlacement,
   type ClaudianSettings,
+  DUAL_PANE_SIDES,
+  type DualPaneSide,
   type EnvironmentScope,
   type EnvSnippet,
   type HiddenProviderCommands,
@@ -94,6 +96,33 @@ function shouldPersistChatViewPlacementMigration(
       'chatViewPlacement' in stored
       && stored.chatViewPlacement !== normalized
     );
+}
+
+function normalizeEnableDualPane(value: unknown): boolean {
+  return typeof value === 'boolean'
+    ? value
+    : DEFAULT_CLAUDIAN_SETTINGS.enableDualPane;
+}
+
+function normalizeDualPaneSide(value: unknown): DualPaneSide {
+  return typeof value === 'string'
+    && (DUAL_PANE_SIDES as readonly string[]).includes(value)
+    ? value as DualPaneSide
+    : DEFAULT_CLAUDIAN_SETTINGS.dualPaneSide;
+}
+
+function shouldPersistDualPaneNormalization(
+  stored: Record<string, unknown>,
+  enableDualPane: boolean,
+  dualPaneSide: DualPaneSide,
+): boolean {
+  return (
+    'enableDualPane' in stored
+    && stored.enableDualPane !== enableDualPane
+  ) || (
+    'dualPaneSide' in stored
+    && stored.dualPaneSide !== dualPaneSide
+  );
 }
 
 function normalizeProviderConfigs(value: unknown): ProviderConfigMap {
@@ -293,6 +322,8 @@ export class ClaudianSettingsStorage {
       stored.chatViewPlacement,
       stored.openInMainTab,
     );
+    const enableDualPane = normalizeEnableDualPane(stored.enableDualPane);
+    const dualPaneSide = normalizeDualPaneSide(stored.dualPaneSide);
     const legacyProviderSettings = {
       ...stored,
       hiddenProviderCommands,
@@ -310,6 +341,8 @@ export class ClaudianSettingsStorage {
       hiddenProviderCommands,
       providerConfigs,
       chatViewPlacement,
+      enableDualPane,
+      dualPaneSide,
     };
 
     const merged = {
@@ -342,6 +375,7 @@ export class ClaudianSettingsStorage {
       || 'enableBlocklist' in stored
       || 'blockedCommands' in stored
       || shouldPersistChatViewPlacementMigration(stored, chatViewPlacement)
+      || shouldPersistDualPaneNormalization(stored, enableDualPane, dualPaneSide)
       || JSON.stringify(envSnippets) !== JSON.stringify(stored.envSnippets ?? [])
       || (
         'customModelAliases' in stored

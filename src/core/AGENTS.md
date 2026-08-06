@@ -2,27 +2,6 @@
 
 `src/core/` is provider-neutral infrastructure. Features depend on core contracts; providers implement those contracts behind the registry boundary.
 
-## Ownership
-
-| Module | Owns |
-| --- | --- |
-| `auxiliary/` | Provider-neutral title generation, instruction refinement, inline edit, and auxiliary-session orchestration |
-| `bootstrap/` | Provider-neutral session metadata storage and shared app-storage contracts |
-| `commands/` | Built-in cross-provider commands |
-| `execution/` | Provider execution, lifecycle, interaction, request, event, and session contracts |
-| `mcp/` | Provider-neutral MCP coordination and config parsing |
-| `performance/` | Startup performance instrumentation |
-| `process/` | Managed subprocess lifecycle primitives |
-| `prompt/` | Shared prompt templates |
-| `providers/` | Registry, capability, environment, model-routing, and workspace-service contracts |
-| `providers/commands/` | Shared command catalog contracts |
-| `rpc/` | Provider-neutral JSON-RPC transport primitives |
-| `security/` | Permission and approval helpers |
-| `skills/` | Shared skill model, codec, validation, and repository contracts |
-| `storage/` | Generic vault filesystem adapters |
-| `tools/` | Shared tool constants and formatting helpers |
-| `types/` | Shared type definitions |
-
 ## Dependency Rules
 
 - `bootstrap/` defines provider-neutral persistence contracts and normalization, including recovery-only native locators. It must not interpret provider-native session formats or make those locators resumable.

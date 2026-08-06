@@ -62,6 +62,11 @@ export const CHAT_VIEW_PLACEMENTS = [
 /** Workspace location used when opening the Claudian chat view. */
 export type ChatViewPlacement = typeof CHAT_VIEW_PLACEMENTS[number];
 
+export const DUAL_PANE_SIDES = ['left', 'right'] as const;
+
+/** Side of the chat occupied by the session manager in dual-pane mode. */
+export type DualPaneSide = typeof DUAL_PANE_SIDES[number];
+
 export type SessionManagerOrganization = 'list' | 'linked-note';
 export type SessionManagerSort = 'last-updated' | 'created';
 
@@ -166,6 +171,8 @@ export interface ClaudianSettings {
   deferMathRenderingDuringStreaming: boolean;
   expandFileEditsByDefault: boolean;
   chatViewPlacement: ChatViewPlacement;
+  enableDualPane: boolean;
+  dualPaneSide: DualPaneSide;
   sessionManagerOrganization?: SessionManagerOrganization;
   sessionManagerSort?: SessionManagerSort;
   pinnedLinkedNotePaths?: string[];

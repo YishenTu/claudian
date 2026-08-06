@@ -284,6 +284,8 @@
       "name": "Máximo de sesiones en ejecución simultáneas",
       "desc": "Número máximo de sesiones de agente listas a la vez (5-10). Las sesiones inactivas más antiguas se pausan automáticamente y se reanudan al usarlas."
     },
+    "enableDualPane": { "name": "Activar modo de panel doble", "desc": "Mostrar automáticamente el gestor de sesiones junto al chat cuando la vista tenga al menos 600 px de ancho." },
+    "dualPaneSide": { "name": "Lado del panel doble", "desc": "Elegir en qué lado del chat aparece el gestor de sesiones.", "left": "Izquierda", "right": "Derecha" },
     "enableAutoScroll": {
       "name": "Desplazamiento automático durante streaming",
       "desc": "Desplazarse automáticamente hacia abajo mientras Claude transmite respuestas. Desactivar para quedarse arriba y leer desde el principio."

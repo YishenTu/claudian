@@ -63,6 +63,8 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
       expect(result.requireCommandOrControlEnterToSend).toBe(false);
       expect(result.titleGenerationLocale).toBe('');
+      expect(result.enableDualPane).toBe(true);
+      expect(result.dualPaneSide).toBe('right');
       expect(mockAdapter.read).not.toHaveBeenCalled();
     });
 
@@ -145,6 +147,22 @@ describe('ClaudianSettingsStorage', () => {
 
       expect(result.chatViewPlacement).toBe('right-sidebar');
       expect(writtenContent.chatViewPlacement).toBe('right-sidebar');
+    });
+
+    it('normalizes invalid dual-pane preferences', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        enableDualPane: 'yes',
+        dualPaneSide: 'top',
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.enableDualPane).toBe(true);
+      expect(result.dualPaneSide).toBe('right');
+      expect(writtenContent.enableDualPane).toBe(true);
+      expect(writtenContent.dualPaneSide).toBe('right');
     });
 
     it('should strip legacy blocklist fields from loaded data', async () => {

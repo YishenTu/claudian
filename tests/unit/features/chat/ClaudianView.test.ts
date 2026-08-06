@@ -1117,6 +1117,45 @@ describe('ClaudianView tab controls', () => {
     expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the single-panel layout when dual-pane mode is disabled', () => {
+    const viewContainerEl = createMockEl();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      isWideSessionLayout: false,
+      plugin: { settings: { enableDualPane: false, dualPaneSide: 'right' } },
+      renderSessionSidebar: jest.fn(),
+      requestedWideSessionLayout: false,
+      viewContainerEl,
+    });
+
+    view.updateSessionSidebarLayout(900);
+
+    expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(false);
+    expect(view.isWideSessionLayout).toBe(false);
+    expect(view.renderSessionSidebar).not.toHaveBeenCalled();
+  });
+
+  it('attaches the persistent session column to the configured left side', () => {
+    const viewContainerEl = createMockEl();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      cancelHistoryRendering: jest.fn(),
+      historyDropdown: createMockEl(),
+      isWideSessionLayout: false,
+      plugin: { settings: { enableDualPane: true, dualPaneSide: 'left' } },
+      renderSessionSidebar: jest.fn(),
+      requestedWideSessionLayout: false,
+      viewContainerEl,
+    });
+
+    view.updateSessionSidebarLayout(900);
+
+    expect(viewContainerEl.hasClass('claudian-session-sidebar-left')).toBe(true);
+    expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(true);
+  });
+
   it('keeps dual-mode controls in place until provisional cleanup finishes', async () => {
     const viewContainerEl = createMockEl();
     viewContainerEl.addClass('claudian-wide-session-layout');
@@ -1389,6 +1428,47 @@ describe('ClaudianView tab controls', () => {
     expect(ownerDocument.removeEventListener).toHaveBeenCalledWith(
       'pointermove',
       expect.any(Function),
+    );
+  });
+
+  it('uses the opposite drag direction when the session column is on the left', () => {
+    const viewContainerEl = createMockEl();
+    viewContainerEl.getBoundingClientRect = jest.fn().mockReturnValue({ width: 800 });
+    viewContainerEl.style.setProperty = jest.fn();
+    const sessionSidebarEl = createMockEl();
+    sessionSidebarEl.getBoundingClientRect = jest.fn().mockReturnValue({ width: 240 });
+    const documentListeners = new Map<string, EventListener>();
+    const ownerDocument = {
+      addEventListener: jest.fn((event: string, listener: EventListener) => {
+        documentListeners.set(event, listener);
+      }),
+      removeEventListener: jest.fn((event: string) => {
+        documentListeners.delete(event);
+      }),
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      isWideSessionLayout: true,
+      sessionSidebarEl,
+      plugin: {
+        app: { vault: {} },
+        settings: { dualPaneSide: 'left' },
+      },
+      viewContainerEl,
+    });
+
+    view.startSessionSidebarResize({
+      button: 0,
+      clientX: 500,
+      currentTarget: { ownerDocument },
+      preventDefault: jest.fn(),
+    });
+    documentListeners.get('pointermove')?.({ clientX: 550 } as unknown as Event);
+
+    expect(viewContainerEl.style.setProperty).toHaveBeenLastCalledWith(
+      '--claudian-session-sidebar-width',
+      '290px',
     );
   });
 

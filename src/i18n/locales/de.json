@@ -284,6 +284,8 @@
       "name": "Maximale gleichzeitig laufende Sitzungen",
       "desc": "Maximale Anzahl gleichzeitig bereiter Agent-Sitzungen (5-10). Ältere inaktive Sitzungen pausieren automatisch und werden bei Nutzung fortgesetzt."
     },
+    "enableDualPane": { "name": "Zwei-Spalten-Modus aktivieren", "desc": "Den Sitzungsmanager automatisch neben dem Chat anzeigen, wenn die Ansicht mindestens 600 px breit ist." },
+    "dualPaneSide": { "name": "Seite der zweiten Spalte", "desc": "Auswählen, auf welcher Seite des Chats der Sitzungsmanager angezeigt wird.", "left": "Links", "right": "Rechts" },
     "enableAutoScroll": {
       "name": "Automatisches Scrollen während Streaming",
       "desc": "Automatisch nach unten scrollen, während Claude Antworten streamt. Deaktivieren, um oben zu bleiben und von Anfang an zu lesen."

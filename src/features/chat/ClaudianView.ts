@@ -492,6 +492,11 @@ export class ClaudianView extends ItemView {
     return this.isWideSessionLayout;
   }
 
+  refreshDualPaneLayout(): void {
+    if (!this.viewContainerEl) return;
+    this.updateSessionSidebarLayout(this.viewContainerEl.getBoundingClientRect().width);
+  }
+
   private findMostRecentUnboundTab(): TabData | null {
     const tabs = this.tabManager?.getAllTabs() ?? [];
     for (let index = tabs.length - 1; index >= 0; index -= 1) {
@@ -1546,7 +1551,8 @@ export class ClaudianView extends ItemView {
       ?? this.sessionSidebarEl.getBoundingClientRect().width;
 
     const handlePointerMove = (moveEvent: PointerEvent): void => {
-      this.setSessionSidebarWidth(startWidth - (moveEvent.clientX - startX));
+      const direction = this.plugin.settings.dualPaneSide === 'left' ? 1 : -1;
+      this.setSessionSidebarWidth(startWidth + direction * (moveEvent.clientX - startX));
     };
     const handlePointerEnd = (): void => {
       this.stopSessionSidebarResize();
@@ -1577,7 +1583,10 @@ export class ClaudianView extends ItemView {
     event.preventDefault();
     const currentWidth = this.sessionSidebarWidth
       ?? this.sessionSidebarEl.getBoundingClientRect().width;
-    const delta = event.key === 'ArrowLeft'
+    const growsToward = this.plugin.settings.dualPaneSide === 'left'
+      ? 'ArrowRight'
+      : 'ArrowLeft';
+    const delta = event.key === growsToward
       ? SESSION_RESIZE_KEYBOARD_STEP
       : -SESSION_RESIZE_KEYBOARD_STEP;
     this.setSessionSidebarWidth(currentWidth + delta);
@@ -1606,7 +1615,11 @@ export class ClaudianView extends ItemView {
   private updateSessionSidebarLayout(width: number): void {
     if (!this.viewContainerEl) return;
 
-    const shouldUseWideLayout = width >= WIDE_SESSION_LAYOUT_MIN_WIDTH;
+    const isLeft = this.plugin?.settings?.dualPaneSide === 'left';
+    this.viewContainerEl.toggleClass('claudian-session-sidebar-left', isLeft);
+
+    const isDualPaneEnabled = this.plugin?.settings?.enableDualPane ?? true;
+    const shouldUseWideLayout = isDualPaneEnabled && width >= WIDE_SESSION_LAYOUT_MIN_WIDTH;
     if (shouldUseWideLayout === this.requestedWideSessionLayout) {
       if (shouldUseWideLayout && this.isWideSessionLayout) {
         if (this.sessionSidebarWidth !== null) {

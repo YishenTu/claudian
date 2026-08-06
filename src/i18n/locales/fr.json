@@ -284,6 +284,8 @@
       "name": "Maximum de sessions exécutées simultanément",
       "desc": "Nombre maximal de sessions d'agent gardées prêtes à la fois (5-10). Les anciennes sessions inactives se mettent automatiquement en pause et reprennent à l'utilisation."
     },
+    "enableDualPane": { "name": "Activer le mode double volet", "desc": "Afficher automatiquement le gestionnaire de sessions à côté du chat lorsque la vue mesure au moins 600 px de large." },
+    "dualPaneSide": { "name": "Côté du double volet", "desc": "Choisir de quel côté du chat le gestionnaire de sessions apparaît.", "left": "Gauche", "right": "Droite" },
     "enableAutoScroll": {
       "name": "Défilement automatique pendant le streaming",
       "desc": "Défiler automatiquement vers le bas pendant que Claude diffuse les réponses. Désactiver pour rester en haut et lire depuis le début."

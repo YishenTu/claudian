@@ -3,29 +3,29 @@ import {
   CONVERSATION_INPUT_LEDGER_SCHEMA_VERSION,
   type ConversationInputRecord,
 } from '@/core/bootstrap/ConversationInputLedgerStorage';
+import type {
+  ChatRewindMode,
+  ChatRewindPreview,
+  ChatRewindResult,
+  ProviderExecutionBackend,
+  ProviderExecutionConfiguration,
+  ProviderExecutionEvent,
+  ProviderExecutionInvalidationReason,
+  ProviderExecutionLifecycleRegistry,
+  ProviderExecutionRequest,
+  ProviderExecutionRun,
+  ProviderExecutionSession,
+  ProviderInteractionDismissReason,
+  ProviderInteractionPort,
+  ProviderNativeResumeSeed,
+  ProviderSessionEvent,
+  ProviderSessionSnapshot,
+  ProviderToolPolicy,
+} from '@/core/execution';
 import {
-  type ChatRewindMode,
-  type ChatRewindPreview,
-  type ChatRewindResult,
-  createProviderExecutionOutcome,
   isModeConfigurableExecutionSession,
   isRewindableExecutionSession,
   isSteerableExecutionSession,
-  type ProviderExecutionBackend,
-  type ProviderExecutionConfiguration,
-  type ProviderExecutionEvent,
-  type ProviderExecutionInvalidationReason,
-  type ProviderExecutionLifecycleRegistry,
-  type ProviderExecutionOutcome,
-  type ProviderExecutionRequest,
-  type ProviderExecutionRun,
-  type ProviderExecutionSession,
-  type ProviderInteractionDismissReason,
-  type ProviderInteractionPort,
-  type ProviderNativeResumeSeed,
-  type ProviderSessionEvent,
-  type ProviderSessionSnapshot,
-  type ProviderToolPolicy,
 } from '@/core/execution';
 import type {
   ChatMessage,
@@ -155,12 +155,21 @@ export interface ChatExecutionCoordinatorDeps {
   };
 }
 
-export interface ChatMissingSessionResult extends Omit<ProviderExecutionOutcome, 'status'> {
-  readonly status: 'missing-session';
+export interface ChatExecutionResult {
+  readonly status:
+    | 'completed'
+    | 'cancelled'
+    | 'error'
+    | 'missing-session'
+    | 'invalidated';
+  readonly accepted: boolean;
+  readonly planCompleted: boolean;
+  readonly nativeUserMessageId?: string;
+  readonly nativeAssistantMessageId?: string;
+  readonly nativeCheckpointId?: string;
+  readonly error?: Extract<ProviderExecutionEvent, { type: 'execution_error' }>;
   readonly missingSessionResolution?: MissingProviderSessionResolution;
 }
-
-export type ChatExecutionResult = ProviderExecutionOutcome | ChatMissingSessionResult;
 
 interface SessionBinding {
   readonly conversation: ChatExecutionConversationBinding;
@@ -705,6 +714,7 @@ export class ChatExecutionCoordinator {
   ): Promise<ChatExecutionResult> {
     let lastSequence = 0;
     let accepted = false;
+    let planCompleted = false;
     let nativeUserMessageId: string | undefined;
     let nativeAssistantMessageId: string | undefined;
     let nativeCheckpointId: string | undefined;
@@ -753,6 +763,7 @@ export class ChatExecutionCoordinator {
         await this.persistSnapshot(active.binding, event.snapshot);
       } else if (event.type === 'turn_completed') {
         terminal = event;
+        planCompleted = event.planCompleted === true;
         nativeAssistantMessageId =
           event.nativeAssistantId ?? nativeAssistantMessageId;
         nativeCheckpointId =
@@ -815,35 +826,34 @@ export class ChatExecutionCoordinator {
     }
 
     if (active.terminationOverride) {
-      return createProviderExecutionOutcome({
-        interruption: active.terminationOverride,
-        accepted,
-        nativeUserMessageId,
-        nativeAssistantMessageId,
-        nativeCheckpointId,
-      });
+      return createInterruptedResult(active.terminationOverride, accepted);
     }
     if (!this.isBindingCurrent(active.binding)) {
-      return createProviderExecutionOutcome({
-        interruption: 'invalidated',
-        accepted,
-        nativeUserMessageId,
-        nativeAssistantMessageId,
-        nativeCheckpointId,
-      });
+      return createInterruptedResult('invalidated', accepted);
     }
     if (!terminal) {
-      return createProviderExecutionOutcome({
+      return createInterruptedResult('cancelled', accepted);
+    }
+    if (terminal.type === 'turn_completed') {
+      return {
+        status: 'completed',
         accepted,
+        planCompleted,
         nativeUserMessageId,
         nativeAssistantMessageId,
         nativeCheckpointId,
-      });
+      };
     }
-    if (
-      terminal.type === 'execution_error'
-      && terminal.category === 'provider-session-missing'
-    ) {
+    if (terminal.type === 'cancelled') {
+      return {
+        status: 'cancelled',
+        accepted,
+        planCompleted: false,
+        nativeUserMessageId,
+        nativeAssistantMessageId,
+      };
+    }
+    if (terminal.category === 'provider-session-missing') {
       let resolution: MissingProviderSessionResolution;
       try {
         resolution = await this.deps.resolveMissingProviderSession(
@@ -861,13 +871,7 @@ export class ChatExecutionCoordinator {
           !== active.binding.conversation.conversationId
       ) {
         if (terminalSinkFailure) throw terminalSinkFailure.error;
-        return createProviderExecutionOutcome({
-          interruption: 'invalidated',
-          accepted,
-          nativeUserMessageId,
-          nativeAssistantMessageId,
-          nativeCheckpointId,
-        });
+        return createInterruptedResult('invalidated', accepted);
       }
       try {
         if (this.sessionBinding === active.binding) {
@@ -904,13 +908,14 @@ export class ChatExecutionCoordinator {
         missingSessionResolution: resolution,
       };
     }
-    return createProviderExecutionOutcome({
-      terminal,
+    return {
+      status: 'error',
       accepted,
+      planCompleted: false,
       nativeUserMessageId,
       nativeAssistantMessageId,
-      nativeCheckpointId,
-    });
+      error: terminal,
+    };
   }
 
   private handleSessionEvent(event: ProviderSessionEvent): void {
@@ -1364,6 +1369,17 @@ function sameConversationBinding(
     && left.providerId === right.providerId
     && JSON.stringify(left.resumeSeed) === JSON.stringify(right.resumeSeed)
   );
+}
+
+function createInterruptedResult(
+  status: 'cancelled' | 'invalidated',
+  accepted: boolean,
+): ChatExecutionResult {
+  return {
+    status,
+    accepted,
+    planCompleted: false,
+  };
 }
 
 function isDefinitePreHandoffRejection(

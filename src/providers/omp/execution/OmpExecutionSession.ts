@@ -117,6 +117,7 @@ export class OmpExecutionSession implements ProviderExecutionSession {
   private nativeSessionId: string | null;
   private activeRun: OmpExecutionRun | null = null;
   private snapshot: ProviderSessionSnapshot;
+  private lastUsage: UsageInfo | null = null;
   private disposed = false;
 
   constructor(
@@ -199,11 +200,15 @@ export class OmpExecutionSession implements ProviderExecutionSession {
       const selectedModel = decodeOmpModelId(request.configuration.model ?? '')
         ?? getOmpProviderSettings(this.plugin.settings).visibleModels[0]
         ?? undefined;
-      run.queue.push({
-        scope: run.scope(),
-        type: 'usage_updated',
-        usage: buildInitialOmpUsageInfo(selectedModel),
-      });
+      if (!this.lastUsage) {
+        const initialUsage = buildInitialOmpUsageInfo(selectedModel);
+        this.lastUsage = initialUsage;
+        run.queue.push({
+          scope: run.scope(),
+          type: 'usage_updated',
+          usage: initialUsage,
+        });
+      }
       const response = await this.kernel.prompt({
         prompt: buildOmpPrompt(request),
         sessionId: native.sessionId,
@@ -250,7 +255,12 @@ export class OmpExecutionSession implements ProviderExecutionSession {
   private handleNotification(run: OmpExecutionRun, notification: AcpSessionNotification): void {
     if (run.terminal || notification.sessionId !== this.nativeSessionId) return;
     const result = this.normalizers.get(run)?.normalize(notification.update);
-    for (const event of result?.events ?? []) run.queue.push({ ...event, scope: run.scope() });
+    for (const event of result?.events ?? []) {
+      if (event.type === 'usage_updated') {
+        this.lastUsage = event.usage;
+      }
+      run.queue.push({ ...event, scope: run.scope() });
+    }
   }
 
   private cancelRun(run: OmpExecutionRun): void {

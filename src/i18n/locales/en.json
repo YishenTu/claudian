@@ -298,6 +298,16 @@
       "name": "Maximum concurrent running sessions",
       "desc": "Maximum number of agent sessions kept ready at once (5-10). Older idle sessions pause automatically and resume when used."
     },
+    "enableDualPane": {
+      "name": "Enable dual-pane mode",
+      "desc": "Automatically show the session manager beside the chat when the view is at least 600 px wide."
+    },
+    "dualPaneSide": {
+      "name": "Dual-pane side",
+      "desc": "Choose which side of the chat the session manager appears on.",
+      "left": "Left",
+      "right": "Right"
+    },
     "enableAutoScroll": {
       "name": "Auto-scroll during streaming",
       "desc": "Automatically scroll to the bottom as Claude streams responses. Disable to stay at the top and read from the beginning."

@@ -284,6 +284,8 @@
       "name": "Máximo de sessões em execução simultâneas",
       "desc": "Número máximo de sessões de agente mantidas prontas ao mesmo tempo (5-10). Sessões ociosas mais antigas pausam automaticamente e retomam quando usadas."
     },
+    "enableDualPane": { "name": "Ativar modo de painel duplo", "desc": "Mostrar automaticamente o gerenciador de sessões ao lado do chat quando a visualização tiver pelo menos 600 px de largura." },
+    "dualPaneSide": { "name": "Lado do painel duplo", "desc": "Escolher em qual lado do chat o gerenciador de sessões aparece.", "left": "Esquerda", "right": "Direita" },
     "enableAutoScroll": {
       "name": "Rolagem automática durante streaming",
       "desc": "Rolar automaticamente para baixo enquanto o Claude transmite respostas. Desativar para ficar no topo e ler desde o início."

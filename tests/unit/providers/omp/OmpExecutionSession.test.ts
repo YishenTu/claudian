@@ -45,11 +45,21 @@ describe('OmpExecutionSession', () => {
     } as never;
 
     const first = session.execute(request);
+    const firstEvents: unknown[] = [];
+    const collectFirst = (async () => {
+      for await (const event of first.events) firstEvents.push(event);
+    })();
     await flush();
+    await kernelOptions.onNotification({
+      sessionId: 'omp-session',
+      update: { sessionUpdate: 'usage_update', size: 200_000, used: 30_000 },
+    });
     firstPrompt.resolve({ userMessageId: 'first' });
-    for await (const event of first.events) {
-      expect(event).toBeDefined();
-    }
+    await collectFirst;
+    expect(firstEvents).toContainEqual(expect.objectContaining({
+      type: 'usage_updated',
+      usage: expect.objectContaining({ percentage: 0 }),
+    }));
 
     const second = session.execute(request);
     const events: unknown[] = [];
@@ -57,6 +67,10 @@ describe('OmpExecutionSession', () => {
       for await (const event of second.events) events.push(event);
     })();
     await flush();
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'usage_updated',
+      usage: expect.objectContaining({ percentage: 0 }),
+    }));
     await kernelOptions.onNotification({
       sessionId: 'omp-session',
       update: {

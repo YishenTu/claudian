@@ -79,6 +79,11 @@ describe('types.ts', () => {
     it('should keep five agent processes warm by default', () => {
       expect(DEFAULT_SETTINGS.maxWarmAgentProcesses).toBe(5);
     });
+
+    it('should enable the right-side dual pane by default', () => {
+      expect(DEFAULT_SETTINGS.enableDualPane).toBe(true);
+      expect(DEFAULT_SETTINGS.dualPaneSide).toBe('right');
+    });
   });
 
   describe('ClaudianSettings type', () => {
@@ -117,6 +122,8 @@ describe('types.ts', () => {
         deferMathRenderingDuringStreaming: true,
         expandFileEditsByDefault: false,
         chatViewPlacement: 'right-sidebar',
+        enableDualPane: true,
+        dualPaneSide: 'right',
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -171,6 +178,8 @@ describe('types.ts', () => {
         deferMathRenderingDuringStreaming: true,
         expandFileEditsByDefault: false,
         chatViewPlacement: 'right-sidebar',
+        enableDualPane: true,
+        dualPaneSide: 'right',
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -226,6 +235,8 @@ describe('types.ts', () => {
         deferMathRenderingDuringStreaming: true,
         expandFileEditsByDefault: true,
         chatViewPlacement: 'right-sidebar',
+        enableDualPane: false,
+        dualPaneSide: 'left',
         hiddenProviderCommands: {
           claude: [],
           codex: [],

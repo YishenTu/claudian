@@ -175,7 +175,7 @@ export default class ClaudianPlugin extends Plugin {
         });
       }));
 
-      this.addRibbonIcon('bot', `Open ${PLUGIN_DISPLAY_NAME}`, () => {
+        this.addRibbonIcon('bot', `Open ${PLUGIN_DISPLAY_NAME}`, () => {
         void this.activateView();
       });
 
