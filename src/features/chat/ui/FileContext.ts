@@ -309,27 +309,26 @@ export class FileContextManager {
     const target = this.inputEl.closest<HTMLElement>('.claudian-input-wrapper');
     if (!target) return;
     if (typeof (target as HTMLElement & { createDiv?: unknown }).createDiv !== 'function') return;
-    const overlay = target.createDiv();
-    overlay.className = 'claudian-file-drop-overlay';
-    overlay.textContent = 'Drop files or folders to attach';
-    overlay.style.display = 'none';
-    target.appendChild(overlay);
+    const overlay = target.createDiv({
+      cls: 'claudian-file-drop-overlay claudian-hidden',
+      text: 'Drop files or folders to attach',
+    });
     let dragDepth = 0;
     this.dragEnterHandler = (event) => {
       event.preventDefault();
       dragDepth += 1;
-      overlay.style.display = '';
+      overlay.removeClass('claudian-hidden');
     };
     this.dragOverHandler = (event) => event.preventDefault();
     this.dragLeaveHandler = (event) => {
       event.preventDefault();
       dragDepth = Math.max(0, dragDepth - 1);
-      if (dragDepth === 0) overlay.style.display = 'none';
+      if (dragDepth === 0) overlay.addClass('claudian-hidden');
     };
     this.dropHandler = (event) => {
       event.preventDefault();
       dragDepth = 0;
-      overlay.style.display = 'none';
+      overlay.addClass('claudian-hidden');
       const paths = this.resolveDroppedPaths(event.dataTransfer);
       for (const path of paths) this.attachDroppedPath(path);
     };
