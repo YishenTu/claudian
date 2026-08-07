@@ -20,6 +20,8 @@ export interface ProviderReadinessPanelController {
   refresh(): Promise<void>;
 }
 
+const MIN_REFRESH_FEEDBACK_MS = 120;
+
 export function renderProviderReadinessPanel(
   options: ProviderReadinessPanelOptions,
 ): ProviderReadinessPanelController {
@@ -50,15 +52,28 @@ export function renderProviderReadinessPanel(
   };
 
   const refresh = async (refreshCatalog = false): Promise<void> => {
-    if (refreshButton) refreshButton.disabled = true;
+    if (refreshButton) {
+      refreshButton.disabled = true;
+      refreshButton.setAttribute?.('aria-busy', 'true');
+      refreshButton.setText?.(t('settings.providerReadiness.checking'));
+    }
     summary.setText(t('settings.providerReadiness.checking'));
     try {
       if (refreshCatalog) {
+        const startedAt = Date.now();
         await options.onRefresh?.();
+        const remaining = MIN_REFRESH_FEEDBACK_MS - (Date.now() - startedAt);
+        if (remaining > 0) {
+          await new Promise<void>(resolve => setTimeout(resolve, remaining));
+        }
       }
       renderSnapshot(await options.getSnapshot());
     } finally {
-      if (refreshButton) refreshButton.disabled = false;
+      if (refreshButton) {
+        refreshButton.disabled = false;
+        refreshButton.removeAttribute?.('aria-busy');
+        refreshButton.setText?.(t('settings.providerReadiness.refresh'));
+      }
     }
   };
 

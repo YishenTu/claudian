@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 
 import { Notice, Setting } from 'obsidian';
 
+import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
   ProviderSettingsTabRenderer,
@@ -20,6 +21,7 @@ import {
   type ProviderModelPickerState,
   renderProviderModelPicker,
 } from '../../../shared/settings/ProviderModelPicker';
+import { renderProviderReadinessPanel } from '../../../shared/settings/ProviderReadinessPanel';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { maybeGetPiWorkspaceServices } from '../app/PiWorkspaceServices';
@@ -37,6 +39,38 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
     const hostnameKey = getHostnameKey();
     const workspace = maybeGetPiWorkspaceServices();
+    const readinessPanel = renderProviderReadinessPanel({
+      container,
+      providerName: 'Pi',
+      async getSnapshot() {
+        const current = getPiProviderSettings(settingsBag);
+        return assessProviderReadiness({
+          cliPath: typeof context.plugin.getResolvedProviderCliPath === 'function'
+            ? await context.plugin.getResolvedProviderCliPath('pi')
+            : null,
+          discoveredModelCount: current.discoveredModels.length,
+          enabled: current.enabled,
+          selectedModelCount: current.visibleModels.length,
+        });
+      },
+      async onRefresh() {
+        const result = await new PiModelDiscoveryService(context.plugin).discoverModels();
+        if (result.kind === 'skipped') return;
+        if (result.diagnostics) {
+          new Notice(`Pi discovery failed: ${result.diagnostics}`);
+          return;
+        }
+        const current = getPiProviderSettings(settingsBag);
+        const normalizedVisibleModels = normalizePiVisibleModels(current.visibleModels, result.models);
+        await context.plugin.mutateSettings(settings => {
+          updatePiProviderSettings(settings, {
+            discoveredModels: result.models,
+            visibleModels: normalizedVisibleModels,
+          });
+        });
+        context.notifyProviderModelOptionsChanged('pi');
+      },
+    });
 
     new Setting(container).setName('Setup').setHeading();
 
@@ -71,6 +105,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
           lastProviderWarning.showFor();
         }
         modelWarning.context.notifyProviderModelOptionsChanged('pi');
+        await readinessPanel.refresh();
       },
     });
 
@@ -85,7 +120,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     renderHostnameCliPathSetting({
       container,
-      description: 'Optional absolute path to the Pi CLI for this computer. Leave empty to use `pi` from PATH.',
+      description: t('settings.pi.cliPathDesc'),
       getValue: () => getPiProviderSettings(settingsBag).cliPathsByHost[hostnameKey] || '',
       name: 'CLI path',
       onChange: async (value) => {
@@ -109,6 +144,7 @@ export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
           () => workspace?.cliResolver?.reset(),
         );
         context.notifyProviderModelOptionsChanged('pi');
+        await readinessPanel.refresh();
       },
       placeholder: process.platform === 'win32'
         ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\pi.cmd'

@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import { Notice, Setting } from 'obsidian';
 
+import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
@@ -24,6 +25,7 @@ import {
   type ProviderModelPickerState,
   renderProviderModelPicker,
 } from '../../../shared/settings/ProviderModelPicker';
+import { renderProviderReadinessPanel } from '../../../shared/settings/ProviderReadinessPanel';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import type { GrokWorkspaceServices } from '../app/GrokWorkspaceServices';
@@ -56,6 +58,25 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         ? 'loaded'
         : 'empty';
     };
+
+    const readinessPanel = renderProviderReadinessPanel({
+      container,
+      providerName: 'Grok',
+      async getSnapshot() {
+        const current = getGrokProviderSettings(settingsBag);
+        return assessProviderReadiness({
+          cliPath: typeof context.plugin.getResolvedProviderCliPath === 'function'
+            ? await context.plugin.getResolvedProviderCliPath(GROK_PROVIDER_ID)
+            : null,
+          discoveredModelCount: current.currentCatalog?.models.length ?? 0,
+          enabled: current.enabled,
+          selectedModelCount: getOrderedGrokVisibleModelIds(current).length,
+        });
+      },
+      async onRefresh() {
+        await refreshModelCatalog();
+      },
+    });
 
     new Setting(container).setName('Setup').setHeading();
 
@@ -91,6 +112,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
           lastProviderWarning.showFor();
         }
         modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
+        await readinessPanel.refresh();
       },
     });
 
@@ -108,7 +130,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     renderHostnameCliPathSetting({
       container,
-      description: 'Optional absolute path to the Grok CLI for this computer. Leave empty to prefer known installs, then `grok` from PATH.',
+      description: t('settings.grok.cliPathDesc'),
       getValue: () => {
         const current = getGrokProviderSettings(settingsBag);
         return current.cliPathsByHost[hostnameKey] ?? current.cliPath ?? '';
@@ -136,6 +158,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
           () => workspace.cliResolver.reset(),
         );
         modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
+        await readinessPanel.refresh();
       },
       placeholder: process.platform === 'win32'
         ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\grok.cmd'

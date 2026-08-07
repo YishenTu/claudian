@@ -107,13 +107,16 @@
     },
     "omp": {
       "setup": "配置", "enable": "启用 OMP", "enableDesc": "启用 Oh My Pi ACP 提供商。",
-      "cliPath": "CLI 路径", "cliPathDesc": "此电脑上的 OMP 绝对路径，同时会让 Obsidian 使用其 Bun 运行时。",
+      "cliPath": "CLI 路径", "cliPathDesc": "此电脑上的 OMP 绝对路径。可粘贴 \"which omp\" 的输出（Windows 使用 \"where omp\"）。留空使用自动检测。",
       "models": "模型", "noModels": "尚未发现 OMP 模型。请检查 OMP 登录状态，然后点击“发现”。",
       "catalogFailed": "无法加载 OMP 模型目录。请检查 CLI 路径和登录状态。", "loadingModels": "正在加载 OMP 模型……",
       "discoveryFailed": "OMP 模型发现失败：{error}", "workspaceNotInitialized": "OMP 工作区尚未初始化",
       "safe": "安全", "yolo": "YOLO", "permissionRequest": "OMP 请求使用{tool}的权限。", "tool": "工具"
     },
-    "cursor": {"setup":"设置","enable":"启用 Cursor","enableDesc":"通过 ACP CLI 启用 Cursor Agent。","cliPath":"CLI 路径","cliPathDesc":"此电脑上 Cursor Agent CLI 的绝对路径。","models":"模型","noModels":"尚未发现 Cursor 模型。请先运行 agent login，再点击发现。","catalogFailed":"无法加载 Cursor 模型目录，请检查 CLI 路径和登录状态。","loadingModels":"正在加载 Cursor 模型…","discoveryFailed":"Cursor 模型发现失败：{error}","workspaceNotInitialized":"Cursor 工作区尚未初始化","agent":"Agent","plan":"计划","ask":"询问","permissionRequest":"Cursor 请求使用 {tool}。","tool":"工具"},
+    "cursor": {"setup":"设置","enable":"启用 Cursor","enableDesc":"通过 ACP CLI 启用 Cursor Agent。","cliPath":"CLI 路径","cliPathDesc":"Cursor Agent CLI 的绝对路径。可粘贴 \"which agent\" 的输出（Windows 使用 \"where agent\"）。留空使用自动检测。","models":"模型","noModels":"尚未发现 Cursor 模型。请先运行 agent login，再点击发现。","catalogFailed":"无法加载 Cursor 模型目录，请检查 CLI 路径和登录状态。","loadingModels":"正在加载 Cursor 模型…","discoveryFailed":"Cursor 模型发现失败：{error}","workspaceNotInitialized":"Cursor 工作区尚未初始化","agent":"Agent","plan":"计划","ask":"询问","permissionRequest":"Cursor 请求使用 {tool}。","tool":"工具"},
+    "grok": {"cliPathDesc":"可选的 Grok CLI 绝对路径。留空会优先使用已知安装，然后查找 PATH。可粘贴 \"which grok\" 的输出（Windows 使用 \"where grok\"）。"},
+    "opencode": {"cliPathDesc":"可选的 OpenCode CLI 绝对路径。留空会查找 PATH。可粘贴 \"which opencode\" 的输出（Windows 使用 \"where opencode\"）。"},
+    "pi": {"cliPathDesc":"可选的 Pi CLI 绝对路径。留空会查找 PATH。可粘贴 \"which pi\" 的输出（Windows 使用 \"where pi\"）。"},
     "providerReadiness": {
       "title": "就绪状态",
       "desc": "检查 {provider} 是否可以开始聊天。",
@@ -361,7 +364,7 @@
       "name": "Claude CLI 路径",
       "desc": "Claude Code CLI 的自定义路径。留空使用自动检测。",
       "descWindows": "对于原生安装程序，使用 claude.exe。对于 npm/pnpm/yarn 或其他包管理器安装，使用 cli-wrapper.cjs 路径（不是 claude.cmd）。",
-      "descUnix": "粘贴 \"which claude\" 的输出 - 适用于原生安装和 npm/pnpm/yarn 安装。",
+      "descUnix": "粘贴 \"which claude\" 的输出 - 适用于原生安装和 npm/pnpm/yarn 安装。Windows 请粘贴 \"where claude\" 的输出。",
       "validation": {
         "notExist": "路径不存在",
         "isDirectory": "路径是目录，不是文件"
@@ -386,8 +389,8 @@
       },
       "cliPath": {
         "name": "Codex CLI 路径",
-        "descUnix": "本机 Codex CLI 的自定义路径。留空会优先使用已知 Codex 安装，然后查找 PATH。",
-        "descWindows": "本机 Codex CLI 的自定义路径。留空会从 PATH 自动检测。请使用原生 Windows 可执行文件路径，通常为 `codex.exe`。",
+        "descUnix": "本机 Codex CLI 的自定义路径。留空会优先使用已知 Codex 安装，然后查找 PATH。可粘贴 \"which codex\" 的输出（Windows 使用 \"where codex\"）。",
+        "descWindows": "本机 Codex CLI 的自定义路径。留空会从 PATH 自动检测。可粘贴 \"where codex\" 的输出，或使用原生可执行文件路径（通常为 `codex.exe`）。",
         "descWsl": "在 WSL 内运行的 Linux 端 Codex 命令或绝对路径。留空会在所选发行版内查找 PATH。",
         "validation": {
           "wslWindowsPath": "WSL 模式需要 Linux 命令或 Linux 绝对路径，而不是 Windows 可执行文件路径。"

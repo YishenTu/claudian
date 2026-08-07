@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
   ProviderSettingsTabRenderer,
@@ -20,6 +21,7 @@ import {
   type ProviderModelPickerState,
   renderProviderModelPicker,
 } from '../../../shared/settings/ProviderModelPicker';
+import { renderProviderReadinessPanel } from '../../../shared/settings/ProviderReadinessPanel';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { maybeGetOpencodeWorkspaceServices } from '../app/OpencodeWorkspaceServices';
@@ -45,6 +47,32 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const opencodeWorkspace = maybeGetOpencodeWorkspaceServices();
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
     const hostnameKey = getHostnameKey();
+    const readinessPanel = renderProviderReadinessPanel({
+      container,
+      providerName: 'OpenCode',
+      async getSnapshot() {
+        const current = getOpencodeProviderSettings(settingsBag);
+        return assessProviderReadiness({
+          cliPath: typeof context.plugin.getResolvedProviderCliPath === 'function'
+            ? await context.plugin.getResolvedProviderCliPath('opencode')
+            : null,
+          discoveredModelCount: current.discoveredModels.length,
+          enabled: current.enabled,
+          selectedModelCount: current.visibleModels.length,
+        });
+      },
+      async onRefresh() {
+        const workspaceService = maybeGetOpencodeWorkspaceServices()?.metadataService;
+        const metadataService = workspaceService
+          ?? new OpencodeMetadataService(context.plugin);
+        try {
+          await metadataService.loadCatalog();
+        } finally {
+          if (!workspaceService) await metadataService.dispose();
+        }
+        context.notifyProviderModelOptionsChanged('opencode');
+      },
+    });
 
     new Setting(container).setName('Setup').setHeading();
 
@@ -79,6 +107,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           lastProviderWarning.showFor();
         }
         modelWarning.context.notifyProviderModelOptionsChanged('opencode');
+        await readinessPanel.refresh();
       },
     });
 
@@ -93,7 +122,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     renderHostnameCliPathSetting({
       container,
-      description: 'Optional absolute path to the OpenCode CLI for this computer. Leave empty to use `opencode` from PATH.',
+      description: t('settings.opencode.cliPathDesc'),
       getValue: () => getOpencodeProviderSettings(settingsBag).cliPathsByHost[hostnameKey] || '',
       name: 'CLI path',
       onChange: async (value) => {
@@ -114,6 +143,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           },
           () => opencodeWorkspace?.cliResolver?.reset(),
         );
+        await readinessPanel.refresh();
       },
       placeholder: process.platform === 'win32'
         ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\opencode.cmd'

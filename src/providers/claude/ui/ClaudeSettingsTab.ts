@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import { assessProviderReadiness } from '../../../core/providers/ProviderReadiness';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
@@ -9,6 +10,7 @@ import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameC
 import { McpSettingsManager } from '../../../shared/settings/McpSettingsManager';
 import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
 import { renderLastEnabledProviderWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
+import { renderProviderReadinessPanel } from '../../../shared/settings/ProviderReadinessPanel';
 import { getHostnameKey } from '../../../utils/env';
 import { expandHomePath } from '../../../utils/path';
 import { getClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
@@ -33,6 +35,32 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     const claudeWorkspace = getClaudeWorkspaceServices();
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
     const claudeSettings = getClaudeProviderSettings(settingsBag);
+    const readinessPanel = renderProviderReadinessPanel({
+      container,
+      providerName: 'Claude',
+      async getSnapshot() {
+        const current = getClaudeProviderSettings(settingsBag);
+        const modelOptions = getClaudeModelOptions(settingsBag);
+        return assessProviderReadiness({
+          cliPath: typeof context.plugin.getResolvedProviderCliPath === 'function'
+            ? await context.plugin.getResolvedProviderCliPath('claude')
+            : null,
+          discoveredModelCount: modelOptions.length,
+          enabled: current.enabled,
+          selectedModelCount: resolveClaudeModelSelection(
+            settingsBag,
+            current.defaultModel,
+          ) ? 1 : 0,
+        });
+      },
+      async onRefresh() {
+        claudeWorkspace.cliResolver.reset();
+        if (typeof context.plugin.getResolvedProviderCliPath === 'function') {
+          await context.plugin.getResolvedProviderCliPath('claude');
+        }
+        context.notifyProviderModelOptionsChanged('claude');
+      },
+    });
 
     const reconcileActiveClaudeModelSelection = (settings: Record<string, unknown>): void => {
       const activeProvider = settings.settingsProvider;
@@ -85,6 +113,7 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           lastProviderWarning.showFor();
         }
         context.notifyProviderModelOptionsChanged('claude');
+        await readinessPanel.refresh();
       },
     });
 
@@ -134,6 +163,7 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           },
           () => claudeWorkspace.cliResolver.reset(),
         );
+        await readinessPanel.refresh();
       },
       placeholder: process.platform === 'win32'
         ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli-wrapper.cjs'
@@ -187,6 +217,7 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
           });
           savedCustomModels = nextCustomModels;
           context.notifyProviderModelOptionsChanged('claude');
+          await readinessPanel.refresh();
         };
 
         text

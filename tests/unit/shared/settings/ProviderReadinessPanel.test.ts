@@ -45,4 +45,34 @@ describe('renderProviderReadinessPanel', () => {
       'Select at least one chat model below.',
     ]);
   });
+
+  it('shows checking feedback while a refresh is in flight', async () => {
+    const container = document.createElement('div');
+    let finishRefresh!: () => void;
+    const onRefresh = jest.fn(() => new Promise<void>(resolve => { finishRefresh = resolve; }));
+
+    renderProviderReadinessPanel({
+      container,
+      providerName: 'Test',
+      getSnapshot: async () => ({ status: 'ready', checks: [] }),
+      onRefresh,
+    });
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+    const button = container.querySelector<HTMLButtonElement>('.claudian-provider-readiness-refresh');
+    expect(button).not.toBeNull();
+    button?.click();
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+    expect(button?.disabled).toBe(true);
+    expect(button?.textContent).toBe('Checking provider readiness…');
+    expect(button?.getAttribute('aria-busy')).toBe('true');
+
+    finishRefresh();
+    await new Promise<void>(resolve => setTimeout(resolve, 140));
+
+    expect(button?.disabled).toBe(false);
+    expect(button?.textContent).toBe('Check again');
+    expect(button?.getAttribute('aria-busy')).toBeNull();
+  });
 });
