@@ -19,4 +19,14 @@ describe('OMP prompt encoding', () => {
       type: 'text',
     }]);
   });
+
+  it('includes attached file chips in the ACP prompt', () => {
+    expect(buildOmpPrompt({
+      context: { contextFiles: ['notes/design.md'] },
+      input: [{ text: 'Use this file', type: 'text' }],
+    } as never)).toEqual([{
+      text: 'Use this file\n\n<context_files>\n<context_file path="notes/design.md" />\n</context_files>',
+      type: 'text',
+    }]);
+  });
 });

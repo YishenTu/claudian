@@ -1013,6 +1013,7 @@ export class InputController {
       ? fileContextManager.transformContextMentions(options.content)
       : options.content;
     const enabledMcpServers = mcpServerSelector?.getEnabledServers();
+    const contextFiles = fileContextManager?.getAttachedFiles?.();
 
     return {
       displayContent: options.content,
@@ -1026,6 +1027,7 @@ export class InputController {
         externalContextPaths: externalContextPaths && externalContextPaths.length > 0
           ? externalContextPaths
           : undefined,
+        contextFiles: contextFiles && contextFiles.size > 0 ? [...contextFiles] : undefined,
         enabledMcpServers: enabledMcpServers && enabledMcpServers.size > 0
           ? enabledMcpServers
           : undefined,
@@ -1095,6 +1097,7 @@ export class InputController {
         ...(request.externalContextPaths
           ? { externalContextPaths: [...request.externalContextPaths] }
           : {}),
+        ...(request.contextFiles ? { contextFiles: [...request.contextFiles] } : {}),
       },
       conversationHistory: user && assistant
         ? this.deps.state.messages.slice(0, -2)
@@ -2265,6 +2268,7 @@ function cloneChatTurnRequest(request: ChatTurnRequest): ChatTurnRequest {
     externalContextPaths: request.externalContextPaths
       ? [...request.externalContextPaths]
       : undefined,
+    contextFiles: request.contextFiles ? [...request.contextFiles] : undefined,
     images: request.images ? [...request.images] : undefined,
   };
 }
@@ -2279,6 +2283,10 @@ function mergeQueuedChatTurns(
   const externalContextPaths = Array.from(new Set([
     ...(existing.request.externalContextPaths ?? []),
     ...(incoming.request.externalContextPaths ?? []),
+  ]));
+  const contextFiles = Array.from(new Set([
+    ...(existing.request.contextFiles ?? []),
+    ...(incoming.request.contextFiles ?? []),
   ]));
   const enabledMcpServers = new Set([
     ...(existing.request.enabledMcpServers ?? []),
@@ -2298,6 +2306,7 @@ function mergeQueuedChatTurns(
         enabledMcpServers.size > 0 ? enabledMcpServers : undefined,
       externalContextPaths:
         externalContextPaths.length > 0 ? externalContextPaths : undefined,
+      contextFiles: contextFiles.length > 0 ? contextFiles : undefined,
       images: images.length > 0 ? images : undefined,
       text: mergeText(existing.request.text, incoming.request.text),
     },

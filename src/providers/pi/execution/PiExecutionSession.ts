@@ -1477,6 +1477,9 @@ function encodePrompt(
   if (context?.canvasSelection) {
     text = appendCanvasContext(text, context.canvasSelection);
   }
+  if (context?.contextFiles?.length) {
+    text = appendContextFiles(text, [...context.contextFiles]);
+  }
   if (context?.externalContextPaths?.length) {
     text = appendContextFiles(text, [...context.externalContextPaths]);
   }

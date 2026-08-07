@@ -21,7 +21,7 @@ import {
   type AcpUsageUpdate,
   buildAcpUsageInfo,
 } from '@/providers/acp';
-import { appendCurrentNote } from '@/utils/context';
+import { appendContextFiles, appendCurrentNote } from '@/utils/context';
 import { appendEditorContext } from '@/utils/editor';
 
 import { decodeCursorModelId } from '../models';
@@ -311,6 +311,9 @@ export function buildCursorPrompt(request: ProviderExecutionRequest): AcpContent
   }
   if (request.context?.editorSelection) {
     text = appendEditorContext(text, request.context.editorSelection);
+  }
+  if (request.context?.contextFiles?.length) {
+    text = appendContextFiles(text, [...request.context.contextFiles]);
   }
   const blocks: AcpContentBlock[] = [{ type: 'text', text }];
   for (const block of request.input) {

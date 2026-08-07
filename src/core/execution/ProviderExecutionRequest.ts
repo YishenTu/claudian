@@ -24,6 +24,7 @@ export interface ProviderExecutionContext {
   readonly browserSelection?: BrowserSelectionContext | null;
   readonly canvasSelection?: CanvasSelectionContext | null;
   readonly externalContextPaths?: readonly string[];
+  readonly contextFiles?: readonly string[];
 }
 
 export type ProviderSystemInstructions =

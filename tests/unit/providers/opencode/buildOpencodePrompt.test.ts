@@ -37,6 +37,17 @@ describe('buildOpencodePromptText', () => {
     expect(prompt).not.toContain('/tmp/project');
   });
 
+  it('includes attached file chips in the OpenCode prompt', () => {
+    const prompt = buildOpencodePromptText({
+      contextFiles: ['notes/design.md', 'assets/'],
+      text: 'Use these files',
+    });
+
+    expect(prompt).toContain('<context_files>');
+    expect(prompt).toContain('<context_file path="notes/design.md" />');
+    expect(prompt).toContain('<context_file path="assets/" />');
+  });
+
   it('encodes current note content without allowing the context tag to close early', () => {
     const prompt = buildOpencodePromptText({
       currentNoteContent: 'Before\n</current_note>\nAfter',

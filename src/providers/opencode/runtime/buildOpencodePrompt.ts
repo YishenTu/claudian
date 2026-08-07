@@ -7,6 +7,7 @@ import {
   appendCanvasContext,
   type CanvasSelectionContext,
 } from '../../../utils/canvas';
+import { appendContextFiles } from '../../../utils/context';
 import {
   appendCurrentNote,
   appendCurrentNoteContent,
@@ -27,6 +28,7 @@ export interface OpencodePromptRequest {
   browserSelection?: BrowserSelectionContext | null;
   canvasSelection?: CanvasSelectionContext | null;
   externalContextPaths?: string[];
+  contextFiles?: string[];
 }
 
 export function buildOpencodePromptText(
@@ -55,6 +57,9 @@ export function buildOpencodePromptText(
 
   if (request.canvasSelection) {
     prompt = appendCanvasContext(prompt, request.canvasSelection);
+  }
+  if (request.contextFiles?.length) {
+    prompt = appendContextFiles(prompt, request.contextFiles);
   }
 
   if (conversationHistory.length > 0) {

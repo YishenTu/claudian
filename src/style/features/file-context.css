@@ -186,3 +186,17 @@
   white-space: nowrap;
   min-width: 0;
 }
+.claudian-file-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--interactive-accent);
+  border-radius: var(--radius-m);
+  background: color-mix(in srgb, var(--background-primary) 88%, var(--interactive-accent));
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+  pointer-events: none;
+}

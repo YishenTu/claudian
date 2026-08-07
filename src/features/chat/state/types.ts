@@ -22,6 +22,7 @@ export interface ChatTurnRequest {
   browserSelection?: BrowserSelectionContext | null;
   canvasSelection?: CanvasSelectionContext | null;
   externalContextPaths?: string[];
+  contextFiles?: string[];
   enabledMcpServers?: Set<string>;
 }
 

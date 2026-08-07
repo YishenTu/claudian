@@ -864,6 +864,7 @@ function buildPromptBlocks(
     currentNoteContent: currentNote?.content,
     currentNotePath: currentNote?.path,
     editorSelection: request.context?.editorSelection,
+    contextFiles: request.context?.contextFiles ? [...request.context.contextFiles] : undefined,
     images,
     text,
   }, bootstrapHistory

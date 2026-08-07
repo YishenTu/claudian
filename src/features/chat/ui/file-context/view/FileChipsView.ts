@@ -16,6 +16,27 @@ export class FileChipsView {
 
   destroy(): void {
     this.contextTray.clearItems('current-note');
+    this.contextTray.clearItems('files');
+  }
+
+  renderAttachedFiles(filePaths: Iterable<string>, currentNotePath?: string | null): void {
+    const items = [...filePaths]
+      .filter(filePath => filePath !== currentNotePath)
+      .map(filePath => {
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        const label = normalizedPath.replace(/\/$/, '').split('/').pop() || filePath;
+        return {
+          id: filePath,
+          kind: 'file' as const,
+          label,
+          icon: normalizedPath.endsWith('/') ? 'folder' : 'file-text',
+          title: filePath,
+          ariaLabel: `Attached file: ${filePath}`,
+          onRemove: () => this.callbacks.onRemoveAttachment(filePath),
+          onActivate: () => this.callbacks.onOpenFile(filePath),
+        };
+      });
+    this.contextTray.setItems('files', items);
   }
 
   renderCurrentNote(filePath: string | null): void {

@@ -27,6 +27,7 @@ import type { ChatMessage, ImageAttachment, StreamChunk } from '../../../core/ty
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import {
+  appendContextFiles,
   appendCurrentNote,
   appendCurrentNoteContent,
 } from '../../../utils/context';
@@ -1805,6 +1806,9 @@ export class CodexExecutionSession
     }
     if (context?.canvasSelection) {
       prompt = appendCanvasContext(prompt, context.canvasSelection);
+    }
+    if (context?.contextFiles?.length) {
+      prompt = appendContextFiles(prompt, [...context.contextFiles]);
     }
 
     const history = request.conversationHistory;
