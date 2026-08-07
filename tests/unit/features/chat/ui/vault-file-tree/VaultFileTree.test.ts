@@ -19,6 +19,10 @@ type TreeOptions = {
   flattenEmptyDirectories?: boolean;
   onSelectionChange?: (paths: readonly string[]) => void;
   paths?: readonly string[];
+  renderRowDecoration?: (context: {
+    item: { kind: 'directory' | 'file'; name: string; path: string };
+    row: unknown;
+  }) => { text: string; title?: string } | null;
   search?: boolean;
   unsafeCSS?: string;
 };
@@ -124,6 +128,10 @@ describe('VaultFileTree', () => {
       unsafeCSS: expect.stringContaining('scrollbar-width: none'),
     }));
     expect(model.options.unsafeCSS).toContain('::-webkit-scrollbar');
+    expect(model.options.unsafeCSS).toContain(
+      '[data-type="item"] > [data-item-section="content"]',
+    );
+    expect(model.options.unsafeCSS).not.toContain('truncate-marker');
     expect(root.isRoot).toHaveBeenCalledTimes(1);
     expect(model.render).toHaveBeenCalledWith({
       containerWrapper: hostEl.querySelector('.claudian-vault-file-tree-body'),
@@ -131,6 +139,34 @@ describe('VaultFileTree', () => {
     expect(hostEl.querySelector('.claudian-vault-file-tree-loading')).toBeNull();
     expect(hostEl.querySelector('.claudian-vault-file-tree-title')?.textContent)
       .toBe('Knowledge Vault');
+  });
+
+  it('renders every item with end truncation without changing vault path identity', async () => {
+    const { tree } = createHarness();
+
+    await tree.mount();
+
+    const model = FakePierreTree.instances[0];
+    const renderRowDecoration = model.options.renderRowDecoration;
+    const row = {};
+
+    expect(model.options.paths).toContain('Projects/Plan.md');
+    expect(renderRowDecoration?.({
+      item: { kind: 'file', name: 'Plan.md', path: 'Projects/Plan.md' },
+      row,
+    })).toEqual({ text: 'Plan', title: 'Plan.md' });
+    expect(renderRowDecoration?.({
+      item: { kind: 'file', name: 'README.MD', path: 'README.MD' },
+      row,
+    })).toEqual({ text: 'README', title: 'README.MD' });
+    expect(renderRowDecoration?.({
+      item: { kind: 'file', name: 'Board.canvas', path: 'Board.canvas' },
+      row,
+    })).toEqual({ text: 'Board.canvas', title: 'Board.canvas' });
+    expect(renderRowDecoration?.({
+      item: { kind: 'directory', name: 'Notes.md', path: 'Notes.md' },
+      row,
+    })).toEqual({ text: 'Notes.md', title: 'Notes.md' });
   });
 
   it('opens a sole selected file in an existing navigable Obsidian leaf', async () => {

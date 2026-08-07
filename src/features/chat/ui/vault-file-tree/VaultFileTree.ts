@@ -2,6 +2,7 @@ import type {
   ContextMenuItem,
   ContextMenuOpenContext,
   FileTree as PierreFileTree,
+  FileTreeRowDecoration,
 } from '@pierre/trees';
 import type { App, EventRef, WorkspaceLeaf } from 'obsidian';
 import { Notice, setIcon, TFile, TFolder } from 'obsidian';
@@ -15,7 +16,24 @@ import {
 
 type PierreTreeModule = { FileTree: typeof PierreFileTree };
 
+const MARKDOWN_EXTENSION = '.md';
+
 const VAULT_FILE_TREE_CSS = `
+  [data-type="item"] > [data-item-section="content"] {
+    display: none;
+  }
+
+  [data-type="item"] > [data-item-section="decoration"] {
+    color: inherit;
+    flex: 1 1 auto;
+    justify-content: flex-start;
+    text-align: start;
+  }
+
+  [data-type="item"] > [data-item-section="decoration"] > span {
+    justify-content: flex-start;
+  }
+
   [data-file-tree-virtualized-scroll="true"] {
     scrollbar-width: none;
   }
@@ -26,6 +44,19 @@ const VAULT_FILE_TREE_CSS = `
     height: 0;
   }
 `;
+
+function renderVaultFileTreeRowDecoration(item: ContextMenuItem): FileTreeRowDecoration | null {
+  const shouldHideExtension = item.kind === 'file'
+    && item.name.toLowerCase().endsWith(MARKDOWN_EXTENSION);
+  const text = shouldHideExtension
+    ? item.name.slice(0, -MARKDOWN_EXTENSION.length)
+    : item.name;
+
+  return {
+    text,
+    title: item.name,
+  };
+}
 
 export type VaultFileTreeOptions = {
   app: App;
@@ -116,6 +147,7 @@ export class VaultFileTree {
         initialExpansion: 'closed',
         onSelectionChange: paths => this.handleSelectionChange(paths),
         paths: this.collectPaths(),
+        renderRowDecoration: ({ item }) => renderVaultFileTreeRowDecoration(item),
         search: false,
         stickyFolders: true,
         unsafeCSS: VAULT_FILE_TREE_CSS,
