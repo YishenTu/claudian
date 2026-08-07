@@ -4,6 +4,7 @@ import { Menu, Notice, Platform, Scope, setIcon, TFile } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ClaudianView } from '@/features/chat/ClaudianView';
+import { HorizontalWheelGesture } from '@/features/chat/ui/HorizontalWheelGesture';
 
 const mockTabManagerConstructor = jest.fn();
 jest.mock('@/features/chat/tabs/TabManager', () => ({
@@ -1141,6 +1142,108 @@ describe('ClaudianView tab controls', () => {
     view.filesSurfaceButtonEl.click();
     expect(view.createVaultFileTree).toHaveBeenCalledTimes(1);
     expect(mount).toHaveBeenCalledTimes(1);
+  });
+
+  it('rotates sidebar surfaces on either horizontal wheel direction without intercepting vertical scroll', () => {
+    const viewContainerEl = createMockEl();
+    const mount = jest.fn().mockResolvedValue(undefined);
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      createVaultFileTree: jest.fn().mockReturnValue({ destroy: jest.fn(), mount }),
+      isWideSessionLayout: true,
+      plugin: { app: {}, settings: { enableFilePane: true } },
+      sidebarSurfaceWheelGesture: new HorizontalWheelGesture(),
+      viewContainerEl,
+      vaultFileTree: null,
+    });
+    view.buildViewLayout();
+
+    expect(view.sessionSidebarEl.getEventListenerCount('wheel')).toBe(1);
+    expect(view.chatPanelEl.getEventListenerCount('wheel')).toBe(0);
+
+    const verticalPreventDefault = jest.fn();
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 10,
+      deltaY: 60,
+      preventDefault: verticalPreventDefault,
+      timeStamp: 0,
+    });
+    expect(view.activeSidebarSurface).toBe('sessions');
+    expect(verticalPreventDefault).not.toHaveBeenCalled();
+
+    const switchToFilesPreventDefault = jest.fn();
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 28,
+      deltaY: 30,
+      preventDefault: switchToFilesPreventDefault,
+      timeStamp: 10,
+    });
+    expect(view.activeSidebarSurface).toBe('files');
+    expect(switchToFilesPreventDefault).toHaveBeenCalledTimes(1);
+    expect(mount).toHaveBeenCalledTimes(1);
+
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 60,
+      deltaY: 0,
+      preventDefault: jest.fn(),
+      timeStamp: 20,
+    });
+    expect(view.activeSidebarSurface).toBe('files');
+
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 4,
+      deltaY: 0,
+      preventDefault: jest.fn(),
+      timeStamp: 120,
+    });
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 18,
+      deltaY: 0,
+      preventDefault: jest.fn(),
+      timeStamp: 220,
+    });
+    const switchToSessionsPreventDefault = jest.fn();
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 12,
+      deltaY: 0,
+      preventDefault: switchToSessionsPreventDefault,
+      timeStamp: 230,
+    });
+    expect(view.activeSidebarSurface).toBe('sessions');
+    expect(switchToSessionsPreventDefault).toHaveBeenCalledTimes(1);
+
+    const rotateLeftPreventDefault = jest.fn();
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: -28,
+      deltaY: 0,
+      preventDefault: rotateLeftPreventDefault,
+      timeStamp: 500,
+    });
+    expect(view.activeSidebarSurface).toBe('files');
+    expect(rotateLeftPreventDefault).toHaveBeenCalledTimes(1);
   });
 
   it('hides the surface switcher when the file pane is disabled', () => {

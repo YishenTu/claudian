@@ -32,6 +32,7 @@ import {
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
 import type { TabData, TabId } from './tabs/types';
+import { HorizontalWheelGesture } from './ui/HorizontalWheelGesture';
 import { VaultFileTree } from './ui/vault-file-tree/VaultFileTree';
 import { recalculateUsageForModel } from './utils/usageInfo';
 
@@ -45,11 +46,14 @@ type SessionSearchScrollState = {
   sessionScrollTop: number;
 };
 
+type SidebarSurface = 'sessions' | 'files';
+
 const WIDE_SESSION_LAYOUT_MIN_WIDTH = 600;
 const MIN_CHAT_PANEL_WIDTH = 320;
 const MIN_SESSION_SIDEBAR_WIDTH = 180;
 const SESSION_RESIZER_WIDTH = 5;
 const SESSION_RESIZE_KEYBOARD_STEP = 16;
+const SIDEBAR_SURFACE_ROTATION: readonly SidebarSurface[] = ['sessions', 'files'];
 
 export class ClaudianView extends ItemView {
   private plugin: FeatureHost;
@@ -86,7 +90,8 @@ export class ClaudianView extends ItemView {
   private filesSurfaceButtonEl: HTMLButtonElement | null = null;
   private sessionSurfaceEl: HTMLElement | null = null;
   private filesSurfaceEl: HTMLElement | null = null;
-  private activeSidebarSurface: 'sessions' | 'files' = 'sessions';
+  private activeSidebarSurface: SidebarSurface = 'sessions';
+  private readonly sidebarSurfaceWheelGesture = new HorizontalWheelGesture();
   private vaultFileTree: VaultFileTree | null = null;
   private sessionSidebarResizerEl: HTMLElement | null = null;
   private sessionSidebarRenderAbortController: AbortController | null = null;
@@ -397,6 +402,9 @@ export class ClaudianView extends ItemView {
     });
 
     this.sessionSidebarEl = this.viewContainerEl.createDiv({ cls: 'claudian-session-sidebar' });
+    this.sessionSidebarEl.addEventListener('wheel', (event) => {
+      this.handleSidebarSurfaceWheel(event);
+    }, { passive: false });
     this.sidebarSurfaceSwitcherEl = this.sessionSidebarEl.createDiv({
       cls: 'claudian-sidebar-surface-switcher',
     });
@@ -1048,6 +1056,31 @@ export class ClaudianView extends ItemView {
     this.updateSidebarSurfaceVisibility();
   }
 
+  private handleSidebarSurfaceWheel(event: WheelEvent): void {
+    if (
+      !this.isWideSessionLayout
+      || !(this.plugin?.settings?.enableFilePane ?? true)
+    ) return;
+
+    const pageWidth = this.sessionSidebarEl?.clientWidth || MIN_SESSION_SIDEBAR_WIDTH;
+    if (!this.sidebarSurfaceWheelGesture.consume(event, pageWidth)) return;
+
+    event.preventDefault();
+    this.rotateSidebarSurface();
+  }
+
+  private rotateSidebarSurface(): void {
+    const currentIndex = SIDEBAR_SURFACE_ROTATION.indexOf(this.activeSidebarSurface);
+    const nextIndex = (Math.max(currentIndex, 0) + 1) % SIDEBAR_SURFACE_ROTATION.length;
+    const nextSurface = SIDEBAR_SURFACE_ROTATION[nextIndex];
+
+    if (nextSurface === 'files') {
+      this.showVaultFiles();
+    } else {
+      this.showSessions();
+    }
+  }
+
   private createVaultFileTree(hostEl: HTMLElement): VaultFileTree {
     return new VaultFileTree({
       app: this.plugin.app,
@@ -1059,6 +1092,7 @@ export class ClaudianView extends ItemView {
   private updateSidebarSurfaceVisibility(): void {
     const filePaneEnabled = this.plugin?.settings?.enableFilePane ?? true;
     if (!filePaneEnabled) {
+      this.sidebarSurfaceWheelGesture?.reset();
       this.activeSidebarSurface = 'sessions';
       this.vaultFileTree?.destroy();
       this.vaultFileTree = null;
@@ -1702,6 +1736,7 @@ export class ClaudianView extends ItemView {
 
     const isDualPaneEnabled = this.plugin?.settings?.enableDualPane ?? true;
     const shouldUseWideLayout = isDualPaneEnabled && width >= WIDE_SESSION_LAYOUT_MIN_WIDTH;
+    if (!shouldUseWideLayout) this.sidebarSurfaceWheelGesture?.reset();
     if (shouldUseWideLayout === this.requestedWideSessionLayout) {
       if (shouldUseWideLayout && this.isWideSessionLayout) {
         if (this.sessionSidebarWidth !== null) {
