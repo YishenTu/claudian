@@ -1,6 +1,10 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
+import {
+  readStoredBoolean,
+  readStoredString,
+} from '../../core/providers/settings/storedSettings';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import {
@@ -156,17 +160,19 @@ export function getOpencodeProviderSettings(
 
   return {
     availableModes,
-    cliPath: (config.cliPath as string | undefined)
-      ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath,
+    cliPath: readStoredString(config.cliPath, DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath),
     cliPathsByHost,
     discoveredModels,
-    enabled: (config.enabled as boolean | undefined)
-      ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.enabled,
-    environmentHash: (config.environmentHash as string | undefined)
-      ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.environmentHash,
-    environmentVariables: (config.environmentVariables as string | undefined)
-      ?? getProviderEnvironmentVariables(settings, 'opencode')
-      ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.environmentVariables,
+    enabled: readStoredBoolean(config.enabled, DEFAULT_OPENCODE_PROVIDER_SETTINGS.enabled),
+    environmentHash: readStoredString(
+      config.environmentHash,
+      DEFAULT_OPENCODE_PROVIDER_SETTINGS.environmentHash,
+    ),
+    environmentVariables: readStoredString(
+      config.environmentVariables,
+      getProviderEnvironmentVariables(settings, 'opencode')
+        ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.environmentVariables,
+    ),
     modelAliases: normalizeOpencodeModelAliases(config.modelAliases, discoveredModels),
     preferredThinkingByModel: normalizeOpencodePreferredThinkingByModel(
       config.preferredThinkingByModel,

@@ -41,8 +41,15 @@ describe('OpenCode mode settings', () => {
     ])).toEqual(OPENCODE_FALLBACK_MODES);
   });
 
-  it('normalizes saved custom mode selections back to the managed YOLO mode', () => {
-    expect(normalizeManagedOpencodeSelectedMode('compaction')).toBe(OPENCODE_YOLO_MODE_ID);
+  it('normalizes unsupported saved mode selections to the managed safe mode', () => {
+    expect(normalizeManagedOpencodeSelectedMode('compaction')).toBe(OPENCODE_SAFE_MODE_ID);
+    expect(normalizeManagedOpencodeSelectedMode(123)).toBe(OPENCODE_SAFE_MODE_ID);
+    expect(normalizeManagedOpencodeSelectedMode(null)).toBe(OPENCODE_SAFE_MODE_ID);
+  });
+
+  it('preserves absent and blank saved mode selections as unset', () => {
+    expect(normalizeManagedOpencodeSelectedMode(undefined)).toBe('');
+    expect(normalizeManagedOpencodeSelectedMode('   ')).toBe('');
   });
 
   it('normalizes the legacy build id back to the managed YOLO mode', () => {
@@ -53,6 +60,7 @@ describe('OpenCode mode settings', () => {
     expect(resolveOpencodeModeForPermissionMode('yolo')).toBe(OPENCODE_YOLO_MODE_ID);
     expect(resolveOpencodeModeForPermissionMode('normal')).toBe(OPENCODE_SAFE_MODE_ID);
     expect(resolveOpencodeModeForPermissionMode('plan')).toBe('plan');
+    expect(resolveOpencodeModeForPermissionMode('danger-full-access')).toBe(OPENCODE_SAFE_MODE_ID);
   });
 
   it('maps managed OpenCode modes back to shared permission modes', () => {

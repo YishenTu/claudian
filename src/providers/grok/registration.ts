@@ -1,4 +1,6 @@
 import { NOOP_TASK_RESULT_INTERPRETER } from '../../core/providers/NoopTaskResultInterpreter';
+import { getProviderConfig } from '../../core/providers/providerConfig';
+import { hasStoredConfigNormalization } from '../../core/providers/settings/storedSettings';
 import type { ProviderModule } from '../../core/providers/types';
 import {
   getGrokWorkspaceServices,
@@ -40,8 +42,12 @@ export const grokProviderRegistration: ProviderModule = {
   settingsStorage: {
     hostScopedFields: ['cliPathsByHost', 'catalogsByHost'],
     normalizeStored(target, stored) {
+      const storedConfig = getProviderConfig(stored, 'grok');
       updateGrokProviderSettings(target, getGrokProviderSettings(stored));
-      return false;
+      return hasStoredConfigNormalization(
+        storedConfig,
+        getProviderConfig(target, 'grok'),
+      );
     },
   },
   subagentAdapter: grokSubagentLifecycleAdapter,

@@ -100,9 +100,13 @@ export function normalizeManagedOpencodeSelectedMode(
   value: unknown,
   modes: OpencodeMode[] = [],
 ): string {
+  if (value === undefined || (typeof value === 'string' && !value.trim())) {
+    return '';
+  }
+
   const normalized = normalizeOpencodeSelectedMode(value);
   if (!normalized) {
-    return '';
+    return OPENCODE_SAFE_MODE_ID;
   }
 
   const canonicalModeId = normalized === OPENCODE_BUILD_MODE_ID
@@ -111,7 +115,7 @@ export function normalizeManagedOpencodeSelectedMode(
   const managedModes = getManagedOpencodeModes(modes);
   return managedModes.some((mode) => mode.id === canonicalModeId)
     ? canonicalModeId
-    : (managedModes[0]?.id ?? '');
+    : managedModes.find((mode) => mode.id === OPENCODE_SAFE_MODE_ID)?.id ?? '';
 }
 
 export function resolveOpencodeModeForPermissionMode(
@@ -127,8 +131,11 @@ export function resolveOpencodeModeForPermissionMode(
   if (permissionMode === 'normal' && managedModeIds.has(OPENCODE_SAFE_MODE_ID)) {
     return OPENCODE_SAFE_MODE_ID;
   }
-  if (managedModeIds.has(OPENCODE_YOLO_MODE_ID)) {
+  if (permissionMode === 'yolo' && managedModeIds.has(OPENCODE_YOLO_MODE_ID)) {
     return OPENCODE_YOLO_MODE_ID;
+  }
+  if (managedModeIds.has(OPENCODE_SAFE_MODE_ID)) {
+    return OPENCODE_SAFE_MODE_ID;
   }
 
   return managedModes[0]?.id ?? '';

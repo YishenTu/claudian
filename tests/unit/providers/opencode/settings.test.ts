@@ -359,7 +359,7 @@ describe('OpenCode settings normalization', () => {
     });
   });
 
-  it('normalizes saved custom OpenCode modes back to the managed YOLO mode', () => {
+  it('normalizes saved custom OpenCode modes back to the managed safe mode', () => {
     expect(getOpencodeProviderSettings({
       providerConfigs: {
         opencode: {
@@ -367,7 +367,7 @@ describe('OpenCode settings normalization', () => {
           selectedMode: 'compaction',
         },
       },
-    }).selectedMode).toBe('claudian-yolo');
+    }).selectedMode).toBe('claudian-safe');
   });
 
   it('normalizes the legacy build alias back to the managed YOLO mode', () => {

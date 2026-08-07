@@ -2,6 +2,10 @@ import { getProviderConfig, setProviderConfig } from '../../core/providers/provi
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
+import {
+  readStoredBoolean,
+  readStoredString,
+} from '../../core/providers/settings/storedSettings';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import {
@@ -19,6 +23,9 @@ export type CodexSafeMode = 'workspace-write' | 'read-only';
 export type CodexReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
 export type CodexInstallationMethod = 'native-windows' | 'wsl';
 export type HostnameInstallationMethods = Record<string, CodexInstallationMethod>;
+
+const CODEX_SAFE_MODES = ['workspace-write', 'read-only'] as const;
+const CODEX_REASONING_SUMMARIES = ['auto', 'concise', 'detailed', 'none'] as const;
 
 export interface CodexProviderConfig {
   enabled: boolean;
@@ -55,6 +62,27 @@ function normalizeCodexInstallationMethod(value: unknown): CodexInstallationMeth
 
 function normalizeOptionalString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function readStoredCodexSafeMode(
+  value: unknown,
+  fallback: CodexSafeMode,
+): CodexSafeMode {
+  if (value === undefined) {
+    return fallback;
+  }
+  return (CODEX_SAFE_MODES as readonly unknown[]).includes(value)
+    ? value as CodexSafeMode
+    : 'read-only';
+}
+
+function readStoredCodexReasoningSummary(
+  value: unknown,
+  fallback: CodexReasoningSummary,
+): CodexReasoningSummary {
+  return (CODEX_REASONING_SUMMARIES as readonly unknown[]).includes(value)
+    ? value as CodexReasoningSummary
+    : fallback;
 }
 
 function shouldPersistCodexInstallationSettings(): boolean {
@@ -374,18 +402,20 @@ function getCodexStoredConfig(
   const visibleModels = normalizeCodexVisibleModels(config.visibleModels, discoveredModels);
 
   return {
-    enabled: (config.enabled as boolean | undefined)
-      ?? (settings.codexEnabled as boolean | undefined)
-      ?? DEFAULT_CODEX_PROVIDER_CONFIG.enabled,
-    safeMode: (config.safeMode as CodexSafeMode | undefined)
-      ?? (settings.codexSafeMode as CodexSafeMode | undefined)
-      ?? DEFAULT_CODEX_PROVIDER_CONFIG.safeMode,
-    cliPath: (config.cliPath as string | undefined)
-      ?? (settings.codexCliPath as string | undefined)
-      ?? DEFAULT_CODEX_PROVIDER_CONFIG.cliPath,
+    enabled: readStoredBoolean(
+      config.enabled,
+      readStoredBoolean(settings.codexEnabled, DEFAULT_CODEX_PROVIDER_CONFIG.enabled),
+    ),
+    safeMode: readStoredCodexSafeMode(
+      config.safeMode,
+      readStoredCodexSafeMode(settings.codexSafeMode, DEFAULT_CODEX_PROVIDER_CONFIG.safeMode),
+    ),
+    cliPath: readStoredString(
+      config.cliPath,
+      readStoredString(settings.codexCliPath, DEFAULT_CODEX_PROVIDER_CONFIG.cliPath),
+    ),
     cliPathsByHost,
-    customModels: (config.customModels as string | undefined)
-      ?? DEFAULT_CODEX_PROVIDER_CONFIG.customModels,
+    customModels: readStoredString(config.customModels, DEFAULT_CODEX_PROVIDER_CONFIG.customModels),
     discoveredModels,
     modelAliases: pruneCodexModelAliases(
       normalizeCodexModelAliases(config.modelAliases, discoveredModels),
@@ -393,21 +423,31 @@ function getCodexStoredConfig(
     ),
     visibleModels,
     enableUltraEffort: config.enableUltraEffort === true,
-    reasoningSummary: (config.reasoningSummary as CodexReasoningSummary | undefined)
-      ?? (settings.codexReasoningSummary as CodexReasoningSummary | undefined)
-      ?? DEFAULT_CODEX_PROVIDER_CONFIG.reasoningSummary,
-    environmentVariables: (config.environmentVariables as string | undefined)
-      ?? getProviderEnvironmentVariables(settings, 'codex')
-      ?? DEFAULT_CODEX_PROVIDER_CONFIG.environmentVariables,
-    environmentHash: (config.environmentHash as string | undefined)
-      ?? (settings.lastCodexEnvHash as string | undefined)
-      ?? DEFAULT_CODEX_PROVIDER_CONFIG.environmentHash,
+    reasoningSummary: readStoredCodexReasoningSummary(
+      config.reasoningSummary,
+      readStoredCodexReasoningSummary(
+        settings.codexReasoningSummary,
+        DEFAULT_CODEX_PROVIDER_CONFIG.reasoningSummary,
+      ),
+    ),
+    environmentVariables: readStoredString(
+      config.environmentVariables,
+      getProviderEnvironmentVariables(settings, 'codex')
+        ?? DEFAULT_CODEX_PROVIDER_CONFIG.environmentVariables,
+    ),
+    environmentHash: readStoredString(
+      config.environmentHash,
+      readStoredString(settings.lastCodexEnvHash, DEFAULT_CODEX_PROVIDER_CONFIG.environmentHash),
+    ),
     catalogTimestamp: typeof config.catalogTimestamp === 'number'
+      && Number.isFinite(config.catalogTimestamp)
+      && config.catalogTimestamp >= 0
       ? config.catalogTimestamp
       : DEFAULT_CODEX_PROVIDER_CONFIG.catalogTimestamp,
-    catalogFingerprint: typeof config.catalogFingerprint === 'string'
-      ? config.catalogFingerprint
-      : DEFAULT_CODEX_PROVIDER_CONFIG.catalogFingerprint,
+    catalogFingerprint: readStoredString(
+      config.catalogFingerprint,
+      DEFAULT_CODEX_PROVIDER_CONFIG.catalogFingerprint,
+    ),
     installationMethodsByHost,
     wslDistroOverridesByHost,
   };

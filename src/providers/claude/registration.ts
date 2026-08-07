@@ -1,4 +1,5 @@
 import { getProviderConfig } from '../../core/providers/providerConfig';
+import { hasStoredConfigNormalization } from '../../core/providers/settings/storedSettings';
 import type { ProviderModule } from '../../core/providers/types';
 import { parseEnvironmentVariables } from '../../utils/env';
 import {
@@ -46,7 +47,10 @@ export const claudeProviderRegistration: ProviderModule = {
       const storedConfig = getProviderConfig(stored, 'claude');
       const removedLegacy1MSettings = LEGACY_CLAUDE_1M_SETTINGS.some(key => key in storedConfig);
       updateClaudeProviderSettings(target, getClaudeProviderSettings(stored));
-      return removedLegacy1MSettings;
+      return removedLegacy1MSettings || hasStoredConfigNormalization(
+        storedConfig,
+        getProviderConfig(target, 'claude'),
+      );
     },
   },
   createExecutionBackend: (plugin) => {
