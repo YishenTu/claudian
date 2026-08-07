@@ -164,6 +164,8 @@ export class ConversationController {
   private metadataPopoverEl: HTMLElement | null = null;
   private metadataPopoverTarget: HTMLElement | null = null;
   private metadataPopoverSequence = 0;
+  private switchRequestRevision = 0;
+  private switchTail: Promise<void> = Promise.resolve();
 
   constructor(deps: ConversationControllerDeps, callbacks: ConversationCallbacks = {}) {
     this.deps = deps;
@@ -328,6 +330,21 @@ export class ConversationController {
 
   /** Switches to a different conversation. */
   async switchTo(id: string): Promise<void> {
+    const requestRevision = ++this.switchRequestRevision;
+    const request = this.switchTail
+      .catch(() => undefined)
+      .then(async () => {
+        if (requestRevision !== this.switchRequestRevision) return;
+        await this.switchToImmediately(id);
+      });
+    this.switchTail = request.then(
+      () => undefined,
+      () => undefined,
+    );
+    await request;
+  }
+
+  private async switchToImmediately(id: string): Promise<void> {
     const { plugin, state, subagentManager } = this.deps;
 
     if (this.deps.isDisposed?.()) return;

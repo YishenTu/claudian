@@ -12,6 +12,17 @@ jest.mock('@/shared/modals/ConfirmModal', () => ({
 
 const mockNotice = Notice as jest.Mock;
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function createMockDeps(overrides: Record<string, unknown> = {}): ConversationControllerDeps {
   const state = new ChatState();
   const inputEl = { value: '', focus: jest.fn() } as unknown as HTMLTextAreaElement;
@@ -2669,7 +2680,11 @@ describe('ConversationController', () => {
       expect(clickHandlers).toBeDefined();
 
       await clickHandlers![0]({ stopPropagation: jest.fn() });
-      await Promise.resolve();
+      for (let attempt = 0;
+        attempt < 10 && (deps.plugin.switchConversation as jest.Mock).mock.calls.length === 0;
+        attempt += 1) {
+        await Promise.resolve();
+      }
 
       expect(deps.plugin.switchConversation).toHaveBeenCalledWith('conv-2');
     });
@@ -3304,6 +3319,45 @@ describe('ConversationController - Race Condition Guards', () => {
   });
 
   describe('switchTo guards', () => {
+    it('serializes a newer switch behind in-flight hydration instead of dropping it', async () => {
+      const firstConversation = deferred<any>();
+      (deps.plugin.switchConversation as jest.Mock).mockImplementation(async (id: string) => {
+        if (id === 'conversation-a') return firstConversation.promise;
+        return {
+          id,
+          title: id,
+          messages: [],
+          sessionId: null,
+          createdAt: Date.now(),
+          lastActivityAt: Date.now(),
+        };
+      });
+      deps.state.currentConversationId = 'old-conversation';
+
+      const firstSwitch = controller.switchTo('conversation-a');
+      for (let attempt = 0;
+        attempt < 10 && (deps.plugin.switchConversation as jest.Mock).mock.calls.length === 0;
+        attempt += 1) {
+        await Promise.resolve();
+      }
+      const secondSwitch = controller.switchTo('conversation-b');
+
+      expect(deps.plugin.switchConversation).toHaveBeenCalledTimes(1);
+      firstConversation.resolve({
+        id: 'conversation-a',
+        title: 'Conversation A',
+        messages: [],
+        sessionId: null,
+        createdAt: Date.now(),
+        lastActivityAt: Date.now(),
+      });
+      await Promise.all([firstSwitch, secondSwitch]);
+
+      expect(deps.plugin.switchConversation).toHaveBeenNthCalledWith(1, 'conversation-a');
+      expect(deps.plugin.switchConversation).toHaveBeenNthCalledWith(2, 'conversation-b');
+      expect(deps.state.currentConversationId).toBe('conversation-b');
+    });
+
     it('should not switch when isSwitchingConversation is already true', async () => {
       deps.state.currentConversationId = 'old-conv';
       deps.state.isSwitchingConversation = true;

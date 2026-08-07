@@ -16,8 +16,8 @@
 | Component | Authority |
 | --- | --- |
 | `TabManager` | Runtime-tab membership, active-tab selection, and create/switch/close operations |
-| `TabRuntimeFactory` | Atomic per-tab assembly. It owns construction-phase mutation and rollback, and returns only structurally ready runtimes to `TabManager` |
-| `TabSession` | Authoritative per-tab identity, conversation binding, provider binding, lifecycle value, execution-coordinator attachment, active-turn reference, and background-work sequencing |
+| `TabRuntimeFactory` | Atomic per-tab assembly and rollback. It is the only production caller of phased construction, composes complete typed bundles, and returns only assembled runtimes to `TabManager` |
+| `TabSession` | Authoritative per-tab identity, conversation binding, provider binding, lifecycle value, immutable execution-coordinator reference and disposal, active-turn reference, and background-work sequencing |
 | `TabModelSelectionCoordinator` | Per-tab model-selection request ordering, blank-tab provider-transition serialization, and stable-draft rollback |
 | `ChatExecutionCoordinator` | One tab's provider-session binding, active execution, interaction fencing, cancellation, and disposal |
 | `WarmExecutionPool` | Application-scoped warm execution ownership, the configured concurrent-running-session limit, and least-recently-used cooling of idle owners |
@@ -75,7 +75,15 @@ Tab activation and conversation hydration do not themselves authorize creation o
 ## Invariants
 
 - Runtime tab creation is unlimited. The configured `maxWarmAgentProcesses` limit applies only to warm execution owners and is normalized to the supported 5-10 range.
-- `TabManager` admits a tab to runtime membership and calls `onTabCreated` only after structural assembly succeeds. Construction readiness means UI, controllers, renderer, coordinator, and input wiring are installed; it does not imply hydration, activation, conversation binding, or warm provider execution. Query types remain lifecycle-aware because teardown can clear owned resources while a tab is `closing`.
+- `TabManager` admits a tab to runtime membership and calls `onTabCreated` only after structural assembly succeeds. Construction readiness means UI, controllers, renderer, coordinator, and input wiring are installed; it does not imply hydration, activation, conversation binding, or warm provider execution.
+- Tab IDs are reserved before asynchronous assembly. Admission callbacks and activation are one transaction: failure must remove and destroy the assembled runtime, release its metadata, and restore the previous active owner.
+- A close reservation synchronously pauses the tab session's intent admission, fences duplicate close requests, and remains reversible while final-live-tab replacement is fallible. Required runtime state callbacks and command-context invalidation remain accepted until replacement admission succeeds and lifecycle becomes terminal `closing`; failed preflight resumes intent admission.
+- Each queued tab-switch request owns its completion and failure. A switch requested by tab admission must await its real activation attempt so callback failure rolls that admission back instead of escaping through an unrelated earlier switch.
+- `TabManager.destroy()` is terminal: new or in-flight tab assembly must not enter membership afterward, runtime-retained intents must revalidate their source tab before manager or view work, and overlapping close requests must not repeat persistence, callbacks, or teardown side effects.
+- Fork operations capture the source tab and exact conversation binding before their first asynchronous source lookup or target prompt. Revalidate that lease after every await and copy accepted-input state by the captured conversation ID, never the coordinator's current binding.
+- View shutdown closes intent admission, invalidates and joins conversation navigation and tab switching, then keeps terminal conversation-binding callbacks open while every admitted tab cancels and drains active/background work. Only that complete quiescence boundary may flush and seal the final tab identity. A reopen overlapping it reuses the same persistence coordinator and awaits the closing snapshot before restoration.
+- `AssembledTabRuntime` keeps required structural references stable after publication, including while `closing` and after resource disposal. Operational availability is expressed by lifecycle state and read-only resource state; teardown authority remains internal and must not null required references.
+- Construction builders remain factory-owned and return complete shell, UI, controller/renderer, and input-binding bundles. Every acquired resource must register rollback immediately; rollback and teardown are idempotent, best-effort, and continue after individual cleanup failures.
 - Cooling an idle tab must preserve its runtime tab, conversation binding, hydrated UI state, and resumable provider snapshot.
 - Returning to single-panel mode must keep dual-pane controls in place until provisional-tab cleanup completes; compact controls must never target a tab already being closed.
 - Switching the active tab must not cancel, dispose, or transfer another tab's active execution.
@@ -87,7 +95,7 @@ Tab activation and conversation hydration do not themselves authorize creation o
 - Focusable, selectable history rows support Enter and Space activation as well as pointer activation.
 - Provider command and metadata warmup must respect provider resource generations and must not reuse stale results.
 - An explicit chat model-picker action updates only the current blank tab or bound conversation and the provider-qualified global seed for future blank tabs. Existing tabs never subscribe to that seed.
-- The app-owned chat model-selection coordinator orders global seed commits by picker intent across the plugin, not by asynchronous provider-switch or conversation-write completion; the latest successful selection wins.
+- The app-owned chat model-selection coordinator orders global seed commits by picker intent across the plugin, not by asynchronous provider-switch or conversation-write completion; the latest successful selection wins. Each commit must revalidate its caller-provided exact runtime/conversation ownership predicate at the serialized settings mutation point, so stale tabs cannot seed future drafts.
 - `TabModelSelectionCoordinator` serializes blank-tab provider changes per tab. Later choices targeting an in-flight provider share its initialization result, and failed overlapping transitions restore the last stable provider/model without seeding future tabs.
 - Restoration, hydration, automatic availability fallback, fork inheritance, and auxiliary executions must not update the future-tab model seed.
 

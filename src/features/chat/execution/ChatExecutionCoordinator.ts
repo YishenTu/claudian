@@ -636,12 +636,16 @@ export class ChatExecutionCoordinator {
   }
 
   async copyInputsForFork(
+    sourceConversationId: string,
     targetConversationId: string,
     throughAssistantCheckpointId?: string,
   ): Promise<void> {
     const conversation = this.requireConversation();
+    if (conversation.conversationId !== sourceConversationId) {
+      throw new Error('Fork source conversation binding is stale');
+    }
     await this.deps.persistence.copyConversationInputsForFork(
-      conversation.conversationId,
+      sourceConversationId,
       targetConversationId,
       throughAssistantCheckpointId,
     );

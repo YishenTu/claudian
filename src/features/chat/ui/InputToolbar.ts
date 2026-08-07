@@ -1276,8 +1276,13 @@ export class InputToolbarLayoutController {
   private pendingLayout: ScheduledAnimationFrame | null = null;
 
   constructor(private readonly toolbarEl: HTMLElement) {
-    this.observeLayoutChanges();
-    this.scheduleLayout();
+    try {
+      this.observeLayoutChanges();
+      this.scheduleLayout();
+    } catch (error) {
+      this.destroy();
+      throw error;
+    }
   }
 
   refreshLayout(): void {
@@ -1355,7 +1360,7 @@ export function createInputToolbar(
   modelSelector: ModelSelector;
   modeSelector: ModeSelector;
   thinkingBudgetSelector: ThinkingBudgetSelector;
-  contextUsageMeter: ContextUsageMeter | null;
+  contextUsageMeter: ContextUsageMeter;
   layoutController: InputToolbarLayoutController;
   externalContextSelector: ExternalContextSelector;
   mcpServerSelector: McpServerSelector;

@@ -13,11 +13,11 @@ import { formatConversationDirectoryTitle } from '../utils/conversationDirectory
  */
 export class NavigationSidebar {
   private container: HTMLElement;
-  private topBtn: HTMLElement;
-  private prevBtn: HTMLElement;
-  private tocBtn: HTMLElement;
-  private nextBtn: HTMLElement;
-  private bottomBtn: HTMLElement;
+  private topBtn!: HTMLElement;
+  private prevBtn!: HTMLElement;
+  private tocBtn!: HTMLElement;
+  private nextBtn!: HTMLElement;
+  private bottomBtn!: HTMLElement;
   private tocPopover: HTMLElement | null = null;
   private scrollHandler: () => void = () => {};
   private outsideClickHandler: ((event: MouseEvent) => void) | null = null;
@@ -31,15 +31,20 @@ export class NavigationSidebar {
   ) {
     this.container = this.parentEl.createDiv({ cls: 'claudian-nav-sidebar' });
 
-    // Create buttons
-    this.topBtn = this.createButton('claudian-nav-btn-top', 'chevrons-up', 'Scroll to top');
-    this.prevBtn = this.createButton('claudian-nav-btn-prev', 'chevron-up', 'Previous message');
-    this.tocBtn = this.createButton('claudian-nav-btn-toc', 'list-tree', 'Conversation directory');
-    this.nextBtn = this.createButton('claudian-nav-btn-next', 'chevron-down', 'Next message');
-    this.bottomBtn = this.createButton('claudian-nav-btn-bottom', 'chevrons-down', 'Scroll to bottom');
+    try {
+      // Create buttons
+      this.topBtn = this.createButton('claudian-nav-btn-top', 'chevrons-up', 'Scroll to top');
+      this.prevBtn = this.createButton('claudian-nav-btn-prev', 'chevron-up', 'Previous message');
+      this.tocBtn = this.createButton('claudian-nav-btn-toc', 'list-tree', 'Conversation directory');
+      this.nextBtn = this.createButton('claudian-nav-btn-next', 'chevron-down', 'Next message');
+      this.bottomBtn = this.createButton('claudian-nav-btn-bottom', 'chevrons-down', 'Scroll to bottom');
 
-    this.setupEventListeners();
-    this.applyVisibility();
+      this.setupEventListeners();
+      this.applyVisibility();
+    } catch (error) {
+      this.destroy();
+      throw error;
+    }
   }
 
   private createButton(cls: string, icon: string, label: string): HTMLElement {

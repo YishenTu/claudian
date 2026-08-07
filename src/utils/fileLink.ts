@@ -5,7 +5,7 @@
  * them clickable to open the file in Obsidian.
  */
 
-import type { App, Component } from 'obsidian';
+import type { App } from 'obsidian';
 
 import { getVaultFileByPath } from './obsidianCompat';
 
@@ -148,9 +148,8 @@ function repairEmptyInternalLink(app: App, link: HTMLAnchorElement): void {
 export function registerFileLinkHandler(
   app: App,
   container: HTMLElement,
-  component: Component
-): void {
-  component.registerDomEvent(container, 'click', (event: MouseEvent) => {
+): () => void {
+  const handler = (event: MouseEvent) => {
     const target = event.target as HTMLElement;
     // Handle both our links and Obsidian's internal links
     const link = target.closest('.claudian-file-link, .internal-link') as HTMLAnchorElement;
@@ -162,7 +161,9 @@ export function registerFileLinkHandler(
         void app.workspace.openLinkText(linkTarget, '', 'tab');
       }
     }
-  });
+  };
+  container.addEventListener('click', handler);
+  return () => container.removeEventListener('click', handler);
 }
 
 function buildFragmentWithLinks(parent: HTMLElement, text: string, matches: WikilinkMatch[]): DocumentFragment {

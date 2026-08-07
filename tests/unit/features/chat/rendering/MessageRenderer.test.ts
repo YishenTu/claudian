@@ -40,7 +40,7 @@ jest.mock('@/utils/imageEmbed', () => ({
 }));
 jest.mock('@/utils/fileLink', () => ({
   processFileLinks: jest.fn(),
-  registerFileLinkHandler: jest.fn(),
+  registerFileLinkHandler: jest.fn().mockImplementation(() => jest.fn()),
 }));
 
 function createMockComponent() {
@@ -1926,7 +1926,7 @@ describe('MessageRenderer', () => {
         }),
       };
 
-      return { overlayEl, docListeners, origDocument };
+      return { overlayEl, mockBody, docListeners, origDocument };
     }
 
     it('closeBtn click removes overlay', () => {
@@ -1989,6 +1989,37 @@ describe('MessageRenderer', () => {
         expect(removeSpy).toHaveBeenCalled();
         // After close, the keydown handler should be removed
         expect(document.removeEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
+      } finally {
+        (globalThis as any).document = origDocument;
+      }
+    });
+
+    it('dispose closes an open overlay and removes its document listener', () => {
+      const { renderer } = createRenderer();
+      const { overlayEl, docListeners, origDocument } = setupDocumentMock();
+
+      try {
+        renderer.showFullImage(image);
+        const removeSpy = jest.spyOn(overlayEl, 'remove');
+
+        renderer.dispose();
+
+        expect(removeSpy).toHaveBeenCalledTimes(1);
+        expect(docListeners.get('keydown')).toEqual([]);
+      } finally {
+        (globalThis as any).document = origDocument;
+      }
+    });
+
+    it('does not acquire another modal after disposal', () => {
+      const { renderer } = createRenderer();
+      const { mockBody, origDocument } = setupDocumentMock();
+
+      try {
+        renderer.dispose();
+        renderer.showFullImage(image);
+
+        expect(mockBody.createDiv).not.toHaveBeenCalled();
       } finally {
         (globalThis as any).document = origDocument;
       }

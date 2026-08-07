@@ -31,7 +31,7 @@ import {
 } from './tabs/Tab';
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
-import type { TabData, TabId } from './tabs/types';
+import type { AssembledTabRuntime, TabId } from './tabs/types';
 import { recalculateUsageForModel } from './utils/usageInfo';
 
 type LoadableView = {
@@ -104,14 +104,14 @@ export class ClaudianView extends ItemView {
 
   // Debouncing for tab bar updates
   private pendingTabBarUpdate: ScheduledAnimationFrame | null = null;
-  private tabStatePersistence: TabStatePersistenceCoordinator;
+  private tabStatePersistence: TabStatePersistenceCoordinator | null = null;
+  private shutdownSnapshotPromise: Promise<void> | null = null;
+  private viewLifecycleRevision = 0;
+  private viewShutdownStarted = false;
 
   constructor(leaf: WorkspaceLeaf, plugin: FeatureHost) {
     super(leaf);
     this.plugin = plugin;
-    this.tabStatePersistence = new TabStatePersistenceCoordinator(
-      state => this.plugin.storage.setTabManagerState(state),
-    );
 
     // Hover Editor compatibility: Define load as an instance method that can't be
     // overwritten by prototype patching. Hover Editor patches ClaudianView.prototype.load
@@ -186,13 +186,13 @@ export class ClaudianView extends ItemView {
         tab.state.usage = recalculateUsageForModel(tab.state.usage, model, contextWindow);
       }
 
-      tab.ui.modelSelector?.updateDisplay();
-      tab.ui.modelSelector?.renderOptions();
-      tab.ui.modeSelector?.updateDisplay();
-      tab.ui.modeSelector?.renderOptions();
-      tab.ui.thinkingBudgetSelector?.updateDisplay();
-      tab.ui.permissionToggle?.updateDisplay();
-      tab.ui.serviceTierToggle?.updateDisplay();
+      tab.ui.modelSelector.updateDisplay();
+      tab.ui.modelSelector.renderOptions();
+      tab.ui.modeSelector.updateDisplay();
+      tab.ui.modeSelector.renderOptions();
+      tab.ui.thinkingBudgetSelector.updateDisplay();
+      tab.ui.permissionToggle.updateDisplay();
+      tab.ui.serviceTierToggle.updateDisplay();
       tab.dom.inputWrapper.toggleClass(
         'claudian-input-plan-mode',
         providerSettings.permissionMode === 'plan' && capabilities.supportsPlanMode,
@@ -215,7 +215,7 @@ export class ClaudianView extends ItemView {
   /** Updates provider-scoped hidden commands on all tabs after settings changes. */
   updateHiddenProviderCommands(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.ui.slashCommandDropdown?.setHiddenCommands(
+      tab.ui.slashCommandDropdown.setHiddenCommands(
         getHiddenProviderCommandSet(this.plugin.settings, getTabProviderId(tab, this.plugin)),
       );
     }
@@ -231,6 +231,14 @@ export class ClaudianView extends ItemView {
   }
 
   private async onOpenImpl() {
+    const previousLifecycleWasClosing = this.viewShutdownStarted === true;
+    const shutdownSnapshotPromise = previousLifecycleWasClosing
+      ? this.shutdownSnapshotPromise
+      : null;
+    this.viewShutdownStarted = false;
+    const lifecycleRevision = (this.viewLifecycleRevision ?? 0) + 1;
+    this.viewLifecycleRevision = lifecycleRevision;
+
     // Guard: Hover Editor and similar plugins may call onOpen before DOM is ready.
     // containerEl must exist before we can access contentEl or create elements.
     if (!this.containerEl) {
@@ -256,7 +264,30 @@ export class ClaudianView extends ItemView {
     this.buildViewLayout();
     if (!this.tabContentEl) return;
 
-    this.tabManager = new TabManager(
+    let tabStatePersistence = this.tabStatePersistence;
+    if (!previousLifecycleWasClosing || !tabStatePersistence) {
+      if (!previousLifecycleWasClosing) {
+        tabStatePersistence?.dispose();
+      }
+      tabStatePersistence = new TabStatePersistenceCoordinator(
+        state => this.plugin.storage.setTabManagerState(state),
+      );
+    }
+    this.tabStatePersistence = tabStatePersistence;
+    try {
+      if (shutdownSnapshotPromise) {
+        await shutdownSnapshotPromise;
+      }
+      await tabStatePersistence.flush();
+    } catch {
+      // Persistence failures are reported at the storage boundary; reopening must continue.
+    }
+    if (
+      !this.isViewLifecycleCurrent(lifecycleRevision)
+      || this.tabStatePersistence !== tabStatePersistence
+    ) return;
+
+    const tabManager = new TabManager(
       this.plugin,
       this.tabContentEl,
       this,
@@ -273,7 +304,7 @@ export class ClaudianView extends ItemView {
           this.notifyConversationNavigationChanged();
           this.updateInputLocation();
           this.syncProviderBrandColor();
-          this.persistCurrentTabState();
+          this.persistCurrentTabState(tabManager, tabStatePersistence);
         },
         onTabSwitched: () => {
           this.updateTabBar();
@@ -285,7 +316,7 @@ export class ClaudianView extends ItemView {
           this.updateTabBar();
           this.notifyConversationNavigationChanged();
           this.updateInputLocation();
-          this.persistCurrentTabState();
+          this.persistCurrentTabState(tabManager, tabStatePersistence);
         },
         onTabStreamingChanged: () => {
           this.updateTabBar();
@@ -298,10 +329,15 @@ export class ClaudianView extends ItemView {
           this.notifyConversationNavigationChanged();
         },
         onTabConversationChanged: () => {
-          this.updateTabBar();
-          this.notifyConversationNavigationChanged();
-          this.syncProviderBrandColor();
-          this.persistCurrentTabState();
+          if (
+            this.tabManager === tabManager
+            && this.isViewLifecycleCurrent(lifecycleRevision)
+          ) {
+            this.updateTabBar();
+            this.notifyConversationNavigationChanged();
+            this.syncProviderBrandColor();
+          }
+          this.persistCurrentTabState(tabManager, tabStatePersistence);
         },
         onTabProviderChanged: () => {
           this.updateTabBar();
@@ -309,14 +345,16 @@ export class ClaudianView extends ItemView {
         },
       }
     );
+    this.tabManager = tabManager;
     this.mentionCacheCoordinator = new MentionCacheCoordinator(
-      () => (this.tabManager?.getAllTabs() ?? []).map(tab => ({
+      () => tabManager.getAllTabs().map(tab => ({
         fileContextManager: tab.ui.fileContextManager,
       })),
     );
 
     this.wireEventHandlers();
-    await this.restoreCurrentTab();
+    await this.restoreCurrentTab(lifecycleRevision);
+    if (!this.isViewLifecycleCurrent(lifecycleRevision)) return;
     this.syncProviderBrandColor();
     this.attachNavRowContentToInputFooter();
     this.updateInputLocation();
@@ -325,6 +363,15 @@ export class ClaudianView extends ItemView {
   }
 
   async onClose() {
+    this.viewShutdownStarted = true;
+    const lifecycleRevision = (this.viewLifecycleRevision ?? 0) + 1;
+    this.viewLifecycleRevision = lifecycleRevision;
+    const tabManager = this.tabManager;
+    const mentionCacheCoordinator = this.mentionCacheCoordinator;
+    const tabBar = this.tabBar;
+    const scope = this.scope;
+    const tabStatePersistence = this.tabStatePersistence;
+    tabManager?.beginShutdown();
     this.sessionLayoutRequestRevision += 1;
     this.clearSessionSearchDismissHandlers();
     this.cancelHistoryRendering();
@@ -340,24 +387,56 @@ export class ClaudianView extends ItemView {
       this.plugin.app.vault.offref(ref);
     }
     this.eventRefs = [];
+    this.restoreActiveInputToTabContent();
 
+    const shutdownSnapshotPromise = this.captureShutdownSnapshot(
+      tabManager,
+      tabStatePersistence,
+    );
+    this.shutdownSnapshotPromise = shutdownSnapshotPromise;
     try {
-      await this.flushCurrentTabState();
+      await shutdownSnapshotPromise;
+      const ownsCloseLifecycle = this.viewShutdownStarted === true
+        && this.viewLifecycleRevision === lifecycleRevision;
+      if (ownsCloseLifecycle) {
+        tabStatePersistence?.dispose();
+        if (this.tabStatePersistence === tabStatePersistence) {
+          this.tabStatePersistence = null;
+        }
+      }
+      try {
+        await tabManager?.destroy();
+      } finally {
+        if (this.tabManager === tabManager) this.tabManager = null;
+        if (this.mentionCacheCoordinator === mentionCacheCoordinator) {
+          this.mentionCacheCoordinator = null;
+        }
+        tabBar?.destroy();
+        if (this.tabBar === tabBar) this.tabBar = null;
+        if (this.scope === scope) this.scope = null;
+      }
+    } finally {
+      if (this.shutdownSnapshotPromise === shutdownSnapshotPromise) {
+        this.shutdownSnapshotPromise = null;
+      }
+    }
+  }
+
+  private async captureShutdownSnapshot(
+    tabManager: TabManager | null,
+    tabStatePersistence: TabStatePersistenceCoordinator | null,
+  ): Promise<void> {
+    try {
+      await tabManager?.drainForShutdownSnapshot();
+    } catch {
+      // Teardown reports drain failures; identity persistence must still be attempted.
+    }
+    try {
+      await this.flushCurrentTabState(tabManager, tabStatePersistence);
     } catch {
       // The storage boundary reports persistence failures. Teardown must still complete.
     } finally {
-      this.tabStatePersistence?.dispose();
-      try {
-        this.restoreActiveInputToTabContent();
-        await this.tabManager?.destroy();
-      } finally {
-        this.tabManager = null;
-        this.mentionCacheCoordinator = null;
-
-        this.tabBar?.destroy();
-        this.tabBar = null;
-        this.scope = null;
-      }
+      tabManager?.sealShutdownSnapshot();
     }
   }
 
@@ -474,11 +553,27 @@ export class ClaudianView extends ItemView {
     return true;
   }
 
-  async handleNewSessionPlan(planContent: string): Promise<boolean> {
+  async handleNewSessionPlan(
+    planContent: string,
+    isSourceLive: () => boolean = () => true,
+  ): Promise<boolean> {
     if (!this.isWideSessionLayout) return false;
+    if (!isSourceLive()) return true;
 
-    await this.createNewTab();
-    const inputController = this.tabManager?.getActiveTab()?.controllers.inputController;
+    const targetTab = await this.createNewTab();
+    if (!targetTab) {
+      throw new Error('New conversation input is unavailable');
+    }
+    if (!isSourceLive()) {
+      if (
+        targetTab.conversationId === null
+        && targetTab.session.userOwnershipRevision === 0
+      ) {
+        await this.tabManager?.discardTab(targetTab.id);
+      }
+      return true;
+    }
+    const inputController = targetTab.controllers.inputController;
     if (!inputController) {
       throw new Error('New conversation input is unavailable');
     }
@@ -497,7 +592,7 @@ export class ClaudianView extends ItemView {
     this.updateSessionSidebarLayout(this.viewContainerEl.getBoundingClientRect().width);
   }
 
-  private findMostRecentUnboundTab(): TabData | null {
+  private findMostRecentUnboundTab(): AssembledTabRuntime | null {
     const tabs = this.tabManager?.getAllTabs() ?? [];
     for (let index = tabs.length - 1; index >= 0; index -= 1) {
       if (tabs[index].conversationId === null) {
@@ -593,11 +688,12 @@ export class ClaudianView extends ItemView {
     }
   }
 
-  async createNewTab(): Promise<void> {
+  async createNewTab(): Promise<AssembledTabRuntime | null> {
     const tab = await this.tabManager?.createTab();
-    if (!tab) return;
+    if (!tab) return null;
     this.updateTabBarVisibility();
     tab.dom.inputEl.focus();
+    return tab;
   }
 
   private updateTabBar(): void {
@@ -1048,8 +1144,8 @@ export class ClaudianView extends ItemView {
     }
 
     try {
-      tab.ui.fileContextManager?.resetForNewConversation();
-      tab.ui.fileContextManager?.setCurrentNote(notePath);
+      tab.ui.fileContextManager.resetForNewConversation();
+      tab.ui.fileContextManager.setCurrentNote(notePath);
       this.updateTabBarVisibility();
       if (this.tabManager.getActiveTabId() === tab.id) {
         tab.dom.inputEl.focus();
@@ -1062,7 +1158,7 @@ export class ClaudianView extends ItemView {
 
   private handleWorkspaceFileOpen(file: TFile): void {
     if (this.linkedNoteNavigationDepth > 0) return;
-    this.tabManager?.getActiveTab()?.ui.fileContextManager?.handleFileOpen(file);
+    this.tabManager?.getActiveTab()?.ui.fileContextManager.handleFileOpen(file);
   }
 
   private activateSessionSearch(): void {
@@ -1323,7 +1419,7 @@ export class ClaudianView extends ItemView {
 
   private getOpenConversationTabs(conversationId: string): Array<{
     manager: FeatureTabManagerHost;
-    tab: TabData;
+    tab: AssembledTabRuntime;
   }> {
     const managers = new Set(
       this.plugin.getAllViews()
@@ -1334,7 +1430,7 @@ export class ClaudianView extends ItemView {
       managers.add(this.tabManager);
     }
 
-    const openTabs: Array<{ manager: FeatureTabManagerHost; tab: TabData }> = [];
+    const openTabs: Array<{ manager: FeatureTabManagerHost; tab: AssembledTabRuntime }> = [];
     for (const manager of managers) {
       for (const tab of manager.getAllTabs()) {
         if (tab.conversationId === conversationId) {
@@ -1796,12 +1892,12 @@ export class ClaudianView extends ItemView {
     };
   }
 
-  private findTabWithConversation(conversationId: string): TabData | null {
+  private findTabWithConversation(conversationId: string): AssembledTabRuntime | null {
     const tabs = this.tabManager?.getAllTabs() ?? [];
     return tabs.find(tab => tab.conversationId === conversationId) ?? null;
   }
 
-  private getHistoryTabIndex(tab: TabData): number | undefined {
+  private getHistoryTabIndex(tab: AssembledTabRuntime): number | undefined {
     const index = this.tabManager?.getAllTabs().findIndex(candidate => candidate.id === tab.id) ?? -1;
     return index >= 0 ? index + 1 : undefined;
   }
@@ -1874,7 +1970,7 @@ export class ClaudianView extends ItemView {
       if (!e.defaultPrevented) {
         const activeTab = this.tabManager?.getActiveTab();
         if (activeTab?.state.isStreaming) {
-          activeTab.controllers.inputController?.cancelStreaming();
+          activeTab.controllers.inputController.cancelStreaming();
         }
       }
       return false;
@@ -1920,28 +2016,45 @@ export class ClaudianView extends ItemView {
   // Current tab persistence
   // ============================================
 
-  private async restoreCurrentTab(): Promise<void> {
-    if (!this.tabManager) return;
+  private isViewLifecycleCurrent(revision: number): boolean {
+    return this.viewShutdownStarted !== true
+      && (this.viewLifecycleRevision ?? 0) === revision;
+  }
+
+  private async restoreCurrentTab(
+    lifecycleRevision = this.viewLifecycleRevision ?? 0,
+  ): Promise<void> {
+    const tabManager = this.tabManager;
+    if (!tabManager) return;
 
     const persistedState = await this.plugin.storage.getTabManagerState();
+    if (
+      !this.isViewLifecycleCurrent(lifecycleRevision)
+      || this.tabManager !== tabManager
+    ) return;
     const currentTab = persistedState?.openTabs.find(
       tab => tab.tabId === persistedState.activeTabId,
     );
     if (currentTab) {
-      await this.tabManager.createTab(currentTab.conversationId, currentTab.tabId);
+      await tabManager.createTab(currentTab.conversationId, currentTab.tabId);
       return;
     }
 
-    await this.tabManager.createTab();
+    await tabManager.createTab();
   }
 
-  private persistCurrentTabState(): void {
-    const state = this.getPersistedCurrentTabState();
-    if (state) this.tabStatePersistence?.update(state);
+  private persistCurrentTabState(
+    tabManager: Pick<TabManager, 'getActiveTab'> | null = this.tabManager,
+    persistence: Pick<TabStatePersistenceCoordinator, 'update'> | null = this.tabStatePersistence,
+  ): void {
+    const state = this.getPersistedCurrentTabState(tabManager);
+    if (state) persistence?.update(state);
   }
 
-  getPersistedCurrentTabState(): AppTabManagerState | null {
-    const activeTab = this.tabManager?.getActiveTab();
+  getPersistedCurrentTabState(
+    tabManager: Pick<TabManager, 'getActiveTab'> | null = this.tabManager,
+  ): AppTabManagerState | null {
+    const activeTab = tabManager?.getActiveTab();
     if (!activeTab) return null;
 
     return {
@@ -1954,11 +2067,16 @@ export class ClaudianView extends ItemView {
   }
 
   /** Flushes the current tab identity before view or plugin shutdown. */
-  async flushCurrentTabState(): Promise<void> {
-    const state = this.getPersistedCurrentTabState();
-    if (!state || !this.tabStatePersistence) return;
-    this.tabStatePersistence.update(state);
-    await this.tabStatePersistence.flush();
+  async flushCurrentTabState(
+    tabManager: Pick<TabManager, 'getActiveTab'> | null = this.tabManager,
+    persistence: Pick<TabStatePersistenceCoordinator, 'flush' | 'update'> | null = (
+      this.tabStatePersistence
+    ),
+  ): Promise<void> {
+    const state = this.getPersistedCurrentTabState(tabManager);
+    if (!state || !persistence) return;
+    persistence.update(state);
+    await persistence.flush();
   }
 
   // ============================================
@@ -1966,7 +2084,7 @@ export class ClaudianView extends ItemView {
   // ============================================
 
   /** Gets the currently active tab. */
-  getActiveTab(): TabData | null {
+  getActiveTab(): AssembledTabRuntime | null {
     return this.tabManager?.getActiveTab() ?? null;
   }
 

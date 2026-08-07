@@ -63,8 +63,13 @@ export class ComposerContextTray {
     this.containerEl = containerEl;
     this.options = options;
     this.containerEl.addClass('claudian-context-row');
-    this.observeSize();
-    this.render();
+    try {
+      this.observeSize();
+      this.render();
+    } catch (error) {
+      this.destroy();
+      throw error;
+    }
   }
 
   setItems(slot: ComposerContextSlot, items: readonly ComposerContextItem[]): void {
@@ -143,6 +148,7 @@ export class ComposerContextTray {
     this.itemsBySlot.clear();
     this.containerEl.empty();
     this.containerEl.removeClass('has-content');
+    this.containerEl.removeClass('claudian-context-row');
     this.containerEl.removeClass('claudian-context-row--expanded');
   }
 

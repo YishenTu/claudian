@@ -20,16 +20,19 @@ describe('registerFileLinkHandler', () => {
       preventDefault: jest.fn(),
     } as any;
 
-    const component = {
-      registerDomEvent: (_el: HTMLElement, _event: string, cb: (event: MouseEvent) => void) => {
-        cb(event);
+    const container = {
+      addEventListener: (_event: string, callback: (event: MouseEvent) => void) => {
+        callback(event);
       },
+      removeEventListener: jest.fn(),
     };
 
-    registerFileLinkHandler(app as any, {} as HTMLElement, component as any);
+    const cleanup = registerFileLinkHandler(app as any, container as any);
+    cleanup();
 
     expect(event.preventDefault).toHaveBeenCalled();
     expect(app.workspace.openLinkText).toHaveBeenCalledWith('note#section', '', 'tab');
+    expect(container.removeEventListener).toHaveBeenCalledWith('click', expect.any(Function));
   });
 
   it('falls back to href when data-href is missing', () => {
@@ -51,13 +54,14 @@ describe('registerFileLinkHandler', () => {
       preventDefault: jest.fn(),
     } as any;
 
-    const component = {
-      registerDomEvent: (_el: HTMLElement, _event: string, cb: (event: MouseEvent) => void) => {
-        cb(event);
+    const container = {
+      addEventListener: (_event: string, callback: (event: MouseEvent) => void) => {
+        callback(event);
       },
+      removeEventListener: jest.fn(),
     };
 
-    registerFileLinkHandler(app as any, {} as HTMLElement, component as any);
+    registerFileLinkHandler(app as any, container as any);
 
     expect(app.workspace.openLinkText).toHaveBeenCalledWith('note^block', '', 'tab');
   });

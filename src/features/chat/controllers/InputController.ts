@@ -141,6 +141,7 @@ export interface InputControllerDeps {
   restorePrePlanPermissionModeIfNeeded?: () => void | Promise<void>;
   /** Captures a review reporter when a terminal provider turn becomes visible. */
   captureReviewableSettlement?: () => () => void;
+  canStartTurn?: () => boolean;
   turnOwner?: ActiveTurnOwner;
 }
 
@@ -244,7 +245,14 @@ export class InputController {
   // ============================================
 
   async sendMessage(options?: SendMessageOptions): Promise<void> {
+    if (this.deps.canStartTurn?.() === false) return;
     await this.turnCoordinator.run(options);
+  }
+
+  resumeQueuedTurnAfterIntentAdmission(): void {
+    if (this.deps.canStartTurn?.() === false) return;
+    if (this.deps.state.isStreaming || !this.deps.state.queuedMessage) return;
+    this.processQueuedMessage();
   }
 
   async handleExecutionEvent(event: ProviderExecutionEvent): Promise<void> {
@@ -908,6 +916,13 @@ export class InputController {
 
     window.setTimeout(
       () => {
+        if (this.deps.canStartTurn?.() === false) {
+          if (!state.queuedMessage) {
+            state.queuedMessage = queuedMessage;
+            this.updateQueueIndicator();
+          }
+          return;
+        }
         void this.sendMessage({
           content: queuedMessage.content,
           images: queuedMessage.images,

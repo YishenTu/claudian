@@ -11,11 +11,12 @@ import type {
 } from '../core/types';
 import type { ChatExecutionPersistence } from './chat/execution/ChatExecutionCoordinator';
 import type { WarmExecutionPool } from './chat/execution/WarmExecutionPool';
-import type { TabData, TabId, TabManagerViewHost } from './chat/tabs/types';
+import type { AssembledTabRuntime, TabId, TabManagerViewHost } from './chat/tabs/types';
 
 export interface FeatureTabManagerHost {
-  getAllTabs(): TabData[];
-  getTab(tabId: TabId): TabData | null;
+  canCreateTab(): boolean;
+  getAllTabs(): AssembledTabRuntime[];
+  getTab(tabId: TabId): AssembledTabRuntime | null;
   switchToTab(tabId: TabId): Promise<void>;
   closeTab(tabId: TabId, force?: boolean): Promise<boolean>;
   primeProviderExecution(providerIds?: ProviderId | ProviderId[]): void;
@@ -23,7 +24,7 @@ export interface FeatureTabManagerHost {
 }
 
 export interface FeatureViewHost extends TabManagerViewHost {
-  getActiveTab(): TabData | null;
+  getActiveTab(): AssembledTabRuntime | null;
   getTabManager(): FeatureTabManagerHost | null;
   notifyConversationListChanged(): void;
   refreshModelSelector(providerId?: ProviderId): void;
@@ -38,6 +39,7 @@ export interface ChatModelSelectionPort {
   commitIntent(
     intent: number,
     selection: StoredChatModelSelection,
+    isStillValid: () => boolean,
   ): Promise<boolean>;
 }
 

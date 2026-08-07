@@ -89,7 +89,7 @@ export class SubagentManager {
   private outputToolToTaskToolUseId: Map<string, string> = new Map();
   private asyncDomStates: Map<string, AsyncSubagentState> = new Map();
 
-  private onStateChange: SubagentStateChangeCallback;
+  private readonly onStateChange: SubagentStateChangeCallback;
   private taskResultInterpreter: ProviderTaskResultInterpreter;
 
   constructor(
@@ -98,10 +98,6 @@ export class SubagentManager {
   ) {
     this.onStateChange = onStateChange;
     this.taskResultInterpreter = taskResultInterpreter;
-  }
-
-  public setCallback(callback: SubagentStateChangeCallback): void {
-    this.onStateChange = callback;
   }
 
   public setTaskResultInterpreter(interpreter: ProviderTaskResultInterpreter): void {

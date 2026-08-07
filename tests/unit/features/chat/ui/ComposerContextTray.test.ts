@@ -7,6 +7,27 @@ jest.mock('obsidian', () => ({
 }));
 
 describe('ComposerContextTray', () => {
+  it('releases its observer when construction fails after observation starts', () => {
+    const containerEl = createMockEl();
+    const disconnect = jest.fn();
+    const ResizeObserverConstructor = class {
+      observe(): void {}
+      disconnect(): void {
+        disconnect();
+      }
+    };
+    containerEl.ownerDocument.defaultView.ResizeObserver = ResizeObserverConstructor;
+    const initializationError = new Error('Context tray render failed');
+
+    expect(() => new ComposerContextTray(
+      containerEl as unknown as HTMLElement,
+      { onDidChange: () => { throw initializationError; } },
+    )).toThrow(initializationError);
+
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(containerEl.children).toHaveLength(0);
+  });
+
   it('owns empty-state visibility and renders slots in semantic order', () => {
     const containerEl = createMockEl();
     const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);

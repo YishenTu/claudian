@@ -74,6 +74,9 @@ export class MessageRenderer {
   private getCapabilities: () => ProviderCapabilities;
   private forkCallback?: (messageId: string) => Promise<void>;
   private liveMessageEls = new Map<string, HTMLElement>();
+  private removeFileLinkHandler: () => void;
+  private closeImageModal: (() => void) | null = null;
+  private isDisposed = false;
 
   constructor(
     plugin: FeatureHost,
@@ -104,12 +107,25 @@ export class MessageRenderer {
     }));
 
     // Register delegated click handler for file links
-    registerFileLinkHandler(this.app, this.messagesEl, this.component);
+    this.removeFileLinkHandler = registerFileLinkHandler(this.app, this.messagesEl);
   }
 
   /** Sets the messages container element. */
   setMessagesEl(el: HTMLElement): void {
+    this.removeFileLinkHandler();
     this.messagesEl = el;
+    this.removeFileLinkHandler = this.isDisposed
+      ? () => {}
+      : registerFileLinkHandler(this.app, this.messagesEl);
+  }
+
+  dispose(): void {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
+    this.closeImageModal?.();
+    this.removeFileLinkHandler();
+    this.removeFileLinkHandler = () => {};
+    this.liveMessageEls.clear();
   }
 
   private getSubagentAdapter(toolName?: string) {
@@ -680,6 +696,9 @@ export class MessageRenderer {
    * Shows full-size image in modal overlay.
    */
   showFullImage(image: ImageAttachment): void {
+    if (this.isDisposed) return;
+    this.closeImageModal?.();
+
     const dataUri = `data:${image.mediaType};base64,${image.data}`;
 
     const ownerDocument = this.messagesEl.ownerDocument ?? window.document;
@@ -702,9 +721,15 @@ export class MessageRenderer {
       }
     };
 
+    let isClosed = false;
     const close = () => {
+      if (isClosed) return;
+      isClosed = true;
       ownerDocument.removeEventListener('keydown', handleEsc);
       overlay.remove();
+      if (this.closeImageModal === close) {
+        this.closeImageModal = null;
+      }
     };
 
     closeBtn.addEventListener('click', close);
@@ -712,6 +737,7 @@ export class MessageRenderer {
       if (e.target === overlay) close();
     });
     ownerDocument.addEventListener('keydown', handleEsc);
+    this.closeImageModal = close;
   }
 
   /**

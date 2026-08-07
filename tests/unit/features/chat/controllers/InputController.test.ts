@@ -228,6 +228,47 @@ describe('InputController coordinator execution', () => {
     });
   });
 
+  it('does not start a turn when its tab session has closed intent admission', async () => {
+    const canStartTurn = jest.fn().mockReturnValue(false);
+    const fixture = createFixture({ canStartTurn });
+    fixture.input.value = 'do not send';
+
+    await fixture.controller.sendMessage();
+
+    expect(canStartTurn).toHaveBeenCalledTimes(1);
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.state.messages).toEqual([]);
+    expect(fixture.input.value).toBe('do not send');
+  });
+
+  it('reschedules an automatically queued turn after intent admission reopens', async () => {
+    let canStart = false;
+    const fixture = createFixture({ canStartTurn: () => canStart });
+    const scheduled: Array<() => void> = [];
+    const timeoutSpy = jest.spyOn(window, 'setTimeout').mockImplementation((callback: any) => {
+      scheduled.push(callback);
+      return scheduled.length as unknown as ReturnType<typeof window.setTimeout>;
+    });
+    fixture.state.queuedMessage = {
+      content: 'queued during close',
+      editorContext: null,
+      canvasContext: null,
+    };
+
+    expect((fixture.controller as any).processQueuedMessage()).toBe(true);
+    scheduled.shift()?.();
+    expect(fixture.state.queuedMessage).toMatchObject({ content: 'queued during close' });
+
+    canStart = true;
+    fixture.controller.resumeQueuedTurnAfterIntentAdmission();
+    expect(fixture.state.queuedMessage).toBeNull();
+    scheduled.shift()?.();
+    await waitForCall(fixture.coordinator.execute);
+
+    expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
+    timeoutSpy.mockRestore();
+  });
+
   it('delegates /clear to the layout-owned New action when it handles the command', async () => {
     const handleNewConversationCommand = jest.fn().mockResolvedValue(true);
     const fixture = createFixture({ handleNewConversationCommand });

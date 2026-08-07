@@ -26,11 +26,11 @@ describe('ChatModelSelectionCoordinator', () => {
     await expect(coordinator.commitIntent(secondIntent, {
       providerId: 'codex',
       model: 'codex/gpt-5.2',
-    })).resolves.toBe(true);
+    }, () => true)).resolves.toBe(true);
     await expect(coordinator.commitIntent(firstIntent, {
       providerId: 'claude',
       model: 'opus',
-    })).resolves.toBe(false);
+    }, () => true)).resolves.toBe(false);
 
     expect(settings.lastSelectedChatModel).toEqual({
       providerId: 'codex',
@@ -50,11 +50,11 @@ describe('ChatModelSelectionCoordinator', () => {
     const first = coordinator.commitIntent(firstIntent, {
       providerId: 'claude',
       model: 'opus',
-    });
+    }, () => true);
     const second = coordinator.commitIntent(secondIntent, {
       providerId: 'codex',
       model: 'codex/gpt-5.2',
-    });
+    }, () => true);
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
     expect(settings.lastSelectedChatModel).toEqual({
@@ -75,16 +75,53 @@ describe('ChatModelSelectionCoordinator', () => {
     await expect(coordinator.commitIntent(failedNewerIntent, {
       providerId: 'codex',
       model: 'codex/gpt-5.2',
-    })).rejects.toThrow('disk full');
+    }, () => true)).rejects.toThrow('disk full');
     await expect(coordinator.commitIntent(earlierIntent, {
       providerId: 'claude',
       model: 'opus',
-    })).resolves.toBe(true);
+    }, () => true)).resolves.toBe(true);
 
     expect(settings.lastSelectedChatModel).toEqual({
       providerId: 'claude',
       model: 'opus',
     });
     expect(persist).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops an intent that loses ownership while waiting to commit', async () => {
+    let releaseFirstPersist!: () => void;
+    const firstPersist = new Promise<void>(resolve => {
+      releaseFirstPersist = resolve;
+    });
+    let persistCount = 0;
+    const { coordinator, settings } = createCoordinator(async () => {
+      persistCount += 1;
+      if (persistCount === 1) {
+        await firstPersist;
+      }
+    });
+    const firstIntent = coordinator.beginIntent();
+    const staleIntent = coordinator.beginIntent();
+    let staleIntentIsValid = true;
+
+    const firstCommit = coordinator.commitIntent(firstIntent, {
+      providerId: 'claude',
+      model: 'opus',
+    }, () => true);
+    const staleCommit = coordinator.commitIntent(staleIntent, {
+      providerId: 'codex',
+      model: 'codex/gpt-5.2',
+    }, () => staleIntentIsValid);
+
+    await Promise.resolve();
+    staleIntentIsValid = false;
+    releaseFirstPersist();
+
+    await expect(Promise.all([firstCommit, staleCommit])).resolves.toEqual([true, false]);
+    expect(settings.lastSelectedChatModel).toEqual({
+      providerId: 'claude',
+      model: 'opus',
+    });
+    expect(persistCount).toBe(1);
   });
 });

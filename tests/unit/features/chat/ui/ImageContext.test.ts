@@ -25,6 +25,7 @@ beforeAll(() => {
 function createMockCallbacks() {
   return {
     onImagesChanged: jest.fn(),
+    onUserImagesChanged: jest.fn(),
   };
 }
 
@@ -206,12 +207,13 @@ describe('ImageContextManager', () => {
 // We access privates through any cast, matching the project's pattern.
 describe('ImageContextManager - Private Helpers', () => {
   let manager: any;
+  let callbacks: ReturnType<typeof createMockCallbacks>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     const { container } = createContainerWithInputWrapper();
     const inputEl = createMockTextArea();
-    const callbacks = createMockCallbacks();
+    callbacks = createMockCallbacks();
     manager = new ImageContextManager(container, inputEl, callbacks);
   });
 
@@ -621,6 +623,65 @@ describe('ImageContextManager - Private Helpers', () => {
       expect(addImageSpy).not.toHaveBeenCalled();
       addImageSpy.mockRestore();
     });
+
+    it('does not attach a pasted image after destruction begins', async () => {
+      let resolveBuffer!: (value: ArrayBuffer) => void;
+      const arrayBuffer = new Promise<ArrayBuffer>((resolve) => {
+        resolveBuffer = resolve;
+      });
+      const mockFile = {
+        name: 'pasted.png',
+        type: 'image/png',
+        size: 1024,
+        arrayBuffer: jest.fn(() => arrayBuffer),
+      };
+      const pasteEvent = {
+        type: 'paste',
+        preventDefault: jest.fn(),
+        clipboardData: {
+          items: {
+            length: 1,
+            0: {
+              type: 'image/png',
+              getAsFile: () => mockFile,
+            },
+          },
+        },
+      };
+
+      manager['inputEl'].dispatchEvent(pasteEvent);
+      expect(mockFile.arrayBuffer).toHaveBeenCalledTimes(1);
+      manager.destroy();
+      resolveBuffer(new ArrayBuffer(4));
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await Promise.resolve();
+      }
+
+      expect(manager.getAttachedImages()).toEqual([]);
+      expect(callbacks.onImagesChanged).not.toHaveBeenCalled();
+      expect(callbacks.onUserImagesChanged).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('destroy', () => {
+    it('unregisters paste and drag/drop listeners', () => {
+      const inputWrapper = manager['containerEl'].querySelector('.claudian-input-wrapper');
+      const inputEl = manager['inputEl'];
+
+      expect(inputEl.getEventListenerCount('paste')).toBe(1);
+      expect(inputWrapper.getEventListenerCount('dragenter')).toBe(1);
+      expect(inputWrapper.getEventListenerCount('dragover')).toBe(1);
+      expect(inputWrapper.getEventListenerCount('dragleave')).toBe(1);
+      expect(inputWrapper.getEventListenerCount('drop')).toBe(1);
+
+      manager.destroy();
+
+      expect(inputEl.getEventListenerCount('paste')).toBe(0);
+      expect(inputWrapper.getEventListenerCount('dragenter')).toBe(0);
+      expect(inputWrapper.getEventListenerCount('dragover')).toBe(0);
+      expect(inputWrapper.getEventListenerCount('dragleave')).toBe(0);
+      expect(inputWrapper.getEventListenerCount('drop')).toBe(0);
+    });
   });
 
   describe('Image context rendering', () => {
@@ -742,6 +803,18 @@ describe('ImageContextManager - Private Helpers', () => {
       clickHandler({ target: overlayEl });
 
       expect(removeEventSpy).toHaveBeenCalled();
+    });
+
+    it('should close an open modal during destruction', () => {
+      const image = createImageAttachment();
+      manager['showFullImage'](image);
+      const removeSpy = jest.spyOn(overlayEl, 'remove');
+      const escHandler = addEventSpy.mock.calls[0][1];
+
+      manager.destroy();
+
+      expect(removeSpy).toHaveBeenCalledTimes(1);
+      expect(removeEventSpy).toHaveBeenCalledWith('keydown', escHandler);
     });
   });
 

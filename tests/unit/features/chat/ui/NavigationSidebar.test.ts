@@ -273,6 +273,39 @@ describe('NavigationSidebar', () => {
   });
 
   describe('initialization', () => {
+    it('rolls back global listeners and DOM when observer setup fails', () => {
+      const initializationError = new Error('Navigation observer failed');
+      const disconnect = jest.fn();
+      const removeScrollListener = jest.spyOn(messagesEl, 'removeEventListener');
+      const removeDocumentListener = jest.fn();
+      Object.assign(parentEl.ownerDocument, {
+        addEventListener: jest.fn(),
+        removeEventListener: removeDocumentListener,
+      });
+      Object.defineProperty(globalThis, 'MutationObserver', {
+        value: class ThrowingMutationObserver {
+          observe(): void {
+            throw initializationError;
+          }
+
+          disconnect(): void {
+            disconnect();
+          }
+        } as unknown as typeof MutationObserver,
+        configurable: true,
+      });
+
+      expect(() => new NavigationSidebar(
+        parentEl as unknown as HTMLElement,
+        messagesEl as unknown as HTMLElement,
+      )).toThrow(initializationError);
+
+      expect(disconnect).toHaveBeenCalledTimes(1);
+      expect(removeScrollListener).toHaveBeenCalledWith('scroll', expect.any(Function));
+      expect(removeDocumentListener).toHaveBeenCalledWith('click', expect.any(Function));
+      expect(parentEl.querySelector('.claudian-nav-sidebar')).toBeNull();
+    });
+
     it('should create container with correct class', () => {
       sidebar = new NavigationSidebar(
         parentEl as unknown as HTMLElement,

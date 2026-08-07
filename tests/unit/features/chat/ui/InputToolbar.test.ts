@@ -1258,6 +1258,29 @@ describe('InputToolbarLayoutController', () => {
     controller.destroy();
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
+
+  it('should release earlier observers when layout construction fails', () => {
+    const toolbarEl = createMockEl();
+    const disconnectResize = jest.fn();
+    const disconnectMutation = jest.fn();
+    const observerError = new Error('mutation observer failed');
+    toolbarEl.ownerDocument.defaultView.ResizeObserver = class {
+      observe = jest.fn();
+      unobserve = jest.fn();
+      disconnect = disconnectResize;
+    };
+    toolbarEl.ownerDocument.defaultView.MutationObserver = class {
+      observe = jest.fn(() => {
+        throw observerError;
+      });
+      disconnect = disconnectMutation;
+      takeRecords = jest.fn().mockReturnValue([]);
+    };
+
+    expect(() => new InputToolbarLayoutController(toolbarEl)).toThrow(observerError);
+    expect(disconnectResize).toHaveBeenCalledTimes(1);
+    expect(disconnectMutation).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('McpServerSelector - toggle and badges', () => {

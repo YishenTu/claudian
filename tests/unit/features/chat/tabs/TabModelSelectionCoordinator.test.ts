@@ -33,7 +33,9 @@ function createHarness() {
   const restoreDraft = jest.fn((restored: TabModelSelectionDraft) => {
     draft = { ...restored };
   });
+  let ownerIsLive = true;
   const coordinator = new TabModelSelectionCoordinator({
+    isOwnerLive: () => ownerIsLive,
     readDraft: () => ({ ...draft }),
     applyModel: (model) => { draft = { ...draft, model }; },
     applyProviderTarget: (target) => { draft = { ...target }; },
@@ -50,6 +52,9 @@ function createHarness() {
       return transition;
     },
     initializeProvider,
+    loseOwnership() {
+      ownerIsLive = false;
+    },
     restoreDraft,
   };
 }
@@ -125,6 +130,21 @@ describe('TabModelSelectionCoordinator', () => {
       model: 'claude-default',
     });
     expect(harness.restoreDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not restore a provider draft after its owner is disposed', async () => {
+    const harness = createHarness();
+    const request = harness.coordinator.beginRequest();
+    const selection = harness.coordinator.selectBlank(request, {
+      providerId: 'codex',
+      model: 'codex-model',
+    });
+
+    harness.loseOwnership();
+    harness.getTransition('codex').reject(new Error('Codex initialization failed'));
+
+    await expect(selection).resolves.toEqual({ status: 'superseded' });
+    expect(harness.restoreDraft).not.toHaveBeenCalled();
   });
 
   it('lets a newer provider transition continue after an older transition fails', async () => {

@@ -6,19 +6,17 @@ import type { TabAttention } from '@/features/chat/state/types';
 import type { FeatureHost } from '@/features/FeatureHost';
 
 import {
-  createTab,
-  destroyTab,
+  assembleTabRuntime,
   type ForkContext,
-  initializeTabControllers,
-  initializeTabUI,
-  wireTabInputEvents,
+  type TabRuntimeCleanup,
 } from './Tab';
 import type {
+  AssembledTabRuntime,
   ProviderCatalogInfo,
-  ReadyTabData,
-  TabData,
   TabId,
-  TabProviderContext,
+  TabProviderCatalogContext,
+  TabRuntimeCleanupFailure,
+  TabRuntimeResourceOwner,
 } from './types';
 
 export interface TabRuntimeFactoryOptions {
@@ -28,138 +26,107 @@ export interface TabRuntimeFactoryOptions {
   conversation?: Conversation;
   tabId?: TabId;
   draftModel?: string | null;
-  lifecycleState?: Extract<TabData['lifecycleState'], 'provisional' | 'cold'>;
+  lifecycleState?: Extract<
+    AssembledTabRuntime['lifecycleState'],
+    'provisional' | 'cold'
+  >;
   getProviderCatalogConfig: (
-    tab: TabProviderContext & Pick<TabData, 'id'>,
+    tab: TabProviderCatalogContext,
   ) => ProviderCatalogInfo;
+  isRuntimeLive: (tab: AssembledTabRuntime) => boolean;
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>;
   openConversation?: (conversationId: string) => Promise<void>;
-  onStreamingChanged?: (tab: ReadyTabData, isStreaming: boolean) => void;
-  onRewindingChanged?: (tab: ReadyTabData, isRewinding: boolean) => void;
-  onAttentionChanged?: (tab: ReadyTabData, attention: TabAttention) => void;
-  onConversationIdChanged?: (tab: ReadyTabData, conversationId: string | null) => void;
-  onProviderChanged?: (tab: ReadyTabData, providerId: ProviderId) => void | Promise<void>;
-  onCommandContextChanged?: (tab: ReadyTabData) => void;
-  captureReviewableSettlement?: (tab: ReadyTabData) => () => void;
+  onStreamingChanged?: (tab: AssembledTabRuntime, isStreaming: boolean) => void;
+  onRewindingChanged?: (tab: AssembledTabRuntime, isRewinding: boolean) => void;
+  onAttentionChanged?: (tab: AssembledTabRuntime, attention: TabAttention) => void;
+  onConversationIdChanged?: (
+    tab: AssembledTabRuntime,
+    conversationId: string | null,
+  ) => void;
+  onProviderChanged?: (
+    tab: AssembledTabRuntime,
+    providerId: ProviderId,
+  ) => void | Promise<void>;
+  onCommandContextChanged?: (tab: AssembledTabRuntime) => void;
+  captureReviewableSettlement?: (tab: AssembledTabRuntime) => () => void;
 }
 
-function assertReadyTabRuntime(tab: TabData): asserts tab is ReadyTabData {
-  const requiredParts: Array<[name: string, value: unknown]> = [
-    ['executionCoordinator', tab.executionCoordinator],
-    ['providerCatalogResolver', tab.providerCatalogResolver],
-    ['renderer', tab.renderer],
-    ['controllers.selectionController', tab.controllers.selectionController],
-    ['controllers.browserSelectionController', tab.controllers.browserSelectionController],
-    ['controllers.canvasSelectionController', tab.controllers.canvasSelectionController],
-    ['controllers.conversationController', tab.controllers.conversationController],
-    ['controllers.streamController', tab.controllers.streamController],
-    ['controllers.inputController', tab.controllers.inputController],
-    ['controllers.navigationController', tab.controllers.navigationController],
-    ['services.titleGenerationService', tab.services.titleGenerationService],
-    ['ui.contextTray', tab.ui.contextTray],
-    ['ui.fileContextManager', tab.ui.fileContextManager],
-    ['ui.imageContextManager', tab.ui.imageContextManager],
-    ['ui.modelSelector', tab.ui.modelSelector],
-    ['ui.modeSelector', tab.ui.modeSelector],
-    ['ui.thinkingBudgetSelector', tab.ui.thinkingBudgetSelector],
-    ['ui.externalContextSelector', tab.ui.externalContextSelector],
-    ['ui.mcpServerSelector', tab.ui.mcpServerSelector],
-    ['ui.permissionToggle', tab.ui.permissionToggle],
-    ['ui.serviceTierToggle', tab.ui.serviceTierToggle],
-    ['ui.slashCommandDropdown', tab.ui.slashCommandDropdown],
-    ['ui.instructionModeManager', tab.ui.instructionModeManager],
-    ['ui.contextUsageMeter', tab.ui.contextUsageMeter],
-    ['ui.statusPanel', tab.ui.statusPanel],
-  ];
-  const missingParts = requiredParts
-    .filter(([, value]) => value === null || value === undefined)
-    .map(([name]) => name);
+interface CleanupEntry {
+  readonly cleanup: TabRuntimeCleanup;
+  readonly resource: string;
+}
 
-  if (missingParts.length > 0) {
-    throw new Error(`Tab runtime assembly incomplete: ${missingParts.join(', ')}`);
+class RuntimeResourceOwner implements TabRuntimeResourceOwner {
+  private readonly entries: CleanupEntry[] = [];
+  private disposal: Promise<readonly TabRuntimeCleanupFailure[]> | null = null;
+  private sealed = false;
+
+  get isDisposed(): boolean {
+    return this.disposal !== null;
   }
-}
 
-async function rollbackTabRuntime(tab: TabData): Promise<void> {
-  try {
-    await destroyTab(tab);
-  } catch {
-    try {
-      tab.dom.contentEl.remove();
-    } catch {
-      // Preserve the construction failure that triggered rollback.
+  register(resource: string, cleanup: TabRuntimeCleanup): void {
+    if (this.sealed || this.disposal) {
+      throw new Error(`Cannot acquire ${resource} after tab runtime assembly`);
     }
+    this.entries.push({ cleanup, resource });
+  }
+
+  seal(): void {
+    this.sealed = true;
+  }
+
+  dispose(): Promise<readonly TabRuntimeCleanupFailure[]> {
+    if (!this.disposal) {
+      this.sealed = true;
+      this.disposal = this.disposeEntries();
+    }
+    return this.disposal;
+  }
+
+  private async disposeEntries(): Promise<readonly TabRuntimeCleanupFailure[]> {
+    const failures: TabRuntimeCleanupFailure[] = [];
+    const entries = this.entries.splice(0).reverse();
+    for (const entry of entries) {
+      try {
+        await entry.cleanup();
+      } catch (error) {
+        failures.push({ error, resource: entry.resource });
+      }
+    }
+    return failures;
   }
 }
 
-/** Creates a structurally complete tab runtime or rolls back all partial ownership. */
+export class TabRuntimeConstructionError extends Error {
+  readonly rollbackFailures: readonly TabRuntimeCleanupFailure[];
+
+  constructor(cause: unknown, rollbackFailures: readonly TabRuntimeCleanupFailure[]) {
+    const resources = rollbackFailures.map(failure => failure.resource).join(', ');
+    super(`Tab runtime construction failed and rollback also failed: ${resources}`, { cause });
+    this.name = 'TabRuntimeConstructionError';
+    this.rollbackFailures = rollbackFailures;
+  }
+}
+
+/** Creates a structurally complete tab runtime or rolls back every acquired resource. */
 export async function createTabRuntime(
   options: TabRuntimeFactoryOptions,
-): Promise<ReadyTabData> {
-  let tab: TabData | null = null;
-  let readyTab: ReadyTabData | null = null;
-  const requireReadyTab = (): ReadyTabData => {
-    if (!readyTab) {
-      throw new Error('Tab runtime callback invoked before assembly completed');
-    }
-    return readyTab;
-  };
+): Promise<AssembledTabRuntime> {
+  const resourceOwner = new RuntimeResourceOwner();
 
   try {
-    tab = createTab({
-      plugin: options.plugin,
-      containerEl: options.containerEl,
-      conversation: options.conversation,
-      tabId: options.tabId,
-      draftModel: options.draftModel,
-      lifecycleState: options.lifecycleState,
-      captureReviewableSettlement: options.captureReviewableSettlement
-        ? () => options.captureReviewableSettlement!(requireReadyTab())
-        : undefined,
+    const runtime = assembleTabRuntime({
+      ...options,
+      registerCleanup: (resource, cleanup) => resourceOwner.register(resource, cleanup),
+      resourceOwner,
     });
-    const constructingTab = tab;
-
-    initializeTabUI(constructingTab, options.plugin, {
-      getProviderCatalogConfig: () => options.getProviderCatalogConfig(constructingTab),
-      onCommandContextChanged: options.onCommandContextChanged
-        ? () => options.onCommandContextChanged!(requireReadyTab())
-        : undefined,
-      onProviderChanged: options.onProviderChanged
-        ? providerId => options.onProviderChanged!(requireReadyTab(), providerId)
-        : undefined,
-    });
-    initializeTabControllers(
-      constructingTab,
-      options.plugin,
-      options.component,
-      options.forkRequestCallback,
-      options.openConversation,
-      () => options.getProviderCatalogConfig(constructingTab),
-    );
-    wireTabInputEvents(constructingTab, options.plugin);
-    assertReadyTabRuntime(constructingTab);
-    readyTab = constructingTab;
-
-    constructingTab.state.callbacks = {
-      ...constructingTab.state.callbacks,
-      onStreamingStateChanged: options.onStreamingChanged
-        ? isStreaming => options.onStreamingChanged!(requireReadyTab(), isStreaming)
-        : undefined,
-      onRewindingStateChanged: options.onRewindingChanged
-        ? isRewinding => options.onRewindingChanged!(requireReadyTab(), isRewinding)
-        : undefined,
-      onAttentionChanged: options.onAttentionChanged
-        ? attention => options.onAttentionChanged!(requireReadyTab(), attention)
-        : undefined,
-      onConversationChanged: options.onConversationIdChanged
-        ? conversationId => options.onConversationIdChanged!(requireReadyTab(), conversationId)
-        : undefined,
-    };
-
-    return constructingTab;
+    resourceOwner.seal();
+    return runtime;
   } catch (error) {
-    if (tab) {
-      await rollbackTabRuntime(tab);
+    const rollbackFailures = await resourceOwner.dispose();
+    if (rollbackFailures.length > 0) {
+      throw new TabRuntimeConstructionError(error, rollbackFailures);
     }
     throw error;
   }

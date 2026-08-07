@@ -251,3 +251,30 @@ test('renderer source does not import AsyncLocalStorage', () => {
   const pattern = /import\s*\{[^}]*\bAsyncLocalStorage\b[^}]*\}\s*from\s*['"](?:node:)?async_hooks['"]/s;
   assert.deepEqual(findMatches([sourceRoot], pattern), []);
 });
+
+test('only TabRuntimeFactory can initiate tab runtime assembly', () => {
+  const tabSource = path.join(featuresRoot, 'chat', 'tabs', 'Tab.ts');
+  const factorySource = path.join(featuresRoot, 'chat', 'tabs', 'TabRuntimeFactory.ts');
+  const assemblyReferences = findMatches(
+    [sourceRoot],
+    /\bassembleTabRuntime\b/,
+  ).sort();
+
+  assert.deepEqual(assemblyReferences, [
+    path.relative(process.cwd(), tabSource),
+    path.relative(process.cwd(), factorySource),
+  ].sort());
+
+  const source = fs.readFileSync(tabSource, 'utf8');
+  for (const retiredConstructionHelper of [
+    'createTab',
+    'initializeTabUI',
+    'initializeTabControllers',
+    'wireTabInputEvents',
+  ]) {
+    assert.doesNotMatch(
+      source,
+      new RegExp(`export\\s+(?:async\\s+)?function\\s+${retiredConstructionHelper}\\b`),
+    );
+  }
+});

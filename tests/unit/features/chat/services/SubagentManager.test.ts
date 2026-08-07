@@ -1752,18 +1752,5 @@ Only this is the final result.
       expect(manager.isPendingAsyncTask('task-async')).toBe(false);
     });
 
-    it('updates callback via setCallback', () => {
-      const { manager } = createManager();
-      const parentEl = createMockEl();
-      const newUpdates: SubagentInfo[] = [];
-
-      manager.handleTaskToolUse('task-1', { description: 'Background', run_in_background: true }, parentEl);
-      manager.setCallback((subagent) => { newUpdates.push({ ...subagent }); });
-
-      manager.handleTaskToolResult('task-1', JSON.stringify({ agent_id: 'agent-new' }));
-
-      expect(newUpdates.length).toBeGreaterThan(0);
-      expect(newUpdates[newUpdates.length - 1].agentId).toBe('agent-new');
-    });
   });
 });

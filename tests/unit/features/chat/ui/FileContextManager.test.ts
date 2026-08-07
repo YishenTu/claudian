@@ -863,6 +863,28 @@ describe('FileContextManager', () => {
   });
 
   describe('destroy', () => {
+    it('rolls back an acquired vault listener when construction fails', () => {
+      const app = createMockApp();
+      const deleteEventRef = { id: 'delete-ref' };
+      const initializationError = new Error('Rename listener failed');
+      app.vault.on
+        .mockReturnValueOnce(deleteEventRef)
+        .mockImplementationOnce(() => {
+          throw initializationError;
+        });
+
+      expect(() => new FileContextManager(
+        app,
+        containerEl as any,
+        inputEl,
+        createMockCallbacks(),
+      )).toThrow(initializationError);
+
+      expect(app.vault.offref).toHaveBeenCalledTimes(1);
+      expect(app.vault.offref).toHaveBeenCalledWith(deleteEventRef);
+      expect(containerEl.children).toHaveLength(0);
+    });
+
     it('should clean up event listeners', () => {
       const app = createMockApp();
       const manager = new FileContextManager(

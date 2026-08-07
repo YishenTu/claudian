@@ -17,6 +17,7 @@ export type TabModelSelectionResult =
   | { status: 'superseded' };
 
 export interface TabModelSelectionEffects {
+  isOwnerLive(): boolean;
   readDraft(): TabModelSelectionDraft;
   applyModel(model: string): void;
   applyProviderTarget(target: TabModelSelectionDraft): void;
@@ -42,13 +43,18 @@ export class TabModelSelectionCoordinator {
   }
 
   isCurrent(request: TabModelSelectionRequest): boolean {
-    return request.revision === this.latestRevision;
+    return this.effects.isOwnerLive()
+      && request.revision === this.latestRevision;
   }
 
   async selectBlank(
     request: TabModelSelectionRequest,
     target: TabModelSelectionDraft & { model: string },
   ): Promise<TabModelSelectionResult> {
+    if (!this.isCurrent(request)) {
+      return { status: 'superseded' };
+    }
+
     const pendingTransition = this.pendingTransition;
     if (pendingTransition) {
       if (pendingTransition.providerId === target.providerId) {

@@ -18,15 +18,22 @@ export class ChatModelSelectionCoordinator {
   commitIntent(
     intent: number,
     selection: StoredChatModelSelection,
+    isStillValid: () => boolean,
   ): Promise<boolean> {
     const commit = this.commitTail.then(async () => {
-      if (intent <= this.committedIntent) {
+      if (intent <= this.committedIntent || !isStillValid()) {
         return false;
       }
 
-      await this.settingsCoordinator.mutate((settings) => {
+      let didCommit = false;
+      await this.settingsCoordinator.mutateConditionally((settings) => {
+        if (!isStillValid()) return false;
         settings.lastSelectedChatModel = { ...selection };
+        didCommit = true;
+        return true;
       });
+      if (!didCommit) return false;
+
       this.committedIntent = intent;
       return true;
     });

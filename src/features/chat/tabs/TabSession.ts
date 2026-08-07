@@ -14,9 +14,14 @@ export class TabSession {
   private activeTurnValue: Promise<void> | null = null;
   private backgroundWork: Promise<void> = Promise.resolve();
   private backgroundWorkPauseDepth = 0;
-  private coordinator: ChatExecutionCoordinator | null = null;
+  private coordinatorDisposal: Promise<void> | null = null;
+  private intentAdmissionPauseDepth = 0;
+  private userOwnershipRevisionValue = 0;
 
-  constructor(private readonly state: TabSessionState) {}
+  constructor(
+    private readonly state: TabSessionState,
+    private readonly coordinator: ChatExecutionCoordinator,
+  ) {}
 
   get id(): string { return this.state.id; }
   get lifecycleState(): TabLifecycleState { return this.state.lifecycleState; }
@@ -27,21 +32,32 @@ export class TabSession {
   set conversationId(value: string | null) { this.state.conversationId = value; }
   get draftModel(): string | null { return this.state.draftModel; }
   set draftModel(value: string | null) { this.state.draftModel = value; }
-  get executionCoordinator(): ChatExecutionCoordinator | null { return this.coordinator; }
+  get executionCoordinator(): ChatExecutionCoordinator { return this.coordinator; }
+  get acceptsIntents(): boolean { return this.intentAdmissionPauseDepth === 0; }
+  get userOwnershipRevision(): number { return this.userOwnershipRevisionValue; }
   get activeTurn(): Promise<void> | null { return this.activeTurnValue; }
   set activeTurn(value: Promise<void> | null) {
     this.activeTurnValue = value;
-    if (value === null) this.coordinator?.notifyMayCool();
+    if (value === null) this.coordinator.notifyMayCool();
   }
 
-  setExecutionCoordinator(coordinator: ChatExecutionCoordinator | null): void {
-    this.coordinator = coordinator;
+  claimUserOwnership(): void {
+    this.userOwnershipRevisionValue += 1;
+  }
+
+  pauseIntentAdmission(): void {
+    this.intentAdmissionPauseDepth += 1;
+  }
+
+  resumeIntentAdmission(): void {
+    this.intentAdmissionPauseDepth = Math.max(0, this.intentAdmissionPauseDepth - 1);
   }
 
   async disposeExecutionCoordinator(): Promise<void> {
-    const coordinator = this.coordinator;
-    this.coordinator = null;
-    await coordinator?.dispose();
+    if (!this.coordinatorDisposal) {
+      this.coordinatorDisposal = Promise.resolve().then(() => this.coordinator.dispose());
+    }
+    await this.coordinatorDisposal;
   }
 
   enqueueBackgroundWork(work: () => Promise<void>): Promise<void> | null {
