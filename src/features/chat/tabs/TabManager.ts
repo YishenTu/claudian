@@ -502,6 +502,7 @@ export class TabManager implements TabManagerInterface {
 
     this.isSwitchingTab = true;
     const previousTabId = this.activeTabId;
+    let activeTabChangePublicationStarted = false;
     onActivationStarted?.(previousTabId);
 
     try {
@@ -521,7 +522,10 @@ export class TabManager implements TabManagerInterface {
       );
       activateTab(tab);
       tab.state.acknowledgeReview();
-      this.callbacks.onActiveTabChanged?.(previousTabId, tabId);
+      if (this.callbacks.onActiveTabChanged) {
+        activeTabChangePublicationStarted = true;
+        this.callbacks.onActiveTabChanged(previousTabId, tabId);
+      }
 
       const providerId = tab.providerId;
       const needsHydration = !!tab.conversationId && tab.hydrationState !== 'ready';
@@ -567,7 +571,11 @@ export class TabManager implements TabManagerInterface {
       if (!this.isTabAlive(tab)) return;
       this.callbacks.onTabSwitched?.(previousTabId, tabId);
     } catch (error) {
-      const rollbackErrors = this.restorePreviousTabAfterFailedSwitch(tab, previousTabId);
+      const rollbackErrors = this.restorePreviousTabAfterFailedSwitch(
+        tab,
+        previousTabId,
+        activeTabChangePublicationStarted,
+      );
       if (rollbackErrors.length > 0) {
         throw new AggregateError(
           [error, ...rollbackErrors],
@@ -637,6 +645,7 @@ export class TabManager implements TabManagerInterface {
   private restorePreviousTabAfterFailedSwitch(
     failedTab: AssembledTabRuntime,
     previousTabId: TabId | null,
+    republishPreviousTab: boolean,
   ): unknown[] {
     const rollbackErrors: unknown[] = [];
     const activeTabId = this.activeTabId;
@@ -666,12 +675,21 @@ export class TabManager implements TabManagerInterface {
         previousTab.id,
         (this.tabActivationRevisions.get(previousTab.id) ?? 0) + 1,
       );
+      let previousTabRestored = false;
       try {
         activateTab(previousTab);
         previousTab.state.acknowledgeReview();
+        previousTabRestored = true;
       } catch (error) {
         this.activeTabId = null;
         rollbackErrors.push(error);
+      }
+      if (previousTabRestored && republishPreviousTab) {
+        try {
+          this.callbacks.onActiveTabChanged?.(failedTab.id, previousTab.id);
+        } catch (error) {
+          rollbackErrors.push(error);
+        }
       }
     }
 
@@ -827,14 +845,25 @@ export class TabManager implements TabManagerInterface {
     this.closingTabIds.add(tabId);
     tab.session.pauseIntentAdmission();
     try {
-      const hasOtherLiveTab = Array.from(this.tabs.values())
-        .some(candidate => (
-          candidate !== tab && this.isTabAvailableAfterCloseClaims(candidate)
-        ));
-      // Keep one original live until a shared replacement is admitted.
-      if (!hasOtherLiveTab) {
-        const replacement = await this.ensureLiveTabReplacement();
-        if (!replacement || this.destroyed || this.tabs.get(tabId) !== tab) {
+      const tabIdsBefore = Array.from(this.tabs.keys());
+      const closingIndex = tabIdsBefore.indexOf(tabId);
+      let successor = this.findLiveTabAfterClose(tabIdsBefore, closingIndex);
+      if (!successor) {
+        successor = await this.ensureLiveTabReplacement();
+      }
+      if (!successor || this.tabs.get(tabId) !== tab) {
+        return false;
+      }
+
+      // Keep the active source reversible until successor activation and publication commit.
+      if (this.activeTabId === tabId) {
+        await this.switchToTab(successor.id);
+        const activeTab = this.getActiveTab();
+        if (
+          !activeTab
+          || activeTab === tab
+          || !this.isTabAvailableToAdmittedClose(activeTab)
+        ) {
           return false;
         }
       }
@@ -853,10 +882,6 @@ export class TabManager implements TabManagerInterface {
       } catch (error) {
         closeErrors.push(error);
       }
-
-      // Capture tab order BEFORE deletion for fallback calculation
-      const tabIdsBefore = Array.from(this.tabs.keys());
-      const closingIndex = tabIdsBefore.indexOf(tabId);
 
       // Destroy tab resources, then release manager ownership even if teardown fails.
       try {
@@ -907,6 +932,39 @@ export class TabManager implements TabManagerInterface {
     const activeTab = this.getActiveTab();
     if (activeTab && this.isTabAvailableAfterCloseClaims(activeTab)) return;
 
+    const replacement = await this.resolveLiveTabAfterClose(tabIdsBefore, closingIndex);
+    if (!replacement || !this.isTabAvailableAfterCloseClaims(replacement)) return;
+    if (this.activeTabId !== replacement.id) {
+      await this.switchToTab(replacement.id);
+    }
+  }
+
+  private async resolveLiveTabAfterClose(
+    tabIdsBefore: readonly TabId[],
+    closingIndex: number,
+  ): Promise<AssembledTabRuntime | null> {
+    if (this.destroyed) return null;
+
+    let replacement = this.findLiveTabAfterClose(tabIdsBefore, closingIndex);
+    if (!replacement) {
+      try {
+        replacement = await this.ensureLiveTabReplacement();
+      } catch (error) {
+        replacement = this.findLiveTabAfterClose(tabIdsBefore, closingIndex);
+        if (!replacement) throw error;
+      }
+    }
+    return replacement && this.isTabAvailableAfterCloseClaims(replacement)
+      ? replacement
+      : null;
+  }
+
+  private findLiveTabAfterClose(
+    tabIdsBefore: readonly TabId[],
+    closingIndex: number,
+  ): AssembledTabRuntime | null {
+    if (this.destroyed) return null;
+
     const before = tabIdsBefore.slice(0, Math.max(0, closingIndex)).reverse();
     const after = tabIdsBefore.slice(Math.max(0, closingIndex + 1));
     const preferredIds = closingIndex === 0
@@ -916,25 +974,11 @@ export class TabManager implements TabManagerInterface {
       ...preferredIds,
       ...this.tabs.keys(),
     ]);
-    let replacement = Array.from(candidateIds)
+    return Array.from(candidateIds)
       .map(id => this.tabs.get(id) ?? null)
       .find((candidate): candidate is AssembledTabRuntime => (
         !!candidate && this.isTabAvailableAfterCloseClaims(candidate)
       )) ?? null;
-
-    if (!replacement) {
-      try {
-        replacement = await this.ensureLiveTabReplacement();
-      } catch (error) {
-        replacement = Array.from(this.tabs.values())
-          .find(tab => this.isTabAvailableAfterCloseClaims(tab)) ?? null;
-        if (!replacement) throw error;
-      }
-    }
-    if (!replacement || !this.isTabAvailableAfterCloseClaims(replacement)) return;
-    if (this.activeTabId !== replacement.id) {
-      await this.switchToTab(replacement.id);
-    }
   }
 
   private async ensureLiveTabReplacement(): Promise<AssembledTabRuntime | null> {
@@ -967,7 +1011,11 @@ export class TabManager implements TabManagerInterface {
   }
 
   private isTabAvailableAfterCloseClaims(tab: AssembledTabRuntime): boolean {
-    return this.isTabAlive(tab) && !this.closingTabIds.has(tab.id);
+    return !this.destroyed && this.isTabAvailableToAdmittedClose(tab);
+  }
+
+  private isTabAvailableToAdmittedClose(tab: AssembledTabRuntime): boolean {
+    return !this.closingTabIds.has(tab.id) && this.isTabOwned(tab);
   }
 
   private isTabOwned(tab: AssembledTabRuntime): boolean {

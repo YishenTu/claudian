@@ -742,8 +742,8 @@ describe('TabManager provider execution orchestration', () => {
   it('restores the previous active tab when activation fails after admission', async () => {
     const callbackError = new Error('Failed to render active tab');
     let rejectActivation = false;
-    const onActiveTabChanged = jest.fn(() => {
-      if (rejectActivation) throw callbackError;
+    const onActiveTabChanged = jest.fn((_previousId: string | null, nextId: string) => {
+      if (rejectActivation && nextId === 'failed-tab') throw callbackError;
     });
     const { manager } = createManager(createPlugin(), { onActiveTabChanged });
     const retained = await manager.createTab();
@@ -848,6 +848,30 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getActiveTab()).toBe(initial);
   });
 
+  it('republishes the predecessor when a tab switch rolls back', async () => {
+    const switchError = new Error('Failed to publish completed switch');
+    const onActiveTabChanged = jest.fn();
+    const onTabSwitched = jest.fn((_previousId: string | null, nextId: string) => {
+      if (nextId === 'target-tab') throw switchError;
+    });
+    const { manager } = createManager(createPlugin(), {
+      onActiveTabChanged,
+      onTabSwitched,
+    });
+    const predecessor = await manager.createTab(null, 'predecessor-tab');
+    const target = await manager.createTab(null, 'target-tab', { activate: false });
+    onActiveTabChanged.mockClear();
+    onTabSwitched.mockClear();
+
+    await expect(manager.switchToTab(target!.id)).rejects.toBe(switchError);
+
+    expect(manager.getActiveTab()).toBe(predecessor);
+    expect(onActiveTabChanged.mock.calls).toEqual([
+      ['predecessor-tab', 'target-tab'],
+      ['target-tab', 'predecessor-tab'],
+    ]);
+  });
+
   it('fences overlapping closes before repeating manager side effects', async () => {
     const onTabClosed = jest.fn();
     const { manager } = createManager(createPlugin(), { onTabClosed });
@@ -859,6 +883,12 @@ describe('TabManager provider execution orchestration', () => {
     const firstClose = manager.closeTab(closing!.id);
     const overlappingClose = manager.closeTab(closing!.id);
 
+    for (let attempt = 0;
+      attempt < 10
+        && (closing!.controllers.conversationController.save as jest.Mock).mock.calls.length === 0;
+      attempt += 1) {
+      await Promise.resolve();
+    }
     expect(closing!.controllers.conversationController.save).toHaveBeenCalledTimes(1);
     save.resolve(undefined);
     await expect(Promise.all([firstClose, overlappingClose])).resolves.toEqual([true, false]);
@@ -866,6 +896,36 @@ describe('TabManager provider execution orchestration', () => {
     expect(onTabClosed).toHaveBeenCalledTimes(1);
     expect(onTabClosed).toHaveBeenCalledWith(closing!.id);
     expect(manager.getAllTabs()).toEqual([retained]);
+  });
+
+  it('keeps the active source live when successor activation fails during close', async () => {
+    const activationError = new Error('Failed to activate close successor');
+    let rejectSuccessorActivation = false;
+    const onActiveTabChanged = jest.fn((_previousId: string | null, nextId: string) => {
+      if (rejectSuccessorActivation && nextId === 'successor-tab') throw activationError;
+    });
+    const onTabClosed = jest.fn();
+    const { manager } = createManager(createPlugin(), {
+      onActiveTabChanged,
+      onTabClosed,
+    });
+    const closing = await manager.createTab(null, 'closing-tab');
+    const successor = await manager.createTab(null, 'successor-tab', { activate: false });
+    rejectSuccessorActivation = true;
+    onActiveTabChanged.mockClear();
+
+    await expect(manager.closeTab(closing!.id)).rejects.toBe(activationError);
+
+    expect(manager.getAllTabs()).toEqual([closing, successor]);
+    expect(manager.getActiveTab()).toBe(closing);
+    expect(closing!.lifecycleState).toBe('cold');
+    expect(closing!.session.acceptsIntents).toBe(true);
+    expect(mockDestroyTab).not.toHaveBeenCalledWith(closing);
+    expect(onTabClosed).not.toHaveBeenCalled();
+    expect(onActiveTabChanged.mock.calls).toEqual([
+      ['closing-tab', 'successor-tab'],
+      ['successor-tab', 'closing-tab'],
+    ]);
   });
 
   it('claims the final tab before awaiting replacement assembly', async () => {
@@ -1048,6 +1108,11 @@ describe('TabManager provider execution orchestration', () => {
 
     const close = manager.closeTab(closing!.id);
 
+    for (let attempt = 0;
+      attempt < 10 && closing!.lifecycleState !== 'closing';
+      attempt += 1) {
+      await Promise.resolve();
+    }
     expect(closing!.lifecycleState).toBe('closing');
     commandContextChanged(closing);
     expect(catalogResolver(closing)).toBeNull();
@@ -1076,6 +1141,11 @@ describe('TabManager provider execution orchestration', () => {
     (closing!.executionCoordinator.notifyMayCool as jest.Mock).mockClear();
 
     const close = manager.closeTab(closing!.id);
+    for (let attempt = 0;
+      attempt < 10 && closing!.lifecycleState !== 'closing';
+      attempt += 1) {
+      await Promise.resolve();
+    }
     factoryOptions.onStreamingChanged(closing, false);
     factoryOptions.onRewindingChanged(closing, false);
     factoryOptions.onAttentionChanged(closing, { kind: 'action-required' });
@@ -1188,7 +1258,7 @@ describe('TabManager provider execution orchestration', () => {
     }
 
     expect(drainSettled).toBe(false);
-    expect(manager.getActiveTab()).toBe(closing);
+    expect(manager.getActiveTab()).toBe(retained);
 
     save.resolve(undefined);
     await Promise.all([close, drain]);
