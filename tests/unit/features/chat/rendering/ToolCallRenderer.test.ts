@@ -167,6 +167,23 @@ describe('ToolCallRenderer', () => {
       expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'check');
     });
 
+    it('wraps long lines in expanded tool results', () => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'Read',
+        status: 'completed',
+        result: `short line\n${'x'.repeat(200)}\nanother line`,
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      const lines = toolEl.querySelectorAll('.claudian-tool-line');
+
+      expect(lines).toHaveLength(3);
+      for (const line of lines) {
+        expect(line.hasClass('claudian-tool-line-wrap')).toBe(true);
+      }
+    });
+
     it('should show error status icon', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall({ status: 'error' });
