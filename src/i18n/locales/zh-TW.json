@@ -276,7 +276,7 @@
     },
     "claudeSafeMode": {
       "name": "安全模式",
-      "desc": "啟用 Safe 開關時使用的權限模式。"
+      "desc": "啟用 Safe 開關時使用的權限模式。它可以減少意外操作，但不是檔案系統沙箱。"
     },
     "codexSafeMode": {
       "name": "安全模式",
@@ -329,7 +329,7 @@
     },
     "enableBangBash": {
       "name": "啟用 bash 模式 (!)",
-      "desc": "在空白輸入框中輸入 ! 以進入 bash 模式。透過 Node.js child_process 直接執行指令。需要重新開啟檢視。",
+      "desc": "在空白輸入框中輸入 ! 以進入 bash 模式。指令會以目前系統使用者身分直接執行，不受 Vault 目錄限制。需要重新開啟檢視。",
       "validation": {
         "noNode": "在 PATH 中找不到 Node.js。請安裝 Node.js 或檢查 PATH 設定。"
       }

@@ -84,6 +84,14 @@ describe('systemPrompt', () => {
       expect(prompt).toContain('# User Message Format');
     });
 
+    it('should describe the vault working directory without claiming filesystem isolation', () => {
+      const prompt = buildSystemPrompt({ vaultPath: '/vault' });
+
+      expect(prompt).toContain('The vault working directory is not a filesystem sandbox.');
+      expect(prompt).toContain('Do not access files outside the vault unless the user explicitly requests it');
+      expect(prompt).not.toContain('A leading slash or absolute path will FAIL');
+    });
+
     it('should document live context shapes and legacy compatibility', () => {
       const prompt = buildSystemPrompt();
 

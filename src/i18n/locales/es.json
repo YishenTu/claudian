@@ -255,7 +255,7 @@
     },
     "claudeSafeMode": {
       "name": "Modo seguro",
-      "desc": "Modo de permisos usado cuando el interruptor Seguro está activo."
+      "desc": "Modo de permisos usado cuando el interruptor Seguro está activo. Reduce las acciones accidentales, pero no es un aislamiento del sistema de archivos."
     },
     "codexSafeMode": {
       "name": "Modo seguro",
@@ -308,7 +308,7 @@
     },
     "enableBangBash": {
       "name": "Habilitar modo bash (!)",
-      "desc": "Escribe ! en una entrada vacía para entrar en modo bash. Ejecuta comandos directamente mediante Node.js child_process. Requiere volver a abrir la vista.",
+      "desc": "Escribe ! en una entrada vacía para entrar en modo bash. Los comandos se ejecutan directamente como el usuario actual del sistema y no están limitados al Vault. Requiere volver a abrir la vista.",
       "validation": {
         "noNode": "Node.js no se encontró en PATH. Instala Node.js o revisa tu configuración de PATH."
       }

@@ -149,4 +149,13 @@ describe('locale files', () => {
       'Hide specific commands and skills from the dropdown. Useful for hiding Claude Code entries that are not relevant to Oh My Claudian. Enter names without the leading slash, one per line.',
     );
   });
+
+  it('states that Claude safety controls do not provide filesystem isolation', () => {
+    const simplifiedChinese = flattenTranslations(zhCN as unknown as TranslationTree);
+
+    expect(english['settings.claudeSafeMode.desc']).toContain('not a filesystem sandbox');
+    expect(english['settings.enableBangBash.desc']).toContain('current OS user');
+    expect(simplifiedChinese['settings.claudeSafeMode.desc']).toContain('不是文件系统沙箱');
+    expect(simplifiedChinese['settings.enableBangBash.desc']).toContain('当前系统用户');
+  });
 });

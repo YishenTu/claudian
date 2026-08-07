@@ -131,6 +131,19 @@ The workflow validates the version, builds the plugin, runs the performance chec
 
 Your input, attachments, and tool results are sent only to the provider you select: Claude, Codex, Cursor, Grok, OMP, OpenCode, Pi, or their configured model providers. Oh My Claudian does not send telemetry. Network activity is limited to explicit provider work and configured MCP endpoints.
 
+## Security and trust boundaries
+
+Oh My Claudian is designed to make powerful local agents safer to operate without presenting application-level controls as a filesystem sandbox:
+
+- New installations start in **Safe** mode. Provider-native permission controls decide when an operation requires approval; **YOLO** remains an explicit user choice.
+- The optional `!` bash mode is disabled by default. When enabled, it runs commands directly as the current OS user and should be treated like a local terminal.
+- External files and folders enter the conversation as explicit context attachments instead of being silently added by Oh My Claudian.
+- Provider-owned settings, transcripts, and permission rules remain provider-owned. Oh My Claudian does not rewrite native history or send telemetry.
+
+The vault is the agent's working directory, not an operating-system security boundary. A local provider CLI, shell command, MCP server, plugin, or other child process may be able to access files, network services, and credentials available to your OS account. Safe/approval mode reduces accidental actions but cannot guarantee that every indirect access path is confined to the vault.
+
+For sensitive personal or business data, use OS-level isolation such as a dedicated user account, container, VM, or Windows Sandbox, restrict network and credential access, keep backups, and review provider-native permission rules before enabling YOLO, bash mode, browser access, MCP servers, plugins, or external context paths.
+
 ## Troubleshooting
 
 If a provider CLI is not found, first leave its configured path blank so Oh My Claudian can auto-detect it. If detection fails, set the executable path in the provider settings and ensure its runtime is available to Obsidian's `PATH`.

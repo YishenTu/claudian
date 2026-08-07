@@ -20,8 +20,9 @@ function getPathRules(vaultPath?: string): string {
 
 **Vault files** (default working directory):
 - ✓ Correct: \`notes/my-note.md\`, \`my-note.md\`, \`folder/subfolder/file.md\`, \`.\`
-- ✗ WRONG: \`/notes/my-note.md\`, \`${vaultPath || '/absolute/path'}/file.md\`
-- A leading slash or absolute path will FAIL for vault operations.
+- Prefer vault-relative paths. Absolute paths may address files outside the vault.
+- The vault working directory is not a filesystem sandbox.
+- Do not access files outside the vault unless the user explicitly requests it or supplies them as external context.
 
 **External context paths**: When external directories are selected, use absolute paths to access files there. These directories are explicitly granted for the current session.`;
 }

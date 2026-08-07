@@ -255,7 +255,7 @@
     },
     "claudeSafeMode": {
       "name": "안전 모드",
-      "desc": "Safe 토글이 활성화되었을 때 사용하는 권한 모드입니다."
+      "desc": "Safe 토글이 활성화되었을 때 사용하는 권한 모드입니다. 실수로 인한 작업을 줄이지만 파일 시스템 샌드박스는 아닙니다."
     },
     "codexSafeMode": {
       "name": "안전 모드",
@@ -308,7 +308,7 @@
     },
     "enableBangBash": {
       "name": "bash 모드 (!) 활성화",
-      "desc": "입력창이 비어 있을 때 !를 입력하면 bash 모드로 들어갑니다. Node.js child_process를 통해 명령을 직접 실행합니다. 보기를 다시 열어야 합니다.",
+      "desc": "입력창이 비어 있을 때 !를 입력하면 bash 모드로 들어갑니다. 명령은 현재 OS 사용자 권한으로 직접 실행되며 Vault로 제한되지 않습니다. 보기를 다시 열어야 합니다.",
       "validation": {
         "noNode": "PATH에서 Node.js를 찾을 수 없습니다. Node.js를 설치하거나 PATH 설정을 확인하세요."
       }

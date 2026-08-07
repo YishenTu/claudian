@@ -279,7 +279,7 @@
     },
     "claudeSafeMode": {
       "name": "Safe mode",
-      "desc": "Permission mode used when the Safe toggle is active."
+      "desc": "Permission mode used when the Safe toggle is active. It reduces accidental actions but is not a filesystem sandbox."
     },
     "codexSafeMode": {
       "name": "Safe mode",
@@ -332,7 +332,7 @@
     },
     "enableBangBash": {
       "name": "Enable bash mode (!)",
-      "desc": "Type ! on empty input to enter bash mode. Runs commands directly via Node.js child_process. Requires view reopen.",
+      "desc": "Type ! on empty input to enter bash mode. Commands run directly as the current OS user and are not confined to the vault. Requires view reopen.",
       "validation": {
         "noNode": "Node.js not found on PATH. Install Node.js or check your PATH configuration."
       }

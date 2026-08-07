@@ -6,7 +6,7 @@ import { getBuiltInProviderDefaultConfigs } from '../../providers/defaultProvide
 export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   userName: '',
 
-  permissionMode: 'yolo',
+  permissionMode: 'normal',
 
   model: 'haiku',
   thinkingBudget: 'off',
