@@ -23,6 +23,7 @@ Oh My Claudian is an Obsidian plugin that embeds coding agents in your vault. Ag
 - Readiness state refreshes immediately after provider enablement changes, so the settings page does not show stale status.
 - Model catalog state in provider settings, including freshness, cached/failed refresh state, default model, and all-versus-explicit selection.
 - Provider-neutral execution outcomes for completion, cancellation, invalidation, and recoverable errors, with recovery actions fenced while a turn is active.
+- Drag files and folders from Obsidian or your desktop into the composer to attach them as clickable context chips.
 - MCP support where available from the selected provider.
 - Internationalized interface with 10 locales, including Simplified and Traditional Chinese.
 **Plan Mode** — Toggle via `Shift+Tab`. The agent explores and designs before implementing, then presents a plan for approval.
@@ -69,7 +70,7 @@ Then enable the plugin in Obsidian under **Settings → Community plugins**.
 
 ## Usage
 
-Open the chat sidebar from the ribbon icon or command palette. Select text and use the inline-edit hotkey to edit notes with a diff preview. Use `/` for commands and skills, `@` to reference vault files or provider resources, and the provider selector to choose Claude, Codex, Cursor, Grok, OMP, OpenCode, or Pi.
+Open the chat sidebar from the ribbon icon or command palette. Select text and use the inline-edit hotkey to edit notes with a diff preview. Use `/` for commands and skills, `@` to reference vault files or provider resources, or drag files and folders into the composer to attach them as context chips. Click an attached file chip to open it in Obsidian. Use the provider selector to choose Claude, Codex, Cursor, Grok, OMP, OpenCode, or Pi.
 
 ### First run
 
@@ -118,11 +119,11 @@ Releases are created automatically by [`.github/workflows/release.yml`](.github/
 3. Create a tag that exactly matches the `manifest.json` version, for example:
 
    ```bash
-   git tag 2.1.10
-   git push origin 2.1.10
+   git tag 2.1.12
+   git push origin 2.1.12
    ```
 
-   If your writable remote is named `fork`, use `git push fork 2.1.10` instead.
+   If your writable remote is named `fork`, use `git push fork 2.1.12` instead.
 
 The workflow validates the version, builds the plugin, runs the performance check, generates release notes, and publishes `main.js`, `manifest.json`, and `styles.css` to the GitHub Release. These are the files used for the Obsidian Community Plugins release.
 
