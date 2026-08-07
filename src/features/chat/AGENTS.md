@@ -16,6 +16,7 @@
 | Component | Authority |
 | --- | --- |
 | `TabManager` | Runtime-tab membership, active-tab selection, and create/switch/close operations |
+| `TabRuntimeFactory` | Atomic per-tab assembly. It owns construction-phase mutation and rollback, and returns only structurally ready runtimes to `TabManager` |
 | `TabSession` | Authoritative per-tab identity, conversation binding, provider binding, lifecycle value, execution-coordinator attachment, active-turn reference, and background-work sequencing |
 | `TabModelSelectionCoordinator` | Per-tab model-selection request ordering, blank-tab provider-transition serialization, and stable-draft rollback |
 | `ChatExecutionCoordinator` | One tab's provider-session binding, active execution, interaction fencing, cancellation, and disposal |
@@ -74,6 +75,7 @@ Tab activation and conversation hydration do not themselves authorize creation o
 ## Invariants
 
 - Runtime tab creation is unlimited. The configured `maxWarmAgentProcesses` limit applies only to warm execution owners and is normalized to the supported 5-10 range.
+- `TabManager` admits a tab to runtime membership and calls `onTabCreated` only after structural assembly succeeds. Construction readiness means UI, controllers, renderer, coordinator, and input wiring are installed; it does not imply hydration, activation, conversation binding, or warm provider execution. Query types remain lifecycle-aware because teardown can clear owned resources while a tab is `closing`.
 - Cooling an idle tab must preserve its runtime tab, conversation binding, hydrated UI state, and resumable provider snapshot.
 - Returning to single-panel mode must keep dual-pane controls in place until provisional-tab cleanup completes; compact controls must never target a tab already being closed.
 - Switching the active tab must not cancel, dispose, or transfer another tab's active execution.

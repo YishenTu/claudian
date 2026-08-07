@@ -226,6 +226,77 @@ export interface TabData {
   renderer: MessageRenderer | null;
 }
 
+/** Controllers guaranteed to exist once tab runtime assembly completes. */
+export type ReadyTabControllers = {
+  selectionController: SelectionController;
+  browserSelectionController: BrowserSelectionController;
+  canvasSelectionController: CanvasSelectionController;
+  conversationController: ConversationController;
+  streamController: StreamController;
+  inputController: InputController;
+  navigationController: NavigationController;
+};
+
+/** Services guaranteed to exist once tab runtime assembly completes. */
+export type ReadyTabServices = Omit<TabServices, 'titleGenerationService'> & {
+  titleGenerationService: TitleGenerationService;
+};
+
+/** UI components guaranteed to exist once tab runtime assembly completes. */
+export type ReadyTabUIComponents = Omit<
+  TabUIComponents,
+  | 'contextTray'
+  | 'fileContextManager'
+  | 'imageContextManager'
+  | 'modelSelector'
+  | 'modeSelector'
+  | 'thinkingBudgetSelector'
+  | 'externalContextSelector'
+  | 'mcpServerSelector'
+  | 'permissionToggle'
+  | 'serviceTierToggle'
+  | 'slashCommandDropdown'
+  | 'instructionModeManager'
+  | 'contextUsageMeter'
+  | 'statusPanel'
+> & {
+  contextTray: ComposerContextTray;
+  fileContextManager: FileContextManager;
+  imageContextManager: ImageContextManager;
+  modelSelector: ModelSelector;
+  modeSelector: ModeSelector;
+  thinkingBudgetSelector: ThinkingBudgetSelector;
+  externalContextSelector: ExternalContextSelector;
+  mcpServerSelector: McpServerSelector;
+  permissionToggle: PermissionToggle;
+  serviceTierToggle: ServiceTierToggle;
+  slashCommandDropdown: SlashCommandDropdown;
+  instructionModeManager: InstructionModeManager;
+  contextUsageMeter: ContextUsageMeter;
+  statusPanel: StatusPanel;
+};
+
+/**
+ * A structurally complete tab runtime. Construction readiness is independent
+ * from hydration, active selection, conversation binding, and warm execution.
+ */
+export type ReadyTabData = Omit<
+  TabData,
+  | 'controllers'
+  | 'executionCoordinator'
+  | 'providerCatalogResolver'
+  | 'renderer'
+  | 'services'
+  | 'ui'
+> & {
+  controllers: ReadyTabControllers;
+  executionCoordinator: ChatExecutionCoordinator;
+  providerCatalogResolver: ProviderCatalogResolver;
+  renderer: MessageRenderer;
+  services: ReadyTabServices;
+  ui: ReadyTabUIComponents;
+};
+
 export type TabProviderContext = Pick<
   TabData,
   'conversationId' | 'providerId' | 'lifecycleState' | 'draftModel'
@@ -239,7 +310,7 @@ export interface TabManagerCallbacks {
   shouldForkToNewTab?: () => boolean;
 
   /** Called when a tab is created. */
-  onTabCreated?: (tab: TabData) => void;
+  onTabCreated?: (tab: ReadyTabData) => void;
 
   /** Called immediately after the active tab changes, before async tab loading completes. */
   onActiveTabChanged?: (fromTabId: TabId | null, toTabId: TabId) => void;

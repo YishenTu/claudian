@@ -16,6 +16,7 @@ import {
   updatePlanModeUI,
   wireTabInputEvents,
 } from '@/features/chat/tabs/Tab';
+import { TabManager } from '@/features/chat/tabs/TabManager';
 
 const coordinatorInstances: MockCoordinator[] = [];
 const coordinatorDeps: ChatExecutionCoordinatorDeps[] = [];
@@ -72,7 +73,10 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
     createExecutionBackend: jest.fn(),
     createInstructionRefineService: jest.fn().mockReturnValue(null),
     createSubagentHistoryService: jest.fn().mockReturnValue(null),
-    createTitleGenerationService: jest.fn().mockReturnValue(null),
+    createTitleGenerationService: jest.fn().mockImplementation(() => ({
+      cancel: jest.fn(),
+      generateTitle: jest.fn().mockResolvedValue(undefined),
+    })),
     getCapabilities: jest.fn().mockReturnValue({
       providerId: 'claude',
       supportsFork: true,
@@ -149,6 +153,7 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
         getAbstractFileByPath: jest.fn().mockReturnValue(null),
         getFiles: jest.fn().mockReturnValue([]),
         on: jest.fn().mockReturnValue({}),
+        offref: jest.fn(),
       },
       workspace: {
         getActiveFile: jest.fn().mockReturnValue(null),
@@ -175,10 +180,28 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
       await mutation(settings);
     }),
     getConversationById: jest.fn().mockResolvedValue(null),
+    getCachedConversation: jest.fn().mockReturnValue(null),
+    getConversationList: jest.fn().mockReturnValue([]),
     getConversationSync: jest.fn().mockReturnValue(null),
+    findConversationAcrossViews: jest.fn().mockReturnValue(null),
     handleMissingProviderSession: jest.fn(),
     ...overrides,
   } as any;
+}
+
+function createTabManager(
+  plugin: ReturnType<typeof createPlugin>,
+  containerEl = createMockEl(),
+  callbacks: Record<string, unknown> = {},
+) {
+  const view = {
+    addChild: jest.fn(),
+    getTabManager: jest.fn(),
+    leaf: {},
+    registerDomEvent: jest.fn(),
+    registerEvent: jest.fn(),
+  } as any;
+  return new TabManager(plugin, containerEl as any, view, callbacks);
 }
 
 function createConversation() {
@@ -269,6 +292,123 @@ describe('Tab provider execution ownership', () => {
 
     expect(tab.executionCoordinator).toBe(coordinatorInstances[0]);
     expect(coordinatorInstances).toHaveLength(1);
+  });
+
+  it('publishes only a structurally ready runtime from TabManager', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
+      disconnect: jest.fn(),
+      observe: jest.fn(),
+    })) as unknown as typeof ResizeObserver;
+    const plugin = createPlugin();
+    const onTabCreated = jest.fn();
+    const manager = createTabManager(plugin, createMockEl(), { onTabCreated });
+
+    try {
+      const tab = await manager.createTab();
+
+      expect(tab).not.toBeNull();
+      expect(tab?.executionCoordinator).not.toBeNull();
+      expect(tab?.renderer).not.toBeNull();
+      expect(Object.values(tab?.controllers ?? {})).not.toContain(null);
+      expect(tab?.services.titleGenerationService).not.toBeNull();
+      expect(tab?.providerCatalogResolver).not.toBeNull();
+      expect(tab?.ui.contextTray).not.toBeNull();
+      expect(tab?.ui.fileContextManager).not.toBeNull();
+      expect(tab?.ui.imageContextManager).not.toBeNull();
+      expect(tab?.ui.modelSelector).not.toBeNull();
+      expect(tab?.ui.modeSelector).not.toBeNull();
+      expect(tab?.ui.thinkingBudgetSelector).not.toBeNull();
+      expect(tab?.ui.externalContextSelector).not.toBeNull();
+      expect(tab?.ui.mcpServerSelector).not.toBeNull();
+      expect(tab?.ui.permissionToggle).not.toBeNull();
+      expect(tab?.ui.serviceTierToggle).not.toBeNull();
+      expect(tab?.ui.slashCommandDropdown).not.toBeNull();
+      expect(tab?.ui.instructionModeManager).not.toBeNull();
+      expect(tab?.ui.contextUsageMeter).not.toBeNull();
+      expect(tab?.ui.statusPanel).not.toBeNull();
+      expect(tab?.hydrationState).toBe('ready');
+      expect(tab?.lifecycleState).toBe('cold');
+      expect(onTabCreated).toHaveBeenCalledWith(tab);
+      expect(coordinatorInstances[0].prepare).not.toHaveBeenCalled();
+    } finally {
+      await manager.destroy();
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
+  it('hydrates a restored ready runtime without preparing provider execution', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
+      disconnect: jest.fn(),
+      observe: jest.fn(),
+    })) as unknown as typeof ResizeObserver;
+    const conversation = createConversation();
+    const plugin = createPlugin({
+      getCachedConversation: jest.fn().mockReturnValue(conversation),
+      getConversationSync: jest.fn().mockReturnValue(conversation),
+      switchConversation: jest.fn().mockResolvedValue(conversation),
+      updateConversation: jest.fn().mockResolvedValue(undefined),
+    });
+    const manager = createTabManager(plugin);
+
+    try {
+      const tab = await manager.createTab(conversation.id);
+
+      expect(tab?.conversationId).toBe(conversation.id);
+      expect(tab?.state.currentConversationId).toBe(conversation.id);
+      expect(tab?.hydrationState).toBe('ready');
+      expect(tab?.lifecycleState).toBe('cold');
+      expect(coordinatorInstances[0].bindConversation).toHaveBeenCalledWith({
+        conversationId: conversation.id,
+        providerId: conversation.providerId,
+        resumeSeed: {
+          providerSessionId: conversation.sessionId,
+          providerState: conversation.providerState,
+          resumeCheckpoint: conversation.resumeAtMessageId,
+        },
+      });
+      expect(coordinatorInstances[0].prepare).not.toHaveBeenCalled();
+    } finally {
+      await manager.destroy();
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
+  it('rolls back an unpublished runtime when assembly fails', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const assemblyError = new Error('resize observer failed');
+    globalThis.ResizeObserver = jest.fn().mockImplementation(() => {
+      throw assemblyError;
+    }) as unknown as typeof ResizeObserver;
+    const plugin = createPlugin();
+    const containerEl = createMockEl();
+    const createDiv = containerEl.createDiv.bind(containerEl);
+    const removeTabRoot = jest.fn();
+    let isFirstChild = true;
+    containerEl.createDiv = jest.fn().mockImplementation((options) => {
+      const child = createDiv(options);
+      if (isFirstChild) {
+        isFirstChild = false;
+        child.remove = removeTabRoot;
+      }
+      return child;
+    });
+    const onTabCreated = jest.fn();
+    const manager = createTabManager(plugin, containerEl, { onTabCreated });
+
+    try {
+      await expect(manager.createTab()).rejects.toBe(assemblyError);
+
+      expect(manager.getAllTabs()).toEqual([]);
+      expect(onTabCreated).not.toHaveBeenCalled();
+      expect(removeTabRoot).toHaveBeenCalledTimes(1);
+      expect(coordinatorInstances).toHaveLength(1);
+      expect(coordinatorInstances[0].dispose).toHaveBeenCalledTimes(1);
+    } finally {
+      await manager.destroy();
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
   });
 
   it('snapshots the global provider-qualified model without changing an existing blank tab', () => {

@@ -585,13 +585,22 @@ export function onProviderAvailabilityChanged(tab: TabData, plugin: FeatureHost)
   return tab.draftModel !== previousDraftModel || tab.providerId !== previousProviderId;
 }
 
-/**
- * Creates a new Tab instance with all required state.
- */
+/** Creates the construction-phase tab shell used by TabRuntimeFactory. */
 export function createTab(options: TabCreateOptions): TabData {
+  const contentEl = options.containerEl.createDiv({
+    cls: 'claudian-tab-content claudian-hidden',
+  });
+  try {
+    return createTabShell(options, contentEl);
+  } catch (error) {
+    contentEl.remove();
+    throw error;
+  }
+}
+
+function createTabShell(options: TabCreateOptions, contentEl: HTMLElement): TabData {
   const {
     plugin,
-    containerEl,
     conversation,
     tabId,
     onStreamingChanged,
@@ -601,8 +610,6 @@ export function createTab(options: TabCreateOptions): TabData {
   } = options;
 
   const id = tabId ?? generateTabId();
-
-  const contentEl = containerEl.createDiv({ cls: 'claudian-tab-content claudian-hidden' });
 
   const state = new ChatState({
     onStreamingStateChanged: onStreamingChanged,

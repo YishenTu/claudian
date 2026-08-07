@@ -10,6 +10,24 @@ const mockInitializeTabControllers = jest.fn();
 const mockDestroyTab = jest.fn().mockResolvedValue(undefined);
 const mockTabs: any[] = [];
 const mockCreateTab = jest.fn((options: Record<string, any>) => createMockTab(options));
+const mockCreateTabRuntime = jest.fn(async (options: Record<string, any>) => {
+  const captureReviewableSettlement = options.captureReviewableSettlement
+    ? () => options.captureReviewableSettlement(tab)
+    : undefined;
+  const tab = mockCreateTab({
+    ...options,
+    captureReviewableSettlement,
+  });
+  mockInitializeTabControllers(
+    tab,
+    options.plugin,
+    options.component,
+    options.forkRequestCallback,
+    options.openConversation,
+    () => options.getProviderCatalogConfig(tab),
+  );
+  return tab;
+});
 const mockChooseForkTarget = jest.fn();
 
 function createMockTab(options: Record<string, any>): any {
@@ -69,6 +87,10 @@ jest.mock('@/features/chat/tabs/Tab', () => ({
   onProviderAvailabilityChanged: jest.fn().mockReturnValue(false),
   refreshTabWorkspaceServices: jest.fn(),
   wireTabInputEvents: jest.fn(),
+}));
+
+jest.mock('@/features/chat/tabs/TabRuntimeFactory', () => ({
+  createTabRuntime: (options: Record<string, any>) => mockCreateTabRuntime(options),
 }));
 
 jest.mock('@/shared/modals/ForkTargetModal', () => ({

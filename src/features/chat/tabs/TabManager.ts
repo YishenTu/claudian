@@ -22,24 +22,24 @@ import type { FeatureHost } from '../../FeatureHost';
 import { getTabProviderId } from './providerResolution';
 import {
   activateTab,
-  createTab,
   deactivateTab,
   destroyTab,
   type ForkContext,
   getTabTitle,
-  initializeTabControllers,
-  initializeTabUI,
   onProviderAvailabilityChanged,
   refreshTabWorkspaceServices,
-  wireTabInputEvents,
 } from './Tab';
+import { createTabRuntime } from './TabRuntimeFactory';
 import {
+  generateTabId,
+  type ReadyTabData,
   type TabBarItem,
   type TabData,
   type TabId,
   type TabManagerCallbacks,
   type TabManagerInterface,
   type TabManagerViewHost,
+  type TabProviderContext,
 } from './types';
 
 function isTabManagerViewHost(value: unknown): value is TabManagerViewHost {
@@ -179,86 +179,83 @@ export class TabManager implements TabManagerInterface {
     conversationId?: string | null,
     tabId?: TabId,
     options: CreateTabOptions = {},
-  ): Promise<TabData | null> {
+  ): Promise<ReadyTabData | null> {
     const { activate = true, draftModel, lifecycleState = 'cold' } = options;
+    const runtimeTabId = tabId ?? generateTabId();
 
     const conversation = conversationId
       ? this.plugin.getCachedConversation(conversationId)
       : undefined;
 
-    const tab = createTab({
-      plugin: this.plugin,
-      containerEl: this.containerEl,
-      conversation: conversation ?? undefined,
-      tabId,
-      ...(typeof draftModel === 'string' ? { draftModel } : {}),
-      lifecycleState,
-      onStreamingChanged: (isStreaming) => {
-        this.callbacks.onTabStreamingChanged?.(tab.id, isStreaming);
-        if (!isStreaming) tab.executionCoordinator?.notifyMayCool();
-      },
-      onRewindingChanged: (isRewinding) => {
-        this.callbacks.onTabRewindingChanged?.(tab.id, isRewinding);
-        if (!isRewinding) tab.executionCoordinator?.notifyMayCool();
-      },
-      onTitleChanged: (title) => {
-        this.callbacks.onTabTitleChanged?.(tab.id, title);
-      },
-      onAttentionChanged: (attention) => {
-        this.callbacks.onTabAttentionChanged?.(tab.id, attention);
-        if (attention?.kind !== 'action-required') {
-          tab.executionCoordinator?.notifyMayCool();
-        }
-      },
-      captureReviewableSettlement: () => {
-        const shouldReport = this.isTabAlive(tab) && this.activeTabId !== tab.id;
-        const activationRevision = this.tabActivationRevisions.get(tab.id) ?? 0;
-        return () => {
-          if (
-            shouldReport
-            && this.isTabAlive(tab)
-            && (this.tabActivationRevisions.get(tab.id) ?? 0) === activationRevision
-          ) {
-            tab.state.markReviewRequired();
+    let tab: ReadyTabData | null = null;
+    try {
+      tab = await createTabRuntime({
+        plugin: this.plugin,
+        containerEl: this.containerEl,
+        component: this.view,
+        conversation: conversation ?? undefined,
+        tabId: runtimeTabId,
+        ...(typeof draftModel === 'string' ? { draftModel } : {}),
+        lifecycleState,
+        getProviderCatalogConfig: runtime => this.getProviderCatalogConfig(runtime),
+        forkRequestCallback: forkContext => this.handleForkRequest(forkContext),
+        openConversation: id => this.openConversation(id),
+        onStreamingChanged: (runtime, isStreaming) => {
+          this.callbacks.onTabStreamingChanged?.(runtime.id, isStreaming);
+          if (!isStreaming) runtime.session.executionCoordinator?.notifyMayCool();
+        },
+        onRewindingChanged: (runtime, isRewinding) => {
+          this.callbacks.onTabRewindingChanged?.(runtime.id, isRewinding);
+          if (!isRewinding) runtime.session.executionCoordinator?.notifyMayCool();
+        },
+        onAttentionChanged: (runtime, attention) => {
+          this.callbacks.onTabAttentionChanged?.(runtime.id, attention);
+          if (attention?.kind !== 'action-required') {
+            runtime.session.executionCoordinator?.notifyMayCool();
           }
-        };
-      },
-      onConversationIdChanged: (conversationId) => {
-        this.bumpTabCommandContextRevision(tab.id);
-        // Sync tab.conversationId when conversation is lazily created
-        tab.conversationId = conversationId;
-        this.callbacks.onTabConversationChanged?.(tab.id, conversationId);
-      },
-    });
+        },
+        captureReviewableSettlement: runtime => {
+          const shouldReport = this.isTabAlive(runtime) && this.activeTabId !== runtime.id;
+          const activationRevision = this.tabActivationRevisions.get(runtime.id) ?? 0;
+          return () => {
+            if (
+              shouldReport
+              && this.isTabAlive(runtime)
+              && (this.tabActivationRevisions.get(runtime.id) ?? 0) === activationRevision
+            ) {
+              runtime.state.markReviewRequired();
+            }
+          };
+        },
+        onConversationIdChanged: (runtime, nextConversationId) => {
+          this.bumpTabCommandContextRevision(runtime.id);
+          runtime.conversationId = nextConversationId;
+          this.callbacks.onTabConversationChanged?.(runtime.id, nextConversationId);
+        },
+        onCommandContextChanged: runtime => {
+          this.bumpTabCommandContextRevision(runtime.id);
+        },
+        onProviderChanged: async (runtime, providerId) => {
+          this.bumpTabCommandContextRevision(runtime.id);
+          await this.ensureTabWorkspaceServices(runtime, providerId, 'provider-selection');
+          this.callbacks.onTabProviderChanged?.(runtime.id, providerId);
+        },
+      });
 
-    this.tabCommandContextRevisions.set(tab.id, 0);
-    this.tabActivationRevisions.set(tab.id, 0);
-    this.ensureProviderCommandDiscoveryStore(tab.id);
-
-    // Initialize UI components with provider catalog
-    initializeTabUI(tab, this.plugin, {
-      getProviderCatalogConfig: () => this.getProviderCatalogConfig(tab),
-      onCommandContextChanged: () => {
-        this.bumpTabCommandContextRevision(tab.id);
-      },
-      onProviderChanged: async (providerId) => {
-        this.bumpTabCommandContextRevision(tab.id);
-        await this.ensureTabWorkspaceServices(tab, providerId, 'provider-selection');
-        this.callbacks.onTabProviderChanged?.(tab.id, providerId);
-      },
-    });
-
-    initializeTabControllers(
-      tab,
-      this.plugin,
-      this.view,
-      (forkContext) => this.handleForkRequest(forkContext),
-      (conversationId) => this.openConversation(conversationId),
-      () => this.getProviderCatalogConfig(tab),
-    );
-
-    // Wire input event handlers
-    wireTabInputEvents(tab, this.plugin);
+      this.tabCommandContextRevisions.set(tab.id, 0);
+      this.tabActivationRevisions.set(tab.id, 0);
+      this.ensureProviderCommandDiscoveryStore(tab.id);
+    } catch (error) {
+      if (tab) {
+        try {
+          await destroyTab(tab);
+        } catch {
+          // Preserve the construction error after best-effort rollback.
+        }
+      }
+      this.releaseTabRuntimeMetadata(runtimeTabId);
+      throw error;
+    }
 
     this.tabs.set(tab.id, tab);
     this.callbacks.onTabCreated?.(tab);
@@ -434,10 +431,7 @@ export class TabManager implements TabManagerInterface {
 
     // Destroy tab resources (async for proper cleanup)
     await destroyTab(tab);
-    this.providerRuntimeCommandCache.delete(tabId);
-    this.providerCommandDiscoveryStores.delete(tabId);
-    this.tabCommandContextRevisions.delete(tabId);
-    this.tabActivationRevisions.delete(tabId);
+    this.releaseTabRuntimeMetadata(tabId);
     this.tabs.delete(tabId);
     const wasActiveTab = this.activeTabId === tabId;
     if (wasActiveTab) {
@@ -826,7 +820,7 @@ export class TabManager implements TabManagerInterface {
     }
   }
 
-  async forkToNewTab(context: ForkContext): Promise<TabData | null> {
+  async forkToNewTab(context: ForkContext): Promise<ReadyTabData | null> {
     const sourceCoordinator = this.getActiveTab()?.executionCoordinator ?? null;
     const conversationId = await this.createForkConversation(context, sourceCoordinator);
     try {
@@ -1199,6 +1193,15 @@ export class TabManager implements TabManagerInterface {
     this.providerRuntimeCommandWarmups.delete(tabId);
   }
 
+  private releaseTabRuntimeMetadata(tabId: TabId): void {
+    this.cancelProviderRuntimeCommandWarmup(tabId);
+    this.providerCommandDiscoveryStores.get(tabId)?.invalidate();
+    this.providerRuntimeCommandCache.delete(tabId);
+    this.providerCommandDiscoveryStores.delete(tabId);
+    this.tabCommandContextRevisions.delete(tabId);
+    this.tabActivationRevisions.delete(tabId);
+  }
+
   private async awaitProviderCommandWarmup(
     warmup: ProviderCommandWarmupEntry,
     signal?: AbortSignal,
@@ -1333,7 +1336,7 @@ export class TabManager implements TabManagerInterface {
     return discovery;
   }
 
-  private getProviderCatalogConfig(tab: TabData) {
+  private getProviderCatalogConfig(tab: TabProviderContext & Pick<TabData, 'id'>) {
     const providerId = getTabProviderId(tab, this.plugin);
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     if (!catalog) return null;
