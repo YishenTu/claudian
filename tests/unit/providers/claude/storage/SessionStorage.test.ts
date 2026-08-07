@@ -62,6 +62,61 @@ describe('SessionStorage', () => {
   });
 
   describe('loadMetadata', () => {
+    it('loads valid task metadata without exposing provider state', async () => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${SESSIONS_PATH}/session-task.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-task',
+        title: 'Task session',
+        createdAt: 100,
+        lastActivityAt: 200,
+        providerState: { native: 'opaque' },
+        task: {
+          schemaVersion: 1,
+          status: 'review',
+          createdAt: 100,
+          updatedAt: 200,
+          summaryNotePath: 'tasks/result.md',
+        },
+      }));
+
+      const result = await storage.load('session-task');
+
+      expect(result?.metadata.task).toEqual({
+        schemaVersion: 1,
+        status: 'review',
+        createdAt: 100,
+        updatedAt: 200,
+        summaryNotePath: 'tasks/result.md',
+      });
+      expect(result?.metadata.providerState).toEqual({ native: 'opaque' });
+      expect(result?.needsMigration).toBe(false);
+    });
+
+    it('drops invalid task metadata and marks the record for migration', async () => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${SESSIONS_PATH}/session-invalid-task.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-invalid-task',
+        title: 'Invalid task',
+        createdAt: 100,
+        lastActivityAt: 200,
+        task: {
+          schemaVersion: 1,
+          status: 'done',
+          createdAt: -1,
+          updatedAt: 200,
+        },
+      }));
+
+      const result = await storage.load('session-invalid-task');
+
+      expect(result?.metadata.task).toBeUndefined();
+      expect(result?.needsMigration).toBe(true);
+    });
+
     it('normalizes legacy timestamps to a single activity timestamp', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
         path === `${SESSIONS_PATH}/session-legacy-time.meta.json`
@@ -839,6 +894,12 @@ describe('SessionStorage', () => {
         lastActivityAt: 1700000900,
         sessionId: 'sdk-session',
         providerState: { providerSessionId: 'current-sdk-session' },
+        task: {
+          schemaVersion: 1,
+          status: 'review',
+          createdAt: 1700000000,
+          updatedAt: 1700000900,
+        },
         messages: [
           { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
         ],
@@ -857,6 +918,12 @@ describe('SessionStorage', () => {
       expect(metadata.lastActivityAt).toBe(1700000900);
       expect(metadata.sessionId).toBe('sdk-session');
       expect((metadata.providerState as any)?.providerSessionId).toBe('current-sdk-session');
+      expect(metadata.task).toEqual({
+        schemaVersion: 1,
+        status: 'review',
+        createdAt: 1700000000,
+        updatedAt: 1700000900,
+      });
       expect(metadata.currentNote).toBe('notes/test.md');
       expect(metadata.externalContextPaths).toEqual(['/external/path']);
       expect(metadata.enabledMcpServers).toEqual(['mcp-server']);

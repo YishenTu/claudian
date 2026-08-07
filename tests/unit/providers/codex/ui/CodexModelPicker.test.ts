@@ -192,10 +192,11 @@ describe('CodexModelPicker', () => {
   it('renders all app-server models selected by default and can clear the filter', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
+    const onSelectionChanged = jest.fn().mockResolvedValue(undefined);
 
     renderCodexModelPicker(createElement() as any, context, {
       refreshModelCatalog: jest.fn(),
-    } as any);
+    } as any, onSelectionChanged);
 
     expect(settingNames).toContain('Visible models');
     expect(settingDescriptions).toContain(
@@ -225,6 +226,7 @@ describe('CodexModelPicker', () => {
     expect(getCodexProviderSettings(plugin.settings).visibleModels).toEqual([]);
     expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
+    expect(onSelectionChanged).toHaveBeenCalledTimes(1);
   });
 
   it('marks the first selected model as default and reorders from the drag handle', async () => {

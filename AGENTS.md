@@ -107,6 +107,7 @@ Provider-specific session fields belong behind typed helpers in the owning provi
 - Do not use `console.*` in production code.
 - Settings writers must merge rather than replace provider-owned configuration.
 - Put non-committed notes, handoff files, traces, and throwaway scripts in `.context/`.
+- Use conventional branch prefixes such as `feat/`, `fix/`, `chore/`, `docs/`, and `refactor/`.
 
 ## TDD Workflow
 

@@ -8,8 +8,10 @@ import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   ConversationMeta,
   ConversationModelRecoverySource,
+  ConversationTask,
   SessionMetadata,
 } from '../types';
+import { CONVERSATION_TASK_SCHEMA_VERSION } from '../types';
 import {
   DELETION_MARKER_SUFFIX,
   LEGACY_SESSIONS_PATH,
@@ -279,23 +281,27 @@ export class SessionStorage implements SessionMetadataReader {
       lastResponseAt: _lastResponseAt,
       selectedModel: rawSelectedModel,
       modelRecoverySource: rawModelRecoverySource,
+      task: rawTask,
       ...metadataFields
     } = rawMetadata;
     const selectedModel = typeof rawSelectedModel === 'string'
       ? rawSelectedModel
       : undefined;
     const modelRecoverySource = this.parseModelRecoverySource(rawModelRecoverySource);
+    const task = this.parseConversationTask(rawTask);
     const metadata = {
       ...metadataFields,
       ...(selectedModel !== undefined ? { selectedModel } : {}),
       ...(modelRecoverySource ? { modelRecoverySource } : {}),
+      ...(task ? { task } : {}),
       lastActivityAt,
     } as unknown as SessionMetadata;
     const needsMigration = !Number.isFinite(rawMetadata.lastActivityAt)
       || 'updatedAt' in rawMetadata
       || 'lastResponseAt' in rawMetadata
       || (rawSelectedModel !== undefined && selectedModel === undefined)
-      || (rawModelRecoverySource !== undefined && modelRecoverySource === undefined);
+      || (rawModelRecoverySource !== undefined && modelRecoverySource === undefined)
+      || (rawTask !== undefined && task === undefined);
     return { metadata, needsMigration, source };
   }
 
@@ -328,6 +334,34 @@ export class SessionStorage implements SessionMetadataReader {
         ? { resumeAtMessageId: source.resumeAtMessageId }
         : {}),
     };
+  }
+
+  private parseConversationTask(value: unknown): ConversationTask | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const task = value as Record<string, unknown>;
+    const status = task.status;
+    if (
+      task.schemaVersion !== CONVERSATION_TASK_SCHEMA_VERSION
+      || (status !== 'execute' && status !== 'review' && status !== 'done')
+      || !this.isValidTaskTimestamp(task.createdAt)
+      || !this.isValidTaskTimestamp(task.updatedAt)
+      || (task.completedAt !== undefined && !this.isValidTaskTimestamp(task.completedAt))
+      || (task.summaryNotePath !== undefined && typeof task.summaryNotePath !== 'string')
+    ) {
+      return undefined;
+    }
+    return {
+      schemaVersion: CONVERSATION_TASK_SCHEMA_VERSION,
+      status,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      ...(typeof task.completedAt === 'number' ? { completedAt: task.completedAt } : {}),
+      ...(typeof task.summaryNotePath === 'string' ? { summaryNotePath: task.summaryNotePath } : {}),
+    };
+  }
+
+  private isValidTaskTimestamp(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
   }
 
   private getFirstFiniteTimestamp(...values: unknown[]): number | undefined {

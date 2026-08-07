@@ -889,6 +889,7 @@ export default class ClaudianPlugin extends Plugin {
       sessionId: meta.sessionId !== undefined ? meta.sessionId : meta.id,
       selectedModel: meta.selectedModel,
       providerState: meta.providerState,
+      task: meta.task,
       modelRecoverySource: meta.modelRecoverySource,
       messages: [],
       currentNote: meta.currentNote,

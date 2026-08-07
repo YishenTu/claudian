@@ -31,6 +31,7 @@ export function renderCodexModelPicker(
   container: HTMLElement,
   context: ProviderSettingsTabRendererContext,
   workspace: CodexWorkspaceServices,
+  onSelectionChanged?: () => Promise<void>,
 ): ProviderModelPickerController {
   const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
 
@@ -98,6 +99,7 @@ export function renderCodexModelPicker(
       ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
     });
     context.notifyProviderModelOptionsChanged('codex');
+    await onSelectionChanged?.();
   };
 
   let refreshPicker = (): void => {};

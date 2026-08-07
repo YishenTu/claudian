@@ -252,7 +252,12 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     new Setting(container).setName(t('settings.models')).setHeading();
 
-    const modelPicker = renderCodexModelPicker(container, modelWarning.context, codexWorkspace);
+    const modelPicker = renderCodexModelPicker(
+      container,
+      modelWarning.context,
+      codexWorkspace,
+      () => readinessPanel.refresh(),
+    );
 
     new Setting(container)
       .setName(t('settings.codex.ultraEffort.name'))

@@ -2189,6 +2189,9 @@ export function initializeTabControllers(
       } catch {
         return new Error('Provider CLI not found.');
       }
+      if (diagnostics?.readiness?.status === 'disabled') {
+        return new Error('Provider is not enabled.');
+      }
       const blockedCheck = diagnostics?.readiness?.checks.find(check => check.status === 'blocked');
       if (!blockedCheck) return null;
       if (blockedCheck.id === 'cli') return new Error('Provider CLI not found.');

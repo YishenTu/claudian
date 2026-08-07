@@ -75,6 +75,20 @@ export interface ExecutionInputSnapshot {
   context?: ExecutionInputContextSnapshot;
 }
 
+export const CONVERSATION_TASK_SCHEMA_VERSION = 1 as const;
+
+export type ConversationTaskStatus = 'execute' | 'review' | 'done';
+
+/** Claudian-owned task lifecycle metadata attached to one conversation. */
+export interface ConversationTask {
+  schemaVersion: typeof CONVERSATION_TASK_SCHEMA_VERSION;
+  status: ConversationTaskStatus;
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
+  summaryNotePath?: string;
+}
+
 export interface CitationEntry {
   path: string;
   lineStart: number;
@@ -143,6 +157,8 @@ export interface Conversation {
   selectedModel?: string;
   /** Opaque provider-owned state bag (session tracking, fork metadata, etc.). */
   providerState?: Record<string, unknown>;
+  /** Claudian-owned task metadata; provider state never belongs here. */
+  task?: ConversationTask;
   /** Read-only native locator retained solely for historical model recovery. */
   modelRecoverySource?: ConversationModelRecoverySource;
   messages: ChatMessage[];
@@ -209,6 +225,8 @@ export interface SessionMetadata {
   selectedModel?: string;
   /** Opaque provider-owned state bag. */
   providerState?: Record<string, unknown>;
+  /** Claudian-owned task metadata. */
+  task?: ConversationTask;
   /** Read-only native locator retained solely for historical model recovery. */
   modelRecoverySource?: ConversationModelRecoverySource;
   currentNote?: string;

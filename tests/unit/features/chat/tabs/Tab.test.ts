@@ -24,6 +24,7 @@ interface MockCoordinator {
   bindConversation: jest.Mock;
   cancel: jest.Mock;
   dispose: jest.Mock;
+  execute: jest.Mock;
   isEventContextCurrent: jest.Mock;
   notifyMayCool: jest.Mock;
   prepare: jest.Mock;
@@ -34,11 +35,13 @@ interface MockCoordinator {
 }
 
 jest.mock('@/features/chat/execution/ChatExecutionCoordinator', () => ({
+  ChatExecutionPreHandoffError: class ChatExecutionPreHandoffError extends Error {},
   ChatExecutionCoordinator: jest.fn().mockImplementation((deps) => {
     const coordinator: MockCoordinator = {
       bindConversation: jest.fn().mockResolvedValue(undefined),
       cancel: jest.fn(),
       dispose: jest.fn().mockResolvedValue(undefined),
+      execute: jest.fn().mockResolvedValue({ accepted: true, planCompleted: false, status: 'completed' }),
       isEventContextCurrent: jest.fn().mockReturnValue(true),
       notifyMayCool: jest.fn(),
       prepare: jest.fn().mockResolvedValue(undefined),
@@ -70,6 +73,7 @@ jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
 jest.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
     createExecutionBackend: jest.fn(),
+    collectDiagnostics: jest.fn(),
     createInstructionRefineService: jest.fn().mockReturnValue(null),
     createSubagentHistoryService: jest.fn().mockReturnValue(null),
     createTitleGenerationService: jest.fn().mockReturnValue(null),
@@ -177,6 +181,7 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
     getConversationById: jest.fn().mockResolvedValue(null),
     getConversationSync: jest.fn().mockReturnValue(null),
     handleMissingProviderSession: jest.fn(),
+    updateConversation: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   } as any;
 }
@@ -506,6 +511,46 @@ describe('Tab provider execution ownership', () => {
 
     expect(handleNewConversationCommand).toHaveBeenCalledTimes(1);
     expect(tab.conversationId).toBe(conversation.id);
+  });
+
+  it('preserves a continued turn when its provider is disabled before send', async () => {
+    jest.mocked(ProviderRegistry.collectDiagnostics).mockResolvedValue({
+      readiness: {
+        status: 'disabled',
+        checks: [
+          { id: 'enabled', status: 'disabled', remediation: 'enableProvider' },
+          { id: 'cli', status: 'disabled' },
+          { id: 'models', status: 'disabled' },
+          { id: 'selection', status: 'disabled' },
+        ],
+      },
+    });
+    const conversation = createConversation();
+    const plugin = createPlugin();
+    const tab = createTab({
+      plugin,
+      containerEl: createMockEl() as any,
+      conversation,
+    });
+    const coordinator = coordinatorInstances.at(-1)!;
+    initializeTabControllers(tab, plugin, {
+      addChild: jest.fn(),
+      registerDomEvent: jest.fn(),
+      registerEvent: jest.fn(),
+    } as any);
+    tab.state.messages = [
+      { id: 'user-1', role: 'user', content: 'Earlier request', timestamp: 1 },
+      { id: 'assistant-1', role: 'assistant', content: 'Earlier response', timestamp: 2 },
+    ];
+    tab.state.currentConversationId = conversation.id;
+    const messagesBeforeSend = tab.state.messages;
+    tab.dom.inputEl.value = 'Keep this continued turn';
+
+    await tab.controllers.inputController!.sendMessage();
+
+    expect(tab.dom.inputEl.value).toBe('Keep this continued turn');
+    expect(tab.state.messages).toEqual(messagesBeforeSend);
+    expect(coordinator.execute).not.toHaveBeenCalled();
   });
 
   it('commits a provisional preview to cold state when the user types', () => {

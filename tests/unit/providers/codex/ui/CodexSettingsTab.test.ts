@@ -10,10 +10,12 @@ const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockCodexCliResolverReset = jest.fn();
 const mockRefreshCodexModelPicker = jest.fn();
+const mockRefreshProviderReadiness = jest.fn().mockResolvedValue(undefined);
 const mockRenderCodexModelPicker = jest.fn((
   _container: unknown,
   _context: { notifyProviderModelOptionsChanged: (providerId: string) => void },
   _workspace: unknown,
+  _onSelectionChanged?: () => Promise<void>,
 ) => ({ refresh: mockRefreshCodexModelPicker }));
 const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
 
@@ -128,7 +130,14 @@ jest.mock('@/providers/codex/ui/CodexModelPicker', () => ({
     container: unknown,
     context: { notifyProviderModelOptionsChanged: (providerId: string) => void },
     workspace: unknown,
-  ) => mockRenderCodexModelPicker(container, context, workspace),
+    onSelectionChanged?: () => Promise<void>,
+  ) => mockRenderCodexModelPicker(container, context, workspace, onSelectionChanged),
+}));
+
+jest.mock('@/shared/settings/ProviderReadinessPanel', () => ({
+  renderProviderReadinessPanel: jest.fn(() => ({
+    refresh: mockRefreshProviderReadiness,
+  })),
 }));
 
 jest.mock('@/providers/codex/ui/CodexSubagentSettings', () => ({
@@ -611,7 +620,19 @@ describe('CodexSettingsTab', () => {
       container,
       expect.objectContaining({ plugin }),
       expect.objectContaining({ commandCatalog: null }),
+      expect.any(Function),
     );
+  });
+
+  it('refreshes readiness after a Codex model selection change', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+    codexSettingsTabRenderer.render(createContainer(), createContext(createPlugin()));
+    const onSelectionChanged = mockRenderCodexModelPicker.mock.calls[0][3];
+
+    await onSelectionChanged?.();
+
+    expect(mockRefreshProviderReadiness).toHaveBeenCalledTimes(1);
   });
 
   it('warns when Codex is enabled without any enabled models', () => {

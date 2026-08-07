@@ -1733,6 +1733,7 @@ export class ConversationRepository {
         providerState && Object.keys(providerState).length > 0
           ? providerState
           : undefined,
+      task: conversation.task,
       ...(!getStoredModelSelection(conversation.selectedModel)
         && conversation.modelRecoverySource
         ? {
