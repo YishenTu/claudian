@@ -11,6 +11,7 @@ import type {
 import {
   destroyTab,
   drainTabForShutdownSnapshot,
+  registerTabRuntimeResourceOwner,
   TabRuntimeTeardownError,
 } from '@/features/chat/tabs/TabLifecycle';
 import { TabManager } from '@/features/chat/tabs/TabManager';
@@ -1940,6 +1941,26 @@ describe('Tab provider execution ownership', () => {
       await manager.destroy();
       globalThis.ResizeObserver = originalResizeObserver;
     }
+  });
+
+  it('rejects replacing the factory-owned runtime resource owner', async () => {
+    const tab = await createTestTab({
+      plugin: createPlugin(),
+      containerEl: createMockEl() as any,
+    });
+    const replacementOwner = {
+      isDisposed: false,
+      dispose: jest.fn().mockResolvedValue([]),
+    };
+
+    expect(() => registerTabRuntimeResourceOwner(tab, replacementOwner))
+      .toThrow('Tab runtime already has a registered resource owner');
+
+    await destroyTab(tab);
+
+    expect(replacementOwner.dispose).not.toHaveBeenCalled();
+    expect(coordinatorInstances[0].dispose).toHaveBeenCalledTimes(1);
+    expect(tab.resources.isDisposed).toBe(true);
   });
 
   it('continues teardown after a cleanup failure without reacquiring or retrying resources', async () => {

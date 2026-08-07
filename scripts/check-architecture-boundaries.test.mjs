@@ -319,3 +319,27 @@ test('tab runtime construction stays private to the factory boundary', () => {
     );
   }
 });
+
+test('only TabRuntimeFactory can register runtime resource ownership', () => {
+  const lifecycleSource = path.join(
+    featuresRoot,
+    'chat',
+    'tabs',
+    'TabLifecycle.ts',
+  );
+  const factorySource = path.join(
+    featuresRoot,
+    'chat',
+    'tabs',
+    'TabRuntimeFactory.ts',
+  );
+  const registrationReferences = findMatches(
+    [sourceRoot],
+    /\bregisterTabRuntimeResourceOwner\b/,
+  ).sort();
+
+  assert.deepEqual(registrationReferences, [
+    path.relative(process.cwd(), factorySource),
+    path.relative(process.cwd(), lifecycleSource),
+  ].sort());
+});

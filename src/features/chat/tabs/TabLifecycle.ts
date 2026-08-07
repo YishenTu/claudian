@@ -21,6 +21,9 @@ export function registerTabRuntimeResourceOwner(
   tab: AssembledTabRuntime,
   resourceOwner: TabRuntimeResourceOwner,
 ): void {
+  if (tabRuntimeResourceOwners.has(tab)) {
+    throw new Error('Tab runtime already has a registered resource owner');
+  }
   tabRuntimeResourceOwners.set(tab, resourceOwner);
 }
 
