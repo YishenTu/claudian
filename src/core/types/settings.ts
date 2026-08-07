@@ -179,6 +179,7 @@ export interface ClaudianSettings {
   expandFileEditsByDefault: boolean;
   chatViewPlacement: ChatViewPlacement;
   enableDualPane: boolean;
+  enableFilePane: boolean;
   dualPaneSide: DualPaneSide;
   sessionManagerOrganization?: SessionManagerOrganization;
   sessionManagerSort?: SessionManagerSort;

@@ -286,6 +286,10 @@
       "name": "Zwei-Spalten-Modus aktivieren",
       "desc": "Den Sitzungsmanager automatisch neben dem Chat anzeigen, wenn die Ansicht mindestens 600 px breit ist."
     },
+    "enableFilePane": {
+      "name": "Dateibereich aktivieren",
+      "desc": "Im Sitzungsmanager des Zwei-Spalten-Modus einen Tab „Dateien“ anzeigen."
+    },
     "dualPaneSide": {
       "name": "Seite der zweiten Spalte",
       "desc": "Auswählen, auf welcher Seite des Chats der Sitzungsmanager angezeigt wird.",

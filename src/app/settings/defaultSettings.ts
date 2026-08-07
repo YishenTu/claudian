@@ -54,6 +54,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   expandFileEditsByDefault: false,
   chatViewPlacement: 'right-sidebar',
   enableDualPane: true,
+  enableFilePane: true,
   dualPaneSide: 'right',
   sessionManagerOrganization: 'list',
   sessionManagerSort: 'last-updated',

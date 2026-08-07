@@ -3,6 +3,9 @@
 }
 
 .claudian-session-sidebar {
+  --claudian-sidebar-surface-footer-height: 40px;
+
+  position: relative;
   display: none;
   flex: 0 0 var(--claudian-session-sidebar-width, 240px);
   flex-direction: column;
@@ -52,6 +55,91 @@
 
 .claudian-wide-session-layout .claudian-view-input-nav-row {
   display: none;
+}
+
+.claudian-sidebar-surface-switcher {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: var(--claudian-sidebar-surface-footer-height);
+  gap: 14px;
+  padding: 8px 12px 12px;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.claudian-sidebar-surface-switcher:hover,
+.claudian-sidebar-surface-switcher:focus-within {
+  opacity: 1;
+}
+
+.claudian-session-sidebar:has(> .claudian-sidebar-surface-switcher:hover)
+  > .claudian-session-surface,
+.claudian-session-sidebar:has(> .claudian-sidebar-surface-switcher:hover)
+  > .claudian-files-surface,
+.claudian-session-sidebar:has(> .claudian-sidebar-surface-switcher:focus-within)
+  > .claudian-session-surface,
+.claudian-session-sidebar:has(> .claudian-sidebar-surface-switcher:focus-within)
+  > .claudian-files-surface {
+  clip-path: inset(0 0 var(--claudian-sidebar-surface-footer-height) 0);
+}
+
+.claudian-session-sidebar .claudian-sidebar-surface-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--text-normal);
+  cursor: pointer;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-session-sidebar .claudian-sidebar-surface-button:hover,
+.claudian-session-sidebar .claudian-sidebar-surface-button:active {
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-session-sidebar .claudian-sidebar-surface-button::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+  opacity: 0.22;
+  transition: opacity 0.12s ease;
+}
+
+.claudian-session-sidebar .claudian-sidebar-surface-button:hover::before {
+  opacity: 0.45;
+}
+
+.claudian-session-sidebar .claudian-sidebar-surface-button.is-active::before {
+  opacity: 0.72;
+}
+
+.claudian-session-sidebar .claudian-sidebar-surface-button:focus-visible {
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.claudian-session-sidebar .claudian-sidebar-surface-button:focus-visible::before {
+  opacity: 0.72;
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 .claudian-session-new-control,

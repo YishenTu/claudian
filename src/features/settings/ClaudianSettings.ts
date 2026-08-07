@@ -332,6 +332,20 @@ export class ClaudianSettingTab extends PluginSettingTab {
               this.refreshDualPaneLayouts();
             });
         });
+
+      new Setting(container)
+        .setName(t('settings.enableFilePane.name'))
+        .setDesc(t('settings.enableFilePane.desc'))
+        .addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.enableFilePane ?? true)
+            .onChange(async (value) => {
+              await this.plugin.mutateSettings((settings) => {
+                settings.enableFilePane = value;
+              });
+              this.refreshDualPaneLayouts();
+            })
+        );
     }
 
     new Setting(container)
