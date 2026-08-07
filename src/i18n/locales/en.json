@@ -126,6 +126,16 @@
       "check": { "enabled": "Provider enabled", "cli": "CLI available", "models": "Model catalog available", "selection": "Chat model selected" },
       "hint": { "enableProvider": "Enable this provider to use it in chat.", "configureCli": "Set a valid CLI path or make the CLI available on Obsidian's PATH.", "refreshModels": "Check the provider login or session, then check again to load models.", "selectModel": "Select at least one chat model below." }
     },
+    "providerDiagnostics": {
+      "kicker": "Troubleshooting", "title": "Provider diagnostics", "whatHappened": "What happened", "readiness": "Readiness checks",
+      "provider": "Provider", "category": "Category", "status": "Status", "platform": "Platform", "time": "Time",
+      "retry": "Retry message", "rebuild": "Rebuild session", "details": "View details", "copy": "Copy report", "close": "Close", "copied": "Provider diagnostic report copied.", "copyFailed": "Could not copy provider diagnostic report.",
+      "statusValue": { "idle": "Idle", "starting": "Starting", "running": "Running", "failed": "Failed" },
+      "check": { "enabled": "Provider enabled", "cli": "CLI available", "models": "Model catalog available", "selection": "Chat model selected" },
+      "checkStatus": { "disabled": "Disabled", "blocked": "Blocked", "attention": "Needs attention", "ready": "Ready" },
+      "remediation": { "enableProvider": "enable provider", "configureCli": "configure CLI", "refreshModels": "refresh models", "selectModel": "select model" },
+      "categoryValue": { "unknown": "Unknown", "cli-not-found": "CLI not found", "cli-start-failed": "CLI failed to start", "session-resume-failed": "Session resume failed", "model-unavailable": "Model unavailable", "permission-denied": "Permission denied", "timeout": "Timed out", "rate-limited": "Rate limited", "protocol-error": "Protocol error", "authentication": "Authentication failed", "not-configured": "Not configured", "provider": "Provider error" }
+    },
     "display": "Display",
     "conversations": "Conversations",
     "content": "Content",

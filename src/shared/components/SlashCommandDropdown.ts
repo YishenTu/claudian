@@ -29,7 +29,7 @@ export interface SlashCommandDropdownCallbacks {
 export interface SlashCommandDropdownOptions {
   fixed?: boolean;
   hiddenCommands?: Set<string>;
-  /** Whether to include Claudian chat-action built-ins such as /clear and /fast. */
+  /** Whether to include Oh My Claudian chat-action built-ins such as /clear and /fast. */
   includeBuiltIns?: boolean;
   /** Active provider identity, independent of optional catalog availability. */
   providerId?: ProviderId;

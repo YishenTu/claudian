@@ -1,5 +1,5 @@
 /**
- * Claudian - File Link Utilities
+ * Oh My Claudian - File Link Utilities
  *
  * Detects Obsidian wikilinks [[path/to/file]] in rendered content and makes
  * them clickable to open the file in Obsidian.

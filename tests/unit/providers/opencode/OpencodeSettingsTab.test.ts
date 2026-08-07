@@ -632,7 +632,7 @@ describe('OpencodeSettingsTab', () => {
       .toHaveBeenCalledWith('opencode mcp add');
     expect(description.appendText).toHaveBeenNthCalledWith(
       2,
-      ' and they will be available in Claudian. ',
+      ' and they will be available in Oh My Claudian. ',
     );
     expect(description.createEl).toHaveBeenCalledWith('a', {
       href: 'https://opencode.ai/docs/mcp-servers/',

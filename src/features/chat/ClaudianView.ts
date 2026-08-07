@@ -141,7 +141,7 @@ export class ClaudianView extends ItemView {
   }
 
   getDisplayText(): string {
-    return 'Claudian';
+    return 'Oh My Claudian';
   }
 
   getIcon(): string {

@@ -1,0 +1,174 @@
+.claudian-provider-diagnostic-card {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--color-orange);
+  border-radius: 9px;
+  background: var(--background-secondary);
+}
+
+.claudian-provider-diagnostic-card-title {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.claudian-provider-diagnostic-card-message {
+  margin-top: 4px;
+  color: var(--text-normal);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.claudian-provider-diagnostic-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.claudian-provider-diagnostic-card-footer button {
+  min-height: 30px;
+}
+
+.claudian-provider-diagnostic-modal {
+  width: min(520px, 92vw);
+}
+
+.claudian-provider-diagnostic-modal .modal-content {
+  padding: 24px;
+}
+
+.claudian-provider-diagnostic-header {
+  position: relative;
+  padding-right: 120px;
+  margin-bottom: 20px;
+}
+
+.claudian-provider-diagnostic-kicker {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.claudian-provider-diagnostic-header h2 {
+  margin: 4px 0 0;
+}
+
+.claudian-provider-diagnostic-status {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.claudian-provider-diagnostic-status.is-unknown,
+.claudian-provider-diagnostic-status.is-cli-start-failed,
+.claudian-provider-diagnostic-status.is-protocol-error {
+  background: color-mix(in srgb, var(--color-orange) 16%, var(--background-secondary));
+  color: var(--color-orange);
+}
+
+.claudian-provider-diagnostic-details {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px 16px;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: var(--background-secondary);
+}
+
+.claudian-provider-diagnostic-details dt {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-provider-diagnostic-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-ui-small);
+}
+
+.claudian-provider-diagnostic-modal h3 {
+  margin: 18px 0 8px;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.claudian-provider-diagnostic-message {
+  max-height: 140px;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.claudian-provider-diagnostic-readiness {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.claudian-provider-diagnostic-readiness li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--background-secondary);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-provider-diagnostic-check-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.claudian-provider-diagnostic-readiness li.is-ready .claudian-provider-diagnostic-check-dot {
+  background: var(--color-green);
+}
+
+.claudian-provider-diagnostic-readiness li.is-blocked .claudian-provider-diagnostic-check-dot,
+.claudian-provider-diagnostic-readiness li.is-disabled .claudian-provider-diagnostic-check-dot {
+  background: var(--color-red);
+}
+
+.claudian-provider-diagnostic-readiness li.is-attention .claudian-provider-diagnostic-check-dot {
+  background: var(--color-orange);
+}
+
+.claudian-provider-diagnostic-modal .modal-button-container {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.claudian-provider-diagnostic-modal .modal-button-container button:first-child {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}

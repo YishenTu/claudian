@@ -273,6 +273,20 @@ describe('InputController coordinator execution', () => {
     expect(fixture.deps.conversationController.save).toHaveBeenCalledTimes(2);
   });
 
+  it('blocks the first turn when provider preflight reports a blocking error', async () => {
+    const onDiagnosticError = jest.fn();
+    const preflightExecution = jest.fn().mockResolvedValue(new Error('Provider CLI not found.'));
+    const fixture = createFixture({ preflightExecution, onDiagnosticError });
+    fixture.input.value = 'first';
+
+    await fixture.controller.sendMessage();
+
+    expect(preflightExecution).toHaveBeenCalledTimes(1);
+    expect(onDiagnosticError).toHaveBeenCalledWith(expect.any(Error));
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.input.value).toBe('first');
+  });
+
   it('numbers canonical submissions without counting interrupt markers', async () => {
     const fixture = createFixture({
       getFileContextManager: () => ({
@@ -1396,7 +1410,7 @@ describe('InputController coordinator execution', () => {
     expect(fixture.deps.renderer.removeMessage).not.toHaveBeenCalled();
     expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
     expect(Notice).toHaveBeenCalledWith(
-      'The provider session no longer exists. Claudian preserved the recoverable history; send again to rebuild the session.',
+      'The provider session no longer exists. Oh My Claudian preserved the recoverable history; send again to rebuild the session.',
     );
   });
 
@@ -1416,7 +1430,7 @@ describe('InputController coordinator execution', () => {
     expect(fixture.deps.renderer.removeMessage).not.toHaveBeenCalled();
     expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
     expect(Notice).toHaveBeenCalledWith(
-      'The provider session no longer exists. Its Claudian record was removed; send again to start a new session.',
+      'The provider session no longer exists. Its Oh My Claudian record was removed; send again to start a new session.',
     );
   });
 

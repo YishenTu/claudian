@@ -727,7 +727,7 @@ function buildAgentConfig(
   return profile === 'readonly'
     ? {
       definition: {
-        description: 'Claudian read-only execution agent.',
+        description: 'Oh My Claudian read-only execution agent.',
         mode: 'primary',
         permission: {
           '*': 'deny',
@@ -745,7 +745,7 @@ function buildAgentConfig(
     }
     : {
       definition: {
-        description: 'Claudian passive execution agent.',
+        description: 'Oh My Claudian passive execution agent.',
         mode: 'primary',
         permission: {
           '*': 'deny',

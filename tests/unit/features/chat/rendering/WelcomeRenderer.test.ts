@@ -6,7 +6,7 @@ import {
 } from '@/features/chat/rendering/WelcomeRenderer';
 
 describe('Welcome', () => {
-  it('renders Claudian branding before the dynamic greeting', () => {
+  it('renders Oh My Claudian branding before the dynamic greeting', () => {
     const parentEl = createMockEl();
 
     const welcomeEl = createWelcomeElement(parentEl, 'Good morning');
@@ -15,7 +15,7 @@ describe('Welcome', () => {
     expect(welcomeEl.children).toHaveLength(2);
     expect(welcomeEl.children[0].hasClass('claudian-welcome-brand')).toBe(true);
     expect(welcomeEl.children[0].hasClass('claudian-welcome-text')).toBe(true);
-    expect(welcomeEl.children[0].textContent).toBe('Claudian');
+    expect(welcomeEl.children[0].textContent).toBe('Oh My Claudian');
     expect(welcomeEl.children[1].hasClass('claudian-welcome-greeting')).toBe(true);
     expect(welcomeEl.children[1].hasClass('claudian-welcome-text')).toBe(true);
     expect(welcomeEl.children[1].textContent).toBe('Good morning');
@@ -39,6 +39,6 @@ describe('Welcome', () => {
     const welcomeEl = createWelcomeElement(parentEl);
 
     expect(welcomeEl.children).toHaveLength(1);
-    expect(welcomeEl.children[0].textContent).toBe('Claudian');
+    expect(welcomeEl.children[0].textContent).toBe('Oh My Claudian');
   });
 });

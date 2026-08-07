@@ -1,4 +1,5 @@
 import { NOOP_TASK_RESULT_INTERPRETER } from '../../core/providers/NoopTaskResultInterpreter';
+import { assessProviderReadiness } from '../../core/providers/ProviderReadiness';
 import type { ProviderModule } from '../../core/providers/types';
 import {
   codexWorkspaceRegistration,
@@ -7,6 +8,7 @@ import { CODEX_PROVIDER_CAPABILITIES } from './capabilities';
 import { codexSettingsReconciler } from './env/CodexSettingsReconciler';
 import { CodexExecutionBackend } from './execution/CodexExecutionBackend';
 import { CodexConversationHistoryService } from './history/CodexConversationHistoryService';
+import { getCodexModelOptions } from './modelOptions';
 import { toCodexRuntimeModelId } from './modelSelection';
 import { codexSubagentLifecycleAdapter } from './normalization/codexSubagentNormalization';
 import {
@@ -25,6 +27,23 @@ export const codexProviderRegistration: ProviderModule = {
   capabilities: CODEX_PROVIDER_CAPABILITIES,
   environmentKeyPatterns: [/^OPENAI_/i, /^CODEX_/i],
   chatUIConfig: codexChatUIConfig,
+  collectDiagnostics: async (context) => {
+    const settings = getCodexProviderSettings(context.settings);
+    const cliPath = context.resolveCliPath ? await context.resolveCliPath() : null;
+    const modelOptions = getCodexModelOptions(context.settings);
+    return {
+      readiness: assessProviderReadiness({
+        cliPath,
+        discoveredModelCount: settings.discoveredModels.length,
+        enabled: settings.enabled,
+        selectedModelCount: modelOptions.length,
+      }),
+      environment: {
+        cliPathConfigured: Boolean(cliPath || settings.cliPath),
+        workingDirectoryAvailable: true,
+      },
+    };
+  },
   settingsReconciler: codexSettingsReconciler,
   settingsStorage: {
     hostScopedFields: ['cliPathsByHost', 'installationMethodsByHost', 'wslDistroOverridesByHost'],

@@ -46,7 +46,7 @@ describe('Claudian file menu', () => {
     (Menu as typeof Menu & { instances: Menu[] }).instances.length = 0;
   });
 
-  it('registers an Add to Claudian item for files', () => {
+  it('registers an Add to Oh My Claudian item for files', () => {
     const { eventRef, getFileMenuHandler, host } = createHost();
 
     registerFileMenu(host as never);
@@ -55,7 +55,7 @@ describe('Claudian file menu', () => {
 
     expect(host.registerEvent).toHaveBeenCalledWith(eventRef);
     expect((menu as any).items).toHaveLength(1);
-    expect((menu as any).items[0].title).toBe('Add to Claudian');
+    expect((menu as any).items[0].title).toBe('Add to Oh My Claudian');
   });
 
   it('does not add the action for folders', () => {

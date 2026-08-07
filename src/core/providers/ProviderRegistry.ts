@@ -8,6 +8,10 @@ import type {
 } from '../execution';
 import { resolveTitleGenerationLocale } from '../prompt/titleGeneration';
 import { decodeProviderModelSelectionId } from './modelSelection';
+import type {
+  ProviderDiagnosticCollectorContext,
+  ProviderDiagnosticData,
+} from './ProviderDiagnostics';
 import type { ProviderHost } from './ProviderHost';
 import { ProviderWorkspaceRegistry } from './ProviderWorkspaceRegistry';
 import {
@@ -144,6 +148,14 @@ export class ProviderRegistry {
 
   static getCapabilities(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderCapabilities {
     return this.getProviderRegistration(providerId).capabilities;
+  }
+
+  static async collectDiagnostics(
+    providerId: ProviderId,
+    context: ProviderDiagnosticCollectorContext,
+  ): Promise<ProviderDiagnosticData | null> {
+    const collector = this.getProviderRegistration(providerId).collectDiagnostics;
+    return collector ? collector(context) : null;
   }
 
   static getEnvironmentKeyPatterns(providerId: ProviderId): RegExp[] {

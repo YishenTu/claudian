@@ -1,4 +1,6 @@
 import { NOOP_TASK_RESULT_INTERPRETER } from '../../core/providers/NoopTaskResultInterpreter';
+import { getProviderConfig } from '../../core/providers/providerConfig';
+import { hasStoredConfigNormalization } from '../../core/providers/settings/storedSettings';
 import type { ProviderModule } from '../../core/providers/types';
 import {
   getOpencodeWorkspaceServices,
@@ -9,6 +11,7 @@ import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeExecutionBackend } from './execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
 import { decodeOpencodeModelId } from './models';
+import { OPENCODE_PLAN_MODE_ID, OPENCODE_SAFE_MODE_ID } from './modes';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from './settings';
 import { opencodeSubagentAdapter } from './subagentAdapter';
 import { opencodeChatUIConfig } from './ui/OpencodeChatUIConfig';
@@ -42,8 +45,18 @@ export const opencodeProviderRegistration: ProviderModule = {
   settingsStorage: {
     hostScopedFields: ['cliPathsByHost'],
     normalizeStored(target, stored) {
-      updateOpencodeProviderSettings(target, getOpencodeProviderSettings(stored));
-      return false;
+      const storedConfig = getProviderConfig(stored, 'opencode');
+      const normalized = getOpencodeProviderSettings(stored);
+      updateOpencodeProviderSettings(target, {
+        ...normalized,
+        selectedMode: normalized.selectedMode === OPENCODE_PLAN_MODE_ID
+          ? OPENCODE_SAFE_MODE_ID
+          : normalized.selectedMode,
+      });
+      return hasStoredConfigNormalization(
+        storedConfig,
+        getProviderConfig(target, 'opencode'),
+      );
     },
   },
   taskResultInterpreter: NOOP_TASK_RESULT_INTERPRETER,

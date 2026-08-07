@@ -1,6 +1,10 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
+import {
+  readStoredBoolean,
+  readStoredString,
+} from '../../core/providers/settings/storedSettings';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import { ensureProviderProjectionMap } from './internal/providerProjection';
@@ -127,18 +131,20 @@ export function getPiProviderSettings(settings: Record<string, unknown>): PiProv
   const persistableIds = getPersistablePiModelIds(settings, visibleModels);
 
   return {
-    cliPath: (config.cliPath as string | undefined)
-      ?? DEFAULT_PI_PROVIDER_SETTINGS.cliPath,
+    cliPath: readStoredString(config.cliPath, DEFAULT_PI_PROVIDER_SETTINGS.cliPath),
     cliPathsByHost,
     catalogTimestamp: typeof config.catalogTimestamp === 'number' ? config.catalogTimestamp : 0,
     discoveredModels,
-    enabled: (config.enabled as boolean | undefined)
-      ?? DEFAULT_PI_PROVIDER_SETTINGS.enabled,
-    environmentHash: (config.environmentHash as string | undefined)
-      ?? DEFAULT_PI_PROVIDER_SETTINGS.environmentHash,
-    environmentVariables: (config.environmentVariables as string | undefined)
-      ?? getProviderEnvironmentVariables(settings, 'pi')
-      ?? DEFAULT_PI_PROVIDER_SETTINGS.environmentVariables,
+    enabled: readStoredBoolean(config.enabled, DEFAULT_PI_PROVIDER_SETTINGS.enabled),
+    environmentHash: readStoredString(
+      config.environmentHash,
+      DEFAULT_PI_PROVIDER_SETTINGS.environmentHash,
+    ),
+    environmentVariables: readStoredString(
+      config.environmentVariables,
+      getProviderEnvironmentVariables(settings, 'pi')
+        ?? DEFAULT_PI_PROVIDER_SETTINGS.environmentVariables,
+    ),
     modelAliases: normalizePiModelAliasesForPersistableIds(
       config.modelAliases,
       discoveredModels,
@@ -324,7 +330,10 @@ export function resolvePiModelAlias(
 }
 
 function normalizePiToolMode(value: unknown): PiToolMode {
-  return value === 'readonly' ? 'readonly' : 'all';
+  if (value === undefined) {
+    return 'all';
+  }
+  return value === 'all' || value === 'readonly' ? value : 'readonly';
 }
 
 function normalizePiEncodedId(

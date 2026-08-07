@@ -55,7 +55,7 @@ function entryToSlashCommand(entry: ProviderCommandEntry): SlashCommand {
   };
 }
 
-// SDK built-in skills that have no meaning inside Claudian
+// SDK built-in skills that have no meaning inside Oh My Claudian
 const BUILTIN_HIDDEN_COMMANDS = new Set([
   'context', 'cost', 'debug', 'extra-usage', 'heapdump', 'init',
   'insights', 'loop', 'schedule', 'security-review', 'simplify', 'update-config',

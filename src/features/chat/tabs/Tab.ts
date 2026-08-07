@@ -17,6 +17,12 @@ import {
   resolveNewConversationModel,
 } from '../../../core/providers/conversationModel';
 import { getEnabledProviderForModel, getProviderForModel } from '../../../core/providers/modelRouting';
+import {
+  createProviderDiagnosticError,
+  createProviderDiagnosticReport,
+  formatProviderDiagnosticNotice,
+  stringifyDiagnosticError,
+} from '../../../core/providers/ProviderDiagnostics';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -72,6 +78,7 @@ import { ImageContextManager } from '../ui/ImageContext';
 import { createInputToolbar } from '../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../ui/InstructionModeManager';
 import { NavigationSidebar } from '../ui/NavigationSidebar';
+import { renderProviderDiagnosticCard } from '../ui/ProviderDiagnosticCard';
 import { StatusPanel } from '../ui/StatusPanel';
 import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
@@ -834,7 +841,60 @@ function createTabExecutionCoordinator(
     resolveMissingProviderSession: (conversationId, missingProviderSessionId) =>
       plugin.handleMissingProviderSession(conversationId, missingProviderSessionId),
     onError: error => {
-      new Notice(error instanceof Error ? error.message : 'Provider execution failed.');
+      const message = stringifyDiagnosticError(error);
+      const diagnosticError = createProviderDiagnosticError(message);
+      new Notice(formatProviderDiagnosticNotice(diagnosticError));
+      const rebuildSession = tab.session.conversationId
+        ? () => {
+            const conversationId = tab.session.conversationId;
+            if (!conversationId) return;
+            void plugin.handleMissingProviderSession(conversationId)
+              .then((resolution) => {
+                if (resolution === 'deleted' || resolution === 'not_found') {
+                  new Notice('The provider session record was removed. Send the message again to start a new session.');
+                  return;
+                }
+                return tab.controllers.inputController?.sendMessage();
+              })
+              .catch(() => new Notice('Could not rebuild the provider session.'));
+          }
+        : undefined;
+      void ProviderRegistry.collectDiagnostics(tab.providerId, {
+        settings: plugin.settings,
+        resolveCliPath: () => plugin.providerHost.getResolvedProviderCliPath(tab.providerId),
+      }).then((diagnostics) => {
+        const environment = diagnostics?.environment
+          ? {
+              platform: Platform.isMacOS ? 'macOS' : Platform.isWin ? 'Windows' : 'Linux',
+              cliPathConfigured: diagnostics.environment.cliPathConfigured ?? false,
+              workingDirectoryAvailable: diagnostics.environment.workingDirectoryAvailable ?? true,
+              ...(diagnostics.environment.cliVersion
+                ? { cliVersion: diagnostics.environment.cliVersion }
+                : {}),
+            }
+          : undefined;
+        renderProviderDiagnosticCard(
+          tab.dom.messagesEl,
+          plugin.app,
+          createProviderDiagnosticReport(tab.providerId, diagnosticError, {
+            platform: environment?.platform,
+            runtimeStatus: getDiagnosticRuntimeStatus(tab.executionCoordinator?.state),
+            readiness: diagnostics?.readiness,
+            environment,
+          }),
+          { onRetry: () => void tab.controllers.inputController?.sendMessage(), onRebuildSession: rebuildSession },
+        );
+      }).catch(() => {
+        renderProviderDiagnosticCard(
+          tab.dom.messagesEl,
+          plugin.app,
+          createProviderDiagnosticReport(tab.providerId, diagnosticError, {
+            platform: Platform.isMacOS ? 'macOS' : Platform.isWin ? 'Windows' : 'Linux',
+            runtimeStatus: getDiagnosticRuntimeStatus(tab.executionCoordinator?.state),
+          }),
+          { onRetry: () => void tab.controllers.inputController?.sendMessage(), onRebuildSession: rebuildSession },
+        );
+      });
     },
     warmExecution: {
       ownerId: tab.id,
@@ -851,6 +911,60 @@ function createTabExecutionCoordinator(
         tab.lifecycleState = isWarm ? 'warm' : 'cold';
       },
     },
+  });
+}
+
+function getDiagnosticRuntimeStatus(
+  state: ChatExecutionCoordinator['state'] | undefined,
+): 'idle' | 'starting' | 'running' | 'failed' {
+  switch (state) {
+    case 'active': return 'running';
+    case 'absent': return 'starting';
+    case 'stale':
+    case 'disposed': return 'failed';
+    default: return 'idle';
+  }
+}
+
+function showPreHandoffDiagnostic(plugin: FeatureHost, tab: TabData, error: unknown): void {
+  const diagnosticError = createProviderDiagnosticError(error);
+  new Notice(formatProviderDiagnosticNotice(diagnosticError));
+  void ProviderRegistry.collectDiagnostics(tab.providerId, {
+    settings: plugin.settings,
+    resolveCliPath: () => plugin.providerHost.getResolvedProviderCliPath(tab.providerId),
+  }).then((diagnostics) => {
+    const platform = Platform.isMacOS ? 'macOS' : Platform.isWin ? 'Windows' : 'Linux';
+    const environment = diagnostics?.environment
+      ? {
+          platform,
+          cliPathConfigured: diagnostics.environment.cliPathConfigured ?? false,
+          workingDirectoryAvailable: diagnostics.environment.workingDirectoryAvailable ?? true,
+          ...(diagnostics.environment.cliVersion
+            ? { cliVersion: diagnostics.environment.cliVersion }
+            : {}),
+        }
+      : undefined;
+    renderProviderDiagnosticCard(
+      tab.dom.messagesEl,
+      plugin.app,
+      createProviderDiagnosticReport(tab.providerId, diagnosticError, {
+        platform,
+        runtimeStatus: getDiagnosticRuntimeStatus(tab.executionCoordinator?.state),
+        readiness: diagnostics?.readiness,
+        environment,
+      }),
+      { onRetry: () => void tab.controllers.inputController?.sendMessage() },
+    );
+  }).catch(() => {
+    renderProviderDiagnosticCard(
+      tab.dom.messagesEl,
+      plugin.app,
+      createProviderDiagnosticReport(tab.providerId, diagnosticError, {
+        platform: Platform.isMacOS ? 'macOS' : Platform.isWin ? 'Windows' : 'Linux',
+        runtimeStatus: getDiagnosticRuntimeStatus(tab.executionCoordinator?.state),
+      }),
+      { onRetry: () => void tab.controllers.inputController?.sendMessage() },
+    );
   });
 }
 
@@ -2064,6 +2178,24 @@ export function initializeTabControllers(
       }
     },
     captureReviewableSettlement: tab.captureReviewableSettlement ?? undefined,
+    onDiagnosticError: error => showPreHandoffDiagnostic(plugin, tab, error),
+    preflightExecution: async () => {
+      let diagnostics;
+      try {
+        diagnostics = await ProviderRegistry.collectDiagnostics(tab.providerId, {
+          settings: plugin.settings,
+          resolveCliPath: () => plugin.providerHost.getResolvedProviderCliPath(tab.providerId),
+        });
+      } catch {
+        return new Error('Provider CLI not found.');
+      }
+      const blockedCheck = diagnostics?.readiness?.checks.find(check => check.status === 'blocked');
+      if (!blockedCheck) return null;
+      if (blockedCheck.id === 'cli') return new Error('Provider CLI not found.');
+      if (blockedCheck.id === 'selection') return new Error('No chat model is selected.');
+      if (blockedCheck.id === 'enabled') return new Error('Provider is not enabled.');
+      return new Error('Provider model catalog is unavailable.');
+    },
   });
 
   tab.controllers.navigationController = new NavigationController({

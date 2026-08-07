@@ -1,5 +1,5 @@
 /**
- * Claudian - Resume session dropdown
+ * Oh My Claudian - Resume session dropdown
  *
  * Dropup UI for selecting a previous conversation to resume.
  * Shown when the /resume built-in command is executed.

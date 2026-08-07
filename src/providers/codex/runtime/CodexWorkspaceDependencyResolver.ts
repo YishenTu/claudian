@@ -324,7 +324,7 @@ export function formatCodexWorkspaceDependencies(
   dependencies: CodexWorkspaceDependencies,
 ): string {
   const lines = [
-    'Workspace dependencies are available for this local Claudian Codex thread.',
+    'Workspace dependencies are available for this local Oh My Claudian Codex thread.',
     '',
     '### Workspace Dependencies',
     'Use these bundled paths for sheets, slides, documents, PDFs, images, or browser automation:',

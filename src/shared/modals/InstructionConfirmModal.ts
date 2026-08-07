@@ -1,5 +1,5 @@
 /**
- * Claudian - Instruction modal
+ * Oh My Claudian - Instruction modal
  *
  * Unified modal that handles all instruction mode states:
  * - Loading (initial processing)

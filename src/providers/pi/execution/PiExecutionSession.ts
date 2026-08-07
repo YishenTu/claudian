@@ -1390,7 +1390,7 @@ function resolveSelectedModel(
     || !settings.visibleModels.includes(model)
   ) {
     throw new PiConfigurationError(
-      'No Pi model is selected. Enable a discovered model in Claudian settings.',
+      'No Pi model is selected. Enable a discovered model in Oh My Claudian settings.',
     );
   }
   return model;

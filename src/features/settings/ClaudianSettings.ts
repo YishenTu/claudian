@@ -104,7 +104,7 @@ function openHotkeySettings(app: App): void {
       return;
     }
 
-    searchEl.value = 'Claudian';
+    searchEl.value = 'Oh My Claudian';
     tab.updateHotkeyVisibility?.();
   }, 100);
 }

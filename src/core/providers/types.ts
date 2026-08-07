@@ -23,6 +23,7 @@ import type { ProviderId } from '../types/provider';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
 import type { ProviderCommandDiscoveryResult } from './commands/ProviderCommandDiscoveryResult';
 import type { ProviderVaultEntryRepository } from './commands/ProviderVaultEntryRepository';
+import type { ProviderDiagnosticCollector } from './ProviderDiagnostics';
 import type { ProviderHost } from './ProviderHost';
 
 export type { ProviderId } from '../types/provider';
@@ -67,6 +68,7 @@ export interface ProviderRegistration {
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
   subagentAdapter?: ProviderSubagentAdapter;
+  collectDiagnostics?: ProviderDiagnosticCollector;
 }
 
 export interface ProviderModule extends ProviderRegistration {

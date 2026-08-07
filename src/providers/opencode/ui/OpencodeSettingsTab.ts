@@ -187,7 +187,7 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
     }
 
     renderNativeMcpSettingsSection(container, {
-      descriptionAfterCommand: ' and they will be available in Claudian. ',
+      descriptionAfterCommand: ' and they will be available in Oh My Claudian. ',
       descriptionBeforeCommand: 'OpenCode manages MCP servers through its own CLI. Configure them with ',
       documentationLabel: 'Learn more',
       documentationUrl: 'https://opencode.ai/docs/mcp-servers/',
@@ -242,7 +242,7 @@ function renderOpencodeModelPicker(
 
   renderProviderModelPicker({
     container,
-    emptyCatalogText: 'Start OpenCode once to load its model catalog. Claudian will then let you pick visible models.',
+    emptyCatalogText: 'Start OpenCode once to load its model catalog. Oh My Claudian will then let you pick visible models.',
     failedCatalogText: 'Could not load the OpenCode model catalog. Check the CLI path and login state, then try again.',
     getState,
     async loadCatalog() {

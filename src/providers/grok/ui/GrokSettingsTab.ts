@@ -180,7 +180,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
     });
 
     renderNativeMcpSettingsSection(container, {
-      descriptionAfterCommand: ' and they will be available in Claudian. ',
+      descriptionAfterCommand: ' and they will be available in Oh My Claudian. ',
       descriptionBeforeCommand: 'Grok Build manages MCP servers through its own CLI. Configure them with ',
       documentationLabel: 'Learn more',
       documentationUrl: 'https://docs.x.ai/build/features/mcp-servers',

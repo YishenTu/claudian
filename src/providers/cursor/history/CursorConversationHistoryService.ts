@@ -13,7 +13,7 @@ export class CursorConversationHistoryService implements ProviderConversationHis
     context?: ProviderHistoryPathContext,
   ): Promise<void> {
     // Cursor keeps ACP transcripts in its local session store. Read them without
-    // mutating the provider-owned database so persisted Claudian conversations
+    // mutating the provider-owned database so persisted Oh My Claudian conversations
     // can be restored after reopening the vault.
     if (!conversation.sessionId || conversation.messages.length > 0) return;
     const messages = await loadCursorSessionMessages(conversation.sessionId, context);

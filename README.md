@@ -76,7 +76,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 1. Open **Settings → Oh My Claudian** and choose a provider tab.
 2. Enable the provider, confirm its **Readiness** checks, and select a chat model.
-3. Open the chat view and send your first message. Use the **Open chat** button in the General settings tab whenever you need to return to the chat.
+3. Open the chat view and send your first message. Oh My Claudian performs a lightweight preflight before sending and preserves your input if the Provider is not ready. Use the inline recovery card to retry, rebuild a session, or view detailed diagnostics.
 
 Each provider has a readiness panel in its settings tab. Use it to see whether the provider is enabled, its CLI is available, models have been discovered, and a chat model is selected. The panel refreshes after enablement changes and lets you recheck the current provider state; installation and authentication remain provider-native. Model pickers also show whether the catalog is fresh, cached, or failed to refresh, along with the provider default and current selection mode.
 
@@ -86,9 +86,9 @@ Cursor requires the Cursor Agent CLI (`agent`) to be installed and authenticated
 
 #### Cursor ACP limitations
 
-Cursor's current ACP implementation does not expose token usage in `session/prompt` responses and does not emit the standard `usage_update` notification. Claudian therefore cannot display real Cursor token counts or context usage; any initial context indicator is only a local placeholder. This is an upstream Cursor Agent CLI limitation, not a Claudian setting. See the [Cursor report about missing `PromptResponse.usage`](https://forum.cursor.com/t/cursor-acp-doesn-t-seem-to-return-token-usage-in-promptresponse-usage/160395) and the [request to emit `usage_update`](https://forum.cursor.com/t/cli-emit-acp-usage-update-so-clients-like-zed-can-show-a-context-window-indicator/165358).
+Cursor's current ACP implementation does not expose token usage in `session/prompt` responses and does not emit the standard `usage_update` notification. Oh My Claudian therefore cannot display real Cursor token counts or context usage; any initial context indicator is only a local placeholder. This is an upstream Cursor Agent CLI limitation, not an Oh My Claudian setting. See the [Cursor report about missing `PromptResponse.usage`](https://forum.cursor.com/t/cursor-acp-doesn-t-seem-to-return-token-usage-in-promptresponse-usage/160395) and the [request to emit `usage_update`](https://forum.cursor.com/t/cli-emit-acp-usage-update-so-clients-like-zed-can-show-a-context-window-indicator/165358).
 
-Cursor itself has local conversation history and supports CLI resume commands such as `cursor-agent ls` and `cursor-agent resume`. Claudian can restore conversations that already have a persisted Cursor session ID by reading Cursor's local ACP transcript store. The limitation is that Cursor's ACP channel does not currently expose a stable session-list API, so Claudian does not yet import or live-list every standalone Cursor session. This is read-only hydration of Claudian's own conversation records.
+Cursor itself has local conversation history and supports CLI resume commands such as `cursor-agent ls` and `cursor-agent resume`. Oh My Claudian can restore conversations that already have a persisted Cursor session ID by reading Cursor's local ACP transcript store. The limitation is that Cursor's ACP channel does not currently expose a stable session-list API, so Oh My Claudian does not yet import or live-list every standalone Cursor session. This is read-only hydration of Oh My Claudian's own conversation records.
 
 ## Development
 
@@ -119,11 +119,11 @@ Releases are created automatically by [`.github/workflows/release.yml`](.github/
 3. Create a tag that exactly matches the `manifest.json` version, for example:
 
    ```bash
-   git tag 2.1.13
-   git push origin 2.1.13
+   git tag 2.1.14
+   git push origin 2.1.14
    ```
 
-   If your writable remote is named `fork`, use `git push fork 2.1.13` instead.
+   If your writable remote is named `fork`, use `git push fork 2.1.14` instead.
 
 The workflow validates the version, builds the plugin, runs the performance check, generates release notes, and publishes `main.js`, `manifest.json`, and `styles.css` to the GitHub Release. These are the files used for the Obsidian Community Plugins release.
 
@@ -137,7 +137,7 @@ If a provider CLI is not found, first leave its configured path blank so Oh My C
 
 For OMP specifically, verify that the CLI is installed, logged in, and executable by the Obsidian desktop process. If model discovery fails, set the absolute OMP path in the OMP settings tab and try **Discover** again.
 
-For Cursor, verify that `agent` is installed and that `agent login` completed. If the CLI is not found or model discovery fails, set the absolute `agent` path in the Cursor settings tab and try **Discover** again. Cursor MCP servers remain configured by Cursor (for example, in `.cursor/mcp.json`) rather than duplicated in Claudian.
+For Cursor, verify that `agent` is installed and that `agent login` completed. If the CLI is not found or model discovery fails, set the absolute `agent` path in the Cursor settings tab and try **Discover** again. Cursor MCP servers remain configured by Cursor (for example, in `.cursor/mcp.json`) rather than duplicated in Oh My Claudian.
 
 ## Architecture
 

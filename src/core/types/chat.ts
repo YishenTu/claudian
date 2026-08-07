@@ -108,7 +108,7 @@ export interface ChatMessage {
   contentBlocks?: ContentBlock[];
   currentNote?: string;
   images?: ImageAttachment[];
-  /** Canonical submitted input correlated from Claudian-owned persistence. */
+  /** Canonical submitted input correlated from Oh My Claudian-owned persistence. */
   executionInput?: ExecutionInputSnapshot;
   /** True if this message represents a user interrupt (from SDK storage). */
   isInterrupt?: boolean;
