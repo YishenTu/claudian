@@ -11,12 +11,14 @@ import type {
 import {
   destroyTab,
   drainTabForShutdownSnapshot,
+  TabRuntimeTeardownError,
+} from '@/features/chat/tabs/TabLifecycle';
+import { TabManager } from '@/features/chat/tabs/TabManager';
+import {
   initializeTabExecution,
   onProviderAvailabilityChanged,
-  TabRuntimeTeardownError,
   updatePlanModeUI,
-} from '@/features/chat/tabs/Tab';
-import { TabManager } from '@/features/chat/tabs/TabManager';
+} from '@/features/chat/tabs/TabProviderState';
 import {
   createTabRuntime,
   TabRuntimeConstructionError,

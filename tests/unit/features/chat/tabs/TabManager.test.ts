@@ -96,12 +96,15 @@ function createMockTab(options: Record<string, any>): any {
   return tab;
 }
 
-jest.mock('@/features/chat/tabs/Tab', () => ({
+jest.mock('@/features/chat/tabs/TabLifecycle', () => ({
   activateTab: jest.fn(),
   deactivateTab: jest.fn(),
   drainTabForShutdownSnapshot: (...args: unknown[]) => mockDrainTabForShutdownSnapshot(...args),
   destroyTab: (...args: unknown[]) => mockDestroyTab(...args),
   getTabTitle: jest.fn().mockReturnValue('Tab'),
+}));
+
+jest.mock('@/features/chat/tabs/TabProviderState', () => ({
   onProviderAvailabilityChanged: jest.fn().mockReturnValue(false),
   refreshTabWorkspaceServices: jest.fn(),
 }));
@@ -756,7 +759,9 @@ describe('TabManager provider execution orchestration', () => {
 
   it('reactivates the previous tab when deactivation fails during admission', async () => {
     const deactivationError = new Error('Failed to deactivate previous tab');
-    const { activateTab, deactivateTab } = jest.requireMock('@/features/chat/tabs/Tab') as {
+    const { activateTab, deactivateTab } = jest.requireMock(
+      '@/features/chat/tabs/TabLifecycle',
+    ) as {
       activateTab: jest.Mock;
       deactivateTab: jest.Mock;
     };

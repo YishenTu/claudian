@@ -20,16 +20,18 @@ import { revealWorkspaceLeaf } from '../../../utils/obsidianCompat';
 import { getVaultPath } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
 import { getTabProviderId } from './providerResolution';
+import type { ForkContext } from './TabForking';
 import {
   activateTab,
   deactivateTab,
   destroyTab,
   drainTabForShutdownSnapshot,
-  type ForkContext,
   getTabTitle,
+} from './TabLifecycle';
+import {
   onProviderAvailabilityChanged,
   refreshTabWorkspaceServices,
-} from './Tab';
+} from './TabProviderState';
 import { createTabRuntime } from './TabRuntimeFactory';
 import {
   type AssembledTabRuntime,

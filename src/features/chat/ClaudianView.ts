@@ -23,14 +23,12 @@ import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
 import { TabStatePersistenceCoordinator } from './services/TabStatePersistenceCoordinator';
 import { getObsidianLanguage } from './session-manager/ProvisionalNoteNames';
 import { renderSessionGroupToggleIcon } from './session-manager/SessionManagerIcons';
-import {
-  commitProvisionalTab,
-  getTabProviderId,
-  sendTabInputMessageFromExplicitEnterShortcut,
-  updatePlanModeUI,
-} from './tabs/Tab';
+import { getTabProviderId } from './tabs/providerResolution';
 import { TabBar } from './tabs/TabBar';
+import { sendTabInputMessageFromExplicitEnterShortcut } from './tabs/TabInputEvents';
+import { commitProvisionalTab } from './tabs/TabLifecycle';
 import { TabManager } from './tabs/TabManager';
+import { updatePlanModeUI } from './tabs/TabProviderState';
 import type { AssembledTabRuntime, TabId } from './tabs/types';
 import { HorizontalWheelGesture } from './ui/HorizontalWheelGesture';
 import { VaultFileTree } from './ui/vault-file-tree/VaultFileTree';

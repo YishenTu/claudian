@@ -252,29 +252,70 @@ test('renderer source does not import AsyncLocalStorage', () => {
   assert.deepEqual(findMatches([sourceRoot], pattern), []);
 });
 
-test('only TabRuntimeFactory can initiate tab runtime assembly', () => {
-  const tabSource = path.join(featuresRoot, 'chat', 'tabs', 'Tab.ts');
+test('tab runtime construction stays private to the factory boundary', () => {
+  const chatRoot = path.join(featuresRoot, 'chat');
+  const tabsRoot = path.join(chatRoot, 'tabs');
+  const tabSource = path.join(tabsRoot, 'Tab.ts');
   const factorySource = path.join(featuresRoot, 'chat', 'tabs', 'TabRuntimeFactory.ts');
+  const runtimeRoot = path.join(tabsRoot, 'runtime');
+  const assemblySymbol = ['assemble', 'TabRuntime'].join('');
   const assemblyReferences = findMatches(
     [sourceRoot],
-    /\bassembleTabRuntime\b/,
+    new RegExp(`\\b${assemblySymbol}\\b`),
   ).sort();
 
-  assert.deepEqual(assemblyReferences, [
-    path.relative(process.cwd(), tabSource),
-    path.relative(process.cwd(), factorySource),
-  ].sort());
+  assert.deepEqual(assemblyReferences, [path.relative(process.cwd(), factorySource)]);
+  assert.equal(fs.existsSync(tabSource), false);
 
-  const source = fs.readFileSync(tabSource, 'utf8');
+  const factory = fs.readFileSync(factorySource, 'utf8');
+  assert.match(factory, new RegExp(`\\bfunction\\s+${assemblySymbol}\\b`));
+  assert.doesNotMatch(
+    factory,
+    new RegExp(`\\bexport\\s+(?:async\\s+)?function\\s+${assemblySymbol}\\b`),
+  );
+
+  const internalImportViolations = [];
+  const factoryImportViolations = [];
+  for (const file of listTypeScriptFiles(sourceRoot)) {
+    for (const sourceImport of listSourceImports(file)) {
+      const target = resolveSourceImport(file, sourceImport.specifier);
+      if (!target) continue;
+      if (
+        isPathWithin(target, runtimeRoot)
+        && file !== factorySource
+        && !isPathWithin(file, runtimeRoot)
+      ) {
+        internalImportViolations.push(
+          `${path.relative(process.cwd(), file)}:${sourceImport.line} -> ${sourceImport.specifier}`,
+        );
+      }
+      if (
+        isPathWithin(file, runtimeRoot)
+        && normalizeModuleTarget(target) === normalizeModuleTarget(factorySource)
+      ) {
+        factoryImportViolations.push(
+          `${path.relative(process.cwd(), file)}:${sourceImport.line} -> ${sourceImport.specifier}`,
+        );
+      }
+    }
+  }
+  assert.deepEqual(internalImportViolations, []);
+  assert.deepEqual(factoryImportViolations, []);
+
+  const retiredConstructionExports = findMatches(
+    [chatRoot],
+    /export\s+(?:async\s+)?function\s+(?:createTab|initializeTabUI|initializeTabControllers|wireTabInputEvents)\b/,
+  );
+  assert.deepEqual(retiredConstructionExports, []);
+
   for (const retiredConstructionHelper of [
-    'createTab',
-    'initializeTabUI',
-    'initializeTabControllers',
-    'wireTabInputEvents',
+    'ReadyTabData',
+    'setControllers',
+    'setUI',
   ]) {
-    assert.doesNotMatch(
-      source,
-      new RegExp(`export\\s+(?:async\\s+)?function\\s+${retiredConstructionHelper}\\b`),
+    assert.deepEqual(
+      findMatches([chatRoot], new RegExp(`\\b${retiredConstructionHelper}\\b`)),
+      [],
     );
   }
 });

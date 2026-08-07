@@ -16,7 +16,11 @@
 | Component | Authority |
 | --- | --- |
 | `TabManager` | Runtime-tab membership, active-tab selection, and create/switch/close operations |
-| `TabRuntimeFactory` | Atomic per-tab assembly and rollback. It is the only production caller of phased construction, composes complete typed bundles, and returns only assembled runtimes to `TabManager` |
+| `TabRuntimeFactory` | Atomic per-tab assembly, publication, and rollback. It privately orchestrates complete runtime bundles and returns only assembled runtimes to `TabManager` |
+| `TabLifecycle` | Runtime activation/deactivation, provisional retention, shutdown drainage, teardown, and display-title helpers |
+| `TabProviderState` | Provider/model/settings resolution, provider UI gating, workspace-service synchronization, and execution initialization |
+| `TabSessionEvents` | Provider-session event routing, background-work sequencing, and automatic-turn rendering |
+| `TabForking` | Fork-source resolution and immutable fork-context preparation |
 | `TabSession` | Authoritative per-tab identity, conversation binding, provider binding, lifecycle value, immutable execution-coordinator reference and disposal, active-turn reference, and background-work sequencing |
 | `TabModelSelectionCoordinator` | Per-tab model-selection request ordering, blank-tab provider-transition serialization, and stable-draft rollback |
 | `ChatExecutionCoordinator` | One tab's provider-session binding, active execution, interaction fencing, cancellation, and disposal |
@@ -26,7 +30,7 @@
 | `TabBar` | Expanded-title presentation state for the current view |
 | `ClaudianView` | View assembly, rendered DOM placement, presentation coordination, layout-mode navigation, and assembly of the persisted current-tab snapshot |
 
-`TabSession` stores lifecycle values, while lifecycle operations in `Tab.ts` and `TabManager` perform the transitions. Controllers, renderers, and UI components must request those operations instead of assigning lifecycle state themselves.
+`TabSession` stores lifecycle values, while lifecycle operations in `TabLifecycle` and `TabManager` perform the transitions. Controllers, renderers, and UI components must request those operations instead of assigning lifecycle state themselves.
 
 `TabStatePersistenceCoordinator` owns write sequencing, not semantic tab state. It receives the active tab identity assembled by `ClaudianView`; it must not infer, add, or remove runtime tabs.
 
@@ -83,7 +87,7 @@ Tab activation and conversation hydration do not themselves authorize creation o
 - Fork operations capture the source tab and exact conversation binding before their first asynchronous source lookup or target prompt. Revalidate that lease after every await and copy accepted-input state by the captured conversation ID, never the coordinator's current binding.
 - View shutdown closes intent admission, invalidates and joins conversation navigation and tab switching, then keeps terminal conversation-binding callbacks open while every admitted tab cancels and drains active/background work. Only that complete quiescence boundary may flush and seal the final tab identity. A reopen overlapping it reuses the same persistence coordinator and awaits the closing snapshot before restoration.
 - `AssembledTabRuntime` keeps required structural references stable after publication, including while `closing` and after resource disposal. Operational availability is expressed by lifecycle state and read-only resource state; teardown authority remains internal and must not null required references.
-- Construction builders remain factory-owned and return complete shell, UI, controller/renderer, and input-binding bundles. Every acquired resource must register rollback immediately; rollback and teardown are idempotent, best-effort, and continue after individual cleanup failures.
+- Construction builders under `tabs/runtime/` are internal to `TabRuntimeFactory` and return complete shell, service, UI, controller/renderer, and input-binding bundles. They may depend on focused tab-domain modules but never import the factory, manager, or view. Every acquired resource must register rollback immediately; rollback and teardown are idempotent, best-effort, and continue after individual cleanup failures.
 - Cooling an idle tab must preserve its runtime tab, conversation binding, hydrated UI state, and resumable provider snapshot.
 - Returning to single-panel mode must keep dual-pane controls in place until provisional-tab cleanup completes; compact controls must never target a tab already being closed.
 - Switching the active tab must not cancel, dispose, or transfer another tab's active execution.
