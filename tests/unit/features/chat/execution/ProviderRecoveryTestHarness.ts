@@ -52,6 +52,7 @@ export function createProviderRecoveryTestHarness(
     stageConversationInput: jest.fn(async () => undefined),
     acceptConversationInput: jest.fn(async () => undefined),
     discardStagedConversationInput: jest.fn(async () => undefined),
+    discardIncompleteConversationInput: jest.fn(async () => undefined),
     copyConversationInputsForFork: jest.fn(async () => undefined),
     truncateConversationInputsFrom: jest.fn(async () => undefined),
   };

@@ -102,6 +102,10 @@ export interface ChatExecutionPersistence {
     conversationId: string,
     recordId: string,
   ): Promise<void>;
+  discardIncompleteConversationInput(
+    conversationId: string,
+    recordId: string,
+  ): Promise<void>;
   copyConversationInputsForFork(
     sourceConversationId: string,
     targetConversationId: string,
@@ -188,6 +192,7 @@ interface ActiveExecution {
   readonly run: ProviderExecutionRun;
   readonly requestController: AbortController;
   readonly inputRecordId: string;
+  readonly hasImages: boolean;
   readonly messages?: ChatTurnMessageBinding;
   terminationOverride: 'cancelled' | 'invalidated' | null;
 }
@@ -422,6 +427,7 @@ export class ChatExecutionCoordinator {
       run,
       requestController,
       inputRecordId: record.id,
+      hasImages: submission.images.length > 0,
       messages: submission.messages,
       terminationOverride: null,
     };
@@ -808,6 +814,17 @@ export class ChatExecutionCoordinator {
       );
       throw new ChatExecutionPreHandoffError(
         terminalSinkFailure?.error ?? terminal,
+      );
+    }
+    if (
+      active.hasImages
+      && accepted
+      && terminal?.type === 'execution_error'
+      && !nativeAssistantMessageId
+    ) {
+      await this.deps.persistence.discardIncompleteConversationInput(
+        active.binding.conversation.conversationId,
+        active.inputRecordId,
       );
     }
     const unacceptedMissingSession = isUnacceptedMissingSession(terminal, accepted);

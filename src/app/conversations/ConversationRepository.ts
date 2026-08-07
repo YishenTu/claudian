@@ -943,6 +943,19 @@ export class ConversationRepository {
     await this.persistLedgerOnly(conversationId, ledger);
   }
 
+  async discardIncompleteConversationInput(
+    conversationId: string,
+    recordId: string,
+  ): Promise<void> {
+    const ledger = await this.requireInputLedger(conversationId);
+    const index = ledger.records.findIndex(({ id }) => id === recordId);
+    if (index === -1) return;
+    const record = ledger.records[index];
+    if (record.state !== 'accepted' || record.providerAssistantMessageId) return;
+    ledger.records.splice(index, 1);
+    await this.persistLedgerOnly(conversationId, ledger);
+  }
+
   async getConversationInputLedger(
     conversationId: string,
   ): Promise<ConversationInputLedger | null> {

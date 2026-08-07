@@ -252,6 +252,7 @@ function createHarness(options: {
     stageConversationInput: jest.fn(async () => undefined),
     acceptConversationInput: jest.fn(async () => undefined),
     discardStagedConversationInput: jest.fn(async () => undefined),
+    discardIncompleteConversationInput: jest.fn(async () => undefined),
     copyConversationInputsForFork: jest.fn(async () => undefined),
     truncateConversationInputsFrom: jest.fn(async () => undefined),
   } as unknown as jest.Mocked<ChatExecutionPersistence>;
@@ -1071,6 +1072,39 @@ describe('ChatExecutionCoordinator', () => {
       { providerUserMessageId: undefined },
     );
     expect(harness.repository.discardStagedConversationInput).not.toHaveBeenCalled();
+  });
+
+  it('removes an accepted image input when execution fails before an assistant response', async () => {
+    const harness = createHarness();
+    const { session, run, resultPromise } = await beginExecution(
+      harness,
+      createSubmission({
+        images: [{
+          id: 'image-1', name: 'image.png', mediaType: 'image/png', data: 'encoded',
+          size: 7, source: 'paste',
+        }],
+      }),
+    );
+
+    run.events.push({
+      type: 'turn_started',
+      scope: requestedScope(session, run, 1),
+      accepted: true,
+    });
+    run.events.push({
+      type: 'execution_error',
+      scope: requestedScope(session, run, 2),
+      category: 'provider',
+      message: 'Model cannot process image input.',
+      recoverable: true,
+    });
+    run.events.end();
+
+    await expect(resultPromise).resolves.toMatchObject({ status: 'error', accepted: true });
+    expect(harness.repository.discardIncompleteConversationInput).toHaveBeenCalledWith(
+      'conversation-1',
+      'input-1',
+    );
   });
 
   it('routes only current monotonically correlated requested events and persists snapshots', async () => {
@@ -2078,6 +2112,9 @@ describe('ChatExecutionCoordinator', () => {
       acceptConversationInput: (...args) => repository.acceptConversationInput(...args),
       discardStagedConversationInput: (...args) => (
         repository.discardStagedConversationInput(...args)
+      ),
+      discardIncompleteConversationInput: (...args) => (
+        repository.discardIncompleteConversationInput(...args)
       ),
       copyConversationInputsForFork: (...args) => (
         repository.copyConversationInputsForFork(...args)
