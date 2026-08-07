@@ -152,6 +152,56 @@ describe('SlashCommandDropdown', () => {
     dropdownWithoutBuiltIns.destroy();
   });
 
+  describe('search result ranking', () => {
+    it('ranks exact, prefix, substring, then description matches', async () => {
+      const entries = [
+        makeEntry('my-paper-writer', 'Substring match'),
+        makeEntry('paper-writer-long', 'Prefix match'),
+        makeEntry('alpha-helper', 'Description mentions paper-writer'),
+        makeEntry('paper-writer', 'Exact match'),
+      ];
+      const dropdownWithEntries = new SlashCommandDropdown(
+        containerEl,
+        inputEl,
+        callbacks,
+        { providerConfig: CLAUDE_CONFIG, providerDiscovery: createEntryDiscovery(async () => entries) },
+      );
+
+      inputEl.value = '/paper-writer';
+      inputEl.selectionStart = 13;
+      dropdownWithEntries.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(getRenderedCommandNames(containerEl)).toEqual([
+        'paper-writer',
+        'paper-writer-long',
+        'my-paper-writer',
+        'alpha-helper',
+      ]);
+      dropdownWithEntries.destroy();
+    });
+
+    it('keeps empty searches alphabetically sorted', async () => {
+      const dropdownWithEntries = new SlashCommandDropdown(
+        containerEl,
+        inputEl,
+        callbacks,
+        { providerConfig: CLAUDE_CONFIG, providerDiscovery: createEntryDiscovery(async () => [
+          makeEntry('zebra'),
+          makeEntry('alpha'),
+        ]) },
+      );
+
+      inputEl.value = '/';
+      inputEl.selectionStart = 1;
+      dropdownWithEntries.handleInputChange();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(getRenderedCommandNames(containerEl)).toEqual(['add-dir', 'alpha', 'clear', 'zebra']);
+      dropdownWithEntries.destroy();
+    });
+  });
+
   describe('setEnabled', () => {
     it('should not show dropdown when disabled', async () => {
       dropdown.setEnabled(false);
