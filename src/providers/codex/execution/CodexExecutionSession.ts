@@ -56,9 +56,11 @@ import type {
   ServerRequestResolvedNotification,
   ThreadCompactStartResult,
   ThreadForkResult,
+  ThreadReadResult,
   ThreadResumeResult,
   ThreadRollbackResult,
   ThreadStartResult,
+  ThreadStatusChangedNotification,
   TurnCompletedNotification,
   TurnStartedNotification,
   TurnStartResult,
@@ -99,6 +101,8 @@ const PASSIVE_INSTRUCTIONS =
 const LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS =
   'This thread predates Claudian client-hosted workspace dependency tools. Do not emulate load_workspace_dependencies or install replacement dependencies.';
 const CODEX_SUPPORTS_EXACT_BUILT_IN_TOOL_ALLOW_LIST = false;
+const MISSED_TURN_COMPLETION_GRACE_MS = 1_000;
+const THREAD_READ_RECOVERY_TIMEOUT_MS = 5_000;
 const CODEX_CONSUMED_FORK_STATE_KEYS = [
   'forkSource',
   'forkSourceSessionFilePath',
@@ -279,6 +283,7 @@ export class CodexExecutionSession
   private forkIdentityPromise: Promise<CodexPendingForkTarget> | null = null;
   private forkSetupPromise: Promise<CodexEnsuredThread> | null = null;
   private disposePromise: Promise<void> | null = null;
+  private completionRecoveryTimer: number | null = null;
   private disposed = false;
   private lifecycleGeneration = 0;
 
@@ -748,6 +753,16 @@ export class CodexExecutionSession
       this.observeNativeTurn(started.threadId, started.turn.id);
       return;
     }
+    if (method === 'thread/status/changed') {
+      const changed = params as ThreadStatusChangedNotification;
+      if (changed.threadId !== run.nativeThreadId) return;
+      if (changed.status.type === 'idle') {
+        this.scheduleMissedTurnCompletionRecovery(run);
+      } else {
+        this.cancelMissedTurnCompletionRecovery();
+      }
+      return;
+    }
 
     const scope = extractNotificationScope(method, params);
     if (scope) {
@@ -764,6 +779,7 @@ export class CodexExecutionSession
     }
 
     if (method === 'turn/completed') {
+      this.cancelMissedTurnCompletionRecovery();
       const completed = params as TurnCompletedNotification;
       run.completion = {
         status: completed.turn.status === 'inProgress'
@@ -776,6 +792,69 @@ export class CodexExecutionSession
       };
     }
     this.notificationRouter?.handleNotification(method, params);
+  }
+
+  private scheduleMissedTurnCompletionRecovery(run: CodexExecutionRun): void {
+    if (
+      this.completionRecoveryTimer
+      || !run.nativeThreadId
+      || !run.nativeTurnId
+    ) {
+      return;
+    }
+    const generation = this.lifecycleGeneration;
+    this.completionRecoveryTimer = window.setTimeout(() => {
+      this.completionRecoveryTimer = null;
+      void this.recoverMissedTurnCompletion(run, generation);
+    }, MISSED_TURN_COMPLETION_GRACE_MS);
+  }
+
+  private cancelMissedTurnCompletionRecovery(): void {
+    if (this.completionRecoveryTimer === null) return;
+    window.clearTimeout(this.completionRecoveryTimer);
+    this.completionRecoveryTimer = null;
+  }
+
+  private async recoverMissedTurnCompletion(
+    run: CodexExecutionRun,
+    generation: number,
+  ): Promise<void> {
+    const transport = this.transport;
+    const threadId = run.nativeThreadId;
+    const turnId = run.nativeTurnId;
+    if (
+      !transport
+      || !threadId
+      || !turnId
+      || this.activeRun !== run
+      || run.isTerminal
+      || run.isCancellationRequested
+      || generation !== this.lifecycleGeneration
+    ) {
+      return;
+    }
+
+    let result: ThreadReadResult;
+    try {
+      result = await transport.request<ThreadReadResult>(
+        'thread/read',
+        { threadId, includeTurns: true },
+        THREAD_READ_RECOVERY_TIMEOUT_MS,
+      );
+    } catch {
+      return;
+    }
+    if (
+      this.activeRun !== run
+      || run.isTerminal
+      || run.isCancellationRequested
+      || generation !== this.lifecycleGeneration
+    ) {
+      return;
+    }
+    const turn = result.thread.turns.find(candidate => candidate.id === turnId);
+    if (!turn || turn.status === 'inProgress') return;
+    this.handleNotification('turn/completed', { threadId, turn });
   }
 
   private observeNativeTurn(threadId: string, nativeTurnId: string): boolean {
@@ -1201,6 +1280,7 @@ export class CodexExecutionSession
 
   private cancelRun(run: CodexExecutionRun): void {
     if (this.activeRun !== run || run.isTerminal) return;
+    this.cancelMissedTurnCompletionRecovery();
     this.lifecycleGeneration += 1;
     this.serverRequestRouter.abortAll('cancelled');
     const transport = this.transport;
@@ -1288,6 +1368,7 @@ export class CodexExecutionSession
   }
 
   private releaseRun(run: CodexExecutionRun): void {
+    this.cancelMissedTurnCompletionRecovery();
     this.notificationRouter?.endTurn();
     this.notificationRouter = null;
     this.pendingTurnNotifications = [];

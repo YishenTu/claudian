@@ -429,6 +429,10 @@ export interface ThreadStartResult {
   reasoningEffort: string;
 }
 
+export interface ThreadReadResult {
+  thread: Thread;
+}
+
 export type SandboxPolicy =
   | { type: 'dangerFullAccess' }
   | {

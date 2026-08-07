@@ -62,6 +62,10 @@ import {
   providerOutputEventToStreamChunk,
   type StreamController,
 } from './StreamController';
+import {
+  hasSuspiciousCommandText,
+  SUSPICIOUS_COMMAND_WARNING,
+} from './suspiciousCommandText';
 import type { ActiveTurnOwner } from './TurnCoordinator';
 import { TurnCoordinator } from './TurnCoordinator';
 
@@ -1828,7 +1832,7 @@ export class InputController {
 
   async handleApprovalRequest(
     toolName: string,
-    _input: Record<string, unknown>,
+    approvalInput: Record<string, unknown>,
     description: string,
     approvalOptions?: ApprovalCallbackOptions,
   ): Promise<ApprovalDecision> {
@@ -1856,6 +1860,16 @@ export class InputController {
     }
     if (approvalOptions?.agentID) {
       headerEl.createDiv({ text: `Agent: ${approvalOptions.agentID}`, cls: 'claudian-ask-approval-agent' });
+    }
+
+    const command = typeof approvalInput.command === 'string'
+      ? approvalInput.command
+      : description;
+    if (hasSuspiciousCommandText(command)) {
+      headerEl.createDiv({
+        text: SUSPICIOUS_COMMAND_WARNING,
+        cls: 'claudian-ask-approval-warning',
+      });
     }
 
     headerEl.createDiv({ text: description, cls: 'claudian-ask-approval-desc' });
