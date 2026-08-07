@@ -11,10 +11,17 @@ export function isVisibleVaultPath(path: string): boolean {
 export function collectVaultFileTreePaths(
   entries: readonly VaultFileTreeEntry[],
 ): string[] {
-  return entries.flatMap(({ kind, path }) => {
-    if (!isVisibleVaultPath(path)) return [];
-    return [kind === 'folder' && !path.endsWith('/') ? `${path}/` : path];
-  });
+  const paths: string[] = [];
+  for (const entry of entries) {
+    const treePath = toVaultFileTreePath(entry);
+    if (treePath !== null) paths.push(treePath);
+  }
+  return paths;
+}
+
+export function toVaultFileTreePath({ kind, path }: VaultFileTreeEntry): string | null {
+  if (!isVisibleVaultPath(path)) return null;
+  return kind === 'folder' && !path.endsWith('/') ? `${path}/` : path;
 }
 
 export function toVaultPath(treePath: string): string {

@@ -1113,13 +1113,17 @@ describe('ClaudianView tab controls', () => {
     const viewContainerEl = createMockEl();
     const mount = jest.fn().mockResolvedValue(undefined);
     const destroy = jest.fn();
+    const setActive = jest.fn();
+    const renderSessionSidebar = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
       activeSidebarSurface: 'sessions',
-      createVaultFileTree: jest.fn().mockReturnValue({ destroy, mount }),
+      createVaultFileTree: jest.fn().mockReturnValue({ destroy, mount, setActive }),
       isWideSessionLayout: true,
       plugin: { app: {} },
+      renderSessionSidebar,
+      requestedWideSessionLayout: true,
       viewContainerEl,
       vaultFileTree: null,
     });
@@ -1140,22 +1144,31 @@ describe('ClaudianView tab controls', () => {
     expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
     expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
     expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
+    expect(setActive).toHaveBeenLastCalledWith(false);
+    expect(renderSessionSidebar).toHaveBeenCalledTimes(1);
 
     view.filesSurfaceButtonEl.click();
     expect(view.createVaultFileTree).toHaveBeenCalledTimes(1);
     expect(mount).toHaveBeenCalledTimes(1);
+    expect(setActive).toHaveBeenLastCalledWith(true);
   });
 
   it('rotates sidebar surfaces on either horizontal wheel direction without intercepting vertical scroll', () => {
     const viewContainerEl = createMockEl();
     const mount = jest.fn().mockResolvedValue(undefined);
+    const setActive = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
       activeSidebarSurface: 'sessions',
-      createVaultFileTree: jest.fn().mockReturnValue({ destroy: jest.fn(), mount }),
+      createVaultFileTree: jest.fn().mockReturnValue({
+        destroy: jest.fn(),
+        mount,
+        setActive,
+      }),
       isWideSessionLayout: true,
       plugin: { app: {}, settings: { enableFilePane: true } },
+      requestedWideSessionLayout: true,
       sidebarSurfaceWheelGesture: new HorizontalWheelGesture(),
       viewContainerEl,
       vaultFileTree: null,
@@ -1164,6 +1177,12 @@ describe('ClaudianView tab controls', () => {
 
     expect(view.sessionSidebarEl.getEventListenerCount('wheel')).toBe(1);
     expect(view.chatPanelEl.getEventListenerCount('wheel')).toBe(0);
+    Object.defineProperty(view.sessionSidebarEl, 'clientWidth', {
+      configurable: true,
+      get: () => {
+        throw new Error('Wheel handling must not read layout');
+      },
+    });
 
     const verticalPreventDefault = jest.fn();
     view.sessionSidebarEl.dispatchEvent({
@@ -1359,20 +1378,26 @@ describe('ClaudianView tab controls', () => {
     const discardProvisionalTabs = jest.fn().mockReturnValue(new Promise<void>((resolve) => {
       finishDiscard = resolve;
     }));
+    const setActive = jest.fn();
 
     Object.assign(view, {
       cancelSessionSidebarRendering: jest.fn(),
+      filesSurfaceEl: createMockEl(),
       isSessionSearchActive: true,
       isSessionSearchComposing: false,
       sessionSearchQuery: 'roadmap',
       isWideSessionLayout: true,
       requestedWideSessionLayout: true,
       sessionLayoutRequestRevision: 0,
-      plugin: { getConversationSync: jest.fn() },
+      plugin: {
+        getConversationSync: jest.fn(),
+        settings: { enableFilePane: true },
+      },
       tabManager: {
         discardProvisionalTabs,
         getAllTabs: jest.fn().mockReturnValue([]),
       },
+      vaultFileTree: { setActive },
       viewContainerEl,
     });
 
@@ -1384,12 +1409,17 @@ describe('ClaudianView tab controls', () => {
     expect(view.sessionSearchQuery).toBe('');
     expect(view.cancelSessionSidebarRendering).toHaveBeenCalledTimes(1);
     expect(discardProvisionalTabs).toHaveBeenCalledTimes(1);
+    expect(setActive).toHaveBeenCalledWith(false);
+
+    view.showVaultFiles();
+    expect(setActive).not.toHaveBeenCalledWith(true);
 
     finishDiscard();
     await view.pendingSessionLayoutTransition;
 
     expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(false);
     expect(view.isWideSessionLayout).toBe(false);
+    expect(setActive).toHaveBeenLastCalledWith(false);
   });
 
   it('cancels a pending compact transition when the view becomes wide again', async () => {
@@ -1689,6 +1719,7 @@ describe('ClaudianView tab controls', () => {
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
+      activeSidebarSurface: 'sessions',
       historyDropdown: createMockEl(),
       isWideSessionLayout: true,
       renderSessionSidebar: jest.fn(),
@@ -1699,6 +1730,23 @@ describe('ClaudianView tab controls', () => {
 
     expect(view.sessionSidebarDirty).toBe(true);
     expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it('defers persistent session rendering while the Files surface is active', () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'files',
+      historyDropdown: createMockEl(),
+      isWideSessionLayout: true,
+      renderSessionSidebar: jest.fn(),
+      sessionSidebarDirty: false,
+    });
+
+    view.updateHistoryDropdown();
+
+    expect(view.sessionSidebarDirty).toBe(true);
+    expect(view.renderSessionSidebar).not.toHaveBeenCalled();
   });
 
   it('defers persistent session column refresh while search IME composition is active', () => {

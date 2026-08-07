@@ -2,21 +2,27 @@ import type {
   ContextMenuItem,
   ContextMenuOpenContext,
   FileTree as PierreFileTree,
+  FileTreeBatchOperation,
   FileTreeRowDecoration,
 } from '@pierre/trees';
-import type { App, EventRef, WorkspaceLeaf } from 'obsidian';
+import type { App, EventRef, TAbstractFile, WorkspaceLeaf } from 'obsidian';
 import { Notice, setIcon, TFile, TFolder } from 'obsidian';
 
-import { showVaultFileTreeMenu } from './VaultFileTreeMenu';
 import {
-  collectVaultFileTreePaths,
-  toVaultPath,
-  type VaultFileTreeEntry,
-} from './vaultFileTreePaths';
+  cancelScheduledAnimationFrame,
+  type ScheduledAnimationFrame,
+  scheduleDelayedFrame,
+} from '@/utils/animationFrame';
+
+import { showVaultFileTreeMenu } from './VaultFileTreeMenu';
+import { toVaultFileTreePath, toVaultPath } from './vaultFileTreePaths';
 
 type PierreTreeModule = { FileTree: typeof PierreFileTree };
 
 const MARKDOWN_EXTENSION = '.md';
+const PATH_REFRESH_DEBOUNCE_MS = 50;
+const SEARCH_RESULT_LIMIT = 500;
+const SEARCH_UPDATE_DEBOUNCE_MS = 250;
 
 const VAULT_FILE_TREE_CSS = `
   [data-type="item"] > [data-item-section="content"] {
@@ -68,14 +74,25 @@ export type VaultFileTreeOptions = {
 export class VaultFileTree {
   private readonly options: VaultFileTreeOptions;
   private bodyEl: HTMLElement | null = null;
+  private defaultHeaderEl: HTMLElement | null = null;
+  private mainTreeHostEl: HTMLElement | null = null;
   private searchButtonEl: HTMLButtonElement | null = null;
   private searchFieldEl: HTMLElement | null = null;
   private searchInputEl: HTMLInputElement | null = null;
+  private searchPaneEl: HTMLElement | null = null;
   private searchDismissCleanup: (() => void) | null = null;
   private searchQuery = '';
+  private searchSourcePaths: readonly string[] | null = null;
   private isSearchComposing = false;
+  private pendingSearchUpdate: ScheduledAnimationFrame | null = null;
+  private isActive = true;
   private tree: PierreFileTree | null = null;
+  private searchTree: PierreFileTree | null = null;
+  private treeConstructor: typeof PierreFileTree | null = null;
   private eventRefs: EventRef[] = [];
+  private pendingPathMutations: FileTreeBatchOperation[] = [];
+  private needsFullPathRefresh = false;
+  private pendingPathRefresh: ScheduledAnimationFrame | null = null;
   private mountPromise: Promise<void> | null = null;
   private destroyed = false;
   private pendingOpenPath: string | null = null;
@@ -107,23 +124,45 @@ export class VaultFileTree {
     return this.isSearchComposing;
   }
 
+  setActive(active: boolean): void {
+    if (this.destroyed || active === this.isActive) return;
+    this.isActive = active;
+
+    if (!active) {
+      this.cancelSearchUpdate();
+      this.closeFileSearch();
+      this.cancelScheduledPathRefresh();
+      return;
+    }
+
+    this.registerVaultEvents();
+    if (this.needsFullPathRefresh || this.pendingPathMutations.length > 0) {
+      this.schedulePathRefresh();
+    }
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
     this.pendingOpenPath = null;
     this.clearFileSearchDismissHandlers();
+    this.cancelSearchUpdate();
+    this.cancelPathRefresh();
+    this.unregisterVaultEvents();
 
-    for (const ref of this.eventRefs) {
-      this.options.app.vault.offref(ref);
-    }
-    this.eventRefs = [];
-
+    this.searchTree?.cleanUp();
+    this.searchTree = null;
     this.tree?.cleanUp();
     this.tree = null;
+    this.treeConstructor = null;
     this.bodyEl = null;
+    this.defaultHeaderEl = null;
+    this.mainTreeHostEl = null;
     this.searchButtonEl = null;
     this.searchFieldEl = null;
     this.searchInputEl = null;
+    this.searchPaneEl = null;
+    this.searchSourcePaths = null;
     this.options.hostEl.replaceChildren();
   }
 
@@ -133,29 +172,15 @@ export class VaultFileTree {
 
     try {
       const module = await (this.options.loadTreeModule?.() ?? import('@pierre/trees'));
-      if (this.destroyed || !this.bodyEl) return;
+      if (this.destroyed || !this.bodyEl || !this.mainTreeHostEl) return;
 
       const loadingEl = this.bodyEl.querySelector('.claudian-vault-file-tree-loading');
-      const tree = new module.FileTree({
-        composition: {
-          contextMenu: {
-            onOpen: (item, context) => this.handleContextMenu(item, context),
-            triggerMode: 'right-click',
-          },
-        },
-        flattenEmptyDirectories: false,
-        initialExpansion: 'closed',
-        onSelectionChange: paths => this.handleSelectionChange(paths),
-        paths: this.collectPaths(),
-        renderRowDecoration: ({ item }) => renderVaultFileTreeRowDecoration(item),
-        search: false,
-        stickyFolders: true,
-        unsafeCSS: VAULT_FILE_TREE_CSS,
-      });
+      this.treeConstructor = module.FileTree;
+      const tree = this.createTree(this.collectPaths(), 'closed');
       this.tree = tree;
-      if (this.searchQuery) tree.setSearch(this.searchQuery);
-      tree.render({ containerWrapper: this.bodyEl });
+      tree.render({ containerWrapper: this.mainTreeHostEl });
       loadingEl?.remove();
+      if (this.searchQuery) this.updateFileSearch(this.searchQuery);
     } catch (error) {
       if (this.destroyed || !this.bodyEl) return;
       this.bodyEl.replaceChildren();
@@ -174,7 +199,11 @@ export class VaultFileTree {
     hostEl.classList.add('claudian-vault-file-tree');
 
     const header = this.createElement('div', 'claudian-vault-file-tree-header');
-    header.append(this.createElement(
+    this.defaultHeaderEl = this.createElement(
+      'div',
+      'claudian-vault-file-tree-default-header',
+    );
+    this.defaultHeaderEl.append(this.createElement(
       'div',
       'claudian-vault-file-tree-title',
       this.options.app.vault.getName(),
@@ -198,7 +227,7 @@ export class VaultFileTree {
     });
 
     headerActions.append(this.searchButtonEl);
-    header.append(headerActions);
+    this.defaultHeaderEl.append(headerActions);
 
     this.searchFieldEl = this.createElement(
       'div',
@@ -245,7 +274,8 @@ export class VaultFileTree {
       }
       this.handleEscape(event);
     });
-    this.searchFieldEl.append(searchIcon, this.searchInputEl);
+    this.searchFieldEl.append(this.searchInputEl, searchIcon);
+    header.append(this.defaultHeaderEl, this.searchFieldEl);
 
     this.bodyEl = this.createElement('div', 'claudian-vault-file-tree-body');
     this.bodyEl.append(this.createElement(
@@ -253,11 +283,24 @@ export class VaultFileTree {
       'claudian-vault-file-tree-loading',
       'Loading files…',
     ));
-    hostEl.append(header, this.searchFieldEl, this.bodyEl);
+    this.mainTreeHostEl = this.createElement('div', 'claudian-vault-file-tree-pane');
+    this.searchPaneEl = this.createElement(
+      'div',
+      'claudian-vault-file-tree-pane claudian-hidden',
+    );
+    this.bodyEl.addEventListener('click', (event) => this.handleTreeRowClick(event));
+    this.bodyEl.append(this.mainTreeHostEl, this.searchPaneEl);
+    hostEl.append(header, this.bodyEl);
   }
 
   private openFileSearch(): void {
-    if (!this.searchFieldEl || !this.searchInputEl || !this.searchButtonEl) return;
+    if (
+      !this.defaultHeaderEl
+      || !this.searchFieldEl
+      || !this.searchInputEl
+      || !this.searchButtonEl
+    ) return;
+    this.defaultHeaderEl.classList.add('claudian-hidden');
     this.searchFieldEl.classList.remove('claudian-hidden');
     this.searchButtonEl.setAttribute('aria-expanded', 'true');
     this.searchInputEl.focus();
@@ -273,6 +316,7 @@ export class VaultFileTree {
       !this.searchFieldEl
       || !this.searchInputEl
       || !this.searchButtonEl
+      || !this.defaultHeaderEl
       || this.searchFieldEl.classList.contains('claudian-hidden')
     ) return;
     this.clearFileSearchDismissHandlers();
@@ -281,12 +325,95 @@ export class VaultFileTree {
     this.updateFileSearch('');
     this.searchInputEl.blur();
     this.searchFieldEl.classList.add('claudian-hidden');
+    this.defaultHeaderEl.classList.remove('claudian-hidden');
     this.searchButtonEl.setAttribute('aria-expanded', 'false');
   }
 
   private updateFileSearch(value: string): void {
     this.searchQuery = value;
-    this.tree?.setSearch(value || null);
+    this.cancelSearchUpdate();
+    if (!value) {
+      this.clearSearchResults();
+      if (this.needsFullPathRefresh || this.pendingPathMutations.length > 0) {
+        this.schedulePathRefresh();
+      }
+      return;
+    }
+    if (!this.isActive || this.destroyed || !this.tree) return;
+
+    this.scheduleSearchUpdate();
+  }
+
+  private scheduleSearchUpdate(): void {
+    this.cancelSearchUpdate();
+    if (!this.searchQuery || !this.isActive || this.destroyed || !this.tree) return;
+    this.pendingSearchUpdate = scheduleDelayedFrame(
+      () => {
+        this.pendingSearchUpdate = null;
+        if (!this.isActive || this.destroyed || !this.tree) return;
+        this.renderSearchResults();
+      },
+      SEARCH_UPDATE_DEBOUNCE_MS,
+      this.options.hostEl.ownerDocument.defaultView,
+    );
+  }
+
+  private cancelSearchUpdate(): void {
+    if (this.pendingSearchUpdate) cancelScheduledAnimationFrame(this.pendingSearchUpdate);
+    this.pendingSearchUpdate = null;
+  }
+
+  private renderSearchResults(): void {
+    if (
+      !this.searchQuery
+      || !this.treeConstructor
+      || !this.mainTreeHostEl
+      || !this.searchPaneEl
+    ) return;
+
+    this.searchSourcePaths ??= this.collectPaths();
+    const normalizedQuery = this.searchQuery
+      .trim()
+      .replaceAll('\\', '/')
+      .toLowerCase();
+    if (!normalizedQuery) {
+      this.clearSearchResults();
+      return;
+    }
+
+    const matchingPaths: string[] = [];
+    let truncated = false;
+    for (const path of this.searchSourcePaths) {
+      if (!path.toLowerCase().includes(normalizedQuery)) continue;
+      if (matchingPaths.length === SEARCH_RESULT_LIMIT) {
+        truncated = true;
+        break;
+      }
+      matchingPaths.push(path);
+    }
+
+    this.searchTree?.cleanUp();
+    this.searchPaneEl.replaceChildren();
+    this.searchTree = this.createTree(matchingPaths, 'open');
+    this.searchTree.render({ containerWrapper: this.searchPaneEl });
+    if (truncated) {
+      this.searchPaneEl.append(this.createElement(
+        'div',
+        'claudian-vault-file-tree-search-limit',
+        `Showing the first ${SEARCH_RESULT_LIMIT} matches`,
+      ));
+    }
+    this.mainTreeHostEl.classList.add('claudian-hidden');
+    this.searchPaneEl.classList.remove('claudian-hidden');
+  }
+
+  private clearSearchResults(): void {
+    this.searchTree?.cleanUp();
+    this.searchTree = null;
+    this.searchSourcePaths = null;
+    this.searchPaneEl?.replaceChildren();
+    this.searchPaneEl?.classList.add('claudian-hidden');
+    this.mainTreeHostEl?.classList.remove('claudian-hidden');
   }
 
   private scheduleFileSearchDismissHandlers(): void {
@@ -301,20 +428,37 @@ export class VaultFileTree {
       const ownerDocument = this.searchInputEl.ownerDocument;
       const ownerWindow = ownerDocument.defaultView;
       let pointerDownOutsideSearch = false;
-      const isOutsideSearch = (event: Event): boolean => {
+      const isOutsideSearchField = (event: Event): boolean => {
         const target = event.target;
         return !this.searchFieldEl || !target || !this.searchFieldEl.contains(target as Node);
       };
+      const isOutsideSearchUi = (event: Event): boolean => {
+        const target = event.target;
+        if (!target) return true;
+        return (
+          !this.searchFieldEl?.contains(target as Node)
+          && !this.searchPaneEl?.contains(target as Node)
+        );
+      };
       const handlePointerDown = (event: Event): void => {
-        pointerDownOutsideSearch = isOutsideSearch(event);
+        pointerDownOutsideSearch = isOutsideSearchField(event);
       };
       const handleFocusIn = (event: Event): void => {
-        if (!pointerDownOutsideSearch && isOutsideSearch(event)) {
+        if (!pointerDownOutsideSearch && isOutsideSearchUi(event)) {
           this.closeFileSearch();
         }
       };
       const handleClick = (event: Event): void => {
-        const shouldDismiss = isOutsideSearch(event);
+        const row = this.getTreeRowFromEvent(event);
+        const click = event as MouseEvent;
+        const isUnmodifiedFileActivation = row?.dataset.itemType === 'file'
+          && !click.ctrlKey
+          && !click.metaKey
+          && !click.shiftKey;
+        const isInsideSearchPane = this.searchPaneEl !== null
+          && event.composedPath().includes(this.searchPaneEl);
+        const shouldDismiss = isOutsideSearchField(event)
+          && (!isInsideSearchPane || isUnmodifiedFileActivation);
         pointerDownOutsideSearch = false;
         if (shouldDismiss) queueMicrotask(() => this.closeFileSearch());
       };
@@ -360,47 +504,224 @@ export class VaultFileTree {
   }
 
   private registerVaultEvents(): void {
-    const refresh = (): void => this.refreshPaths();
+    if (this.destroyed || this.eventRefs.length > 0) return;
     this.eventRefs.push(
-      this.options.app.vault.on('create', refresh),
-      this.options.app.vault.on('delete', refresh),
-      this.options.app.vault.on('rename', refresh),
+      this.options.app.vault.on('create', file => {
+        const path = this.toTreePath(file);
+        if (path !== null) this.queuePathMutation({ path, type: 'add' });
+      }),
+      this.options.app.vault.on('delete', file => {
+        const path = this.toTreePath(file);
+        if (path !== null) this.queuePathMutation({ path, recursive: true, type: 'remove' });
+      }),
+      this.options.app.vault.on('rename', (file, oldPath) => {
+        const from = this.toTreePath(file, oldPath);
+        const to = this.toTreePath(file);
+        if (from === to) return;
+        if (from === null) {
+          if (to !== null) this.queueVisibleSubtreeAdd(file);
+          return;
+        }
+        if (to === null) {
+          this.queuePathMutation({ path: from, recursive: true, type: 'remove' });
+          return;
+        }
+        this.queuePathMutation({ from, to, type: 'move' });
+      }),
     );
   }
 
+  private unregisterVaultEvents(): void {
+    for (const ref of this.eventRefs) {
+      this.options.app.vault.offref(ref);
+    }
+    this.eventRefs = [];
+  }
+
+  private queuePathMutation(operation: FileTreeBatchOperation): void {
+    this.queuePathMutations([operation]);
+  }
+
+  private queuePathMutations(operations: readonly FileTreeBatchOperation[]): void {
+    if (this.destroyed || !this.tree) return;
+    if (!this.isActive) {
+      this.needsFullPathRefresh = true;
+      this.pendingPathMutations = [];
+      return;
+    }
+    let didQueue = false;
+    for (const operation of operations) {
+      if (this.needsFullPathRefresh) break;
+      if (operation.type === 'add') {
+        const previous = this.pendingPathMutations.at(-1);
+        if (previous?.type === 'add' && previous.path === operation.path) continue;
+      }
+      this.pendingPathMutations.push(operation);
+      didQueue = true;
+    }
+    if (!didQueue) return;
+    if (this.searchQuery) {
+      this.searchSourcePaths = null;
+      this.scheduleSearchUpdate();
+      return;
+    }
+    this.schedulePathRefresh();
+  }
+
+  private queueVisibleSubtreeAdd(file: TAbstractFile): void {
+    if (!this.isActive) {
+      this.needsFullPathRefresh = true;
+      this.pendingPathMutations = [];
+      return;
+    }
+    const operations: FileTreeBatchOperation[] = [];
+    const pendingFiles = [file];
+    while (pendingFiles.length > 0) {
+      const current = pendingFiles.pop();
+      if (!current) continue;
+      const path = this.toTreePath(current);
+      if (path === null) continue;
+      operations.push({ path, type: 'add' });
+      if (current instanceof TFolder) pendingFiles.push(...current.children);
+    }
+    this.queuePathMutations(operations);
+  }
+
+  private schedulePathRefresh(): void {
+    if (this.pendingPathRefresh) return;
+    this.pendingPathRefresh = scheduleDelayedFrame(
+      () => {
+        this.pendingPathRefresh = null;
+        this.refreshPaths();
+      },
+      PATH_REFRESH_DEBOUNCE_MS,
+      this.options.hostEl.ownerDocument.defaultView,
+    );
+  }
+
+  private cancelPathRefresh(): void {
+    this.cancelScheduledPathRefresh();
+    this.pendingPathMutations = [];
+    this.needsFullPathRefresh = false;
+  }
+
+  private cancelScheduledPathRefresh(): void {
+    if (this.pendingPathRefresh) cancelScheduledAnimationFrame(this.pendingPathRefresh);
+    this.pendingPathRefresh = null;
+  }
+
   private refreshPaths(): void {
-    if (this.destroyed) return;
-    this.tree?.resetPaths(this.collectPaths());
+    if (!this.isActive || this.destroyed || !this.tree) return;
+    if (this.searchQuery) return;
+    if (this.needsFullPathRefresh) {
+      this.needsFullPathRefresh = false;
+      this.pendingPathMutations = [];
+      const expandedPaths = this.getExpandedPaths();
+      this.tree.resetPaths(this.collectPaths(), {
+        initialExpandedPaths: expandedPaths,
+      });
+      return;
+    }
+
+    const operations = this.pendingPathMutations;
+    this.pendingPathMutations = [];
+    if (operations.length === 0) return;
+
+    try {
+      this.tree.batch(operations);
+    } catch {
+      const expandedPaths = this.getExpandedPaths();
+      this.tree.resetPaths(this.collectPaths(), { initialExpandedPaths: expandedPaths });
+    }
+  }
+
+  private getExpandedPaths(): string[] {
+    if (!this.tree) return [];
+    return this.tree
+      .getVisibleRows(0, this.tree.getVisibleCount())
+      .filter(row => row.kind === 'directory' && row.isExpanded)
+      .map(row => row.path);
+  }
+
+  private createTree(
+    paths: readonly string[],
+    initialExpansion: 'closed' | 'open',
+  ): PierreFileTree {
+    if (!this.treeConstructor) throw new Error('File tree module is not loaded');
+    return new this.treeConstructor({
+      composition: {
+        contextMenu: {
+          onOpen: (item, context) => this.handleContextMenu(item, context),
+          triggerMode: 'right-click',
+        },
+      },
+      flattenEmptyDirectories: false,
+      initialExpansion,
+      paths,
+      renderRowDecoration: ({ item }) => renderVaultFileTreeRowDecoration(item),
+      search: false,
+      stickyFolders: true,
+      unsafeCSS: VAULT_FILE_TREE_CSS,
+    });
   }
 
   private collectPaths(): string[] {
-    const entries: VaultFileTreeEntry[] = this.options.app.vault
-      .getAllLoadedFiles()
-      .flatMap((file): VaultFileTreeEntry[] => {
-        if (file instanceof TFolder && file.isRoot()) return [];
-        return [{
-          kind: file instanceof TFolder ? 'folder' : 'file',
-          path: file.path,
-        }];
+    const paths: string[] = [];
+    for (const file of this.options.app.vault.getAllLoadedFiles()) {
+      if (file instanceof TFolder && file.isRoot()) continue;
+      const path = toVaultFileTreePath({
+        kind: file instanceof TFolder ? 'folder' : 'file',
+        path: file.path,
       });
-    return collectVaultFileTreePaths(entries);
+      if (path !== null) paths.push(path);
+    }
+    return paths;
   }
 
-  private handleSelectionChange(paths: readonly string[]): void {
-    if (this.destroyed || paths.length !== 1 || paths[0].endsWith('/')) return;
-    this.pendingOpenPath = toVaultPath(paths[0]);
+  private toTreePath(file: TAbstractFile, path = file.path): string | null {
+    return toVaultFileTreePath({
+      kind: file instanceof TFolder ? 'folder' : 'file',
+      path,
+    });
+  }
+
+  private handleTreeRowClick(event: MouseEvent): void {
+    if (this.destroyed || event.defaultPrevented) return;
+    const row = this.getTreeRowFromEvent(event);
+    if (!row) return;
+    this.pendingOpenPath = null;
+    if (
+      row.dataset.itemType !== 'file'
+      || event.ctrlKey
+      || event.metaKey
+      || event.shiftKey
+    ) return;
+    const path = row.dataset.itemPath;
+    if (!path) return;
+    this.pendingOpenPath = toVaultPath(path);
     void this.drainPendingFileOpen();
+  }
+
+  private getTreeRowFromEvent(event: Event): HTMLElement | undefined {
+    return event.composedPath().find((candidate) => {
+      if (typeof candidate !== 'object' || candidate === null || !('dataset' in candidate)) {
+        return false;
+      }
+      const dataset = (candidate as { dataset?: DOMStringMap }).dataset;
+      return dataset?.itemPath !== undefined && dataset.itemType !== undefined;
+    }) as HTMLElement | undefined;
   }
 
   private handleContextMenu(item: ContextMenuItem, context: ContextMenuOpenContext): void {
     if (this.destroyed) return;
+    const displayedTree = this.searchTree ?? this.tree;
     showVaultFileTreeMenu({
       app: this.options.app,
       context,
-      focusPath: path => this.tree?.getItem(path)?.focus(),
+      focusPath: path => displayedTree?.getItem(path)?.focus(),
       isDestroyed: () => this.destroyed,
       item,
-      selectedPaths: this.tree?.getSelectedPaths() ?? [],
+      selectedPaths: displayedTree?.getSelectedPaths() ?? [],
       sourceLeaf: this.options.sourceLeaf,
     });
   }

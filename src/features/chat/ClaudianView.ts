@@ -729,7 +729,7 @@ export class ClaudianView extends ItemView {
     if (this.historyDropdown?.hasClass('visible')) {
       this.renderHistoryDropdown();
     }
-    if (this.isWideSessionLayout) {
+    if (this.isWideSessionLayout && this.activeSidebarSurface !== 'files') {
       this.renderSessionSidebar();
     }
   }
@@ -756,7 +756,12 @@ export class ClaudianView extends ItemView {
 
   private renderSessionSidebar(): void {
     const sessionSurfaceEl = this.sessionSurfaceEl ?? this.sessionSidebarEl;
-    if (!sessionSurfaceEl || !this.sessionSidebarDirty || !this.isWideSessionLayout) return;
+    if (
+      !sessionSurfaceEl
+      || !this.sessionSidebarDirty
+      || !this.isWideSessionLayout
+      || this.activeSidebarSurface === 'files'
+    ) return;
     if (this.isSessionSearchComposing) return;
 
     const previousSearchInput = this.sessionSearchInputEl;
@@ -1038,30 +1043,36 @@ export class ClaudianView extends ItemView {
   private showVaultFiles(): void {
     if (
       !this.isWideSessionLayout
+      || !this.requestedWideSessionLayout
       || !this.filesSurfaceEl
       || !(this.plugin?.settings?.enableFilePane ?? true)
     ) return;
     this.activeSidebarSurface = 'files';
     this.updateSidebarSurfaceVisibility();
 
-    if (this.vaultFileTree) return;
+    if (this.vaultFileTree) {
+      this.vaultFileTree.setActive(true);
+      return;
+    }
     this.vaultFileTree = this.createVaultFileTree(this.filesSurfaceEl);
     void this.vaultFileTree.mount();
   }
 
   private showSessions(): void {
     this.activeSidebarSurface = 'sessions';
+    this.vaultFileTree?.setActive(false);
     this.updateSidebarSurfaceVisibility();
+    this.renderSessionSidebar();
   }
 
   private handleSidebarSurfaceWheel(event: WheelEvent): void {
     if (
       !this.isWideSessionLayout
+      || !this.requestedWideSessionLayout
       || !(this.plugin?.settings?.enableFilePane ?? true)
     ) return;
 
-    const pageWidth = this.sessionSidebarEl?.clientWidth || MIN_SESSION_SIDEBAR_WIDTH;
-    if (!this.sidebarSurfaceWheelGesture.consume(event, pageWidth)) return;
+    if (!this.sidebarSurfaceWheelGesture.consume(event)) return;
 
     event.preventDefault();
     this.rotateSidebarSurface();
@@ -1734,7 +1745,10 @@ export class ClaudianView extends ItemView {
 
     const isDualPaneEnabled = this.plugin?.settings?.enableDualPane ?? true;
     const shouldUseWideLayout = isDualPaneEnabled && width >= WIDE_SESSION_LAYOUT_MIN_WIDTH;
-    if (!shouldUseWideLayout) this.sidebarSurfaceWheelGesture?.reset();
+    if (!shouldUseWideLayout) {
+      this.sidebarSurfaceWheelGesture?.reset();
+      this.vaultFileTree?.setActive(false);
+    }
     if (shouldUseWideLayout === this.requestedWideSessionLayout) {
       if (shouldUseWideLayout && this.isWideSessionLayout) {
         if (this.sessionSidebarWidth !== null) {
@@ -1755,6 +1769,12 @@ export class ClaudianView extends ItemView {
       }
       this.historyDropdown?.removeClass('visible');
       this.cancelHistoryRendering();
+      if (
+        this.activeSidebarSurface === 'files'
+        && (this.plugin?.settings?.enableFilePane ?? true)
+      ) {
+        this.vaultFileTree?.setActive(true);
+      }
       this.renderSessionSidebar();
       return;
     }
@@ -1805,6 +1825,7 @@ export class ClaudianView extends ItemView {
     ) return;
 
     this.isWideSessionLayout = false;
+    this.vaultFileTree?.setActive(false);
     this.viewContainerEl.removeClass('claudian-wide-session-layout');
   }
 

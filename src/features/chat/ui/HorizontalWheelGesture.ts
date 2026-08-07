@@ -22,13 +22,13 @@ export class HorizontalWheelGesture {
   private lastDelta = 0;
   private lastEventAt: number | null = null;
 
-  consume(event: WheelGestureEvent, pageWidth = WHEEL_PAGE_WIDTH): boolean {
+  consume(event: WheelGestureEvent): boolean {
     if (
       event.ctrlKey
       || Math.abs(event.deltaX) < Math.abs(event.deltaY) * HORIZONTAL_INTENT_RATIO
     ) return false;
 
-    const delta = this.normalizeDelta(event, pageWidth);
+    const delta = this.normalizeDelta(event);
     const elapsed = this.lastEventAt === null
       ? Number.POSITIVE_INFINITY
       : event.timeStamp - this.lastEventAt;
@@ -68,9 +68,9 @@ export class HorizontalWheelGesture {
     this.lastEventAt = null;
   }
 
-  private normalizeDelta(event: WheelGestureEvent, pageWidth: number): number {
+  private normalizeDelta(event: WheelGestureEvent): number {
     if (event.deltaMode === WHEEL_DELTA_MODE_LINE) return event.deltaX * WHEEL_LINE_HEIGHT;
-    if (event.deltaMode === WHEEL_DELTA_MODE_PAGE) return event.deltaX * pageWidth;
+    if (event.deltaMode === WHEEL_DELTA_MODE_PAGE) return event.deltaX * WHEEL_PAGE_WIDTH;
     return event.deltaX;
   }
 }
