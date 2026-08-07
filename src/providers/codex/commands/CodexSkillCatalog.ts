@@ -65,7 +65,10 @@ export class CodexSkillCatalog implements ProviderCommandCatalog {
       .filter(skill => skill.enabled)
       .sort(compareCodexSkillPriority);
     const entries = skills.map(listedSkillToProviderEntry);
-    return context.includeBuiltIns ? [CODEX_COMPACT_COMMAND, ...entries] : entries;
+    // Return both namespaces in one discovery snapshot. The shared dropdown
+    // filters entries by their display prefix for the active trigger (`/` or `$`).
+    void context;
+    return [CODEX_COMPACT_COMMAND, ...entries];
   }
 
   getDropdownConfig(): ProviderCommandDropdownConfig {

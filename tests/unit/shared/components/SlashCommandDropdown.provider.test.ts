@@ -136,6 +136,12 @@ const CODEX_ENTRIES: ProviderCommandEntry[] = [
   },
 ];
 
+const CODEX_COMPACT_ENTRY: ProviderCommandEntry = {
+  id: 'codex-builtin-compact', providerId: 'codex', kind: 'command', name: 'compact',
+  description: 'Compact conversation history', content: '', scope: 'system', source: 'builtin',
+  isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/',
+};
+
 describe('SlashCommandDropdown - provider catalog', () => {
   let containerEl: any;
   let inputEl: any;
@@ -276,7 +282,7 @@ describe('SlashCommandDropdown - provider catalog', () => {
     });
 
     it('shows built-ins + skills on / trigger at position 0', async () => {
-      const getProviderEntries = jest.fn().mockResolvedValue(CODEX_ENTRIES);
+      const getProviderEntries = jest.fn().mockResolvedValue([CODEX_COMPACT_ENTRY, ...CODEX_ENTRIES]);
       const dropdown = new SlashCommandDropdown(
         containerEl,
         inputEl,
@@ -294,7 +300,8 @@ describe('SlashCommandDropdown - provider catalog', () => {
 
       const names = getRenderedCommandNames(containerEl);
       expect(names).toContain('/clear');
-      expect(names).toContain('$analyze');
+      expect(names).toContain('/compact');
+      expect(names).not.toContain('$analyze');
 
       dropdown.destroy();
     });
@@ -484,7 +491,7 @@ describe('SlashCommandDropdown - provider catalog', () => {
           },
         );
 
-        inputEl.value = '/';
+        inputEl.value = displayPrefix;
         inputEl.selectionStart = 1;
         dropdown.handleInputChange();
         await new Promise(resolve => setTimeout(resolve, 0));

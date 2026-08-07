@@ -44,20 +44,20 @@ describe('CodexSkillCatalog', () => {
 
     expect(listProvider.listSkills).toHaveBeenCalledWith({ signal });
     expect(entries.map(entry => entry.name)).toEqual([
+      'compact',
       'legacy-skill',
       'shared-skill',
       'home-skill',
     ]);
-    expect(entries[0]).toMatchObject({
+    expect(entries[1]).toMatchObject({
       scope: 'vault',
       isEditable: false,
       isDeletable: false,
       displayPrefix: '$',
       insertPrefix: '$',
     });
-    expect(entries[0].persistenceKey).toBeUndefined();
     expect(entries[1].persistenceKey).toBeUndefined();
-    expect(entries[2].scope).toBe('user');
+    expect(entries[3].scope).toBe('user');
   });
 
   it('preserves the exact app-server skill name and filters disabled skills', async () => {
@@ -81,16 +81,18 @@ describe('CodexSkillCatalog', () => {
 
     const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
 
-    expect(entries.map(entry => entry.name)).toEqual(['scope:qualified-name']);
+    expect(entries.map(entry => entry.name)).toEqual(['compact', 'scope:qualified-name']);
   });
 
-  it('includes the provider built-in only when requested', async () => {
+  it('includes the provider built-in in the shared trigger-aware snapshot', async () => {
     const catalog = new CodexSkillCatalog(createListProvider());
 
     await expect(catalog.listDropdownEntries({ includeBuiltIns: true })).resolves.toEqual([
       expect.objectContaining({ name: 'compact', insertPrefix: '/' }),
     ]);
-    await expect(catalog.listDropdownEntries({ includeBuiltIns: false })).resolves.toEqual([]);
+    await expect(catalog.listDropdownEntries({ includeBuiltIns: false })).resolves.toEqual([
+      expect.objectContaining({ name: 'compact', insertPrefix: '/' }),
+    ]);
   });
 
   it('force-refreshes only through the app-server list provider', async () => {
