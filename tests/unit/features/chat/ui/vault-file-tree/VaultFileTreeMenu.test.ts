@@ -4,6 +4,16 @@ import { Menu, type TAbstractFile, TFile, TFolder } from 'obsidian';
 
 import { showVaultFileTreeMenu } from '@/features/chat/ui/vault-file-tree/VaultFileTreeMenu';
 
+const mockShowVaultFileRenameModal = jest.fn();
+const mockShowVaultFileCreateModal = jest.fn();
+
+jest.mock('@/features/chat/ui/vault-file-tree/VaultFileRenameModal', () => ({
+  showVaultFileRenameModal: (...args: unknown[]) => mockShowVaultFileRenameModal(...args),
+}));
+jest.mock('@/features/chat/ui/vault-file-tree/VaultFileCreateModal', () => ({
+  showVaultFileCreateModal: (...args: unknown[]) => mockShowVaultFileCreateModal(...args),
+}));
+
 type TestMenu = Menu & {
   hideCallback?: () => void;
   items: Array<{
@@ -52,6 +62,9 @@ function createHarness() {
     menu.addItem(item => item.setTitle('Plugin action'));
   });
   const app = {
+    fileManager: {
+      promptForDeletion: jest.fn().mockResolvedValue(true),
+    },
     vault: {
       getAbstractFileByPath: jest.fn((path: string) => files.get(path) ?? null),
     },
@@ -75,7 +88,6 @@ function createHarness() {
   };
   const focusPath = jest.fn();
   const writeClipboard = jest.fn().mockResolvedValue(undefined);
-  const sourceLeaf = { id: 'claudian-leaf' };
 
   return {
     app,
@@ -84,7 +96,6 @@ function createHarness() {
     focusPath,
     getLeaf,
     openedLeaves,
-    sourceLeaf,
     trigger,
     writeClipboard,
   };
@@ -98,6 +109,8 @@ function clickMenuItem(menu: TestMenu, title: string): void {
 
 describe('VaultFileTreeMenu', () => {
   beforeEach(() => {
+    mockShowVaultFileCreateModal.mockReset();
+    mockShowVaultFileRenameModal.mockReset();
     MockMenu.instances = [];
     MockMenu.prototype.onHide = function (callback: () => void): void {
       this.hideCallback = callback;
@@ -117,7 +130,6 @@ describe('VaultFileTreeMenu', () => {
       isDestroyed: () => false,
       item: { kind: 'file', name: 'Plan.md', path: 'Projects/Plan.md' },
       selectedPaths: ['Notes.md'],
-      sourceLeaf: harness.sourceLeaf as never,
       writeClipboard: harness.writeClipboard,
     }) as TestMenu;
 
@@ -125,8 +137,9 @@ describe('VaultFileTreeMenu', () => {
       'Open',
       'Open in new tab',
       'Open in split',
-      'Open in new window',
+      'Rename',
       'Copy path',
+      'Delete',
       'Plugin action',
     ]);
     expect(harness.context.close).toHaveBeenCalledWith({ restoreFocus: false });
@@ -134,14 +147,34 @@ describe('VaultFileTreeMenu', () => {
       'file-menu',
       menu,
       harness.files.get('Projects/Plan.md'),
-      'file-explorer',
-      harness.sourceLeaf,
+      'file-explorer-context-menu',
+      null,
     );
     expect(harness.trigger.mock.invocationCallOrder[0])
       .toBeLessThan((menu.showAtPosition as jest.Mock).mock.invocationCallOrder[0]);
     expect(menu.showAtPosition).toHaveBeenCalledWith(
       { x: 24, y: 46 },
       harness.context.anchorElement.ownerDocument,
+    );
+  });
+
+  it('offers rename for a single file and opens the rename modal', () => {
+    const harness = createHarness();
+    const menu = showVaultFileTreeMenu({
+      app: harness.app as never,
+      context: harness.context,
+      focusPath: harness.focusPath,
+      isDestroyed: () => false,
+      item: { kind: 'file', name: 'Plan.md', path: 'Projects/Plan.md' },
+      selectedPaths: [],
+      writeClipboard: harness.writeClipboard,
+    }) as TestMenu;
+
+    clickMenuItem(menu, 'Rename');
+
+    expect(mockShowVaultFileRenameModal).toHaveBeenCalledWith(
+      harness.app,
+      harness.files.get('Projects/Plan.md'),
     );
   });
 
@@ -154,14 +187,12 @@ describe('VaultFileTreeMenu', () => {
       isDestroyed: () => false,
       item: { kind: 'file', name: 'Plan.md', path: 'Projects/Plan.md' },
       selectedPaths: [],
-      sourceLeaf: harness.sourceLeaf as never,
       writeClipboard: harness.writeClipboard,
     }) as TestMenu;
 
     clickMenuItem(menu, 'Open');
     clickMenuItem(menu, 'Open in new tab');
     clickMenuItem(menu, 'Open in split');
-    clickMenuItem(menu, 'Open in new window');
     clickMenuItem(menu, 'Copy path');
     await Promise.resolve();
 
@@ -169,7 +200,6 @@ describe('VaultFileTreeMenu', () => {
       false,
       'tab',
       'split',
-      'window',
     ]);
     for (const leaf of harness.openedLeaves) {
       expect(leaf.openFile).toHaveBeenCalledWith(harness.files.get('Projects/Plan.md'));
@@ -187,17 +217,20 @@ describe('VaultFileTreeMenu', () => {
       isDestroyed: () => destroyed,
       item: { kind: 'file', name: 'Plan.md', path: 'Projects/Plan.md' },
       selectedPaths: ['Projects/Plan.md', 'Notes.md'],
-      sourceLeaf: harness.sourceLeaf as never,
       writeClipboard: harness.writeClipboard,
     }) as TestMenu;
 
-    expect(menu.items.map(item => item.title)).toEqual(['Copy paths', 'Plugin action']);
+    expect(menu.items.map(item => item.title)).toEqual([
+      'Copy paths',
+      'Delete',
+      'Plugin action',
+    ]);
     expect(harness.trigger).toHaveBeenCalledWith(
       'files-menu',
       menu,
       [harness.files.get('Projects/Plan.md'), harness.files.get('Notes.md')],
-      'file-explorer',
-      harness.sourceLeaf,
+      'file-explorer-context-menu',
+      null,
     );
 
     clickMenuItem(menu, 'Copy paths');
@@ -220,17 +253,107 @@ describe('VaultFileTreeMenu', () => {
       isDestroyed: () => false,
       item: { kind: 'directory', name: 'Projects', path: 'Projects/' },
       selectedPaths: [],
-      sourceLeaf: harness.sourceLeaf as never,
       writeClipboard: harness.writeClipboard,
     }) as TestMenu;
 
-    expect(menu.items.map(item => item.title)).toEqual(['Copy path', 'Plugin action']);
+    expect(menu.items.map(item => item.title)).toEqual([
+      'New note',
+      'New folder',
+      'Rename',
+      'Copy path',
+      'Delete',
+      'Plugin action',
+    ]);
     expect(harness.trigger).toHaveBeenCalledWith(
       'file-menu',
       menu,
       harness.files.get('Projects'),
-      'file-explorer',
-      harness.sourceLeaf,
+      'file-explorer-context-menu',
+      null,
     );
+
+    clickMenuItem(menu, 'Rename');
+    expect(mockShowVaultFileRenameModal).toHaveBeenCalledWith(
+      harness.app,
+      harness.files.get('Projects'),
+    );
+
+    clickMenuItem(menu, 'New note');
+    expect(mockShowVaultFileCreateModal).toHaveBeenCalledWith(
+      harness.app,
+      harness.files.get('Projects'),
+      'note',
+    );
+
+    clickMenuItem(menu, 'New folder');
+    expect(mockShowVaultFileCreateModal).toHaveBeenCalledWith(
+      harness.app,
+      harness.files.get('Projects'),
+      'folder',
+    );
+  });
+
+  it('deletes a single item through Obsidian confirmation', async () => {
+    const harness = createHarness();
+    const menu = showVaultFileTreeMenu({
+      app: harness.app as never,
+      context: harness.context,
+      focusPath: harness.focusPath,
+      isDestroyed: () => false,
+      item: { kind: 'file', name: 'Plan.md', path: 'Projects/Plan.md' },
+      selectedPaths: [],
+      writeClipboard: harness.writeClipboard,
+    }) as TestMenu;
+
+    clickMenuItem(menu, 'Delete');
+    await Promise.resolve();
+
+    expect(harness.app.fileManager.promptForDeletion).toHaveBeenCalledWith(
+      harness.files.get('Projects/Plan.md'),
+    );
+  });
+
+  it('deletes each still-existing item in a multi-selection', async () => {
+    const harness = createHarness();
+    const menu = showVaultFileTreeMenu({
+      app: harness.app as never,
+      context: harness.context,
+      focusPath: harness.focusPath,
+      isDestroyed: () => false,
+      item: { kind: 'file', name: 'Plan.md', path: 'Projects/Plan.md' },
+      selectedPaths: ['Projects/Plan.md', 'Notes.md'],
+      writeClipboard: harness.writeClipboard,
+    }) as TestMenu;
+
+    clickMenuItem(menu, 'Delete');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(harness.app.fileManager.promptForDeletion.mock.calls).toEqual([
+      [harness.files.get('Projects/Plan.md')],
+      [harness.files.get('Notes.md')],
+    ]);
+  });
+
+  it('does not delete a replacement that reuses a stale menu path', async () => {
+    const harness = createHarness();
+    const original = harness.files.get('Projects/Plan.md');
+    const menu = showVaultFileTreeMenu({
+      app: harness.app as never,
+      context: harness.context,
+      focusPath: harness.focusPath,
+      isDestroyed: () => false,
+      item: { kind: 'file', name: 'Plan.md', path: 'Projects/Plan.md' },
+      selectedPaths: [],
+      writeClipboard: harness.writeClipboard,
+    }) as TestMenu;
+    const replacement = createFile('Projects/Plan.md');
+    harness.files.set(replacement.path, replacement);
+
+    clickMenuItem(menu, 'Delete');
+    await Promise.resolve();
+
+    expect(original).not.toBe(replacement);
+    expect(harness.app.fileManager.promptForDeletion).not.toHaveBeenCalled();
   });
 });

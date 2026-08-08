@@ -5,7 +5,7 @@ import type {
   FileTreeBatchOperation,
   FileTreeRowDecoration,
 } from '@pierre/trees';
-import type { App, EventRef, TAbstractFile, WorkspaceLeaf } from 'obsidian';
+import type { App, EventRef, TAbstractFile } from 'obsidian';
 import { Notice, setIcon, TFile, TFolder } from 'obsidian';
 
 import {
@@ -14,6 +14,7 @@ import {
   scheduleDelayedFrame,
 } from '@/utils/animationFrame';
 
+import { showVaultFileCreateModal } from './VaultFileCreateModal';
 import { showVaultFileTreeMenu } from './VaultFileTreeMenu';
 import { toVaultFileTreePath, toVaultPath } from './vaultFileTreePaths';
 
@@ -68,7 +69,6 @@ export type VaultFileTreeOptions = {
   app: App;
   hostEl: HTMLElement;
   loadTreeModule?: () => Promise<PierreTreeModule>;
-  sourceLeaf?: WorkspaceLeaf;
 };
 
 export class VaultFileTree {
@@ -210,6 +210,14 @@ export class VaultFileTree {
     ));
 
     const headerActions = this.createElement('div', 'claudian-vault-file-tree-header-actions');
+    const newNoteButton = this.createHeaderButton('New note', 'file-plus', () => {
+      const activeFilePath = this.options.app.workspace.getActiveFile()?.path ?? '';
+      const parent = this.options.app.fileManager.getNewFileParent(activeFilePath);
+      showVaultFileCreateModal(this.options.app, parent, 'note');
+    });
+    const newFolderButton = this.createHeaderButton('New folder', 'folder-plus', () => {
+      showVaultFileCreateModal(this.options.app, this.options.app.vault.getRoot(), 'folder');
+    });
     this.searchButtonEl = this.createElement(
       'button',
       'claudian-vault-file-tree-header-button',
@@ -226,7 +234,7 @@ export class VaultFileTree {
       }
     });
 
-    headerActions.append(this.searchButtonEl);
+    headerActions.append(newNoteButton, newFolderButton, this.searchButtonEl);
     this.defaultHeaderEl.append(headerActions);
 
     this.searchFieldEl = this.createElement(
@@ -503,6 +511,24 @@ export class VaultFileTree {
     return element;
   }
 
+  private createHeaderButton(
+    ariaLabel: string,
+    icon: string,
+    onClick: () => void,
+  ): HTMLButtonElement {
+    const button = this.createElement(
+      'button',
+      'claudian-vault-file-tree-header-button',
+    );
+    button.type = 'button';
+    button.setAttribute('aria-label', ariaLabel);
+    setIcon(button, icon);
+    button.addEventListener('click', () => {
+      if (!this.destroyed) onClick();
+    });
+    return button;
+  }
+
   private registerVaultEvents(): void {
     if (this.destroyed || this.eventRefs.length > 0) return;
     this.eventRefs.push(
@@ -722,7 +748,6 @@ export class VaultFileTree {
       isDestroyed: () => this.destroyed,
       item,
       selectedPaths: displayedTree?.getSelectedPaths() ?? [],
-      sourceLeaf: this.options.sourceLeaf,
     });
   }
 

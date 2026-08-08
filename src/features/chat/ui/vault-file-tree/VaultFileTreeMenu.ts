@@ -2,9 +2,11 @@ import type {
   ContextMenuItem,
   ContextMenuOpenContext,
 } from '@pierre/trees';
-import type { App, PaneType, WorkspaceLeaf } from 'obsidian';
-import { Menu, Notice, TFile } from 'obsidian';
+import type { App, PaneType, TAbstractFile } from 'obsidian';
+import { Menu, Notice, TFile, TFolder } from 'obsidian';
 
+import { showVaultFileCreateModal } from './VaultFileCreateModal';
+import { showVaultFileRenameModal } from './VaultFileRenameModal';
 import { toVaultPath } from './vaultFileTreePaths';
 
 export type VaultFileTreeMenuOptions = {
@@ -14,9 +16,10 @@ export type VaultFileTreeMenuOptions = {
   isDestroyed: () => boolean;
   item: ContextMenuItem;
   selectedPaths: readonly string[];
-  sourceLeaf?: WorkspaceLeaf;
   writeClipboard?: (text: string) => Promise<void>;
 };
+
+const FILE_EXPLORER_CONTEXT_MENU_SOURCE = 'file-explorer-context-menu';
 
 function getMenuPaths(itemPath: string, selectedPaths: readonly string[]): readonly string[] {
   return selectedPaths.length > 1 && selectedPaths.includes(itemPath)
@@ -51,6 +54,19 @@ function copyPaths(options: VaultFileTreeMenuOptions, paths: readonly string[]):
     .catch(() => new Notice(paths.length === 1 ? 'Failed to copy path' : 'Failed to copy paths'));
 }
 
+async function deleteFiles(app: App, files: readonly TAbstractFile[]): Promise<void> {
+  for (const file of files) {
+    const currentFile = app.vault.getAbstractFileByPath(file.path);
+    if (currentFile !== file) continue;
+
+    try {
+      await app.fileManager.promptForDeletion(currentFile);
+    } catch {
+      new Notice(`Failed to delete "${file.name}"`);
+    }
+  }
+}
+
 export function showVaultFileTreeMenu(options: VaultFileTreeMenuOptions): Menu | null {
   const paths = getMenuPaths(options.item.path, options.selectedPaths);
   const targets = paths.flatMap((path) => {
@@ -66,6 +82,19 @@ export function showVaultFileTreeMenu(options: VaultFileTreeMenuOptions): Menu |
 
   const menu = new Menu().setUseNativeMenu(false);
   const singleFile = files.length === 1 && files[0] instanceof TFile ? files[0] : null;
+  const singleFolder = files.length === 1 && files[0] instanceof TFolder ? files[0] : null;
+
+  if (singleFolder) {
+    menu.addItem(item => item
+      .setTitle('New note')
+      .setIcon('file-plus')
+      .onClick(() => showVaultFileCreateModal(options.app, singleFolder, 'note')));
+    menu.addItem(item => item
+      .setTitle('New folder')
+      .setIcon('folder-plus')
+      .onClick(() => showVaultFileCreateModal(options.app, singleFolder, 'folder')));
+    menu.addSeparator();
+  }
 
   if (singleFile) {
     menu.addItem(item => item
@@ -80,11 +109,14 @@ export function showVaultFileTreeMenu(options: VaultFileTreeMenuOptions): Menu |
       .setTitle('Open in split')
       .setIcon('columns-2')
       .onClick(() => openFile(options.app, singleFile, 'split')));
-    menu.addItem(item => item
-      .setTitle('Open in new window')
-      .setIcon('picture-in-picture-2')
-      .onClick(() => openFile(options.app, singleFile, 'window')));
     menu.addSeparator();
+  }
+
+  if (files.length === 1) {
+    menu.addItem(item => item
+      .setTitle('Rename')
+      .setIcon('pencil')
+      .onClick(() => showVaultFileRenameModal(options.app, files[0])));
   }
 
   menu.addItem(item => item
@@ -92,21 +124,29 @@ export function showVaultFileTreeMenu(options: VaultFileTreeMenuOptions): Menu |
     .setIcon('copy')
     .onClick(() => copyPaths(options, resolvedPaths)));
 
+  menu.addItem(item => item
+    .setTitle('Delete')
+    .setIcon('trash-2')
+    .setWarning(true)
+    .onClick(() => {
+      void deleteFiles(options.app, files);
+    }));
+
   if (files.length === 1) {
     options.app.workspace.trigger(
       'file-menu',
       menu,
       files[0],
-      'file-explorer',
-      options.sourceLeaf,
+      FILE_EXPLORER_CONTEXT_MENU_SOURCE,
+      null,
     );
   } else {
     options.app.workspace.trigger(
       'files-menu',
       menu,
       files,
-      'file-explorer',
-      options.sourceLeaf,
+      FILE_EXPLORER_CONTEXT_MENU_SOURCE,
+      null,
     );
   }
 

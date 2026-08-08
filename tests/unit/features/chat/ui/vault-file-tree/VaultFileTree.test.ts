@@ -5,8 +5,12 @@ import { TFile, TFolder } from 'obsidian';
 import { VaultFileTree } from '@/features/chat/ui/vault-file-tree/VaultFileTree';
 
 const mockShowVaultFileTreeMenu = jest.fn();
+const mockShowVaultFileCreateModal = jest.fn();
 jest.mock('@/features/chat/ui/vault-file-tree/VaultFileTreeMenu', () => ({
   showVaultFileTreeMenu: (...args: unknown[]) => mockShowVaultFileTreeMenu(...args),
+}));
+jest.mock('@/features/chat/ui/vault-file-tree/VaultFileCreateModal', () => ({
+  showVaultFileCreateModal: (...args: unknown[]) => mockShowVaultFileCreateModal(...args),
 }));
 
 type TreeOptions = {
@@ -98,11 +102,15 @@ function createHarness(ownerDocument: Document = document) {
   const openFile = jest.fn().mockResolvedValue(undefined);
   const getLeaf = jest.fn().mockReturnValue({ openFile });
   const app = {
+    fileManager: {
+      getNewFileParent: jest.fn(() => project),
+    },
     vault: {
       getAllLoadedFiles: jest.fn(() => files),
       getAbstractFileByPath: jest.fn((path: string) => (
         files.find(file => file.path === path) ?? null
       )),
+      getRoot: jest.fn(() => root),
       getName: jest.fn(() => 'Knowledge Vault'),
       offref: jest.fn(),
       on: jest.fn((event: string, handler: (...args: unknown[]) => void) => {
@@ -112,18 +120,19 @@ function createHarness(ownerDocument: Document = document) {
         return ref;
       }),
     },
-    workspace: { getLeaf },
+    workspace: {
+      getActiveFile: jest.fn(() => plan),
+      getLeaf,
+    },
   };
   const hostEl = ownerDocument.createElement('div');
   Object.assign(hostEl, {
     createEl: <K extends keyof HTMLElementTagNameMap>(tag: K) => ownerDocument.createElement(tag),
   });
-  const sourceLeaf = { id: 'claudian-leaf' };
   const tree = new VaultFileTree({
     app: app as never,
     hostEl,
     loadTreeModule: async () => ({ FileTree: FakePierreTree }) as never,
-    sourceLeaf: sourceLeaf as never,
   });
 
   return {
@@ -133,9 +142,9 @@ function createHarness(ownerDocument: Document = document) {
     handlers,
     hostEl,
     openFile,
+    project,
     refs,
     root,
-    sourceLeaf,
     tree,
   };
 }
@@ -143,7 +152,22 @@ function createHarness(ownerDocument: Document = document) {
 describe('VaultFileTree', () => {
   beforeEach(() => {
     FakePierreTree.instances = [];
+    mockShowVaultFileCreateModal.mockReset();
     mockShowVaultFileTreeMenu.mockReset();
+  });
+
+  it('offers root note and folder creation from the tree header', async () => {
+    const { app, hostEl, project, root, tree } = createHarness();
+
+    await tree.mount();
+    hostEl.querySelector<HTMLButtonElement>('[aria-label="New note"]')?.click();
+    hostEl.querySelector<HTMLButtonElement>('[aria-label="New folder"]')?.click();
+
+    expect(mockShowVaultFileCreateModal.mock.calls).toEqual([
+      [app, project, 'note'],
+      [app, root, 'folder'],
+    ]);
+    expect(app.fileManager.getNewFileParent).toHaveBeenCalledWith('Projects/Plan.md');
   });
 
   it('renders the visible vault through the vanilla Pierre tree', async () => {
@@ -298,7 +322,7 @@ describe('VaultFileTree', () => {
   });
 
   it('forwards right-click context to the native vault menu boundary', async () => {
-    const { app, sourceLeaf, tree } = createHarness();
+    const { app, tree } = createHarness();
     await tree.mount();
     const model = FakePierreTree.instances[0];
     const item = { kind: 'file', name: 'Plan.md', path: 'Projects/Plan.md' };
@@ -315,7 +339,6 @@ describe('VaultFileTree', () => {
       context,
       item,
       selectedPaths: ['Projects/Plan.md', 'Notes.md'],
-      sourceLeaf,
     }));
 
     const options = mockShowVaultFileTreeMenu.mock.calls[0][0];
