@@ -23,6 +23,7 @@ function createPort(): jest.Mocked<ProviderInteractionPort> {
 
 function createHandler(
   port: jest.Mocked<ProviderInteractionPort>,
+  onToolBlocked: jest.Mock = jest.fn(),
 ): CanUseTool {
   return createClaudeExecutionCanUseTool({
     interactionPort: port,
@@ -31,6 +32,7 @@ function createHandler(
     isToolAllowed: () => true,
     getPermissionMode: () => 'normal',
     resolveSdkPermissionMode: () => 'default',
+    onToolBlocked,
   });
 }
 
@@ -68,6 +70,25 @@ describe('createClaudeExecutionCanUseTool', () => {
       'claude:session-local:native-tool-1',
       'resolved',
     );
+  });
+
+  it('reports a denied approval against its native tool identity', async () => {
+    const port = createPort();
+    port.requestApproval.mockImplementation(async (request) => ({
+      interactionId: request.interactionId,
+      decision: 'deny',
+    }));
+    const onToolBlocked = jest.fn();
+    const handler = createHandler(port, onToolBlocked);
+
+    const result = await handler('Bash', { command: 'rm -rf /' }, nativeOptions);
+
+    expect(result).toEqual({
+      behavior: 'deny',
+      message: 'User denied this action.',
+      interrupt: false,
+    });
+    expect(onToolBlocked).toHaveBeenCalledWith('native-tool-1');
   });
 
   it('routes questions and injects Claude Code compatible custom-answer support', async () => {
@@ -128,8 +149,9 @@ describe('createClaudeExecutionCanUseTool', () => {
       sessionInstanceId: 'session-local',
       getTurnId: () => 'turn-local',
       isToolAllowed: (toolName) => toolName === 'Read',
-    getPermissionMode: () => 'normal',
+      getPermissionMode: () => 'normal',
       resolveSdkPermissionMode: () => 'default',
+      onToolBlocked: jest.fn(),
     });
 
     const result = await handler('Edit', {}, nativeOptions);

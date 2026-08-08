@@ -60,7 +60,6 @@ jest.mock('@/features/chat/rendering/ThinkingBlockRenderer', () => ({
 jest.mock('@/features/chat/rendering/ToolCallRenderer', () => ({
   getToolName: jest.fn().mockReturnValue('Read'),
   getToolSummary: jest.fn().mockReturnValue('file.md'),
-  isBlockedToolResult: jest.fn().mockReturnValue(false),
   renderToolCall: jest.fn(),
   updateToolCallResult: jest.fn(),
 }));
@@ -591,6 +590,32 @@ describe('StreamController - Text Content', () => {
           }],
         },
       );
+    });
+  });
+
+  describe('tool completion outcome mapping', () => {
+    it('preserves an authoritative blocked outcome from provider events', () => {
+      expect(providerOutputEventToStreamChunk({
+        type: 'tool_completed',
+        scope: {
+          kind: 'requested',
+          sessionInstanceId: 'session-1',
+          executionId: 'execution-1',
+          turnId: 'turn-1',
+          sequence: 1,
+        },
+        toolCallId: 'tool-1',
+        toolScope: { kind: 'main' },
+        content: 'The tool was not run.',
+        isError: true,
+        isBlocked: true,
+      })).toEqual({
+        type: 'tool_result',
+        id: 'tool-1',
+        content: 'The tool was not run.',
+        isError: true,
+        isBlocked: true,
+      });
     });
   });
 
@@ -3147,8 +3172,6 @@ describe('StreamController - Text Content', () => {
     });
 
     it('does not infer list_agents status from nested agent result prose', async () => {
-      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
-      (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
       const msg = createTestMessage();
       deps.getProviderId = () => 'codex';
       msg.toolCalls = [{
@@ -4286,7 +4309,7 @@ describe('StreamController - Plan Mode', () => {
     });
   });
 
-  describe('blocked detection bypass', () => {
+  describe('tool completion outcomes', () => {
     it('persists provider payload from an incomplete tool stream without changing presentation', async () => {
       const rawInput = ['opaque', { nested: true }];
       const rawOutput = { partial: { bytes: [1, 2, 3] } };
@@ -4377,10 +4400,7 @@ describe('StreamController - Plan Mode', () => {
       expect(msg.toolCalls![0].resolvedAnswers).toEqual({ 'Color?': 'Blue' });
     });
 
-    it('should not mark AskUserQuestion as blocked even when result looks blocked', async () => {
-      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
-      (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
-
+    it('should not infer AskUserQuestion status from result text', async () => {
       const msg = createTestMessage();
       msg.toolCalls = [{
         id: 'ask-1',
@@ -4397,10 +4417,7 @@ describe('StreamController - Plan Mode', () => {
       expect(msg.toolCalls![0].status).toBe('completed');
     });
 
-    it('should not mark ExitPlanMode as blocked even when result looks blocked', async () => {
-      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
-      (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
-
+    it('should not infer ExitPlanMode status from result text', async () => {
       const msg = createTestMessage();
       msg.toolCalls = [{
         id: 'exit-1',
@@ -4417,10 +4434,24 @@ describe('StreamController - Plan Mode', () => {
       expect(msg.toolCalls![0].status).toBe('completed');
     });
 
-    it('should mark regular tool as blocked when result is blocked', async () => {
-      const { isBlockedToolResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
-      (isBlockedToolResult as jest.Mock).mockReturnValueOnce(true);
+    it('should complete a successful Read whose file content discusses approval', async () => {
+      const msg = createTestMessage();
+      msg.toolCalls = [{
+        id: 'read-1',
+        name: 'Read',
+        input: { file_path: 'repro-a.md' },
+        status: 'running',
+      }];
 
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'read-1', content: 'wait for explicit approval' },
+        msg
+      );
+
+      expect(msg.toolCalls![0].status).toBe('completed');
+    });
+
+    it('should mark a tool as blocked only when the provider reports that outcome', async () => {
       const msg = createTestMessage();
       msg.toolCalls = [{
         id: 'bash-1',
@@ -4430,7 +4461,12 @@ describe('StreamController - Plan Mode', () => {
       }];
 
       await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'bash-1', content: 'Access denied by user approval' },
+        {
+          type: 'tool_result',
+          id: 'bash-1',
+          content: 'The tool was not run.',
+          isBlocked: true,
+        },
         msg
       );
 

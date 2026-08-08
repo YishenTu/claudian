@@ -200,6 +200,7 @@ export class AcpExecutionEventNormalizer {
               return [{
                 content: chunk.content,
                 isError: chunk.isError,
+                isBlocked: chunk.isBlocked,
                 scope: this.nextScope(),
                 toolCallId: chunk.id,
                 toolScope,

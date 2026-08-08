@@ -161,6 +161,12 @@ ClaudeExecutionStrategySink {
       getPermissionMode: () => this.currentPermissionMode,
       resolveSdkPermissionMode: (mode) =>
         this.encoder.resolveSdkPermissionMode(mode),
+      onToolBlocked: (toolUseId) => {
+        this.eventNormalizer.markToolBlocked(
+          toolUseId,
+          this.activeRun ? 'requested' : 'background',
+        );
+      },
     });
     this.strategy = config.lifecycle === 'persistent'
       ? new ClaudePersistentExecutionStrategy(this)

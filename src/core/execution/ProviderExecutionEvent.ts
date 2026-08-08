@@ -150,6 +150,8 @@ export type ProviderToolCompletedEvent = ProviderEventBase<
   ProviderToolIdentity & {
     readonly content?: string;
     readonly isError?: boolean;
+    /** Authoritative provider outcome; never infer this from result content. */
+    readonly isBlocked?: boolean;
     readonly toolUseResult?: SDKToolUseResult;
     readonly providerPayload?: ToolProviderPayload;
   };

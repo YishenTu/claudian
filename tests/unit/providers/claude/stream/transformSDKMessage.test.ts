@@ -41,6 +41,29 @@ describe('transformSDKMessage', () => {
       expect(results).toEqual([]);
     });
 
+    it('emits an authoritative blocked tool result for permission denials', () => {
+      const message = {
+        type: 'system',
+        subtype: 'permission_denied',
+        tool_name: 'Bash',
+        tool_use_id: 'tool-123',
+        decision_reason: 'Denied by policy',
+        message: 'The tool was not run.',
+        uuid: 'message-123',
+        session_id: 'test-session',
+      } as any;
+
+      const results = [...transformSDKMessage(message)];
+
+      expect(results).toEqual([{
+        type: 'tool_result',
+        id: 'tool-123',
+        content: 'The tool was not run.',
+        isError: true,
+        isBlocked: true,
+      }]);
+    });
+
     it('yields context_compacted event for compact_boundary subtype', () => {
       const message = msg({
         type: 'system',

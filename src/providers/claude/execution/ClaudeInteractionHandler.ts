@@ -25,6 +25,7 @@ export interface ClaudeExecutionInteractionDeps {
   readonly resolveSdkPermissionMode: (
     mode: PermissionMode,
   ) => SDKPermissionMode;
+  readonly onToolBlocked: (toolUseId: string) => void;
 }
 
 export class ClaudeInteractionHandler {
@@ -177,6 +178,7 @@ export class ClaudeInteractionHandler {
           ),
         };
       }
+      this.deps.onToolBlocked(options.toolUseID);
       return {
         behavior: 'deny',
         message: 'User denied this action.',

@@ -6,6 +6,33 @@ import { ClaudeExecutionEventNormalizer } from '@/providers/claude/execution/Cla
 const msg = buildSDKMessage;
 
 describe('ClaudeExecutionEventNormalizer task tools', () => {
+  it('preserves a blocked decision for the matching native tool result', () => {
+    const normalizer = new ClaudeExecutionEventNormalizer();
+    normalizer.markToolBlocked('tool-1', 'requested');
+
+    const events = normalizer.normalize(msg({
+      type: 'user',
+      message: {
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'tool-1',
+          content: 'The tool was not run.',
+          is_error: true,
+        }],
+      },
+    }), 'requested');
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'output',
+      event: expect.objectContaining({
+        type: 'tool_completed',
+        toolCallId: 'tool-1',
+        isError: true,
+        isBlocked: true,
+      }),
+    }));
+  });
+
   it('adapts main-thread task mutations and preserves native payloads', () => {
     const normalizer = new ClaudeExecutionEventNormalizer();
 

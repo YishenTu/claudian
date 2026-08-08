@@ -61,18 +61,6 @@ export function isSubagentHiddenTool(name: string): boolean {
   return (SUBAGENT_HIDDEN_TOOLS as readonly string[]).includes(name);
 }
 
-// These tools resolve via dedicated callbacks (not content-based), so their
-// tool_result should never be marked "blocked" based on result text.
-export const TOOLS_SKIP_BLOCKED_DETECTION = [
-  TOOL_ENTER_PLAN_MODE,
-  TOOL_EXIT_PLAN_MODE,
-  TOOL_ASK_USER_QUESTION,
-] as const;
-
-export function skipsBlockedDetection(name: string): boolean {
-  return (TOOLS_SKIP_BLOCKED_DETECTION as readonly string[]).includes(name);
-}
-
 export const EDIT_TOOLS = [TOOL_WRITE, TOOL_EDIT, TOOL_NOTEBOOK_EDIT] as const;
 export type EditToolName = (typeof EDIT_TOOLS)[number];
 

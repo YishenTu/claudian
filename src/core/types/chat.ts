@@ -242,7 +242,14 @@ export type StreamChunk =
       input: Record<string, unknown>;
       providerPayload?: ToolProviderPayload;
     }
-  | { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult }
+  | {
+      type: 'tool_result';
+      id: string;
+      content: string;
+      isError?: boolean;
+      isBlocked?: boolean;
+      toolUseResult?: SDKToolUseResult;
+    }
   | { type: 'tool_output'; id: string; content: string }
   | {
       type: 'error';
@@ -255,7 +262,15 @@ export type StreamChunk =
   | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
   | { type: 'context_compacted' }
   | { type: 'subagent_tool_use'; subagentId: string; id: string; name: string; input: Record<string, unknown> }
-  | { type: 'subagent_tool_result'; subagentId: string; id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult };
+  | {
+      type: 'subagent_tool_result';
+      subagentId: string;
+      id: string;
+      content: string;
+      isError?: boolean;
+      isBlocked?: boolean;
+      toolUseResult?: SDKToolUseResult;
+    };
 
 /**
  * Context window usage information.

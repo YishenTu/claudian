@@ -23,7 +23,6 @@ import {
   TOOL_WRITE,
   TOOL_WRITE_STDIN,
 } from '../../../core/tools/toolNames';
-import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo } from '../../../core/types';
 import type { DiffStats } from '../../../core/types/diff';
 import { appendMcpIcon } from '../../../shared/icons';
@@ -805,16 +804,6 @@ export function renderTodoWriteResult(
   }
 
   renderTodoItems(container, todos);
-}
-
-export function isBlockedToolResult(content: unknown, isError?: boolean): boolean {
-  const lower = extractToolResultContent(content, { fallbackIndent: 2 }).toLowerCase();
-  if (lower.includes('outside the vault')) return true;
-  if (lower.includes('access denied')) return true;
-  if (lower.includes('user denied')) return true;
-  if (lower.includes('approval')) return true;
-  if (isError && lower.includes('deny')) return true;
-  return false;
 }
 
 interface ToolElementStructure {

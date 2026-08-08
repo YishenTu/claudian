@@ -6,7 +6,6 @@ import {
   getToolLabel,
   getToolName,
   getToolSummary,
-  isBlockedToolResult,
   renderStoredToolCall,
   renderTodoWriteResult,
   renderToolCall,
@@ -860,33 +859,6 @@ describe('ToolCallRenderer', () => {
 
       expect(lines).toContain('src/main.ts');
       expect(lines).not.toContain('update: src/main.ts');
-    });
-  });
-
-  describe('isBlockedToolResult', () => {
-    it.each([
-      'Path is outside the vault',
-      'Access Denied for this file',
-      'User denied the action',
-      'Requires approval from user',
-    ])('should detect blocked result: %s', (result) => {
-      expect(isBlockedToolResult(result)).toBe(true);
-    });
-
-    it('should detect "deny" only when isError is true', () => {
-      expect(isBlockedToolResult('deny permission', true)).toBe(true);
-      expect(isBlockedToolResult('deny permission', false)).toBe(false);
-      expect(isBlockedToolResult('deny permission')).toBe(false);
-    });
-
-    it('should return false for normal results', () => {
-      expect(isBlockedToolResult('File content here')).toBe(false);
-    });
-
-    it('extracts text from structured content blocks before blocked detection', () => {
-      expect(isBlockedToolResult([
-        { type: 'text', text: 'Requires approval from user' },
-      ])).toBe(true);
     });
   });
 
