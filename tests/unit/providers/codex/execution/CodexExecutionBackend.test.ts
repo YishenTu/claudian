@@ -493,6 +493,111 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('recovers a completed turn when the terminal notification is missed', async () => {
+    jest.useFakeTimers();
+    const threadId = 'thread-missed-completion';
+    const turnId = 'turn-missed-completion';
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult(threadId);
+      if (method === 'turn/start') return createTurnResult(turnId);
+      if (method === 'thread/read') {
+        return createThreadResult(threadId, [{ id: turnId }]);
+      }
+      if (method === 'turn/interrupt') return {};
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const run = session.execute(createRequest());
+    const eventsPromise = collectEvents(run.events);
+
+    try {
+      await waitForCondition(() => mockTransportRequest.mock.calls.some(
+        ([method]) => method === 'turn/start',
+      ));
+      emitNotification('thread/status/changed', {
+        threadId,
+        status: { type: 'idle' },
+      });
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      expect(mockTransportRequest).toHaveBeenCalledWith(
+        'thread/read',
+        { threadId, includeTurns: true },
+        expect.any(Number),
+      );
+      expect((await eventsPromise).at(-1)).toMatchObject({
+        nativeCheckpointId: turnId,
+        type: 'turn_completed',
+      });
+    } finally {
+      run.cancel();
+      await eventsPromise;
+      await session.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not recover when the terminal notification arrives during the grace period', async () => {
+    jest.useFakeTimers();
+    const threadId = 'thread-normal-completion';
+    const turnId = 'turn-normal-completion';
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult(threadId);
+      if (method === 'turn/start') return createTurnResult(turnId);
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const run = session.execute(createRequest());
+    const eventsPromise = collectEvents(run.events);
+
+    try {
+      await waitForCondition(() => mockTransportRequest.mock.calls.some(
+        ([method]) => method === 'turn/start',
+      ));
+      emitNotification('thread/status/changed', {
+        threadId,
+        status: { type: 'idle' },
+      });
+      completeTurn(threadId, turnId);
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      expect(mockTransportRequest).not.toHaveBeenCalledWith(
+        'thread/read',
+        expect.anything(),
+        expect.anything(),
+      );
+      expect((await eventsPromise).at(-1)).toMatchObject({
+        nativeCheckpointId: turnId,
+        type: 'turn_completed',
+      });
+    } finally {
+      run.cancel();
+      await eventsPromise;
+      await session.dispose();
+      jest.useRealTimers();
+    }
+  });
+
   it('sends all attached context using canonical escaped XML', async () => {
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
