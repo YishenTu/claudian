@@ -1,6 +1,10 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
+import {
+  readStoredBoolean,
+  readStoredString,
+} from '../../core/providers/settings/storedSettings';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import {
   normalizeOmpDiscoveredModels,
@@ -38,16 +42,25 @@ export function getOmpProviderSettings(settings: Record<string, unknown>): OmpPr
   const config = getProviderConfig(settings, 'omp');
   const discoveredModels = normalizeOmpDiscoveredModels(config.discoveredModels);
   return {
-    cliPath: typeof config.cliPath === 'string' ? config.cliPath : DEFAULT_OMP_PROVIDER_SETTINGS.cliPath,
+    cliPath: readStoredString(config.cliPath, DEFAULT_OMP_PROVIDER_SETTINGS.cliPath),
     cliPathsByHost: normalizeHostnameStringMap(config.cliPathsByHost),
-    enabled: config.enabled === true,
-    environmentHash: typeof config.environmentHash === 'string' ? config.environmentHash : '',
-    environmentVariables: typeof config.environmentVariables === 'string'
-      ? config.environmentVariables
-      : getProviderEnvironmentVariables(settings, 'omp') ?? '',
+    enabled: readStoredBoolean(config.enabled, DEFAULT_OMP_PROVIDER_SETTINGS.enabled),
+    environmentHash: readStoredString(
+      config.environmentHash,
+      DEFAULT_OMP_PROVIDER_SETTINGS.environmentHash,
+    ),
+    environmentVariables: readStoredString(
+      config.environmentVariables,
+      getProviderEnvironmentVariables(settings, 'omp')
+        ?? DEFAULT_OMP_PROVIDER_SETTINGS.environmentVariables,
+    ),
     thinking: normalizeOmpThinkingConfig(config.thinking),
     discoveredModels,
-    catalogTimestamp: typeof config.catalogTimestamp === 'number' ? config.catalogTimestamp : 0,
+    catalogTimestamp: typeof config.catalogTimestamp === 'number'
+      && Number.isFinite(config.catalogTimestamp)
+      && config.catalogTimestamp >= 0
+      ? Math.floor(config.catalogTimestamp)
+      : DEFAULT_OMP_PROVIDER_SETTINGS.catalogTimestamp,
     visibleModels: normalizeOmpVisibleModels(config.visibleModels, discoveredModels),
   };
 }

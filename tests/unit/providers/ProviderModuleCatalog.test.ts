@@ -83,7 +83,7 @@ describe('built-in ProviderModule catalog', () => {
         normalizedSettings,
         malformedSettings,
       );
-      expect(normalized).toBe(!['cursor', 'omp'].includes(module.id));
+      expect(normalized).toBe(true);
       const config = getProviderConfig(normalizedSettings, module.id);
       expect(config.enabled).toBe(defaultEnabled[module.id]);
       expect(config.cliPath).toEqual(expect.any(String));

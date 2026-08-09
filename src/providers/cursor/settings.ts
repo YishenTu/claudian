@@ -1,6 +1,10 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
+import {
+  readStoredBoolean,
+  readStoredString,
+} from '../../core/providers/settings/storedSettings';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import {
   type CursorDiscoveredModel,
@@ -34,15 +38,24 @@ export function getCursorProviderSettings(settings: Record<string, unknown>): Cu
   const config = getProviderConfig(settings, 'cursor');
   const discoveredModels = normalizeCursorDiscoveredModels(config.discoveredModels);
   return {
-    cliPath: typeof config.cliPath === 'string' ? config.cliPath : DEFAULT_CURSOR_PROVIDER_SETTINGS.cliPath,
+    cliPath: readStoredString(config.cliPath, DEFAULT_CURSOR_PROVIDER_SETTINGS.cliPath),
     cliPathsByHost: normalizeHostnameStringMap(config.cliPathsByHost),
-    enabled: config.enabled === true,
-    environmentHash: typeof config.environmentHash === 'string' ? config.environmentHash : '',
-    environmentVariables: typeof config.environmentVariables === 'string'
-      ? config.environmentVariables
-      : getProviderEnvironmentVariables(settings, 'cursor') ?? '',
+    enabled: readStoredBoolean(config.enabled, DEFAULT_CURSOR_PROVIDER_SETTINGS.enabled),
+    environmentHash: readStoredString(
+      config.environmentHash,
+      DEFAULT_CURSOR_PROVIDER_SETTINGS.environmentHash,
+    ),
+    environmentVariables: readStoredString(
+      config.environmentVariables,
+      getProviderEnvironmentVariables(settings, 'cursor')
+        ?? DEFAULT_CURSOR_PROVIDER_SETTINGS.environmentVariables,
+    ),
     discoveredModels,
-    catalogTimestamp: typeof config.catalogTimestamp === 'number' ? config.catalogTimestamp : 0,
+    catalogTimestamp: typeof config.catalogTimestamp === 'number'
+      && Number.isFinite(config.catalogTimestamp)
+      && config.catalogTimestamp >= 0
+      ? Math.floor(config.catalogTimestamp)
+      : DEFAULT_CURSOR_PROVIDER_SETTINGS.catalogTimestamp,
     visibleModels: normalizeCursorVisibleModels(config.visibleModels, discoveredModels),
   };
 }
