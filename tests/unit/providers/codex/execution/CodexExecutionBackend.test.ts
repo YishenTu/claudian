@@ -339,6 +339,18 @@ async function collectEvents(
   return result;
 }
 
+async function collectUntil(
+  events: AsyncIterable<ProviderExecutionEvent>,
+  predicate: (event: ProviderExecutionEvent) => boolean,
+): Promise<ProviderExecutionEvent[]> {
+  const result: ProviderExecutionEvent[] = [];
+  for await (const event of events) {
+    result.push(event);
+    if (predicate(event)) break;
+  }
+  return result;
+}
+
 function completeTurn(threadId: string, turnId: string): void {
   emitNotification('turn/completed', {
     threadId,
@@ -967,6 +979,67 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('does not bind a new run to a late scoped notification from the previous turn', async () => {
+    const threadId = 'thread-late-previous-scope';
+    const firstTurnId = 'turn-previous';
+    const secondTurnId = 'turn-current';
+    let turnAttempt = 0;
+    const secondTurnStart = createDeferred<ReturnType<typeof createTurnResult>>();
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult(threadId);
+      if (method === 'turn/start') {
+        turnAttempt += 1;
+        if (turnAttempt === 1) {
+          queueMicrotask(() => completeTurn(threadId, firstTurnId));
+          return createTurnResult(firstTurnId);
+        }
+
+        emitNotification('thread/tokenUsage/updated', {
+          threadId,
+          turnId: firstTurnId,
+          tokenUsage: {
+            last: { inputTokens: 1, cachedInputTokens: 0 },
+            modelContextWindow: 100,
+          },
+        });
+        return secondTurnStart.promise;
+      }
+      if (method === 'turn/interrupt') return {};
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    try {
+      await collectEvents(session.execute(createRequest()).events);
+
+      const secondRun = session.execute(createRequest());
+      const secondTurnStartedPromise = collectUntil(
+        secondRun.events,
+        event => event.type === 'turn_started',
+      );
+      await waitForCondition(() => turnAttempt === 2);
+      secondTurnStart.resolve(createTurnResult(secondTurnId));
+
+      await expect(secondTurnStartedPromise).resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          accepted: true,
+          nativeTurnId: secondTurnId,
+          type: 'turn_started',
+        }),
+      ]));
+    } finally {
+      await session.dispose();
+    }
+  });
   it('persists native context when cancellation races a turn-start acknowledgement', async () => {
     const controller = new AbortController();
     let turnAttempt = 0;

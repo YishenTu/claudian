@@ -767,6 +767,10 @@ export class CodexExecutionSession
 
     const scope = extractNotificationScope(method, params);
     if (scope) {
+      if (!run.nativeTurnId) {
+        this.pendingTurnNotifications.push({ method, params });
+        return;
+      }
       if (!this.observeNativeTurn(scope.threadId, scope.turnId)) return;
       if (
         scope.threadId !== run.nativeThreadId
