@@ -361,9 +361,11 @@ export function createMockEl(tag = 'div'): any {
     },
 
     querySelector(selector: string) {
-      const cls = selector.replace('.', '');
+      const simpleClassSelector = selector.match(/^([a-z][\w-]*)?\.([\w-]+)$/i);
+      const tagName = simpleClassSelector?.[1]?.toUpperCase();
+      const cls = simpleClassSelector?.[2] ?? selector.replace('.', '');
       const find = (el: any): MockElement | null => {
-        if (el.hasClass?.(cls)) return el;
+        if ((!tagName || el.tagName === tagName) && el.hasClass?.(cls)) return el;
         for (const child of el.children || []) {
           const found = find(child);
           if (found) return found;
@@ -373,10 +375,12 @@ export function createMockEl(tag = 'div'): any {
       return find(element);
     },
     querySelectorAll(selector: string) {
-      const cls = selector.replace('.', '');
+      const simpleClassSelector = selector.match(/^([a-z][\w-]*)?\.([\w-]+)$/i);
+      const tagName = simpleClassSelector?.[1]?.toUpperCase();
+      const cls = simpleClassSelector?.[2] ?? selector.replace('.', '');
       const results: MockElement[] = [];
       const collect = (el: any) => {
-        if (el.hasClass?.(cls)) results.push(el);
+        if ((!tagName || el.tagName === tagName) && el.hasClass?.(cls)) results.push(el);
         for (const child of el.children || []) collect(child);
       };
       for (const child of children) collect(child);
