@@ -4,7 +4,9 @@ import type { ProviderCommandDropdownConfig } from '../../../core/providers/comm
 import type { ProviderCommandDiscoveryController } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers/types';
+import type { Conversation } from '../../../core/types';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
+import type { FeatureHost } from '../../FeatureHost';
 import type { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import type { CanvasSelectionController } from '../controllers/CanvasSelectionController';
 import type { ConversationController } from '../controllers/ConversationController';
@@ -79,6 +81,23 @@ export type ProviderCatalogInfo = {
 } | null;
 
 export type ProviderCatalogResolver = () => ProviderCatalogInfo;
+
+export interface TabCreateOptions {
+  plugin: FeatureHost;
+
+  containerEl: HTMLElement;
+  conversation?: Conversation;
+  tabId?: TabId;
+  /** Initial draft model for an unbound tab. */
+  draftModel?: string | null;
+  lifecycleState?: Extract<TabData['lifecycleState'], 'provisional' | 'cold'>;
+  onStreamingChanged?: (isStreaming: boolean) => void;
+  onRewindingChanged?: (isRewinding: boolean) => void;
+  onTitleChanged?: (title: string) => void;
+  onAttentionChanged?: (attention: TabAttention) => void;
+  captureReviewableSettlement?: () => () => void;
+  onConversationIdChanged?: (conversationId: string | null) => void;
+}
 
 /** Generates a unique tab ID. */
 export function generateTabId(): TabId {

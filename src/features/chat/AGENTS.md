@@ -17,6 +17,13 @@
 | --- | --- |
 | `TabManager` | Runtime-tab membership, active-tab selection, and create/switch/close operations |
 | `TabSession` | Authoritative per-tab identity, conversation binding, provider binding, lifecycle value, execution-coordinator attachment, active-turn reference, and background-work sequencing |
+| `TabRuntimeFactory` | Allocation of the provider-neutral runtime shell: per-tab DOM, `ChatState`, `TabSession`, placeholder controllers/services/UI slots, and initial draft/provider resolution |
+| `TabControllerFactory` | Installation of the renderer and selection controllers for a tab; execution controllers remain in the tab orchestration flow until their dependencies are separated |
+| `TabStreamControllerFactory` | Assembly of one tab's stream controller, provider-owned subagent history recovery, and background-work/persistence adapters |
+| `TabConversationControllerFactory` | Assembly of ConversationController and its tab-owned state accessors; provider binding transitions are supplied as one atomic hook |
+| `TabInputControllerFactory` | Assembly of InputController, provider preflight diagnostics, and layout/plan-mode hooks for the tab composer |
+| `TabNavigationControllerFactory` | Assembly and initialization of keyboard navigation for a tab, including escape-handling suppression for active composer modes |
+| `TabRuntimeCleanup` | Reverse-order, idempotent teardown of tab-owned resources; cleanup failures are collected so later resources still release |
 | `TabModelSelectionCoordinator` | Per-tab model-selection request ordering, blank-tab provider-transition serialization, and stable-draft rollback |
 | `ChatExecutionCoordinator` | One tab's provider-session binding, active execution, interaction fencing, cancellation, and disposal |
 | `WarmExecutionPool` | Application-scoped warm execution ownership, the configured concurrent-running-session limit, and least-recently-used cooling of idle owners |
@@ -25,7 +32,9 @@
 | `TabBar` | Expanded-title presentation state for the current view |
 | `ClaudianView` | View assembly, rendered DOM placement, presentation coordination, layout-mode navigation, and assembly of the persisted current-tab snapshot |
 
-`TabSession` stores lifecycle values, while lifecycle operations in `Tab.ts` and `TabManager` perform the transitions. Controllers, renderers, and UI components must request those operations instead of assigning lifecycle state themselves.
+`TabRuntimeFactory` must not create provider execution sessions or feature controllers; those are attached by the owning initialization flow after the shell exists. `TabRuntimeCleanup` must run after conversation save and execution drain, and before the tab DOM is removed. `TabSession` stores lifecycle values, while lifecycle operations in `Tab.ts` and `TabManager` perform the transitions. Controllers, renderers, and UI components must request those operations instead of assigning lifecycle state themselves.
+
+`initializeTabRuntimeControllers` is the current orchestration entry point. `initializeTabControllers` remains only as a deprecated compatibility alias for existing feature tests and integrations.
 
 `TabStatePersistenceCoordinator` owns write sequencing, not semantic tab state. It receives the active tab identity assembled by `ClaudianView`; it must not infer, add, or remove runtime tabs.
 

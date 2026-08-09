@@ -63,7 +63,7 @@ jest.mock('@/features/chat/tabs/Tab', () => ({
   deactivateTab: jest.fn(),
   destroyTab: (...args: unknown[]) => mockDestroyTab(...args),
   getTabTitle: jest.fn().mockReturnValue('Tab'),
-  initializeTabControllers: (...args: unknown[]) => mockInitializeTabControllers(...args),
+  initializeTabRuntimeControllers: (...args: unknown[]) => mockInitializeTabControllers(...args),
   initializeTabExecution: (...args: unknown[]) => mockInitializeTabExecution(...args),
   initializeTabUI: jest.fn(),
   onProviderAvailabilityChanged: jest.fn().mockReturnValue(false),

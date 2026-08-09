@@ -27,7 +27,7 @@ import {
   destroyTab,
   type ForkContext,
   getTabTitle,
-  initializeTabControllers,
+  initializeTabRuntimeControllers,
   initializeTabUI,
   onProviderAvailabilityChanged,
   refreshTabWorkspaceServices,
@@ -248,7 +248,7 @@ export class TabManager implements TabManagerInterface {
       },
     });
 
-    initializeTabControllers(
+    initializeTabRuntimeControllers(
       tab,
       this.plugin,
       this.view,
