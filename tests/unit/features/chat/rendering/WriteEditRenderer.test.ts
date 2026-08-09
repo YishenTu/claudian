@@ -94,6 +94,23 @@ describe('WriteEditRenderer', () => {
       expect(state.summaryEl.textContent).toBe('file.md');
     });
 
+    it('passes the provider line range to the file opener', () => {
+      const parentEl = createMockEl();
+      const onOpenFile = jest.fn();
+      const toolCall = createToolCall({
+        input: { file_path: 'notes/test.md:140-185' },
+      });
+
+      const state = createWriteEditBlock(parentEl, toolCall, { onOpenFile });
+      state.summaryEl.click();
+
+      expect(onOpenFile).toHaveBeenCalledWith({
+        path: 'notes/test.md',
+        lineStart: 140,
+        lineEnd: 185,
+      });
+    });
+
     it('should handle missing file_path gracefully', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall({ input: {} });

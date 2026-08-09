@@ -1,4 +1,11 @@
 import { extractLinkTarget } from '@/utils/fileLink';
+import { parseFileReference } from '@/utils/FileReference';
+
+describe('stripFileLineRange', () => {
+  it('removes a single line suffix', () => {
+    expect(parseFileReference('notes/README.md:140').path).toBe('notes/README.md');
+  });
+});
 
 // Extract the pattern from the module for testing
 // This matches the pattern in src/utils/fileLink.ts
@@ -229,5 +236,27 @@ describe('wikilink pattern matching', () => {
     it('drops display text while preserving anchors', () => {
       expect(extractLinkTarget('[[note#section|Alias]]')).toBe('note#section');
     });
+  });
+});
+
+describe('file references', () => {
+  it('preserves a single line reference', () => {
+    expect(parseFileReference('notes/README.md:140')).toEqual({
+      path: 'notes/README.md',
+      lineStart: 140,
+      lineEnd: 140,
+    });
+  });
+
+  it('preserves an inclusive line range with unicode dashes', () => {
+    expect(parseFileReference('notes/README.md:140–185')).toEqual({
+      path: 'notes/README.md',
+      lineStart: 140,
+      lineEnd: 185,
+    });
+  });
+
+  it('does not treat a non-line suffix as a reference', () => {
+    expect(parseFileReference('notes/README.md')).toEqual({ path: 'notes/README.md' });
   });
 });

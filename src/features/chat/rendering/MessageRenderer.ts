@@ -24,6 +24,7 @@ import { t } from '../../../i18n/i18n';
 import { extractUserDisplayContent } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
+import type { FileReference } from '../../../utils/FileReference';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 import { stripLegacyInterruptIndicator } from '../../../utils/interrupt';
 import { escapeRawHtmlTags } from '../../../utils/markdownHtml';
@@ -518,8 +519,8 @@ export class MessageRenderer {
     if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall, {
         initiallyExpanded: this.shouldExpandFileEditsByDefault(),
-        onOpenFile: (filePath) => runRendererAction(async () => {
-          await openVaultFile(this.app, filePath);
+        onOpenFile: (fileReference: FileReference) => runRendererAction(async () => {
+          await openVaultFile(this.app, fileReference);
         }),
       });
     } else if (
@@ -536,8 +537,8 @@ export class MessageRenderer {
     } else {
       renderStoredToolCall(contentEl, toolCall, {
         initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH && this.shouldExpandFileEditsByDefault(),
-        onOpenFile: (filePath) => runRendererAction(async () => {
-          await openVaultFile(this.app, filePath);
+        onOpenFile: (fileReference: FileReference) => runRendererAction(async () => {
+          await openVaultFile(this.app, fileReference);
         }),
       });
     }

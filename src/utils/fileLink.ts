@@ -8,6 +8,7 @@
 import type { App, Component } from 'obsidian';
 
 import { getVaultFileByPath } from './obsidianCompat';
+export { stripFileLineRange } from './FileReference';
 
 /**
  * Regex pattern to match Obsidian wikilinks in text content.

@@ -28,6 +28,7 @@ import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo } from '.
 import type { DiffStats } from '../../../core/types/diff';
 import { appendMcpIcon } from '../../../shared/icons';
 import { parseApplyPatchDiffs, parseFileUpdateChangeDiffs } from '../../../utils/diff';
+import { type FileReference,parseFileReference } from '../../../utils/FileReference';
 import { setupCollapsible } from './collapsible';
 import { renderDiffContent, renderDiffStats } from './DiffRenderer';
 import { renderTodoItems } from './todoUtils';
@@ -830,32 +831,32 @@ interface ToolElementStructure {
 
 export interface ToolCallRenderOptions {
   initiallyExpanded?: boolean;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (fileReference: FileReference) => void;
 }
 
-function getToolFilePath(toolCall: ToolCallInfo): string | undefined {
+function getToolFilePath(toolCall: ToolCallInfo): FileReference | undefined {
   const fileTools: string[] = [TOOL_READ, TOOL_WRITE, TOOL_EDIT];
   if (!fileTools.includes(toolCall.name)) {
     return undefined;
   }
   const filePath = toolCall.input.file_path;
-  return typeof filePath === 'string' && filePath.trim() ? filePath : undefined;
+  return typeof filePath === 'string' && filePath.trim() ? parseFileReference(filePath) : undefined;
 }
 
 function makeFileSummaryInteractive(
   summaryEl: HTMLElement,
-  filePath: string | undefined,
-  onOpenFile: ((filePath: string) => void) | undefined,
+  fileReference: FileReference | undefined,
+  onOpenFile: ((fileReference: FileReference) => void) | undefined,
 ): void {
-  if (!filePath || !onOpenFile) return;
+  if (!fileReference || !onOpenFile) return;
 
   summaryEl.addClass('claudian-tool-file-link');
   summaryEl.setAttribute('role', 'link');
   summaryEl.setAttribute('tabindex', '0');
-  summaryEl.setAttribute('title', `Open ${filePath}`);
+  summaryEl.setAttribute('title', `Open ${fileReference.path}`);
   const open = (event: Event) => {
     event.stopPropagation();
-    onOpenFile(filePath);
+    onOpenFile(fileReference);
   };
   summaryEl.addEventListener('click', open);
   summaryEl.addEventListener('keydown', (event) => {
@@ -870,7 +871,7 @@ function makeFileSummaryInteractive(
 function createToolElementStructure(
   parentEl: HTMLElement,
   toolCall: ToolCallInfo,
-  onOpenFile?: (filePath: string) => void,
+  onOpenFile?: (fileReference: FileReference) => void,
 ): ToolElementStructure {
   const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
   if (toolCall.name === TOOL_BASH) {
