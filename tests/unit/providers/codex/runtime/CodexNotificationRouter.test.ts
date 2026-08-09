@@ -65,6 +65,89 @@ describe('CodexNotificationRouter', () => {
       ]);
     });
 
+    it('emits only the missing suffix from a completed agent message', () => {
+      router.handleNotification('item/started', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'agentMessage',
+          id: 'msg1',
+          text: '',
+          phase: 'streaming',
+          memoryCitation: null,
+        },
+      });
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'msg1',
+        delta: 'Hel',
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'agentMessage',
+          id: 'msg1',
+          text: 'Hello',
+          phase: 'final',
+          memoryCitation: null,
+        },
+      });
+
+      expect(chunks).toEqual([
+        { type: 'assistant_message_start', itemId: 'msg1' },
+        { type: 'text', content: 'Hel' },
+        { type: 'text', content: 'lo' },
+      ]);
+    });
+
+    it('does not repeat an earlier completed agent message after segment changes', () => {
+      const startAgentMessage = (itemId: string) => {
+        router.handleNotification('item/started', {
+          threadId: 't1',
+          turnId: 'turn1',
+          item: {
+            type: 'agentMessage',
+            id: itemId,
+            text: '',
+            phase: 'streaming',
+            memoryCitation: null,
+          },
+        });
+      };
+      startAgentMessage('msg1');
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'msg1',
+        delta: 'First',
+      });
+      startAgentMessage('msg2');
+      router.handleNotification('item/agentMessage/delta', {
+        threadId: 't1',
+        turnId: 'turn1',
+        itemId: 'msg2',
+        delta: 'Second',
+      });
+      router.handleNotification('item/completed', {
+        threadId: 't1',
+        turnId: 'turn1',
+        item: {
+          type: 'agentMessage',
+          id: 'msg1',
+          text: 'First',
+          phase: 'final',
+          memoryCitation: null,
+        },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'text')).toEqual([
+        { type: 'text', content: 'First' },
+        { type: 'text', content: 'Second' },
+      ]);
+    });
+
     it('does not append raw memory citation markup after streamed text', () => {
       router.handleNotification('item/agentMessage/delta', {
         threadId: 't1',

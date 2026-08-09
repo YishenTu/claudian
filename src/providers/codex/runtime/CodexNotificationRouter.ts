@@ -112,7 +112,7 @@ export class CodexNotificationRouter {
   private sawPlanDelta = false;
   private startedUserMessageIds = new Set<string>();
   private startedAgentMessageIds = new Set<string>();
-  private agentMessageDeltaIds = new Set<string>();
+  private streamedAgentMessageTextById = new Map<string, string>();
   private emittedMemoryCitationIds = new Set<string>();
   private emittedMemoryCitationKeys = new Set<string>();
   private streamedAssistantTurnText = '';
@@ -208,7 +208,7 @@ export class CodexNotificationRouter {
     this.sawPlanDelta = false;
     this.startedUserMessageIds.clear();
     this.startedAgentMessageIds.clear();
-    this.agentMessageDeltaIds.clear();
+    this.streamedAgentMessageTextById.clear();
     this.emittedMemoryCitationIds.clear();
     this.emittedMemoryCitationKeys.clear();
     this.resetAssistantTextTracking();
@@ -248,7 +248,7 @@ export class CodexNotificationRouter {
     this.sawPlanDelta = false;
     this.startedUserMessageIds.clear();
     this.startedAgentMessageIds.clear();
-    this.agentMessageDeltaIds.clear();
+    this.streamedAgentMessageTextById.clear();
     this.emittedMemoryCitationIds.clear();
     this.emittedMemoryCitationKeys.clear();
     this.resetAssistantTextTracking();
@@ -338,7 +338,8 @@ export class CodexNotificationRouter {
   }
 
   private onAgentMessageDelta(params: AgentMessageDeltaNotification): void {
-    this.agentMessageDeltaIds.add(params.itemId);
+    const previousText = this.streamedAgentMessageTextById.get(params.itemId) ?? '';
+    this.streamedAgentMessageTextById.set(params.itemId, previousText + params.delta);
     this.appendAssistantText(params.delta, params.itemId);
     this.emit({ type: 'text', content: params.delta });
   }
@@ -950,17 +951,37 @@ export class CodexNotificationRouter {
 
   private emitMissingAssistantSegmentText(text: string, itemId?: string): void {
     this.claimAssistantSegment(itemId);
+    const segmentId = itemId ?? this.currentAssistantSegmentId;
     const missingText = normalizeAgentMessageCompletionText(
       text,
       this.currentAssistantSegmentText,
     );
     if (text) {
       this.currentAssistantSegmentText = text;
+      if (segmentId) {
+        this.streamedAgentMessageTextById.set(segmentId, text);
+      }
     }
     if (!missingText) {
       return;
     }
 
+    this.streamedAssistantTurnText += missingText;
+    this.emit({ type: 'text', content: missingText });
+  }
+
+  private emitMissingAgentMessageText(text: string, itemId: string): void {
+    const streamedText = this.streamedAgentMessageTextById.get(itemId) ?? '';
+    const missingText = normalizeAgentMessageCompletionText(text, streamedText);
+    if (text) {
+      this.streamedAgentMessageTextById.set(itemId, text);
+    }
+    if (!missingText) {
+      return;
+    }
+
+    this.claimAssistantSegment(itemId);
+    this.currentAssistantSegmentText = text;
     this.streamedAssistantTurnText += missingText;
     this.emit({ type: 'text', content: missingText });
   }
@@ -976,6 +997,12 @@ export class CodexNotificationRouter {
 
     this.streamedAssistantTurnText += missingText;
     this.currentAssistantSegmentText += missingText;
+    if (this.currentAssistantSegmentId) {
+      this.streamedAgentMessageTextById.set(
+        this.currentAssistantSegmentId,
+        this.currentAssistantSegmentText,
+      );
+    }
     this.emit({ type: 'text', content: missingText });
   }
 
@@ -1715,8 +1742,8 @@ export class CodexNotificationRouter {
     }
 
     const visibleText = stripCodexMemoryCitationMarkup(item.text);
-    if (!this.agentMessageDeltaIds.has(item.id) && visibleText) {
-      this.emitMissingAssistantSegmentText(visibleText, item.id);
+    if (visibleText) {
+      this.emitMissingAgentMessageText(visibleText, item.id);
     }
 
     this.emitMemoryCitation(item.memoryCitation, item.id);

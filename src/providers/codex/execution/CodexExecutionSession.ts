@@ -102,6 +102,8 @@ const LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS =
   'This thread predates Claudian client-hosted workspace dependency tools. Do not emulate load_workspace_dependencies or install replacement dependencies.';
 const CODEX_SUPPORTS_EXACT_BUILT_IN_TOOL_ALLOW_LIST = false;
 const MISSED_TURN_COMPLETION_GRACE_MS = 1_000;
+const MISSED_TURN_COMPLETION_MAX_ATTEMPTS = 3;
+const MISSED_TURN_COMPLETION_RETRY_BASE_MS = 500;
 const THREAD_READ_RECOVERY_TIMEOUT_MS = 5_000;
 const CODEX_CONSUMED_FORK_STATE_KEYS = [
   'forkSource',
@@ -130,6 +132,14 @@ interface TurnCompletion {
   readonly status: 'completed' | 'failed' | 'interrupted';
   readonly nativeTurnId: string;
   readonly errorMessage?: string;
+}
+
+interface CompletionRecovery {
+  readonly run: CodexExecutionRun;
+  readonly generation: number;
+  attempt: number;
+  inFlight: boolean;
+  timer: number | null;
 }
 
 interface CodexEnsuredThread {
@@ -283,7 +293,7 @@ export class CodexExecutionSession
   private forkIdentityPromise: Promise<CodexPendingForkTarget> | null = null;
   private forkSetupPromise: Promise<CodexEnsuredThread> | null = null;
   private disposePromise: Promise<void> | null = null;
-  private completionRecoveryTimer: number | null = null;
+  private completionRecovery: CompletionRecovery | null = null;
   private disposed = false;
   private lifecycleGeneration = 0;
 
@@ -758,7 +768,7 @@ export class CodexExecutionSession
       const changed = params as ThreadStatusChangedNotification;
       if (changed.threadId !== run.nativeThreadId) return;
       if (changed.status.type === 'idle') {
-        this.scheduleMissedTurnCompletionRecovery(run);
+        this.observeThreadIdle(run);
       } else {
         this.cancelMissedTurnCompletionRecovery();
       }
@@ -799,31 +809,60 @@ export class CodexExecutionSession
     this.notificationRouter?.handleNotification(method, params);
   }
 
-  private scheduleMissedTurnCompletionRecovery(run: CodexExecutionRun): void {
+  private observeThreadIdle(run: CodexExecutionRun): void {
+    let recovery = this.completionRecovery;
     if (
-      this.completionRecoveryTimer
-      || !run.nativeThreadId
-      || !run.nativeTurnId
+      !recovery
+      || recovery.run !== run
+      || recovery.generation !== this.lifecycleGeneration
+    ) {
+      this.cancelMissedTurnCompletionRecovery();
+      recovery = {
+        run,
+        generation: this.lifecycleGeneration,
+        attempt: 0,
+        inFlight: false,
+        timer: null,
+      };
+      this.completionRecovery = recovery;
+    }
+    this.scheduleMissedTurnCompletionRecovery(
+      recovery,
+      MISSED_TURN_COMPLETION_GRACE_MS,
+    );
+  }
+
+  private scheduleMissedTurnCompletionRecovery(
+    recovery: CompletionRecovery,
+    delayMs: number,
+  ): void {
+    if (
+      this.completionRecovery !== recovery
+      || recovery.timer !== null
+      || recovery.inFlight
+      || !this.isCompletionRecoveryCurrent(recovery)
+      || !recovery.run.nativeTurnId
     ) {
       return;
     }
-    const generation = this.lifecycleGeneration;
-    this.completionRecoveryTimer = window.setTimeout(() => {
-      this.completionRecoveryTimer = null;
-      void this.recoverMissedTurnCompletion(run, generation);
-    }, MISSED_TURN_COMPLETION_GRACE_MS);
+    recovery.timer = window.setTimeout(() => {
+      recovery.timer = null;
+      void this.recoverMissedTurnCompletion(recovery);
+    }, delayMs);
   }
 
   private cancelMissedTurnCompletionRecovery(): void {
-    if (!this.completionRecoveryTimer) return;
-    window.clearTimeout(this.completionRecoveryTimer);
-    this.completionRecoveryTimer = null;
+    const recovery = this.completionRecovery;
+    if (recovery && recovery.timer !== null) {
+      window.clearTimeout(recovery.timer);
+    }
+    this.completionRecovery = null;
   }
 
   private async recoverMissedTurnCompletion(
-    run: CodexExecutionRun,
-    generation: number,
+    recovery: CompletionRecovery,
   ): Promise<void> {
+    const { run } = recovery;
     const transport = this.transport;
     const threadId = run.nativeThreadId;
     const turnId = run.nativeTurnId;
@@ -831,13 +870,12 @@ export class CodexExecutionSession
       !transport
       || !threadId
       || !turnId
-      || this.activeRun !== run
-      || run.isTerminal
-      || run.isCancellationRequested
-      || generation !== this.lifecycleGeneration
+      || !this.isCompletionRecoveryCurrent(recovery)
     ) {
       return;
     }
+    recovery.attempt += 1;
+    recovery.inFlight = true;
 
     let result: ThreadReadResult;
     try {
@@ -847,20 +885,56 @@ export class CodexExecutionSession
         THREAD_READ_RECOVERY_TIMEOUT_MS,
       );
     } catch {
+      recovery.inFlight = false;
+      this.retryOrFailMissedTurnCompletion(recovery);
       return;
     }
-    if (
-      this.activeRun !== run
-      || run.isTerminal
-      || run.isCancellationRequested
-      || generation !== this.lifecycleGeneration
-    ) {
-      return;
-    }
+    if (!this.isCompletionRecoveryCurrent(recovery)) return;
+    recovery.inFlight = false;
     const turn = result.thread.turns.find(candidate => candidate.id === turnId);
-    if (!turn || turn.status === 'inProgress') return;
+    if (
+      result.thread.id !== threadId
+      || !turn
+      || turn.status === 'inProgress'
+    ) {
+      this.retryOrFailMissedTurnCompletion(recovery);
+      return;
+    }
     this.replayRecoveredTurnItems(threadId, turn);
     this.handleNotification('turn/completed', { threadId, turn });
+  }
+
+  private retryOrFailMissedTurnCompletion(
+    recovery: CompletionRecovery,
+  ): void {
+    if (!this.isCompletionRecoveryCurrent(recovery)) return;
+    if (recovery.attempt < MISSED_TURN_COMPLETION_MAX_ATTEMPTS) {
+      const retryDelay = MISSED_TURN_COMPLETION_RETRY_BASE_MS
+        * (2 ** (recovery.attempt - 1));
+      this.scheduleMissedTurnCompletionRecovery(recovery, retryDelay);
+      return;
+    }
+
+    this.cancelMissedTurnCompletionRecovery();
+    this.finishError(
+      recovery.run,
+      'provider',
+      'Codex became idle, but its completed turn could not be recovered.',
+      true,
+    );
+  }
+
+  private isCompletionRecoveryCurrent(
+    recovery: CompletionRecovery,
+  ): boolean {
+    const { run, generation } = recovery;
+    return (
+      this.completionRecovery === recovery
+      && this.activeRun === run
+      && !run.isTerminal
+      && !run.isCancellationRequested
+      && generation === this.lifecycleGeneration
+    );
   }
 
   private replayRecoveredTurnItems(
@@ -905,6 +979,13 @@ export class CodexExecutionSession
         nativeTurnId,
       });
       this.flushPendingTurnNotifications(run);
+      const recovery = this.completionRecovery;
+      if (recovery?.run === run) {
+        this.scheduleMissedTurnCompletionRecovery(
+          recovery,
+          MISSED_TURN_COMPLETION_GRACE_MS,
+        );
+      }
     }
     return true;
   }

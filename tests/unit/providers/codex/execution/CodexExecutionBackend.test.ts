@@ -587,6 +587,275 @@ describe('CodexExecutionBackend', () => {
     }
   });
 
+  it('recovers when the idle status arrives before turn acknowledgement', async () => {
+    jest.useFakeTimers();
+    const threadId = 'thread-idle-before-ack';
+    const turnId = 'turn-idle-before-ack';
+    const turnStart = createDeferred<ReturnType<typeof createTurnResult>>();
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult(threadId);
+      if (method === 'turn/start') return turnStart.promise;
+      if (method === 'thread/read') {
+        return createThreadResult(threadId, [{
+          id: turnId,
+          items: [{
+            type: 'agentMessage',
+            id: 'assistant-idle-before-ack',
+            text: 'Recovered after acknowledgement.',
+            phase: 'final',
+            memoryCitation: null,
+          }],
+        }]);
+      }
+      if (method === 'turn/interrupt') return {};
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const run = session.execute(createRequest());
+    const eventsPromise = collectEvents(run.events);
+
+    try {
+      await waitForCondition(() => mockTransportRequest.mock.calls.some(
+        ([method]) => method === 'turn/start',
+      ));
+      emitNotification('thread/status/changed', {
+        threadId,
+        status: { type: 'idle' },
+      });
+      turnStart.resolve(createTurnResult(turnId));
+      await flushMicrotasks();
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      expect(mockTransportRequest).toHaveBeenCalledWith(
+        'thread/read',
+        { threadId, includeTurns: true },
+        expect.any(Number),
+      );
+      expect((await eventsPromise).at(-1)).toMatchObject({
+        nativeCheckpointId: turnId,
+        type: 'turn_completed',
+      });
+    } finally {
+      run.cancel();
+      await eventsPromise;
+      await session.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  it('retries stale recovery reads and reconciles partial assistant text once', async () => {
+    jest.useFakeTimers();
+    const threadId = 'thread-recovery-retry';
+    const turnId = 'turn-recovery-retry';
+    let readAttempt = 0;
+    const assistantItem = {
+      type: 'agentMessage',
+      id: 'assistant-recovery-retry',
+      text: 'Recovered response.',
+      phase: 'final',
+      memoryCitation: null,
+    };
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult(threadId);
+      if (method === 'turn/start') return createTurnResult(turnId);
+      if (method === 'thread/read') {
+        readAttempt += 1;
+        if (readAttempt === 1) return createThreadResult(threadId);
+        if (readAttempt === 2) {
+          return createThreadResult(threadId, [{
+            id: turnId,
+            items: [assistantItem],
+            status: 'inProgress',
+          }]);
+        }
+        return createThreadResult(threadId, [{
+          id: turnId,
+          items: [assistantItem],
+        }]);
+      }
+      if (method === 'turn/interrupt') return {};
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const run = session.execute(createRequest());
+    const eventsPromise = collectEvents(run.events);
+
+    try {
+      await waitForCondition(() => mockTransportRequest.mock.calls.some(
+        ([method]) => method === 'turn/start',
+      ));
+      emitNotification('item/started', {
+        threadId,
+        turnId,
+        item: assistantItem,
+      });
+      emitNotification('item/agentMessage/delta', {
+        threadId,
+        turnId,
+        itemId: assistantItem.id,
+        delta: 'Recovered ',
+      });
+      emitNotification('thread/status/changed', {
+        threadId,
+        status: { type: 'idle' },
+      });
+      await jest.advanceTimersByTimeAsync(10_000);
+
+      const events = await eventsPromise;
+      expect(readAttempt).toBe(3);
+      expect(events
+        .filter((event): event is Extract<ProviderExecutionEvent, { type: 'text_delta' }> => (
+          event.type === 'text_delta'
+        ))
+        .map(event => event.text)
+        .join('')).toBe('Recovered response.');
+      expect(events.at(-1)).toMatchObject({
+        nativeCheckpointId: turnId,
+        type: 'turn_completed',
+      });
+    } finally {
+      run.cancel();
+      await eventsPromise;
+      await session.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not overlap recovery reads when idle is reported repeatedly', async () => {
+    jest.useFakeTimers();
+    const threadId = 'thread-repeated-idle';
+    const turnId = 'turn-repeated-idle';
+    const threadRead = createDeferred<ReturnType<typeof createThreadResult>>();
+    let readAttempt = 0;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult(threadId);
+      if (method === 'turn/start') return createTurnResult(turnId);
+      if (method === 'thread/read') {
+        readAttempt += 1;
+        return threadRead.promise;
+      }
+      if (method === 'turn/interrupt') return {};
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const run = session.execute(createRequest());
+    const eventsPromise = collectEvents(run.events);
+
+    try {
+      await waitForCondition(() => mockTransportRequest.mock.calls.some(
+        ([method]) => method === 'turn/start',
+      ));
+      emitNotification('thread/status/changed', {
+        threadId,
+        status: { type: 'idle' },
+      });
+      await jest.advanceTimersByTimeAsync(1_000);
+      emitNotification('thread/status/changed', {
+        threadId,
+        status: { type: 'idle' },
+      });
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      expect(readAttempt).toBe(1);
+      threadRead.resolve(createThreadResult(threadId, [{ id: turnId }]));
+      await flushMicrotasks();
+      expect((await eventsPromise).at(-1)).toMatchObject({
+        nativeCheckpointId: turnId,
+        type: 'turn_completed',
+      });
+    } finally {
+      run.cancel();
+      threadRead.resolve(createThreadResult(threadId, [{ id: turnId }]));
+      await eventsPromise;
+      await session.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  it('fails recoverably after bounded completion recovery failures', async () => {
+    jest.useFakeTimers();
+    const threadId = 'thread-recovery-failure';
+    const turnId = 'turn-recovery-failure';
+    let readAttempt = 0;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult(threadId);
+      if (method === 'turn/start') return createTurnResult(turnId);
+      if (method === 'thread/read') {
+        readAttempt += 1;
+        throw new Error('thread/read unavailable');
+      }
+      if (method === 'turn/interrupt') return {};
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const run = session.execute(createRequest());
+    const eventsPromise = collectEvents(run.events);
+
+    try {
+      await waitForCondition(() => mockTransportRequest.mock.calls.some(
+        ([method]) => method === 'turn/start',
+      ));
+      emitNotification('thread/status/changed', {
+        threadId,
+        status: { type: 'idle' },
+      });
+      await jest.advanceTimersByTimeAsync(10_000);
+
+      expect(session.getStatus()).toBe('idle');
+      expect(readAttempt).toBe(3);
+      expect((await eventsPromise).at(-1)).toMatchObject({
+        category: 'provider',
+        recoverable: true,
+        type: 'execution_error',
+      });
+    } finally {
+      run.cancel();
+      await eventsPromise;
+      await session.dispose();
+      jest.useRealTimers();
+    }
+  });
+
   it('does not recover when the terminal notification arrives during the grace period', async () => {
     jest.useFakeTimers();
     const threadId = 'thread-normal-completion';
