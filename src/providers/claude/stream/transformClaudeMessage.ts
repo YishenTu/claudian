@@ -14,7 +14,13 @@ import { isDefaultClaudeModel, resolveContextWindowSize } from '../types/models'
 import { createTransformStreamState, type TransformStreamState } from './toolInputStreamState';
 
 type ToolUseFields = { id: string; name: string; input: Record<string, unknown> };
-type ToolResultFields = { id: string; content: string; isError?: boolean; toolUseResult?: SDKToolUseResult };
+type ToolResultFields = {
+  id: string;
+  content: string;
+  isError?: boolean;
+  isBlocked?: boolean;
+  toolUseResult?: SDKToolUseResult;
+};
 type AsyncSubagentCompletionStatus = ClaudeAsyncSubagentCompletionEvent['status'];
 
 export { createTransformStreamState };
@@ -413,6 +419,13 @@ export function* transformSDKMessage(
         if (notification) {
           yield notification;
         }
+      } else if (message.subtype === 'permission_denied') {
+        yield emitToolResult(message.agent_id ?? null, {
+          id: message.tool_use_id,
+          content: message.message,
+          isError: true,
+          isBlocked: true,
+        });
       }
       break;
 

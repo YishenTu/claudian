@@ -100,6 +100,45 @@ describe('AcpInteractionController', () => {
     );
   });
 
+  it('reports a denied permission so the matching tool result can become blocked', async () => {
+    const port = createPort();
+    port.requestApproval.mockImplementation(async (request) => ({
+      decision: 'deny',
+      interactionId: request.interactionId,
+    }));
+    const onPermissionDenied = jest.fn();
+    const controller = new AcpInteractionController({
+      getTurnId: () => 'turn-1',
+      interactionPort: port,
+      onPermissionDenied,
+      sessionInstanceId: 'session-instance-1',
+    });
+
+    await expect(controller.requestPermission(PERMISSION_REQUEST)).resolves.toEqual({
+      outcome: { optionId: 'reject', outcome: 'selected' },
+    });
+    expect(onPermissionDenied).toHaveBeenCalledWith('tool-1');
+  });
+
+  it('does not classify an explicitly cancelled approval as blocked', async () => {
+    const port = createPort();
+    port.requestApproval.mockImplementation(async (request) => ({
+      decision: 'cancel',
+      interactionId: request.interactionId,
+    }));
+    const onPermissionDenied = jest.fn();
+    const controller = new AcpInteractionController({
+      getTurnId: () => 'turn-1',
+      interactionPort: port,
+      onPermissionDenied,
+      sessionInstanceId: 'session-instance-1',
+    });
+
+    await controller.requestPermission(PERMISSION_REQUEST);
+
+    expect(onPermissionDenied).not.toHaveBeenCalled();
+  });
+
   it('cancels stale or cross-turn resolutions instead of applying them', async () => {
     let turnId = 'turn-1';
     let resolveApproval!: (value: {

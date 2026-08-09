@@ -788,6 +788,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         this.emitRequested(active, {
           content: chunk.content,
           isError: chunk.isError,
+          isBlocked: chunk.isBlocked,
           toolCallId: chunk.id,
           toolScope: { kind: 'main' },
           toolUseResult: chunk.toolUseResult,

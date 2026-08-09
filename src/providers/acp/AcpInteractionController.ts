@@ -30,6 +30,7 @@ export interface AcpPermissionPresentation {
 export interface AcpInteractionControllerOptions {
   readonly getTurnId: () => string | null;
   readonly interactionPort: ProviderInteractionPort;
+  readonly onPermissionDenied?: (toolCallId: string) => void;
   readonly presentPermission?: (
     request: AcpRequestPermissionRequest,
     input: Readonly<Record<string, unknown>>,
@@ -108,7 +109,17 @@ export class AcpInteractionController {
       }
 
       this.dismiss(interactionId, 'resolved');
-      return mapAcpApprovalDecision(response.decision, request.options);
+      const mappedResponse = mapAcpApprovalDecision(response.decision, request.options);
+      const mappedOutcome = mappedResponse.outcome;
+      const rejectedOption = mappedOutcome.outcome === 'selected'
+        && request.options.find(option => option.optionId === mappedOutcome.optionId)?.kind.startsWith('reject');
+      if (
+        response.decision === 'deny'
+        || rejectedOption
+      ) {
+        this.options.onPermissionDenied?.(request.toolCall.toolCallId);
+      }
+      return mappedResponse;
     } catch {
       this.dismiss(interactionId, 'cancelled');
       return CANCELLED_RESPONSE;

@@ -177,6 +177,33 @@ describe('AcpExecutionEventNormalizer', () => {
     }));
   });
 
+  it('marks a denied ACP tool result as blocked through the provider boundary', () => {
+    const normalizer = new AcpExecutionEventNormalizer({
+      isToolBlocked: toolCallId => toolCallId === 'tool-1',
+      scope: {
+        executionId: 'execution-1',
+        kind: 'requested',
+        sessionInstanceId: 'session-instance-1',
+        turnId: 'turn-1',
+      },
+    });
+
+    const result = normalizer.normalize({
+      rawInput: { path: 'README.md' },
+      sessionUpdate: 'tool_call',
+      status: 'failed',
+      title: 'Read',
+      toolCallId: 'tool-1',
+    });
+
+    expect(result.events).toContainEqual(expect.objectContaining({
+      isBlocked: true,
+      isError: true,
+      toolCallId: 'tool-1',
+      type: 'tool_completed',
+    }));
+  });
+
   it('preserves unknown forward-compatible updates in an opaque notice payload', () => {
     const normalizer = new AcpExecutionEventNormalizer({
       scope: {

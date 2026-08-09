@@ -114,6 +114,7 @@ export class OmpExecutionSession implements ProviderExecutionSession {
   readonly sessionInstanceId = randomUUID();
   private readonly createKernel: (options: OmpAcpSessionKernelOptions) => OmpAcpSessionKernel;
   private readonly listeners = new Set<(event: ProviderSessionEvent) => void>();
+  private readonly blockedToolCallIds = new Set<string>();
   private kernel: OmpAcpSessionKernel | null = null;
   private nativeSessionId: string | null;
   private activeRun: OmpExecutionRun | null = null;
@@ -163,6 +164,7 @@ export class OmpExecutionSession implements ProviderExecutionSession {
   }
 
   private async startRun(run: OmpExecutionRun, request: ProviderExecutionRequest): Promise<void> {
+    this.blockedToolCallIds.clear();
     try {
       if (!this.kernel) {
         this.kernel = this.createKernel({
@@ -176,6 +178,7 @@ export class OmpExecutionSession implements ProviderExecutionSession {
             const activeRun = this.activeRun;
             if (activeRun) this.handleNotification(activeRun, notification);
           },
+          onPermissionDenied: toolCallId => this.blockedToolCallIds.add(toolCallId),
           plugin: this.plugin,
         });
         await this.kernel.connect();
@@ -190,6 +193,7 @@ export class OmpExecutionSession implements ProviderExecutionSession {
           usage,
           decodeOmpModelId(request.configuration.model ?? '') ?? undefined,
         ),
+        isToolBlocked: toolCallId => this.blockedToolCallIds.has(toolCallId),
         scope: {
           executionId: run.executionId,
           kind: 'requested',

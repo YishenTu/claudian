@@ -61,6 +61,7 @@ export interface OpencodeAcpSessionKernelOptions {
   readonly getActiveTurnId: () => string | null;
   readonly onClosed: (error: Error) => void;
   readonly onNotification: (notification: AcpSessionNotification) => void;
+  readonly onPermissionDenied?: (toolCallId: string) => void;
   readonly plugin: ProviderHost;
   readonly sessionInstanceId: string;
 }
@@ -243,9 +244,10 @@ export class DefaultOpencodeAcpSessionKernel
         }
       });
 
-      this.interactionController = new AcpInteractionController({
-        getTurnId: this.options.getActiveTurnId,
-        interactionPort: this.options.config.interactionPort,
+    this.interactionController = new AcpInteractionController({
+      getTurnId: this.options.getActiveTurnId,
+      interactionPort: this.options.config.interactionPort,
+      onPermissionDenied: this.options.onPermissionDenied,
         presentPermission: presentOpencodePermission,
         sessionInstanceId: this.options.sessionInstanceId,
       });

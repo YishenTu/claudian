@@ -160,6 +160,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
 
   private readonly createKernel: OpencodeAcpSessionKernelFactory;
   private readonly listeners = new Set<(event: ProviderSessionEvent) => void>();
+  private readonly blockedToolCallIds = new Set<string>();
   private activeRun: OpencodeExecutionRun | null = null;
   private kernel: OpencodeAcpSessionKernel | null = null;
   private kernelGeneration = 0;
@@ -204,6 +205,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       (active) => this.cancelRun(active),
     );
     this.activeRun = run;
+    this.blockedToolCallIds.clear();
     const onAbort = () => run.cancel();
     request.signal.addEventListener('abort', onAbort, { once: true });
     run.abortCleanup = () => request.signal.removeEventListener('abort', onAbort);
@@ -300,6 +302,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
               );
             }
           },
+          onPermissionDenied: toolCallId => this.blockedToolCallIds.add(toolCallId),
           plugin: this.plugin,
           sessionInstanceId: this.sessionInstanceId,
         });
@@ -460,6 +463,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
           model: this.resolveSelectedRawModelId(undefined) ?? undefined,
           promptUsage: null,
         }),
+        isToolBlocked: toolCallId => this.blockedToolCallIds.has(toolCallId),
         scope: {
           executionId: run.executionId,
           kind: 'requested',

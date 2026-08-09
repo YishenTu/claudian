@@ -94,6 +94,7 @@ interface NormalizationState {
   readonly taskToolNormalizer: ClaudeTaskToolNormalizer;
   readonly usageState: ReturnType<typeof createTransformUsageState>;
   readonly toolScopes: Map<string, ToolIdentity>;
+  readonly blockedToolIds: Set<string>;
   assistantStarted: boolean;
   sawStreamText: boolean;
   sawStreamThinking: boolean;
@@ -159,12 +160,20 @@ export class ClaudeExecutionEventNormalizer {
     return normalized;
   }
 
+  markToolBlocked(
+    toolUseId: string,
+    channel: ClaudeExecutionEventChannel,
+  ): void {
+    this.states[channel].blockedToolIds.add(toolUseId);
+  }
+
   reset(channel: ClaudeExecutionEventChannel): void {
     const state = this.states[channel];
     state.streamState.clearAll();
     state.taskToolNormalizer.reset();
     state.usageState.clear();
     state.toolScopes.clear();
+    state.blockedToolIds.clear();
     state.assistantStarted = false;
     state.sawStreamText = false;
     state.sawStreamThinking = false;
@@ -248,6 +257,7 @@ function createNormalizationState(): NormalizationState {
     taskToolNormalizer: new ClaudeTaskToolNormalizer(),
     usageState: createTransformUsageState(),
     toolScopes: new Map(),
+    blockedToolIds: new Set(),
     assistantStarted: false,
     sawStreamText: false,
     sawStreamThinking: false,
@@ -396,6 +406,9 @@ function normalizeToolCompleted(
     | Extract<StreamChunk, { type: 'subagent_tool_result' }>,
   state: NormalizationState,
 ): ClaudeNormalizedOutputEvent {
+  if (chunk.isBlocked) {
+    state.blockedToolIds.add(chunk.id);
+  }
   const identity = state.toolScopes.get(chunk.id) ?? (
     chunk.type === 'subagent_tool_result'
       ? {
@@ -413,6 +426,7 @@ function normalizeToolCompleted(
     ...identity,
     content: chunk.content,
     isError: chunk.isError,
+    isBlocked: state.blockedToolIds.has(chunk.id),
     toolUseResult: chunk.toolUseResult,
   };
 }

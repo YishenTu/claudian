@@ -30,6 +30,7 @@ export interface OmpAcpSessionKernelOptions {
   readonly getActiveTurnId: () => string | null;
   readonly onClosed: (error: Error) => void;
   readonly onNotification: (notification: AcpSessionNotification) => void;
+  readonly onPermissionDenied?: (toolCallId: string) => void;
   readonly plugin: ProviderHost;
 }
 
@@ -93,6 +94,7 @@ export class DefaultOmpAcpSessionKernel implements OmpAcpSessionKernel {
     this.interaction = new AcpInteractionController({
       getTurnId: this.options.getActiveTurnId,
       interactionPort: this.options.config.interactionPort,
+      onPermissionDenied: this.options.onPermissionDenied,
       presentPermission: presentOmpPermission,
       sessionInstanceId: 'omp',
     });

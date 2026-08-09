@@ -1418,11 +1418,18 @@ export class CodexNotificationRouter {
     const normalizedName = normalizeCodexToolName('command_execution');
     const output = item.aggregatedOutput ?? '';
     const content = rawResult?.content ?? normalizeCodexToolResult(normalizedName, output);
-    const isError = item.exitCode !== null
+    const isDeclined = item.status === 'declined';
+    const isError = isDeclined || (item.exitCode !== null
       ? item.exitCode !== 0
-      : rawResult?.isError ?? isCodexToolOutputError(output);
+      : rawResult?.isError ?? isCodexToolOutputError(output));
 
-    this.emit({ type: 'tool_result', id: resultId, content, isError });
+    this.emit({
+      type: 'tool_result',
+      id: resultId,
+      content,
+      isError,
+      ...(isDeclined ? { isBlocked: true } : {}),
+    });
   }
 
   // -- fileChange -------------------------------------------------------------
@@ -1457,6 +1464,7 @@ export class CodexNotificationRouter {
       id: item.id,
       content: paths || 'File change completed',
       isError: item.status === 'failed' || item.status === 'declined',
+      ...(item.status === 'declined' ? { isBlocked: true } : {}),
     });
   }
 

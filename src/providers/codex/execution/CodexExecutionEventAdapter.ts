@@ -54,6 +54,7 @@ export function adaptCodexStreamChunk(
         toolScope: { kind: 'main' },
         content: chunk.content,
         ...(chunk.isError !== undefined ? { isError: chunk.isError } : {}),
+        ...(chunk.isBlocked !== undefined ? { isBlocked: chunk.isBlocked } : {}),
         ...(chunk.toolUseResult ? { toolUseResult: chunk.toolUseResult } : {}),
       };
     case 'usage':
@@ -88,6 +89,7 @@ export function adaptCodexStreamChunk(
         toolScope: { kind: 'subagent', subagentId: chunk.subagentId },
         content: chunk.content,
         ...(chunk.isError !== undefined ? { isError: chunk.isError } : {}),
+        ...(chunk.isBlocked !== undefined ? { isBlocked: chunk.isBlocked } : {}),
         ...(chunk.toolUseResult ? { toolUseResult: chunk.toolUseResult } : {}),
       };
     case 'error':

@@ -202,6 +202,7 @@ RewindableExecutionSession {
   private nativeStartupFlight: Promise<GrokExecutionNativeConnection> | null = null;
   private quarantineGeneration = 0;
   private readonly interactionController: AcpInteractionController;
+  private readonly blockedToolCallIds = new Set<string>();
   private readonly interactionRouter: GrokExecutionInteractionRouter;
   private readonly listeners = new Set<(event: ProviderSessionEvent) => void>();
   private readonly mirrorDeduplicator = new GrokSessionNotificationMirrorDeduplicator();
@@ -230,6 +231,7 @@ RewindableExecutionSession {
     this.interactionController = new AcpInteractionController({
       getTurnId: () => this.active?.run.turnId ?? null,
       interactionPort: config.interactionPort,
+      onPermissionDenied: toolCallId => this.blockedToolCallIds.add(toolCallId),
       sessionInstanceId: this.sessionInstanceId,
     });
     this.interactionRouter = new GrokExecutionInteractionRouter(
@@ -243,6 +245,7 @@ RewindableExecutionSession {
   execute(request: ProviderExecutionRequest): ProviderExecutionRun {
     if (this.disposed) throw new Error('Grok execution session is disposed.');
     if (this.active) throw new Error('Grok execution session is already executing.');
+    this.blockedToolCallIds.clear();
     const run = new GrokExecutionRunState(
       randomUUID(),
       randomUUID(),
@@ -255,6 +258,7 @@ RewindableExecutionSession {
       cancellationGeneration: this.cancellationGeneration,
       normalizer: new AcpExecutionEventNormalizer({
         mapUsage: usage => buildAcpUsageInfo({ contextWindow: usage }),
+        isToolBlocked: toolCallId => this.blockedToolCallIds.has(toolCallId),
         scope: {
           executionId: run.executionId,
           kind: 'requested',
