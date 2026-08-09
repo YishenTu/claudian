@@ -410,17 +410,25 @@ export class ClaudianView extends ItemView {
     this.sidebarSurfaceSwitcherEl = this.sessionSidebarEl.createDiv({
       cls: 'claudian-sidebar-surface-switcher',
     });
+    this.sessionSidebarEl.insertBefore(
+      this.sidebarSurfaceSwitcherEl,
+      this.sessionSidebarEl.firstChild,
+    );
     this.sidebarSurfaceSwitcherEl.setAttribute('role', 'group');
     this.sidebarSurfaceSwitcherEl.setAttribute('aria-label', 'Sidebar view');
     this.sessionsSurfaceButtonEl = this.sidebarSurfaceSwitcherEl.createEl('button', {
       cls: 'claudian-sidebar-surface-button claudian-sidebar-surface-button--sessions',
       attr: { 'aria-label': 'Sessions', type: 'button' },
     });
+    setIcon(this.sessionsSurfaceButtonEl, 'messages-square');
+    this.sessionsSurfaceButtonEl.createSpan({ text: 'Sessions' });
     this.sessionsSurfaceButtonEl.addEventListener('click', () => this.showSessions());
     this.filesSurfaceButtonEl = this.sidebarSurfaceSwitcherEl.createEl('button', {
       cls: 'claudian-sidebar-surface-button claudian-sidebar-surface-button--files',
       attr: { 'aria-label': 'Files', type: 'button' },
     });
+    setIcon(this.filesSurfaceButtonEl, 'folder-tree');
+    this.filesSurfaceButtonEl.createSpan({ text: 'Files' });
     this.filesSurfaceButtonEl.addEventListener('click', () => this.showVaultFiles());
     if (this.activeSidebarSurface !== 'files') {
       this.activeSidebarSurface = 'sessions';

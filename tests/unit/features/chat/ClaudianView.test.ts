@@ -1090,17 +1090,21 @@ describe('ClaudianView tab controls', () => {
     expect(viewContainerEl.children[0].hasClass('claudian-chat-panel')).toBe(true);
     expect(viewContainerEl.children[1].hasClass('claudian-session-resizer')).toBe(true);
     expect(viewContainerEl.children[2].hasClass('claudian-session-sidebar')).toBe(true);
-    expect(viewContainerEl.children[2].children[0].hasClass('claudian-session-surface')).toBe(true);
-    expect(viewContainerEl.children[2].children[1].hasClass('claudian-files-surface')).toBe(true);
-    expect(viewContainerEl.children[2].children[1].hasClass('claudian-hidden')).toBe(true);
-    expect(viewContainerEl.children[2].children[2]
+    expect(viewContainerEl.children[2].children[0]
       .hasClass('claudian-sidebar-surface-switcher')).toBe(true);
+    expect(viewContainerEl.children[2].children[1].hasClass('claudian-session-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[2].hasClass('claudian-files-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[2].hasClass('claudian-hidden')).toBe(true);
     expect(view.sidebarSurfaceSwitcherEl.getAttribute('role')).toBe('group');
     expect(view.sidebarSurfaceSwitcherEl.getAttribute('aria-label')).toBe('Sidebar view');
-    expect(view.sessionsSurfaceButtonEl.textContent).toBe('');
+    expect(view.sessionsSurfaceButtonEl.children.some((child: any) => (
+      child.textContent === 'Sessions'
+    ))).toBe(true);
     expect(view.sessionsSurfaceButtonEl.getAttribute('aria-label')).toBe('Sessions');
     expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
-    expect(view.filesSurfaceButtonEl.textContent).toBe('');
+    expect(view.filesSurfaceButtonEl.children.some((child: any) => (
+      child.textContent === 'Files'
+    ))).toBe(true);
     expect(view.filesSurfaceButtonEl.getAttribute('aria-label')).toBe('Files');
     expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
     expect(viewContainerEl.children[2].getAttribute('aria-label')).toBeNull();
