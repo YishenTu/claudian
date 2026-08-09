@@ -25,6 +25,7 @@ import { appendContextFiles, appendCurrentNote } from '@/utils/context';
 import { appendEditorContext } from '@/utils/editor';
 
 import { decodeOmpModelId } from '../models';
+import { createOmpToolStreamAdapter } from '../normalization/ompToolNormalization';
 import { getOmpProviderSettings } from '../settings';
 import {
   DefaultOmpAcpSessionKernel,
@@ -195,6 +196,7 @@ export class OmpExecutionSession implements ProviderExecutionSession {
           sessionInstanceId: this.sessionInstanceId,
           turnId: run.turnId,
         },
+        toolStreamAdapter: createOmpToolStreamAdapter(),
       });
       this.normalizers.set(run, normalizer);
       const selectedModel = decodeOmpModelId(request.configuration.model ?? '')

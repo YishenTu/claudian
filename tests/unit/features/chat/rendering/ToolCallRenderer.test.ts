@@ -68,6 +68,20 @@ describe('ToolCallRenderer', () => {
       expect(header.getAttribute('tabindex')).toBe('0');
     });
 
+    it('opens the reported file without toggling the tool card', () => {
+      const parentEl = createMockEl();
+      const onOpenFile = jest.fn();
+      const toolCall = createToolCall({ input: { file_path: 'notes/file.md' } });
+
+      const toolEl = renderToolCall(parentEl, toolCall, new Map(), { onOpenFile });
+      const summary = toolEl.querySelector('.claudian-tool-summary') as HTMLElement | null;
+
+      summary?.click();
+
+      expect(onOpenFile).toHaveBeenCalledWith('notes/file.md');
+      expect(toolCall.isExpanded).toBe(false);
+    });
+
     it('should track isExpanded on toolCall object', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall();

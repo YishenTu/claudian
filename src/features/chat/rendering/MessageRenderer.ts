@@ -31,6 +31,7 @@ import {
   escapeMathDelimitersForStreaming,
   normalizeLatexMathDelimiters,
 } from '../../../utils/markdownMath';
+import { openVaultFile } from '../../../utils/obsidianCompat';
 import type { FeatureHost } from '../../FeatureHost';
 import { findRewindContext } from '../rewind';
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
@@ -517,6 +518,9 @@ export class MessageRenderer {
     if (isWriteEditTool(toolCall.name)) {
       renderStoredWriteEdit(contentEl, toolCall, {
         initiallyExpanded: this.shouldExpandFileEditsByDefault(),
+        onOpenFile: (filePath) => runRendererAction(async () => {
+          await openVaultFile(this.app, filePath);
+        }),
       });
     } else if (
       subagentAdapter?.protocol === 'managed-agent'
@@ -532,6 +536,9 @@ export class MessageRenderer {
     } else {
       renderStoredToolCall(contentEl, toolCall, {
         initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH && this.shouldExpandFileEditsByDefault(),
+        onOpenFile: (filePath) => runRendererAction(async () => {
+          await openVaultFile(this.app, filePath);
+        }),
       });
     }
   }

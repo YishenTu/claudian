@@ -46,6 +46,7 @@ import {
 import { formatDurationMmSs } from '../../../utils/date';
 import { extractDiffData } from '../../../utils/diff';
 import { hasStreamingMathDelimiters } from '../../../utils/markdownMath';
+import { openVaultFile } from '../../../utils/obsidianCompat';
 import { getVaultPath, normalizePathForVault } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
 import { FLAVOR_TEXTS } from '../constants';
@@ -468,7 +469,10 @@ export class StreamController {
     let replacementEl: HTMLElement;
 
     if (needsWriteEditRenderer) {
-      const writeEditState = createWriteEditBlock(parentEl, toolCall, { initiallyExpanded });
+      const writeEditState = createWriteEditBlock(parentEl, toolCall, {
+        initiallyExpanded,
+        onOpenFile: (filePath) => { void openVaultFile(this.deps.plugin.app, filePath); },
+      });
       replacementEl = writeEditState.wrapperEl;
       state.writeEditStates.set(toolCall.id, writeEditState);
       state.toolCallElements.set(toolCall.id, replacementEl);
@@ -486,6 +490,7 @@ export class StreamController {
       state.writeEditStates.delete(toolCall.id);
       replacementEl = renderToolCall(parentEl, toolCall, state.toolCallElements, {
         initiallyExpanded,
+        onOpenFile: (filePath) => { void openVaultFile(this.deps.plugin.app, filePath); },
       });
       state.toolCallElements.set(toolCall.id, replacementEl);
       if (toolCall.result !== undefined || toolCall.status !== 'running') {
@@ -584,12 +589,14 @@ export class StreamController {
     if (isWriteEditTool(toolCall.name)) {
       const writeEditState = createWriteEditBlock(parentEl, toolCall, {
         initiallyExpanded: this.shouldExpandFileEditsByDefault(),
+        onOpenFile: (filePath) => { void openVaultFile(this.deps.plugin.app, filePath); },
       });
       state.writeEditStates.set(toolId, writeEditState);
       state.toolCallElements.set(toolId, writeEditState.wrapperEl);
     } else {
       renderToolCall(parentEl, toolCall, state.toolCallElements, {
         initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH && this.shouldExpandFileEditsByDefault(),
+        onOpenFile: (filePath) => { void openVaultFile(this.deps.plugin.app, filePath); },
       });
     }
     state.pendingTools.delete(toolId);

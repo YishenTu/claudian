@@ -15,7 +15,7 @@ export const ompProviderRegistration: ProviderModule = {
   chatUIConfig: ompChatUIConfig,
   createExecutionBackend: plugin => new OmpExecutionBackend(plugin),
   displayName: 'OMP',
-  environmentKeyPatterns: [/^(?:OMP|PI)_/i],
+  environmentKeyPatterns: [/^OMP_/i],
   historyService: new OmpConversationHistoryService(),
   isEnabled: settings => getOmpProviderSettings(settings).enabled,
   setEnabled: (settings, enabled) => updateOmpProviderSettings(settings, { enabled }),

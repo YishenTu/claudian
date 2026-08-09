@@ -16,6 +16,10 @@ export class FileContextState {
     this.currentNoteSent = true;
   }
 
+  markCurrentNoteChanged(): void {
+    this.currentNoteSent = false;
+  }
+
   isSessionStarted(): boolean {
     return this.sessionStarted;
   }

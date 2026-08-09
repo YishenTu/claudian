@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import type { ProviderSessionConfig } from '@/core/execution';
+import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { t } from '@/i18n/i18n';
 import {
@@ -21,7 +22,7 @@ import {
   type AcpWriteTextFileRequest,
 } from '@/providers/acp';
 
-import { buildOmpLaunchSpec } from '../runtime/OmpLaunchSpec';
+import { buildOmpEnvironment, buildOmpLaunchSpec } from '../runtime/OmpLaunchSpec';
 import { getOmpProviderSettings } from '../settings';
 
 export interface OmpAcpSessionKernelOptions {
@@ -71,7 +72,10 @@ export class DefaultOmpAcpSessionKernel implements OmpAcpSessionKernel {
     const spec = buildOmpLaunchSpec({
       command,
       cwd: this.options.config.vaultWorkingDirectory,
-      env: { ...process.env },
+      env: buildOmpEnvironment(
+        process.env,
+        getRuntimeEnvironmentVariables(this.options.plugin.settings, 'omp'),
+      ),
       settings,
     });
     const subprocess = new AcpSubprocess(spec);

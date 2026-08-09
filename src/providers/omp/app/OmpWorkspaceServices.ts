@@ -5,7 +5,7 @@ import type {
 } from '../../../core/providers/types';
 import { OmpModelDiscoveryService } from '../metadata/OmpModelDiscoveryService';
 import { OmpCliResolver } from '../runtime/OmpCliResolver';
-import { updateOmpProviderSettings } from '../settings';
+import { getOmpProviderSettings, updateOmpProviderSettings } from '../settings';
 import { ompSettingsTabRenderer } from '../ui/OmpSettingsTab';
 
 export interface OmpWorkspaceServices extends ProviderWorkspaceServices {
@@ -23,9 +23,15 @@ export const ompWorkspaceRegistration: ProviderWorkspaceRegistration<OmpWorkspac
         try {
           const catalog = await modelDiscoveryService.discoverCatalog();
           await plugin.mutateSettings(settings => {
+            const current = getOmpProviderSettings(settings);
             updateOmpProviderSettings(settings, {
               discoveredModels: catalog.models,
               catalogTimestamp: Date.now(),
+              visibleModels: current.visibleModels.length > 0
+                ? current.visibleModels
+                : catalog.models[0]
+                  ? [catalog.models[0].rawId]
+                  : [],
               ...(catalog.thinking ? { thinking: catalog.thinking } : {}),
             });
           });

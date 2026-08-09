@@ -14,6 +14,7 @@ import {
   initializeTabUI,
   onProviderAvailabilityChanged,
   updatePlanModeUI,
+  updateSendButton,
   wireTabInputEvents,
 } from '@/features/chat/tabs/Tab';
 
@@ -1402,5 +1403,38 @@ describe('Tab provider execution ownership', () => {
 
     expect(plugin.settings.permissionMode).toBe('plan');
     expect(coordinator.setMode).not.toHaveBeenCalled();
+  });
+
+  it('reflects draft and streaming state in the send button', () => {
+    const tab = createTab({ plugin: createPlugin(), containerEl: createMockEl() as any });
+
+    updateSendButton(tab);
+    expect(tab.dom.sendButtonEl.disabled).toBe(true);
+
+    tab.dom.inputEl.value = 'send this';
+    updateSendButton(tab);
+    expect(tab.dom.sendButtonEl.disabled).toBe(false);
+    expect(tab.dom.sendButtonEl.getAttribute('aria-label')).toBe('Send message');
+
+    tab.state.isStreaming = true;
+    updateSendButton(tab);
+    expect(tab.dom.sendButtonEl.disabled).toBe(false);
+    expect(tab.dom.sendButtonEl.getAttribute('aria-label')).toBe('Stop generation');
+  });
+
+  it('sends or cancels from the send button', () => {
+    const sendMessage = jest.fn();
+    const cancelStreaming = jest.fn();
+    const tab = createTab({ plugin: createPlugin(), containerEl: createMockEl() as any });
+    tab.controllers.inputController = { sendMessage, cancelStreaming } as any;
+    tab.dom.inputEl.value = 'send this';
+
+    wireTabInputEvents(tab, createPlugin());
+    tab.dom.sendButtonEl.click();
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+
+    tab.state.isStreaming = true;
+    tab.dom.sendButtonEl.click();
+    expect(cancelStreaming).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,7 +1,21 @@
-import { buildOmpLaunchSpec } from '@/providers/omp/runtime/OmpLaunchSpec';
+import { buildOmpEnvironment, buildOmpLaunchSpec } from '@/providers/omp/runtime/OmpLaunchSpec';
 import { DEFAULT_OMP_PROVIDER_SETTINGS } from '@/providers/omp/settings';
 
 describe('buildOmpLaunchSpec', () => {
+  it('does not inherit Pi configuration directories or profiles', () => {
+    expect(buildOmpEnvironment(
+      {
+        PATH: '/usr/bin',
+        PI_CODING_AGENT_DIR: '/Users/lee/.pi/agent',
+        PI_PROFILE: 'pi-work',
+      },
+      {
+        OMP_PROFILE: 'omp-work',
+        PI_CONFIG_DIR: '/Users/lee/.pi',
+      },
+    )).toEqual({ PATH: '/usr/bin', OMP_PROFILE: 'omp-work' });
+  });
+
   it('starts OMP in ACP mode with the conversation working directory', () => {
     const spec = buildOmpLaunchSpec({
       command: '/usr/local/bin/omp',

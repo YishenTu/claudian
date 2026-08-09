@@ -57,6 +57,19 @@
   min-width: 0;
 }
 
+.claudian-write-edit-summary.claudian-tool-file-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--text-faint);
+  text-underline-offset: 2px;
+}
+
+.claudian-write-edit-summary.claudian-tool-file-link:hover,
+.claudian-write-edit-summary.claudian-tool-file-link:focus-visible {
+  color: var(--text-accent);
+  text-decoration-color: currentColor;
+}
+
 .claudian-write-edit-stats {
   font-family: var(--font-monospace);
   font-size: 11px;

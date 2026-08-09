@@ -141,15 +141,25 @@ export function normalizeOmpVisibleModels(
   discoveredModels: OmpDiscoveredModel[] = [],
 ): string[] {
   if (!Array.isArray(value)) return [];
-  const known = new Set(discoveredModels.map(model => model.rawId));
+  const known = new Map(discoveredModels.map(model => [canonicalizeOmpModelId(model.rawId), model.rawId]));
   const result: string[] = [];
   for (const entry of value) {
     if (typeof entry !== 'string') continue;
     const rawId = entry.trim();
-    if (!rawId || (known.size > 0 && !known.has(rawId)) || result.includes(rawId)) continue;
-    result.push(rawId);
+    if (!rawId) continue;
+    const resolved = known.get(canonicalizeOmpModelId(rawId)) ?? rawId;
+    if (result.includes(resolved)) continue;
+    result.push(resolved);
   }
   return result;
+}
+
+function canonicalizeOmpModelId(value: string): string {
+  return value.trim()
+    .replace(/^omp:/iu, '')
+    .replace(/:+/gu, '/')
+    .replace(/\/{2,}/gu, '/')
+    .toLowerCase();
 }
 
 function firstText(...values: unknown[]): string | undefined {

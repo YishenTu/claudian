@@ -25,6 +25,7 @@ export interface FileContextCallbacks {
   getExcludedTags: () => string[];
   onChipsChanged?: () => void;
   onUserChipsChanged?: () => void;
+  onCurrentNoteChanged?: (notePath: string | null) => void;
   getExternalContexts?: () => string[];
   /** Called when an agent is selected from the @ mention dropdown. */
   onAgentMentionSelect?: (agentId: string) => void;
@@ -213,6 +214,30 @@ export class FileContextManager {
       } else {
         this.currentNotePath = null;
       }
+      this.callbacks.onCurrentNoteChanged?.(this.currentNotePath);
+      this.refreshCurrentNoteChip();
+      return;
+    }
+
+    if (this.hasExcludedTag(file)) {
+      if (this.currentNotePath) {
+        this.state.detachFile(this.currentNotePath);
+      }
+      this.currentNotePath = null;
+      this.state.markCurrentNoteChanged();
+      this.callbacks.onCurrentNoteChanged?.(null);
+      this.refreshCurrentNoteChip();
+      return;
+    }
+
+    if (this.currentNotePath !== normalizedPath) {
+      if (this.currentNotePath) {
+        this.state.detachFile(this.currentNotePath);
+      }
+      this.currentNotePath = normalizedPath;
+      this.state.attachFile(normalizedPath);
+      this.state.markCurrentNoteChanged();
+      this.callbacks.onCurrentNoteChanged?.(normalizedPath);
       this.refreshCurrentNoteChip();
     }
   }

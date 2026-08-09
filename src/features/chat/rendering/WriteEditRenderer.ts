@@ -22,6 +22,32 @@ export interface WriteEditState {
 
 export interface WriteEditRenderOptions {
   initiallyExpanded?: boolean;
+  onOpenFile?: (filePath: string) => void;
+}
+
+function makeFileSummaryInteractive(
+  summaryEl: HTMLElement,
+  filePath: string,
+  onOpenFile: ((filePath: string) => void) | undefined,
+): void {
+  if (!onOpenFile || !filePath || filePath === 'file') return;
+
+  summaryEl.addClass('claudian-tool-file-link');
+  summaryEl.setAttribute('role', 'link');
+  summaryEl.setAttribute('tabindex', '0');
+  summaryEl.setAttribute('title', `Open ${filePath}`);
+  const open = (event: Event) => {
+    event.stopPropagation();
+    onOpenFile(filePath);
+  };
+  summaryEl.addEventListener('click', open);
+  summaryEl.addEventListener('keydown', (event) => {
+    const keyboardEvent = event;
+    if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
+      keyboardEvent.preventDefault();
+      open(event);
+    }
+  });
 }
 
 function shortenPath(filePath: string, maxLength = 40): string {
@@ -73,6 +99,7 @@ export function createWriteEditBlock(
   nameEl.setText(toolName);
   const summaryEl = headerEl.createDiv({ cls: 'claudian-write-edit-summary' });
   summaryEl.setText(fileNameOnly(filePath) || 'file');
+  makeFileSummaryInteractive(summaryEl, filePath, options.onOpenFile);
 
   // Populated when diff is computed
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });
@@ -191,6 +218,7 @@ export function renderStoredWriteEdit(
   nameEl.setText(toolName);
   const summaryEl = headerEl.createDiv({ cls: 'claudian-write-edit-summary' });
   summaryEl.setText(fileNameOnly(filePath) || 'file');
+  makeFileSummaryInteractive(summaryEl, filePath, options.onOpenFile);
 
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });
   if (toolCall.diffData) {

@@ -525,6 +525,17 @@ describe('ChatState', () => {
   });
 
   describe('resetStreamingState', () => {
+    it('notifies the UI when reset clears streaming', () => {
+      const onStreamingStateChanged = jest.fn();
+      const chatState = new ChatState({ onStreamingStateChanged });
+      chatState.isStreaming = true;
+      onStreamingStateChanged.mockClear();
+
+      chatState.resetStreamingState();
+
+      expect(onStreamingStateChanged).toHaveBeenCalledWith(false);
+    });
+
     it('resets all streaming-related state', () => {
       const chatState = new ChatState();
       chatState.currentContentEl = {} as HTMLElement;

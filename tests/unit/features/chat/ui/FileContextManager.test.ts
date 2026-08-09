@@ -101,11 +101,13 @@ function createMockApp(options: {
 function createMockCallbacks(options: {
   externalContexts?: string[];
   excludedTags?: string[];
+  onCurrentNoteChanged?: (notePath: string | null) => void;
 } = {}): FileContextCallbacks {
-  const { externalContexts = [], excludedTags = [] } = options;
+  const { externalContexts = [], excludedTags = [], onCurrentNoteChanged } = options;
   return {
     getExcludedTags: jest.fn(() => excludedTags),
     getExternalContexts: jest.fn(() => externalContexts),
+    onCurrentNoteChanged,
   };
 }
 
@@ -529,10 +531,11 @@ describe('FileContextManager', () => {
       manager.destroy();
     });
 
-    it('should not update current note when session is started', () => {
+    it('should associate a newly opened note with the started session', () => {
       const app = createMockApp({ files: ['notes/a.md'] });
+      const onCurrentNoteChanged = jest.fn();
       const manager = new FileContextManager(
-        app, containerEl as any, inputEl, createMockCallbacks()
+        app, containerEl as any, inputEl, createMockCallbacks({ onCurrentNoteChanged })
       );
 
       manager.setCurrentNote('notes/a.md');
@@ -540,8 +543,9 @@ describe('FileContextManager', () => {
 
       const fileB = createMockTFile('notes/b.md');
       manager.handleFileOpen(fileB);
-      // Should NOT update because session is started
-      expect(manager.getCurrentNotePath()).toBe('notes/a.md');
+      expect(manager.getCurrentNotePath()).toBe('notes/b.md');
+      expect(manager.shouldSendCurrentNote()).toBe(true);
+      expect(onCurrentNoteChanged).toHaveBeenLastCalledWith('notes/b.md');
       manager.destroy();
     });
 

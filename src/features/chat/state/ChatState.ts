@@ -459,7 +459,7 @@ export class ChatState {
     this.state.currentTextEl = null;
     this.state.currentTextContent = '';
     this.state.currentThinkingState = null;
-    this.state.isStreaming = false;
+    this.isStreaming = false;
     this.state.cancelRequested = false;
     // Clear thinking indicator timeout
     this.clearThinkingIndicatorTimeout();

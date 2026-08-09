@@ -118,6 +118,54 @@
   color: var(--text-muted);
 }
 
+.claudian-input-send-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  margin-inline-start: 8px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+}
+
+/* Keep the provider mode switch and the primary action together on the right. */
+.claudian-input-toolbar > .claudian-mode-selector {
+  margin-inline-start: auto;
+}
+
+.claudian-input-send-button:hover:not(:disabled) {
+  background: var(--claudian-brand);
+  border-color: var(--claudian-brand);
+  color: var(--background-primary);
+  filter: brightness(1.08);
+}
+
+.claudian-input-send-button:disabled {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--claudian-brand) 35%, transparent);
+  color: color-mix(in srgb, var(--claudian-brand) 55%, var(--text-faint));
+  cursor: default;
+  opacity: 0.7;
+}
+
+.claudian-input-send-button.is-streaming {
+  border-color: var(--claudian-brand);
+  background: rgba(var(--claudian-brand-rgb), 0.14);
+  color: var(--claudian-brand);
+}
+
+.claudian-input-send-button svg {
+  width: 18px;
+  height: 18px;
+}
+
 /* Input toolbar */
 .claudian-input-toolbar {
   display: flex;

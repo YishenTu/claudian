@@ -2,7 +2,7 @@
 
 ## Project
 
-Claudian is an Obsidian plugin that embeds provider-backed coding agents in a sidebar and inline-edit flow. Claude is the default provider. Codex, Grok, OpenCode, and Pi are optional providers that plug into the same conversation model through `Conversation.providerId` and opaque provider-owned `providerState`.
+Claudian is an Obsidian plugin that embeds provider-backed coding agents in a sidebar and inline-edit flow. Claude is the default provider. The built-in selectable providers are Claude, Codex, Cursor, Grok, OMP (Oh My Pi), OpenCode, and Pi; ACP is shared transport infrastructure, not a selectable provider. All providers plug into the same conversation model through `Conversation.providerId` and opaque provider-owned `providerState`.
 
 Do not assume provider parity. Check each provider's `capabilities.ts`, `registration.ts`, and UI config before wiring shared behavior.
 
@@ -14,7 +14,9 @@ Do not assume provider parity. Check each provider's `capabilities.ts`, `registr
   - `src/features/chat/AGENTS.md`
   - `src/providers/claude/AGENTS.md`
   - `src/providers/codex/AGENTS.md`
+  - `src/providers/cursor/AGENTS.md`
   - `src/providers/grok/AGENTS.md`
+  - `src/providers/omp/AGENTS.md`
   - `src/providers/opencode/AGENTS.md`
   - `src/providers/pi/AGENTS.md`
   - `src/style/AGENTS.md`
@@ -107,7 +109,10 @@ Provider-specific session fields belong behind typed helpers in the owning provi
 - Do not use `console.*` in production code.
 - Settings writers must merge rather than replace provider-owned configuration.
 - Put non-committed notes, handoff files, traces, and throwaway scripts in `.context/`.
-- Use conventional branch prefixes such as `feat/`, `fix/`, `chore/`, `docs/`, and `refactor/`.
+- Use the format `<type>/<short-kebab-description>`, for example `feat/tool-file-links`, `fix/omp-model-discovery`, `chore/update-dependencies`, `docs/provider-guide`, or `refactor/session-storage`.
+- Choose a type that describes the primary intent: `feat/` for user-visible behavior, `fix/` for a bug correction, `refactor/` for behavior-preserving structure changes, `test/` for test-only work, `docs/` for documentation, `chore/` for maintenance/tooling, and `perf/` for performance work.
+- Keep names lowercase, concise, specific, and stable; use hyphens, avoid ticket-only names, personal names, provider names without a change, vague words such as `work` or `tmp`, and branch names that encode an agent or tool identity. Never use `codex/` as a branch prefix.
+- Branch from the intended integration base, keep one coherent change per branch, and do not reuse a branch after its pull request has been closed or merged.
 
 ## TDD Workflow
 
@@ -122,6 +127,8 @@ Provider-specific session fields belong behind typed helpers in the owning provi
 - Prefer provider-native behavior over local reimplementation. Adapt provider output at the boundary instead of shadowing provider features.
 - Keep live streaming and history replay responsibilities separate. Live output should come from the provider runtime protocol when available; provider transcript files are the replay source.
 - New provider behavior must be expressed through registries and capabilities: `ProviderRegistry`, `ProviderWorkspaceRegistry`, `ProviderChatUIConfig`, provider capabilities, and provider-owned settings reconciliation.
+- The built-in provider list is composed in `src/providers/index.ts`. Adding or changing a provider requires checking its registration, `ProviderId` usage, capabilities, settings storage/reconciliation, workspace services, UI configuration, history, and the nearest provider guide; do not update a shared provider switch without checking every registered provider.
+- ACP providers share transport and session primitives from `src/providers/acp/`, but each ACP provider owns its launch policy, tool normalization, model discovery, history, and provider state. Do not assume Cursor and OMP behave like each other or like OpenCode.
 - Model, permission, plan-mode, command, MCP, skill, and subagent behavior is provider-specific unless the core contract explicitly makes it shared.
 - Treat persisted provider configuration as untrusted runtime input. Provider settings readers and storage normalization must decode every field; invalid permission, tool, and sandbox modes must fail closed.
 - When provider behavior is uncertain, inspect real runtime output first. Put throwaway scripts, traces, and handoff notes in `.context/`.

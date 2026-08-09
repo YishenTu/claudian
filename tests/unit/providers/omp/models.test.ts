@@ -2,6 +2,7 @@ import {
   encodeOmpModelId,
   normalizeOmpConfigOptionModels,
   normalizeOmpDiscoveredModels,
+  normalizeOmpVisibleModels,
 } from '@/providers/omp/models';
 
 describe('OMP models', () => {
@@ -52,5 +53,12 @@ describe('OMP models', () => {
       { description: 'openai/gpt-5-mini', label: 'GPT-5 mini', rawId: 'openai/gpt-5-mini' },
       { label: 'Claude Sonnet', rawId: 'anthropic/claude-sonnet' },
     ]);
+  });
+
+  it('migrates legacy OMP model ids to the current catalog ids', () => {
+    expect(normalizeOmpVisibleModels(
+      ['omp:bailian:deepseek-v4-flash', 'openrouter/gpt-5'],
+      [{ label: 'DeepSeek', rawId: 'bailian/deepseek-v4-flash' }],
+    )).toEqual(['bailian/deepseek-v4-flash', 'openrouter/gpt-5']);
   });
 });

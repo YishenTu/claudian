@@ -830,11 +830,47 @@ interface ToolElementStructure {
 
 export interface ToolCallRenderOptions {
   initiallyExpanded?: boolean;
+  onOpenFile?: (filePath: string) => void;
+}
+
+function getToolFilePath(toolCall: ToolCallInfo): string | undefined {
+  const fileTools: string[] = [TOOL_READ, TOOL_WRITE, TOOL_EDIT];
+  if (!fileTools.includes(toolCall.name)) {
+    return undefined;
+  }
+  const filePath = toolCall.input.file_path;
+  return typeof filePath === 'string' && filePath.trim() ? filePath : undefined;
+}
+
+function makeFileSummaryInteractive(
+  summaryEl: HTMLElement,
+  filePath: string | undefined,
+  onOpenFile: ((filePath: string) => void) | undefined,
+): void {
+  if (!filePath || !onOpenFile) return;
+
+  summaryEl.addClass('claudian-tool-file-link');
+  summaryEl.setAttribute('role', 'link');
+  summaryEl.setAttribute('tabindex', '0');
+  summaryEl.setAttribute('title', `Open ${filePath}`);
+  const open = (event: Event) => {
+    event.stopPropagation();
+    onOpenFile(filePath);
+  };
+  summaryEl.addEventListener('click', open);
+  summaryEl.addEventListener('keydown', (event) => {
+    const keyboardEvent = event;
+    if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
+      keyboardEvent.preventDefault();
+      open(event);
+    }
+  });
 }
 
 function createToolElementStructure(
   parentEl: HTMLElement,
-  toolCall: ToolCallInfo
+  toolCall: ToolCallInfo,
+  onOpenFile?: (filePath: string) => void,
 ): ToolElementStructure {
   const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
   if (toolCall.name === TOOL_BASH) {
@@ -854,6 +890,7 @@ function createToolElementStructure(
 
   const summaryEl = header.createSpan({ cls: 'claudian-tool-summary' });
   summaryEl.setText(getToolSummary(toolCall.name, toolCall.input));
+  makeFileSummaryInteractive(summaryEl, getToolFilePath(toolCall), onOpenFile);
 
   const currentTaskEl = toolCall.name === TOOL_TODO_WRITE
     ? createCurrentTaskPreview(header, toolCall.input)
@@ -1056,7 +1093,7 @@ export function renderToolCall(
   options: ToolCallRenderOptions = {}
 ): HTMLElement {
   const { toolEl, header, statusEl, content, currentTaskEl } =
-    createToolElementStructure(parentEl, toolCall);
+    createToolElementStructure(parentEl, toolCall, options.onOpenFile);
 
   toolEl.dataset.toolId = toolCall.id;
   toolCallElements.set(toolCall.id, toolEl);
@@ -1139,7 +1176,7 @@ export function renderStoredToolCall(
   options: ToolCallRenderOptions = {}
 ): HTMLElement {
   const { toolEl, header, statusEl, content, currentTaskEl } =
-    createToolElementStructure(parentEl, toolCall);
+    createToolElementStructure(parentEl, toolCall, options.onOpenFile);
 
   if (toolCall.name === TOOL_TODO_WRITE) {
     setTodoWriteStatus(statusEl, toolCall.input);

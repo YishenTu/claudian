@@ -1,5 +1,5 @@
 import type { Component } from 'obsidian';
-import { Notice, Platform } from 'obsidian';
+import { Notice, Platform, setIcon } from 'obsidian';
 
 import type {
   ProviderBackgroundOutputEvent,
@@ -724,6 +724,15 @@ export function createTab(options: TabCreateOptions): TabData {
     renderer: null,
   };
 
+  state.callbacks = {
+    ...state.callbacks,
+    onStreamingStateChanged: (isStreaming) => {
+      onStreamingChanged?.(isStreaming);
+      updateSendButton(tab);
+    },
+  };
+  updateSendButton(tab);
+
   tab.executionCoordinator = createTabExecutionCoordinator(tab, plugin);
   return tab;
 }
@@ -1148,6 +1157,15 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
       dir: 'auto',
     },
   });
+  const sendButtonEl = inputWrapper.createEl('button', {
+    cls: 'claudian-input-send-button',
+    attr: {
+      type: 'button',
+      'aria-label': 'Send message',
+      title: 'Send message (enter)',
+    },
+  });
+  setIcon(sendButtonEl, 'send');
 
   return {
     contentEl,
@@ -1159,10 +1177,23 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     queueIndicatorEl,
     inputWrapper,
     inputEl,
+    sendButtonEl,
     navRowEl,
     contextRowEl,
     eventCleanups: [],
   };
+}
+
+export function updateSendButton(tab: TabData): void {
+  const { inputEl, sendButtonEl } = tab.dom;
+  const isStreaming = tab.state.isStreaming;
+  const canSend = inputEl.value.trim().length > 0;
+
+  sendButtonEl.disabled = !isStreaming && !canSend;
+  sendButtonEl.toggleClass('is-streaming', isStreaming);
+  setIcon(sendButtonEl, isStreaming ? 'square' : 'send');
+  sendButtonEl.setAttribute('aria-label', isStreaming ? 'Stop generation' : 'Send message');
+  sendButtonEl.setAttribute('title', isStreaming ? 'Stop generation (Esc)' : 'Send message (Enter)');
 }
 
 /**
@@ -1264,6 +1295,12 @@ function initializeContextManagers(
       getExcludedTags: () => plugin.settings.excludedTags,
       getExternalContexts: () => tab.ui.externalContextSelector?.getExternalContexts() || [],
       onUserChipsChanged: onUserModified,
+      onCurrentNoteChanged: (notePath) => {
+        if (!tab.conversationId) return;
+        void plugin.updateConversation(tab.conversationId, {
+          currentNote: notePath ?? undefined,
+        });
+      },
     },
     dom.inputContainerEl,
     contextTray,
@@ -1559,6 +1596,9 @@ function initializeInputToolbar(
       onUserModified?.();
     },
   });
+
+  // Keep the primary action in the toolbar flow so it never overlaps provider controls.
+  inputToolbar.appendChild(dom.sendButtonEl);
 
   dom.eventCleanups.push(() => toolbarComponents.layoutController.destroy());
 
@@ -2285,6 +2325,16 @@ export function wireTabInputEvents(tab: TabData, plugin: FeatureHost): void {
       return;
     }
   };
+  const sendButtonHandler = (): void => {
+    if (state.isStreaming) {
+      controllers.inputController?.cancelStreaming();
+      return;
+    }
+    if (dom.sendButtonEl.disabled) return;
+    void controllers.inputController?.sendMessage();
+  };
+  dom.sendButtonEl.addEventListener('click', sendButtonHandler);
+  dom.eventCleanups.push(() => dom.sendButtonEl.removeEventListener('click', sendButtonHandler));
   dom.inputEl.addEventListener('keydown', keydownHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('keydown', keydownHandler));
 
@@ -2297,9 +2347,11 @@ export function wireTabInputEvents(tab: TabData, plugin: FeatureHost): void {
     ui.bangBashModeManager?.handleInputChange();
     syncBangBashSuppression();
     autoResizeTextarea(dom.inputEl);
+    updateSendButton(tab);
   };
   dom.inputEl.addEventListener('input', inputHandler);
   dom.eventCleanups.push(() => dom.inputEl.removeEventListener('input', inputHandler));
+  updateSendButton(tab);
 
   // Scroll listener for auto-scroll control (tracks position always, not just during streaming)
   const SCROLL_THRESHOLD = 20; // pixels from bottom to consider "at bottom"

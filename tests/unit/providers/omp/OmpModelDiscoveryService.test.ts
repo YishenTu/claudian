@@ -1,4 +1,41 @@
-import { OmpModelDiscoveryService } from '@/providers/omp/metadata/OmpModelDiscoveryService';
+import {
+  OmpModelDiscoveryService,
+  parseOmpModelsOutput,
+} from '@/providers/omp/metadata/OmpModelDiscoveryService';
+
+function createCatalogRunner() {
+  return {
+    run: jest.fn().mockResolvedValue({ exitCode: 1, stdout: '' }),
+  };
+}
+
+describe('parseOmpModelsOutput', () => {
+  it('parses the complete OMP catalog without using Pi model ids', () => {
+    expect(parseOmpModelsOutput(JSON.stringify({
+      models: [{
+        id: 'deepseek-v4-flash',
+        name: 'DeepSeek V4 Flash · Bailian',
+        provider: 'bailian',
+        selector: 'bailian/deepseek-v4-flash',
+      }, {
+        id: 'gpt-5',
+        name: 'GPT-5 · OpenRouter',
+        provider: 'openrouter',
+      }],
+    }))).toEqual([
+      {
+        description: 'bailian/deepseek-v4-flash',
+        label: 'DeepSeek V4 Flash · Bailian',
+        rawId: 'bailian/deepseek-v4-flash',
+      },
+      {
+        description: 'openrouter/gpt-5',
+        label: 'GPT-5 · OpenRouter',
+        rawId: 'openrouter/gpt-5',
+      },
+    ]);
+  });
+});
 
 describe('OmpModelDiscoveryService', () => {
   it('discovers OMP thinking choices alongside models', async () => {
@@ -29,7 +66,10 @@ describe('OmpModelDiscoveryService', () => {
       setConfigOption: jest.fn(),
     };
     const plugin = { app: { vault: { adapter: { basePath: '/vault' } } } } as never;
-    const service = new OmpModelDiscoveryService(plugin, { createKernel: () => kernel });
+    const service = new OmpModelDiscoveryService(plugin, {
+      createKernel: () => kernel,
+      runner: createCatalogRunner(),
+    });
 
     await expect(service.discoverCatalog()).resolves.toEqual({
       models: [{ label: 'GPT-5 mini', rawId: 'openai/gpt-5-mini' }],
@@ -78,6 +118,7 @@ describe('OmpModelDiscoveryService', () => {
 
     const service = new OmpModelDiscoveryService(plugin, {
       createKernel: () => kernel,
+      runner: createCatalogRunner(),
     });
 
     await expect(service.discover()).resolves.toEqual([
@@ -118,6 +159,7 @@ describe('OmpModelDiscoveryService', () => {
 
     const service = new OmpModelDiscoveryService(plugin, {
       createKernel: () => kernel,
+      runner: createCatalogRunner(),
     });
 
     await expect(service.discover()).resolves.toEqual([

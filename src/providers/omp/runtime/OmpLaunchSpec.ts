@@ -2,6 +2,20 @@ import * as path from 'node:path';
 
 import type { OmpProviderSettings } from '../settings';
 
+export function buildOmpEnvironment(
+  inheritedEnv: NodeJS.ProcessEnv,
+  configuredEnv: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const withoutPiEnvironment = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => Object.fromEntries(
+    Object.entries(env).filter(([key]) => !/^PI_/i.test(key)),
+  );
+
+  return {
+    ...withoutPiEnvironment(inheritedEnv),
+    ...withoutPiEnvironment(configuredEnv),
+  };
+}
+
 export interface BuildOmpLaunchSpecParams {
   command: string;
   cwd: string;

@@ -54,6 +54,12 @@ describe('model selection namespacing', () => {
   });
 
   describe('decodeProviderModelSelectionId', () => {
+    it('decodes OMP model selections without routing them through Pi', () => {
+      expect(decodeProviderModelSelectionId('omp:openai/gpt-5')).toEqual({
+        providerId: 'omp',
+        modelId: 'openai/gpt-5',
+      });
+    });
     it('decodes a namespaced id into its provider and model id', () => {
       expect(decodeProviderModelSelectionId('claude-code/deepseek-v4-pro')).toEqual({
         providerId: 'claude',

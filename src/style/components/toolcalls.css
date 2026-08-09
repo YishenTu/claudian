@@ -51,6 +51,19 @@
   display: none;
 }
 
+.claudian-tool-file-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--text-faint);
+  text-underline-offset: 2px;
+}
+
+.claudian-tool-file-link:hover,
+.claudian-tool-file-link:focus-visible {
+  color: var(--text-accent);
+  text-decoration-color: currentColor;
+}
+
 .claudian-tool-call-bash.expanded .claudian-tool-summary {
   display: none;
 }

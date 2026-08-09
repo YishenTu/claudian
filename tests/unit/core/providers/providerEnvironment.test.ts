@@ -33,6 +33,13 @@ describe('providerEnvironment', () => {
       expect(result.reviewKeys).toEqual(['CUSTOM_FLAG']);
     });
 
+    it('keeps Pi variables out of the OMP scope', () => {
+      const result = classifyEnvironmentVariablesByOwnership('PI_CODING_AGENT_DIR=/tmp/pi');
+
+      expect(result.providers.pi).toBe('PI_CODING_AGENT_DIR=/tmp/pi');
+      expect(result.providers.omp).toBeUndefined();
+    });
+
     it('keeps comments attached to the next owned variable when migrating', () => {
       const result = classifyEnvironmentVariablesByOwnership([
         '# shared comment',
