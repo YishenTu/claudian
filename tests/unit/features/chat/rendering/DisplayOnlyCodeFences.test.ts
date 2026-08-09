@@ -108,6 +108,33 @@ describe('DisplayOnlyCodeFences', () => {
     expect(highlightElement).toHaveBeenCalledWith(code);
   });
 
+  it('restores the nested code element when Prism copies the placeholder class to pre', async () => {
+    const highlightElement = jest.fn((element: { tagName: string; empty: () => void }) => {
+      if (element.tagName === 'PRE') {
+        element.empty();
+      }
+    });
+    (loadPrism as jest.Mock).mockResolvedValueOnce({ highlightElement });
+    const container = createMockEl();
+    const placeholderClass = 'language-claudian-display-only-fence-0';
+    const pre = container.createEl('pre', { cls: placeholderClass });
+    const code = pre.createEl('code', {
+      cls: placeholderClass,
+      text: 'const value = 1;',
+    });
+    const copyButton = pre.createEl('button', { cls: 'copy-code-button' });
+
+    await restoreDisplayOnlyCodeFences(container, [{
+      placeholderLanguage: 'claudian-display-only-fence-0',
+      originalLanguage: 'typescript',
+    }]);
+
+    expect(code.hasClass(placeholderClass)).toBe(false);
+    expect(code.hasClass('language-typescript')).toBe(true);
+    expect(highlightElement).toHaveBeenCalledWith(code);
+    expect(pre.querySelector('.copy-code-button')).toBe(copyButton);
+  });
+
   it('restores language classes even when Prism loading fails', async () => {
     (loadPrism as jest.Mock).mockRejectedValueOnce(new Error('Prism unavailable'));
     const container = createMockEl();

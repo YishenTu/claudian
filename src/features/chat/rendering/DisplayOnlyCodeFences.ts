@@ -61,7 +61,7 @@ export async function restoreDisplayOnlyCodeFences(
 
   for (const fence of fences) {
     const placeholderClass = `language-${fence.placeholderLanguage}`;
-    const code = container.querySelector<HTMLElement>(`.${placeholderClass}`);
+    const code = container.querySelector<HTMLElement>(`code.${placeholderClass}`);
     if (!code) {
       continue;
     }
