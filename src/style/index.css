@@ -9,6 +9,7 @@
 /* Components */
 @import "./components/tabs.css";
 @import "./components/history.css";
+@import "./components/vault-file-tree.css";
 @import "./components/messages.css";
 @import "./components/nav-sidebar.css";
 @import "./components/code.css";

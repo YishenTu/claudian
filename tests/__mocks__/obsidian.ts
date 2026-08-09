@@ -241,6 +241,8 @@ class MockMenuItem {
     return this;
   });
 
+  setWarning = jest.fn((_isWarning: boolean) => this);
+
   onClick = jest.fn((handler: () => void) => {
     this.clickHandler = handler;
     return this;

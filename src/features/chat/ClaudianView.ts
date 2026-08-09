@@ -32,6 +32,8 @@ import {
 import { TabBar } from './tabs/TabBar';
 import { TabManager } from './tabs/TabManager';
 import type { TabData, TabId } from './tabs/types';
+import { HorizontalWheelGesture } from './ui/HorizontalWheelGesture';
+import { VaultFileTree } from './ui/vault-file-tree/VaultFileTree';
 import { recalculateUsageForModel } from './utils/usageInfo';
 
 type LoadableView = {
@@ -44,11 +46,14 @@ type SessionSearchScrollState = {
   sessionScrollTop: number;
 };
 
+type SidebarSurface = 'sessions' | 'files';
+
 const WIDE_SESSION_LAYOUT_MIN_WIDTH = 600;
 const MIN_CHAT_PANEL_WIDTH = 320;
 const MIN_SESSION_SIDEBAR_WIDTH = 180;
 const SESSION_RESIZER_WIDTH = 5;
 const SESSION_RESIZE_KEYBOARD_STEP = 16;
+const SIDEBAR_SURFACE_ROTATION: readonly SidebarSurface[] = ['sessions', 'files'];
 
 export class ClaudianView extends ItemView {
   private plugin: FeatureHost;
@@ -80,6 +85,14 @@ export class ClaudianView extends ItemView {
   private historyDropdown: HTMLElement | null = null;
   private historyRenderAbortController: AbortController | null = null;
   private sessionSidebarEl: HTMLElement | null = null;
+  private sidebarSurfaceSwitcherEl: HTMLElement | null = null;
+  private sessionsSurfaceButtonEl: HTMLButtonElement | null = null;
+  private filesSurfaceButtonEl: HTMLButtonElement | null = null;
+  private sessionSurfaceEl: HTMLElement | null = null;
+  private filesSurfaceEl: HTMLElement | null = null;
+  private activeSidebarSurface: SidebarSurface = 'sessions';
+  private readonly sidebarSurfaceWheelGesture = new HorizontalWheelGesture();
+  private vaultFileTree: VaultFileTree | null = null;
   private sessionSidebarResizerEl: HTMLElement | null = null;
   private sessionSidebarRenderAbortController: AbortController | null = null;
   private sessionSidebarResizeObserver: ResizeObserver | null = null;
@@ -331,6 +344,8 @@ export class ClaudianView extends ItemView {
     this.cancelSessionSidebarRendering();
     this.disconnectSessionSidebarLayoutObserver();
     this.stopSessionSidebarResize();
+    this.vaultFileTree?.destroy();
+    this.vaultFileTree = null;
     if (this.pendingTabBarUpdate !== null) {
       cancelScheduledAnimationFrame(this.pendingTabBarUpdate);
       this.pendingTabBarUpdate = null;
@@ -387,6 +402,30 @@ export class ClaudianView extends ItemView {
     });
 
     this.sessionSidebarEl = this.viewContainerEl.createDiv({ cls: 'claudian-session-sidebar' });
+    this.sessionSidebarEl.addEventListener('wheel', (event) => {
+      this.handleSidebarSurfaceWheel(event);
+    }, { passive: false });
+    this.sessionSurfaceEl = this.sessionSidebarEl.createDiv({ cls: 'claudian-session-surface' });
+    this.filesSurfaceEl = this.sessionSidebarEl.createDiv({ cls: 'claudian-files-surface' });
+    this.sidebarSurfaceSwitcherEl = this.sessionSidebarEl.createDiv({
+      cls: 'claudian-sidebar-surface-switcher',
+    });
+    this.sidebarSurfaceSwitcherEl.setAttribute('role', 'group');
+    this.sidebarSurfaceSwitcherEl.setAttribute('aria-label', 'Sidebar view');
+    this.sessionsSurfaceButtonEl = this.sidebarSurfaceSwitcherEl.createEl('button', {
+      cls: 'claudian-sidebar-surface-button claudian-sidebar-surface-button--sessions',
+      attr: { 'aria-label': 'Sessions', type: 'button' },
+    });
+    this.sessionsSurfaceButtonEl.addEventListener('click', () => this.showSessions());
+    this.filesSurfaceButtonEl = this.sidebarSurfaceSwitcherEl.createEl('button', {
+      cls: 'claudian-sidebar-surface-button claudian-sidebar-surface-button--files',
+      attr: { 'aria-label': 'Files', type: 'button' },
+    });
+    this.filesSurfaceButtonEl.addEventListener('click', () => this.showVaultFiles());
+    if (this.activeSidebarSurface !== 'files') {
+      this.activeSidebarSurface = 'sessions';
+    }
+    this.updateSidebarSurfaceVisibility();
   }
 
   /**
@@ -494,6 +533,7 @@ export class ClaudianView extends ItemView {
 
   refreshDualPaneLayout(): void {
     if (!this.viewContainerEl) return;
+    this.updateSidebarSurfaceVisibility();
     this.updateSessionSidebarLayout(this.viewContainerEl.getBoundingClientRect().width);
   }
 
@@ -689,7 +729,7 @@ export class ClaudianView extends ItemView {
     if (this.historyDropdown?.hasClass('visible')) {
       this.renderHistoryDropdown();
     }
-    if (this.isWideSessionLayout) {
+    if (this.isWideSessionLayout && this.activeSidebarSurface !== 'files') {
       this.renderSessionSidebar();
     }
   }
@@ -715,7 +755,13 @@ export class ClaudianView extends ItemView {
   }
 
   private renderSessionSidebar(): void {
-    if (!this.sessionSidebarEl || !this.sessionSidebarDirty || !this.isWideSessionLayout) return;
+    const sessionSurfaceEl = this.sessionSurfaceEl ?? this.sessionSidebarEl;
+    if (
+      !sessionSurfaceEl
+      || !this.sessionSidebarDirty
+      || !this.isWideSessionLayout
+      || this.activeSidebarSurface === 'files'
+    ) return;
     if (this.isSessionSearchComposing) return;
 
     const previousSearchInput = this.sessionSearchInputEl;
@@ -734,8 +780,8 @@ export class ClaudianView extends ItemView {
       this.sessionSearchFieldEl = null;
       this.sessionSearchInputEl = null;
       this.sessionGroupToggleButtonEl = null;
-      this.renderHistorySurface(this.sessionSidebarEl, abortController.signal, 'sessions');
-      this.buildSessionHeaderActions(this.sessionSidebarEl);
+      this.renderHistorySurface(sessionSurfaceEl, abortController.signal, 'sessions');
+      this.buildSessionHeaderActions(sessionSurfaceEl);
       if (shouldRestoreSearchFocus) {
         this.focusSessionSearchInput();
       }
@@ -992,6 +1038,84 @@ export class ClaudianView extends ItemView {
     );
 
     this.updateNewTabButtonVisibility();
+  }
+
+  private showVaultFiles(): void {
+    if (
+      !this.isWideSessionLayout
+      || !this.requestedWideSessionLayout
+      || !this.filesSurfaceEl
+      || !(this.plugin?.settings?.enableFilePane ?? true)
+    ) return;
+    this.activeSidebarSurface = 'files';
+    this.updateSidebarSurfaceVisibility();
+
+    if (this.vaultFileTree) {
+      this.vaultFileTree.setActive(true);
+      return;
+    }
+    this.vaultFileTree = this.createVaultFileTree(this.filesSurfaceEl);
+    void this.vaultFileTree.mount();
+  }
+
+  private showSessions(): void {
+    this.activeSidebarSurface = 'sessions';
+    this.vaultFileTree?.setActive(false);
+    this.updateSidebarSurfaceVisibility();
+    this.renderSessionSidebar();
+  }
+
+  private handleSidebarSurfaceWheel(event: WheelEvent): void {
+    if (
+      !this.isWideSessionLayout
+      || !this.requestedWideSessionLayout
+      || !(this.plugin?.settings?.enableFilePane ?? true)
+    ) return;
+
+    if (!this.sidebarSurfaceWheelGesture.consume(event)) return;
+
+    event.preventDefault();
+    this.rotateSidebarSurface();
+  }
+
+  private rotateSidebarSurface(): void {
+    const currentIndex = SIDEBAR_SURFACE_ROTATION.indexOf(this.activeSidebarSurface);
+    const nextIndex = (Math.max(currentIndex, 0) + 1) % SIDEBAR_SURFACE_ROTATION.length;
+    const nextSurface = SIDEBAR_SURFACE_ROTATION[nextIndex];
+
+    if (nextSurface === 'files') {
+      this.showVaultFiles();
+    } else {
+      this.showSessions();
+    }
+  }
+
+  private createVaultFileTree(hostEl: HTMLElement): VaultFileTree {
+    return new VaultFileTree({
+      app: this.plugin.app,
+      hostEl,
+    });
+  }
+
+  private updateSidebarSurfaceVisibility(): void {
+    const filePaneEnabled = this.plugin?.settings?.enableFilePane ?? true;
+    if (!filePaneEnabled) {
+      this.sidebarSurfaceWheelGesture?.reset();
+      this.activeSidebarSurface = 'sessions';
+      this.vaultFileTree?.destroy();
+      this.vaultFileTree = null;
+    }
+
+    this.sidebarSurfaceSwitcherEl?.toggleClass('claudian-hidden', !filePaneEnabled);
+    const showFiles = filePaneEnabled && this.activeSidebarSurface === 'files';
+    this.sessionSurfaceEl?.toggleClass('claudian-hidden', showFiles);
+    this.sessionSurfaceEl?.setAttribute('aria-hidden', String(showFiles));
+    this.filesSurfaceEl?.toggleClass('claudian-hidden', !showFiles);
+    this.filesSurfaceEl?.setAttribute('aria-hidden', String(!showFiles));
+    this.sessionsSurfaceButtonEl?.toggleClass('is-active', !showFiles);
+    this.sessionsSurfaceButtonEl?.setAttribute('aria-pressed', String(!showFiles));
+    this.filesSurfaceButtonEl?.toggleClass('is-active', showFiles);
+    this.filesSurfaceButtonEl?.setAttribute('aria-pressed', String(showFiles));
   }
 
   private requestSessionNew(): void {
@@ -1620,6 +1744,10 @@ export class ClaudianView extends ItemView {
 
     const isDualPaneEnabled = this.plugin?.settings?.enableDualPane ?? true;
     const shouldUseWideLayout = isDualPaneEnabled && width >= WIDE_SESSION_LAYOUT_MIN_WIDTH;
+    if (!shouldUseWideLayout) {
+      this.sidebarSurfaceWheelGesture?.reset();
+      this.vaultFileTree?.setActive(false);
+    }
     if (shouldUseWideLayout === this.requestedWideSessionLayout) {
       if (shouldUseWideLayout && this.isWideSessionLayout) {
         if (this.sessionSidebarWidth !== null) {
@@ -1640,6 +1768,12 @@ export class ClaudianView extends ItemView {
       }
       this.historyDropdown?.removeClass('visible');
       this.cancelHistoryRendering();
+      if (
+        this.activeSidebarSurface === 'files'
+        && (this.plugin?.settings?.enableFilePane ?? true)
+      ) {
+        this.vaultFileTree?.setActive(true);
+      }
       this.renderSessionSidebar();
       return;
     }
@@ -1690,6 +1824,7 @@ export class ClaudianView extends ItemView {
     ) return;
 
     this.isWideSessionLayout = false;
+    this.vaultFileTree?.setActive(false);
     this.viewContainerEl.removeClass('claudian-wide-session-layout');
   }
 
@@ -1866,7 +2001,12 @@ export class ClaudianView extends ItemView {
     // Returning false consumes Escape before Obsidian uses it for pane navigation.
     this.scope = new Scope(this.app.scope);
     this.scope.register([], 'Escape', (e: KeyboardEvent) => {
-      if (e.isComposing || this.isSessionSearchComposing) return;
+      if (
+        e.isComposing
+        || this.isSessionSearchComposing
+        || this.vaultFileTree?.isComposingSearch()
+      ) return;
+      if (this.vaultFileTree?.handleEscape(e)) return false;
       if (this.isSessionSearchActive) {
         this.closeSessionSearch();
         return false;

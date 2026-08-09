@@ -105,6 +105,12 @@ function normalizeEnableDualPane(value: unknown): boolean {
     : DEFAULT_CLAUDIAN_SETTINGS.enableDualPane;
 }
 
+function normalizeEnableFilePane(value: unknown): boolean {
+  return typeof value === 'boolean'
+    ? value
+    : DEFAULT_CLAUDIAN_SETTINGS.enableFilePane;
+}
+
 function normalizeDualPaneSide(value: unknown): DualPaneSide {
   return typeof value === 'string'
     && (DUAL_PANE_SIDES as readonly string[]).includes(value)
@@ -115,11 +121,15 @@ function normalizeDualPaneSide(value: unknown): DualPaneSide {
 function shouldPersistDualPaneNormalization(
   stored: Record<string, unknown>,
   enableDualPane: boolean,
+  enableFilePane: boolean,
   dualPaneSide: DualPaneSide,
 ): boolean {
   return (
     'enableDualPane' in stored
     && stored.enableDualPane !== enableDualPane
+  ) || (
+    'enableFilePane' in stored
+    && stored.enableFilePane !== enableFilePane
   ) || (
     'dualPaneSide' in stored
     && stored.dualPaneSide !== dualPaneSide
@@ -381,6 +391,7 @@ export class ClaudianSettingsStorage {
       stored.openInMainTab,
     );
     const enableDualPane = normalizeEnableDualPane(stored.enableDualPane);
+    const enableFilePane = normalizeEnableFilePane(stored.enableFilePane);
     const dualPaneSide = normalizeDualPaneSide(stored.dualPaneSide);
     const legacyProviderSettings = {
       ...stored,
@@ -400,6 +411,7 @@ export class ClaudianSettingsStorage {
       providerConfigs,
       chatViewPlacement,
       enableDualPane,
+      enableFilePane,
       dualPaneSide,
       lastSelectedChatModel,
     };
@@ -434,7 +446,12 @@ export class ClaudianSettingsStorage {
       || 'enableBlocklist' in stored
       || 'blockedCommands' in stored
       || shouldPersistChatViewPlacementMigration(stored, chatViewPlacement)
-      || shouldPersistDualPaneNormalization(stored, enableDualPane, dualPaneSide)
+      || shouldPersistDualPaneNormalization(
+        stored,
+        enableDualPane,
+        enableFilePane,
+        dualPaneSide,
+      )
       || JSON.stringify(envSnippets) !== JSON.stringify(stored.envSnippets ?? [])
       || (
         'customModelAliases' in stored

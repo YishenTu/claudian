@@ -65,6 +65,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.titleGenerationLocale).toBe('');
       expect(result.lastSelectedChatModel).toBeNull();
       expect(result.enableDualPane).toBe(true);
+      expect(result.enableFilePane).toBe(true);
       expect(result.dualPaneSide).toBe('right');
       expect(mockAdapter.read).not.toHaveBeenCalled();
     });
@@ -287,6 +288,7 @@ describe('ClaudianSettingsStorage', () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
         enableDualPane: 'yes',
+        enableFilePane: 'yes',
         dualPaneSide: 'top',
       }));
 
@@ -294,8 +296,10 @@ describe('ClaudianSettingsStorage', () => {
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
       expect(result.enableDualPane).toBe(true);
+      expect(result.enableFilePane).toBe(true);
       expect(result.dualPaneSide).toBe('right');
       expect(writtenContent.enableDualPane).toBe(true);
+      expect(writtenContent.enableFilePane).toBe(true);
       expect(writtenContent.dualPaneSide).toBe('right');
     });
 

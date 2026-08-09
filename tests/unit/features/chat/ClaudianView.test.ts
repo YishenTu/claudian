@@ -4,6 +4,7 @@ import { Menu, Notice, Platform, Scope, setIcon, TFile } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ClaudianView } from '@/features/chat/ClaudianView';
+import { HorizontalWheelGesture } from '@/features/chat/ui/HorizontalWheelGesture';
 
 const mockTabManagerConstructor = jest.fn();
 jest.mock('@/features/chat/tabs/TabManager', () => ({
@@ -447,6 +448,7 @@ describe('ClaudianView tab controls', () => {
     expect(searchButton?.getAttribute('aria-label')).toBe('Search');
     expect(searchButton?.querySelector('.claudian-session-nav-label')?.textContent)
       .toBe('Search');
+    expect(container.querySelector('.claudian-session-files-control')).toBeNull();
     expect(archiveButton?.getAttribute('aria-label')).toBe('Archive');
     expect(container.querySelector('.claudian-history-list')).toBe(list);
 
@@ -1088,10 +1090,222 @@ describe('ClaudianView tab controls', () => {
     expect(viewContainerEl.children[0].hasClass('claudian-chat-panel')).toBe(true);
     expect(viewContainerEl.children[1].hasClass('claudian-session-resizer')).toBe(true);
     expect(viewContainerEl.children[2].hasClass('claudian-session-sidebar')).toBe(true);
+    expect(viewContainerEl.children[2].children[0].hasClass('claudian-session-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[1].hasClass('claudian-files-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[1].hasClass('claudian-hidden')).toBe(true);
+    expect(viewContainerEl.children[2].children[2]
+      .hasClass('claudian-sidebar-surface-switcher')).toBe(true);
+    expect(view.sidebarSurfaceSwitcherEl.getAttribute('role')).toBe('group');
+    expect(view.sidebarSurfaceSwitcherEl.getAttribute('aria-label')).toBe('Sidebar view');
+    expect(view.sessionsSurfaceButtonEl.textContent).toBe('');
+    expect(view.sessionsSurfaceButtonEl.getAttribute('aria-label')).toBe('Sessions');
+    expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
+    expect(view.filesSurfaceButtonEl.textContent).toBe('');
+    expect(view.filesSurfaceButtonEl.getAttribute('aria-label')).toBe('Files');
+    expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
     expect(viewContainerEl.children[2].getAttribute('aria-label')).toBeNull();
     expect(viewContainerEl.children[1].getAttribute('role')).toBe('separator');
     expect(viewContainerEl.children[0].children).toContain(view.tabContentEl);
     expect(viewContainerEl.children[0].children).toContain(view.inputFooterEl);
+  });
+
+  it('switches the persistent sidebar to Files without remounting the tree', () => {
+    const viewContainerEl = createMockEl();
+    const mount = jest.fn().mockResolvedValue(undefined);
+    const destroy = jest.fn();
+    const setActive = jest.fn();
+    const renderSessionSidebar = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      createVaultFileTree: jest.fn().mockReturnValue({ destroy, mount, setActive }),
+      isWideSessionLayout: true,
+      plugin: { app: {} },
+      renderSessionSidebar,
+      requestedWideSessionLayout: true,
+      viewContainerEl,
+      vaultFileTree: null,
+    });
+    view.buildViewLayout();
+
+    view.filesSurfaceButtonEl.click();
+
+    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(true);
+    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(false);
+    expect(view.filesSurfaceEl.getAttribute('aria-hidden')).toBe('false');
+    expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
+    expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
+    expect(view.createVaultFileTree).toHaveBeenCalledWith(view.filesSurfaceEl);
+    expect(mount).toHaveBeenCalledTimes(1);
+
+    view.sessionsSurfaceButtonEl.click();
+    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(false);
+    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
+    expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
+    expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
+    expect(setActive).toHaveBeenLastCalledWith(false);
+    expect(renderSessionSidebar).toHaveBeenCalledTimes(1);
+
+    view.filesSurfaceButtonEl.click();
+    expect(view.createVaultFileTree).toHaveBeenCalledTimes(1);
+    expect(mount).toHaveBeenCalledTimes(1);
+    expect(setActive).toHaveBeenLastCalledWith(true);
+  });
+
+  it('rotates sidebar surfaces on either horizontal wheel direction without intercepting vertical scroll', () => {
+    const viewContainerEl = createMockEl();
+    const mount = jest.fn().mockResolvedValue(undefined);
+    const setActive = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      createVaultFileTree: jest.fn().mockReturnValue({
+        destroy: jest.fn(),
+        mount,
+        setActive,
+      }),
+      isWideSessionLayout: true,
+      plugin: { app: {}, settings: { enableFilePane: true } },
+      requestedWideSessionLayout: true,
+      sidebarSurfaceWheelGesture: new HorizontalWheelGesture(),
+      viewContainerEl,
+      vaultFileTree: null,
+    });
+    view.buildViewLayout();
+
+    expect(view.sessionSidebarEl.getEventListenerCount('wheel')).toBe(1);
+    expect(view.chatPanelEl.getEventListenerCount('wheel')).toBe(0);
+    Object.defineProperty(view.sessionSidebarEl, 'clientWidth', {
+      configurable: true,
+      get: () => {
+        throw new Error('Wheel handling must not read layout');
+      },
+    });
+
+    const verticalPreventDefault = jest.fn();
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 10,
+      deltaY: 60,
+      preventDefault: verticalPreventDefault,
+      timeStamp: 0,
+    });
+    expect(view.activeSidebarSurface).toBe('sessions');
+    expect(verticalPreventDefault).not.toHaveBeenCalled();
+
+    const switchToFilesPreventDefault = jest.fn();
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 28,
+      deltaY: 30,
+      preventDefault: switchToFilesPreventDefault,
+      timeStamp: 10,
+    });
+    expect(view.activeSidebarSurface).toBe('files');
+    expect(switchToFilesPreventDefault).toHaveBeenCalledTimes(1);
+    expect(mount).toHaveBeenCalledTimes(1);
+
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 60,
+      deltaY: 0,
+      preventDefault: jest.fn(),
+      timeStamp: 20,
+    });
+    expect(view.activeSidebarSurface).toBe('files');
+
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 4,
+      deltaY: 0,
+      preventDefault: jest.fn(),
+      timeStamp: 120,
+    });
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 18,
+      deltaY: 0,
+      preventDefault: jest.fn(),
+      timeStamp: 220,
+    });
+    const switchToSessionsPreventDefault = jest.fn();
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 12,
+      deltaY: 0,
+      preventDefault: switchToSessionsPreventDefault,
+      timeStamp: 230,
+    });
+    expect(view.activeSidebarSurface).toBe('sessions');
+    expect(switchToSessionsPreventDefault).toHaveBeenCalledTimes(1);
+
+    const rotateLeftPreventDefault = jest.fn();
+    view.sessionSidebarEl.dispatchEvent({
+      type: 'wheel',
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: -28,
+      deltaY: 0,
+      preventDefault: rotateLeftPreventDefault,
+      timeStamp: 500,
+    });
+    expect(view.activeSidebarSurface).toBe('files');
+    expect(rotateLeftPreventDefault).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the surface switcher when the file pane is disabled', () => {
+    const viewContainerEl = createMockEl();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      plugin: { settings: { enableFilePane: false } },
+      viewContainerEl,
+    });
+    view.buildViewLayout();
+
+    expect(view.sidebarSurfaceSwitcherEl.hasClass('claudian-hidden')).toBe(true);
+    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(false);
+    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
+  });
+
+  it('returns to Sessions and tears down the tree when the file pane is disabled', () => {
+    const viewContainerEl = createMockEl();
+    const destroy = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'files',
+      plugin: { settings: { enableFilePane: true } },
+      updateSessionSidebarLayout: jest.fn(),
+      vaultFileTree: { destroy },
+      viewContainerEl,
+    });
+    view.buildViewLayout();
+    view.plugin.settings.enableFilePane = false;
+
+    view.refreshDualPaneLayout();
+
+    expect(view.activeSidebarSurface).toBe('sessions');
+    expect(view.sidebarSurfaceSwitcherEl.hasClass('claudian-hidden')).toBe(true);
+    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(false);
+    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(view.vaultFileTree).toBeNull();
   });
 
   it('shows and renders the persistent session column when the view becomes wide', () => {
@@ -1164,20 +1378,26 @@ describe('ClaudianView tab controls', () => {
     const discardProvisionalTabs = jest.fn().mockReturnValue(new Promise<void>((resolve) => {
       finishDiscard = resolve;
     }));
+    const setActive = jest.fn();
 
     Object.assign(view, {
       cancelSessionSidebarRendering: jest.fn(),
+      filesSurfaceEl: createMockEl(),
       isSessionSearchActive: true,
       isSessionSearchComposing: false,
       sessionSearchQuery: 'roadmap',
       isWideSessionLayout: true,
       requestedWideSessionLayout: true,
       sessionLayoutRequestRevision: 0,
-      plugin: { getConversationSync: jest.fn() },
+      plugin: {
+        getConversationSync: jest.fn(),
+        settings: { enableFilePane: true },
+      },
       tabManager: {
         discardProvisionalTabs,
         getAllTabs: jest.fn().mockReturnValue([]),
       },
+      vaultFileTree: { setActive },
       viewContainerEl,
     });
 
@@ -1189,12 +1409,17 @@ describe('ClaudianView tab controls', () => {
     expect(view.sessionSearchQuery).toBe('');
     expect(view.cancelSessionSidebarRendering).toHaveBeenCalledTimes(1);
     expect(discardProvisionalTabs).toHaveBeenCalledTimes(1);
+    expect(setActive).toHaveBeenCalledWith(false);
+
+    view.showVaultFiles();
+    expect(setActive).not.toHaveBeenCalledWith(true);
 
     finishDiscard();
     await view.pendingSessionLayoutTransition;
 
     expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(false);
     expect(view.isWideSessionLayout).toBe(false);
+    expect(setActive).toHaveBeenLastCalledWith(false);
   });
 
   it('cancels a pending compact transition when the view becomes wide again', async () => {
@@ -1494,6 +1719,7 @@ describe('ClaudianView tab controls', () => {
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
+      activeSidebarSurface: 'sessions',
       historyDropdown: createMockEl(),
       isWideSessionLayout: true,
       renderSessionSidebar: jest.fn(),
@@ -1504,6 +1730,23 @@ describe('ClaudianView tab controls', () => {
 
     expect(view.sessionSidebarDirty).toBe(true);
     expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it('defers persistent session rendering while the Files surface is active', () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'files',
+      historyDropdown: createMockEl(),
+      isWideSessionLayout: true,
+      renderSessionSidebar: jest.fn(),
+      sessionSidebarDirty: false,
+    });
+
+    view.updateHistoryDropdown();
+
+    expect(view.sessionSidebarDirty).toBe(true);
+    expect(view.renderSessionSidebar).not.toHaveBeenCalled();
   });
 
   it('defers persistent session column refresh while search IME composition is active', () => {
@@ -2129,6 +2372,7 @@ describe('ClaudianView shutdown', () => {
     const flushPersistence = jest.fn().mockResolvedValue(undefined);
     const updatePersistence = jest.fn();
     const tabBarDestroy = jest.fn();
+    const vaultFileTreeDestroy = jest.fn();
 
     Object.assign(view, {
       cancelHistoryRendering: jest.fn(),
@@ -2139,6 +2383,7 @@ describe('ClaudianView shutdown', () => {
       restoreActiveInputToTabContent: jest.fn(),
       scope: {},
       tabBar: { destroy: tabBarDestroy },
+      vaultFileTree: { destroy: vaultFileTreeDestroy },
       tabManager: {
         destroy,
         getActiveTab: jest.fn().mockReturnValue({
@@ -2164,6 +2409,8 @@ describe('ClaudianView shutdown', () => {
     expect(disposePersistence).toHaveBeenCalledTimes(1);
     expect(destroy).toHaveBeenCalledTimes(1);
     expect(tabBarDestroy).toHaveBeenCalledTimes(1);
+    expect(vaultFileTreeDestroy).toHaveBeenCalledTimes(1);
+    expect(view.vaultFileTree).toBeNull();
     expect(view.tabManager).toBeNull();
     expect(view.scope).toBeNull();
   });
@@ -2376,6 +2623,24 @@ describe('ClaudianView Escape handling', () => {
     const result = escapeHandler.func({ key: 'Escape', isComposing: false } as KeyboardEvent);
 
     expect(view.closeSessionSearch).toHaveBeenCalledTimes(1);
+    expect(cancelStreaming).not.toHaveBeenCalled();
+    expect(result).toBe(false);
+  });
+
+  it('closes file search from the scoped Escape handler', () => {
+    const { cancelStreaming, view } = createEscapeHarness({ isStreaming: true });
+    const handleEscape = jest.fn().mockReturnValue(true);
+    view.vaultFileTree = {
+      handleEscape,
+      isComposingSearch: jest.fn().mockReturnValue(false),
+    };
+
+    view.wireEventHandlers();
+    const escapeHandler = view.scope.handlers.find((handler: any) => handler.key === 'Escape');
+    const event = { key: 'Escape', isComposing: false } as KeyboardEvent;
+    const result = escapeHandler.func(event);
+
+    expect(handleEscape).toHaveBeenCalledWith(event);
     expect(cancelStreaming).not.toHaveBeenCalled();
     expect(result).toBe(false);
   });
