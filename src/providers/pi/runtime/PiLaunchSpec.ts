@@ -22,13 +22,18 @@ export interface PiLaunchSpec {
   command: string;
   cwd: string;
   env: NodeJS.ProcessEnv;
-  launchKey: string;
+  processKey: string;
+  sessionTarget: string | null;
 }
 
 const READONLY_TOOLS = 'read,grep,find,ls';
 
 export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec {
   const args = ['--mode', 'rpc'];
+  let sessionFlagIndex: number | null = null;
+  const sessionTarget = params.providerState?.sessionFile
+    ?? params.providerState?.sessionId
+    ?? null;
   const systemPrompt = params.systemPrompt?.trim();
   if (systemPrompt) {
     args.push('--system-prompt', systemPrompt);
@@ -36,8 +41,9 @@ export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec
 
   if (params.noSession) {
     args.push('--no-session');
-  } else if (params.providerState?.sessionFile || params.providerState?.sessionId) {
-    args.push('--session', params.providerState.sessionFile ?? params.providerState.sessionId!);
+  } else if (sessionTarget) {
+    sessionFlagIndex = args.length;
+    args.push('--session', sessionTarget);
   }
 
   if (params.noTools) {
@@ -63,11 +69,23 @@ export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec
     command: params.command,
     cwd: params.cwd,
     env: params.env ?? process.env,
-    launchKey: JSON.stringify({
-      args,
+    processKey: JSON.stringify({
+      args: withoutSessionTarget(args, sessionFlagIndex),
       command: params.command,
       cwd: params.cwd,
       envText: params.envText ?? params.settings.environmentVariables,
     }),
+    sessionTarget: params.noSession ? null : sessionTarget,
   };
+}
+
+function withoutSessionTarget(
+  args: readonly string[],
+  sessionFlagIndex: number | null,
+): string[] {
+  if (sessionFlagIndex === null) return [...args];
+  return [
+    ...args.slice(0, sessionFlagIndex),
+    ...args.slice(sessionFlagIndex + 2),
+  ];
 }

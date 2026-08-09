@@ -402,11 +402,10 @@ export class ClaudianView extends ItemView {
     this.eventRefs = [];
     this.restoreActiveInputToTabContent();
 
-    const shutdownSnapshotPromise = this.captureShutdownSnapshot(
+    const shutdownSnapshotPromise = this.ensureShutdownSnapshot(
       tabManager,
       tabStatePersistence,
     );
-    this.shutdownSnapshotPromise = shutdownSnapshotPromise;
     try {
       await shutdownSnapshotPromise;
       const ownsCloseLifecycle = this.viewShutdownStarted === true
@@ -433,6 +432,25 @@ export class ClaudianView extends ItemView {
         this.shutdownSnapshotPromise = null;
       }
     }
+  }
+
+  async prepareForPluginUnload(): Promise<void> {
+    const tabManager = this.tabManager;
+    tabManager?.beginShutdown();
+    await this.ensureShutdownSnapshot(tabManager, this.tabStatePersistence);
+  }
+
+  private ensureShutdownSnapshot(
+    tabManager: TabManager | null,
+    tabStatePersistence: TabStatePersistenceCoordinator | null,
+  ): Promise<void> {
+    if (this.shutdownSnapshotPromise) return this.shutdownSnapshotPromise;
+    const shutdownSnapshotPromise = this.captureShutdownSnapshot(
+      tabManager,
+      tabStatePersistence,
+    );
+    this.shutdownSnapshotPromise = shutdownSnapshotPromise;
+    return shutdownSnapshotPromise;
   }
 
   private async captureShutdownSnapshot(

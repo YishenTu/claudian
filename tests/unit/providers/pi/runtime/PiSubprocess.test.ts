@@ -83,6 +83,33 @@ describe('PiSubprocess', () => {
     );
   });
 
+  it('preserves Unicode Windows session paths when resuming through a .cmd shim', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const sessionFile = 'D:\\文档\\Documents\\Atlas\\Pi Sessions\\session.jsonl';
+    const subprocess = new PiSubprocess({
+      args: ['--mode', 'rpc', '--session', sessionFile],
+      command: 'C:\\Users\\dev\\AppData\\Roaming\\npm\\pi.cmd',
+      cwd: 'D:\\文档\\Documents\\Atlas',
+      env: { PATH: 'C:\\Windows\\System32' },
+    });
+
+    subprocess.start();
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      process.env.ComSpec || process.env.comspec || 'cmd.exe',
+      [
+        '/d',
+        '/s',
+        '/c',
+        '"C:\\Users\\dev\\AppData\\Roaming\\npm\\pi.cmd --mode rpc --session "D:\\文档\\Documents\\Atlas\\Pi Sessions\\session.jsonl""',
+      ],
+      expect.objectContaining({
+        cwd: 'D:\\文档\\Documents\\Atlas',
+        windowsVerbatimArguments: true,
+      }),
+    );
+  });
+
   it('kills the process tree when shutting down Windows .cmd shims', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const subprocess = new PiSubprocess({

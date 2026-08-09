@@ -1112,21 +1112,43 @@ describe('ClaudianPlugin', () => {
       expect(disposeSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('flushes the current tab identity when views are not closed first', async () => {
+    it('drains views before disposing execution and workspace resources', async () => {
       await plugin.onload();
-      const flushCurrentTabState = jest.fn().mockResolvedValue(undefined);
+      let resolveViewDrain!: () => void;
+      const viewDrain = new Promise<void>((resolve) => {
+        resolveViewDrain = resolve;
+      });
+      const prepareForPluginUnload = jest.fn(() => viewDrain);
       mockApp.workspace.getLeavesOfType.mockReturnValue([{
         view: {
-          flushCurrentTabState,
+          prepareForPluginUnload,
           getTabManager: jest.fn(),
         },
       }]);
+      const disposeExecution = jest.spyOn(
+        plugin.executionLifecycleRegistry,
+        'dispose',
+      ).mockResolvedValue(undefined);
+      const disposeWorkspaces = jest.spyOn(
+        ProviderWorkspaceRegistry,
+        'disposeInitialized',
+      ).mockResolvedValue(undefined);
 
       plugin.onunload();
       await Promise.resolve();
-      await Promise.resolve();
 
-      expect(flushCurrentTabState).toHaveBeenCalledTimes(1);
+      expect(prepareForPluginUnload).toHaveBeenCalledTimes(1);
+      expect(disposeExecution).not.toHaveBeenCalled();
+      expect(disposeWorkspaces).not.toHaveBeenCalled();
+
+      resolveViewDrain();
+      await (plugin as any).applicationShutdownPromise;
+
+      expect(disposeExecution).toHaveBeenCalledTimes(1);
+      expect(disposeWorkspaces).toHaveBeenCalledTimes(1);
+      expect(disposeExecution.mock.invocationCallOrder[0]).toBeLessThan(
+        disposeWorkspaces.mock.invocationCallOrder[0],
+      );
     });
   });
 

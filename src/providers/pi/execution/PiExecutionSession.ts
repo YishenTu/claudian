@@ -154,7 +154,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   private forkMaterializationFlight: Promise<void> | null = null;
   private kernel: PiExecutionKernel | null = null;
   private kernelGeneration = 0;
-  private launchKey: string | null = null;
+  private processKey: string | null = null;
+  private readonly kernelSessionTargets = new Set<string>();
   private lifecycleError: Error | null = null;
   private normalizationState: PiEventNormalizationState =
     createPiEventNormalizationState();
@@ -516,8 +517,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const hasAcceptedCompatibleLiveContext = Boolean(
       this.nativeConversationContextEstablished
       && !hasNativeSession
-      && this.kernel
-      && this.launchKey === launchSpec.launchKey,
+      && this.canReuseKernel(launchSpec),
     );
     const prompt = encodePrompt(
       request,
@@ -593,8 +593,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
     if (
-      this.kernel
-      && this.launchKey === launchSpec.launchKey
+      this.canReuseKernel(launchSpec)
     ) {
       return;
     }
@@ -625,7 +624,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
     this.kernel = kernel;
-    this.launchKey = launchSpec.launchKey;
+    this.processKey = launchSpec.processKey;
+    this.replaceKernelSessionTargets(launchSpec.sessionTarget);
     if (
       !this.isActive(active)
       || active.abortController.signal.aborted
@@ -825,7 +825,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       kernel.getStderrSnapshot(),
     );
     this.kernel = null;
-    this.launchKey = null;
+    this.processKey = null;
+    this.kernelSessionTargets.clear();
     if (!this.hasNativeSessionState()) {
       this.nativeConversationContextEstablished = false;
     }
@@ -897,6 +898,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (this.shouldDisableNativePersistence()) {
       this.providerSessionId = null;
       this.removeNativeProviderState();
+      this.kernelSessionTargets.clear();
       this.bumpRevision();
       return;
     }
@@ -922,6 +924,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.setOptionalProviderStateValue('sessionFile', sessionFile);
     this.setOptionalProviderStateValue('leafEntryId', leafEntryId);
     this.setOptionalProviderStateValue('parentSession', parentSession);
+    this.replaceKernelSessionTargets(sessionFile, sessionId);
     this.deleteProviderStateValue('forkSource');
     this.deleteProviderStateValue('forkSourceSessionFile');
     this.bumpRevision();
@@ -1205,11 +1208,28 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       && !this.disposed;
   }
 
+  private canReuseKernel(launchSpec: PiLaunchSpec): boolean {
+    if (!this.kernel || this.processKey !== launchSpec.processKey) return false;
+    return launchSpec.sessionTarget
+      ? this.kernelSessionTargets.has(launchSpec.sessionTarget)
+      : this.kernelSessionTargets.size === 0;
+  }
+
+  private replaceKernelSessionTargets(
+    ...targets: Array<string | null | undefined>
+  ): void {
+    this.kernelSessionTargets.clear();
+    for (const target of targets) {
+      if (target) this.kernelSessionTargets.add(target);
+    }
+  }
+
   private shutdownKernel(): Promise<void> {
     if (this.shutdownPromise) return this.shutdownPromise;
     const kernel = this.kernel;
     this.kernel = null;
-    this.launchKey = null;
+    this.processKey = null;
+    this.kernelSessionTargets.clear();
     this.kernelGeneration += 1;
     if (!this.hasNativeSessionState()) {
       this.nativeConversationContextEstablished = false;

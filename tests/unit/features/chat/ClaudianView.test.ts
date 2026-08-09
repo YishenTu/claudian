@@ -2636,6 +2636,46 @@ describe('ClaudianView composer input', () => {
 });
 
 describe('ClaudianView shutdown', () => {
+  it('prepares plugin unload through one shared drained snapshot', async () => {
+    const drain = deferred<void>();
+    const flush = jest.fn().mockResolvedValue(undefined);
+    const manager = {
+      beginShutdown: jest.fn(),
+      drainForShutdownSnapshot: jest.fn(() => drain.promise),
+      getActiveTab: jest.fn().mockReturnValue({
+        conversationId: 'conversation-1',
+        id: 'tab-1',
+      }),
+      sealShutdownSnapshot: jest.fn(),
+    };
+    const persistence = {
+      flush,
+      update: jest.fn(),
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      tabManager: manager,
+      tabStatePersistence: persistence,
+    });
+
+    const first = view.prepareForPluginUnload();
+    const second = view.prepareForPluginUnload();
+
+    expect(manager.beginShutdown).toHaveBeenCalledTimes(2);
+    expect(manager.drainForShutdownSnapshot).toHaveBeenCalledTimes(1);
+    expect(flush).not.toHaveBeenCalled();
+
+    drain.resolve(undefined);
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+
+    expect(persistence.update).toHaveBeenCalledWith({
+      activeTabId: 'tab-1',
+      openTabs: [{ conversationId: 'conversation-1', tabId: 'tab-1' }],
+    });
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(manager.sealShutdownSnapshot).toHaveBeenCalledTimes(1);
+  });
+
   it('drains active turns before flushing and sealing the final tab identity', async () => {
     const drain = deferred<void>();
     const activeTab = { conversationId: null as string | null, id: 'tab-1' };

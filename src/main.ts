@@ -145,6 +145,7 @@ export default class ClaudianPlugin extends Plugin {
   private remainingSessionMetadataLoad: Promise<void> | null = null;
   private providerChatOptionsChangeTail: Promise<void> = Promise.resolve();
   private isUnloading = false;
+  private applicationShutdownPromise: Promise<void> | null = null;
 
   get executionPersistence(): ChatExecutionPersistence {
     return this.conversationRepository;
@@ -317,11 +318,24 @@ export default class ClaudianPlugin extends Plugin {
       this.sessionMetadataLoadTimer = null;
     }
     StartupProfiler.freeze();
-    void Promise.all(
-      this.getAllViews().map(view => view.flushCurrentTabState()),
-    ).catch(() => undefined);
-    void this.executionLifecycleRegistry.dispose();
-    void ProviderWorkspaceRegistry.disposeInitialized();
+    this.applicationShutdownPromise ??= this.shutdownApplication();
+    void this.applicationShutdownPromise.catch(() => undefined);
+  }
+
+  private async shutdownApplication(): Promise<void> {
+    await Promise.allSettled(
+      this.getAllViews().map(view => view.prepareForPluginUnload()),
+    );
+    try {
+      await this.executionLifecycleRegistry.dispose();
+    } catch {
+      // Continue releasing provider workspaces even if execution cleanup fails.
+    }
+    try {
+      await ProviderWorkspaceRegistry.disposeInitialized();
+    } catch {
+      // Obsidian teardown has no error channel; workspace cleanup is best effort.
+    }
   }
 
   async activateView() {

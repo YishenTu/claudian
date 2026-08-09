@@ -963,6 +963,7 @@ describe('PiExecutionBackend', () => {
     }
 
     const prompts = harness.kernels.flatMap(getPromptMessages);
+    expect(harness.kernels).toHaveLength(1);
     expect(prompts[0]).toContain('prior question');
     expect(prompts[0]).toContain('prior answer');
     expect(prompts[1]).toBe('Second follow up');
@@ -1910,12 +1911,18 @@ describe('PiExecutionBackend', () => {
     const run = harness.session.execute(createRequest());
     const eventsPromise = collect(run.events);
     await waitFor(() => harness.kernels.length === 1);
+    const sessionTargetIndex = harness.kernels[0].launchSpec.args.indexOf('--session') + 1;
+    const forkFile = harness.kernels[0].launchSpec.args[sessionTargetIndex];
+    harness.responses.set('get_state', {
+      leafEntryId: 'assistant-1',
+      parentSession: sourceFile,
+      sessionFile: forkFile,
+      sessionId: 'fork-session',
+    });
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
     await eventsPromise;
 
-    const sessionTargetIndex = harness.kernels[0].launchSpec.args.indexOf('--session') + 1;
-    const forkFile = harness.kernels[0].launchSpec.args[sessionTargetIndex];
     expect(forkFile).not.toBe(sourceFile);
     expect(path.dirname(forkFile)).toBe(tempDir);
     expect(await fs.readFile(forkFile, 'utf8')).toContain(
@@ -1924,7 +1931,7 @@ describe('PiExecutionBackend', () => {
     const snapshot = harness.session.getSnapshot();
     expect(snapshot.providerState).toMatchObject({
       futureState: { retained: true },
-      sessionFile: '/tmp/pi-session.jsonl',
+      sessionFile: forkFile,
     });
     expect(snapshot.providerState).not.toHaveProperty('forkSource');
     expect(snapshot.providerState).not.toHaveProperty('forkSourceSessionFile');
@@ -1937,10 +1944,11 @@ describe('PiExecutionBackend', () => {
       input: [{ text: 'Continue after fork', type: 'text' }],
     }));
     const continuedEventsPromise = collect(continuedRun.events);
-    await waitFor(() => harness.kernels.length === 2);
-    harness.kernels[1].emit({ type: 'agent_start' });
-    harness.kernels[1].emit({ type: 'agent_end' });
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 2);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
     await continuedEventsPromise;
+    expect(harness.kernels).toHaveLength(1);
     expect(harness.session.getSnapshot().providerStateDeletes).toEqual([
       'forkSource',
       'forkSourceSessionFile',
