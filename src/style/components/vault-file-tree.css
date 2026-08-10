@@ -163,7 +163,7 @@
   overflow: hidden;
 }
 
-.claudian-vault-file-tree-pane > file-tree-container {
+.claudian-vault-file-tree-pane > [data-file-tree-virtualized] {
   display: block;
   flex: 1 1 auto;
   min-width: 0;
