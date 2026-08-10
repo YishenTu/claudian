@@ -34,7 +34,7 @@ import type { ChatState } from '../state/ChatState';
 import type { TabAttention } from '../state/types';
 import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
-import type { ExternalContextSelector, McpServerSelector } from '../ui/InputToolbar';
+import type { ExternalContextSelector } from '../ui/InputToolbar';
 import type { StatusPanel } from '../ui/StatusPanel';
 
 function runConversationAction(action: () => Promise<void>, failureMessage: string): void {
@@ -77,7 +77,6 @@ export interface ConversationControllerDeps {
   restoreMessageToComposer?: (message: Pick<ChatMessage, 'content' | 'images'>) => void;
   getFileContextManager: () => FileContextManager | null;
   getImageContextManager: () => ImageContextManager | null;
-  getMcpServerSelector: () => McpServerSelector | null;
   getExternalContextSelector: () => ExternalContextSelector | null;
   clearQueuedMessage: () => void;
   getTitleGenerationService: () => TitleGenerationService | null;
@@ -260,7 +259,6 @@ export class ConversationController {
       fileCtx?.autoAttachActiveFile();
 
       this.deps.getImageContextManager()?.clearImages();
-      this.deps.getMcpServerSelector()?.clearEnabled();
       // Pass current settings to ensure we have the most up-to-date persistent paths
       this.deps.getExternalContextSelector()?.clearExternalContexts(
         plugin.settings.persistentExternalContextPaths || []
@@ -307,8 +305,6 @@ export class ConversationController {
       this.deps.getExternalContextSelector()?.clearExternalContexts(
         plugin.settings.persistentExternalContextPaths || []
       );
-
-      this.deps.getMcpServerSelector()?.clearEnabled();
 
       const welcomeEl = renderer.renderMessages(
         [],
@@ -625,15 +621,11 @@ export class ConversationController {
 
     const externalContextSelector = this.deps.getExternalContextSelector();
     const externalContextPaths = externalContextSelector?.getExternalContexts() ?? [];
-    const mcpServerSelector = this.deps.getMcpServerSelector();
-    const enabledMcpServers = mcpServerSelector ? Array.from(mcpServerSelector.getEnabledServers()) : [];
-
     const updates: Partial<Conversation> = {
       messages: state.messages,
       currentNote: currentNote,
       externalContextPaths: externalContextPaths.length > 0 ? externalContextPaths : undefined,
       usage: state.usage ?? undefined,
-      enabledMcpServers: enabledMcpServers.length > 0 ? enabledMcpServers : undefined,
     };
 
     if (updateLastActivity) {
@@ -685,13 +677,6 @@ export class ConversationController {
     }
 
     this.restoreExternalContextPaths(conversation.externalContextPaths, !hasMessages);
-
-    const mcpServerSelector = this.deps.getMcpServerSelector();
-    if (conversation.enabledMcpServers && conversation.enabledMcpServers.length > 0) {
-      mcpServerSelector?.setEnabledServers(conversation.enabledMcpServers);
-    } else {
-      mcpServerSelector?.clearEnabled();
-    }
 
     const welcomeEl = renderer.renderMessages(
       state.messages,

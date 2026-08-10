@@ -6,7 +6,7 @@ import type { ProviderSettingsTabRenderer } from '../../../core/providers/types'
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import { renderHostnameCliPathSetting } from '../../../shared/settings/HostnameCliPathSetting';
-import { McpSettingsManager } from '../../../shared/settings/McpSettingsManager';
+import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
 import { renderProviderEnablementSetting } from '../../../shared/settings/ProviderEnablementSetting';
 import { renderLastEnabledProviderWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
@@ -282,23 +282,13 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     // --- MCP Servers ---
 
-    new Setting(container).setName(t('settings.mcpServers.name')).setHeading();
-
-    const mcpDesc = container.createDiv({ cls: 'claudian-mcp-settings-desc' });
-    mcpDesc.createEl('p', {
-      text: t('settings.mcpServers.desc'),
-      cls: 'setting-item-description',
-    });
-
-    const mcpContainer = container.createDiv({ cls: 'claudian-mcp-container' });
-    new McpSettingsManager(mcpContainer, {
-      app: context.plugin.app,
-      mcpStorage: claudeWorkspace.mcpStorage,
-      broadcastMcpReload: async () => {
-        await context.plugin.runProviderExecutionTransition(['claude'], async () => {
-          await claudeWorkspace.mcpManager.loadServers();
-        });
-      },
+    renderNativeMcpSettingsSection(container, {
+      descriptionAfterCommand: t('settings.mcpServers.descAfterCommand'),
+      descriptionBeforeCommand: t('settings.mcpServers.descBeforeCommand'),
+      documentationLabel: t('settings.mcpServers.learnMore'),
+      documentationUrl: 'https://code.claude.com/docs/en/mcp',
+      heading: t('settings.mcpServers.name'),
+      setupCommand: 'claude mcp add',
     });
 
     // --- Plugins ---

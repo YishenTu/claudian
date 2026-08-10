@@ -77,19 +77,3 @@ export {
   type PluginInfo,
   type PluginScope,
 } from './plugins';
-
-// MCP types
-export {
-  DEFAULT_MCP_SERVER,
-  getMcpServerType,
-  isValidMcpServerConfig,
-  type ManagedMcpConfigFile,
-  type ManagedMcpServer,
-  type McpConfigFile,
-  type McpHttpServerConfig,
-  type McpServerConfig,
-  type McpServerType,
-  type McpSSEServerConfig,
-  type McpStdioServerConfig,
-  type ParsedMcpConfig,
-} from './mcp';

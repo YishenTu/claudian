@@ -8,7 +8,6 @@ import type {
   ProviderExecutionRequest,
   ProviderSessionConfig,
 } from '../../../core/execution';
-import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import { buildSystemPrompt } from '../../../core/prompt/mainAgent';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
@@ -84,13 +83,11 @@ export interface ClaudeEncodedExecutionRequest {
   readonly effort: EffortLevel;
   readonly sdkPermissionMode: SDKPermissionMode;
   readonly restartKey: string;
-  readonly mcpServersKey: string;
   readonly allowedTools: ReadonlySet<string> | null;
 }
 
 export interface ClaudeExecutionRequestEncoderDeps {
   readonly host: ProviderHost;
-  readonly mcpManager: McpServerManager;
   readonly pluginManager: AppPluginManager;
 }
 
@@ -105,7 +102,6 @@ export class ClaudeExecutionRequestEncoder {
     resume: ClaudeNativeResume,
     replayConversationHistory: boolean,
   ): Promise<ClaudeEncodedExecutionRequest> {
-    await this.deps.mcpManager.ensureLoaded();
     const cliPath = await this.deps.host.getResolvedProviderCliPath('claude');
     if (!cliPath) {
       throw new Error('Claude CLI not found');
@@ -133,14 +129,7 @@ export class ClaudeExecutionRequestEncoder {
       settings.permissionMode,
       claudeSettings.safeMode,
     );
-    const encodedPrompt = this.encodePrompt(request, replayConversationHistory);
-    const mcpMentions = this.deps.mcpManager.extractMentions(encodedPrompt);
-    const prompt = this.deps.mcpManager.transformMentions(encodedPrompt);
-    const enabledMcpServers = new Set([
-      ...mcpMentions,
-      ...(request.configuration.enabledMcpServers ?? []),
-    ]);
-    const mcpServers = this.deps.mcpManager.getActiveServers(enabledMcpServers);
+    const prompt = this.encodePrompt(request, replayConversationHistory);
     const policy = resolveToolPolicy(request);
     const systemPrompt = request.configuration.systemInstructions.kind === 'explicit'
       ? [
@@ -180,11 +169,9 @@ export class ClaudeExecutionRequestEncoder {
       enableFileCheckpointing: true,
       canUseTool,
       disallowedTools: [
-        ...this.deps.mcpManager.getDisallowedMcpTools(enabledMcpServers),
         ...UNSUPPORTED_SDK_TOOLS,
         ...DISABLED_BUILTIN_SUBAGENTS,
       ],
-      ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
       ...(externalPaths.length > 0
         ? { additionalDirectories: externalPaths }
         : {}),
@@ -238,7 +225,6 @@ export class ClaudeExecutionRequestEncoder {
         enableAutoMode: claudeSettings.safeMode === 'auto',
         persistSession: options.persistSession,
       }),
-      mcpServersKey: JSON.stringify(mcpServers),
       allowedTools: policy.allowedTools,
     };
   }

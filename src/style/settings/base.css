@@ -69,6 +69,10 @@
   color: var(--text-normal);
 }
 
+.claudian-mcp-settings-desc {
+  margin-bottom: 12px;
+}
+
 /* Custom section descriptions - align with items */
 .claudian-sp-settings-desc,
 .claudian-mcp-settings-desc,

@@ -169,7 +169,9 @@
     },
     "mcpServers": {
       "name": "MCP サーバー",
-      "desc": ".claude/mcp.json に保存された Vault レベルの MCP サーバー設定を管理します。コンテキスト保存モードのサーバーは @mention でアクティブにする必要があります。"
+      "descBeforeCommand": "Claude Code は独自の CLI で MCP サーバーを管理します。",
+      "descAfterCommand": " で設定すると Claudian で利用できます。",
+      "learnMore": "詳しく見る"
     },
     "plugins": {
       "name": "Claude Code プラグイン",

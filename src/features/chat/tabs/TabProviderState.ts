@@ -156,10 +156,6 @@ function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalog
   };
 }
 
-export function getProviderMcpManager(providerId: ProviderId) {
-  return ProviderWorkspaceRegistry.getMcpServerManager(providerId);
-}
-
 export function syncSlashCommandDropdownForProvider(
   tab: AssembledTabRuntime,
   plugin: FeatureHost,
@@ -257,17 +253,9 @@ export function applyProviderUIGating(
 ): void {
   const capabilities = getTabCapabilities(tab, plugin);
   const uiConfig = getTabChatUIConfig(tab, plugin);
-  const mcpManager = capabilities.supportsMcpTools
-    ? getProviderMcpManager(capabilities.providerId)
-    : null;
   const hasPermissionToggle = Boolean(uiConfig.getPermissionModeToggle?.());
 
-  if (!capabilities.supportsMcpTools) {
-    tab.ui.mcpServerSelector.clearEnabled();
-  }
-  tab.ui.mcpServerSelector.setVisible(capabilities.supportsMcpTools);
   tab.ui.permissionToggle.setVisible(hasPermissionToggle);
-  tab.ui.fileContextManager.setMcpManager(mcpManager);
 
   tab.ui.fileContextManager.setAgentService(
     ProviderWorkspaceRegistry.getAgentMentionProvider(capabilities.providerId),
@@ -281,8 +269,6 @@ export function refreshTabWorkspaceServices(
   tab: AssembledTabRuntime,
   plugin: FeatureHost,
 ): void {
-  const providerId = getTabProviderId(tab, plugin);
-  tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(providerId));
   syncSlashCommandDropdownForProvider(tab, plugin);
   applyProviderUIGating(tab, plugin);
 }

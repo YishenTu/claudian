@@ -222,7 +222,6 @@ function createSubmission(overrides: Partial<ChatTurnSubmission> = {}): ChatTurn
     configuration: {
       systemInstructions: { kind: 'provider-default' },
       model: 'model-1',
-      enabledMcpServers: ['server-1'],
     },
     toolPolicy: { kind: 'provider-default' },
     ...overrides,

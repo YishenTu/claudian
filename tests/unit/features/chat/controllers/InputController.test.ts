@@ -179,7 +179,6 @@ function createFixture(overrides: Record<string, unknown> = {}) {
       hasImages: jest.fn().mockReturnValue(false),
       setImages: jest.fn(),
     }) as any,
-    getMcpServerSelector: () => null,
     getExternalContextSelector: () => null,
     getInstructionModeManager: () => null,
     getInstructionRefineService: () => null,

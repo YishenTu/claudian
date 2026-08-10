@@ -18,11 +18,6 @@ export interface FolderMentionItem {
   path: string;
 }
 
-export interface McpServerMentionItem {
-  type: 'mcp-server';
-  name: string;
-}
-
 export interface ContextFileMentionItem {
   type: 'context-file';
   name: string;
@@ -60,7 +55,6 @@ export type { AgentMentionProvider };
 export type MentionItem =
   | FileMentionItem
   | FolderMentionItem
-  | McpServerMentionItem
   | ContextFileMentionItem
   | ContextFolderMentionItem
   | AgentMentionItem

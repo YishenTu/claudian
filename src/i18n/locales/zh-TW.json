@@ -169,7 +169,9 @@
     },
     "mcpServers": {
       "name": "MCP 伺服器",
-      "desc": "管理儲存在 .claude/mcp.json 中的 Vault 級 MCP 伺服器配置。啟用上下文保存模式的伺服器需要 @ 提及才能啟用。"
+      "descBeforeCommand": "Claude Code 透過自己的 CLI 管理 MCP 伺服器。請使用 ",
+      "descAfterCommand": " 進行設定，它們會在 Claudian 中可用。",
+      "learnMore": "了解更多"
     },
     "plugins": {
       "name": "Claude Code 外掛程式",

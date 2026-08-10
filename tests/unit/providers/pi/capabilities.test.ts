@@ -11,7 +11,6 @@ describe('PI_PROVIDER_CAPABILITIES', () => {
       supportsProviderCommands: true,
       supportsImageAttachments: true,
       supportsInstructionMode: true,
-      supportsMcpTools: false,
       supportsTurnSteer: true,
       reasoningControl: 'effort',
     });

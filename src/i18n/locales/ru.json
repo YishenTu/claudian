@@ -169,7 +169,9 @@
     },
     "mcpServers": {
       "name": "MCP серверы",
-      "desc": "Управление конфигурациями MCP-серверов на уровне хранилища в .claude/mcp.json. Серверы с режимом сохранения контекста требуют @mention для активации."
+      "descBeforeCommand": "Claude Code управляет MCP-серверами через собственный CLI. Настройте через ",
+      "descAfterCommand": ", и они будут доступны в Claudian. ",
+      "learnMore": "Подробнее"
     },
     "plugins": {
       "name": "Плагины Claude Code",

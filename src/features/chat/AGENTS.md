@@ -9,7 +9,7 @@
 - `InputController` builds canonical execution requests; providers own native prompt encoding.
 - Resolve provider-owned services through registries:
   - `ProviderRegistry`: execution backends, title generation, instruction refinement, inline edit, task-result interpretation.
-  - `ProviderWorkspaceRegistry`: command catalogs, agent mentions, MCP managers, CLI resolution, settings tabs.
+  - `ProviderWorkspaceRegistry`: command catalogs, agent mentions, CLI resolution, settings tabs.
 
 ## Ownership
 

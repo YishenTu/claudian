@@ -101,7 +101,6 @@ describe('ClaudianView model refresh routing', () => {
     jest.spyOn(ProviderRegistry, 'getCapabilities').mockImplementation(providerId => ({
       providerId,
       supportsImageAttachments: false,
-      supportsMcpTools: false,
       supportsPlanMode: false,
     } as any));
     jest.spyOn(ProviderRegistry, 'getEnabledProviderIds').mockReturnValue(['codex', 'grok']);

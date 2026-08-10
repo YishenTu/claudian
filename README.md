@@ -25,13 +25,13 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes.
 
-**`@mention`** - Type `@` to mention anything you want the agent to work with, vault files, subagents, MCP servers, or files in external directories.
+**`@mention`** - Type `@` to mention anything you want the agent to work with, including vault files, subagents, and files in external directories.
 
 **Plan Mode** — Toggle via `Shift+Tab`. The agent explores and designs before implementing, then presents a plan for approval.
 
 **Instruction Mode (`#`)** — Refined custom instructions added from the chat input.
 
-**MCP Servers** — Connect external tools via Model Context Protocol (stdio, SSE, HTTP). Claude manages vault MCP in-app; Other harnesses uses its own CLI-managed MCP configuration.
+**MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
 
 **Tabs & Session Management** — Use multiple tabs in single-panel mode or a persistent session manager beside the chat in dual-pane mode.
 

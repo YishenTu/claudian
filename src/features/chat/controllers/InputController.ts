@@ -51,7 +51,7 @@ import type { QueuedMessage } from '../state/types';
 import type { ChatTurnRequest } from '../state/types';
 import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
-import type { AddExternalContextResult, McpServerSelector } from '../ui/InputToolbar';
+import type { AddExternalContextResult } from '../ui/InputToolbar';
 import type { InstructionModeManager } from '../ui/InstructionModeManager';
 import type { StatusPanel } from '../ui/StatusPanel';
 import type { BrowserSelectionController } from './BrowserSelectionController';
@@ -111,7 +111,6 @@ export interface InputControllerDeps {
   getMessagesEl: () => HTMLElement;
   getFileContextManager: () => FileContextManager | null;
   getImageContextManager: () => ImageContextManager | null;
-  getMcpServerSelector: () => McpServerSelector | null;
   getExternalContextSelector: () => {
     getExternalContexts: () => string[];
     addExternalContext: (path: string) => AddExternalContextResult;
@@ -996,7 +995,6 @@ export class InputController {
     } = this.deps;
 
     const fileContextManager = this.deps.getFileContextManager();
-    const mcpServerSelector = this.deps.getMcpServerSelector();
     const externalContextSelector = this.deps.getExternalContextSelector();
 
     const currentNotePath = fileContextManager?.getCurrentNotePath() || null;
@@ -1017,8 +1015,6 @@ export class InputController {
     const transformedText = !isCompact && fileContextManager
       ? fileContextManager.transformContextMentions(options.content)
       : options.content;
-    const enabledMcpServers = mcpServerSelector?.getEnabledServers();
-
     return {
       displayContent: options.content,
       turnRequest: {
@@ -1030,9 +1026,6 @@ export class InputController {
         canvasSelection: canvasContext,
         externalContextPaths: externalContextPaths && externalContextPaths.length > 0
           ? externalContextPaths
-          : undefined,
-        enabledMcpServers: enabledMcpServers && enabledMcpServers.size > 0
-          ? enabledMcpServers
           : undefined,
       },
     };
@@ -1069,9 +1062,6 @@ export class InputController {
     return {
       canonicalText: request.text,
       configuration: {
-        ...(request.enabledMcpServers
-          ? { enabledMcpServers: [...request.enabledMcpServers] }
-          : {}),
         ...(request.externalContextPaths
           ? { externalWorkspaceRoots: [...request.externalContextPaths] }
           : {}),
@@ -2254,9 +2244,6 @@ export class InputController {
 function cloneChatTurnRequest(request: ChatTurnRequest): ChatTurnRequest {
   return {
     ...request,
-    enabledMcpServers: request.enabledMcpServers
-      ? new Set(request.enabledMcpServers)
-      : undefined,
     externalContextPaths: request.externalContextPaths
       ? [...request.externalContextPaths]
       : undefined,
@@ -2275,10 +2262,6 @@ function mergeQueuedChatTurns(
     ...(existing.request.externalContextPaths ?? []),
     ...(incoming.request.externalContextPaths ?? []),
   ]));
-  const enabledMcpServers = new Set([
-    ...(existing.request.enabledMcpServers ?? []),
-    ...(incoming.request.enabledMcpServers ?? []),
-  ]);
   const images = [
     ...(existing.request.images ?? []),
     ...(incoming.request.images ?? []),
@@ -2289,8 +2272,6 @@ function mergeQueuedChatTurns(
       ...cloneChatTurnRequest(incoming.request),
       currentNotePath:
         incoming.request.currentNotePath ?? existing.request.currentNotePath,
-      enabledMcpServers:
-        enabledMcpServers.size > 0 ? enabledMcpServers : undefined,
       externalContextPaths:
         externalContextPaths.length > 0 ? externalContextPaths : undefined,
       images: images.length > 0 ? images : undefined,

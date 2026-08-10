@@ -90,11 +90,6 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     getImageContextManager: () => ({
       clearImages: jest.fn(),
     }) as any,
-    getMcpServerSelector: () => ({
-      clearEnabled: jest.fn(),
-      getEnabledServers: jest.fn().mockResolvedValue(new Set()),
-      setEnabledServers: jest.fn(),
-    }) as any,
     getExternalContextSelector: () => ({
       getExternalContexts: jest.fn().mockReturnValue([]),
       setExternalContexts: jest.fn(),
@@ -3105,151 +3100,31 @@ describe('ConversationController - Title Generation', () => {
   });
 });
 
-describe('ConversationController - MCP Server Persistence', () => {
-  let controller: ConversationController;
-  let deps: ConversationControllerDeps;
-  let mockMcpServerSelector: any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockMcpServerSelector = {
-      clearEnabled: jest.fn(),
-      getEnabledServers: jest.fn().mockReturnValue(new Set(['mcp-server-1', 'mcp-server-2'])),
-      setEnabledServers: jest.fn(),
+describe('ConversationController - provider switching', () => {
+  it('should ensure the tab service matches the switched conversation provider', async () => {
+    const ensureExecutionForConversation = jest.fn().mockResolvedValue(undefined);
+    const switchedConversation = {
+      id: 'new-conv',
+      providerId: 'codex',
+      title: 'Codex Conversation',
+      messages: [],
+      sessionId: null,
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
     };
-    deps = createMockDeps({
-      getMcpServerSelector: () => mockMcpServerSelector,
+    const deps = createMockDeps({
+      ensureExecutionForConversation,
+      plugin: {
+        ...createMockDeps().plugin,
+        switchConversation: jest.fn().mockResolvedValue(switchedConversation),
+      } as any,
     });
-    controller = new ConversationController(deps);
-  });
+    const controller = new ConversationController(deps);
+    deps.state.currentConversationId = 'old-conv';
 
-  describe('save', () => {
-    it('should save enabled MCP servers to conversation', async () => {
-      deps.state.currentConversationId = 'conv-1';
+    await controller.switchTo('new-conv');
 
-      await controller.save();
-
-      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-        'conv-1',
-        expect.objectContaining({
-          enabledMcpServers: ['mcp-server-1', 'mcp-server-2'],
-        }),
-      );
-    });
-
-    it('should save undefined when no MCP servers enabled', async () => {
-      mockMcpServerSelector.getEnabledServers.mockReturnValue(new Set());
-      deps.state.currentConversationId = 'conv-1';
-
-      await controller.save();
-
-      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-        'conv-1',
-        expect.objectContaining({
-          enabledMcpServers: undefined,
-        }),
-      );
-    });
-  });
-
-  describe('loadActive', () => {
-    it('should restore enabled MCP servers from conversation', async () => {
-      deps.state.currentConversationId = 'conv-1';
-      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
-        id: 'conv-1',
-        messages: [],
-        sessionId: null,
-        enabledMcpServers: ['restored-server-1', 'restored-server-2'],
-      });
-
-      await controller.loadActive();
-
-      expect(mockMcpServerSelector.setEnabledServers).toHaveBeenCalledWith([
-        'restored-server-1',
-        'restored-server-2',
-      ]);
-    });
-
-    it('should clear MCP servers when conversation has none', async () => {
-      deps.state.currentConversationId = 'conv-1';
-      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
-        id: 'conv-1',
-        messages: [],
-        sessionId: null,
-        enabledMcpServers: undefined,
-      });
-
-      await controller.loadActive();
-
-      expect(mockMcpServerSelector.clearEnabled).toHaveBeenCalled();
-    });
-  });
-
-  describe('switchTo', () => {
-    it('should restore enabled MCP servers when switching conversations', async () => {
-      deps.state.currentConversationId = 'old-conv';
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-        id: 'new-conv',
-        providerId: 'claude',
-        messages: [],
-        sessionId: null,
-        enabledMcpServers: ['switched-server'],
-      });
-
-      await controller.switchTo('new-conv');
-
-      expect(mockMcpServerSelector.setEnabledServers).toHaveBeenCalledWith(['switched-server']);
-    });
-
-    it('should clear MCP servers when switching to conversation with no servers', async () => {
-      deps.state.currentConversationId = 'old-conv';
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-        id: 'new-conv',
-        providerId: 'claude',
-        messages: [],
-        sessionId: null,
-        enabledMcpServers: undefined,
-      });
-
-      await controller.switchTo('new-conv');
-
-      expect(mockMcpServerSelector.clearEnabled).toHaveBeenCalled();
-    });
-
-    it('should ensure the tab service matches the switched conversation provider', async () => {
-      const ensureExecutionForConversation = jest.fn().mockResolvedValue(undefined);
-      const switchedConversation = {
-        id: 'new-conv',
-        providerId: 'codex',
-        title: 'Codex Conversation',
-        messages: [],
-        sessionId: null,
-        createdAt: Date.now(),
-        lastActivityAt: Date.now(),
-      };
-
-      deps = createMockDeps({
-        ensureExecutionForConversation,
-        plugin: {
-          ...createMockDeps().plugin,
-          switchConversation: jest.fn().mockResolvedValue(switchedConversation),
-        } as any,
-      });
-      controller = new ConversationController(deps);
-      deps.state.currentConversationId = 'old-conv';
-
-      await controller.switchTo('new-conv');
-
-      expect(ensureExecutionForConversation).toHaveBeenCalledWith(switchedConversation);
-    });
-  });
-
-  describe('createNew', () => {
-    it('should clear enabled MCP servers for new conversation', async () => {
-      await controller.createNew();
-
-      expect(mockMcpServerSelector.clearEnabled).toHaveBeenCalled();
-    });
+    expect(ensureExecutionForConversation).toHaveBeenCalledWith(switchedConversation);
   });
 });
 

@@ -1,7 +1,6 @@
 import type { App, EventRef } from 'obsidian';
 import { Notice, TFile, TFolder } from 'obsidian';
 
-import type { McpServerManager } from '../../../core/mcp/McpServerManager';
 import type { AgentMentionProvider } from '../../../shared/mention/MentionDropdownController';
 import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
 import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
@@ -46,9 +45,6 @@ export class FileContextManager {
 
   // Current note (shown as chip)
   private currentNotePath: string | null = null;
-
-  // MCP server support
-  private onMcpMentionChange: ((servers: Set<string>) => void) | null = null;
 
   constructor(
     app: App,
@@ -100,11 +96,7 @@ export class FileContextManager {
         this.inputEl,
         {
           onAttachFile: (filePath) => this.state.attachFile(filePath),
-          onMcpMentionChange: (servers) => this.onMcpMentionChange?.(servers),
           onAgentMentionSelect: (agentId) => this.callbacks.onAgentMentionSelect?.(agentId),
-          getMentionedMcpServers: () => this.state.getMentionedMcpServers(),
-          setMentionedMcpServers: (mentions) => this.state.setMentionedMcpServers(mentions),
-          addMentionedMcpServer: (name) => this.state.addMentionedMcpServer(name),
           getExternalContexts: () => this.callbacks.getExternalContexts?.() || [],
           getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
           getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
@@ -366,20 +358,8 @@ export class FileContextManager {
     }
   }
 
-  // ========================================
-  // MCP Server Support
-  // ========================================
-
-  setMcpManager(manager: McpServerManager | null): void {
-    this.mentionDropdown.setMcpManager(manager);
-  }
-
   setAgentService(agentService: AgentMentionProvider | null): void {
     this.mentionDropdown.setAgentService(agentService);
-  }
-
-  setOnMcpMentionChange(callback: (servers: Set<string>) => void): void {
-    this.onMcpMentionChange = callback;
   }
 
   /**
@@ -388,18 +368,6 @@ export class FileContextManager {
    */
   preScanExternalContexts(): void {
     this.mentionDropdown.preScanExternalContexts();
-  }
-
-  getMentionedMcpServers(): Set<string> {
-    return this.state.getMentionedMcpServers();
-  }
-
-  clearMcpMentions(): void {
-    this.state.clearMcpMentions();
-  }
-
-  updateMcpMentionsFromText(text: string): void {
-    this.mentionDropdown.updateMcpMentionsFromText(text);
   }
 
   private hasExcludedTag(file: TFile): boolean {

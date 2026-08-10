@@ -771,48 +771,7 @@ describe('FileContextManager', () => {
     });
   });
 
-  describe('MCP and agent support', () => {
-    it('should expose getMentionedMcpServers', () => {
-      const app = createMockApp();
-      const manager = new FileContextManager(
-        app, containerEl as any, inputEl, createMockCallbacks()
-      );
-      const servers = manager.getMentionedMcpServers();
-      expect(servers).toBeInstanceOf(Set);
-      expect(servers.size).toBe(0);
-      manager.destroy();
-    });
-
-    it('should clear MCP mentions', () => {
-      const app = createMockApp();
-      const manager = new FileContextManager(
-        app, containerEl as any, inputEl, createMockCallbacks()
-      );
-      // Should not throw
-      manager.clearMcpMentions();
-      expect(manager.getMentionedMcpServers().size).toBe(0);
-      manager.destroy();
-    });
-
-    it('should set onMcpMentionChange callback without error', () => {
-      const app = createMockApp();
-      const manager = new FileContextManager(
-        app, containerEl as any, inputEl, createMockCallbacks()
-      );
-      const callback = jest.fn();
-      expect(() => manager.setOnMcpMentionChange(callback)).not.toThrow();
-      manager.destroy();
-    });
-
-    it('should setMcpManager without error', () => {
-      const app = createMockApp();
-      const manager = new FileContextManager(
-        app, containerEl as any, inputEl, createMockCallbacks()
-      );
-      expect(() => manager.setMcpManager(null)).not.toThrow();
-      manager.destroy();
-    });
-
+  describe('agent support', () => {
     it('should setAgentService without error', () => {
       const app = createMockApp();
       const manager = new FileContextManager(

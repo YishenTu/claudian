@@ -42,7 +42,6 @@ export interface ProviderExecutionConfiguration {
   readonly permissionMode?: string;
   readonly mode?: string;
   readonly serviceTier?: string;
-  readonly enabledMcpServers?: readonly string[];
   readonly externalWorkspaceRoots?: readonly string[];
 }
 

@@ -33,7 +33,6 @@ import { TabModelSelectionCoordinator } from '../TabModelSelectionCoordinator';
 import {
   applyProviderUIGating,
   getBlankTabModelOptions,
-  getProviderMcpManager,
   getTabCapabilities,
   getTabChatUIConfig,
   getTabHiddenCommands,
@@ -79,8 +78,6 @@ function buildContextManagers(
     contextTray,
   );
   options.registerCleanup('tab file context manager', () => fileContextManager.destroy());
-  fileContextManager.setMcpManager(getProviderMcpManager(getTabProviderId(shell, plugin)));
-
   const imageContextManager = new ImageContextManager(
     dom.inputContainerEl,
     dom.inputEl,
@@ -476,7 +473,6 @@ export function buildTabRuntimeUI(
     modeSelector: toolbar.modeSelector,
     thinkingBudgetSelector: toolbar.thinkingBudgetSelector,
     externalContextSelector: toolbar.externalContextSelector,
-    mcpServerSelector: toolbar.mcpServerSelector,
     permissionToggle: toolbar.permissionToggle,
     serviceTierToggle: toolbar.serviceTierToggle,
     slashCommandDropdown,
@@ -485,11 +481,6 @@ export function buildTabRuntimeUI(
     navigationSidebar,
   };
 
-  ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(shell, plugin)));
-  ui.mcpServerSelector.setOnChange(onUserModified);
-  ui.fileContextManager.setOnMcpMentionChange((servers) => {
-    ui.mcpServerSelector.addMentionedServers(servers);
-  });
   ui.externalContextSelector.setOnChange(() => {
     ui.fileContextManager.preScanExternalContexts();
     options.onCommandContextChanged?.(runtimeRef.requirePublished());

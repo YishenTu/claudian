@@ -844,7 +844,6 @@ describe('SessionStorage', () => {
         ],
         currentNote: 'notes/test.md',
         externalContextPaths: ['/external/path'],
-        enabledMcpServers: ['mcp-server'],
         usage,
         titleGenerationStatus: 'success',
       };
@@ -859,7 +858,6 @@ describe('SessionStorage', () => {
       expect((metadata.providerState as any)?.providerSessionId).toBe('current-sdk-session');
       expect(metadata.currentNote).toBe('notes/test.md');
       expect(metadata.externalContextPaths).toEqual(['/external/path']);
-      expect(metadata.enabledMcpServers).toEqual(['mcp-server']);
       expect(metadata.usage).toEqual(usage);
       expect(metadata.titleGenerationStatus).toBe('success');
 

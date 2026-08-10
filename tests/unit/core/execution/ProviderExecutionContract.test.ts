@@ -66,7 +66,6 @@ function createRequest(signal = new AbortController().signal): ProviderExecution
       permissionMode: 'normal',
       serviceTier: 'default',
       mode: 'plan',
-      enabledMcpServers: ['docs'],
       externalWorkspaceRoots: ['/external'],
     },
     toolPolicy: { kind: 'read-only' },

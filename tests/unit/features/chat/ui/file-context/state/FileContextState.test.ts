@@ -20,9 +20,6 @@ describe('FileContextState', () => {
       expect(state.hasSentCurrentNote()).toBe(false);
     });
 
-    it('should start with no MCP mentions', () => {
-      expect(state.getMentionedMcpServers().size).toBe(0);
-    });
   });
 
   describe('session lifecycle', () => {
@@ -42,28 +39,24 @@ describe('FileContextState', () => {
       state.startSession();
       state.markCurrentNoteSent();
       state.attachFile('file1.md');
-      state.addMentionedMcpServer('server1');
 
       state.resetForNewConversation();
 
       expect(state.isSessionStarted()).toBe(false);
       expect(state.hasSentCurrentNote()).toBe(false);
       expect(state.getAttachedFiles().size).toBe(0);
-      expect(state.getMentionedMcpServers().size).toBe(0);
     });
   });
 
   describe('resetForLoadedConversation', () => {
     it('should set state based on whether conversation has messages', () => {
       state.attachFile('file1.md');
-      state.addMentionedMcpServer('server1');
 
       state.resetForLoadedConversation(true);
 
       expect(state.isSessionStarted()).toBe(true);
       expect(state.hasSentCurrentNote()).toBe(true);
       expect(state.getAttachedFiles().size).toBe(0);
-      expect(state.getMentionedMcpServers().size).toBe(0);
     });
 
     it('should not mark as started when no messages', () => {
@@ -109,47 +102,4 @@ describe('FileContextState', () => {
     });
   });
 
-  describe('MCP server mentions', () => {
-    it('should add a mentioned MCP server', () => {
-      state.addMentionedMcpServer('server1');
-      expect(state.getMentionedMcpServers().has('server1')).toBe(true);
-    });
-
-    it('should return a copy of mentioned servers', () => {
-      state.addMentionedMcpServer('server1');
-      const servers = state.getMentionedMcpServers();
-      servers.add('server2');
-      expect(state.getMentionedMcpServers().has('server2')).toBe(false);
-    });
-
-    it('should clear MCP mentions', () => {
-      state.addMentionedMcpServer('server1');
-      state.clearMcpMentions();
-      expect(state.getMentionedMcpServers().size).toBe(0);
-    });
-
-    it('should set mentioned MCP servers and return true when changed', () => {
-      const changed = state.setMentionedMcpServers(new Set(['a', 'b']));
-      expect(changed).toBe(true);
-      expect(state.getMentionedMcpServers()).toEqual(new Set(['a', 'b']));
-    });
-
-    it('should return false when setting same servers', () => {
-      state.setMentionedMcpServers(new Set(['a', 'b']));
-      const changed = state.setMentionedMcpServers(new Set(['a', 'b']));
-      expect(changed).toBe(false);
-    });
-
-    it('should return true when sizes differ', () => {
-      state.setMentionedMcpServers(new Set(['a']));
-      const changed = state.setMentionedMcpServers(new Set(['a', 'b']));
-      expect(changed).toBe(true);
-    });
-
-    it('should return true when same size but different contents', () => {
-      state.setMentionedMcpServers(new Set(['a', 'b']));
-      const changed = state.setMentionedMcpServers(new Set(['a', 'c']));
-      expect(changed).toBe(true);
-    });
-  });
 });

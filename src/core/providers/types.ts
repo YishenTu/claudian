@@ -4,14 +4,12 @@ import type {
   ProviderExecutionBackend,
   ProviderExecutionTransitionScope,
 } from '../execution';
-import type { McpServerManager } from '../mcp/McpServerManager';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   AgentDefinition,
   AuxiliaryContinuityReset,
   Conversation,
   InstructionRefineResult,
-  ManagedMcpServer,
   PluginInfo,
   SessionMetadata,
   SlashCommand,
@@ -35,7 +33,6 @@ export interface ProviderCapabilities {
   supportsProviderCommands: boolean;
   supportsImageAttachments: boolean;
   supportsInstructionMode: boolean;
-  supportsMcpTools: boolean;
   supportsTurnSteer?: boolean;
   reasoningControl: 'effort' | 'token-budget' | 'none';
   planPathPrefix?: string;
@@ -49,7 +46,7 @@ export const DEFAULT_CHAT_PROVIDER_ID = 'claude' as const satisfies ProviderId;
  * This is intentionally limited to chat-facing services.
  * Shared bootstrap (defaults, storage) is in `src/core/bootstrap/`.
  * Provider-owned workspace services (CLI resolution, commands, agents,
- * MCP, settings tabs) live behind `src/providers/<id>/app/`.
+ * settings tabs) live behind `src/providers/<id>/app/`.
  */
 export interface ProviderRegistration {
   displayName: string;
@@ -136,12 +133,6 @@ export interface SessionMetadataScanResult {
 // provider implementations. They are NOT part of the shared bootstrap storage
 // contract (`SharedAppStorage`).
 // ---------------------------------------------------------------------------
-
-export interface AppMcpStorage {
-  load(): Promise<ManagedMcpServer[]>;
-  save(servers: ManagedMcpServer[]): Promise<void>;
-  tryParseClipboardConfig?(text: string): unknown;
-}
 
 export interface AppCommandStorage {
   save(command: SlashCommand): Promise<void>;
@@ -425,7 +416,6 @@ export interface ProviderWorkspaceServices {
   cliResolver?: ProviderCliResolver | null;
   commandLoader?: ProviderCommandLoader | null;
   tabWarmupPolicy?: ProviderTabWarmupPolicy | null;
-  mcpServerManager?: McpServerManager | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
   refreshAgentMentions?(context?: ProviderTransitionOwnerContext): Promise<void>;
   refreshModelCatalog?(

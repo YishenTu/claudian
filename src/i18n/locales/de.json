@@ -169,7 +169,9 @@
     },
     "mcpServers": {
       "name": "MCP-Server",
-      "desc": "Verwalte Vault-MCP-Serverkonfigurationen in .claude/mcp.json. Server mit Kontext-Speichermodus benötigen @mention zur Aktivierung."
+      "descBeforeCommand": "Claude Code verwaltet MCP-Server über seine eigene CLI. Konfiguriere mit ",
+      "descAfterCommand": ", dann sind sie in Claudian verfügbar. ",
+      "learnMore": "Mehr erfahren"
     },
     "plugins": {
       "name": "Claude Code-Plugins",

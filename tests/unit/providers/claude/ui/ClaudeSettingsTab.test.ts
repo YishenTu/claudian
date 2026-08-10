@@ -4,12 +4,11 @@ import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/settings';
 import { claudeSettingsTabRenderer } from '@/providers/claude/ui/ClaudeSettingsTab';
 
 const mockRenderEnvironmentSettingsSection = jest.fn();
+const mockRenderNativeMcpSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockSlashCommandSettings = jest.fn();
-const mockMcpSettingsManager = jest.fn();
 const mockPluginSettingsManager = jest.fn();
 const mockCliResolverReset = jest.fn();
-const mockMcpManagerLoadServers = jest.fn().mockResolvedValue(undefined);
 const mockAgentManagerLoadAgents = jest.fn().mockResolvedValue(undefined);
 const mockVaultCommandRepository = {};
 
@@ -107,8 +106,8 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
-jest.mock('@/shared/settings/McpSettingsManager', () => ({
-  McpSettingsManager: jest.fn((...args: unknown[]) => mockMcpSettingsManager(...args)),
+jest.mock('@/shared/settings/NativeMcpSettingsSection', () => ({
+  renderNativeMcpSettingsSection: (...args: unknown[]) => mockRenderNativeMcpSettingsSection(...args),
 }));
 
 jest.mock('@/providers/claude/app/ClaudeWorkspaceServices', () => ({
@@ -122,10 +121,6 @@ jest.mock('@/providers/claude/app/ClaudeWorkspaceServices', () => ({
       loadAgents: mockAgentManagerLoadAgents,
     },
     agentStorage: {},
-    mcpStorage: {},
-    mcpManager: {
-      loadServers: mockMcpManagerLoadServers,
-    },
     pluginManager: {},
   })),
 }));
@@ -554,32 +549,22 @@ describe('ClaudeSettingsTab', () => {
     expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
   });
 
-  it('reloads Claude MCP state inside the execution transition', async () => {
-    let transitionActive = false;
+  it('directs MCP setup to the native Claude CLI', () => {
     const plugin = createPlugin();
-    plugin.runProviderExecutionTransition.mockImplementation(async (
-      providerIds: string[],
-      mutation: () => Promise<unknown>,
-    ) => {
-      expect(providerIds).toEqual(['claude']);
-      transitionActive = true;
-      try {
-        return await mutation();
-      } finally {
-        transitionActive = false;
-      }
-    });
-    mockMcpManagerLoadServers.mockImplementation(async () => {
-      expect(transitionActive).toBe(true);
-    });
 
     claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
-    const dependencies = mockMcpSettingsManager.mock.calls[0]?.[1] as {
-      broadcastMcpReload(): Promise<void>;
-    };
-    await dependencies.broadcastMcpReload();
 
-    expect(mockMcpManagerLoadServers).toHaveBeenCalledTimes(1);
+    expect(mockRenderNativeMcpSettingsSection).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        descriptionAfterCommand: 'settings.mcpServers.descAfterCommand',
+        descriptionBeforeCommand: 'settings.mcpServers.descBeforeCommand',
+        documentationLabel: 'settings.mcpServers.learnMore',
+        documentationUrl: 'https://code.claude.com/docs/en/mcp',
+        heading: 'settings.mcpServers.name',
+        setupCommand: 'claude mcp add',
+      },
+    );
   });
 
   it('invalidates Claude plugin and agent configuration inside the execution transition', async () => {

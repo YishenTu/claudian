@@ -231,7 +231,6 @@ export function buildTabRuntimeControllers(
       ),
       getFileContextManager: () => ui.fileContextManager,
       getImageContextManager: () => ui.imageContextManager,
-      getMcpServerSelector: () => ui.mcpServerSelector,
       getExternalContextSelector: () => ui.externalContextSelector,
       clearQueuedMessage: () => (
         runtimeRef.requirePublished().controllers.inputController.clearQueuedMessage()
@@ -326,7 +325,6 @@ export function buildTabRuntimeControllers(
     getMessagesEl: () => dom.messagesEl,
     getFileContextManager: () => ui.fileContextManager,
     getImageContextManager: () => ui.imageContextManager,
-    getMcpServerSelector: () => ui.mcpServerSelector,
     getExternalContextSelector: () => ui.externalContextSelector,
     getInstructionModeManager: () => ui.instructionModeManager,
     getInstructionRefineService: () => services.instructionRefineService,

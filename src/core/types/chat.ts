@@ -157,8 +157,6 @@ export interface Conversation {
   usage?: UsageInfo;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
-  /** UI-enabled MCP servers for this session (context-saving servers activated via selector). */
-  enabledMcpServers?: string[];
   /** Assistant checkpoint identifier for resumeAtMessageId after rewind. */
   resumeAtMessageId?: string;
 }
@@ -215,7 +213,6 @@ export interface SessionMetadata {
   isPinned?: boolean;
   isArchived?: boolean;
   externalContextPaths?: string[];
-  enabledMcpServers?: string[];
   usage?: UsageInfo;
   /** Assistant checkpoint identifier for resumeAtMessageId after rewind. */
   resumeAtMessageId?: string;

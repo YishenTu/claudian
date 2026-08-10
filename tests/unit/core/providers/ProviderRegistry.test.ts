@@ -19,8 +19,6 @@ describe('ProviderRegistry', () => {
   beforeEach(() => {
     ProviderWorkspaceRegistry.clear();
     ProviderWorkspaceRegistry.setServices('claude', {
-      mcpManager: {} as any,
-      mcpServerManager: {} as any,
     } as any);
     jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockResolvedValue(undefined);

@@ -15,14 +15,14 @@
 | `runtime/` | Persistent SDK query, restart decisions, message-channel behavior, CLI spawning, and native prompt construction |
 | `history/` | Read-only native transcript discovery, branch projection, historical model recovery, rewind, and subagent replay |
 | `app/`, `commands/`, `agents/`, `plugins/` | Workspace-scoped discovery and provider-native catalogs |
-| `storage/` | Only the documented Claudian-managed portions of Claude-compatible settings, MCP, command, skill, agent, and plugin files |
+| `storage/` | Only the documented Claudian-managed portions of Claude-compatible settings, command, skill, agent, and plugin files |
 | `types/` | Typed interpretation and sanitization of Claude-owned provider state |
 
 The execution session owns the live provider snapshot. History services reconstruct replay state but must not become a second live-session authority.
 
 ## Design Rules
 
-- Keep the persistent SDK query alive across turns when possible. Update model, permission mode, MCP servers, and effort through SDK calls.
+- Keep the persistent SDK query alive across turns when possible. Update model, permission mode, and effort through SDK calls.
 - Claude's provider fallback model is a user preference resolved against the current dynamic model options, including environment-mapped and custom options. Fresh settings prefer the Opus tier; an unavailable preference falls back without changing existing conversations or the global future-tab seed.
 - Restart the persistent query when the effective system prompt, disabled-tool set, plugin set, settings source set, CLI path, Chrome enablement, auto-mode enablement, or external context paths change.
 - Do not duplicate assistant text. The SDK can emit text incrementally and again in the final assistant message; stream handling must preserve the existing dedupe behavior.
@@ -32,7 +32,7 @@ The execution session owns the live provider snapshot. History services reconstr
 ## Storage Rules
 
 - `CCSettingsStorage.save()` must merge with existing `.claude/settings.json`; Claudian only owns permissions and plugin enablement.
-- `.claude/mcp.json` has a Claude-compatible `mcpServers` namespace and a Claudian `_claudian.servers` metadata namespace. Keep them separate.
+- Claude Code owns MCP configuration, authentication, health checks, and connection lifecycle through its native CLI and settings scopes. At application storage initialization, the composition root invokes the Claude-owned legacy cleanup to delete `.claude/mcp.json`; no other Claudian code may read, write, inject, or migrate that path.
 - Plugin enabled state is dual-written to `.claude/settings.json` and `PluginManager.plugins[].enabled`. Keep both in sync.
 - Native transcripts are read from `{CLAUDE_CONFIG_DIR:-~/.claude}/projects/{vault}/`; resolve the config dir through `resolveClaudeConfigDir`, never hardcode `~/.claude`.
 - Historical selected-model recovery returns a provider-qualified model only from a valid active-branch checkpoint. For multi-segment conversations, the checkpoint-bearing or latest authoritative segment must resolve; do not silently fall back to an older segment's model or make the recovery locator resumable.

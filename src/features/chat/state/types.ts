@@ -22,7 +22,6 @@ export interface ChatTurnRequest {
   browserSelection?: BrowserSelectionContext | null;
   canvasSelection?: CanvasSelectionContext | null;
   externalContextPaths?: string[];
-  enabledMcpServers?: Set<string>;
 }
 
 /** Queued message waiting to be sent after current streaming completes. */

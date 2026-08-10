@@ -1726,7 +1726,6 @@ export class ConversationRepository {
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       externalContextPaths: conversation.externalContextPaths,
-      enabledMcpServers: conversation.enabledMcpServers,
       usage: conversation.usage,
       resumeAtMessageId: conversation.resumeAtMessageId,
     };

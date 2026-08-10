@@ -73,8 +73,6 @@ jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
     getAgentMentionProvider: jest.fn().mockReturnValue(null),
     getCommandCatalog: jest.fn().mockReturnValue(null),
     getIfInitialized: jest.fn().mockReturnValue(null),
-    getMcpServerManager: jest.fn().mockReturnValue(null),
-    getMcpManager: jest.fn().mockReturnValue(null),
     getCommandLoader: jest.fn().mockReturnValue(null),
     getTabWarmupPolicy: jest.fn().mockReturnValue(null),
   },
@@ -339,7 +337,6 @@ function installTransitionController(
     getInputEl: () => tab.dom.inputEl,
     getFileContextManager: () => null,
     getImageContextManager: () => null,
-    getMcpServerSelector: () => null,
     getExternalContextSelector: () => null,
     clearQueuedMessage: jest.fn(),
     getTitleGenerationService: () => null,
@@ -490,7 +487,6 @@ describe('Tab provider execution ownership', () => {
       expect(tab?.ui.modeSelector).not.toBeNull();
       expect(tab?.ui.thinkingBudgetSelector).not.toBeNull();
       expect(tab?.ui.externalContextSelector).not.toBeNull();
-      expect(tab?.ui.mcpServerSelector).not.toBeNull();
       expect(tab?.ui.permissionToggle).not.toBeNull();
       expect(tab?.ui.serviceTierToggle).not.toBeNull();
       expect(tab?.ui.slashCommandDropdown).not.toBeNull();

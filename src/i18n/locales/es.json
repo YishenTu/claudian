@@ -169,7 +169,9 @@
     },
     "mcpServers": {
       "name": "Servidores MCP",
-      "desc": "Administra configuraciones de servidores MCP a nivel de vault almacenadas en .claude/mcp.json. Los servidores con modo de guardado de contexto requieren @mention para activarse."
+      "descBeforeCommand": "Claude Code gestiona servidores MCP mediante su propia CLI. Configúralos con ",
+      "descAfterCommand": " y estarán disponibles en Claudian. ",
+      "learnMore": "Más información"
     },
     "plugins": {
       "name": "Plugins de Claude Code",

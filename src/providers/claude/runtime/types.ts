@@ -1,12 +1,7 @@
-import type {
-  PermissionMode as SDKPermissionMode,
-  SDKMessage,
-  SDKUserMessage,
-} from '@anthropic-ai/claude-agent-sdk';
+import type { SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import type { ImageAttachment, StreamChunk } from '../../../core/types';
-import type { PermissionMode } from '../../../core/types/settings';
-import type { ClaudeModel, EffortLevel } from '../types/models';
+import type { ClaudeModel } from '../types/models';
 
 export interface TextContentBlock {
   type: 'text';
@@ -82,22 +77,6 @@ export function createResponseHandler(options: ResponseHandlerOptions): Response
     resetStreamThinking() { _sawStreamThinking = false; },
     markChunkSeen() { _sawAnyChunk = true; },
   };
-}
-
-export interface PersistentQueryConfig {
-  model: string | null;
-  effortLevel: EffortLevel;
-  permissionMode: PermissionMode | null;
-  sdkPermissionMode: SDKPermissionMode | null;
-  systemPromptKey: string;
-  disallowedToolsKey: string;
-  mcpServersKey: string;
-  pluginsKey: string;
-  externalContextPaths: string[];
-  settingSources: string;
-  claudeCliPath: string;
-  enableChrome: boolean;
-  enableAutoMode: boolean;
 }
 
 export interface SessionState {

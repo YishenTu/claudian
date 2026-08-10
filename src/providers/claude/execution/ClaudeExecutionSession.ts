@@ -72,7 +72,7 @@ interface BackgroundTurn {
 
 type ClaudeExecutionSessionServices = Pick<
   ClaudeWorkspaceServices,
-  'agentManager' | 'commandCatalog' | 'mcpManager' | 'pluginManager'
+  'agentManager' | 'commandCatalog' | 'pluginManager'
 >;
 
 export class ClaudeExecutionSession
@@ -147,7 +147,6 @@ ClaudeExecutionStrategySink {
     );
     this.encoder = new ClaudeExecutionRequestEncoder({
       host,
-      mcpManager: services.mcpManager,
       pluginManager: services.pluginManager,
     });
     this.interactionHandler = new ClaudeInteractionHandler({

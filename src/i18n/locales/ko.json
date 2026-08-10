@@ -169,7 +169,9 @@
     },
     "mcpServers": {
       "name": "MCP 서버",
-      "desc": ".claude/mcp.json에 저장된 Vault 수준의 MCP 서버 구성을 관리합니다. 컨텍스트 저장 모드 서버는 @mention으로 활성화해야 합니다."
+      "descBeforeCommand": "Claude Code는 자체 CLI로 MCP 서버를 관리합니다. ",
+      "descAfterCommand": " 명령으로 구성하면 Claudian에서 사용할 수 있습니다. ",
+      "learnMore": "자세히 알아보기"
     },
     "plugins": {
       "name": "Claude Code 플러그인",

@@ -11,13 +11,25 @@ import type {
   ProviderSessionEvent,
   ProviderSessionSnapshot,
 } from '@/core/execution';
-import type { McpServerManager } from '@/core/mcp/McpServerManager';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { Conversation } from '@/core/types';
 import type { ClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
+import { buildClaudeSDKUserMessage } from '@/providers/claude/runtime/ClaudeUserMessageFactory';
+
+jest.mock('@/providers/claude/runtime/ClaudeUserMessageFactory', () => {
+  const actual = jest.requireActual('@/providers/claude/runtime/ClaudeUserMessageFactory');
+  return {
+    ...actual,
+    buildClaudeSDKUserMessage: jest.fn(actual.buildClaudeSDKUserMessage),
+  };
+});
+
+const mockBuildClaudeSDKUserMessage = buildClaudeSDKUserMessage as jest.MockedFunction<
+  typeof buildClaudeSDKUserMessage
+>;
 
 const sdkMock = sdkModule as unknown as {
   getLastOptions: () => sdkModule.Options | undefined;
@@ -88,24 +100,13 @@ function createHost(): ProviderHost {
 function createServices(): {
   services: ClaudeWorkspaceServices;
   commandCatalog: { setCommandSnapshot: jest.Mock };
-  mcpManager: jest.Mocked<McpServerManager>;
 } {
-  const mcpManager = {
-    ensureLoaded: jest.fn().mockResolvedValue(undefined),
-    extractMentions: jest.fn().mockReturnValue(new Set<string>()),
-    transformMentions: jest.fn().mockImplementation((text: string) => text),
-    getActiveServers: jest.fn().mockReturnValue({}),
-    getDisallowedMcpTools: jest.fn().mockReturnValue([]),
-    getAllDisallowedMcpTools: jest.fn().mockReturnValue([]),
-  } as unknown as jest.Mocked<McpServerManager>;
   const commandCatalog = {
     setCommandSnapshot: jest.fn(),
   };
   return {
-    mcpManager,
     commandCatalog,
     services: {
-      mcpManager,
       pluginManager: {
         getPluginsKey: jest.fn().mockReturnValue(''),
       },
@@ -139,7 +140,6 @@ function createRequest(
       model: 'claude-sonnet-4-5',
       reasoning: 'medium',
       permissionMode: 'ask',
-      enabledMcpServers: [],
     },
     toolPolicy: { kind: 'provider-default' },
     signal: new AbortController().signal,
@@ -155,6 +155,10 @@ async function collectEvents(
     collected.push(event);
   }
   return collected;
+}
+
+function getEncodedPrompts(): string[] {
+  return mockBuildClaudeSDKUserMessage.mock.calls.map(([prompt]) => prompt);
 }
 
 describe('ClaudeExecutionBackend', () => {
@@ -361,15 +365,8 @@ describe('ClaudeExecutionBackend', () => {
     expect(oneShot.getSnapshot().providerSessionId).toBeUndefined();
   });
 
-  it('maps images, structured context, MCP mentions, and explicit allow lists', async () => {
-    const { services, mcpManager } = createServices();
-    mcpManager.extractMentions.mockReturnValue(new Set(['mentioned']));
-    mcpManager.transformMentions.mockImplementation(
-      (text: string) => text.replace('@mentioned', 'MCP_RESOURCE'),
-    );
-    mcpManager.getActiveServers.mockReturnValue({
-      mentioned: { command: 'server' },
-    });
+  it('maps images and structured context without injecting legacy MCP configuration', async () => {
+    const { services } = createServices();
     sdkMock.setMockMessages([
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
@@ -397,23 +394,22 @@ describe('ClaudeExecutionBackend', () => {
       },
       configuration: {
         systemInstructions: { kind: 'provider-default' },
-        enabledMcpServers: ['enabled'],
       },
       toolPolicy: { kind: 'allow-list', names: ['Read', 'Grep'] },
     })).events);
 
-    expect(mcpManager.getActiveServers).toHaveBeenCalledWith(
-      new Set(['mentioned', 'enabled']),
-    );
+    expect(getEncodedPrompts()).toEqual([
+      expect.stringContaining('@mentioned Explain this'),
+    ]);
     expect(sdkMock.getLastOptions()).toEqual(expect.objectContaining({
       additionalDirectories: ['/external'],
-      mcpServers: { mentioned: { command: 'server' } },
       tools: ['Read', 'Grep'],
     }));
+    expect(sdkMock.getLastOptions()?.mcpServers).toBeUndefined();
   });
 
   it('encodes structured context with escaped XML paths and bodies', async () => {
-    const { services, mcpManager } = createServices();
+    const { services } = createServices();
     sdkMock.setMockMessages([
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
@@ -434,7 +430,7 @@ describe('ClaudeExecutionBackend', () => {
       },
     })).events);
 
-    const prompt = String(mcpManager.extractMentions.mock.calls[0]?.[0]);
+    const prompt = getEncodedPrompts()[0] ?? '';
     expect(prompt).toContain(
       '<current_note path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Before\n</current_note>\nAfter]]>\n</current_note>',
     );
@@ -559,17 +555,12 @@ describe('ClaudeExecutionBackend', () => {
     expect(interactionPort.requestApproval).not.toHaveBeenCalled();
   });
 
-  it('applies model, effort, permission, and MCP changes without replacing a compatible persistent query', async () => {
+  it('applies model, effort, and permission changes without replacing a compatible persistent query', async () => {
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
-    const { services, mcpManager } = createServices();
-    mcpManager.getActiveServers
-      .mockReturnValueOnce({})
-      .mockReturnValueOnce({
-        selected: { command: 'server' },
-      });
+    const { services } = createServices();
     const session = new ClaudeExecutionBackend(createHost(), services)
       .createSession(createConfig());
 
@@ -581,16 +572,13 @@ describe('ClaudeExecutionBackend', () => {
         model: 'claude-opus-4-6',
         reasoning: 'high',
         permissionMode: 'plan',
-        enabledMcpServers: ['selected'],
       },
     })).events);
 
     expect(sdkMock.getQueryCallCount()).toBe(1);
     expect(query?.setModel).toHaveBeenCalledWith('claude-opus-4-6');
     expect(query?.setPermissionMode).toHaveBeenCalledWith('plan');
-    expect(query?.setMcpServers).toHaveBeenCalledWith({
-      selected: { command: 'server' },
-    });
+    expect(query?.setMcpServers).not.toHaveBeenCalled();
   });
 
   it('replays canonical history only while bootstrapping a native session', async () => {
@@ -598,7 +586,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
-    const { services, mcpManager } = createServices();
+    const { services } = createServices();
     const session = new ClaudeExecutionBackend(createHost(), services)
       .createSession(createConfig());
     const conversationHistory = [
@@ -614,7 +602,7 @@ describe('ClaudeExecutionBackend', () => {
       input: [{ type: 'text', text: 'Follow up' }],
     })).events);
 
-    const prompts = mcpManager.extractMentions.mock.calls.map(([prompt]) => String(prompt));
+    const prompts = getEncodedPrompts();
     expect(prompts[0]).toContain('prior question');
     expect(prompts[0]).toContain('prior answer');
     expect(prompts[1]).toBe('Follow up');
@@ -625,7 +613,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'system', subtype: 'init', session_id: 'replacement-session' },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
-    const { services, mcpManager } = createServices();
+    const { services } = createServices();
     const session = new ClaudeExecutionBackend(createHost(), services)
       .createSession(createConfig({
         resumeSeed: {
@@ -650,7 +638,7 @@ describe('ClaudeExecutionBackend', () => {
       input: [{ type: 'text', text: 'After recovery' }],
     })).events);
 
-    const prompts = mcpManager.extractMentions.mock.calls.map(([prompt]) => String(prompt));
+    const prompts = getEncodedPrompts();
     expect(prompts[0]).toBe('Hello');
     expect(prompts[1]).toContain('recover this question');
     expect(prompts[2]).toBe('After recovery');
@@ -661,8 +649,9 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'system', subtype: 'init', session_id: 'replacement-session' },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
-    const { services, mcpManager } = createServices();
-    const session = new ClaudeExecutionBackend(createHost(), services)
+    const { services } = createServices();
+    const host = createHost();
+    const session = new ClaudeExecutionBackend(host, services)
       .createSession(createConfig({
         resumeSeed: {
           providerSessionId: 'expected-session',
@@ -676,7 +665,9 @@ describe('ClaudeExecutionBackend', () => {
     await collectEvents(session.execute(createRequest({ conversationHistory })).events);
 
     const encodingBarrier = createDeferred<void>();
-    mcpManager.ensureLoaded.mockImplementationOnce(() => encodingBarrier.promise);
+    (host.getResolvedProviderCliPath as jest.Mock)
+      .mockImplementationOnce(() => encodingBarrier.promise.then(() => '/bin/claude'))
+      .mockResolvedValue('/bin/claude');
     const cancelledRun = session.execute(createRequest({
       conversationHistory,
       input: [{ type: 'text', text: 'Cancelled recovery' }],
@@ -692,7 +683,7 @@ describe('ClaudeExecutionBackend', () => {
       input: [{ type: 'text', text: 'Retry recovery' }],
     })).events);
 
-    const prompts = mcpManager.extractMentions.mock.calls.map(([prompt]) => String(prompt));
+    const prompts = getEncodedPrompts();
     expect(prompts.at(-1)).toContain('cancel recovery question');
   });
 
@@ -713,7 +704,7 @@ describe('ClaudeExecutionBackend', () => {
     )
       .mockResolvedValueOnce(failedFactory as never)
       .mockResolvedValueOnce((() => retryQuery) as never);
-    const { services, mcpManager } = createServices();
+    const { services } = createServices();
     const session = new ClaudeExecutionBackend(createHost(), services)
       .createSession(createConfig({
         resumeSeed: {
@@ -750,7 +741,7 @@ describe('ClaudeExecutionBackend', () => {
       input: [{ type: 'text', text: 'Retry recovery' }],
     })).events);
 
-    const prompts = mcpManager.extractMentions.mock.calls.map(([prompt]) => String(prompt));
+    const prompts = getEncodedPrompts();
     expect(prompts.at(-1)).toContain('retry this question');
   });
 
@@ -845,7 +836,7 @@ describe('ClaudeExecutionBackend', () => {
     )
       .mockResolvedValueOnce(firstFactory as never)
       .mockResolvedValueOnce(retryFactory as never);
-    const { services, mcpManager } = createServices();
+    const { services } = createServices();
     const session = new ClaudeExecutionBackend(createHost(), services)
       .createSession(createConfig({
         resumeSeed: {
@@ -899,9 +890,7 @@ describe('ClaudeExecutionBackend', () => {
         resumeSessionAt: 'assistant-checkpoint',
       }),
     }));
-    expect(mcpManager.extractMentions.mock.calls.at(-1)?.[0]).toBe(
-      'Retry the fork',
-    );
+    expect(getEncodedPrompts().at(-1)).toBe('Retry the fork');
   });
 
   it('persists amnesia recovery intent across execution-session recreation', async () => {
@@ -909,7 +898,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'system', subtype: 'init', session_id: 'replacement-session' },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
-    const { services, mcpManager } = createServices();
+    const { services } = createServices();
     const backend = new ClaudeExecutionBackend(createHost(), services);
     const session = backend.createSession(createConfig({
       resumeSeed: {
@@ -945,7 +934,7 @@ describe('ClaudeExecutionBackend', () => {
       input: [{ type: 'text', text: 'Continue after recovery' }],
     })).events);
 
-    const prompts = mcpManager.extractMentions.mock.calls.map(([prompt]) => String(prompt));
+    const prompts = getEncodedPrompts();
     expect(prompts.at(-2)).toContain('durable recovery question');
     expect(prompts.at(-1)).toBe('Continue after recovery');
     expect(replacement.getSnapshot().providerState).not.toHaveProperty(
@@ -1542,16 +1531,18 @@ describe('ClaudeExecutionBackend', () => {
       await import('@/providers/claude/loadClaudeAgentSdk'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
-    const { services, mcpManager } = createServices();
-    mcpManager.ensureLoaded
-      .mockImplementationOnce(() => encodingBarrier.promise)
-      .mockResolvedValue(undefined);
-    const session = new ClaudeExecutionBackend(createHost(), services)
+    const { services } = createServices();
+    const host = createHost();
+    const resolveCliPath = host.getResolvedProviderCliPath as jest.Mock;
+    resolveCliPath
+      .mockImplementationOnce(() => encodingBarrier.promise.then(() => '/bin/claude'))
+      .mockResolvedValue('/bin/claude');
+    const session = new ClaudeExecutionBackend(host, services)
       .createSession(createConfig());
     const cancelledRun = session.execute(createRequest());
     const cancelledEventsPromise = collectEvents(cancelledRun.events);
 
-    await waitFor(() => mcpManager.ensureLoaded.mock.calls.length === 1);
+    await waitFor(() => resolveCliPath.mock.calls.length === 1);
     cancelledRun.cancel();
     const retryRun = session.execute(createRequest({
       input: [{ type: 'text', text: 'Retry after local cancellation' }],
@@ -1602,8 +1593,10 @@ describe('ClaudeExecutionBackend', () => {
     )
       .mockResolvedValueOnce((() => staleQuery) as never)
       .mockResolvedValueOnce((() => retryQuery) as never);
-    const { services, mcpManager } = createServices();
-    const session = new ClaudeExecutionBackend(createHost(), services)
+    const { services } = createServices();
+    const host = createHost();
+    const resolveCliPath = host.getResolvedProviderCliPath as jest.Mock;
+    const session = new ClaudeExecutionBackend(host, services)
       .createSession(createConfig());
 
     await collectEvents(session.execute(createRequest()).events);
@@ -1621,7 +1614,7 @@ describe('ClaudeExecutionBackend', () => {
       input: [{ type: 'text', text: 'Retry on a fresh query' }],
     }));
     const retryEventsPromise = collectEvents(retryRun.events);
-    await waitFor(() => mcpManager.ensureLoaded.mock.calls.length === 3);
+    await waitFor(() => resolveCliPath.mock.calls.length === 3);
 
     oldTerminalBarrier.resolve(null);
     await staleQuery.finished;

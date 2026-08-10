@@ -239,12 +239,6 @@ implements ClaudeExecutionStrategy {
       await query.setPermissionMode(request.sdkPermissionMode);
       if (this.query !== query || this.disposed) return;
     }
-    if (request.mcpServersKey !== current.mcpServersKey) {
-      await query.setMcpServers(
-        request.options.mcpServers ?? {},
-      );
-      if (this.query !== query || this.disposed) return;
-    }
     this.currentConfig = request;
   }
 

@@ -24,7 +24,6 @@ import type { ImageContextManager } from '../ui/ImageContext';
 import type {
   ContextUsageMeter,
   ExternalContextSelector,
-  McpServerSelector,
   ModelSelector,
   ModeSelector,
   PermissionToggle,
@@ -122,7 +121,6 @@ export interface TabUIComponents {
   readonly modeSelector: ModeSelector;
   readonly thinkingBudgetSelector: ThinkingBudgetSelector;
   readonly externalContextSelector: ExternalContextSelector;
-  readonly mcpServerSelector: McpServerSelector;
   readonly permissionToggle: PermissionToggle;
   readonly serviceTierToggle: ServiceTierToggle;
   readonly slashCommandDropdown: SlashCommandDropdown;
