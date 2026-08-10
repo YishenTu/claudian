@@ -1,5 +1,6 @@
 import '@/providers';
 
+import { createUntrustedTestFile } from '@test/helpers/testFilesystem';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -947,9 +948,9 @@ ${inlineOutput}
       const { manager } = createManager();
       setupLinkedAgentOutput(manager, 'task-1', 'agent-untrusted-output', 'out-1');
 
-      const homeDir = process.env.HOME ?? process.cwd();
-      const untrustedDir = mkdtempSync(join(homeDir, '.claudian-untrusted-'));
-      const fullOutputFile = join(untrustedDir, 'agent-untrusted.output');
+      const { filePath: fullOutputFile, cleanup } = createUntrustedTestFile(
+        'agent-untrusted.output',
+      );
       const fullOutput = [
         JSON.stringify({
           type: 'assistant',
@@ -973,7 +974,7 @@ ${inlineOutput}
         const result = manager.handleAgentOutputToolResult('out-1', xmlPayload, false);
         expect(result?.result).toBe(inlineOutput);
       } finally {
-        rmSync(untrustedDir, { recursive: true, force: true });
+        cleanup();
       }
     });
 

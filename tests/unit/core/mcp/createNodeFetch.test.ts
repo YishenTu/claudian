@@ -2,71 +2,32 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client';
-import * as http from 'http';
-import type { AddressInfo } from 'net';
+import {
+  createTestHttpServer,
+  type TestHttpRequest,
+  type TestHttpServer,
+} from '@test/helpers/TestHttpServer';
+import type * as http from 'http';
 
 import { createNodeFetch } from '@/core/mcp/McpTester';
 
-interface ReceivedRequest {
-  method: string;
-  url: string;
-  headers: http.IncomingHttpHeaders;
-  body: string;
-}
-
-function createTestServer(handler?: (req: ReceivedRequest, res: http.ServerResponse) => void): {
-  server: http.Server;
-  getUrl: () => string;
-  received: ReceivedRequest[];
-} {
-  const received: ReceivedRequest[] = [];
-
-  const server = http.createServer((req, res) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => {
-      const entry: ReceivedRequest = {
-        method: req.method ?? 'GET',
-        url: req.url ?? '/',
-        headers: req.headers,
-        body: Buffer.concat(chunks).toString('utf-8'),
-      };
-      received.push(entry);
-
-      if (handler) {
-        handler(entry, res);
-      } else {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
-      }
-    });
-  });
-
-  server.listen(0);
-
-  return {
-    server,
-    getUrl: () => {
-      const addr = server.address() as AddressInfo;
-      return `http://127.0.0.1:${addr.port}`;
-    },
-    received,
-  };
-}
-
 describe('createNodeFetch', () => {
-  let server: http.Server;
+  let server: TestHttpServer['server'] | null = null;
   let getUrl: () => string;
-  let received: ReceivedRequest[];
+  let received: TestHttpRequest[] = [];
   let nodeFetch: ReturnType<typeof createNodeFetch>;
   const serversToClose: http.Server[] = [];
 
-  beforeAll(() => {
-    ({ server, getUrl, received } = createTestServer());
+  beforeAll(async () => {
+    ({ server, getUrl, received } = await createTestHttpServer());
     nodeFetch = createNodeFetch();
   });
 
   afterAll(() => new Promise<void>((resolve) => {
+    if (!server) {
+      resolve();
+      return;
+    }
     server.close(() => resolve());
   }));
 
@@ -138,7 +99,7 @@ describe('createNodeFetch', () => {
   });
 
   it('should handle non-200 responses', async () => {
-    const { server: errorServer, getUrl: errorUrl, received: errorReceived } = createTestServer(
+    const { server: errorServer, getUrl: errorUrl, received: errorReceived } = await createTestHttpServer(
       (_req, res) => {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'not found' }));
@@ -166,7 +127,7 @@ describe('createNodeFetch', () => {
   });
 
   it('should stop a hanging MCP HTTP discovery probe at the SDK request timeout', async () => {
-    const { server: hangingServer, getUrl: hangingUrl, received: hangingReceived } = createTestServer(
+    const { server: hangingServer, getUrl: hangingUrl, received: hangingReceived } = await createTestHttpServer(
       () => {
         // Accept the discovery request without ever sending a response.
       },
