@@ -7,6 +7,7 @@ import type { Conversation } from '../../../../src/core/types';
 import { OpencodeConversationHistoryService } from '../../../../src/providers/opencode/history/OpencodeConversationHistoryService';
 
 describe('OpencodeConversationHistoryService', () => {
+  const originalPlatform = process.platform;
   let tmpRoot: string;
 
   beforeEach(() => {
@@ -14,6 +15,7 @@ describe('OpencodeConversationHistoryService', () => {
   });
 
   afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
     rmSync(tmpRoot, { force: true, recursive: true });
   });
 
@@ -146,6 +148,37 @@ describe('OpencodeConversationHistoryService', () => {
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted prompt']);
     expect(conversation.providerState).toEqual({
       databasePath: trustedPath,
+      futureResumeCursor: { token: 'cursor-1' },
+    });
+  });
+
+  it('replaces a legacy Windows AppData database hint with the home database', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const sessionId = 'session-windows-home';
+    const home = path.join(tmpRoot, 'home');
+    const appData = path.join(home, 'AppData', 'Roaming');
+    const legacyPath = path.join(appData, 'opencode', 'opencode.db');
+    const homePath = path.join(home, '.local', 'share', 'opencode', 'opencode.db');
+    seedDatabase(legacyPath, sessionId, 'Legacy AppData prompt');
+    seedDatabase(homePath, sessionId, 'Current home prompt');
+    const conversation = createConversation(sessionId, legacyPath);
+    conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
+
+    await new OpencodeConversationHistoryService().hydrateConversationHistory(
+      conversation,
+      null,
+      {
+        environment: {
+          APPDATA: appData,
+          HOME: home,
+          LOCALAPPDATA: path.join(home, 'AppData', 'Local'),
+        },
+      },
+    );
+
+    expect(conversation.messages.map(message => message.content)).toEqual(['Current home prompt']);
+    expect(conversation.providerState).toEqual({
+      databasePath: homePath,
       futureResumeCursor: { token: 'cursor-1' },
     });
   });

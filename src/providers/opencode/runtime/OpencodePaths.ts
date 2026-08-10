@@ -15,11 +15,6 @@ export function resolveOpencodeDataDir(
   }
 
   const home = env.HOME || os.homedir();
-  if (process.platform === 'win32') {
-    const appData = env.APPDATA || env.LOCALAPPDATA || path.join(home, 'AppData', 'Roaming');
-    return path.join(appData, OPENCODE_APP_NAME);
-  }
-
   return path.join(home, '.local', 'share', OPENCODE_APP_NAME);
 }
 
