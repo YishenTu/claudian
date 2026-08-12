@@ -675,10 +675,17 @@ describe('ClaudianView tab controls', () => {
 
   it('keeps tab-aware navigation on the single-mode history surface', () => {
     const container = createMockEl();
+    const ownerRequestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    container.ownerDocument.defaultView.requestAnimationFrame = ownerRequestAnimationFrame;
+    const globalRequestAnimationFrame = jest.spyOn(window, 'requestAnimationFrame');
     const renderHistoryDropdown = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
     Object.assign(view, {
       isArchiveSessionView: false,
+      historyDropdown: container,
       openHistoryConversation: jest.fn(),
       openHistoryConversationInNewTab: jest.fn(),
       getHistoryConversationStatus: jest.fn(),
@@ -698,10 +705,25 @@ describe('ClaudianView tab controls', () => {
     const options = renderHistoryDropdown.mock.calls[0]?.[1];
     expect(options.showOpenStateLabels).toBe(true);
     expect(options.showOpenStateActions).toBe(true);
+    expect(options.showInlinePinAction).toBe(false);
+    expect(options.onRequestInlineRename).toEqual(expect.any(Function));
     expect(options.onOpenConversationInNewTab).toEqual(expect.any(Function));
     expect(options.onBeforeRestoreListState).toEqual(expect.any(Function));
     expect(options).not.toHaveProperty('organization');
     expect(options).not.toHaveProperty('showMetadataPopover');
+
+    const beginRename = jest.fn();
+    const targetItem = container.createDiv({ cls: 'claudian-history-item' });
+    targetItem.setAttribute('data-conversation-id', 'conversation-1');
+    options.onRequestInlineRename({
+      beginRename,
+      conversationId: 'conversation-1',
+    });
+    expect(container.hasClass('visible')).toBe(true);
+    expect(beginRename).toHaveBeenCalledWith(targetItem);
+    expect(ownerRequestAnimationFrame).toHaveBeenCalledTimes(1);
+    expect(globalRequestAnimationFrame).not.toHaveBeenCalled();
+    globalRequestAnimationFrame.mockRestore();
   });
 
   it('collapses and expands every linked-note group from the session header', () => {
@@ -1152,12 +1174,20 @@ describe('ClaudianView tab controls', () => {
     view.updateHistoryDropdown();
 
     expect(renderHistoryDropdown).toHaveBeenCalledTimes(2);
+    const secondRenderSignal = renderHistoryDropdown.mock.calls[1][1].signal as AbortSignal;
 
     view.toggleHistoryDropdown();
     expect(firstRenderSignal.aborted).toBe(true);
+    expect(secondRenderSignal.aborted).toBe(true);
     view.updateHistoryDropdown();
 
     expect(renderHistoryDropdown).toHaveBeenCalledTimes(2);
+
+    view.toggleHistoryDropdown();
+
+    expect(renderHistoryDropdown).toHaveBeenCalledTimes(3);
+    const reopenedSignal = renderHistoryDropdown.mock.calls[2][1].signal as AbortSignal;
+    expect(reopenedSignal.aborted).toBe(false);
   });
 
   it('builds the persistent session column to the right of the chat panel', () => {
@@ -1897,10 +1927,12 @@ describe('ClaudianView tab controls', () => {
         getProviderIcon: expect.any(Function),
         getModelLabel: expect.any(Function),
         onRerender: expect.any(Function),
+        onRequestInlineRename: expect.any(Function),
         onSelectConversation: expect.any(Function),
         preserveListState: true,
         searchQuery: 'roadmap',
         showAttentionState: true,
+        showInlinePinAction: true,
         showOpenStateActions: false,
         showOpenStateLabels: false,
         showMetadataPopover: true,
@@ -1952,6 +1984,31 @@ describe('ClaudianView tab controls', () => {
         collapsedGroupKeys: expect.any(Set),
       }),
     );
+
+    const ownerRequestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    sessionSidebarEl.ownerDocument.defaultView.requestAnimationFrame = ownerRequestAnimationFrame;
+    let replacementItem: ReturnType<typeof createMockEl> | null = null;
+    view.isArchiveSessionView = false;
+    view.isSessionSearchActive = true;
+    view.closeSessionSearch = jest.fn(() => {
+      view.isSessionSearchActive = false;
+      sessionSidebarEl.empty();
+      replacementItem = sessionSidebarEl.createDiv({ cls: 'claudian-history-item' });
+      replacementItem.setAttribute('data-conversation-id', 'conversation-1');
+    });
+    const beginRename = jest.fn();
+
+    sessionOptions.onRequestInlineRename({
+      beginRename,
+      conversationId: 'conversation-1',
+    });
+
+    expect(view.closeSessionSearch).toHaveBeenCalledTimes(1);
+    expect(ownerRequestAnimationFrame).toHaveBeenCalledTimes(1);
+    expect(beginRename).toHaveBeenCalledWith(replacementItem);
   });
 
   it('projects local and cross-view runtime attention into session status', () => {
@@ -2990,10 +3047,12 @@ describe('ClaudianView Escape handling', () => {
   function createEscapeHarness(options: {
     isStreaming: boolean;
   }): {
+    cancelInlineRename: jest.Mock;
     cancelStreaming: jest.Mock;
     eventRefs: unknown[];
     view: any;
   } {
+    const cancelInlineRename = jest.fn().mockReturnValue(false);
     const cancelStreaming = jest.fn();
     const eventRefs: unknown[] = [];
     const parentScope = new Scope();
@@ -3027,6 +3086,7 @@ describe('ClaudianView Escape handling', () => {
       getActiveTab: jest.fn().mockReturnValue({
         state: { isStreaming: options.isStreaming },
         controllers: {
+          conversationController: { cancelInlineRename },
           inputController: { cancelStreaming },
         },
         ui: {
@@ -3040,7 +3100,7 @@ describe('ClaudianView Escape handling', () => {
       }),
     };
 
-    return { cancelStreaming, eventRefs, view };
+    return { cancelInlineRename, cancelStreaming, eventRefs, view };
   }
 
   function createScopedSendHarness(options: {
@@ -3139,6 +3199,24 @@ describe('ClaudianView Escape handling', () => {
     const escapeHandler = view.scope.handlers.find((handler: any) => handler.key === 'Escape');
     const result = escapeHandler.func({ key: 'Escape', isComposing: false } as KeyboardEvent);
 
+    expect(cancelStreaming).not.toHaveBeenCalled();
+    expect(result).toBe(false);
+  });
+
+  it('exits inline rename before handling other scoped Escape actions', () => {
+    const { cancelInlineRename, cancelStreaming, view } = createEscapeHarness({
+      isStreaming: true,
+    });
+    cancelInlineRename.mockReturnValue(true);
+    view.closeSessionSearch = jest.fn();
+    view.isSessionSearchActive = true;
+
+    view.wireEventHandlers();
+    const escapeHandler = view.scope.handlers.find((handler: any) => handler.key === 'Escape');
+    const result = escapeHandler.func({ key: 'Escape', isComposing: false } as KeyboardEvent);
+
+    expect(cancelInlineRename).toHaveBeenCalledTimes(1);
+    expect(view.closeSessionSearch).not.toHaveBeenCalled();
     expect(cancelStreaming).not.toHaveBeenCalled();
     expect(result).toBe(false);
   });

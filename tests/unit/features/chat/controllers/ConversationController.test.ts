@@ -2593,6 +2593,40 @@ describe('ConversationController', () => {
         expect(onSetConversationPinned).toHaveBeenCalledWith('pinned', false);
       });
 
+      it('hides the inline pin action without removing the context-menu action', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'active', title: 'Active', createdAt: 2 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
+          onSetConversationPinned: jest.fn().mockResolvedValue(undefined),
+          sessionActionMode: 'active',
+          showInlinePinAction: false,
+          showOpenStateActions: false,
+        });
+
+        const item = container.querySelector('.claudian-history-item')!;
+        expect(item.querySelector('.claudian-pin-btn')).toBeNull();
+        expect(item.querySelector('.claudian-archive-btn')).not.toBeNull();
+
+        item.dispatchEvent({
+          type: 'contextmenu',
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+        const menu = (Menu as typeof Menu & {
+          instances: Array<{ items: Array<{ title: string }> }>;
+        }).instances.at(-1)!;
+        expect(menu.items.map(menuItem => menuItem.title)).toEqual([
+          'Pin',
+          'Rename',
+          'Archive',
+        ]);
+      });
+
       it('keeps rename in the active context menu and delete in Archived only', () => {
         const activeContainer = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
@@ -2619,7 +2653,7 @@ describe('ConversationController', () => {
           }>;
         }).instances.at(-1)!;
         expect(menu.useNativeMenu).toBe(false);
-        expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Archive', 'Rename']);
+        expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Archive']);
 
         const archivedContainer = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
@@ -2646,6 +2680,60 @@ describe('ConversationController', () => {
         }).instances.at(-1)!;
         expect(menu.useNativeMenu).toBe(false);
         expect(menu.items.map(item => item.title)).toEqual(['Restore', 'Delete']);
+      });
+
+      it('defers inline rename until the transient history surface is restored', async () => {
+        const container = createMockEl();
+        const onRerender = jest.fn();
+        const onRequestInlineRename = jest.fn();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+          { id: 'active', title: 'Original title', createdAt: 2 },
+        ]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          onRerender,
+          onRequestInlineRename,
+          sessionActionMode: 'active',
+          showOpenStateActions: true,
+        });
+
+        const item = container.querySelector('.claudian-history-item')!;
+        const title = item.querySelector('.claudian-history-item-title')!;
+        title.replaceWith = jest.fn();
+        item.dispatchEvent({
+          type: 'contextmenu',
+          stopPropagation: jest.fn(),
+          preventDefault: jest.fn(),
+        });
+
+        const menu = (Menu as typeof Menu & {
+          instances: Array<{
+            items: Array<{ title: string; clickHandler: (() => void) | null }>;
+          }>;
+        }).instances.at(-1)!;
+        menu.items.find(menuItem => menuItem.title === 'Rename')?.clickHandler?.();
+
+        expect(title.replaceWith).not.toHaveBeenCalled();
+        expect(item.querySelector('.claudian-rename-input')).toBeNull();
+        expect(onRequestInlineRename).toHaveBeenCalledWith({
+          beginRename: expect.any(Function),
+          conversationId: 'active',
+        });
+
+        onRequestInlineRename.mock.calls[0][0].beginRename(item);
+        const input = item.querySelector('.claudian-rename-input')!;
+        expect(title.replaceWith).toHaveBeenCalledWith(input);
+        input.value = 'Renamed title';
+        input.blur();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(deps.plugin.renameConversation).toHaveBeenCalledWith(
+          'active',
+          'Renamed title',
+        );
+        expect(onRerender).toHaveBeenCalledTimes(1);
       });
     });
   });
@@ -2789,6 +2877,83 @@ describe('ConversationController', () => {
 
       expect(deps.plugin.renameConversation).toHaveBeenCalledWith('conv-1', 'New title');
       expect(onRerender).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not persist an unchanged inline rename', async () => {
+      const container = createMockEl();
+      const onRerender = jest.fn();
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Original title', createdAt: 1000 },
+      ]);
+
+      controller.renderHistoryDropdown(container, {
+        onSelectConversation: jest.fn(),
+        onRerender,
+      });
+
+      const item = container.querySelector('.claudian-history-item')!;
+      const title = item.querySelector('.claudian-history-item-title')!;
+      title.replaceWith = jest.fn();
+      item.querySelector('.claudian-history-item-actions')!.children[0].click();
+      const input = item.querySelector('.claudian-rename-input')!;
+      input.value = '  Original title  ';
+      input.blur();
+      await Promise.resolve();
+
+      expect(deps.plugin.renameConversation).not.toHaveBeenCalled();
+      expect(onRerender).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels the active inline rename without persisting the draft', async () => {
+      const container = createMockEl();
+      const onRerender = jest.fn();
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Original title', createdAt: 1000 },
+      ]);
+
+      controller.renderHistoryDropdown(container, {
+        onSelectConversation: jest.fn(),
+        onRerender,
+      });
+
+      const item = container.querySelector('.claudian-history-item')!;
+      const title = item.querySelector('.claudian-history-item-title')!;
+      title.replaceWith = jest.fn();
+      item.querySelector('.claudian-history-item-actions')!.children[0].click();
+      const input = item.querySelector('.claudian-rename-input')!;
+      input.value = 'Unsaved title';
+
+      expect(controller.cancelInlineRename()).toBe(true);
+      await Promise.resolve();
+
+      expect(input.value).toBe('Original title');
+      expect(deps.plugin.renameConversation).not.toHaveBeenCalled();
+      expect(onRerender).toHaveBeenCalledTimes(1);
+      expect(controller.cancelInlineRename()).toBe(false);
+    });
+
+    it('releases inline rename ownership when its surface rerenders without blur', () => {
+      const container = createMockEl();
+      const options = {
+        onSelectConversation: jest.fn(),
+        onRerender: jest.fn(),
+      };
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+        { id: 'conv-1', title: 'Original title', createdAt: 1000 },
+      ]);
+
+      controller.renderHistoryDropdown(container, options);
+      const item = container.querySelector('.claudian-history-item')!;
+      const title = item.querySelector('.claudian-history-item-title')!;
+      title.replaceWith = jest.fn();
+      item.querySelector('.claudian-history-item-actions')!.children[0].click();
+      const input = item.querySelector('.claudian-rename-input')!;
+      input.value = 'Detached draft';
+
+      controller.renderHistoryDropdown(container, options);
+
+      expect(controller.cancelInlineRename()).toBe(false);
+      expect(deps.plugin.renameConversation).not.toHaveBeenCalled();
     });
 
     it('should delete conversation and reload active when deleting current conversation', async () => {

@@ -933,6 +933,31 @@ export class ClaudianView extends ItemView {
       showOpenStateLabels: navigationMode === 'history',
       showOpenStateActions: navigationMode === 'history' && !isArchiveView,
       preserveListState: true,
+      showInlinePinAction: navigationMode === 'sessions',
+      onRequestInlineRename: ({ beginRename, conversationId }) => {
+        if (navigationMode === 'sessions' && this.isSessionSearchActive) {
+          this.closeSessionSearch();
+        }
+        const restoreAndRename = () => {
+          if (
+            navigationMode === 'history'
+            && (signal.aborted || this.historyDropdown !== container)
+          ) return;
+          const targetItem = Array.from(
+            container.querySelectorAll<HTMLElement>('.claudian-history-item'),
+          ).find(item => item.getAttribute('data-conversation-id') === conversationId);
+          if (!targetItem) return;
+
+          if (navigationMode === 'history') {
+            container.addClass('visible');
+          }
+          beginRename(targetItem);
+        };
+        scheduleAnimationFrame(
+          restoreAndRename,
+          container.ownerDocument.defaultView,
+        );
+      },
       sessionScope: isArchiveView ? 'archived' : 'active',
       sessionActionMode: isArchiveView ? 'archived' : 'active',
       historyHeaderLabel: isArchiveView ? 'Archived' : 'Sessions',
@@ -1995,6 +2020,7 @@ export class ClaudianView extends ItemView {
   private cancelHistoryRendering(): void {
     this.historyRenderAbortController?.abort();
     this.historyRenderAbortController = null;
+    this.historyDropdownDirty = true;
   }
 
   private cancelSessionSidebarRendering(): void {
@@ -2118,13 +2144,14 @@ export class ClaudianView extends ItemView {
         || this.isSessionSearchComposing
         || this.vaultFileTree?.isComposingSearch()
       ) return;
+      const activeTab = this.tabManager?.getActiveTab();
+      if (activeTab?.controllers.conversationController.cancelInlineRename()) return false;
       if (this.vaultFileTree?.handleEscape(e)) return false;
       if (this.isSessionSearchActive) {
         this.closeSessionSearch();
         return false;
       }
       if (!e.defaultPrevented) {
-        const activeTab = this.tabManager?.getActiveTab();
         if (activeTab?.state.isStreaming) {
           activeTab.controllers.inputController.cancelStreaming();
         }

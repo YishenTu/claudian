@@ -38,6 +38,27 @@ Choose a folder by UI ownership, not by the screen where a selector happens to a
 - Use Obsidian CSS variables such as `--background-*`, `--text-*`, and `--interactive-*`.
 - Use `var(--font-monospace)` for code blocks.
 
+## Specific Element Rules
+
+Every Claudian-owned instance of an element listed below must use its required base pattern. A departure is allowed only through an explicit semantic or surface modifier; selector order, nesting, and inherited Obsidian styles are not exceptions.
+
+### Buttons
+
+- All buttons use `border: 0`, `background: transparent`, `box-shadow: none`, and `color: var(--text-muted)` at rest.
+- Hover and `focus-visible` use `color: var(--text-normal)` while retaining no border, transparent background, and no box shadow. Filled hover or focus surfaces require an explicit modifier.
+- Disabled buttons use `color: var(--text-faint)` and `cursor: default`, and must not retain hover, focus, or active emphasis.
+- Button SVGs inherit `currentColor`; their width and height are declared by the button's base selector. Different icon sizing requires an explicit modifier.
+- Apply the complete base pattern to the Claudian button class and its hover, focus, active, and disabled selectors so Obsidian cannot restore native button chrome in any state.
+
+### Inputs and Textareas
+
+- All standalone inputs and textareas use `min-width: 0`, `border: 1px solid var(--background-modifier-border)`, `background: var(--background-modifier-form-field)`, `box-shadow: none`, `color: var(--text-normal)`, and the inherited UI font.
+- Hover retains the base border, background, and box shadow. Focus uses `outline: none` and `border-color: var(--interactive-accent)` without introducing a browser or Obsidian box shadow.
+- Placeholders use `color: var(--text-muted)`. Disabled controls use `color: var(--text-faint)` and `cursor: default`.
+- An input or textarea embedded in a wrapper uses `border: 0`, `background: transparent`, and `box-shadow: none` in every interaction state; the wrapper alone owns the border, background, radius, and focus treatment.
+- Textareas use `resize: none` and `overflow-y: auto` by default. A resizable textarea requires an explicit modifier and bounded sizing.
+- Error, warning, read-only, and semantic-mode treatments require explicit modifiers or scoped custom properties; they must override every affected interaction state.
+
 ## Gotchas
 
 - Obsidian uses `body.theme-dark` and `body.theme-light` for theme detection.

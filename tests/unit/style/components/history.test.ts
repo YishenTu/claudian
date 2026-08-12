@@ -19,3 +19,16 @@ describe('Persistent sidebar surface pager styles', () => {
     );
   });
 });
+
+describe('Single-pane history action styles', () => {
+  it('keeps row actions borderless and transparent while using color for interaction', () => {
+    const css = readFileSync(path.resolve('src/style/components/history.css'), 'utf8');
+
+    expect(css).toMatch(
+      /\.claudian-history-menu \.claudian-history-item-actions \.claudian-action-btn\s*{[^}]*background:\s*transparent;[^}]*border:\s*none;[^}]*box-shadow:\s*none;[^}]*color:\s*var\(--text-muted\);/,
+    );
+    expect(css).toMatch(
+      /\.claudian-history-menu \.claudian-history-item-actions \.claudian-action-btn:hover,[\s\S]*?\.claudian-history-menu \.claudian-history-item-actions \.claudian-action-btn:focus-visible\s*{[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;[^}]*color:\s*var\(--text-normal\);/,
+    );
+  });
+});

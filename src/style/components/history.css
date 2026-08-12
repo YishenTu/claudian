@@ -800,6 +800,22 @@ body.theme-dark .claudian-session-metadata-popover {
   color: var(--interactive-accent);
 }
 
+.claudian-history-menu .claudian-history-item-actions .claudian-action-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+.claudian-history-menu .claudian-history-item-actions .claudian-action-btn:hover,
+.claudian-history-menu .claudian-history-item-actions .claudian-action-btn:focus-visible {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
 .claudian-rename-input {
   width: 100%;
   padding: 2px 4px;
