@@ -175,6 +175,7 @@ export interface ClaudianSettings {
   // UI preferences
   maxWarmAgentProcesses: number;
   enableAutoScroll: boolean;
+  showMessageTimestamps?: boolean;
   deferMathRenderingDuringStreaming: boolean;
   expandFileEditsByDefault: boolean;
   chatViewPlacement: ChatViewPlacement;

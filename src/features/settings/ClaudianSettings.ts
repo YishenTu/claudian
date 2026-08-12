@@ -362,6 +362,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(container)
+      .setName(t('settings.showMessageTimestamps.name'))
+      .setDesc(t('settings.showMessageTimestamps.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showMessageTimestamps === true)
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.showMessageTimestamps = value;
+            });
+          })
+      );
+
+    new Setting(container)
       .setName(t('settings.deferMathRenderingDuringStreaming.name'))
       .setDesc(t('settings.deferMathRenderingDuringStreaming.desc'))
       .addToggle((toggle) =>

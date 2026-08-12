@@ -302,6 +302,10 @@
       "name": "Automatisches Scrollen während Streaming",
       "desc": "Automatisch nach unten scrollen, während Claude Antworten streamt. Deaktivieren, um oben zu bleiben und von Anfang an zu lesen."
     },
+    "showMessageTimestamps": {
+      "name": "Nachrichtenzeitstempel anzeigen",
+      "desc": "Die lokale Sende- oder Empfangszeit jeder Nachricht im Chatverlauf anzeigen."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Mathe-Rendering während Streaming aufschieben",
       "desc": "LaTeX während des Streamings roh anzeigen und Mathematik einmal rendern, wenn der Textblock abgeschlossen ist."

@@ -302,6 +302,10 @@
       "name": "Défilement automatique pendant le streaming",
       "desc": "Défiler automatiquement vers le bas pendant que Claude diffuse les réponses. Désactiver pour rester en haut et lire depuis le début."
     },
+    "showMessageTimestamps": {
+      "name": "Afficher les horodatages des messages",
+      "desc": "Afficher l’heure locale d’envoi ou d’arrivée de chaque message dans le fil de discussion."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Différer le rendu mathématique pendant le streaming",
       "desc": "Afficher le LaTeX brut pendant la diffusion, puis rendre les formules une fois chaque bloc de texte terminé."
