@@ -14,7 +14,7 @@ import type {
   ProviderUserMessageStartedEvent,
   ToolExecutionScope,
 } from '../../../core/execution';
-import type { StreamChunk } from '../../../core/types';
+import type { StreamChunk, UsageInfo } from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import {
   isAsyncSubagentCompletion,
@@ -29,6 +29,7 @@ import type {
 import {
   createTransformStreamState,
   createTransformUsageState,
+  recalculateClaudeUsageContextWindow,
   transformSDKMessage,
 } from '../stream/transformClaudeMessage';
 
@@ -79,6 +80,11 @@ export type ClaudeNormalizedExecutionEvent =
     readonly providerSessionId?: string;
   }
   | {
+    readonly type: 'context_window';
+    readonly model: string;
+    readonly contextWindow: number;
+  }
+  | {
     readonly type: 'result';
   };
 
@@ -95,6 +101,7 @@ interface NormalizationState {
   readonly usageState: ReturnType<typeof createTransformUsageState>;
   readonly toolScopes: Map<string, ToolIdentity>;
   readonly blockedToolIds: Set<string>;
+  lastUsage: UsageInfo | null;
   assistantStarted: boolean;
   sawStreamText: boolean;
   sawStreamThinking: boolean;
@@ -115,6 +122,7 @@ export class ClaudeExecutionEventNormalizer {
     options: {
       readonly intendedModel?: string;
       readonly customContextLimits?: Record<string, number>;
+      readonly authoritativeContextWindow?: number;
     } = {},
   ): ClaudeNormalizedExecutionEvent[] {
     const state = this.states[channel];
@@ -139,6 +147,34 @@ export class ClaudeExecutionEventNormalizer {
         continue;
       }
       if (isContextWindowEvent(event)) {
+        const model = options.intendedModel ?? state.lastUsage?.model ?? 'sonnet';
+        const authoritativeContextWindow = isFinitePositiveNumber(
+          options.authoritativeContextWindow,
+        )
+          ? options.authoritativeContextWindow
+          : undefined;
+        if (authoritativeContextWindow === undefined) {
+          normalized.push({
+            type: 'context_window',
+            model,
+            contextWindow: event.contextWindow,
+          });
+        }
+        const correctedUsage = this.updateContextWindow(
+          channel,
+          model,
+          options.customContextLimits,
+          authoritativeContextWindow ?? event.contextWindow,
+        );
+        if (correctedUsage) {
+          normalized.push({
+            type: 'output',
+            event: {
+              type: 'usage_updated',
+              usage: correctedUsage,
+            },
+          });
+        }
         continue;
       }
       if (isStreamChunk(event)) {
@@ -160,6 +196,28 @@ export class ClaudeExecutionEventNormalizer {
     return normalized;
   }
 
+  updateContextWindow(
+    channel: ClaudeExecutionEventChannel,
+    model: string,
+    customContextLimits: Record<string, number> | undefined,
+    runtimeContextWindow: number,
+  ): UsageInfo | null {
+    const state = this.states[channel];
+    if (!state.lastUsage || state.lastUsage.model !== model) {
+      return null;
+    }
+    const correctedUsage = recalculateClaudeUsageContextWindow(
+      state.lastUsage,
+      customContextLimits,
+      runtimeContextWindow,
+    );
+    if (sameUsageWindow(state.lastUsage, correctedUsage)) {
+      return null;
+    }
+    state.lastUsage = correctedUsage;
+    return correctedUsage;
+  }
+
   markToolBlocked(
     toolUseId: string,
     channel: ClaudeExecutionEventChannel,
@@ -174,6 +232,7 @@ export class ClaudeExecutionEventNormalizer {
     state.usageState.clear();
     state.toolScopes.clear();
     state.blockedToolIds.clear();
+    state.lastUsage = null;
     state.assistantStarted = false;
     state.sawStreamText = false;
     state.sawStreamThinking = false;
@@ -258,6 +317,7 @@ function createNormalizationState(): NormalizationState {
     usageState: createTransformUsageState(),
     toolScopes: new Map(),
     blockedToolIds: new Set(),
+    lastUsage: null,
     assistantStarted: false,
     sawStreamText: false,
     sawStreamThinking: false,
@@ -353,6 +413,7 @@ function toOutputEvent(
       };
     }
     case 'usage':
+      state.lastUsage = chunk.usage;
       return {
         type: 'usage_updated',
         usage: chunk.usage,
@@ -368,6 +429,16 @@ function toOutputEvent(
         level: chunk.level,
       };
   }
+}
+
+function sameUsageWindow(current: UsageInfo, next: UsageInfo): boolean {
+  return current.contextWindow === next.contextWindow
+    && current.contextWindowIsAuthoritative === next.contextWindowIsAuthoritative
+    && current.percentage === next.percentage;
+}
+
+function isFinitePositiveNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
 function normalizeToolStarted(

@@ -114,6 +114,11 @@ ClaudeExecutionStrategySink {
   private lastAllowedTools: ReadonlySet<string> | null = null;
   private currentPermissionMode: PermissionMode;
   private readonly eventNormalizer = new ClaudeExecutionEventNormalizer();
+  private nativeQuery: Query | null = null;
+  private authoritativeContextWindow: {
+    readonly model: string;
+    readonly contextWindow: number;
+  } | null = null;
 
   constructor(
     private readonly host: ProviderHost,
@@ -454,12 +459,18 @@ ClaudeExecutionStrategySink {
     }
 
     const active = this.activeRun;
+    const intendedModel = this.lastEncodedRequest?.model;
+    const authoritativeContextWindow = intendedModel
+      && this.authoritativeContextWindow?.model === intendedModel
+      ? this.authoritativeContextWindow.contextWindow
+      : undefined;
     const normalizedEvents = this.eventNormalizer.normalize(
       message,
       active ? 'requested' : 'background',
       {
         intendedModel: this.lastEncodedRequest?.model,
         customContextLimits: this.host.settings.customContextLimits,
+        authoritativeContextWindow,
       },
     );
     if (
@@ -555,6 +566,13 @@ ClaudeExecutionStrategySink {
           this.finishBackgroundTurn('provider-ended');
         }
         return;
+      }
+      if (normalized.type === 'context_window') {
+        this.authoritativeContextWindow = {
+          model: normalized.model,
+          contextWindow: normalized.contextWindow,
+        };
+        continue;
       }
       if (normalized.type === 'result') {
         if (this.activeRun) {
@@ -670,6 +688,52 @@ ClaudeExecutionStrategySink {
 
   releaseNativeTurnFence(queryToken: number): void {
     this.suppressedEphemeralQueryTokens.delete(queryToken);
+  }
+
+  handleNativeQueryOpened(query: Query): void {
+    if (this.nativeQuery === query) return;
+    this.nativeQuery = query;
+    this.authoritativeContextWindow = null;
+  }
+
+  handleNativeQueryClosed(query: Query): void {
+    if (this.nativeQuery !== query) return;
+    this.nativeQuery = null;
+    this.authoritativeContextWindow = null;
+  }
+
+  handleAuthoritativeContextWindow(
+    query: Query,
+    model: string,
+    contextWindow: number,
+  ): void {
+    if (
+      this.nativeQuery !== query
+      || !Number.isFinite(contextWindow)
+      || contextWindow <= 0
+    ) {
+      return;
+    }
+    this.authoritativeContextWindow = { model, contextWindow };
+    const channel = this.activeRun
+      ? 'requested'
+      : this.backgroundTurn
+        ? 'background'
+        : null;
+    if (!channel) return;
+    const correctedUsage = this.eventNormalizer.updateContextWindow(
+      channel,
+      model,
+      this.host.settings.customContextLimits,
+      contextWindow,
+    );
+    const target = this.activeRun ?? this.backgroundTurn;
+    if (correctedUsage && target) {
+      this.emitTurnOutput(target, {
+        type: 'usage_updated',
+        usage: correctedUsage,
+      });
+    }
   }
 
   private async startExecution(

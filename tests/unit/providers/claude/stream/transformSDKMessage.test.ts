@@ -1258,8 +1258,8 @@ describe('transformSDKMessage', () => {
       const results = [...transformSDKMessage(message)];
 
       expect(results).toEqual([
-        { type: 'error', content: 'Hit maximum turn limit' },
         { type: 'context_window', contextWindow: 200000 },
+        { type: 'error', content: 'Hit maximum turn limit' },
       ]);
     });
 
