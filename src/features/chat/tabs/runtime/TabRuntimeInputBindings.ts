@@ -112,15 +112,114 @@ export function buildTabRuntimeInputBindings(
   const scrollThreshold = 20;
   const reEnableDelay = 150;
   let reEnableTimeout: number | null = null;
+  let bottomNavigationInProgress = false;
 
   const isAutoScrollAllowed = (): boolean => plugin.settings.enableAutoScroll ?? true;
+  const cancelReEnableTimeout = (): void => {
+    if (reEnableTimeout === null) return;
+    window.clearTimeout(reEnableTimeout);
+    reEnableTimeout = null;
+  };
+
+  ui.navigationSidebar.setOnScrollIntent((intent) => {
+    cancelReEnableTimeout();
+    const enabled = intent === 'bottom' && isAutoScrollAllowed();
+    bottomNavigationInProgress = enabled;
+    state.autoScrollEnabled = enabled;
+  });
+  options.registerCleanup('tab scroll navigation binding', () => {
+    ui.navigationSidebar.setOnScrollIntent(null);
+  });
+
+  const nativeBoundaryScrollKeys = new Set(['end', 'home']);
+  const nativePageScrollKeys = new Set(['pagedown', 'pageup']);
+  const nativeArrowScrollKeys = new Set(['arrowdown', 'arrowup']);
+  const userScrollIntentHandler = (event: Event) => {
+    if (event.type === 'keydown') {
+      const keyboardEvent = event as KeyboardEvent;
+      const settings = plugin.settings.keyboardNavigation;
+      const key = keyboardEvent.key.toLowerCase();
+      const hasControlModifier = keyboardEvent.ctrlKey || keyboardEvent.metaKey;
+      const isConfiguredScrollKey = !hasControlModifier
+        && !keyboardEvent.altKey
+        && !keyboardEvent.shiftKey && (
+        key === settings.scrollUpKey.toLowerCase()
+        || key === settings.scrollDownKey.toLowerCase()
+      );
+      const target = keyboardEvent.target as HTMLElement | null;
+      const targetTag = target?.tagName;
+      const isTextEntryTarget = targetTag === 'INPUT'
+        || targetTag === 'SELECT'
+        || targetTag === 'TEXTAREA'
+        || target?.isContentEditable === true;
+      const isActivatableTarget = targetTag === 'A'
+        || targetTag === 'BUTTON'
+        || targetTag === 'SUMMARY'
+        || target?.getAttribute?.('role') === 'button';
+      const isNativeBoundaryScrollKey = !keyboardEvent.altKey
+        && !keyboardEvent.shiftKey
+        && nativeBoundaryScrollKeys.has(key)
+        && !isTextEntryTarget;
+      const isNativePageScrollKey = !hasControlModifier
+        && !keyboardEvent.altKey
+        && !keyboardEvent.shiftKey
+        && nativePageScrollKeys.has(key)
+        && !isTextEntryTarget;
+      const isNativeArrowScrollKey = !keyboardEvent.altKey
+        && !keyboardEvent.shiftKey
+        && nativeArrowScrollKeys.has(key)
+        && !isTextEntryTarget
+        && !isActivatableTarget;
+      const isNativeSpaceScrollKey = key === ' '
+        && !hasControlModifier
+        && !keyboardEvent.altKey
+        && !isTextEntryTarget
+        && !isActivatableTarget;
+      const isNativeScrollKey = isNativeBoundaryScrollKey
+        || isNativePageScrollKey
+        || isNativeArrowScrollKey
+        || isNativeSpaceScrollKey;
+      if (!isConfiguredScrollKey && !isNativeScrollKey) {
+        return;
+      }
+    }
+    if (event.type === 'pointerdown') {
+      const pointerEvent = event as PointerEvent;
+      if (pointerEvent.target !== dom.messagesEl) return;
+      const scrollbarWidth = dom.messagesEl.offsetWidth - dom.messagesEl.clientWidth;
+      if (scrollbarWidth <= 0 || dom.messagesEl.scrollHeight <= dom.messagesEl.clientHeight) return;
+      const bounds = dom.messagesEl.getBoundingClientRect();
+      const pointerX = pointerEvent.clientX - bounds.left;
+      const direction = dom.messagesEl.ownerDocument.defaultView
+        ?.getComputedStyle?.(dom.messagesEl).direction;
+      const isInScrollbarGutter = direction === 'rtl'
+        ? pointerX <= scrollbarWidth
+        : pointerX >= bounds.width - scrollbarWidth;
+      if (!isInScrollbarGutter) return;
+    }
+    cancelReEnableTimeout();
+    bottomNavigationInProgress = false;
+    state.autoScrollEnabled = false;
+  };
+  const userScrollIntentEvents = [
+    'wheel',
+    'touchmove',
+    'pointerdown',
+    'keydown',
+  ] as const;
+  for (const eventName of userScrollIntentEvents) {
+    dom.messagesEl.addEventListener(eventName, userScrollIntentHandler, { passive: true });
+  }
+  options.registerCleanup('tab user scroll intent binding', () => {
+    for (const eventName of userScrollIntentEvents) {
+      dom.messagesEl.removeEventListener(eventName, userScrollIntentHandler);
+    }
+  });
 
   const scrollHandler = () => {
     if (!isAutoScrollAllowed()) {
-      if (reEnableTimeout) {
-        window.clearTimeout(reEnableTimeout);
-        reEnableTimeout = null;
-      }
+      bottomNavigationInProgress = false;
+      cancelReEnableTimeout();
       state.autoScrollEnabled = false;
       return;
     }
@@ -129,13 +228,12 @@ export function buildTabRuntimeInputBindings(
     const isAtBottom = scrollHeight - scrollTop - clientHeight <= scrollThreshold;
 
     if (!isAtBottom) {
-      if (reEnableTimeout) {
-        window.clearTimeout(reEnableTimeout);
-        reEnableTimeout = null;
-      }
+      if (bottomNavigationInProgress) return;
+      cancelReEnableTimeout();
       state.autoScrollEnabled = false;
-    } else if (!state.autoScrollEnabled) {
-      if (!reEnableTimeout) {
+    } else {
+      if (state.autoScrollEnabled) return;
+      if (reEnableTimeout === null) {
         reEnableTimeout = window.setTimeout(() => {
           reEnableTimeout = null;
           const { scrollTop, scrollHeight, clientHeight } = dom.messagesEl;
@@ -149,7 +247,7 @@ export function buildTabRuntimeInputBindings(
   dom.messagesEl.addEventListener('scroll', scrollHandler, { passive: true });
   options.registerCleanup('tab message scroll binding', () => {
     dom.messagesEl.removeEventListener('scroll', scrollHandler);
-    if (reEnableTimeout) window.clearTimeout(reEnableTimeout);
+    cancelReEnableTimeout();
   });
   return { installed: true };
 }

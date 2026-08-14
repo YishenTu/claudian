@@ -400,6 +400,207 @@ describe('Tab provider execution ownership', () => {
     expect(coordinatorInstances).toHaveLength(1);
   });
 
+  it('lets later navigation override bottom auto-scroll intent', async () => {
+    const plugin = createPlugin();
+    plugin.settings.keyboardNavigation = {
+      focusInputKey: 'i',
+      scrollDownKey: 's',
+      scrollUpKey: 'w',
+    };
+    const tab = await createTestTab({
+      plugin,
+      containerEl: createMockEl() as any,
+    });
+    tab.dom.messagesEl.scrollHeight = 1_000;
+    tab.dom.messagesEl.clientHeight = 500;
+    tab.dom.messagesEl.scrollTop = 100;
+    tab.state.autoScrollEnabled = false;
+    tab.dom.messagesEl.scrollTo = jest.fn();
+
+    const bottomButton = tab.dom.messagesWrapperEl.querySelector(
+      '.claudian-nav-btn-bottom',
+    );
+    bottomButton?.click();
+
+    expect(bottomButton).not.toBeNull();
+    expect(tab.state.autoScrollEnabled).toBe(true);
+
+    tab.dom.messagesEl.dispatchEvent('scroll');
+
+    expect(tab.state.autoScrollEnabled).toBe(true);
+
+    tab.dom.messagesEl.scrollTop = 500;
+    tab.dom.messagesEl.dispatchEvent('scroll');
+    tab.dom.messagesEl.scrollHeight = 1_200;
+    tab.dom.messagesEl.dispatchEvent('scroll');
+
+    expect(tab.state.autoScrollEnabled).toBe(true);
+
+    const sidebar = tab.dom.messagesWrapperEl.querySelector('.claudian-nav-sidebar');
+    for (const buttonIndex of [0, 1, 3]) {
+      bottomButton?.click();
+      sidebar?.children[buttonIndex]?.click();
+      expect(tab.state.autoScrollEnabled).toBe(false);
+    }
+
+    const userMessage = tab.dom.messagesEl.createDiv({ cls: 'claudian-message-user' });
+    userMessage.setAttribute('data-toc-title', 'Prompt');
+    const queryMessages = tab.dom.messagesEl.querySelectorAll.bind(tab.dom.messagesEl);
+    tab.dom.messagesEl.querySelectorAll = jest.fn((selector: string) => (
+      selector === '.claudian-message-user, [data-role="user"]'
+        ? [userMessage]
+        : queryMessages(selector)
+    ));
+    const messageControl = userMessage.createEl('button');
+    bottomButton?.click();
+    sidebar?.children[2]?.click();
+    tab.dom.messagesWrapperEl.querySelector('.claudian-nav-toc-item')?.click();
+    expect(tab.state.autoScrollEnabled).toBe(false);
+
+    bottomButton?.click();
+    tab.dom.messagesEl.dispatchEvent({
+      type: 'keydown',
+      key: 'w',
+      target: messageControl,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      preventDefault: jest.fn(),
+    });
+    expect(tab.state.autoScrollEnabled).toBe(false);
+
+    bottomButton?.click();
+    tab.dom.messagesEl.dispatchEvent({
+      type: 'keydown',
+      key: 'PageUp',
+      target: messageControl,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      preventDefault: jest.fn(),
+    });
+    expect(tab.state.autoScrollEnabled).toBe(false);
+
+    bottomButton?.click();
+    tab.dom.messagesEl.dispatchEvent({
+      type: 'pointerdown',
+      target: tab.dom.messagesEl,
+      clientX: 250,
+    });
+    expect(tab.state.autoScrollEnabled).toBe(true);
+
+    tab.dom.messagesEl.dispatchEvent({
+      type: 'touchstart',
+      target: userMessage,
+    });
+    expect(tab.state.autoScrollEnabled).toBe(true);
+
+    tab.dom.messagesEl.dispatchEvent({
+      type: 'touchmove',
+      target: userMessage,
+    });
+    expect(tab.state.autoScrollEnabled).toBe(false);
+
+    bottomButton?.click();
+    tab.dom.messagesEl.dispatchEvent({
+      type: 'keydown',
+      key: ' ',
+      target: messageControl,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      preventDefault: jest.fn(),
+    });
+    expect(tab.state.autoScrollEnabled).toBe(true);
+
+    tab.dom.messagesEl.dispatchEvent({
+      type: 'pointermove',
+      target: tab.dom.messagesEl,
+      buttons: 1,
+    });
+    expect(tab.state.autoScrollEnabled).toBe(true);
+
+    bottomButton?.click();
+    tab.dom.messagesEl.offsetWidth = 506;
+    tab.dom.messagesEl.clientWidth = 500;
+    tab.dom.messagesEl.getBoundingClientRect = jest.fn().mockReturnValue({
+      bottom: 500,
+      height: 500,
+      left: 0,
+      right: 506,
+      top: 0,
+      width: 506,
+      x: 0,
+      y: 0,
+      toJSON: jest.fn(),
+    });
+    tab.dom.messagesEl.dispatchEvent({
+      type: 'pointerdown',
+      target: tab.dom.messagesEl,
+      clientX: 503,
+    });
+    expect(tab.state.autoScrollEnabled).toBe(false);
+
+    bottomButton?.click();
+    tab.dom.messagesEl.dispatchEvent({
+      type: 'keydown',
+      key: 'Home',
+      target: messageControl,
+      altKey: false,
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      preventDefault: jest.fn(),
+    });
+    expect(tab.state.autoScrollEnabled).toBe(false);
+
+    bottomButton?.click();
+    tab.dom.messagesEl.dispatchEvent({ type: 'wheel' });
+
+    expect(tab.state.autoScrollEnabled).toBe(false);
+  });
+
+  it('keeps auto-scroll disabled when bottom navigation is used with the setting off', async () => {
+    const plugin = createPlugin();
+    plugin.settings.enableAutoScroll = false;
+    const tab = await createTestTab({
+      plugin,
+      containerEl: createMockEl() as any,
+    });
+    tab.state.autoScrollEnabled = false;
+    tab.dom.messagesEl.scrollTo = jest.fn();
+
+    tab.dom.messagesWrapperEl.querySelector('.claudian-nav-btn-bottom')?.click();
+
+    expect(tab.state.autoScrollEnabled).toBe(false);
+  });
+
+  it('does not let a pending bottom re-arm override newer navigation', async () => {
+    jest.useFakeTimers();
+    try {
+      const tab = await createTestTab({
+        plugin: createPlugin(),
+        containerEl: createMockEl() as any,
+      });
+      tab.dom.messagesEl.scrollHeight = 1_000;
+      tab.dom.messagesEl.clientHeight = 500;
+      tab.dom.messagesEl.scrollTop = 500;
+      tab.dom.messagesEl.scrollTo = jest.fn();
+      tab.state.autoScrollEnabled = false;
+
+      tab.dom.messagesEl.dispatchEvent('scroll');
+      tab.dom.messagesWrapperEl.querySelector('.claudian-nav-btn-top')?.click();
+      jest.advanceTimersByTime(150);
+
+      expect(tab.state.autoScrollEnabled).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('releases the renderer file-link listener during tab teardown', async () => {
     const tab = await createTestTab({
       plugin: createPlugin(),
