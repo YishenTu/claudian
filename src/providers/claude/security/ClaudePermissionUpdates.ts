@@ -1,38 +1,29 @@
-import type { PermissionUpdate, PermissionUpdateDestination } from '@anthropic-ai/claude-agent-sdk';
+import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 
 import { getActionPattern } from '../../../core/security/approvalRules';
 
-export function buildPermissionUpdates(
+export function buildPersistentPermissionUpdates(
   toolName: string,
   input: Record<string, unknown>,
-  decision: 'allow' | 'allow-always',
   suggestions?: PermissionUpdate[]
 ): PermissionUpdate[] {
-  const destination: PermissionUpdateDestination =
-    decision === 'allow-always' ? 'projectSettings' : 'session';
-
   const processed: PermissionUpdate[] = [];
   let hasRuleUpdate = false;
 
   if (suggestions) {
     for (const suggestion of suggestions) {
       if (suggestion.type === 'addRules' || suggestion.type === 'replaceRules') {
-        if (decision === 'allow-always') {
-          const scopedRules = suggestion.rules.filter(hasNonEmptyRuleScope);
-          if (scopedRules.length === 0) {
-            continue;
-          }
-          hasRuleUpdate = true;
-          processed.push({
-            ...suggestion,
-            rules: scopedRules,
-            behavior: 'allow',
-            destination,
-          });
-        } else {
-          hasRuleUpdate = true;
-          processed.push({ ...suggestion, behavior: 'allow', destination });
+        const scopedRules = suggestion.rules.filter(hasNonEmptyRuleScope);
+        if (scopedRules.length === 0) {
+          continue;
         }
+        hasRuleUpdate = true;
+        processed.push({
+          ...suggestion,
+          rules: scopedRules,
+          behavior: 'allow',
+          destination: 'projectSettings',
+        });
       } else {
         processed.push(suggestion);
       }
@@ -41,7 +32,7 @@ export function buildPermissionUpdates(
 
   if (!hasRuleUpdate) {
     const pattern = getActionPattern(toolName, input);
-    if (decision === 'allow-always' && !isNonEmptyDerivedScope(pattern)) {
+    if (!isNonEmptyDerivedScope(pattern)) {
       return [];
     }
     const ruleValue: { toolName: string; ruleContent?: string } = { toolName };
@@ -53,7 +44,7 @@ export function buildPermissionUpdates(
       type: 'addRules',
       behavior: 'allow',
       rules: [ruleValue],
-      destination,
+      destination: 'projectSettings',
     });
   }
 
