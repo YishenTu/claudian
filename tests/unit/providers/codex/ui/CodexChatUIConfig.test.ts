@@ -658,11 +658,15 @@ describe('CodexChatUIConfig', () => {
     });
 
     it('uses the selected model service tier metadata from app-server', () => {
-      const settings = withDiscoveredModels({ model: TEST_CODEX_MODEL });
+      const settings = withDiscoveredModels({
+        model: TEST_CODEX_MODEL,
+        serviceTier: 'default',
+      });
       const config = settings.providerConfigs as { codex: { discoveredModels: any[] } };
       config.codex.discoveredModels[1] = {
         ...config.codex.discoveredModels[1],
         serviceTiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed' }],
+        defaultServiceTier: 'priority',
       };
 
       expect(codexChatUIConfig.getServiceTierToggle!(settings)).toEqual({
@@ -671,6 +675,25 @@ describe('CodexChatUIConfig', () => {
         activeValue: 'priority',
         activeLabel: 'Fast',
         description: '1.5x speed',
+        isActive: false,
+      });
+    });
+
+    it('reports Fast active when the next query resolves to the Fast tier', () => {
+      const settings = withDiscoveredModels({
+        model: TEST_CODEX_MODEL,
+        serviceTier: 'fast',
+      });
+      const config = settings.providerConfigs as { codex: { discoveredModels: any[] } };
+      config.codex.discoveredModels[1] = {
+        ...config.codex.discoveredModels[1],
+        serviceTiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed' }],
+        defaultServiceTier: null,
+      };
+
+      expect(codexChatUIConfig.getServiceTierToggle!(settings)).toMatchObject({
+        activeValue: 'priority',
+        isActive: true,
       });
     });
 

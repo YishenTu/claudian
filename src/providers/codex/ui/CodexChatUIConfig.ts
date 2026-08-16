@@ -12,6 +12,7 @@ import type {
 import { OPENAI_PROVIDER_ICON } from '../../../shared/icons';
 import { getCodexModelOptions } from '../modelOptions';
 import {
+  CODEX_DEFAULT_SERVICE_TIER,
   CODEX_FALLBACK_REASONING_EFFORT_VALUES,
   findCodexModel,
   getCodexDefaultReasoningEffort,
@@ -19,6 +20,7 @@ import {
   getCodexReasoningEffortOptions,
   getDefaultCodexModel,
   isCodexModelAvailable,
+  resolveCodexModelServiceTier,
 } from '../models';
 import {
   isCodexModelSelectionId,
@@ -44,7 +46,6 @@ const CODEX_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   planLabel: 'Plan',
 };
 
-const DEFAULT_SERVICE_TIER_VALUE = 'default';
 const DEFAULT_SERVICE_TIER_LABEL = 'Standard';
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
@@ -184,10 +185,11 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
     }
 
     return {
-      inactiveValue: model.defaultServiceTier ?? DEFAULT_SERVICE_TIER_VALUE,
+      inactiveValue: CODEX_DEFAULT_SERVICE_TIER,
       inactiveLabel: DEFAULT_SERVICE_TIER_LABEL,
       activeValue: tier.id,
       activeLabel: tier.name,
+      isActive: resolveCodexModelServiceTier(model, settings.serviceTier) === tier.id,
       description: tier.description || undefined,
     };
   },

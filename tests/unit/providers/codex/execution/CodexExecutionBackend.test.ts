@@ -513,6 +513,52 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('keeps an explicit Standard selection off when the catalog defaults to Fast', async () => {
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult('thread-standard-tier');
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn('thread-standard-tier', 'turn-standard-tier'));
+        return createTurnResult('turn-standard-tier');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const plugin = createPlugin();
+    const codexConfig = (
+      plugin.settings.providerConfigs as Record<string, Record<string, unknown>>
+    ).codex;
+    codexConfig.discoveredModels = [{
+      ...(codexConfig.discoveredModels as Array<Record<string, unknown>>)[0],
+      defaultServiceTier: 'priority',
+    }];
+    const session = new CodexExecutionBackend(plugin).createSession(createSessionConfig());
+    await collectEvents(session.execute(createRequest(
+      new AbortController().signal,
+      {
+        configuration: {
+          systemInstructions: { kind: 'explicit', instructions: 'Be concise.' },
+          model: TEST_CODEX_MODEL,
+          reasoning: 'high',
+          serviceTier: 'default',
+          permissionMode: 'normal',
+        },
+      },
+    )).events);
+
+    expect(mockTransportRequest).toHaveBeenCalledWith(
+      'turn/start',
+      expect.objectContaining({ serviceTier: 'default' }),
+    );
+
+    await session.dispose();
+  });
 
   it('recovers a completed turn when the terminal notification is missed', async () => {
     jest.useFakeTimers();

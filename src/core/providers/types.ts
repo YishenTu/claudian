@@ -249,6 +249,8 @@ export interface ProviderServiceTierToggleConfig {
   inactiveLabel: string;
   activeValue: string;
   activeLabel: string;
+  /** Whether the provider will use the active tier for the next request. */
+  isActive: boolean;
   description?: string;
 }
 
