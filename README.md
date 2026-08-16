@@ -161,6 +161,12 @@ src/
 └── style/                       # Modular CSS
 ```
 
+## Contributing
+
+Issues and focused pull requests are welcome. Issues are the preferred starting point: describe the problem, reproduction steps, and environment clearly so it can be investigated.
+
+Before opening a pull request, please read the [contribution guide](CONTRIBUTING.md). Pull requests must explain the problem, the proposed solution, why the approach is appropriate, and how the change was validated. Pull requests that add a new provider are not accepted; the guide explains this maintenance and product-quality boundary in detail.
+
 ## Star History
 
 <a href="https://www.star-history.com/?repos=YishenTu%2Fclaudian&type=date&legend=top-left">
@@ -173,6 +179,19 @@ src/
 
 ## Sponsorship
 
+### Kimi (Moonshot AI)
+
+<img src="https://gcdn.moonshot.cn/growth-cdn/sponsor/kimi-en.png" alt="Kimi (Moonshot AI)" width="90%">
+
+Thanks to Kimi (Moonshot AI), our Open Source Friend, for supporting Claudian! With 2.8T parameters, native vision, and a
+1-million-token context window, Kimi K3 delivers frontier performance across long-horizon coding, knowledge work, and
+reasoning.
+
+New users receive bonus API credits equal to 10% of their first successful top-up. Use the discount link for the
+[CN](https://platform.kimi.com?track_id=track-1f391886e67141d4866ff9d261767ee7&aff=claudian) or
+[Global](https://platform.kimi.ai?track_id=track-9800ef0cb7f444b1b33371617443c186&aff=claudian) platform. This offer
+ends September 30, 2026. Claudian receives no affiliate commission from these links.
+
 ### Ke Holdings Inc. (BEIKE)
 
 <img src="assets/sponsors/MOMA.png" alt="MOMA" width="90%">
@@ -181,12 +200,6 @@ Claudian is proudly sponsored by Ke Holdings Inc. (BEIKE) and the MOMA team. The
 improve through ongoing development and maintenance.
 
 > Want to support Claudian or appear here? Contact me: [tysk01213@gmail.com](mailto:tysk01213@gmail.com).
-
-## Contributing
-
-Issues and focused pull requests are welcome. Issues are the preferred starting point: describe the problem, reproduction steps, and environment clearly so it can be investigated.
-
-Before opening a pull request, please read the [contribution guide](CONTRIBUTING.md). Pull requests must explain the problem, the proposed solution, why the approach is appropriate, and how the change was validated. Pull requests that add a new provider are not accepted; the guide explains this maintenance and product-quality boundary in detail.
 
 ## License
 
