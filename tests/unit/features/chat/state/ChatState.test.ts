@@ -331,7 +331,6 @@ describe('ChatState', () => {
       const chatState = new ChatState();
 
       expect(chatState.attention).toBeNull();
-      expect(chatState.needsAttention).toBe(false);
       expect(chatState.requiresAction).toBe(false);
     });
 
@@ -343,7 +342,6 @@ describe('ChatState', () => {
       chatState.markReviewRequired();
 
       expect(chatState.attention).toEqual({ kind: 'review', since: 123 });
-      expect(chatState.needsAttention).toBe(true);
       expect(chatState.requiresAction).toBe(false);
       expect(onAttentionChanged).toHaveBeenCalledWith({ kind: 'review', since: 123 });
 

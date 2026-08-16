@@ -308,6 +308,6 @@ export interface TabBarItem {
   providerId: ProviderId;
   isActive: boolean;
   isStreaming: boolean;
-  needsAttention: boolean;
+  attention: TabAttention;
   canClose: boolean;
 }

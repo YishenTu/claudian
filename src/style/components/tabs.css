@@ -90,7 +90,11 @@
   border-color: var(--claudian-brand-grok, #ffffff);
 }
 
-.claudian-tab-badge-attention {
+.claudian-tab-badge-review {
+  border-color: var(--color-green);
+}
+
+.claudian-tab-badge-action-required {
   border-color: var(--text-error);
 }
 

@@ -66,7 +66,6 @@ function createMockTab(options: Record<string, any>): any {
       isSwitchingConversation: false,
       messages: [],
       markReviewRequired: jest.fn(),
-      needsAttention: false,
       requiresAction: false,
     },
     controllers: {
@@ -266,6 +265,22 @@ describe('TabManager provider execution orchestration', () => {
     await manager.switchToTab(target!.id);
 
     expect(target!.state.acknowledgeReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the attention kind in tab bar items', async () => {
+    const { manager } = createManager();
+    const tab = await manager.createTab();
+    Object.defineProperty(tab!.state, 'attention', {
+      configurable: true,
+      value: { kind: 'review', since: 123 },
+    });
+
+    expect(manager.getTabBarItems()).toEqual([
+      expect.objectContaining({
+        attention: { kind: 'review', since: 123 },
+        id: tab!.id,
+      }),
+    ]);
   });
 
   it('waits for prior tab switching to settle', async () => {

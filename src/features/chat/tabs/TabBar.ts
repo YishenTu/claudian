@@ -76,8 +76,10 @@ export class TabBar {
     let stateClass = 'claudian-tab-badge-idle';
     if (item.isActive) {
       stateClass = 'claudian-tab-badge-active';
-    } else if (item.needsAttention) {
-      stateClass = 'claudian-tab-badge-attention';
+    } else if (item.attention) {
+      stateClass = item.attention.kind === 'action-required'
+        ? 'claudian-tab-badge-action-required'
+        : 'claudian-tab-badge-review';
     } else if (item.isStreaming) {
       stateClass = 'claudian-tab-badge-streaming';
     }

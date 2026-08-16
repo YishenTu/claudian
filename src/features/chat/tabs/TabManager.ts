@@ -1156,7 +1156,7 @@ export class TabManager implements TabManagerInterface {
         providerId: getTabProviderId(tab, this.plugin),
         isActive: tab.id === this.activeTabId,
         isStreaming: tab.state.isStreaming,
-        needsAttention: tab.state.needsAttention,
+        attention: tab.state.attention,
         canClose: !tab.state.isRewinding && (this.tabs.size > 1 || !tab.state.isStreaming),
       });
     }

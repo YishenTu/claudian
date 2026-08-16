@@ -308,10 +308,6 @@ export class ChatState {
     return this.state.attention;
   }
 
-  get needsAttention(): boolean {
-    return this.state.attention !== null;
-  }
-
   get requiresAction(): boolean {
     return this.state.attention?.kind === 'action-required';
   }
