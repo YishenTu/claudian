@@ -27,6 +27,20 @@ body.theme-light .claudian-message-content pre {
   overflow-x: hidden;
 }
 
+/* Rendered mermaid diagrams are graphics, not code surfaces */
+.claudian-message-content .block-language-mermaid,
+.claudian-code-wrapper pre.mermaid,
+.claudian-message-content pre.mermaid {
+  background: transparent;
+  padding: 0;
+  text-align: center;
+}
+
+.claudian-message-content .mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
 /* Unwrapped pre still needs margin */
 .claudian-message-content>pre {
   margin: 8px 0;

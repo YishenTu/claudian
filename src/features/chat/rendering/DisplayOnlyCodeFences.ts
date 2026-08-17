@@ -4,6 +4,19 @@ import { transformMarkdownSegments } from '../../../utils/markdownSegments';
 
 const PLACEHOLDER_LANGUAGE_PREFIX = 'claudian-display-only-fence-';
 
+/** Fence languages Claudian renders instead of neutralizing, when the user opts in. */
+export const DIAGRAM_FENCE_LANGUAGES: readonly string[] = ['mermaid'];
+
+const DIAGRAM_FENCE_OPENER = new RegExp(
+  String.raw`^[\t ]*(?:\x60{3,}|~{3,})[\t ]*(?:${DIAGRAM_FENCE_LANGUAGES.join('|')})[\t ]*$`,
+  'im',
+);
+
+/** Reports whether streaming content already contains a diagram fence opener. */
+export function hasDiagramFence(content: string): boolean {
+  return DIAGRAM_FENCE_OPENER.test(content);
+}
+
 interface PrismHighlighter {
   highlightElement(element: Element): void;
 }
@@ -26,10 +39,22 @@ export interface PreparedDisplayOnlyCodeFences {
   fences: DisplayOnlyCodeFence[];
 }
 
+export interface PrepareDisplayOnlyCodeFencesOptions {
+  /**
+   * Languages whose code-block processor is allowed to run on chat content.
+   * Everything else stays inert.
+   */
+  renderedLanguages?: readonly string[];
+}
+
 /** Replaces fence languages so Obsidian cannot dispatch registered code-block processors. */
 export function prepareDisplayOnlyCodeFences(
   markdown: string,
+  options?: PrepareDisplayOnlyCodeFencesOptions,
 ): PreparedDisplayOnlyCodeFences {
+  const renderedLanguages = new Set(
+    (options?.renderedLanguages ?? []).map((language) => language.toLowerCase()),
+  );
   const fences: DisplayOnlyCodeFence[] = [];
   const preparedMarkdown = transformMarkdownSegments(markdown, {
     fence: (opener, fence) => {
@@ -38,8 +63,12 @@ export function prepareDisplayOnlyCodeFences(
         return opener;
       }
 
-      const placeholderLanguage = `${PLACEHOLDER_LANGUAGE_PREFIX}${fences.length}`;
       const originalLanguage = languageMatch[2];
+      if (renderedLanguages.has(originalLanguage.toLowerCase())) {
+        return opener;
+      }
+
+      const placeholderLanguage = `${PLACEHOLDER_LANGUAGE_PREFIX}${fences.length}`;
       fences.push({ placeholderLanguage, originalLanguage });
 
       const transformedInfo = `${languageMatch[1]}${placeholderLanguage}${languageMatch[3]}`;

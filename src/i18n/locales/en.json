@@ -683,6 +683,10 @@
       "name": "Defer math rendering during streaming",
       "desc": "Show raw LaTeX while responses stream, then render math once when each text block completes."
     },
+    "renderDiagramsInChat": {
+      "name": "Render Mermaid diagrams in chat",
+      "desc": "Render mermaid code blocks from responses as diagrams. Diagrams render after each block finishes streaming. Turn this off to keep all code blocks as plain source."
+    },
     "expandFileEditsByDefault": {
       "name": "Expand file edits by default",
       "desc": "Show Write and Edit diffs expanded when they first appear."

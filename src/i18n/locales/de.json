@@ -683,6 +683,10 @@
       "name": "Mathe-Rendering während Streaming aufschieben",
       "desc": "LaTeX während des Streamings roh anzeigen und Mathematik einmal rendern, wenn der Textblock abgeschlossen ist."
     },
+    "renderDiagramsInChat": {
+      "name": "Mermaid-Diagramme im Chat rendern",
+      "desc": "Mermaid-Codeblöcke aus Antworten als Diagramme rendern. Diagramme werden gerendert, sobald der jeweilige Block fertig gestreamt ist. Deaktivieren, um alle Codeblöcke als reinen Quelltext zu zeigen."
+    },
     "expandFileEditsByDefault": {
       "name": "Dateibearbeitungen standardmäßig ausklappen",
       "desc": "Write- und Edit-Diffs beim ersten Erscheinen ausgeklappt anzeigen."

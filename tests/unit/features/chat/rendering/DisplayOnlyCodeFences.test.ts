@@ -43,6 +43,40 @@ describe('DisplayOnlyCodeFences', () => {
     ]);
   });
 
+  it('leaves allowlisted languages untouched while still neutralizing the rest', () => {
+    const markdown = [
+      '```dataview',
+      'TABLE file.name',
+      '```',
+      '```Mermaid',
+      'flowchart TB',
+      '```',
+      '```dataviewjs',
+      'dv.list([])',
+      '```',
+    ].join('\n');
+
+    const prepared = prepareDisplayOnlyCodeFences(markdown, {
+      renderedLanguages: ['mermaid'],
+    });
+
+    expect(prepared.markdown).toBe([
+      '```claudian-display-only-fence-0',
+      'TABLE file.name',
+      '```',
+      '```Mermaid',
+      'flowchart TB',
+      '```',
+      '```claudian-display-only-fence-1',
+      'dv.list([])',
+      '```',
+    ].join('\n'));
+    expect(prepared.fences.map((fence) => fence.originalLanguage)).toEqual([
+      'dataview',
+      'dataviewjs',
+    ]);
+  });
+
   it('does not treat fence-like content inside an outer fence as a new block', () => {
     const markdown = [
       '````markdown',

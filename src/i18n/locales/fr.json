@@ -683,6 +683,10 @@
       "name": "Différer le rendu mathématique pendant le streaming",
       "desc": "Afficher le LaTeX brut pendant la diffusion, puis rendre les formules une fois chaque bloc de texte terminé."
     },
+    "renderDiagramsInChat": {
+      "name": "Afficher les diagrammes Mermaid dans le chat",
+      "desc": "Affiche les blocs de code mermaid des réponses sous forme de diagrammes. Le rendu a lieu une fois chaque bloc entièrement reçu. Désactivez pour conserver tous les blocs de code en texte source."
+    },
     "expandFileEditsByDefault": {
       "name": "Développer les modifications de fichiers par défaut",
       "desc": "Afficher les diffs Write et Edit développés lors de leur première apparition."

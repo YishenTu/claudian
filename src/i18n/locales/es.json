@@ -683,6 +683,10 @@
       "name": "Diferir renderizado matemático durante streaming",
       "desc": "Mostrar LaTeX sin procesar mientras se transmite la respuesta y renderizar las fórmulas una vez al completar cada bloque de texto."
     },
+    "renderDiagramsInChat": {
+      "name": "Renderizar diagramas Mermaid en el chat",
+      "desc": "Renderiza los bloques de código mermaid de las respuestas como diagramas. El renderizado ocurre cuando cada bloque termina de transmitirse. Desactívalo para mantener todos los bloques como código fuente."
+    },
     "expandFileEditsByDefault": {
       "name": "Expandir ediciones de archivo por defecto",
       "desc": "Mostrar los diffs de Write y Edit expandidos cuando aparecen por primera vez."
