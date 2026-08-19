@@ -1,0 +1,774 @@
+import { randomUUID } from 'node:crypto';
+
+import { type AcceptResponse, type CollabComment, type CollabRequestDetail, type CollabResolvingTicketExpectation, type CollabTicketDetail, type CollabTicketPage } from '@claudian/collab-protocol';
+
+import {
+  CollabProjectWorkSessionRegistry,
+} from '@/app/collab/activity/CollabProjectWorkSession';
+import {
+  ProjectEventClient,
+  type ProjectEventClientInput,
+  type ProjectEventInvalidation,
+} from '@/app/collab/client/ProjectEventClient';
+import type {
+  CollabLocalMembershipRecord,
+  CollabLocalProjectDocumentBase,
+} from '@/app/collab/CollabLocalProjectRepository';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+import type { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
+import type {
+  CollabManagerResponsibilityOfferSummary,
+  CollabProjectSnapshot,
+} from '@/core/collab';
+import { type CollabCoordinationSnapshot, type CollabListTicketsRequest, type CollabOperationOptions, type CollabTicketDetailProjection, type CollabTicketPageProjection } from '@/core/collab';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
+
+const CACHE_SCHEMA_VERSION = 3 as const;
+const OBSOLETE_CACHE_SCHEMA_VERSION = 2 as const;
+const MAX_CACHED_TICKET_PAGES = 16;
+const MAX_CACHED_TICKET_DETAILS = 32;
+
+interface CachedTicketPage {
+  readonly cachedAt: string;
+  readonly key: string;
+  readonly page: CollabTicketPage;
+}
+
+interface CachedTicketDetail {
+  readonly cachedAt: string;
+  readonly detail: CollabTicketDetail;
+  readonly ticketId: string;
+}
+
+interface CollabSnapshotCache extends CollabLocalProjectDocumentBase {
+  readonly cachedAt: string;
+  readonly schemaVersion: typeof CACHE_SCHEMA_VERSION;
+  readonly snapshot: CollabProjectSnapshot;
+  readonly ticketDetails: readonly CachedTicketDetail[];
+  readonly ticketPages: readonly CachedTicketPage[];
+}
+
+interface ObsoleteCollabSnapshotCache extends CollabLocalProjectDocumentBase {
+  readonly schemaVersion: typeof OBSOLETE_CACHE_SCHEMA_VERSION;
+}
+
+type DecodedCollabSnapshotCache = CollabSnapshotCache | ObsoleteCollabSnapshotCache;
+
+export interface CollabClientProjectionStore {
+  loadMembership(projectId: string): Promise<CollabLocalMembershipRecord | null>;
+  loadProjectDocument<T extends CollabLocalProjectDocumentBase>(
+    projectId: string,
+    kind: 'cache',
+    decode: (value: unknown) => T,
+  ): Promise<T | null>;
+  saveProjectDocument<T extends CollabLocalProjectDocumentBase>(
+    projectId: string,
+    kind: 'cache',
+    document: T,
+  ): Promise<void>;
+  removeProjectDocument(projectId: string, kind: 'cache'): Promise<boolean>;
+  updateMembershipProjection(
+    projectId: string,
+    memberId: string,
+    role: CollabLocalMembershipRecord['member']['role'],
+    sequence: number,
+  ): Promise<CollabLocalMembershipRecord>;
+}
+
+export interface CollabClientProjectionControlPort {
+  acceptRequest(input: {
+    readonly expectedHeadOid: string;
+    readonly expectedMainOid: string;
+    readonly expectedRequestRevision: number;
+    readonly expectedResolvingTickets: readonly CollabResolvingTicketExpectation[];
+    readonly idempotencyKey: string;
+    readonly projectId: string;
+    readonly requestId: string;
+    readonly signal?: AbortSignal;
+  }): Promise<AcceptResponse>;
+  createComment(input: {
+    readonly body: string;
+    readonly idempotencyKey: string;
+    readonly projectId: string;
+    readonly requestId: string;
+    readonly signal?: AbortSignal;
+  }): Promise<{ readonly comment: CollabComment }>;
+  listTickets(
+    request: CollabListTicketsRequest,
+    options?: CollabOperationOptions,
+  ): Promise<CollabTicketPage>;
+  readRequest(
+    projectId: string,
+    requestId: string,
+    options?: CollabOperationOptions,
+  ): Promise<CollabRequestDetail>;
+  readSnapshot(
+    projectId: string,
+    options?: CollabOperationOptions,
+  ): Promise<CollabProjectSnapshot>;
+  readTicket(
+    projectId: string,
+    ticketId: string,
+    options?: CollabOperationOptions,
+  ): Promise<CollabTicketDetail>;
+}
+
+export interface CollabClientCommentInput {
+  readonly body: string;
+  readonly idempotencyKey?: string;
+  readonly projectId: string;
+  readonly requestId: string;
+}
+
+export interface CollabClientProjectionEventPort {
+  dispose(): void;
+  start(): void;
+}
+
+export type CollabClientProjectionEventFactory = (
+  input: ProjectEventClientInput,
+  onInvalidation: (invalidation: ProjectEventInvalidation) => Promise<number>,
+) => CollabClientProjectionEventPort;
+
+export interface CollabClientProjectionOptions {
+  readonly createEventClient?: CollabClientProjectionEventFactory;
+  readonly managerResponsibility?: CollabManagerResponsibilityProjectionPort;
+  readonly now?: () => Date;
+  readonly retirement?: Pick<RetirementClientHandler, 'handle'>;
+  readonly sessions?: CollabProjectWorkSessionRegistry;
+}
+
+export interface CollabManagerResponsibilityProjectionPort {
+  reconcileSnapshot(
+    snapshot: CollabProjectSnapshot,
+  ): Promise<CollabManagerResponsibilityOfferSummary | null>;
+}
+
+interface ProjectionEventSession {
+  readonly client: CollabClientProjectionEventPort;
+  readonly listeners: Set<(snapshot: CollabProjectSnapshot) => void>;
+  dispose(): void;
+}
+
+function projectionError(
+  code: 'cancelled' | 'host-stopped' | 'project-not-found',
+  reason: string,
+): CollabError {
+  return new CollabError({ code, safeContext: { reason } });
+}
+
+function decodeCache(value: unknown): DecodedCollabSnapshotCache {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('Invalid Collab snapshot cache');
+  }
+  const source = value as Readonly<Record<string, unknown>>;
+  const projectId = source.projectId;
+  if (
+    source.schemaVersion === OBSOLETE_CACHE_SCHEMA_VERSION
+    && typeof projectId === 'string'
+  ) {
+    return { projectId, schemaVersion: OBSOLETE_CACHE_SCHEMA_VERSION };
+  }
+  const cachedAt = source.cachedAt;
+  if (
+    source.schemaVersion !== CACHE_SCHEMA_VERSION
+    || typeof projectId !== 'string'
+    || typeof cachedAt !== 'string'
+    || Number.isNaN(Date.parse(cachedAt))
+    || new Date(cachedAt).toISOString() !== cachedAt
+  ) {
+    throw new TypeError('Invalid Collab snapshot cache');
+  }
+  const snapshot = lanCollabControlOperationCodec('getSnapshot').decodeResponse({
+    data: source.snapshot,
+    protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
+    requestId: 'cache-decode',
+  });
+  if (snapshot.project.id !== projectId) {
+    throw new TypeError('Invalid Collab snapshot cache');
+  }
+  if (!Array.isArray(source.ticketPages) || !Array.isArray(source.ticketDetails)) {
+    throw new TypeError('Invalid Collab Ticket cache');
+  }
+  const ticketPages = source.ticketPages.map(decodeCachedTicketPage);
+  const ticketDetails = source.ticketDetails.map(decodeCachedTicketDetail);
+  if (
+    ticketPages.length > MAX_CACHED_TICKET_PAGES
+    || ticketDetails.length > MAX_CACHED_TICKET_DETAILS
+    || new Set(ticketPages.map(entry => entry.key)).size !== ticketPages.length
+    || new Set(ticketDetails.map(entry => entry.ticketId)).size !== ticketDetails.length
+  ) {
+    throw new TypeError('Invalid Collab Ticket cache');
+  }
+  return {
+    cachedAt,
+    projectId,
+    schemaVersion: CACHE_SCHEMA_VERSION,
+    snapshot,
+    ticketDetails,
+    ticketPages,
+  };
+}
+
+function decodeCachedTicketPage(value: unknown): CachedTicketPage {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('Invalid cached Ticket page');
+  }
+  const source = value as Readonly<Record<string, unknown>>;
+  const cachedAt = cacheTimestamp(source.cachedAt);
+  if (typeof source.key !== 'string' || source.key.length > 1_024) {
+    throw new TypeError('Invalid cached Ticket page');
+  }
+  return {
+    cachedAt,
+    key: source.key,
+    page: lanCollabControlOperationCodec('listTickets').decodeResponse(cacheEnvelope(source.page)),
+  };
+}
+
+function decodeCachedTicketDetail(value: unknown): CachedTicketDetail {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('Invalid cached Ticket detail');
+  }
+  const source = value as Readonly<Record<string, unknown>>;
+  const cachedAt = cacheTimestamp(source.cachedAt);
+  if (typeof source.ticketId !== 'string') {
+    throw new TypeError('Invalid cached Ticket detail');
+  }
+  const detail = lanCollabControlOperationCodec('getTicket')
+    .decodeResponse(cacheEnvelope(source.detail));
+  if (detail.ticket.id !== source.ticketId) {
+    throw new TypeError('Invalid cached Ticket detail');
+  }
+  return { cachedAt, detail, ticketId: source.ticketId };
+}
+
+function cacheEnvelope(data: unknown): unknown {
+  return {
+    data,
+    protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
+    requestId: 'cache-decode',
+  };
+}
+
+function cacheTimestamp(value: unknown): string {
+  if (
+    typeof value !== 'string'
+    || Number.isNaN(Date.parse(value))
+    || new Date(value).toISOString() !== value
+  ) {
+    throw new TypeError('Invalid Collab cache timestamp');
+  }
+  return value;
+}
+
+function ticketPageKey(request: CollabListTicketsRequest): string {
+  return JSON.stringify([
+    request.status,
+    request.cursor ?? null,
+    request.limit ?? null,
+  ]);
+}
+
+function canUseCache(error: CollabError): boolean {
+  return error.code === 'offline'
+    || error.code === 'host-stopped'
+    || error.code === 'endpoint-unreachable'
+    || error.code === 'local-network-permission-required'
+    || error.code === 'operation-timeout';
+}
+
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw projectionError('cancelled', 'projection-read-cancelled');
+  }
+}
+
+function retirementResultFromError(
+  projectId: string,
+  error: unknown,
+): { readonly projectId: string; readonly retiredAt: string } | null {
+  if (!(error instanceof CollabError) || error.code !== 'project-retired') return null;
+  const contextProjectId = error.safeContext.projectId;
+  const retiredAt = error.safeContext.retiredAt;
+  if (
+    contextProjectId !== projectId
+    || typeof retiredAt !== 'string'
+    || Number.isNaN(Date.parse(retiredAt))
+    || new Date(retiredAt).toISOString() !== retiredAt
+  ) {
+    throw new CollabError({
+      code: 'authority-integrity-error',
+      safeContext: { reason: 'retirement-terminal-result-invalid' },
+    });
+  }
+  return { projectId, retiredAt };
+}
+
+export class CollabClientProjection {
+  private readonly createEventClient: CollabClientProjectionEventFactory;
+  private disposed = false;
+  private readonly managerResponsibility?: CollabManagerResponsibilityProjectionPort;
+  private readonly now: () => Date;
+  private readonly ownsSessions: boolean;
+  private readonly retirement?: Pick<RetirementClientHandler, 'handle'>;
+  private readonly sessions: CollabProjectWorkSessionRegistry;
+
+  constructor(
+    private readonly store: CollabClientProjectionStore,
+    private readonly control: CollabClientProjectionControlPort,
+    options: CollabClientProjectionOptions = {},
+  ) {
+    this.createEventClient = options.createEventClient
+      ?? ((input, onInvalidation) => new ProjectEventClient(input, onInvalidation));
+    this.managerResponsibility = options.managerResponsibility;
+    this.now = options.now ?? (() => new Date());
+    this.ownsSessions = options.sessions === undefined;
+    this.retirement = options.retirement;
+    this.sessions = options.sessions ?? new CollabProjectWorkSessionRegistry();
+  }
+
+  async readSnapshot(
+    projectId: string,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabCoordinationSnapshot> {
+    this.assertOpen();
+    throwIfCancelled(options.signal);
+    try {
+      const snapshot = await this.readOnlineCoalesced(projectId);
+      throwIfCancelled(options.signal);
+      return {
+        snapshot,
+        source: 'online',
+        stale: false,
+        syncState: {
+          eventSequence: snapshot.eventSequence,
+          generation: this.projectGeneration(projectId),
+          projectId,
+          status: 'synchronized',
+        },
+      };
+    } catch (error) {
+      throwIfCancelled(options.signal);
+      const collabError = error instanceof CollabError ? error : null;
+      if (!collabError || !canUseCache(collabError)) throw error;
+      const cached = await this.loadCache(projectId);
+      if (!cached) throw error;
+      return {
+        snapshot: cached.snapshot,
+        source: 'cache',
+        stale: true,
+        syncState: {
+          eventSequence: cached.snapshot.eventSequence,
+          generation: this.projectGeneration(projectId),
+          projectId,
+          status: 'offline',
+        },
+      };
+    }
+  }
+
+  async listTickets(
+    request: CollabListTicketsRequest,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabTicketPageProjection> {
+    this.assertOpen();
+    throwIfCancelled(options.signal);
+    const generation = this.projectGeneration(request.projectId);
+    const key = ticketPageKey(request);
+    try {
+      const page = await this.runWithRetirementFallback(
+        request.projectId,
+        () => this.control.listTickets(request, options),
+      );
+      throwIfCancelled(options.signal);
+      this.assertProjectGeneration(request.projectId, generation);
+      await this.updateTicketCache(request.projectId, cache => {
+        if (!cache) return null;
+        const entry = { cachedAt: this.now().toISOString(), key, page };
+        return {
+          ...cache,
+          ticketPages: [
+            entry,
+            ...cache.ticketPages.filter(candidate => candidate.key !== key),
+          ].slice(0, MAX_CACHED_TICKET_PAGES),
+        };
+      }).catch(() => undefined);
+      return { page, source: 'online', stale: false };
+    } catch (error) {
+      throwIfCancelled(options.signal);
+      const collabError = error instanceof CollabError ? error : null;
+      if (!collabError || !canUseCache(collabError)) throw error;
+      const cache = await this.loadCache(request.projectId);
+      throwIfCancelled(options.signal);
+      const page = cache?.ticketPages.find(entry => entry.key === key)?.page;
+      if (!page) throw error;
+      return { page, source: 'cache', stale: true };
+    }
+  }
+
+  async readTicket(
+    projectId: string,
+    ticketId: string,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabTicketDetailProjection> {
+    this.assertOpen();
+    throwIfCancelled(options.signal);
+    const generation = this.projectGeneration(projectId);
+    try {
+      const detail = await this.runWithRetirementFallback(
+        projectId,
+        () => this.control.readTicket(projectId, ticketId, options),
+      );
+      throwIfCancelled(options.signal);
+      this.assertProjectGeneration(projectId, generation);
+      if (detail.ticket.id !== ticketId) {
+        throw new CollabError({
+          code: 'authority-integrity-error',
+          safeContext: { reason: 'projection-ticket-detail-mismatch' },
+        });
+      }
+      await this.updateTicketCache(projectId, cache => {
+        if (!cache) return null;
+        const entry = { cachedAt: this.now().toISOString(), detail, ticketId };
+        return {
+          ...cache,
+          ticketDetails: [
+            entry,
+            ...cache.ticketDetails.filter(candidate => candidate.ticketId !== ticketId),
+          ].slice(0, MAX_CACHED_TICKET_DETAILS),
+        };
+      }).catch(() => undefined);
+      return { detail, source: 'online', stale: false };
+    } catch (error) {
+      throwIfCancelled(options.signal);
+      const collabError = error instanceof CollabError ? error : null;
+      if (!collabError || !canUseCache(collabError)) throw error;
+      const cache = await this.loadCache(projectId);
+      throwIfCancelled(options.signal);
+      const detail = cache?.ticketDetails.find(entry => entry.ticketId === ticketId)?.detail;
+      if (!detail) throw error;
+      return { detail, source: 'cache', stale: true };
+    }
+  }
+
+  async readRequest(
+    projectId: string,
+    requestId: string,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabRequestDetail> {
+    this.assertOpen();
+    return this.runWithRetirementFallback(
+      projectId,
+      () => this.control.readRequest(projectId, requestId, options),
+    );
+  }
+
+  async addComment(
+    input: CollabClientCommentInput,
+    options: CollabOperationOptions = {},
+  ): Promise<CollabComment> {
+    this.assertOpen();
+    const response = await this.runWithRetirementFallback(
+      input.projectId,
+      () => this.control.createComment({
+        body: input.body,
+        idempotencyKey: input.idempotencyKey
+          ?? `comment-${randomUUID().replaceAll('-', '')}`,
+        projectId: input.projectId,
+        requestId: input.requestId,
+        ...(options.signal ? { signal: options.signal } : {}),
+      }),
+    );
+    return response.comment;
+  }
+
+  async acceptRequest(
+    projectId: string,
+    requestId: string,
+    expectedMainOid: string,
+    expectedHeadOid: string,
+    expectedRequestRevision: number,
+    expectedResolvingTickets: readonly CollabResolvingTicketExpectation[],
+    options: CollabOperationOptions = {},
+    idempotencyKey?: string,
+  ): Promise<AcceptResponse> {
+    this.assertOpen();
+    return this.runWithRetirementFallback(
+      projectId,
+      () => this.control.acceptRequest({
+        expectedHeadOid,
+        expectedMainOid,
+        expectedRequestRevision,
+        expectedResolvingTickets,
+        idempotencyKey: idempotencyKey ?? `accept-${randomUUID().replaceAll('-', '')}`,
+        projectId,
+        requestId,
+        ...(options.signal ? { signal: options.signal } : {}),
+      }),
+    );
+  }
+
+  async subscribe(
+    projectId: string,
+    listener: (snapshot: CollabProjectSnapshot) => void,
+  ): Promise<{ dispose(): void }> {
+    this.assertOpen();
+    const work = this.sessions.acquire(projectId);
+    let session = work.getEventConnection<ProjectionEventSession>();
+    if (!session) {
+      const generation = work.generation;
+      const membership = await this.store.loadMembership(projectId);
+      this.assertOpen();
+      work.assertGeneration(generation);
+      const endpoint = membership?.authority.endpoint;
+      const caCertificatePem = membership?.authority.hostCaCertificatePem;
+      if (!membership) {
+        throw projectionError('project-not-found', 'projection-membership-missing');
+      }
+      if (!endpoint || !caCertificatePem) {
+        throw projectionError('host-stopped', 'projection-host-endpoint-unavailable');
+      }
+      const listeners = new Set<(snapshot: CollabProjectSnapshot) => void>();
+      const client = this.createEventClient({
+        caCertificatePem,
+        endpoint,
+        lastSequence: membership.lastEventSequence,
+        memberCredential: membership.member.credential,
+        projectId,
+      }, invalidation => this.refreshFromEvent(projectId, invalidation));
+      session = { client, dispose: () => client.dispose(), listeners };
+      work.setEventConnection(session);
+      try {
+        client.start();
+      } catch (error) {
+        work.clearEventConnection(session);
+        throw error;
+      }
+    }
+    session.listeners.add(listener);
+    let disposed = false;
+    return {
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        const current = work.getEventConnection<ProjectionEventSession>();
+        current?.listeners.delete(listener);
+        if (current && current.listeners.size === 0) {
+          work.clearEventConnection(current);
+        }
+      },
+    };
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    if (this.ownsSessions) void this.sessions.close();
+  }
+
+  async closeProject(projectId: string): Promise<void> {
+    this.resetProjectConnection(projectId);
+    await this.sessions.acquire(projectId).drainCacheUpdates();
+  }
+
+  resetProjectConnection(projectId: string): void {
+    this.assertOpen();
+    this.sessions.acquire(projectId).resetProjection();
+  }
+
+  async handleRetirement(
+    result: { readonly projectId: string; readonly retiredAt: string },
+    source: 'response' | 'terminal-fallback',
+  ): Promise<void> {
+    if (!this.retirement) return;
+    this.stopProjectConnection(result.projectId);
+    await this.retirement.handle(result, source);
+  }
+
+  private readOnlineCoalesced(projectId: string): Promise<CollabProjectSnapshot> {
+    const session = this.sessions.acquire(projectId);
+    return session.coalesceSnapshot(() => (
+      this.readOnlineSnapshot(projectId, session.generation)
+    ));
+  }
+
+  private async readOnlineSnapshot(
+    projectId: string,
+    generation: number,
+  ): Promise<CollabProjectSnapshot> {
+    let snapshot: CollabProjectSnapshot;
+    try {
+      snapshot = await this.control.readSnapshot(projectId);
+    } catch (error) {
+      const retirement = retirementResultFromError(projectId, error);
+      if (retirement && this.retirement) {
+        this.scheduleRetirement(retirement, 'terminal-fallback');
+      }
+      throw error;
+    }
+    const session = this.sessions.acquire(projectId);
+    session.assertGeneration(generation);
+    if (snapshot.project.id !== projectId) {
+      throw new CollabError({ code: 'authority-integrity-error' });
+    }
+    const membership = await this.store.loadMembership(projectId);
+    session.assertGeneration(generation);
+    if (!membership) {
+      throw projectionError('project-not-found', 'projection-membership-missing');
+    }
+    if (
+      membership.project.id !== projectId
+      || membership.member.id !== snapshot.currentMember.id
+    ) {
+      throw new CollabError({
+        code: 'authority-integrity-error',
+        safeContext: { reason: 'projection-current-member-mismatch' },
+      });
+    }
+    if (snapshot.eventSequence < membership.lastEventSequence) {
+      throw new CollabError({
+        code: 'authority-integrity-error',
+        safeContext: { reason: 'projection-event-sequence-regressed' },
+      });
+    }
+    const writeSnapshotCache = async (cachedSnapshot: CollabProjectSnapshot): Promise<void> => {
+      await this.updateTicketCache(projectId, cache => ({
+        cachedAt: this.now().toISOString(),
+        projectId,
+        schemaVersion: CACHE_SCHEMA_VERSION,
+        snapshot: cachedSnapshot,
+        ticketDetails: cache?.ticketDetails ?? [],
+        ticketPages: cache?.ticketPages ?? [],
+      }));
+    };
+    await writeSnapshotCache(snapshot);
+    session.assertGeneration(generation);
+    await this.store.updateMembershipProjection(
+      projectId,
+      snapshot.currentMember.id,
+      snapshot.currentMember.role,
+      snapshot.eventSequence,
+    );
+    session.assertGeneration(generation);
+    const reconciledOffer = await this.managerResponsibility
+      ?.reconcileSnapshot(snapshot) ?? null;
+    session.assertGeneration(generation);
+    if (reconciledOffer) {
+      const originalOffer = snapshot.managerResponsibilityOffer;
+      if (
+        !originalOffer
+        || reconciledOffer.offerId !== originalOffer.offerId
+        || reconciledOffer.sourceManagerMemberId !== originalOffer.sourceManagerMemberId
+        || reconciledOffer.targetMemberId !== originalOffer.targetMemberId
+      ) {
+        throw new CollabError({
+          code: 'authority-integrity-error',
+          safeContext: { reason: 'projection-manager-responsibility-mismatch' },
+        });
+      }
+      snapshot = { ...snapshot, managerResponsibilityOffer: reconciledOffer };
+      await writeSnapshotCache(snapshot);
+      session.assertGeneration(generation);
+    }
+    return snapshot;
+  }
+
+  private refreshFromEvent(
+    projectId: string,
+    invalidation: ProjectEventInvalidation,
+  ): Promise<number> {
+    if (invalidation.kind === 'retired') {
+      return this.handleRetirementEvent(projectId, invalidation);
+    }
+    const work = this.sessions.acquire(projectId);
+    const generation = work.generation;
+    return work.coalesceEventRefresh(
+      invalidation.sequence,
+      () => this.readOnlineCoalesced(projectId).then(snapshot => {
+        work.assertGeneration(generation);
+        const connection = work.getEventConnection<ProjectionEventSession>();
+        for (const listener of connection?.listeners ?? []) {
+          try {
+            listener(snapshot);
+          } catch {
+            // Projection observers cannot invalidate authoritative refresh state.
+          }
+        }
+        return snapshot.eventSequence;
+      }),
+    );
+  }
+
+  private async handleRetirementEvent(
+    projectId: string,
+    invalidation: Extract<ProjectEventInvalidation, { readonly kind: 'retired' }>,
+  ): Promise<number> {
+    this.scheduleRetirement({
+      projectId,
+      retiredAt: invalidation.retiredAt,
+    }, 'event');
+    return invalidation.sequence;
+  }
+
+  private stopProjectConnection(projectId: string): void {
+    this.sessions.acquire(projectId).resetProjection();
+  }
+
+  private async runWithRetirementFallback<T>(
+    projectId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      const retirement = retirementResultFromError(projectId, error);
+      if (retirement && this.retirement) {
+        this.scheduleRetirement(retirement, 'terminal-fallback');
+      }
+      throw error;
+    }
+  }
+
+  private scheduleRetirement(
+    result: { readonly projectId: string; readonly retiredAt: string },
+    source: 'event' | 'terminal-fallback',
+  ): void {
+    if (!this.retirement) return;
+    this.stopProjectConnection(result.projectId);
+    void this.retirement.handle(result, source).catch(() => undefined);
+  }
+
+  private assertOpen(): void {
+    if (this.disposed) throw projectionError('host-stopped', 'projection-disposed');
+  }
+
+  private assertProjectGeneration(projectId: string, generation: number): void {
+    this.sessions.acquire(projectId).assertGeneration(generation);
+  }
+
+  private projectGeneration(projectId: string): number {
+    return this.sessions.acquire(projectId).generation;
+  }
+
+  private updateTicketCache(
+    projectId: string,
+    update: (cache: CollabSnapshotCache | null) => CollabSnapshotCache | null,
+  ): Promise<void> {
+    return this.sessions.acquire(projectId).enqueueCacheUpdate(async () => {
+      const cache = await this.loadCache(projectId).catch(() => null);
+      const next = update(cache);
+      if (next) await this.store.saveProjectDocument(projectId, 'cache', next);
+    });
+  }
+
+  private async loadCache(projectId: string): Promise<CollabSnapshotCache | null> {
+    const cache = await this.store.loadProjectDocument(projectId, 'cache', decodeCache);
+    if (cache?.schemaVersion === OBSOLETE_CACHE_SCHEMA_VERSION) {
+      await this.store.removeProjectDocument(projectId, 'cache');
+      return null;
+    }
+    return cache;
+  }
+}

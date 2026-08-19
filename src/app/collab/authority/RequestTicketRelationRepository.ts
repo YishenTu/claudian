@@ -1,0 +1,283 @@
+import { type CollabGitOid, type CollabMemberId, type CollabRequestId, type CollabRequestTicketRelation, type CollabTicketAcceptedRelation, type CollabTicketCommitRelationKind, type CollabTicketId } from '@claudian/collab-protocol';
+
+import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
+
+const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+export interface PendingTicketRelationInput {
+  readonly relationId: string;
+  readonly ticketId: CollabTicketId;
+  readonly kind: CollabTicketCommitRelationKind;
+}
+
+function relationError(reason: string): CollabError {
+  return new CollabError({
+    code: 'authority-integrity-error',
+    recoveryActions: ['open-diagnostics'],
+    safeContext: { reason },
+  });
+}
+
+function timestamp(value: unknown): string {
+  if (
+    typeof value !== 'string'
+    || Number.isNaN(Date.parse(value))
+    || new Date(value).toISOString() !== value
+  ) {
+    throw relationError('ticket-relation-timestamp-invalid');
+  }
+  return value;
+}
+
+function decodeRelation(
+  row: Readonly<Record<string, unknown>>,
+): CollabRequestTicketRelation {
+  const id = row.relation_id;
+  const ticketId = row.ticket_id;
+  const ticketNumber = row.ticket_number;
+  const ticketTitle = row.title;
+  const ticketRevision = row.ticket_revision;
+  const commitOid = row.commit_oid;
+  const kind = row.kind;
+  const state = row.state;
+  if (
+    typeof id !== 'string'
+    || !ID_PATTERN.test(id)
+    || typeof ticketId !== 'string'
+    || !ID_PATTERN.test(ticketId)
+    || typeof ticketNumber !== 'number'
+    || !Number.isSafeInteger(ticketNumber)
+    || ticketNumber < 1
+    || typeof ticketTitle !== 'string'
+    || ticketTitle.length === 0
+    || typeof ticketRevision !== 'number'
+    || !Number.isSafeInteger(ticketRevision)
+    || ticketRevision < 1
+    || typeof commitOid !== 'string'
+    || !OID_PATTERN.test(commitOid)
+    || (kind !== 'references' && kind !== 'resolves')
+    || (state !== 'pending' && state !== 'accepted')
+  ) {
+    throw relationError('ticket-relation-row-invalid');
+  }
+  return {
+    commitOid,
+    id,
+    kind,
+    state,
+    ticketId,
+    ticketNumber,
+    ticketRevision,
+    ticketTitle,
+  };
+}
+
+function relationSelect(): string {
+  return `SELECT
+    r.relation_id, r.ticket_id, r.commit_oid, r.kind, r.state,
+    t.ticket_number, t.title, t.revision AS ticket_revision
+  FROM request_ticket_relations r
+  JOIN tickets t ON t.ticket_id = r.ticket_id`;
+}
+
+export class RequestTicketRelationRepository {
+  listForRequest(
+    connection: AuthorityDatabaseConnection,
+    requestId: CollabRequestId,
+  ): readonly CollabRequestTicketRelation[] {
+    if (!ID_PATTERN.test(requestId)) {
+      throw relationError('ticket-relation-request-id-invalid');
+    }
+    return connection.all(
+      `${relationSelect()}
+       WHERE r.request_id = ?
+       ORDER BY t.ticket_number, r.relation_id`,
+      [requestId],
+    ).map(decodeRelation);
+  }
+
+  replacePending(
+    connection: AuthorityDatabaseConnection,
+    input: {
+      readonly actorMemberId: CollabMemberId;
+      readonly commitOid: CollabGitOid;
+      readonly requestId: CollabRequestId;
+      readonly relations: readonly PendingTicketRelationInput[];
+      readonly updatedAt: string;
+    },
+  ): { readonly changed: boolean; readonly relations: readonly CollabRequestTicketRelation[] } {
+    if (
+      !ID_PATTERN.test(input.actorMemberId)
+      || !ID_PATTERN.test(input.requestId)
+      || !OID_PATTERN.test(input.commitOid)
+      || input.relations.length > CLAUDIAN_COLLAB_LIMITS.maxRequestTicketRelations
+    ) {
+      throw relationError('ticket-relation-input-invalid');
+    }
+    timestamp(input.updatedAt);
+    const desired = new Map<CollabTicketId, PendingTicketRelationInput>();
+    for (const relation of input.relations) {
+      if (
+        !ID_PATTERN.test(relation.relationId)
+        || !ID_PATTERN.test(relation.ticketId)
+        || (relation.kind !== 'references' && relation.kind !== 'resolves')
+        || desired.has(relation.ticketId)
+      ) {
+        throw relationError('ticket-relation-input-invalid');
+      }
+      desired.set(relation.ticketId, relation);
+    }
+
+    const existing = this.listForRequest(connection, input.requestId);
+    if (existing.some(relation => relation.state !== 'pending')) {
+      throw relationError('accepted-relation-on-open-request');
+    }
+    let changed = false;
+
+    for (const relation of existing) {
+      const next = desired.get(relation.ticketId);
+      if (!next) {
+        connection.run(
+          `DELETE FROM request_ticket_relations
+           WHERE relation_id = ? AND state = 'pending'`,
+          [relation.id],
+        );
+        changed = true;
+        continue;
+      }
+      desired.delete(relation.ticketId);
+      if (next.kind !== relation.kind || input.commitOid !== relation.commitOid) {
+        connection.run(
+          `UPDATE request_ticket_relations
+           SET kind = ?, commit_oid = ?, updated_at = ?
+           WHERE relation_id = ? AND state = 'pending'`,
+          [next.kind, input.commitOid, input.updatedAt, relation.id],
+        );
+        changed = true;
+      }
+    }
+
+    for (const relation of desired.values()) {
+      connection.run(
+        `INSERT INTO request_ticket_relations (
+          relation_id, request_id, ticket_id, commit_oid, kind, state,
+          created_by_member_id, created_at, updated_at,
+          accepted_at, accepted_merge_oid
+        ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, NULL, NULL)`,
+        [
+          relation.relationId,
+          input.requestId,
+          relation.ticketId,
+          input.commitOid,
+          relation.kind,
+          input.actorMemberId,
+          input.updatedAt,
+          input.updatedAt,
+        ],
+      );
+      changed = true;
+    }
+
+    return {
+      changed,
+      relations: this.listForRequest(connection, input.requestId),
+    };
+  }
+
+  deletePendingForRequest(
+    connection: AuthorityDatabaseConnection,
+    requestId: CollabRequestId,
+  ): void {
+    if (!ID_PATTERN.test(requestId)) {
+      throw relationError('ticket-relation-request-id-invalid');
+    }
+    connection.run(
+      `DELETE FROM request_ticket_relations
+       WHERE request_id = ? AND state = 'pending'`,
+      [requestId],
+    );
+  }
+
+  hasPendingResolve(
+    connection: AuthorityDatabaseConnection,
+    ticketId: CollabTicketId,
+  ): boolean {
+    if (!ID_PATTERN.test(ticketId)) {
+      throw relationError('ticket-relation-ticket-id-invalid');
+    }
+    return connection.get(
+      `SELECT relation_id FROM request_ticket_relations
+       WHERE ticket_id = ? AND state = 'pending' AND kind = 'resolves'
+       LIMIT 1`,
+      [ticketId],
+    ) !== null;
+  }
+
+  acceptPending(
+    connection: AuthorityDatabaseConnection,
+    input: {
+      readonly acceptedAt: string;
+      readonly acceptedMergeOid: CollabGitOid;
+      readonly requestId: CollabRequestId;
+    },
+  ): readonly CollabRequestTicketRelation[] {
+    if (!ID_PATTERN.test(input.requestId) || !OID_PATTERN.test(input.acceptedMergeOid)) {
+      throw relationError('ticket-relation-accept-input-invalid');
+    }
+    timestamp(input.acceptedAt);
+    connection.run(
+      `UPDATE request_ticket_relations
+       SET state = 'accepted', accepted_at = ?, accepted_merge_oid = ?, updated_at = ?
+       WHERE request_id = ? AND state = 'pending'`,
+      [input.acceptedAt, input.acceptedMergeOid, input.acceptedAt, input.requestId],
+    );
+    return this.listForRequest(connection, input.requestId);
+  }
+
+  listAcceptedForTicket(
+    connection: AuthorityDatabaseConnection,
+    ticketId: CollabTicketId,
+  ): readonly CollabTicketAcceptedRelation[] {
+    if (!ID_PATTERN.test(ticketId)) {
+      throw relationError('ticket-relation-ticket-id-invalid');
+    }
+    return connection.all(
+      `SELECT relation_id, request_id, kind, commit_oid,
+        accepted_merge_oid, accepted_at
+       FROM request_ticket_relations
+       WHERE ticket_id = ? AND state = 'accepted'
+       ORDER BY accepted_at, relation_id`,
+      [ticketId],
+    ).map(row => {
+      const id = row.relation_id;
+      const requestId = row.request_id;
+      const kind = row.kind;
+      const commitOid = row.commit_oid;
+      const acceptedMergeOid = row.accepted_merge_oid;
+      if (
+        typeof id !== 'string'
+        || !ID_PATTERN.test(id)
+        || typeof requestId !== 'string'
+        || !ID_PATTERN.test(requestId)
+        || (kind !== 'references' && kind !== 'resolves')
+        || typeof commitOid !== 'string'
+        || !OID_PATTERN.test(commitOid)
+        || typeof acceptedMergeOid !== 'string'
+        || !OID_PATTERN.test(acceptedMergeOid)
+      ) {
+        throw relationError('accepted-ticket-relation-row-invalid');
+      }
+      return {
+        acceptedAt: timestamp(row.accepted_at),
+        acceptedMergeOid,
+        commitOid,
+        id,
+        kind,
+        requestId,
+      };
+    });
+  }
+}
