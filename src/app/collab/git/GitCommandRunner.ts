@@ -31,6 +31,7 @@ export interface IsolatedGitEnvironmentOptions {
   readonly emptyConfigPath: string;
   readonly identity?: GitCommandIdentity;
   readonly network?: GitNetworkEnvironment;
+  readonly platform?: NodeJS.Platform;
   readonly suppressHooks?: boolean;
 }
 
@@ -135,15 +136,21 @@ export function buildIsolatedGitEnvironment(
     runtimeConfig.push({ key: 'core.hooksPath', value: options.emptyConfigPath });
   }
   if (options.network) {
-    runtimeConfig.push(
-      {
-        key: 'http.extraHeader',
-        value: `Authorization: ${options.network.authorizationHeader}`,
-      },
-      { key: 'http.schannelCheckRevoke', value: 'false' },
-      { key: 'http.schannelUseSSLCAInfo', value: 'true' },
-      { key: 'http.sslCAInfo', value: options.network.sslCaInfoPath },
-    );
+    runtimeConfig.push({
+      key: 'http.extraHeader',
+      value: `Authorization: ${options.network.authorizationHeader}`,
+    });
+    if ((options.platform ?? process.platform) === 'win32') {
+      runtimeConfig.push(
+        { key: 'http.sslBackend', value: 'schannel' },
+        { key: 'http.schannelCheckRevoke', value: 'false' },
+        { key: 'http.schannelUseSSLCAInfo', value: 'true' },
+      );
+    }
+    runtimeConfig.push({
+      key: 'http.sslCAInfo',
+      value: options.network.sslCaInfoPath,
+    });
   }
 
   Object.assign(environment, {

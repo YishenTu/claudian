@@ -46,6 +46,7 @@ describe('GitCommandRunner', () => {
         authorizationHeader: secret,
         sslCaInfoPath: '/vault/.claudian/collab/ca.pem',
       },
+      platform: 'win32',
     });
 
     expect(environment).toMatchObject({
@@ -72,9 +73,26 @@ describe('GitCommandRunner', () => {
       { key: 'http.extraHeader', value: `Authorization: ${secret}` },
       { key: 'http.schannelCheckRevoke', value: 'false' },
       { key: 'http.schannelUseSSLCAInfo', value: 'true' },
+      { key: 'http.sslBackend', value: 'schannel' },
       { key: 'http.sslCAInfo', value: '/vault/.claudian/collab/ca.pem' },
       { key: 'transfer.fsckObjects', value: 'true' },
     ]));
+
+    const posixEnvironment = buildIsolatedGitEnvironment({
+      emptyConfigPath,
+      network: {
+        authorizationHeader: secret,
+        sslCaInfoPath: '/vault/.claudian/collab/ca.pem',
+      },
+      platform: 'linux',
+    });
+    const posixConfigKeys = Array.from(
+      { length: Number(posixEnvironment.GIT_CONFIG_COUNT) },
+      (_, index) => posixEnvironment[`GIT_CONFIG_KEY_${index}`],
+    );
+    expect(posixConfigKeys).not.toContain('http.sslBackend');
+    expect(posixConfigKeys).not.toContain('http.schannelCheckRevoke');
+    expect(posixConfigKeys).not.toContain('http.schannelUseSSLCAInfo');
   });
 
   it('scopes a validated commit identity to one isolated process environment', () => {
