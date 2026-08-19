@@ -37,9 +37,9 @@ function authError(): CollabError {
   });
 }
 
-async function requireGitSuccess<T>(operation: Promise<T>): Promise<T> {
+async function withGitDiagnostics(operation: () => Promise<void>): Promise<void> {
   try {
-    return await operation;
+    await operation();
   } catch (error) {
     if (error instanceof CollabError) {
       throw new Error(
@@ -202,7 +202,7 @@ describe('GitHttpBackendProxy integration', () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it('allows pending clone, requires activation for push, and accepts own fast-forward', async () => {
+  it('allows pending clone, requires activation for push, and accepts own fast-forward', () => withGitDiagnostics(async () => {
     forceBackpressure = true;
     const clonePath = await service.cloneRepository({
       branch: `members/${MEMBER_ID}`,
@@ -238,21 +238,21 @@ describe('GitHttpBackendProxy integration', () => {
       .toBe(initialOid);
 
     memberStatus = 'active';
-    await requireGitSuccess(service.push(
+    await service.push(
       clonePath,
       'origin',
       `${collabMemberRef(MEMBER_ID)}:${collabMemberRef(MEMBER_ID)}`,
       network,
-    ));
+    );
     expect(await service.resolveRef(bareRepositoryPath, collabMemberRef(MEMBER_ID)))
       .toBe(publishedOid);
-    await requireGitSuccess(service.fetch(
+    await service.fetch(
       clonePath,
       'origin',
       ['+refs/heads/main:refs/remotes/origin/main'],
       network,
-    ));
-    await requireGitSuccess(service.assertHealthy(bareRepositoryPath));
+    );
+    await service.assertHealthy(bareRepositoryPath);
     expect(backpressureCount).toBeGreaterThan(0);
     expect(proxy.activeChildCount).toBe(0);
     const receiveFsck = await runner.run({
@@ -260,7 +260,7 @@ describe('GitHttpBackendProxy integration', () => {
       cwd: bareRepositoryPath,
     });
     expect(receiveFsck.stdout.toString('utf8').trim()).toBe('true');
-  });
+  }));
 
   it('re-authenticates after asynchronous preparation before starting a Git child', async () => {
     memberStatus = 'active';
@@ -305,7 +305,7 @@ describe('GitHttpBackendProxy integration', () => {
     });
   });
 
-  it('caps cumulative Host storage for later receive-pack requests', async () => {
+  it('caps cumulative Host storage for later receive-pack requests', () => withGitDiagnostics(async () => {
     memberStatus = 'active';
     const baseline = await service.measureStorageBytes(bareRepositoryPath);
     await proxy.close();
@@ -356,10 +356,10 @@ describe('GitHttpBackendProxy integration', () => {
       `${collabMemberRef(MEMBER_ID)}:${collabMemberRef(MEMBER_ID)}`,
       network,
     )).rejects.toBeInstanceOf(CollabError);
-    await requireGitSuccess(service.assertHealthy(bareRepositoryPath));
-  });
+    await service.assertHealthy(bareRepositoryPath);
+  }));
 
-  it('rejects main, another member, deletion, and non-fast-forward updates', async () => {
+  it('rejects main, another member, deletion, and non-fast-forward updates', () => withGitDiagnostics(async () => {
     memberStatus = 'active';
     const clonePath = await service.cloneRepository({
       branch: `members/${MEMBER_ID}`,
@@ -400,12 +400,12 @@ describe('GitHttpBackendProxy integration', () => {
       })).rejects.toBeInstanceOf(CollabError);
     }
 
-    await requireGitSuccess(service.push(
+    await service.push(
       clonePath,
       'origin',
       `${personalRef}:${personalRef}`,
       network,
-    ));
+    );
     await runner.run({
       args: ['update-ref', personalRef, initialOid!, secondOid],
       cwd: clonePath,
@@ -420,9 +420,9 @@ describe('GitHttpBackendProxy integration', () => {
     expect(await service.resolveRef(bareRepositoryPath, collabMemberRef('member-bob')))
       .toBeNull();
     expect(await service.resolveRef(bareRepositoryPath, personalRef)).toBe(secondOid);
-    await requireGitSuccess(service.assertHealthy(bareRepositoryPath));
+    await service.assertHealthy(bareRepositoryPath);
     expect(proxy.activeChildCount).toBe(0);
-  });
+  }));
 
   it('rejects dumb and anonymous requests before spawning a Git child', async () => {
     await expect(requestStatus('/v1/git/project-alpha/repository.git/HEAD'))
