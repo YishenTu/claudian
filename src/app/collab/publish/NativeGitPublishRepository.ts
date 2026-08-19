@@ -1,10 +1,20 @@
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type CollabFileChangeKind, type CollabOperationId } from '@claudian/collab-protocol';
+import {
+  COLLAB_MEMBER_REF_PREFIX,
+  type CollabFileChangeKind,
+  type CollabOperationId,
+} from '@claudian/collab-protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { ensureTrustedCollabOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
+import {
+  COLLAB_MAIN_FETCH_REFSPEC,
+  COLLAB_ORIGIN_MAIN_REF,
+  collabBranchName,
+  collabOriginTrackingRef,
+} from '@/app/collab/git/collabGitRefs';
 import type { GitNetworkEnvironment } from '@/app/collab/git/GitCommandRunner';
 import type {
   GitRepositoryService,
@@ -22,7 +32,6 @@ import {
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const ORIGIN = 'origin';
-const PERSONAL_REF_PREFIX = 'refs/heads/';
 
 export interface PublishAcceptedStatePort {
   classifyDivergence(
@@ -62,10 +71,10 @@ function repositoryError(
 }
 
 function remotePersonalRef(personalRef: string): string {
-  if (!personalRef.startsWith(PERSONAL_REF_PREFIX)) {
+  if (!personalRef.startsWith(COLLAB_MEMBER_REF_PREFIX)) {
     throw repositoryError('repository-invalid', 'publish-personal-ref-invalid');
   }
-  return `refs/remotes/${ORIGIN}/${personalRef.slice(PERSONAL_REF_PREFIX.length)}`;
+  return collabOriginTrackingRef(personalRef);
 }
 
 function branchDivergence(
@@ -73,8 +82,8 @@ function branchDivergence(
   personalRef: string,
   headOid: string,
 ): { readonly leftOnly: number; readonly rightOnly: number } | null {
-  if (!personalRef.startsWith(PERSONAL_REF_PREFIX)) return null;
-  const branchName = personalRef.slice(PERSONAL_REF_PREFIX.length);
+  if (!personalRef.startsWith(COLLAB_MEMBER_REF_PREFIX)) return null;
+  const branchName = collabBranchName(personalRef);
   if (
     branch.headOid !== headOid
     || branch.headName !== branchName
@@ -138,7 +147,7 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
         left.path < right.path ? -1 : left.path > right.path ? 1 : 0
       ));
       const remotePersonal = remotePersonalRef(context.personalRef);
-      const remoteMain = `refs/remotes/${ORIGIN}/main`;
+      const remoteMain = COLLAB_ORIGIN_MAIN_REF;
       const refs = await session.resolveRefs([
         context.personalRef,
         remotePersonal,
@@ -232,7 +241,7 @@ export class NativeGitPublishRepository implements PublishRepositoryPort {
       context.repositoryPath,
       ORIGIN,
       [
-        `+refs/heads/main:refs/remotes/${ORIGIN}/main`,
+        COLLAB_MAIN_FETCH_REFSPEC,
         `+${context.personalRef}:${remotePersonalRef(context.personalRef)}`,
       ],
       network,

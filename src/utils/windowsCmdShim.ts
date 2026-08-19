@@ -16,6 +16,11 @@ interface ErrorEmitterLike {
   on(event: 'error', listener: (error: Error) => void): unknown;
 }
 
+interface CompletionEmitterLike {
+  once(event: 'close', listener: (code: number | null) => void): unknown;
+  once(event: 'error', listener: (error: Error) => void): unknown;
+}
+
 type SpawnProcess = (
   command: string,
   args: string[],
@@ -23,13 +28,17 @@ type SpawnProcess = (
 ) => unknown;
 
 export function resolveWindowsCmdShimSpawnSpec(
-  spec: Pick<WindowsCmdShimSpawnSpec, 'args' | 'command'>,
+  spec: Pick<WindowsCmdShimSpawnSpec, 'args' | 'command'>
+    & Partial<Pick<WindowsCmdShimSpawnSpec, 'killProcessTree'>>,
 ): WindowsCmdShimSpawnSpec {
   const command = spec.command.trim();
   if (!command || process.platform !== 'win32' || !command.toLowerCase().endsWith('.cmd')) {
     return {
       args: spec.args,
       command: spec.command,
+      ...(process.platform === 'win32' && spec.killProcessTree
+        ? { killProcessTree: true }
+        : {}),
     };
   }
 
@@ -73,10 +82,65 @@ export function terminateSpawnedProcess(
   }
 }
 
+export async function terminateSpawnedProcessTree(
+  proc: KillableProcess,
+  signal: NodeJS.Signals | number | undefined,
+  spawnProcess: SpawnProcess,
+  spawnSpec?: WindowsCmdShimSpawnSpec | null,
+): Promise<boolean> {
+  if (
+    process.platform !== 'win32'
+    || !spawnSpec?.killProcessTree
+    || typeof proc.pid !== 'number'
+  ) {
+    return proc.kill(signal);
+  }
+
+  let taskkill: unknown;
+  try {
+    taskkill = spawnProcess('taskkill.exe', ['/pid', String(proc.pid), '/t', '/f'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+  } catch {
+    return proc.kill(signal);
+  }
+  if (!isCompletionEmitterLike(taskkill)) {
+    return proc.kill(signal);
+  }
+
+  return new Promise<boolean>(resolve => {
+    let settled = false;
+    const settle = (result: boolean): void => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    const fallback = (): void => {
+      try {
+        settle(proc.kill(signal));
+      } catch {
+        settle(false);
+      }
+    };
+    taskkill.once('error', fallback);
+    taskkill.once('close', code => {
+      if (code === 0) settle(true);
+      else fallback();
+    });
+  });
+}
+
 function isErrorEmitterLike(value: unknown): value is ErrorEmitterLike {
   return value !== null
     && typeof value === 'object'
     && typeof (value as { on?: unknown }).on === 'function';
+}
+
+function isCompletionEmitterLike(value: unknown): value is CompletionEmitterLike {
+  return value !== null
+    && typeof value === 'object'
+    && typeof (value as { once?: unknown }).once === 'function';
 }
 
 function requiresWindowsShellQuoting(value: string): boolean {

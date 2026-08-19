@@ -52,6 +52,35 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+  windows-static:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Collab protocol
+        run: npm run build:protocol
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test Collab protocol
+        run: npm run test:protocol -- --runInBand
+
+      - name: Verify Collab protocol package
+        run: npm run verify:protocol
+
   test:
     runs-on: ubuntu-latest
     steps:

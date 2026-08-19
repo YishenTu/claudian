@@ -1,4 +1,5 @@
 import type {
+  COLLAB_MAIN_REF,
   CollabChangedFile as SharedCollabChangedFile,
   CollabChangeRequest,
   CollabGitOid,
@@ -21,7 +22,7 @@ export interface CollabProject {
   id: CollabProjectId;
   name: string;
   authorityKind: CollabAuthorityKind;
-  mainRef: 'refs/heads/main';
+  mainRef: typeof COLLAB_MAIN_REF;
   mainOid: CollabGitOid;
   hostMemberId: CollabMemberId;
   managerSetGeneration: number;

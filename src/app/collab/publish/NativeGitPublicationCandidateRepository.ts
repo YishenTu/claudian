@@ -1,5 +1,6 @@
 import { collabMemberRef, type CollabOperationId } from '@claudian/collab-protocol';
 
+import { COLLAB_ORIGIN_MAIN_REF } from '@/app/collab/git/collabGitRefs';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import type {
   GitCommitTreeInput,
@@ -16,7 +17,6 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const ORIGIN_MAIN_REF = 'refs/remotes/origin/main';
 const CANDIDATE_IDENTITY = Object.freeze({
   email: 'collab@claudian.local',
   name: 'Claudian Collab',
@@ -149,7 +149,7 @@ export class NativeGitPublicationCandidateRepository {
     if (candidateOid === input.contributionHeadOid) {
       const [personalOid, mainOid] = await Promise.all([
         this.git.resolveRef(context.repositoryPath, context.personalRef),
-        this.git.resolveRef(context.repositoryPath, ORIGIN_MAIN_REF),
+        this.git.resolveRef(context.repositoryPath, COLLAB_ORIGIN_MAIN_REF),
       ]);
       if (
         personalOid !== candidateOid
@@ -193,7 +193,7 @@ export class NativeGitPublicationCandidateRepository {
     const [symbolicHead, personalOid, mainOid, status] = await Promise.all([
       this.readSymbolicHead(context, signal),
       this.git.resolveRef(context.repositoryPath, context.personalRef),
-      this.git.resolveRef(context.repositoryPath, ORIGIN_MAIN_REF),
+      this.git.resolveRef(context.repositoryPath, COLLAB_ORIGIN_MAIN_REF),
       this.git.getWorkingTreeStatus(context.repositoryPath),
     ]);
     if (

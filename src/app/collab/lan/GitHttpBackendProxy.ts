@@ -23,7 +23,7 @@ import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
   resolveWindowsCmdShimSpawnSpec,
-  terminateSpawnedProcess,
+  terminateSpawnedProcessTree,
   type WindowsCmdShimSpawnSpec,
 } from '@/utils/windowsCmdShim';
 
@@ -76,6 +76,7 @@ interface ActiveGitChild {
   readonly closed: Promise<void>;
   readonly memberId: string;
   readonly spawnSpec: WindowsCmdShimSpawnSpec;
+  terminationTask: Promise<boolean> | null;
   terminated: boolean;
   terminationTimer: number | null;
   unregisterOwnedResource?: () => void;
@@ -577,6 +578,7 @@ export class GitHttpBackendProxy {
     const spawnSpec = resolveWindowsCmdShimSpawnSpec({
       args: [],
       command: this.options.gitHttpBackendPath,
+      killProcessTree: true,
     });
     const child = spawn(spawnSpec.command, spawnSpec.args, {
       cwd: this.enabled!.authorityDirectory,
@@ -603,6 +605,7 @@ export class GitHttpBackendProxy {
       closed,
       memberId,
       spawnSpec,
+      terminationTask: null,
       terminated: false,
       terminationTimer: null,
     };
@@ -692,19 +695,22 @@ export class GitHttpBackendProxy {
         'git-http-backend-spawn-failed',
       )));
       child.once('close', exitCode => {
-        request.removeListener('aborted', abort);
-        request.removeListener('error', abort);
-        if (
-          exitCode !== 0
-          || active.terminated
-          || !cgiHeadersSent
-          || bodyBytes > this.maxReceivedPackBytes
-        ) {
-          finish(proxyError('operation-failed', 'git-http-backend-failed'));
-          return;
-        }
-        response.end();
-        finish();
+        void (async () => {
+          request.removeListener('aborted', abort);
+          request.removeListener('error', abort);
+          await active.terminationTask?.catch(() => false);
+          if (
+            exitCode !== 0
+            || active.terminated
+            || !cgiHeadersSent
+            || bodyBytes > this.maxReceivedPackBytes
+          ) {
+            finish(proxyError('operation-failed', 'git-http-backend-failed'));
+            return;
+          }
+          response.end();
+          finish();
+        })();
       });
       try {
         const unregister = this.options.onChildStarted?.(
@@ -725,16 +731,28 @@ export class GitHttpBackendProxy {
     active.terminated = true;
     active.child.stdin.destroy();
     try {
-      terminateSpawnedProcess(active.child, 'SIGTERM', spawn, active.spawnSpec);
+      active.terminationTask = terminateSpawnedProcessTree(
+        active.child,
+        'SIGTERM',
+        spawn,
+        active.spawnSpec,
+      );
     } catch {
       // The bounded SIGKILL fallback remains authoritative.
     }
-    active.terminationTimer = window.setTimeout(() => {
-      try {
-        terminateSpawnedProcess(active.child, 'SIGKILL', spawn, active.spawnSpec);
-      } catch {
-        // The process close/error event remains authoritative for cleanup.
-      }
-    }, this.terminationGraceMs);
+    if (!active.spawnSpec.killProcessTree) {
+      active.terminationTimer = window.setTimeout(() => {
+        try {
+          active.terminationTask = terminateSpawnedProcessTree(
+            active.child,
+            'SIGKILL',
+            spawn,
+            active.spawnSpec,
+          );
+        } catch {
+          // The process close/error event remains authoritative for cleanup.
+        }
+      }, this.terminationGraceMs);
+    }
   }
 }

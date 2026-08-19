@@ -14,6 +14,7 @@ import { collabMemberRef } from '@claudian/collab-protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { parseConflictTextMerge } from '@/app/collab/conflicts/ConflictTextMerge';
+import { COLLAB_ORIGIN_MAIN_REF } from '@/app/collab/git/collabGitRefs';
 import {
   type GitCommandRunner,
   parseGitNulFields,
@@ -29,7 +30,6 @@ const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const STAGE_PATTERN = /^(100644|100755) ([0-9a-f]{40}(?:[0-9a-f]{24})?) ([123])\t(.+)$/;
 const SCRATCH_BRANCH = 'refs/heads/resolution';
 const RESULT_REF = 'refs/heads/resolved';
-const REMOTE_MAIN_REF = 'refs/remotes/origin/main';
 const RESOLUTION_IDENTITY = Object.freeze({
   email: 'collab@claudian.local',
   name: 'Claudian Collab',
@@ -612,7 +612,7 @@ export class ConflictScratchGitRepository {
     }
     const [headOid, mainOid, symbolicHead, status] = await Promise.all([
       this.git.resolveRef(context.repositoryPath, context.personalRef),
-      this.git.resolveRef(context.repositoryPath, REMOTE_MAIN_REF),
+      this.git.resolveRef(context.repositoryPath, COLLAB_ORIGIN_MAIN_REF),
       this.runner.run({
         acceptedExitCodes: [0, 1],
         args: ['symbolic-ref', '--quiet', 'HEAD'],

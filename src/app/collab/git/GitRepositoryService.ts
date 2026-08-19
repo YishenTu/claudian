@@ -14,6 +14,10 @@ import path from 'node:path';
 import { type CollabFileChangeKind, collabMemberRef } from '@claudian/collab-protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
+import {
+  COLLAB_MAIN_FETCH_REFSPEC,
+  COLLAB_MEMBERS_FETCH_REFSPEC,
+} from '@/app/collab/git/collabGitRefs';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import {
   type GitNetworkEnvironment,
@@ -1370,7 +1374,7 @@ export class GitRepositoryService {
         '--local',
         '--replace-all',
         key,
-        '+refs/heads/main:refs/remotes/origin/main',
+        COLLAB_MAIN_FETCH_REFSPEC,
       ],
       cwd: repositoryPath,
     });
@@ -1380,7 +1384,7 @@ export class GitRepositoryService {
         '--local',
         '--add',
         key,
-        '+refs/heads/members/*:refs/remotes/origin/members/*',
+        COLLAB_MEMBERS_FETCH_REFSPEC,
       ],
       cwd: repositoryPath,
     });

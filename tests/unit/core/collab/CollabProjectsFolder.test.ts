@@ -29,6 +29,8 @@ describe('CollabProjectsFolder', () => {
     ['workspace/name.', 'windows-invalid'],
     ['workspace/name /nested', 'windows-invalid'],
     ['workspace/CON', 'windows-reserved'],
+    ['workspace/COM¹.md', 'windows-reserved-superscript'],
+    ['workspace/LPT²', 'windows-reserved-superscript'],
     ['workspace/.git', 'reserved-directory'],
     ['workspace/.claudian', 'reserved-directory'],
     ['workspace/.obsidian', 'reserved-directory'],

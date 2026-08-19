@@ -19,7 +19,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.json",
-    "clean": "rm -rf dist",
+    "clean": "node scripts/clean.mjs",
     "prepack": "npm run build",
     "test": "jest",
     "verify:pack": "node scripts/verify-pack.mjs"

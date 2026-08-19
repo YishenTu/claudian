@@ -2,9 +2,17 @@ import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
 
-import { collabMemberRef, type CollabOperationId } from '@claudian/collab-protocol';
+import {
+  COLLAB_MEMBER_REF_PREFIX,
+  collabMemberRef,
+  type CollabOperationId,
+} from '@claudian/collab-protocol';
 
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
+import {
+  COLLAB_ORIGIN_MAIN_REF,
+  collabOriginTrackingRef,
+} from '@/app/collab/git/collabGitRefs';
 import {
   type GitCommandRunner,
   parseGitNulFields,
@@ -30,8 +38,6 @@ import { type CollabConflictEntry } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const ORIGIN_MAIN_REF = 'refs/remotes/origin/main';
-const PERSONAL_REF_PREFIX = 'refs/heads/';
 const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const TEXT_EXTENSIONS = new Set([
   '.canvas', '.css', '.csv', '.html', '.js', '.json', '.jsx', '.md',
@@ -77,10 +83,10 @@ function requireOid(oid: string | null, reason: string): string {
 }
 
 function remotePersonalRef(personalRef: string): string {
-  if (!personalRef.startsWith(PERSONAL_REF_PREFIX)) {
+  if (!personalRef.startsWith(COLLAB_MEMBER_REF_PREFIX)) {
     throw integrationError('repository-invalid', 'reconciliation-personal-ref-invalid');
   }
-  return `refs/remotes/origin/${personalRef.slice(PERSONAL_REF_PREFIX.length)}`;
+  return collabOriginTrackingRef(personalRef);
 }
 
 function isTextPath(repositoryPath: string): boolean {
@@ -272,12 +278,12 @@ export class NativeGitAcceptedStateIntegrator implements
     const remotePersonal = remotePersonalRef(context.personalRef);
     const [symbolicHead, refs, status] = await Promise.all([
       this.readSymbolicHead(context),
-      session.resolveRefs([context.personalRef, remotePersonal, ORIGIN_MAIN_REF]),
+      session.resolveRefs([context.personalRef, remotePersonal, COLLAB_ORIGIN_MAIN_REF]),
       session.getWorkingTreeStatus(),
     ]);
     const personalOid = refs.get(context.personalRef) ?? null;
     const remotePersonalOid = refs.get(remotePersonal) ?? null;
-    const acceptedMainOid = refs.get(ORIGIN_MAIN_REF) ?? null;
+    const acceptedMainOid = refs.get(COLLAB_ORIGIN_MAIN_REF) ?? null;
     if (
       symbolicHead !== context.personalRef
       || status.length !== 0
@@ -432,12 +438,12 @@ export class NativeGitAcceptedStateIntegrator implements
       const remotePersonal = remotePersonalRef(context.personalRef);
       const [symbolicHead, refs, status] = await Promise.all([
         this.readSymbolicHead(context),
-        session.resolveRefs([context.personalRef, remotePersonal, ORIGIN_MAIN_REF]),
+        session.resolveRefs([context.personalRef, remotePersonal, COLLAB_ORIGIN_MAIN_REF]),
         session.getWorkingTreeStatus(),
       ]);
       const headOid = refs.get(context.personalRef) ?? null;
       const personalRemoteOid = refs.get(remotePersonal) ?? null;
-      const acceptedMainOid = refs.get(ORIGIN_MAIN_REF) ?? null;
+      const acceptedMainOid = refs.get(COLLAB_ORIGIN_MAIN_REF) ?? null;
       if (
         symbolicHead !== context.personalRef
         || !headOid

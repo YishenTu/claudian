@@ -8,7 +8,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
 
 import { NodeSqlJsSnapshotStore } from '@/app/collab/authority/SqlJsSnapshotStore';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
@@ -537,7 +537,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
         cwd: repositoryPath, maxStdoutBytes: 4 * 1024 * 1024,
         signal, suppressHooks: true,
       }),
-      this.options.repositories.resolveRef(repositoryPath, 'refs/heads/main'),
+      this.options.repositories.resolveRef(repositoryPath, COLLAB_MAIN_REF),
     ]);
     if (
       formatResult.stdout.toString('utf8').trim() !== manifest.gitObjectFormat
@@ -570,7 +570,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     if (
       refs.size !== expectedRefs.length
       || expectedRefs.some(ref => !refs.has(ref))
-      || refs.get('refs/heads/main') !== manifest.authorityMainOid
+      || refs.get(COLLAB_MAIN_REF) !== manifest.authorityMainOid
     ) throw packageError('host-transfer-target-git-refs-mismatch');
     const expectedOidLength = manifest.gitObjectFormat === 'sha1' ? 40 : 64;
     if ([...refs.values()].some(oid => oid.length !== expectedOidLength)) {

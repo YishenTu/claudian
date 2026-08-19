@@ -568,6 +568,61 @@ test('collab protocol registry and contract constants exist only in the package'
   assert.deepEqual(findMatches([sourceRoot], pattern), []);
 });
 
+test('production consumes protocol-owned canonical Collab Git refs', () => {
+  assert.deepEqual(findForbiddenSymbolInventoryViolations(
+    /refs\/heads\/main/,
+    new Map([['src/app/collab/authority/AuthoritySchema.ts', 2]]),
+  ), []);
+  assert.deepEqual(findForbiddenSymbolInventoryViolations(
+    /refs\/heads\/members\//,
+    new Map([['src/app/collab/authority/AuthoritySchema.ts', 1]]),
+  ), []);
+  assert.deepEqual(findForbiddenSymbolInventoryViolations(
+    /refs\/remotes\/origin\/main/,
+    new Map(),
+  ), []);
+  assert.deepEqual(findForbiddenSymbolInventoryViolations(
+    /refs\/remotes\/origin\/members\//,
+    new Map(),
+  ), []);
+});
+
+test('collab protocol build scripts avoid platform-specific shell commands', () => {
+  const manifest = JSON.parse(fs.readFileSync(
+    path.join(process.cwd(), 'packages', 'collab-protocol', 'package.json'),
+    'utf8',
+  ));
+  assert.equal(manifest.scripts.clean, 'node scripts/clean.mjs');
+
+  const verifier = fs.readFileSync(
+    path.join(process.cwd(), 'packages', 'collab-protocol', 'scripts', 'verify-pack.mjs'),
+    'utf8',
+  );
+  assert.match(verifier, /fileURLToPath\(import\.meta\.url\)/);
+  assert.doesNotMatch(verifier, /new URL\(import\.meta\.url\)\.pathname/);
+  assert.doesNotMatch(verifier, /run\(['"](?:npm|tar)['"]/);
+  assert.doesNotMatch(verifier, /\bexecSync\b/);
+
+  const workflow = fs.readFileSync(
+    path.join(process.cwd(), '.github', 'workflows', 'ci.yml'),
+    'utf8',
+  );
+  const windowsJob = workflow.split(/^  test:/mu)[0].split(/^  windows-static:/mu)[1] ?? '';
+  assert.match(windowsJob, /npm run verify:protocol/);
+});
+
+test('Collab Git process owners await Windows process-tree termination', () => {
+  for (const relativePath of [
+    'src/app/collab/git/GitCommandRunner.ts',
+    'src/app/collab/lan/GitHttpBackendProxy.ts',
+  ]) {
+    const source = fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
+    assert.match(source, /killProcessTree:\s*true/);
+    assert.match(source, /terminateSpawnedProcessTree\(/);
+    assert.match(source, /await\s+(?:active\.)?terminationTask/);
+  }
+});
+
 test('src does not re-export the collab protocol package', () => {
   const pattern = /export\s+(?:\*|\{[^}]*\})\s*from\s*['"]@claudian\/collab-protocol['"]/;
   assert.deepEqual(findMatches([sourceRoot], pattern), []);

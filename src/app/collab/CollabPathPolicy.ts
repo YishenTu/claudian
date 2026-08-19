@@ -1,12 +1,12 @@
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { isWindowsReservedName } from '@/core/collab/WindowsPortablePath';
 
 const RESERVED_ROOTS = new Set([
   '.claudian',
   '.git',
   'workspace',
 ]);
-const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:[\\/]/;
 const INVALID_WINDOWS_CHARACTER = /[<>:"\\|?*]/;
 
@@ -148,7 +148,7 @@ export class CollabPathPolicy {
         containsControlCharacter(segment)
         || INVALID_WINDOWS_CHARACTER.test(segment)
         || /[. ]$/.test(segment)
-        || WINDOWS_RESERVED_NAME.test(segment)
+        || isWindowsReservedName(segment)
       ) {
         return {
           ok: false,

@@ -1,4 +1,4 @@
-import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
+import { COLLAB_MAIN_REF, type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId } from '@claudian/collab-protocol';
 import type { Database, SqlJsStatic, SqlValue } from 'sql.js';
 
 import {
@@ -424,7 +424,7 @@ export class HostTransferAuthoritySnapshot {
     if (
       project.project_id !== input.manifest.projectId
       || project.host_member_id !== input.manifest.targetHostMemberId
-      || project.main_ref !== 'refs/heads/main'
+      || project.main_ref !== COLLAB_MAIN_REF
       || project.state !== 'active'
       || project.snapshot_generation !== input.manifest.sourceAuthorityGeneration
       || transfer.source_host_member_id !== input.sourceHostMemberId
@@ -467,7 +467,7 @@ export class HostTransferAuthoritySnapshot {
     });
     return Object.freeze({
       eventSequence: latestEventSequence(database),
-      expectedRefs: Object.freeze(['refs/heads/main', ...memberRefs]),
+      expectedRefs: Object.freeze([COLLAB_MAIN_REF, ...memberRefs]),
       proofChain,
     });
   }

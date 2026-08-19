@@ -1,6 +1,11 @@
 import { collabMemberRef, type CollabRequestDetail } from '@claudian/collab-protocol';
 
 import { ensureTrustedCollabOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
+import {
+  COLLAB_MAIN_FETCH_REFSPEC,
+  COLLAB_ORIGIN_MAIN_REF,
+  collabOriginTrackingRef,
+} from '@/app/collab/git/collabGitRefs';
 import type { GitNetworkEnvironment } from '@/app/collab/git/GitCommandRunner';
 import type {
   GitRepositoryReadSession,
@@ -41,7 +46,7 @@ function throwIfCancelled(signal?: AbortSignal): void {
 }
 
 function remoteMemberRef(memberId: string): string {
-  return `refs/remotes/origin/${collabMemberRef(memberId).slice('refs/heads/'.length)}`;
+  return collabOriginTrackingRef(collabMemberRef(memberId));
 }
 
 type ReviewRefAuthority =
@@ -90,7 +95,7 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
       context.repositoryPath,
       'origin',
       [
-        '+refs/heads/main:refs/remotes/origin/main',
+        COLLAB_MAIN_FETCH_REFSPEC,
         `+${memberRef}:${memberRemoteRef}`,
       ],
       network,
@@ -109,8 +114,8 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
     detail: CollabRequestDetail,
     memberRemoteRef: string,
   ): Promise<ReviewRefAuthority> {
-    const refs = await session.resolveRefs(['refs/remotes/origin/main', memberRemoteRef]);
-    const mainOid = refs.get('refs/remotes/origin/main') ?? null;
+    const refs = await session.resolveRefs([COLLAB_ORIGIN_MAIN_REF, memberRemoteRef]);
+    const mainOid = refs.get(COLLAB_ORIGIN_MAIN_REF) ?? null;
     const advertisedHeadOid = refs.get(memberRemoteRef) ?? null;
     if (mainOid !== detail.currentMainOid) return 'main-changed';
     if (!advertisedHeadOid) return 'head-missing';

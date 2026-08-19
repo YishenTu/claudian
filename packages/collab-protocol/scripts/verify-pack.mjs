@@ -13,7 +13,6 @@
  */
 import {
   execFileSync,
-  execSync,
 } from 'node:child_process';
 import {
   existsSync,
@@ -26,8 +25,9 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
-const packageRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(packageRoot, '..', '..');
 const contextRoot = path.join(repoRoot, '.context');
 mkdirSync(contextRoot, { recursive: true });
@@ -47,32 +47,44 @@ function assert(condition, message) {
   }
 }
 
+function runNpm(args, options = {}) {
+  const npmCliPath = process.env.npm_execpath;
+  assert(npmCliPath, 'npm_execpath is required; run verification through an npm script');
+  return run(process.execPath, [npmCliPath, ...args], options);
+}
+
 const workRoot = mkdtempSync(path.join(contextRoot, 'collab-protocol-pack-'));
 console.log(`workspace: ${workRoot}`);
 
 // 1. Build + pack.
-run('npm', ['run', 'build']);
-const tarballName = run('npm', ['pack', '--pack-destination', workRoot]);
+runNpm(['run', 'build']);
+const packResult = JSON.parse(runNpm([
+  'pack',
+  '--json',
+  '--silent',
+  '--pack-destination',
+  workRoot,
+]));
+assert(Array.isArray(packResult) && packResult.length === 1, 'npm pack returned no artifact');
+const [{ filename: tarballName, files: packedFileEntries }] = packResult;
+assert(typeof tarballName === 'string', 'npm pack omitted the artifact filename');
+assert(Array.isArray(packedFileEntries), 'npm pack omitted the artifact inventory');
 const tarballPath = path.join(workRoot, tarballName);
 assert(existsSync(tarballPath), `tarball missing: ${tarballPath}`);
 console.log(`packed: ${tarballName}`);
 
 // 2. Exact packed-file inventory: dist build output, package.json, README.md.
 const expectedFiles = [
-  'package/README.md',
-  'package/package.json',
+  'README.md',
+  'package.json',
   ...readdirSync(path.join(packageRoot, 'src'))
     .filter(name => name.endsWith('.ts'))
     .flatMap((name) => {
       const base = name.replace(/\.ts$/, '');
-      return [`package/dist/${base}.js`, `package/dist/${base}.d.ts`];
+      return [`dist/${base}.js`, `dist/${base}.d.ts`];
     }),
 ].sort();
-const packedFiles = run('tar', ['-tzf', tarballPath])
-  .split('\n')
-  .map(entry => entry.trim())
-  .filter(Boolean)
-  .sort();
+const packedFiles = packedFileEntries.map(entry => entry.path).sort();
 assert(
   JSON.stringify(packedFiles) === JSON.stringify(expectedFiles),
   `packed inventory mismatch:\nexpected: ${JSON.stringify(expectedFiles, null, 2)}\nactual: ${JSON.stringify(packedFiles, null, 2)}`,
@@ -97,7 +109,7 @@ writeFileSync(
     2,
   ),
 );
-run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts'], { cwd: consumerRoot });
+runNpm(['install', '--no-audit', '--no-fund', '--ignore-scripts'], { cwd: consumerRoot });
 const installedManifest = JSON.parse(readFileSync(
   path.join(consumerRoot, 'node_modules', '@claudian/collab-protocol', 'package.json'),
   'utf8',
@@ -169,10 +181,10 @@ assert.equal(error.safeContext.path, '[PATH]');
 console.log('smoke: version, shared registry, codecs, parsers, safe errors OK');
 `;
 writeFileSync(path.join(consumerRoot, 'smoke.cjs'), smokeSource);
-const cjsOutput = run('node', ['smoke.cjs'], { cwd: consumerRoot });
+const cjsOutput = run(process.execPath, ['smoke.cjs'], { cwd: consumerRoot });
 console.log(`cjs ${cjsOutput}`);
 
-const esmOutput = run('node', [
+const esmOutput = run(process.execPath, [
   '--input-type=module',
   '-e',
   "import { COLLAB_PROTOCOL_VERSION, collabMemberRef } from '@claudian/collab-protocol';"
@@ -183,11 +195,11 @@ console.log(esmOutput);
 
 // 5. Subpath imports must be blocked by the exports map.
 for (const subpath of ['dist/CollabError.js', 'package.json']) {
-  execSync(
-    `node -e "try { require('@claudian/collab-protocol/${subpath}'); process.exit(3); }`
-      + ' catch { process.exit(0); }" ',
-    { cwd: consumerRoot, encoding: 'utf8' },
-  );
+  run(process.execPath, [
+    '-e',
+    `try { require('@claudian/collab-protocol/${subpath}'); process.exit(3); }`
+      + ' catch { process.exit(0); }',
+  ], { cwd: consumerRoot });
 }
 console.log('subpath import blocked as expected');
 

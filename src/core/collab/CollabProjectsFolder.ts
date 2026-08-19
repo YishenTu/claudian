@@ -1,9 +1,10 @@
+import { isWindowsReservedName } from '@/core/collab/WindowsPortablePath';
+
 export const DEFAULT_COLLAB_PROJECTS_FOLDER = 'workspace';
 
 const MAX_PROJECTS_FOLDER_LENGTH = 175;
 const MAX_PROJECTS_FOLDER_SEGMENT_LENGTH = 120;
 const WINDOWS_INVALID_CHARACTER_PATTERN = /[<>:"\\|?*]/u;
-const WINDOWS_RESERVED_NAME_PATTERN = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
 
 export type CollabProjectsFolderErrorCode =
   | 'absolute-path'
@@ -95,7 +96,7 @@ export function parseCollabProjectsFolder(
       WINDOWS_INVALID_CHARACTER_PATTERN.test(segment)
       || segment.endsWith('.')
       || segment.endsWith(' ')
-      || WINDOWS_RESERVED_NAME_PATTERN.test(segment)
+      || isWindowsReservedName(segment)
     ) {
       return failure('windows-invalid-name', 'Use folder names supported by macOS, Windows, and Linux.');
     }

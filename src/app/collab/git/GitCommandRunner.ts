@@ -8,7 +8,7 @@ import { TextDecoder } from 'node:util';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
   resolveWindowsCmdShimSpawnSpec,
-  terminateSpawnedProcess,
+  terminateSpawnedProcessTree,
 } from '@/utils/windowsCmdShim';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -305,6 +305,7 @@ export class GitCommandRunner {
     const spawnSpec = resolveWindowsCmdShimSpawnSpec({
       args,
       command: this.options.executablePath,
+      killProcessTree: true,
     });
 
     let child: ChildProcessWithoutNullStreams;
@@ -331,23 +332,26 @@ export class GitCommandRunner {
       let failureKind: GitCommandFailureKind | null = null;
       let spawnError = false;
       let settled = false;
+      let terminationTask: Promise<boolean> | null = null;
       let terminationTimer: number | null = null;
 
       const terminate = (kind: GitCommandFailureKind): void => {
         if (failureKind !== null) return;
         failureKind = kind;
         try {
-          terminateSpawnedProcess(child, 'SIGTERM', spawn, spawnSpec);
+          terminationTask = terminateSpawnedProcessTree(child, 'SIGTERM', spawn, spawnSpec);
         } catch {
           // The SIGKILL fallback below remains authoritative.
         }
-        terminationTimer = window.setTimeout(() => {
-          try {
-            terminateSpawnedProcess(child, 'SIGKILL', spawn, spawnSpec);
-          } catch {
-            // Close/error still determines final cleanup.
-          }
-        }, this.terminationGraceMs);
+        if (!spawnSpec.killProcessTree) {
+          terminationTimer = window.setTimeout(() => {
+            try {
+              terminationTask = terminateSpawnedProcessTree(child, 'SIGKILL', spawn, spawnSpec);
+            } catch {
+              // Close/error still determines final cleanup.
+            }
+          }, this.terminationGraceMs);
+        }
       };
 
       const timeout = window.setTimeout(
@@ -381,46 +385,49 @@ export class GitCommandRunner {
       child.on('error', () => {
         spawnError = true;
       });
-      child.on('close', (exitCode) => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timeout);
-        if (terminationTimer !== null) window.clearTimeout(terminationTimer);
-        request.signal?.removeEventListener('abort', onAbort);
-        this.activeProcesses.delete(child);
+      child.on('close', exitCode => {
+        void (async () => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeout);
+          if (terminationTimer !== null) window.clearTimeout(terminationTimer);
+          request.signal?.removeEventListener('abort', onAbort);
+          await terminationTask?.catch(() => false);
+          this.activeProcesses.delete(child);
 
-        const stderr = redactGitDiagnostic(
-          Buffer.concat(stderrChunks).toString('utf8'),
-          sensitiveValues,
-        );
-        if (failureKind === 'cancelled') {
-          reject(commandFailure('cancelled', 'git-command-cancelled'));
-          return;
-        }
-        if (failureKind === 'timeout') {
-          reject(commandFailure('operation-timeout', 'git-command-timeout'));
-          return;
-        }
-        if (failureKind === 'output-limit') {
-          reject(commandFailure('quota-exceeded', 'git-output-limit'));
-          return;
-        }
-        if (spawnError || exitCode === null) {
-          reject(commandFailure('operation-failed', 'git-spawn-failed'));
-          return;
-        }
-        if (!(request.acceptedExitCodes ?? [0]).includes(exitCode)) {
-          reject(commandFailure('operation-failed', 'git-command-failed', {
+          const stderr = redactGitDiagnostic(
+            Buffer.concat(stderrChunks).toString('utf8'),
+            sensitiveValues,
+          );
+          if (failureKind === 'cancelled') {
+            reject(commandFailure('cancelled', 'git-command-cancelled'));
+            return;
+          }
+          if (failureKind === 'timeout') {
+            reject(commandFailure('operation-timeout', 'git-command-timeout'));
+            return;
+          }
+          if (failureKind === 'output-limit') {
+            reject(commandFailure('quota-exceeded', 'git-output-limit'));
+            return;
+          }
+          if (spawnError || exitCode === null) {
+            reject(commandFailure('operation-failed', 'git-spawn-failed'));
+            return;
+          }
+          if (!(request.acceptedExitCodes ?? [0]).includes(exitCode)) {
+            reject(commandFailure('operation-failed', 'git-command-failed', {
+              exitCode,
+              stderr,
+            }));
+            return;
+          }
+          resolve({
             exitCode,
             stderr,
-          }));
-          return;
-        }
-        resolve({
-          exitCode,
-          stderr,
-          stdout: Buffer.concat(stdoutChunks),
-        });
+            stdout: Buffer.concat(stdoutChunks),
+          });
+        })();
       });
 
       if (request.stdin === undefined) {
