@@ -19,8 +19,8 @@ import {
   parseGitHttpRoute,
 } from '@/app/collab/lan/git/GitHttpRoute';
 import {
+  buildGitReceiveHookEnvironment,
   createProtectedReceiveHook,
-  formatGitExecutableForReceiveHook,
 } from '@/app/collab/lan/git/GitReceiveHookPolicy';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -523,6 +523,15 @@ export class GitHttpBackendProxy {
     if (!enabled) throw proxyError('operation-failed', 'git-proxy-disabled');
     const environment = { ...(this.options.baseEnvironment ?? process.env) };
     removeInheritedGitAndAuthState(environment);
+    const inheritedPathKey = Object.keys(environment).find(
+      key => key.toLocaleLowerCase('en-US') === 'path',
+    );
+    const inheritedPath = inheritedPathKey ? environment[inheritedPathKey] ?? '' : '';
+    if (inheritedPathKey) delete environment[inheritedPathKey];
+    const hookGit = buildGitReceiveHookEnvironment(
+      this.options.gitExecutablePath,
+      inheritedPath,
+    );
     const gitProtocol = singleHeader(request, 'git-protocol');
     if (
       gitProtocol !== null
@@ -534,9 +543,7 @@ export class GitHttpBackendProxy {
       throw proxyError('path-invalid', 'git-protocol-header-invalid');
     }
     Object.assign(environment, {
-      CLAUDIAN_COLLAB_GIT_EXECUTABLE: formatGitExecutableForReceiveHook(
-        this.options.gitExecutablePath,
-      ),
+      CLAUDIAN_COLLAB_GIT_EXECUTABLE: hookGit.executable,
       CLAUDIAN_COLLAB_MEMBER_ID: memberId,
       CLAUDIAN_COLLAB_MEMBER_REF: collabMemberRef(memberId),
       CLAUDIAN_COLLAB_PROJECT_ID: this.options.projectId,
@@ -552,6 +559,7 @@ export class GitHttpBackendProxy {
       LANG: 'C',
       LC_ALL: 'C',
       PATH_INFO: `/repository.git${route.pathSuffix}`,
+      PATH: hookGit.path,
       QUERY_STRING: route.queryString,
       REMOTE_ADDR: normalizedRemoteAddress(request),
       REMOTE_USER: memberId,

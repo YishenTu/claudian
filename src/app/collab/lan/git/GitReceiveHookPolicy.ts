@@ -1,10 +1,24 @@
-export function formatGitExecutableForReceiveHook(
+import path from 'node:path';
+
+export interface GitReceiveHookEnvironment {
+  readonly executable: string;
+  readonly path: string;
+}
+
+export function buildGitReceiveHookEnvironment(
   executablePath: string,
+  inheritedPath: string,
   platform: NodeJS.Platform = process.platform,
-): string {
-  return platform === 'win32'
-    ? executablePath.replace(/\\/g, '/')
-    : executablePath;
+): GitReceiveHookEnvironment {
+  const pathApi = platform === 'win32' ? path.win32 : path.posix;
+  const delimiter = platform === 'win32' ? ';' : ':';
+  const executableDirectory = pathApi.dirname(executablePath);
+  return {
+    executable: pathApi.basename(executablePath),
+    path: inheritedPath
+      ? `${executableDirectory}${delimiter}${inheritedPath}`
+      : executableDirectory,
+  };
 }
 
 export function createProtectedReceiveHook(): string {

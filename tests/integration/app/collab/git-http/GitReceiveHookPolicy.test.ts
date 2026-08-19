@@ -1,6 +1,6 @@
 import {
+  buildGitReceiveHookEnvironment,
   createProtectedReceiveHook,
-  formatGitExecutableForReceiveHook,
 } from '@/app/collab/lan/git/GitReceiveHookPolicy';
 
 describe('protected receive hook policy', () => {
@@ -15,12 +15,22 @@ describe('protected receive hook policy', () => {
     expect(hook).not.toContain('credential');
   });
 
-  it('uses an MSYS-compatible executable path for Git for Windows hooks', () => {
-    expect(formatGitExecutableForReceiveHook(
+  it('puts the exact Git directory first without passing an absolute path to the hook', () => {
+    expect(buildGitReceiveHookEnvironment(
       'C:\\Program Files\\Git\\cmd\\git.exe',
+      'C:\\Windows\\System32;C:\\Windows',
       'win32',
-    )).toBe('C:/Program Files/Git/cmd/git.exe');
-    expect(formatGitExecutableForReceiveHook('/usr/local/bin/git', 'darwin'))
-      .toBe('/usr/local/bin/git');
+    )).toEqual({
+      executable: 'git.exe',
+      path: 'C:\\Program Files\\Git\\cmd;C:\\Windows\\System32;C:\\Windows',
+    });
+    expect(buildGitReceiveHookEnvironment(
+      '/opt/custom/bin/custom-git',
+      '/usr/local/bin:/usr/bin',
+      'darwin',
+    )).toEqual({
+      executable: 'custom-git',
+      path: '/opt/custom/bin:/usr/local/bin:/usr/bin',
+    });
   });
 });
