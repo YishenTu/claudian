@@ -1,3 +1,8 @@
+const os = require('node:os');
+
+const availableParallelism = os.availableParallelism?.() ?? os.cpus().length;
+const maxWorkers = Math.max(1, Math.min(4, Math.floor(availableParallelism / 2)));
+
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 const baseConfig = {
   preset: 'ts-jest',
@@ -21,6 +26,7 @@ const baseConfig = {
 };
 
 module.exports = {
+  maxWorkers,
   projects: [
     {
       ...baseConfig,

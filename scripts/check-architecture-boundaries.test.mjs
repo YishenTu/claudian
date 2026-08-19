@@ -4,6 +4,16 @@ import * as path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
+import {
+  evaluationIndicatorMs,
+  evaluationReviewThresholdMs,
+  historicalMainWarningBytes,
+  inspectArtifactSize,
+  inspectEvaluationDuration,
+  mainReviewThresholdBytes,
+  preCollabReferenceMainBytes,
+} from './check-startup-performance.mjs';
+
 function listTypeScriptFiles(root) {
   const files = [];
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
@@ -26,6 +36,34 @@ function findMatches(roots, pattern) {
   return matches;
 }
 
+function inspectForbiddenSymbolInventory(entries, pattern, allowedOccurrences) {
+  const counts = new Map();
+  const matcherFlags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  for (const entry of entries) {
+    const count = [...entry.source.matchAll(new RegExp(pattern.source, matcherFlags))].length;
+    if (count > 0) counts.set(entry.file, count);
+  }
+  const files = new Set([...counts.keys(), ...allowedOccurrences.keys()]);
+  return [...files].sort().flatMap(file => {
+    const actual = counts.get(file) ?? 0;
+    const expected = allowedOccurrences.get(file) ?? 0;
+    return actual === expected
+      ? []
+      : [`${file}: expected ${expected} compatibility occurrence, found ${actual}`];
+  });
+}
+
+function findForbiddenSymbolInventoryViolations(pattern, allowedOccurrences) {
+  return inspectForbiddenSymbolInventory(
+    listTypeScriptFiles(sourceRoot).map(file => ({
+      file: path.relative(process.cwd(), file),
+      source: fs.readFileSync(file, 'utf8'),
+    })),
+    pattern,
+    allowedOccurrences,
+  );
+}
+
 function listSourceImports(file) {
   const sourceText = fs.readFileSync(file, 'utf8');
   const sourceFile = ts.createSourceFile(
@@ -37,18 +75,22 @@ function listSourceImports(file) {
   );
   const imports = [];
 
-  function addImport(moduleSpecifier) {
+  function addImport(moduleSpecifier, options = {}) {
     if (!moduleSpecifier || !ts.isStringLiteralLike(moduleSpecifier)) return;
     const { line } = sourceFile.getLineAndCharacterOfPosition(moduleSpecifier.getStart(sourceFile));
     imports.push({
+      dynamic: options.dynamic === true,
       line: line + 1,
       specifier: moduleSpecifier.text,
+      typeOnly: options.typeOnly === true,
     });
   }
 
   function visit(node) {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      addImport(node.moduleSpecifier);
+    if (ts.isImportDeclaration(node)) {
+      addImport(node.moduleSpecifier, { typeOnly: node.importClause?.isTypeOnly === true });
+    } else if (ts.isExportDeclaration(node)) {
+      addImport(node.moduleSpecifier, { typeOnly: node.isTypeOnly === true });
     } else if (
       ts.isImportEqualsDeclaration(node)
       && ts.isExternalModuleReference(node.moduleReference)
@@ -57,7 +99,9 @@ function listSourceImports(file) {
     } else if (ts.isCallExpression(node)) {
       const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
       const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
-      if (isDynamicImport || isRequire) addImport(node.arguments[0]);
+      if (isDynamicImport || isRequire) {
+        addImport(node.arguments[0], { dynamic: isDynamicImport });
+      }
     }
     ts.forEachChild(node, visit);
   }
@@ -86,8 +130,42 @@ function normalizeModuleTarget(target) {
   return target.replace(/\.(?:[cm]?[jt]sx?)$/, '');
 }
 
+function importsPackage(specifier, packageName) {
+  return specifier === packageName || specifier.startsWith(`${packageName}/`);
+}
+
 function resolvedImportKey(importer, target) {
   return `${path.normalize(importer)}::${normalizeModuleTarget(path.normalize(target))}`;
+}
+
+function resolveTypeScriptImport(importer, specifier) {
+  const target = resolveSourceImport(importer, specifier);
+  if (!target) return null;
+  const candidates = [
+    target,
+    `${target}.ts`,
+    `${target}.tsx`,
+    path.join(target, 'index.ts'),
+    path.join(target, 'index.tsx'),
+  ];
+  return candidates.find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile())
+    ?? null;
+}
+
+function listStaticSourceGraph(entry) {
+  const pending = [entry];
+  const visited = new Set();
+  while (pending.length > 0) {
+    const file = pending.pop();
+    if (!file || visited.has(file)) continue;
+    visited.add(file);
+    for (const sourceImport of listSourceImports(file)) {
+      if (sourceImport.dynamic || sourceImport.typeOnly) continue;
+      const target = resolveTypeScriptImport(file, sourceImport.specifier);
+      if (target && isPathWithin(target, sourceRoot)) pending.push(target);
+    }
+  }
+  return [...visited].sort();
 }
 
 function findResolvedImportViolations(roots, isForbidden, allowedImports = new Set()) {
@@ -216,6 +294,60 @@ test('features are independent from the composition root and app adapters', () =
   assert.deepEqual(findMatches([path.join(sourceRoot, 'features')], pattern), []);
 });
 
+test('Collab modal and shared code do not depend on detail or sidebar surfaces', () => {
+  const collabRoot = path.join(featuresRoot, 'collab');
+  const detailRoot = path.join(collabRoot, 'detail');
+  const sidebarRoot = path.join(collabRoot, 'sidebar');
+  assert.deepEqual(findResolvedImportViolations(
+    [path.join(collabRoot, 'modals'), path.join(collabRoot, 'shared')],
+    target => isPathWithin(target, detailRoot) || isPathWithin(target, sidebarRoot),
+  ), []);
+});
+
+test('active Collab code has no singular Manager or transfer compatibility surface', () => {
+  assert.deepEqual(findForbiddenSymbolInventoryViolations(
+    /\bmanager_member_id\b/,
+    new Map([['src/app/collab/authority/AuthoritySchema.ts', 5]]),
+  ), []);
+  assert.deepEqual(findForbiddenSymbolInventoryViolations(
+    /\bmanagerMemberId\b/,
+    new Map(),
+  ), []);
+  assert.deepEqual(findForbiddenSymbolInventoryViolations(
+    /\btransferManager\b/,
+    new Map(),
+  ), []);
+  assert.deepEqual(findForbiddenSymbolInventoryViolations(
+    /manager-transfer/,
+    new Map([
+      ['src/app/collab/authority/AuthoritySchema.ts', 2],
+      ['src/app/collab/exit/LocalExitStores.ts', 3],
+      ['src/app/collab/exit/ManagerResponsibilityReceiptRecord.ts', 2],
+    ]),
+  ), []);
+  assert.deepEqual(
+    findForbiddenSymbolInventoryViolations(
+      /\bexpectedManagerMemberId\b/,
+      new Map([
+        ['src/app/collab/authority/MembershipAdminService.ts', 1],
+        ['src/app/collab/exit/PendingLeaveRecord.ts', 2],
+        ['src/app/collab/retirement/RetirementIntent.ts', 1],
+      ]),
+    ),
+    [],
+  );
+});
+
+test('singular Manager compatibility inventory rejects an extra active occurrence', () => {
+  assert.deepEqual(inspectForbiddenSymbolInventory(
+    [{ file: 'compatibility-owner.ts', source: 'manager_member_id manager_member_id' }],
+    /\bmanager_member_id\b/,
+    new Map([['compatibility-owner.ts', 1]]),
+  ), [
+    'compatibility-owner.ts: expected 1 compatibility occurrence, found 2',
+  ]);
+});
+
 test('features and shared UI are independent from concrete providers', () => {
   const pattern = new RegExp(
     `from\\s+['"][^'"]*${concreteProviderPathPattern.source}`,
@@ -224,6 +356,78 @@ test('features and shared UI are independent from concrete providers', () => {
     path.join(sourceRoot, 'features'),
     path.join(sourceRoot, 'shared'),
   ], pattern), []);
+});
+
+test('chat consumes Collab only through the FeatureHost surface seam', () => {
+  const chatRoot = path.join(featuresRoot, 'chat');
+  const collabRoot = path.join(featuresRoot, 'collab');
+  const violations = findResolvedImportViolations(
+    [chatRoot],
+    target => isPathWithin(target, collabRoot) || isPathWithin(target, path.join(appRoot, 'collab')),
+  );
+
+  assert.deepEqual(violations, []);
+  assert.ok(
+    listSourceImports(path.join(chatRoot, 'ClaudianView.ts'))
+      .some(sourceImport => normalizeModuleTarget(resolveSourceImport(
+        path.join(chatRoot, 'ClaudianView.ts'),
+        sourceImport.specifier,
+      ) ?? '') === normalizeModuleTarget(path.join(featuresRoot, 'FeatureHost'))),
+  );
+});
+
+test('the retired Vault file-tree surface stays outside the plugin', () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+  const viewSource = fs.readFileSync(path.join(featuresRoot, 'chat', 'ClaudianView.ts'), 'utf8');
+  const settingsTypeSource = fs.readFileSync(path.join(sourceRoot, 'core', 'types', 'settings.ts'), 'utf8');
+  const treeRoot = path.join(featuresRoot, 'chat', 'ui', 'vault-file-tree');
+
+  assert.equal(packageJson.dependencies?.['@pierre/trees'], undefined);
+  assert.equal(fs.existsSync(treeRoot) && listTypeScriptFiles(treeRoot).length > 0, false);
+  assert.equal(fs.existsSync(path.join(sourceRoot, 'style', 'components', 'vault-file-tree.css')), false);
+  assert.doesNotMatch(viewSource, /VaultFileTree|filesSurface|showVaultFiles/);
+  assert.doesNotMatch(settingsTypeSource, /enableFilePane/);
+});
+
+test('ordinary main evaluation cannot reach Collab runtime foundations', () => {
+  const mainFile = path.join(sourceRoot, 'main.ts');
+  const eagerGraph = listStaticSourceGraph(mainFile);
+  const collabAppRoot = path.join(appRoot, 'collab');
+  const forbiddenPackages = ['@pierre/diffs', 'node-forge', 'sql.js', 'ws'];
+  const heavyImports = eagerGraph.flatMap(file => (
+    listSourceImports(file)
+      .filter(sourceImport => (
+        !sourceImport.dynamic
+        && !sourceImport.typeOnly
+        && forbiddenPackages.some(packageName => (
+          importsPackage(sourceImport.specifier, packageName)
+        ))
+      ))
+      .map(sourceImport => (
+        `${path.relative(process.cwd(), file)}:${sourceImport.line}`
+        + ` imports ${sourceImport.specifier}`
+      ))
+  ));
+
+  assert.deepEqual(eagerGraph.filter(file => isPathWithin(file, collabAppRoot)), []);
+  assert.deepEqual(heavyImports, []);
+  assert.ok(
+    listSourceImports(mainFile).some(sourceImport => (
+      sourceImport.dynamic && sourceImport.specifier === './app/collab'
+    )),
+  );
+  assert.ok(
+    listSourceImports(path.join(
+      featuresRoot,
+      'collab',
+      'detail',
+      'review',
+      'CollabDiffRenderer.ts',
+    ))
+      .some(sourceImport => (
+        sourceImport.dynamic && sourceImport.specifier === '@pierre/diffs'
+      )),
+  );
 });
 
 test('persisted settings changes use the coordinator boundary', () => {
@@ -342,4 +546,67 @@ test('only TabRuntimeFactory can register runtime resource ownership', () => {
     path.relative(process.cwd(), factorySource),
     path.relative(process.cwd(), lifecycleSource),
   ].sort());
+});
+
+test('collab protocol package imports only relative modules and allowlisted dependencies', () => {
+  const protocolPackageSourceRoot = path.join(process.cwd(), 'packages', 'collab-protocol', 'src');
+  const violations = [];
+  for (const file of listTypeScriptFiles(protocolPackageSourceRoot)) {
+    for (const sourceImport of listSourceImports(file)) {
+      const { specifier } = sourceImport;
+      if (specifier.startsWith('.') || specifier === '@lezer/markdown') continue;
+      violations.push(
+        `${path.relative(process.cwd(), file)}:${sourceImport.line} imports ${specifier}`,
+      );
+    }
+  }
+  assert.deepEqual(violations, []);
+});
+
+test('collab protocol registry and contract constants exist only in the package', () => {
+  const pattern = /export\s+(?:const|interface|type|class|function)\s+(?:COLLAB_CONTROL_OPERATION_CODECS|CollabControlOperationMap|COLLAB_EVENT_KINDS|COLLAB_ERROR_CODES|COLLAB_LIMITS|COLLAB_PROTOCOL_VERSION|COLLAB_MAIN_REF|COLLAB_MEMBER_REF_PREFIX)\b/;
+  assert.deepEqual(findMatches([sourceRoot], pattern), []);
+});
+
+test('src does not re-export the collab protocol package', () => {
+  const pattern = /export\s+(?:\*|\{[^}]*\})\s*from\s*['"]@claudian\/collab-protocol['"]/;
+  assert.deepEqual(findMatches([sourceRoot], pattern), []);
+});
+
+test('src and tests import the collab protocol package only through its root entry', () => {
+  const violations = [];
+  for (const root of [sourceRoot, path.join(process.cwd(), 'tests')]) {
+    for (const file of listTypeScriptFiles(root)) {
+      for (const sourceImport of listSourceImports(file)) {
+        const { specifier } = sourceImport;
+        if (
+          specifier.startsWith('@claudian/collab-protocol/')
+          || specifier.includes('packages/collab-protocol')
+        ) {
+          violations.push(
+            `${path.relative(process.cwd(), file)}:${sourceImport.line} imports ${specifier}`,
+          );
+        }
+      }
+    }
+  }
+  assert.deepEqual(violations, []);
+});
+
+test('performance policy reports the pre-Collab delta and review thresholds', () => {
+  assert.deepEqual(inspectArtifactSize(historicalMainWarningBytes + 1), {
+    historicalNotice: true,
+    referenceDeltaBytes: historicalMainWarningBytes + 1 - preCollabReferenceMainBytes,
+    reviewRequired: false,
+  });
+  assert.equal(
+    inspectArtifactSize(mainReviewThresholdBytes + 1).reviewRequired,
+    true,
+  );
+  assert.equal(inspectEvaluationDuration(evaluationIndicatorMs), 'within-indicator');
+  assert.equal(inspectEvaluationDuration(evaluationIndicatorMs + 1), 'warning');
+  assert.equal(
+    inspectEvaluationDuration(evaluationReviewThresholdMs + 1),
+    'review-required',
+  );
 });

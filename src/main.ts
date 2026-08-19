@@ -8,13 +8,26 @@ import './providers';
 StartupProfiler.finishModuleEvaluation();
 
 import type { Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
-import { MarkdownView, Notice, Plugin, TFolder } from 'obsidian';
+import { MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from 'obsidian';
 
+import type {
+  LocalAgentRuntimeHttpServer,
+  LocalAgentRuntimeHttpServerEndpoint,
+} from './app/agent-runtime';
+import type {
+  ClaudianCollabService,
+  CollabFeatureService,
+} from './app/collab';
+import type {
+  GitRuntimeResolution,
+  GitRuntimeResolver,
+} from './app/collab/git/GitRuntimeResolver';
+import { CollabComposerReferenceService } from './app/CollabComposerReferenceService';
 import { ConversationRepository } from './app/conversations/ConversationRepository';
 import { ClaudianProviderHost } from './app/providers/ClaudianProviderHost';
 import { ChatModelSelectionCoordinator } from './app/settings/ChatModelSelectionCoordinator';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
-import { PinnedLinkedNotePathCoordinator } from './app/settings/PinnedLinkedNotePathCoordinator';
+import { PinnedLinkedContentPathCoordinator } from './app/settings/PinnedLinkedContentPathCoordinator';
 import type {
   ConditionalSettingsMutation,
   SettingsCommit,
@@ -28,6 +41,12 @@ import { SharedStorageService } from './app/storage/SharedStorageService';
 import { TabWorkspaceMigrationCoordinator } from './app/storage/TabWorkspaceMigrationCoordinator';
 import type { SessionMetadataReadResult } from './core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from './core/bootstrap/storage';
+import {
+  type CollabCoordinationSnapshot,
+  type CollabPublicationReview,
+  type CollabRequestReview,
+  parseCollabProjectsFolder,
+} from './core/collab';
 import {
   ProviderExecutionLifecycleRegistry,
   type ProviderExecutionTransitionScope,
@@ -53,6 +72,7 @@ import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
+  ConversationMutablePatch,
   SessionMetadata,
 } from './core/types';
 import {
@@ -67,9 +87,25 @@ import {
   WarmExecutionPool,
 } from './features/chat/execution/WarmExecutionPool';
 import { registerFileMenu } from './features/chat/fileMenu';
+import {
+  COLLAB_DETAIL_VIEW_TYPE,
+  CollabDetailView,
+  CollabDetailViewCoordinator,
+  type CollabDetailViewPort,
+} from './features/collab/detail/CollabDetailView';
+import { preloadCollabDiffRenderer } from './features/collab/detail/review/CollabDiffRenderer';
+import { CollabPreparedReviewCache } from './features/collab/handoff/CollabPreparedReviewCache';
+import { CollabTransientSurfaceRegistry } from './features/collab/modals/CollabTransientSurfaceRegistry';
+import {
+  ResponsiveCollabRouter,
+  type ResponsiveCollabTarget,
+} from './features/collab/navigation/ResponsiveCollabRouter';
+import { DeferredCollabSurfaceController } from './features/collab/sidebar/DeferredCollabSurfaceController';
+import type { GitSetupResolution } from './features/collab/sidebar/GitSetupPanel';
+import type { CollabSidebarSurfaceFactory } from './features/FeatureHost';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
-import { setLocale } from './i18n/i18n';
+import { setLocale, t } from './i18n/i18n';
 import type { Locale } from './i18n/types';
 import { deleteLegacyMcpConfig } from './providers/claude/storage/LegacyMcpConfigCleanup';
 import { buildCursorContext } from './utils/editor';
@@ -80,6 +116,19 @@ function isClaudianView(value: unknown): value is ClaudianView {
   return !!value
     && typeof value === 'object'
     && typeof (value as { getTabManager?: unknown }).getTabManager === 'function';
+}
+
+function toGitSetupResolution(resolution: GitRuntimeResolution): GitSetupResolution {
+  if (resolution.status === 'available') {
+    return { status: 'available', version: resolution.runtime.version.raw };
+  }
+  if (resolution.status === 'incompatible') {
+    return {
+      missingCapabilities: resolution.missingCapabilities,
+      status: 'incompatible',
+    };
+  }
+  return { status: 'missing' };
 }
 
 function readPendingProviderSessionInvalidations(
@@ -133,9 +182,32 @@ export default class ClaudianPlugin extends Plugin {
   readonly warmExecutionPool = new WarmExecutionPool(
     () => this.settings?.maxWarmAgentProcesses ?? DEFAULT_MAX_WARM_AGENT_PROCESSES,
   );
+  readonly collabSurfaceFactory: CollabSidebarSurfaceFactory = {
+    create: (hostEl, leaf) => this.createCollabSurface(hostEl, leaf),
+  };
+  readonly collabComposerReferences = new CollabComposerReferenceService(
+    () => this.getCollabFeatureService(),
+    () => this.isCollabEnabled(),
+  );
+  private collabFoundation: ClaudianCollabService | null = null;
+  private collabSettingsGitResolver: GitRuntimeResolver | null = null;
+  private collabFeatureService: CollabFeatureService | null = null;
+  private collabFeatureServicePromise: Promise<CollabFeatureService | null> | null = null;
+  private agentRuntime: LocalAgentRuntimeHttpServer | null = null;
+  private agentRuntimeStartPromise:
+    Promise<LocalAgentRuntimeHttpServerEndpoint | null> | null = null;
+  private collabHostRestore: Promise<void> | null = null;
+  private collabHostRestoreTimer: number | null = null;
+  private collabHostRestoreRetryDelayMs = 1_000;
+  private collabLayoutReady = false;
+  private collabLifecycleGeneration = 0;
+  private collabLifecycleTail: Promise<void> = Promise.resolve();
+  private readonly collabPreparedReviews = new CollabPreparedReviewCache();
+  private readonly collabTransientSurfaces = new CollabTransientSurfaceRegistry();
+  private collabDetailViewCoordinator: CollabDetailViewCoordinator | null = null;
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
   private chatModelSelectionCoordinator!: ChatModelSelectionCoordinator;
-  private pinnedLinkedNotePaths!: PinnedLinkedNotePathCoordinator;
+  private pinnedLinkedContentPaths!: PinnedLinkedContentPathCoordinator;
   private conversationRepository!: ConversationRepository;
   private pendingSessionMetadataScan = false;
   private pendingEnvironmentInvalidationGenerations = new Map<ProviderId, number>();
@@ -172,16 +244,38 @@ export default class ClaudianPlugin extends Plugin {
         VIEW_TYPE_CLAUDIAN,
         (leaf) => new ClaudianView(leaf, this)
       );
+      this.registerView(
+        COLLAB_DETAIL_VIEW_TYPE,
+        leaf => new CollabDetailView(leaf, this.createCollabDetailViewPort(), {
+          openProjectFile: (projectId, filePath) => (
+            this.openCollabProjectFile(projectId, filePath)
+          ),
+          openTicketInNewTab: (projectId, ticketId) => (
+            this.getCollabDetailViewCoordinator().openInNewTab({
+              kind: 'ticket',
+              projectId,
+              ticketId,
+            })
+          ),
+          preparedReviews: this.collabPreparedReviews,
+        }),
+      );
       registerFileMenu(this);
       this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
-        void this.handleLinkedNoteRename(file, oldPath).catch(() => {
-          new Notice('Failed to update linked session note paths');
+        void this.handleLinkedContentRename(file, oldPath).catch(() => {
+          new Notice('Failed to update linked content paths');
         });
       }));
       this.registerEvent(this.app.vault.on('delete', (file) => {
-        void this.handlePinnedLinkedNoteDeleted(file).catch(() => {
-          new Notice('Failed to update pinned linked notes');
+        void this.handlePinnedLinkedContentDeleted(file).catch(() => {
+          new Notice('Failed to update pinned linked content');
         });
+      }));
+      this.registerEvent(this.app.vault.on('create', (file) => {
+        for (const view of this.getAllViews()) {
+          view.handleLinkedContentCreated(file.path);
+        }
+        this.notifyConversationViewsChanged();
       }));
 
       this.addRibbonIcon('bot', 'Open Claudian', () => {
@@ -193,6 +287,46 @@ export default class ClaudianPlugin extends Plugin {
         name: 'Open chat view',
         callback: () => {
           void this.activateView();
+        },
+      });
+
+      this.addCommand({
+        id: 'open-collab',
+        name: t('collab.commands.open'),
+        checkCallback: checking => {
+          if (!this.isCollabEnabled()) return false;
+          if (!checking) void this.activateCollabSurface();
+          return true;
+        },
+      });
+
+      this.addCommand({
+        id: 'create-collab-project',
+        name: t('collab.commands.createProject'),
+        checkCallback: checking => {
+          if (!this.isCollabEnabled()) return false;
+          if (!checking) void this.openCreateCollabProject();
+          return true;
+        },
+      });
+
+      this.addCommand({
+        id: 'join-collab-project',
+        name: t('collab.commands.joinProject'),
+        checkCallback: checking => {
+          if (!this.isCollabEnabled()) return false;
+          if (!checking) void this.openJoinCollabProject();
+          return true;
+        },
+      });
+
+      this.addCommand({
+        id: 'resume-collab-project-setup',
+        name: t('collab.commands.resumeSetup'),
+        checkCallback: checking => {
+          if (!this.isCollabEnabled()) return false;
+          if (!checking) void this.resumeFirstCollabProjectSetup();
+          return true;
         },
       });
 
@@ -309,17 +443,27 @@ export default class ClaudianPlugin extends Plugin {
       });
 
       this.addSettingTab(new ClaudianSettingTab(this.app, this));
+      this.initializeCollabLayoutLifecycle();
+      if (this.isCollabEnabled()) void this.startAgentRuntime();
       this.scheduleRemainingSessionMetadataLoad();
     } finally {
       StartupProfiler.finishOnload();
     }
   }
 
+  // Collab reviews are session-only editor leaves and must not enter saved workspace state.
+  // eslint-disable-next-line obsidianmd/detach-leaves -- Intentional exception for ephemeral leaves.
   onunload(): void {
     this.isUnloading = true;
+    this.collabTransientSurfaces.closeAll();
+    this.app.workspace.detachLeavesOfType(COLLAB_DETAIL_VIEW_TYPE);
     if (this.sessionMetadataLoadTimer !== null) {
       window.clearTimeout(this.sessionMetadataLoadTimer);
       this.sessionMetadataLoadTimer = null;
+    }
+    if (this.collabHostRestoreTimer !== null) {
+      window.clearTimeout(this.collabHostRestoreTimer);
+      this.collabHostRestoreTimer = null;
     }
     StartupProfiler.freeze();
     this.applicationShutdownPromise ??= this.shutdownApplication();
@@ -327,6 +471,9 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private async shutdownApplication(): Promise<void> {
+    const featureConstruction = this.collabFeatureServicePromise;
+    const featureClose = this.collabFeatureService?.close();
+    const agentRuntimeClose = this.agentRuntime?.close().catch(() => undefined);
     await Promise.allSettled(
       this.getAllViews().map(view => view.prepareForPluginUnload()),
     );
@@ -339,6 +486,27 @@ export default class ClaudianPlugin extends Plugin {
       await ProviderWorkspaceRegistry.disposeInitialized();
     } catch {
       // Obsidian teardown has no error channel; workspace cleanup is best effort.
+    }
+    await agentRuntimeClose;
+    try {
+      await this.agentRuntime?.waitForWriteInvocations();
+    } catch {
+      // Continue cleanup if write-settlement tracking fails unexpectedly.
+    }
+    try {
+      this.collabComposerReferences.dispose();
+    } catch {
+      // Continue closing the Collab foundation if feature cleanup fails.
+    }
+    const constructedFeature = await featureConstruction?.catch(() => null);
+    await constructedFeature?.close().catch(() => undefined);
+    await featureClose?.catch(() => undefined);
+    await this.collabHostRestore?.catch(() => undefined);
+    this.collabPreparedReviews.clear();
+    try {
+      await this.collabFoundation?.close();
+    } catch {
+      // Obsidian teardown has no error channel; Collab cleanup is best effort.
     }
   }
 
@@ -360,6 +528,579 @@ export default class ClaudianPlugin extends Plugin {
     if (leaf) {
       await revealWorkspaceLeaf(workspace, leaf);
     }
+  }
+
+  private async activateCollabSurface(): Promise<boolean> {
+    if (!this.isCollabEnabled()) return false;
+    const router = new ResponsiveCollabRouter({
+      createMainTabTarget: async () => {
+        const leaf = this.app.workspace.getLeaf('tab');
+        if (!leaf) return null;
+        await leaf.setViewState({ active: true, type: VIEW_TYPE_CLAUDIAN });
+        const view = leaf.view;
+        if (!isClaudianView(view)) return null;
+        return {
+          prepare: async () => {
+            view.refreshDualPaneLayout();
+          },
+          reveal: () => revealWorkspaceLeaf(this.app.workspace, leaf),
+          select: () => view.selectCollabSurface(),
+        } satisfies ResponsiveCollabTarget;
+      },
+      listExistingTargets: () => this.app.workspace
+        .getLeavesOfType(VIEW_TYPE_CLAUDIAN)
+        .flatMap(leaf => {
+          const view = leaf.view;
+          return isClaudianView(view) ? [{
+            reveal: () => revealWorkspaceLeaf(this.app.workspace, leaf),
+            select: () => view.selectCollabSurface(),
+          } satisfies ResponsiveCollabTarget] : [];
+        }),
+    });
+    return router.open();
+  }
+
+  private createCollabSurface(
+    hostEl: HTMLElement,
+    leaf: WorkspaceLeaf,
+  ) {
+    return new DeferredCollabSurfaceController(hostEl, {
+      create: async () => {
+        if (!this.isCollabEnabled()) {
+          throw new Error('Collab is disabled in this Vault.');
+        }
+        const initialGitResolution = this.resolveCollabGit(false);
+        void initialGitResolution.catch(() => undefined);
+        const [feature, panelModule] = await Promise.all([
+          this.getCollabFeatureService(),
+          import('./features/collab/sidebar/CollabPanel'),
+        ]);
+        if (!this.isCollabEnabled()) {
+          throw new Error('Collab was disabled while loading.');
+        }
+        if (!feature) {
+          const unavailable = hostEl.createDiv({ cls: 'claudian-collab-panel-status' });
+          unavailable.setText(t('collab.notices.desktopRequired'));
+          return {
+            destroy: () => unavailable.remove(),
+            setActive: () => undefined,
+          };
+        }
+        return new panelModule.CollabPanel(hostEl, leaf, {
+          app: this.app,
+          configuredGitPath: () => this.settings.collabGitPath ?? '',
+          copyText: text => navigator.clipboard.writeText(text),
+          initialGitResolution,
+          onOpenConflict: (project, operationId, location, requestId) => {
+            void this.openCollabConflict(project.id, operationId, location, requestId);
+          },
+          onCreateTicket: project => {
+            void this.getCollabDetailViewCoordinator().open({
+              kind: 'ticket',
+              projectId: project.id,
+            });
+          },
+          onOpenRequest: (project, review, coordination, selectedPath) => {
+            void this.openPreparedCollabReview(
+              project.id,
+              review,
+              coordination,
+              selectedPath,
+            );
+          },
+          onReviewIntent: () => {
+            void preloadCollabDiffRenderer().catch(() => undefined);
+          },
+          onOpenPublicationReview: (project, review, selectedPath) => {
+            void this.openPreparedCollabPublicationReview(
+              project.id,
+              review,
+              selectedPath,
+            );
+          },
+          onOpenTicket: (project, ticketId) => {
+            return this.getCollabDetailViewCoordinator().open({
+              kind: 'ticket',
+              projectId: project.id,
+              ticketId,
+            });
+          },
+          onOpenWorkingTreeReview: (project, review, selectedPath) => {
+            void this.getCollabDetailViewCoordinator().open({
+              baseOid: review.baseOid,
+              headOid: review.headOid,
+              kind: 'working-tree',
+              projectId: project.id,
+              selectedPath,
+              snapshotId: review.snapshotId,
+            });
+          },
+          onSaveConfiguredGitPath: path => this.saveCollabGitPath(path),
+          port: feature,
+          preparedReviews: this.collabPreparedReviews,
+          projectSetup: feature,
+          resolveGit: rescan => this.resolveCollabGit(rescan),
+          ticketFocus: {
+            read: () => {
+              const leaf = this.app.workspace.getLeavesOfType(
+                COLLAB_DETAIL_VIEW_TYPE,
+              )[0];
+              const state = leaf?.getViewState().state;
+              if (
+                state?.kind !== 'ticket'
+                || typeof state.projectId !== 'string'
+                || typeof state.ticketId !== 'string'
+              ) return null;
+              return {
+                projectId: state.projectId,
+                ticketId: state.ticketId,
+              };
+            },
+            subscribe: listener => {
+              const layoutChange = this.app.workspace.on('layout-change', listener);
+              const activeLeafChange = this.app.workspace.on(
+                'active-leaf-change',
+                listener,
+              );
+              return {
+                dispose: () => {
+                  this.app.workspace.offref(layoutChange);
+                  this.app.workspace.offref(activeLeafChange);
+                },
+              };
+            },
+          },
+          transientSurfaces: this.collabTransientSurfaces,
+        });
+      },
+      errorText: t('collab.panel.loadFailed'),
+      loadingText: t('collab.panel.loading'),
+    });
+  }
+
+  private getCollabFeatureService(): Promise<CollabFeatureService | null> {
+    if (!this.isCollabEnabled()) return Promise.resolve(null);
+    if (this.collabFeatureService) {
+      return Promise.resolve(this.collabFeatureService);
+    }
+    const pending = this.collabFeatureServicePromise ?? this.createCollabFeatureService();
+    if (!this.collabFeatureServicePromise) {
+      this.collabFeatureServicePromise = pending;
+      const clearPending = () => {
+        if (this.collabFeatureServicePromise === pending) {
+          this.collabFeatureServicePromise = null;
+        }
+      };
+      void pending.then(clearPending, clearPending);
+    }
+    return pending;
+  }
+
+  private async createCollabFeatureService(): Promise<CollabFeatureService | null> {
+    const generation = this.collabLifecycleGeneration;
+    const vaultRoot = getVaultPath(this.app);
+    if (vaultRoot === null) return null;
+    const collab = await import('./app/collab');
+    if (!this.isCollabEnabled() || generation !== this.collabLifecycleGeneration) return null;
+    const foundation = new collab.ClaudianCollabService({
+      getConfiguredGitPath: () => this.settings.collabGitPath ?? '',
+      getProjectsFolder: () => this.settings.collabProjectsFolder,
+      obsidianConfigDirectory: this.app.vault.configDir,
+      vaultRoot,
+    });
+    const projectSetup = new collab.CollabProjectSetupService(foundation, {
+      getProjectsFolder: () => this.settings.collabProjectsFolder,
+      vaultRoot,
+    });
+    const { feature } = collab.createCollabFeatureSubcomposition({
+      foundation,
+      projectSetup,
+      vaultRoot,
+    });
+    if (!this.isCollabEnabled() || generation !== this.collabLifecycleGeneration) {
+      await feature.close();
+      await foundation.close();
+      return null;
+    }
+    this.collabFoundation = foundation;
+    this.collabFeatureService = feature;
+    return feature;
+  }
+
+  async getMainAgentDynamicSystemPromptSections(): Promise<readonly string[]> {
+    if (!this.isCollabEnabled()) return [];
+    const endpoint = await this.startAgentRuntime();
+    if (!endpoint || !this.isCollabEnabled()) return [];
+    const runtime = await import('./app/agent-runtime');
+    if (!this.isCollabEnabled()) return [];
+    return [runtime.buildCollabModeSystemPrompt(endpoint)];
+  }
+
+  private startAgentRuntime(): Promise<LocalAgentRuntimeHttpServerEndpoint | null> {
+    if (!this.isCollabEnabled()) return Promise.resolve(null);
+    if (this.agentRuntimeStartPromise) return this.agentRuntimeStartPromise;
+    const pending = (async (): Promise<LocalAgentRuntimeHttpServerEndpoint | null> => {
+      try {
+        let runtime = this.agentRuntime;
+        if (!runtime) {
+          const vaultRoot = getVaultPath(this.app);
+          if (vaultRoot === null) return null;
+          const agentRuntime = await import('./app/agent-runtime');
+          if (!this.isCollabEnabled()) return null;
+          runtime = new agentRuntime.LocalAgentRuntimeHttpServer(
+            new agentRuntime.AgentRuntimeGateway(
+              () => this.getCollabFeatureService(),
+            ),
+            {
+              portCandidates: agentRuntime.deriveAgentRuntimePortCandidates(vaultRoot),
+            },
+          );
+          this.agentRuntime = runtime;
+        }
+        const endpoint = await runtime.start();
+        if (this.isCollabEnabled()) return endpoint;
+        await runtime.close();
+        return null;
+      } catch {
+        return null;
+      }
+    })();
+    this.agentRuntimeStartPromise = pending;
+    void pending.then(endpoint => {
+      if (
+        endpoint === null
+        && this.isCollabEnabled()
+        && this.agentRuntimeStartPromise === pending
+      ) {
+        this.agentRuntimeStartPromise = null;
+      }
+    });
+    return pending;
+  }
+
+  private async resolveCollabGit(rescan: boolean): Promise<GitSetupResolution> {
+    const feature = await this.getCollabFeatureService();
+    if (!feature || !this.collabFoundation) return { status: 'missing' };
+    return toGitSetupResolution(await this.collabFoundation.resolveGitRuntime(rescan));
+  }
+
+  private async saveCollabGitPath(path: string): Promise<GitSetupResolution> {
+    await this.mutateSettings(settings => {
+      settings.collabGitPath = path;
+    });
+    return this.resolveCollabGit(true);
+  }
+
+  private async openCreateCollabProject(): Promise<void> {
+    const generation = this.collabLifecycleGeneration;
+    const feature = await this.getCollabFeatureService();
+    if (!this.isCurrentCollabLifecycle(generation)) return;
+    if (!feature) {
+      new Notice(t('collab.notices.desktopRequired'));
+      return;
+    }
+    const resolution = await this.resolveCollabGit(false);
+    if (!this.isCurrentCollabLifecycle(generation)) return;
+    if (resolution.status !== 'available') {
+      await this.activateCollabSurface();
+      if (!this.isCurrentCollabLifecycle(generation)) return;
+      new Notice(t('collab.notices.createRequiresGit'));
+      return;
+    }
+    const initialized = await feature.initialize();
+    if (!this.isCurrentCollabLifecycle(generation)) return;
+    if (initialized.status !== 'success') {
+      new Notice(t('collab.notices.initializationFailed'));
+      return;
+    }
+    const { CreateProjectModal } = await import(
+      './features/collab/modals/project/CreateProjectModal'
+    );
+    if (!this.isCurrentCollabLifecycle(generation)) return;
+    this.collabTransientSurfaces.open(onClosed => (
+      new CreateProjectModal(this.app, feature, { onClosed })
+    ));
+  }
+
+  private async openJoinCollabProject(): Promise<void> {
+    const generation = this.collabLifecycleGeneration;
+    const feature = await this.getCollabFeatureService();
+    if (!this.isCurrentCollabLifecycle(generation)) return;
+    if (!feature) {
+      new Notice(t('collab.notices.desktopRequired'));
+      return;
+    }
+    const resolution = await this.resolveCollabGit(false);
+    if (!this.isCurrentCollabLifecycle(generation)) return;
+    if (resolution.status !== 'available') {
+      await this.activateCollabSurface();
+      if (!this.isCurrentCollabLifecycle(generation)) return;
+      new Notice(t('collab.notices.joinRequiresGit'));
+      return;
+    }
+    const initialized = await feature.initialize();
+    if (!this.isCurrentCollabLifecycle(generation)) return;
+    if (initialized.status !== 'success') {
+      new Notice(t('collab.notices.initializationFailed'));
+      return;
+    }
+    const { JoinProjectModal } = await import(
+      './features/collab/modals/project/JoinProjectModal'
+    );
+    if (!this.isCurrentCollabLifecycle(generation)) return;
+    this.collabTransientSurfaces.open(onClosed => (
+      new JoinProjectModal(this.app, feature, { onClosed })
+    ));
+  }
+
+  private isCurrentCollabLifecycle(generation: number): boolean {
+    return !this.isUnloading
+      && this.isCollabEnabled()
+      && generation === this.collabLifecycleGeneration;
+  }
+
+  private async resumeFirstCollabProjectSetup(): Promise<void> {
+    const feature = await this.getCollabFeatureService();
+    if (!feature) return;
+    const initialized = await feature.initialize();
+    if (initialized.status !== 'success') {
+      await this.activateCollabSurface();
+      return;
+    }
+    const projects = await feature.listProjects();
+    if (projects.status !== 'success') return;
+    for (const project of projects.value) {
+      const operationId = await feature.getPendingSetupOperationId(project.id);
+      if (!operationId) continue;
+      const result = await feature.resumeSetup({ operationId });
+      new Notice(result.status === 'success'
+        ? t('collab.notices.setupReady', { name: result.value.name })
+        : t('collab.notices.setupNeedsAttention'));
+      return;
+    }
+    new Notice(t('collab.notices.noInterruptedSetup'));
+  }
+
+  private createCollabDetailViewPort(): CollabDetailViewPort {
+    return {
+      acceptRequest: async (...args) => (
+        (await this.requireCollabFeatureService()).acceptRequest(...args)
+      ),
+      addComment: async (...args) => (
+        (await this.requireCollabFeatureService()).addComment(...args)
+      ),
+      addTicketComment: async (...args) => (
+        (await this.requireCollabFeatureService()).addTicketComment(...args)
+      ),
+      closeTicket: async (...args) => (
+        (await this.requireCollabFeatureService()).closeTicket(...args)
+      ),
+      confirmPublish: async (...args) => (
+        (await this.requireCollabFeatureService()).confirmPublish(...args)
+      ),
+      createTicket: async (...args) => (
+        (await this.requireCollabFeatureService()).createTicket(...args)
+      ),
+      listTickets: async (...args) => (
+        (await this.requireCollabFeatureService()).listTickets(...args)
+      ),
+      prepareReview: async (...args) => (
+        (await this.requireCollabFeatureService()).prepareReview(...args)
+      ),
+      preparePublicationReview: async (...args) => (
+        (await this.requireCollabFeatureService()).preparePublicationReview(...args)
+      ),
+      prepareWorkingTreeReview: async (...args) => (
+        (await this.requireCollabFeatureService()).prepareWorkingTreeReview(...args)
+      ),
+      publish: async (...args) => (
+        (await this.requireCollabFeatureService()).publish(...args)
+      ),
+      readConflict: async (...args) => (
+        (await this.requireCollabFeatureService()).readConflict(...args)
+      ),
+      readConflictFile: async (...args) => (
+        (await this.requireCollabFeatureService()).readConflictFile(...args)
+      ),
+      readReviewFile: async (...args) => (
+        (await this.requireCollabFeatureService()).readReviewFile(...args)
+      ),
+      readPublicationReviewFile: async (...args) => (
+        (await this.requireCollabFeatureService()).readPublicationReviewFile(...args)
+      ),
+      readWorkingTreeReviewFile: async (...args) => (
+        (await this.requireCollabFeatureService()).readWorkingTreeReviewFile(...args)
+      ),
+      readSnapshot: async (...args) => (
+        (await this.requireCollabFeatureService()).readSnapshot(...args)
+      ),
+      readPublishDescription: async (...args) => (
+        (await this.requireCollabFeatureService()).readPublishDescription(...args)
+      ),
+      readTicket: async (...args) => (
+        (await this.requireCollabFeatureService()).readTicket(...args)
+      ),
+      reopenTicket: async (...args) => (
+        (await this.requireCollabFeatureService()).reopenTicket(...args)
+      ),
+      subscribe: listener => {
+        if (!this.isCollabEnabled()) return { dispose: () => undefined };
+        let disposed = false;
+        let subscription: { dispose(): void } | null = null;
+        void this.requireCollabFeatureService().then(feature => {
+          if (disposed) return;
+          subscription = feature.subscribe(listener);
+        }).catch(() => undefined);
+        return {
+          dispose: () => {
+            disposed = true;
+            subscription?.dispose();
+          },
+        };
+      },
+      updateRequestMetadata: async (...args) => (
+        (await this.requireCollabFeatureService()).updateRequestMetadata(...args)
+      ),
+      updateTicketContent: async (...args) => (
+        (await this.requireCollabFeatureService()).updateTicketContent(...args)
+      ),
+    };
+  }
+
+  private async openCollabProjectFile(projectId: string, filePath: string): Promise<void> {
+    try {
+      const feature = await this.requireCollabFeatureService();
+      const project = feature.state.projects.find(candidate => candidate.id === projectId);
+      if (!project) throw new Error('Collab Project is unavailable');
+      const vaultPath = normalizePath(`${project.workspacePath}/${filePath}`);
+      const file = this.app.vault.getAbstractFileByPath(vaultPath);
+      if (!(file instanceof TFile)) throw new Error('Collab Project file is unavailable');
+      await this.app.workspace.getLeaf('tab').openFile(file);
+    } catch {
+      new Notice(t('collab.review.fileLoadFailed'));
+    }
+  }
+
+  private async openCollabConflict(
+    projectId: string,
+    operationId: string,
+    location: 'my-changes' | 'request',
+    requestId?: string,
+  ): Promise<void> {
+    try {
+      const feature = await this.requireCollabFeatureService();
+      const result = await feature.readConflict(operationId);
+      if (
+        result.status !== 'success'
+        || result.value.descriptor.projectId !== projectId
+      ) {
+        new Notice(t('collab.notices.conflictUnavailable'));
+        return;
+      }
+      await this.getCollabDetailViewCoordinator().open({
+        kind: 'conflict',
+        location,
+        operationId,
+        projectId,
+        ...(location === 'request' && requestId ? { requestId } : {}),
+      });
+    } catch {
+      new Notice(t('collab.notices.conflictUnavailable'));
+    }
+  }
+
+  private async openCollabRequest(projectId: string, requestId: string): Promise<void> {
+    try {
+      const feature = await this.requireCollabFeatureService();
+      const [reviewResult, snapshotResult] = await Promise.all([
+        feature.prepareReview(projectId, requestId),
+        feature.readSnapshot(projectId),
+      ]);
+      if (reviewResult.status !== 'success' || snapshotResult.status !== 'success') {
+        new Notice(t('collab.notices.reviewUnavailable'));
+        return;
+      }
+      const review = reviewResult.value;
+      await this.openPreparedCollabReview(
+        projectId,
+        review,
+        snapshotResult.value,
+        review.files[0]?.path,
+      );
+    } catch {
+      new Notice(t('collab.notices.reviewUnavailable'));
+    }
+  }
+
+  private async openPreparedCollabReview(
+    projectId: string,
+    review: CollabRequestReview,
+    coordination: CollabCoordinationSnapshot,
+    selectedPath?: string,
+  ): Promise<void> {
+    if (review.projectId !== projectId) {
+      new Notice(t('collab.notices.reviewUnavailable'));
+      return;
+    }
+    try {
+      const state = {
+        comparisonBaseOid: review.comparisonBaseOid,
+        comparisonTargetOid: review.comparisonTargetOid,
+        kind: 'request' as const,
+        projectId,
+        requestId: review.detail.request.id,
+        reviewedHeadOid: review.detail.reviewedHeadOid,
+        reviewedMainOid: review.detail.currentMainOid,
+        ...(selectedPath ? { selectedPath } : {}),
+      };
+      await this.getCollabDetailViewCoordinator().open(
+        state,
+        { coordination, review },
+      );
+    } catch {
+      new Notice(t('collab.notices.reviewUnavailable'));
+    }
+  }
+
+  private async openPreparedCollabPublicationReview(
+    projectId: string,
+    review: CollabPublicationReview,
+    selectedPath?: string,
+  ): Promise<void> {
+    if (review.projectId !== projectId) {
+      new Notice(t('collab.notices.reviewUnavailable'));
+      return;
+    }
+    try {
+      const selected = review.files.find(file => file.path === selectedPath) ?? review.files[0];
+      this.collabPreparedReviews.storePublication(review);
+      await this.getCollabDetailViewCoordinator().open({
+        candidateOid: review.candidateOid,
+        comparisonBaseOid: review.comparisonBaseOid,
+        comparisonTargetOid: review.comparisonTargetOid,
+        currentMainOid: review.currentMainOid,
+        kind: 'publication',
+        operationId: review.operationId,
+        projectId,
+        ...(selected ? { selectedPath: selected.path } : {}),
+      });
+    } catch {
+      new Notice(t('collab.notices.reviewUnavailable'));
+    }
+  }
+
+  private async requireCollabFeatureService(): Promise<CollabFeatureService> {
+    const feature = await this.getCollabFeatureService();
+    if (!feature) throw new Error(t('collab.notices.desktopRequired'));
+    return feature;
+  }
+
+  private getCollabDetailViewCoordinator(): CollabDetailViewCoordinator {
+    this.collabDetailViewCoordinator ??= new CollabDetailViewCoordinator(
+      this.app.workspace,
+      this.collabPreparedReviews,
+    );
+    return this.collabDetailViewCoordinator;
   }
 
   private getLeafForPlacement(placement: ChatViewPlacement): WorkspaceLeaf | null {
@@ -454,7 +1195,7 @@ export default class ClaudianPlugin extends Plugin {
     this.chatModelSelectionCoordinator = new ChatModelSelectionCoordinator(
       this.settingsCoordinator,
     );
-    this.pinnedLinkedNotePaths = new PinnedLinkedNotePathCoordinator(
+    this.pinnedLinkedContentPaths = new PinnedLinkedContentPathCoordinator(
       this.settingsCoordinator,
     );
     const didNormalizePendingSessionInvalidations = this.syncPendingSessionInvalidations();
@@ -587,6 +1328,113 @@ export default class ClaudianPlugin extends Plugin {
     return records.filter(
       (record): record is SessionMetadataReadResult => record !== null,
     );
+  }
+
+  private async applyCollabEnabled(enabled: boolean): Promise<void> {
+    if (this.isUnloading) return;
+    this.collabLifecycleGeneration += 1;
+    if (!enabled) this.collabTransientSurfaces.closeAll();
+    if (this.settings.collabEnabled !== enabled) {
+      await this.mutateSettings(settings => {
+        settings.collabEnabled = enabled;
+      });
+    }
+    this.collabComposerReferences.refreshAvailability();
+    for (const view of this.getAllViews()) view.refreshCollabAvailability();
+    if (enabled) {
+      void this.startAgentRuntime();
+      this.scheduleCollabHostRestore();
+      return;
+    }
+    this.app.workspace.detachLeavesOfType(COLLAB_DETAIL_VIEW_TYPE);
+    await this.closeCollabOwners();
+  }
+
+  private async closeCollabOwners(): Promise<void> {
+    if (this.collabHostRestoreTimer !== null) {
+      window.clearTimeout(this.collabHostRestoreTimer);
+      this.collabHostRestoreTimer = null;
+    }
+    const feature = this.collabFeatureService;
+    const featureConstruction = this.collabFeatureServicePromise;
+    const hostRestore = this.collabHostRestore;
+    const featureClose = feature?.close();
+    const runtimeStart = this.agentRuntimeStartPromise;
+    await runtimeStart?.catch(() => null);
+    const runtime = this.agentRuntime;
+    await runtime?.close().catch(() => undefined);
+    await runtime?.waitForWriteInvocations().catch(() => undefined);
+    await hostRestore?.catch(() => undefined);
+    const constructed = await featureConstruction?.catch(() => null);
+    await constructed?.close().catch(() => undefined);
+    await featureClose?.catch(() => undefined);
+    await this.collabDetailViewCoordinator?.close().catch(() => undefined);
+    this.collabDetailViewCoordinator = null;
+    this.collabPreparedReviews.clear();
+    await this.collabFoundation?.close().catch(() => undefined);
+    this.agentRuntime = null;
+    this.agentRuntimeStartPromise = null;
+    this.collabFeatureService = null;
+    this.collabFeatureServicePromise = null;
+    this.collabFoundation = null;
+    this.collabHostRestore = null;
+    this.collabHostRestoreRetryDelayMs = 1_000;
+  }
+
+  private initializeCollabLayoutLifecycle(): void {
+    const afterLayoutReady = (): void => {
+      if (this.isUnloading) return;
+      this.collabLayoutReady = true;
+      this.app.workspace.detachLeavesOfType(COLLAB_DETAIL_VIEW_TYPE);
+      if (this.isCollabEnabled()) this.scheduleCollabHostRestore();
+    };
+
+    if (typeof this.app.workspace.onLayoutReady === 'function') {
+      this.app.workspace.onLayoutReady(afterLayoutReady);
+    } else {
+      afterLayoutReady();
+    }
+  }
+
+  private scheduleCollabHostRestore(delayMs = 0): void {
+    if (
+      !this.collabLayoutReady
+      || !this.isCollabEnabled()
+      || this.collabHostRestore
+      || this.collabHostRestoreTimer !== null
+    ) return;
+    this.collabHostRestoreTimer = window.setTimeout(() => {
+      this.collabHostRestoreTimer = null;
+      this.startCollabHostRestore();
+    }, delayMs);
+  }
+
+  private startCollabHostRestore(): void {
+    if (!this.isCollabEnabled() || this.collabHostRestore) return;
+    let retry = false;
+    const restore = (async () => {
+      const feature = await this.getCollabFeatureService();
+      if (!feature || !this.isCollabEnabled()) return;
+      await feature.restoreLifecycle().catch(() => {
+        retry = true;
+      });
+      if (!this.isCollabEnabled()) return;
+      await feature.restoreHosts().catch(() => {
+        retry = true;
+      });
+    })().catch(() => {
+      retry = true;
+    }).finally(() => {
+      if (this.collabHostRestore === restore) this.collabHostRestore = null;
+      if (retry && this.isCollabEnabled() && !this.isUnloading) {
+        const delay = this.collabHostRestoreRetryDelayMs;
+        this.collabHostRestoreRetryDelayMs = Math.min(delay * 2, 30_000);
+        this.scheduleCollabHostRestore(delay);
+      } else if (!retry) {
+        this.collabHostRestoreRetryDelayMs = 1_000;
+      }
+    });
+    this.collabHostRestore = restore;
   }
 
   private scheduleRemainingSessionMetadataLoad(): void {
@@ -910,7 +1758,7 @@ export default class ClaudianPlugin extends Plugin {
       providerState: meta.providerState,
       modelRecoverySource: meta.modelRecoverySource,
       messages: [],
-      currentNote: meta.currentNote,
+      linkedContentPath: meta.linkedContentPath,
       isPinned: meta.isPinned,
       isArchived: meta.isArchived,
       externalContextPaths: meta.externalContextPaths,
@@ -935,6 +1783,54 @@ export default class ClaudianPlugin extends Plugin {
     onCommitted?: SettingsCommit<ClaudianSettings>,
   ): Promise<void> {
     await this.settingsCoordinator.mutate(mutation, onCommitted);
+  }
+
+  isCollabEnabled(): boolean {
+    return !this.isUnloading && this.settings?.collabEnabled === true;
+  }
+
+  async checkCollabGitInstallation(
+    rescan = false,
+  ): Promise<'available' | 'unavailable'> {
+    if (!this.collabSettingsGitResolver) {
+      const { GitRuntimeResolver } = await import(
+        './app/collab/git/GitRuntimeResolver'
+      );
+      this.collabSettingsGitResolver = new GitRuntimeResolver();
+    }
+    const input = {
+      configuredPath: this.settings.collabGitPath ?? '',
+      pathEnvironment: process.env.PATH,
+    };
+    const resolution = rescan
+      ? await this.collabSettingsGitResolver.rescan(input)
+      : await this.collabSettingsGitResolver.resolve(input);
+    return resolution.status === 'available' ? 'available' : 'unavailable';
+  }
+
+  setCollabEnabled(enabled: boolean): Promise<void> {
+    const transition = this.collabLifecycleTail.then(
+      () => this.applyCollabEnabled(enabled),
+      () => this.applyCollabEnabled(enabled),
+    );
+    this.collabLifecycleTail = transition.catch(() => undefined);
+    return transition;
+  }
+
+  async setCollabProjectsFolder(raw: string): Promise<
+    { readonly ok: true; readonly value: string }
+    | { readonly message: string; readonly ok: false }
+  > {
+    const parsed = parseCollabProjectsFolder(raw, {
+      obsidianConfigDirectory: this.app.vault.configDir,
+    });
+    if (!parsed.ok) return { message: parsed.message, ok: false };
+    if (this.settings.collabProjectsFolder !== parsed.value) {
+      await this.mutateSettings(settings => {
+        settings.collabProjectsFolder = parsed.value;
+      });
+    }
+    return { ok: true, value: parsed.value };
   }
 
   getAgentSkillResourceGeneration(): number {
@@ -1264,7 +2160,7 @@ export default class ClaudianPlugin extends Plugin {
     providerId?: ProviderId;
     sessionId?: string;
     selectedModel?: string;
-    currentNote?: string;
+    linkedContentPath?: string;
   }): Promise<Conversation> {
     const conversation = await this.conversationRepository.create(options);
     this.notifyConversationViewsChanged();
@@ -1332,8 +2228,8 @@ export default class ClaudianPlugin extends Plugin {
     this.notifyConversationViewsChanged();
   }
 
-  async setLinkedNotePinned(notePath: string, isPinned: boolean): Promise<void> {
-    const changed = await this.pinnedLinkedNotePaths.setPinned(notePath, isPinned);
+  async setLinkedContentPinned(contentPath: string, isPinned: boolean): Promise<void> {
+    const changed = await this.pinnedLinkedContentPaths.setPinned(contentPath, isPinned);
     if (changed) {
       this.notifyConversationViewsChanged();
     }
@@ -1344,39 +2240,61 @@ export default class ClaudianPlugin extends Plugin {
     this.notifyConversationViewsChanged();
   }
 
-  private async handleLinkedNoteRename(
+  private async handleLinkedContentRename(
     file: TAbstractFile,
     oldPath: string,
   ): Promise<void> {
-    await this.conversationRepository.rewriteCurrentNotePaths(oldPath, file.path, {
-      includeDescendants: file instanceof TFolder,
-    });
-    await this.pinnedLinkedNotePaths.rewritePaths(
+    const includeDescendants = file instanceof TFolder;
+    for (const view of this.getAllViews()) {
+      view.handleLinkedContentRenamed(oldPath, file.path, includeDescendants);
+    }
+    await this.rewriteLinkedContentPaths(oldPath, file.path, includeDescendants);
+    await this.pinnedLinkedContentPaths.rewritePaths(
       oldPath,
       file.path,
-      file instanceof TFolder,
+      includeDescendants,
     );
     this.notifyConversationViewsChanged();
   }
 
-  private async handlePinnedLinkedNoteDeleted(file: TAbstractFile): Promise<void> {
-    const removed = await this.pinnedLinkedNotePaths.removePaths(
-      file.path,
-      file instanceof TFolder,
-    );
-    if (removed) {
+  private async handlePinnedLinkedContentDeleted(file: TAbstractFile): Promise<void> {
+    const includeDescendants = file instanceof TFolder;
+    for (const view of this.getAllViews()) {
+      view.handleLinkedContentDeleted(file.path, includeDescendants);
+    }
+    try {
+      await this.pinnedLinkedContentPaths.removePaths(
+        file.path,
+        includeDescendants,
+      );
+    } finally {
       this.notifyConversationViewsChanged();
     }
   }
 
-  async updateConversation(id: string, updates: Partial<Conversation>): Promise<void> {
+  async rewriteLinkedContentPaths(
+    oldPath: string,
+    newPath: string,
+    includeDescendants: boolean,
+  ): Promise<void> {
+    await this.conversationRepository.rewriteLinkedContentPaths(oldPath, newPath, {
+      includeDescendants,
+    });
+    this.notifyConversationViewsChanged();
+  }
+
+  async updateConversation(id: string, updates: ConversationMutablePatch): Promise<void> {
     await this.conversationRepository.update(id, updates);
     this.notifyConversationViewsChanged();
   }
 
   private notifyConversationViewsChanged(): void {
     for (const view of this.getAllViews()) {
-      view.notifyConversationListChanged();
+      try {
+        view.notifyConversationListChanged();
+      } catch {
+        // UI projection failures must not roll back a committed repository mutation.
+      }
     }
   }
 
