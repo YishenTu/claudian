@@ -499,6 +499,12 @@ describe('ConflictScratchGitRepository', () => {
     });
     const git = new GitRepositoryService(runner);
     await git.initializeWorkingRepository(repositoryPath);
+    await git.configureLocalRepository(repositoryPath, {
+      memberId: 'member-a',
+      personalRef: 'refs/heads/members/member-a',
+      projectId: 'project-a',
+      userDisplayName: 'Member A',
+    });
     const basePath = scenario === 'binary'
       ? 'image.bin'
       : scenario === 'rename-delete'

@@ -144,6 +144,12 @@ describe('GitRepositoryService integration', () => {
     const repositoryPath = path.join(root, 'read-session');
     await mkdir(repositoryPath);
     await service.initializeWorkingRepository(repositoryPath);
+    await service.configureLocalRepository(repositoryPath, {
+      memberId: 'member-reader',
+      personalRef: 'refs/heads/members/member-reader',
+      projectId: 'project-read-session',
+      userDisplayName: 'Reader',
+    });
     await service.stageAll(repositoryPath);
     const headOid = await service.createCommitFromIndex(repositoryPath, {
       expectedRefOid: null,

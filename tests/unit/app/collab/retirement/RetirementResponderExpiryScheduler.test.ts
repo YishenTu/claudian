@@ -7,7 +7,7 @@ describe('RetirementResponderExpiryScheduler', () => {
   afterEach(() => jest.useRealTimers());
 
   it('keeps a 30-day responder alive through bounded timers and expires it once', async () => {
-    jest.setSystemTime(new Date('2026-08-13T00:00:00.000Z'));
+    jest.setSystemTime(Date.parse('2026-08-13T00:00:00.000Z'));
     const onExpire = jest.fn().mockResolvedValue(undefined);
     const subject = new RetirementResponderExpiryScheduler(onExpire);
     subject.schedule('project-alpha', '2026-09-12T00:00:00.000Z');
@@ -20,7 +20,7 @@ describe('RetirementResponderExpiryScheduler', () => {
   });
 
   it('retries a failed expiry cleanup without a zero-delay loop', async () => {
-    jest.setSystemTime(new Date('2026-09-12T00:00:00.000Z'));
+    jest.setSystemTime(Date.parse('2026-09-12T00:00:00.000Z'));
     const onExpire = jest.fn()
       .mockRejectedValueOnce(new Error('disk busy'))
       .mockResolvedValueOnce(undefined);

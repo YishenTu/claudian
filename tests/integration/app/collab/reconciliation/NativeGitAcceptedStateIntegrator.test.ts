@@ -235,6 +235,12 @@ describe('NativeGitAcceptedStateIntegrator', () => {
     const git = new GitRepositoryService(runner);
     await mkdir(repositoryPath, { recursive: true });
     await git.initializeWorkingRepository(repositoryPath);
+    await git.configureLocalRepository(repositoryPath, {
+      memberId: MEMBER_ID,
+      personalRef: PERSONAL_REF,
+      projectId: 'project-a',
+      userDisplayName: 'Member A',
+    });
     const conflictPath = scenario === 'delete-modify-space'
       ? 'note with spaces.md'
       : 'note.md';

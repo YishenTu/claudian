@@ -178,6 +178,12 @@ describe('ConflictResolution integration', () => {
     });
     const git = new GitRepositoryService(runner);
     await git.initializeWorkingRepository(repositoryPath);
+    await git.configureLocalRepository(repositoryPath, {
+      memberId: 'member-a',
+      personalRef: 'refs/heads/members/member-a',
+      projectId: 'project-a',
+      userDisplayName: 'Member A',
+    });
     await writeFile(path.join(repositoryPath, 'note.md'), 'base\n');
     await git.stageAll(repositoryPath);
     const baseOid = await git.createCommitFromIndex(repositoryPath, {

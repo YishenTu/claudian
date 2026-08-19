@@ -355,6 +355,12 @@ describe('GitHttpBackendProxy integration', () => {
       remoteUrl: url,
     });
     const personalRef = collabMemberRef(MEMBER_ID);
+    await service.configureLocalRepository(clonePath, {
+      memberId: MEMBER_ID,
+      personalRef,
+      projectId: PROJECT_ID,
+      userDisplayName: 'Alice',
+    });
     const initialOid = await service.resolveRef(clonePath, personalRef);
     const mainOid = await service.resolveRef(bareRepositoryPath, 'refs/heads/main');
     expect(initialOid).toBe(mainOid);
