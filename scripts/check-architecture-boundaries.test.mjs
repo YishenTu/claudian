@@ -641,6 +641,14 @@ test('CI gates releases, cross-platform behavior, protocol changes, and security
   assert.match(ci, /cross-platform-smoke:/);
   assert.match(ci, /windows-latest/);
   assert.match(ci, /macos-latest/);
+  assert.match(ci, /cross-platform-collab-scope:/);
+  assert.match(ci, /packages\/collab-protocol\/\*/);
+  assert.match(ci, /src\/app\/collab\/\*/);
+  assert.match(ci, /src\/core\/collab\/\*/);
+  assert.match(ci, /src\/features\/collab\/\*/);
+  assert.match(ci, /tests\/\*collab\/\*/);
+  assert.match(ci, /needs:\s*cross-platform-collab-scope/);
+  assert.match(ci, /needs\.cross-platform-collab-scope\.outputs\.run == 'true'/);
 
   assert.match(release, /uses:\s*\.\/\.github\/workflows\/ci\.yml/);
   assert.match(release, /needs:\s*verify/);

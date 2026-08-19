@@ -132,7 +132,65 @@ jobs:
       - name: Test
         run: npm run test
 
+  cross-platform-collab-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine whether cross-platform Collab smoke is required
+        id: scope
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          run_smoke=false
+          while IFS= read -r changed_path; do
+            case "$changed_path" in
+              packages/collab-protocol/* | \
+              src/app/collab/* | \
+              src/core/collab/* | \
+              src/features/collab/* | \
+              src/style/features/collab-* | \
+              tests/*collab/* | \
+              src/utils/windowsCmdShim.ts | \
+              src/core/process/ManagedStdioProcess.ts | \
+              tests/unit/utils/windowsCmdShim.test.ts | \
+              tests/unit/core/process/ManagedStdioProcess.test.ts | \
+              scripts/*collab* | \
+              scripts/build* | \
+              scripts/check-architecture-boundaries.test.mjs | \
+              scripts/compressedStaticAssets.js | \
+              esbuild.config.mjs | \
+              package.json | \
+              package-lock.json | \
+              .node-version | \
+              tsconfig*.json | \
+              .github/workflows/ci.yml | \
+              .github/workflows/release.yml | \
+              .github/workflows/nightly.yml)
+                run_smoke=true
+                break
+                ;;
+            esac
+          done < <(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+
+          echo "run=$run_smoke" >> "$GITHUB_OUTPUT"
+
   cross-platform-smoke:
+    needs: cross-platform-collab-scope
+    if: needs.cross-platform-collab-scope.outputs.run == 'true'
     name: Cross-platform Collab smoke (${{ matrix.os }})
     strategy:
       fail-fast: false
