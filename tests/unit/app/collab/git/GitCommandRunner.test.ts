@@ -213,7 +213,10 @@ describe('GitCommandRunner', () => {
 
     expect(failure).toMatchObject({
       code: 'operation-failed',
-      safeContext: { exitCode: 7 },
+      safeContext: {
+        exitCode: 7,
+        status: expect.any(String),
+      },
     });
     expect(JSON.stringify(failure)).not.toContain(secret);
     expect(JSON.stringify(failure)).not.toContain(workingDirectory);
