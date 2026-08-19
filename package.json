@@ -21,6 +21,7 @@
     "check:performance": "node scripts/check-startup-performance.mjs",
     "pretypecheck": "npm run build:protocol",
     "typecheck": "tsc --noEmit",
+    "prelint": "npm run build:protocol",
     "lint": "eslint \"{src,tests,packages/collab-protocol/src,packages/collab-protocol/tests}/**/*.ts\"",
     "lint:fix": "npm run lint -- --fix",
     "pretest": "npm run build:protocol",
