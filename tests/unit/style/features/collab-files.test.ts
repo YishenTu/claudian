@@ -25,6 +25,9 @@ describe('Collab changed-file styles', () => {
     expect(publishCss).toContain('.claudian-collab-file-kind[data-kind="added"]');
     expect(publishCss).toContain('.claudian-collab-file-kind[data-kind="deleted"]');
     expect(publishCss).toContain('.claudian-collab-file-path');
+    expect(publishCss).toMatch(
+      /button\.claudian-collab-file-button:is\(:hover, :focus-visible\)\s*\{[^}]*background:\s*var\(--background-modifier-hover\)/s,
+    );
 
     const changedFileCss = publishCss + requestsCss;
     expect(changedFileCss).not.toContain('claudian-collab-publish-files');

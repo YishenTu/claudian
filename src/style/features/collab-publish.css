@@ -108,10 +108,17 @@
   text-align: start;
 }
 
-.claudian-collab-panel button.claudian-collab-file-button:is(:hover, :focus-visible, :active, [aria-pressed="true"]) {
+.claudian-collab-panel button.claudian-collab-file-button:is(:active, [aria-pressed="true"]) {
   color: var(--text-normal);
   border: 0;
   background: transparent;
+  box-shadow: none;
+}
+
+.claudian-collab-panel button.claudian-collab-file-button:is(:hover, :focus-visible) {
+  color: var(--text-normal);
+  border: 0;
+  background: var(--background-modifier-hover);
   box-shadow: none;
 }
 

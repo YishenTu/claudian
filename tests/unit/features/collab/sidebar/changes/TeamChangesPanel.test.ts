@@ -362,7 +362,16 @@ describe('TeamChangesPanel', () => {
     memberContainer.querySelector<HTMLButtonElement>(
       '[data-path="notes/request-team.md"]',
     )?.click();
-    expect(onOpenFile).toHaveBeenCalledTimes(openCount);
+    expect(onOpenFile).toHaveBeenCalledTimes(openCount + 1);
+    expect(onOpenFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          request: expect.objectContaining({ id: 'request-team' }),
+        }),
+      }),
+      expect.objectContaining({ snapshot: expect.any(Object) }),
+      'notes/request-team.md',
+    );
   });
 
   it('owns conflict resolution for the current Member open request', async () => {
@@ -451,6 +460,13 @@ describe('TeamChangesPanel', () => {
     ]);
     expect(firstFile.closest('.claudian-collab-file-list')?.getAttribute('aria-label'))
       .toBe('2 changed files');
+    const firstFileOpenCount = onOpenPublicationReview.mock.calls.length;
+    firstFile.click();
+    expect(onOpenPublicationReview).toHaveBeenCalledTimes(firstFileOpenCount + 1);
+    expect(onOpenPublicationReview).toHaveBeenLastCalledWith(
+      prepared,
+      'notes/resolved-a.md',
+    );
     firstFile.focus();
     selectedFile.click();
     expect(onOpenPublicationReview).toHaveBeenLastCalledWith(
@@ -480,9 +496,16 @@ describe('TeamChangesPanel', () => {
     )!;
     requestRow().click();
     await flush();
+    expect(requestRow().getAttribute('aria-expanded')).toBe('true');
+    expect(onOpenFile).toHaveBeenCalledTimes(1);
+
     requestRow().click();
+    expect(requestRow().getAttribute('aria-expanded')).toBe('false');
+    expect(onOpenFile).toHaveBeenCalledTimes(1);
+
     requestRow().click();
     await flush();
+    expect(requestRow().getAttribute('aria-expanded')).toBe('true');
 
     expect(test.port.prepareReview.mock.calls.filter(
       call => call[1] === 'request-team',

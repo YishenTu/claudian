@@ -413,8 +413,9 @@ export class TeamChangesPanel {
         onSelect: path => {
           const currentSelection = this.publicationFor(request)?.selectedPath
             ?? publication.review.files[0]?.path;
-          if (path === currentSelection) return;
-          this.ownRequestActivity = { ...publication, selectedPath: path };
+          if (path !== currentSelection) {
+            this.ownRequestActivity = { ...publication, selectedPath: path };
+          }
           this.options.onOpenPublicationReview?.(publication.review, path);
         },
         selectedPath,
@@ -472,8 +473,9 @@ export class TeamChangesPanel {
         const currentSelection = this.expandedReviewState?.kind === 'ready'
           ? this.expandedReviewState.selectedPath
           : null;
-        if (path === currentSelection) return;
-        this.expandedReviewState = { ...state, selectedPath: path };
+        if (path !== currentSelection) {
+          this.expandedReviewState = { ...state, selectedPath: path };
+        }
         this.options.onOpenFile(review, coordination, path);
       },
       selectedPath: state.selectedPath,
