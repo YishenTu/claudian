@@ -23,6 +23,7 @@
 ## Compatibility and versioning
 
 - Package SemVer (pre-1.0) is independent from the wire-protocol version. `COLLAB_PROTOCOL_VERSION` is currently `1`; the supported wire range is exactly `[1, 1]`. Existing application LAN control version `7` is independently owned under `src/app/collab/lan/`.
+- `contract-snapshot.json` is the committed public-contract baseline. Regenerate it with repository-root `npm run check:protocol-compatibility -- --write` only for an intentional contract change; any detected contract change requires monotonic increases to both package SemVer and `COLLAB_PROTOCOL_VERSION`. CI compares the proposed snapshot with the merge-base snapshot and rejects rollbacks or unversioned drift.
 - Envelope decoders reject unknown fields and unsupported protocol versions (fail closed). Operation compatibility is decoder-defined and pinned by fixtures; decoded DTOs must not retain unrecognized input properties. Unknown operation kinds have no codec and fail at registry lookup.
 - Any change to envelope, DTO, or operation payload shape, or to the operation inventory, is a wire-breaking change requiring a new wire-protocol version; package SemVer alone never signals wire compatibility.
 - The package currently owns only the decision-complete request/Ticket/Accept semantics. Do not add Project snapshot, event, onboarding, lifecycle, or HTTP binding contracts until their exact Cloud behavior is accepted. In particular, publish no shared event kind until its exact redacted payload codec and snapshot-fallback behavior are decision-complete.

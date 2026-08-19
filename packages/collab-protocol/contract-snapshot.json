@@ -1,0 +1,544 @@
+{
+  "contract": {
+    "decoderBehaviorDigests": [
+      {
+        "path": "src/CollabControlOperationCodecs.ts",
+        "sha256": "335fd418ae8d9bc99cb73e7b5c7ee6ba74261e0490ad1ecfb0ea096cd0bb20af"
+      },
+      {
+        "path": "src/CollabProtocol.ts",
+        "sha256": "c09dbf818640525fe8047f205b40e23f0db8805395df390814707382256c30f7"
+      },
+      {
+        "path": "src/CollabRequestTicketRequestCodecs.ts",
+        "sha256": "0548176fc3de34e86688d68e454d1df244b051cf480f8c5d5a936b95d8415f22"
+      },
+      {
+        "path": "src/CollabRequestTicketResponseCodecs.ts",
+        "sha256": "0d0ee76e686d74681e330e106ee581344ca98e79f1ff894a435769f07c407dfa"
+      },
+      {
+        "path": "src/CollabValidation.ts",
+        "sha256": "ddba3d734c63ba21ab6f69c097c0817629acfd176dcffb7e68e850d5cd584f71"
+      }
+    ],
+    "errorCodes": [
+      "protocol-version-unsupported",
+      "protocol-payload-invalid",
+      "project-not-found",
+      "quota-exceeded",
+      "authentication-failed",
+      "authorization-denied",
+      "membership-revoked",
+      "stale-main",
+      "stale-request-head",
+      "personal-ref-diverged",
+      "content-conflict",
+      "description-required",
+      "request-not-open",
+      "request-head-not-pushed",
+      "ticket-not-found",
+      "resolving-ticket-reference-not-found",
+      "ticket-not-open",
+      "stale-ticket",
+      "stale-request-metadata",
+      "authority-not-synchronized",
+      "idempotency-conflict",
+      "acceptance-recovery-required",
+      "authority-integrity-error",
+      "operation-timeout",
+      "operation-failed"
+    ],
+    "exports": {
+      ".": {
+        "default": "./dist/index.js",
+        "types": "./dist/index.d.ts"
+      }
+    },
+    "gitRefs": {
+      "main": "refs/heads/main",
+      "memberPrefix": "refs/heads/members/"
+    },
+    "limits": {
+      "defaultTicketPageSize": 50,
+      "maxBlobBytes": 52428800,
+      "maxChangedPaths": 2000,
+      "maxCommentBytes": 16384,
+      "maxPathSegmentUtf16": 120,
+      "maxRepositoryPathUtf16": 240,
+      "maxRequestDescriptionBytes": 16384,
+      "maxRequestTicketRelations": 32,
+      "maxTicketBodyBytes": 32768,
+      "maxTicketCommentBytes": 16384,
+      "maxTicketComments": 500,
+      "maxTicketPageSize": 100,
+      "maxTicketTitleUtf16": 200
+    },
+    "operations": [
+      "acceptRequest",
+      "closeTicket",
+      "createComment",
+      "createTicket",
+      "createTicketComment",
+      "ensureMyRequest",
+      "getRequest",
+      "getTicket",
+      "listTickets",
+      "reopenTicket",
+      "updateMyRequestMetadata",
+      "updateTicketContent"
+    ],
+    "publicDeclarations": [
+      {
+        "declaration": "export interface AcceptRequest extends CollabMutationContext {\n    requestId: CollabRequestId;\n    expectedMainOid: CollabGitOid;\n    expectedHeadOid: CollabGitOid;\n    expectedRequestRevision: number;\n    expectedResolvingTickets: readonly CollabResolvingTicketExpectation[];\n}",
+        "exportName": "AcceptRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface AcceptResponse {\n    request: CollabChangeRequest;\n    mainOid: CollabGitOid;\n    mergeCommitOid: CollabGitOid;\n}",
+        "exportName": "AcceptResponse",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface ChangeTicketStatusRequest extends CollabMutationContext {\n    ticketId: CollabTicketId;\n    expectedRevision: number;\n}",
+        "exportName": "ChangeTicketStatusRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export declare const COLLAB_CONTROL_OPERATION_CODECS: Readonly<{\n    readonly getRequest: CollabControlOperationCodec<import(\"./CollabProtocol\").GetRequestRequest, import(\"./types\").CollabRequestDetail>;\n    readonly ensureMyRequest: CollabControlOperationCodec<import(\"./CollabProtocol\").EnsureMyRequestRequest, import(\"./CollabProtocol\").EnsureMyRequestResponse>;\n    readonly createComment: CollabControlOperationCodec<import(\"./CollabProtocol\").CreateCommentRequest, import(\"./CollabProtocol\").CreateCommentResponse>;\n    readonly listTickets: CollabControlOperationCodec<import(\"./CollabProtocol\").ListTicketsRequest, import(\"./types\").CollabTicketPage>;\n    readonly getTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").GetTicketRequest, import(\"./types\").CollabTicketDetail>;\n    readonly createTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").CreateTicketRequest, import(\"./CollabProtocol\").CreateTicketResponse>;\n    readonly updateTicketContent: CollabControlOperationCodec<import(\"./CollabProtocol\").UpdateTicketContentRequest, import(\"./CollabProtocol\").TicketMutationResponse>;\n    readonly createTicketComment: CollabControlOperationCodec<import(\"./CollabProtocol\").CreateTicketCommentRequest, import(\"./CollabProtocol\").CreateTicketCommentResponse>;\n    readonly closeTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").ChangeTicketStatusRequest, import(\"./CollabProtocol\").TicketMutationResponse>;\n    readonly reopenTicket: CollabControlOperationCodec<import(\"./CollabProtocol\").ChangeTicketStatusRequest, import(\"./CollabProtocol\").TicketMutationResponse>;\n    readonly updateMyRequestMetadata: CollabControlOperationCodec<import(\"./CollabProtocol\").UpdateMyRequestMetadataRequest, import(\"./CollabProtocol\").UpdateMyRequestMetadataResponse>;\n    readonly acceptRequest: CollabControlOperationCodec<import(\"./CollabProtocol\").AcceptRequest, import(\"./CollabProtocol\").AcceptResponse>;\n}>;",
+        "exportName": "COLLAB_CONTROL_OPERATION_CODECS",
+        "source": "./CollabControlOperationCodecs"
+      },
+      {
+        "declaration": "export declare const COLLAB_ERROR_CODES: readonly [\"protocol-version-unsupported\", \"protocol-payload-invalid\", \"project-not-found\", \"quota-exceeded\", \"authentication-failed\", \"authorization-denied\", \"membership-revoked\", \"stale-main\", \"stale-request-head\", \"personal-ref-diverged\", \"content-conflict\", \"description-required\", \"request-not-open\", \"request-head-not-pushed\", \"ticket-not-found\", \"resolving-ticket-reference-not-found\", \"ticket-not-open\", \"stale-ticket\", \"stale-request-metadata\", \"authority-not-synchronized\", \"idempotency-conflict\", \"acceptance-recovery-required\", \"authority-integrity-error\", \"operation-timeout\", \"operation-failed\"];",
+        "exportName": "COLLAB_ERROR_CODES",
+        "source": "./CollabError"
+      },
+      {
+        "declaration": "export declare const COLLAB_LIMITS: Readonly<{\n    maxBlobBytes: number;\n    maxChangedPaths: 2000;\n    maxCommentBytes: number;\n    maxRequestDescriptionBytes: number;\n    maxTicketTitleUtf16: 200;\n    maxTicketBodyBytes: number;\n    maxTicketCommentBytes: number;\n    maxRequestTicketRelations: 32;\n    defaultTicketPageSize: 50;\n    maxTicketPageSize: 100;\n    maxTicketComments: 500;\n    maxPathSegmentUtf16: 120;\n    maxRepositoryPathUtf16: 240;\n}>;",
+        "exportName": "COLLAB_LIMITS",
+        "source": "./CollabConstants"
+      },
+      {
+        "declaration": "export declare const COLLAB_MAIN_REF: \"refs/heads/main\";",
+        "exportName": "COLLAB_MAIN_REF",
+        "source": "./CollabConstants"
+      },
+      {
+        "declaration": "export declare const COLLAB_MEMBER_REF_PREFIX: \"refs/heads/members/\";",
+        "exportName": "COLLAB_MEMBER_REF_PREFIX",
+        "source": "./CollabConstants"
+      },
+      {
+        "declaration": "export declare const COLLAB_PROTOCOL_VERSION: 1;",
+        "exportName": "COLLAB_PROTOCOL_VERSION",
+        "source": "./CollabConstants"
+      },
+      {
+        "declaration": "export interface CollabChangedFile {\n    path: CollabRelativePath;\n    previousPath?: CollabRelativePath;\n    kind: CollabFileChangeKind;\n    binary: boolean;\n    oldBytes?: number;\n    newBytes?: number;\n    additions?: number;\n    deletions?: number;\n    largeForReview: boolean;\n}",
+        "exportName": "CollabChangedFile",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabChangeRequest {\n    id: CollabRequestId;\n    memberId: CollabMemberId;\n    status: CollabRequestStatus;\n    firstBaseOid: CollabGitOid;\n    latestHeadOid: CollabGitOid;\n    mergedOid?: CollabGitOid;\n    description: string;\n    revision: number;\n    ticketRelations: readonly CollabRequestTicketRelation[];\n    commentCount: number;\n    createdAt: CollabIsoTimestamp;\n    updatedAt: CollabIsoTimestamp;\n}",
+        "exportName": "CollabChangeRequest",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabComment {\n    id: CollabCommentId;\n    requestId: CollabRequestId;\n    authorMemberId: CollabMemberId;\n    body: string;\n    createdAt: CollabIsoTimestamp;\n}",
+        "exportName": "CollabComment",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabCommentId = string;",
+        "exportName": "CollabCommentId",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabControlOperation = keyof CollabControlOperationMap;",
+        "exportName": "CollabControlOperation",
+        "source": "./CollabControlOperationCodecs"
+      },
+      {
+        "declaration": "export declare function collabControlOperationCodec<Operation extends CollabControlOperation>(operation: Operation): CodecMap[Operation];",
+        "exportName": "collabControlOperationCodec",
+        "source": "./CollabControlOperationCodecs"
+      },
+      {
+        "declaration": "export interface CollabControlOperationCodec<Request, Response> {\n    readonly decodeRequest: (input: unknown) => CollabDecodeResult<Request>;\n    readonly decodeResponse: (input: unknown) => Response;\n}",
+        "exportName": "CollabControlOperationCodec",
+        "source": "./CollabControlOperationCodecs"
+      },
+      {
+        "declaration": "export interface CollabControlOperationDefinition<Request, Response> {\n    request: Request;\n    response: Response;\n}",
+        "exportName": "CollabControlOperationDefinition",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface CollabControlOperationMap {\n    getRequest: CollabControlOperationDefinition<GetRequestRequest, CollabRequestDetail>;\n    ensureMyRequest: CollabControlOperationDefinition<EnsureMyRequestRequest, EnsureMyRequestResponse>;\n    createComment: CollabControlOperationDefinition<CreateCommentRequest, CreateCommentResponse>;\n    listTickets: CollabControlOperationDefinition<ListTicketsRequest, CollabTicketPage>;\n    getTicket: CollabControlOperationDefinition<GetTicketRequest, CollabTicketDetail>;\n    createTicket: CollabControlOperationDefinition<CreateTicketRequest, CreateTicketResponse>;\n    updateTicketContent: CollabControlOperationDefinition<UpdateTicketContentRequest, TicketMutationResponse>;\n    createTicketComment: CollabControlOperationDefinition<CreateTicketCommentRequest, CreateTicketCommentResponse>;\n    closeTicket: CollabControlOperationDefinition<ChangeTicketStatusRequest, TicketMutationResponse>;\n    reopenTicket: CollabControlOperationDefinition<ChangeTicketStatusRequest, TicketMutationResponse>;\n    updateMyRequestMetadata: CollabControlOperationDefinition<UpdateMyRequestMetadataRequest, UpdateMyRequestMetadataResponse>;\n    acceptRequest: CollabControlOperationDefinition<AcceptRequest, AcceptResponse>;\n}",
+        "exportName": "CollabControlOperationMap",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export type CollabDecodeFailure = {\n    status: 'invalid';\n    error: CollabError;\n} | {\n    status: 'unsupported-version';\n    receivedVersion: number;\n    error: CollabError;\n};",
+        "exportName": "CollabDecodeFailure",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export type CollabDecodeResult<T> = {\n    status: 'ok';\n    value: T;\n} | CollabDecodeFailure;",
+        "exportName": "CollabDecodeResult",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export type CollabDiagnosticContext = Readonly<Record<string, CollabDiagnosticValue>>;",
+        "exportName": "CollabDiagnosticContext",
+        "source": "./CollabError"
+      },
+      {
+        "declaration": "export type CollabDiagnosticValue = string | number | boolean | null | readonly CollabDiagnosticValue[] | {\n    readonly [key: string]: CollabDiagnosticValue;\n};",
+        "exportName": "CollabDiagnosticValue",
+        "source": "./CollabError"
+      },
+      {
+        "declaration": "export declare class CollabError extends Error {\n    readonly code: CollabErrorCode;\n    readonly group: CollabErrorGroup;\n    readonly safeContext: CollabDiagnosticContext;\n    readonly recoveryActions: readonly CollabRecoveryAction[];\n    readonly cause?: unknown;\n    constructor(options: CollabErrorOptions);\n    toJSON(): Readonly<Record<string, unknown>>;\n}",
+        "exportName": "CollabError",
+        "source": "./CollabError"
+      },
+      {
+        "declaration": "export type CollabErrorCode = typeof COLLAB_ERROR_CODES[number];",
+        "exportName": "CollabErrorCode",
+        "source": "./CollabError"
+      },
+      {
+        "declaration": "export declare function collabErrorGroup(code: CollabErrorCode): CollabErrorGroup;",
+        "exportName": "collabErrorGroup",
+        "source": "./CollabError"
+      },
+      {
+        "declaration": "export type CollabErrorGroup = 'setup' | 'path' | 'authorization' | 'state' | 'integrity' | 'operation';",
+        "exportName": "CollabErrorGroup",
+        "source": "./CollabError"
+      },
+      {
+        "declaration": "export interface CollabErrorOptions {\n    code: CollabErrorCode;\n    safeContext?: Readonly<Record<string, unknown>>;\n    recoveryActions?: readonly CollabRecoveryAction[];\n    cause?: unknown;\n}",
+        "exportName": "CollabErrorOptions",
+        "source": "./CollabError"
+      },
+      {
+        "declaration": "export type CollabFileChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'type-changed';",
+        "exportName": "CollabFileChangeKind",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabGitOid = string;",
+        "exportName": "CollabGitOid",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabIdempotencyKey = string;",
+        "exportName": "CollabIdempotencyKey",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabIsoTimestamp = string;",
+        "exportName": "CollabIsoTimestamp",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabMember {\n    id: CollabMemberId;\n    displayName: string;\n    personalRef: string;\n    role: CollabRole;\n    status: CollabMemberStatus;\n    createdAt: CollabIsoTimestamp;\n    activatedAt?: CollabIsoTimestamp;\n    revokedAt?: CollabIsoTimestamp;\n}",
+        "exportName": "CollabMember",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabMemberId = string;",
+        "exportName": "CollabMemberId",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabMemberMentionTarget {\n    readonly displayName: string;\n    readonly memberId: CollabMemberId;\n}",
+        "exportName": "CollabMemberMentionTarget",
+        "source": "./CollabMemberMentionParser"
+      },
+      {
+        "declaration": "export declare function collabMemberRef(memberId: CollabMemberId): string;",
+        "exportName": "collabMemberRef",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabMemberStatus = 'pending' | 'active' | 'revoked' | 'left';",
+        "exportName": "CollabMemberStatus",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabMutationContext {\n    projectId: CollabProjectId;\n    idempotencyKey: CollabIdempotencyKey;\n}",
+        "exportName": "CollabMutationContext",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export type CollabOperationId = string;",
+        "exportName": "CollabOperationId",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabParsedTicketReference {\n    ticketNumber: number;\n    kind: CollabTicketCommitRelationKind;\n}",
+        "exportName": "CollabParsedTicketReference",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabProjectId = string;",
+        "exportName": "CollabProjectId",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabProtocolEnvelope<T> {\n    protocolVersion: CollabProtocolVersion;\n    requestId: string;\n    data: T;\n}",
+        "exportName": "CollabProtocolEnvelope",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export type CollabProtocolVersion = typeof COLLAB_PROTOCOL_VERSION;",
+        "exportName": "CollabProtocolVersion",
+        "source": "./CollabConstants"
+      },
+      {
+        "declaration": "export type CollabRecoveryAction = typeof COLLAB_RECOVERY_ACTIONS[number];",
+        "exportName": "CollabRecoveryAction",
+        "source": "./CollabError"
+      },
+      {
+        "declaration": "export type CollabRelativePath = string;",
+        "exportName": "CollabRelativePath",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabRequestDetail {\n    request: CollabChangeRequest;\n    currentMainOid: CollabGitOid;\n    reviewedHeadOid: CollabGitOid;\n    reviewCondition: CollabReviewCondition;\n    changedFiles: readonly CollabChangedFile[];\n    comments: readonly CollabComment[];\n}",
+        "exportName": "CollabRequestDetail",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabRequestId = string;",
+        "exportName": "CollabRequestId",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabRequestStatus = 'open' | 'merged' | 'discarded';",
+        "exportName": "CollabRequestStatus",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabRequestTicketOperation = 'acceptRequest' | 'closeTicket' | 'createComment' | 'createTicket' | 'createTicketComment' | 'ensureMyRequest' | 'getRequest' | 'getTicket' | 'listTickets' | 'reopenTicket' | 'updateMyRequestMetadata' | 'updateTicketContent';",
+        "exportName": "CollabRequestTicketOperation",
+        "source": "./CollabRequestTicketRequestCodecs"
+      },
+      {
+        "declaration": "export interface CollabRequestTicketRelation {\n    id: CollabTicketRelationId;\n    ticketId: CollabTicketId;\n    ticketNumber: number;\n    ticketTitle: string;\n    ticketRevision: number;\n    commitOid: CollabGitOid;\n    kind: CollabTicketCommitRelationKind;\n    state: 'pending' | 'accepted';\n}",
+        "exportName": "CollabRequestTicketRelation",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabResolvingTicketExpectation {\n    ticketId: CollabTicketId;\n    revision: number;\n}",
+        "exportName": "CollabResolvingTicketExpectation",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabReviewCondition = 'clean' | 'conflicting' | 'stale';",
+        "exportName": "CollabReviewCondition",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabRole = 'manager' | 'member';",
+        "exportName": "CollabRole",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabTicketAcceptedRelation {\n    id: CollabTicketRelationId;\n    requestId: CollabRequestId;\n    kind: CollabTicketCommitRelationKind;\n    commitOid: CollabGitOid;\n    acceptedMergeOid: CollabGitOid;\n    acceptedAt: CollabIsoTimestamp;\n}",
+        "exportName": "CollabTicketAcceptedRelation",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabTicketComment {\n    id: CollabTicketCommentId;\n    ticketId: CollabTicketId;\n    authorMemberId: CollabMemberId;\n    body: string;\n    createdAt: CollabIsoTimestamp;\n}",
+        "exportName": "CollabTicketComment",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabTicketCommentId = string;",
+        "exportName": "CollabTicketCommentId",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabTicketCommitRelationKind = 'references' | 'resolves';",
+        "exportName": "CollabTicketCommitRelationKind",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabTicketDetail {\n    ticket: CollabTicketSummary;\n    body: string;\n    comments: readonly CollabTicketComment[];\n    acceptedRelations: readonly CollabTicketAcceptedRelation[];\n}",
+        "exportName": "CollabTicketDetail",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabTicketId = string;",
+        "exportName": "CollabTicketId",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabTicketPage {\n    tickets: readonly CollabTicketSummary[];\n    nextCursor?: string;\n}",
+        "exportName": "CollabTicketPage",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabTicketReferenceParseFailureReason = 'description-too-large' | 'ticket-number-out-of-range';",
+        "exportName": "CollabTicketReferenceParseFailureReason",
+        "source": "./CollabTicketReferenceParser"
+      },
+      {
+        "declaration": "export type CollabTicketReferenceParseResult = {\n    status: 'ok';\n    references: readonly CollabParsedTicketReference[];\n} | {\n    status: 'invalid';\n    reason: CollabTicketReferenceParseFailureReason;\n};",
+        "exportName": "CollabTicketReferenceParseResult",
+        "source": "./CollabTicketReferenceParser"
+      },
+      {
+        "declaration": "export type CollabTicketReferenceScanResult = {\n    readonly status: 'ok';\n    readonly tokens: readonly CollabTicketReferenceToken[];\n} | {\n    readonly reason: 'ticket-number-out-of-range';\n    readonly status: 'invalid';\n};",
+        "exportName": "CollabTicketReferenceScanResult",
+        "source": "./CollabTicketReferenceParser"
+      },
+      {
+        "declaration": "export interface CollabTicketReferenceToken {\n    readonly from: number;\n    readonly kind: CollabTicketCommitRelationKind;\n    readonly ticketNumber: number;\n    readonly to: number;\n}",
+        "exportName": "CollabTicketReferenceToken",
+        "source": "./CollabTicketReferenceParser"
+      },
+      {
+        "declaration": "export type CollabTicketRelationId = string;",
+        "exportName": "CollabTicketRelationId",
+        "source": "./types"
+      },
+      {
+        "declaration": "export type CollabTicketStatus = 'open' | 'closed';",
+        "exportName": "CollabTicketStatus",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CollabTicketSummary {\n    id: CollabTicketId;\n    number: number;\n    title: string;\n    status: CollabTicketStatus;\n    authorMemberId: CollabMemberId;\n    revision: number;\n    commentCount: number;\n    createdAt: CollabIsoTimestamp;\n    updatedAt: CollabIsoTimestamp;\n    closedAt?: CollabIsoTimestamp;\n    closedByMemberId?: CollabMemberId;\n}",
+        "exportName": "CollabTicketSummary",
+        "source": "./types"
+      },
+      {
+        "declaration": "export interface CreateCommentRequest extends CollabMutationContext {\n    requestId: CollabRequestId;\n    body: string;\n}",
+        "exportName": "CreateCommentRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface CreateCommentResponse {\n    comment: CollabComment;\n    request: CollabChangeRequest;\n}",
+        "exportName": "CreateCommentResponse",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface CreateTicketCommentRequest extends CollabMutationContext {\n    ticketId: CollabTicketId;\n    body: string;\n}",
+        "exportName": "CreateTicketCommentRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface CreateTicketCommentResponse {\n    comment: CollabTicketComment;\n    ticket: CollabTicketSummary;\n}",
+        "exportName": "CreateTicketCommentResponse",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface CreateTicketRequest extends CollabMutationContext {\n    title: string;\n    body: string;\n}",
+        "exportName": "CreateTicketRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface CreateTicketResponse {\n    ticket: CollabTicketDetail;\n}",
+        "exportName": "CreateTicketResponse",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export declare function decodeCollabProtocolEnvelope<T = unknown>(input: unknown): CollabDecodeResult<CollabProtocolEnvelope<T>>;",
+        "exportName": "decodeCollabProtocolEnvelope",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface EnsureMyRequestRequest extends CollabMutationContext {\n    expectedMainOid: CollabGitOid;\n    headOid: CollabGitOid;\n    description: string;\n}",
+        "exportName": "EnsureMyRequestRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface EnsureMyRequestResponse {\n    mainOid: CollabGitOid;\n    request: CollabChangeRequest;\n}",
+        "exportName": "EnsureMyRequestResponse",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface GetRequestRequest {\n    projectId: CollabProjectId;\n    requestId: CollabRequestId;\n}",
+        "exportName": "GetRequestRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface GetTicketRequest {\n    projectId: CollabProjectId;\n    ticketId: CollabTicketId;\n}",
+        "exportName": "GetTicketRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface ListTicketsRequest {\n    projectId: CollabProjectId;\n    status: CollabTicketStatus | 'all';\n    cursor?: string;\n    limit?: number;\n}",
+        "exportName": "ListTicketsRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export declare function parseCollabMemberMentions(markdown: string, targets: readonly CollabMemberMentionTarget[]): readonly CollabMemberId[];",
+        "exportName": "parseCollabMemberMentions",
+        "source": "./CollabMemberMentionParser"
+      },
+      {
+        "declaration": "export declare function parseCollabTicketReferences(description: string): CollabTicketReferenceParseResult;",
+        "exportName": "parseCollabTicketReferences",
+        "source": "./CollabTicketReferenceParser"
+      },
+      {
+        "declaration": "export declare function sanitizeCollabDiagnosticContext(context?: Readonly<Record<string, unknown>>): CollabDiagnosticContext;",
+        "exportName": "sanitizeCollabDiagnosticContext",
+        "source": "./CollabError"
+      },
+      {
+        "declaration": "export declare function scanCollabTicketReferences(description: string): CollabTicketReferenceScanResult;",
+        "exportName": "scanCollabTicketReferences",
+        "source": "./CollabTicketReferenceParser"
+      },
+      {
+        "declaration": "export interface TicketMutationResponse {\n    ticket: CollabTicketSummary;\n}",
+        "exportName": "TicketMutationResponse",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface UpdateMyRequestMetadataRequest extends CollabMutationContext {\n    requestId: CollabRequestId;\n    expectedHeadOid: CollabGitOid;\n    expectedRequestRevision: number;\n    description: string;\n}",
+        "exportName": "UpdateMyRequestMetadataRequest",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface UpdateMyRequestMetadataResponse {\n    request: CollabChangeRequest;\n}",
+        "exportName": "UpdateMyRequestMetadataResponse",
+        "source": "./CollabProtocol"
+      },
+      {
+        "declaration": "export interface UpdateTicketContentRequest extends CollabMutationContext {\n    ticketId: CollabTicketId;\n    expectedRevision: number;\n    title: string;\n    body: string;\n}",
+        "exportName": "UpdateTicketContentRequest",
+        "source": "./CollabProtocol"
+      }
+    ],
+    "publicRuntimeExports": [
+      "COLLAB_CONTROL_OPERATION_CODECS",
+      "COLLAB_ERROR_CODES",
+      "COLLAB_LIMITS",
+      "COLLAB_MAIN_REF",
+      "COLLAB_MEMBER_REF_PREFIX",
+      "COLLAB_PROTOCOL_VERSION",
+      "CollabError",
+      "collabControlOperationCodec",
+      "collabErrorGroup",
+      "collabMemberRef",
+      "decodeCollabProtocolEnvelope",
+      "parseCollabMemberMentions",
+      "parseCollabTicketReferences",
+      "sanitizeCollabDiagnosticContext",
+      "scanCollabTicketReferences"
+    ]
+  },
+  "packageVersion": "0.1.0",
+  "protocolVersion": 1,
+  "schemaVersion": 1
+}

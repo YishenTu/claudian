@@ -38,8 +38,15 @@ import ClaudianPlugin from '@/main';
 
 describe('ClaudianPlugin', () => {
   let plugin: ClaudianPlugin;
+  let pluginInstances: ClaudianPlugin[];
   let mockApp: any;
   let mockManifest: any;
+
+  function createPlugin(): ClaudianPlugin {
+    const instance = new ClaudianPlugin(mockApp, mockManifest);
+    pluginInstances.push(instance);
+    return instance;
+  }
 
   function getRegisteredCommand(commandId: string) {
     const call = (plugin.addCommand as jest.Mock).mock.calls.find(
@@ -121,6 +128,7 @@ describe('ClaudianPlugin', () => {
   }
 
   beforeEach(() => {
+    pluginInstances = [];
     // Reset mocks
     jest.restoreAllMocks();
     jest.clearAllMocks();
@@ -184,8 +192,18 @@ describe('ClaudianPlugin', () => {
     };
 
     // Create plugin instance with mocked app
-    plugin = new ClaudianPlugin(mockApp, mockManifest);
+    plugin = createPlugin();
     (plugin.loadData as jest.Mock).mockResolvedValue({});
+  });
+
+  afterEach(async () => {
+    for (const instance of pluginInstances) {
+      instance.onunload();
+    }
+    await Promise.allSettled(pluginInstances.map(instance => (
+      (instance as unknown as { applicationShutdownPromise?: Promise<void> })
+        .applicationShutdownPromise
+    )));
   });
 
   describe('onload', () => {
@@ -1527,7 +1545,7 @@ describe('ClaudianPlugin', () => {
       expect(pendingGeneration).toEqual(expect.any(Number));
 
       plugin.onunload();
-      const restartedPlugin = new ClaudianPlugin(mockApp, mockManifest);
+      const restartedPlugin = createPlugin();
       (restartedPlugin.loadData as jest.Mock).mockResolvedValue({});
       const restartedSaveMetadataSpy = jest.spyOn(
         ConversationPersistenceStore.prototype,
@@ -2964,7 +2982,7 @@ describe('ClaudianPlugin', () => {
         .toEqual(expect.any(Number));
 
       plugin.onunload();
-      const restartedPlugin = new ClaudianPlugin(mockApp, mockManifest);
+      const restartedPlugin = createPlugin();
       (restartedPlugin.loadData as jest.Mock).mockResolvedValue({});
       const saveMetadataSpy = jest.spyOn(
         ConversationPersistenceStore.prototype,

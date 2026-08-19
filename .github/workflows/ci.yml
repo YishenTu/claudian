@@ -5,10 +5,28 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.12
+
   lockfile:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -18,8 +36,9 @@ jobs:
       - name: Check Bun lockfile
         run: npm run check:lockfile
 
-  lint:
+  quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -27,24 +46,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -52,37 +54,69 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-  windows-static:
-    runs-on: windows-latest
+      - name: Lint
+        run: npm run lint
+
+  diff-hygiene:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed lines for whitespace errors
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA"
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  protocol-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Collab protocol
-        run: npm run build:protocol
+      - name: Verify protocol contract and version policy
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            npm run check:protocol-compatibility -- --base "$BASE_SHA"
+          else
+            npm run check:protocol-compatibility
+          fi
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Test Collab protocol
-        run: npm run test:protocol -- --runInBand
-
-      - name: Verify Collab protocol package
+      - name: Verify packed protocol consumer
         run: npm run verify:protocol
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -90,7 +124,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -98,12 +132,18 @@ jobs:
       - name: Test
         run: npm run test
 
-      - name: Verify Collab protocol package
-        run: npm run verify:protocol
-
-  build:
-    needs: [lint, typecheck, test]
-    runs-on: ubuntu-latest
+  cross-platform-smoke:
+    name: Cross-platform Collab smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            verify-protocol: true
+          - os: macos-latest
+            verify-protocol: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -111,10 +151,36 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build production plugin
+        run: npm run build
+
+      - name: Run OS-sensitive Collab tests
+        run: npm run test:cross-platform-collab
+
+      - name: Verify protocol package on Windows
+        if: matrix.verify-protocol
+        run: npm run verify:protocol
+
+  build:
+    needs: [quality, protocol-contract, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and inspect production artifacts
         run: npm run build && npm run check:performance

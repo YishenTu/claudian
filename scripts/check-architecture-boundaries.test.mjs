@@ -607,8 +607,10 @@ test('collab protocol build scripts avoid platform-specific shell commands', () 
     path.join(process.cwd(), '.github', 'workflows', 'ci.yml'),
     'utf8',
   );
-  const windowsJob = workflow.split(/^  test:/mu)[0].split(/^  windows-static:/mu)[1] ?? '';
-  assert.match(windowsJob, /npm run verify:protocol/);
+  const crossPlatformJob = workflow
+    .split(/^  build:/mu)[0]
+    .split(/^  cross-platform-smoke:/mu)[1] ?? '';
+  assert.match(crossPlatformJob, /npm run verify:protocol/);
 });
 
 test('Collab Git process owners await Windows process-tree termination', () => {
@@ -621,6 +623,39 @@ test('Collab Git process owners await Windows process-tree termination', () => {
     assert.match(source, /terminateSpawnedProcessTree\(/);
     assert.match(source, /await\s+(?:active\.)?terminationTask/);
   }
+});
+
+test('CI gates releases, cross-platform behavior, protocol changes, and security', () => {
+  const workflowsRoot = path.join(process.cwd(), '.github', 'workflows');
+  const ci = fs.readFileSync(path.join(workflowsRoot, 'ci.yml'), 'utf8');
+  const release = fs.readFileSync(path.join(workflowsRoot, 'release.yml'), 'utf8');
+  const nightly = fs.readFileSync(path.join(workflowsRoot, 'nightly.yml'), 'utf8');
+  const codeql = fs.readFileSync(path.join(workflowsRoot, 'codeql.yml'), 'utf8');
+
+  assert.match(ci, /workflow_call:/);
+  assert.match(ci, /rhysd\/actionlint:1\.7\.12/);
+  assert.match(ci, /diff-hygiene:/);
+  assert.match(ci, /dependency-review-action@v4/);
+  assert.match(ci, /protocol-contract:/);
+  assert.match(ci, /npm run check:protocol-compatibility/);
+  assert.match(ci, /cross-platform-smoke:/);
+  assert.match(ci, /windows-latest/);
+  assert.match(ci, /macos-latest/);
+
+  assert.match(release, /uses:\s*\.\/\.github\/workflows\/ci\.yml/);
+  assert.match(release, /needs:\s*verify/);
+
+  assert.match(nightly, /schedule:/);
+  assert.match(nightly, /ubuntu-latest/);
+  assert.match(nightly, /windows-latest/);
+  assert.match(nightly, /macos-latest/);
+  assert.match(nightly, /npm run check:open-handles/);
+  assert.match(nightly, /npm audit --omit=dev --audit-level=high/);
+
+  assert.match(codeql, /schedule:/);
+  assert.match(codeql, /github\/codeql-action\/init@v4/);
+  assert.match(codeql, /github\/codeql-action\/analyze@v4/);
+  assert.match(codeql, /javascript-typescript/);
 });
 
 test('src does not re-export the collab protocol package', () => {

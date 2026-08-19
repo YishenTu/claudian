@@ -9,7 +9,7 @@ import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { build } from 'esbuild';
+import { build, stop } from 'esbuild';
 
 import * as compressedStaticAssetsHelpers from '../../../scripts/compressedStaticAssets.js';
 import * as desktopRuntimeAliasHelpers from '../../../scripts/desktopRuntimeAliases.js';
@@ -110,6 +110,7 @@ describe('Collab dependency envelope', () => {
   }, 60_000);
 
   afterAll(() => {
+    stop();
     rmSync(tempDirectory, { force: true, recursive: true });
   });
 

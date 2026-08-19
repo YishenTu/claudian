@@ -25,6 +25,8 @@ run([
 run([
   '--test',
   path.join(__dirname, 'check-architecture-boundaries.test.mjs'),
+  path.join(__dirname, 'check-collab-protocol-compatibility.test.mjs'),
   path.join(__dirname, 'check-eslint-config.test.mjs'),
+  path.join(__dirname, 'check-open-handles.test.mjs'),
   path.join(__dirname, 'check-release-version.test.mjs'),
 ]);
