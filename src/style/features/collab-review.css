@@ -1,0 +1,260 @@
+.claudian-collab-review {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: var(--size-4-4);
+}
+
+.claudian-collab-review-header {
+  border-block-end: 1px solid var(--background-modifier-border);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--size-2-2) var(--size-4-3);
+  align-items: center;
+  margin-block-end: var(--size-4-3);
+  padding-block-end: var(--size-4-3);
+}
+
+.claudian-collab-review-header h2 {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  margin: 0;
+}
+
+.claudian-collab-review-header.has-primary-action h2 {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.claudian-collab-review-header > .claudian-collab-request-description {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.claudian-collab-review-tabs {
+  align-items: center;
+  display: flex;
+  gap: var(--size-4-3);
+  grid-column: 1 / -1;
+  grid-row: 3;
+  min-width: 0;
+}
+
+.claudian-collab-review-header.is-request > .claudian-collab-review-tabs {
+  grid-row: 2;
+}
+
+.claudian-collab-review .claudian-collab-review-tabs > button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--text-muted);
+  padding: var(--size-2-2) 0;
+  width: auto;
+}
+
+.claudian-collab-review .claudian-collab-review-tabs > button:is(:hover, :focus-visible) {
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.claudian-collab-review .claudian-collab-review-tabs > button.is-active {
+  color: var(--text-normal);
+}
+
+.claudian-collab-review-tabs > .claudian-collab-review-display-controls {
+  margin-inline-start: auto;
+}
+
+.claudian-collab-review-tabs > .claudian-collab-review-display-controls[hidden],
+.claudian-collab-review-content[hidden] {
+  display: none;
+}
+
+.claudian-collab-review-display-controls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--size-2-2);
+}
+
+.claudian-collab-review button.claudian-collab-review-display-toggle {
+  appearance: none;
+  display: inline-flex;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-muted) !important;
+  background: transparent !important;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  outline: 0;
+}
+
+.claudian-collab-review button.claudian-collab-review-display-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-collab-review [slot="header-filename-suffix"] {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  line-height: 1;
+}
+
+.claudian-collab-review button.claudian-collab-review-file-open {
+  align-self: center;
+  margin-block: 0;
+  vertical-align: middle;
+}
+
+.claudian-collab-review button.claudian-collab-review-display-toggle:hover,
+.claudian-collab-review button.claudian-collab-review-display-toggle:focus-visible,
+.claudian-collab-review button.claudian-collab-review-display-toggle:active {
+  color: var(--text-normal) !important;
+  background: transparent !important;
+  border: 0;
+  box-shadow: none;
+}
+
+.claudian-collab-review button.claudian-collab-review-display-toggle:focus-visible {
+  outline: 1px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.claudian-collab-review-metadata-line {
+  align-items: center;
+  display: flex;
+  gap: var(--size-4-2);
+  min-width: 0;
+}
+
+.claudian-collab-review-header button.claudian-collab-review-accept {
+  grid-column: 2;
+  grid-row: 2;
+  width: auto;
+  padding: 2px 6px;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border: 1px solid var(--interactive-accent);
+  border-radius: var(--radius-s);
+  box-shadow: none;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+}
+
+.claudian-collab-review-header.has-primary-action button.claudian-collab-review-accept {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.claudian-collab-review-header button.claudian-collab-review-accept:hover,
+.claudian-collab-review-header button.claudian-collab-review-accept:focus-visible {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent-hover);
+  border-color: var(--interactive-accent-hover);
+  box-shadow: none;
+}
+
+.claudian-collab-review-header button.claudian-collab-review-accept:disabled {
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  border-color: var(--background-modifier-border);
+  box-shadow: none;
+}
+
+.claudian-collab-review-summary {
+  color: var(--text-muted);
+}
+
+.claudian-collab-review-condition {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-review-condition.is-clean,
+.claudian-collab-review-condition.is-merged {
+  color: var(--text-success);
+}
+
+.claudian-collab-review-condition.is-conflicting,
+.claudian-collab-review-condition.is-stale {
+  color: var(--text-warning);
+}
+
+.claudian-collab-review-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
+}
+
+.claudian-collab-review button.claudian-collab-review-display-toggle[hidden] {
+  display: none;
+}
+
+.claudian-collab-review-overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-5);
+  padding: var(--size-4-2) 0;
+}
+
+.claudian-collab-review-content [data-diffs] {
+  font-family: var(--font-monospace);
+}
+
+.claudian-collab-review-file {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 20rem;
+  min-height: 8rem;
+  margin-block-end: var(--size-4-6);
+  scroll-margin-block-start: var(--size-4-3);
+}
+
+.claudian-collab-review-file:last-child {
+  margin-block-end: 0;
+}
+
+.claudian-collab-review-file-title {
+  display: flex;
+  gap: var(--size-2-2);
+  align-items: center;
+}
+
+.claudian-collab-review-file-title h3 {
+  margin: 0;
+}
+
+.claudian-collab-review-file-placeholder {
+  min-height: 8rem;
+  padding: var(--size-4-3);
+  color: var(--text-muted);
+  border-block-start: 1px solid var(--background-modifier-border);
+}
+
+.claudian-collab-review-metadata,
+.claudian-collab-review-message {
+  color: var(--text-muted);
+}
+
+.claudian-collab-review-image {
+  display: block;
+  max-width: min(100%, 60rem);
+  max-height: 70vh;
+  margin-block-start: var(--size-4-4);
+  object-fit: contain;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}

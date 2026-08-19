@@ -1,0 +1,107 @@
+.claudian-collab-comment-meta {
+  align-items: baseline;
+  color: var(--text-muted);
+  display: flex;
+  font-size: var(--font-ui-smaller);
+  gap: 10px;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.claudian-collab-comment-meta time {
+  margin-left: auto;
+}
+
+.claudian-collab-comment-context {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-collab-comment-markdown > :first-child {
+  margin-top: 0;
+}
+
+.claudian-collab-comment-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.claudian-collab-comment-composer {
+  border-top: 1px solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.claudian-collab-comment-composer-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.claudian-collab-comment-modes {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.claudian-collab-review .claudian-collab-markdown-draft-modes button.claudian-collab-comment-submit {
+  background: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--button-radius, var(--radius-s));
+  box-shadow: var(--input-shadow);
+  color: var(--text-normal);
+  min-height: var(--input-height);
+  padding: 4px 12px;
+}
+
+.claudian-collab-review .claudian-collab-markdown-draft-modes button.claudian-collab-comment-submit:is(:hover, :focus-visible) {
+  background: var(--interactive-hover);
+  border-color: var(--background-modifier-border-hover);
+  box-shadow: var(--input-shadow);
+  color: var(--text-normal);
+}
+
+.claudian-collab-comment-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-comment-status:empty {
+  display: none;
+}
+
+.claudian-collab-request-comments {
+  border-top: 1px solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+  padding-top: var(--size-4-4);
+}
+
+.claudian-collab-request-comments:not(.has-entries) > .claudian-collab-comment-composer {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.claudian-collab-request-comments h3 {
+  margin: 0;
+}
+
+.claudian-collab-request-comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.claudian-collab-request-comment-list[hidden] {
+  display: none;
+}
+
+.claudian-collab-request-comment {
+  background: var(--background-primary);
+  border-radius: var(--radius-s);
+  padding: var(--size-4-3);
+}

@@ -1,0 +1,139 @@
+.claudian-collab-markdown-draft {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.claudian-collab-markdown-draft-modes {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.claudian-collab-markdown-draft-modes[hidden] {
+  display: none;
+}
+
+.claudian-collab-markdown-draft > .claudian-collab-markdown-draft-modes {
+  align-self: flex-end;
+}
+
+.claudian-collab-review .claudian-collab-markdown-draft-modes button {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-muted);
+  padding: 0;
+  width: auto;
+}
+
+.claudian-collab-review .claudian-collab-markdown-draft-modes button:is(:hover, :focus-visible, [aria-pressed="true"]) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.claudian-collab-markdown-draft .cm-editor {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--input-radius, var(--radius-s));
+  box-shadow: none;
+  box-sizing: border-box;
+  color: var(--text-normal);
+  width: 100%;
+}
+
+.claudian-collab-markdown-draft .cm-editor.cm-focused {
+  border-color: var(--background-modifier-border-focus);
+  box-shadow: none;
+  outline: none;
+}
+
+.claudian-collab-markdown-draft .cm-scroller {
+  max-height: min(42vh, 420px);
+  overflow: auto;
+}
+
+.claudian-collab-markdown-draft .cm-content {
+  caret-color: var(--text-normal);
+  font-family: var(--font-monospace);
+  min-height: 120px;
+  padding: 10px 12px;
+}
+
+.claudian-collab-markdown-draft .cm-cursor {
+  border-left-color: var(--text-normal);
+}
+
+.claudian-collab-markdown-draft .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground,
+.claudian-collab-markdown-draft .cm-editor > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+  background: var(--text-selection) !important;
+}
+
+.claudian-collab-markdown-draft .cm-line {
+  padding: 0;
+}
+
+.claudian-collab-markdown-draft .cm-placeholder {
+  color: var(--text-faint);
+  font-style: normal;
+}
+
+.claudian-collab-ticket-field .cm-content {
+  min-height: clamp(180px, 28vh, 360px);
+}
+
+.claudian-collab-markdown-draft-editor[hidden],
+.claudian-collab-markdown-draft-preview[hidden] {
+  display: none;
+}
+
+.claudian-collab-markdown-draft-preview {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--input-radius, var(--radius-s));
+  box-shadow: none;
+  box-sizing: border-box;
+  min-height: 120px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.claudian-collab-ticket-field .claudian-collab-markdown-draft-preview {
+  min-height: clamp(180px, 28vh, 360px);
+}
+
+.claudian-collab-markdown-draft-preview > :first-child {
+  margin-top: 0;
+}
+
+.claudian-collab-markdown-draft-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.claudian-collab-review button.claudian-collab-markdown-ticket-reference {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-accent);
+  cursor: pointer;
+  display: inline;
+  font: inherit;
+  margin: 0;
+  padding: 0;
+  text-decoration: none;
+  vertical-align: baseline;
+  width: auto;
+}
+
+.claudian-collab-review button.claudian-collab-markdown-ticket-reference:is(:hover, :focus-visible) {
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-accent-hover);
+  text-decoration: underline;
+}

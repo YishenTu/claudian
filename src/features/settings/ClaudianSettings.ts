@@ -1,4 +1,4 @@
-import type { App, Plugin } from 'obsidian';
+import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
 import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import {
@@ -16,6 +16,7 @@ import type {
 } from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
+import { renderCopyableCodeFence } from '../../shared/components/CopyableCodeFence';
 import { AgentSkillSettings } from '../../shared/settings/AgentSkillSettings';
 import { renderEnvironmentSettingsSection } from '../../shared/settings/EnvironmentSettingsSection';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
@@ -27,7 +28,9 @@ import type { FeatureHost } from '../FeatureHost';
 import { AgentSkillManagementCoordinator } from './AgentSkillManagementCoordinator';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 
-type SettingsTabId = string;
+type SettingsTabId = 'general' | 'collab' | 'providers';
+const CLAUDIAN_COLLAB_READ_MORE_URL =
+  'https://claudian.md/docs/collab-mode/';
 type ObsidianHotkey = { modifiers: string[]; key: string };
 type ObsidianHotkeyManager = {
   customKeys?: Record<string, ObsidianHotkey[] | undefined>;
@@ -47,6 +50,28 @@ type AppWithHotkeyInternals = App & {
   hotkeyManager?: ObsidianHotkeyManager;
   setting?: ObsidianSettingsController;
 };
+
+function renderCollabGitInstallationHelp(
+  container: HTMLElement,
+): void {
+  const details = container.createEl('details', {
+    cls: 'claudian-collab-git-installation-help',
+  });
+  details.createEl('summary', {
+    text: t('settings.collabGitInstallation.summary'),
+  });
+  details.createEl('p', {
+    text: [
+      t('settings.collabGitInstallation.requirement'),
+      t('settings.collabGitInstallation.verify'),
+    ].join(' '),
+  });
+  const promptText = t('settings.collabGitInstallation.prompt');
+  const copyLabel = t('collab.gitSetup.copyPrompt');
+  renderCopyableCodeFence(details, promptText, {
+    copyLabel,
+  });
+}
 
 function formatHotkey(hotkey: ObsidianHotkey): string {
   const isMac = Platform.isMacOS;
@@ -118,6 +143,7 @@ function addHotkeySettingRow(
 export class ClaudianSettingTab extends PluginSettingTab {
   plugin: FeatureHost;
   private activeTab: SettingsTabId = 'general';
+  private activeProviderTab: ProviderId | null = null;
   private refreshTitleModelOptions: (() => void) | null = null;
   private displayGeneration = 0;
   private readonly agentSkillCoordinator: AgentSkillManagementCoordinator;
@@ -136,7 +162,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
    * Claudian still builds its settings imperatively in display(); this empty
    * array satisfies the contract so the tab is registered in search.
    */
-  getSettingDefinitions(): unknown[] {
+  getSettingDefinitions(): SettingDefinitionItem[] {
     return [];
   }
 
@@ -151,28 +177,39 @@ export class ClaudianSettingTab extends PluginSettingTab {
     setLocale(this.plugin.settings.locale as Locale);
 
     const providerTabs = ProviderRegistry.getRegisteredProviderIds();
-    const tabIds: SettingsTabId[] = ['general', ...providerTabs];
-    if (!tabIds.includes(this.activeTab)) {
-      this.activeTab = 'general';
+    const tabIds: SettingsTabId[] = ['general', 'collab', 'providers'];
+    const preferredProvider = providerTabs.includes(this.plugin.settings.settingsProvider)
+      ? this.plugin.settings.settingsProvider
+      : providerTabs[0] ?? null;
+    if (!this.activeProviderTab || !providerTabs.includes(this.activeProviderTab)) {
+      this.activeProviderTab = preferredProvider;
     }
 
     const tabBar = containerEl.createDiv({ cls: 'claudian-settings-tabs' });
     const tabButtons = new Map<SettingsTabId, HTMLButtonElement>();
     const tabContents = new Map<SettingsTabId, HTMLDivElement>();
-    const renderedProviderTabs = new Set<ProviderId>();
+    const providersContent = containerEl.createDiv({
+      cls: `claudian-settings-tab-content${this.activeTab === 'providers' ? ' claudian-settings-tab-content--active' : ''}`,
+    });
+    tabContents.set('providers', providersContent);
+    const providerTabBar = providersContent.createDiv({
+      cls: 'claudian-settings-provider-tabs',
+    });
+    const providerContentHost = providersContent.createDiv({
+      cls: 'claudian-settings-provider-content-host',
+    });
+    const providerButtons = new Map<ProviderId, HTMLButtonElement>();
+    const providerContents = new Map<ProviderId, HTMLDivElement>();
+    const renderedProviderIds = new Set<ProviderId>();
+    let activateCollabTab: (() => void) | null = null;
 
     const renderProviderTab = async (providerId: ProviderId): Promise<void> => {
-      if (renderedProviderTabs.has(providerId)) {
-        return;
-      }
-      renderedProviderTabs.add(providerId);
-
-      const content = tabContents.get(providerId);
-      if (!content) {
-        return;
-      }
-      content.empty();
-      content.createDiv({
+      if (renderedProviderIds.has(providerId)) return;
+      const providerContent = providerContents.get(providerId);
+      if (!providerContent) return;
+      renderedProviderIds.add(providerId);
+      providerContent.empty();
+      providerContent.createDiv({
         cls: 'claudian-settings-provider-loading',
         text: `Loading ${ProviderRegistry.getProviderDisplayName(providerId)} settings...`,
       });
@@ -184,17 +221,14 @@ export class ClaudianSettingTab extends PluginSettingTab {
           'settings-tab',
         );
         await ProviderWorkspaceRegistry.prepareSettings(providerId);
-        if (displayGeneration !== this.displayGeneration) {
-          return;
-        }
-
-        content.empty();
+        if (displayGeneration !== this.displayGeneration) return;
+        providerContent.empty();
         const renderer = ProviderWorkspaceRegistry.getSettingsTabRenderer(providerId);
         if (!renderer) {
-          content.createDiv({ text: 'Provider settings are unavailable.' });
+          providerContent.createDiv({ text: 'Provider settings are unavailable.' });
           return;
         }
-        renderer.render(content, {
+        renderer.render(providerContent, {
           plugin: this.plugin.providerHost,
           renderAgentSkillSettings: (target, _targetProviderId) => {
             new AgentSkillSettings(target, this.agentSkillCoordinator, this.app);
@@ -212,13 +246,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
           ),
         });
       } catch (error) {
-        if (displayGeneration !== this.displayGeneration) {
-          return;
-        }
-        renderedProviderTabs.delete(providerId);
-        content.empty();
+        if (displayGeneration !== this.displayGeneration) return;
+        renderedProviderIds.delete(providerId);
+        providerContent.empty();
         const message = error instanceof Error ? error.message : 'Unknown error';
-        content.createDiv({
+        providerContent.createDiv({
           cls: 'claudian-setting-validation claudian-setting-validation-error',
           text: `Could not load provider settings: ${message}`,
         });
@@ -226,9 +258,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
     };
 
     for (const id of tabIds) {
-      const label = id === 'general'
-        ? t('settings.tabs.general')
-        : ProviderRegistry.getProviderDisplayName(id);
+      const label = t(`settings.tabs.${id}` as TranslationKey);
       const button = tabBar.createEl('button', {
         cls: `claudian-settings-tab${id === this.activeTab ? ' claudian-settings-tab--active' : ''}`,
         text: label,
@@ -239,14 +269,17 @@ export class ClaudianSettingTab extends PluginSettingTab {
           tabButtons.get(tabId)?.toggleClass('claudian-settings-tab--active', tabId === id);
           tabContents.get(tabId)?.toggleClass('claudian-settings-tab-content--active', tabId === id);
         }
-        if (id !== 'general') {
-          void renderProviderTab(id);
+        if (id === 'providers' && this.activeProviderTab) {
+          void renderProviderTab(this.activeProviderTab);
+        }
+        if (id === 'collab') {
+          activateCollabTab?.();
         }
       });
       tabButtons.set(id, button);
     }
 
-    for (const id of tabIds) {
+    for (const id of tabIds.filter(id => id !== 'providers')) {
       const content = containerEl.createDiv({
         cls: `claudian-settings-tab-content${id === this.activeTab ? ' claudian-settings-tab-content--active' : ''}`,
       });
@@ -254,9 +287,39 @@ export class ClaudianSettingTab extends PluginSettingTab {
     }
 
     this.renderGeneralTab(tabContents.get('general')!);
+    activateCollabTab = this.renderCollabTab(tabContents.get('collab')!);
 
-    if (this.activeTab !== 'general') {
-      void renderProviderTab(this.activeTab);
+    for (const providerId of providerTabs) {
+      const content = providerContentHost.createDiv({
+        cls: `claudian-settings-provider-content${providerId === this.activeProviderTab ? ' claudian-settings-provider-content--active' : ''}`,
+      });
+      providerContents.set(providerId, content);
+      const button = providerTabBar.createEl('button', {
+        cls: `claudian-settings-provider-tab${providerId === this.activeProviderTab ? ' claudian-settings-provider-tab--active' : ''}`,
+        text: ProviderRegistry.getProviderDisplayName(providerId),
+      });
+      button.addEventListener('click', () => {
+        this.activeProviderTab = providerId;
+        for (const candidate of providerTabs) {
+          providerButtons.get(candidate)?.toggleClass(
+            'claudian-settings-provider-tab--active',
+            candidate === providerId,
+          );
+          providerContents.get(candidate)?.toggleClass(
+            'claudian-settings-provider-content--active',
+            candidate === providerId,
+          );
+        }
+        void renderProviderTab(providerId);
+      });
+      providerButtons.set(providerId, button);
+    }
+
+    if (this.activeTab === 'providers' && this.activeProviderTab) {
+      void renderProviderTab(this.activeProviderTab);
+    }
+    if (this.activeTab === 'collab') {
+      activateCollabTab();
     }
   }
 
@@ -336,19 +399,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
             });
         });
 
-      new Setting(container)
-        .setName(t('settings.enableFilePane.name'))
-        .setDesc(t('settings.enableFilePane.desc'))
-        .addToggle((toggle) =>
-          toggle
-            .setValue(this.plugin.settings.enableFilePane ?? true)
-            .onChange(async (value) => {
-              await this.plugin.mutateSettings((settings) => {
-                settings.enableFilePane = value;
-              });
-              this.refreshDualPaneLayouts();
-            })
-        );
     }
 
     new Setting(container)
@@ -668,6 +718,119 @@ export class ClaudianSettingTab extends PluginSettingTab {
             }
           });
       });
+
+  }
+
+  private renderCollabTab(container: HTMLElement): () => void {
+    const displayGeneration = this.displayGeneration;
+    let requestGeneration = 0;
+    let checkTimer: number | null = null;
+
+    const collabEnabledSetting = new Setting(container)
+      .setName(t('settings.collabEnabled.name'))
+      .setDesc(t('settings.collabEnabled.desc'))
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.collabEnabled)
+        .onChange(async value => {
+          await this.plugin.setCollabEnabled(value);
+        }));
+    collabEnabledSetting.descEl.createEl('br');
+    collabEnabledSetting.descEl.createEl('a', {
+      attr: {
+        href: CLAUDIAN_COLLAB_READ_MORE_URL,
+        rel: 'noopener noreferrer',
+        target: '_blank',
+      },
+      cls: 'claudian-collab-read-more-link',
+      text: t('settings.collabReadMore'),
+    });
+
+    let folderInput: { setValue(value: string): unknown } | null = null;
+    const validation = container.createDiv({
+      cls: 'claudian-setting-validation claudian-setting-validation-error claudian-hidden',
+    });
+    new Setting(container)
+      .setName(t('settings.collabProjectsFolder.name'))
+      .setDesc(t('settings.collabProjectsFolder.desc'))
+      .addText(text => {
+        folderInput = text;
+        text
+          .setPlaceholder(t('settings.collabProjectsFolder.placeholder'))
+          .setValue(this.plugin.settings.collabProjectsFolder)
+          .onChange(async value => {
+            const result = await this.plugin.setCollabProjectsFolder(value);
+            validation.toggleClass('claudian-hidden', result.ok);
+            validation.setText(result.ok ? '' : result.message);
+            if (result.ok && result.value !== value) folderInput?.setValue(result.value);
+          });
+      });
+
+    const gitPathSetting = new Setting(container)
+      .setName(t('settings.collabGitPath.name'))
+      .setDesc(t('settings.collabGitPath.desc'))
+      .addText((text) => {
+        text
+          .setPlaceholder(t('settings.collabGitPath.placeholder'))
+          .setValue(this.plugin.settings.collabGitPath ?? '')
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.collabGitPath = value.trim();
+            });
+            scheduleGitCheck();
+          });
+      });
+
+    const statusEl = gitPathSetting.nameEl.createSpan({
+      cls: 'claudian-collab-git-path-status claudian-collab-git-path-status--checking',
+    });
+    statusEl.setAttribute('role', 'status');
+
+    const setGitStatus = (
+      status: 'available' | 'checking' | 'unavailable',
+    ): void => {
+      const label = t(`settings.collabGitStatus.${status}` as TranslationKey);
+      statusEl.className = [
+        'claudian-collab-git-path-status',
+        `claudian-collab-git-path-status--${status}`,
+      ].join(' ');
+      statusEl.setAttribute('aria-label', label);
+      statusEl.title = label;
+    };
+
+    const runGitCheck = async (rescan: boolean): Promise<void> => {
+      const generation = ++requestGeneration;
+      setGitStatus('checking');
+      let status: 'available' | 'unavailable';
+      try {
+        status = await this.plugin.checkCollabGitInstallation(rescan);
+      } catch {
+        status = 'unavailable';
+      }
+      if (
+        displayGeneration !== this.displayGeneration
+        || generation !== requestGeneration
+      ) {
+        return;
+      }
+      setGitStatus(status);
+    };
+
+    const scheduleGitCheck = (): void => {
+      if (checkTimer !== null) window.clearTimeout(checkTimer);
+      setGitStatus('checking');
+      checkTimer = window.setTimeout(() => {
+        checkTimer = null;
+        void runGitCheck(true);
+      }, 300);
+    };
+
+    renderCollabGitInstallationHelp(container);
+
+    return () => {
+      if (checkTimer !== null) window.clearTimeout(checkTimer);
+      checkTimer = null;
+      void runGitCheck(false);
+    };
   }
 
   private notifyProviderModelOptionsChanged(providerId: ProviderId): void {

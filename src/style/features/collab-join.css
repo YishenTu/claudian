@@ -1,0 +1,36 @@
+.claudian-collab-join-modal {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.claudian-collab-join-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.claudian-collab-join-field label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-collab-join-field textarea {
+  min-height: 96px;
+  resize: vertical;
+  font-family: var(--font-monospace);
+}
+
+.claudian-collab-join-status {
+  min-height: 24px;
+  margin: 12px 0;
+}
+
+.claudian-collab-join-warning {
+  color: var(--text-warning);
+}
+
+.claudian-collab-join-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

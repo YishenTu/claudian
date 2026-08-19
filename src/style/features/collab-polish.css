@@ -1,0 +1,48 @@
+.claudian-collab-panel,
+.claudian-collab-panel-header,
+.claudian-collab-project-home,
+.claudian-collab-project-toolbar,
+.claudian-collab-project-header-actions,
+.claudian-collab-personal-home,
+.claudian-collab-team-home {
+  min-inline-size: 0;
+}
+
+.claudian-collab-panel button,
+.claudian-collab-panel-status,
+.claudian-collab-project-path,
+.claudian-collab-publish-status,
+.claudian-collab-team-member,
+.claudian-collab-access-note,
+.claudian-collab-access-status,
+.claudian-collab-access-invitation,
+.claudian-collab-host-error {
+  overflow-wrap: anywhere;
+}
+
+.claudian-collab-panel button:not(.claudian-collab-project-picker) {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  white-space: normal;
+}
+
+.claudian-collab-panel-header,
+.claudian-collab-access-actions,
+.claudian-collab-host-actions {
+  flex-wrap: wrap;
+}
+
+.claudian-collab-panel :is(button, select, summary, textarea, input):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudian-collab-surface,
+  .claudian-collab-surface * {
+    animation-duration: 0s;
+    animation-iteration-count: 1;
+    scroll-behavior: auto;
+    transition-duration: 0s;
+  }
+}

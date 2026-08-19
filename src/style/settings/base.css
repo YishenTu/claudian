@@ -37,6 +37,45 @@
   display: block;
 }
 
+.claudian-settings-provider-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.claudian-settings button.claudian-settings-provider-tab {
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+
+.claudian-settings button.claudian-settings-provider-tab:hover,
+.claudian-settings button.claudian-settings-provider-tab:focus,
+.claudian-settings button.claudian-settings-provider-tab:active {
+  color: var(--text-normal);
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-settings button.claudian-settings-provider-tab--active {
+  color: var(--text-normal);
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-settings-provider-content {
+  display: none;
+}
+
+.claudian-settings-provider-content--active {
+  display: block;
+}
+
 /* Codex placeholder */
 .claudian-settings-codex-placeholder {
   padding: 40px 20px;
@@ -71,6 +110,52 @@
 
 .claudian-mcp-settings-desc {
   margin-bottom: 12px;
+}
+
+.claudian-collab-git-installation-help {
+  margin: var(--size-4-1) var(--size-4-3) var(--size-4-4);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-collab-git-installation-help > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.claudian-collab-git-installation-help > summary:hover {
+  color: var(--text-normal);
+}
+
+.claudian-collab-git-installation-help > p {
+  margin: var(--size-4-2) 0;
+}
+
+.claudian-collab-git-path-status {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-inline-start: var(--size-4-1);
+  border-radius: 50%;
+  background: var(--text-faint);
+  vertical-align: middle;
+}
+
+.claudian-collab-git-path-status--available {
+  background: var(--color-green);
+}
+
+.claudian-collab-git-path-status--unavailable {
+  background: var(--color-red);
+}
+
+.claudian-collab-read-more-link {
+  color: var(--text-accent);
+}
+
+.claudian-collab-read-more-link:hover,
+.claudian-collab-read-more-link:focus-visible {
+  color: var(--text-accent-hover);
 }
 
 /* Custom section descriptions - align with items */
