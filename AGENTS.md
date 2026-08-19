@@ -9,9 +9,11 @@ Do not assume provider parity. Check each provider's `capabilities.ts`, `registr
 ## Scope Guides
 
 - Before editing a scoped area, read its nearest scoped guide:
+  - `packages/collab-protocol/AGENTS.md`
   - `src/app/AGENTS.md`
   - `src/core/AGENTS.md`
   - `src/features/chat/AGENTS.md`
+  - `src/features/collab/AGENTS.md`
   - `src/providers/claude/AGENTS.md`
   - `src/providers/codex/AGENTS.md`
   - `src/providers/grok/AGENTS.md`
@@ -56,6 +58,7 @@ Scoped guides define the source of truth and allowed mutators for state in their
 | Area | Responsibility |
 | --- | --- |
 | `src/main.ts` | Plugin lifecycle and concrete application composition |
+| `packages/collab-protocol/` | Sole owner of the decision-complete shared Collab wire contract: opaque IDs, transport-neutral DTOs, executable codecs, the operation registry, shared safe errors and limits, Git ref semantics, and version/compatibility policy consumed by Claudian and Cloud Server; undecided Cloud snapshots and events remain excluded |
 | `src/app/` | Application conversation, settings, provider-host, and storage services |
 | `src/core/` | Provider-neutral runtime, registry, storage, tool, and type contracts |
 | `src/providers/acp/` | Shared ACP transport, interaction, and session primitives without provider policy |
@@ -78,6 +81,7 @@ providers -> ProviderHost + core contracts + shared provider and UI primitives
 ```
 
 - `core/` must not import feature code, app composition, or provider implementations.
+- `packages/collab-protocol/` must not import repository source (`src/`), Obsidian, or any transport binding; `src/` consumes it only through the `@claudian/collab-protocol` package entry point, and `src/core/collab/` retains only client-only Collab contracts without re-exporting package symbols.
 - Feature code must not import provider implementations. Resolve provider behavior through core registries and contracts.
 - Provider runtime and protocol code must not import chat views, feature controllers, or other feature orchestration.
 - Existing Claude compatibility re-exports that point into `src/app/` are migration seams, not an allowed general dependency direction. Do not add new provider-to-app imports; move shared contracts into `core/` when touching those seams materially.
@@ -87,6 +91,7 @@ providers -> ProviderHost + core contracts + shared provider and UI primitives
 ### Cross-Layer Ownership
 
 - `src/main.ts` owns plugin lifecycle and wiring; it does not become the home for feature or provider behavior.
+- Complex application domains may expose one app-owned subcomposition helper, but `src/main.ts` remains the sole concrete caller and lifecycle publisher; subcomposition must not become a second root or service locator.
 - `src/app/` owns application-scoped repositories, settings transactions, host adapters, and persistence coordination. See its scoped guide for exact state authority.
 - `src/features/*/` owns user-facing orchestration and presentation state, not provider-native processes or storage formats.
 - `src/providers/*/` owns native protocol, process, session, transcript, settings, and provider-state interpretation.
@@ -103,18 +108,28 @@ Provider-specific session fields belong behind typed helpers in the owning provi
 
 ## Development Rules
 
-- Write code, comments, identifiers, commit messages, and code blocks in English.
+- Write code, comments, identifiers, commit messages, and code blocks in English. Keep Markdown soft-wrapped (no hard-wrapped lines).
 - Do not use `console.*` in production code.
 - Settings writers must merge rather than replace provider-owned configuration.
 - Put non-committed notes, handoff files, traces, and throwaway scripts in `.context/`.
+- Production bundling Brotli-compresses locale JSON and the canonical `sql.js/dist/sql-wasm.wasm` import through `scripts/compressedStaticAssets.js`. Keep those import paths or update the build round-trip test with the bundler.
 
 ## TDD Workflow
 
-- For new behavior or bug fixes, work one observable slice at a time: add or update the failing test in the mirrored `tests/` path, make it pass, then refactor.
-- Test through the closest stable owner or public interface; do not expose or test private methods only for convenience.
-- Mock environment and provider boundaries. Prefer real Claudian code, fixtures, or lightweight fakes for Claudian-owned collaborators.
-- For shared provider contracts, test provider-neutral behavior first, then cover each provider adapter's distinct behavior separately.
-- If a change cannot be tested directly, document why and cover the closest stable contract instead.
+### General
+
+- Production behavior changes and bug fixes must use TDD: establish a failing executable test at an agreed seam before implementation. Documentation-only and non-behavioral mechanical changes are exempt. When an automated failing test is not feasible, record repeatable failing evidence first and cover the closest stable seam.
+- Treat documented owning-module and public interfaces as pre-agreed test seams. If behavior cannot be verified without reaching past a seam, resolve the ownership or interface decision before writing the test; do not add a test-only facade or public method.
+- Build vertical tracer bullets: exercise one observable behavior at one seam with the minimum implementation needed to prove it. Do not batch a horizontal layer of tests around imagined types, collaborators, or future behavior.
+- Derive expected results independently from the implementation, using a specification literal, accepted fixture, or worked example. Do not reproduce the production algorithm in the assertion, assert internal call counts, or bypass the owning interface to inspect storage unless that storage contract is the declared seam under test.
+- Mock only true external boundaries, through narrow operation-specific ports rather than a generic conditional transport. Keep owned modules real.
+- After a tracer bullet is green, review and refactor its structure separately under the passing seam-level tests. Do not mix speculative architecture work into the behavior cycle.
+
+### Project-specific
+
+- The owner and public contracts named in the applicable scoped guides are the accepted seams for their areas.
+- Accepted Collab protocol fixtures and captured provider-native examples are independent sources of expected behavior.
+- Mock only environment, Obsidian, and provider boundaries. Keep Claudian-owned modules real. For shared provider contracts, prove provider-neutral behavior first, then cover each adapter's distinct native behavior.
 
 ## Provider Rules
 

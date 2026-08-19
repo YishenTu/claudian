@@ -15,7 +15,7 @@
 
 ![Preview](assets/Preview.png)
 
-An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Grok, Opencode, Pi, and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box.
+An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Grok, Opencode, Pi, and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box. Visit [claudian.md](https://claudian.md/) to learn more.
 
 ## Features & Usage
 
@@ -29,11 +29,13 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Plan Mode** — Toggle via `Shift+Tab`. The agent explores and designs before implementing, then presents a plan for approval.
 
-**Instruction Mode (`#`)** — Refined custom instructions added from the chat input.
+**Instruction Mode (`/instruction`)** — Refined custom instructions added from the chat input.
 
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
 
 **Tabs & Session Management** — Use multiple tabs in single-panel mode or a persistent session manager beside the chat in dual-pane mode.
+
+**Collab Mode** — Collaborate on shared projects with other Claudian users. [Learn more](https://claudian.md/docs/collab-mode/).
 
 ## Requirements
 
@@ -43,9 +45,10 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
   - [Grok Build](https://github.com/xai-org/grok-build)
   - [OpenCode](https://github.com/anomalyco/opencode)
   - [Pi](https://github.com/earendil-works/pi)
-- A compatible subscription or API provider, such as [OpenRouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.kimi.ai/docs/guide/claude-code-kimi), [GLM](https://docs.z.ai/devpack/tool/claude), or [DeepSeek](https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code).
+- A compatible subscription or API provider, such as [OpenRouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.kimi.ai/docs/guide/claude-code-kimi), [GLM](https://docs.z.ai/devpack/tool/claude), or [DeepSeek](https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code) etc.
 - Obsidian v1.7.2+
 - Desktop only (macOS, Linux, Windows)
+- Collab Mode requires [Git](https://git-scm.com/install/)
 
 ## Installation
 
@@ -88,7 +91,8 @@ npm run build
 ## Privacy & Data Use
 
 - **Sent to API**: Your input, attached files, images, and tool call outputs. Depending on the selected provider, data is sent to Anthropic (Claude), OpenAI (Codex), xAI (Grok), or the providers configured in OpenCode or Pi. The destination can be configured through provider settings and environment variables.
-- **No telemetry or unsolicited background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, and provider SDK/CLI calls needed to answer your requests.
+- **Collab LAN traffic**: When you explicitly Host or synchronize a Collab Project, Project Git data and authenticated coordination metadata travel directly between invited teammates' devices on the local network. Collab Mode itself does not send Project data to a Claudian cloud service or any third party.
+- **No telemetry or unsolicited background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, provider SDK/CLI calls needed to answer your requests, and explicitly started Collab LAN work.
 
 ## Troubleshooting
 
@@ -135,14 +139,14 @@ For provider-specific installation and configuration guidance, refer to the prov
 ```
 src/
 ├── main.ts                      # Plugin entry point
-├── app/                         # Shared defaults and plugin-level storage
+├── app/                         # Application services, storage, and lazy Collab infrastructure
 ├── core/                        # Provider-neutral runtime, registry, and type contracts
 │   ├── runtime/                 # ChatRuntime interface and approval types
 │   ├── providers/               # Provider registry and workspace services
 │   ├── auxiliary/               # Shared provider auxiliary services
 │   ├── bootstrap/               # Plugin bootstrap wiring
 │   ├── security/                # Approval utilities
-│   └── ...                      # commands, mcp, prompt, storage, tools, types
+│   └── ...                      # commands, prompt, storage, tools, types
 ├── providers/
 │   ├── claude/                  # Claude SDK adaptor, prompt encoding, storage, MCP, plugins
 │   ├── codex/                   # Codex app-server adaptor, JSON-RPC transport, JSONL history
@@ -152,6 +156,7 @@ src/
 │   └── acp/                     # Agent Client Protocol shared transport
 ├── features/
 │   ├── chat/                    # Sidebar chat: tabs, controllers, renderers
+│   ├── collab/                  # Collab sidebar, review, conflict, and access UI
 │   ├── inline-edit/             # Inline edit modal and provider-backed edit services
 │   └── settings/                # Settings shell with provider tabs
 ├── shared/                      # Reusable UI components and modals
@@ -196,8 +201,7 @@ ends September 30, 2026. Claudian receives no affiliate commission from these li
 
 <img src="assets/sponsors/MOMA.png" alt="MOMA" width="90%">
 
-Claudian is proudly sponsored by Ke Holdings Inc. (BEIKE) and the MOMA team. Their support helps Claudian continue to
-improve through ongoing development and maintenance.
+Claudian is proudly sponsored by Ke Holdings Inc. (BEIKE) and the MOMA team. Their support helps Claudian continue to improve through ongoing development and maintenance.
 
 > Want to support Claudian or appear here? Contact me: [tysk01213@gmail.com](mailto:tysk01213@gmail.com).
 

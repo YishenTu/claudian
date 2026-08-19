@@ -7,6 +7,12 @@
 - Controllers request conversation and execution changes through injected callbacks, `FeatureHost`, and `ChatExecutionCoordinator`; cross-tab operations remain `TabManager` authority.
 - Renderers and UI components may render state and emit user intent. They must not mutate tab membership, conversation persistence, or provider-session lifecycle directly.
 - `InputController` builds canonical execution requests; providers own native prompt encoding.
+- App-provided Main Agent dynamic sections are best-effort provider-default system instructions. Resolve them before ordinary or steered execution, never encode them as input blocks, expose them in rendered text, or persist them in Claudian's input ledger, and never let resolution failure block Chat.
+- `TabRuntimeInputBindings` is the sole Main Chat owner of composer input and keydown forwarding. Shared dropdown sources contribute matching, loading, and selection semantics but must not install their own input listeners.
+- Main Chat obtains Collab composer references only through the optional `FeatureHost.collabComposerReferences` port. Those menus use the Collab Panel's effective selected Project without mutating selection and insert only visible plain text; no hidden entity metadata enters messages or persistence.
+- Collab surface availability, composer references, and the Collab dynamic system-prompt section all follow the application-owned live Collab enablement predicate. Disabled views must remove Collab from surface rotation, destroy an instantiated Collab controller, and preserve the active chat tab; plugin-lifetime composer ports reset to a cold unavailable state rather than becoming terminally disposed.
+- Single-panel and dual-pane Collab presentation share one lazy `CollabPanel` controller and one rendered DOM tree. `ClaudianView` reparents that surface between the compact nav dropup and persistent sidebar; closing the dropup only deactivates it, while disabling Collab or closing the view destroys it. History and compact Collab dropups are mutually exclusive.
+- Sidebar surface swipes use one native horizontal scroll container with mandatory snap points. Chromium owns wheel transactions, momentum, drag position, and gesture completion; do not classify physical swipes from delta strength or idle timers, cancel wheel events, or translate the surface strip. Preload the first horizontal drag target without changing semantic activity. For swipe navigation, commit `activeSidebarSurface`, `inert`, `aria-hidden`, and provider surface activation only from `scrollend` after snap completion. This keeps the wheel target valid through Chromium's transaction when the pointer is stationary. With exactly two enabled surfaces, keep the live active surface at the center snap and use one inert, accessibility-hidden visual replica so the other logical surface occupies both adjacent snaps. The replica owns no controller or semantic state, both copies map to the same logical surface, and replica refresh must happen during alignment rather than wheel or scroll dispatch.
 - Resolve provider-owned services through registries:
   - `ProviderRegistry`: execution backends, title generation, instruction refinement, inline edit, task-result interpretation.
   - `ProviderWorkspaceRegistry`: command catalogs, agent mentions, CLI resolution, settings tabs.
@@ -19,6 +25,8 @@
 | `TabRuntimeFactory` | Atomic per-tab assembly, publication, and rollback. It privately orchestrates complete runtime bundles and returns only assembled runtimes to `TabManager` |
 | `TabLifecycle` | Runtime activation/deactivation, provisional retention, shutdown drainage, teardown, and display-title helpers |
 | `TabProviderState` | Provider/model/settings resolution, provider UI gating, workspace-service synchronization, and execution initialization |
+| `MainChatComposerDropdown` | One dropdown controller and source set for provider slash commands, Vault/external/Agent mentions, and optional Collab Member Changes/Ticket references |
+| `LinkedContentController` | One tab's Linked content selection, greeting selector, context-tray projection, first-create submission freeze, immutable lock, and Vault path-event reconciliation |
 | `TabSessionEvents` | Provider-session event routing, background-work sequencing, and automatic-turn rendering |
 | `TabForking` | Fork-source resolution and immutable fork-context preparation |
 | `TabSession` | Authoritative per-tab identity, conversation binding, provider binding, lifecycle value, immutable execution-coordinator reference and disposal, active-turn reference, and background-work sequencing |
@@ -51,6 +59,7 @@ Keep these layers independent:
    - Versioned view-state decoding is fail-closed: one malformed tab, duplicate ID, invalid active target, or invalid expanded-title target rejects the entire view snapshot. Permissive normalization is reserved for the legacy plugin-global migration source.
 3. **Runtime tab state**
    - `TabSession`, `ChatState`, controllers, renderers, and DOM exist only for the current view runtime. An unbound tab snapshots its own provider/model draft when created.
+   - Each tab owns exactly one `LinkedContentController`. An unbound auto draft may follow its active eligible Markdown Note; explicit selection is sticky, and a durable Conversation always projects a locked file, folder, missing, or unlinked identity. The Vault root is not a valid Linked content target.
    - Hydration state is independent from both active-tab selection and provider execution state.
 4. **Provider execution state**
    - `ChatExecutionCoordinator` owns the live per-tab execution binding.
@@ -101,6 +110,8 @@ Tab activation and conversation hydration do not themselves authorize creation o
 - Closing a tab disposes its runtime resources but never deletes its conversation; conversation deletion is a separate application operation.
 - Layout and presentation changes must not alter conversation binding or execution lifecycle.
 - Initial responsive layout must be established before constructing or attaching navigation UI, and restoration must publish the completed tab bar only after every selected shell is admitted.
+- Linked content is immutable for a durable Conversation. The first canonical user turn freezes the draft path before Conversation creation and uses that same token for creation plus provider context; create failure restores the reconciled draft, while any post-create failure leaves a locked zero-message Conversation whose retry is still ordinal one. Later, queued, steered, hydrated, and `/compact` turns never resend the reference through a mutable sent flag.
+- Linked content supplies scoped context, not a workspace transition: selecting a file or folder must not change the agent CWD, external workspace roots, permissions, current Obsidian file, or Collab Project selection. Providers receive only the canonical path and must not recursively ingest a directory without agent-initiated reads.
 - A stale provider generation, session binding, or stream generation must not update the current tab.
 - Warm preparation is provisional until the coordinator revalidates its conversation binding and disposal generation after acquisition and snapshot persistence; superseded work must not install, retain, or publish a warm provider session.
 - Conversation navigation is latest-wins across provisional and retained targets; provisional cleanup blocks new navigation while it invalidates and drains pending work, and manager teardown fences all later requests.

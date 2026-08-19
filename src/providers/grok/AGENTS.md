@@ -25,6 +25,7 @@
 - Preserve `Conversation.sessionId` and provider state across prompt, CLI-path, and environment changes. Recycle the process and load the same native session.
 - Use Grok's native history under `~/.grok/sessions/` read-only.
 - Send image attachments as ACP image content blocks and rehydrate their persisted native blocks. Use Grok's `_x.ai/interject` and `_x.ai/session/fork` extensions behind typed provider-owned boundaries for steering and forks.
+- Grok's `_x.ai/session/fork` request does not carry system-prompt metadata. After adopting the child, load that child with the current complete Grok/Claudian system-prompt replacement before its first prompt, and record the configuration as applied only after that load succeeds.
 - Keep Grok/xAI tools enabled and preserve unknown tool data losslessly. Adapt Grok task-family lifecycle calls into the shared subagent renderer while retaining their raw names and payloads.
 - Expose Safe, Plan, and YOLO. Plan is a native ACP session mode layered over the remembered Safe or YOLO base; native mode updates remain authoritative.
 
