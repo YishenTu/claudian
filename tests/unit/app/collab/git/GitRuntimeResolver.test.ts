@@ -142,7 +142,7 @@ describe('GitRuntimeResolver', () => {
     const resolver = new GitRuntimeResolver({
       conventionalCandidates: () => ['/conventional/git'],
       findOnPath: () => pathGit,
-      platform: 'darwin',
+      platform: process.platform,
       probe,
     });
 
@@ -164,7 +164,7 @@ describe('GitRuntimeResolver', () => {
     const resolver = new GitRuntimeResolver({
       conventionalCandidates: () => [pathGit, manualGit],
       findOnPath: () => pathGit,
-      platform: 'linux',
+      platform: process.platform,
       probe,
     });
 
@@ -181,7 +181,7 @@ describe('GitRuntimeResolver', () => {
   it('reports an incompatible version without claiming missing Git', async () => {
     const resolver = new GitRuntimeResolver({
       findOnPath: () => pathGit,
-      platform: 'linux',
+      platform: process.platform,
       probe: async () => ({
         ...SUPPORTED_PROBE,
         version: { major: 2, minor: 37, patch: 9, raw: 'git version 2.37.9' },
@@ -198,7 +198,7 @@ describe('GitRuntimeResolver', () => {
   it('reports every missing required capability', async () => {
     const resolver = new GitRuntimeResolver({
       findOnPath: () => pathGit,
-      platform: 'linux',
+      platform: process.platform,
       probe: async () => ({
         ...SUPPORTED_PROBE,
         capabilities: {
@@ -220,7 +220,7 @@ describe('GitRuntimeResolver', () => {
     const probe = jest.fn().mockResolvedValue(SUPPORTED_PROBE);
     const resolver = new GitRuntimeResolver({
       findOnPath: () => pathGit,
-      platform: 'linux',
+      platform: process.platform,
       probe,
     });
 
@@ -235,7 +235,7 @@ describe('GitRuntimeResolver', () => {
     const probe = jest.fn();
     const resolver = new GitRuntimeResolver({
       findOnPath: () => pathGit,
-      platform: 'linux',
+      platform: process.platform,
       probe,
     });
 
@@ -252,7 +252,7 @@ describe('GitRuntimeResolver', () => {
     const probe = jest.fn();
     const resolver = new GitRuntimeResolver({
       findOnPath: () => pathGit,
-      platform: 'darwin',
+      platform: process.platform,
       probe,
     });
 

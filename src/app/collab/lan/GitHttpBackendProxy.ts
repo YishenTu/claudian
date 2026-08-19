@@ -18,7 +18,10 @@ import {
   type ParsedGitHttpRoute,
   parseGitHttpRoute,
 } from '@/app/collab/lan/git/GitHttpRoute';
-import { createProtectedReceiveHook } from '@/app/collab/lan/git/GitReceiveHookPolicy';
+import {
+  createProtectedReceiveHook,
+  formatGitExecutableForReceiveHook,
+} from '@/app/collab/lan/git/GitReceiveHookPolicy';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
@@ -531,7 +534,9 @@ export class GitHttpBackendProxy {
       throw proxyError('path-invalid', 'git-protocol-header-invalid');
     }
     Object.assign(environment, {
-      CLAUDIAN_COLLAB_GIT_EXECUTABLE: this.options.gitExecutablePath,
+      CLAUDIAN_COLLAB_GIT_EXECUTABLE: formatGitExecutableForReceiveHook(
+        this.options.gitExecutablePath,
+      ),
       CLAUDIAN_COLLAB_MEMBER_ID: memberId,
       CLAUDIAN_COLLAB_MEMBER_REF: collabMemberRef(memberId),
       CLAUDIAN_COLLAB_PROJECT_ID: this.options.projectId,

@@ -1,3 +1,12 @@
+export function formatGitExecutableForReceiveHook(
+  executablePath: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === 'win32'
+    ? executablePath.replace(/\\/g, '/')
+    : executablePath;
+}
+
 export function createProtectedReceiveHook(): string {
   return `#!/bin/sh
 set -eu
