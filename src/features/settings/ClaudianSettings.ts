@@ -1,4 +1,4 @@
-import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
+import type { App, Plugin } from 'obsidian';
 import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import {
@@ -162,7 +162,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
    * Claudian still builds its settings imperatively in display(); this empty
    * array satisfies the contract so the tab is registered in search.
    */
-  getSettingDefinitions(): SettingDefinitionItem[] {
+  getSettingDefinitions(): never[] {
     return [];
   }
 
@@ -258,7 +258,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
     };
 
     for (const id of tabIds) {
-      const label = t(`settings.tabs.${id}` as TranslationKey);
+      const label = t(`settings.tabs.${id}`);
       const button = tabBar.createEl('button', {
         cls: `claudian-settings-tab${id === this.activeTab ? ' claudian-settings-tab--active' : ''}`,
         text: label,
@@ -788,7 +788,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const setGitStatus = (
       status: 'available' | 'checking' | 'unavailable',
     ): void => {
-      const label = t(`settings.collabGitStatus.${status}` as TranslationKey);
+      const label = t(`settings.collabGitStatus.${status}`);
       statusEl.className = [
         'claudian-collab-git-path-status',
         `claudian-collab-git-path-status--${status}`,
