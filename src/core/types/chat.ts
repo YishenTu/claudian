@@ -27,7 +27,7 @@ export interface ImageAttachment {
   source: 'file' | 'paste' | 'drop';
 }
 
-export interface ExecutionInputCurrentNoteSnapshot {
+export interface ExecutionInputLinkedContentSnapshot {
   path: string;
   content?: string;
 }
@@ -62,7 +62,7 @@ export interface ExecutionInputCanvasSnapshot {
 }
 
 export interface ExecutionInputContextSnapshot {
-  currentNote?: ExecutionInputCurrentNoteSnapshot;
+  linkedContent?: ExecutionInputLinkedContentSnapshot;
   editorSelection?: ExecutionInputEditorSnapshot | null;
   browserSelection?: ExecutionInputBrowserSnapshot | null;
   canvasSelection?: ExecutionInputCanvasSnapshot | null;
@@ -106,7 +106,9 @@ export interface ChatMessage {
   timestamp: number;
   toolCalls?: ToolCallInfo[];
   contentBlocks?: ContentBlock[];
-  currentNote?: string;
+  linkedContentPath?: string;
+  /** Legacy replay-only field. New messages must use linkedContentPath. */
+  readonly currentNote?: string;
   images?: ImageAttachment[];
   /** Canonical submitted input correlated from Claudian-owned persistence. */
   executionInput?: ExecutionInputSnapshot;
@@ -146,7 +148,7 @@ export interface Conversation {
   /** Read-only native locator retained solely for historical model recovery. */
   modelRecoverySource?: ConversationModelRecoverySource;
   messages: ChatMessage[];
-  currentNote?: string;
+  readonly linkedContentPath?: string;
   /** Whether the session is pinned in the dual-pane session manager. */
   isPinned?: boolean;
   /** Whether the session is archived and hidden from active session lists. */
@@ -160,6 +162,11 @@ export interface Conversation {
   /** Assistant checkpoint identifier for resumeAtMessageId after rewind. */
   resumeAtMessageId?: string;
 }
+
+export type ConversationMutablePatch = Partial<Omit<
+  Conversation,
+  'id' | 'providerId' | 'createdAt' | 'linkedContentPath'
+>>;
 
 /** Native session locator that must never make an invalidated session resumable. */
 export interface ConversationModelRecoverySource {
@@ -180,8 +187,8 @@ export interface ConversationMeta {
   lastActivityAt: number;
   messageCount: number;
   preview: string;
-  /** Vault-relative path of the note linked to this session. */
-  currentNote?: string;
+  /** Vault-relative path of the file or directory linked to this session. */
+  linkedContentPath?: string;
   /** Whether the session is pinned in the dual-pane session manager. */
   isPinned?: boolean;
   /** Whether the session is archived and hidden from active session lists. */
@@ -209,7 +216,7 @@ export interface SessionMetadata {
   providerState?: Record<string, unknown>;
   /** Read-only native locator retained solely for historical model recovery. */
   modelRecoverySource?: ConversationModelRecoverySource;
-  currentNote?: string;
+  linkedContentPath?: string;
   isPinned?: boolean;
   isArchived?: boolean;
   externalContextPaths?: string[];

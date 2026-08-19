@@ -67,8 +67,13 @@ export const DUAL_PANE_SIDES = ['left', 'right'] as const;
 /** Side of the chat occupied by the session manager in dual-pane mode. */
 export type DualPaneSide = typeof DUAL_PANE_SIDES[number];
 
-export type SessionManagerOrganization = 'list' | 'linked-note';
+export type SessionManagerOrganization = 'list' | 'linked-content';
 export type SessionManagerSort = 'last-updated' | 'created';
+
+export interface LegacyLinkedContentSettingsInput {
+  sessionManagerOrganization?: SessionManagerOrganization | 'linked-note';
+  pinnedLinkedNotePaths?: unknown;
+}
 
 /** Forced provider transition invalidated a parked auxiliary continuation. */
 export interface AuxiliaryContinuityReset {
@@ -179,12 +184,14 @@ export interface ClaudianSettings {
   expandFileEditsByDefault: boolean;
   chatViewPlacement: ChatViewPlacement;
   enableDualPane: boolean;
-  enableFilePane: boolean;
   dualPaneSide: DualPaneSide;
   restoreTabsOnStartup: boolean;
+  collabEnabled: boolean;
+  collabProjectsFolder: string;
+  collabGitPath: string;
   sessionManagerOrganization?: SessionManagerOrganization;
   sessionManagerSort?: SessionManagerSort;
-  pinnedLinkedNotePaths?: string[];
+  pinnedLinkedContentPaths?: string[];
 
   // Provider command visibility
   hiddenProviderCommands: HiddenProviderCommands;

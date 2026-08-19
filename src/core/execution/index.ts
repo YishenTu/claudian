@@ -52,11 +52,11 @@ export {
   type ProviderExecutionTransitionScope,
 } from './ProviderExecutionLifecycleRegistry';
 export {
-  type ProviderCurrentNoteContext,
   type ProviderExecutionConfiguration,
   type ProviderExecutionContext,
   type ProviderExecutionInputBlock,
   type ProviderExecutionRequest,
+  type ProviderLinkedContentContext,
   type ProviderSystemInstructions,
   type ProviderToolPolicy,
 } from './ProviderExecutionRequest';

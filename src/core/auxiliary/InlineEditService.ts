@@ -17,10 +17,12 @@ const CONTINUITY_RESET_MESSAGE =
 
 export class InlineEditService implements InlineEditServiceContract {
   private readonly controller: AuxiliarySessionController;
+  private readonly vaultWorkingDirectory: string;
   private hasConversation = false;
   private modelOverride: string | undefined;
 
   constructor(context: AuxiliaryExecutionContext) {
+    this.vaultWorkingDirectory = context.vaultWorkingDirectory;
     this.controller = new AuxiliarySessionController(
       context,
       'inline-edit',
@@ -78,7 +80,7 @@ export class InlineEditService implements InlineEditServiceContract {
       const text = await this.controller.execute({
         model: this.modelOverride,
         prompt,
-        systemPrompt: getInlineEditSystemPrompt(),
+        systemPrompt: getInlineEditSystemPrompt(this.vaultWorkingDirectory),
       });
       this.hasConversation = true;
       return parseInlineEditResponse(text);

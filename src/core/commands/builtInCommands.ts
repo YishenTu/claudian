@@ -8,10 +8,19 @@
 import { ProviderRegistry } from '../providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId } from '../providers/types';
 
-export type BuiltInCommandAction = 'clear' | 'add-dir' | 'resume' | 'fork' | 'fast';
-type BuiltInCommandCapability = 'supportsNativeHistory' | 'supportsFork';
+export type BuiltInCommandAction =
+  | 'clear'
+  | 'add-dir'
+  | 'resume'
+  | 'fork'
+  | 'fast'
+  | 'instruction';
+type BuiltInCommandCapability =
+  | 'supportsNativeHistory'
+  | 'supportsFork'
+  | 'supportsInstructionMode';
 type BuiltInCommandCapabilityContext =
-  Pick<ProviderCapabilities, BuiltInCommandCapability>
+  Partial<Pick<ProviderCapabilities, BuiltInCommandCapability>>
   & Partial<Pick<ProviderCapabilities, 'providerId'>>;
 type BuiltInCommandSupportContext = ProviderId | BuiltInCommandCapabilityContext;
 
@@ -28,6 +37,8 @@ export interface BuiltInCommand {
   requiredCapability?: BuiltInCommandCapability;
   /** When set, only these providers expose and execute the command. */
   supportedProviderIds?: ProviderId[];
+  /** When true, any submitted arguments leave the text for normal provider handling. */
+  exact?: boolean;
 }
 
 export interface BuiltInCommandResult {
@@ -67,6 +78,13 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     description: 'Toggle fast mode',
     action: 'fast',
     supportedProviderIds: ['codex'],
+  },
+  {
+    name: 'instruction',
+    description: 'Save a reusable custom instruction',
+    action: 'instruction',
+    exact: true,
+    requiredCapability: 'supportsInstructionMode',
   },
 ];
 
@@ -125,7 +143,7 @@ export function isBuiltInCommandSupported(
   }
 
   const capabilities = resolveCapabilities(context);
-  return capabilities ? capabilities[command.requiredCapability] : false;
+  return capabilities ? capabilities[command.requiredCapability] === true : false;
 }
 
 /**
@@ -147,9 +165,10 @@ export function detectBuiltInCommand(
   const cmdName = match[1].toLowerCase();
   const command = commandMap.get(cmdName);
   if (!command) return null;
-  if (!isBuiltInCommandProviderSupported(command, context)) return null;
+  if (!isBuiltInCommandSupported(command, context)) return null;
 
   const args = (match[2] || '').trim();
+  if (command.exact && args.length > 0) return null;
 
   return { command, args };
 }

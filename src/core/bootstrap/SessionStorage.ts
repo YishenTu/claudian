@@ -1,4 +1,5 @@
 import { mapWithConcurrency } from '../../utils/concurrency';
+import { decodeLinkedContentPathFields } from '../path/LinkedContentPath';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
   type SessionMetadataListOptions,
@@ -234,7 +235,7 @@ export class SessionStorage implements SessionMetadataReader {
       lastActivityAt: meta.lastActivityAt,
       messageCount: 0,
       preview: 'SDK session',
-      currentNote: meta.currentNote,
+      linkedContentPath: meta.linkedContentPath,
       isPinned: meta.isPinned,
       isArchived: meta.isArchived,
       titleGenerationStatus: meta.titleGenerationStatus,
@@ -279,21 +280,26 @@ export class SessionStorage implements SessionMetadataReader {
       lastResponseAt: _lastResponseAt,
       selectedModel: rawSelectedModel,
       modelRecoverySource: rawModelRecoverySource,
+      linkedContentPath: _rawLinkedContentPath,
+      currentNote: _rawCurrentNote,
       ...metadataFields
     } = rawMetadata;
     const selectedModel = typeof rawSelectedModel === 'string'
       ? rawSelectedModel
       : undefined;
     const modelRecoverySource = this.parseModelRecoverySource(rawModelRecoverySource);
+    const linkedContent = decodeLinkedContentPathFields(rawMetadata);
     const metadata = {
       ...metadataFields,
       ...(selectedModel !== undefined ? { selectedModel } : {}),
       ...(modelRecoverySource ? { modelRecoverySource } : {}),
+      ...(linkedContent.path ? { linkedContentPath: linkedContent.path } : {}),
       lastActivityAt,
     } as unknown as SessionMetadata;
     const needsMigration = !Number.isFinite(rawMetadata.lastActivityAt)
       || 'updatedAt' in rawMetadata
       || 'lastResponseAt' in rawMetadata
+      || linkedContent.needsMigration
       || (rawSelectedModel !== undefined && selectedModel === undefined)
       || (rawModelRecoverySource !== undefined && modelRecoverySource === undefined);
     return { metadata, needsMigration, source };
