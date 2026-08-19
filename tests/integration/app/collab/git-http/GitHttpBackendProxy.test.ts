@@ -37,6 +37,20 @@ function authError(): CollabError {
   });
 }
 
+async function requireGitSuccess<T>(operation: Promise<T>): Promise<T> {
+  try {
+    return await operation;
+  } catch (error) {
+    if (error instanceof CollabError) {
+      throw new Error(
+        `Unexpected Git failure: ${error.code} ${JSON.stringify(error.safeContext)}`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+}
+
 describe('GitHttpBackendProxy integration', () => {
   let authorityDirectory: string;
   let authenticationCalls: number;
@@ -224,21 +238,21 @@ describe('GitHttpBackendProxy integration', () => {
       .toBe(initialOid);
 
     memberStatus = 'active';
-    await expect(service.push(
+    await requireGitSuccess(service.push(
       clonePath,
       'origin',
       `${collabMemberRef(MEMBER_ID)}:${collabMemberRef(MEMBER_ID)}`,
       network,
-    )).resolves.toBeUndefined();
+    ));
     expect(await service.resolveRef(bareRepositoryPath, collabMemberRef(MEMBER_ID)))
       .toBe(publishedOid);
-    await expect(service.fetch(
+    await requireGitSuccess(service.fetch(
       clonePath,
       'origin',
       ['+refs/heads/main:refs/remotes/origin/main'],
       network,
-    )).resolves.toBeUndefined();
-    await expect(service.assertHealthy(bareRepositoryPath)).resolves.toBeUndefined();
+    ));
+    await requireGitSuccess(service.assertHealthy(bareRepositoryPath));
     expect(backpressureCount).toBeGreaterThan(0);
     expect(proxy.activeChildCount).toBe(0);
     const receiveFsck = await runner.run({
@@ -342,7 +356,7 @@ describe('GitHttpBackendProxy integration', () => {
       `${collabMemberRef(MEMBER_ID)}:${collabMemberRef(MEMBER_ID)}`,
       network,
     )).rejects.toBeInstanceOf(CollabError);
-    await expect(service.assertHealthy(bareRepositoryPath)).resolves.toBeUndefined();
+    await requireGitSuccess(service.assertHealthy(bareRepositoryPath));
   });
 
   it('rejects main, another member, deletion, and non-fast-forward updates', async () => {
@@ -386,7 +400,12 @@ describe('GitHttpBackendProxy integration', () => {
       })).rejects.toBeInstanceOf(CollabError);
     }
 
-    await service.push(clonePath, 'origin', `${personalRef}:${personalRef}`, network);
+    await requireGitSuccess(service.push(
+      clonePath,
+      'origin',
+      `${personalRef}:${personalRef}`,
+      network,
+    ));
     await runner.run({
       args: ['update-ref', personalRef, initialOid!, secondOid],
       cwd: clonePath,
@@ -401,7 +420,7 @@ describe('GitHttpBackendProxy integration', () => {
     expect(await service.resolveRef(bareRepositoryPath, collabMemberRef('member-bob')))
       .toBeNull();
     expect(await service.resolveRef(bareRepositoryPath, personalRef)).toBe(secondOid);
-    await expect(service.assertHealthy(bareRepositoryPath)).resolves.toBeUndefined();
+    await requireGitSuccess(service.assertHealthy(bareRepositoryPath));
     expect(proxy.activeChildCount).toBe(0);
   });
 
