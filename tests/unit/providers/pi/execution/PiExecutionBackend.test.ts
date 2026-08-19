@@ -557,6 +557,26 @@ describe('PiExecutionBackend', () => {
     expect(new Set(events.map(event => event.scope.sequence)).size).toBe(events.length);
   });
 
+  it('encodes path-only Linked content without changing the Vault-root process CWD', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest({
+      context: { linkedContent: { path: 'Projects/Research' } },
+      input: [{ text: 'Inspect linked content', type: 'text' }],
+    }));
+    const eventsPromise = collect(run.events);
+    await flush();
+    completeTurn(harness.kernels[0]);
+    await eventsPromise;
+
+    expect(harness.kernels[0].launchSpec.cwd).toBe('/vault');
+    expect(getPromptMessages(harness.kernels[0])).toEqual([
+      'Inspect linked content\n\n<linked_content path="Projects/Research" />',
+    ]);
+    expect(getPromptMessages(harness.kernels[0])[0]).not.toMatch(
+      /<(?:linked_note|current_note)\b/,
+    );
+  });
+
   it('launches resumed persistent sessions with their native session file', async () => {
     const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-resume-session-'));
     const sessionFile = path.join(sessionDir, 'pi-session-1.jsonl');
@@ -1159,6 +1179,33 @@ describe('PiExecutionBackend', () => {
     await eventsPromise;
 
     expect(harness.kernels[0].launchSpec.args).toContain(expected);
+  });
+
+  it('includes provider-default dynamic sections in the complete system prompt', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest({
+      configuration: {
+        model: 'pi:anthropic/claude-sonnet-4',
+        reasoning: 'high',
+        systemInstructions: {
+          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          kind: 'provider-default',
+        },
+      },
+    }));
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+    completeTurn(harness.kernels[0]);
+    await eventsPromise;
+
+    const args = harness.kernels[0].launchSpec.args;
+    const promptIndex = args.indexOf('--system-prompt');
+    const systemPrompt = args[promptIndex + 1] ?? '';
+    expect(systemPrompt).toContain('## Runtime Context');
+    expect(systemPrompt).toContain('Use `bash: date`');
+    expect(systemPrompt).toContain('## Vault Media');
+    expect(systemPrompt).toContain('## Collab Mode\nRuntime guidance.');
+    expect(systemPrompt.match(/## Collab Mode/g)).toHaveLength(1);
   });
 
   it('maps an explicit allow-list exactly and falls back to provider model settings', async () => {

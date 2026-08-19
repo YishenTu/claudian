@@ -215,7 +215,7 @@ function createSubmission(overrides: Partial<ChatTurnSubmission> = {}): ChatTurn
     canonicalText: 'canonical input',
     images: [],
     context: {
-      currentNote: { path: 'note.md', content: 'note' },
+      linkedContent: { path: 'note.md', content: 'note' },
       externalContextPaths: ['/external'],
     },
     conversationHistory: [],
@@ -812,6 +812,12 @@ describe('ChatExecutionCoordinator', () => {
       timestamp: 124,
     };
     const submission = createSubmission({
+      configuration: {
+        systemInstructions: {
+          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          kind: 'provider-default',
+        },
+      },
       images: [image],
       messages: { user: userMessage, assistant: assistantMessage },
     });
@@ -826,8 +832,10 @@ describe('ChatExecutionCoordinator', () => {
       canonicalText: 'canonical input',
       localMessageId: 'user-1',
       images: [image],
-      context: { currentNote: { path: 'note.md', content: 'note' } },
+      context: { linkedContent: { path: 'note.md', content: 'note' } },
     });
+    expect(harness.repository.stageConversationInput.mock.calls[0][1])
+      .not.toHaveProperty('systemInstructions');
     expect(session.requests[0]).toMatchObject({
       input: [
         { type: 'text', text: 'canonical input' },

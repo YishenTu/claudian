@@ -1,10 +1,9 @@
 import { createMockEl } from '@test/helpers/MockElement';
-import { Menu, Notice, Platform, Scope, setIcon, TFile } from 'obsidian';
+import { Menu, Notice, Platform, Scope, setIcon } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ClaudianView } from '@/features/chat/ClaudianView';
-import { HorizontalWheelGesture } from '@/features/chat/ui/HorizontalWheelGesture';
 
 const mockTabManagerConstructor = jest.fn();
 jest.mock('@/features/chat/tabs/TabManager', () => ({
@@ -191,201 +190,196 @@ describe('ClaudianView tab controls', () => {
     expect(inputEl.focus).toHaveBeenCalledTimes(1);
   });
 
-  it('reveals an open linked note and creates a provisional note chat', async () => {
-    const note = Object.assign(new TFile(), {
-      basename: 'Plan',
-      extension: 'md',
-      name: 'Plan.md',
-      path: 'Projects/Plan.md',
-    });
-    const existingLeaf = { view: { file: note } };
-    const previousDraftHandleFileOpen = jest.fn();
-    const linkedDraftHandleFileOpen = jest.fn();
-    const view = Object.create(ClaudianView.prototype) as any;
-    const revealLeaf = jest.fn().mockImplementation(async () => {
-      view.handleWorkspaceFileOpen(note);
-    });
-    const getLeaf = jest.fn();
-    const resetForNewConversation = jest.fn();
-    const setCurrentNote = jest.fn();
+  it('creates a provisional chat with the selected Linked content without opening it', async () => {
+    const selectExplicit = jest.fn();
     const focus = jest.fn();
     let activeTabId = 'initial-tab';
     const createTab = jest.fn().mockImplementation(async () => {
-      activeTabId = 'linked-note-tab';
+      activeTabId = 'linked-content-tab';
       return {
-        id: 'linked-note-tab',
+        id: 'linked-content-tab',
         dom: { inputEl: { focus } },
-        ui: {
-          fileContextManager: {
-            handleFileOpen: linkedDraftHandleFileOpen,
-            resetForNewConversation,
-            setCurrentNote,
-          },
-        },
+        ui: { linkedContentController: { selectExplicit } },
       };
     });
+    const view = Object.create(ClaudianView.prototype) as any;
     Object.assign(view, {
+      contentExists: jest.fn().mockReturnValue(true),
       isArchiveSessionView: false,
-      linkedNoteNavigationDepth: 0,
-      plugin: {
-        app: {
-          vault: { getAbstractFileByPath: jest.fn().mockReturnValue(note) },
-          workspace: {
-            getLeaf,
-            getLeavesOfType: jest.fn().mockReturnValue([existingLeaf]),
-            revealLeaf,
-          },
-        },
-      },
       tabManager: {
         closeTab: jest.fn().mockResolvedValue(true),
         createTab,
         getActiveTabId: jest.fn(() => activeTabId),
         getTabSwitchRequestRevision: jest.fn().mockReturnValue(0),
-        getActiveTab: jest.fn().mockReturnValue({
-          ui: {
-            fileContextManager: {
-              handleFileOpen: previousDraftHandleFileOpen,
-            },
-          },
-        }),
         waitForTabSwitchIdle: jest.fn().mockResolvedValue(undefined),
       },
       updateTabBarVisibility: jest.fn(),
     });
 
-    await view.startLinkedNoteConversation(note.path);
+    await view.startLinkedContentConversation('Projects/Plan.md');
 
-    expect(revealLeaf).toHaveBeenCalledWith(existingLeaf);
-    expect(getLeaf).not.toHaveBeenCalled();
-    expect(previousDraftHandleFileOpen).not.toHaveBeenCalled();
-    expect(linkedDraftHandleFileOpen).not.toHaveBeenCalled();
-    expect(revealLeaf.mock.invocationCallOrder[0])
-      .toBeLessThan(createTab.mock.invocationCallOrder[0]);
     expect(createTab).toHaveBeenCalledWith(null, undefined, {
       activate: true,
       lifecycleState: 'provisional',
     });
-    expect(resetForNewConversation).toHaveBeenCalledTimes(1);
-    expect(setCurrentNote).toHaveBeenCalledWith(note.path);
-    expect(resetForNewConversation.mock.invocationCallOrder[0])
-      .toBeLessThan(setCurrentNote.mock.invocationCallOrder[0]);
+    expect(selectExplicit).toHaveBeenCalledWith('Projects/Plan.md');
     expect(focus).toHaveBeenCalledTimes(1);
   });
 
-  it('opens a closed linked note in a new workspace tab before creating chat', async () => {
-    const note = Object.assign(new TFile(), {
-      basename: 'Plan',
-      extension: 'md',
-      name: 'Plan.md',
-      path: 'Projects/Plan.md',
-    });
-    const noteLeaf = { openFile: jest.fn().mockResolvedValue(undefined), view: {} };
-    const revealLeaf = jest.fn().mockResolvedValue(undefined);
-    const resetForNewConversation = jest.fn();
-    const setCurrentNote = jest.fn();
-    let activeTabId = 'initial-tab';
-    const createTab = jest.fn().mockImplementation(async () => {
-      activeTabId = 'linked-note-tab';
-      return {
-        id: 'linked-note-tab',
-        dom: { inputEl: { focus: jest.fn() } },
-        ui: { fileContextManager: { resetForNewConversation, setCurrentNote } },
-      };
-    });
+  it('supports a directory as Linked content without changing workspace focus', async () => {
+    const selectExplicit = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
     Object.assign(view, {
+      contentExists: jest.fn().mockReturnValue(true),
       isArchiveSessionView: false,
-      plugin: {
-        app: {
-          vault: { getAbstractFileByPath: jest.fn().mockReturnValue(note) },
-          workspace: {
-            getLeaf: jest.fn().mockReturnValue(noteLeaf),
-            getLeavesOfType: jest.fn().mockReturnValue([]),
-            revealLeaf,
-          },
-        },
-      },
       tabManager: {
-        createTab,
-        getActiveTabId: jest.fn(() => activeTabId),
+        closeTab: jest.fn().mockResolvedValue(true),
+        createTab: jest.fn().mockResolvedValue({
+          id: 'linked-content-tab',
+          dom: { inputEl: { focus: jest.fn() } },
+          ui: { linkedContentController: { selectExplicit } },
+        }),
+        getActiveTabId: jest.fn().mockReturnValue('initial-tab'),
         getTabSwitchRequestRevision: jest.fn().mockReturnValue(0),
         waitForTabSwitchIdle: jest.fn().mockResolvedValue(undefined),
       },
       updateTabBarVisibility: jest.fn(),
     });
 
-    await view.startLinkedNoteConversation(note.path);
+    await view.startLinkedContentConversation('Projects');
 
-    expect(view.plugin.app.workspace.getLeaf).toHaveBeenCalledWith('tab');
-    expect(noteLeaf.openFile).toHaveBeenCalledWith(note);
-    expect(revealLeaf).toHaveBeenCalledWith(noteLeaf);
-    expect(createTab).toHaveBeenCalledWith(null, undefined, {
-      activate: true,
-      lifecycleState: 'provisional',
-    });
-    expect(resetForNewConversation).toHaveBeenCalledTimes(1);
-    expect(setCurrentNote).toHaveBeenCalledWith(note.path);
+    expect(selectExplicit).toHaveBeenCalledWith('Projects');
   });
 
-  it('does not steal chat focus after a user switches tabs during note navigation', async () => {
-    const note = Object.assign(new TFile(), {
-      basename: 'Plan',
-      extension: 'md',
-      name: 'Plan.md',
-      path: 'Projects/Plan.md',
-    });
-    let resolveReveal!: () => void;
-    const revealLeaf = jest.fn().mockReturnValue(new Promise<void>((resolve) => {
-      resolveReveal = resolve;
-    }));
-    const focus = jest.fn();
-    const resetForNewConversation = jest.fn();
-    const setCurrentNote = jest.fn();
-    const createTab = jest.fn().mockResolvedValue({
-      id: 'linked-note-tab',
-      dom: { inputEl: { focus } },
-      ui: { fileContextManager: { resetForNewConversation, setCurrentNote } },
-    });
-    const activeTabId = 'initial-tab';
-    let tabSwitchRequestRevision = 0;
+  it('closes the provisional chat when selecting Linked content fails', async () => {
+    const closeTab = jest.fn().mockResolvedValue(true);
     const view = Object.create(ClaudianView.prototype) as any;
     Object.assign(view, {
+      contentExists: jest.fn().mockReturnValue(true),
       isArchiveSessionView: false,
-      linkedNoteNavigationDepth: 0,
-      plugin: {
-        app: {
-          vault: { getAbstractFileByPath: jest.fn().mockReturnValue(note) },
-          workspace: {
-            getLeaf: jest.fn(),
-            getLeavesOfType: jest.fn().mockReturnValue([{ view: { file: note } }]),
-            revealLeaf,
-          },
-        },
-      },
       tabManager: {
-        closeTab: jest.fn().mockResolvedValue(true),
-        createTab,
-        getActiveTabId: jest.fn(() => activeTabId),
-        getTabSwitchRequestRevision: jest.fn(() => tabSwitchRequestRevision),
+        closeTab,
+        createTab: jest.fn().mockResolvedValue({
+          id: 'linked-content-tab',
+          dom: { inputEl: { focus: jest.fn() } },
+          ui: {
+            linkedContentController: {
+              selectExplicit: jest.fn(() => {
+                throw new Error('invalid Linked content');
+              }),
+            },
+          },
+        }),
+        getActiveTabId: jest.fn().mockReturnValue('initial-tab'),
+        getTabSwitchRequestRevision: jest.fn().mockReturnValue(0),
         waitForTabSwitchIdle: jest.fn().mockResolvedValue(undefined),
       },
       updateTabBarVisibility: jest.fn(),
     });
 
-    const startLinkedChat = view.startLinkedNoteConversation(note.path);
-    await Promise.resolve();
-    tabSwitchRequestRevision += 1;
-    resolveReveal();
-    await startLinkedChat;
+    await expect(view.startLinkedContentConversation('Projects')).rejects.toThrow(
+      'invalid Linked content',
+    );
+    expect(closeTab).toHaveBeenCalledWith('linked-content-tab');
+  });
 
-    expect(createTab).toHaveBeenCalledWith(null, undefined, {
-      activate: false,
-      lifecycleState: 'provisional',
+  it('does not create a linked chat after its Vault target becomes missing', async () => {
+    const createTab = jest.fn();
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      contentExists: jest.fn().mockReturnValue(false),
+      isArchiveSessionView: false,
+      tabManager: {
+        createTab,
+        waitForTabSwitchIdle: jest.fn().mockResolvedValue(undefined),
+      },
     });
-    expect(resetForNewConversation).toHaveBeenCalledTimes(1);
-    expect(setCurrentNote).toHaveBeenCalledWith(note.path);
-    expect(focus).not.toHaveBeenCalled();
+
+    await expect(view.startLinkedContentConversation('Gone/Plan.md')).rejects.toThrow(
+      'Linked content is no longer available',
+    );
+    expect(createTab).not.toHaveBeenCalled();
+  });
+
+  it('closes a provisional chat when its Linked content disappears during activation', async () => {
+    const closeTab = jest.fn().mockResolvedValue(true);
+    const contentExists = jest.fn()
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      contentExists,
+      isArchiveSessionView: false,
+      tabManager: {
+        closeTab,
+        createTab: jest.fn().mockResolvedValue({
+          id: 'linked-content-tab',
+          dom: { inputEl: { focus: jest.fn() } },
+          ui: { linkedContentController: { selectExplicit: jest.fn() } },
+        }),
+        getActiveTabId: jest.fn().mockReturnValue('initial-tab'),
+        getTabSwitchRequestRevision: jest.fn().mockReturnValue(0),
+        waitForTabSwitchIdle: jest.fn().mockResolvedValue(undefined),
+      },
+      updateTabBarVisibility: jest.fn(),
+    });
+
+    await expect(view.startLinkedContentConversation('Projects/Plan.md')).rejects.toThrow(
+      'Linked content is no longer available',
+    );
+    expect(closeTab).toHaveBeenCalledWith('linked-content-tab');
+  });
+
+  it('routes active-file changes only to the active tab Linked content owner', () => {
+    const handleActiveFileChanged = jest.fn();
+    const activeTab = {
+      ui: { linkedContentController: { handleActiveFileChanged } },
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.tabManager = { getActiveTab: jest.fn().mockReturnValue(activeTab) };
+    const file = { path: 'Projects/Plan.md' };
+
+    view.handleWorkspaceFileOpen(file);
+
+    expect(handleActiveFileChanged).toHaveBeenCalledWith(file, true);
+
+    view.handleWorkspaceFileOpen(null);
+
+    expect(handleActiveFileChanged).toHaveBeenLastCalledWith(null, true);
+  });
+
+  it('fans Vault path events to every tab Linked content owner', () => {
+    const first = {
+      handleCreated: jest.fn(),
+      handleDeleted: jest.fn(),
+      handleRenamed: jest.fn(),
+    };
+    const second = {
+      handleCreated: jest.fn(),
+      handleDeleted: jest.fn(),
+      handleRenamed: jest.fn(),
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+    view.tabManager = {
+      getAllTabs: jest.fn().mockReturnValue([
+        { ui: { linkedContentController: first } },
+        { ui: { linkedContentController: second } },
+      ]),
+    };
+
+    view.handleLinkedContentRenamed('Projects/Old', 'Projects/New', true);
+    view.handleLinkedContentDeleted('Projects/New', true);
+    view.handleLinkedContentCreated('Projects/New');
+
+    for (const controller of [first, second]) {
+      expect(controller.handleRenamed).toHaveBeenCalledWith(
+        'Projects/Old',
+        'Projects/New',
+        true,
+      );
+      expect(controller.handleDeleted).toHaveBeenCalledWith('Projects/New', true);
+      expect(controller.handleCreated).toHaveBeenCalledWith('Projects/New');
+    }
   });
 
   it('hides the new-tab button when the tab manager is at capacity', () => {
@@ -733,7 +727,7 @@ describe('ClaudianView tab controls', () => {
     globalRequestAnimationFrame.mockRestore();
   });
 
-  it('collapses and expands every linked-note group from the session header', () => {
+  it('collapses and expands every linked-content group from the session header', () => {
     const container = createMockEl();
     const list = container.createDiv({ cls: 'claudian-history-list' });
     list.createDiv({
@@ -744,12 +738,12 @@ describe('ClaudianView tab controls', () => {
     Object.assign(view, {
       collapsedSessionGroupKeys: new Set<string>(),
       plugin: {
-        settings: { sessionManagerOrganization: 'linked-note' },
+        settings: { sessionManagerOrganization: 'linked-content' },
         getAllViews: jest.fn().mockReturnValue([]),
       },
       renderSessionSidebar,
       requestDualNew: jest.fn(),
-      sessionGroupKeys: new Set(['note:Projects/Plan.md', 'ungrouped']),
+      sessionGroupKeys: new Set(['content:Projects/Plan.md', 'ungrouped']),
       sessionSidebarDirty: false,
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
@@ -768,7 +762,7 @@ describe('ClaudianView tab controls', () => {
     expect(collapseIcon.children[0]?.tagName).toBe('SVG');
 
     view.collapsedSessionGroupKeys = new Set([
-      'note:Projects/Plan.md',
+      'content:Projects/Plan.md',
       'ungrouped',
     ]);
     view.updateSessionGroupToggleButton();
@@ -781,7 +775,7 @@ describe('ClaudianView tab controls', () => {
     collapseButton.click();
 
     expect(view.collapsedSessionGroupKeys).toEqual(
-      new Set(['note:Projects/Plan.md', 'ungrouped']),
+      new Set(['content:Projects/Plan.md', 'ungrouped']),
     );
     expect(view.sessionSidebarDirty).toBe(true);
     expect(renderSessionSidebar).toHaveBeenCalledTimes(1);
@@ -1209,222 +1203,395 @@ describe('ClaudianView tab controls', () => {
     expect(viewContainerEl.children[0].hasClass('claudian-chat-panel')).toBe(true);
     expect(viewContainerEl.children[1].hasClass('claudian-session-resizer')).toBe(true);
     expect(viewContainerEl.children[2].hasClass('claudian-session-sidebar')).toBe(true);
-    expect(viewContainerEl.children[2].children[0].hasClass('claudian-session-surface')).toBe(true);
-    expect(viewContainerEl.children[2].children[1].hasClass('claudian-files-surface')).toBe(true);
-    expect(viewContainerEl.children[2].children[1].hasClass('claudian-hidden')).toBe(true);
-    expect(viewContainerEl.children[2].children[2]
+    expect(viewContainerEl.children[2].children[0]
+      .hasClass('claudian-sidebar-surface-track')).toBe(true);
+    expect(viewContainerEl.children[2].children[0].children[0]
+      .hasClass('claudian-session-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[0].children).toHaveLength(1);
+    expect(viewContainerEl.children[2].children[1]
       .hasClass('claudian-sidebar-surface-switcher')).toBe(true);
     expect(view.sidebarSurfaceSwitcherEl.getAttribute('role')).toBe('group');
     expect(view.sidebarSurfaceSwitcherEl.getAttribute('aria-label')).toBe('Sidebar view');
     expect(view.sessionsSurfaceButtonEl.textContent).toBe('');
     expect(view.sessionsSurfaceButtonEl.getAttribute('aria-label')).toBe('Sessions');
     expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
-    expect(view.filesSurfaceButtonEl.textContent).toBe('');
-    expect(view.filesSurfaceButtonEl.getAttribute('aria-label')).toBe('Files');
-    expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
     expect(viewContainerEl.children[2].getAttribute('aria-label')).toBeNull();
     expect(viewContainerEl.children[1].getAttribute('role')).toBe('separator');
     expect(viewContainerEl.children[0].children).toContain(view.tabContentEl);
     expect(viewContainerEl.children[0].children).toContain(view.inputFooterEl);
+    expect(view.collabSurfaceEl).toBeNull();
+    expect(view.collabSurfaceButtonEl).toBeNull();
   });
 
-  it('switches the persistent sidebar to Files without remounting the tree', () => {
+  it('adds the optional Collab surface without constructing it before selection', () => {
     const viewContainerEl = createMockEl();
-    const mount = jest.fn().mockResolvedValue(undefined);
-    const destroy = jest.fn();
-    const setActive = jest.fn();
-    const renderSessionSidebar = jest.fn();
+    const create = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
       activeSidebarSurface: 'sessions',
-      createVaultFileTree: jest.fn().mockReturnValue({ destroy, mount, setActive }),
-      isWideSessionLayout: true,
-      plugin: { app: {} },
-      renderSessionSidebar,
-      requestedWideSessionLayout: true,
+      leaf: { id: 'leaf-1' },
+      plugin: {
+        collabSurfaceFactory: { create },
+      },
       viewContainerEl,
-      vaultFileTree: null,
     });
+
     view.buildViewLayout();
 
-    view.filesSurfaceButtonEl.click();
+    expect(viewContainerEl.children[2].children).toHaveLength(2);
+    expect(viewContainerEl.children[2].children[0]
+      .hasClass('claudian-sidebar-surface-track')).toBe(true);
+    expect(viewContainerEl.children[2].children[0].children).toHaveLength(2);
+    expect(viewContainerEl.children[2].children[0].children[0]
+      .hasClass('claudian-session-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[0].children[1]
+      .hasClass('claudian-collab-surface')).toBe(true);
+    expect(viewContainerEl.children[2].children[1]
+      .hasClass('claudian-sidebar-surface-switcher')).toBe(true);
+    expect(view.collabSurfaceEl.hasClass('claudian-hidden')).toBe(false);
+    expect(view.collabSurfaceEl.getAttribute('aria-hidden')).toBe('true');
+    expect(view.collabSurfaceButtonEl.getAttribute('aria-label')).toBe('Collab');
+    expect(view.collabSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
+    expect(create).not.toHaveBeenCalled();
+  });
 
-    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(true);
-    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(false);
-    expect(view.filesSurfaceEl.getAttribute('aria-hidden')).toBe('false');
-    expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
-    expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
-    expect(view.createVaultFileTree).toHaveBeenCalledWith(view.filesSurfaceEl);
-    expect(mount).toHaveBeenCalledTimes(1);
+  it('opens the compact Collab menu lazily and reuses its controller', () => {
+    const containerEl = createMockEl();
+    const viewContainerEl = createMockEl();
+    const controller = {
+      destroy: jest.fn(),
+      setActive: jest.fn(),
+    };
+    const create = jest.fn().mockReturnValue(controller);
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      containerEl,
+      isWideSessionLayout: false,
+      leaf: { id: 'leaf-1' },
+      plugin: {
+        collabSurfaceFactory: { create },
+      },
+      requestedWideSessionLayout: false,
+      viewContainerEl,
+    });
+
+    view.buildNavRowContent();
+    view.buildViewLayout();
+    view.historyDropdown.addClass('visible');
+    const preventPointerFocus = jest.fn();
+
+    view.compactCollabButtonEl.dispatchEvent({
+      type: 'mousedown',
+      preventDefault: preventPointerFocus,
+    });
+
+    expect(preventPointerFocus).toHaveBeenCalledTimes(1);
+
+    view.compactCollabButtonEl.click();
+
+    expect(view.historyDropdown.hasClass('visible')).toBe(false);
+    expect(view.compactCollabMenuEl.hasClass('visible')).toBe(true);
+    expect(view.compactCollabButtonEl.getAttribute('aria-expanded')).toBe('true');
+    expect(view.compactCollabMenuEl.children).toContain(view.collabSurfaceEl);
+    expect(create).toHaveBeenCalledWith(view.collabSurfaceEl, view.leaf);
+    expect(controller.setActive).toHaveBeenLastCalledWith(true);
+
+    view.compactCollabButtonEl.click();
+
+    expect(view.compactCollabMenuEl.hasClass('visible')).toBe(false);
+    expect(view.compactCollabButtonEl.getAttribute('aria-expanded')).toBe('false');
+    expect(controller.setActive).toHaveBeenLastCalledWith(false);
+
+    view.compactCollabButtonEl.click();
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(controller.setActive).toHaveBeenLastCalledWith(true);
+
+    view.toggleHistoryDropdown();
+
+    expect(view.compactCollabMenuEl.hasClass('visible')).toBe(false);
+    expect(view.historyDropdown.hasClass('visible')).toBe(true);
+    expect(controller.setActive).toHaveBeenLastCalledWith(false);
+  });
+
+  it('moves the same compact Collab surface back to the wide sidebar', () => {
+    const containerEl = createMockEl();
+    const viewContainerEl = createMockEl();
+    const controller = {
+      destroy: jest.fn(),
+      setActive: jest.fn(),
+    };
+    const create = jest.fn().mockReturnValue(controller);
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      containerEl,
+      isWideSessionLayout: false,
+      leaf: { id: 'leaf-1' },
+      plugin: {
+        collabSurfaceFactory: { create },
+        settings: { enableDualPane: true },
+      },
+      renderSessionSidebar: jest.fn(),
+      requestedWideSessionLayout: false,
+      viewContainerEl,
+    });
+
+    view.buildNavRowContent();
+    view.buildViewLayout();
+    view.compactCollabButtonEl.click();
+    const collabSurfaceEl = view.collabSurfaceEl;
+
+    view.updateSessionSidebarLayout(600);
+
+    expect(view.compactCollabMenuEl.hasClass('visible')).toBe(false);
+    expect(view.sidebarSurfaceTrackEl.children).toContain(collabSurfaceEl);
+    expect(view.collabSurfaceEl).toBe(collabSurfaceEl);
+    expect(view.collabSurfaceController).toBe(controller);
+    expect(controller.destroy).not.toHaveBeenCalled();
+  });
+
+  it('keeps the compact Collab control unavailable while Collab is disabled', () => {
+    const containerEl = createMockEl();
+    const viewContainerEl = createMockEl();
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      containerEl,
+      isWideSessionLayout: false,
+      plugin: {
+        collabSurfaceFactory: { create: jest.fn() },
+        settings: { collabEnabled: false },
+      },
+      requestedWideSessionLayout: false,
+      viewContainerEl,
+    });
+
+    view.buildNavRowContent();
+    view.buildViewLayout();
+
+    expect(view.compactCollabButtonEl.hasClass('claudian-hidden')).toBe(true);
+    expect(view.compactCollabButtonEl.getAttribute('aria-hidden')).toBe('true');
+    expect(view.compactCollabButtonEl.getAttribute('tabindex')).toBe('-1');
+    expect(view.compactCollabMenuEl.hasClass('visible')).toBe(false);
+  });
+
+  it('removes the Collab indicator from the sidebar switcher while disabled', () => {
+    const viewContainerEl = createMockEl();
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      leaf: { id: 'leaf-1' },
+      plugin: {
+        collabSurfaceFactory: { create: jest.fn() },
+        settings: { collabEnabled: false },
+      },
+      viewContainerEl,
+    });
+
+    view.buildViewLayout();
+    view.refreshCollabAvailability();
+
+    expect(view.collabSurfaceButtonEl.hasClass('claudian-hidden')).toBe(true);
+    expect(view.collabSurfaceButtonEl.getAttribute('aria-hidden')).toBe('true');
+    expect(view.collabSurfaceButtonEl.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('lazily creates, activates, deactivates, and reuses the Collab controller', () => {
+    const viewContainerEl = createMockEl();
+    const activeTab = { id: 'tab-1', state: { isStreaming: true } };
+    const cancelStreaming = jest.fn();
+    const destroyTabManager = jest.fn();
+    const controller = {
+      destroy: jest.fn(),
+      setActive: jest.fn(),
+    };
+    const create = jest.fn().mockReturnValue(controller);
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      isWideSessionLayout: true,
+      leaf: { id: 'leaf-1' },
+      plugin: {
+        app: {},
+        collabSurfaceFactory: { create },
+      },
+      renderSessionSidebar: jest.fn(),
+      requestedWideSessionLayout: true,
+      tabManager: {
+        cancelStreaming,
+        destroy: destroyTabManager,
+        getActiveTab: jest.fn().mockReturnValue(activeTab),
+      },
+      viewContainerEl,
+    });
+    view.buildViewLayout();
+    const chatPanelEl = view.chatPanelEl;
+
+    expect(view.selectCollabSurface()).toBe(true);
+    expect(create).toHaveBeenCalledWith(view.collabSurfaceEl, view.leaf);
+    expect(controller.setActive).toHaveBeenLastCalledWith(true);
+    expect(view.activeSidebarSurface).toBe('collab');
+    expect(view.collabSurfaceEl.hasClass('claudian-hidden')).toBe(false);
+    expect(view.collabSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
+    expect(view.chatPanelEl).toBe(chatPanelEl);
+    expect(view.tabManager.getActiveTab()).toBe(activeTab);
+    expect(cancelStreaming).not.toHaveBeenCalled();
+    expect(destroyTabManager).not.toHaveBeenCalled();
 
     view.sessionsSurfaceButtonEl.click();
+    expect(controller.setActive).toHaveBeenLastCalledWith(false);
     expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(false);
-    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
-    expect(view.sessionsSurfaceButtonEl.getAttribute('aria-pressed')).toBe('true');
-    expect(view.filesSurfaceButtonEl.getAttribute('aria-pressed')).toBe('false');
-    expect(setActive).toHaveBeenLastCalledWith(false);
-    expect(renderSessionSidebar).toHaveBeenCalledTimes(1);
 
-    view.filesSurfaceButtonEl.click();
-    expect(view.createVaultFileTree).toHaveBeenCalledTimes(1);
-    expect(mount).toHaveBeenCalledTimes(1);
-    expect(setActive).toHaveBeenLastCalledWith(true);
+    expect(view.selectCollabSurface()).toBe(true);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(controller.setActive).toHaveBeenLastCalledWith(true);
   });
 
-  it('rotates sidebar surfaces on either horizontal wheel direction without intercepting vertical scroll', () => {
+  it('keeps Sessions and Collab selectable', () => {
     const viewContainerEl = createMockEl();
-    const mount = jest.fn().mockResolvedValue(undefined);
-    const setActive = jest.fn();
+    const controller = { destroy: jest.fn(), setActive: jest.fn() };
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
       activeSidebarSurface: 'sessions',
-      createVaultFileTree: jest.fn().mockReturnValue({
-        destroy: jest.fn(),
-        mount,
-        setActive,
-      }),
       isWideSessionLayout: true,
-      plugin: { app: {}, settings: { enableFilePane: true } },
+      leaf: { id: 'leaf-1' },
+      plugin: {
+        collabSurfaceFactory: { create: jest.fn().mockReturnValue(controller) },
+      },
       requestedWideSessionLayout: true,
-      sidebarSurfaceWheelGesture: new HorizontalWheelGesture(),
       viewContainerEl,
-      vaultFileTree: null,
     });
     view.buildViewLayout();
 
-    expect(view.sessionSidebarEl.getEventListenerCount('wheel')).toBe(1);
-    expect(view.chatPanelEl.getEventListenerCount('wheel')).toBe(0);
-    Object.defineProperty(view.sessionSidebarEl, 'clientWidth', {
-      configurable: true,
-      get: () => {
-        throw new Error('Wheel handling must not read layout');
-      },
-    });
+    expect(view.sidebarSurfaceSwitcherEl.hasClass('claudian-hidden')).toBe(false);
 
-    const verticalPreventDefault = jest.fn();
-    view.sessionSidebarEl.dispatchEvent({
-      type: 'wheel',
-      ctrlKey: false,
-      deltaMode: 0,
-      deltaX: 10,
-      deltaY: 60,
-      preventDefault: verticalPreventDefault,
-      timeStamp: 0,
-    });
+    view.collabSurfaceButtonEl.click();
+    expect(view.activeSidebarSurface).toBe('collab');
+    view.sessionsSurfaceButtonEl.click();
     expect(view.activeSidebarSurface).toBe('sessions');
-    expect(verticalPreventDefault).not.toHaveBeenCalled();
-
-    const switchToFilesPreventDefault = jest.fn();
-    view.sessionSidebarEl.dispatchEvent({
-      type: 'wheel',
-      ctrlKey: false,
-      deltaMode: 0,
-      deltaX: 28,
-      deltaY: 30,
-      preventDefault: switchToFilesPreventDefault,
-      timeStamp: 10,
-    });
-    expect(view.activeSidebarSurface).toBe('files');
-    expect(switchToFilesPreventDefault).toHaveBeenCalledTimes(1);
-    expect(mount).toHaveBeenCalledTimes(1);
-
-    view.sessionSidebarEl.dispatchEvent({
-      type: 'wheel',
-      ctrlKey: false,
-      deltaMode: 0,
-      deltaX: 60,
-      deltaY: 0,
-      preventDefault: jest.fn(),
-      timeStamp: 20,
-    });
-    expect(view.activeSidebarSurface).toBe('files');
-
-    view.sessionSidebarEl.dispatchEvent({
-      type: 'wheel',
-      ctrlKey: false,
-      deltaMode: 0,
-      deltaX: 4,
-      deltaY: 0,
-      preventDefault: jest.fn(),
-      timeStamp: 120,
-    });
-    view.sessionSidebarEl.dispatchEvent({
-      type: 'wheel',
-      ctrlKey: false,
-      deltaMode: 0,
-      deltaX: 18,
-      deltaY: 0,
-      preventDefault: jest.fn(),
-      timeStamp: 220,
-    });
-    const switchToSessionsPreventDefault = jest.fn();
-    view.sessionSidebarEl.dispatchEvent({
-      type: 'wheel',
-      ctrlKey: false,
-      deltaMode: 0,
-      deltaX: 12,
-      deltaY: 0,
-      preventDefault: switchToSessionsPreventDefault,
-      timeStamp: 230,
-    });
-    expect(view.activeSidebarSurface).toBe('sessions');
-    expect(switchToSessionsPreventDefault).toHaveBeenCalledTimes(1);
-
-    const rotateLeftPreventDefault = jest.fn();
-    view.sessionSidebarEl.dispatchEvent({
-      type: 'wheel',
-      ctrlKey: false,
-      deltaMode: 0,
-      deltaX: -28,
-      deltaY: 0,
-      preventDefault: rotateLeftPreventDefault,
-      timeStamp: 500,
-    });
-    expect(view.activeSidebarSurface).toBe('files');
-    expect(rotateLeftPreventDefault).toHaveBeenCalledTimes(1);
   });
 
-  it('hides the surface switcher when the file pane is disabled', () => {
+  it('keeps the wheel target centered when swiping between Sessions and Collab', () => {
     const viewContainerEl = createMockEl();
+    const controller = {
+      destroy: jest.fn(),
+      preload: jest.fn(),
+      setActive: jest.fn(),
+    };
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
       activeSidebarSurface: 'sessions',
-      plugin: { settings: { enableFilePane: false } },
+      isWideSessionLayout: true,
+      leaf: { id: 'leaf-1' },
+      plugin: {
+        collabSurfaceFactory: { create: jest.fn().mockReturnValue(controller) },
+      },
+      renderSessionSidebar: jest.fn(),
+      requestedWideSessionLayout: true,
       viewContainerEl,
     });
     view.buildViewLayout();
 
-    expect(view.sidebarSurfaceSwitcherEl.hasClass('claudian-hidden')).toBe(true);
-    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(false);
-    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
+    const swipe = (direction: -1 | 1) => {
+      const childrenBeforeWheel = [...view.sidebarSurfaceTrackEl.children];
+      view.sidebarSurfaceTrackEl.dispatchEvent({
+        type: 'wheel',
+        ctrlKey: false,
+        deltaX: direction * 90,
+        deltaY: 0,
+      });
+
+      expect(view.sidebarSurfaceTrackEl.children).toEqual(childrenBeforeWheel);
+      expect(view.sidebarSurfaceTrackEl.scrollLeft).toBe(240);
+
+      view.sidebarSurfaceTrackEl.scrollLeft = direction > 0 ? 480 : 0;
+      view.sidebarSurfaceTrackEl.dispatchEvent({ type: 'scroll' });
+      view.sidebarSurfaceTrackEl.dispatchEvent({ type: 'scrollend' });
+      view.sidebarSurfaceTrackEl.dispatchEvent({ type: 'scrollend' });
+    };
+
+    swipe(1);
+    expect(view.activeSidebarSurface).toBe('collab');
+    swipe(1);
+    expect(view.activeSidebarSurface).toBe('sessions');
+    swipe(-1);
+    expect(view.activeSidebarSurface).toBe('collab');
+    swipe(-1);
+    expect(view.activeSidebarSurface).toBe('sessions');
   });
 
-  it('returns to Sessions and tears down the tree when the file pane is disabled', () => {
+  it('supports roving keyboard selection across enabled sidebar surfaces', () => {
     const viewContainerEl = createMockEl();
-    const destroy = jest.fn();
+    const controller = { destroy: jest.fn(), setActive: jest.fn() };
     const view = Object.create(ClaudianView.prototype) as any;
 
     Object.assign(view, {
-      activeSidebarSurface: 'files',
-      plugin: { settings: { enableFilePane: true } },
-      updateSessionSidebarLayout: jest.fn(),
-      vaultFileTree: { destroy },
+      activeSidebarSurface: 'sessions',
+      isWideSessionLayout: true,
+      leaf: { id: 'leaf-1' },
+      plugin: {
+        collabSurfaceFactory: { create: jest.fn().mockReturnValue(controller) },
+      },
+      renderSessionSidebar: jest.fn(),
+      requestedWideSessionLayout: true,
       viewContainerEl,
     });
     view.buildViewLayout();
-    view.plugin.settings.enableFilePane = false;
+    view.collabSurfaceButtonEl.focus = jest.fn();
+    const nextPreventDefault = jest.fn();
 
-    view.refreshDualPaneLayout();
+    view.sidebarSurfaceSwitcherEl.dispatchEvent({
+      key: 'ArrowRight',
+      preventDefault: nextPreventDefault,
+      target: view.sessionsSurfaceButtonEl,
+      type: 'keydown',
+    });
+
+    expect(nextPreventDefault).toHaveBeenCalledTimes(1);
+    expect(view.activeSidebarSurface).toBe('collab');
+    expect(view.collabSurfaceButtonEl.focus).toHaveBeenCalledTimes(1);
+    expect(view.sessionsSurfaceButtonEl.getAttribute('tabindex')).toBe('-1');
+    expect(view.collabSurfaceButtonEl.getAttribute('tabindex')).toBe('0');
+
+    view.sessionsSurfaceButtonEl.focus = jest.fn();
+    view.sidebarSurfaceSwitcherEl.dispatchEvent({
+      key: 'Home',
+      preventDefault: jest.fn(),
+      target: view.collabSurfaceButtonEl,
+      type: 'keydown',
+    });
 
     expect(view.activeSidebarSurface).toBe('sessions');
-    expect(view.sidebarSurfaceSwitcherEl.hasClass('claudian-hidden')).toBe(true);
-    expect(view.sessionSurfaceEl.hasClass('claudian-hidden')).toBe(false);
-    expect(view.filesSurfaceEl.hasClass('claudian-hidden')).toBe(true);
-    expect(destroy).toHaveBeenCalledTimes(1);
-    expect(view.vaultFileTree).toBeNull();
+    expect(view.sessionsSurfaceButtonEl.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not expose Collab selection without the optional factory', () => {
+    const viewContainerEl = createMockEl();
+    const activeTab = { id: 'tab-1' };
+    const view = Object.create(ClaudianView.prototype) as any;
+
+    Object.assign(view, {
+      activeSidebarSurface: 'sessions',
+      isWideSessionLayout: true,
+      plugin: { settings: {} },
+      requestedWideSessionLayout: true,
+      tabManager: { getActiveTab: jest.fn().mockReturnValue(activeTab) },
+      viewContainerEl,
+    });
+    view.buildViewLayout();
+
+    expect(view.selectCollabSurface()).toBe(false);
+    expect(view.activeSidebarSurface).toBe('sessions');
+    expect(view.tabManager.getActiveTab()).toBe(activeTab);
   });
 
   it('shows and renders the persistent session column when the view becomes wide', () => {
@@ -1497,11 +1664,8 @@ describe('ClaudianView tab controls', () => {
     const discardProvisionalTabs = jest.fn().mockReturnValue(new Promise<void>((resolve) => {
       finishDiscard = resolve;
     }));
-    const setActive = jest.fn();
-
     Object.assign(view, {
       cancelSessionSidebarRendering: jest.fn(),
-      filesSurfaceEl: createMockEl(),
       isSessionSearchActive: true,
       isSessionSearchComposing: false,
       sessionSearchQuery: 'roadmap',
@@ -1510,13 +1674,11 @@ describe('ClaudianView tab controls', () => {
       sessionLayoutRequestRevision: 0,
       plugin: {
         getConversationSync: jest.fn(),
-        settings: { enableFilePane: true },
       },
       tabManager: {
         discardProvisionalTabs,
         getAllTabs: jest.fn().mockReturnValue([]),
       },
-      vaultFileTree: { setActive },
       viewContainerEl,
     });
 
@@ -1528,17 +1690,12 @@ describe('ClaudianView tab controls', () => {
     expect(view.sessionSearchQuery).toBe('');
     expect(view.cancelSessionSidebarRendering).toHaveBeenCalledTimes(1);
     expect(discardProvisionalTabs).toHaveBeenCalledTimes(1);
-    expect(setActive).toHaveBeenCalledWith(false);
-
-    view.showVaultFiles();
-    expect(setActive).not.toHaveBeenCalledWith(true);
 
     finishDiscard();
     await view.pendingSessionLayoutTransition;
 
     expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(false);
     expect(view.isWideSessionLayout).toBe(false);
-    expect(setActive).toHaveBeenLastCalledWith(false);
   });
 
   it('cancels a pending compact transition when the view becomes wide again', async () => {
@@ -1856,23 +2013,6 @@ describe('ClaudianView tab controls', () => {
     expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
   });
 
-  it('defers persistent session rendering while the Files surface is active', () => {
-    const view = Object.create(ClaudianView.prototype) as any;
-
-    Object.assign(view, {
-      activeSidebarSurface: 'files',
-      historyDropdown: createMockEl(),
-      isWideSessionLayout: true,
-      renderSessionSidebar: jest.fn(),
-      sessionSidebarDirty: false,
-    });
-
-    view.updateHistoryDropdown();
-
-    expect(view.sessionSidebarDirty).toBe(true);
-    expect(view.renderSessionSidebar).not.toHaveBeenCalled();
-  });
-
   it('defers persistent session column refresh while search IME composition is active', () => {
     const view = Object.create(ClaudianView.prototype) as any;
     const sessionSidebarEl = createMockEl();
@@ -1931,8 +2071,8 @@ describe('ClaudianView tab controls', () => {
         collapsedGroupKeys: expect.any(Set),
         onGroupCollapseChange: expect.any(Function),
         onSetConversationsArchived: expect.any(Function),
-        onSetLinkedNotePinned: expect.any(Function),
-        onStartLinkedNoteConversation: expect.any(Function),
+        onSetLinkedContentPinned: expect.any(Function),
+        onStartLinkedContentConversation: expect.any(Function),
         getProviderIcon: expect.any(Function),
         getModelLabel: expect.any(Function),
         onRerender: expect.any(Function),
@@ -1946,7 +2086,7 @@ describe('ClaudianView tab controls', () => {
         showOpenStateLabels: false,
         showMetadataPopover: true,
         showPinnedSection: true,
-        pinnedLinkedNotePaths: expect.any(Set),
+        pinnedLinkedContentPaths: expect.any(Set),
         showArchivedSection: false,
         sessionScope: 'active',
         sessionActionMode: 'active',
@@ -1969,8 +2109,8 @@ describe('ClaudianView tab controls', () => {
     expect(sessionOptions.getProviderIcon(historicalProviderConversation)).toBeUndefined();
     expect(sessionOptions.getModelLabel(historicalProviderConversation))
       .toBe('removed-provider/opaque-model');
-    sessionOptions.onGroupCollapseChange('note:Projects/Plan.md', true);
-    expect(sessionOptions.collapsedGroupKeys.has('note:Projects/Plan.md')).toBe(true);
+    sessionOptions.onGroupCollapseChange('content:Projects/Plan.md', true);
+    expect(sessionOptions.collapsedGroupKeys.has('content:Projects/Plan.md')).toBe(true);
 
     renderHistoryDropdown.mock.calls[0][1].onRerender();
     expect(updateHistoryDropdown).toHaveBeenCalledTimes(1);
@@ -2087,19 +2227,19 @@ describe('ClaudianView tab controls', () => {
     expect(otherView.notifyConversationListChanged).toHaveBeenCalledTimes(1);
   });
 
-  it('persists linked-note pins through the feature host', async () => {
-    const setLinkedNotePinned = jest.fn().mockResolvedValue(undefined);
+  it('persists linked-content pins through the feature host', async () => {
+    const setLinkedContentPinned = jest.fn().mockResolvedValue(undefined);
     const view = Object.create(ClaudianView.prototype) as any;
     Object.assign(view, {
-      plugin: { setLinkedNotePinned },
+      plugin: { setLinkedContentPinned },
     });
 
-    await view.setLinkedNotePinned('Projects/Plan.md', true);
+    await view.setLinkedContentPinned('Projects/Plan.md', true);
 
-    expect(setLinkedNotePinned).toHaveBeenCalledWith('Projects/Plan.md', true);
+    expect(setLinkedContentPinned).toHaveBeenCalledWith('Projects/Plan.md', true);
   });
 
-  it('archives linked-note sessions through the existing guarded archive flow', async () => {
+  it('archives linked-content sessions through the existing guarded archive flow', async () => {
     const view = Object.create(ClaudianView.prototype) as any;
     view.setConversationArchived = jest.fn().mockResolvedValue(undefined);
 
@@ -2180,7 +2320,7 @@ describe('ClaudianView tab controls', () => {
     expect(menu.items.map((item: any) => item.title)).toEqual([
       'Organize sessions',
       'In one list',
-      'By linked note',
+      'By linked content',
       'Sort sessions by',
       'Last activity',
       'Created',
@@ -2188,10 +2328,10 @@ describe('ClaudianView tab controls', () => {
     expect(menu.items.find((item: any) => item.title === 'In one list').checked).toBe(true);
     expect(menu.items.find((item: any) => item.title === 'Last activity').checked).toBe(true);
 
-    menu.items.find((item: any) => item.title === 'By linked note').clickHandler();
+    menu.items.find((item: any) => item.title === 'By linked content').clickHandler();
     await Promise.resolve();
 
-    expect(settings.sessionManagerOrganization).toBe('linked-note');
+    expect(settings.sessionManagerOrganization).toBe('linked-content');
     expect(mutateSettings).toHaveBeenCalledTimes(1);
     expect(view.sessionSidebarDirty).toBe(true);
     expect(view.renderSessionSidebar).toHaveBeenCalledTimes(1);
@@ -3264,10 +3404,11 @@ describe('ClaudianView shutdown', () => {
     }));
     const updatePersistence = jest.fn();
     const tabBarDestroy = jest.fn();
-    const vaultFileTreeDestroy = jest.fn();
+    const collabSurfaceDestroy = jest.fn();
 
     Object.assign(view, {
       cancelHistoryRendering: jest.fn(),
+      collabSurfaceController: { destroy: collabSurfaceDestroy, setActive: jest.fn() },
       eventRefs: [],
       mentionCacheCoordinator: {},
       pendingTabBarUpdate: null,
@@ -3278,7 +3419,6 @@ describe('ClaudianView shutdown', () => {
         destroy: tabBarDestroy,
         getExpandedTitleTabIds: jest.fn().mockReturnValue([]),
       },
-      vaultFileTree: { destroy: vaultFileTreeDestroy },
       tabManager: {
         beginShutdown,
         destroy,
@@ -3314,8 +3454,8 @@ describe('ClaudianView shutdown', () => {
       .toBeLessThan(disposePersistence.mock.invocationCallOrder[0]);
     expect(destroy).toHaveBeenCalledTimes(1);
     expect(tabBarDestroy).toHaveBeenCalledTimes(1);
-    expect(vaultFileTreeDestroy).toHaveBeenCalledTimes(1);
-    expect(view.vaultFileTree).toBeNull();
+    expect(collabSurfaceDestroy).toHaveBeenCalledTimes(1);
+    expect(view.collabSurfaceController).toBeNull();
     expect(view.tabManager).toBeNull();
     expect(view.scope).toBeNull();
   });
@@ -3690,6 +3830,49 @@ describe('ClaudianView Escape handling', () => {
     expect(result).toBe(false);
   });
 
+  it('leaves the compact Collab menu open while handling chat Escape actions', () => {
+    const { cancelInlineRename, cancelStreaming, view } = createEscapeHarness({
+      isStreaming: true,
+    });
+    const controller = { destroy: jest.fn(), setActive: jest.fn() };
+    view.compactCollabButtonEl = createMockEl('button');
+    view.compactCollabButtonEl.focus = jest.fn();
+    view.compactCollabMenuEl = createMockEl();
+    view.compactCollabMenuEl.addClass('visible');
+    view.collabSurfaceActive = true;
+    view.collabSurfaceController = controller;
+
+    view.wireEventHandlers();
+    const escapeHandler = view.scope.handlers.find((handler: any) => handler.key === 'Escape');
+    const result = escapeHandler.func({ key: 'Escape', isComposing: false } as KeyboardEvent);
+
+    expect(view.compactCollabMenuEl.hasClass('visible')).toBe(true);
+    expect(view.compactCollabButtonEl.focus).not.toHaveBeenCalled();
+    expect(controller.setActive).not.toHaveBeenCalled();
+    expect(cancelInlineRename).toHaveBeenCalledTimes(1);
+    expect(cancelStreaming).toHaveBeenCalledTimes(1);
+    expect(result).toBe(false);
+  });
+
+  it('closes the compact Collab menu on an outside document click', () => {
+    const { view } = createEscapeHarness({ isStreaming: false });
+    const controller = { destroy: jest.fn(), setActive: jest.fn() };
+    view.compactCollabButtonEl = createMockEl('button');
+    view.compactCollabMenuEl = createMockEl();
+    view.compactCollabMenuEl.addClass('visible');
+    view.collabSurfaceActive = true;
+    view.collabSurfaceController = controller;
+
+    view.wireEventHandlers();
+    const documentClickHandler = view.registerDomEvent.mock.calls.find(
+      (call: unknown[]) => call[1] === 'click',
+    )?.[2];
+    documentClickHandler();
+
+    expect(view.compactCollabMenuEl.hasClass('visible')).toBe(false);
+    expect(controller.setActive).toHaveBeenLastCalledWith(false);
+  });
+
   it('consumes scoped Escape without cancelling when not streaming', () => {
     const { cancelStreaming, view } = createEscapeHarness({ isStreaming: false });
 
@@ -3730,24 +3913,6 @@ describe('ClaudianView Escape handling', () => {
     const result = escapeHandler.func({ key: 'Escape', isComposing: false } as KeyboardEvent);
 
     expect(view.closeSessionSearch).toHaveBeenCalledTimes(1);
-    expect(cancelStreaming).not.toHaveBeenCalled();
-    expect(result).toBe(false);
-  });
-
-  it('closes file search from the scoped Escape handler', () => {
-    const { cancelStreaming, view } = createEscapeHarness({ isStreaming: true });
-    const handleEscape = jest.fn().mockReturnValue(true);
-    view.vaultFileTree = {
-      handleEscape,
-      isComposingSearch: jest.fn().mockReturnValue(false),
-    };
-
-    view.wireEventHandlers();
-    const escapeHandler = view.scope.handlers.find((handler: any) => handler.key === 'Escape');
-    const event = { key: 'Escape', isComposing: false } as KeyboardEvent;
-    const result = escapeHandler.func(event);
-
-    expect(handleEscape).toHaveBeenCalledWith(event);
     expect(cancelStreaming).not.toHaveBeenCalled();
     expect(result).toBe(false);
   });

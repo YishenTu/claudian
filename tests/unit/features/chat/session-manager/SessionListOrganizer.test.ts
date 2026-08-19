@@ -43,17 +43,17 @@ describe('SessionListOrganizer', () => {
 
   it('groups by full note path and keeps same-name notes in separate groups', () => {
     const sections = organizeSessionList([
-      createConversation('a', { currentNote: 'Projects/A/Plan.md', lastActivityAt: 10 }),
-      createConversation('b', { currentNote: 'Projects/B/Plan.md', lastActivityAt: 30 }),
-      createConversation('c', { currentNote: 'Projects/A/Plan.md', lastActivityAt: 20 }),
+      createConversation('a', { linkedContentPath: 'Projects/A/Plan.md', lastActivityAt: 10 }),
+      createConversation('b', { linkedContentPath: 'Projects/B/Plan.md', lastActivityAt: 30 }),
+      createConversation('c', { linkedContentPath: 'Projects/A/Plan.md', lastActivityAt: 20 }),
     ], {
-      organization: 'linked-note',
+      organization: 'linked-content',
       sort: 'last-updated',
       language: 'en',
-      noteExists: () => true,
+      contentExists: () => true,
     });
 
-    expect(sections.map(section => section.notePath)).toEqual([
+    expect(sections.map(section => section.contentPath)).toEqual([
       'Projects/B/Plan.md',
       'Projects/A/Plan.md',
     ]);
@@ -61,22 +61,22 @@ describe('SessionListOrganizer', () => {
     expect(sections[1].conversations.map(conversation => conversation.id)).toEqual(['c', 'a']);
   });
 
-  it('keeps unlinked and provisional sessions out of note groups', () => {
+  it('keeps unlinked and provisional sessions out of content groups', () => {
     const sections = organizeSessionList([
       createConversation('unlinked', { lastActivityAt: 20 }),
       createConversation('provisional', {
-        currentNote: 'Inbox/Untitled 2.md',
+        linkedContentPath: 'Inbox/Untitled 2.md',
         lastActivityAt: 30,
       }),
       createConversation('linked', {
-        currentNote: 'Notes/Real note.md',
+        linkedContentPath: 'Notes/Real note.md',
         lastActivityAt: 10,
       }),
     ], {
-      organization: 'linked-note',
+      organization: 'linked-content',
       sort: 'last-updated',
       language: 'en',
-      noteExists: () => true,
+      contentExists: () => true,
     });
 
     expect(sections).toHaveLength(2);
@@ -85,45 +85,73 @@ describe('SessionListOrganizer', () => {
       'provisional',
       'unlinked',
     ]);
-    expect(sections[1]).toMatchObject({ kind: 'note', notePath: 'Notes/Real note.md' });
+    expect(sections[1]).toMatchObject({ kind: 'content', contentPath: 'Notes/Real note.md' });
+  });
+
+  it('does not suppress existing folders or non-Note files with provisional names', () => {
+    const sections = organizeSessionList([
+      createConversation('folder', {
+        linkedContentPath: 'Projects/Untitled',
+        lastActivityAt: 20,
+      }),
+      createConversation('file', {
+        linkedContentPath: 'Assets/Untitled',
+        lastActivityAt: 10,
+      }),
+    ], {
+      organization: 'linked-content',
+      sort: 'last-updated',
+      language: 'en',
+      contentExists: () => true,
+      contentIsNote: () => false,
+    });
+
+    expect(sections.map(section => section.contentPath)).toEqual([
+      'Projects/Untitled',
+      'Assets/Untitled',
+    ]);
+    expect(sections.flatMap(section => section.conversations).map(({ id }) => id))
+      .toEqual(['folder', 'file']);
   });
 
   it('retains missing note paths as distinct missing groups', () => {
     const sections = organizeSessionList([
-      createConversation('missing-a', { currentNote: 'Gone/A.md' }),
-      createConversation('missing-b', { currentNote: 'Gone/B.md' }),
+      createConversation('missing-a', { linkedContentPath: 'Gone/A.md' }),
+      createConversation('missing-b', { linkedContentPath: 'Gone/B.md' }),
+      createConversation('missing-untitled', { linkedContentPath: 'Gone/Untitled.md' }),
     ], {
-      organization: 'linked-note',
+      organization: 'linked-content',
       sort: 'created',
       language: 'en',
-      noteExists: () => false,
+      contentExists: () => false,
     });
 
     expect(sections.map(section => ({
       kind: section.kind,
       label: section.label,
-      notePath: section.notePath,
+      contentPath: section.contentPath,
     }))).toEqual([
-      { kind: 'missing', label: 'A', notePath: 'Gone/A.md' },
-      { kind: 'missing', label: 'B', notePath: 'Gone/B.md' },
+      { kind: 'missing', label: 'A', contentPath: 'Gone/A.md' },
+      { kind: 'missing', label: 'B', contentPath: 'Gone/B.md' },
+      { kind: 'missing', label: 'Untitled', contentPath: 'Gone/Untitled.md' },
     ]);
   });
 
-  it('includes requested linked-note groups even when they have no sessions', () => {
+  it('includes requested linked-content groups even when they have no sessions', () => {
     const sections = organizeSessionList([], {
-      organization: 'linked-note',
+      organization: 'linked-content',
       sort: 'last-updated',
       language: 'en',
-      includeNotePaths: ['Projects/Plan.md'],
-      noteExists: () => true,
+      includeContentPaths: ['Projects/Plan.md'],
+      contentExists: () => true,
     });
 
     expect(sections).toEqual([{
       conversations: [],
-      key: 'note:Projects/Plan.md',
-      kind: 'note',
+      key: 'content:Projects/Plan.md',
+      kind: 'content',
       label: 'Plan',
-      notePath: 'Projects/Plan.md',
+      contentPath: 'Projects/Plan.md',
     }]);
   });
 

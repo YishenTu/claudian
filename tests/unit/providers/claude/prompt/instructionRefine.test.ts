@@ -5,7 +5,7 @@ describe('buildRefineSystemPrompt', () => {
     it('should return base prompt when existing instructions is empty', () => {
       const result = buildRefineSystemPrompt('');
 
-      expect(result).toContain('You are an expert Prompt Engineer');
+      expect(result).toContain('You refine user requests into system instructions');
       expect(result).toContain('**Your Goal**');
       expect(result).toContain('**Process**');
       expect(result).toContain('**Guidelines**');
@@ -46,15 +46,17 @@ describe('buildRefineSystemPrompt', () => {
       expect(result).toContain('```\n- Rule 1\n- Rule 2\n```');
     });
 
-    it('should include conflict avoidance guidance', () => {
+    it('should treat existing instructions as read-only context for an appendable snippet', () => {
       const existingInstructions = '- Some rule';
 
       const result = buildRefineSystemPrompt(existingInstructions);
 
-      expect(result).toContain('Consider how it fits with existing instructions');
+      expect(result).toContain('read-only reference');
+      expect(result).toContain('appendable snippet');
       expect(result).toContain('Avoid duplicating existing instructions');
       expect(result).toContain('conflicts with an existing one');
       expect(result).toContain('Match the format of existing instructions');
+      expect(result).toContain('Do not rewrite or restate the full existing prompt');
     });
 
     it('should trim whitespace from existing instructions', () => {
@@ -81,7 +83,8 @@ describe('buildRefineSystemPrompt', () => {
 
       expect(result).toContain('*No Conflict*');
       expect(result).toContain('*Conflict*');
-      expect(result).toContain('merged instruction');
+      expect(result).toContain('explicitly scoped exception or override');
+      expect(result).toContain('ask a concise clarification question');
     });
 
     it('should specify output format with instruction tags', () => {
@@ -98,7 +101,9 @@ describe('buildRefineSystemPrompt', () => {
 
       expect(result).toContain('Input: "typescript for code"');
       expect(result).toContain('Input: "be concise"');
-      expect(result).toContain('Input: "organize coding style rules"');
+      expect(result).toContain(
+        'Input: "organize these rules: use TypeScript; prefer functional patterns; keep diffs small"',
+      );
       expect(result).toContain('Input: "use that thing from before"');
     });
 
@@ -109,6 +114,7 @@ describe('buildRefineSystemPrompt', () => {
       expect(result).toContain('**Code Language**');
       expect(result).toContain('**Conciseness**');
       expect(result).toContain('## Coding Standards');
+      expect(result).not.toContain('Include proper type annotations and interfaces');
     });
 
     it('should include ambiguity handling example', () => {
@@ -132,6 +138,7 @@ describe('buildRefineSystemPrompt', () => {
 
       expect(result).toContain('**Scope**');
       expect(result).toContain('Keep it focused');
+      expect(result).toContain('Do not invent requirements');
     });
 
     it('should specify format guideline', () => {
@@ -152,7 +159,7 @@ describe('buildRefineSystemPrompt', () => {
       const result = buildRefineSystemPrompt('');
 
       expect(result).toContain('**Conflict Handling**');
-      expect(result).toContain('directly contradicts');
+      expect(result).toContain('cannot coexist unambiguously');
     });
   });
 

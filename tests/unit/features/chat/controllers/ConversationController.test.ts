@@ -31,11 +31,11 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
   const messagesEl = createMockEl();
 
   const fileContextManager = {
-    resetForNewConversation: jest.fn(),
-    resetForLoadedConversation: jest.fn(),
-    autoAttachActiveFile: jest.fn(),
-    setCurrentNote: jest.fn(),
-    getCurrentNotePath: jest.fn().mockReturnValue(null),
+    clearAttachments: jest.fn(),
+  };
+  const linkedContentController = {
+    resetAutoDraft: jest.fn(),
+    lock: jest.fn(),
   };
 
   return {
@@ -87,6 +87,7 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     getMessagesEl: () => messagesEl as any,
     getInputEl: () => inputEl,
     getFileContextManager: () => fileContextManager as any,
+    getLinkedContentController: () => linkedContentController as any,
     getImageContextManager: () => ({
       clearImages: jest.fn(),
     }) as any,
@@ -160,13 +161,14 @@ describe('ConversationController', () => {
           .toBeLessThan((deps.plugin.updateConversation as jest.Mock).mock.invocationCallOrder[0]);
       });
 
-      it('should reset file context for new conversation', async () => {
+      it('clears attachments and resets the Linked content draft', async () => {
         const fileContextManager = deps.getFileContextManager()!;
+        const linkedContentController = deps.getLinkedContentController();
 
         await controller.createNew();
 
-        expect(fileContextManager.resetForNewConversation).toHaveBeenCalled();
-        expect(fileContextManager.autoAttachActiveFile).toHaveBeenCalled();
+        expect(fileContextManager.clearAttachments).toHaveBeenCalled();
+        expect(linkedContentController.resetAutoDraft).toHaveBeenCalled();
       });
 
       it('should recreate the branded welcome for a new conversation', async () => {
@@ -256,13 +258,15 @@ describe('ConversationController', () => {
         expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
       });
 
-      it('should reset file context when switching conversations', async () => {
+      it('clears attachments and locks the switched Conversation target', async () => {
         deps.state.currentConversationId = 'old-conv';
         const fileContextManager = deps.getFileContextManager()!;
+        const linkedContentController = deps.getLinkedContentController();
 
         await controller.switchTo('new-conv');
 
-        expect(fileContextManager.resetForLoadedConversation).toHaveBeenCalled();
+        expect(fileContextManager.clearAttachments).toHaveBeenCalled();
+        expect(linkedContentController.lock).toHaveBeenCalled();
       });
 
       it('should clear input value on switch', async () => {
@@ -325,13 +329,26 @@ describe('ConversationController', () => {
   });
 
   describe('initializeWelcome', () => {
-    it('should initialize file context for new tab', () => {
-      const fileContextManager = deps.getFileContextManager()!;
+    it('republishes a welcome element after adding the greeting mount', () => {
+      const setWelcomeEl = jest.fn();
+      const welcomeEl = createMockEl();
+      const controllerWithMount = new ConversationController(createMockDeps({
+        getWelcomeEl: () => welcomeEl,
+        setWelcomeEl,
+      }));
+
+      controllerWithMount.initializeWelcome();
+
+      expect(setWelcomeEl).toHaveBeenCalledWith(welcomeEl);
+      expect(welcomeEl.querySelector('.claudian-welcome-linked-content')).not.toBeNull();
+    });
+
+    it('does not reset the Linked content draft during a welcome rerender', () => {
+      const linkedContentController = deps.getLinkedContentController();
 
       controller.initializeWelcome();
 
-      expect(fileContextManager.resetForNewConversation).toHaveBeenCalled();
-      expect(fileContextManager.autoAttachActiveFile).toHaveBeenCalled();
+      expect(linkedContentController.resetAutoDraft).not.toHaveBeenCalled();
     });
 
     it('should not throw if welcomeEl is null', () => {
@@ -422,83 +439,14 @@ describe('ConversationController', () => {
       expect(deps.plugin.createConversation).not.toHaveBeenCalled();
     });
 
-    it('should lazily create conversation when entry point has messages', async () => {
+    it('rejects messages before InputController creates the Conversation shell', async () => {
       deps.state.currentConversationId = null;
       deps.state.messages = [{ id: '1', role: 'user', content: 'hello', timestamp: Date.now() }];
 
-      (deps.plugin.createConversation as jest.Mock).mockResolvedValue({
-        id: 'lazy-conv',
-        title: 'New Conversation',
-        messages: [],
-        sessionId: null,
-        createdAt: Date.now(),
-        lastActivityAt: Date.now(),
-      });
-
-      await controller.save();
-
-      expect(deps.plugin.createConversation).toHaveBeenCalled();
-      expect(deps.state.currentConversationId).toBe('lazy-conv');
-      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-        'lazy-conv',
-        expect.any(Object)
+      await expect(controller.save()).rejects.toThrow(
+        'Cannot save messages before the Conversation shell is created',
       );
-    });
-
-    it('should preserve the active provider and selected model when lazily creating a conversation', async () => {
-      deps = createMockDeps({
-        getProviderId: () => 'codex',
-        getSelectedModel: () => 'gpt-5.1-codex',
-      });
-      controller = new ConversationController(deps);
-      deps.state.currentConversationId = null;
-      deps.state.messages = [{ id: '1', role: 'user', content: 'hello', timestamp: Date.now() }];
-
-      (deps.plugin.createConversation as jest.Mock).mockResolvedValue({
-        id: 'lazy-codex-conv',
-        providerId: 'codex',
-        title: 'Codex Conversation',
-        messages: [],
-        sessionId: 'session-codex',
-        createdAt: Date.now(),
-        lastActivityAt: Date.now(),
-      });
-
-      await controller.save();
-
-      expect(deps.plugin.createConversation).toHaveBeenCalledWith({
-        providerId: 'codex',
-        selectedModel: 'gpt-5.1-codex',
-      });
-    });
-
-    it('should include the active note when lazily creating a conversation', async () => {
-      const fileContextManager = deps.getFileContextManager()!;
-      (fileContextManager.getCurrentNotePath as jest.Mock).mockReturnValue(
-        'Projects/Plan.md',
-      );
-      deps.state.currentConversationId = null;
-      deps.state.messages = [
-        { id: '1', role: 'user', content: 'hello', timestamp: Date.now() },
-      ];
-      (deps.plugin.createConversation as jest.Mock).mockResolvedValue({
-        id: 'linked-conv',
-        title: 'New Conversation',
-        messages: [],
-        sessionId: null,
-        createdAt: Date.now(),
-        lastActivityAt: Date.now(),
-      });
-
-      await controller.save();
-
-      expect(deps.plugin.createConversation).toHaveBeenCalledWith(
-        expect.objectContaining({ currentNote: 'Projects/Plan.md' }),
-      );
-      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-        'linked-conv',
-        expect.objectContaining({ currentNote: 'Projects/Plan.md' }),
-      );
+      expect(deps.plugin.createConversation).not.toHaveBeenCalled();
     });
 
     it('should set lastActivityAt when updateLastActivity is true', async () => {
@@ -563,35 +511,34 @@ describe('ConversationController', () => {
   });
 
   describe('loadActive with existing conversation', () => {
-    it('should restore currentNote when conversation has one', async () => {
-      const fileContextManager = deps.getFileContextManager()!;
+    it('should restore linkedContentPath when conversation has one', async () => {
+      const linkedContentController = deps.getLinkedContentController();
       deps.state.currentConversationId = 'conv-with-note';
       (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
         id: 'conv-with-note',
         messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
         sessionId: null,
-        currentNote: 'notes/my-note.md',
+        linkedContentPath: 'notes/my-note.md',
       });
 
       await controller.loadActive();
 
-      expect(fileContextManager.setCurrentNote).toHaveBeenCalledWith('notes/my-note.md');
+      expect(linkedContentController.lock).toHaveBeenCalledWith('notes/my-note.md');
     });
 
-    it('should auto-attach active file when no currentNote and no messages', async () => {
-      const fileContextManager = deps.getFileContextManager()!;
+    it('locks an empty existing Conversation even without Linked content', async () => {
+      const linkedContentController = deps.getLinkedContentController();
       deps.state.currentConversationId = 'empty-conv';
       (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
         id: 'empty-conv',
         messages: [],
         sessionId: null,
-        currentNote: undefined,
+        linkedContentPath: undefined,
       });
 
       await controller.loadActive();
 
-      expect(fileContextManager.autoAttachActiveFile).toHaveBeenCalled();
-      expect(fileContextManager.setCurrentNote).not.toHaveBeenCalled();
+      expect(linkedContentController.lock).toHaveBeenCalledWith(undefined);
     });
 
     it('should call renderer.renderMessages with greeting callback', async () => {
@@ -614,37 +561,37 @@ describe('ConversationController', () => {
     });
   });
 
-  describe('switchTo with currentNote', () => {
-    it('should set currentNote when switched conversation has one', async () => {
-      const fileContextManager = deps.getFileContextManager()!;
+  describe('switchTo with linkedContentPath', () => {
+    it('should set linkedContentPath when switched conversation has one', async () => {
+      const linkedContentController = deps.getLinkedContentController();
       deps.state.currentConversationId = 'old-conv';
 
       (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
         id: 'new-conv',
         messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
         sessionId: null,
-        currentNote: 'docs/readme.md',
+        linkedContentPath: 'docs/readme.md',
       });
 
       await controller.switchTo('new-conv');
 
-      expect(fileContextManager.setCurrentNote).toHaveBeenCalledWith('docs/readme.md');
+      expect(linkedContentController.lock).toHaveBeenCalledWith('docs/readme.md');
     });
 
-    it('should not set currentNote when switched conversation has none', async () => {
-      const fileContextManager = deps.getFileContextManager()!;
+    it('locks a switched Conversation with explicit None', async () => {
+      const linkedContentController = deps.getLinkedContentController();
       deps.state.currentConversationId = 'old-conv';
 
       (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
         id: 'new-conv',
         messages: [],
         sessionId: null,
-        currentNote: undefined,
+        linkedContentPath: undefined,
       });
 
       await controller.switchTo('new-conv');
 
-      expect(fileContextManager.setCurrentNote).not.toHaveBeenCalled();
+      expect(linkedContentController.lock).toHaveBeenCalledWith(undefined);
     });
 
     it('should call renderer.renderMessages with greeting callback on switch', async () => {
@@ -895,7 +842,7 @@ describe('ConversationController', () => {
           .toEqual(['Normal']);
       });
 
-      it('moves pinned note groups above standalone pinned sessions without duplication', () => {
+      it('moves pinned content groups above standalone pinned sessions without duplication', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
@@ -903,14 +850,14 @@ describe('ConversationController', () => {
             title: 'Note regular',
             createdAt: 4,
             lastActivityAt: 4,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
           },
           {
             id: 'note-pinned-session',
             title: 'Note pinned session',
             createdAt: 3,
             lastActivityAt: 3,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
             isPinned: true,
           },
           {
@@ -925,18 +872,18 @@ describe('ConversationController', () => {
             title: 'Regular',
             createdAt: 1,
             lastActivityAt: 1,
-            currentNote: 'Projects/Other.md',
+            linkedContentPath: 'Projects/Other.md',
           },
         ]);
 
         controller.renderHistoryDropdown(container, {
           onSelectConversation: jest.fn(),
           showPinnedSection: true,
-          organization: 'linked-note',
+          organization: 'linked-content',
           sort: 'last-updated',
           language: 'en',
-          noteExists: () => true,
-          pinnedLinkedNotePaths: new Set([
+          contentExists: () => true,
+          pinnedLinkedContentPaths: new Set([
             'Projects/Plan.md',
             'Projects/Empty.md',
           ]),
@@ -944,7 +891,7 @@ describe('ConversationController', () => {
 
         const pinnedSection = container.querySelector('.claudian-history-section--pinned')!;
         const pinnedHeaders = pinnedSection.querySelectorAll('.claudian-session-group-header');
-        expect(pinnedHeaders.map((header: any) => header.getAttribute('data-note-path'))).toEqual([
+        expect(pinnedHeaders.map((header: any) => header.getAttribute('data-content-path'))).toEqual([
           'Projects/Plan.md',
           'Projects/Empty.md',
         ]);
@@ -965,38 +912,38 @@ describe('ConversationController', () => {
         ))).toHaveLength(1);
       });
 
-      it('offers note pinning from linked-note header context menus', async () => {
+      it('offers note pinning from linked-content header context menus', async () => {
         const container = createMockEl();
-        const onSetLinkedNotePinned = jest.fn().mockResolvedValue(undefined);
+        const onSetLinkedContentPinned = jest.fn().mockResolvedValue(undefined);
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
             id: 'plan',
             title: 'Plan session',
             createdAt: 2,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
           },
           {
             id: 'other',
             title: 'Other session',
             createdAt: 1,
-            currentNote: 'Projects/Other.md',
+            linkedContentPath: 'Projects/Other.md',
           },
         ]);
 
         controller.renderHistoryDropdown(container, {
           onSelectConversation: jest.fn(),
           showPinnedSection: true,
-          organization: 'linked-note',
+          organization: 'linked-content',
           sort: 'created',
           language: 'en',
-          noteExists: () => true,
-          pinnedLinkedNotePaths: new Set(['Projects/Plan.md']),
-          onSetLinkedNotePinned,
+          contentExists: () => true,
+          pinnedLinkedContentPaths: new Set(['Projects/Plan.md']),
+          onSetLinkedContentPinned,
         });
 
         const groupHeaders = container.querySelectorAll('.claudian-session-group-header');
         const pinnedHeader = groupHeaders.find((header: any) => (
-          header.getAttribute('data-note-path') === 'Projects/Plan.md'
+          header.getAttribute('data-content-path') === 'Projects/Plan.md'
         ))!;
         pinnedHeader.dispatchEvent({
           type: 'contextmenu',
@@ -1006,13 +953,13 @@ describe('ConversationController', () => {
         let menu = (Menu as typeof Menu & {
           instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
         }).instances.at(-1)!;
-        expect(menu.items.map(item => item.title)).toEqual(['Unpin linked note']);
+        expect(menu.items.map(item => item.title)).toEqual(['Unpin Linked content']);
         menu.items[0].clickHandler?.();
         await Promise.resolve();
-        expect(onSetLinkedNotePinned).toHaveBeenCalledWith('Projects/Plan.md', false);
+        expect(onSetLinkedContentPinned).toHaveBeenCalledWith('Projects/Plan.md', false);
 
         const regularHeader = groupHeaders.find((header: any) => (
-          header.getAttribute('data-note-path') === 'Projects/Other.md'
+          header.getAttribute('data-content-path') === 'Projects/Other.md'
         ))!;
         regularHeader.dispatchEvent({
           type: 'contextmenu',
@@ -1022,13 +969,13 @@ describe('ConversationController', () => {
         menu = (Menu as typeof Menu & {
           instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
         }).instances.at(-1)!;
-        expect(menu.items.map(item => item.title)).toEqual(['Pin linked note']);
+        expect(menu.items.map(item => item.title)).toEqual(['Pin Linked content']);
         menu.items[0].clickHandler?.();
         await Promise.resolve();
-        expect(onSetLinkedNotePinned).toHaveBeenCalledWith('Projects/Other.md', true);
+        expect(onSetLinkedContentPinned).toHaveBeenCalledWith('Projects/Other.md', true);
       });
 
-      it('uses a DOM menu and archives non-running sessions from a linked-note header', async () => {
+      it('uses a DOM menu and archives non-running sessions from a linked-content header', async () => {
         const container = createMockEl();
         const onSetConversationsArchived = jest.fn().mockResolvedValue(undefined);
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
@@ -1036,44 +983,44 @@ describe('ConversationController', () => {
             id: 'ready',
             title: 'Ready session',
             createdAt: 3,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
           },
           {
             id: 'running',
             title: 'Running session',
             createdAt: 2,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
           },
           {
             id: 'hidden',
             title: 'Hidden session',
             createdAt: 1,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
           },
           {
             id: 'busy',
             title: 'Busy session',
             createdAt: 0,
-            currentNote: 'Projects/Busy.md',
+            linkedContentPath: 'Projects/Busy.md',
           },
         ]);
 
         controller.renderHistoryDropdown(container, {
           onSelectConversation: jest.fn(),
-          organization: 'linked-note',
+          organization: 'linked-content',
           sessionActionMode: 'active',
           searchQuery: 'ready',
           getConversationStatus: id => ({
             openState: 'closed',
             isRunning: id === 'running' || id === 'busy',
           }),
-          onSetLinkedNotePinned: jest.fn().mockResolvedValue(undefined),
+          onSetLinkedContentPinned: jest.fn().mockResolvedValue(undefined),
           onSetConversationsArchived,
         });
 
         const groupHeaders = container.querySelectorAll('.claudian-session-group-header');
         const planHeader = groupHeaders.find((header: any) => (
-          header.getAttribute('data-note-path') === 'Projects/Plan.md'
+          header.getAttribute('data-content-path') === 'Projects/Plan.md'
         ))!;
         planHeader.dispatchEvent({
           type: 'contextmenu',
@@ -1092,7 +1039,7 @@ describe('ConversationController', () => {
         }).instances.at(-1)!;
         expect(menu.useNativeMenu).toBe(false);
         expect(menu.items.map(item => item.title)).toEqual([
-          'Pin linked note',
+          'Pin Linked content',
           'Archive all sessions',
         ]);
         expect(menu.items[1].disabled).toBe(false);
@@ -1103,14 +1050,14 @@ describe('ConversationController', () => {
         const busyContainer = createMockEl();
         controller.renderHistoryDropdown(busyContainer, {
           onSelectConversation: jest.fn(),
-          organization: 'linked-note',
+          organization: 'linked-content',
           sessionActionMode: 'active',
           searchQuery: 'busy',
           getConversationStatus: id => ({
             openState: 'closed',
             isRunning: id === 'running' || id === 'busy',
           }),
-          onSetLinkedNotePinned: jest.fn().mockResolvedValue(undefined),
+          onSetLinkedContentPinned: jest.fn().mockResolvedValue(undefined),
           onSetConversationsArchived,
         });
         const busyHeader = busyContainer.querySelector('.claudian-session-group-header')!;
@@ -1142,7 +1089,7 @@ describe('ConversationController', () => {
           title: 'Review architecture',
           createdAt: 1_000,
           lastActivityAt: 2_000,
-          currentNote: 'Projects/Architecture.md',
+          linkedContentPath: 'Projects/Architecture.md',
         }]);
         jest.spyOn(controller, 'formatMetadataDate').mockReturnValue('Aug 3, 2026');
         jest.spyOn(controller, 'formatMetadataDateTime').mockReturnValue('Aug 5, 2026, 14:28');
@@ -1196,10 +1143,10 @@ describe('ConversationController', () => {
         expect(popover.querySelector('.claudian-session-metadata-provider-icon'))
           .not.toBeNull();
         expect(popover.style.top).toBe('120px');
-        const noteValue = popover.querySelector(
-          '.claudian-session-metadata-value--note',
+        const contentValue = popover.querySelector(
+          '.claudian-session-metadata-value--content',
         )!;
-        expect(noteValue.getAttribute('title')).toBe('Projects/Architecture.md');
+        expect(contentValue.getAttribute('title')).toBe('Projects/Architecture.md');
 
         content.dispatchEvent({
           type: 'keydown',
@@ -1401,7 +1348,7 @@ describe('ConversationController', () => {
         )).toBe(false);
       });
 
-      it('filters the current session scope by title and linked-note path', () => {
+      it('filters the current session scope by title and linked-content path', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
@@ -1413,7 +1360,7 @@ describe('ConversationController', () => {
           {
             id: 'active-note',
             title: 'Planning notes',
-            currentNote: 'Projects/Roadmap.md',
+            linkedContentPath: 'Projects/Roadmap.md',
             createdAt: 3,
             lastActivityAt: 3,
           },
@@ -1509,21 +1456,21 @@ describe('ConversationController', () => {
           .toBe('Cannot archive a running session');
       });
 
-      it('uses the same linked-note grouping and sorting for archived sessions', () => {
+      it('uses the same linked-content grouping and sorting for archived sessions', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
             id: 'archived-b',
             title: 'Second',
             createdAt: 2,
-            currentNote: 'Projects/B.md',
+            linkedContentPath: 'Projects/B.md',
             isArchived: true,
           },
           {
             id: 'archived-a',
             title: 'First',
             createdAt: 1,
-            currentNote: 'Projects/A.md',
+            linkedContentPath: 'Projects/A.md',
             isArchived: true,
           },
           { id: 'active', title: 'Active', createdAt: 3 },
@@ -1534,10 +1481,10 @@ describe('ConversationController', () => {
           showArchivedSection: true,
           sessionScope: 'archived',
           sessionActionMode: 'archived',
-          organization: 'linked-note',
+          organization: 'linked-content',
           sort: 'created',
           language: 'en',
-          noteExists: () => true,
+          contentExists: () => true,
           onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
         });
 
@@ -1546,41 +1493,41 @@ describe('ConversationController', () => {
           .toEqual(['B', 'A']);
       });
 
-      it('renders full-path note groups only for the linked-note organization', () => {
+      it('renders full-path content groups only for the linked-content organization', () => {
         const container = createMockEl();
         const onGroupCollapseChange = jest.fn();
         const onGroupKeysChange = jest.fn();
-        const onStartLinkedNoteConversation = jest.fn().mockResolvedValue(undefined);
+        const onStartLinkedContentConversation = jest.fn().mockResolvedValue(undefined);
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
             id: 'plan-a',
             title: 'Plan A',
             createdAt: 3,
-            currentNote: 'Projects/A/Plan.md',
+            linkedContentPath: 'Projects/A/Plan.md',
           },
           {
             id: 'plan-b',
             title: 'Plan B',
             createdAt: 2,
-            currentNote: 'Projects/B/Plan.md',
+            linkedContentPath: 'Projects/B/Plan.md',
           },
           {
             id: 'untitled',
             title: 'Draft discussion',
             createdAt: 1,
-            currentNote: 'Inbox/Untitled 2.md',
+            linkedContentPath: 'Inbox/Untitled 2.md',
           },
         ]);
 
         controller.renderHistoryDropdown(container, {
           onSelectConversation: jest.fn(),
-          organization: 'linked-note',
+          organization: 'linked-content',
           sort: 'created',
           language: 'en',
-          noteExists: () => true,
+          contentExists: () => true,
           onGroupCollapseChange,
           onGroupKeysChange,
-          onStartLinkedNoteConversation,
+          onStartLinkedContentConversation,
         });
 
         const labels = container
@@ -1593,29 +1540,29 @@ describe('ConversationController', () => {
         expect(groupHeaders[1].getAttribute('title')).toBe('Projects/B/Plan.md');
         const groupIcons = container.querySelectorAll('.claudian-session-group-icon');
         expect(groupIcons).toHaveLength(3);
-        expect(setIcon).toHaveBeenCalledWith(groupIcons[0], 'file-text');
-        expect(setIcon).toHaveBeenCalledWith(groupIcons[1], 'file-text');
+        expect(setIcon).toHaveBeenCalledWith(groupIcons[0], 'link');
+        expect(setIcon).toHaveBeenCalledWith(groupIcons[1], 'link');
         expect(setIcon).toHaveBeenCalledWith(groupIcons[2], 'inbox');
-        const linkedNoteActions = container.querySelectorAll(
+        const linkedContentActions = container.querySelectorAll(
           '.claudian-session-group-new-action',
         );
-        expect(linkedNoteActions).toHaveLength(2);
-        expect(linkedNoteActions[0].tagName).toBe('SPAN');
-        expect(linkedNoteActions[0].getAttribute('role')).toBe('button');
-        expect(linkedNoteActions[0].getAttribute('tabindex')).toBe('0');
-        expect(setIcon).toHaveBeenCalledWith(linkedNoteActions[0], 'square-pen');
-        expect(linkedNoteActions[0].getAttribute('aria-label'))
+        expect(linkedContentActions).toHaveLength(2);
+        expect(linkedContentActions[0].tagName).toBe('SPAN');
+        expect(linkedContentActions[0].getAttribute('role')).toBe('button');
+        expect(linkedContentActions[0].getAttribute('tabindex')).toBe('0');
+        expect(setIcon).toHaveBeenCalledWith(linkedContentActions[0], 'square-pen');
+        expect(linkedContentActions[0].getAttribute('aria-label'))
           .toBe('New chat for Plan');
         const stopPropagation = jest.fn();
-        linkedNoteActions[0].dispatchEvent({ type: 'click', stopPropagation });
+        linkedContentActions[0].dispatchEvent({ type: 'click', stopPropagation });
         expect(stopPropagation).toHaveBeenCalledTimes(1);
-        expect(onStartLinkedNoteConversation).toHaveBeenCalledWith(
+        expect(onStartLinkedContentConversation).toHaveBeenCalledWith(
           'Projects/A/Plan.md',
         );
         expect(groupHeaders[0].getAttribute('aria-expanded')).toBe('true');
         expect(onGroupKeysChange).toHaveBeenCalledWith([
-          'note:Projects/A/Plan.md',
-          'note:Projects/B/Plan.md',
+          'content:Projects/A/Plan.md',
+          'content:Projects/B/Plan.md',
           'ungrouped',
         ]);
         expect(groupHeaders[0].getAttribute('role')).toBe('button');
@@ -1628,10 +1575,66 @@ describe('ConversationController', () => {
         expect(groupHeaders[0].getAttribute('aria-expanded')).toBe('false');
         expect(groupBodies[0].hasClass('claudian-session-group-body--collapsed')).toBe(true);
         expect(onGroupCollapseChange).toHaveBeenCalledWith(
-          'note:Projects/A/Plan.md',
+          'content:Projects/A/Plan.md',
           true,
         );
         expect(container.querySelectorAll('.claudian-history-item')).toHaveLength(3);
+      });
+
+      it('keeps missing groups visible without offering a new linked chat', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([{
+          id: 'missing-plan',
+          title: 'Missing plan',
+          createdAt: 1,
+          linkedContentPath: 'Gone/Plan.md',
+        }]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          organization: 'linked-content',
+          sort: 'created',
+          language: 'en',
+          contentExists: () => false,
+          onStartLinkedContentConversation: jest.fn(),
+        });
+
+        expect(container.querySelector('.claudian-session-group-status')?.textContent)
+          .toBe('Missing');
+        expect(container.querySelector('.claudian-session-group-new-action')).toBeNull();
+      });
+
+      it('shows metadata for an existing directory with a provisional Note name', () => {
+        const container = createMockEl();
+        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([{
+          id: 'untitled-folder',
+          providerId: 'claude',
+          title: 'Untitled folder chat',
+          createdAt: 1,
+          lastActivityAt: 1,
+          linkedContentPath: 'Projects/Untitled',
+        }]);
+
+        controller.renderHistoryDropdown(container, {
+          onSelectConversation: jest.fn(),
+          organization: 'linked-content',
+          sort: 'created',
+          language: 'en',
+          contentExists: () => true,
+          contentIsNote: () => false,
+          showMetadataPopover: true,
+        });
+
+        const item = container.querySelector('.claudian-history-item')!;
+        const body = createMockEl();
+        Object.defineProperty(item.ownerDocument, 'body', {
+          configurable: true,
+          value: body,
+        });
+        item.dispatchEvent({ type: 'mouseenter' });
+
+        expect(body.querySelector('.claudian-session-metadata-value--content')?.textContent)
+          .toBe('Untitled');
       });
 
       it('delegates rerendering after deletion when the surface owner provides a callback', async () => {
@@ -1733,12 +1736,12 @@ describe('ConversationController', () => {
             id: `conv-${index}`,
             title: `Conversation ${index}`,
             createdAt: 75 - index,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
           })),
         );
         const options = {
           onSelectConversation: jest.fn(),
-          organization: 'linked-note' as const,
+          organization: 'linked-content' as const,
           sort: 'last-updated' as const,
           language: 'en',
           pageSize: 25,
@@ -1927,27 +1930,27 @@ describe('ConversationController', () => {
 
       it('does not let collapsed groups consume pagination or hide later headers', () => {
         const container = createMockEl();
-        const collapsedGroupKeys = new Set(['note:Projects/A.md']);
+        const collapsedGroupKeys = new Set(['content:Projects/A.md']);
         const onRerender = jest.fn();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           ...Array.from({ length: 75 }, (_, index) => ({
             id: `a-${index}`,
             title: `A ${index}`,
             createdAt: 1000 - index,
-            currentNote: 'Projects/A.md',
+            linkedContentPath: 'Projects/A.md',
           })),
           {
             id: 'b-1',
             title: 'B 1',
             createdAt: 1,
-            currentNote: 'Projects/B.md',
+            linkedContentPath: 'Projects/B.md',
           },
         ]);
 
         controller.renderHistoryDropdown(container, {
           onSelectConversation: jest.fn(),
           onRerender,
-          organization: 'linked-note',
+          organization: 'linked-content',
           sort: 'created',
           pageSize: 25,
           collapsedGroupKeys,
@@ -2125,26 +2128,26 @@ describe('ConversationController', () => {
           .toBe('Date 1000');
       });
 
-      it('shows a running indicator on a collapsed linked-note header', () => {
+      it('shows a running indicator on a collapsed linked-content header', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
             id: 'running',
             title: 'Running session',
             createdAt: 1000,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
           },
           {
             id: 'idle',
             title: 'Idle session',
             createdAt: 900,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
           },
         ]);
 
         controller.renderHistoryDropdown(container, {
           onSelectConversation: jest.fn(),
-          organization: 'linked-note',
+          organization: 'linked-content',
           sort: 'last-updated',
           language: 'en',
           showOpenStateLabels: false,
@@ -2171,26 +2174,26 @@ describe('ConversationController', () => {
         expect(setIcon).toHaveBeenCalledWith(headerIndicator, 'loader-2');
       });
 
-      it('marks a collapsed linked-note header when it contains attention', () => {
+      it('marks a collapsed linked-content header when it contains attention', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
             id: 'attention',
             title: 'Needs review',
             createdAt: 1000,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
           },
           {
             id: 'normal',
             title: 'No attention',
             createdAt: 900,
-            currentNote: 'Projects/Plan.md',
+            linkedContentPath: 'Projects/Plan.md',
           },
         ]);
 
         controller.renderHistoryDropdown(container, {
           onSelectConversation: jest.fn(),
-          organization: 'linked-note',
+          organization: 'linked-content',
           sort: 'last-updated',
           language: 'en',
           showAttentionState: true,
@@ -2861,7 +2864,7 @@ describe('ConversationController', () => {
       controller.renderHistoryDropdown(container, {
         onSelectConversation: jest.fn(),
         onRerender,
-        organization: 'linked-note',
+        organization: 'linked-content',
         sort: 'created',
       });
 

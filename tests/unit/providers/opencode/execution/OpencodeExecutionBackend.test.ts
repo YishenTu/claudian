@@ -503,6 +503,29 @@ describe('OpencodeExecutionBackend', () => {
     await collect(run.events);
   });
 
+  it('encodes path-only Linked content without changing the Vault-root kernel CWD', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest({
+      context: { linkedContent: { path: 'Projects/Research' } },
+      input: [{ text: 'Inspect linked content', type: 'text' }],
+    }));
+    await waitForPrompt(harness.kernels[0]);
+    harness.kernels[0].completePrompt();
+    await collect(run.events);
+
+    expect(harness.kernels[0].options.config.vaultWorkingDirectory).toBe('/vault');
+    expect(harness.kernels[0].prompts[0]).toEqual({
+      prompt: [{
+        text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />',
+        type: 'text',
+      }],
+      sessionId: 'native-session',
+    });
+    expect(JSON.stringify(harness.kernels[0].prompts[0])).not.toMatch(
+      /<(?:linked_note|current_note)\b/,
+    );
+  });
+
   it('bootstraps canonical history when no native session exists', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({
@@ -745,6 +768,50 @@ describe('OpencodeExecutionBackend', () => {
     expect(harness.kernels.slice(1).map(kernel => kernel.openedResumeIds)).toEqual([
       ['native-session'],
       ['native-session'],
+    ]);
+  });
+
+  it('reconnects when provider-default dynamic system sections change', async () => {
+    const harness = createHarness();
+    const execute = async (
+      dynamicSections: readonly string[],
+      expectedKernelCount: number,
+      expectedPromptCount: number,
+    ): Promise<void> => {
+      const base = createRequest();
+      const run = harness.session.execute(createRequest({
+        configuration: {
+          ...base.configuration,
+          systemInstructions: {
+            dynamicSections,
+            kind: 'provider-default',
+          },
+        },
+      }));
+      await waitForCondition(() => harness.kernels.length === expectedKernelCount);
+      const kernel = harness.kernels[expectedKernelCount - 1];
+      await waitForPrompt(kernel, expectedPromptCount);
+      kernel.completePrompt();
+      await collect(run.events);
+    };
+
+    await execute(['dynamic-a'], 1, 1);
+    await execute(['dynamic-a'], 1, 2);
+    await execute(['dynamic-b'], 2, 1);
+
+    expect(harness.kernels.map(kernel => kernel.connectCalls[0])).toEqual([
+      expect.objectContaining({
+        systemInstructions: {
+          dynamicSections: ['dynamic-a'],
+          kind: 'provider-default',
+        },
+      }),
+      expect.objectContaining({
+        systemInstructions: {
+          dynamicSections: ['dynamic-b'],
+          kind: 'provider-default',
+        },
+      }),
     ]);
   });
 

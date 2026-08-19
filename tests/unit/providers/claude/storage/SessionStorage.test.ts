@@ -602,7 +602,7 @@ describe('SessionStorage', () => {
             createdAt: 1700000000,
             updatedAt: 1700001000,
             lastResponseAt: 1700000900,
-            currentNote: 'Notes/One.md',
+            linkedContentPath: 'Notes/One.md',
             selectedModel: 'claude-sonnet-4-5',
             isPinned: true,
             isArchived: true,
@@ -633,7 +633,7 @@ describe('SessionStorage', () => {
       expect(metas[0].messageCount).toBe(0);
       expect(metas[1].preview).toBe('SDK session');
       expect(metas[1].messageCount).toBe(0);
-      expect(metas[1].currentNote).toBe('Notes/One.md');
+      expect(metas[1].linkedContentPath).toBe('Notes/One.md');
       expect(metas[1].selectedModel).toBe('claude-sonnet-4-5');
       expect(metas[1].isPinned).toBe(true);
       expect(metas[1].isArchived).toBe(true);
@@ -842,7 +842,7 @@ describe('SessionStorage', () => {
         messages: [
           { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
         ],
-        currentNote: 'notes/test.md',
+        linkedContentPath: 'notes/test.md',
         externalContextPaths: ['/external/path'],
         usage,
         titleGenerationStatus: 'success',
@@ -856,7 +856,7 @@ describe('SessionStorage', () => {
       expect(metadata.lastActivityAt).toBe(1700000900);
       expect(metadata.sessionId).toBe('sdk-session');
       expect((metadata.providerState as any)?.providerSessionId).toBe('current-sdk-session');
-      expect(metadata.currentNote).toBe('notes/test.md');
+      expect(metadata.linkedContentPath).toBe('notes/test.md');
       expect(metadata.externalContextPaths).toEqual(['/external/path']);
       expect(metadata.usage).toEqual(usage);
       expect(metadata.titleGenerationStatus).toBe('success');

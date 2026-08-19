@@ -336,6 +336,7 @@ function installTransitionController(
     getMessagesEl: () => tab.dom.messagesEl,
     getInputEl: () => tab.dom.inputEl,
     getFileContextManager: () => null,
+    getLinkedContentController: () => tab.ui.linkedContentController,
     getImageContextManager: () => null,
     getExternalContextSelector: () => null,
     clearQueuedMessage: jest.fn(),
@@ -791,7 +792,7 @@ describe('Tab provider execution ownership', () => {
       expect(tab?.ui.externalContextSelector).not.toBeNull();
       expect(tab?.ui.permissionToggle).not.toBeNull();
       expect(tab?.ui.serviceTierToggle).not.toBeNull();
-      expect(tab?.ui.slashCommandDropdown).not.toBeNull();
+      expect(tab?.ui.composerDropdown).not.toBeNull();
       expect(tab?.ui.instructionModeManager).not.toBeNull();
       expect(tab?.ui.contextUsageMeter).not.toBeNull();
       expect(tab?.ui.statusPanel).not.toBeNull();

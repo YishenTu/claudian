@@ -4,7 +4,7 @@ import { ConversationRepository } from '@/app/conversations/ConversationReposito
 import type { ConversationPersistence } from '@/core/bootstrap/ConversationPersistenceStore';
 import { resolveConversationModel } from '@/core/providers/conversationModel';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { Conversation } from '@/core/types';
+import type { Conversation, ConversationMutablePatch } from '@/core/types';
 
 function createConversation(id = 'conversation-1'): Conversation {
   return {
@@ -71,20 +71,88 @@ describe('ConversationRepository hydration', () => {
     expect(hydrateConversationHistory).not.toHaveBeenCalled();
   });
 
-  it('projects the linked note path into lightweight conversation metadata', () => {
-    const conversation = createConversation();
-    conversation.currentNote = 'Notes/Architecture.md';
+  it('projects Linked content into lightweight conversation metadata', () => {
+    const conversation: Conversation = {
+      ...createConversation(),
+      linkedContentPath: 'Notes/Architecture.md',
+    };
     conversation.selectedModel = 'claude-sonnet-4-5';
     const { repository } = createRepository(conversation);
 
     expect(repository.getMetadata(conversation.id)).toMatchObject({
-      currentNote: 'Notes/Architecture.md',
+      linkedContentPath: 'Notes/Architecture.md',
       selectedModel: 'claude-sonnet-4-5',
     });
     expect(repository.list()[0]).toMatchObject({
-      currentNote: 'Notes/Architecture.md',
+      linkedContentPath: 'Notes/Architecture.md',
       selectedModel: 'claude-sonnet-4-5',
     });
+  });
+
+  it('creates normalized Linked content metadata without a legacy path field', async () => {
+    const { repository, persistence } = createRepository();
+
+    const conversation = await repository.create({
+      sessionId: 'linked-content-session',
+      linkedContentPath: 'Projects\\Research//Plan.md',
+    });
+
+    expect(conversation.linkedContentPath).toBe('Projects/Research/Plan.md');
+    expect(persistence.saveMetadata).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: conversation.id,
+        linkedContentPath: 'Projects/Research/Plan.md',
+      }),
+    );
+    expect(persistence.saveMetadata.mock.calls.at(-1)?.[0])
+      .not.toHaveProperty('currentNote');
+  });
+
+  it('removes a new Conversation shell when its initial metadata write fails', async () => {
+    const { repository, persistence } = createRepository();
+    persistence.saveMetadata.mockRejectedValueOnce(new Error('metadata unavailable'));
+
+    await expect(repository.create({
+      sessionId: 'failed-linked-content-session',
+      linkedContentPath: 'Projects/Plan.md',
+    })).rejects.toThrow('metadata unavailable');
+
+    expect(repository.getAll().map(({ id }) => id))
+      .not.toContain('failed-linked-content-session');
+    expect(repository.list().map(({ id }) => id))
+      .not.toContain('failed-linked-content-session');
+
+    await expect(repository.create({
+      sessionId: 'failed-linked-content-session',
+      linkedContentPath: 'Projects/Plan.md',
+    })).resolves.toMatchObject({
+      id: 'failed-linked-content-session',
+      linkedContentPath: 'Projects/Plan.md',
+    });
+    expect(repository.getAll().filter(({ id }) => id === 'failed-linked-content-session'))
+      .toHaveLength(1);
+  });
+
+  it('rejects invalid Linked content at the conversation creation boundary', async () => {
+    const { repository, persistence } = createRepository();
+
+    await expect(repository.create({
+      linkedContentPath: '../outside',
+    })).rejects.toThrow('Invalid Linked content path');
+
+    expect(repository.getAll()).toHaveLength(1);
+    expect(persistence.saveMetadata).not.toHaveBeenCalled();
+  });
+
+  it('keeps Linked content out of the typed mutable patch', () => {
+    const patch: ConversationMutablePatch = { title: 'Renamed' };
+    const invalidPatch: ConversationMutablePatch = {
+      // @ts-expect-error Linked content is creation-only conversation identity.
+      linkedContentPath: 'Notes/Other.md',
+    };
+
+    expect(patch).toEqual({ title: 'Renamed' });
+    expect(invalidPatch).toHaveProperty('linkedContentPath');
   });
 
   it('recovers and persists only missing historical model selections', async () => {
@@ -689,74 +757,147 @@ describe('ConversationRepository hydration', () => {
     expect(conversation).toMatchObject({ isArchived: false, isPinned: false });
   });
 
-  it('rewrites linked note paths without changing session activity timestamps', async () => {
-    const fileConversation = createConversation('file');
-    fileConversation.currentNote = 'Notes/Old.md';
+  it('rewrites exact and descendant Linked content paths without changing activity', async () => {
+    const fileConversation: Conversation = {
+      ...createConversation('file'),
+      linkedContentPath: 'Notes/Old.md',
+    };
     fileConversation.lastActivityAt = 20;
-    const folderConversation = createConversation('folder');
-    folderConversation.currentNote = 'Projects/Old/Plan.md';
+    const folderConversation: Conversation = {
+      ...createConversation('folder'),
+      linkedContentPath: 'Projects/Old/Plan.md',
+    };
     folderConversation.lastActivityAt = 40;
-    const unrelatedConversation = createConversation('unrelated');
-    unrelatedConversation.currentNote = 'Notes/Other.md';
+    const unrelatedConversation: Conversation = {
+      ...createConversation('unrelated'),
+      linkedContentPath: 'Notes/Other.md',
+    };
     const { repository, persistence } = createRepository(fileConversation);
     repository.mergeMetadataConversations([folderConversation, unrelatedConversation]);
 
-    await repository.rewriteCurrentNotePaths('Notes/Old.md', 'Notes/New.md');
-    await repository.rewriteCurrentNotePaths('Projects/Old', 'Projects/New', {
+    await repository.rewriteLinkedContentPaths('Notes/Old.md', 'Notes/New.md');
+    await repository.rewriteLinkedContentPaths('Projects/Old', 'Projects/New', {
       includeDescendants: true,
     });
 
     expect(fileConversation).toMatchObject({
-      currentNote: 'Notes/New.md',
+      linkedContentPath: 'Notes/New.md',
       lastActivityAt: 20,
     });
     expect(folderConversation).toMatchObject({
-      currentNote: 'Projects/New/Plan.md',
+      linkedContentPath: 'Projects/New/Plan.md',
       lastActivityAt: 40,
     });
-    expect(unrelatedConversation.currentNote).toBe('Notes/Other.md');
+    expect(unrelatedConversation.linkedContentPath).toBe('Notes/Other.md');
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: 'file',
-      currentNote: 'Notes/New.md',
+      linkedContentPath: 'Notes/New.md',
       lastActivityAt: 20,
     }));
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: 'folder',
-      currentNote: 'Projects/New/Plan.md',
+      linkedContentPath: 'Projects/New/Plan.md',
       lastActivityAt: 40,
     }));
   });
 
-  it('persists read-only state synchronization without changing session activity', async () => {
-    const conversation = createConversation();
+  it('rejects untyped attempts to set or clear immutable conversation identity', async () => {
+    const conversation: Conversation = {
+      ...createConversation(),
+      linkedContentPath: 'Notes/Current.md',
+    };
     conversation.lastActivityAt = 42;
     const { repository, persistence } = createRepository(conversation);
+    const untypedUpdate = repository.update.bind(repository) as (
+      id: string,
+      updates: Record<string, unknown>,
+    ) => Promise<void>;
 
-    await repository.update(
-      conversation.id,
-      { currentNote: 'Notes/Current.md' },
+    await expect(untypedUpdate(conversation.id, {
+      linkedContentPath: 'Notes/Other.md',
+    })).rejects.toThrow('immutable');
+    await expect(untypedUpdate(conversation.id, {
+      linkedContentPath: undefined,
+    })).rejects.toThrow('immutable');
+
+    expect(conversation.linkedContentPath).toBe('Notes/Current.md');
+    expect(conversation.lastActivityAt).toBe(42);
+    expect(persistence.saveMetadata).not.toHaveBeenCalled();
+  });
+
+  it('repairs leaked Linked content mutations at read and persistence boundaries', async () => {
+    const conversation: Conversation = {
+      ...createConversation(),
+      linkedContentPath: 'Projects/Authoritative',
+    };
+    const { repository, persistence } = createRepository(conversation);
+    const leaked = conversation as { linkedContentPath?: string };
+
+    leaked.linkedContentPath = 'Projects/Leaked';
+    await repository.persistConversations([conversation]);
+
+    expect(conversation.linkedContentPath).toBe('Projects/Authoritative');
+    expect(persistence.saveMetadata).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        linkedContentPath: 'Projects/Authoritative',
+      }),
     );
 
-    expect(conversation.lastActivityAt).toBe(42);
-    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
-      id: conversation.id,
-      currentNote: 'Notes/Current.md',
-      lastActivityAt: 42,
+    leaked.linkedContentPath = undefined;
+    expect(repository.getMetadata(conversation.id)).toMatchObject({
+      linkedContentPath: 'Projects/Authoritative',
+    });
+    expect(conversation.linkedContentPath).toBe('Projects/Authoritative');
+  });
+
+  it('repairs a leaked Linked content mutation before a queued save serializes', async () => {
+    const conversation: Conversation = {
+      ...createConversation(),
+      linkedContentPath: 'Projects/Authoritative',
+    };
+    const { repository, persistence } = createRepository(conversation);
+    let releaseFirstSave!: () => void;
+    let signalFirstSaveStarted!: () => void;
+    const firstSaveStarted = new Promise<void>((resolve) => {
+      signalFirstSaveStarted = resolve;
+    });
+    persistence.saveMetadata.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      signalFirstSaveStarted();
+      releaseFirstSave = resolve;
     }));
+
+    const firstSave = repository.rename(conversation.id, 'First');
+    await firstSaveStarted;
+    const secondSave = repository.setPinned(conversation.id, true);
+    (conversation as { linkedContentPath?: string }).linkedContentPath = 'Projects/Leaked';
+    releaseFirstSave();
+
+    await Promise.all([firstSave, secondSave]);
+
+    expect(persistence.saveMetadata).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        linkedContentPath: 'Projects/Authoritative',
+        isPinned: true,
+      }),
+    );
+    expect(conversation.linkedContentPath).toBe('Projects/Authoritative');
   });
 
   it('does not apply an earlier rename to a new session that reuses the old path', async () => {
-    const originalConversation = createConversation('original');
-    originalConversation.currentNote = 'Notes/Old.md';
+    const originalConversation: Conversation = {
+      ...createConversation('original'),
+      linkedContentPath: 'Notes/Old.md',
+    };
     const { repository } = createRepository(originalConversation);
 
-    await repository.rewriteCurrentNotePaths('Notes/Old.md', 'Notes/Renamed.md');
-    const newConversation = await repository.create();
-    await repository.update(newConversation.id, { currentNote: 'Notes/Old.md' });
-    await repository.rewriteCurrentNotePaths('Notes/Renamed.md', 'Notes/Final.md');
+    await repository.rewriteLinkedContentPaths('Notes/Old.md', 'Notes/Renamed.md');
+    const newConversation = await repository.create({
+      linkedContentPath: 'Notes/Old.md',
+    });
+    await repository.rewriteLinkedContentPaths('Notes/Renamed.md', 'Notes/Final.md');
 
-    expect(originalConversation.currentNote).toBe('Notes/Final.md');
-    expect(newConversation.currentNote).toBe('Notes/Old.md');
+    expect(originalConversation.linkedContentPath).toBe('Notes/Final.md');
+    expect(newConversation.linkedContentPath).toBe('Notes/Old.md');
   });
 
   it('deduplicates concurrent hydration and does not reread an empty transcript', async () => {

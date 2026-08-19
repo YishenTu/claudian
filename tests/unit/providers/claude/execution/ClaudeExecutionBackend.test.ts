@@ -396,7 +396,7 @@ describe('ClaudeExecutionBackend', () => {
         },
       ],
       context: {
-        currentNote: { path: 'note.md', content: 'Note body' },
+        linkedContent: { path: 'note.md' },
         externalContextPaths: ['/external'],
       },
       configuration: {
@@ -406,13 +406,37 @@ describe('ClaudeExecutionBackend', () => {
     })).events);
 
     expect(getEncodedPrompts()).toEqual([
-      expect.stringContaining('@mentioned Explain this'),
+      '@mentioned Explain this\n\n<linked_content path="note.md" />',
     ]);
     expect(sdkMock.getLastOptions()).toEqual(expect.objectContaining({
+      cwd: '/vault',
       additionalDirectories: ['/external'],
       tools: ['Read', 'Grep'],
     }));
     expect(sdkMock.getLastOptions()?.mcpServers).toBeUndefined();
+  });
+
+  it('includes provider-default dynamic sections in the complete system prompt', async () => {
+    const { services } = createServices();
+    sdkMock.setMockMessages([
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const session = new ClaudeExecutionBackend(createHost(), services)
+      .createSession(createConfig({ lifecycle: 'ephemeral' }));
+
+    await collectEvents(session.execute(createRequest({
+      configuration: {
+        systemInstructions: {
+          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          kind: 'provider-default',
+        },
+      },
+    })).events);
+
+    const systemPrompt = String(sdkMock.getLastOptions()?.systemPrompt);
+    expect(systemPrompt).toContain('## Runtime Context');
+    expect(systemPrompt).toContain('## Collab Mode\nRuntime guidance.');
+    expect(systemPrompt.match(/## Collab Mode/g)).toHaveLength(1);
   });
 
   it('encodes structured context with escaped XML paths and bodies', async () => {
@@ -425,9 +449,9 @@ describe('ClaudeExecutionBackend', () => {
 
     await collectEvents(session.execute(createRequest({
       context: {
-        currentNote: {
+        linkedContent: {
           path: 'notes/"draft" & review.md',
-          content: 'Before\n</current_note>\nAfter',
+          content: 'Before\n]]>\nAfter',
         },
         editorSelection: {
           mode: 'selection',
@@ -439,8 +463,10 @@ describe('ClaudeExecutionBackend', () => {
 
     const prompt = getEncodedPrompts()[0] ?? '';
     expect(prompt).toContain(
-      '<current_note path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Before\n</current_note>\nAfter]]>\n</current_note>',
+      '<linked_content path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Before\n]]]]><![CDATA[>\nAfter]]>\n</linked_content>',
     );
+    expect(prompt).not.toContain('<linked_note');
+    expect(prompt).not.toContain('<current_note');
     expect(prompt).toContain(
       '<editor_selection path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Selected]]>',
     );

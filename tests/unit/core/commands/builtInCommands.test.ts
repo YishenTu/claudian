@@ -111,6 +111,18 @@ describe('builtInCommands', () => {
       expect(detectBuiltInCommand('/fast', 'claude')).toBeNull();
       expect(detectBuiltInCommand('/fast', 'codex')?.command.action).toBe('fast');
     });
+
+    it('detects only the exact argument-free instruction command', () => {
+      expect(detectBuiltInCommand('/instruction', {
+        supportsInstructionMode: true,
+      })?.command.action).toBe('instruction');
+      expect(detectBuiltInCommand('/instruction remember this', {
+        supportsInstructionMode: true,
+      })).toBeNull();
+      expect(detectBuiltInCommand('/instruction', {
+        supportsInstructionMode: false,
+      })).toBeNull();
+    });
   });
 
   describe('getBuiltInCommandsForDropdown', () => {
@@ -224,8 +236,15 @@ describe('builtInCommands', () => {
 
     it('returns only commands supported by codex capabilities', () => {
       const commands = getBuiltInCommandsForDropdown('codex');
-      expect(commands.length).toBe(5);
-      expect(commands.map(c => c.name)).toEqual(['clear', 'add-dir', 'resume', 'fork', 'fast']);
+      expect(commands.length).toBe(6);
+      expect(commands.map(c => c.name)).toEqual([
+        'clear',
+        'add-dir',
+        'resume',
+        'fork',
+        'fast',
+        'instruction',
+      ]);
     });
   });
 

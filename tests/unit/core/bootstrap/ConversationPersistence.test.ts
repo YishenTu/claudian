@@ -190,6 +190,69 @@ describe('SessionStorage read boundary', () => {
     await expect(storage.load('deleted')).resolves.toBeNull();
     expect(adapter.read).not.toHaveBeenCalled();
   });
+
+  it('normalizes legacy currentNote to canonical Linked content metadata', async () => {
+    const adapter = createAdapter();
+    const storage = new SessionStorage(adapter);
+    adapter.exists.mockImplementation(async (path) => (
+      path === `${SESSIONS_PATH}/legacy-content.meta.json`
+    ));
+    adapter.read.mockResolvedValue(JSON.stringify({
+      ...createMetadata('legacy-content'),
+      currentNote: 'Notes\\Legacy.md',
+    }));
+
+    await expect(storage.load('legacy-content')).resolves.toEqual({
+      metadata: {
+        ...createMetadata('legacy-content'),
+        linkedContentPath: 'Notes/Legacy.md',
+      },
+      needsMigration: true,
+      source: 'current',
+    });
+    expect(adapter.write).not.toHaveBeenCalled();
+  });
+
+  it('prefers canonical metadata and removes the legacy field', async () => {
+    const adapter = createAdapter();
+    const storage = new SessionStorage(adapter);
+    adapter.exists.mockImplementation(async (path) => (
+      path === `${SESSIONS_PATH}/canonical-content.meta.json`
+    ));
+    adapter.read.mockResolvedValue(JSON.stringify({
+      ...createMetadata('canonical-content'),
+      linkedContentPath: './Projects//Current',
+      currentNote: 'Notes/Legacy.md',
+    }));
+
+    await expect(storage.load('canonical-content')).resolves.toEqual({
+      metadata: {
+        ...createMetadata('canonical-content'),
+        linkedContentPath: 'Projects/Current',
+      },
+      needsMigration: true,
+      source: 'current',
+    });
+  });
+
+  it('fails closed when canonical metadata is invalid', async () => {
+    const adapter = createAdapter();
+    const storage = new SessionStorage(adapter);
+    adapter.exists.mockImplementation(async (path) => (
+      path === `${SESSIONS_PATH}/invalid-content.meta.json`
+    ));
+    adapter.read.mockResolvedValue(JSON.stringify({
+      ...createMetadata('invalid-content'),
+      linkedContentPath: '../escape',
+      currentNote: 'Notes/Legacy.md',
+    }));
+
+    await expect(storage.load('invalid-content')).resolves.toEqual({
+      metadata: createMetadata('invalid-content'),
+      needsMigration: true,
+      source: 'current',
+    });
+  });
 });
 
 describe('ConversationInputLedgerStorage', () => {
@@ -216,6 +279,74 @@ describe('ConversationInputLedgerStorage', () => {
     await expect(storage.load(ledger.conversationId)).resolves.toEqual({
       status: 'loaded',
       ledger,
+      needsMigration: false,
+    });
+  });
+
+  it('normalizes legacy Linked content context without rewriting the ledger', async () => {
+    const adapter = createAdapter();
+    const storage = new ConversationInputLedgerStorage(adapter);
+    const legacy = createLedger();
+    const raw = {
+      ...legacy,
+      records: [{
+        ...legacy.records[0],
+        context: {
+          currentNote: { path: 'Notes\\Legacy.md', content: 'body' },
+        },
+      }],
+    };
+    adapter.exists.mockResolvedValue(true);
+    adapter.read.mockResolvedValue(JSON.stringify(raw));
+
+    const result = await storage.load(legacy.conversationId);
+
+    expect(result).toEqual({
+      status: 'loaded',
+      ledger: {
+        ...legacy,
+        records: [{
+          ...legacy.records[0],
+          context: {
+            linkedContent: { path: 'Notes/Legacy.md', content: 'body' },
+          },
+        }],
+      },
+      needsMigration: true,
+    });
+    expect(adapter.write).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for invalid canonical context without falling back to legacy', async () => {
+    const adapter = createAdapter();
+    const storage = new ConversationInputLedgerStorage(adapter);
+    const ledger = createLedger();
+    const raw = {
+      ...ledger,
+      records: [{
+        ...ledger.records[0],
+        context: {
+          linkedContent: { path: '../escape' },
+          currentNote: { path: 'Notes/Legacy.md' },
+          editorSelection: null,
+        },
+      }],
+    };
+    adapter.exists.mockResolvedValue(true);
+    adapter.read.mockResolvedValue(JSON.stringify(raw));
+
+    const result = await storage.load(ledger.conversationId);
+
+    expect(result).toEqual({
+      status: 'loaded',
+      ledger: {
+        ...ledger,
+        records: [{
+          ...ledger.records[0],
+          context: { editorSelection: null },
+        }],
+      },
+      needsMigration: true,
     });
   });
 
@@ -301,7 +432,7 @@ describe('ConversationPersistenceStore', () => {
       title: 'Persisted conversation',
       createdAt: 1,
       lastActivityAt: 2,
-      currentNote: 'Notes/current.md',
+      linkedContentPath: 'Notes/current.md',
     };
 
     await store.saveMetadata(metadata);

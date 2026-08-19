@@ -66,11 +66,11 @@ describe('SessionStorage JSONL format', () => {
       expect(conversation!.lastActivityAt).toBe(1500);
     });
 
-    it('should parse currentNote when present', () => {
-      const jsonl = '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"lastActivityAt":2000,"sessionId":null,"currentNote":"file1.md"}';
+    it('should parse linkedContentPath when present', () => {
+      const jsonl = '{"type":"meta","id":"conv-123","title":"Test","createdAt":1000,"lastActivityAt":2000,"sessionId":null,"linkedContentPath":"file1.md"}';
 
       const conversation = parseJSONLHelper(jsonl);
-      expect(conversation!.currentNote).toBe('file1.md');
+      expect(conversation!.linkedContentPath).toBe('file1.md');
     });
   });
 
@@ -172,7 +172,7 @@ describe('SessionStorage JSONL format', () => {
         createdAt: 1000,
         lastActivityAt: 1500,
         sessionId: 'sess-rt',
-        currentNote: 'a.md',
+        linkedContentPath: 'a.md',
         messages: [
           { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1001 },
           { id: 'msg-2', role: 'assistant', content: 'World', timestamp: 1002 },
@@ -188,7 +188,7 @@ describe('SessionStorage JSONL format', () => {
       expect(parsed!.createdAt).toBe(original.createdAt);
       expect(parsed!.lastActivityAt).toBe(original.lastActivityAt);
       expect(parsed!.sessionId).toBe(original.sessionId);
-      expect(parsed!.currentNote).toBe(original.currentNote);
+      expect(parsed!.linkedContentPath).toBe(original.linkedContentPath);
       expect(parsed!.messages).toHaveLength(2);
     });
   });
@@ -282,7 +282,7 @@ interface SessionMetaRecord {
   createdAt: number;
   lastActivityAt: number;
   sessionId: string | null;
-  currentNote?: string;
+  linkedContentPath?: string;
 }
 
 interface SessionMessageRecord {
@@ -322,7 +322,7 @@ function parseJSONLHelper(content: string): Conversation | null {
     lastActivityAt: meta.lastActivityAt,
     sessionId: meta.sessionId,
     messages,
-    currentNote: meta.currentNote,
+    linkedContentPath: meta.linkedContentPath,
   };
 }
 
@@ -336,7 +336,7 @@ function serializeToJSONLHelper(conversation: Conversation): string {
     createdAt: conversation.createdAt,
     lastActivityAt: conversation.lastActivityAt,
     sessionId: conversation.sessionId,
-    currentNote: conversation.currentNote,
+    linkedContentPath: conversation.linkedContentPath,
   };
   lines.push(JSON.stringify(meta));
 

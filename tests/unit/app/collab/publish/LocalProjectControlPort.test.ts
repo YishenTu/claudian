@@ -1,0 +1,301 @@
+import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import {
+  type LocalProjectControlClientPort,
+  LocalProjectControlPort,
+} from '@/app/collab/publish/LocalProjectControlPort';
+
+const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const HEAD = 'a'.repeat(40);
+const MERGE = 'b'.repeat(40);
+function mergedRequest() {
+  return {
+    commentCount: 0,
+    createdAt: CREATED_AT,
+    description: 'Published change',
+    firstBaseOid: HEAD,
+    id: 'request-a',
+    latestHeadOid: HEAD,
+    memberId: 'member-a',
+    mergedOid: MERGE,
+    revision: 2,
+    status: 'merged' as const,
+    ticketRelations: [],
+    updatedAt: CREATED_AT,
+  };
+}
+
+function membership(): CollabLocalMembershipRecord {
+  return {
+    authority: {
+      endpoint: 'https://192.168.1.20:54545',
+      gitRemoteUrl: 'https://192.168.1.20:54545/v1/git/project-a/repository.git',
+      hostCaCertificatePem: 'certificate',
+      hostCaFingerprint: 'ab'.repeat(32),
+      kind: 'lan',
+    },
+    createdAt: CREATED_AT,
+    hostOwnership: { ownsAuthority: false },
+    lastEventSequence: 0,
+    member: {
+      credential: 'A'.repeat(43),
+      displayName: 'Alice',
+      id: 'member-a',
+      personalRef: 'refs/heads/members/member-a',
+      role: 'member',
+    },
+    project: {
+      id: 'project-a',
+      name: 'Alpha',
+      workspacePath: 'workspace/project-a',
+    },
+    schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
+    updatedAt: CREATED_AT,
+  };
+}
+
+function snapshot() {
+  const currentMember = {
+    activatedAt: CREATED_AT,
+    createdAt: CREATED_AT,
+    displayName: 'Alice',
+    id: 'member-a',
+    personalRef: 'refs/heads/members/member-a',
+    role: 'member' as const,
+    status: 'active' as const,
+  };
+  return {
+    currentMember,
+    eventSequence: 1,
+    members: [currentMember],
+    openTicketCount: 0,
+    openRequests: [],
+    project: {
+      authorityKind: 'lan' as const,
+      createdAt: CREATED_AT,
+      hostMemberId: 'member-host',
+      id: 'project-a',
+      mainOid: HEAD,
+      mainRef: 'refs/heads/main' as const,
+      managerSetGeneration: 0,
+      name: 'Alpha',
+    },
+    ticketHighlights: [],
+  };
+}
+
+function ticketClientMethods() {
+  return {
+    addTicketComment: jest.fn(),
+    createTicket: jest.fn(),
+    listTickets: jest.fn(),
+    readTicket: jest.fn(),
+    reopenTicket: jest.fn(),
+    updateRequestMetadata: jest.fn(),
+    updateTicketContent: jest.fn(),
+    closeTicket: jest.fn(),
+  };
+}
+
+describe('LocalProjectControlPort', () => {
+  it('reloads membership and validates snapshot and request identity', async () => {
+    const client: LocalProjectControlClientPort = {
+      ...ticketClientMethods(),
+      acceptRequest: jest.fn().mockResolvedValue({
+        mainOid: MERGE,
+        mergeCommitOid: MERGE,
+        request: mergedRequest(),
+      }),
+      createComment: jest.fn().mockResolvedValue({
+        comment: {
+          authorMemberId: 'member-a',
+          body: 'Please revise',
+          createdAt: CREATED_AT,
+          id: 'comment-a',
+          requestId: 'request-a',
+        },
+        request: { id: 'request-a' },
+      }),
+      ensureMyRequest: jest.fn().mockResolvedValue({
+        mainOid: HEAD,
+        request: {
+          commentCount: 0,
+          createdAt: CREATED_AT,
+          description: 'Published change',
+          firstBaseOid: HEAD,
+          id: 'request-a',
+          latestHeadOid: HEAD,
+          memberId: 'member-a',
+          revision: 1,
+          status: 'open',
+          ticketRelations: [],
+          updatedAt: CREATED_AT,
+        },
+      }),
+      readRequest: jest.fn().mockResolvedValue({
+        comments: [],
+        currentMainOid: HEAD,
+        request: {
+          commentCount: 0,
+          createdAt: CREATED_AT,
+          description: 'Published change',
+          firstBaseOid: HEAD,
+          id: 'request-a',
+          latestHeadOid: HEAD,
+          memberId: 'member-a',
+          revision: 1,
+          status: 'open',
+          ticketRelations: [],
+          updatedAt: CREATED_AT,
+        },
+        reviewCondition: 'clean',
+        reviewedHeadOid: HEAD,
+      }),
+      readSnapshot: jest.fn().mockResolvedValue(snapshot()),
+    };
+    const projects = { loadMembership: jest.fn().mockResolvedValue(membership()) };
+    const port = new LocalProjectControlPort(projects as never, {
+      createClient: jest.fn(() => client),
+    });
+
+    await expect(port.readSnapshot('project-a')).resolves.toMatchObject({
+      currentMember: { id: 'member-a' },
+    });
+    await expect(port.ensure({
+      description: 'Published change',
+      expectedMainOid: HEAD,
+      headOid: HEAD,
+      idempotencyKey: 'publish-head',
+      projectId: 'project-a',
+    })).resolves.toMatchObject({ id: 'request-a' });
+    await expect(port.readRequest('project-a', 'request-a')).resolves.toMatchObject({
+      request: { id: 'request-a' },
+    });
+    await expect(port.createComment({
+      body: 'Please revise',
+      idempotencyKey: 'comment-key',
+      projectId: 'project-a',
+      requestId: 'request-a',
+    })).resolves.toMatchObject({ comment: { id: 'comment-a' } });
+    expect(client.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      body: 'Please revise',
+    }));
+    await expect(port.acceptRequest({
+      expectedHeadOid: HEAD,
+      expectedMainOid: HEAD,
+      expectedRequestRevision: 1,
+      expectedResolvingTickets: [],
+      idempotencyKey: 'accept-key',
+      projectId: 'project-a',
+      requestId: 'request-a',
+    })).resolves.toMatchObject({ mainOid: MERGE });
+    expect(projects.loadMembership).toHaveBeenCalledTimes(5);
+  });
+
+  it('rejects cross-Project or cross-Member control responses', async () => {
+    const wrongSnapshot = snapshot();
+    wrongSnapshot.project.id = 'project-other';
+    const client = {
+      ...ticketClientMethods(),
+      acceptRequest: jest.fn().mockResolvedValue({
+        mainOid: MERGE,
+        mergeCommitOid: MERGE,
+        request: { ...mergedRequest(), latestHeadOid: MERGE },
+      }),
+      createComment: jest.fn().mockResolvedValue({
+        comment: {
+          authorMemberId: 'member-other',
+          body: 'Comment',
+          createdAt: CREATED_AT,
+          id: 'comment-a',
+          requestId: 'request-a',
+        },
+        request: { id: 'request-a' },
+      }),
+      ensureMyRequest: jest.fn().mockResolvedValue({
+        mainOid: HEAD,
+        request: {
+          commentCount: 0,
+          createdAt: CREATED_AT,
+          description: 'Published change',
+          firstBaseOid: HEAD,
+          id: 'request-a',
+          latestHeadOid: HEAD,
+          memberId: 'member-other',
+          revision: 1,
+          status: 'open',
+          ticketRelations: [],
+          updatedAt: CREATED_AT,
+        },
+      }),
+      readRequest: jest.fn().mockResolvedValue({
+        request: { id: 'request-other' },
+      }),
+      readSnapshot: jest.fn().mockResolvedValue(wrongSnapshot),
+    };
+    const port = new LocalProjectControlPort({
+      loadMembership: jest.fn().mockResolvedValue(membership()),
+    } as never, { createClient: () => client });
+
+    await expect(port.readSnapshot('project-a')).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+    });
+    await expect(port.ensure({
+      description: 'Published change',
+      expectedMainOid: HEAD,
+      headOid: HEAD,
+      idempotencyKey: 'publish-head',
+      projectId: 'project-a',
+    })).rejects.toMatchObject({ code: 'authority-integrity-error' });
+    await expect(port.readRequest('project-a', 'request-a')).rejects.toMatchObject({
+      code: 'authority-integrity-error',
+    });
+    await expect(port.createComment({
+      body: 'Comment',
+      idempotencyKey: 'comment-key',
+      projectId: 'project-a',
+      requestId: 'request-a',
+    })).rejects.toMatchObject({ code: 'authority-integrity-error' });
+    await expect(port.acceptRequest({
+      expectedHeadOid: HEAD,
+      expectedMainOid: HEAD,
+      expectedRequestRevision: 1,
+      expectedResolvingTickets: [],
+      idempotencyKey: 'accept-key',
+      projectId: 'project-a',
+      requestId: 'request-a',
+    })).rejects.toMatchObject({ code: 'authority-integrity-error' });
+  });
+
+  it('rejects an ensure response validated against a different main', async () => {
+    const client = {
+      ensureMyRequest: jest.fn().mockResolvedValue({
+        mainOid: MERGE,
+        request: {
+          commentCount: 0,
+          createdAt: CREATED_AT,
+          description: 'Published change',
+          firstBaseOid: HEAD,
+          id: 'request-a',
+          latestHeadOid: HEAD,
+          memberId: 'member-a',
+          revision: 1,
+          status: 'open',
+          ticketRelations: [],
+          updatedAt: CREATED_AT,
+        },
+      }),
+    } as unknown as LocalProjectControlClientPort;
+    const port = new LocalProjectControlPort({
+      loadMembership: jest.fn().mockResolvedValue(membership()),
+    } as never, { createClient: () => client });
+
+    await expect(port.ensure({
+      description: 'Published change',
+      expectedMainOid: HEAD,
+      headOid: HEAD,
+      idempotencyKey: 'publish-head',
+      projectId: 'project-a',
+    })).rejects.toMatchObject({ code: 'authority-integrity-error' });
+  });
+});

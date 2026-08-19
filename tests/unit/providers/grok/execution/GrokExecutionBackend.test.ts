@@ -424,6 +424,30 @@ describe('GrokExecutionBackend', () => {
     });
   });
 
+  it('encodes path-only Linked content without changing the Vault-root session CWD', async () => {
+    const native = new FakeNativeConnection();
+    const nativeFactory: GrokExecutionNativeFactory = { create: jest.fn(() => native) };
+    const session = new GrokExecutionBackend(
+      { settings: {} } as ProviderHost,
+      { nativeFactory },
+    ).createSession(sessionConfig);
+    const baseRequest = executionRequest('Inspect linked content');
+
+    await collect(session.execute({
+      ...baseRequest,
+      context: { linkedContent: { path: 'Projects/Research' } },
+    }).events);
+
+    expect(native.loadRequests[0]?.cwd).toBe('/tmp/vault');
+    expect(native.promptRequests[0]?.prompt).toEqual([{
+      text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />',
+      type: 'text',
+    }]);
+    expect(JSON.stringify(native.promptRequests[0]?.prompt)).not.toMatch(
+      /<(?:linked_note|current_note)\b/,
+    );
+  });
+
   it('drops an unsupported reasoning effort after cold-session model discovery', async () => {
     const native = new FakeNativeConnection();
     native.loadResponse = {
@@ -818,6 +842,41 @@ describe('GrokExecutionBackend', () => {
         sessionId: 'session-existing',
       }),
     ]);
+  });
+
+  it('keeps the full Grok prompt replacement when adding provider-default dynamic sections', async () => {
+    const native = new FakeNativeConnection();
+    const host = {
+      settings: {
+        mediaFolder: 'media',
+        systemPrompt: 'Keep the shared instruction.',
+        userName: 'Ada',
+      },
+    } as unknown as ProviderHost;
+    const session = new GrokExecutionBackend(host, {
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+    const base = executionRequest();
+    const request: ProviderExecutionRequest = {
+      ...base,
+      configuration: {
+        ...base.configuration,
+        systemInstructions: {
+          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          kind: 'provider-default',
+        },
+      },
+    };
+
+    await collect(session.execute(request).events);
+
+    const systemPrompt = String(native.loadRequests[0]?._meta?.systemPromptOverride);
+    expect(systemPrompt).toContain('## Runtime Context');
+    expect(systemPrompt).toContain('Use `bash: date`');
+    expect(systemPrompt).toContain('## Vault Media');
+    expect(systemPrompt).toContain('Keep the shared instruction.');
+    expect(systemPrompt).toContain('## Collab Mode\nRuntime guidance.');
+    expect(systemPrompt.match(/## Collab Mode/g)).toHaveLength(1);
   });
 
   it('bootstraps canonical history only when creating a new native session', async () => {
@@ -1639,16 +1698,30 @@ describe('GrokExecutionBackend', () => {
     ]);
   });
 
-  it('forks from provider-owned checkpoint metadata instead of loading the source', async () => {
+  it('forks from provider-owned checkpoint metadata and loads the child with system instructions', async () => {
     const native = new FakeNativeConnection();
+    const host = {
+      settings: { systemPrompt: 'Keep the Grok replacement.' },
+    } as unknown as ProviderHost;
     const session = new GrokExecutionBackend(
-      { settings: {} } as ProviderHost,
+      host,
       {
         nativeFactory: { create: () => native },
       },
     ).createSession(forkSessionConfig());
 
-    const events = await collect(session.execute(executionRequest()).events);
+    const base = executionRequest();
+    const request: ProviderExecutionRequest = {
+      ...base,
+      configuration: {
+        ...base.configuration,
+        systemInstructions: {
+          dynamicSections: ['## Collab Mode\nFork runtime guidance.'],
+          kind: 'provider-default',
+        },
+      },
+    };
+    const events = await collect(session.execute(request).events);
 
     expect(native.forkCalls).toEqual([
       expect.objectContaining({
@@ -1656,7 +1729,18 @@ describe('GrokExecutionBackend', () => {
         targetPromptIndex: 3,
       }),
     ]);
-    expect(native.loadRequests).toHaveLength(0);
+    expect(native.loadRequests).toEqual([
+      expect.objectContaining({
+        _meta: expect.objectContaining({
+          systemPromptOverride: expect.stringContaining(
+            '## Collab Mode\nFork runtime guidance.',
+          ),
+        }),
+        sessionId: 'session-forked',
+      }),
+    ]);
+    expect(String(native.loadRequests[0]?._meta?.systemPromptOverride))
+      .toContain('Keep the Grok replacement.');
     expect(native.newRequests).toHaveLength(0);
     expect(events).toContainEqual(expect.objectContaining({
       snapshot: expect.objectContaining({

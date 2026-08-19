@@ -149,7 +149,7 @@ describe('ConversationRepository input ledger', () => {
       canonicalText: 'Canonical input',
       rawDisplayText: '/command',
       context: {
-        currentNote: { path: 'Notes/current.md' },
+        linkedContent: { path: 'Notes/current.md' },
       },
       images: [image],
       contentDigest: computeConversationInputDigest({
@@ -160,6 +160,7 @@ describe('ConversationRepository input ledger', () => {
     const persistence = createPersistence({
       status: 'loaded',
       ledger: createLedger(conversation.id, [record]),
+      needsMigration: false,
     });
     const { repository } = createRepository(conversation, persistence);
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
@@ -189,10 +190,46 @@ describe('ConversationRepository input ledger', () => {
         schemaVersion: 1,
         canonicalText: 'Canonical input',
         context: {
-          currentNote: { path: 'Notes/current.md' },
+          linkedContent: { path: 'Notes/current.md' },
         },
       },
     });
+  });
+
+  it('defers legacy ledger writeback until the next ordered ledger mutation', async () => {
+    const conversation = createConversation('legacy-ledger');
+    const migratedRecord = createInputRecord({
+      id: 'migrated-input',
+      state: 'accepted',
+      context: {
+        linkedContent: { path: 'Notes/Legacy.md' },
+      },
+    });
+    const persistence = createPersistence({
+      status: 'loaded',
+      ledger: createLedger(conversation.id, [migratedRecord]),
+      needsMigration: true,
+    });
+    const { repository } = createRepository(conversation, persistence);
+    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+      hydrateConversationHistory: jest.fn().mockResolvedValue(undefined),
+    } as any);
+
+    await repository.ensureHydrated(conversation.id);
+
+    expect(persistence.saveInputLedger).not.toHaveBeenCalled();
+
+    await repository.stageConversationInput(
+      conversation.id,
+      createInputRecord({ id: 'next-input' }),
+    );
+
+    expect(persistence.saveInputLedger).toHaveBeenCalledTimes(1);
+    const persistedLedger = persistence.saveInputLedger.mock.calls[0][1];
+    expect(persistedLedger.records[0].context).toEqual({
+      linkedContent: { path: 'Notes/Legacy.md' },
+    });
+    expect(JSON.stringify(persistedLedger)).not.toContain('currentNote');
   });
 
   it('prefers a unique provider user-message ID, then requires ordinal and digest together', async () => {
@@ -235,6 +272,7 @@ describe('ConversationRepository input ledger', () => {
     const persistence = createPersistence({
       status: 'loaded',
       ledger: createLedger(conversation.id, records),
+      needsMigration: false,
     });
     const { repository } = createRepository(conversation, persistence);
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
@@ -291,6 +329,7 @@ describe('ConversationRepository input ledger', () => {
     const persistence = createPersistence({
       status: 'loaded',
       ledger: createLedger(conversation.id, records),
+      needsMigration: false,
     });
     const { repository } = createRepository(conversation, persistence);
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
@@ -328,7 +367,11 @@ describe('ConversationRepository input ledger', () => {
       }),
     });
     const ledger = createLedger(conversation.id, [matched, unmatched]);
-    const persistence = createPersistence({ status: 'loaded', ledger });
+    const persistence = createPersistence({
+      status: 'loaded',
+      ledger,
+      needsMigration: false,
+    });
     const { repository } = createRepository(conversation, persistence);
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
       hydrateConversationHistory: async (target: Conversation) => {
@@ -368,7 +411,11 @@ describe('ConversationRepository input ledger', () => {
       timestamp: 50,
     });
     const ledger = createLedger(conversation.id, [accepted]);
-    const persistence = createPersistence({ status: 'loaded', ledger });
+    const persistence = createPersistence({
+      status: 'loaded',
+      ledger,
+      needsMigration: false,
+    });
     const { repository } = createRepository(conversation, persistence);
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
       hydrateConversationHistory: async (target: Conversation) => {
@@ -417,7 +464,11 @@ describe('ConversationRepository input ledger', () => {
       }),
     ];
     const ledger = createLedger(conversation.id, records);
-    const persistence = createPersistence({ status: 'loaded', ledger });
+    const persistence = createPersistence({
+      status: 'loaded',
+      ledger,
+      needsMigration: false,
+    });
     const { repository } = createRepository(conversation, persistence);
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
       hydrateConversationHistory: async (target: Conversation) => {
@@ -587,7 +638,11 @@ describe('ConversationRepository input ledger', () => {
       localMessageId: 'existing-local',
     });
     const ledger = createLedger(conversation.id, [existing]);
-    const persistence = createPersistence({ status: 'loaded', ledger });
+    const persistence = createPersistence({
+      status: 'loaded',
+      ledger,
+      needsMigration: false,
+    });
     const { repository } = createRepository(conversation, persistence);
 
     persistence.saveInputLedger.mockRejectedValueOnce(
@@ -834,7 +889,7 @@ describe('ConversationRepository input ledger', () => {
       localMessageId: 'failed-local-message',
       rawDisplayText: '/retry',
       canonicalText: 'Failed canonical input',
-      context: { currentNote: { path: 'Notes/failed.md' } },
+      context: { linkedContent: { path: 'Notes/failed.md' } },
       images: [image],
       contentDigest: computeConversationInputDigest({
         visibleText: '/retry',
@@ -846,7 +901,7 @@ describe('ConversationRepository input ledger', () => {
       localMessageId: 'retry-local-message',
       rawDisplayText: '/retry',
       canonicalText: 'Retry canonical input',
-      context: { currentNote: { path: 'Notes/retry.md' } },
+      context: { linkedContent: { path: 'Notes/retry.md' } },
       images: [image],
       contentDigest: failedInput.contentDigest,
     });
@@ -873,6 +928,7 @@ describe('ConversationRepository input ledger', () => {
     const coldPersistence = createPersistence({
       status: 'loaded',
       ledger: JSON.parse(JSON.stringify(durableLedger)) as ConversationInputLedger,
+      needsMigration: false,
     });
     const { repository: coldRepository } = createRepository(
       coldConversation,
@@ -907,7 +963,7 @@ describe('ConversationRepository input ledger', () => {
       executionInput: {
         schemaVersion: 1,
         canonicalText: 'Retry canonical input',
-        context: { currentNote: { path: 'Notes/retry.md' } },
+        context: { linkedContent: { path: 'Notes/retry.md' } },
       },
     });
 
@@ -1305,7 +1361,10 @@ describe('ConversationRepository persistence queue and binding fences', () => {
   });
 
   it('rewrites current metadata after timestamp schema migration', async () => {
-    const conversation = createConversation();
+    const conversation: Conversation = {
+      ...createConversation(),
+      linkedContentPath: 'Notes/Architecture.md',
+    };
     conversation.lastActivityAt = 42;
     const persistence = createPersistence();
     const { repository } = createRepository(conversation, persistence);
@@ -1317,9 +1376,11 @@ describe('ConversationRepository persistence queue and binding fences', () => {
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: conversation.id,
       lastActivityAt: 42,
+      linkedContentPath: 'Notes/Architecture.md',
     }));
     expect(persistence.saveMetadata.mock.calls[0][0]).not.toHaveProperty('updatedAt');
     expect(persistence.saveMetadata.mock.calls[0][0]).not.toHaveProperty('lastResponseAt');
+    expect(persistence.saveMetadata.mock.calls[0][0]).not.toHaveProperty('currentNote');
     expect(persistence.deleteLegacyMetadata).not.toHaveBeenCalled();
   });
 
@@ -1351,24 +1412,26 @@ describe('ConversationRepository persistence queue and binding fences', () => {
     }));
   });
 
-  it('applies note renames to metadata adopted after the rename event', async () => {
+  it('applies Linked content renames to metadata adopted after the rename event', async () => {
     const existing = createConversation('existing');
     const persistence = createPersistence();
     const { repository } = createRepository(existing, persistence);
-    await repository.rewriteCurrentNotePaths('Notes/Old.md', 'Notes/New.md');
+    await repository.rewriteLinkedContentPaths('Notes/Old.md', 'Notes/New.md');
     persistence.saveMetadata.mockClear();
 
-    const deferredConversation = createConversation('deferred');
-    deferredConversation.currentNote = 'Notes/Old.md';
+    const deferredConversation: Conversation = {
+      ...createConversation('deferred'),
+      linkedContentPath: 'Notes/Old.md',
+    };
     repository.mergeMetadataConversations([deferredConversation]);
     await repository.adoptMetadataConversations([
       { conversation: deferredConversation, needsMigration: false, source: 'current' },
     ]);
 
-    expect(deferredConversation.currentNote).toBe('Notes/New.md');
+    expect(deferredConversation.linkedContentPath).toBe('Notes/New.md');
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: 'deferred',
-      currentNote: 'Notes/New.md',
+      linkedContentPath: 'Notes/New.md',
     }));
   });
 });
@@ -1836,7 +1899,7 @@ describe('ConversationRepository deletion, fork, and rewind persistence', () => 
     const persistence = createPersistence();
     persistence.loadInputLedger.mockImplementation(async (id) => (
       id === source.id
-        ? { status: 'loaded', ledger: sourceLedger }
+        ? { status: 'loaded', ledger: sourceLedger, needsMigration: false }
         : { status: 'missing' }
     ));
     const { repository } = createRepository(source, persistence);
@@ -1862,7 +1925,11 @@ describe('ConversationRepository deletion, fork, and rewind persistence', () => 
       createInputRecord({ id: 'input-2', userTurnOrdinal: 2 }),
       createInputRecord({ id: 'input-3', userTurnOrdinal: 3 }),
     ]);
-    const persistence = createPersistence({ status: 'loaded', ledger });
+    const persistence = createPersistence({
+      status: 'loaded',
+      ledger,
+      needsMigration: false,
+    });
     const { repository } = createRepository(conversation, persistence);
 
     await repository.truncateConversationInputsFrom(

@@ -82,8 +82,8 @@ describe('types.ts', () => {
 
     it('should enable the right-side dual pane by default', () => {
       expect(DEFAULT_SETTINGS.enableDualPane).toBe(true);
-      expect(DEFAULT_SETTINGS.enableFilePane).toBe(true);
       expect(DEFAULT_SETTINGS.dualPaneSide).toBe('right');
+      expect(DEFAULT_SETTINGS.collabGitPath).toBe('');
     });
 
     it('should restore tabs on startup by default', () => {
@@ -128,9 +128,11 @@ describe('types.ts', () => {
         expandFileEditsByDefault: false,
         chatViewPlacement: 'right-sidebar',
         enableDualPane: true,
-        enableFilePane: true,
         dualPaneSide: 'right',
         restoreTabsOnStartup: true,
+        collabEnabled: false,
+        collabProjectsFolder: 'workspace',
+        collabGitPath: '',
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -187,9 +189,11 @@ describe('types.ts', () => {
         expandFileEditsByDefault: false,
         chatViewPlacement: 'right-sidebar',
         enableDualPane: true,
-        enableFilePane: true,
         dualPaneSide: 'right',
         restoreTabsOnStartup: true,
+        collabEnabled: false,
+        collabProjectsFolder: 'workspace',
+        collabGitPath: '',
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -247,9 +251,11 @@ describe('types.ts', () => {
         expandFileEditsByDefault: true,
         chatViewPlacement: 'right-sidebar',
         enableDualPane: false,
-        enableFilePane: false,
         dualPaneSide: 'left',
         restoreTabsOnStartup: false,
+        collabEnabled: true,
+        collabProjectsFolder: 'Shared/Projects',
+        collabGitPath: '/usr/bin/git',
         hiddenProviderCommands: {
           claude: [],
           codex: [],

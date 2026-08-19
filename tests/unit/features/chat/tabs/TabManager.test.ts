@@ -1863,15 +1863,19 @@ describe('TabManager provider execution orchestration', () => {
   });
 
   it('copies the accepted input ledger when forking', async () => {
-    const { manager, plugin } = createManager(createPlugin({
-      getCachedConversation: jest.fn().mockReturnValue({
+    const sourceConversation = {
         id: 'source-conversation',
+        linkedContentPath: 'Projects',
         providerId: 'claude',
-      }),
+    };
+    const { manager, plugin } = createManager(createPlugin({
+      getCachedConversation: jest.fn().mockReturnValue(sourceConversation),
+      getConversationSync: jest.fn().mockReturnValue(sourceConversation),
     }));
     const source = await manager.createTab('source-conversation');
 
     await manager.forkToNewTab({
+      linkedContentPath: 'Projects',
       messages: [],
       providerId: 'claude',
       resumeAt: 'assistant-checkpoint',
@@ -1884,6 +1888,10 @@ describe('TabManager provider execution orchestration', () => {
       'forked',
       'assistant-checkpoint',
     );
+    expect(plugin.createConversation).toHaveBeenCalledWith(expect.objectContaining({
+      linkedContentPath: 'Projects',
+      providerId: 'claude',
+    }));
     expect(plugin.updateConversation).toHaveBeenCalledWith(
       'forked',
       expect.objectContaining({ providerState: { fork: true } }),

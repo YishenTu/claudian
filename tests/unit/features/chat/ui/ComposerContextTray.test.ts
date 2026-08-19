@@ -47,9 +47,9 @@ describe('ComposerContextTray', () => {
       icon: 'text-select',
       onRemove: jest.fn(),
     }]);
-    tray.setItems('current-note', [{
-      id: 'current-note',
-      kind: 'note',
+    tray.setItems('linked-content', [{
+      id: 'linked-content',
+      kind: 'content',
       label: 'Draft.md',
       icon: 'file-text',
       onRemove: jest.fn(),
@@ -57,7 +57,7 @@ describe('ComposerContextTray', () => {
 
     expect(containerEl.hasClass('has-content')).toBe(true);
     expect(containerEl.querySelectorAll('.claudian-context-chip').map((item: any) => item.dataset.contextSlot)).toEqual([
-      'current-note',
+      'linked-content',
       'editor-selection',
       'images',
     ]);
@@ -69,9 +69,9 @@ describe('ComposerContextTray', () => {
     const onRemove = jest.fn();
     const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
 
-    tray.setItems('current-note', [{
-      id: 'current-note',
-      kind: 'note',
+    tray.setItems('editor-selection', [{
+      id: 'editor-selection',
+      kind: 'selection',
       label: 'Architecture.md',
       icon: 'file-text',
       title: 'notes/Architecture.md',
@@ -127,9 +127,9 @@ describe('ComposerContextTray', () => {
     const containerEl = createMockEl();
     const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
 
-    tray.setItems('current-note', [{
+    tray.setItems('linked-content', [{
       id: 'note',
-      kind: 'note',
+      kind: 'content',
       label: 'Note.md',
       onRemove: jest.fn(),
     }]);

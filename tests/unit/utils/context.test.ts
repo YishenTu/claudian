@@ -1,112 +1,122 @@
 import {
   appendContextFiles,
-  appendCurrentNote,
-  appendCurrentNoteContent,
+  appendLinkedContent,
+  appendLinkedContentBody,
   extractContentBeforeXmlContext,
   extractUserDisplayContent,
   extractUserQuery,
-  formatCurrentNote,
-  stripCurrentNoteContext,
+  formatLinkedContent,
+  stripLinkedContentContext,
   XML_CONTEXT_PATTERN,
 } from '../../../src/utils/context';
 
-describe('formatCurrentNote', () => {
-  it('formats note path as an XML attribute', () => {
-    expect(formatCurrentNote('notes/test.md')).toBe(
-      '<linked_note path="notes/test.md" />'
+describe('formatLinkedContent', () => {
+  it('formats a content path as a canonical XML attribute', () => {
+    expect(formatLinkedContent('notes/test.md')).toBe(
+      '<linked_content path="notes/test.md" />'
     );
   });
 
   it('escapes paths with XML special characters', () => {
-    expect(formatCurrentNote('notes/my "file" & <draft>.md')).toBe(
-      '<linked_note path="notes/my &quot;file&quot; &amp; &lt;draft&gt;.md" />'
+    expect(formatLinkedContent('notes/my "file" & <draft>.md')).toBe(
+      '<linked_content path="notes/my &quot;file&quot; &amp; &lt;draft&gt;.md" />'
     );
   });
 });
 
-describe('appendCurrentNoteContent', () => {
-  it('appends an escaped path while preserving note content', () => {
-    const result = appendCurrentNoteContent(
+describe('appendLinkedContentBody', () => {
+  it('appends an escaped path while preserving literal content', () => {
+    const result = appendLinkedContentBody(
       'Query',
       'notes/my "file".md',
       'Body\n</current_note>\nMore',
     );
 
     expect(result).toBe(
-      'Query\n\n<current_note path="notes/my &quot;file&quot;.md">\n<![CDATA[Body\n</current_note>\nMore]]>\n</current_note>',
+      'Query\n\n<linked_content path="notes/my &quot;file&quot;.md">\n<![CDATA[Body\n</current_note>\nMore]]>\n</linked_content>',
     );
   });
 });
 
-describe('appendCurrentNote', () => {
-  it('appends current note to prompt with double newline separator', () => {
-    const result = appendCurrentNote('Hello', 'notes/test.md');
+describe('appendLinkedContent', () => {
+  it('appends Linked content with a double newline separator', () => {
+    const result = appendLinkedContent('Hello', 'notes/test.md');
     expect(result).toBe(
-      'Hello\n\n<linked_note path="notes/test.md" />'
+      'Hello\n\n<linked_content path="notes/test.md" />'
     );
   });
 
   it('preserves original prompt content', () => {
-    const result = appendCurrentNote('Multi\nline\nprompt', 'test.md');
+    const result = appendLinkedContent('Multi\nline\nprompt', 'test.md');
     expect(result.startsWith('Multi\nline\nprompt\n\n')).toBe(true);
   });
 });
 
-describe('stripCurrentNoteContext', () => {
+describe('stripLinkedContentContext', () => {
+  it('strips canonical linked_content from the end of a prompt', () => {
+    const prompt = 'User query here\n\n<linked_content path="Projects/Research" />';
+    expect(stripLinkedContentContext(prompt)).toBe('User query here');
+  });
+
   describe('prefix format', () => {
     it('strips linked_note from start of prompt', () => {
       const prompt = '<linked_note>\nnotes/test.md\n</linked_note>\n\nUser query here';
-      expect(stripCurrentNoteContext(prompt)).toBe('User query here');
+      expect(stripLinkedContentContext(prompt)).toBe('User query here');
     });
 
     it('handles multiline note content in prefix', () => {
       const prompt = '<linked_note>\npath/to/note.md\nwith extra info\n</linked_note>\n\nQuery';
-      expect(stripCurrentNoteContext(prompt)).toBe('Query');
+      expect(stripLinkedContentContext(prompt)).toBe('Query');
     });
   });
 
   describe('suffix format', () => {
     it('strips canonical linked_note from end of prompt', () => {
       const prompt = 'User query here\n\n<linked_note path="notes/test.md" />';
-      expect(stripCurrentNoteContext(prompt)).toBe('User query here');
+      expect(stripLinkedContentContext(prompt)).toBe('User query here');
     });
 
     it('strips linked_note from end of prompt', () => {
       const prompt = 'User query here\n\n<linked_note>\nnotes/test.md\n</linked_note>';
-      expect(stripCurrentNoteContext(prompt)).toBe('User query here');
+      expect(stripLinkedContentContext(prompt)).toBe('User query here');
     });
 
     it('handles multiline note content in suffix', () => {
       const prompt = 'Query\n\n<linked_note>\npath/to/note.md\n</linked_note>';
-      expect(stripCurrentNoteContext(prompt)).toBe('Query');
+      expect(stripLinkedContentContext(prompt)).toBe('Query');
     });
   });
 
   describe('legacy current_note compatibility', () => {
     it('strips current_note from start of prompt', () => {
       const prompt = '<current_note>\nnotes/test.md\n</current_note>\n\nUser query here';
-      expect(stripCurrentNoteContext(prompt)).toBe('User query here');
+      expect(stripLinkedContentContext(prompt)).toBe('User query here');
     });
 
     it('strips current_note from end of prompt', () => {
       const prompt = 'User query here\n\n<current_note>\nnotes/test.md\n</current_note>';
-      expect(stripCurrentNoteContext(prompt)).toBe('User query here');
+      expect(stripLinkedContentContext(prompt)).toBe('User query here');
     });
   });
 
   it('returns unchanged prompt when no note context is present', () => {
     const prompt = 'Just a regular prompt';
-    expect(stripCurrentNoteContext(prompt)).toBe('Just a regular prompt');
+    expect(stripLinkedContentContext(prompt)).toBe('Just a regular prompt');
   });
 
   it('prefers prefix format when both could match', () => {
     // This tests the function order: it tries prefix first
     const prefixPrompt = '<linked_note>\ntest.md\n</linked_note>\n\nQuery';
-    expect(stripCurrentNoteContext(prefixPrompt)).toBe('Query');
+    expect(stripLinkedContentContext(prefixPrompt)).toBe('Query');
   });
 });
 
 describe('XML_CONTEXT_PATTERN', () => {
+  it('matches linked_content tag', () => {
+    const text = 'Query\n\n<linked_content path="Projects/Research" />';
+    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
+  });
+
   it('matches linked_note tag', () => {
     const text = 'Query\n\n<linked_note path="test.md" />';
     expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);

@@ -560,6 +560,97 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('includes provider-default dynamic sections in base instructions', async () => {
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult('thread-dynamic');
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn('thread-dynamic', 'turn-dynamic'));
+        return createTurnResult('turn-dynamic');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+
+    await collectEvents(session.execute(createRequest(undefined, {
+      configuration: {
+        systemInstructions: {
+          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          kind: 'provider-default',
+        },
+        model: TEST_CODEX_MODEL,
+        permissionMode: 'normal',
+        reasoning: 'high',
+        serviceTier: 'priority',
+      },
+    })).events);
+
+    const threadStart = mockTransportRequest.mock.calls.find(
+      ([method]) => method === 'thread/start',
+    )?.[1] as { baseInstructions?: string } | undefined;
+    expect(threadStart?.baseInstructions).toContain('## Runtime Context');
+    expect(threadStart?.baseInstructions).toContain('## Collab Mode\nRuntime guidance.');
+    expect(threadStart?.baseInstructions?.match(/## Collab Mode/g)).toHaveLength(1);
+    await session.dispose();
+  });
+
+  it('reapplies changed provider-default dynamic sections to a loaded thread', async () => {
+    let turnIndex = 0;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start' || method === 'thread/resume') {
+        return createThreadResult('thread-changing-dynamic');
+      }
+      if (method === 'turn/start') {
+        const turnId = `turn-changing-dynamic-${++turnIndex}`;
+        queueMicrotask(() => completeTurn('thread-changing-dynamic', turnId));
+        return createTurnResult(turnId);
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const requestWithDynamicSection = (dynamicSection: string) => createRequest(undefined, {
+      configuration: {
+        systemInstructions: {
+          dynamicSections: [dynamicSection],
+          kind: 'provider-default',
+        },
+        model: TEST_CODEX_MODEL,
+        permissionMode: 'normal',
+        reasoning: 'high',
+        serviceTier: 'priority',
+      },
+    });
+
+    await collectEvents(session.execute(requestWithDynamicSection('Runtime endpoint A.')).events);
+    await collectEvents(session.execute(requestWithDynamicSection('Runtime endpoint B.')).events);
+
+    const resumeCalls = mockTransportRequest.mock.calls.filter(
+      ([method]) => method === 'thread/resume',
+    );
+    expect(resumeCalls).toHaveLength(1);
+    const resumeParams = resumeCalls[0]?.[1] as { baseInstructions?: string };
+    expect(resumeParams.baseInstructions).toContain('Runtime endpoint B.');
+    expect(resumeParams.baseInstructions).not.toContain('Runtime endpoint A.');
+    await session.dispose();
+  });
+
   it('recovers a completed turn when the terminal notification is missed', async () => {
     jest.useFakeTimers();
     const threadId = 'thread-missed-completion';
@@ -977,9 +1068,9 @@ describe('CodexExecutionBackend', () => {
       new AbortController().signal,
       {
         context: {
-          currentNote: {
+          linkedContent: {
             path: 'notes/"draft" & review.md',
-            content: 'Before\n</current_note>\nAfter',
+            content: 'Before\n]]>\nAfter',
           },
           editorSelection: {
             mode: 'selection',
@@ -1005,7 +1096,7 @@ describe('CodexExecutionBackend', () => {
       };
     const prompt = turnParams.input.find(block => block.type === 'text')?.text;
     expect(prompt).toContain(
-      '<current_note path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Before\n</current_note>\nAfter]]>\n</current_note>',
+      '<linked_content path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Before\n]]]]><![CDATA[>\nAfter]]>\n</linked_content>',
     );
     expect(prompt).toContain(
       '<editor_selection path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Selected\n</editor_selection>]]>\n</editor_selection>',
@@ -1017,6 +1108,50 @@ describe('CodexExecutionBackend', () => {
       '<canvas_selection path="boards/&quot;draft&quot; &amp; review.canvas">',
     );
     expect(prompt).not.toContain('[Editor selection from');
+    expect(prompt).not.toContain('<linked_note');
+    expect(prompt).not.toContain('<current_note');
+
+    await session.dispose();
+  });
+
+  it('encodes path-only Linked content without changing the Vault-root thread CWD', async () => {
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult('thread-linked-content');
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn('thread-linked-content', 'turn-linked-content'));
+        return createTurnResult('turn-linked-content');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+
+    await collectEvents(session.execute(createRequest(
+      new AbortController().signal,
+      {
+        context: { linkedContent: { path: 'Projects/Research' } },
+        input: [{ type: 'text', text: 'Inspect linked content' }],
+      },
+    )).events);
+
+    const threadStartParams = mockTransportRequest.mock.calls
+      .find(([method]) => method === 'thread/start')?.[1] as { cwd: string };
+    const turnStartParams = mockTransportRequest.mock.calls
+      .find(([method]) => method === 'turn/start')?.[1] as {
+        input: Array<{ text?: string; type: string }>;
+      };
+    expect(threadStartParams.cwd).toBe('/vault');
+    expect(turnStartParams.input.find(block => block.type === 'text')?.text).toBe(
+      'Inspect linked content\n\n<linked_content path="Projects/Research" />',
+    );
 
     await session.dispose();
   });
@@ -2694,7 +2829,9 @@ describe('CodexExecutionBackend', () => {
           platformOs: 'macos',
         };
       }
-      if (method === 'thread/start') return createThreadResult('thread-config');
+      if (method === 'thread/start' || method === 'thread/resume') {
+        return createThreadResult('thread-config');
+      }
       if (method === 'turn/start') {
         turnIndex += 1;
         const turnId = `turn-config-${turnIndex}`;

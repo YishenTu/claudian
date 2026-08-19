@@ -58,7 +58,10 @@ describe('InlineEditService', () => {
     expect(backend.sessions[0].requests[0]).toMatchObject({
       configuration: {
         model: 'edit-model',
-        systemInstructions: { kind: 'explicit' },
+        systemInstructions: {
+          instructions: expect.stringContaining('Vault absolute path: /vault'),
+          kind: 'explicit',
+        },
       },
       toolPolicy: { kind: 'read-only' },
     });

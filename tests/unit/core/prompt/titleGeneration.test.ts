@@ -14,8 +14,18 @@ describe('titleGeneration', () => {
     expect(TITLE_GENERATION_SYSTEM_PROMPT).toContain('max 50 chars');
   });
 
-  it('instructs to start with a strong verb', () => {
-    expect(TITLE_GENERATION_SYSTEM_PROMPT).toContain('strong verb');
+  it('prefers action-led wording only when natural for the selected language', () => {
+    expect(TITLE_GENERATION_SYSTEM_PROMPT).toContain('action-led wording when natural');
+    expect(TITLE_GENERATION_SYSTEM_PROMPT).not.toContain('Start with a **strong verb**');
+  });
+
+  it('limits formatting and technical context without overclaiming', () => {
+    expect(TITLE_GENERATION_SYSTEM_PROMPT).toContain(
+      'No surrounding quotes or trailing punctuation',
+    );
+    expect(TITLE_GENERATION_SYSTEM_PROMPT).toContain(
+      'relevant and confidently identifiable',
+    );
   });
 
   it('instructs to return only the raw title text', () => {
