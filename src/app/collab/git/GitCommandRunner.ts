@@ -140,6 +140,7 @@ export function buildIsolatedGitEnvironment(
         key: 'http.extraHeader',
         value: `Authorization: ${options.network.authorizationHeader}`,
       },
+      { key: 'http.schannelUseSSLCAInfo', value: 'true' },
       { key: 'http.sslCAInfo', value: options.network.sslCaInfoPath },
     );
   }

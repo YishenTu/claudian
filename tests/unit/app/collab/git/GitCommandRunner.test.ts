@@ -70,6 +70,7 @@ describe('GitCommandRunner', () => {
       { key: 'credential.useHttpPath', value: 'true' },
       { key: 'fetch.fsckObjects', value: 'true' },
       { key: 'http.extraHeader', value: `Authorization: ${secret}` },
+      { key: 'http.schannelUseSSLCAInfo', value: 'true' },
       { key: 'http.sslCAInfo', value: '/vault/.claudian/collab/ca.pem' },
       { key: 'transfer.fsckObjects', value: 'true' },
     ]));
