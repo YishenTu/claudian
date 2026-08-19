@@ -1692,7 +1692,7 @@ export class TabManager implements TabManagerInterface {
     const conversation = await this.plugin.createConversation({
       providerId: context.providerId,
       ...(context.sourceSelectedModel ? { selectedModel: context.sourceSelectedModel } : {}),
-      ...(context.currentNote ? { currentNote: context.currentNote } : {}),
+      ...(context.linkedContentPath ? { linkedContentPath: context.linkedContentPath } : {}),
     });
 
     const deleteForkConversation = async (): Promise<void> => {
@@ -1734,7 +1734,6 @@ export class TabManager implements TabManagerInterface {
         messages: context.messages,
         providerState: forkProviderState,
         ...(title && { title }),
-        ...(context.currentNote && { currentNote: context.currentNote }),
       });
       if (!this.isForkSourceCurrent(sourceLease)) {
         await deleteForkConversation();

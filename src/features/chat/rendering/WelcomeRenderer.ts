@@ -16,6 +16,8 @@ export function renderWelcomeContent(
       text: greeting,
     });
   }
+
+  welcomeEl.createDiv({ cls: 'claudian-welcome-linked-content' });
 }
 
 export function createWelcomeElement(

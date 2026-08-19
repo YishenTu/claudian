@@ -67,14 +67,63 @@
   border: 0;
   border-radius: 4px;
   background: transparent;
+  box-shadow: none;
   cursor: pointer;
-  color: var(--text-faint);
-  transition: color 0.15s ease, background 0.15s ease;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
 }
 
-.claudian-input-nav-btn:hover {
+.claudian-input-nav-btn:hover,
+.claudian-input-nav-btn:focus-visible,
+.claudian-input-nav-btn:active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   color: var(--text-normal);
-  background: var(--background-modifier-hover);
+}
+
+.claudian-input-nav-btn:disabled,
+.claudian-input-nav-btn[aria-disabled='true'] {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: default;
+}
+
+/* Obsidian applies more specific native-button chrome than the shared nav class. */
+button.claudian-input-nav-btn {
+  appearance: none;
+  flex: 0 0 24px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+button.claudian-input-nav-btn:hover,
+button.claudian-input-nav-btn:focus-visible,
+button.claudian-input-nav-btn:active {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+button.claudian-input-nav-btn:disabled,
+button.claudian-input-nav-btn[aria-disabled='true'] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: default;
 }
 
 .claudian-input-nav-btn svg {

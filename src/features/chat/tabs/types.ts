@@ -4,7 +4,7 @@ import type { ProviderCommandDropdownConfig } from '../../../core/providers/comm
 import type { ProviderCommandDiscoveryController } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers/types';
-import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
+import type { MainChatComposerDropdown } from '../composer/MainChatComposerDropdown';
 import type { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import type { CanvasSelectionController } from '../controllers/CanvasSelectionController';
 import type { ConversationController } from '../controllers/ConversationController';
@@ -13,6 +13,7 @@ import type { NavigationController } from '../controllers/NavigationController';
 import type { SelectionController } from '../controllers/SelectionController';
 import type { StreamController } from '../controllers/StreamController';
 import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
+import type { LinkedContentController } from '../linked-content';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
@@ -119,6 +120,7 @@ export interface TabServices {
 export interface TabUIComponents {
   readonly contextTray: ComposerContextTray;
   readonly fileContextManager: FileContextManager;
+  readonly linkedContentController: LinkedContentController;
   readonly imageContextManager: ImageContextManager;
   readonly modelSelector: ModelSelector;
   readonly modeSelector: ModeSelector;
@@ -126,7 +128,7 @@ export interface TabUIComponents {
   readonly externalContextSelector: ExternalContextSelector;
   readonly permissionToggle: PermissionToggle;
   readonly serviceTierToggle: ServiceTierToggle;
-  readonly slashCommandDropdown: SlashCommandDropdown;
+  readonly composerDropdown: MainChatComposerDropdown;
   readonly instructionModeManager: InstructionModeManager;
   readonly bangBashModeManager: BangBashModeManager | null;
   readonly contextUsageMeter: ContextUsageMeter;

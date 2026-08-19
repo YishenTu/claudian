@@ -7,13 +7,13 @@ import {
 } from '../../../utils/animationFrame';
 
 export type ComposerContextSlot =
-  | 'current-note'
+  | 'linked-content'
   | 'editor-selection'
   | 'browser-selection'
   | 'canvas-selection'
   | 'images';
 
-export type ComposerContextItemKind = 'note' | 'selection' | 'image';
+export type ComposerContextItemKind = 'content' | 'selection' | 'image';
 
 export interface ComposerContextItem {
   id: string;
@@ -22,6 +22,7 @@ export interface ComposerContextItem {
   icon?: string;
   title?: string;
   ariaLabel?: string;
+  status?: 'missing';
   onActivate?: () => void;
   onRemove?: () => void;
 }
@@ -31,7 +32,7 @@ export interface ComposerContextTrayOptions {
 }
 
 const SLOT_ORDER: readonly ComposerContextSlot[] = [
-  'current-note',
+  'linked-content',
   'editor-selection',
   'browser-selection',
   'canvas-selection',
@@ -188,6 +189,7 @@ export class ComposerContextTray {
     const chipEl = this.containerEl.createDiv({
       cls: `claudian-context-chip claudian-context-chip--${item.kind}`,
     });
+    if (item.status === 'missing') chipEl.addClass('claudian-context-chip--missing');
     chipEl.dataset.contextSlot = slot;
     chipEl.dataset.contextId = item.id;
 

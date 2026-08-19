@@ -33,7 +33,7 @@ import {
   invalidateTabProviderCommands,
   refreshTabProviderUI,
   restorePrePlanMode,
-  syncSlashCommandDropdownForProvider,
+  syncComposerDropdownForProvider,
   syncTabProviderServices,
   toggleTabServiceTier,
 } from '../TabProviderState';
@@ -222,7 +222,14 @@ export function buildTabRuntimeControllers(
       subagentManager: services.subagentManager,
       getHistoryDropdown: () => null,
       getWelcomeEl: () => dom.welcomeEl,
-      setWelcomeEl: (element) => { dom.welcomeEl = element; },
+      setWelcomeEl: (element) => {
+        dom.welcomeEl = element;
+        if (element) {
+          ui.linkedContentController.mountWelcome(element);
+        } else {
+          ui.linkedContentController.unmountWelcome();
+        }
+      },
       getMessagesEl: () => dom.messagesEl,
       getInputEl: () => dom.inputEl,
       restoreMessageToComposer: message => (
@@ -230,6 +237,7 @@ export function buildTabRuntimeControllers(
           .restoreRewoundMessageToComposer(message)
       ),
       getFileContextManager: () => ui.fileContextManager,
+      getLinkedContentController: () => ui.linkedContentController,
       getImageContextManager: () => ui.imageContextManager,
       getExternalContextSelector: () => ui.externalContextSelector,
       clearQueuedMessage: () => (
@@ -265,7 +273,7 @@ export function buildTabRuntimeControllers(
         if (tab.lifecycleState !== 'provisional') {
           tab.lifecycleState = 'cold';
         }
-        syncSlashCommandDropdownForProvider(
+        syncComposerDropdownForProvider(
           tab,
           plugin,
           shell.providerCatalogResolver,
@@ -296,7 +304,7 @@ export function buildTabRuntimeControllers(
         }
         refreshTabProviderUI(tab, plugin);
         applyProviderUIGating(tab, plugin);
-        syncSlashCommandDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
+        syncComposerDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
       },
       onConversationLoaded: () => {
         const tab = runtimeRef.requirePublished();
@@ -325,6 +333,7 @@ export function buildTabRuntimeControllers(
     getWelcomeEl: () => dom.welcomeEl,
     getMessagesEl: () => dom.messagesEl,
     getFileContextManager: () => ui.fileContextManager,
+    getLinkedContentController: () => ui.linkedContentController,
     getImageContextManager: () => ui.imageContextManager,
     getExternalContextSelector: () => ui.externalContextSelector,
     getInstructionModeManager: () => ui.instructionModeManager,
@@ -388,8 +397,7 @@ export function buildTabRuntimeControllers(
       if (ui.instructionModeManager.isActive()) return true;
       if (ui.bangBashModeManager?.isActive()) return true;
       if (inputController.isResumeDropdownVisible()) return true;
-      if (ui.slashCommandDropdown.isVisible()) return true;
-      if (ui.fileContextManager.isMentionDropdownVisible()) return true;
+      if (ui.composerDropdown.isVisible()) return true;
       return false;
     },
   });

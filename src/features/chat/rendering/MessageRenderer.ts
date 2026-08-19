@@ -21,6 +21,7 @@ import type {
   ToolCallInfo,
 } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
+import { enhanceRenderedCodeFence } from '../../../shared/components/CopyableCodeFence';
 import { extractUserDisplayContent } from '../../../utils/context';
 import { formatDurationMmSs } from '../../../utils/date';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
@@ -785,50 +786,7 @@ export class MessageRenderer {
       );
       await restoreDisplayOnlyCodeFences(el, displayOnlyCodeFences.fences);
 
-      // Wrap pre elements and move buttons outside scroll area
-      el.querySelectorAll('pre').forEach((pre) => {
-        // Skip if already wrapped
-        if (pre.parentElement?.classList.contains('claudian-code-wrapper')) return;
-
-        // Create wrapper
-        const wrapper = createDiv({ cls: 'claudian-code-wrapper' });
-        pre.parentElement?.insertBefore(wrapper, pre);
-        wrapper.appendChild(pre);
-
-        // Check for language class and add label
-        const code = pre.querySelector('code[class*="language-"]');
-        if (code) {
-          const match = code.className.match(/language-(\w+)/);
-          if (match) {
-            wrapper.classList.add('has-language');
-            const label = createSpan({
-              cls: 'claudian-code-lang-label',
-              text: match[1],
-            });
-            wrapper.appendChild(label);
-            label.addEventListener('click', () => {
-              runRendererAction(async () => {
-                const originalLabel = match[1];
-                if (!originalLabel) return;
-
-                try {
-                  await navigator.clipboard.writeText(code.textContent || '');
-                  label.setText('Copied!');
-                  window.setTimeout(() => label.setText(originalLabel), 1500);
-                } catch {
-                  // Clipboard API may fail in non-secure contexts
-                }
-              });
-            });
-          }
-        }
-
-        // Move Obsidian's copy button outside pre into wrapper
-        const copyBtn = pre.querySelector('.copy-code-button');
-        if (copyBtn) {
-          wrapper.appendChild(copyBtn);
-        }
-      });
+      el.querySelectorAll('pre').forEach(enhanceRenderedCodeFence);
 
       // Process wikilinks only when the source can contain them; the DOM pass is expensive.
       if (processedMarkdown.includes('[[')) {

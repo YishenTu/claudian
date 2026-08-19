@@ -7,13 +7,13 @@ import { isProvisionalNotePath } from './ProvisionalNoteNames';
 
 export { isProvisionalNotePath } from './ProvisionalNoteNames';
 
-export type SessionListSectionKind = 'list' | 'note' | 'ungrouped' | 'missing';
+export type SessionListSectionKind = 'list' | 'content' | 'ungrouped' | 'missing';
 
 export interface SessionListSection {
   key: string;
   kind: SessionListSectionKind;
   label?: string;
-  notePath?: string;
+  contentPath?: string;
   conversations: ConversationMeta[];
 }
 
@@ -21,8 +21,18 @@ interface OrganizeSessionListOptions {
   organization: SessionManagerOrganization;
   sort: SessionManagerSort;
   language: string;
-  includeNotePaths?: readonly string[];
-  noteExists?: (notePath: string) => boolean;
+  includeContentPaths?: readonly string[];
+  contentExists?: (contentPath: string) => boolean;
+  contentIsNote?: (contentPath: string) => boolean;
+}
+
+export function isLegacyProvisionalLinkedContent(
+  contentPath: string,
+  options: Pick<OrganizeSessionListOptions, 'contentExists' | 'contentIsNote' | 'language'>,
+): boolean {
+  if (!isProvisionalNotePath(contentPath, options.language)) return false;
+  if (options.contentExists?.(contentPath) === false) return false;
+  return options.contentIsNote?.(contentPath) !== false;
 }
 
 function getLastActivityTimestamp(conversation: ConversationMeta): number {
@@ -68,8 +78,8 @@ function compareSections(
     });
 }
 
-export function getLinkedNoteTitle(notePath: string): string {
-  const filename = notePath.replace(/\\/g, '/').split('/').pop() ?? notePath;
+export function getLinkedContentTitle(contentPath: string): string {
+  const filename = contentPath.replace(/\\/g, '/').split('/').pop() ?? contentPath;
   return filename.replace(/\.md$/i, '');
 }
 
@@ -88,45 +98,45 @@ export function organizeSessionList(
     }];
   }
 
-  const noteGroups = new Map<string, SessionListSection>();
-  for (const notePath of options.includeNotePaths ?? []) {
-    const kind: SessionListSectionKind = options.noteExists?.(notePath) === false
+  const contentGroups = new Map<string, SessionListSection>();
+  for (const contentPath of options.includeContentPaths ?? []) {
+    const kind: SessionListSectionKind = options.contentExists?.(contentPath) === false
       ? 'missing'
-      : 'note';
-    noteGroups.set(notePath, {
-      key: `${kind}:${notePath}`,
+      : 'content';
+    contentGroups.set(contentPath, {
+      key: `${kind}:${contentPath}`,
       kind,
-      label: getLinkedNoteTitle(notePath),
-      notePath,
+      label: getLinkedContentTitle(contentPath),
+      contentPath,
       conversations: [],
     });
   }
   const ungrouped: ConversationMeta[] = [];
   for (const conversation of sortedConversations) {
-    const notePath = conversation.currentNote;
-    if (!notePath || isProvisionalNotePath(notePath, options.language)) {
+    const contentPath = conversation.linkedContentPath;
+    if (!contentPath || isLegacyProvisionalLinkedContent(contentPath, options)) {
       ungrouped.push(conversation);
       continue;
     }
 
-    const kind: SessionListSectionKind = options.noteExists?.(notePath) === false
+    const kind: SessionListSectionKind = options.contentExists?.(contentPath) === false
       ? 'missing'
-      : 'note';
-    let group = noteGroups.get(notePath);
+      : 'content';
+    let group = contentGroups.get(contentPath);
     if (!group) {
       group = {
-        key: `${kind}:${notePath}`,
+        key: `${kind}:${contentPath}`,
         kind,
-        label: getLinkedNoteTitle(notePath),
-        notePath,
+        label: getLinkedContentTitle(contentPath),
+        contentPath,
         conversations: [],
       };
-      noteGroups.set(notePath, group);
+      contentGroups.set(contentPath, group);
     }
     group.conversations.push(conversation);
   }
 
-  const sections = [...noteGroups.values()];
+  const sections = [...contentGroups.values()];
   if (ungrouped.length > 0) {
     sections.push({
       key: 'ungrouped',

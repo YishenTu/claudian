@@ -11,6 +11,10 @@ import type {
 } from '../../core/bootstrap/SessionStorage';
 import type { ProviderSessionSnapshot } from '../../core/execution';
 import {
+  assertLinkedContentPath,
+  normalizeLinkedContentPath,
+} from '../../core/path/LinkedContentPath';
+import {
   getConversationModelPersistenceTarget,
   normalizeProviderModelSelection,
   resolveConversationModel,
@@ -31,6 +35,7 @@ import {
   type Conversation,
   type ConversationMeta,
   type ConversationModelRecoverySource,
+  type ConversationMutablePatch,
   isCanonicalUserMessage,
   type SessionMetadata,
 } from '../../core/types';
@@ -51,6 +56,7 @@ export type ConversationRepositoryDeps = ConversationRepositoryBaseDeps & {
 interface LoadedLedgerState {
   status: 'loaded';
   ledger: ConversationInputLedger;
+  needsMigration: boolean;
 }
 
 interface UnavailableLedgerState {
@@ -77,7 +83,7 @@ interface ConversationDeletionState {
   readonly executionBinding: ExecutionBindingState | null;
 }
 
-interface NotePathRename {
+interface LinkedContentPathRename {
   oldPath: string;
   newPath: string;
   includeDescendants: boolean;
@@ -98,6 +104,20 @@ type HistoricalModelRecovery = NonNullable<
 >;
 
 const HISTORICAL_MODEL_RECOVERY_CONCURRENCY = 2;
+
+const IMMUTABLE_CONVERSATION_PATCH_FIELDS = [
+  'id',
+  'providerId',
+  'createdAt',
+  'linkedContentPath',
+] as const;
+
+type MutableLinkedContentConversation = Omit<
+  Conversation,
+  'linkedContentPath'
+> & {
+  linkedContentPath?: string;
+};
 
 function getStoredModelSelection(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -190,8 +210,12 @@ export class ConversationRepository {
   >();
   private readonly historicalModelRecoverySources = new Map<string, Conversation>();
   private readonly selectedModelMutationVersions = new WeakMap<Conversation, number>();
-  private readonly notePathRenames: NotePathRename[] = [];
-  private readonly pendingNotePathCorrectionIds = new Set<string>();
+  private readonly linkedContentPathsByConversationId = new Map<
+    string,
+    string | undefined
+  >();
+  private readonly linkedContentPathRenames: LinkedContentPathRename[] = [];
+  private readonly pendingLinkedContentPathCorrectionIds = new Set<string>();
   private readonly persistence: ConversationPersistence;
 
   constructor(private readonly deps: ConversationRepositoryDeps) {
@@ -203,11 +227,15 @@ export class ConversationRepository {
       this.invalidateConversation(conversation.id);
     }
     for (const conversation of conversations) {
-      this.applyNotePathRenames(conversation);
+      this.applyLinkedContentPathRenamesToHydratedConversation(conversation);
     }
     this.conversations = conversations.filter(
       ({ id }) => !this.deletedConversationIds.has(id),
     );
+    this.linkedContentPathsByConversationId.clear();
+    for (const conversation of this.conversations) {
+      this.captureLinkedContentIdentity(conversation);
+    }
     this.hydratedConversationIds = new Set(
       this.conversations
         .filter((conversation) => conversation.messages.length > 0)
@@ -229,13 +257,16 @@ export class ConversationRepository {
       source: SessionMetadataReadResult['source'];
     }>,
   ): Promise<void> {
-    const notePathCorrectedIds = new Set<string>();
+    const linkedContentPathCorrectedIds = new Set<string>();
     for (const { conversation } of entries) {
-      if (
-        this.pendingNotePathCorrectionIds.has(conversation.id)
-        || this.applyNotePathRenames(conversation)
+      const current = this.getSync(conversation.id);
+      if (this.pendingLinkedContentPathCorrectionIds.has(conversation.id)) {
+        linkedContentPathCorrectedIds.add(conversation.id);
+      } else if (
+        !current
+        && this.applyLinkedContentPathRenamesToHydratedConversation(conversation)
       ) {
-        notePathCorrectedIds.add(conversation.id);
+        linkedContentPathCorrectedIds.add(conversation.id);
       }
     }
     const registeredProviderIds = new Set(ProviderRegistry.getRegisteredProviderIds());
@@ -264,7 +295,7 @@ export class ConversationRepository {
             (source === 'legacy' || needsMigration)
             && (addedIds.has(conversation.id) || !!this.getSync(conversation.id))
           )
-          || notePathCorrectedIds.has(conversation.id),
+          || linkedContentPathCorrectedIds.has(conversation.id),
       )
       .map(({ conversation, source }) => this.enqueuePersistence(
         conversation.id,
@@ -274,7 +305,7 @@ export class ConversationRepository {
           await this.persistence.saveMetadata(this.toSessionMetadata(current, {
             preserveProviderState: !this.hydratedConversationIds.has(current.id),
           }));
-          this.pendingNotePathCorrectionIds.delete(current.id);
+          this.pendingLinkedContentPathCorrectionIds.delete(current.id);
           if (source === 'legacy') {
             await this.persistence.deleteLegacyMetadata(current.id);
           }
@@ -284,12 +315,16 @@ export class ConversationRepository {
   }
 
   mergeMetadataConversations(conversations: Conversation[]): Conversation[] {
+    const existingIds = new Set(this.conversations.map(({ id }) => id));
     for (const conversation of conversations) {
-      if (this.applyNotePathRenames(conversation)) {
-        this.pendingNotePathCorrectionIds.add(conversation.id);
+      if (existingIds.has(conversation.id)) {
+        this.getSync(conversation.id);
+        continue;
+      }
+      if (this.applyLinkedContentPathRenamesToHydratedConversation(conversation)) {
+        this.pendingLinkedContentPathCorrectionIds.add(conversation.id);
       }
     }
-    const existingIds = new Set(this.conversations.map(({ id }) => id));
     const added = conversations.filter(
       ({ id }) =>
         !existingIds.has(id)
@@ -306,6 +341,7 @@ export class ConversationRepository {
         right.lastActivityAt - left.lastActivityAt,
     );
     for (const conversation of added) {
+      this.captureLinkedContentIdentity(conversation);
       if (conversation.messages.length > 0) {
         this.hydratedConversationIds.add(conversation.id);
       }
@@ -327,11 +363,13 @@ export class ConversationRepository {
       this.ledgerStates.delete(shell.id);
       this.ledgerLoadPromises.delete(shell.id);
       this.executionBindings.delete(shell.id);
+      this.linkedContentPathsByConversationId.delete(shell.id);
       this.invalidateConversation(shell.id);
     }
   }
 
   getAll(): Conversation[] {
+    this.restoreAllLinkedContentIdentities();
     return this.conversations;
   }
 
@@ -339,7 +377,7 @@ export class ConversationRepository {
     providerId?: ProviderId;
     sessionId?: string;
     selectedModel?: string;
-    currentNote?: string;
+    linkedContentPath?: string;
   }): Promise<Conversation> {
     const settings = this.deps.getSettings();
     const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
@@ -370,14 +408,22 @@ export class ConversationRepository {
       sessionId: sessionId ?? null,
       selectedModel,
       messages: [],
-      currentNote: options?.currentNote,
+      linkedContentPath: options?.linkedContentPath === undefined
+        ? undefined
+        : assertLinkedContentPath(options.linkedContentPath),
     };
 
     this.conversations.unshift(conversation);
+    this.captureLinkedContentIdentity(conversation);
     if (!sessionId) {
       this.hydratedConversationIds.add(conversation.id);
     }
-    await this.save(conversation);
+    try {
+      await this.save(conversation);
+    } catch (error) {
+      this.discardUnresolvedMetadataShells([conversation]);
+      throw error;
+    }
     return conversation;
   }
 
@@ -511,12 +557,20 @@ export class ConversationRepository {
     await this.save(conversation);
   }
 
-  async update(id: string, updates: Partial<Conversation>): Promise<void> {
+  async update(id: string, updates: ConversationMutablePatch): Promise<void> {
+    const attemptedImmutableFields = IMMUTABLE_CONVERSATION_PATCH_FIELDS.filter(
+      field => Object.prototype.hasOwnProperty.call(updates, field),
+    );
+    if (attemptedImmutableFields.length > 0) {
+      throw new Error(
+        `Conversation update cannot change immutable fields: ${attemptedImmutableFields.join(', ')}`,
+      );
+    }
+
     const conversation = this.getSync(id);
     if (!conversation) return;
 
     const safeUpdates = { ...updates };
-    delete safeUpdates.providerId;
     if ('selectedModel' in safeUpdates) {
       const selectedModel = normalizeProviderModelSelection(
         conversation.providerId,
@@ -723,21 +777,29 @@ export class ConversationRepository {
     return 'superseded';
   }
 
-  async rewriteCurrentNotePaths(
+  async rewriteLinkedContentPaths(
     oldPath: string,
     newPath: string,
     options: { includeDescendants?: boolean } = {},
   ): Promise<void> {
-    if (!oldPath || !newPath || oldPath === newPath) return;
+    const normalizedOldPath = normalizeLinkedContentPath(oldPath);
+    const normalizedNewPath = normalizeLinkedContentPath(newPath);
+    if (
+      normalizedOldPath === null
+      || normalizedNewPath === null
+      || normalizedOldPath === normalizedNewPath
+    ) {
+      return;
+    }
 
-    const rename: NotePathRename = {
-      oldPath,
-      newPath,
+    const rename: LinkedContentPathRename = {
+      oldPath: normalizedOldPath,
+      newPath: normalizedNewPath,
       includeDescendants: options.includeDescendants ?? false,
     };
-    this.notePathRenames.push(rename);
+    this.linkedContentPathRenames.push(rename);
     const changed = this.conversations.filter(conversation => (
-      this.applyNotePathRename(conversation, rename)
+      this.applyLinkedContentPathRename(conversation, rename)
     ));
     await this.persistConversations(changed);
   }
@@ -881,6 +943,7 @@ export class ConversationRepository {
       }
       try {
         await this.persistence.saveInputLedger(conversationId, ledger);
+        this.markInputLedgerCanonical(conversationId, ledger);
       } catch (error) {
         if (insertedRecord) {
           const insertedIndex = ledger.records.indexOf(insertedRecord);
@@ -925,6 +988,7 @@ export class ConversationRepository {
     await this.enqueuePersistence(conversationId, async () => {
       if (!await this.canWriteLedger(conversationId, ledger)) return;
       await this.persistence.saveInputLedger(conversationId, ledger);
+      this.markInputLedgerCanonical(conversationId, ledger);
       const current = this.getSync(conversationId);
       if (current && await this.canWriteConversation(current)) {
         await this.persistence.saveMetadata(this.toSessionMetadata(current));
@@ -1011,7 +1075,7 @@ export class ConversationRepository {
       lastActivityAt: conversation.lastActivityAt,
       messageCount: conversation.messages.length,
       preview: this.getPreview(conversation),
-      currentNote: conversation.currentNote,
+      linkedContentPath: conversation.linkedContentPath,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
@@ -1077,18 +1141,24 @@ export class ConversationRepository {
   }
 
   getSync(id: string): Conversation | null {
-    return this.conversations.find(
+    const conversation = this.conversations.find(
       (conversation) => conversation.id === id,
     ) ?? null;
+    if (conversation) {
+      this.restoreLinkedContentIdentity(conversation);
+    }
+    return conversation;
   }
 
   findEmpty(): Conversation | null {
+    this.restoreAllLinkedContentIdentities();
     return this.conversations.find(
       (conversation) => conversation.messages.length === 0,
     ) ?? null;
   }
 
   list(): ConversationMeta[] {
+    this.restoreAllLinkedContentIdentities();
     return this.conversations.map((conversation) => ({
       id: conversation.id,
       providerId: conversation.providerId,
@@ -1098,7 +1168,7 @@ export class ConversationRepository {
       lastActivityAt: conversation.lastActivityAt,
       messageCount: conversation.messages.length,
       preview: this.getPreview(conversation),
-      currentNote: conversation.currentNote,
+      linkedContentPath: conversation.linkedContentPath,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
@@ -1146,43 +1216,95 @@ export class ConversationRepository {
     return changed;
   }
 
-  private applyNotePathRenames(conversation: Conversation): boolean {
-    const originalPath = conversation.currentNote;
-    if (!originalPath) return false;
-
-    let currentPath = originalPath;
-    for (const rename of this.notePathRenames) {
-      const rewrittenPath = this.rewriteNotePath(currentPath, rename);
-      currentPath = rewrittenPath ?? currentPath;
+  private applyLinkedContentPathRenamesToHydratedConversation(
+    conversation: Conversation,
+  ): boolean {
+    const originalPath = conversation.linkedContentPath;
+    let currentPath = normalizeLinkedContentPath(originalPath) ?? undefined;
+    for (const rename of this.linkedContentPathRenames) {
+      if (!currentPath) break;
+      currentPath = this.rewriteLinkedContentPath(currentPath, rename) ?? currentPath;
     }
     if (currentPath === originalPath) return false;
 
-    conversation.currentNote = currentPath;
+    this.assignLinkedContentPath(conversation, currentPath);
     return true;
   }
 
-  private applyNotePathRename(
+  private applyLinkedContentPathRename(
     conversation: Conversation,
-    rename: NotePathRename,
+    rename: LinkedContentPathRename,
   ): boolean {
-    if (!conversation.currentNote) return false;
-    const rewrittenPath = this.rewriteNotePath(conversation.currentNote, rename);
-    if (!rewrittenPath || rewrittenPath === conversation.currentNote) return false;
+    const currentPath = this.getAuthoritativeLinkedContentPath(conversation);
+    if (!currentPath) return false;
+    const rewrittenPath = this.rewriteLinkedContentPath(currentPath, rename);
+    if (!rewrittenPath || rewrittenPath === currentPath) return false;
 
-    conversation.currentNote = rewrittenPath;
+    this.setLinkedContentIdentity(conversation, rewrittenPath);
     return true;
   }
 
-  private rewriteNotePath(
-    notePath: string,
-    rename: NotePathRename,
+  private rewriteLinkedContentPath(
+    contentPath: string,
+    rename: LinkedContentPathRename,
   ): string | null {
     return rewriteVaultPathAfterRename(
-      notePath,
+      contentPath,
       rename.oldPath,
       rename.newPath,
       rename.includeDescendants,
     );
+  }
+
+  private captureLinkedContentIdentity(conversation: Conversation): void {
+    const path = normalizeLinkedContentPath(conversation.linkedContentPath)
+      ?? undefined;
+    this.setLinkedContentIdentity(conversation, path);
+  }
+
+  private setLinkedContentIdentity(
+    conversation: Conversation,
+    path: string | undefined,
+  ): void {
+    this.linkedContentPathsByConversationId.set(conversation.id, path);
+    this.assignLinkedContentPath(conversation, path);
+  }
+
+  private restoreLinkedContentIdentity(conversation: Conversation): void {
+    if (!this.linkedContentPathsByConversationId.has(conversation.id)) return;
+    this.assignLinkedContentPath(
+      conversation,
+      this.linkedContentPathsByConversationId.get(conversation.id),
+    );
+  }
+
+  private restoreAllLinkedContentIdentities(): void {
+    for (const conversation of this.conversations) {
+      this.restoreLinkedContentIdentity(conversation);
+    }
+  }
+
+  private getAuthoritativeLinkedContentPath(
+    conversation: Conversation,
+  ): string | undefined {
+    if (this.linkedContentPathsByConversationId.has(conversation.id)) {
+      const path = this.linkedContentPathsByConversationId.get(conversation.id);
+      this.assignLinkedContentPath(conversation, path);
+      return path;
+    }
+    return normalizeLinkedContentPath(conversation.linkedContentPath) ?? undefined;
+  }
+
+  private assignLinkedContentPath(
+    conversation: Conversation,
+    path: string | undefined,
+  ): void {
+    const mutableConversation = conversation as MutableLinkedContentConversation;
+    if (path === undefined) {
+      delete mutableConversation.linkedContentPath;
+      return;
+    }
+    mutableConversation.linkedContentPath = path;
   }
 
   private async reconcileProviderSession(
@@ -1429,7 +1551,11 @@ export class ConversationRepository {
       (result): LedgerState => {
         let state: LedgerState;
         if (result.status === 'loaded') {
-          state = { status: 'loaded', ledger: result.ledger };
+          state = {
+            status: 'loaded',
+            ledger: result.ledger,
+            needsMigration: result.needsMigration,
+          };
         } else if (result.status === 'missing') {
           state = {
             status: 'loaded',
@@ -1438,6 +1564,7 @@ export class ConversationRepository {
               conversationId,
               records: [],
             },
+            needsMigration: false,
           };
         } else {
           state = {
@@ -1602,7 +1729,18 @@ export class ConversationRepository {
     await this.enqueuePersistence(conversationId, async () => {
       if (!await this.canWriteLedger(conversationId, ledger)) return;
       await this.persistence.saveInputLedger(conversationId, ledger);
+      this.markInputLedgerCanonical(conversationId, ledger);
     });
+  }
+
+  private markInputLedgerCanonical(
+    conversationId: string,
+    ledger: ConversationInputLedger,
+  ): void {
+    const state = this.ledgerStates.get(conversationId);
+    if (state?.status === 'loaded' && state.ledger === ledger) {
+      state.needsMigration = false;
+    }
   }
 
   private async canWriteLedger(
@@ -1667,6 +1805,7 @@ export class ConversationRepository {
   }
 
   private save(conversation: Conversation): Promise<void> {
+    this.restoreLinkedContentIdentity(conversation);
     const generation = this.getConversationGeneration(conversation.id);
     return this.enqueuePersistence(conversation.id, async () => {
       if (
@@ -1675,6 +1814,7 @@ export class ConversationRepository {
       ) {
         return;
       }
+      this.restoreLinkedContentIdentity(conversation);
       await this.persistence.saveMetadata(this.toSessionMetadata(conversation));
     });
   }
@@ -1694,6 +1834,7 @@ export class ConversationRepository {
     conversation: Conversation,
     options: { preserveProviderState?: boolean } = {},
   ): SessionMetadata {
+    const linkedContentPath = this.getAuthoritativeLinkedContentPath(conversation);
     const historyService = ProviderRegistry.getConversationHistoryService(
       conversation.providerId,
     );
@@ -1722,7 +1863,7 @@ export class ConversationRepository {
             ),
           }
         : {}),
-      currentNote: conversation.currentNote,
+      linkedContentPath,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       externalContextPaths: conversation.externalContextPaths,
@@ -1737,6 +1878,7 @@ export class ConversationRepository {
     await this.persistence.deleteInputLedger(id);
     this.ledgerStates.delete(id);
     this.ledgerLoadPromises.delete(id);
+    this.linkedContentPathsByConversationId.delete(id);
   }
 
   private async finalizeDeletedConversation(id: string): Promise<void> {

@@ -13,9 +13,10 @@ import type {
   ProviderChatUIConfig,
   ProviderId,
 } from '../../../../core/providers/types';
-import { SlashCommandDropdown } from '../../../../shared/components/SlashCommandDropdown';
 import { getEnhancedPath } from '../../../../utils/env';
 import { getVaultPath } from '../../../../utils/path';
+import { MainChatComposerDropdown } from '../../composer/MainChatComposerDropdown';
+import { LinkedContentController } from '../../linked-content';
 import { BangBashService } from '../../services/BangBashService';
 import { BangBashModeManager as BangBashModeManagerClass } from '../../ui/BangBashModeManager';
 import { ComposerContextTray } from '../../ui/ComposerContextTray';
@@ -39,7 +40,7 @@ import {
   getTabSelectedModel,
   getTabSettingsSnapshot,
   refreshTabProviderUI,
-  syncSlashCommandDropdownForProvider,
+  syncComposerDropdownForProvider,
   syncTabProviderServices,
   type TabProviderSettings,
   updateTabProviderSettings,
@@ -57,27 +58,42 @@ import type {
 } from './TabRuntimeConstruction';
 
 function buildContextManagers(
-  shell: TabRuntimeShellBundle,
-  contextTray: ComposerContextTray,
   externalContextSelector: TabUIComponents['externalContextSelector'],
   options: TabRuntimeConstructionContext,
+  shell: TabRuntimeShellBundle,
+  contextTray: ComposerContextTray,
   onUserModified: () => void,
-): Pick<TabUIComponents, 'fileContextManager' | 'imageContextManager'> {
+): Pick<
+  TabUIComponents,
+  'fileContextManager' | 'imageContextManager' | 'linkedContentController'
+> {
   const { dom } = shell;
   const { plugin } = options;
   const fileContextManager = new FileContextManager(
     plugin.app,
-    dom.contextRowEl,
-    dom.inputEl,
     {
-      getExcludedTags: () => plugin.settings.excludedTags,
       getExternalContexts: () => externalContextSelector.getExternalContexts(),
-      onUserChipsChanged: onUserModified,
+      onAgentMentionSelect: () => onUserModified(),
     },
-    dom.inputContainerEl,
-    contextTray,
   );
   options.registerCleanup('tab file context manager', () => fileContextManager.destroy());
+  const linkedContentController = new LinkedContentController({
+    app: plugin.app,
+    getExcludedTags: () => plugin.settings.excludedTags,
+    getCachedVaultFiles: () => fileContextManager.getCachedVaultFiles(),
+    getCachedVaultFolders: () => fileContextManager.getCachedVaultFolders(),
+  });
+  options.registerCleanup(
+    'tab Linked content controller',
+    () => linkedContentController.destroy(),
+  );
+  if (options.conversation?.id) {
+    linkedContentController.lock(options.conversation.linkedContentPath);
+  } else {
+    linkedContentController.resetAutoDraft();
+  }
+  linkedContentController.mountContextTray(contextTray);
+  if (dom.welcomeEl) linkedContentController.mountWelcome(dom.welcomeEl);
   const imageContextManager = new ImageContextManager(
     dom.inputContainerEl,
     dom.inputEl,
@@ -86,32 +102,37 @@ function buildContextManagers(
     contextTray,
   );
   options.registerCleanup('tab image context manager', () => imageContextManager.destroy());
-  return { fileContextManager, imageContextManager };
+  return { fileContextManager, imageContextManager, linkedContentController };
 }
 
-function buildSlashCommandDropdown(
+function buildComposerDropdown(
   shell: TabRuntimeShellBundle,
   providerId: ProviderId,
+  fileContextManager: FileContextManager,
   options: TabRuntimeConstructionContext,
+  runtimeRef: PublishedTabRuntimeRef,
   getHiddenCommands?: () => Set<string>,
   catalogInfo?: ProviderCatalogInfo,
-): SlashCommandDropdown {
+): MainChatComposerDropdown {
   const { dom } = shell;
-  const dropdown = new SlashCommandDropdown(
+  const dropdown = new MainChatComposerDropdown(
     dom.inputContainerEl,
     dom.inputEl,
+    fileContextManager,
     {
-      onSelect: () => {},
-      onHide: () => {},
-    },
-    {
+      collabReferences: options.plugin.collabComposerReferences,
       providerId,
       hiddenCommands: getHiddenCommands?.() ?? new Set(),
       providerConfig: catalogInfo?.config,
       providerDiscovery: catalogInfo?.discovery,
+      onSlashCommandSelected: command => {
+        if (command.id !== 'builtin:instruction') return;
+        dom.inputEl.value = '';
+        runtimeRef.requirePublished().ui.instructionModeManager.enter();
+      },
     },
   );
-  options.registerCleanup('tab slash command dropdown', () => dropdown.destroy());
+  options.registerCleanup('tab composer dropdown', () => dropdown.destroy());
   return dropdown;
 }
 
@@ -119,6 +140,7 @@ function buildInstructionComponents(
   shell: TabRuntimeShellBundle,
   options: TabRuntimeConstructionContext,
   runtimeRef: PublishedTabRuntimeRef,
+  composerDropdown: MainChatComposerDropdown,
 ): Pick<
   TabUIComponents,
   'instructionModeManager' | 'bangBashModeManager' | 'statusPanel'
@@ -133,6 +155,9 @@ function buildInstructionComponents(
           .handleInstructionSubmit(rawInstruction);
       },
       getInputWrapper: () => dom.inputWrapper,
+      onActiveChange: active => {
+        if (active) composerDropdown.hide();
+      },
     },
   );
   options.registerCleanup(
@@ -223,14 +248,14 @@ function buildInputToolbar(
       shell.draftModel = model;
       shell.providerId = providerId;
       syncTabProviderServices(shell, services, plugin);
-      runtimeRef.requirePublished().ui.slashCommandDropdown.clearProviderCatalog?.();
+      runtimeRef.requirePublished().ui.composerDropdown.clearProviderCatalog();
     },
     restoreDraft: ({ providerId, model }) => {
       const tab = runtimeRef.requirePublished();
       shell.draftModel = model;
       shell.providerId = providerId;
       syncTabProviderServices(shell, services, plugin);
-      syncSlashCommandDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
+      syncComposerDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
       refreshTabProviderUI(tab, plugin);
       applyProviderUIGating(tab, plugin);
     },
@@ -282,7 +307,7 @@ function buildInputToolbar(
         );
         if (!didCommit || !isSelectionTargetCurrent()) return;
 
-        syncSlashCommandDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
+        syncComposerDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
         onUserModified();
         options.onDraftModelChanged?.(tab, tab.draftModel);
         await uiConfig.prepareModelMetadata?.(
@@ -448,21 +473,28 @@ export function buildTabRuntimeUI(
 
   const toolbar = buildInputToolbar(shell, services, options, runtimeRef, onUserModified);
   const contextManagers = buildContextManagers(
-    shell,
-    contextTray,
     toolbar.externalContextSelector,
     options,
+    shell,
+    contextTray,
     onUserModified,
   );
   const catalogInfo = shell.providerCatalogResolver();
-  const slashCommandDropdown = buildSlashCommandDropdown(
+  const composerDropdown = buildComposerDropdown(
     shell,
     getTabProviderId(shell, plugin),
+    contextManagers.fileContextManager,
     options,
+    runtimeRef,
     () => getTabHiddenCommands(shell, plugin),
     catalogInfo,
   );
-  const instructionComponents = buildInstructionComponents(shell, options, runtimeRef);
+  const instructionComponents = buildInstructionComponents(
+    shell,
+    options,
+    runtimeRef,
+    composerDropdown,
+  );
   const navigationSidebar = new NavigationSidebar(
     dom.messagesWrapperEl,
     dom.messagesEl,
@@ -478,7 +510,7 @@ export function buildTabRuntimeUI(
     externalContextSelector: toolbar.externalContextSelector,
     permissionToggle: toolbar.permissionToggle,
     serviceTierToggle: toolbar.serviceTierToggle,
-    slashCommandDropdown,
+    composerDropdown,
     ...instructionComponents,
     contextUsageMeter: toolbar.contextUsageMeter,
     navigationSidebar,

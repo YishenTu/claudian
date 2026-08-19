@@ -12,8 +12,11 @@ import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import { type InlineEditMode, type InlineEditService, type ProviderId } from '../../../core/providers/types';
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
-import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
-import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
+import {
+  ComposerDropdownController,
+  MentionSource,
+  SlashCommandSource,
+} from '../../../shared/composer-dropdown';
 import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
 import {
   createExternalContextLookupGetter,
@@ -383,8 +386,9 @@ export class InlineEditSession {
   private selectionListener: ((e: Event) => void) | null = null;
   private isConversing = false;
   private resolvedProviderId: ProviderId;
-  private slashCommandDropdown: SlashCommandDropdown | null = null;
-  private mentionDropdown: MentionDropdownController | null = null;
+  private composerDropdown: ComposerDropdownController | null = null;
+  private mentionSource: MentionSource | null = null;
+  private slashSource: SlashCommandSource | null = null;
   private mentionDataProvider: VaultMentionDataProvider;
   private agentReplyRenderVersion = 0;
   private sourceSnapshot: InlineEditSourceSnapshot | null = null;
@@ -542,48 +546,39 @@ export class InlineEditSession {
     this.spinnerEl = inputWrap.createDiv({ cls: 'claudian-inline-spinner claudian-hidden' });
 
     const inlineCatalog = ProviderWorkspaceRegistry.getCommandCatalog(this.resolvedProviderId);
-    this.slashCommandDropdown = new SlashCommandDropdown(
-      ownerDocument.body,
-      inputEl,
-      {
-        onSelect: () => {},
-        onHide: () => {},
-      },
-      {
-        fixed: true,
-        includeBuiltIns: false,
-        providerId: this.resolvedProviderId,
-        hiddenCommands: getHiddenProviderCommandSet(this.plugin.settings, this.resolvedProviderId),
-        ...(inlineCatalog ? {
-          providerConfig: inlineCatalog.getDropdownConfig(),
-          providerDiscovery: new ProviderCommandDiscoveryStore(async signal =>
-            normalizeProviderCommandDiscoveryItems(
-              await inlineCatalog.listDropdownEntries({
-                includeBuiltIns: false,
-                signal,
-              }),
-            ),
+    this.slashSource = new SlashCommandSource({
+      includeBuiltIns: false,
+      providerId: this.resolvedProviderId,
+      hiddenCommands: getHiddenProviderCommandSet(this.plugin.settings, this.resolvedProviderId),
+      ...(inlineCatalog ? {
+        providerConfig: inlineCatalog.getDropdownConfig(),
+        providerDiscovery: new ProviderCommandDiscoveryStore(async signal =>
+          normalizeProviderCommandDiscoveryItems(
+            await inlineCatalog.listDropdownEntries({
+              includeBuiltIns: false,
+              signal,
+            }),
           ),
-        } : {}),
-      }
-    );
-
-    this.mentionDropdown = new MentionDropdownController(
+        ),
+      } : {}),
+    });
+    this.mentionSource = new MentionSource({
+      // Inline Edit resolves @mentions at send time from input text.
+      onAttachFile: () => {},
+      getExternalContexts: this.getExternalContexts,
+      getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
+      getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
+      normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
+    });
+    this.composerDropdown = new ComposerDropdownController(
       ownerDocument.body,
       inputEl,
-      {
-        // Inline-edit resolves @mentions at send time from input text.
-        onAttachFile: () => {},
-        getExternalContexts: this.getExternalContexts,
-        getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
-        getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
-        normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
-      },
-      { fixed: true }
+      [this.slashSource, this.mentionSource],
+      { fixed: true },
     );
 
     inputEl.addEventListener('keydown', (e) => this.handleKeydown(e));
-    inputEl.addEventListener('input', () => this.mentionDropdown?.handleInputChange());
+    inputEl.addEventListener('input', () => this.composerDropdown?.handleInputChange());
 
     window.setTimeout(() => inputEl.focus(), 50);
     return container;
@@ -900,11 +895,12 @@ export class InlineEditSession {
     if (this.escHandler) {
       this.getOwnerDocument().removeEventListener('keydown', this.escHandler);
     }
-    this.slashCommandDropdown?.destroy();
-    this.slashCommandDropdown = null;
-
-    this.mentionDropdown?.destroy();
-    this.mentionDropdown = null;
+    this.composerDropdown?.destroy();
+    this.composerDropdown = null;
+    this.slashSource?.destroy();
+    this.slashSource = null;
+    this.mentionSource?.destroy();
+    this.mentionSource = null;
 
     if (activeController === this) {
       activeController = null;
@@ -957,9 +953,11 @@ export class InlineEditSession {
   }
 
   private getDocumentSlice(doc: Text, from: number, to: number): string {
-    const sliceString = (doc as Text & { sliceString?: (start: number, end: number) => string }).sliceString;
-    if (typeof sliceString === 'function') {
-      return sliceString.call(doc, from, to);
+    const compatibleDoc = doc as Text & {
+      sliceString?: (start: number, end: number) => string;
+    };
+    if (typeof compatibleDoc.sliceString === 'function') {
+      return compatibleDoc.sliceString(from, to);
     }
     return from === this.selFrom && to === this.selTo ? this.selectedText : '';
   }
@@ -976,16 +974,12 @@ export class InlineEditSession {
   }
 
   private focusEditor(): void {
-    const focus = (this.editorView as EditorView & { focus?: () => void }).focus;
-    focus?.call(this.editorView);
+    const compatibleView = this.editorView as EditorView & { focus?: () => void };
+    compatibleView.focus?.();
   }
 
   private handleKeydown(e: KeyboardEvent) {
-    if (this.mentionDropdown?.handleKeydown(e)) {
-      return;
-    }
-
-    if (this.slashCommandDropdown?.handleKeydown(e)) {
+    if (this.composerDropdown?.handleKeydown(e)) {
       return;
     }
 

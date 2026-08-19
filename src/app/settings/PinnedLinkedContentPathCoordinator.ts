@@ -1,23 +1,27 @@
+import { normalizeLinkedContentPath } from '../../core/path/LinkedContentPath';
 import type { ClaudianSettings } from '../../core/types';
 import type { SettingsCoordinator } from './SettingsCoordinator';
 
-export class PinnedLinkedNotePathCoordinator {
+export class PinnedLinkedContentPathCoordinator {
   constructor(
     private readonly settingsCoordinator: SettingsCoordinator<ClaudianSettings>,
   ) {}
 
-  async setPinned(notePath: string, isPinned: boolean): Promise<boolean> {
+  async setPinned(contentPath: string, isPinned: boolean): Promise<boolean> {
+    const normalizedPath = normalizeLinkedContentPath(contentPath);
+    if (normalizedPath === null) return false;
+
     let changed = false;
     await this.settingsCoordinator.mutateConditionally((settings) => {
-      const pinnedPaths = new Set(settings.pinnedLinkedNotePaths ?? []);
+      const pinnedPaths = new Set(settings.pinnedLinkedContentPaths ?? []);
       if (isPinned) {
-        if (pinnedPaths.has(notePath)) return false;
-        pinnedPaths.add(notePath);
-      } else if (!pinnedPaths.delete(notePath)) {
+        if (pinnedPaths.has(normalizedPath)) return false;
+        pinnedPaths.add(normalizedPath);
+      } else if (!pinnedPaths.delete(normalizedPath)) {
         return false;
       }
 
-      settings.pinnedLinkedNotePaths = [...pinnedPaths];
+      settings.pinnedLinkedContentPaths = [...pinnedPaths];
       changed = true;
       return true;
     });
@@ -29,13 +33,23 @@ export class PinnedLinkedNotePathCoordinator {
     newPath: string,
     includeDescendants: boolean,
   ): Promise<boolean> {
+    const normalizedOldPath = normalizeLinkedContentPath(oldPath);
+    const normalizedNewPath = normalizeLinkedContentPath(newPath);
+    if (
+      normalizedOldPath === null
+      || normalizedNewPath === null
+      || normalizedOldPath === normalizedNewPath
+    ) {
+      return false;
+    }
+
     let changed = false;
     await this.settingsCoordinator.mutateConditionally((settings) => {
-      const oldPrefix = `${oldPath.replace(/\/$/, '')}/`;
-      const newPrefix = `${newPath.replace(/\/$/, '')}/`;
-      const currentPaths = settings.pinnedLinkedNotePaths ?? [];
+      const oldPrefix = `${normalizedOldPath.replace(/\/$/, '')}/`;
+      const newPrefix = `${normalizedNewPath.replace(/\/$/, '')}/`;
+      const currentPaths = settings.pinnedLinkedContentPaths ?? [];
       const rewrittenPaths = currentPaths.map((path) => {
-        if (path === oldPath) return newPath;
+        if (path === normalizedOldPath) return normalizedNewPath;
         if (includeDescendants && path.startsWith(oldPrefix)) {
           return `${newPrefix}${path.slice(oldPrefix.length)}`;
         }
@@ -46,7 +60,7 @@ export class PinnedLinkedNotePathCoordinator {
         || deduplicatedPaths.some((path, index) => path !== currentPaths[index]);
       if (!changed) return false;
 
-      settings.pinnedLinkedNotePaths = deduplicatedPaths;
+      settings.pinnedLinkedContentPaths = deduplicatedPaths;
       return true;
     });
     return changed;
@@ -56,18 +70,21 @@ export class PinnedLinkedNotePathCoordinator {
     deletedPath: string,
     includeDescendants: boolean,
   ): Promise<boolean> {
+    const normalizedDeletedPath = normalizeLinkedContentPath(deletedPath);
+    if (normalizedDeletedPath === null) return false;
+
     let changed = false;
     await this.settingsCoordinator.mutateConditionally((settings) => {
-      const deletedPrefix = `${deletedPath.replace(/\/$/, '')}/`;
-      const currentPaths = settings.pinnedLinkedNotePaths ?? [];
+      const deletedPrefix = `${normalizedDeletedPath.replace(/\/$/, '')}/`;
+      const currentPaths = settings.pinnedLinkedContentPaths ?? [];
       const retainedPaths = currentPaths.filter(path => (
-        path !== deletedPath
+        path !== normalizedDeletedPath
         && !(includeDescendants && path.startsWith(deletedPrefix))
       ));
       changed = retainedPaths.length !== currentPaths.length;
       if (!changed) return false;
 
-      settings.pinnedLinkedNotePaths = retainedPaths;
+      settings.pinnedLinkedContentPaths = retainedPaths;
       return true;
     });
     return changed;

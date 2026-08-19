@@ -3,6 +3,11 @@ import {
   LEGACY_CLAUDIAN_SETTINGS_PATH,
 } from '../../core/bootstrap/storagePaths';
 import {
+  DEFAULT_COLLAB_PROJECTS_FOLDER,
+  parseCollabProjectsFolder,
+} from '../../core/collab/CollabProjectsFolder';
+import { normalizeLinkedContentPath } from '../../core/path/LinkedContentPath';
+import {
   normalizeHiddenCommandList,
   normalizeHiddenProviderCommands,
 } from '../../core/providers/commands/hiddenCommands';
@@ -23,6 +28,7 @@ import {
   type EnvSnippet,
   type HiddenProviderCommands,
   type ProviderConfigMap,
+  type SessionManagerOrganization,
   type StoredChatModelSelection,
 } from '../../core/types/settings';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './defaultSettings';
@@ -44,6 +50,8 @@ const LEGACY_STRIPPED_SHARED_SETTING_FIELDS = [
   'enableBlocklist',
   'blockedCommands',
   'openInMainTab',
+  'pinnedLinkedNotePaths',
+  'enableFilePane',
 ] as const;
 
 function getProviderSettingsAdapters() {
@@ -105,12 +113,6 @@ function normalizeEnableDualPane(value: unknown): boolean {
     : DEFAULT_CLAUDIAN_SETTINGS.enableDualPane;
 }
 
-function normalizeEnableFilePane(value: unknown): boolean {
-  return typeof value === 'boolean'
-    ? value
-    : DEFAULT_CLAUDIAN_SETTINGS.enableFilePane;
-}
-
 function normalizeDualPaneSide(value: unknown): DualPaneSide {
   return typeof value === 'string'
     && (DUAL_PANE_SIDES as readonly string[]).includes(value)
@@ -124,19 +126,61 @@ function normalizeRestoreTabsOnStartup(value: unknown): boolean {
     : DEFAULT_CLAUDIAN_SETTINGS.restoreTabsOnStartup;
 }
 
+function normalizeCollabGitPath(value: unknown): string {
+  if (typeof value !== 'string') return DEFAULT_CLAUDIAN_SETTINGS.collabGitPath;
+  const trimmed = value.trim();
+  return trimmed.length <= 4_096
+    && !trimmed.includes('\u0000')
+    && !trimmed.includes('\r')
+    && !trimmed.includes('\n')
+    ? trimmed
+    : DEFAULT_CLAUDIAN_SETTINGS.collabGitPath;
+}
+
+function normalizeCollabEnabled(value: unknown): boolean {
+  return typeof value === 'boolean'
+    ? value
+    : DEFAULT_CLAUDIAN_SETTINGS.collabEnabled;
+}
+
+function normalizeSessionManagerOrganization(
+  value: unknown,
+): SessionManagerOrganization {
+  if (value === 'linked-note') return 'linked-content';
+  return value === 'linked-content' || value === 'list'
+    ? value
+    : DEFAULT_CLAUDIAN_SETTINGS.sessionManagerOrganization ?? 'list';
+}
+
+function normalizePinnedLinkedContentPaths(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  const normalizedPaths: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of value) {
+    const path = normalizeLinkedContentPath(candidate);
+    if (path === null || seen.has(path)) continue;
+    seen.add(path);
+    normalizedPaths.push(path);
+  }
+  return normalizedPaths;
+}
+
+function normalizeCollabProjectsFolder(value: unknown): string {
+  if (typeof value !== 'string') return DEFAULT_COLLAB_PROJECTS_FOLDER;
+  const parsed = parseCollabProjectsFolder(value);
+  return parsed.ok ? parsed.value : DEFAULT_COLLAB_PROJECTS_FOLDER;
+}
+
 function shouldPersistChatViewNormalization(
   stored: Record<string, unknown>,
   enableDualPane: boolean,
-  enableFilePane: boolean,
   dualPaneSide: DualPaneSide,
   restoreTabsOnStartup: boolean,
 ): boolean {
-  return (
+  return 'enableFilePane' in stored || (
     'enableDualPane' in stored
     && stored.enableDualPane !== enableDualPane
-  ) || (
-    'enableFilePane' in stored
-    && stored.enableFilePane !== enableFilePane
   ) || (
     'dualPaneSide' in stored
     && stored.dualPaneSide !== dualPaneSide
@@ -401,10 +445,24 @@ export class ClaudianSettingsStorage {
       stored.openInMainTab,
     );
     const enableDualPane = normalizeEnableDualPane(stored.enableDualPane);
-    const enableFilePane = normalizeEnableFilePane(stored.enableFilePane);
     const dualPaneSide = normalizeDualPaneSide(stored.dualPaneSide);
     const restoreTabsOnStartup = normalizeRestoreTabsOnStartup(
       stored.restoreTabsOnStartup,
+    );
+    const collabEnabled = normalizeCollabEnabled(stored.collabEnabled);
+    const collabProjectsFolder = normalizeCollabProjectsFolder(stored.collabProjectsFolder);
+    const collabGitPath = normalizeCollabGitPath(stored.collabGitPath);
+    const hasCanonicalPinnedPaths = Object.prototype.hasOwnProperty.call(
+      stored,
+      'pinnedLinkedContentPaths',
+    );
+    const pinnedLinkedContentPaths = normalizePinnedLinkedContentPaths(
+      hasCanonicalPinnedPaths
+        ? stored.pinnedLinkedContentPaths
+        : stored.pinnedLinkedNotePaths,
+    );
+    const sessionManagerOrganization = normalizeSessionManagerOrganization(
+      stored.sessionManagerOrganization,
     );
     const legacyProviderSettings = {
       ...stored,
@@ -424,9 +482,13 @@ export class ClaudianSettingsStorage {
       providerConfigs,
       chatViewPlacement,
       enableDualPane,
-      enableFilePane,
       dualPaneSide,
       restoreTabsOnStartup,
+      collabEnabled,
+      collabProjectsFolder,
+      collabGitPath,
+      sessionManagerOrganization,
+      pinnedLinkedContentPaths,
       lastSelectedChatModel,
     };
 
@@ -463,9 +525,30 @@ export class ClaudianSettingsStorage {
       || shouldPersistChatViewNormalization(
         stored,
         enableDualPane,
-        enableFilePane,
         dualPaneSide,
         restoreTabsOnStartup,
+      )
+      || (
+        'collabEnabled' in stored
+        && stored.collabEnabled !== collabEnabled
+      )
+      || (
+        'collabProjectsFolder' in stored
+        && stored.collabProjectsFolder !== collabProjectsFolder
+      )
+      || (
+        'collabGitPath' in stored
+        && stored.collabGitPath !== collabGitPath
+      )
+      || (
+        'sessionManagerOrganization' in stored
+        && stored.sessionManagerOrganization !== sessionManagerOrganization
+      )
+      || 'pinnedLinkedNotePaths' in stored
+      || (
+        'pinnedLinkedContentPaths' in stored
+        && JSON.stringify(stored.pinnedLinkedContentPaths)
+          !== JSON.stringify(pinnedLinkedContentPaths)
       )
       || JSON.stringify(envSnippets) !== JSON.stringify(stored.envSnippets ?? [])
       || (
@@ -490,6 +573,12 @@ export class ClaudianSettingsStorage {
       stripLegacyFields({
         ...settings,
         providerConfigs,
+        sessionManagerOrganization: normalizeSessionManagerOrganization(
+          settings.sessionManagerOrganization,
+        ),
+        pinnedLinkedContentPaths: normalizePinnedLinkedContentPaths(
+          settings.pinnedLinkedContentPaths,
+        ),
       }),
       null,
       2,

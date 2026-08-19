@@ -1,4 +1,5 @@
-.claudian-history-container {
+.claudian-history-container,
+.claudian-nav-dropup-container {
   position: static;
 }
 
@@ -54,6 +55,66 @@
   display: none;
 }
 
+.claudian-sidebar-surface-track {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  scrollbar-width: none;
+}
+
+.claudian-sidebar-surface-track--paging {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+}
+
+.claudian-sidebar-surface-track::-webkit-scrollbar {
+  display: none;
+}
+
+.claudian-sidebar-surface-track > :is(
+  .claudian-session-surface,
+  .claudian-collab-surface,
+  .claudian-sidebar-surface-replica
+) {
+  flex: 0 0 100%;
+  width: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.claudian-sidebar-surface-replica {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.claudian-sidebar-surface-replica > .claudian-sidebar-surface-replica-content {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.claudian-sidebar-surface-track > .claudian-sidebar-surface-page--before {
+  order: 0;
+}
+
+.claudian-sidebar-surface-track > .claudian-sidebar-surface-page--active {
+  order: 1;
+}
+
+.claudian-sidebar-surface-track > .claudian-sidebar-surface-page--after {
+  order: 2;
+}
+
 .claudian-sidebar-surface-switcher {
   display: flex;
   flex: 0 0 28px;
@@ -63,6 +124,15 @@
   gap: 14px;
   padding: 4px 12px;
   background: transparent;
+}
+
+.claudian-collab-surface {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .claudian-session-sidebar .claudian-sidebar-surface-button {
@@ -607,8 +677,8 @@ body.theme-dark .claudian-session-metadata-popover {
   color: var(--text-normal);
 }
 
-/* History dropup menu (opens upward since it's at bottom of view) */
-.claudian-history-menu {
+/* Single-pane dropup shell (opens upward since it's at bottom of view) */
+.claudian-nav-dropup-menu {
   display: none;
   position: absolute;
   bottom: 100%;
@@ -626,8 +696,26 @@ body.theme-dark .claudian-session-metadata-popover {
   inset-inline-end: 0;
 }
 
-.claudian-history-menu.visible {
+.claudian-nav-dropup-menu.visible {
   display: block;
+}
+
+.claudian-nav-dropup-menu--surface.visible {
+  display: flex;
+  height: min(400px, 60vh);
+  flex-direction: column;
+}
+
+.claudian-nav-dropup-menu--surface > .claudian-collab-surface {
+  width: 100%;
+  height: 100%;
+}
+
+.claudian-compact-collab-button.is-active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
 }
 
 .claudian-history-header {

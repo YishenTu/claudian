@@ -1,8 +1,9 @@
-import type { App, EventRef } from 'obsidian';
-import { Notice, TFile, TFolder } from 'obsidian';
+import type { App, EventRef, TFile } from 'obsidian';
+import { TFolder } from 'obsidian';
 
-import type { AgentMentionProvider } from '../../../shared/mention/MentionDropdownController';
-import { MentionDropdownController } from '../../../shared/mention/MentionDropdownController';
+import type { AgentMentionProvider } from '../../../core/providers/types';
+import { MentionSource } from '../../../shared/composer-dropdown/MentionSource';
+import type { FolderMentionItem } from '../../../shared/mention/types';
 import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
 import {
   createExternalContextLookupGetter,
@@ -16,102 +17,48 @@ import {
   normalizePathForVault as normalizePathForVaultUtil,
   rewriteVaultPathAfterRename,
 } from '../../../utils/path';
-import { ComposerContextTray } from './ComposerContextTray';
-import { FileContextState } from './file-context/state/FileContextState';
-import { FileChipsView } from './file-context/view/FileChipsView';
 
 export interface FileContextCallbacks {
-  getExcludedTags: () => string[];
-  onChipsChanged?: () => void;
-  onUserChipsChanged?: () => void;
-  getExternalContexts?: () => string[];
-  /** Called when an agent is selected from the @ mention dropdown. */
+  getExternalContexts?: () => readonly string[];
   onAgentMentionSelect?: (agentId: string) => void;
 }
 
+/**
+ * Owns composer file attachments, Vault mention caches, and mention transformation.
+ * Linked content state and presentation belong to LinkedContentController.
+ */
 export class FileContextManager {
-  private app: App;
-  private callbacks: FileContextCallbacks;
-  private dropdownContainerEl: HTMLElement;
-  private inputEl: HTMLTextAreaElement;
-  private state: FileContextState;
-  private mentionDataProvider: VaultMentionDataProvider;
-  private chipsView!: FileChipsView;
-  private mentionDropdown!: MentionDropdownController;
-  private ownedContextTray: ComposerContextTray | null = null;
+  private readonly attachedFiles = new Set<string>();
+  private readonly mentionDataProvider: VaultMentionDataProvider;
+  private readonly mentionSource: MentionSource;
   private deleteEventRef: EventRef | null = null;
   private renameEventRef: EventRef | null = null;
   private destroyed = false;
 
-  // Current note (shown as chip)
-  private currentNotePath: string | null = null;
-
   constructor(
-    app: App,
-    chipsContainerEl: HTMLElement,
-    inputEl: HTMLTextAreaElement,
-    callbacks: FileContextCallbacks,
-    dropdownContainerEl?: HTMLElement,
-    contextTray?: ComposerContextTray,
+    private readonly app: App,
+    private readonly callbacks: FileContextCallbacks,
   ) {
-    this.app = app;
-    this.dropdownContainerEl = dropdownContainerEl ?? chipsContainerEl;
-    this.inputEl = inputEl;
-    this.callbacks = callbacks;
-
-    this.state = new FileContextState();
     this.mentionDataProvider = new VaultMentionDataProvider(this.app);
+    this.mentionSource = new MentionSource({
+      onAttachFile: filePath => this.attachedFiles.add(filePath),
+      onAgentMentionSelect: agentId => this.callbacks.onAgentMentionSelect?.(agentId),
+      getExternalContexts: () => this.callbacks.getExternalContexts?.() ?? [],
+      getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
+      getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
+      normalizePathForVault: rawPath => this.normalizePathForVault(rawPath),
+    });
+
     try {
-      const resolvedContextTray = contextTray ?? new ComposerContextTray(chipsContainerEl);
-      if (!contextTray) {
-        this.ownedContextTray = resolvedContextTray;
-      }
-      this.chipsView = new FileChipsView(resolvedContextTray, {
-        onRemoveAttachment: (filePath) => {
-          if (filePath === this.currentNotePath) {
-            this.currentNotePath = null;
-            this.state.detachFile(filePath);
-            this.refreshCurrentNoteChip();
-            this.callbacks.onUserChipsChanged?.();
-          }
-        },
-        onOpenFile: (filePath) => {
-          void (async (): Promise<void> => {
-            const file = this.app.vault.getAbstractFileByPath(filePath);
-            if (!(file instanceof TFile)) {
-              new Notice(`Could not open file: ${filePath}`);
-              return;
-            }
-            try {
-              await this.app.workspace.getLeaf().openFile(file);
-            } catch (error) {
-              new Notice(`Failed to open file: ${error instanceof Error ? error.message : String(error)}`);
-            }
-          })();
-        },
-      });
-
-      this.mentionDropdown = new MentionDropdownController(
-        this.dropdownContainerEl,
-        this.inputEl,
-        {
-          onAttachFile: (filePath) => this.state.attachFile(filePath),
-          onAgentMentionSelect: (agentId) => this.callbacks.onAgentMentionSelect?.(agentId),
-          getExternalContexts: () => this.callbacks.getExternalContexts?.() || [],
-          getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
-          getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
-          normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
+      this.deleteEventRef = this.app.vault.on('delete', file => {
+        if (file instanceof TFolder) {
+          this.handleDeletedPath(file.path, true);
+        } else {
+          this.handleDeletedPath(file.path, false);
         }
-      );
-
-      this.deleteEventRef = this.app.vault.on('delete', (file) => {
-        if (file instanceof TFile) this.handleFileDeleted(file.path);
       });
-
       this.renameEventRef = this.app.vault.on('rename', (file, oldPath) => {
-        if (file instanceof TFile || file instanceof TFolder) {
-          this.handleFileRenamed(oldPath, file.path, file instanceof TFolder);
-        }
+        this.handleRenamedPath(oldPath, file.path, file instanceof TFolder);
       });
       this.mentionDataProvider.initializeInBackground();
     } catch (error) {
@@ -120,137 +67,56 @@ export class FileContextManager {
     }
   }
 
-  /** Returns the current note path (shown as chip). */
-  getCurrentNotePath(): string | null {
-    return this.currentNotePath;
-  }
-
   getAttachedFiles(): Set<string> {
-    return this.state.getAttachedFiles();
+    return new Set(this.attachedFiles);
   }
 
-  /** Checks whether current note should be sent for this session. */
-  shouldSendCurrentNote(notePath?: string | null): boolean {
-    const resolvedPath = notePath ?? this.currentNotePath;
-    return !!resolvedPath && !this.state.hasSentCurrentNote();
+  clearAttachments(): void {
+    this.attachedFiles.clear();
   }
 
-  /** Marks current note as sent (call after sending a message). */
-  markCurrentNoteSent() {
-    this.state.markCurrentNoteSent();
+  getCachedVaultFiles(): readonly TFile[] {
+    return this.mentionDataProvider.getCachedVaultFiles();
   }
 
-  isSessionStarted(): boolean {
-    return this.state.isSessionStarted();
+  getCachedVaultFolders(): readonly Pick<FolderMentionItem, 'name' | 'path'>[] {
+    return this.mentionDataProvider.getCachedVaultFolders();
   }
 
-  startSession() {
-    this.state.startSession();
-  }
-
-  /** Resets state for a new conversation. */
-  resetForNewConversation() {
-    this.currentNotePath = null;
-    this.state.resetForNewConversation();
-    this.refreshCurrentNoteChip();
-  }
-
-  /** Resets state for loading an existing conversation. */
-  resetForLoadedConversation(hasMessages: boolean) {
-    this.currentNotePath = null;
-    this.state.resetForLoadedConversation(hasMessages);
-    this.refreshCurrentNoteChip();
-  }
-
-  /** Sets current note (for restoring persisted state). */
-  setCurrentNote(notePath: string | null) {
-    this.currentNotePath = notePath;
-    if (notePath) {
-      this.state.attachFile(notePath);
-    }
-    this.refreshCurrentNoteChip();
-  }
-
-  /** Auto-attaches the currently focused file (for new sessions). */
-  autoAttachActiveFile() {
-    const activeFile = this.app.workspace.getActiveFile();
-    if (activeFile && !this.hasExcludedTag(activeFile)) {
-      const normalizedPath = this.normalizePathForVault(activeFile.path);
-      if (normalizedPath) {
-        this.currentNotePath = normalizedPath;
-        this.state.attachFile(normalizedPath);
-        this.refreshCurrentNoteChip();
-      }
-    }
-  }
-
-  /** Handles file open event. */
-  handleFileOpen(file: TFile) {
-    const normalizedPath = this.normalizePathForVault(file.path);
-    if (!normalizedPath) return;
-
-    if (!this.state.isSessionStarted()) {
-      this.state.clearAttachments();
-      if (!this.hasExcludedTag(file)) {
-        this.currentNotePath = normalizedPath;
-        this.state.attachFile(normalizedPath);
-      } else {
-        this.currentNotePath = null;
-      }
-      this.refreshCurrentNoteChip();
-    }
-  }
-
-  markFileCacheDirty() {
+  markFileCacheDirty(): void {
     this.mentionDataProvider.markFilesDirty();
   }
 
-  markFolderCacheDirty() {
+  markFolderCacheDirty(): void {
     this.mentionDataProvider.markFoldersDirty();
   }
 
-  /** Handles input changes to detect @ mentions. */
-  handleInputChange() {
-    this.mentionDropdown.handleInputChange();
-  }
-
-  /** Handles keyboard navigation in mention dropdown. Returns true if handled. */
-  handleMentionKeydown(e: KeyboardEvent): boolean {
-    return this.mentionDropdown.handleKeydown(e);
-  }
-
-  isMentionDropdownVisible(): boolean {
-    return this.mentionDropdown.isVisible();
-  }
-
-  hideMentionDropdown() {
-    this.mentionDropdown.hide();
-  }
-
-  containsElement(el: Node): boolean {
-    return this.mentionDropdown.containsElement(el);
+  getMentionSource(): MentionSource {
+    return this.mentionSource;
   }
 
   transformContextMentions(text: string): string {
-    const externalContexts = this.callbacks.getExternalContexts?.() || [];
+    const externalContexts = this.callbacks.getExternalContexts?.() ?? [];
     if (externalContexts.length === 0 || !text.includes('@')) return text;
 
-    const contextEntries = buildExternalContextDisplayEntries(externalContexts)
-      .sort((a, b) => b.displayNameLower.length - a.displayNameLower.length);
+    const contextEntries = buildExternalContextDisplayEntries([...externalContexts])
+      .sort((left, right) => right.displayNameLower.length - left.displayNameLower.length);
     const getContextLookup = createExternalContextLookupGetter(
-      contextRoot => externalContextScanner.scanPaths([contextRoot])
+      contextRoot => externalContextScanner.scanPaths([contextRoot]),
     );
-
     let replaced = false;
     let cursor = 0;
     const chunks: string[] = [];
 
     for (let index = 0; index < text.length; index++) {
       if (!isMentionStart(text, index)) continue;
-
-      const resolved = resolveExternalMentionAtIndex(text, index, contextEntries, getContextLookup);
+      const resolved = resolveExternalMentionAtIndex(
+        text,
+        index,
+        contextEntries,
+        getContextLookup,
+      );
       if (!resolved) continue;
-
       chunks.push(text.slice(cursor, index));
       chunks.push(`${resolved.resolvedPath}${resolved.trailingPunctuation}`);
       cursor = resolved.endIndex;
@@ -263,8 +129,15 @@ export class FileContextManager {
     return chunks.join('');
   }
 
-  /** Cleans up event listeners (call on view close). */
-  destroy() {
+  setAgentService(agentService: AgentMentionProvider | null): void {
+    this.mentionSource.setAgentService(agentService);
+  }
+
+  preScanExternalContexts(): void {
+    this.mentionSource.preScanExternalContexts();
+  }
+
+  destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
     if (this.deleteEventRef) {
@@ -275,123 +148,44 @@ export class FileContextManager {
       this.app.vault.offref(this.renameEventRef);
       this.renameEventRef = null;
     }
-    this.mentionDropdown?.destroy();
-    this.chipsView?.destroy();
-    this.ownedContextTray?.destroy();
-    this.ownedContextTray = null;
+    this.mentionSource.destroy();
   }
 
-  /** Normalizes a file path to be vault-relative with forward slashes. */
-  normalizePathForVault(rawPath: string | undefined | null): string | null {
-    const vaultPath = getVaultPath(this.app);
-    return normalizePathForVaultUtil(rawPath, vaultPath);
+  private normalizePathForVault(rawPath: string | undefined | null): string | null {
+    return normalizePathForVaultUtil(rawPath, getVaultPath(this.app));
   }
 
-  private refreshCurrentNoteChip(): void {
-    this.chipsView.renderCurrentNote(this.currentNotePath);
-    this.callbacks.onChipsChanged?.();
-  }
-
-  private handleFileRenamed(
+  private handleRenamedPath(
     oldPath: string,
     newPath: string,
-    includeDescendants = false,
+    includeDescendants: boolean,
   ): void {
     const normalizedOld = this.normalizePathForVault(oldPath);
     const normalizedNew = this.normalizePathForVault(newPath);
     if (!normalizedOld || !normalizedNew) return;
-
-    let needsUpdate = false;
-
-    const renamedCurrentNote = this.currentNotePath
-      ? rewriteVaultPathAfterRename(
-          this.currentNotePath,
-          normalizedOld,
-          normalizedNew,
-          includeDescendants,
-        )
-      : null;
-    if (renamedCurrentNote) {
-      this.currentNotePath = renamedCurrentNote;
-      needsUpdate = true;
-    }
-
-    for (const attachedPath of [...this.state.getAttachedFiles()]) {
-      const renamedAttachedPath = rewriteVaultPathAfterRename(
+    for (const attachedPath of [...this.attachedFiles]) {
+      const renamedPath = rewriteVaultPathAfterRename(
         attachedPath,
         normalizedOld,
         normalizedNew,
         includeDescendants,
       );
-      if (!renamedAttachedPath) continue;
-
-      this.state.detachFile(attachedPath);
-      this.state.attachFile(renamedAttachedPath);
-      needsUpdate = true;
-    }
-
-    if (needsUpdate) {
-      this.refreshCurrentNoteChip();
+      if (!renamedPath) continue;
+      this.attachedFiles.delete(attachedPath);
+      this.attachedFiles.add(renamedPath);
     }
   }
 
-  private handleFileDeleted(deletedPath: string): void {
-    const normalized = this.normalizePathForVault(deletedPath);
-    if (!normalized) return;
-
-    let needsUpdate = false;
-
-    // Clear current note if deleted
-    if (this.currentNotePath === normalized) {
-      this.currentNotePath = null;
-      needsUpdate = true;
-    }
-
-    // Remove from attached files
-    if (this.state.getAttachedFiles().has(normalized)) {
-      this.state.detachFile(normalized);
-      needsUpdate = true;
-    }
-
-    if (needsUpdate) {
-      this.refreshCurrentNoteChip();
-    }
-  }
-
-  setAgentService(agentService: AgentMentionProvider | null): void {
-    this.mentionDropdown.setAgentService(agentService);
-  }
-
-  /**
-   * Pre-scans external context paths in the background to warm the cache.
-   * Should be called when external context paths are added/changed.
-   */
-  preScanExternalContexts(): void {
-    this.mentionDropdown.preScanExternalContexts();
-  }
-
-  private hasExcludedTag(file: TFile): boolean {
-    const excludedTags = this.callbacks.getExcludedTags();
-    if (excludedTags.length === 0) return false;
-
-    const cache = this.app.metadataCache.getFileCache(file);
-    if (!cache) return false;
-
-    const fileTags: string[] = [];
-
-    if (cache.frontmatter?.tags) {
-      const fmTags: unknown = cache.frontmatter.tags;
-      if (Array.isArray(fmTags)) {
-        fileTags.push(...fmTags.filter((tag): tag is string => typeof tag === 'string').map((tag) => tag.replace(/^#/, '')));
-      } else if (typeof fmTags === 'string') {
-        fileTags.push(fmTags.replace(/^#/, ''));
+  private handleDeletedPath(path: string, includeDescendants: boolean): void {
+    const normalizedPath = this.normalizePathForVault(path);
+    if (!normalizedPath) return;
+    for (const attachedPath of [...this.attachedFiles]) {
+      if (
+        attachedPath === normalizedPath
+        || (includeDescendants && attachedPath.startsWith(`${normalizedPath}/`))
+      ) {
+        this.attachedFiles.delete(attachedPath);
       }
     }
-
-    if (cache.tags) {
-      fileTags.push(...cache.tags.map(t => t.tag.replace(/^#/, '')));
-    }
-
-    return fileTags.some(tag => excludedTags.includes(tag));
   }
 }
