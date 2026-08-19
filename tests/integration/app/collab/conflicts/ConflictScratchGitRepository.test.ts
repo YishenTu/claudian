@@ -31,6 +31,7 @@ describe('ConflictScratchGitRepository', () => {
 
   it('uses Native Git conflict stages without mutating the visible Project', async () => {
     const harness = await createHarness();
+    const runSpy = jest.spyOn(harness.runner, 'run');
 
     const inspected = await harness.scratch.prepare(
       harness.context,
@@ -65,6 +66,13 @@ describe('ConflictScratchGitRepository', () => {
     await expect(readFile(path.join(harness.repositoryPath, 'note.md'), 'utf8'))
       .resolves.toBe('personal\n');
     expect(await harness.git.getWorkingTreeStatus(harness.repositoryPath)).toEqual([]);
+    expect(runSpy).toHaveBeenCalledWith(expect.objectContaining({
+      args: expect.arrayContaining(['merge']),
+      identity: {
+        email: 'collab@claudian.local',
+        name: 'Claudian Collab',
+      },
+    }));
   });
 
   it('derives independently selectable conflict hunks through Native Git', async () => {

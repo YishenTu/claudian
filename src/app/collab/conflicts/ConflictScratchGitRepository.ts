@@ -148,6 +148,7 @@ export class ConflictScratchGitRepository {
         descriptor.startingMainOid,
       ],
       cwd: scratchPath,
+      identity: RESOLUTION_IDENTITY,
       signal,
       suppressHooks: true,
     });
