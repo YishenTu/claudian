@@ -37,13 +37,18 @@ function authError(): CollabError {
   });
 }
 
-async function withGitDiagnostics(operation: () => Promise<void>): Promise<void> {
+async function withGitDiagnostics(
+  operation: (setStage: (stage: string) => void) => Promise<void>,
+): Promise<void> {
+  let stage = 'test setup';
   try {
-    await operation();
+    await operation(nextStage => {
+      stage = nextStage;
+    });
   } catch (error) {
     if (error instanceof CollabError) {
       throw new Error(
-        `Unexpected Git failure: ${error.code} ${JSON.stringify(error.safeContext)}`,
+        `Unexpected Git failure during ${stage}: ${error.code} ${JSON.stringify(error.safeContext)}`,
         { cause: error },
       );
     }
@@ -202,8 +207,9 @@ describe('GitHttpBackendProxy integration', () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it('allows pending clone, requires activation for push, and accepts own fast-forward', () => withGitDiagnostics(async () => {
+  it('allows pending clone, requires activation for push, and accepts own fast-forward', () => withGitDiagnostics(async setStage => {
     forceBackpressure = true;
+    setStage('pending clone');
     const clonePath = await service.cloneRepository({
       branch: `members/${MEMBER_ID}`,
       directoryName: 'member-clone',
@@ -213,6 +219,7 @@ describe('GitHttpBackendProxy integration', () => {
     });
     const initialOid = await service.resolveRef(clonePath, collabMemberRef(MEMBER_ID));
     expect(initialOid).not.toBeNull();
+    setStage('local clone configuration');
     await service.configureLocalRepository(clonePath, {
       memberId: MEMBER_ID,
       personalRef: collabMemberRef(MEMBER_ID),
@@ -221,6 +228,7 @@ describe('GitHttpBackendProxy integration', () => {
     });
     await writeFile(path.join(clonePath, 'note.md'), 'published\n');
     await service.stageAll(clonePath);
+    setStage('local publication commit');
     const publishedOid = await service.createCommitFromIndex(clonePath, {
       expectedRefOid: initialOid,
       message: 'Publish note',
@@ -228,6 +236,7 @@ describe('GitHttpBackendProxy integration', () => {
       ref: collabMemberRef(MEMBER_ID),
     });
 
+    setStage('pending push rejection');
     await expect(service.push(
       clonePath,
       'origin',
@@ -238,6 +247,7 @@ describe('GitHttpBackendProxy integration', () => {
       .toBe(initialOid);
 
     memberStatus = 'active';
+    setStage('active personal push');
     await service.push(
       clonePath,
       'origin',
@@ -246,12 +256,14 @@ describe('GitHttpBackendProxy integration', () => {
     );
     expect(await service.resolveRef(bareRepositoryPath, collabMemberRef(MEMBER_ID)))
       .toBe(publishedOid);
+    setStage('active fetch');
     await service.fetch(
       clonePath,
       'origin',
       ['+refs/heads/main:refs/remotes/origin/main'],
       network,
     );
+    setStage('repository health check');
     await service.assertHealthy(bareRepositoryPath);
     expect(backpressureCount).toBeGreaterThan(0);
     expect(proxy.activeChildCount).toBe(0);
@@ -305,8 +317,9 @@ describe('GitHttpBackendProxy integration', () => {
     });
   });
 
-  it('caps cumulative Host storage for later receive-pack requests', () => withGitDiagnostics(async () => {
+  it('caps cumulative Host storage for later receive-pack requests', () => withGitDiagnostics(async setStage => {
     memberStatus = 'active';
+    setStage('repository measurement');
     const baseline = await service.measureStorageBytes(bareRepositoryPath);
     await proxy.close();
     proxy = new GitHttpBackendProxy({
@@ -327,6 +340,7 @@ describe('GitHttpBackendProxy integration', () => {
       repository: service,
     });
     await proxy.enable();
+    setStage('quota clone');
     const clonePath = await service.cloneRepository({
       branch: `members/${MEMBER_ID}`,
       directoryName: 'quota-clone',
@@ -334,6 +348,7 @@ describe('GitHttpBackendProxy integration', () => {
       parentDirectory: root,
       remoteUrl: url,
     });
+    setStage('quota clone configuration');
     await service.configureLocalRepository(clonePath, {
       memberId: MEMBER_ID,
       personalRef: collabMemberRef(MEMBER_ID),
@@ -343,6 +358,7 @@ describe('GitHttpBackendProxy integration', () => {
     await writeFile(path.join(clonePath, 'large.bin'), randomBytes(256 * 1024));
     await service.stageAll(clonePath);
     const initialOid = await service.resolveRef(clonePath, collabMemberRef(MEMBER_ID));
+    setStage('oversized local commit');
     await service.createCommitFromIndex(clonePath, {
       expectedRefOid: initialOid,
       message: 'Oversized cumulative push',
@@ -350,17 +366,20 @@ describe('GitHttpBackendProxy integration', () => {
       ref: collabMemberRef(MEMBER_ID),
     });
 
+    setStage('quota push rejection');
     await expect(service.push(
       clonePath,
       'origin',
       `${collabMemberRef(MEMBER_ID)}:${collabMemberRef(MEMBER_ID)}`,
       network,
     )).rejects.toBeInstanceOf(CollabError);
+    setStage('quota repository health check');
     await service.assertHealthy(bareRepositoryPath);
   }));
 
-  it('rejects main, another member, deletion, and non-fast-forward updates', () => withGitDiagnostics(async () => {
+  it('rejects main, another member, deletion, and non-fast-forward updates', () => withGitDiagnostics(async setStage => {
     memberStatus = 'active';
+    setStage('hostile clone');
     const clonePath = await service.cloneRepository({
       branch: `members/${MEMBER_ID}`,
       directoryName: 'hostile-clone',
@@ -369,6 +388,7 @@ describe('GitHttpBackendProxy integration', () => {
       remoteUrl: url,
     });
     const personalRef = collabMemberRef(MEMBER_ID);
+    setStage('hostile clone configuration');
     await service.configureLocalRepository(clonePath, {
       memberId: MEMBER_ID,
       personalRef,
@@ -381,6 +401,7 @@ describe('GitHttpBackendProxy integration', () => {
 
     await writeFile(path.join(clonePath, 'second.md'), 'second\n');
     await service.stageAll(clonePath);
+    setStage('hostile local commit');
     const secondOid = await service.createCommitFromIndex(clonePath, {
       expectedRefOid: initialOid,
       message: 'Second commit',
@@ -393,6 +414,7 @@ describe('GitHttpBackendProxy integration', () => {
       `${personalRef}:${collabMemberRef('member-bob')}`,
       `:${personalRef}`,
     ]) {
+      setStage(`protected ref rejection for ${refspec}`);
       await expect(runner.run({
         args: ['push', '--porcelain', 'origin', refspec],
         cwd: clonePath,
@@ -400,16 +422,19 @@ describe('GitHttpBackendProxy integration', () => {
       })).rejects.toBeInstanceOf(CollabError);
     }
 
+    setStage('valid personal push');
     await service.push(
       clonePath,
       'origin',
       `${personalRef}:${personalRef}`,
       network,
     );
+    setStage('local personal ref rewind');
     await runner.run({
       args: ['update-ref', personalRef, initialOid!, secondOid],
       cwd: clonePath,
     });
+    setStage('non-fast-forward rejection');
     await expect(runner.run({
       args: ['push', '--porcelain', 'origin', `+${personalRef}:${personalRef}`],
       cwd: clonePath,
@@ -420,6 +445,7 @@ describe('GitHttpBackendProxy integration', () => {
     expect(await service.resolveRef(bareRepositoryPath, collabMemberRef('member-bob')))
       .toBeNull();
     expect(await service.resolveRef(bareRepositoryPath, personalRef)).toBe(secondOid);
+    setStage('hostile repository health check');
     await service.assertHealthy(bareRepositoryPath);
     expect(proxy.activeChildCount).toBe(0);
   }));
