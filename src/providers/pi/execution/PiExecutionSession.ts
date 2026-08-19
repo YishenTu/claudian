@@ -32,7 +32,7 @@ import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import {
   appendContextFiles,
-  appendCurrentNote,
+  appendLinkedContent,
 } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import { parseEnvironmentVariables } from '../../../utils/env';
@@ -1473,7 +1473,9 @@ function resolveSystemPrompt(
     userName: getString(settings.userName) ?? undefined,
     vaultPath,
   } satisfies SystemPromptSettings, {
-    toolGuidanceProfile: 'provider-native',
+    dynamicSections: request.configuration.systemInstructions.dynamicSections
+      ? [...request.configuration.systemInstructions.dynamicSections]
+      : undefined,
   });
 }
 
@@ -1486,8 +1488,8 @@ function encodePrompt(
 } {
   let text = getInputText(request);
   const context = request.context;
-  if (context?.currentNote?.path) {
-    text = appendCurrentNote(text, context.currentNote.path);
+  if (context?.linkedContent?.path) {
+    text = appendLinkedContent(text, context.linkedContent.path);
   }
   if (context?.editorSelection) {
     text = appendEditorContext(text, context.editorSelection);

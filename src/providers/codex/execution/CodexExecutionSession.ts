@@ -27,8 +27,8 @@ import type { ChatMessage, ImageAttachment, StreamChunk } from '../../../core/ty
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import {
-  appendCurrentNote,
-  appendCurrentNoteContent,
+  appendLinkedContent,
+  appendLinkedContentBody,
 } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import {
@@ -300,6 +300,7 @@ export class CodexExecutionSession
 
   private threadId: string | null;
   private loadedThreadId: string | null = null;
+  private loadedThreadBaseInstructions: string | null = null;
   private sessionFilePath: string | null;
   private workspaceDependencyToolVersion: number | null;
   private pendingFork: CodexProviderState['forkSource'];
@@ -1102,7 +1103,13 @@ export class CodexExecutionSession
       );
     }
 
-    if (this.threadId && this.loadedThreadId !== this.threadId) {
+    if (
+      this.threadId
+      && (
+        this.loadedThreadId !== this.threadId
+        || this.loadedThreadBaseInstructions !== baseInstructions
+      )
+    ) {
       const result = await this.transport!.request<ThreadResumeResult>(
         'thread/resume',
         {
@@ -1125,6 +1132,7 @@ export class CodexExecutionSession
         },
       );
       this.loadedThreadId = result.thread.id;
+      this.loadedThreadBaseInstructions = baseInstructions;
       return {
         threadId: result.thread.id,
         sessionFilePath: this.toHostSessionPath(result.thread.path),
@@ -1164,6 +1172,7 @@ export class CodexExecutionSession
       },
     );
     this.loadedThreadId = result.thread.id;
+    this.loadedThreadBaseInstructions = baseInstructions;
     this.workspaceDependencyToolVersion = dynamicTools.some(spec =>
       spec.namespace === CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE
       && spec.name === CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME
@@ -1265,6 +1274,7 @@ export class CodexExecutionSession
     }
 
     this.loadedThreadId = target.threadId;
+    this.loadedThreadBaseInstructions = baseInstructions;
     const checkpointIndex = resumeResult.thread.turns.findIndex(
       turn => turn.id === fork.resumeAt,
     );
@@ -1563,6 +1573,7 @@ export class CodexExecutionSession
     this.launchSpec = null;
     this.runtimeContext = null;
     this.loadedThreadId = null;
+    this.loadedThreadBaseInstructions = null;
     this.dynamicToolRegistry = new CodexDynamicToolRegistry();
     this.serverRequestRouter.setDynamicToolRegistry(null);
 
@@ -1778,7 +1789,11 @@ export class CodexExecutionSession
   private resolveBaseInstructions(request: ProviderExecutionRequest): string {
     const base = request.configuration.systemInstructions.kind === 'explicit'
       ? request.configuration.systemInstructions.instructions
-      : buildSystemPrompt(this.getSystemPromptSettings());
+      : buildSystemPrompt(this.getSystemPromptSettings(), {
+          dynamicSections: request.configuration.systemInstructions.dynamicSections
+            ? [...request.configuration.systemInstructions.dynamicSections]
+            : undefined,
+        });
     return request.toolPolicy.kind === 'passive'
       ? `${base}\n\n${PASSIVE_INSTRUCTIONS}`
       : base;
@@ -1889,13 +1904,13 @@ export class CodexExecutionSession
       .map(block => block.text)
       .join('\n\n');
     const context = request.context;
-    if (context?.currentNote) {
-      prompt = context.currentNote.content === undefined
-        ? appendCurrentNote(prompt, context.currentNote.path)
-        : appendCurrentNoteContent(
+    if (context?.linkedContent) {
+      prompt = context.linkedContent.content === undefined
+        ? appendLinkedContent(prompt, context.linkedContent.path)
+        : appendLinkedContentBody(
           prompt,
-          context.currentNote.path,
-          context.currentNote.content,
+          context.linkedContent.path,
+          context.linkedContent.content,
         );
     }
     if (context?.editorSelection) {

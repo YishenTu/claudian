@@ -24,8 +24,8 @@ import type {
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import {
-  appendCurrentNote,
-  appendCurrentNoteContent,
+  appendLinkedContent,
+  appendLinkedContentBody,
 } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import {
@@ -141,6 +141,10 @@ export class ClaudeExecutionRequestEncoder {
         customPrompt: settings.systemPrompt,
         vaultPath: sessionConfig.vaultWorkingDirectory,
         userName: settings.userName,
+      }, {
+        dynamicSections: request.configuration.systemInstructions.dynamicSections
+          ? [...request.configuration.systemInstructions.dynamicSections]
+          : undefined,
       });
     const externalPaths = uniqueStrings([
       ...(request.context?.externalContextPaths ?? []),
@@ -266,13 +270,13 @@ export class ClaudeExecutionRequestEncoder {
       .map((block) => block.text)
       .join('\n\n');
     const context = request.context;
-    if (context?.currentNote) {
-      prompt = context.currentNote.content === undefined
-        ? appendCurrentNote(prompt, context.currentNote.path)
-        : appendCurrentNoteContent(
+    if (context?.linkedContent) {
+      prompt = context.linkedContent.content === undefined
+        ? appendLinkedContent(prompt, context.linkedContent.path)
+        : appendLinkedContentBody(
           prompt,
-          context.currentNote.path,
-          context.currentNote.content,
+          context.linkedContent.path,
+          context.linkedContent.content,
         );
     }
     if (context?.editorSelection) {
