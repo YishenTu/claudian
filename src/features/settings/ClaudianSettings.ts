@@ -306,22 +306,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
 
     new Setting(container)
-      .setName(t('settings.tabRestoreMode.name'))
-      .setDesc(t('settings.tabRestoreMode.desc'))
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption('none', t('settings.tabRestoreMode.none'))
-          .addOption('active', t('settings.tabRestoreMode.active'))
-          .addOption('all', t('settings.tabRestoreMode.all'))
-          .setValue(this.plugin.settings.tabRestoreMode)
-          .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
-              settings.tabRestoreMode = value as TabRestoreMode;
-            });
-          });
-      });
-
-    new Setting(container)
       .setName(t('settings.enableDualPane.name'))
       .setDesc(t('settings.enableDualPane.desc'))
       .addToggle((toggle) =>
@@ -367,6 +351,22 @@ export class ClaudianSettingTab extends PluginSettingTab {
             })
         );
     }
+
+    new Setting(container)
+      .setName(t('settings.tabRestoreMode.name'))
+      .setDesc(t('settings.tabRestoreMode.desc'))
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('none', t('settings.tabRestoreMode.none'))
+          .addOption('active', t('settings.tabRestoreMode.active'))
+          .addOption('all', t('settings.tabRestoreMode.all'))
+          .setValue(this.plugin.settings.tabRestoreMode)
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.tabRestoreMode = value as TabRestoreMode;
+            });
+          });
+      });
 
     new Setting(container)
       .setName(t('settings.enableAutoScroll.name'))

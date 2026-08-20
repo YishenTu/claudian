@@ -165,6 +165,8 @@ describe('ClaudianSettingTab display settings', () => {
     expect(mockRenderedSettingNames).toContain(t('settings.enableFilePane.name'));
     expect(mockRenderedSettingNames.indexOf(t('settings.dualPaneSide.name')))
       .toBeLessThan(mockRenderedSettingNames.indexOf(t('settings.enableFilePane.name')));
+    expect(mockRenderedSettingNames.indexOf(t('settings.enableFilePane.name')))
+      .toBeLessThan(mockRenderedSettingNames.indexOf(t('settings.tabRestoreMode.name')));
 
     mockRenderedSettingNames.length = 0;
     const disabled = createTab(false);
@@ -172,6 +174,7 @@ describe('ClaudianSettingTab display settings', () => {
 
     expect(mockRenderedSettingNames).not.toContain(t('settings.dualPaneSide.name'));
     expect(mockRenderedSettingNames).not.toContain(t('settings.enableFilePane.name'));
+    expect(mockRenderedSettingNames).toContain(t('settings.tabRestoreMode.name'));
   });
 
   it('updates the file pane setting and refreshes open dual-pane views', async () => {
