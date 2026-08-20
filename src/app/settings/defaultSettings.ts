@@ -56,7 +56,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   enableDualPane: true,
   enableFilePane: true,
   dualPaneSide: 'right',
-  tabRestoreMode: 'all',
+  restoreTabsOnStartup: true,
   sessionManagerOrganization: 'list',
   sessionManagerSort: 'last-updated',
   pinnedLinkedNotePaths: [],

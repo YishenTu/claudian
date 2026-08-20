@@ -28,6 +28,7 @@ import { StatusPanel } from '../../ui/StatusPanel';
 import { autoResizeTextarea } from '../../ui/textareaResize';
 import { recalculateUsageForModel } from '../../utils/usageInfo';
 import { getTabProviderId } from '../providerResolution';
+import { commitProvisionalTab } from '../TabLifecycle';
 import { TabModelSelectionCoordinator } from '../TabModelSelectionCoordinator';
 import {
   applyProviderUIGating,
@@ -434,7 +435,9 @@ export function buildTabRuntimeUI(
 ): TabUIComponents {
   const { dom } = shell;
   const { plugin } = options;
-  const onUserModified = (): void => options.retainTab(runtimeRef.requirePublished());
+  const onUserModified = (): void => {
+    commitProvisionalTab(runtimeRef.requirePublished());
+  };
   const contextTray = new ComposerContextTray(dom.contextRowEl, {
     onDidChange: () => {
       autoResizeTextarea(dom.inputEl);

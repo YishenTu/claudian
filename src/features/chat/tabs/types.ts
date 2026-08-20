@@ -266,23 +266,20 @@ export interface TabManagerCallbacks {
   /** Skips the target prompt when the active layout always forks into a new runtime tab. */
   shouldForkToNewTab?: () => boolean;
 
-  /** Called when a tab is created. */
+  /** Called after a newly created tab completes admission. */
   onTabCreated?: (tab: AssembledTabRuntime) => void;
 
   /** Called immediately after the active tab changes, before async tab loading completes. */
   onActiveTabChanged?: (fromTabId: TabId | null, toTabId: TabId) => void;
+
+  /** Called after an explicit active-tab switch completes without rollback. */
+  onActiveTabCommitted?: (fromTabId: TabId | null, toTabId: TabId) => void;
 
   /** Called when switching to a different tab. */
   onTabSwitched?: (fromTabId: TabId | null, toTabId: TabId) => void;
 
   /** Called when a tab is closed. */
   onTabClosed?: (tabId: TabId) => void;
-
-  /** Called when a replaceable preview becomes part of the retained working set. */
-  onTabRetained?: (tabId: TabId) => void;
-
-  /** Called after a newly created retained tab completes admission. */
-  onRetainedTabAdmitted?: (tabId: TabId) => void;
 
   /** Called when tab streaming state changes. */
   onTabStreamingChanged?: (tabId: TabId, isStreaming: boolean) => void;

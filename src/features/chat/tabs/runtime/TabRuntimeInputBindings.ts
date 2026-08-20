@@ -3,6 +3,7 @@ import {
   sendTabInputMessageFromEnterKey,
   sendTabInputMessageFromExplicitEnterShortcut,
 } from '../TabInputEvents';
+import { commitProvisionalTab } from '../TabLifecycle';
 import { getTabCapabilities } from '../TabProviderState';
 import type { TabControllers, TabInputBindings, TabUIComponents } from '../types';
 import type {
@@ -93,7 +94,7 @@ export function buildTabRuntimeInputBindings(
   );
 
   const inputHandler = () => {
-    options.retainTab(runtimeRef.requirePublished());
+    commitProvisionalTab(runtimeRef.requirePublished());
     if (!ui.bangBashModeManager?.isActive()) {
       ui.fileContextManager.handleInputChange();
     }

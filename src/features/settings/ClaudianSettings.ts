@@ -13,7 +13,6 @@ import { AgentSkillRepository } from '../../core/skills/AgentSkillRepository';
 import type {
   ChatViewPlacement,
   DualPaneSide,
-  TabRestoreMode,
 } from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
@@ -353,17 +352,14 @@ export class ClaudianSettingTab extends PluginSettingTab {
     }
 
     new Setting(container)
-      .setName(t('settings.tabRestoreMode.name'))
-      .setDesc(t('settings.tabRestoreMode.desc'))
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption('none', t('settings.tabRestoreMode.none'))
-          .addOption('active', t('settings.tabRestoreMode.active'))
-          .addOption('all', t('settings.tabRestoreMode.all'))
-          .setValue(this.plugin.settings.tabRestoreMode)
+      .setName(t('settings.restoreTabsOnStartup.name'))
+      .setDesc(t('settings.restoreTabsOnStartup.desc'))
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.restoreTabsOnStartup)
           .onChange(async (value) => {
             await this.plugin.mutateSettings((settings) => {
-              settings.tabRestoreMode = value as TabRestoreMode;
+              settings.restoreTabsOnStartup = value;
             });
           });
       });

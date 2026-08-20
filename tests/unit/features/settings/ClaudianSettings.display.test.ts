@@ -1,6 +1,5 @@
 const mockRenderedSettingNames: string[] = [];
 const mockToggleChanges = new Map<string, (value: boolean) => Promise<void>>();
-const mockDropdownChanges = new Map<string, (value: string) => Promise<void>>();
 
 type MockChainableComponent = Record<string, jest.Mock> & {
   selectEl?: { replaceChildren: jest.Mock };
@@ -31,10 +30,6 @@ jest.mock('obsidian', () => {
     addDropdown(callback: (dropdown: MockChainableComponent) => void): this {
       const dropdown = createChainableComponent();
       dropdown.selectEl = { replaceChildren: jest.fn() };
-      dropdown.onChange.mockImplementation((handler: (value: string) => Promise<void>) => {
-        mockDropdownChanges.set(this.name, handler);
-        return dropdown;
-      });
       callback(dropdown);
       return this;
     }
@@ -154,7 +149,6 @@ describe('ClaudianSettingTab display settings', () => {
   beforeEach(() => {
     mockRenderedSettingNames.length = 0;
     mockToggleChanges.clear();
-    mockDropdownChanges.clear();
   });
 
   it('renders the dual-pane position only while dual-pane mode is enabled', () => {
@@ -166,7 +160,7 @@ describe('ClaudianSettingTab display settings', () => {
     expect(mockRenderedSettingNames.indexOf(t('settings.dualPaneSide.name')))
       .toBeLessThan(mockRenderedSettingNames.indexOf(t('settings.enableFilePane.name')));
     expect(mockRenderedSettingNames.indexOf(t('settings.enableFilePane.name')))
-      .toBeLessThan(mockRenderedSettingNames.indexOf(t('settings.tabRestoreMode.name')));
+      .toBeLessThan(mockRenderedSettingNames.indexOf(t('settings.restoreTabsOnStartup.name')));
 
     mockRenderedSettingNames.length = 0;
     const disabled = createTab(false);
@@ -174,7 +168,7 @@ describe('ClaudianSettingTab display settings', () => {
 
     expect(mockRenderedSettingNames).not.toContain(t('settings.dualPaneSide.name'));
     expect(mockRenderedSettingNames).not.toContain(t('settings.enableFilePane.name'));
-    expect(mockRenderedSettingNames).toContain(t('settings.tabRestoreMode.name'));
+    expect(mockRenderedSettingNames).toContain(t('settings.restoreTabsOnStartup.name'));
   });
 
   it('updates the file pane setting and refreshes open dual-pane views', async () => {
@@ -200,14 +194,14 @@ describe('ClaudianSettingTab display settings', () => {
     expect(display).toHaveBeenCalledTimes(1);
   });
 
-  it('renders and updates the startup tab restore mode', async () => {
+  it('renders and updates the startup tab restore toggle', async () => {
     const { tab, plugin } = createTab(true);
     (tab as any).renderGeneralTab(createContainer());
 
-    expect(mockRenderedSettingNames).toContain(t('settings.tabRestoreMode.name'));
+    expect(mockRenderedSettingNames).toContain(t('settings.restoreTabsOnStartup.name'));
 
-    await mockDropdownChanges.get(t('settings.tabRestoreMode.name'))?.('none');
+    await mockToggleChanges.get(t('settings.restoreTabsOnStartup.name'))?.(false);
 
-    expect(plugin.settings.tabRestoreMode).toBe('none');
+    expect(plugin.settings.restoreTabsOnStartup).toBe(false);
   });
 });

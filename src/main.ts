@@ -487,16 +487,16 @@ export default class ClaudianPlugin extends Plugin {
     const didNormalizeModelVariants = this.normalizeModelVariantSettings();
 
     const deferRemainingMetadata = options.deferNonRestoredSessionMetadata === true;
-    const initialMetadataScan = await StartupProfiler.runAsync(
-      deferRemainingMetadata ? 'deferred-session-metadata-load' : 'session-metadata-load',
-      async () => deferRemainingMetadata
-        ? {
-            records: await this.loadCurrentTabSessionMetadata(),
-            complete: false,
-            invalidMetadataCount: 0,
-          }
-        : this.loadSessionMetadataWithSources(),
-    );
+    const initialMetadataScan = deferRemainingMetadata
+      ? {
+          records: [],
+          complete: false,
+          invalidMetadataCount: 0,
+        }
+      : await StartupProfiler.runAsync(
+          'session-metadata-load',
+          () => this.loadSessionMetadataWithSources(),
+        );
     const initialModelRecoverySources = initialMetadataScan.records.map(({ metadata }) => (
       this.createConversationMetadataShell(metadata)
     ));
@@ -563,15 +563,6 @@ export default class ClaudianPlugin extends Plugin {
     await this.completePendingSessionInvalidations(completedInvalidationGenerations);
     this.hasLoadedAllSessionMetadata = initialMetadataScan.complete;
     this.pendingSessionMetadataScan = deferRemainingMetadata;
-  }
-
-  private async loadCurrentTabSessionMetadata(): Promise<SessionMetadataReadResult[]> {
-    const state = await this.storage.getTabManagerState();
-    const currentTab = state?.openTabs.find(tab => tab.tabId === state.activeTabId);
-    if (!currentTab?.conversationId) return [];
-
-    const record = await this.storage.sessions.load(currentTab.conversationId);
-    return record ? [record] : [];
   }
 
   private async loadSessionMetadataWithSources(): Promise<{

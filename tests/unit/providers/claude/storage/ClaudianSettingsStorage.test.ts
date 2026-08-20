@@ -67,7 +67,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.enableDualPane).toBe(true);
       expect(result.enableFilePane).toBe(true);
       expect(result.dualPaneSide).toBe('right');
-      expect(result.tabRestoreMode).toBe('all');
+      expect(result.restoreTabsOnStartup).toBe(true);
       expect(mockAdapter.read).not.toHaveBeenCalled();
     });
 
@@ -304,28 +304,30 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.dualPaneSide).toBe('right');
     });
 
-    it('normalizes invalid tab restore modes', async () => {
+    it('normalizes invalid startup tab restore values', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
-        tabRestoreMode: 'last-window',
+        restoreTabsOnStartup: 'yes',
       }));
 
       const result = await storage.load();
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
-      expect(result.tabRestoreMode).toBe('all');
-      expect(writtenContent.tabRestoreMode).toBe('all');
+      expect(result.restoreTabsOnStartup).toBe(true);
+      expect(writtenContent.restoreTabsOnStartup).toBe(true);
     });
 
-    it('preserves a valid tab restore mode', async () => {
+    it('preserves a disabled startup tab restore toggle', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
-        tabRestoreMode: 'active',
+        restoreTabsOnStartup: false,
       }));
 
       const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
-      expect(result.tabRestoreMode).toBe('active');
+      expect(result.restoreTabsOnStartup).toBe(false);
+      expect(writtenContent.restoreTabsOnStartup).toBe(false);
     });
 
     it('should strip legacy blocklist fields from loaded data', async () => {

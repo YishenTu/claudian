@@ -1,6 +1,7 @@
 
 import { Notice, TFile, TFolder } from 'obsidian';
 
+import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -214,7 +215,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.registerEvent).toHaveBeenCalledWith({ id: 'workspace-event' });
     });
 
-    it('loads only current-tab metadata before the full history scan', async () => {
+    it('does not preload legacy tab metadata before a view claims migration', async () => {
       type EmptyMetadataScan = {
         metadata: [];
         complete: true;
@@ -261,8 +262,8 @@ describe('ClaudianPlugin', () => {
       loadSourceSpy.mockRestore();
 
       expect(completedBeforeHistoryScan).toBe(true);
-      expect(didLoadRestoredMetadata).toBe(true);
-      expect(cachedConversation?.title).toBe(restoredMetadata.title);
+      expect(didLoadRestoredMetadata).toBe(false);
+      expect(cachedConversation).toBeNull();
     });
 
     it('loads metadata requested by a view-scoped tab workspace', async () => {
@@ -287,6 +288,10 @@ describe('ClaudianPlugin', () => {
     });
 
     it('discards stale global tab state after a view-scoped restore succeeds', async () => {
+      const clearLegacyState = jest.spyOn(
+        SharedStorageService.prototype,
+        'clearTabManagerState',
+      ).mockResolvedValue(undefined);
       (plugin.loadData as jest.Mock).mockResolvedValue({
         tabManagerState: {
           activeTabId: 'legacy-tab',
@@ -305,15 +310,15 @@ describe('ClaudianPlugin', () => {
         }),
       }]);
       await plugin.onload();
-      const clearLegacyState = jest.spyOn(plugin.storage, 'clearTabManagerState')
-        .mockResolvedValue(undefined);
 
+      expect(clearLegacyState).toHaveBeenCalledTimes(1);
       await expect(plugin.claimLegacyTabManagerState()).resolves.toBeNull();
       expect(clearLegacyState).toHaveBeenCalledTimes(1);
 
       await plugin.completeLegacyTabManagerStateMigration();
 
       expect(clearLegacyState).toHaveBeenCalledTimes(1);
+      clearLegacyState.mockRestore();
     });
 
     it('publishes the remaining conversation metadata after layout readiness', async () => {

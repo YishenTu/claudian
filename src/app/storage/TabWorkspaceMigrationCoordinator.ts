@@ -62,6 +62,7 @@ export class TabWorkspaceMigrationCoordinator {
   ): TabWorkspaceStateDeliveryRegistration {
     this.deliveredRuntimeViews.add(view);
     this.hasViewScopedState ||= hasViewScopedState;
+    this.retireLegacyStateWhenSuperseded();
     this.refreshDeclarations();
 
     return {
@@ -72,10 +73,7 @@ export class TabWorkspaceMigrationCoordinator {
 
   async claimLegacyState(): Promise<AppTabManagerState | null> {
     await this.declarationsReadyPromise;
-    if (this.hasViewScopedState) {
-      await this.completeMigration().catch(() => undefined);
-      return null;
-    }
+    if (this.hasViewScopedState) return null;
     if (this.legacyStateClaimed) return null;
 
     this.legacyStateClaimed = true;
@@ -105,7 +103,13 @@ export class TabWorkspaceMigrationCoordinator {
       });
     if (!allRuntimeViewsDelivered) return;
 
+    this.retireLegacyStateWhenSuperseded();
     this.declarationsReady = true;
     this.resolveDeclarationsReady();
+  }
+
+  private retireLegacyStateWhenSuperseded(): void {
+    if (!this.hasViewScopedState) return;
+    void this.completeMigration().catch(() => undefined);
   }
 }

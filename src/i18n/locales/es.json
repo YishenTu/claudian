@@ -288,12 +288,9 @@
       "name": "Activar modo de panel doble",
       "desc": "Mostrar automáticamente el gestor de sesiones junto al chat cuando la vista tenga al menos 600 px de ancho."
     },
-    "tabRestoreMode": {
+    "restoreTabsOnStartup": {
       "name": "Restaurar pestañas al iniciar",
-      "desc": "Elegir qué pestañas de chat conservadas se vuelven a abrir al cargar una vista de Claudian.",
-      "none": "Iniciar un chat nuevo",
-      "active": "Restaurar la última pestaña",
-      "all": "Restaurar todas las pestañas"
+      "desc": "Volver a abrir todas las pestañas en el modo de panel único o solo la última pestaña activa en el modo de panel doble."
     },
     "enableFilePane": {
       "name": "Activar panel de archivos",

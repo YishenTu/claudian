@@ -39,16 +39,6 @@ function createOwnershipSession() {
   };
 }
 
-function retainMockTab(tab: {
-  lifecycleState?: string;
-  session?: ReturnType<typeof createOwnershipSession>;
-}): boolean {
-  tab.session?.claimUserOwnership();
-  if (tab.lifecycleState !== 'provisional') return false;
-  tab.lifecycleState = 'cold';
-  return true;
-}
-
 function createModelRefreshTab(providerId: 'codex' | 'grok') {
   return {
     conversationId: `${providerId}-conversation`,
@@ -1618,7 +1608,6 @@ describe('ClaudianView tab controls', () => {
       tabManager: {
         discardProvisionalTabs,
         getAllTabs: jest.fn().mockReturnValue([pinnedTab, previewTab]),
-        retainTab: jest.fn((_tabId: string) => retainMockTab(pinnedTab)),
       },
       viewContainerEl,
     });
@@ -1640,7 +1629,6 @@ describe('ClaudianView tab controls', () => {
       plugin: { setConversationPinned },
       tabManager: {
         getAllTabs: jest.fn().mockReturnValue([openTab]),
-        retainTab: jest.fn((_tabId: string) => retainMockTab(openTab)),
       },
     });
 
@@ -2272,7 +2260,6 @@ describe('ClaudianView tab controls', () => {
     view.tabManager = {
       getAllTabs: jest.fn(() => tabs),
       openConversation,
-      retainTab: jest.fn((_tabId: string) => retainMockTab(tabs[0])),
     };
 
     await view.openSessionConversation('pinned-conversation');
@@ -2377,7 +2364,17 @@ describe('ClaudianView runtime tab initialization', () => {
           createTab,
           discardProvisionalTabs: jest.fn().mockResolvedValue(undefined),
           getAllTabs: jest.fn().mockReturnValue([]),
+          getPersistedState: jest.fn().mockReturnValue({
+            activeTabId: 'restored-2',
+            openTabs: [
+              { conversationId: null, tabId: 'restored-1' },
+              { conversationId: null, tabId: 'restored-2' },
+            ],
+          }),
           restoreState: jest.fn(async () => {
+            tabManagerCallbacks.onTabCreated({ id: 'restored-1' });
+            await Promise.resolve();
+            tabManagerCallbacks.onTabCreated({ id: 'restored-2' });
             await createTab();
           }),
         };
@@ -2385,23 +2382,33 @@ describe('ClaudianView runtime tab initialization', () => {
     );
 
     const view = Object.create(ClaudianView.prototype) as any;
+    const contentEl = createMockEl();
+    contentEl.getBoundingClientRect = jest.fn().mockReturnValue({ width: 640 });
     Object.assign(view, {
-      attachNavRowContentToInputFooter: jest.fn(),
+      attachNavRowContentToInputFooter: jest.fn(() => {
+        expect(view.isWideSessionLayout).toBe(true);
+        expect(view.viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(true);
+      }),
       buildInputFooter: jest.fn(),
-      buildNavRowContent: jest.fn().mockReturnValue(createMockEl()),
+      buildNavRowContent: jest.fn(() => {
+        expect(view.isWideSessionLayout).toBe(true);
+        expect(view.viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(true);
+        return createMockEl();
+      }),
       containerEl: createMockEl(),
-      contentEl: createMockEl(),
+      contentEl,
       plugin: {
         claimLegacyTabManagerState: jest.fn().mockResolvedValue(null),
         completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
         ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
         registerTabWorkspaceStateDelivery: jest.fn()
           .mockReturnValue(readyTabWorkspaceStateDelivery()),
-        settings: { tabRestoreMode: 'all' },
+        settings: { restoreTabsOnStartup: true },
         storage: {
           getTabManagerState: jest.fn().mockResolvedValue(null),
         },
       },
+      sessionSidebarWidth: null,
       syncProviderBrandColor: jest.fn(),
       notifyConversationNavigationChanged: jest.fn(),
       updateTabBar: jest.fn(),
@@ -2414,16 +2421,34 @@ describe('ClaudianView runtime tab initialization', () => {
 
     expect(createTab).not.toHaveBeenCalled();
     expect(view.attachNavRowContentToInputFooter).toHaveBeenCalledTimes(1);
+    expect(view.viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(true);
 
     await view.setState({}, { history: false });
 
     expect(createTab).toHaveBeenCalledTimes(1);
     expect(view.attachNavRowContentToInputFooter).toHaveBeenCalledTimes(1);
     expect(tabManagerCallbacks).not.toHaveProperty('onPersistedStateChanged');
+    expect(view.updateTabBar).toHaveBeenCalledTimes(1);
 
     view.persistTabWorkspaceState = jest.fn();
-    tabManagerCallbacks.onRetainedTabAdmitted('background-tab');
+    view.updateTabBar.mockClear();
+    view.notifyConversationNavigationChanged.mockClear();
+    tabManagerCallbacks.onActiveTabChanged('restored-1', 'restored-2');
+    expect(view.persistTabWorkspaceState).not.toHaveBeenCalled();
+    expect(view.updateTabBar).toHaveBeenCalledTimes(1);
+
+    view.updateTabBar.mockClear();
+    view.notifyConversationNavigationChanged.mockClear();
+
+    tabManagerCallbacks.onActiveTabCommitted('restored-1', 'restored-2');
     expect(view.persistTabWorkspaceState).toHaveBeenCalledTimes(1);
+
+    view.persistTabWorkspaceState.mockClear();
+    tabManagerCallbacks.onTabCreated({ id: 'background-tab' });
+    expect(view.persistTabWorkspaceState).toHaveBeenCalledTimes(1);
+
+    view.updateTabBar.mockClear();
+    view.notifyConversationNavigationChanged.mockClear();
 
     tabManagerCallbacks.onTabAttentionChanged('tab-1', { kind: 'review', since: 1 });
 
@@ -2446,6 +2471,10 @@ describe('ClaudianView runtime tab initialization', () => {
       discardProvisionalTabs: jest.fn().mockResolvedValue(undefined),
       getActiveTab: jest.fn().mockReturnValue(null),
       getAllTabs: jest.fn().mockReturnValue([]),
+      getPersistedState: jest.fn().mockReturnValue({
+        activeTabId: null,
+        openTabs: [],
+      }),
       restoreState,
       sealShutdownSnapshot,
     }));
@@ -2473,7 +2502,7 @@ describe('ClaudianView runtime tab initialization', () => {
         ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
         registerTabWorkspaceStateDelivery: jest.fn()
           .mockReturnValue(readyTabWorkspaceStateDelivery()),
-        settings: { tabRestoreMode: 'all' },
+        settings: { restoreTabsOnStartup: true },
         storage: {
           getTabManagerState: jest.fn(() => persistedState.promise),
         },
@@ -2510,7 +2539,7 @@ describe('ClaudianView runtime tab initialization', () => {
     expect(view.tabManager).toBeNull();
   });
 
-  it('reuses and drains closing persistence before restoring a reopened view', async () => {
+  it('reuses closing persistence and restores only the active tab when reopening wide', async () => {
     const pendingFlush = deferred<void>();
     const persistence = {
       dispose: jest.fn(),
@@ -2527,28 +2556,35 @@ describe('ClaudianView runtime tab initialization', () => {
       createTab,
       discardProvisionalTabs: jest.fn().mockResolvedValue(undefined),
       getAllTabs: jest.fn().mockReturnValue([]),
+      getPersistedState: jest.fn().mockReturnValue({
+        activeTabId: 'closing-tab-2',
+        openTabs: [{ conversationId: null, tabId: 'closing-tab-2' }],
+      }),
       restoreState,
     }));
+    const contentEl = createMockEl();
+    contentEl.getBoundingClientRect = jest.fn().mockReturnValue({ width: 640 });
     const view = Object.create(ClaudianView.prototype) as any;
     Object.assign(view, {
       attachNavRowContentToInputFooter: jest.fn(),
       buildInputFooter: jest.fn(),
       buildNavRowContent: jest.fn().mockReturnValue(createMockEl()),
       containerEl: createMockEl(),
-      contentEl: createMockEl(),
+      contentEl,
       plugin: {
         claimLegacyTabManagerState,
         completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
         ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
-        settings: { tabRestoreMode: 'active' },
+        settings: { restoreTabsOnStartup: true },
         storage: {
           getTabManagerState: jest.fn().mockResolvedValue(null),
           setTabManagerState: jest.fn().mockResolvedValue(undefined),
         },
       },
+      notifyConversationNavigationChanged: jest.fn(),
       startSessionSidebarLayoutObserver: jest.fn(),
       syncProviderBrandColor: jest.fn(),
-      persistedTabWorkspaceState: {
+      finalizedTabWorkspaceState: {
         activeTabId: 'closing-tab-2',
         openTabs: [
           { conversationId: null, tabId: 'closing-tab-1' },
@@ -2580,7 +2616,6 @@ describe('ClaudianView runtime tab initialization', () => {
     expect(restoreState).toHaveBeenCalledWith({
       activeTabId: 'closing-tab-2',
       openTabs: [
-        { conversationId: null, tabId: 'closing-tab-1' },
         { conversationId: null, tabId: 'closing-tab-2' },
       ],
     });
@@ -2604,6 +2639,13 @@ describe('ClaudianView runtime tab initialization', () => {
       createTab,
       discardProvisionalTabs: jest.fn().mockResolvedValue(undefined),
       getAllTabs: jest.fn().mockReturnValue([]),
+      getPersistedState: jest.fn().mockReturnValue({
+        activeTabId: 'finalized-tab-2',
+        openTabs: [
+          { conversationId: 'conversation-1', tabId: 'finalized-tab-1' },
+          { conversationId: null, tabId: 'finalized-tab-2' },
+        ],
+      }),
       restoreState,
     }));
     const view = Object.create(ClaudianView.prototype) as any;
@@ -2617,12 +2659,13 @@ describe('ClaudianView runtime tab initialization', () => {
         claimLegacyTabManagerState,
         completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
         ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
-        settings: { tabRestoreMode: 'none' },
+        settings: { restoreTabsOnStartup: false },
         storage: {
           getTabManagerState: jest.fn().mockResolvedValue(null),
           setTabManagerState: jest.fn().mockResolvedValue(undefined),
         },
       },
+      notifyConversationNavigationChanged: jest.fn(),
       shutdownSnapshotPromise: shutdownSnapshot.promise,
       startSessionSidebarLayoutObserver: jest.fn(),
       syncProviderBrandColor: jest.fn(),
@@ -2641,7 +2684,7 @@ describe('ClaudianView runtime tab initialization', () => {
     expect(mockTabManagerConstructor).not.toHaveBeenCalled();
     expect(claimLegacyTabManagerState).not.toHaveBeenCalled();
 
-    view.persistedTabWorkspaceState = {
+    view.finalizedTabWorkspaceState = {
       activeTabId: 'finalized-tab-2',
       openTabs: [
         { conversationId: 'conversation-1', tabId: 'finalized-tab-1' },
@@ -2664,7 +2707,34 @@ describe('ClaudianView runtime tab initialization', () => {
 });
 
 describe('ClaudianView tab workspace persistence', () => {
-  it('publishes the retained working set in versioned view state', () => {
+  it('keeps the pending restore plan authoritative before the first admission', () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+    const pendingState = {
+      activeTabId: 'tab-2',
+      openTabs: [
+        { conversationId: 'conversation-1', tabId: 'tab-1' },
+        { conversationId: 'conversation-2', tabId: 'tab-2' },
+      ],
+    };
+    Object.assign(view, {
+      pendingTabWorkspaceState: pendingState,
+      tabManager: {
+        getPersistedState: jest.fn().mockReturnValue({
+          activeTabId: null,
+          openTabs: [],
+        }),
+      },
+    });
+
+    expect(view.getState()).toEqual({
+      tabWorkspace: {
+        version: 1,
+        ...pendingState,
+      },
+    });
+  });
+
+  it('publishes the open working set in versioned view state', () => {
     const view = Object.create(ClaudianView.prototype) as any;
     const state = {
       activeTabId: 'tab-2',
@@ -2757,7 +2827,7 @@ describe('ClaudianView tab workspace persistence', () => {
     expect(view.pendingTabWorkspaceState).toBeNull();
   });
 
-  it('applies the all policy and prepares every bound conversation before restore', async () => {
+  it('restores every open tab and prepares every bound conversation in single-pane mode', async () => {
     const view = Object.create(ClaudianView.prototype) as any;
     const restoreState = jest.fn().mockResolvedValue(undefined);
     const setExpandedTitleTabIds = jest.fn();
@@ -2774,7 +2844,7 @@ describe('ClaudianView tab workspace persistence', () => {
     view.plugin = {
       completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
       ensureConversationMetadataLoaded,
-      settings: { tabRestoreMode: 'all' },
+      settings: { restoreTabsOnStartup: true },
     };
     view.hasTabWorkspaceViewState = true;
     view.pendingTabWorkspaceState = state;
@@ -2791,6 +2861,38 @@ describe('ClaudianView tab workspace persistence', () => {
     expect(setExpandedTitleTabIds).toHaveBeenCalledWith(['tab-1']);
   });
 
+  it('restores and prepares only the last active tab in dual-pane mode', async () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+    const restoreState = jest.fn().mockResolvedValue(undefined);
+    const ensureConversationMetadataLoaded = jest.fn().mockResolvedValue(undefined);
+    view.plugin = {
+      completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
+      ensureConversationMetadataLoaded,
+      settings: { restoreTabsOnStartup: true },
+    };
+    view.hasTabWorkspaceViewState = true;
+    view.isWideSessionLayout = true;
+    const state = {
+      activeTabId: 'preview-tab',
+      openTabs: [
+        { conversationId: 'conversation-1', tabId: 'tab-1' },
+        { conversationId: 'conversation-preview', tabId: 'preview-tab' },
+      ],
+    };
+    view.pendingTabWorkspaceState = state;
+    view.tabManager = { restoreState };
+
+    await view.restoreTabWorkspace();
+
+    expect(ensureConversationMetadataLoaded).toHaveBeenCalledWith([
+      'conversation-preview',
+    ]);
+    expect(restoreState).toHaveBeenCalledWith({
+      activeTabId: 'preview-tab',
+      openTabs: [{ conversationId: 'conversation-preview', tabId: 'preview-tab' }],
+    });
+  });
+
   it('starts fresh without preparing saved conversations', async () => {
     const view = Object.create(ClaudianView.prototype) as any;
     const restoreState = jest.fn().mockResolvedValue(undefined);
@@ -2798,7 +2900,7 @@ describe('ClaudianView tab workspace persistence', () => {
     view.plugin = {
       completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
       ensureConversationMetadataLoaded,
-      settings: { tabRestoreMode: 'none' },
+      settings: { restoreTabsOnStartup: false },
     };
     view.hasTabWorkspaceViewState = true;
     view.pendingTabWorkspaceState = {
@@ -2829,7 +2931,7 @@ describe('ClaudianView tab workspace persistence', () => {
       claimLegacyTabManagerState,
       completeLegacyTabManagerStateMigration,
       ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
-      settings: { tabRestoreMode: 'all' },
+      settings: { restoreTabsOnStartup: true },
     };
     view.hasTabWorkspaceViewState = false;
     view.pendingTabWorkspaceState = null;
@@ -2862,9 +2964,9 @@ describe('ClaudianView composer input', () => {
       getActiveTab: jest.fn().mockReturnValue({
         id: 'active-tab',
         dom: { inputEl },
+        lifecycleState: 'cold',
         session: createOwnershipSession(),
       }),
-      retainTab: jest.fn(),
     };
 
     return { inputEl, inputHandler, view };
@@ -2910,6 +3012,78 @@ describe('ClaudianView composer input', () => {
 });
 
 describe('ClaudianView shutdown', () => {
+  it('does not replace a pending restore plan with zero admitted tabs', async () => {
+    const pendingState = {
+      activeTabId: 'restored-2',
+      openTabs: [
+        { conversationId: 'conversation-1', tabId: 'restored-1' },
+        { conversationId: 'conversation-2', tabId: 'restored-2' },
+      ],
+    };
+    const manager = {
+      drainForShutdownSnapshot: jest.fn().mockResolvedValue(undefined),
+      getPersistedState: jest.fn().mockReturnValue({
+        activeTabId: null,
+        openTabs: [],
+      }),
+      sealShutdownSnapshot: jest.fn(),
+    };
+    const persistence = {
+      flush: jest.fn().mockResolvedValue(undefined),
+      update: jest.fn(),
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      pendingTabWorkspaceState: pendingState,
+      tabManager: manager,
+      tabStatePersistence: persistence,
+    });
+
+    await view.captureShutdownSnapshot(manager, persistence);
+
+    expect(view.finalizedTabWorkspaceState).toEqual(pendingState);
+    expect(persistence.update).toHaveBeenCalledWith(pendingState);
+    expect(persistence.flush).toHaveBeenCalledTimes(1);
+    expect(manager.sealShutdownSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains the complete restore plan when shutdown interrupts inactive admission', async () => {
+    const pendingState = {
+      activeTabId: 'restored-2',
+      openTabs: [
+        { conversationId: 'conversation-1', tabId: 'restored-1' },
+        { conversationId: 'conversation-2', tabId: 'restored-2' },
+      ],
+    };
+    const manager = {
+      drainForShutdownSnapshot: jest.fn().mockResolvedValue(undefined),
+      getPersistedState: jest.fn().mockReturnValue({
+        activeTabId: null,
+        openTabs: [
+          { conversationId: 'conversation-1', tabId: 'restored-1' },
+        ],
+      }),
+      sealShutdownSnapshot: jest.fn(),
+    };
+    const persistence = {
+      flush: jest.fn().mockResolvedValue(undefined),
+      update: jest.fn(),
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      pendingTabWorkspaceState: pendingState,
+      tabManager: manager,
+      tabStatePersistence: persistence,
+    });
+
+    await view.captureShutdownSnapshot(manager, persistence);
+
+    expect(view.finalizedTabWorkspaceState).toEqual(pendingState);
+    expect(persistence.update).toHaveBeenCalledWith(pendingState);
+    expect(persistence.flush).toHaveBeenCalledTimes(1);
+    expect(manager.sealShutdownSnapshot).toHaveBeenCalledTimes(1);
+  });
+
   it('prepares plugin unload through one shared drained snapshot', async () => {
     const drain = deferred<void>();
     const flush = jest.fn().mockResolvedValue(undefined);
@@ -3005,6 +3179,65 @@ describe('ClaudianView shutdown', () => {
     expect(sealShutdownSnapshot).toHaveBeenCalledTimes(1);
     expect(flush.mock.invocationCallOrder[0])
       .toBeLessThan(sealShutdownSnapshot.mock.invocationCallOrder[0]);
+  });
+
+  it('publishes the finalized snapshot while the old manager is being destroyed', async () => {
+    const destruction = deferred<void>();
+    let teardownStarted = false;
+    const finalState = {
+      activeTabId: 'tab-1',
+      openTabs: [{ conversationId: 'conversation-1', tabId: 'tab-1' }],
+    };
+    const manager = {
+      beginShutdown: jest.fn(),
+      destroy: jest.fn(() => {
+        teardownStarted = true;
+        return destruction.promise;
+      }),
+      drainForShutdownSnapshot: jest.fn().mockResolvedValue(undefined),
+      getPersistedState: jest.fn(() => teardownStarted
+        ? { activeTabId: null, openTabs: [] }
+        : finalState),
+      sealShutdownSnapshot: jest.fn(),
+    };
+    const view = Object.create(ClaudianView.prototype) as any;
+    Object.assign(view, {
+      cancelHistoryRendering: jest.fn(),
+      cancelSessionSidebarRendering: jest.fn(),
+      clearSessionSearchDismissHandlers: jest.fn(),
+      disconnectSessionSidebarLayoutObserver: jest.fn(),
+      eventRefs: [],
+      mentionCacheCoordinator: {},
+      pendingTabBarUpdate: null,
+      pendingTabWorkspaceState: null,
+      plugin: { app: { vault: { offref: jest.fn() } } },
+      restoreActiveInputToTabContent: jest.fn(),
+      scope: {},
+      stopSessionSidebarResize: jest.fn(),
+      tabBar: { destroy: jest.fn(), getExpandedTitleTabIds: jest.fn().mockReturnValue([]) },
+      tabManager: manager,
+      tabStatePersistence: {
+        dispose: jest.fn(),
+        flush: jest.fn().mockResolvedValue(undefined),
+        update: jest.fn(),
+      },
+    });
+
+    const closing = view.onClose();
+    for (let attempt = 0;
+      attempt < 10 && manager.destroy.mock.calls.length === 0;
+      attempt += 1) {
+      await Promise.resolve();
+    }
+
+    expect(manager.destroy).toHaveBeenCalledTimes(1);
+    expect(view.tabManager).toBeNull();
+    expect(view.getState()).toEqual({
+      tabWorkspace: { version: 1, ...finalState },
+    });
+
+    destruction.resolve(undefined);
+    await closing;
   });
 
   it('flushes the current tab identity before disposing view resources', async () => {
@@ -3164,6 +3397,23 @@ describe('ClaudianView shutdown', () => {
 
     flush.resolve(undefined);
     await closing;
+    expect(view.finalizedTabWorkspaceState).toEqual({
+      activeTabId: 'tab-1',
+      openTabs: [{
+        conversationId: 'conversation-created-during-close',
+        tabId: 'tab-1',
+      }],
+    });
+    expect(view.getState()).toEqual({
+      tabWorkspace: {
+        version: 1,
+        activeTabId: 'tab-1',
+        openTabs: [{
+          conversationId: 'conversation-created-during-close',
+          tabId: 'tab-1',
+        }],
+      },
+    });
     expect(sealShutdownSnapshot).toHaveBeenCalledTimes(1);
   });
 
@@ -3529,7 +3779,6 @@ describe('ClaudianView Escape handling', () => {
       state: { prePlanPermissionMode: null },
     };
     view.tabManager.getActiveTab.mockReturnValue(activeTab);
-    view.tabManager.retainTab = jest.fn((_tabId: string) => retainMockTab(activeTab));
     view.plugin.settings = {};
     jest.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({
       providerId: 'claude',

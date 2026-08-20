@@ -93,6 +93,7 @@ describe('TabWorkspaceMigrationCoordinator', () => {
       second.waitUntilDeclarationsReady,
     ]);
 
+    expect(storage.clearTabManagerState).toHaveBeenCalledTimes(1);
     await expect(coordinator.claimLegacyState()).resolves.toBeNull();
     expect(storage.getTabManagerState).not.toHaveBeenCalled();
     expect(storage.clearTabManagerState).toHaveBeenCalledTimes(1);
@@ -130,6 +131,7 @@ describe('TabWorkspaceMigrationCoordinator', () => {
     markLayoutReady();
     await registration.waitUntilDeclarationsReady;
 
+    expect(storage.clearTabManagerState).toHaveBeenCalledTimes(1);
     await expect(coordinator.claimLegacyState()).resolves.toBeNull();
     expect(storage.getTabManagerState).not.toHaveBeenCalled();
     expect(storage.clearTabManagerState).toHaveBeenCalledTimes(1);

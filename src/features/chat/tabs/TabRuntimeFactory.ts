@@ -50,7 +50,6 @@ export interface TabRuntimeFactoryOptions {
     tab: TabProviderCatalogContext,
   ) => ProviderCatalogInfo;
   isRuntimeLive: (tab: AssembledTabRuntime) => boolean;
-  retainTab: (tab: AssembledTabRuntime) => void;
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>;
   openConversation?: (conversationId: string) => Promise<void>;
   onStreamingChanged?: (tab: AssembledTabRuntime, isStreaming: boolean) => void;

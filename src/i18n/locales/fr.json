@@ -288,12 +288,9 @@
       "name": "Activer le mode double volet",
       "desc": "Afficher automatiquement le gestionnaire de sessions à côté du chat lorsque la vue mesure au moins 600 px de large."
     },
-    "tabRestoreMode": {
+    "restoreTabsOnStartup": {
       "name": "Restaurer les onglets au démarrage",
-      "desc": "Choisir les onglets de discussion conservés à rouvrir au chargement d’une vue Claudian.",
-      "none": "Démarrer une nouvelle discussion",
-      "active": "Restaurer le dernier onglet",
-      "all": "Restaurer tous les onglets"
+      "desc": "Rouvrir tous les onglets en mode volet unique, ou uniquement le dernier onglet actif en mode double volet."
     },
     "enableFilePane": {
       "name": "Activer le volet des fichiers",

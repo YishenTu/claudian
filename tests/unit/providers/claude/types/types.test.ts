@@ -86,8 +86,8 @@ describe('types.ts', () => {
       expect(DEFAULT_SETTINGS.dualPaneSide).toBe('right');
     });
 
-    it('should restore all retained tabs by default', () => {
-      expect(DEFAULT_SETTINGS.tabRestoreMode).toBe('all');
+    it('should restore tabs on startup by default', () => {
+      expect(DEFAULT_SETTINGS.restoreTabsOnStartup).toBe(true);
     });
   });
 
@@ -130,7 +130,7 @@ describe('types.ts', () => {
         enableDualPane: true,
         enableFilePane: true,
         dualPaneSide: 'right',
-        tabRestoreMode: 'all',
+        restoreTabsOnStartup: true,
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -189,7 +189,7 @@ describe('types.ts', () => {
         enableDualPane: true,
         enableFilePane: true,
         dualPaneSide: 'right',
-        tabRestoreMode: 'active',
+        restoreTabsOnStartup: true,
         hiddenProviderCommands: {
           claude: [],
           codex: [],
@@ -249,7 +249,7 @@ describe('types.ts', () => {
         enableDualPane: false,
         enableFilePane: false,
         dualPaneSide: 'left',
-        tabRestoreMode: 'none',
+        restoreTabsOnStartup: false,
         hiddenProviderCommands: {
           claude: [],
           codex: [],

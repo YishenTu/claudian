@@ -24,8 +24,6 @@ import {
   type HiddenProviderCommands,
   type ProviderConfigMap,
   type StoredChatModelSelection,
-  TAB_RESTORE_MODES,
-  type TabRestoreMode,
 } from '../../core/types/settings';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './defaultSettings';
 
@@ -120,11 +118,10 @@ function normalizeDualPaneSide(value: unknown): DualPaneSide {
     : DEFAULT_CLAUDIAN_SETTINGS.dualPaneSide;
 }
 
-function normalizeTabRestoreMode(value: unknown): TabRestoreMode {
-  return typeof value === 'string'
-    && (TAB_RESTORE_MODES as readonly string[]).includes(value)
-    ? value as TabRestoreMode
-    : DEFAULT_CLAUDIAN_SETTINGS.tabRestoreMode;
+function normalizeRestoreTabsOnStartup(value: unknown): boolean {
+  return typeof value === 'boolean'
+    ? value
+    : DEFAULT_CLAUDIAN_SETTINGS.restoreTabsOnStartup;
 }
 
 function shouldPersistChatViewNormalization(
@@ -132,7 +129,7 @@ function shouldPersistChatViewNormalization(
   enableDualPane: boolean,
   enableFilePane: boolean,
   dualPaneSide: DualPaneSide,
-  tabRestoreMode: TabRestoreMode,
+  restoreTabsOnStartup: boolean,
 ): boolean {
   return (
     'enableDualPane' in stored
@@ -144,8 +141,8 @@ function shouldPersistChatViewNormalization(
     'dualPaneSide' in stored
     && stored.dualPaneSide !== dualPaneSide
   ) || (
-    'tabRestoreMode' in stored
-    && stored.tabRestoreMode !== tabRestoreMode
+    'restoreTabsOnStartup' in stored
+    && stored.restoreTabsOnStartup !== restoreTabsOnStartup
   );
 }
 
@@ -406,7 +403,9 @@ export class ClaudianSettingsStorage {
     const enableDualPane = normalizeEnableDualPane(stored.enableDualPane);
     const enableFilePane = normalizeEnableFilePane(stored.enableFilePane);
     const dualPaneSide = normalizeDualPaneSide(stored.dualPaneSide);
-    const tabRestoreMode = normalizeTabRestoreMode(stored.tabRestoreMode);
+    const restoreTabsOnStartup = normalizeRestoreTabsOnStartup(
+      stored.restoreTabsOnStartup,
+    );
     const legacyProviderSettings = {
       ...stored,
       hiddenProviderCommands,
@@ -427,7 +426,7 @@ export class ClaudianSettingsStorage {
       enableDualPane,
       enableFilePane,
       dualPaneSide,
-      tabRestoreMode,
+      restoreTabsOnStartup,
       lastSelectedChatModel,
     };
 
@@ -466,7 +465,7 @@ export class ClaudianSettingsStorage {
         enableDualPane,
         enableFilePane,
         dualPaneSide,
-        tabRestoreMode,
+        restoreTabsOnStartup,
       )
       || JSON.stringify(envSnippets) !== JSON.stringify(stored.envSnippets ?? [])
       || (

@@ -134,32 +134,44 @@ describe('resolveTabRestorePlan', () => {
     openTabs: [
       { tabId: 'tab-1', conversationId: 'conv-1' },
       { tabId: 'tab-2', conversationId: null, draftModel: 'codex:gpt-5' },
+      { tabId: 'preview-tab', conversationId: 'conv-preview' },
     ],
-    activeTabId: 'tab-2',
+    activeTabId: 'preview-tab',
     expandedTitleTabIds: ['tab-1', 'tab-2'],
   };
 
-  it('returns an empty plan for a fresh startup', () => {
-    expect(resolveTabRestorePlan(state, 'none')).toEqual({
+  it('returns an empty plan when startup restoration is disabled', () => {
+    expect(resolveTabRestorePlan(state, {
+      restoreTabsOnStartup: false,
+      isDualPane: false,
+    })).toEqual({
       openTabs: [],
       activeTabId: null,
     });
   });
 
-  it('selects only the last active retained tab', () => {
-    expect(resolveTabRestorePlan(state, 'active')).toEqual({
-      openTabs: [{ tabId: 'tab-2', conversationId: null, draftModel: 'codex:gpt-5' }],
-      activeTabId: 'tab-2',
-      expandedTitleTabIds: ['tab-2'],
+  it('preserves every open tab and its order in single-pane mode', () => {
+    expect(resolveTabRestorePlan(state, {
+      restoreTabsOnStartup: true,
+      isDualPane: false,
+    })).toEqual(state);
+  });
+
+  it('selects only the last active tab in dual-pane mode', () => {
+    expect(resolveTabRestorePlan(state, {
+      restoreTabsOnStartup: true,
+      isDualPane: true,
+    })).toEqual({
+      openTabs: [{ tabId: 'preview-tab', conversationId: 'conv-preview' }],
+      activeTabId: 'preview-tab',
     });
   });
 
-  it('preserves all retained tabs and their order', () => {
-    expect(resolveTabRestorePlan(state, 'all')).toEqual(state);
-  });
-
-  it('returns an empty active plan when its target is missing', () => {
-    expect(resolveTabRestorePlan({ ...state, activeTabId: 'missing' }, 'active')).toEqual({
+  it('returns an empty dual-pane plan when its active target is missing', () => {
+    expect(resolveTabRestorePlan({ ...state, activeTabId: 'missing' }, {
+      restoreTabsOnStartup: true,
+      isDualPane: true,
+    })).toEqual({
       openTabs: [],
       activeTabId: null,
     });

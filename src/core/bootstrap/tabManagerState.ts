@@ -1,5 +1,4 @@
 import type { AppTabManagerState } from '../providers/types';
-import type { TabRestoreMode } from '../types/settings';
 import { isValidSessionMetadataId } from './SessionStorage';
 
 export const TAB_WORKSPACE_VIEW_STATE_KEY = 'tabWorkspace';
@@ -144,13 +143,16 @@ export function normalizeTabManagerState(data: unknown): AppTabManagerState | nu
 
 export function resolveTabRestorePlan(
   state: AppTabManagerState | null,
-  mode: TabRestoreMode,
+  options: {
+    restoreTabsOnStartup: boolean;
+    isDualPane: boolean;
+  },
 ): AppTabManagerState {
-  if (!state || mode === 'none') {
+  if (!state || !options.restoreTabsOnStartup) {
     return { openTabs: [], activeTabId: null };
   }
 
-  if (mode === 'active') {
+  if (options.isDualPane) {
     const activeTab = state.openTabs.find(tab => tab.tabId === state.activeTabId);
     return activeTab
       ? {

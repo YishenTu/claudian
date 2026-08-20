@@ -21,6 +21,7 @@ import {
   handleForkRequest,
 } from '../TabForking';
 import {
+  commitProvisionalTab,
   isClosingLifecycleState,
 } from '../TabLifecycle';
 import {
@@ -120,7 +121,7 @@ export function buildTabRuntimeControllers(
     dom.inputEl,
     undefined,
     [dom.contentEl, dom.inputComposerEl, ...getSharedSelectionFocusScopeEls(component)],
-    () => options.retainTab(runtimeRef.requirePublished()),
+    () => commitProvisionalTab(runtimeRef.requirePublished()),
   );
   options.registerCleanup('tab editor selection controller', () => selectionController.stop());
 
@@ -129,7 +130,7 @@ export function buildTabRuntimeControllers(
     ui.contextTray,
     dom.inputEl,
     undefined,
-    () => options.retainTab(runtimeRef.requirePublished()),
+    () => commitProvisionalTab(runtimeRef.requirePublished()),
   );
   options.registerCleanup(
     'tab browser selection controller',
@@ -141,7 +142,7 @@ export function buildTabRuntimeControllers(
     ui.contextTray,
     dom.inputEl,
     undefined,
-    () => options.retainTab(runtimeRef.requirePublished()),
+    () => commitProvisionalTab(runtimeRef.requirePublished()),
   );
   options.registerCleanup(
     'tab canvas selection controller',
@@ -285,7 +286,7 @@ export function buildTabRuntimeControllers(
         const previousProviderId = tab.providerId;
         const nextModel = resolveNewConversationModel(plugin.settings);
         void shell.executionCoordinator.bindConversation(null);
-        options.retainTab(tab);
+        commitProvisionalTab(tab);
         tab.draftModel = nextModel?.model ?? null;
         tab.conversationId = null;
         tab.providerId = nextModel?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;

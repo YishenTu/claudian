@@ -67,11 +67,6 @@ export const DUAL_PANE_SIDES = ['left', 'right'] as const;
 /** Side of the chat occupied by the session manager in dual-pane mode. */
 export type DualPaneSide = typeof DUAL_PANE_SIDES[number];
 
-export const TAB_RESTORE_MODES = ['none', 'active', 'all'] as const;
-
-/** Retained tab shells materialized when a Claudian view opens. */
-export type TabRestoreMode = typeof TAB_RESTORE_MODES[number];
-
 export type SessionManagerOrganization = 'list' | 'linked-note';
 export type SessionManagerSort = 'last-updated' | 'created';
 
@@ -186,7 +181,7 @@ export interface ClaudianSettings {
   enableDualPane: boolean;
   enableFilePane: boolean;
   dualPaneSide: DualPaneSide;
-  tabRestoreMode: TabRestoreMode;
+  restoreTabsOnStartup: boolean;
   sessionManagerOrganization?: SessionManagerOrganization;
   sessionManagerSort?: SessionManagerSort;
   pinnedLinkedNotePaths?: string[];
