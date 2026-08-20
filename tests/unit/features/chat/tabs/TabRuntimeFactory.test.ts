@@ -578,6 +578,80 @@ describe('Tab provider execution ownership', () => {
     expect(tab.state.autoScrollEnabled).toBe(false);
   });
 
+  it('re-arms auto-scroll when a streaming user manually returns to the bottom', async () => {
+    jest.useFakeTimers();
+    try {
+      const tab = await createTestTab({
+        plugin: createPlugin(),
+        containerEl: createMockEl() as any,
+      });
+      tab.state.isStreaming = true;
+      tab.dom.messagesEl.scrollHeight = 1_000;
+      tab.dom.messagesEl.clientHeight = 500;
+      tab.dom.messagesEl.scrollTop = 500;
+
+      tab.dom.messagesEl.dispatchEvent({ type: 'wheel' });
+      tab.dom.messagesEl.scrollTop = 250;
+      tab.dom.messagesEl.dispatchEvent('scroll');
+
+      expect(tab.state.autoScrollEnabled).toBe(false);
+
+      tab.dom.messagesEl.scrollTop = 500;
+      tab.dom.messagesEl.dispatchEvent('scroll');
+
+      expect(tab.state.autoScrollEnabled).toBe(true);
+
+      tab.dom.messagesEl.scrollHeight = 1_200;
+      await tab.controllers.streamController.handleStreamChunk(
+        { type: 'text', content: 'continued' },
+        { content: '', role: 'assistant' },
+      );
+      jest.advanceTimersByTime(16);
+
+      expect(tab.dom.messagesEl.scrollTop).toBe(1_200);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps auto-scroll armed during downward wheel momentum at the bottom', async () => {
+    jest.useFakeTimers();
+    try {
+      const tab = await createTestTab({
+        plugin: createPlugin(),
+        containerEl: createMockEl() as any,
+      });
+      tab.state.isStreaming = true;
+      tab.dom.messagesEl.scrollHeight = 1_000;
+      tab.dom.messagesEl.clientHeight = 500;
+      tab.dom.messagesEl.scrollTop = 250;
+      tab.state.autoScrollEnabled = false;
+
+      tab.dom.messagesEl.dispatchEvent({ type: 'wheel', deltaY: 120 });
+      tab.dom.messagesEl.scrollTop = 500;
+      tab.dom.messagesEl.dispatchEvent('scroll');
+
+      expect(tab.state.autoScrollEnabled).toBe(true);
+
+      for (let index = 0; index < 3; index++) {
+        tab.dom.messagesEl.dispatchEvent({ type: 'wheel', deltaY: 120 });
+      }
+
+      expect(tab.state.autoScrollEnabled).toBe(true);
+
+      tab.dom.messagesEl.scrollHeight = 1_200;
+      await tab.controllers.streamController.handleStreamChunk(
+        { type: 'text', content: 'continued' },
+        { content: '', role: 'assistant' },
+      );
+      jest.advanceTimersByTime(16);
+
+      expect(tab.dom.messagesEl.scrollTop).toBe(1_200);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('does not let a pending bottom re-arm override newer navigation', async () => {
     jest.useFakeTimers();
     try {
@@ -593,6 +667,7 @@ describe('Tab provider execution ownership', () => {
 
       tab.dom.messagesEl.dispatchEvent('scroll');
       tab.dom.messagesWrapperEl.querySelector('.claudian-nav-btn-top')?.click();
+      tab.dom.messagesEl.dispatchEvent({ type: 'wheel', deltaY: 120 });
       jest.advanceTimersByTime(150);
 
       expect(tab.state.autoScrollEnabled).toBe(false);

@@ -110,21 +110,17 @@ export function buildTabRuntimeInputBindings(
   );
 
   const scrollThreshold = 20;
-  const reEnableDelay = 150;
-  let reEnableTimeout: number | null = null;
-  let bottomNavigationInProgress = false;
+  let navigationScrollIntent: 'away' | 'bottom' | null = null;
 
   const isAutoScrollAllowed = (): boolean => plugin.settings.enableAutoScroll ?? true;
-  const cancelReEnableTimeout = (): void => {
-    if (reEnableTimeout === null) return;
-    window.clearTimeout(reEnableTimeout);
-    reEnableTimeout = null;
+  const isMessagesAtBottom = (): boolean => {
+    const { scrollTop, scrollHeight, clientHeight } = dom.messagesEl;
+    return scrollHeight - scrollTop - clientHeight <= scrollThreshold;
   };
 
   ui.navigationSidebar.setOnScrollIntent((intent) => {
-    cancelReEnableTimeout();
+    navigationScrollIntent = intent;
     const enabled = intent === 'bottom' && isAutoScrollAllowed();
-    bottomNavigationInProgress = enabled;
     state.autoScrollEnabled = enabled;
   });
   options.registerCleanup('tab scroll navigation binding', () => {
@@ -135,6 +131,14 @@ export function buildTabRuntimeInputBindings(
   const nativePageScrollKeys = new Set(['pagedown', 'pageup']);
   const nativeArrowScrollKeys = new Set(['arrowdown', 'arrowup']);
   const userScrollIntentHandler = (event: Event) => {
+    if (event.type === 'wheel') {
+      const wheelEvent = event as WheelEvent;
+      if (wheelEvent.deltaY > 0 && isMessagesAtBottom()) {
+        if (navigationScrollIntent === 'away') return;
+        state.autoScrollEnabled = isAutoScrollAllowed();
+        return;
+      }
+    }
     if (event.type === 'keydown') {
       const keyboardEvent = event as KeyboardEvent;
       const settings = plugin.settings.keyboardNavigation;
@@ -197,8 +201,7 @@ export function buildTabRuntimeInputBindings(
         : pointerX >= bounds.width - scrollbarWidth;
       if (!isInScrollbarGutter) return;
     }
-    cancelReEnableTimeout();
-    bottomNavigationInProgress = false;
+    navigationScrollIntent = null;
     state.autoScrollEnabled = false;
   };
   const userScrollIntentEvents = [
@@ -218,36 +221,25 @@ export function buildTabRuntimeInputBindings(
 
   const scrollHandler = () => {
     if (!isAutoScrollAllowed()) {
-      bottomNavigationInProgress = false;
-      cancelReEnableTimeout();
+      navigationScrollIntent = null;
       state.autoScrollEnabled = false;
       return;
     }
 
-    const { scrollTop, scrollHeight, clientHeight } = dom.messagesEl;
-    const isAtBottom = scrollHeight - scrollTop - clientHeight <= scrollThreshold;
+    if (navigationScrollIntent === 'bottom') return;
 
-    if (!isAtBottom) {
-      if (bottomNavigationInProgress) return;
-      cancelReEnableTimeout();
+    if (!isMessagesAtBottom()) {
+      navigationScrollIntent = null;
       state.autoScrollEnabled = false;
-    } else {
-      if (state.autoScrollEnabled) return;
-      if (reEnableTimeout === null) {
-        reEnableTimeout = window.setTimeout(() => {
-          reEnableTimeout = null;
-          const { scrollTop, scrollHeight, clientHeight } = dom.messagesEl;
-          if (scrollHeight - scrollTop - clientHeight <= scrollThreshold) {
-            state.autoScrollEnabled = true;
-          }
-        }, reEnableDelay);
-      }
+      return;
     }
+
+    if (navigationScrollIntent === 'away') return;
+    state.autoScrollEnabled = true;
   };
   dom.messagesEl.addEventListener('scroll', scrollHandler, { passive: true });
   options.registerCleanup('tab message scroll binding', () => {
     dom.messagesEl.removeEventListener('scroll', scrollHandler);
-    cancelReEnableTimeout();
   });
   return { installed: true };
 }

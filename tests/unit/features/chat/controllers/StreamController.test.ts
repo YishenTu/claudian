@@ -1293,6 +1293,31 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Timer lifecycle', () => {
+    it('should scroll to a newly shown thinking indicator when auto-scroll is enabled', () => {
+      const messagesEl = deps.getMessagesEl();
+      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1_000, configurable: true });
+      messagesEl.scrollTop = 0;
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(416);
+
+      expect(deps.state.thinkingEl).not.toBeNull();
+      expect(messagesEl.scrollTop).toBe(1_000);
+    });
+
+    it('should not scroll to a newly shown thinking indicator when auto-scroll is paused', () => {
+      const messagesEl = deps.getMessagesEl();
+      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1_000, configurable: true });
+      messagesEl.scrollTop = 0;
+      deps.state.autoScrollEnabled = false;
+
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(416);
+
+      expect(deps.state.thinkingEl).not.toBeNull();
+      expect(messagesEl.scrollTop).toBe(0);
+    });
+
     it('should create timer interval when showing thinking indicator', () => {
       deps.state.responseStartTime = performance.now();
 
