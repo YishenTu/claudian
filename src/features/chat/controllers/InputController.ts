@@ -6,6 +6,7 @@ import {
   isBuiltInCommandSupported,
 } from '../../../core/commands/builtInCommands';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
+import type { ProviderUIOption } from '../../../core/providers/types';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
   type InstructionRefineService,
@@ -27,6 +28,7 @@ import type {
 import { TOOL_EXIT_PLAN_MODE } from '../../../core/tools/toolNames';
 import type { ApprovalDecision, ChatMessage, ExitPlanModeDecision, StreamChunk } from '../../../core/types';
 import type ClaudianPlugin from '../../../main';
+import { ModelCommandDropdown } from '../../../shared/components/ModelCommandDropdown';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import type { BrowserSelectionContext } from '../../../utils/browser';
@@ -108,6 +110,15 @@ export interface InputControllerDeps {
   openConversation?: (conversationId: string) => Promise<void>;
   onForkAll?: () => Promise<void>;
   restorePrePlanPermissionModeIfNeeded?: () => void;
+  /** Model picker for the active tab, used by the `/model` built-in command. */
+  getModelSelectorHandle?: () => ModelSelectorHandle | null;
+}
+
+/** Minimal surface the `/model` command needs from the tab's model picker. */
+export interface ModelSelectorHandle {
+  getOptions: () => ProviderUIOption[];
+  getCurrentValue: () => string;
+  selectValue: (value: string) => Promise<void>;
 }
 
 export class InputController {
@@ -118,6 +129,7 @@ export class InputController {
   private pendingPlanApproval: InlinePlanApproval | null = null;
   private pendingPlanApprovalInvalidated = false;
   private activeResumeDropdown: ResumeSessionDropdown | null = null;
+  private activeModelDropdown: ModelCommandDropdown | null = null;
   private inputContainerHideDepth = 0;
   private steerInFlight = false;
   private pendingSteerMessage: QueuedMessage | null = null;
@@ -224,9 +236,11 @@ export class InputController {
       : (imageContextManager?.hasImages() ?? false);
     if (!content && !hasImages) return;
 
-    // Check for built-in commands first (e.g., /clear, /new, /add-dir)
+    // Check for built-in commands first (e.g., /clear, /new, /add-dir).
+    // Provider-routed commands (e.g. /compact) are discoverable in the dropdown
+    // but must still reach the provider, so they fall through to normal submission.
     const builtInCmd = detectBuiltInCommand(content);
-    if (builtInCmd) {
+    if (builtInCmd && !builtInCmd.command.providerRouted) {
       if (shouldUseInput) {
         inputEl.value = '';
         this.deps.resetInputHeight();
@@ -1639,6 +1653,9 @@ export class InputController {
         await this.deps.onForkAll();
         break;
       }
+      case 'model':
+        this.handleModelCommand(args);
+        break;
       default: {
         // Unknown command - notify user
         const unknownAction = typeof (command as { action?: unknown }).action === 'string'
@@ -1700,6 +1717,89 @@ export class InputController {
         },
         onDismiss: () => {
           this.destroyResumeDropdown();
+        },
+      }
+    );
+  }
+
+  // ============================================
+  // Model Command Dropdown
+  // ============================================
+
+  handleModelKeydown(e: KeyboardEvent): boolean {
+    if (!this.activeModelDropdown?.isVisible()) return false;
+    return this.activeModelDropdown.handleKeydown(e);
+  }
+
+  isModelDropdownVisible(): boolean {
+    return this.activeModelDropdown?.isVisible() ?? false;
+  }
+
+  destroyModelDropdown(): void {
+    if (this.activeModelDropdown) {
+      this.activeModelDropdown.destroy();
+      this.activeModelDropdown = null;
+    }
+  }
+
+  private handleModelCommand(args: string): void {
+    const modelSelector = this.deps.getModelSelectorHandle?.();
+    if (!modelSelector) {
+      new Notice('Model switching is not available for this tab.');
+      return;
+    }
+
+    const options = modelSelector.getOptions();
+    if (options.length === 0) {
+      new Notice('No models available.');
+      return;
+    }
+
+    if (!args) {
+      this.showModelDropdown(modelSelector, options);
+      return;
+    }
+
+    const query = args.trim().toLowerCase();
+    const matches = options.filter((option) => (
+      option.value.toLowerCase().includes(query) || option.label.toLowerCase().includes(query)
+    ));
+
+    if (matches.length === 1) {
+      modelSelector.selectValue(matches[0].value).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        new Notice(`Failed to change model: ${msg}`);
+      });
+      return;
+    }
+
+    if (matches.length === 0) {
+      new Notice(`No model matches "${args}".`);
+      return;
+    }
+
+    // Ambiguous argument - fall back to the picker, scoped to the matches.
+    this.showModelDropdown(modelSelector, matches);
+  }
+
+  private showModelDropdown(modelSelector: ModelSelectorHandle, options: ProviderUIOption[]): void {
+    this.destroyModelDropdown();
+
+    this.activeModelDropdown = new ModelCommandDropdown(
+      this.deps.getInputContainerEl(),
+      this.deps.getInputEl(),
+      options,
+      modelSelector.getCurrentValue(),
+      {
+        onSelect: (value) => {
+          this.destroyModelDropdown();
+          modelSelector.selectValue(value).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            new Notice(`Failed to change model: ${msg}`);
+          });
+        },
+        onDismiss: () => {
+          this.destroyModelDropdown();
         },
       }
     );

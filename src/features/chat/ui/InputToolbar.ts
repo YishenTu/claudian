@@ -79,6 +79,23 @@ export class ModelSelector {
     });
   }
 
+  /** Available model options, for callers that need to build their own picker (e.g. `/model`). */
+  getOptions(): ProviderUIOption[] {
+    return this.getAvailableModels();
+  }
+
+  /** The model value currently selected for this tab. */
+  getCurrentValue(): string {
+    return this.callbacks.getSettings().model;
+  }
+
+  /** Selects a model by value, reusing the same change path as clicking a dropdown option. */
+  async selectValue(value: string): Promise<void> {
+    await this.callbacks.onModelChange(value);
+    this.updateDisplay();
+    this.renderOptions();
+  }
+
   private render() {
     this.container.empty();
 

@@ -19,21 +19,6 @@ import {
 
 const CODEX_SKILL_ID_PREFIX = 'codex-skill-';
 
-const CODEX_COMPACT_COMMAND: ProviderCommandEntry = {
-  id: 'codex-builtin-compact',
-  providerId: 'codex',
-  kind: 'command',
-  name: 'compact',
-  description: 'Compact conversation history',
-  content: '',
-  scope: 'system',
-  source: 'builtin',
-  isEditable: false,
-  isDeletable: false,
-  displayPrefix: '/',
-  insertPrefix: '/',
-};
-
 function buildSkillId(
   skill: Pick<SkillMetadata, 'name' | 'path' | 'scope'>,
   location?: { rootId: string; name: string } | null,
@@ -88,12 +73,11 @@ export class CodexSkillCatalog implements ProviderCommandCatalog {
     // Codex dropdown entries come from app-server metadata; runtime commands are ignored.
   }
 
-  async listDropdownEntries(context: { includeBuiltIns: boolean }): Promise<ProviderCommandEntry[]> {
+  async listDropdownEntries(_context: { includeBuiltIns: boolean }): Promise<ProviderCommandEntry[]> {
     const skills = (await this.listProvider.listSkills())
       .filter(skill => skill.enabled)
       .sort(compareCodexSkillPriority);
-    const entries = skills.map(skill => listedSkillToProviderEntry(skill, this.vaultPath));
-    return context.includeBuiltIns ? [CODEX_COMPACT_COMMAND, ...entries] : entries;
+    return skills.map(skill => listedSkillToProviderEntry(skill, this.vaultPath));
   }
 
   async listVaultEntries(): Promise<ProviderCommandEntry[]> {

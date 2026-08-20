@@ -4,10 +4,15 @@ import { Notice } from 'obsidian';
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { encodeClaudeTurn } from '@/providers/claude/prompt/ClaudeTurnEncoder';
+import { ModelCommandDropdown } from '@/shared/components/ModelCommandDropdown';
 import { ResumeSessionDropdown } from '@/shared/components/ResumeSessionDropdown';
 
 jest.mock('@/shared/components/ResumeSessionDropdown', () => ({
   ResumeSessionDropdown: jest.fn(),
+}));
+
+jest.mock('@/shared/components/ModelCommandDropdown', () => ({
+  ModelCommandDropdown: jest.fn(),
 }));
 
 beforeAll(() => {
@@ -1822,6 +1827,123 @@ describe('InputController - Message Queue', () => {
 
       expect(mockNotice).toHaveBeenCalledWith('Fork not available.');
       expect(inputEl.value).toBe('');
+    });
+  });
+
+  describe('Built-in commands - /model', () => {
+    const options = [
+      { value: 'model-a', label: 'Model A' },
+      { value: 'model-b', label: 'Model B' },
+    ];
+    let mockSelectorHandle: {
+      getOptions: jest.Mock;
+      getCurrentValue: jest.Mock;
+      selectValue: jest.Mock;
+    };
+    let mockDropdownInstance: {
+      isVisible: jest.Mock;
+      handleKeydown: jest.Mock;
+      destroy: jest.Mock;
+    };
+
+    beforeEach(() => {
+      mockNotice.mockClear();
+      (ModelCommandDropdown as jest.Mock).mockClear();
+      mockSelectorHandle = {
+        getOptions: jest.fn().mockReturnValue(options),
+        getCurrentValue: jest.fn().mockReturnValue('model-a'),
+        selectValue: jest.fn().mockResolvedValue(undefined),
+      };
+      mockDropdownInstance = {
+        isVisible: jest.fn().mockReturnValue(true),
+        handleKeydown: jest.fn().mockReturnValue(false),
+        destroy: jest.fn(),
+      };
+      (ModelCommandDropdown as jest.Mock).mockImplementation(() => mockDropdownInstance);
+      deps.getModelSelectorHandle = () => mockSelectorHandle as any;
+    });
+
+    it('should show notice when no model selector is available for the tab', async () => {
+      deps.getModelSelectorHandle = () => null;
+      inputEl.value = '/model';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('Model switching is not available for this tab.');
+      expect(ModelCommandDropdown).not.toHaveBeenCalled();
+    });
+
+    it('should open the picker dropdown when no argument is given', async () => {
+      inputEl.value = '/model';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(ModelCommandDropdown).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        options,
+        'model-a',
+        expect.objectContaining({ onSelect: expect.any(Function), onDismiss: expect.any(Function) }),
+      );
+      expect(controller.isModelDropdownVisible()).toBe(true);
+      expect(inputEl.value).toBe('');
+    });
+
+    it('should select the model directly when the argument matches exactly one option', async () => {
+      inputEl.value = '/model model-b';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockSelectorHandle.selectValue).toHaveBeenCalledWith('model-b');
+      expect(ModelCommandDropdown).not.toHaveBeenCalled();
+    });
+
+    it('should match by label case-insensitively', async () => {
+      inputEl.value = '/model model a';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockSelectorHandle.selectValue).toHaveBeenCalledWith('model-a');
+    });
+
+    it('should show notice when the argument matches no option', async () => {
+      inputEl.value = '/model nonexistent';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      expect(mockNotice).toHaveBeenCalledWith('No model matches "nonexistent".');
+      expect(mockSelectorHandle.selectValue).not.toHaveBeenCalled();
+    });
+
+    it('should call selectValue on dropdown select callback', async () => {
+      inputEl.value = '/model';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const callbacks = (ModelCommandDropdown as jest.Mock).mock.calls[0][4];
+      callbacks.onSelect('model-b');
+
+      expect(mockSelectorHandle.selectValue).toHaveBeenCalledWith('model-b');
+      expect(mockDropdownInstance.destroy).toHaveBeenCalled();
+    });
+
+    it('should destroy dropdown on dismiss callback', async () => {
+      inputEl.value = '/model';
+      controller = new InputController(deps);
+
+      await controller.sendMessage();
+
+      const callbacks = (ModelCommandDropdown as jest.Mock).mock.calls[0][4];
+      callbacks.onDismiss();
+
+      expect(mockDropdownInstance.destroy).toHaveBeenCalled();
+      expect(controller.isModelDropdownVisible()).toBe(false);
     });
   });
 

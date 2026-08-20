@@ -1446,6 +1446,7 @@ export function initializeTabControllers(
     onForkAll: forkRequestCallback
       ? () => handleForkAll(tab, plugin, forkRequestCallback)
       : undefined,
+    getModelSelectorHandle: () => tab.ui.modelSelector,
     restorePrePlanPermissionModeIfNeeded: () => {
       if (getTabPermissionMode(tab, plugin) === 'plan') {
         const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
@@ -1464,6 +1465,7 @@ export function initializeTabControllers(
       if (ui.instructionModeManager?.isActive()) return true;
       if (ui.bangBashModeManager?.isActive()) return true;
       if (tab.controllers.inputController?.isResumeDropdownVisible()) return true;
+      if (tab.controllers.inputController?.isModelDropdownVisible()) return true;
       if (ui.slashCommandDropdown?.isVisible()) return true;
       if (ui.fileContextManager?.isMentionDropdownVisible()) return true;
       return false;
@@ -1517,6 +1519,10 @@ export function wireTabInputEvents(tab: TabData, plugin: ClaudianPlugin): void {
     }
 
     if (controllers.inputController?.handleResumeKeydown(e)) {
+      return;
+    }
+
+    if (controllers.inputController?.handleModelKeydown(e)) {
       return;
     }
 
@@ -1646,6 +1652,7 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.controllers.inputController?.dismissPendingApproval();
 
   tab.controllers.inputController?.destroyResumeDropdown();
+  tab.controllers.inputController?.destroyModelDropdown();
   tab.ui.fileContextManager?.destroy();
   tab.ui.slashCommandDropdown?.destroy();
   tab.ui.slashCommandDropdown = null;

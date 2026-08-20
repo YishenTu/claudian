@@ -236,6 +236,9 @@ const createMockInputController = () => ({
   handleResumeKeydown: jest.fn().mockReturnValue(false),
   isResumeDropdownVisible: jest.fn().mockReturnValue(false),
   destroyResumeDropdown: jest.fn(),
+  handleModelKeydown: jest.fn().mockReturnValue(false),
+  isModelDropdownVisible: jest.fn().mockReturnValue(false),
+  destroyModelDropdown: jest.fn(),
   dismissPendingApproval: jest.fn(),
 });
 
@@ -1366,8 +1369,9 @@ describe('Tab - Destruction', () => {
       const cancelTitleGeneration = jest.fn();
       const destroyTodoPanel = jest.fn();
       const destroyResumeDropdown = jest.fn();
+      const destroyModelDropdown = jest.fn();
 
-      tab.controllers.inputController = { destroyResumeDropdown, dismissPendingApproval: jest.fn() } as any;
+      tab.controllers.inputController = { destroyResumeDropdown, destroyModelDropdown, dismissPendingApproval: jest.fn() } as any;
       tab.ui.fileContextManager = { destroy: destroyFileContext } as any;
       tab.ui.slashCommandDropdown = { destroy: destroySlashDropdown } as any;
       tab.ui.instructionModeManager = { destroy: destroyInstructionMode } as any;
@@ -1378,6 +1382,7 @@ describe('Tab - Destruction', () => {
       await destroyTab(tab);
 
       expect(destroyResumeDropdown).toHaveBeenCalled();
+      expect(destroyModelDropdown).toHaveBeenCalled();
       expect(destroyFileContext).toHaveBeenCalled();
       expect(destroySlashDropdown).toHaveBeenCalled();
       expect(destroyInstructionMode).toHaveBeenCalled();

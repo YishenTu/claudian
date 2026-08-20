@@ -98,6 +98,29 @@ describe('builtInCommands', () => {
       expect(detectBuiltInCommand('/FORK')).not.toBeNull();
       expect(detectBuiltInCommand('/Fork')).not.toBeNull();
     });
+
+    it('detects /model command with argument', () => {
+      const result = detectBuiltInCommand('/model opus');
+      expect(result).not.toBeNull();
+      expect(result?.command.name).toBe('model');
+      expect(result?.command.action).toBe('model');
+      expect(result?.args).toBe('opus');
+    });
+
+    it('detects /model command without argument', () => {
+      const result = detectBuiltInCommand('/model');
+      expect(result).not.toBeNull();
+      expect(result?.command.name).toBe('model');
+      expect(result?.args).toBe('');
+    });
+
+    it('detects /compact as a provider-routed command', () => {
+      const result = detectBuiltInCommand('/compact');
+      expect(result).not.toBeNull();
+      expect(result?.command.name).toBe('compact');
+      expect(result?.command.action).toBe('compact');
+      expect(result?.command.providerRouted).toBe(true);
+    });
   });
 
   describe('getBuiltInCommandsForDropdown', () => {
@@ -174,6 +197,22 @@ describe('builtInCommands', () => {
       const cmd = BUILT_IN_COMMANDS.find((c) => c.name === 'fork');
       expect(cmd?.requiredCapability).toBe('supportsFork');
     });
+
+    it('has model command that accepts args and no provider restriction', () => {
+      const modelCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'model');
+      expect(modelCmd).toBeDefined();
+      expect(modelCmd?.action).toBe('model');
+      expect(modelCmd?.hasArgs).toBe(true);
+      expect(modelCmd?.requiredCapability).toBeUndefined();
+    });
+
+    it('has provider-routed compact command with no args', () => {
+      const compactCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'compact');
+      expect(compactCmd).toBeDefined();
+      expect(compactCmd?.action).toBe('compact');
+      expect(compactCmd?.providerRouted).toBe(true);
+      expect(compactCmd?.requiredCapability).toBeUndefined();
+    });
   });
 
   describe('getBuiltInCommandsForDropdown - provider filtering', () => {
@@ -189,6 +228,8 @@ describe('builtInCommands', () => {
       expect(commands.map(c => c.name)).toContain('add-dir');
       expect(commands.map(c => c.name)).toContain('resume');
       expect(commands.map(c => c.name)).toContain('fork');
+      expect(commands.map(c => c.name)).toContain('model');
+      expect(commands.map(c => c.name)).toContain('compact');
     });
 
     it('returns all capability-supported commands for codex provider', () => {
@@ -198,12 +239,14 @@ describe('builtInCommands', () => {
       expect(names).toContain('add-dir');
       expect(names).toContain('resume');
       expect(names).toContain('fork');
+      expect(names).toContain('model');
+      expect(names).toContain('compact');
     });
 
     it('returns only commands supported by codex capabilities', () => {
       const commands = getBuiltInCommandsForDropdown('codex');
-      expect(commands.length).toBe(4);
-      expect(commands.map(c => c.name)).toEqual(['clear', 'add-dir', 'resume', 'fork']);
+      expect(commands.length).toBe(6);
+      expect(commands.map(c => c.name)).toEqual(['clear', 'add-dir', 'resume', 'fork', 'model', 'compact']);
     });
   });
 

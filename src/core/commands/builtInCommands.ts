@@ -8,7 +8,7 @@
 import { ProviderRegistry } from '../providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId } from '../providers/types';
 
-export type BuiltInCommandAction = 'clear' | 'add-dir' | 'resume' | 'fork';
+export type BuiltInCommandAction = 'clear' | 'add-dir' | 'resume' | 'fork' | 'model' | 'compact';
 type BuiltInCommandCapability = 'supportsNativeHistory' | 'supportsFork';
 type BuiltInCommandSupportContext = ProviderId | Pick<ProviderCapabilities, BuiltInCommandCapability>;
 
@@ -23,6 +23,12 @@ export interface BuiltInCommand {
   argumentHint?: string;
   /** When set, provider capabilities must expose this feature. */
   requiredCapability?: BuiltInCommandCapability;
+  /**
+   * When true, the command is only surfaced for discovery (dropdown listing).
+   * Submission is not intercepted client-side; the raw text still reaches the
+   * active provider, which recognizes and executes the command natively.
+   */
+  providerRouted?: boolean;
 }
 
 export interface BuiltInCommandResult {
@@ -56,6 +62,19 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     description: 'Fork entire conversation to new session',
     action: 'fork',
     requiredCapability: 'supportsFork',
+  },
+  {
+    name: 'model',
+    description: 'Switch the model used for this conversation',
+    action: 'model',
+    hasArgs: true,
+    argumentHint: '[model name]',
+  },
+  {
+    name: 'compact',
+    description: 'Compact the conversation to free up context',
+    action: 'compact',
+    providerRouted: true,
   },
 ];
 
