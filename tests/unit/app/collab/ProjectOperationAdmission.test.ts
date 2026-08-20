@@ -54,4 +54,24 @@ describe('ProjectOperationAdmission', () => {
     await draining;
     expect(drained).toBe(true);
   });
+
+  it('normalizes non-Error failures at the admission boundary', async () => {
+    const admission = new ProjectOperationAdmission();
+
+    await expect(admission.runProject(
+      () => { throw 'project-resolution-failed'; },
+      'active',
+      async () => undefined,
+    )).rejects.toMatchObject({
+      cause: 'project-resolution-failed',
+      message: 'project-resolution-failed',
+    });
+    await expect(admission.runGlobal(
+      // eslint-disable-next-line prefer-promise-reject-errors -- Exercise boundary normalization of an invalid rejection.
+      async () => Promise.reject('operation-failed'),
+    )).rejects.toMatchObject({
+      cause: 'operation-failed',
+      message: 'operation-failed',
+    });
+  });
 });

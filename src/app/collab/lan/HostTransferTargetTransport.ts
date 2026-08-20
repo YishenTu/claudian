@@ -17,6 +17,7 @@ import { hostTransferProvisionalPath } from '@/app/collab/lan/HostTransferProvis
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
 import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { toError } from '@/utils/error';
 
 const RESPONSE_LIMIT = 64 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -164,7 +165,7 @@ async function requestReceiver(input: {
       } catch (error) {
         finish(() => {
           request.destroy();
-          reject(error);
+          reject(toError(error, 'Host transfer request body failed.'));
         });
       }
     })();

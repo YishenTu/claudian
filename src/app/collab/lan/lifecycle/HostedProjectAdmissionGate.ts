@@ -1,4 +1,5 @@
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { toError } from '@/utils/error';
 
 export type HostedProjectAdmissionMode =
   | 'active'
@@ -64,12 +65,11 @@ export class HostedProjectAdmissionGate {
         `host-project-${this.currentMode}`,
       ));
     }
-    let started: Promise<T>;
-    try {
-      started = Promise.resolve(operation());
-    } catch (error) {
-      started = Promise.reject(error);
-    }
+    const started = Promise.resolve()
+      .then(operation)
+      .catch((error: unknown) => {
+        throw toError(error, 'Hosted Project operation failed.');
+      });
     const tracked = started.finally(() => {
       this.admitted.delete(tracked);
     });

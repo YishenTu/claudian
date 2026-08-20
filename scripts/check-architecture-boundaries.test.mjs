@@ -805,6 +805,24 @@ test('root tooling resolves the collab protocol package without generated artifa
   );
 });
 
+test('source-only typecheck resolves the canonical collab protocol source', () => {
+  const configPath = path.join(process.cwd(), 'tsconfig.source.json');
+  const config = ts.readConfigFile(configPath, ts.sys.readFile);
+  assert.equal(config.error, undefined);
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, process.cwd());
+  const resolution = ts.resolveModuleName(
+    '@claudian/collab-protocol',
+    path.join(process.cwd(), 'src', 'main.ts'),
+    parsed.options,
+    ts.sys,
+  ).resolvedModule;
+
+  assert.equal(
+    resolution?.resolvedFileName,
+    path.join(process.cwd(), 'packages', 'collab-protocol', 'src', 'index.ts'),
+  );
+});
+
 test('performance policy reports the pre-Collab delta and review thresholds', () => {
   assert.deepEqual(inspectArtifactSize(historicalMainWarningBytes + 1), {
     historicalNotice: true,

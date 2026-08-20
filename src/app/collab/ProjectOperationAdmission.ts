@@ -1,6 +1,7 @@
 import { type CollabProjectId } from '@claudian/collab-protocol';
 
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { toError } from '@/utils/error';
 
 export type ProjectOperationPolicy = 'active' | 'retired-local';
 
@@ -42,7 +43,7 @@ export class ProjectOperationAdmission {
     try {
       projectId = resolveProjectId();
     } catch (error) {
-      return Promise.reject(error);
+      return Promise.reject(toError(error, 'Collab Project operation admission failed.'));
     }
     if (policy === 'active' && this.closedProjects.has(projectId)) {
       return Promise.reject(new CollabError({
@@ -55,12 +56,11 @@ export class ProjectOperationAdmission {
 
   private runAdmitted<T>(operation: () => Promise<T>): Promise<T> {
     if (this.closing) return Promise.reject(closingError());
-    let admitted: Promise<T>;
-    try {
-      admitted = Promise.resolve().then(operation);
-    } catch (error) {
-      admitted = Promise.reject(error);
-    }
+    const admitted = Promise.resolve()
+      .then(operation)
+      .catch((error: unknown) => {
+        throw toError(error, 'Admitted Collab Project operation failed.');
+      });
     this.active.add(admitted);
     const remove = () => this.active.delete(admitted);
     void admitted.then(remove, remove);

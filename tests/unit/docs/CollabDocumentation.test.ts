@@ -6,6 +6,19 @@ import {
 import path from 'node:path';
 
 describe('Collab documentation', () => {
+  it('keeps the documented Obsidian requirement synchronized with tooling', () => {
+    const manifest = JSON.parse(readFileSync(path.resolve('manifest.json'), 'utf8')) as {
+      minAppVersion: string;
+    };
+    const packageJson = JSON.parse(readFileSync(path.resolve('package.json'), 'utf8')) as {
+      devDependencies: Record<string, string>;
+    };
+    const readme = readFileSync(path.resolve('README.md'), 'utf8');
+
+    expect(packageJson.devDependencies.obsidian).toBe(manifest.minAppVersion);
+    expect(readme).toContain(`- Obsidian v${manifest.minAppVersion}+`);
+  });
+
   it('links the concise Collab overview to its documentation and states the LAN boundary', () => {
     const readme = readFileSync(path.resolve('README.md'), 'utf8');
 

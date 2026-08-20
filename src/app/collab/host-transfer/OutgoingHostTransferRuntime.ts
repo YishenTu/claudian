@@ -7,6 +7,7 @@ import type {
   OutgoingHostTransferCoordinator,
 } from '@/app/collab/host-transfer/OutgoingHostTransferCoordinator';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
+import { toError } from '@/utils/error';
 
 export class OutgoingHostTransferRuntime {
   private readonly abortController = new AbortController();
@@ -133,12 +134,11 @@ export class OutgoingHostTransferRuntime {
         safeContext: { reason: 'host-transfer-runtime-closed' },
       }));
     }
-    let pending: Promise<T>;
-    try {
-      pending = Promise.resolve(operation());
-    } catch (error) {
-      pending = Promise.reject(error);
-    }
+    const pending = Promise.resolve()
+      .then(operation)
+      .catch((error: unknown) => {
+        throw toError(error, 'Outgoing Host transfer operation failed.');
+      });
     this.active.add(pending);
     const remove = () => this.active.delete(pending);
     void pending.then(remove, remove);

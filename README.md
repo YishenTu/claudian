@@ -46,7 +46,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
   - [OpenCode](https://github.com/anomalyco/opencode)
   - [Pi](https://github.com/earendil-works/pi)
 - A compatible subscription or API provider, such as [OpenRouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.kimi.ai/docs/guide/claude-code-kimi), [GLM](https://docs.z.ai/devpack/tool/claude), or [DeepSeek](https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code) etc.
-- Obsidian v1.7.2+
+- Obsidian v1.13.0+
 - Desktop only (macOS, Linux, Windows)
 - Collab Mode requires [Git](https://git-scm.com/install/)
 

@@ -1,6 +1,18 @@
 import { HostedProjectAdmissionGate } from '@/app/collab/lan/lifecycle/HostedProjectAdmissionGate';
 
 describe('HostedProjectAdmissionGate', () => {
+  it('normalizes non-Error operation failures', async () => {
+    const gate = new HostedProjectAdmissionGate();
+
+    await expect(gate.run(
+      // eslint-disable-next-line prefer-promise-reject-errors -- Exercise boundary normalization of an invalid rejection.
+      async () => Promise.reject('hosted-operation-failed'),
+    )).rejects.toMatchObject({
+      cause: 'hosted-operation-failed',
+      message: 'hosted-operation-failed',
+    });
+  });
+
   it('drains work admitted before quiescence and rejects later work', async () => {
     const gate = new HostedProjectAdmissionGate({ drainTimeoutMs: 250 });
     let release!: () => void;

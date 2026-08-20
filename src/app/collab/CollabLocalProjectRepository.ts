@@ -1596,7 +1596,7 @@ export class CollabLocalProjectRepository {
     relativePath: string,
     recordKind: 'cache' | 'index' | 'membership' | 'pending-operation' | 'publication-state' | 'request-draft' | CollabLifecycleProjectDocumentKind | 'retirement-tombstone',
     projectId?: string,
-  ): Promise<unknown | null> {
+  ): Promise<unknown> {
     let absolutePath: string;
     try {
       absolutePath = await resolveCollabVaultPath(this.vaultRoot, relativePath);

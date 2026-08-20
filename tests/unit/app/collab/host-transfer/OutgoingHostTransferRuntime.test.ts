@@ -1,6 +1,21 @@
 import { OutgoingHostTransferRuntime } from '@/app/collab/host-transfer/OutgoingHostTransferRuntime';
 
 describe('OutgoingHostTransferRuntime', () => {
+  it('normalizes non-Error coordinator failures', async () => {
+    const runtime = new OutgoingHostTransferRuntime(
+      'project-a',
+      jest.fn(() => ({
+        run: () => { throw 'coordinator-failed'; },
+      })) as never,
+      { load: jest.fn() } as never,
+    );
+
+    await expect(runtime.run('project-a', 'transfer-a')).rejects.toMatchObject({
+      cause: 'coordinator-failed',
+      message: 'coordinator-failed',
+    });
+  });
+
   it('aborts and drains accepted background work before closing', async () => {
     let receivedSignal: AbortSignal | undefined;
     const coordinator = {

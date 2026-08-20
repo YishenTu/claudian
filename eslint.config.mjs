@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import eslintComments from '@eslint-community/eslint-plugin-eslint-comments';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import jestPlugin from 'eslint-plugin-jest';
 import obsidianmd from 'eslint-plugin-obsidianmd';
@@ -11,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const jestRecommended = jestPlugin.configs['flat/recommended'];
 const tsconfigRootDir = dirname(fileURLToPath(import.meta.url));
-const obsidianRuleSeverity = 'warn';
+const obsidianRuleSeverity = 'error';
 
 // Enforces the file naming conventions from AGENTS.md without extra dependencies.
 // Exported so scripts/check-eslint-config.test.mjs can exercise it directly.
@@ -106,6 +107,25 @@ const stagedObsidianRules = {
   'obsidianmd/vault/iterate': obsidianRuleSeverity,
 };
 
+const strictTypeAwareRules = {
+  'prefer-promise-reject-errors': 'off',
+  '@typescript-eslint/await-thenable': 'error',
+  '@typescript-eslint/no-deprecated': 'error',
+  '@typescript-eslint/no-duplicate-type-constituents': 'error',
+  '@typescript-eslint/no-floating-promises': 'error',
+  '@typescript-eslint/no-misused-promises': 'error',
+  '@typescript-eslint/no-redundant-type-constituents': 'error',
+  '@typescript-eslint/no-unsafe-argument': 'error',
+  '@typescript-eslint/no-unsafe-assignment': 'error',
+  '@typescript-eslint/no-unsafe-call': 'error',
+  '@typescript-eslint/no-unsafe-member-access': 'error',
+  '@typescript-eslint/no-unsafe-return': 'error',
+  '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+  '@typescript-eslint/only-throw-error': 'error',
+  '@typescript-eslint/prefer-promise-reject-errors': 'error',
+  '@typescript-eslint/unbound-method': 'error',
+};
+
 export default defineConfig([
   {
     ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'main.js'],
@@ -153,10 +173,21 @@ export default defineConfig([
       },
     },
     plugins: {
+      'eslint-comments': eslintComments,
       obsidianmd,
+    },
+    linterOptions: {
+      reportUnusedDisableDirectives: 'error',
+      reportUnusedInlineConfigs: 'error',
     },
     rules: {
       ...stagedObsidianRules,
+      ...strictTypeAwareRules,
+      'eslint-comments/no-restricted-disable': [
+        'error',
+        'obsidianmd/*',
+      ],
+      'eslint-comments/require-description': 'error',
       'obsidianmd/prefer-create-el': 'error',
       '@typescript-eslint/naming-convention': [
         'error',
@@ -169,14 +200,18 @@ export default defineConfig([
         { selector: 'objectLiteralProperty', format: null },
         { selector: 'typeProperty', format: null },
       ],
-      '@typescript-eslint/no-duplicate-type-constituents': 'error',
-      '@typescript-eslint/no-misused-promises': 'error',
-      '@typescript-eslint/only-throw-error': 'error',
-      '@typescript-eslint/no-unsafe-argument': 'error',
-      '@typescript-eslint/no-unsafe-assignment': 'error',
-      '@typescript-eslint/no-unsafe-return': 'error',
-      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
-      '@typescript-eslint/unbound-method': 'error',
+    },
+  },
+  {
+    files: ['packages/collab-protocol/src/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        project: './packages/collab-protocol/tsconfig.json',
+        tsconfigRootDir,
+      },
+    },
+    rules: {
+      ...strictTypeAwareRules,
     },
   },
   {

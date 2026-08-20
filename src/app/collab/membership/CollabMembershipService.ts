@@ -83,7 +83,7 @@ export interface CollabMembershipServiceOptions {
 }
 
 export interface CollabMembershipPendingLeavePort {
-  load(projectId: CollabProjectId): Promise<unknown | null>;
+  load(projectId: CollabProjectId): Promise<unknown>;
 }
 
 export interface CollabMembershipManagerReceiptPort {
