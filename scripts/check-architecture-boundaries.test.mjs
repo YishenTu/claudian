@@ -781,6 +781,30 @@ test('src and tests import the collab protocol package only through its root ent
   assert.deepEqual(violations, []);
 });
 
+test('root tooling resolves the collab protocol package without generated artifacts', () => {
+  const configPath = path.join(process.cwd(), 'tsconfig.json');
+  const config = ts.readConfigFile(configPath, ts.sys.readFile);
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, process.cwd());
+  const host = {
+    ...ts.sys,
+    fileExists(file) {
+      return !file.includes(`${path.sep}collab-protocol${path.sep}dist${path.sep}`)
+        && ts.sys.fileExists(file);
+    },
+  };
+  const resolution = ts.resolveModuleName(
+    '@claudian/collab-protocol',
+    path.join(process.cwd(), 'src', 'main.ts'),
+    parsed.options,
+    host,
+  ).resolvedModule;
+
+  assert.equal(
+    resolution?.resolvedFileName,
+    path.join(process.cwd(), 'packages', 'collab-protocol', 'src', 'index.ts'),
+  );
+});
+
 test('performance policy reports the pre-Collab delta and review thresholds', () => {
   assert.deepEqual(inspectArtifactSize(historicalMainWarningBytes + 1), {
     historicalNotice: true,

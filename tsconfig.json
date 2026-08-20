@@ -3,6 +3,10 @@
     "paths": {
       "@/*": ["./src/*"],
       "@test/*": ["./tests/*"],
+      "@claudian/collab-protocol": [
+        "./packages/collab-protocol/dist/index",
+        "./packages/collab-protocol/src/index.ts"
+      ],
       "@modelcontextprotocol/sdk/*": ["./node_modules/@modelcontextprotocol/sdk/dist/esm/*"]
     },
     "skipLibCheck": true,

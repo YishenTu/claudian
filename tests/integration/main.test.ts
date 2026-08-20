@@ -1772,13 +1772,12 @@ describe('ClaudianPlugin', () => {
       expect(() => plugin.onunload()).not.toThrow();
     });
 
-    it('detaches session-only Collab review leaves before unload completes', async () => {
+    it('leaves plugin-view detachment to Obsidian during unload', async () => {
       await plugin.onload();
 
       plugin.onunload();
 
-      expect(mockApp.workspace.detachLeavesOfType)
-        .toHaveBeenCalledWith(COLLAB_DETAIL_VIEW_TYPE);
+      expect(mockApp.workspace.detachLeavesOfType).not.toHaveBeenCalled();
     });
 
     it('disposes the application execution lifecycle registry', async () => {

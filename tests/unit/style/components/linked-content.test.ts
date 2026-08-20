@@ -27,7 +27,7 @@ describe('Linked content styles', () => {
     expect(messagesCss).toMatch(/\.claudian-linked-content-selector-row\.is-editing\s+\.claudian-linked-content-selector\s*{[^}]*display:\s*none;/);
     expect(messagesCss).toMatch(/\.claudian-linked-content-selector:focus-visible\s*{[^}]*outline:\s*none;/);
     expect(messagesCss).toMatch(/\.claudian-linked-content-picker-search\s*{[^}]*width:\s*auto;[^}]*max-width:\s*100%;[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid var\(--interactive-accent\);[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/);
-    expect(messagesCss).toMatch(/\.claudian-linked-content-selector-row\s*>\s*input\[type='text'\]\.claudian-linked-content-picker-search[^}]*appearance:\s*none;[^}]*min-height:\s*0;[^}]*padding:\s*0\s*!important;[^}]*border:\s*0\s*!important;[^}]*border-bottom:\s*1px solid var\(--interactive-accent\)\s*!important;[^}]*border-radius:\s*0\s*!important;[^}]*background:\s*transparent\s*!important;[^}]*box-shadow:\s*none\s*!important;/);
+    expect(messagesCss).toMatch(/\.claudian-welcome-linked-content\s+\.claudian-linked-content-selector-row\s*>\s*input\[type='text'\]\.claudian-linked-content-picker-search[^}]*appearance:\s*none;[^}]*min-height:\s*0;[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid var\(--interactive-accent\);[^}]*border-radius:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/);
     expect(messagesCss).not.toContain('.claudian-linked-content-picker-status');
     expect(messagesCss).not.toContain('.claudian-linked-content-picker-retry');
   });
@@ -38,8 +38,8 @@ describe('Linked content styles', () => {
   });
 
   it('keeps picker items transparent until hover or selection', () => {
-    expect(messagesCss).toMatch(/button\.claudian-linked-content-picker-option\s*{[^}]*background:\s*transparent\s*!important;/);
-    expect(messagesCss).toMatch(/button\.claudian-linked-content-picker-option:hover,[\s\S]*?button\.claudian-linked-content-picker-option\.is-selected\s*{[^}]*background:\s*var\(--background-modifier-hover\)\s*!important;/);
+    expect(messagesCss).toMatch(/\.claudian-linked-content-picker\s+button\.claudian-linked-content-picker-option\s*{[^}]*background:\s*transparent;/);
+    expect(messagesCss).toMatch(/\.claudian-linked-content-picker\s+button\.claudian-linked-content-picker-option:hover,[\s\S]*?\.claudian-linked-content-picker\s+button\.claudian-linked-content-picker-option\.is-selected\s*{[^}]*background:\s*var\(--background-modifier-hover\);/);
   });
 
   it('separates picker item names from their path descriptions', () => {
@@ -47,7 +47,8 @@ describe('Linked content styles', () => {
   });
 
   it('prevents Obsidian themes from restoring selector background chrome', () => {
-    expect(messagesCss).toMatch(/\.claudian-linked-content-selector-row\s*>\s*button\.claudian-linked-content-selector[^}]*min-width:\s*0\s*!important;[^}]*width:\s*auto\s*!important;[^}]*padding:\s*0\s*!important;[^}]*background:\s*transparent\s*!important;[^}]*outline:\s*none\s*!important;/);
+    expect(messagesCss).toMatch(/\.claudian-welcome-linked-content\s+\.claudian-linked-content-selector-row\s*>\s*button\.claudian-linked-content-selector[^}]*min-width:\s*0;[^}]*width:\s*auto;[^}]*padding:\s*0;[^}]*background:\s*transparent;[^}]*outline:\s*none;/);
+    expect(messagesCss).not.toContain('!important');
   });
 
   it('styles Linked content and Missing content as context-tray modifiers', () => {

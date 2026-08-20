@@ -343,7 +343,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.mutateSettings((settings) => {
               settings.locale = locale;
             });
-            this.display();
+            this.update();
           });
       });
 
@@ -378,7 +378,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
               settings.enableDualPane = value;
             });
             this.refreshDualPaneLayouts();
-            this.display();
+            this.update();
           })
       );
 
@@ -467,7 +467,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.mutateSettings((settings) => {
               settings.enableAutoTitleGeneration = value;
             });
-            this.display();
+            this.update();
           })
       );
 
@@ -697,7 +697,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
         slider
           .setLimits(MIN_WARM_AGENT_PROCESSES, MAX_WARM_AGENT_PROCESSES, 1)
           .setValue(this.plugin.settings.maxWarmAgentProcesses ?? 5)
-          .setDynamicTooltip()
           .onChange(async (value) => {
             await this.plugin.mutateSettings((settings) => {
               settings.maxWarmAgentProcesses = value;

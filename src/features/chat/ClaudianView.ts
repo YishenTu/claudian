@@ -359,7 +359,9 @@ export class ClaudianView extends ItemView {
       }
       tabStatePersistence = new TabStatePersistenceCoordinator(
         async () => {
-          await this.plugin.app.workspace.requestSaveLayout();
+          this.plugin.app.workspace.requestSaveLayout();
+          const save = this.plugin.app.workspace.requestSaveLayout.run();
+          if (save) await save;
         },
       );
     }

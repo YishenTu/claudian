@@ -531,9 +531,11 @@ export class ClaudianCollabService {
       const foundations = await Promise.all(pending.map(
         foundation => foundation.catch(() => null),
       ));
-      const closeResults = await Promise.allSettled(foundations.map(
-        foundation => foundation?.database.close(),
-      ));
+      const closeResults = await Promise.allSettled(
+        foundations
+          .filter((foundation): foundation is CollabAuthorityFoundation => foundation !== null)
+          .map(foundation => foundation.database.close()),
+      );
       firstError ??= closeResults.find(result => result.status === 'rejected')?.reason;
       if (firstError instanceof Error) throw firstError;
       if (firstError) throw collabServiceError('not-initialized', 'collab-close-failed');

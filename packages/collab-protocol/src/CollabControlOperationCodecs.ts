@@ -4,7 +4,6 @@ import {
   type CollabDecodeResult,
 } from './CollabProtocol';
 import {
-  type CollabRequestTicketOperation,
   decodeCollabRequestTicketOperationRequest,
 } from './CollabRequestTicketRequestCodecs';
 import {
@@ -40,10 +39,7 @@ function decodeRequest(
   operation: CollabControlOperation,
   input: unknown,
 ): CollabDecodeResult<unknown> {
-  return decodeCollabRequestTicketOperationRequest(
-    operation as CollabRequestTicketOperation,
-    input,
-  );
+  return decodeCollabRequestTicketOperationRequest(operation, input);
 }
 
 function decodeResponse(operation: CollabControlOperation, input: unknown): unknown {

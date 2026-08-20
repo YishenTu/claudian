@@ -33,7 +33,6 @@ describe('CollabProjectsFolder', () => {
     ['workspace/LPT²', 'windows-reserved-superscript'],
     ['workspace/.git', 'reserved-directory'],
     ['workspace/.claudian', 'reserved-directory'],
-    ['workspace/.obsidian', 'reserved-directory'],
     ['workspace/control\u0001', 'control-character'],
   ])('rejects %s (%s)', (raw) => {
     expect(parseCollabProjectsFolder(raw)).toEqual(expect.objectContaining({
@@ -42,9 +41,19 @@ describe('CollabProjectsFolder', () => {
   });
 
   it('rejects the active Obsidian configuration directory', () => {
+    expect(parseCollabProjectsFolder('workspace/.obsidian', {
+      obsidianConfigDirectory: '.obsidian',
+    })).toEqual(expect.objectContaining({ ok: false }));
     expect(parseCollabProjectsFolder('Shared/.vault-config/Projects', {
       obsidianConfigDirectory: '.vault-config',
     })).toEqual(expect.objectContaining({ ok: false }));
+  });
+
+  it('does not guess the active configuration directory outside the Vault boundary', () => {
+    expect(parseCollabProjectsFolder('workspace/.obsidian')).toEqual({
+      ok: true,
+      value: 'workspace/.obsidian',
+    });
   });
 
   it('rejects oversized segments and complete paths', () => {

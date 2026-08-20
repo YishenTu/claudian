@@ -452,12 +452,9 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
-  // Collab reviews are session-only editor leaves and must not enter saved workspace state.
-  // eslint-disable-next-line obsidianmd/detach-leaves -- Intentional exception for ephemeral leaves.
   onunload(): void {
     this.isUnloading = true;
     this.collabTransientSurfaces.closeAll();
-    this.app.workspace.detachLeavesOfType(COLLAB_DETAIL_VIEW_TYPE);
     if (this.sessionMetadataLoadTimer !== null) {
       window.clearTimeout(this.sessionMetadataLoadTimer);
       this.sessionMetadataLoadTimer = null;

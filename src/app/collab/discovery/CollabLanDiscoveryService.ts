@@ -49,7 +49,7 @@ interface DnsSdBrowser {
 }
 
 interface DnsSdPublication {
-  readonly stop: CallableFunction;
+  stop(callback?: () => void): void;
 }
 
 interface DnsSdRuntime {
@@ -107,7 +107,7 @@ class BonjourDnsSdRuntime implements DnsSdRuntime {
     readonly port: number;
     readonly txt: Readonly<Record<string, string>>;
   }): DnsSdPublication {
-    return this.bonjour.publish({
+    const publication = this.bonjour.publish({
       disableIPv6: true,
       name: input.name,
       port: input.port,
@@ -116,6 +116,10 @@ class BonjourDnsSdRuntime implements DnsSdRuntime {
       txt: input.txt,
       type: COLLAB_DNS_SD_TYPE,
     });
+    const stop = publication.stop as (callback?: () => void) => void;
+    return {
+      stop: (callback) => stop.call(publication, callback),
+    };
   }
 }
 

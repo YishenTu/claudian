@@ -82,7 +82,7 @@
   gap: var(--size-2-2);
 }
 
-.claudian-collab-review button.claudian-collab-review-display-toggle {
+.view-content.claudian-collab-review button.claudian-collab-review-display-toggle {
   appearance: none;
   display: inline-flex;
   width: 18px;
@@ -91,15 +91,15 @@
   align-items: center;
   justify-content: center;
   padding: 0;
-  color: var(--text-muted) !important;
-  background: transparent !important;
+  color: var(--text-muted);
+  background: transparent;
   border: 0;
   border-radius: 0;
   box-shadow: none;
   outline: 0;
 }
 
-.claudian-collab-review button.claudian-collab-review-display-toggle svg {
+.view-content.claudian-collab-review button.claudian-collab-review-display-toggle svg {
   width: 16px;
   height: 16px;
 }
@@ -117,16 +117,16 @@
   vertical-align: middle;
 }
 
-.claudian-collab-review button.claudian-collab-review-display-toggle:hover,
-.claudian-collab-review button.claudian-collab-review-display-toggle:focus-visible,
-.claudian-collab-review button.claudian-collab-review-display-toggle:active {
-  color: var(--text-normal) !important;
-  background: transparent !important;
+.view-content.claudian-collab-review button.claudian-collab-review-display-toggle:hover,
+.view-content.claudian-collab-review button.claudian-collab-review-display-toggle:focus-visible,
+.view-content.claudian-collab-review button.claudian-collab-review-display-toggle:active {
+  color: var(--text-normal);
+  background: transparent;
   border: 0;
   box-shadow: none;
 }
 
-.claudian-collab-review button.claudian-collab-review-display-toggle:focus-visible {
+.view-content.claudian-collab-review button.claudian-collab-review-display-toggle:focus-visible {
   outline: 1px solid var(--interactive-accent);
   outline-offset: 2px;
 }

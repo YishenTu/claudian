@@ -37,9 +37,8 @@ function failure(
 }
 
 function configDirectorySegments(value: string | undefined): Set<string> {
-  // Storage normalization has no Vault instance; application validation supplies Vault.configDir.
-  // eslint-disable-next-line obsidianmd/hardcoded-config-path
-  const normalized = (value?.trim() || '.obsidian').normalize('NFC');
+  const normalized = value?.trim().normalize('NFC');
+  if (!normalized) return new Set();
   return new Set(
     normalized
       .split('/')

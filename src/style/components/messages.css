@@ -109,17 +109,17 @@
   cursor: default;
 }
 
-.claudian-linked-content-selector-row > button.claudian-linked-content-selector,
-.claudian-linked-content-selector-row > button.claudian-linked-content-selector:hover,
-.claudian-linked-content-selector-row > button.claudian-linked-content-selector:focus-visible,
-.claudian-linked-content-selector-row > button.claudian-linked-content-selector:active {
+.claudian-welcome-linked-content .claudian-linked-content-selector-row > button.claudian-linked-content-selector,
+.claudian-welcome-linked-content .claudian-linked-content-selector-row > button.claudian-linked-content-selector:hover,
+.claudian-welcome-linked-content .claudian-linked-content-selector-row > button.claudian-linked-content-selector:focus-visible,
+.claudian-welcome-linked-content .claudian-linked-content-selector-row > button.claudian-linked-content-selector:active {
   appearance: none;
-  min-width: 0 !important;
-  width: auto !important;
-  padding: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  outline: none !important;
+  min-width: 0;
+  width: auto;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
 }
 
 .claudian-linked-content-selector-row.is-editing .claudian-linked-content-selector {
@@ -197,19 +197,19 @@
   box-shadow: none;
 }
 
-.claudian-linked-content-selector-row > input[type='text'].claudian-linked-content-picker-search,
-.claudian-linked-content-selector-row > input[type='text'].claudian-linked-content-picker-search:hover,
-.claudian-linked-content-selector-row > input[type='text'].claudian-linked-content-picker-search:focus,
-.claudian-linked-content-selector-row > input[type='text'].claudian-linked-content-picker-search:active {
+.claudian-welcome-linked-content .claudian-linked-content-selector-row > input[type='text'].claudian-linked-content-picker-search,
+.claudian-welcome-linked-content .claudian-linked-content-selector-row > input[type='text'].claudian-linked-content-picker-search:hover,
+.claudian-welcome-linked-content .claudian-linked-content-selector-row > input[type='text'].claudian-linked-content-picker-search:focus,
+.claudian-welcome-linked-content .claudian-linked-content-selector-row > input[type='text'].claudian-linked-content-picker-search:active {
   appearance: none;
   min-height: 0;
   height: auto;
-  padding: 0 !important;
-  border: 0 !important;
-  border-bottom: 1px solid var(--interactive-accent) !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--interactive-accent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .claudian-linked-content-picker-search::placeholder {
@@ -232,38 +232,38 @@
   content: ' ';
 }
 
-button.claudian-linked-content-picker-option {
+.claudian-linked-content-picker button.claudian-linked-content-picker-option {
   appearance: none;
   width: 100%;
   min-width: 0;
   border: 0;
   border-radius: 0;
-  background: transparent !important;
+  background: transparent;
   box-shadow: none;
   font-family: inherit;
   text-align: start;
 }
 
-button.claudian-linked-content-picker-option:focus-visible,
-button.claudian-linked-content-picker-option:active {
+.claudian-linked-content-picker button.claudian-linked-content-picker-option:focus-visible,
+.claudian-linked-content-picker button.claudian-linked-content-picker-option:active {
   border: 0;
-  background: transparent !important;
+  background: transparent;
   box-shadow: none;
 }
 
-button.claudian-linked-content-picker-option:focus-visible {
+.claudian-linked-content-picker button.claudian-linked-content-picker-option:focus-visible {
   outline: 1px solid var(--interactive-accent);
   outline-offset: -1px;
 }
 
-button.claudian-linked-content-picker-option:hover,
-button.claudian-linked-content-picker-option.is-selected {
-  background: var(--background-modifier-hover) !important;
+.claudian-linked-content-picker button.claudian-linked-content-picker-option:hover,
+.claudian-linked-content-picker button.claudian-linked-content-picker-option.is-selected {
+  background: var(--background-modifier-hover);
 }
 
-button.claudian-linked-content-picker-option:disabled {
+.claudian-linked-content-picker button.claudian-linked-content-picker-option:disabled {
   border: 0;
-  background: transparent !important;
+  background: transparent;
   box-shadow: none;
   color: var(--text-faint);
   cursor: default;

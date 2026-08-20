@@ -71,7 +71,7 @@
 
 .claudian-collab-markdown-draft .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground,
 .claudian-collab-markdown-draft .cm-editor > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
-  background: var(--text-selection) !important;
+  background: var(--text-selection);
 }
 
 .claudian-collab-markdown-draft .cm-line {

@@ -45,6 +45,7 @@ jest.mock('obsidian', () => {
       const btn: any = {
         _onClick: null as null | (() => void),
         setButtonText: jest.fn().mockReturnThis(),
+        setDestructive: jest.fn().mockReturnThis(),
         setWarning: jest.fn().mockReturnThis(),
         onClick: jest.fn((handler: () => void) => {
           btn._onClick = handler;
@@ -81,6 +82,7 @@ describe('ConfirmModal', () => {
     expect(createdButtons).toHaveLength(2);
 
     const confirmBtn = createdButtons[1];
+    expect(confirmBtn.setDestructive).toHaveBeenCalledTimes(1);
     confirmBtn._onClick();
 
     await expect(p).resolves.toBe(true);
@@ -108,4 +110,3 @@ describe('ConfirmModal', () => {
     await expect(p).resolves.toBe(true);
   });
 });
-

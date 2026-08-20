@@ -274,13 +274,13 @@ describe('ClaudianSettingTab display settings', () => {
 
   it('rerenders display settings after dual-pane mode changes', async () => {
     const { tab, plugin } = createTab(true);
-    const display = jest.spyOn(tab, 'display').mockImplementation();
+    const update = jest.spyOn(tab, 'update').mockImplementation();
     (tab as any).renderGeneralTab(createContainer());
 
     await mockToggleChanges.get(t('settings.enableDualPane.name'))?.(false);
 
     expect(plugin.settings.enableDualPane).toBe(false);
-    expect(display).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledTimes(1);
   });
 
   it('renders and updates the startup tab restore toggle', async () => {

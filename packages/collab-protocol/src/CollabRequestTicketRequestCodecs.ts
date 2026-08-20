@@ -9,11 +9,6 @@ import type {
   CreateTicketCommentRequest,
   CreateTicketRequest,
   EnsureMyRequestRequest,
-  GetRequestRequest,
-  GetTicketRequest,
-  ListRequestCommentsRequest,
-  ListTicketAcceptedRelationsRequest,
-  ListTicketCommentsRequest,
   ListTicketsRequest,
   UpdateMyRequestMetadataRequest,
   UpdateTicketContentRequest,
@@ -117,7 +112,7 @@ function decodeRequestTicketRequest(
   switch (operation) {
     case 'getRequest':
       return isCollabProjectId(input.projectId) && isCollabOpaqueId(input.requestId)
-        ? { projectId: input.projectId, requestId: input.requestId } as GetRequestRequest
+        ? { projectId: input.projectId, requestId: input.requestId }
         : null;
     case 'ensureMyRequest':
       return mutationContext(input)
@@ -203,7 +198,7 @@ function decodeRequestTicketRequest(
           ...(input.limit === undefined ? {} : { limit: input.limit }),
           projectId: input.projectId,
           requestId: input.requestId,
-        } as ListRequestCommentsRequest
+        }
         : null;
     case 'listTicketComments':
       return hasExactKeys(input, ['projectId', 'ticketId'], ['cursor', 'limit'])
@@ -215,7 +210,7 @@ function decodeRequestTicketRequest(
           ...(input.limit === undefined ? {} : { limit: input.limit }),
           projectId: input.projectId,
           ticketId: input.ticketId,
-        } as ListTicketCommentsRequest
+        }
         : null;
     case 'listTicketAcceptedRelations':
       return hasExactKeys(input, ['projectId', 'ticketId'], ['cursor', 'limit'])
@@ -227,13 +222,13 @@ function decodeRequestTicketRequest(
           ...(input.limit === undefined ? {} : { limit: input.limit }),
           projectId: input.projectId,
           ticketId: input.ticketId,
-        } as ListTicketAcceptedRelationsRequest
+        }
         : null;
     case 'getTicket':
       return hasExactKeys(input, ['projectId', 'ticketId'])
         && isCollabProjectId(input.projectId)
         && isCollabOpaqueId(input.ticketId)
-        ? { projectId: input.projectId, ticketId: input.ticketId } as GetTicketRequest
+        ? { projectId: input.projectId, ticketId: input.ticketId }
         : null;
     case 'createTicket':
       return hasExactKeys(input, ['body', 'idempotencyKey', 'projectId', 'title'])

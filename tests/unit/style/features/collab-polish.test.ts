@@ -122,8 +122,9 @@ describe('Collab responsive and accessibility styles', () => {
       /\.claudian-collab-markdown-draft \.cm-cursor\s*{[^}]*border-left-color:\s*var\(--text-normal\);/,
     );
     expect(css).toMatch(
-      /\.claudian-collab-markdown-draft \.cm-editor\.cm-focused > \.cm-scroller > \.cm-selectionLayer \.cm-selectionBackground[^{]*{[^}]*background:\s*var\(--text-selection\) !important;/,
+      /\.claudian-collab-markdown-draft \.cm-editor\.cm-focused > \.cm-scroller > \.cm-selectionLayer \.cm-selectionBackground[^{]*{[^}]*background:\s*var\(--text-selection\);/,
     );
+    expect(css).not.toContain('!important');
     expect(css).not.toContain('::selection');
     expect(css).toMatch(
       /\.claudian-collab-markdown-draft-preview\s*{[^}]*background:\s*transparent;[^}]*border:\s*1px solid var\(--background-modifier-border\);/,
@@ -167,6 +168,10 @@ describe('Collab responsive and accessibility styles', () => {
     expect(reviewCss).toMatch(
       /button\.claudian-collab-review-display-toggle\[hidden\]\s*{[^}]*display:\s*none;/,
     );
+    expect(reviewCss).toMatch(
+      /\.view-content\.claudian-collab-review button\.claudian-collab-review-display-toggle\s*{[^}]*color:\s*var\(--text-muted\);[^}]*background:\s*transparent;/,
+    );
+    expect(reviewCss).not.toContain('!important');
     expect(reviewCss).toMatch(
       /\.claudian-collab-review-overview\s*{[^}]*padding:\s*var\(--size-4-2\) 0;/,
     );

@@ -33,6 +33,10 @@ export class PluginSettingTab {
   }
 
   display() {}
+
+  update() {
+    this.display();
+  }
 }
 
 export class ItemView {
